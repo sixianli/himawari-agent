@@ -12,25 +12,67 @@ date: "2026-09-24"
 
 ## 阅读导航
 
+- [术语说明](#terms)：本文反复用到的词先在这里解释
 - [目标与来源](#goal)
 - [当前代码与目标差距](#baseline)
-- [任务身份与共享边界](#identity)：[能力包络与环境轮换](#envelope)、[Run 边界的用户可见后果](#run-boundary)
-- [组件职责与后端合同](#backend)：[环境内 runner 的信任域](#runner-trust)
-- [授权与安全策略](#policy)：[原目录模式的平台门禁](#host-mount-gate)
-- [状态、停止与释放证明](#lifecycle)：[停止顺序](#stop-order)、[不依赖控制进程存活的硬期限](#deadline)
+- [任务身份与共享边界](#identity)：[环境权限上限与换新环境](#envelope)、[谁可以批准扩权](#expansion-approval)、[Run 边界的用户可见后果](#run-boundary)
+- [组件职责与后端合同](#backend)：[环境内 runner 的可信程度](#runner-trust)
+- [授权与安全策略](#policy)：[凭据的使用方式](#credentials)、[原目录模式的平台门禁](#host-mount-gate)
+- [状态、停止与停止证明](#lifecycle)：[停止顺序](#stop-order)、[不依赖控制进程存活的硬期限](#deadline)
 - [持久化、恢复与兼容](#recovery)
 - [浏览器与外部资源](#browser)
-- [错误与产品投影](#errors)
+- [错误与用户看到的状态](#errors)
 - [验收标准](#acceptance)
 - [验证策略与适用资料](#verification)
+
+<a id="terms"></a>
+
+## 术语说明
+
+带反引号的是代码或数据库里的名字；哪些已经存在于代码中、哪些是本设计计划新增的，表中逐项注明（2026-09-25 核查）。
+
+| 本文用词 | 意思 |
+| --- | --- |
+| Run（一轮） | 用户每发一条消息，产品就启动一个 Run，直到这条消息处理完 |
+| 主环境 | 本轮挂载用户工作目录、或运行任意代码的那个隔离容器 |
+| 网络辅助环境 | 只给纯 web_search 这类只需联网、不碰用户目录的工具使用的另一个容器 |
+| 环境权限上限（capability envelope，上一版称“能力包络”） | 一个环境里任何程序最多能做的事：能读写哪些目录、能连哪些网络目标、能用哪些凭据，以及 CPU、内存、磁盘等资源额度 |
+| 扩权 | 把新能力加进本轮主环境的权限上限 |
+| 换新环境（rotation，上一版称“轮换”） | 停掉当前容器、拿到停止证明之后，按新的权限上限建一个新容器 |
+| 第几个环境（generation） | 同一轮里每换一次环境编号加一；对应计划新增的字段 `environmentGeneration`（代码里还没有） |
+| `executionJobId` | 计划新增的字段（代码里还没有），标识“本轮这个执行作业”；一轮只有一个，本轮所有环境都挂在它下面 |
+| `lease` | 代码里已有的名字：一条“某个执行占用着某块资源”的登记。登记还在时，会冲突的其他任务不能动这块资源。本文的“环境级 `lease`”指整个环境持有的这种登记 |
+| `claim` | 代码里已有的名字（例如 `SandboxWorkspaceClaim`）：单次工具调用对具体文件或目录的占用登记，比环境级 `lease` 更细 |
+| 停止标记（fence） | 数据库里的递增编号。开始停止时先把它加一，带着旧编号的请求一律被拦住，不再执行 |
+| 停止证明（release proof） | 执行后端独立检查后给出的记录，证明环境确实已经整体停下、不会再运行；只有它被接收，才能释放 `lease` |
+| 冲突保护（barrier） | 结果不确定时加的一道保护，让可能冲突的新任务先等着，直到弄清楚 |
+| 临时凭据（broker handle） | 宿主发放的、有期限和用途限制的凭据，用完或停止时撤销；长期密钥本身不交给任务 |
+| 环境外的专用执行程序（上一版称“专用窄适配”） | 在宿主一侧运行、只做一类固定动作的程序（例如推送到指定仓库的指定分支）；只接受受限参数，不执行任意命令 |
+| runner | 容器里替 Pi 工具实际干活的程序 |
+| 受保护 init | 容器里的 1 号进程，只负责计时，到期就退出，从而让整个容器停下 |
+| intent | 执行某个动作前先写进数据库的“准备做这件事”的记录；崩溃后靠它判断动作可能已经发生到哪一步 |
+| ActionPolicy、授权记录（Grant） | 现有的审批判定入口和授权记录；Grant 是一条有范围、有期限的授权 |
+| 范围授权、单次批准 | 范围授权覆盖一类操作一段时间（例如“这个目录可以写”）；单次批准只覆盖一条具体操作 |
+| 资格验证（qualification） | 在某个具体的平台、版本、配置组合上实测安全保证是否成立；通过前不启用 |
+| 失败即拒绝（fail closed） | 缺条件或结果不明时拒绝或保持阻塞，而不是放行 |
+| bind mount | 把宿主上的目录直接接进容器；容器里写的内容会真实写回宿主 |
+| CAS | 数据库“先比对再写入”：记录仍是预期版本才写，防止两个写入方互相覆盖 |
+| ACK | 结果已送达的确认回执 |
+| SRT | 现在使用的进程级沙箱（依赖包 `@anthropic-ai/sandbox-runtime`），在宿主上限制单个进程能访问的文件和网络 |
+| Worker | 现有的执行进程，负责把工具请求交给沙箱或执行后端，并把结果传回 |
+| daemon | 在后台长期运行、脱离终端的程序 |
+| Linux capability、no-new-privileges | capability 是 Linux 把 root 权限拆成的一项项特权（例如改系统时钟、追踪别的进程）；no-new-privileges 禁止进程在运行中获得新的特权 |
+| inode | 文件系统给每个文件的内部编号；两个路径指向同一个 inode，就是同一个文件 |
+
+[↑ 返回阅读导航](#contents)
 
 <a id="goal"></a>
 
 ## 目标与来源
 
-将 [ADR 0031](../../adr/0031-isolated-tool-execution.md) 固定的两层安全边界落为 Himawari 的可实施设计：一个任务环境承载多次工具调用，所有高副作用工具经 Execution Backend，只有可信环境终止证明才能释放任务 workspace lease。
+把 [ADR 0031](../../adr/0031-isolated-tool-execution.md) 定下的两层安全边界落成 Himawari 可以实施的设计：一轮对话里的多次工具调用共用一个隔离环境；Shell、构建、安装依赖这类会产生副作用的工具，都通过执行后端（Execution Backend，负责创建、运行、停止容器的那一层）在环境里运行；只有拿到停止证明，才释放本轮任务对工作目录的 `lease`。
 
-这是目标设计，**尚未实现**。用户已要求在 ADR 自审通过后编写 Spec 和 Plan；本文不代表已经完成代码迁移、部署或容器资格验收。第一阶段交付本地 Docker-compatible backend；macOS OrbStack 是候选 concrete runtime。远端 backend、MicroVM 和完整浏览器产品接入只定义相同合同，不在第一阶段自动实现。
+这是目标设计，**尚未实现**。用户已要求在 ADR 自审通过后编写 Spec 和 Plan；本文不代表已经完成代码迁移、部署或容器资格验证。第一阶段交付本地 Docker 兼容的执行后端；macOS 上候选的具体运行时是 OrbStack。远端后端、MicroVM（轻量虚拟机）和完整的浏览器产品接入只定义相同合同，不在第一阶段自动实现。
 
 - 架构决定：[SOURCE: docs/adr/0031-isolated-tool-execution.md]
 - 当前架构事实：[SOURCE: docs/architecture-v0.1.md]
@@ -38,30 +80,30 @@ date: "2026-09-24"
 - 网络安全：[SOURCE: docs/adr/0026-job-scoped-network-egress.md]
 - 释放事实：[SOURCE: docs/adr/0030-durable-workspace-release-facts.md]
 - 既有执行设计：[SOURCE: docs/execution/specs/2026-09-07-srt-unified-execution-design.md]
-- Workspace authorization / claim / barrier：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
+- 工作目录授权、`claim` 与冲突保护：[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]
 
-对 2026-09-07 Spec 的 Host SRT 首选、每调用环境及 Mac 尽力停止目标，由本 Spec 的新路径设计取代；旧运行证据保持原含义。2026-09-16 Spec 的权限、原目录/工作副本、版本比较、队列、自动审查与展示合同保留，仅将其底层执行和环境释放条件改由本文约束。不新增自动审批权限，不改变模型或费用配置，不启用 MCP、Git push 或跨 Run 常驻服务。
+2026-09-07 Spec 中“宿主上的 SRT 优先”“每次调用一个环境”和“Mac 上尽力停止”的目标，由本 Spec 取代；旧的运行证据保持原含义。2026-09-16 workspace Spec 中的权限、原目录/工作副本、版本比较、队列、自动审查与展示规则保留，只把底层执行和环境释放条件改由本文约束；它的 [4.1 审批决定](2026-09-16-workspace-authorization-lifecycle-design.md#approval)按本文新增了“本轮环境扩权”这一决定类型。自动审查新增的唯一权力是按人配置的清单批准扩权，见[谁可以批准扩权](#expansion-approval)。不改变模型或费用配置，不启用 MCP、Git 推送或跨 Run 常驻服务。
 
-2026-09-25 修订：依据文档审阅补充[能力包络与环境轮换](#envelope)、[Run 边界的用户可见后果](#run-boundary)、[环境内 runner 的信任域](#runner-trust)、[原目录模式的平台门禁](#host-mount-gate)和[不依赖控制进程存活的硬期限](#deadline)，并新增 ITE-16～19。这些内容把已有原则（不合并 Grant、权限变化须轮换、环境归属于 Run、runner 输出不可信、额度不可强制则拒绝）落实为可实施规则；ADR 0031 的决定不变。
+2026-09-25 修订两次：第一次依据文档审阅补充了[Run 边界的用户可见后果](#run-boundary)、[环境内 runner 的可信程度](#runner-trust)、[原目录模式的平台门禁](#host-mount-gate)和[不依赖控制进程存活的硬期限](#deadline)，新增 ITE-16～19；第二次按用户同日确认的决定改写了[环境权限上限与换新环境](#envelope)（只增不减、按类别决定谁批准、凭据单独处理、撤权时缩小），新增[谁可以批准扩权](#expansion-approval)、[凭据的使用方式](#credentials)和 ITE-20～21，并把全文改成大白话。ADR 0031 的决定不变。
 
 <a id="baseline"></a>
 
 ## 当前代码与目标差距
 
-核查日期 2026-09-24，Git HEAD `506a91d56ab28ee6daa72f629dd85c1e3bcaee84`；工作区另有在途代码、测试和文档改动，以下结论来自读取时的源码，不是干净提交或生产状态声明。本轮未运行容器/停止探针。旧 Plan 的 Mac setsid 反例属于历史证据，不冒充本轮复现。
+核查日期 2026-09-24，Git HEAD `506a91d56ab28ee6daa72f629dd85c1e3bcaee84`；工作区当时另有未提交的代码、测试和文档改动，下列结论来自读取时的源码，不代表某个干净提交或生产环境的状态。本轮没有运行容器或停止探针。旧 Plan 里的 Mac `setsid` 反例（用 `setsid` 脱离原进程组的程序没有被停掉）是历史证据，不冒充本轮复现。
 
 | 已核查入口 | 现有机制 | 目标变化 |
 | --- | --- | --- |
-| [production-sandbox-services.ts](../../../apps/agent-service/src/production-sandbox-services.ts) | 多个准入入口以 `jobId(input.invocationId)`、`environment:${hash(input.invocationId)}` 生成绑定 | 增加任务级环境身份，保留每次 invocation/attempt；不能只把现有 spawn 换成 docker run |
-| [production-sandbox-execution-v2.ts](../../../apps/execution-worker/src/production-sandbox-execution-v2.ts)、[sandbox-execution.ts](../../../packages/application/src/ports/sandbox-execution.ts) | Worker prepare / bind / start、结果与资源分离、认证 broker、resource inspect/stop | 同一环境内多次 execute，环境级 start/stop fence；保留逐次授权 |
-| [job-host.ts](../../../packages/runtime-sandbox/src/job-host.ts)、[job-host-main.ts](../../../packages/runtime-sandbox/src/job-host-main.ts) | 独立 Node Job Host、SRT manager、私有 IPC、进程组停止；主控制器明确返回未知树清理 | Host supervisor 变为 backend 适配器；任务实际工具代码进入环境；不靠 Host PID tree 证明停止 |
-| [linux-namespace.ts](../../../packages/runtime-sandbox/src/linux-namespace.ts) | Linux 捕获 PID namespace/init 身份并核查存续；不能推广到 Mac | 保留旧证据解释；新 backend 按不可混淆的环境身份及 incarnation 核查整体终止 |
-| [resource-observer.ts](../../../packages/runtime-sandbox/src/resource-observer.ts) | `ps` 采样观察 CPU/内存与已知后代，不是硬配额 | 由后端强制 CPU/memory/pids/disk 等额度，观察仅用于审计 |
-| [sqlite-sandbox-release-operations.ts](../../../packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts) | 释放凭据接纳、occupancy 释放、迟到 control barrier 与新风险记录 | 新增环境级 lease 和释放事实；旧按 job 的工具完成不能释放父环境 |
-| [sandbox-execution-reconciliation.ts](../../../packages/application/src/services/sandbox-execution-reconciliation.ts)、[sandbox-startup-recovery.ts](../../../packages/application/src/services/sandbox-startup-recovery.ts) | 当前 authority、sequence/CAS、有界 inspect/stop、未知占用恢复，不授予重启能力 | 以持久 backend/environment 绑定跨 Worker、Agent、runtime 重启核查 |
-| [sandboxed-coding-executor.ts](../../../packages/runtime-pi/src/sandboxed-coding-executor.ts) | 固定 Pi 0.84.2，复用工具工厂及受控 Operations；find/grep/ls 整段实现放在 runner | 复用完整 executor，路径及 tmp 在环境内；不复制 Pi 工具实现 |
+| [production-sandbox-services.ts](../../../apps/agent-service/src/production-sandbox-services.ts) | 多个准入入口用 `jobId(input.invocationId)`、`environment:${hash(input.invocationId)}` 生成身份，也就是每次调用各算一个作业和环境 | 增加一轮一个的任务级环境身份，保留每次调用的身份；不能只把现有的进程启动换成 `docker run` |
+| [production-sandbox-execution-v2.ts](../../../apps/execution-worker/src/production-sandbox-execution-v2.ts)、[sandbox-execution.ts](../../../packages/application/src/ports/sandbox-execution.ts) | Worker 分准备、绑定、启动三步；结果与资源分开记录；经 `PayloadBroker` 认证数据通道传输；可以检查和停止资源 | 同一环境里多次执行；环境级的停止标记；保留逐次授权 |
+| [job-host.ts](../../../packages/runtime-sandbox/src/job-host.ts)、[job-host-main.ts](../../../packages/runtime-sandbox/src/job-host-main.ts) | 独立的 Node 进程 Job Host、SRT 管理、私有进程间通信、按进程组停止；主控制器对进程树能否清干净明确返回“未知” | 宿主一侧的监管改成执行后端适配器；工具代码进入环境运行；不靠宿主上的进程树证明已停止 |
+| [linux-namespace.ts](../../../packages/runtime-sandbox/src/linux-namespace.ts) | Linux 上记录 PID namespace（进程隔离空间）及其中 1 号进程的身份，并检查是否还在；这套办法不能用到 Mac | 保留旧证据的解释；新后端按不会混淆的环境身份，以及运行时自身是否重启过，检查整体终止 |
+| [resource-observer.ts](../../../packages/runtime-sandbox/src/resource-observer.ts) | 用 `ps` 采样观察 CPU/内存和已知子进程，不是硬性限额 | 由后端强制 CPU、内存、进程数、磁盘等限额，采样只用于审计 |
+| [sqlite-sandbox-release-operations.ts](../../../packages/persistence-sqlite/src/sqlite-sandbox-release-operations.ts) | 接收释放凭据、释放占用、为迟到的控制请求加冲突保护、记录新风险 | 新增环境级 `lease` 和释放记录；旧的“单次作业完成”不能释放整个环境 |
+| [sandbox-execution-reconciliation.ts](../../../packages/application/src/services/sandbox-execution-reconciliation.ts)、[sandbox-startup-recovery.ts](../../../packages/application/src/services/sandbox-startup-recovery.ts) | 按当前控制权、序号和 CAS 核对；有次数上限的检查/停止；恢复未知占用；不授予重新启动的能力 | 用持久保存的后端/环境绑定，在 Worker、Agent、运行时重启之后继续核对 |
+| [sandboxed-coding-executor.ts](../../../packages/runtime-pi/src/sandboxed-coding-executor.ts) | 固定 Pi 0.84.2，复用工具工厂和受控 Operations；find/grep/ls 的整段实现放在 runner 里 | 复用完整执行器，路径和临时目录都在环境内；不复制 Pi 的工具实现 |
 
-已核对 canonical 只读 `pi-mono/packages/coding-agent` 的 0.84.2 源码和已安装 Bash 类型：`BashOperations.exec` 提供命令、cwd、signal、timeout、onData；`grep.ts` 自行启动 rg，因此只代理 Bash 不足以覆盖全部 I/O。继续使用 `createGovernedPiCodingTools()` / `createPiOperationsFromGovernedHostPort()` 与现有受限 runner。Pi 不提供产品的 Grant、workspace lease 或持久环境终止证明，这些责任由 Himawari 的薄后端适配与账本承担，不引入第二套 Agent Loop、工具协议或权限数据库。
+已核对指定的只读 `pi-mono/packages/coding-agent` 0.84.2 源码和已安装的 Bash 类型：`BashOperations.exec` 提供命令、工作目录、取消信号、超时和输出回调；`grep.ts` 自己启动 `rg`，所以只代理 Bash 不能覆盖全部文件读写。继续使用 `createGovernedPiCodingTools()` / `createPiOperationsFromGovernedHostPort()` 和现有受限 runner。Pi 不提供产品的授权记录、工作目录 `lease` 或持久的环境终止证明，这些由 Himawari 自己的薄适配层和数据库记录承担，不另建第二套 Agent 循环、工具协议或权限数据库。
 
 <a id="identity"></a>
 
@@ -71,92 +113,120 @@ date: "2026-09-24"
 
 | 概念 | 含义及关系 |
 | --- | --- |
-| 产品 Thread / Pi Session | 对话历史；不持有永久容器，不作为环境授权 |
-| 任务级 execution job | 第一阶段由一个 Run 拥有、首次需要工具时惰性创建，绑定 Owner/Agent/Host、冻结策略和期限；默认一个任务一个环境，多工具共享；不跨 Run 转移 |
-| invocation / attempt | 单次工具或受管理后台操作的稳定身份；继续原有幂等和一次 Handle 消费；多个 invocation 关联同一任务环境 |
+| 产品 Thread / Pi Session | 对话历史；不持有永久容器，也不代表环境授权 |
+| 任务级执行作业（`executionJobId`） | 第一阶段由一个 Run 拥有，第一次需要工具时才创建；绑定所有者、Agent、宿主、固定的策略和期限；本轮所有工具共用它的环境；不转给下一轮 |
+| 单次调用（invocation / attempt） | 一次工具调用或受管理后台操作的固定身份；沿用原有“同一请求只执行一次”和“授权句柄只用一次”的规则；多次调用挂在同一个任务环境下 |
 
-新增产品拥有的 `executionJobId` 与 `environmentGeneration`；现有 `SandboxJobIdentity.jobId` 保留调用作业的历史语义，不批量改名、不把旧 invocation 合并。`environmentId` 由可信协调器创建，持久绑定 executionJob、backend、runtime 实例、不可变 runtime environment ID、generation、策略摘要和镜像/runner 摘要。名称、PID、容器 label 或模型提供的 ID 均不是授权证明。
+新增产品自有的 `executionJobId` 和 `environmentGeneration` 两个字段；现有 `SandboxJobIdentity.jobId` 保持“单次调用作业”的原意，不批量改名，也不把旧调用合并。环境编号 `environmentId` 由可信的协调方创建，并永久关联执行作业、后端、运行时实例、运行时给出的不可变环境 ID、第几个环境、策略摘要和镜像/runner 摘要。名称、进程号、容器标签或模型提供的 ID 都不能当作授权证明。
 
-一个 Run 同时最多存活一个**主环境**，即挂载用户 workspace 或运行任意代码的环境。不挂载任何用户目录、只需要网络能力的工具（例如纯 web_search）使用同一 Run 的**网络辅助环境**：它继续满足原合同中“无用户目录 grant、挂载或 claim”的要求，不持有 workspace lease，但同样要取得整体停止证明，以确认出口和凭据已关闭，并计入 Run 结束前的核对。除这两类外不另建环境。
+一个 Run 同时最多只有一个**主环境**。纯 web_search 这类不碰任何用户目录、只需要联网的工具，使用本轮的**网络辅助环境**：它不挂载用户目录、不申请 `claim`、不持有工作目录 `lease`，**不计入主环境的权限上限，也不触发扩权**；但它同样要拿到停止证明，确认网络出口和凭据已关闭，并在 Run 结束前一起核对。除这两类外不另建环境。
 
-能力包络变化时，按[能力包络与环境轮换](#envelope)先停止并证明旧 generation 已释放，再创建下一 generation；任何时刻不得同时保有相交的写能力。新 generation 不恢复旧进程、秘密或 broker 凭据，也不延长原期限。这是权限变化或恢复时的显式轮换，不是每个 tool call 创建一个环境。
+主环境的权限上限变化（扩大或缩小）时，按[环境权限上限与换新环境](#envelope)先停掉旧环境并拿到停止证明，再建下一个环境；任何时刻都不能同时存在两个对同一范围有写权限的环境。新环境不继承旧进程、秘密或临时凭据，也不延长原期限。只有权限变化或故障恢复才换新环境，不是每次工具调用都新建。
 
 ### 同一环境共享什么
 
-同一任务保有 cwd、workspace、Git 工作树、任务私有 HOME/tmp/cache、依赖及构建产物。后台程序属于父环境；单个前台工具返回不清理这些状态，不证明任务结束。默认串行处理同一环境的前台变更；同任务并发需满足资源冲突规则，不能用“相同 Run”绕过文件发布的版本检查。
+同一轮任务共享当前工作目录、Git 工作树、任务私有的 HOME/tmp/cache、依赖和构建产物。后台程序属于整个环境；某个前台工具返回不会清理这些状态，也不代表任务结束。同一环境里的前台修改默认一个接一个执行；同一轮内的并发仍要满足资源冲突规则，不能用“同一个 Run”绕过文件发布时的版本检查。
 
-共享以**已经明确授权整个环境存续期的能力上界**为前提。批准一次精确命令不等于批准后续程序任意复用其能力；如果授权仅覆盖某次操作且能力无法在共享环境内可靠隔离/撤回，就停止轮换或拒绝组合，不能把多个一次 Grant 的并集挂进同一个长寿环境。每个工具仍需当前 ActionPolicy、Grant/Handle、输入指纹、期限、预算与取消检查；这些检查不能代替 OS/后端权限限制。具体判定见下文。
+环境里的任何程序都能用到整个权限上限内的能力，所以一条命令实际能做的事，可能比它这次获批的范围大。本设计接受这一点，但要求每次审批都把“当前环境已有哪些能力”展示给审核者（见下一节）。每个工具仍要通过现有的 ActionPolicy、授权记录、输入指纹、期限、预算和取消检查；这些检查不能代替操作系统和后端的权限限制。
 
 <a id="envelope"></a>
 
-### 能力包络与环境轮换
+### 环境权限上限与换新环境
 
-**能力包络（capability envelope）**指环境内任何代码实际能够取得的全部能力：可读与可写挂载、网络出口策略、broker 凭据和资源额度。它由后端强制并冻结在 generation 上；环境运行中不追加挂载、网络目标或凭据。
+环境权限上限由后端强制，并在每个环境创建时固定；环境运行中不追加目录、网络目标或凭据。
 
-| 规则 | 判定方式 |
+按用户 2026-09-25 确认的决定，本轮主环境的权限上限**只增不减**（撤权和过期除外，见本节末尾）。“这个环境最多能做什么”和“这条命令要不要问”是两件分开判断的事：
+
+| 判断 | 规则 |
 | --- | --- |
-| 初始包络 | 首次需要环境时惰性创建，包络取**触发创建的那次调用**经 ActionPolicy 准入后的可强制范围，计算方式沿用[工作区 Spec 的执行范围规则](2026-09-16-workspace-authorization-lifecycle-design.md#execution-scope)；资源额度按策略与主机预算冻结。不预先加入其他授权，不合并多个 Grant |
-| 所需能力须在包络内 | 任一调用需要的能力超出当前包络时，不在当前 generation 执行，转入轮换 |
-| 任意代码调用还须覆盖包络 | Bash、脚本、构建、包管理、后台任务等任意程序会以包络的全部能力运行，因此它的有效授权必须覆盖整个包络。例如当前包络含 npm registry 出口，而新 Bash 只获准无网络运行，就不能在该 generation 执行 |
-| 固定实现的精确文件工具 | read / write / edit / find / grep / ls 等由宿主解析目标的工具只需落在包络内；它们不扩大包络，逐次目标、授权与版本检查照旧，效果按[runner 信任域](#runner-trust)由宿主独立读回 |
-| 已启动的后台程序 | 按工作区 Spec 既有合同（W13），获准命令启动的后台程序在本 Run 内仍属于原任务，能力以当时的包络为限。后续批准不会把新增能力交给它们：能力只能通过轮换增加，而轮换会先停止它们 |
-| 包络期限 | 取 Run 结束、触发授权的有效期（范围授权时）和环境 wall timeout 三者中最早者；撤权或过期按[停止顺序](#stop-order)整体停止 |
+| 初始上限 | 取本轮第一个需要主环境的工具调用获准的范围，计算方式沿用 [workspace Spec 的执行范围规则](2026-09-16-workspace-authorization-lifecycle-design.md#execution-scope)；资源额度按策略和主机预算固定。这一步也按[谁可以批准扩权](#expansion-approval)的分类判断，防止把必须由人批准的能力放进第一次调用来绕过 |
+| 扩权 | 某条命令需要的能力超出当前上限时，审批请求里单独列出“扩权”这一项。获批后**一律换新环境**：新上限 = 旧上限 + 这次批准新增的能力 |
+| 命令能否执行 | 一条命令能执行 = 它需要的能力在当前上限内，**并且**它按现有 ActionPolicy 获准：已有范围授权覆盖的不再问；只有单次批准的，照样逐条问 |
+| 审批时展示 | 每次审批（人工或自动审查）都展示当前环境已有哪些能力；需要换新环境时，还要列出会被停掉的后台程序 |
+| 固定实现的文件工具 | read / write / edit / find / grep / ls 这类由宿主确定目标的工具，只要目标在上限内即可；它们不扩大上限，逐次的目标、授权与版本检查照旧，结果按 [runner 的可信程度](#runner-trust)由宿主自己读回核对 |
+| 已启动的后台程序 | 按 workspace Spec 已有规则（W13），获准命令启动的后台程序在本轮内仍属于本任务，能力以所在环境的上限为限。它们拿不到后来新增的能力：扩权一定换新环境，而换新环境会先停掉它们 |
+| 纯 web_search | 在网络辅助环境运行，不计入主环境上限，不触发扩权 |
 
-**轮换**的步骤是：对当前 generation 请求整体停止 → 取得并接纳 release proof → 以触发调用的可强制范围作为新包络，创建下一 generation。
+**换新环境**的步骤：请求当前环境整体停止 → 拿到并接收停止证明 → 按新的上限创建下一个环境。
 
-- 当前 generation 仍有本任务启动的后台程序时，轮换会停止它们。这一影响作为该次请求的事实进入既有会话内审批或自动审查判定，不能静默停止，也不新增独立审批入口；没有后台程序时直接轮换。
-- 任务私有 HOME/cache 卷属于 executionJob，可以挂载到下一 generation，避免重复下载依赖。它不携带进程；旧 generation 的 broker 凭据在停止时已撤销，文件里即使残留旧凭据也不可再用。tmp 不跨 generation 保留。
-- 代价：权限需求来回变化的任务会多次轮换，例如“无网络构建 → 联网安装依赖 → 无网络测试”会创建三个 generation。这是不合并单次批准的直接结果。验收记录每个 Run 的轮换次数和耗时，不以放宽包络规则来减少轮换。
+- 会被停掉的后台程序，必须在审批时列给审核者看。由自动审查批准的扩权如果会停掉后台程序，仍由自动审查按清单决定，但会话里必须明确显示被停掉的程序。不新增独立的审批入口。
+- 任务私有的 HOME/cache 目录属于本轮执行作业，可以接到下一个环境，避免重复下载依赖。它不带进程；旧环境的临时凭据在停止时已撤销，文件里即使残留也用不了。tmp 不跨环境保留。
+
+**权限必须能变小。** 某项能力的授权被撤销或过期时：停掉当前环境，按去掉这项能力后的上限新建环境，同时停掉后台程序并在会话中显示。上限里的每项能力都记录各自的来源授权和期限；有多项期限时，最早到期的那项一到期就执行这一步。整轮结束时环境全部停止，见 [Run 边界的用户可见后果](#run-boundary)。
+
+代价有两个：每扩一次权就换一次环境，后台程序会被停掉；上限只增不减，后面的命令会在更大的上限里运行（例如联网安装之后，无网络测试的命令所在环境仍能访问 npm registry）。前者靠审批时列出后台程序来提醒，后者靠审批时展示当前环境能力来提醒。验收时记录每个 Run 里换新环境的次数和耗时。
+
+与 ADR 0031 的关系：ADR 0031 要求共享环境只在“固定的授权上界”内成立，不能把不同授权悄悄合并来扩大权限。本设计中每个环境的上限在创建时固定、运行中不变；上限要变大，必须有一个在审批里单独列出、由有权者批准的扩权决定，并换新环境。命令的单次批准本身不会把能力加进上限。
+
+<a id="expansion-approval"></a>
+
+### 谁可以批准扩权
+
+扩权按能力类别决定由谁批准（用户 2026-09-25 确认）。确定初始上限时用同一套分类。
+
+| 能力类别 | 谁可以批准 |
+| --- | --- |
+| 写入不在当前上限内的目录 | 必须由人批准 |
+| 使用凭据 | 必须由人批准，且只给用到它的那一次调用，见[凭据的使用方式](#credentials) |
+| 访问清单外、或不限目标的外网 | 必须由人批准 |
+| 委托清单里事先列好的扩权项（例如“允许访问 npm registry”） | 自动审查可以批准，人也可以批准 |
+| 其他不在清单里的扩权 | 必须由人批准 |
+
+- 委托清单由人配置，带版本号；清单的每次修改和每次按清单作出的批准都记入审计。自动审查不能修改清单。上表前三类不能写进清单，配置时直接拒绝。
+- 自动审查遇到清单外的扩权，不作决定，转交会话内的人工审批。
+- 待用户确认：人此前作出、仍然有效、并明确覆盖某项能力的范围授权，能否代替本次的人工批准。确认之前按“每次都由人在本次审批中批准”处理（失败即拒绝）。凭据不受这个问题影响，始终每次由人批准。
+- 这是 workspace Spec [4.1 审批决定](2026-09-16-workspace-authorization-lifecycle-design.md#approval)中“本轮环境扩权”决定类型的完整规则；验收为 ITE-20。
 
 <a id="run-boundary"></a>
 
 ### Run 边界的用户可见后果
 
-当前产品中一次用户提交对应一个 Run（见 [当前架构](../../architecture-v0.1.md)：[SOURCE: docs/architecture-v0.1.md]），而第一阶段环境归属于 Run 且不跨 Run 转移。因此任务环境最长只存在于一轮对话：
+当前产品中，用户每发一条消息就对应一个 Run（见[当前架构](../../architecture-v0.1.md)：[SOURCE: docs/architecture-v0.1.md]），而第一阶段环境属于 Run、不转给下一轮。所以任务环境最长只存在于一轮对话：
 
-- Run 结束（成功、失败或取消）时请求整体停止。上一轮启动的 dev server、watcher 等后台程序随之停止，下一轮不会继承。需要跨轮次常驻的服务不在本阶段范围。
-- 写入 workspace（原目录或工作副本）的文件、依赖目录和构建产物按原合同保留；任务私有 HOME、cache 和 tmp 不跨 Run 保留，下一轮在新环境中重新准备。
-- 等待用户批准或自动审查仍在同一 Run 内：等待期间环境及其 lease 保持，但等待不延长环境期限。超过期限就先整体停止，批准后以新 generation 执行。
-- Run 的业务结果与环境释放按[环境状态与操作状态独立](#lifecycle)分开记录。用户能从既有 thread execution resources 投影看到“本轮后台程序已随本轮结束而停止”或“停止待确认”，不新增页面。
+- Run 结束（成功、失败或取消）时请求整体停止。本轮启动的开发服务器、文件监视程序等后台程序随之停止，下一轮不会继承。需要跨轮次常驻的服务不在本阶段范围。
+- 写进工作目录（原目录或工作副本）的文件、依赖目录和构建产物按原规则保留；任务私有的 HOME、cache 和 tmp 不跨 Run 保留，下一轮在新环境里重新准备。权限上限也不跨 Run：下一轮从第一个工具调用重新确定。
+- 等待用户批准或自动审查仍在同一个 Run 内：等待期间环境和它的 `lease` 保持，但等待不延长环境期限；超过期限就先整体停止，批准后在下一个环境里执行。
+- Run 的业务结果与环境释放分开记录，见[环境状态与操作状态分开](#lifecycle)。用户能在现有的线程执行资源显示（thread execution resources）里看到“本轮后台程序已随本轮结束而停止”或“停止待确认”，不新增页面。
 
 <a id="backend"></a>
 
 ## 组件职责与后端合同
 
-| 层 | 所有权 |
+| 层 | 负责什么 |
 | --- | --- |
-| Agent Service / application | Pi orchestration、授权/HITL、execution job、lease、持久 intent/fence、结果披露和 recovery |
-| Worker | 读取当前 authority，调用 backend，维持认证通信、输出回传与执行观察；不在 Worker 运行任意工具实现 |
-| Execution Backend adapter | 受保护 runtime 管理接口，编译/验证策略，创建与定位环境，执行、整体停止、核查并提供可信证据 |
-| 环境内 executor | 复用 Pi 工具、Shell/CLI/浏览器及其子进程；不得签发释放证明或读取控制平面秘密；与任务代码处于同一信任域，见[runner 信任域](#runner-trust) |
-| 环境内受保护 init | 作为环境 PID 1 只负责[硬期限](#deadline)计时与到期退出；不运行工具、不接收任务输入、不签发证明 |
-| SQLite 与 evidence reader | 事务接纳事实、验证证据主体和摘要、处理 CAS 竞争、维护 lease/barrier；runner 输出不直接写权威状态 |
+| Agent Service / application | Pi 编排、授权与人工审批、执行作业、`lease`、持久保存的 intent 和停止标记、结果披露和恢复 |
+| Worker | 读取当前控制权，调用执行后端，维持认证通信、输出回传和执行观察；不在 Worker 里运行任何工具实现 |
+| 执行后端适配器（Execution Backend adapter） | 受保护的运行时管理接口：把策略转换成容器配置并核对、创建和定位环境、执行、整体停止、核查并给出可信证据 |
+| 环境内 runner | 复用 Pi 工具、Shell/CLI/浏览器及其子进程；不能签发停止证明，也读不到控制一侧的秘密；可信程度和任务代码相同，见[环境内 runner 的可信程度](#runner-trust) |
+| 环境内受保护 init | 作为容器的 1 号进程，只负责[硬期限](#deadline)计时和到期退出；不运行工具、不接收任务输入、不签发证明 |
+| 环境外的专用执行程序 | 在宿主一侧完成需要凭据的固定动作，凭据不进入容器；只接受受限参数，见[凭据的使用方式](#credentials) |
+| SQLite 与证据读取方 | 在事务中接收事实、核对证据属于谁以及摘要是否匹配、用 CAS 处理并发写入、维护 `lease` 和冲突保护；runner 的输出不能直接写成权威状态 |
 
-产品 port 放在 application；版本化序列化合同放在 execution-contracts。具体容器适配隔离于基础设施模块，只有组合根选择实现。沿现有 execution.v2 / Payload 认证通道扩展版本，不能让 application 调用 Docker CLI。第一阶段适配器可使用受保护的 Docker-compatible API 或固定 CLI argv；模型不能提供 daemon endpoint、image、mount、启动器或 runtime 参数。CLI 只是实现细节，不是公开产品合同。
+产品接口（port）放在 application；带版本的序列化合同放在 execution-contracts。具体的容器适配放在基础设施模块，只由程序的组装入口选择实现。沿现有 execution.v2 / Payload 认证通道扩展版本，application 不能直接调用 Docker CLI。第一阶段适配器可以用受保护的 Docker 兼容 API，或参数固定的 CLI；模型不能指定 daemon 地址、镜像、挂载、启动程序或运行时参数。CLI 只是实现细节，不是公开的产品合同。
 
-目标 `ExecutionBackendPort` 的语义如下；实现时沿现有端口扩展，不另造并行调度系统：
+目标 `ExecutionBackendPort` 的行为如下；实现时沿现有接口扩展，不另造一套并行的调度系统：
 
-| 操作 | 输入及约束 | 返回和失败语义 |
+| 操作 | 输入及约束 | 返回和失败时的处理 |
 | --- | --- | --- |
-| `capabilities` / `health` | 受信配置的 backend/host 及 qualification 绑定 | 明确可强制的策略、生命周期与资源保证，其中必须包含不依赖控制进程存活的[硬期限](#deadline)；健康不等于安全资格；不支持的能力拒绝 |
-| `create` | 已持久化 execution job、generation、create intent 幂等键、冻结的能力包络与策略、资源预算、硬期限、镜像/runner digest、已核查 workspace | 创建尚不可接收用户工具的环境，并把剩余期限交给受保护 init；返回不可变定位与有效策略；响应丢失按同一 intent 核查，不盲建第二个环境 |
-| `execute` | 已绑定环境、当前 fence、调用身份、受保护参数引用和期限 | 发送前持久化 execute intent；同一环境执行，返回稳定输出 cursor、不可信操作结果与独立环境观察。Docker-compatible exec 没有幂等键，因此响应丢失时不再发送，只读取 runner 已写出的输出（仍不可信）和 backend 观察，并按[runner 信任域](#runner-trust)冻结该 generation |
-| `inspect` | 完整 backend/runtime/environment/generation 身份和期望序号 | `running` / `stopped` / `unknown` 等可信观察及证据；连接失败、daemon 被替换、仅名称匹配或不明确的 not-found 均不是 stopped |
-| `stop` | 原环境身份、持久 stop intent、当前控制 authority、有限清理期限 | 幂等风险缩减，阻止新的 execute，整体停止环境及关联资源；返回请求接纳与终止观察，接纳不是证明 |
-| `verifyStopped` | stop fence、原 runtime 实例、不可变定位与所需证明维度 | 可信、带摘要且有接纳时效的停止证明，或 unknown；不能由任务 stdout/exit code 推导 |
-| `destroy` | 已停止且证据已持久保存的任务自有资源清单 | 回收环境层、私有 profile/tmp/cache；保留用户 workspace 和验证证据；失败保留 GC 义务，不抹掉已接纳停止事实 |
+| `capabilities` / `health` | 受信配置的后端/宿主，以及对应的资格验证结果 | 说明能强制哪些策略、生命周期和资源保证，其中必须包含不依赖控制进程存活的[硬期限](#deadline)；健康不等于安全资格；不支持的能力直接拒绝 |
+| `create` | 已保存的执行作业、第几个环境、创建 intent 和防重复键、固定的权限上限与策略、资源预算、硬期限、镜像/runner 摘要、已核查的工作目录 | 创建一个还不能接收用户工具的环境，并把剩余期限交给受保护 init；返回不可变的定位信息和实际生效的策略；响应丢失时按同一 intent 核查，不盲目再建一个 |
+| `execute` | 已绑定的环境、当前停止标记、调用身份、受保护的参数引用和期限 | 发送前先保存执行 intent；在同一环境执行，返回稳定的输出位置、不可信的操作结果和后端的独立观察。Docker 兼容的 exec 没有防重复键，所以响应丢失时不再重发，只读取 runner 已写出的输出（仍不可信）和后端观察，并按 [runner 的可信程度](#runner-trust)停用当前环境 |
+| `inspect` | 完整的后端/运行时/环境/第几个环境身份和期望序号 | 返回 `running` / `stopped` / `unknown` 等可信观察和证据；连接失败、daemon 被替换、只有名称对得上，或含义不明的 not-found，都不算 stopped |
+| `stop` | 原环境身份、已保存的停止 intent、当前控制权、有限的清理期限 | 可以重复调用；阻止新的 execute，整体停止环境及关联资源；返回“请求已接收”和终止观察，“已接收”不是证明 |
+| `verifyStopped` | 停止标记、原运行时实例、不可变定位，以及证明需要覆盖的各项内容 | 给出可信、带摘要、有接收时效的停止证明，或者 unknown；不能由任务的输出或退出码推出来 |
+| `destroy` | 已停止、且证据已保存的任务自有资源清单 | 回收环境、私有 profile/tmp/cache；保留用户工作目录和验证证据；失败就留下回收任务，不抹掉已接收的停止事实 |
 
-Adapter 必须有同一语义的合约测试；未来 remote backend 只改变定位、传输和证明机制。运行远端工作区时需显式导入/发布及版本检查，不能把本机路径直接解释成远端路径。
+适配器要有同一行为的合同测试；将来的远端后端只改变定位、传输和证明方式。远端运行工作目录时要显式导入/发布并检查版本，不能把本机路径直接当成远端路径。
 
 <a id="runner-trust"></a>
 
-### 环境内 runner 的信任域
+### 环境内 runner 的可信程度
 
-环境内的 runner 与任务代码使用同一 uid 和 namespace。一旦某个 generation 执行过任意代码，留下的程序就可能结束、替换或篡改 runner，因此之后该 generation 内**所有调用**的 runner 输出都只算不可信操作结果，包括精确文件工具报告的目标、摘要和成功与否。
+环境里的 runner 和任务代码使用同一个用户身份和同一个隔离空间。一个环境只要运行过任意代码，留下的程序就可能结束、替换或篡改 runner，因此之后这个环境里**所有调用**的 runner 输出都只算不可信的操作结果，包括文件工具报告的目标、摘要和成功与否。
 
-- 用于版本比较、候选发布、变更回执、release 判定和效果审计的事实，由宿主侧可信组件独立读回：原目录模式直接读取宿主文件身份与摘要；工作副本模式经受控导出校验。无法独立读回时按效果未知处理，保留相应 barrier，不发布、不宣称成功。
-- execute 响应丢失时，该调用记为结果未知且不重发。由于无法确认命令是否仍在运行，该 generation 立即冻结新的 execute 并请求整体停止；本 Run 后续调用使用新 generation，相交范围须等旧 generation 的 release proof 接纳后才能执行。
-- runner 可被篡改不扩大权限：它能做的事已被包络和后端策略限制。本节约束的是**结果可信度**，不是能力边界。
+- 用来做版本比较、候选发布、变更回执、释放判断和效果审计的事实，由宿主一侧的可信组件自己读回：原目录模式直接读宿主上的文件身份和摘要；工作副本模式通过受控导出核对。读不回来就按“效果未知”处理，保留相应的冲突保护，不发布、不宣称成功。
+- execute 响应丢失时，这次调用记为“结果未知”，不重发。因为无法确认命令是否还在运行，当前环境立即停止接收新的 execute 并请求整体停止；本轮后续调用在下一个环境里执行，涉及相交范围的调用要等旧环境的停止证明被接收后才能开始。
+- runner 被篡改不会扩大权限：它能做的事已经被权限上限和后端策略限制住。本节管的是**结果能不能信**，不是能力边界。
 
 [↑ 返回阅读导航](#contents)
 
@@ -166,90 +236,101 @@ Adapter 必须有同一语义的合约测试；未来 remote backend 只改变�
 
 ### 策略快照与资格
 
-创建前冻结 `filesystem / network / credentials / privileges / resources`、实际生效机制和摘要。启动前核对后端能力与安装/镜像/runner 资格；运行期复核当前权限和期限，撤权立即冻结新调用并请求整个环境停止。后端不能兑现任何必需约束时，准入拒绝。不得通过嵌套 sandbox 失败后自动去掉安全策略。
+创建环境前，固定文件系统、网络、凭据、特权和资源五类策略，连同实际生效的机制和摘要。启动前核对后端能力，以及安装、镜像、runner 的资格；运行中复核当前权限和期限，撤权时立即停止接收新调用，并按[环境权限上限与换新环境](#envelope)缩小上限。后端做不到任何一项必需约束时，拒绝准入。不能因为嵌套的沙箱失败就自动去掉安全策略。
 
-第一阶段 Linux container 不强制内嵌 SRT。沿用可复用的目标校验、输出保护和授权规则，以 container runtime、namespace、seccomp、capability 限制及受控出口满足策略；是否额外启用 SRT 由该组合的资格决定。现有 macOS SRT native 只保留 legacy 核查和其他适用策略场景，不能接纳需要新严格 lifecycle 保证的工具任务。
+第一阶段在 Linux 容器里不强制再套一层 SRT。沿用可复用的目标校验、输出保护和授权规则，用容器运行时、namespace、seccomp（系统调用过滤）、capability 限制和受控出口满足策略；是否另外启用 SRT，由这一组合的资格验证决定。现有 macOS 上直接用 SRT 的方式只保留给旧记录的核查和其他适用场景，不能接收需要新的严格停止保证的工具任务。
 
-### 文件与 workspace lease
+### 文件与工作目录 `lease`
 
-- 仅挂载明确批准的真实目录/必要输入；只读和可写分别声明，根文件系统默认只读，临时写入只在限额的任务目录。HOME 为任务私有目录，不是用户 Home。
-- 原目录执行仍可通过限定 bind mount 支持，不强迫所有任务先建工作副本；但每个平台须先通过[原目录模式的平台门禁](#host-mount-gate)。挂载会真实写回 Host；容器停止不回滚这些修改。工作副本仍是既有可选模式，导出沿原版本比较与发布协议。
-- 检查 canonical path、目录身份、符号链接、嵌套挂载、Git worktree 的外置 gitdir/common dir；不得为使 Git 可用而自动挂载父目录或其他仓库。需要的 Git 元数据必须属于授权集合；不足时拒绝或在授权副本内执行。
-- `.env`、私钥、credential 配置、Host 安装目录、数据库、control socket 和运行产物不能因处在授权根下而自动可读写；若后端无法隔离这类嵌套保护范围，该挂载模式不可启用。
-- 维护环境级 lease，范围至少覆盖环境可实际写入/保持文件句柄的全部资源。任意 Shell 若可写整个授权 workspace，就必须占用对应目录范围直到环境停止。只拥有受限文件能力的任务可沿既有细粒度 claim 协调，不把授权目录一概变为目录独占。
-- 子调用 claim 可在后置条件满足时结束，但不覆盖父环境 lease。同环境内部操作复用父所有权，仍进行细粒度序列化；其他任务必须检查父环境和风险 barrier。read/read 及不相交资源的并发按既有规则保留。
+- 只挂载明确批准的真实目录和必要输入；只读和可写分别声明，根文件系统默认只读，临时写入只放在有额度的任务目录。HOME 是任务私有目录，不是用户的 Home。
+- 原目录执行仍可以用限定范围的 bind mount 支持，不强迫所有任务先建工作副本；但每个平台先要通过[原目录模式的平台门禁](#host-mount-gate)。挂载会真实写回宿主，容器停止不会回滚这些修改。工作副本仍是可选模式，导出沿用原来的版本比较和发布规则。
+- 检查规范路径、目录身份、符号链接、嵌套挂载，以及 Git worktree 放在外面的 gitdir/common dir；不能为了让 Git 能用就自动挂载父目录或其他仓库。需要的 Git 元数据必须在授权范围内；不够时拒绝，或在授权的副本里执行。
+- `.env`、私钥、凭据配置、宿主安装目录、数据库、控制 socket 和运行产物，不会因为位于授权目录下面就自动可读写；后端隔离不了这些嵌套的受保护范围时，这种挂载方式不能启用。
+- 维护环境级 `lease`，范围至少覆盖环境实际能写入、或保持文件句柄的全部资源。任意 Shell 如果能写整个授权目录，就要占住对应目录直到环境停止。只有受限文件能力的任务，仍可用原来的细粒度 `claim` 协调，不把授权目录一律变成整目录独占。
+- 单次调用的 `claim` 可以在完成条件满足后结束，但不能代替整个环境的 `lease`。同一环境内部的操作沿用环境的所有权，仍逐个排队；其他任务要检查这个环境的 `lease` 和冲突保护。只读与只读之间、互不相交的资源之间的并发，按原规则保留。
 
-### 网络、秘密和特权
+### 网络与特权
 
-默认无网络；批准联网时仅通过不可绕过的任务出口。沿 ADR 0026 保留确切 hostname:port、完整 DNS 地址集校验、检查后数字 IP 拨号、重定向重新授权和迟到 DNS 防重开。直连 IPv4/IPv6、UDP/QUIC、DNS、Host gateway、私网/metadata、其他任务网络及 Unix socket 均须在策略内明确处理并测试。代理变量不是防火墙；无法阻断旁路就不能签发资格。
+默认无网络；批准联网时，只能走任务专属、绕不过去的出口。沿 ADR 0026 保留：目标精确到 hostname:port、检查 DNS 返回的全部地址、检查后按数字 IP 连接、重定向要重新授权、迟到的 DNS 结果不能重新打开连接。直连 IPv4/IPv6、UDP/QUIC、DNS、宿主网关、私网/云元数据地址、其他任务的网络和 Unix socket，都要在策略里明确处理并测试。代理环境变量不是防火墙；挡不住绕行就不能签发资格。
 
-任务只能获得期限及目标受限的 broker handle/临时 credential；长期 provider key、SSH key、Docker socket、Host agent socket 不挂载。外部提交型副作用在专用窄适配内执行，校验目标、调用身份和披露，不接受任意 CLI 作为代理载荷。Git 写操作及 hook、包管理安装脚本仍在环境内执行。
+任务默认以非 root 运行、去掉 capability、设置 no-new-privileges、限制系统调用，并使用私有的进程、挂载、网络和进程间通信空间；不用 privileged 模式，不共享宿主的进程或网络空间，不开放任意设备或嵌套的运行时管理 socket。容器管理适配器属于必须可信的核心部分，接口要尽量小；任务不能通过它启动别的容器或宿主进程。
 
-任务默认 non-root、drop capabilities、no-new-privileges、受限 syscalls、私有 PID/mount/network/IPC；不使用 privileged、host PID/network、任意设备或嵌套 runtime 管理 socket。容器管理适配器属于可信计算基础，其接口必须最小化；任务不能通过它启动兄弟容器或 Host 进程。
+<a id="credentials"></a>
+
+### 凭据的使用方式
+
+按用户 2026-09-25 确认的决定：
+
+- 凭据始终由人批准，只给用到它的那一次调用，不扩到整个 Run，也不能被范围授权或自动审查覆盖。长期的 provider key、SSH key、Docker socket、宿主 agent socket 不挂进容器。
+- **优先在环境外的专用执行程序中完成**：凭据只保存在宿主一侧，永远不进入容器。这个程序只接受仓库、分支这类受限参数，不接受任意命令，不执行 Git hook；它仍校验目标、调用身份和披露范围，并照常审计。向外部提交内容的动作（例如调用外部 API 发送数据）同样在这类程序中完成，不接受任意命令行作为代理内容。本阶段 Git 推送仍不启用，将来接入时走这条路。
+- **凭据必须进入容器时**（例如从私有 npm 仓库安装依赖）：先换新环境，停掉后台程序；只发临时凭据；调用结束立即撤销；审批时明确写出“这次调用期间，环境里的其他程序也能使用它”。撤销后凭据失效，它不留在本轮权限上限里。
+- 本地的 Git 提交及其 hook、包管理器的安装脚本仍在环境内执行，不能借专用执行程序绕过隔离。
+
+验收为 ITE-21。
 
 ### 资源
 
-每环境冻结 CPU 上限、内存硬上限、进程数上限、wall timeout、输出/文件大小及磁盘/workspace 额度；禁止无限默认值。额度取自现有策略与主机预算，数值经资格测量确定。runtime 全局容量也做 admission，避免大量合规小任务耗尽 Host。
+每个环境固定 CPU 上限、内存硬上限、进程数上限、总运行时长（wall timeout）、输出和文件大小，以及磁盘/工作目录额度；不允许无限的默认值。额度取自现有策略和主机预算，具体数值由资格验证实测确定。运行时的整体容量也做准入控制，避免大量各自合规的小任务把宿主耗尽。
 
-磁盘不能只限制可写容器层而忽略 bind-mounted workspace。必须验证所用文件系统/runtime 的配额或使用有界存储与受控发布；原目录模式无法强制所需额度时返回不支持，不能用“容器有 quota”掩盖宿主盘无界写入。清理有独立有限预算，超时保持 blocked，不延长用户执行。
+磁盘不能只限制容器自己的可写层，而忽略挂进来的工作目录。必须验证所用文件系统或运行时的配额，或者改用有容量上限的存储加受控发布；原目录模式无法强制所需额度时返回“不支持”，不能用“容器有配额”掩盖宿主磁盘被无限写入。清理有独立的有限预算，超时就保持阻塞，不占用用户的执行时间。
 
 <a id="host-mount-gate"></a>
 
 ### 原目录模式的平台门禁
 
-原目录模式在某个平台启用前，必须同时满足三项条件：bind mount 的磁盘/workspace 额度可以强制；授权根下的嵌套敏感文件可以隔离；路径身份（大小写、硬链接、inode/device、符号链接）要么在宿主与环境内解释一致，要么全部由宿主侧解析。
+原目录模式在某个平台启用前，必须同时满足三项条件：挂进容器的工作目录能强制磁盘额度；授权目录下嵌套的敏感文件能被隔离；路径身份（大小写、硬链接、inode/device、符号链接）要么在宿主和容器里解释一致，要么全部由宿主一侧解析。
 
-macOS 上宿主目录要经 runtime 的共享文件系统进入 Linux VM。APFS 通常不为任意目录提供配额，默认不区分大小写，而容器按区分大小写的 Linux 语义访问。这两点都可能让原目录模式在 Mac 上无法取得资格。
+macOS 上的宿主目录要经过运行时的共享文件系统才能进入 Linux 虚拟机。APFS 通常不能给任意目录设配额，默认也不区分大小写，而容器按区分大小写的 Linux 规则访问。这两点都可能让原目录模式在 Mac 上拿不到资格。
 
-- 该可行性在 Plan 的 P0 就要核查，不留到后端实现末尾。
-- 某平台取得资格前不启用原目录模式（fail closed），只提供有界存储的工作副本，或拒绝执行。
-- 如果 P0 确认某平台无法强制额度，就与[工作区 Spec](2026-09-16-workspace-authorization-lifecycle-design.md) 验收矩阵 W20 的“普通命令不被强制转入副本”冲突。这是产品决定，有两个选项：(a) 该平台普通命令也改用有界工作副本，并修订工作区 Spec 的适用范围；(b) 接受非硬额度的磁盘保护（例如宿主剩余空间下限，加上增长观察后整体停止），这与 ADR 0031 的资源要求冲突，须另立 ADR 修正。实施者在此停止并请用户选择，不自行采用任一方案。
+- 这项可行性在 Plan 的 P0 就核查，不留到后端实现的最后。
+- 某平台拿到资格前不启用原目录模式（失败即拒绝），只提供有容量上限的工作副本，或者拒绝执行。
+- 如果 P0 确认某平台无法强制额度，就会和 [workspace Spec](2026-09-16-workspace-authorization-lifecycle-design.md) 验收矩阵 W20 的“普通命令不被强制转入副本”冲突。这是产品决定，有两个选项：(a) 该平台的普通命令也改用有容量上限的工作副本，并修订 workspace Spec 的适用范围；(b) 接受不是硬性额度的磁盘保护（例如宿主剩余空间下限，加上观察到增长过快时整体停止），这与 ADR 0031 的资源要求冲突，要另写 ADR 修正。实施者到这里停下来请用户选择，不自行采用任一方案。
 
 <a id="lifecycle"></a>
 
-## 状态、停止与释放证明
+## 状态、停止与停止证明
 
-### 环境状态与操作状态独立
+### 环境状态与操作状态分开
 
-目标环境状态：`reserved → creating → ready → running → stop_requested → stopping → stopped_verified → released`。创建或观察不确定进入 `unknown / blocked`；这些是新环境记录的语义，不直接重命名旧 Run 状态。对用户的 `STOPPED` 只在环境释放条件满足后投影；业务 succeeded/failed/cancelled 与环境状态保持独立。
+目标环境状态：`reserved`（已预留）→ `creating` → `ready` → `running` → `stop_requested` → `stopping` → `stopped_verified`（已证明停止）→ `released`（已释放）。创建或观察结果不确定时进入 `unknown / blocked`。这些是新环境记录的状态，不直接改名旧的 Run 状态。给用户显示的“已停止”只在环境满足释放条件后出现；业务上的成功、失败、取消与环境状态分开记录。
 
-环境可在多个工具调用之间保持 `running`；单个命令结束不转入环境停止。正常任务完成、Run 取消、期限/资源超限、撤权、监督失联或服务退出需求均请求整体停止。全局 coordinator 完成 Run 前要原子核对没有新派发、未释放环境及必要 barrier。
+环境可以在多次工具调用之间一直处于 `running`；单个命令结束不会让环境停止。正常完成、Run 取消、到期或资源超限、扩权或撤权（都要换新环境）、监督通道断开或服务需要退出时，都会请求整体停止。完成 Run 之前，协调方要在一个事务里确认：没有新的派发、没有未释放的环境、没有必须保留的冲突保护。
 
 <a id="stop-order"></a>
 
 ### 停止顺序
 
-1. SQLite 持久 stop intent 并提升执行 fence，禁止后续 create/start/execute；与准入/派发使用同一权威事务规则。backend 对延迟请求再次检查该 fence，不能只依赖调用端已取消。
-2. 关闭任务网络出口、撤销 broker credential 与相关远端 session；请求环境级停止并在有限宽限后强制终止。使用 backend 的环境生命周期机制，不以 PID tree 猜测完整后代。
-3. 核查不可变环境身份、runtime incarnation、所有关联执行资源、停止状态与不可复活条件。关闭自动 restart，禁用任务委托外部 scheduler；可信侧不再接受旧 exec/start 消息。
-4. 保存环境终止及必要能力关闭证据；持久化失败保留 lease，重复核查不能重放工具。
-5. 在短事务中接纳 release proof、完成环境占用释放、更新任务终态；交付 ACK 独立处理。有关文件完整性或未决发布的 barrier 仍阻止相应冲突。
-6. 环境删除、临时文件回收等无执行能力残留可以在后续 GC 完成。安全相关清理未完成不得释放；纯存储回收失败不把已经可靠停止的环境重新描述为活着。
+1. 在 SQLite 中保存停止 intent，并把停止标记加一，从此拒绝后续的 create/start/execute；和准入、派发使用同一套事务规则。后端对迟到的请求再检查一次停止标记，不能只依赖调用方已经取消。
+2. 关闭任务的网络出口，撤销临时凭据和相关的远端会话；请求环境整体停止，给有限的宽限时间后强制终止。用后端的环境生命周期机制，不靠进程树去猜所有后代。
+3. 核查不可变的环境身份、运行时是否重启过、所有关联的执行资源、停止状态，以及“不会被重新启动”的条件。关闭自动重启，禁用任务交给外部调度器的定时执行；可信一侧不再接受旧的 exec/start 消息。
+4. 保存环境终止和能力关闭的证据；保存失败就继续保留 `lease`，重复核查不会重新执行工具。
+5. 在一个短事务里接收停止证明、释放环境占用、更新任务终态；结果送达确认（ACK）单独处理。与文件完整性或未完成发布有关的冲突保护仍然阻止相应冲突。
+6. 删除环境、回收临时文件这类已经没有执行能力的残留，可以之后再清理。与安全相关的清理没完成就不能释放；纯存储回收失败，不会把已经可靠停止的环境重新说成还活着。
 
 <a id="deadline"></a>
 
 ### 不依赖控制进程存活的硬期限
 
-Worker 或 Agent 内的计时器会随进程崩溃失效；任务环境内的普通看门狗可以被任务代码结束；Docker-compatible runtime 也没有“运行满时长自动停止”或“调用方断开即停止”的选项（`docker container run` 只有停止宽限 `--stop-timeout` 和 restart 策略）。因此硬期限分两层落实：
+Worker 或 Agent 里的计时器会随进程崩溃失效；环境里普通的看门狗程序会被任务代码结束；Docker 兼容运行时也没有“运行满时长自动停止”或“调用方断开就停止”的选项（`docker container run` 只有停止宽限 `--stop-timeout` 和重启策略）。因此硬期限分两层落实：
 
-1. **环境内受保护 init**：create 时把剩余期限交给作为 PID 1 的固定程序。它来自受摘要约束的只读镜像，以不同于任务的非 root uid 运行，只负责计时和到期退出。Linux PID namespace 的成员只能向 init 发送 init 已设置处理器的信号；init 退出时，内核以 SIGKILL 终止该 namespace 内的全部进程。再加上 uid 不同、无 capability、no-new-privileges 和只读根文件系统，任务无法结束、追踪或替换它。到期终止后，证明仍由 backend 的 inspect / verifyStopped 取得，init 本身不签发证明。
-2. **宿主侧恢复**：Worker/Agent 恢复后，既有 startup / reconciliation 按持久化的 stop intent 和期限执行 inspect / stop；恢复完成并接纳证明之前，lease 一直保持。
+1. **环境内受保护 init**：创建环境时，把剩余期限交给作为 1 号进程的固定程序。它来自有摘要约束的只读镜像，用一个和任务不同的非 root 用户运行，只负责计时和到期退出。在 Linux 的 PID namespace 里，其他进程只能给 1 号进程发它自己设置过处理方式的信号；1 号进程退出时，内核用 SIGKILL 结束这个空间里的所有进程。再加上用户不同、没有 capability、设置了 no-new-privileges 和只读根文件系统，任务无法结束、追踪或替换它。到期终止后，证明仍由后端的 inspect / verifyStopped 取得，init 自己不签发证明。
+2. **宿主一侧恢复**：Worker/Agent 恢复后，现有的启动恢复和核对流程按已保存的停止 intent 和期限执行 inspect / stop；恢复完成并接收证明之前，`lease` 一直保留。
 
-监督通道失联时不宣称立即停止；最坏情况是环境运行到硬期限后终止，其间占用不释放。remote backend 或 MicroVM 可以用自身等价的 TTL 机制替代第 1 层，但须在能力声明中给出并通过同等资格。主机休眠、VM 挂起和时钟调整对期限的实际影响纳入资格，按实测确定可以保证的上界；给不出上界的组合不签发资格。
+监督通道断开时不宣称立即停止；最坏情况是环境运行到硬期限才终止，期间占用不释放。远端后端或 MicroVM 可以用自带的等价到期机制代替第 1 层，但必须在能力声明中写明，并通过同等的资格验证。主机休眠、虚拟机挂起和时钟调整对期限的实际影响纳入资格验证，按实测确定能保证的最长时间；给不出这个上界的组合不签发资格。
 
-### Release proof 的最低内容
+### 停止证明的最低内容
 
-| 维度 | 必须证明的内容 |
+| 方面 | 必须证明的内容 |
 | --- | --- |
-| 主体 | executionJob、Owner/Agent/Host、backend/runtime identity、不可变 environment ID、generation、原 create intent、policy/image/runner digest |
-| 顺序 | stop intent/fence、环境观察 sequence、checkedAt/validUntil、可信验证者与受保护 evidence digest |
-| 终止 | 环境已终止，子孙/daemon/setsid/double fork 无法留在环境外执行；关联 browser/service 全部停止；不是仅主 PID/exec session 退出 |
-| 不能复活 | 无自动 restart、旧 Worker/延迟调用无法启动或执行、控制端旧 authority 无效；runtime 重启后的身份与状态可核实 |
-| 能力关闭 | 任务出口与 active connections 关闭、broker 句柄撤销、私有控制端点不再允许执行；必要发布/写回已经完成或受到单独 barrier 保护 |
+| 属于谁 | 执行作业、所有者/Agent/宿主、后端/运行时身份、不可变环境 ID、第几个环境、原创建 intent、策略/镜像/runner 摘要 |
+| 先后顺序 | 停止 intent 和停止标记、环境观察序号、检查时间和有效期、可信的验证方和受保护的证据摘要 |
+| 已终止 | 环境已终止，子孙进程、daemon、`setsid` 或两次 fork 脱离的进程都不能留在环境外继续运行；关联的浏览器和服务全部停止；不能只是主进程或 exec 会话退出 |
+| 不会复活 | 没有自动重启；旧 Worker 或迟到的调用无法启动或执行；控制端的旧控制权失效；运行时重启后仍能核实身份和状态 |
+| 能力已关闭 | 任务出口和已建立的连接关闭、临时凭据撤销、私有控制端点不再允许执行；必要的发布/写回已经完成，或另有冲突保护 |
 
-第一阶段禁用自动删除环境，先保存证据再删除。inspect 的 not-found 只有能绑定原 runtime、原创建记录、受信删除/终止记录且排除自动复活时才可转换为证明；daemon 不可达、重装、连接错主机均为 unknown。后端能力说明和负向资格探针共同支持其生命周期保证，不能只读一个 `State.Running=false` 字段就签发完整证明。
+第一阶段不自动删除环境，先保存证据再删除。inspect 返回 not-found 时，只有能对上原运行时、原创建记录、可信的删除/终止记录，并排除了自动复活，才能当作证明；daemon 连不上、重装过、连错主机，都算 unknown。后端的能力说明和负向资格探针一起支撑它的生命周期保证，不能只读一个 `State.Running=false` 字段就签发完整证明。
 
-没有真正创建/启动用户环境时，可沿既有 reservation release 思路证明 never-created / never-started：必须封锁延迟 create/start 并核查原 intent；创建响应丢失不可当作从未创建。环境停止后即使外部 API 结果未知，也不能伪称未发生；另行恢复该操作结果，必要时保留资源级 barrier。
+从没真正创建或启动过用户环境时，可以沿用现有“释放预留”的思路证明“从未创建/从未启动”：必须先封住迟到的 create/start，并核查原 intent；创建响应丢失不能当作从未创建。环境停止后，即使外部 API 的结果仍未知，也不能说它没发生；这个结果另行恢复，必要时保留资源级的冲突保护。
 
 [↑ 返回阅读导航](#contents)
 
@@ -257,87 +338,90 @@ Worker 或 Agent 内的计时器会随进程崩溃失效；任务环境内的普
 
 ## 持久化、恢复与兼容
 
-沿 SQLite 现有 journal 追加环境记录、调用关联、环境 lease、create/stop intent 与 release receipt；版本化合同不得给 v1/v2 旧数据补 `verified` 默认值。采用追加 migration，编号在实施时取当时下一可用号；禁止修改已发布 migration。
+沿用 SQLite 现有的追加式记录，增加环境记录、调用关联、环境级 `lease`、创建/停止 intent 和释放回执（release receipt，现有数据库已有这类永久记录）；带版本的合同不能给旧的 v1/v2 数据补上 `verified` 默认值。用追加的数据库迁移，编号在实施时取下一个可用号；不修改已发布的迁移。
 
-- 环境绑定事务保证一个 execution job/generation 只有一个获准环境；create 前持久 intent，create 后绑定实际 locator，再允许用户 execute。
-- 每调用仍保存旧语义的调用回执、输入指纹、输出与结果；新 reader 将环境状态关联到旧操作视图。环境可有多个子调用，release 判定必须查父 lease。
-- 重启先恢复所有未释放环境、未决 create/stop 和 barrier，再开放相交准入。reconciler 只有 inspect/stop 权限，无 execute/start 权限。
-- Worker/Agent 崩溃后，环境的最长存续由[不依赖控制进程存活的硬期限](#deadline)限定，恢复后按持久 intent 执行 inspect / stop；不依赖已崩溃进程的定时器，也不宣称失联时立即停止。runtime 恢复后原环境不得自动复活；恢复流程核查原 ID，不能先建替代容器。
-- 当前 authority 接纳新证明并使用 CAS，旧 Worker 迟到结果不能覆盖新 generation。证明首次接纳要验证时效，历史读取验证当时接纳事实；TTL、ACK 不反向改变释放状态。
-- 释放后出现可信的矛盾写入证据时，新建 incident/barrier 保护真实受影响资源，保留原释放历史；调查后端资格并禁止新准入，不用重新锁旧记录伪装从未释放。
-- legacy 环境保留原 SRT/namespace 观察和恢复路径，unknown 不能批量升级成 stopped。混合版本 writer 必须显式拒绝不理解的新环境/lease 合同；升级失败回退到停止新工具准入及保留恢复能力，不恢复 Host 执行。
+- 环境绑定事务保证一个执行作业的每个“第几个环境”只有一个获准环境；创建前先保存 intent，创建后绑定实际定位，然后才允许用户工具执行。
+- 每次调用仍按原含义保存调用回执、输入指纹、输出和结果；新的读取方把环境状态关联到旧的操作视图。一个环境可以有多次调用，判断能否释放时必须看环境级 `lease`。
+- 每个环境保存它的权限上限、每项能力的来源授权和期限、换新环境的原因（扩权、撤权、过期或故障）以及被停掉的后台程序清单。
+- 重启时先恢复所有未释放的环境、未完成的创建/停止和冲突保护，再开放可能冲突的准入。核对程序只有 inspect/stop 权限，没有 execute/start 权限。
+- Worker/Agent 崩溃后，环境的最长存续由[不依赖控制进程存活的硬期限](#deadline)限定，恢复后按保存的 intent 执行 inspect / stop；不依赖已崩溃进程的计时器，也不宣称断开时立即停止。运行时恢复后原环境不得自动复活；恢复流程核查原 ID，不能先建一个替代容器。
+- 由当前控制权接收新证明并用 CAS 写入，旧 Worker 迟到的结果不能覆盖新的环境。证明第一次被接收时要检查时效，之后读历史时核对当时接收的事实；期限到了或 ACK 到了，都不会反过来改变释放状态。
+- 释放后如果出现可信的“其实还在写”的矛盾证据，就新建事故记录和冲突保护，保护真正受影响的资源，并保留原释放历史；同时调查后端资格、禁止新的准入，不把旧记录重新锁上、假装从未释放。
+- 旧环境（legacy）保留原来 SRT/namespace 的观察和恢复路径，unknown 不能批量改成 stopped。新旧版本混跑时，写入方必须明确拒绝它不理解的新环境/`lease` 合同；升级失败就退回到停止新工具准入、保留恢复能力，不恢复在宿主上执行。
 
 <a id="browser"></a>
 
 ## 浏览器与外部资源
 
-本地 browser 及 driver 在任务环境内运行，使用任务私有 profile、下载目录、cookie 与受控出口；CDP/control endpoint 不开放给其他任务或宿主公共网络。浏览器子进程和下载与任务一并终止。不得连接用户现有登录 profile 或桌面浏览器来绕过隔离。
+本地浏览器及其驱动在任务环境内运行，使用任务私有的 profile、下载目录、cookie 和受控出口；浏览器的调试控制端口（CDP）不开放给其他任务或宿主公共网络。浏览器子进程和下载随任务一起终止。不能连接用户现有已登录的 profile 或桌面浏览器来绕过隔离。
 
-未来 remote browser adapter 需要持久 session locator、当前授权、可验证 session terminate、下载/credential 清理和失联恢复。仅 close websocket 不足以释放；远端仍能下载/导航时保留 blocked。其他远端异步执行遵循同一约束；普通外部 API 已接受的业务效果独立记录，不宣称可被本地 stop 撤销。
+将来的远端浏览器适配需要：持久保存的会话定位、当前授权、可验证的会话终止、下载和凭据清理、断线后的恢复。只关闭 websocket 不算释放；远端还能下载或导航时保持阻塞。其他远端异步执行遵守同样约束；普通外部 API 已经接受的业务效果单独记录，不宣称本地停止能撤销它。
 
-第一阶段不新增浏览器产品工具；默认阻止未经资格的浏览器路径，同时以真实浏览器 fixture 验证容器后端能够包含这一进程类型。未来接入时补产品端到端验收，不能从 fixture 推导已具备浏览器功能。
+第一阶段不新增浏览器产品工具；未经资格验证的浏览器路径默认阻止，同时用真实浏览器测试样例验证容器后端能管住这类进程。将来接入时补产品端到端验收，不能从测试样例推断已经具备浏览器功能。
 
 <a id="errors"></a>
 
-## 错误与产品投影
+## 错误与用户看到的状态
 
-新增稳定产品原因码；实现时与现有错误分类统一，不能把所有错误投影成 result_unknown：
+新增固定的产品原因码；实现时与现有错误分类统一，不能把所有错误都显示成 result_unknown：
 
-| 场景 | 目标原因及恢复 |
+| 场景 | 原因码及恢复方式 |
 | --- | --- |
-| 未安装/未启动/健康失败 | `EXECUTION_BACKEND_UNAVAILABLE`；未派发，等待修复后重新准入，不 Host fallback |
-| 无资格、策略或额度不支持 | `EXECUTION_POLICY_UNSUPPORTED`；未派发，说明具体不支持项，不自动放宽 |
-| 创建失败且证明从未存在 | `EXECUTION_ENVIRONMENT_CREATE_FAILED`；接纳无启动证明后释放预留 |
-| create / execute 响应丢失 | `EXECUTION_ENVIRONMENT_UNKNOWN`；保留占用并核查原 intent，不重建/重放 |
-| 停止/inspect/能力关闭失败 | `EXECUTION_STOP_UNCONFIRMED`；停止待核验，保持 lease，有限 recovery |
-| 身份/generation/fence 不匹配 | `EXECUTION_BINDING_CHANGED`；拒绝旧消息，保留原风险归属 |
-| 资源上限触发 | `EXECUTION_RESOURCE_LIMIT`；记录实际限制及操作事实，整体停止后再验证释放 |
+| 未安装、未启动或健康检查失败 | `EXECUTION_BACKEND_UNAVAILABLE`；没有派发，修好后重新准入，不退回宿主执行 |
+| 没有资格，或策略/额度不支持 | `EXECUTION_POLICY_UNSUPPORTED`；没有派发，说明具体哪项不支持，不自动放宽 |
+| 创建失败且能证明从未存在 | `EXECUTION_ENVIRONMENT_CREATE_FAILED`；接收“从未启动”的证明后释放预留 |
+| 创建或执行的响应丢失 | `EXECUTION_ENVIRONMENT_UNKNOWN`；保留占用，按原 intent 核查，不重建、不重放 |
+| 停止、检查或能力关闭失败 | `EXECUTION_STOP_UNCONFIRMED`；停止待核实，保留 `lease`，有限次恢复 |
+| 身份、第几个环境或停止标记对不上 | `EXECUTION_BINDING_CHANGED`；拒绝旧消息，风险仍记在原来的归属上 |
+| 触发资源上限 | `EXECUTION_RESOURCE_LIMIT`；记录实际限制和操作事实，整体停止后再核实释放 |
 
-用户应能区分“工具已有结果”“正在停止”“停止尚未确认”“工作区仍被占用”和“执行后端不可用”。沿已有 thread execution resources / state 投影与会话内审批，不新增独立审批页或泛用详情侧栏。观察时间、执行时间、批准等待和恢复时间分别记录，不用 UI timer 推断 backend 生命周期。本 Spec 不重新设计视觉页面。
+用户应能分清“工具已有结果”“正在停止”“停止尚未确认”“工作目录仍被占用”和“执行后端不可用”。沿用现有的线程执行资源显示和会话内审批，不新增独立审批页或通用详情侧栏；审批卡片按[环境权限上限与换新环境](#envelope)显示当前环境的能力和会被停掉的后台程序。观察时间、执行时间、等待批准和恢复时间分别记录，不用界面计时器推断后端状态。本 Spec 不重新设计视觉页面。
 
 <a id="acceptance"></a>
 
 ## 验收标准
 
-| ID | Given / When / Then |
+| ID | 前提 / 操作 / 期望结果 |
 | --- | --- |
-| ITE-01 | 同一 Run 的已授权任务；依次写入、安装 fixture 依赖、构建、测试、读取 Git 状态；环境 ID 不变、产物与状态保留，各调用身份/结果独立，Host 未执行其任意代码 |
-| ITE-02 | 两个不同任务或不同权限上界；尝试复用环境、credential、profile 或扩大 mount/network；拒绝并审计，不合并 Grant |
-| ITE-03 | 任务创建 child/grandchild、daemon、detached、setsid、double fork、background writer 且关闭 stdio；停止任务；后端独立 inspect 与宿主文件/网络 readback 证明全部停止，lease 只在 proof 接纳后释放 |
-| ITE-04 | 后端缺失、未启动、健康失败或创建失败；发起工具；明确拒绝，无 Host spawn、无重复 create；创建响应不确定保持 lease |
-| ITE-05 | 旧环境可能仍写入且 stop/inspect 超时、断线或身份改变；冲突新任务不能启动，不相交任务仍按既有规则运行 |
-| ITE-06 | Agent/Worker 在 create、bind、execute、stop、proof 接纳、lease release 前后崩溃；恢复核查原身份，不重放未知命令，不提前释放；runtime 重启也不复活已停环境 |
-| ITE-07 | 授权文件与假秘密/邻仓/Host socket 并存；尝试越界读写、symlink、外置 gitdir、大小写别名与硬链接；仅允许显式范围，路径身份按宿主侧解析协调，写能力覆盖的父 lease 保持到停止 |
-| ITE-08 | deny-all 或 allowlist 网络；直连、代理、IPv6、UDP/DNS、重定向、私网及迟到 DNS；未授权请求均被阻止，停止后已有连接不能继续使用 |
-| ITE-09 | CPU/memory/pids/timeout/disk 限制及输出洪泛；触发限制；Host 保持可用，任务整体停止或 blocked；bind mount 额度不能绕过 |
-| ITE-10 | 原权限撤销/过期，或旧 execute 延迟到达；不再派发，后台进程与出口停止；原 Grant 失效不阻止可信紧急清理 |
-| ITE-11 | proof 已接纳后 ACK 迟到、重复、丢失及凭证过期；release fact 不反锁、不重跑；新矛盾证据单独创建 barrier |
-| ITE-12 | legacy unknown 与新环境记录并存；升级/旧 writer/回退；旧 unknown 不被自动释放，新 lease 不被旧调用完成回执清除 |
-| ITE-13 | 真实 browser fixture 有导航、下载、cookie 与子进程；停止后 profile 隔离、下载不继续；未启用的 Host/remote browser 路径被拒绝 |
-| ITE-14 | 替换实现或使用不支持必需能力的 backend；上层只使用产品合同；未知能力拒绝，不包含 OrbStack/Docker 专用分支 |
-| ITE-15 | 原目录有用户 dirty 修改、工作副本发布遇版本变化或 cleanup 失败；保留用户数据/产物及证据，不 reset、不删除授权 workspace，不虚构成功 |
-| ITE-16 | 同一 Run 先以 workspace 可写、无网络运行 Bash 并启动后台 writer，再依次请求联网安装、无网络测试和纯 web_search；需要更大或更小能力的任意代码调用触发轮换，有后台程序时先进入会话内判定；后台程序拿不到新网络能力；web_search 在无 workspace 挂载的网络辅助环境运行；记录轮换次数与耗时 |
-| ITE-17 | 环境运行中强制结束 Worker 与 Agent 且不恢复；任务尝试 kill / ptrace / 替换 init 或修改时钟；环境在硬期限终止，恢复并接纳证明之前 lease 保持；休眠/挂起下的期限行为有实测记录 |
-| ITE-18 | 第一轮启动 watcher 并写入 HOME/cache 后 Run 结束；第二轮在新环境中不含旧进程和 HOME/cache，workspace 文件与依赖目录保留；等待审批超过期限时先停止环境，批准后以新 generation 执行 |
-| ITE-19 | 任意代码篡改 runner 或伪造后续精确写入的目标/摘要；宿主独立读回发现不一致并按效果未知处理，不发布、不释放相关 barrier；execute 响应丢失后该 generation 不再接收 execute |
+| ITE-01 | 同一 Run 的已授权任务依次写文件、安装测试用的本地依赖、构建、测试、读 Git 状态，全程不需要扩权；环境 ID 不变，产物和状态保留，每次调用的身份和结果各自独立，宿主没有运行任务的任意代码 |
+| ITE-02 | 两个不同任务或不同 Run；尝试复用对方的环境、凭据、profile，或扩大挂载/网络；拒绝并记入审计，不同任务之间不共享环境或权限 |
+| ITE-03 | 任务创建子进程、孙进程、daemon、脱离终端的进程、`setsid`、两次 fork 和后台写入程序，并关闭标准输入输出；停止任务；后端的独立检查和宿主一侧的文件/网络读回证明全部停止，`lease` 只在停止证明被接收后释放 |
+| ITE-04 | 后端缺失、未启动、健康检查失败或创建失败时发起工具；明确拒绝，没有启动宿主进程，没有重复创建；创建响应不确定时保留 `lease` |
+| ITE-05 | 旧环境可能仍在写入，而且停止/检查超时、断线或身份改变；有冲突的新任务不能启动，不相交的任务仍按原规则运行 |
+| ITE-06 | Agent/Worker 在创建、绑定、执行、停止、接收证明、释放 `lease` 的前后崩溃；恢复时核查原身份，不重放未知命令，不提前释放；运行时重启也不复活已停环境 |
+| ITE-07 | 授权文件旁边放着假秘密、相邻仓库和宿主 socket；尝试越界读写、符号链接、外置 gitdir、大小写别名和硬链接；只允许显式范围，路径身份由宿主一侧解析，写权限覆盖的环境级 `lease` 保持到停止 |
+| ITE-08 | 全部拒绝或白名单网络；尝试直连、代理、IPv6、UDP/DNS、重定向、私网和迟到的 DNS；未授权请求全部被挡，停止后已有连接不能继续使用 |
+| ITE-09 | CPU、内存、进程数、时长、磁盘限制和大量输出；触发限制；宿主保持可用，任务整体停止或阻塞；挂进来的工作目录额度绕不过去 |
+| ITE-10 | 原授权被撤销或过期，或者旧的 execute 迟到；不再派发，后台进程和出口停止，按缩小后的上限换新环境；多项能力有不同期限时最早到期的先生效；原授权失效不妨碍可信的紧急清理 |
+| ITE-11 | 停止证明已接收后，ACK 迟到、重复、丢失或凭证过期；释放事实不被反锁、不重跑；新的矛盾证据单独建冲突保护 |
+| ITE-12 | 旧的 unknown 记录和新环境记录并存；升级、旧写入方、回退；旧 unknown 不被自动释放，新的 `lease` 不被旧调用的完成回执清掉 |
+| ITE-13 | 真实浏览器测试样例有导航、下载、cookie 和子进程；停止后 profile 隔离、下载不再继续；未启用的宿主/远端浏览器路径被拒绝 |
+| ITE-14 | 替换实现，或使用缺少必需能力的后端；上层只用产品合同；未知能力被拒绝，代码里没有 OrbStack/Docker 专用分支 |
+| ITE-15 | 原目录有用户未提交的修改、工作副本发布遇到版本变化，或清理失败；保留用户数据、产物和证据，不 reset、不删除授权目录，不虚构成功 |
+| ITE-16 | 同一 Run 依次：① 无网络构建，确定初始上限，并启动一个后台程序 → ② 联网安装依赖，扩权项“允许访问 npm registry”在委托清单内，由自动审查批准并换新环境 → ③ 无网络测试，不换环境，按现有规则逐条判断要不要问 → ④ web_search 在网络辅助环境运行。期望：② 的审批展示当前环境能力并列出会被停掉的后台程序，会话里明确显示被停掉的程序；② 之后上限 = 原上限 + npm registry；① 启动的后台程序在 ② 时已停止，拿不到网络；③ 的审批展示环境已有 npm registry 访问能力；④ 不改变主环境上限；记录换新环境的次数和耗时 |
+| ITE-17 | 环境运行中强制结束 Worker 和 Agent 且不恢复；任务尝试 kill、ptrace、替换 init 或修改时钟；环境在硬期限终止，恢复并接收证明之前 `lease` 保持；休眠/挂起下的期限行为有实测记录 |
+| ITE-18 | 第一轮启动文件监视程序并写入 HOME/cache 后 Run 结束；第二轮的新环境里没有旧进程和 HOME/cache，权限上限从第一个调用重新确定，工作目录中的文件和依赖目录保留；等待审批超过期限时先停止环境，批准后在下一个环境执行 |
+| ITE-19 | 任意代码篡改 runner，或伪造后续文件写入报告的目标/摘要；宿主自己读回发现不一致，按效果未知处理，不发布、不解除相关冲突保护；execute 响应丢失后，当前环境不再接收 execute |
+| ITE-20 | 写入新目录、使用凭据、访问清单外或不限目标的外网，分别出现在本轮第一个调用和后续调用里；自动审查都不能批准，转交人工；自动审查遇到清单外的其他扩权也转交人工；尝试把这三类写进委托清单时配置被拒绝；清单修改和按清单作出的批准都有审计记录 |
+| ITE-21 | 凭据在环境外的专用执行程序中使用时，容器里任何程序都读不到它，专用执行程序拒绝任意命令和 hook；凭据必须进入容器时，先换新环境并停掉后台程序，审批写明“这次调用期间，环境里的其他程序也能使用它”，调用结束后凭据立即撤销、之后再用会失败，且不进入本轮权限上限；两种情况都每次由人批准 |
 
 <a id="verification"></a>
 
 ## 验证策略与适用资料
 
-以真实产品入口的持久 E2E 为主要覆盖，使用现有 Vitest e2e/integration、真实 SQLite/认证通道/Worker 和实际容器。测试后端仅覆盖不可可靠触发的竞态与能力协商，不代替真实 runtime 的 containment、网络、挂载或资源验证。每个失败窗口由可观测同步点控制，禁止固定 sleep 冒充停止证明；有限观测必须结合后端强制机制，不宣称有限等待可证明所有未来行为。
+以真实产品入口的持久 E2E（端到端测试）为主要覆盖，使用现有 Vitest e2e/integration、真实 SQLite、认证通道、Worker 和实际容器。测试用后端只用来覆盖难以稳定触发的竞争和能力协商，不代替真实运行时的隔离、网络、挂载或资源验证。每个故障窗口用可观察的同步点控制，不能用固定等待冒充停止证明；有限时间的观察必须配合后端的强制机制，不宣称有限等待能证明以后的所有行为。
 
-在 Mac + Docker-compatible runtime 上完成主验收；Linux container 平台另行执行相同合同。每种安装版本、镜像、策略、挂载方式和模式都有独立资格。用户已验证 OrbStack 可用只支持候选选择，不能当作 ITE-01～19 全部通过。具体文件、命令、留存证据和阶段门禁见 [Implementation Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
+在 Mac + Docker 兼容运行时上完成主要验收；Linux 容器平台另外执行同一合同。每种安装版本、镜像、策略、挂载方式和模式都要单独取得资格。用户已验证 OrbStack 可用，只说明它可以作为候选，不能当作 ITE-01～21 全部通过。具体文件、命令、留存证据和阶段门槛见[实施计划](../plans/2026-09-24-isolated-tool-execution-plan.md)。
 
 查阅的官方资料（2026-09-24）用于约束适配设计，不代替平台实测：
 
-- [Docker run](https://docs.docker.com/engine/containers/run/)：网络与 bind mount 默认行为不能直接作为产品策略；必须显式配置。
-- [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)：资源限制需要配置；资源观察不是额度强制。
-- [Docker Engine security](https://docs.docker.com/engine/security/)：runtime 管理面属于可信边界，任务不能获得其控制权。
+- [Docker run](https://docs.docker.com/engine/containers/run/)：网络与 bind mount 的默认行为不能直接当作产品策略，必须显式配置。
+- [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)：资源限制需要配置；资源观察不等于额度强制。
+- [Docker Engine security](https://docs.docker.com/engine/security/)：运行时管理面属于可信边界，任务不能拿到它的控制权。
 
 2026-09-25 补充查阅，用于[硬期限](#deadline)设计：
 
-- [docker container run](https://docs.docker.com/reference/cli/docker/container/run/)：只有 `--stop-timeout`（停止后的宽限）、`--restart` 和 `--init`（信号转发与回收僵尸进程），没有按运行时长自动停止的选项。
-- [pid_namespaces(7)](https://man7.org/linux/man-pages/man7/pid_namespaces.7.html)：namespace 成员只能向 init 发送其已设置处理器的信号；init 终止时内核以 SIGKILL 终止该 namespace 的全部进程。
+- [docker container run](https://docs.docker.com/reference/cli/docker/container/run/)：只有 `--stop-timeout`（停止后的宽限）、`--restart` 和 `--init`（转发信号并回收僵尸进程），没有按运行时长自动停止的选项。
+- [pid_namespaces(7)](https://man7.org/linux/man-pages/man7/pid_namespaces.7.html)：同一空间里的进程只能向 1 号进程发送它设置过处理方式的信号；1 号进程终止时，内核以 SIGKILL 终止该空间的全部进程。
 
 [↑ 返回阅读导航](#contents)
