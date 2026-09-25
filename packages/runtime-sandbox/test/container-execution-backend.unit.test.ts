@@ -1,5 +1,16 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -9,7 +20,7 @@ import {
   executionEnvironmentLocatorSchema,
   executionEnvironmentStopProofSchema,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONTAINER_RUNNER_DIGEST,
   ContainerExecutionBackend,
@@ -130,6 +141,15 @@ class FakeDocker {
     if (command === "start") this.start(container);
     else if (command === "stop") {
       if (container.State.Running && !container.State.Paused) this.exit(container);
+    } else if (command === "kill") {
+      if (!container.State.Running)
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: `Error response from daemon: cannot kill container: ${target}: container ${target} is not running`,
+          truncated: false,
+        };
+      this.exit(container);
     } else if (command === "rm") {
       if (container.State.Running)
         return { exitCode: 1, stdout: "", stderr: "running", truncated: false };
@@ -186,6 +206,22 @@ class FakeDocker {
       index += 2;
     }
     const one = (flag: string) => values.get(flag)?.[0];
+    const mounts = (values.get("--mount") ?? []).map((spec) => {
+      const fields = new Map(
+        spec.split(",").map((field) => {
+          const separator = field.indexOf("=");
+          return separator < 0
+            ? [field, "true"]
+            : [field.slice(0, separator), field.slice(separator + 1)];
+        }),
+      );
+      return {
+        type: fields.get("type") ?? "",
+        source: fields.get("source") ?? "",
+        target: fields.get("target") ?? "",
+        readOnly: fields.get("readonly") === "true",
+      };
+    });
     const name = one("--name") ?? "";
     if (this.find(name))
       return {
@@ -229,6 +265,16 @@ class FakeDocker {
           ]),
         ),
         Binds: null,
+        ...(mounts.length > 0
+          ? {
+              Mounts: mounts.map((mount) => ({
+                Type: mount.type,
+                Source: mount.source,
+                Target: mount.target,
+                ...(mount.readOnly ? { ReadOnly: true } : {}),
+              })),
+            }
+          : {}),
         Devices: [],
         PidMode: "",
         IpcMode: one("--ipc") ?? "shareable",
@@ -245,7 +291,14 @@ class FakeDocker {
         FinishedAt: ZERO_TIME,
       },
       RestartCount: 0,
-      Mounts: [],
+      Mounts: mounts.map((mount) => ({
+        Type: mount.type,
+        Source: mount.source,
+        Destination: mount.target,
+        Mode: "",
+        RW: !mount.readOnly,
+        Propagation: "rprivate",
+      })),
     };
     this.tamper(container);
     this.containers.set(container.Id, container);
@@ -277,11 +330,19 @@ class FakeDocker {
 }
 
 let stateDirectory: string;
+let hostRoot: string;
 let docker: FakeDocker;
 let now: Date;
+let freeBytes: (directory: string) => Promise<number>;
 const argumentsByRef = new Map<string, { argv: readonly string[] }>();
+const roots = new Map<
+  string,
+  { readonly canonicalPath: string; readonly device: string; readonly inode: string }
+>();
 
-function backend() {
+function backend(
+  overrides: Partial<ConstructorParameters<typeof ContainerExecutionBackend>[0]> = {},
+) {
   return new ContainerExecutionBackend({
     backendRef: "container-docker:host-1",
     docker: docker.run,
@@ -299,7 +360,40 @@ function backend() {
       if (!value) throw new Error("unknown arguments");
       return value;
     },
+    resolveDirectory: async (directory) => roots.get(directory.canonicalRootId) ?? null,
+    hostDirectories: { maxScannedEntries: 200, maxProtectedEntries: 8 },
+    diskGuard: {
+      minFreeBytes: 1000,
+      maxGrowthBytes: 500,
+      intervalMs: 100,
+      freeBytes: (directory) => freeBytes(directory),
+    },
+    ...overrides,
   });
+}
+async function hostDirectory(name: string, files: Record<string, string> = {}) {
+  const root = path.join(hostRoot, name);
+  await mkdir(root, { recursive: true });
+  for (const [file, content] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), content);
+  }
+  const info = await lstat(root);
+  roots.set(name, { canonicalPath: root, device: String(info.dev), inode: String(info.ino) });
+  return root;
+}
+function directory(name: string, access: "read" | "write") {
+  return { hostId: "host-1", grantRef: `grant-${name}`, canonicalRootId: name, access, source };
+}
+function withDirectories(...directories: ReturnType<typeof directory>[]) {
+  return { envelope: { ...envelope, directories } };
+}
+async function caseInsensitiveHost() {
+  await writeFile(path.join(hostRoot, "case-probe"), "");
+  return lstat(path.join(hostRoot, "CASE-PROBE")).then(
+    () => true,
+    () => false,
+  );
 }
 function createInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -330,12 +424,17 @@ function stopRequest(locator: unknown, stopIntentId = "stop-1") {
 
 beforeEach(async () => {
   stateDirectory = await mkdtemp(path.join(os.tmpdir(), "container-backend-"));
+  hostRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), "container-host-")));
   docker = new FakeDocker();
   now = new Date("2026-09-25T10:00:00.000Z");
+  freeBytes = async () => 10_000;
   argumentsByRef.clear();
+  roots.clear();
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await rm(stateDirectory, { recursive: true, force: true });
+  await rm(hostRoot, { recursive: true, force: true });
 });
 
 describe("container execution backend capabilities", () => {
@@ -438,7 +537,7 @@ describe("creating a container environment", () => {
             ],
           },
         },
-        "CONTAINER_POLICY_UNSUPPORTED",
+        "CONTAINER_DIRECTORY_UNRESOLVED",
       ],
       [
         { envelope: { ...envelope, network: [{ target: "registry.npmjs.org:443", source }] } },
@@ -483,6 +582,361 @@ describe("creating a container environment", () => {
       code: "CONTAINER_EXECUTION_CLOSED",
     });
     expect(docker.calls.filter((call) => call[1] === "create")).toHaveLength(1);
+  });
+});
+
+describe("mounting approved host directories", () => {
+  const execute = (subject: ContainerExecutionBackend, locator: unknown, invocationId: string) =>
+    subject.execute({
+      identity,
+      createIntentId: "create-1",
+      locator: locator as ReturnType<typeof executionEnvironmentLocatorSchema.parse>,
+      stopFence: 0,
+      invocationId,
+      argumentsRef: "arguments-1",
+      deadlineAt: "2026-09-25T10:30:00.000Z",
+    });
+
+  it("mounts each approved directory at a fixed target and runs the task as its owner", async () => {
+    const repo = await hostDirectory("repo", { "src/index.js": "x" });
+    const docs = await hostDirectory("docs", { "readme.md": "y" });
+    const subject = backend();
+    const locator = await subject.create(
+      createInput(withDirectories(directory("repo", "write"), directory("docs", "read"))),
+    );
+    const container = docker.only();
+    expect(container.HostConfig["Mounts"]).toEqual([
+      { Type: "bind", Source: docs, Target: "/workspaces/docs", ReadOnly: true },
+      { Type: "bind", Source: repo, Target: "/workspaces/repo" },
+    ]);
+    const owner = await lstat(repo);
+    const taskUser = `${owner.uid}:${owner.gid}`;
+    expect(container.Config.Labels["io.himawari.environment.task-user"]).toBe(taskUser);
+    argumentsByRef.set("arguments-1", { argv: ["true"] });
+    await execute(subject, locator, "invocation-1");
+    expect(docker.execs[0]).toContain(taskUser);
+    expect(docker.execs[0]).not.toContain("65534:65534");
+  });
+
+  it("removes a created container whose mounts differ from the approved directories", async () => {
+    await hostDirectory("repo", { "src/index.js": "x" });
+    docker.tamper = (container) => {
+      container.Mounts = container.Mounts.map((mount) => ({
+        ...(mount as Record<string, unknown>),
+        RW: true,
+      }));
+    };
+    await expect(
+      backend().create(createInput(withDirectories(directory("repo", "read")))),
+    ).rejects.toMatchObject({ code: "CONTAINER_POLICY_MISMATCH" });
+    expect(docker.containers.size).toBe(0);
+  });
+
+  it("kills the environment when an approved directory is replaced before the runtime mounts it", async () => {
+    const repo = await hostDirectory("repo");
+    docker.afterCreate = async () => {
+      await rename(repo, `${repo}-old`);
+      await mkdir(repo);
+    };
+    await expect(
+      backend().create(createInput(withDirectories(directory("repo", "write")))),
+    ).rejects.toMatchObject({ code: "CONTAINER_DIRECTORY_CHANGED" });
+    expect(docker.only().State.Running).toBe(false);
+  });
+
+  it("refuses directories it cannot resolve or verify on the host before touching the runtime", async () => {
+    const real = await hostDirectory("real");
+    await symlink(real, path.join(hostRoot, "alias"));
+    const realInfo = await lstat(real);
+    roots.set("alias", {
+      canonicalPath: path.join(hostRoot, "alias"),
+      device: String(realInfo.dev),
+      inode: String(realInfo.ino),
+    });
+    const moved = await hostDirectory("moved");
+    roots.set("moved", { canonicalPath: moved, device: String(realInfo.dev), inode: "1" });
+    await writeFile(path.join(hostRoot, "plain-file"), "");
+    const fileInfo = await lstat(path.join(hostRoot, "plain-file"));
+    roots.set("plain-file", {
+      canonicalPath: path.join(hostRoot, "plain-file"),
+      device: String(fileInfo.dev),
+      inode: String(fileInfo.ino),
+    });
+    await hostDirectory("outer");
+    const inner = await hostDirectory("outer/inner");
+    const innerInfo = await lstat(inner);
+    roots.set("inner", {
+      canonicalPath: inner,
+      device: String(innerInfo.dev),
+      inode: String(innerInfo.ino),
+    });
+    const comma = await hostDirectory("comma,name");
+    const commaInfo = await lstat(comma);
+    roots.set("comma", {
+      canonicalPath: comma,
+      device: String(commaInfo.dev),
+      inode: String(commaInfo.ino),
+    });
+    const refusals: [ReturnType<typeof directory>[], string][] = [
+      [[directory("unknown", "read")], "CONTAINER_DIRECTORY_UNRESOLVED"],
+      [[{ ...directory("real", "read"), hostId: "host-2" }], "CONTAINER_DIRECTORY_UNRESOLVED"],
+      [[directory("alias", "read")], "CONTAINER_DIRECTORY_CHANGED"],
+      [[directory("moved", "read")], "CONTAINER_DIRECTORY_CHANGED"],
+      [[directory("plain-file", "read")], "CONTAINER_DIRECTORY_CHANGED"],
+      [[directory("outer", "read"), directory("inner", "write")], "CONTAINER_POLICY_UNSUPPORTED"],
+      [[directory("comma", "read")], "CONTAINER_POLICY_UNSUPPORTED"],
+    ];
+    for (const [directories, code] of refusals)
+      await expect(
+        backend().create(createInput(withDirectories(...directories))),
+      ).rejects.toMatchObject({ code });
+    expect(docker.calls.filter((call) => call[0] === "container")).toEqual([]);
+  });
+
+  it("masks protected entries and special files that exist when the environment is created", async () => {
+    const repo = await hostDirectory("repo", {
+      ".env": "SECRET",
+      ".env.local": "SECRET",
+      ".envrc": "not protected",
+      "config/server.key": "SECRET",
+      "keys/id_ed25519.pub": "SECRET",
+      ".docker/config.json": "SECRET",
+      ".npmrc": "SECRET",
+      ".ssh/known_hosts": "SECRET",
+      ".himawari-trash/old": "SECRET",
+      "nested/.aws/credentials": "SECRET",
+      ".git/HEAD": "ref: refs/heads/main\n",
+      "src/app.js": "ok",
+    });
+    await mkdir(path.join(repo, "run"));
+    execFileSync("mkfifo", [path.join(repo, "run", "pipe")]);
+    const caseInsensitive = await caseInsensitiveHost();
+    const create = backend({
+      hostDirectories: { maxScannedEntries: 200, maxProtectedEntries: 16 },
+    }).create(createInput(withDirectories(directory("repo", "write"))));
+    if (caseInsensitive) {
+      await expect(create).rejects.toMatchObject({ code: "CONTAINER_PROTECTED_FILE_UNMASKABLE" });
+      expect(docker.calls.filter((call) => call[0] === "container")).toEqual([]);
+      return;
+    }
+    await create;
+    const file = await realpath(path.join(stateDirectory, "masks", "file"));
+    const folder = await realpath(path.join(stateDirectory, "masks", "directory"));
+    const mask = (target: string, source: string) => ({
+      Type: "bind",
+      Source: source,
+      Target: `/workspaces/repo/${target}`,
+      ReadOnly: true,
+    });
+    expect(docker.only().HostConfig["Mounts"]).toEqual([
+      { Type: "bind", Source: repo, Target: "/workspaces/repo" },
+      mask(".docker/config.json", file),
+      mask(".env", file),
+      mask(".env.local", file),
+      mask(".himawari-trash", folder),
+      mask(".npmrc", file),
+      mask(".ssh", folder),
+      mask("config/server.key", file),
+      mask("keys/id_ed25519.pub", file),
+      mask("nested/.aws", folder),
+      mask("run/pipe", file),
+    ]);
+    expect((await lstat(file)).mode & 0o777).toBe(0o444);
+    expect((await lstat(folder)).mode & 0o777).toBe(0o555);
+  });
+
+  it("refuses protected entries that another name could still reach", async () => {
+    const hardLinked = await hostDirectory("hard-linked", { "other.txt": "SECRET" });
+    await link(path.join(hardLinked, "other.txt"), path.join(hardLinked, ".env"));
+    const nested = await hostDirectory("nested-link", { ".ssh/id_rsa": "SECRET" });
+    await mkdir(path.join(nested, "notes"));
+    await link(path.join(nested, ".ssh", "id_rsa"), path.join(nested, "notes", "copy"));
+    const symlinked = await hostDirectory("symlinked", { "app.cfg": "SECRET" });
+    await symlink("app.cfg", path.join(symlinked, ".env"));
+    await hostDirectory(
+      "crowded",
+      Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`.env.${index}`, "SECRET"])),
+    );
+    await hostDirectory(
+      "large",
+      Object.fromEntries(Array.from({ length: 201 }, (_, index) => [`file-${index}`, ""])),
+    );
+    const refusals: [string, string][] = [
+      ["hard-linked", "CONTAINER_PROTECTED_FILE_UNMASKABLE"],
+      ["nested-link", "CONTAINER_PROTECTED_FILE_UNMASKABLE"],
+      ["symlinked", "CONTAINER_PROTECTED_FILE_UNMASKABLE"],
+      ["crowded", "CONTAINER_PROTECTED_FILE_UNMASKABLE"],
+      ["large", "CONTAINER_DIRECTORY_SCAN_LIMIT"],
+    ];
+    for (const [name, code] of refusals)
+      await expect(
+        backend().create(createInput(withDirectories(directory(name, "write")))),
+      ).rejects.toMatchObject({ code });
+    expect(docker.calls.filter((call) => call[0] === "container")).toEqual([]);
+  });
+
+  it("requires Git metadata referenced by the directory to stay inside it", async () => {
+    const outside = await hostDirectory("outside-gitdir", { HEAD: "ref: refs/heads/main\n" });
+    await hostDirectory("worktree-outside", { ".git": `gitdir: ${outside}\n` });
+    await hostDirectory("relative-escape", { ".git": "gitdir: ../outside-gitdir\n" });
+    await hostDirectory("common-outside", {
+      ".git": "gitdir: meta\n",
+      "meta/HEAD": "ref: refs/heads/main\n",
+      "meta/commondir": "../../outside-gitdir\n",
+    });
+    const symlinked = await hostDirectory("symlinked-git");
+    await symlink(outside, path.join(symlinked, ".git"));
+    await hostDirectory("malformed", { ".git": "not a gitdir line\n" });
+    for (const name of [
+      "worktree-outside",
+      "relative-escape",
+      "common-outside",
+      "symlinked-git",
+      "malformed",
+    ])
+      await expect(
+        backend().create(createInput(withDirectories(directory(name, "write")))),
+      ).rejects.toMatchObject({ code: "CONTAINER_GIT_METADATA_OUTSIDE" });
+    expect(docker.calls.filter((call) => call[0] === "container")).toEqual([]);
+
+    await hostDirectory("inside", {
+      ".git": "gitdir: meta/worktrees/main\n",
+      "meta/worktrees/main/HEAD": "ref: refs/heads/main\n",
+      "meta/worktrees/main/commondir": "../..\n",
+      "vendor/lib/.git": "gitdir: ../../meta/modules/lib\n",
+      "meta/modules/lib/HEAD": "ref: refs/heads/main\n",
+    });
+    await backend().create(createInput(withDirectories(directory("inside", "write"))));
+    expect(docker.containers.size).toBe(1);
+  });
+});
+
+describe("protecting the host disk behind writable directories", () => {
+  const request = { identity, createIntentId: "create-1" };
+  const guarded = (free: () => Promise<number>, intervalMs = 10) =>
+    backend({
+      diskGuard: { minFreeBytes: 1000, maxGrowthBytes: 500, intervalMs, freeBytes: free },
+    });
+
+  it("refuses to create a writable environment when free space is unknown or below the floor", async () => {
+    await hostDirectory("repo");
+    const writable = createInput(withDirectories(directory("repo", "write")));
+    await expect(
+      guarded(async () => {
+        throw new Error("statfs failed");
+      }).create(writable),
+    ).rejects.toMatchObject({ code: "CONTAINER_DISK_GUARD_UNAVAILABLE" });
+    await expect(guarded(async () => 999).create(writable)).rejects.toMatchObject({
+      code: "CONTAINER_DISK_FLOOR",
+    });
+    expect(docker.calls.filter((call) => call[0] === "container")).toEqual([]);
+
+    let observed = 0;
+    await guarded(async () => {
+      observed += 1;
+      throw new Error("statfs failed");
+    }).create(createInput(withDirectories(directory("repo", "read"))));
+    expect(observed).toBe(0);
+    expect(docker.only().State.Running).toBe(true);
+  });
+
+  it.each([
+    ["growth", 9_400, { consumedBytes: 600, freeBytes: 9_400 }],
+    ["floor", 900, { freeBytes: 900 }],
+    ["unavailable", Number.NaN, {}],
+  ] as const)(
+    "kills the whole environment on a %s observation and refuses later execution",
+    async (reason, after, expected) => {
+      const repo = await hostDirectory("repo");
+      let free = 10_000;
+      let observations = 0;
+      const subject = guarded(async () => {
+        observations += 1;
+        if (Number.isNaN(free)) throw new Error("statfs failed");
+        return free;
+      });
+      const locator = await subject.create(
+        createInput(withDirectories(directory("repo", "write"))),
+      );
+      free = 9_600;
+      const seen = observations;
+      await vi.waitFor(() => expect(observations).toBeGreaterThan(seen + 2));
+      expect(docker.only().State.Running).toBe(true);
+      expect(await subject.diskGuardBreach({ ...request, locator })).toBeNull();
+
+      free = after;
+      await vi.waitFor(async () =>
+        expect(await subject.diskGuardBreach({ ...request, locator })).toMatchObject({
+          reason,
+          directory: repo,
+          baselineFreeBytes: 10_000,
+          ...expected,
+        }),
+      );
+      expect(docker.only().State.Running).toBe(false);
+      expect(docker.calls.filter((call) => call[1] === "kill")).toHaveLength(1);
+      const stable = observations;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(observations).toBe(stable);
+      argumentsByRef.set("arguments-1", { argv: ["true"] });
+      await expect(
+        subject.execute({
+          ...request,
+          locator,
+          stopFence: 0,
+          invocationId: "invocation-1",
+          argumentsRef: "arguments-1",
+          deadlineAt: "2026-09-25T10:30:00.000Z",
+        }),
+      ).rejects.toMatchObject({ code: "CONTAINER_DISK_GUARD_TRIPPED" });
+      await subject.stop(stopRequest(locator));
+      expect(
+        executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(stopRequest(locator)))
+          .basis,
+      ).toBe("verified_stopped");
+    },
+  );
+
+  it("stops observing once the environment is stopped", async () => {
+    await hostDirectory("repo");
+    let observations = 0;
+    const subject = guarded(async () => {
+      observations += 1;
+      return 10_000;
+    });
+    const locator = await subject.create(createInput(withDirectories(directory("repo", "write"))));
+    await vi.waitFor(() => expect(observations).toBeGreaterThan(2));
+    await subject.stop(stopRequest(locator));
+    const stable = observations;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(observations).toBe(stable);
+  });
+
+  it("resumes the guard from the saved baseline in a new backend before executing", async () => {
+    await hostDirectory("repo");
+    let free = 10_000;
+    const first = guarded(async () => free, 60_000);
+    const locator = await first.create(createInput(withDirectories(directory("repo", "write"))));
+    free = 9_000;
+    argumentsByRef.set("arguments-1", { argv: ["true"] });
+    const second = guarded(async () => free, 60_000);
+    await expect(
+      second.execute({
+        ...request,
+        locator,
+        stopFence: 0,
+        invocationId: "invocation-1",
+        argumentsRef: "arguments-1",
+        deadlineAt: "2026-09-25T10:30:00.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "CONTAINER_DISK_GUARD_TRIPPED" });
+    expect(docker.execs).toEqual([]);
+    expect(docker.only().State.Running).toBe(false);
+    expect(await second.diskGuardBreach({ ...request, locator })).toMatchObject({
+      reason: "growth",
+      consumedBytes: 1_000,
+    });
+    await first.stop(stopRequest(locator));
   });
 });
 

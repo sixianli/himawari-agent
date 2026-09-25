@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   EXECUTION_BACKEND_PROTOCOL_V1,
@@ -11,7 +11,20 @@ import {
   STOP_PROOF_COVERAGE,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import {
+  ContainerBackendError,
+  type ContainerBackendErrorCode,
+} from "./container-backend-error.ts";
 import { type DockerCommand, DockerCommandTimeout } from "./docker-command.ts";
+import {
+  type ContainerMount,
+  type HostDirectoryCapability,
+  type HostDirectoryIdentity,
+  type HostDirectoryLimits,
+  type PreparedHostDirectories,
+  prepareHostDirectories,
+  verifyHostDirectory,
+} from "./host-directories.ts";
 
 const INIT_SCRIPT = 'd=$1; while [ "$(date +%s)" -lt "$d" ]; do sleep 1; done';
 const INIT_NAME = "himawari-init";
@@ -35,34 +48,7 @@ export const CONTAINER_RUNNER_DIGEST = sha256(
 );
 const GUARANTEES = TASK_ENVIRONMENT_GUARANTEES.filter((item) => item !== "task-egress-policy.v1");
 
-export type ContainerBackendErrorCode =
-  | "CONTAINER_RUNTIME_UNAVAILABLE"
-  | "CONTAINER_RUNTIME_CHANGED"
-  | "CONTAINER_IMAGE_UNQUALIFIED"
-  | "CONTAINER_RUNNER_UNQUALIFIED"
-  | "CONTAINER_POLICY_UNSUPPORTED"
-  | "CONTAINER_POLICY_MISMATCH"
-  | "CONTAINER_IDENTITY_CONFLICT"
-  | "CONTAINER_DEADLINE_PASSED"
-  | "CONTAINER_EXECUTION_CLOSED"
-  | "CONTAINER_NOT_RUNNING"
-  | "CONTAINER_RESTARTED"
-  | "CONTAINER_ARGUMENTS_INVALID"
-  | "CONTAINER_COMMAND_TIMEOUT"
-  | "CONTAINER_OUTPUT_UNKNOWN"
-  | "CONTAINER_STOP_NOT_REQUESTED"
-  | "CONTAINER_NOT_STOPPED"
-  | "CONTAINER_STOP_UNVERIFIED";
-
-export class ContainerBackendError extends Error {
-  readonly code: ContainerBackendErrorCode;
-
-  constructor(code: ContainerBackendErrorCode, options?: { readonly cause?: unknown }) {
-    super(code, options);
-    this.name = "ContainerBackendError";
-    this.code = code;
-  }
-}
+export { ContainerBackendError, type ContainerBackendErrorCode };
 
 export interface ContainerExecutionBackendOptions {
   readonly backendRef: string;
@@ -77,6 +63,30 @@ export interface ContainerExecutionBackendOptions {
   readonly maxOutputBytes: number;
   readonly now: () => Date;
   readonly readArguments: (argumentsRef: string) => Promise<{ readonly argv: readonly string[] }>;
+  readonly resolveDirectory: (
+    directory: HostDirectoryCapability,
+  ) => Promise<HostDirectoryIdentity | null>;
+  readonly hostDirectories: HostDirectoryLimits;
+  readonly diskGuard: {
+    readonly minFreeBytes: number;
+    readonly maxGrowthBytes: number;
+    readonly intervalMs: number;
+    readonly freeBytes: (directory: string) => Promise<number>;
+  };
+}
+
+interface DiskGuardRecord {
+  readonly roots: readonly { readonly directory: string; readonly baselineFreeBytes: number }[];
+}
+
+export interface DiskGuardBreach {
+  readonly reason: "growth" | "floor" | "unavailable";
+  readonly directory: string;
+  readonly baselineFreeBytes: number;
+  readonly freeBytes?: number;
+  readonly consumedBytes?: number;
+  readonly containerId: string;
+  readonly observedAt: string;
 }
 
 export interface ContainerInvocationOutput {
@@ -142,6 +152,7 @@ interface DestroyedRecord {
 
 export class ContainerExecutionBackend {
   private readonly options: ContainerExecutionBackendOptions;
+  private readonly diskWatches = new Map<string, NodeJS.Timeout>();
 
   constructor(options: ContainerExecutionBackendOptions) {
     this.options = options;
@@ -177,16 +188,31 @@ export class ContainerExecutionBackend {
       throw new ContainerBackendError("CONTAINER_IMAGE_UNQUALIFIED");
     if (input.runnerDigest !== CONTAINER_RUNNER_DIGEST)
       throw new ContainerBackendError("CONTAINER_RUNNER_UNQUALIFIED");
-    if (input.envelope.directories.length > 0 || input.envelope.network.length > 0)
+    if (input.envelope.network.length > 0)
       throw new ContainerBackendError("CONTAINER_POLICY_UNSUPPORTED");
     const deadlineMs = Date.parse(input.deadlineAt);
     if (deadlineMs - this.options.now().getTime() <= 1000)
       throw new ContainerBackendError("CONTAINER_DEADLINE_PASSED");
     const files = await this.files(input.identity);
     if (await readJson(files.stop)) throw new ContainerBackendError("CONTAINER_EXECUTION_CLOSED");
+    const directories = await prepareHostDirectories({
+      hostId: input.identity.hostId,
+      directories: input.envelope.directories,
+      resolve: this.options.resolveDirectory,
+      limits: this.options.hostDirectories,
+      masks: await this.masks(),
+    });
+    const taskUser = this.taskUser(directories);
+    await this.admitDisk(files, directories);
     const daemon = await this.daemon();
     const imageId = await this.pinnedImageId();
-    const expected = this.expectedPolicy(input.envelope, imageId, Math.floor(deadlineMs / 1000));
+    const expected = this.expectedPolicy(
+      input.envelope,
+      imageId,
+      Math.floor(deadlineMs / 1000),
+      directories.mounts,
+      taskUser,
+    );
     const name = containerName(input.identity);
     let container = await this.inspectContainer(name);
     if (!container) {
@@ -201,7 +227,7 @@ export class ContainerExecutionBackend {
       const created = await this.command([
         "container",
         "create",
-        ...this.createArguments(input, name, expected),
+        ...this.createArguments(input, name, expected, directories.mounts, taskUser),
       ]);
       if (created.exitCode !== 0)
         throw new ContainerBackendError(
@@ -235,6 +261,14 @@ export class ContainerExecutionBackend {
     });
     if (startedRecord.startedAt !== container.State.StartedAt || container.RestartCount > 0)
       throw new ContainerBackendError("CONTAINER_RESTARTED");
+    try {
+      for (const root of directories.roots) await verifyHostDirectory(root);
+    } catch (cause) {
+      await this.kill(container.Id);
+      throw cause;
+    }
+    if (await this.guardDisk(files, container.Id))
+      throw new ContainerBackendError("CONTAINER_DISK_GUARD_TRIPPED");
     return this.locatorFor(daemon.id, container, input.createIntentId);
   }
 
@@ -253,8 +287,12 @@ export class ContainerExecutionBackend {
     const observation = await this.observe(input);
     if (observation.kind !== "found") throw refusal(observation);
     const { container } = observation;
+    if (await this.guardDisk(files, container.Id))
+      throw new ContainerBackendError("CONTAINER_DISK_GUARD_TRIPPED");
     if (!container.State.Running || container.State.Paused)
       throw new ContainerBackendError("CONTAINER_NOT_RUNNING");
+    const taskUser = container.Config.Labels?.[`${LABEL}task-user`];
+    if (!taskUser) throw new ContainerBackendError("CONTAINER_POLICY_MISMATCH");
     const { argv } = await this.options.readArguments(input.argumentsRef);
     if (
       !Array.isArray(argv) ||
@@ -272,7 +310,7 @@ export class ContainerExecutionBackend {
           "container",
           "exec",
           "--user",
-          this.options.taskUser,
+          taskUser,
           "--workdir",
           TASK_WORKDIR,
           ...TASK_ENVIRONMENT.flatMap((variable) => ["--env", variable]),
@@ -346,6 +384,7 @@ export class ContainerExecutionBackend {
     input: EnvironmentTarget & { readonly stopIntentId: string; readonly stopFence: number },
   ): Promise<{ readonly accepted: true }> {
     const files = await this.files(input.identity);
+    this.unwatchDisk(files.key);
     await writeOnce(files.stop, { stopIntentId: input.stopIntentId, stopFence: input.stopFence });
     const observation = await this.observe(input);
     if (observation.kind === "missing") return { accepted: true };
@@ -422,10 +461,15 @@ export class ContainerExecutionBackend {
     };
   }
 
+  async diskGuardBreach(input: EnvironmentTarget): Promise<DiskGuardBreach | null> {
+    return readJson<DiskGuardBreach>((await this.files(input.identity)).diskBreach);
+  }
+
   async destroy(input: EnvironmentTarget): Promise<void> {
     const files = await this.files(input.identity);
     const stop = await readJson<StopRecord>(files.stop);
     if (!stop) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    this.unwatchDisk(files.key);
     const observation = await this.observe(input);
     if (observation.kind === "missing") {
       if (await readJson(files.destroyed)) return;
@@ -516,6 +560,8 @@ export class ContainerExecutionBackend {
     input: Parameters<ContainerExecutionBackend["create"]>[0],
     name: string,
     expected: ReturnType<ContainerExecutionBackend["expectedPolicy"]>,
+    mounts: readonly ContainerMount[],
+    taskUser: string,
   ) {
     const labels = {
       ...this.identityLabels(input.identity, input.createIntentId),
@@ -523,6 +569,7 @@ export class ContainerExecutionBackend {
       [`${LABEL}image-digest`]: input.imageDigest,
       [`${LABEL}runner-digest`]: input.runnerDigest,
       [`${LABEL}deadline`]: input.deadlineAt,
+      [`${LABEL}task-user`]: taskUser,
     };
     return [
       "--name",
@@ -553,6 +600,10 @@ export class ContainerExecutionBackend {
       "private",
       "--tmpfs",
       `${TASK_WORKDIR}:${expected.tmpfs[TASK_WORKDIR]}`,
+      ...mounts.flatMap((mount) => [
+        "--mount",
+        `type=bind,source=${mount.source},target=${mount.target}${mount.readOnly ? ",readonly" : ""}`,
+      ]),
       "--stop-timeout",
       String(this.options.stopGraceSeconds),
       "--log-driver",
@@ -568,10 +619,17 @@ export class ContainerExecutionBackend {
     ];
   }
 
-  private expectedPolicy(envelope: ExecutionEnvelope, imageId: string, deadlineEpoch: number) {
+  private expectedPolicy(
+    envelope: ExecutionEnvelope,
+    imageId: string,
+    deadlineEpoch: number,
+    mounts: readonly ContainerMount[],
+    taskUser: string,
+  ) {
     const { resources } = envelope;
     return {
       user: this.options.initUser,
+      taskUser,
       image: imageId,
       entrypoint: ["/bin/sh"],
       cmd: ["-c", INIT_SCRIPT, INIT_NAME, String(deadlineEpoch)],
@@ -590,7 +648,21 @@ export class ContainerExecutionBackend {
         [TASK_WORKDIR]: `rw,nosuid,nodev,size=${resources.privateStorageBytes},mode=1777`,
       },
       binds: null,
-      mounts: [],
+      hostMounts: mounts.map((mount) => ({
+        type: "bind",
+        source: mount.source,
+        target: mount.target,
+        readOnly: mount.readOnly,
+        rest: {},
+      })),
+      mounts: mounts.map((mount) => ({
+        type: "bind",
+        source: mount.source,
+        destination: mount.target,
+        mode: "",
+        rw: !mount.readOnly,
+        propagation: "rprivate",
+      })),
       devices: [],
       pidMode: "",
       ipcMode: "private",
@@ -705,9 +777,120 @@ export class ContainerExecutionBackend {
       started: path.join(directory, "started.json"),
       stop: path.join(directory, "stop.json"),
       destroyed: path.join(directory, "destroyed.json"),
+      diskGuard: path.join(directory, "disk-guard.json"),
+      diskBreach: path.join(directory, "disk-breach.json"),
       evidence: path.join(directory, "evidence"),
       invocations: path.join(directory, "invocations"),
     };
+  }
+
+  private async masks() {
+    const directory = path.join(this.options.stateDirectory, "masks");
+    const file = path.join(directory, "file");
+    const folder = path.join(directory, "directory");
+    await mkdir(folder, { recursive: true });
+    await writeFile(file, "", { flag: "wx", mode: 0o444 }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    });
+    await chmod(file, 0o444);
+    await chmod(folder, 0o555);
+    return { file: await realpath(file), directory: await realpath(folder) };
+  }
+
+  private taskUser(directories: PreparedHostDirectories) {
+    if (!directories.owner) return this.options.taskUser;
+    const { uid, gid } = directories.owner;
+    if (uid === 0 || String(uid) === this.options.initUser.split(":")[0])
+      throw new ContainerBackendError("CONTAINER_DIRECTORY_OWNER_UNSUPPORTED");
+    return `${uid}:${gid}`;
+  }
+
+  private async admitDisk(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    directories: PreparedHostDirectories,
+  ) {
+    const roots: DiskGuardRecord["roots"][number][] = [];
+    for (const root of directories.roots.filter((item) => item.access === "write")) {
+      const free = await this.options.diskGuard.freeBytes(root.canonicalPath).catch(() => NaN);
+      if (!Number.isFinite(free))
+        throw new ContainerBackendError("CONTAINER_DISK_GUARD_UNAVAILABLE");
+      if (free < this.options.diskGuard.minFreeBytes)
+        throw new ContainerBackendError("CONTAINER_DISK_FLOOR");
+      roots.push({ directory: root.canonicalPath, baselineFreeBytes: free });
+    }
+    if (roots.length > 0) await writeOnce<DiskGuardRecord>(files.diskGuard, { roots });
+  }
+
+  private async guardDisk(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    containerId: string,
+  ) {
+    if (!this.diskWatches.has(files.key)) {
+      const result = await this.checkDisk(files, containerId);
+      if (result !== "settled") this.watchDisk(files, containerId);
+    }
+    return (await readJson(files.diskBreach)) !== null;
+  }
+
+  private async checkDisk(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    containerId: string,
+  ): Promise<"clear" | "settled" | "retry"> {
+    const guard = await readJson<DiskGuardRecord>(files.diskGuard);
+    if (!guard) return "settled";
+    if (!(await readJson(files.diskBreach))) {
+      const breach = await this.observeDisk(guard);
+      if (!breach) return "clear";
+      await writeOnce<DiskGuardBreach>(files.diskBreach, {
+        ...breach,
+        containerId,
+        observedAt: this.now(),
+      });
+    }
+    return (await this.kill(containerId)) ? "settled" : "retry";
+  }
+
+  private async observeDisk(guard: DiskGuardRecord) {
+    const { freeBytes, minFreeBytes, maxGrowthBytes } = this.options.diskGuard;
+    for (const { directory, baselineFreeBytes } of guard.roots) {
+      const free = await freeBytes(directory).catch(() => NaN);
+      if (!Number.isFinite(free))
+        return { reason: "unavailable" as const, directory, baselineFreeBytes };
+      const observed = { directory, baselineFreeBytes, freeBytes: free };
+      const consumedBytes = baselineFreeBytes - free;
+      if (free < minFreeBytes) return { reason: "floor" as const, ...observed, consumedBytes };
+      if (consumedBytes > maxGrowthBytes)
+        return { reason: "growth" as const, ...observed, consumedBytes };
+    }
+    return null;
+  }
+
+  private watchDisk(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    containerId: string,
+  ) {
+    const timer = setTimeout(async () => {
+      if (this.diskWatches.get(files.key) !== timer) return;
+      const result = await this.checkDisk(files, containerId).catch(() => "retry" as const);
+      if (this.diskWatches.get(files.key) !== timer) return;
+      if (result === "settled") this.diskWatches.delete(files.key);
+      else this.watchDisk(files, containerId);
+    }, this.options.diskGuard.intervalMs);
+    timer.unref();
+    this.diskWatches.set(files.key, timer);
+  }
+
+  private unwatchDisk(key: string) {
+    clearTimeout(this.diskWatches.get(key));
+    this.diskWatches.delete(key);
+  }
+
+  private async kill(containerId: string) {
+    const killed = await this.command(["container", "kill", containerId]).catch(() => null);
+    return (
+      killed !== null &&
+      (killed.exitCode === 0 || /is not running|No such container/i.test(killed.stderr))
+    );
   }
 
   private now() {
@@ -741,6 +924,7 @@ function effectivePolicy(container: Container) {
   const host = container.HostConfig;
   return {
     user: container.Config.User,
+    taskUser: container.Config.Labels?.[`${LABEL}task-user`] ?? null,
     image: container.Image,
     entrypoint: container.Config.Entrypoint,
     cmd: container.Config.Cmd,
@@ -757,13 +941,44 @@ function effectivePolicy(container: Container) {
     nanoCpus: host["NanoCpus"],
     tmpfs: host["Tmpfs"],
     binds: host["Binds"] ?? null,
-    mounts: container.Mounts ?? [],
+    hostMounts: records(host["Mounts"])
+      .map(({ Type, Source, Target, ReadOnly, ...rest }) => ({
+        type: Type,
+        source: Source,
+        target: Target,
+        readOnly: ReadOnly === true,
+        rest,
+      }))
+      .sort((a, b) => compareText(String(a.target), String(b.target))),
+    mounts: records(container.Mounts)
+      .map((mount) => ({
+        type: mount["Type"],
+        source: mount["Source"],
+        destination: mount["Destination"],
+        mode: mount["Mode"],
+        rw: mount["RW"],
+        propagation: mount["Propagation"],
+      }))
+      .sort((a, b) => compareText(String(a.destination), String(b.destination))),
     devices: host["Devices"] ?? [],
     pidMode: host["PidMode"],
     ipcMode: host["IpcMode"],
     usernsMode: host["UsernsMode"],
     logType: host.LogConfig?.Type,
   };
+}
+
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === "object" && !Array.isArray(item),
+      )
+    : [];
+}
+
+function compareText(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function containerName(identity: ExecutionEnvironmentIdentity) {

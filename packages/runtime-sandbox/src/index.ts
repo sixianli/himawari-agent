@@ -1,5 +1,6 @@
 export * from "./execution-backend/container-execution-backend.ts";
 export * from "./execution-backend/docker-command.ts";
+export * from "./execution-backend/host-directories.ts";
 export * from "./job-host.ts";
 export type { JobHostControlBinding, JobHostControlObservation } from "./job-host-control.js";
 export { queryJobHostControl, readJobHostFinalEvidence } from "./job-host-control.js";
