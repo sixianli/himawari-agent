@@ -195,6 +195,8 @@ Mac 上的第三次完整运行（`mac-orbstack/mac-qualification-03.*`）中，
 | 单元测试（两个文件），Mac 与 Hermes | 各 66 项通过（`unit-mac-01.log`、`unit-linux-01.log`） |
 | `npm run typecheck`、`check:boundaries`、`check:ci-policy`、`check:v0.2-coverage`、`check:v0.2-invariants`、`check:secrets`；改动文件的 `biome format` 与 `biome lint --error-on-warnings` | 通过；lint 只有 `useLiteralKeys` 提示 |
 
+**正式的 `npm test`**：提交 `408e2fd` 之后在本机沙箱外运行 `npm test`，按 `408e2fd` 打安装包后运行全部测试项目。构建和测试两步都通过：contracts 355 项、unit 2004 项（比上一批多 8 项，正好是本批新增的 7 项后端测试和 1 项出口代理测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-408e2fd.tar.gz`](npm-test-408e2fd.tar.gz)，安装包本身没有保存，只记录了 SHA-256。本批没有运行覆盖率检查，原因见[第二批](../p2-original-directory-01/README.md#verification)。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)（用 `tar -xzf raw-logs.tar.gz` 解开），包括实现前的 BusyBox 实验脚本和日志（`probes/`）。
 
 [↑ 返回目录](#contents)
