@@ -154,6 +154,8 @@
 | `npm run format:check`、`typecheck`、`check:boundaries`、`check:ci-policy`、`check:v0.2-coverage`、`check:v0.2-invariants`、`check:secrets` | 通过（`checks/`） |
 | `npm run lint` | 有 20 条 `useLiteralKeys` 警告，都在 `apps/agent-service/src/capability-programs/` 的两个文件里，本批没有改动这两个文件；本批改动的文件没有警告 |
 
+**正式的 `npm test`**：提交 `a6881dd` 之后在本机沙箱外运行 `npm test`，按 `a6881dd` 打安装包后运行全部测试项目。构建和测试两步都通过：contracts 355 项、unit 2012 项（比上一批多 8 项，正好是本批新增的 8 项后端单元测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-a6881dd.tar.gz`](npm-test-a6881dd.tar.gz)，安装包本身没有保存，只记录了 SHA-256。本批没有运行覆盖率检查，原因见[第二批](../p2-original-directory-01/README.md#verification)。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)（用 `tar -xzf raw-logs.tar.gz` 解开）。里面没有令牌的值：模拟仓库的日志只记录令牌的 SHA-256 前缀，这些令牌也都已经作废。
 
 [↑ 返回目录](#contents)
