@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -186,6 +186,10 @@ describe("same-artifact verification", () => {
       await mkdir(compiled, { recursive: true });
       await writeFile(path.join(compiled, "main.js"), "export {}; ");
     }
+    const nativeSource = "packages/platform-node/src/files/rename-native.c";
+    await mkdir(path.join(temporary, path.dirname(nativeSource)), { recursive: true });
+    await cp(path.join(repositoryRoot, nativeSource), path.join(temporary, nativeSource));
+    await mkdir(path.join(temporary, "compiled", path.dirname(nativeSource)), { recursive: true });
     const outer = path.join(temporary, "node_modules/outer-fixture");
     const inner = path.join(outer, "node_modules/inner-fixture");
     await mkdir(inner, { recursive: true });
@@ -233,7 +237,7 @@ describe("same-artifact verification", () => {
         buildRoot: path.join(temporary, "compiled"),
         runtimeRoot: path.join(temporary, "broken-runtime"),
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/inner-fixture/);
   });
 
   it("checks exact regular-file bytes, modes, dependency identity and platform", async () => {
