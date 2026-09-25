@@ -5,6 +5,7 @@ import {
   lstat,
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rename,
   rm,
@@ -18,6 +19,8 @@ import {
   EXECUTION_ENVIRONMENT_V1,
   executionBackendCapabilitiesSchema,
   executionEnvironmentLocatorSchema,
+  type ExecutionEnvironmentIdentity,
+  type ExecutionEnvironmentLocator,
   executionEnvironmentStopProofSchema,
 } from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -106,6 +109,7 @@ class FakeDocker {
   ) => (container.Name.startsWith("/himawari-egress-") ? 0 : null);
   readonly calls: string[][] = [];
   readonly execs: string[][] = [];
+  readonly execEnvironments: Record<string, string>[] = [];
   tamper: (container: FakeContainer) => void = () => {};
   afterCreate: () => Promise<void> = async () => {};
   execResult: { exitCode: number; stdout: string; stderr: string; truncated: boolean } = {
@@ -118,8 +122,9 @@ class FakeDocker {
   private sequence = 0;
   private tick = 0;
 
-  readonly run: DockerCommand = async (args) => {
+  readonly run: DockerCommand = async (args, options) => {
     this.calls.push([...args]);
+    if (args[1] === "exec") this.execEnvironments.push({ ...options.environment });
     if (!this.reachable)
       return {
         exitCode: 1,
@@ -416,6 +421,43 @@ let hostRoot: string;
 let docker: FakeDocker;
 let now: Date;
 let freeBytes: (directory: string) => Promise<number>;
+
+class FakeIssuer {
+  readonly issued = new Map<string, Record<string, string>>();
+  readonly revoked = new Set<string>();
+  readonly requests: Record<string, string>[] = [];
+  environment: (credentialId: string) => Record<string, string> = (credentialId) => ({
+    REGISTRY_TOKEN: `token-${credentialId.slice(0, 8)}`,
+  });
+  expiresAt: ((requested: string) => string) | null = null;
+  failRevoke = false;
+  failIssue = false;
+
+  readonly issuer = {
+    issue: async (request: {
+      credentialId: string;
+      secretRef: string;
+      approvalRef: string;
+      expiresAt: string;
+    }) => {
+      this.requests.push({ ...request });
+      if (this.failIssue || this.revoked.has(request.credentialId))
+        throw new Error("issue refused");
+      const environment = this.environment(request.credentialId);
+      this.issued.set(request.credentialId, environment);
+      return {
+        environment,
+        expiresAt: this.expiresAt ? this.expiresAt(request.expiresAt) : request.expiresAt,
+      };
+    },
+    revoke: async (credentialId: string) => {
+      if (this.failRevoke) throw new Error("issuer unreachable");
+      this.revoked.add(credentialId);
+    },
+    isRevoked: async (credentialId: string) => !this.failRevoke && this.revoked.has(credentialId),
+  };
+}
+let issuer: FakeIssuer;
 const argumentsByRef = new Map<string, { argv: readonly string[] }>();
 const roots = new Map<
   string,
@@ -456,6 +498,7 @@ function backend(
       intervalMs: 100,
       freeBytes: (directory) => freeBytes(directory),
     },
+    credentialIssuer: issuer.issuer,
     ...overrides,
   });
 }
@@ -516,6 +559,7 @@ beforeEach(async () => {
   docker = new FakeDocker();
   now = new Date("2026-09-25T10:00:00.000Z");
   freeBytes = async () => 10_000;
+  issuer = new FakeIssuer();
   argumentsByRef.clear();
   roots.clear();
 });
@@ -1310,6 +1354,206 @@ describe("executing in a container environment", () => {
   });
 });
 
+describe("handing a temporary credential to one call in a fresh environment", () => {
+  const credential = { secretRef: "secret-registry", approvalRef: "approval-7" };
+  function call(
+    subject: ContainerExecutionBackend,
+    request: {
+      identity: ExecutionEnvironmentIdentity;
+      createIntentId: string;
+      locator: ExecutionEnvironmentLocator;
+    },
+    invocationId: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    argumentsByRef.set(invocationId, { argv: ["sh", "-c", "fetch-package"] });
+    return subject.execute({
+      ...request,
+      stopFence: 0,
+      invocationId,
+      argumentsRef: invocationId,
+      deadlineAt: "2026-09-25T10:30:00.000Z",
+      ...overrides,
+    });
+  }
+  async function stateText() {
+    const files = execFileSync("find", [stateDirectory, "-type", "f"], { encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    return (await Promise.all(files.map((file) => readFile(file, "utf8")))).join("\n");
+  }
+
+  it("issues it for the first call only, passes the value outside the arguments and revokes it at the issuer", async () => {
+    const { subject, request } = await started();
+    const result = await call(subject, request, "invocation-1", {
+      credential,
+      deadlineAt: "2026-09-25T11:30:00.000Z",
+    });
+    const [issued] = issuer.requests;
+    expect(issued).toMatchObject({
+      secretRef: "secret-registry",
+      approvalRef: "approval-7",
+      expiresAt: "2026-09-25T11:00:00.000Z",
+    });
+    const credentialId = issued?.["credentialId"] ?? "";
+    expect(credentialId).toMatch(/^[a-f0-9]{64}$/);
+    const value = `token-${credentialId.slice(0, 8)}`;
+    const exec = docker.execs[0] ?? [];
+    expect(exec).toEqual(expect.arrayContaining(["--env", "REGISTRY_TOKEN"]));
+    expect(exec.join("\n")).not.toContain(value);
+    expect(docker.execEnvironments[0]).toEqual({ REGISTRY_TOKEN: value });
+    expect(issuer.revoked).toEqual(new Set([credentialId]));
+    expect((await subject.readOutput(result.outputRef)).exitCode).toBe(0);
+    expect(await stateText()).not.toContain(value);
+
+    await call(subject, request, "invocation-2");
+    expect(docker.execEnvironments[1]).toEqual({});
+    expect((docker.execs[1] ?? []).join("\n")).not.toContain("REGISTRY_TOKEN");
+    await expect(call(subject, request, "invocation-3", { credential })).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_REFUSED",
+    });
+    expect(issuer.requests).toHaveLength(1);
+  });
+
+  it("refuses an environment that already ran a call, or a backend without an issuer, before issuing", async () => {
+    const { subject, request } = await started();
+    await call(subject, request, "invocation-1");
+    await expect(call(subject, request, "invocation-2", { credential })).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_REFUSED",
+    });
+    const fresh = backend({ credentialIssuer: null });
+    const second = { ...identity, environmentId: "environment-2" };
+    const locator = await fresh.create(createInput({ identity: second }));
+    await expect(
+      call(fresh, { identity: second, createIntentId: "create-1", locator }, "invocation-1", {
+        credential,
+      }),
+    ).rejects.toMatchObject({ code: "CONTAINER_CREDENTIAL_UNAVAILABLE" });
+    expect(issuer.requests).toEqual([]);
+    expect(docker.execs).toHaveLength(1);
+  });
+
+  it("revokes and refuses a credential whose variables or lifetime exceed what was asked", async () => {
+    const cases: [Record<string, string>, ((requested: string) => string) | null][] = [
+      [{ PATH: "/evil" }, null],
+      [{ HTTPS_PROXY: "http://elsewhere" }, null],
+      [{ DOCKER_HOST: "tcp://elsewhere:2375" }, null],
+      [{ "BAD-NAME": "x" }, null],
+      [{}, null],
+      [{ REGISTRY_TOKEN: "" }, null],
+      [{ REGISTRY_TOKEN: "x" }, () => "2026-09-25T12:00:00.000Z"],
+    ];
+    for (const [index, [environment, expiresAt]] of cases.entries()) {
+      const target = { ...identity, environmentId: `environment-${index + 10}` };
+      const subject = backend();
+      const locator = await subject.create(createInput({ identity: target }));
+      issuer.environment = () => environment;
+      issuer.expiresAt = expiresAt;
+      await expect(
+        call(subject, { identity: target, createIntentId: "create-1", locator }, "invocation-1", {
+          credential,
+        }),
+      ).rejects.toMatchObject({ code: "CONTAINER_CREDENTIAL_REFUSED" });
+    }
+    expect(docker.execs).toEqual([]);
+    expect(issuer.revoked.size).toBe(cases.length);
+  });
+
+  it("revokes the credential when the call times out", async () => {
+    const { subject, request } = await started();
+    docker.execTimeout = true;
+    await expect(call(subject, request, "invocation-1", { credential })).rejects.toMatchObject({
+      code: "CONTAINER_COMMAND_TIMEOUT",
+    });
+    expect(issuer.revoked.size).toBe(1);
+  });
+
+  it("stops the whole environment and withholds the stop proof until the issuer confirms revocation", async () => {
+    const subject = backend();
+    const request = { identity, createIntentId: "create-1" };
+    const locator = await subject.create(
+      createInput({
+        envelope: { ...envelope, network: [{ target: "registry.example:443", source }] },
+      }),
+    );
+    issuer.failRevoke = true;
+    await expect(
+      call(subject, { ...request, locator }, "invocation-1", { credential }),
+    ).rejects.toMatchObject({ code: "CONTAINER_CREDENTIAL_NOT_REVOKED" });
+    expect([...docker.containers.values()].every((item) => !item.State.Running)).toBe(true);
+    await expect(call(subject, { ...request, locator }, "invocation-2")).rejects.toMatchObject({
+      code: "CONTAINER_NOT_RUNNING",
+    });
+    await expect(subject.stop(stopRequest(locator))).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_NOT_REVOKED",
+    });
+    await expect(subject.verifyStopped(stopRequest(locator))).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_NOT_REVOKED",
+    });
+    await expect(subject.destroy({ ...request, locator })).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_NOT_REVOKED",
+    });
+    issuer.failRevoke = false;
+    await subject.stop(stopRequest(locator));
+    const proof = executionEnvironmentStopProofSchema.parse(
+      await subject.verifyStopped(stopRequest(locator)),
+    );
+    const saved = JSON.parse(await subject.readEvidence(proof.evidence[0]?.ref ?? ""));
+    expect(saved.credential).toMatchObject({ credentialId: issuer.requests[0]?.["credentialId"] });
+    expect(saved.credential.revokedAt).toBe("2026-09-25T10:00:00.000Z");
+  });
+
+  it("revokes the claimed identifier when a stop lands between the claim and the issue", async () => {
+    const holder: { subject?: ContainerExecutionBackend } = {};
+    const subject = backend({
+      readArguments: async () => {
+        await holder.subject?.stop(stopRequest(null));
+        return { argv: ["true"] };
+      },
+    });
+    holder.subject = subject;
+    const locator = await subject.create(createInput());
+    await expect(
+      subject.execute({
+        identity,
+        createIntentId: "create-1",
+        locator,
+        stopFence: 0,
+        invocationId: "invocation-1",
+        argumentsRef: "arguments-1",
+        deadlineAt: "2026-09-25T10:30:00.000Z",
+        credential,
+      }),
+    ).rejects.toMatchObject({ code: "CONTAINER_EXECUTION_CLOSED" });
+    expect(issuer.requests).toEqual([]);
+    expect(issuer.revoked.size).toBe(1);
+    expect(
+      executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(stopRequest(locator)))
+        .basis,
+    ).toBe("verified_stopped");
+  });
+
+  it("revokes by the recorded identifier when the stop arrives before the issue completed", async () => {
+    const { subject, request, locator } = await started();
+    issuer.failIssue = true;
+    await expect(call(subject, request, "invocation-1", { credential })).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_UNAVAILABLE",
+    });
+    const [attempt] = issuer.requests;
+    expect(issuer.revoked).toEqual(new Set([attempt?.["credentialId"]]));
+    issuer.failIssue = false;
+    await expect(call(subject, request, "invocation-1", { credential })).rejects.toMatchObject({
+      code: "CONTAINER_CREDENTIAL_REFUSED",
+    });
+    await subject.stop(stopRequest(locator));
+    expect(
+      executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(stopRequest(locator)))
+        .basis,
+    ).toBe("verified_stopped");
+    expect(docker.execs).toEqual([]);
+  });
+});
+
 describe("observing and stopping a container environment", () => {
   it("distinguishes running, paused, stopped, missing and untrusted observations", async () => {
     const { subject, request, locator } = await started();
@@ -1437,6 +1681,19 @@ describe("docker command runner", () => {
     await expect(run([], { timeoutMs: 100, maxOutputBytes: 10 })).rejects.toBeInstanceOf(
       DockerCommandTimeout,
     );
+  });
+
+  it("passes values to the command without letting them redirect the daemon", async () => {
+    const run = dockerCli(
+      process.execPath,
+      script("process.stdout.write(`${process.env.REGISTRY_TOKEN}|${process.env.DOCKER_HOST}`)"),
+    );
+    const result = await run([], {
+      timeoutMs: 5000,
+      maxOutputBytes: 100,
+      environment: { REGISTRY_TOKEN: "t0ken", DOCKER_HOST: "tcp://attacker:2375" },
+    });
+    expect(result.stdout).toBe("t0ken|undefined");
   });
 
   it("does not let the caller's environment redirect the daemon", async () => {

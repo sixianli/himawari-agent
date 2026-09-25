@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  chmod,
   link,
   lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
+  rename,
   rm,
   stat,
   symlink,
@@ -95,6 +98,7 @@ function backend(host = dockerHost, overrides: Partial<ContainerExecutionBackend
     },
     hostDirectories: { maxScannedEntries: 20_000, maxProtectedEntries: 256 },
     diskGuard: { ...DISK_GUARD, freeBytes: hostFreeBytes },
+    credentialIssuer: null,
     ...overrides,
   });
   const port: ExecutionBackendPort = subject;
@@ -1084,6 +1088,198 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
     await stopAndProve(subject, first, firstLocator);
     await stopAndProve(subject, second, secondLocator);
   });
+
+  it(
+    "gives a temporary credential only to the first call of a fresh environment and makes every copy fail once revoked",
+    { timeout: 120_000 },
+    async () => {
+      const registryRoot = await mkdtemp(path.join(hostRoot, "registry-"));
+      await chmod(registryRoot, 0o755);
+      await writeFile(
+        path.join(registryRoot, "server.mjs"),
+        [
+          'import { createHash } from "node:crypto";',
+          'import { readFileSync } from "node:fs";',
+          'import { createServer } from "node:http";',
+          "createServer((request, response) => {",
+          '  const tokens = JSON.parse(readFileSync("/registry/tokens.json", "utf8"));',
+          '  const token = String(request.headers.authorization ?? "").replace(/^Bearer /, "");',
+          "  const entry = tokens[token];",
+          '  const ok = request.url === "/pkg" && entry !== undefined && Date.parse(entry.expiresAt) > Date.now();',
+          '  console.log(`${ok ? 200 : 401} ${createHash("sha256").update(token).digest("hex").slice(0, 16)}`);',
+          '  response.writeHead(ok ? 200 : 401).end(ok ? "package-ok\\n" : "denied\\n");',
+          '}).listen(8080, "0.0.0.0");',
+        ].join("\n"),
+        { mode: 0o644 },
+      );
+      const tokens: Record<string, { credentialId: string; expiresAt: string }> = {};
+      const revoked = new Set<string>();
+      const issuedTokens = new Map<string, string>();
+      const saveTokens = async () => {
+        const file = path.join(registryRoot, "tokens.json");
+        await writeFile(`${file}.tmp`, JSON.stringify(tokens), { mode: 0o644 });
+        await rename(`${file}.tmp`, file);
+      };
+      await saveTokens();
+      const credentialIssuer: NonNullable<ContainerExecutionBackendOptions["credentialIssuer"]> = {
+        issue: async (request) => {
+          if (revoked.has(request.credentialId)) throw new Error("revoked identifier");
+          const token = issuedTokens.get(request.credentialId) ?? randomBytes(24).toString("hex");
+          issuedTokens.set(request.credentialId, token);
+          tokens[token] = { credentialId: request.credentialId, expiresAt: request.expiresAt };
+          await saveTokens();
+          return { environment: { REGISTRY_TOKEN: token }, expiresAt: request.expiresAt };
+        },
+        revoke: async (credentialId) => {
+          revoked.add(credentialId);
+          const token = issuedTokens.get(credentialId);
+          if (token) delete tokens[token];
+          await saveTokens();
+        },
+        isRevoked: async (credentialId) =>
+          revoked.has(credentialId) &&
+          !Object.values(tokens).some((entry) => entry.credentialId === credentialId),
+      };
+      const subject = backend(dockerHost, { credentialIssuer });
+      const target = environment(600, [], ["example.com:443"]);
+      const locator = await subject.create(target.create);
+      const network = String(
+        JSON.parse(
+          (
+            await direct(
+              "container",
+              "inspect",
+              "--format",
+              "{{json .}}",
+              locator.runtimeEnvironmentId,
+            )
+          ).stdout,
+        ).HostConfig.NetworkMode,
+      );
+      const registryName = `himawari-q-registry-${runId}`;
+      const registry = await direct(
+        "container",
+        "run",
+        "--detach",
+        "--name",
+        registryName,
+        "--label",
+        `io.himawari.environment.run=${runId}`,
+        "--network",
+        network,
+        "--network-alias",
+        "registry.test",
+        "--user",
+        "65533:65533",
+        "--read-only",
+        "--mount",
+        `type=bind,source=${registryRoot},target=/registry,readonly`,
+        `${EGRESS_IMAGE_REFERENCE}@sha256:${EGRESS_IMAGE_DIGEST}`,
+        "node",
+        "/registry/server.mjs",
+      );
+      expect(registry.exitCode, registry.stderr).toBe(0);
+      let ready = false;
+      for (let attempt = 0; attempt < 50 && !ready; attempt++) {
+        const probe = await direct(
+          "container",
+          "exec",
+          registryName,
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/pkg').then((r) => process.exit(r.status === 401 ? 0 : 1), () => process.exit(1))",
+        );
+        ready = probe.exitCode === 0;
+        if (!ready) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(ready).toBe(true);
+
+      const request = (token: string) =>
+        `wget -Y off -q -O - --header "Authorization: Bearer ${token}" http://registry.test:8080/pkg 2>/dev/null || echo refused`;
+      const credentialCall = async (invocationId: string) => {
+        argumentsByRef.set(invocationId, {
+          argv: [
+            "sh",
+            "-c",
+            [
+              `echo "during=$(${request("$REGISTRY_TOKEN")})"`,
+              'printf %s "$REGISTRY_TOKEN" > /tmp/copied-token',
+              `(while [ ! -e /tmp/go ]; do sleep 0.2; done; echo "background=$(${request("$REGISTRY_TOKEN")})" > /tmp/background.txt) >/dev/null 2>&1 &`,
+              'echo "argv_has_token=$(grep -c "$REGISTRY_TOKEN" /proc/$$/cmdline || true)"',
+            ].join("\n"),
+          ],
+        });
+        return subject.execute({
+          identity: target.identity,
+          createIntentId: target.createIntentId,
+          locator,
+          stopFence: 0,
+          invocationId,
+          argumentsRef: invocationId,
+          deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+          credential: { secretRef: "secret-registry", approvalRef: "approval-q" },
+        });
+      };
+      const first = await subject.readOutput(
+        (await credentialCall("invocation-credential-1")).outputRef,
+      );
+      const [credentialId] = [...issuedTokens.keys()];
+      const token = issuedTokens.get(credentialId ?? "") ?? "";
+      const tokenHash = createHash("sha256").update(token).digest("hex").slice(0, 16);
+      expect(lines(first.stdout)).toEqual({ during: "package-ok", argv_has_token: "0" });
+      expect(revoked.has(credentialId ?? "")).toBe(true);
+
+      const after = await run(
+        subject,
+        target,
+        locator,
+        [
+          'echo "inherited=${REGISTRY_TOKEN:-absent}"',
+          `echo "copied=$(${request("$(cat /tmp/copied-token)")})"`,
+          "touch /tmp/go",
+          "for i in $(seq 1 50); do [ -s /tmp/background.txt ] && break; sleep 0.2; done",
+          "cat /tmp/background.txt",
+        ].join("\n"),
+      );
+      expect(lines(after.stdout)).toEqual({
+        inherited: "absent",
+        copied: "refused",
+        background: "refused",
+      });
+      await expect(credentialCall("invocation-credential-2")).rejects.toMatchObject({
+        code: "CONTAINER_CREDENTIAL_REFUSED",
+      });
+      expect(issuedTokens.size).toBe(1);
+
+      const registryLog = (await direct("container", "logs", registryName)).stdout
+        .trim()
+        .split("\n")
+        .filter((line) => line.endsWith(tokenHash));
+      expect(registryLog).toEqual([`200 ${tokenHash}`, `401 ${tokenHash}`, `401 ${tokenHash}`]);
+      const inspected = (
+        await direct("container", "inspect", "--format", "{{json .}}", locator.runtimeEnvironmentId)
+      ).stdout;
+      expect(inspected).not.toContain(token);
+      const stateFiles = (await readdir(stateDirectory, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => path.join(entry.parentPath, entry.name));
+      for (const file of stateFiles) expect(await readFile(file, "utf8")).not.toContain(token);
+
+      const proof = await stopAndProve(subject, target, locator);
+      const saved = JSON.parse(await subject.readEvidence(proof.evidence[0]?.ref ?? ""));
+      expect(saved.credential).toMatchObject({ credentialId });
+      await direct("container", "rm", "--force", registryName);
+      observations["temporaryCredential"] = {
+        firstCall: lines(first.stdout),
+        afterRevocation: lines(after.stdout),
+        registryLog,
+        secondCredentialCall: "CONTAINER_CREDENTIAL_REFUSED",
+        tokenAbsentFromInspectAndState: true,
+        stateFilesChecked: stateFiles.length,
+        proofCredential: saved.credential,
+      };
+    },
+  );
 
   it(
     "ends the egress proxy with the environment at its deadline",

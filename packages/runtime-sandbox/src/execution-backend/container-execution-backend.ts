@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   EXECUTION_BACKEND_PROTOCOL_V1,
@@ -44,6 +44,11 @@ import {
   prepareHostDirectories,
   verifyHostDirectory,
 } from "./host-directories.ts";
+import {
+  credentialEnvironment,
+  type TemporaryCredentialIssuer,
+  type TemporaryCredentialRecord,
+} from "./temporary-credential.ts";
 
 const INIT_SCRIPT = 'd=$1; while [ "$(date +%s)" -lt "$d" ]; do sleep 1; done';
 const INIT_NAME = "himawari-init";
@@ -53,6 +58,12 @@ const TASK_ENVIRONMENT = [
   "TMPDIR=/tmp",
   "XDG_CACHE_HOME=/tmp/.cache",
   "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+];
+const PROXY_VARIABLES = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
+const RESERVED_VARIABLES = [
+  ...TASK_ENVIRONMENT.map((variable) => variable.slice(0, variable.indexOf("="))),
+  ...PROXY_VARIABLES,
+  "NO_PROXY",
 ];
 const LABEL = "io.himawari.environment.";
 const INSPECT_OUTPUT_BYTES = 4 * 1024 * 1024;
@@ -65,6 +76,10 @@ export const CONTAINER_RUNNER_DIGEST = sha256(
 );
 
 export { ContainerBackendError, type ContainerBackendErrorCode };
+export type {
+  TemporaryCredentialIssuer,
+  TemporaryCredentialRequest,
+} from "./temporary-credential.ts";
 
 export interface ContainerExecutionBackendOptions {
   readonly backendRef: string;
@@ -90,6 +105,7 @@ export interface ContainerExecutionBackendOptions {
     readonly freeBytes: (directory: string) => Promise<number>;
   };
   readonly egress: ContainerEgressOptions;
+  readonly credentialIssuer: TemporaryCredentialIssuer | null;
 }
 
 interface DiskGuardRecord {
@@ -136,6 +152,10 @@ type Observation =
 interface StopRecord {
   readonly stopIntentId: string;
   readonly stopFence: number;
+}
+interface CredentialRevokedRecord {
+  readonly credentialId: string;
+  readonly revokedAt: string;
 }
 interface DestroyedRecord {
   readonly locator: ExecutionEnvironmentLocator;
@@ -296,6 +316,7 @@ export class ContainerExecutionBackend {
       readonly invocationId: string;
       readonly argumentsRef: string;
       readonly deadlineAt: string;
+      readonly credential?: { readonly secretRef: string; readonly approvalRef: string };
     },
   ): Promise<{ readonly outputRef: string; readonly observedAt: string }> {
     const files = await this.files(input.identity);
@@ -313,9 +334,10 @@ export class ContainerExecutionBackend {
     if (!taskUser) throw new ContainerBackendError("CONTAINER_POLICY_MISMATCH");
     const egressRecord = await readJson<EgressRecord>(files.egress);
     const proxyEnvironment = egressRecord
-      ? ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
-          .map((variable) => `${variable}=${egressProxyUrl(egressRecord)}`)
-          .concat(["NO_PROXY=", "no_proxy="])
+      ? PROXY_VARIABLES.map((variable) => `${variable}=${egressProxyUrl(egressRecord)}`).concat([
+          "NO_PROXY=",
+          "no_proxy=",
+        ])
       : [];
     const { argv } = await this.options.readArguments(input.argumentsRef);
     if (
@@ -327,8 +349,18 @@ export class ContainerExecutionBackend {
     const invocationKey = sha256(input.invocationId);
     const outputFile = path.join(files.invocations, `${invocationKey}.json`);
     if (await readJson(outputFile)) throw new ContainerBackendError("CONTAINER_IDENTITY_CONFLICT");
-    let result: Awaited<ReturnType<DockerCommand>>;
+    const credential = input.credential
+      ? await this.claimCredential(files, input, invocationKey, container)
+      : null;
+    if (!credential)
+      await writeOnce(path.join(files.invocations, `${invocationKey}.started`), {
+        invocationId: input.invocationId,
+      });
+    let result: Awaited<ReturnType<DockerCommand>> | null = null;
+    let failure: unknown = null;
+    let revoked = true;
     try {
+      const environment = credential ? await this.issueCredential(credential) : {};
       result = await this.options.docker(
         [
           "container",
@@ -337,31 +369,127 @@ export class ContainerExecutionBackend {
           taskUser,
           "--workdir",
           TASK_WORKDIR,
-          ...[...TASK_ENVIRONMENT, ...proxyEnvironment].flatMap((variable) => ["--env", variable]),
+          ...[...TASK_ENVIRONMENT, ...proxyEnvironment, ...Object.keys(environment)].flatMap(
+            (variable) => ["--env", variable],
+          ),
           container.Id,
           ...argv,
         ],
-        { timeoutMs: remainingMs, maxOutputBytes: this.options.maxOutputBytes },
+        { timeoutMs: remainingMs, maxOutputBytes: this.options.maxOutputBytes, environment },
       );
     } catch (cause) {
-      throw new ContainerBackendError(
-        cause instanceof DockerCommandTimeout
-          ? "CONTAINER_COMMAND_TIMEOUT"
-          : "CONTAINER_RUNTIME_UNAVAILABLE",
-        { cause },
-      );
+      failure =
+        cause instanceof ContainerBackendError
+          ? cause
+          : new ContainerBackendError(
+              cause instanceof DockerCommandTimeout
+                ? "CONTAINER_COMMAND_TIMEOUT"
+                : "CONTAINER_RUNTIME_UNAVAILABLE",
+              { cause },
+            );
+    } finally {
+      if (credential) revoked = await this.revokeCredential(files, true);
     }
-    await writeOnce(outputFile, {
-      invocationId: input.invocationId,
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      truncated: result.truncated,
-    });
+    if (!revoked) {
+      await this.kill(container.Id);
+      if (egressRecord) await this.egress.kill(files);
+    }
+    if (result)
+      await writeOnce(outputFile, {
+        invocationId: input.invocationId,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        truncated: result.truncated,
+      });
+    if (!revoked) throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
+    if (failure) throw failure;
     return {
       outputRef: `container-output:${files.key}:${invocationKey}`,
       observedAt: this.now(),
     };
+  }
+
+  private async claimCredential(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    input: {
+      readonly invocationId: string;
+      readonly deadlineAt: string;
+      readonly credential?: { readonly secretRef: string; readonly approvalRef: string };
+    },
+    invocationKey: string,
+    container: Container,
+  ): Promise<TemporaryCredentialRecord> {
+    if (!input.credential || !this.options.credentialIssuer)
+      throw new ContainerBackendError("CONTAINER_CREDENTIAL_UNAVAILABLE");
+    if ((await readdir(files.invocations)).length > 0 || (await readJson(files.credential)))
+      throw new ContainerBackendError("CONTAINER_CREDENTIAL_REFUSED");
+    const environmentDeadline = container.Config.Labels?.[`${LABEL}deadline`] ?? "";
+    const expiresAt = new Date(
+      Math.min(Date.parse(input.deadlineAt), Date.parse(environmentDeadline)),
+    );
+    if (!Number.isFinite(expiresAt.getTime()))
+      throw new ContainerBackendError("CONTAINER_POLICY_MISMATCH");
+    const record = await writeOnce<TemporaryCredentialRecord>(
+      files.credential,
+      {
+        credentialId: sha256(`${files.key}\n${invocationKey}`),
+        invocationId: input.invocationId,
+        secretRef: input.credential.secretRef,
+        approvalRef: input.credential.approvalRef,
+        expiresAt: expiresAt.toISOString(),
+      },
+      0o600,
+    );
+    if (record.invocationId !== input.invocationId)
+      throw new ContainerBackendError("CONTAINER_CREDENTIAL_REFUSED");
+    await writeOnce(path.join(files.invocations, `${invocationKey}.started`), {
+      invocationId: input.invocationId,
+    });
+    if (await readJson(files.stop)) {
+      await this.revokeCredential(files, true);
+      throw new ContainerBackendError("CONTAINER_EXECUTION_CLOSED");
+    }
+    return record;
+  }
+
+  private async issueCredential(record: TemporaryCredentialRecord) {
+    const issuer = this.options.credentialIssuer;
+    if (!issuer) throw new ContainerBackendError("CONTAINER_CREDENTIAL_UNAVAILABLE");
+    const issued = await issuer
+      .issue({
+        credentialId: record.credentialId,
+        secretRef: record.secretRef,
+        approvalRef: record.approvalRef,
+        expiresAt: record.expiresAt,
+      })
+      .catch((cause: unknown) => {
+        throw new ContainerBackendError("CONTAINER_CREDENTIAL_UNAVAILABLE", { cause });
+      });
+    const environment = credentialEnvironment(issued, record.expiresAt, RESERVED_VARIABLES);
+    if (!environment) throw new ContainerBackendError("CONTAINER_CREDENTIAL_REFUSED");
+    return environment;
+  }
+
+  private async revokeCredential(
+    files: Awaited<ReturnType<ContainerExecutionBackend["files"]>>,
+    attempt: boolean,
+  ): Promise<boolean> {
+    const record = await readJson<TemporaryCredentialRecord>(files.credential);
+    if (!record || (await readJson(files.credentialRevoked))) return true;
+    const issuer = this.options.credentialIssuer;
+    if (!issuer) return false;
+    try {
+      if (attempt) await issuer.revoke(record.credentialId);
+      if (!(await issuer.isRevoked(record.credentialId))) return false;
+    } catch {
+      return false;
+    }
+    await writeOnce<CredentialRevokedRecord>(files.credentialRevoked, {
+      credentialId: record.credentialId,
+      revokedAt: this.now(),
+    });
+    return true;
   }
 
   async readOutput(outputRef: string): Promise<ContainerInvocationOutput> {
@@ -414,18 +542,21 @@ export class ContainerExecutionBackend {
     this.unwatchDisk(files.key);
     await writeOnce(files.stop, { stopIntentId: input.stopIntentId, stopFence: input.stopFence });
     if (await readJson(files.egress)) await this.egress.stop(files);
+    const revoked = await this.revokeCredential(files, true);
     const observation = await this.observe(input);
-    if (observation.kind === "missing") return { accepted: true };
-    if (observation.kind !== "found" && observation.kind !== "restarted")
-      throw refusal(observation);
-    const stopped = await this.command([
-      "container",
-      "stop",
-      "--time",
-      String(this.options.stopGraceSeconds),
-      observation.container.Id,
-    ]);
-    if (stopped.exitCode !== 0) throw new ContainerBackendError("CONTAINER_RUNTIME_UNAVAILABLE");
+    if (observation.kind !== "missing") {
+      if (observation.kind !== "found" && observation.kind !== "restarted")
+        throw refusal(observation);
+      const stopped = await this.command([
+        "container",
+        "stop",
+        "--time",
+        String(this.options.stopGraceSeconds),
+        observation.container.Id,
+      ]);
+      if (stopped.exitCode !== 0) throw new ContainerBackendError("CONTAINER_RUNTIME_UNAVAILABLE");
+    }
+    if (!revoked) throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
     return { accepted: true };
   }
 
@@ -436,6 +567,9 @@ export class ContainerExecutionBackend {
     const stop = await readJson<StopRecord>(files.stop);
     if (stop?.stopIntentId !== input.stopIntentId)
       throw new ContainerBackendError("CONTAINER_STOP_NOT_REQUESTED");
+    if (!(await this.revokeCredential(files, false)))
+      throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
+    const credential = await readJson<CredentialRevokedRecord>(files.credentialRevoked);
     const observation = await this.observe(input);
     const destroyed = await readJson<DestroyedRecord>(files.destroyed);
     const egress = (await readJson(files.egress)) !== null;
@@ -487,6 +621,7 @@ export class ContainerExecutionBackend {
     const evidence = await this.saveEvidence(files, {
       container: observation.container,
       egress: egressProxy,
+      credential,
       daemonId: observation.daemonId,
       stop,
       checkedAt: proof.checkedAt,
@@ -508,6 +643,8 @@ export class ContainerExecutionBackend {
     const files = await this.files(input.identity);
     const stop = await readJson<StopRecord>(files.stop);
     if (!stop) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    if (!(await this.revokeCredential(files, false)))
+      throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
     this.unwatchDisk(files.key);
     const egress = (await readJson(files.egress)) !== null;
     const observation = await this.observe(input);
@@ -530,6 +667,7 @@ export class ContainerExecutionBackend {
     const evidence = await this.saveEvidence(files, {
       container: observation.container,
       egress: egressProxy,
+      credential: await readJson<CredentialRevokedRecord>(files.credentialRevoked),
       daemonId: observation.daemonId,
       stop,
       destroyed: true,
@@ -825,6 +963,8 @@ export class ContainerExecutionBackend {
       egress: path.join(directory, "egress.json"),
       egressStartIntent: path.join(directory, "egress-start-intent.json"),
       egressStarted: path.join(directory, "egress-started.json"),
+      credential: path.join(directory, "credential.json"),
+      credentialRevoked: path.join(directory, "credential-revoked.json"),
       evidence: path.join(directory, "evidence"),
       invocations: path.join(directory, "invocations"),
     };

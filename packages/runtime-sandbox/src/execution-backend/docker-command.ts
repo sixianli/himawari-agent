@@ -9,7 +9,11 @@ export interface DockerCommandResult {
 
 export type DockerCommand = (
   args: readonly string[],
-  options: { readonly timeoutMs: number; readonly maxOutputBytes: number },
+  options: {
+    readonly timeoutMs: number;
+    readonly maxOutputBytes: number;
+    readonly environment?: Readonly<Record<string, string>>;
+  },
 ) => Promise<DockerCommandResult>;
 
 export class DockerCommandTimeout extends Error {
@@ -28,9 +32,9 @@ const REDIRECTING_VARIABLES = [
 ];
 
 export function dockerCli(executable: string, globalArgs: readonly string[]): DockerCommand {
-  return (args, { timeoutMs, maxOutputBytes }) =>
+  return (args, { timeoutMs, maxOutputBytes, environment }) =>
     new Promise((resolve, reject) => {
-      const env = { ...process.env };
+      const env = { ...process.env, ...environment };
       for (const name of REDIRECTING_VARIABLES) delete env[name];
       const child = spawn(executable, [...globalArgs, ...args], {
         env,
