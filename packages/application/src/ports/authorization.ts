@@ -89,9 +89,8 @@ export interface PermissionPolicyRule {
 
 /** Host-owned review outcome. It reports what the coordinator durably committed; it is never an
  * execution grant, and "alternative" carries untrusted text that can only seed a new request.
- * A coordinator that only persists its decision may resolve without a value; absence is never
- * an approval, so `void` stays part of the union for those existing implementations. */
-// biome-ignore lint/suspicious/noConfusingVoidType: absence of an outcome is meaningful here.
+ * A coordinator that only persists its decision may resolve to `undefined`; absence is never
+ * an approval. */
 export type AutomaticReviewOutcome =
   | { readonly decision: "approve" | "deny" | "human" }
   | {

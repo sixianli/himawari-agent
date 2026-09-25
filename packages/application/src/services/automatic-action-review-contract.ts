@@ -70,7 +70,10 @@ export function parseAutomaticReviewDecision(
   const confidence = record["confidence"];
   if (
     confidence !== undefined &&
-    (typeof confidence !== "number" || !Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+    (typeof confidence !== "number" ||
+      !Number.isFinite(confidence) ||
+      confidence < 0 ||
+      confidence > 1)
   )
     return invalid();
   const identity = {
