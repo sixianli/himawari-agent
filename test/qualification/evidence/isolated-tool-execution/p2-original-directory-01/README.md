@@ -201,6 +201,10 @@ HIMAWARI_CONTAINER_QUALIFICATION=1 HIMAWARI_CONTAINER_DOCKER_CLI=$(command -v do
 | `npm ci --offline`，Hermes | 成功，没有下载（`hermes-linux/npm-ci-offline.log`） |
 | `npm run typecheck`；改动文件的 `biome format` 与 `biome lint --error-on-warnings` | 通过；lint 只有 `useLiteralKeys` 提示，这是 `noPropertyAccessFromIndexSignature` 要求的写法 |
 
+`npm run check:boundaries`、`check:ci-policy`、`check:v0.2-coverage`、`check:v0.2-invariants`、`check:secrets` 和文档治理的 `validate_docs.py --strict` 在提交前逐项运行，均通过。本批没有改动测试登记，所以 `check:ci-policy` 在提交前就能通过。两份操作手册（Hermes 升级、安装启停）登记了 `packages/runtime-sandbox/src` 作为合同来源，本批改动让它们的摘要失效。核对后确认：新代码还没有接进任何安装或启停步骤，两份手册的正文仍然准确，因此重新登记了摘要。
+
+**正式的 `npm test`**：提交 `012a3de` 之后在本机沙箱外运行 `npm test`（`scripts/ci/local.mjs --check test`），按 `012a3de` 打安装包后运行全部测试项目。构建和测试两步都通过：contracts 355 项、unit 1996 项（比上一批多 13 项，正好是本批新增的单元测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-012a3de.tar.gz`](npm-test-012a3de.tar.gz)，包括各项目的 JSON、JUnit 和日志、运行上下文和安装包的 SHA-256；安装包本身没有保存。本批没有运行覆盖率检查。[第一批](../p2-container-lifecycle-01/README.md#verification)在这台 Mac 上运行时，有与本批无关的 tooling 测试失败，检查没能给出正式结论；这些失败本批没有重新确认，所以本批也没有覆盖率结论。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)（用 `tar -xzf raw-logs.tar.gz` 解开）。
 
 [↑ 返回目录](#contents)
