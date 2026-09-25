@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -15,7 +14,27 @@ import {
   ContainerBackendError,
   type ContainerBackendErrorCode,
 } from "./container-backend-error.ts";
+import {
+  type Container,
+  canonical,
+  effectiveMounts,
+  expectedMounts,
+  hasStopped,
+  mountArguments,
+  NEVER,
+  parseJson,
+  readJson,
+  sha256,
+  writeOnce,
+} from "./container-records.ts";
 import { type DockerCommand, DockerCommandTimeout } from "./docker-command.ts";
+import {
+  ContainerEgress,
+  type ContainerEgressOptions,
+  type EgressRecord,
+  egressNames,
+  egressProxyUrl,
+} from "./egress-proxy.ts";
 import {
   type ContainerMount,
   type HostDirectoryCapability,
@@ -36,9 +55,7 @@ const TASK_ENVIRONMENT = [
   "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 ];
 const LABEL = "io.himawari.environment.";
-const NEVER = "0001-01-01T00:00:00Z";
 const INSPECT_OUTPUT_BYTES = 4 * 1024 * 1024;
-const STOPPED_STATUSES = new Set(["exited", "created", "dead"]);
 
 export const CONTAINER_RUNNER_DIGEST = sha256(
   canonical({
@@ -46,7 +63,6 @@ export const CONTAINER_RUNNER_DIGEST = sha256(
     task: { environment: TASK_ENVIRONMENT, workdir: TASK_WORKDIR },
   }),
 );
-const GUARANTEES = TASK_ENVIRONMENT_GUARANTEES.filter((item) => item !== "task-egress-policy.v1");
 
 export { ContainerBackendError, type ContainerBackendErrorCode };
 
@@ -73,6 +89,7 @@ export interface ContainerExecutionBackendOptions {
     readonly intervalMs: number;
     readonly freeBytes: (directory: string) => Promise<number>;
   };
+  readonly egress: ContainerEgressOptions;
 }
 
 interface DiskGuardRecord {
@@ -103,31 +120,6 @@ interface EnvironmentTarget {
   readonly locator: ExecutionEnvironmentLocator | null;
 }
 
-interface Container {
-  readonly Id: string;
-  readonly Name: string;
-  readonly Image: string;
-  readonly Config: {
-    readonly User: string;
-    readonly Labels: Record<string, string> | null;
-    readonly Entrypoint: readonly string[] | null;
-    readonly Cmd: readonly string[] | null;
-  };
-  readonly HostConfig: Record<string, unknown> & {
-    readonly RestartPolicy?: { readonly Name?: string };
-    readonly LogConfig?: { readonly Type?: string };
-  };
-  readonly State: {
-    readonly Status: string;
-    readonly Running: boolean;
-    readonly Paused: boolean;
-    readonly Restarting: boolean;
-    readonly StartedAt: string;
-  };
-  readonly RestartCount: number;
-  readonly Mounts: readonly unknown[] | null;
-}
-
 type Observation =
   | { readonly kind: "unavailable"; readonly cause: unknown }
   | { readonly kind: "foreign" }
@@ -153,9 +145,19 @@ interface DestroyedRecord {
 export class ContainerExecutionBackend {
   private readonly options: ContainerExecutionBackendOptions;
   private readonly diskWatches = new Map<string, NodeJS.Timeout>();
+  private readonly egress: ContainerEgress;
 
   constructor(options: ContainerExecutionBackendOptions) {
     this.options = options;
+    this.egress = new ContainerEgress(options.egress, {
+      stateDirectory: options.stateDirectory,
+      stopGraceSeconds: options.stopGraceSeconds,
+      command: (args) => this.command(args),
+      inspectContainer: (nameOrId) => this.inspectContainer(nameOrId),
+      pinnedImageId: (image) => this.pinnedImageId(image),
+      remove: (containerId) => this.remove(containerId),
+      kill: (containerId) => this.kill(containerId),
+    });
   }
 
   async capabilities(): Promise<ExecutionBackendCapabilities> {
@@ -165,12 +167,13 @@ export class ContainerExecutionBackend {
       !daemon.securityOptions.some((option) => option.startsWith("name=seccomp"))
     )
       throw new ContainerBackendError("CONTAINER_POLICY_UNSUPPORTED");
-    await this.pinnedImageId();
+    await this.pinnedImageId(this.options.image);
+    await this.egress.imageId();
     return {
       protocolVersion: EXECUTION_BACKEND_PROTOCOL_V1,
       backendRef: this.options.backendRef,
       runtimeInstanceId: daemon.id,
-      guarantees: GUARANTEES,
+      guarantees: TASK_ENVIRONMENT_GUARANTEES,
       checkedAt: this.now(),
     };
   }
@@ -188,8 +191,6 @@ export class ContainerExecutionBackend {
       throw new ContainerBackendError("CONTAINER_IMAGE_UNQUALIFIED");
     if (input.runnerDigest !== CONTAINER_RUNNER_DIGEST)
       throw new ContainerBackendError("CONTAINER_RUNNER_UNQUALIFIED");
-    if (input.envelope.network.length > 0)
-      throw new ContainerBackendError("CONTAINER_POLICY_UNSUPPORTED");
     const deadlineMs = Date.parse(input.deadlineAt);
     if (deadlineMs - this.options.now().getTime() <= 1000)
       throw new ContainerBackendError("CONTAINER_DEADLINE_PASSED");
@@ -204,14 +205,31 @@ export class ContainerExecutionBackend {
     });
     const taskUser = this.taskUser(directories);
     await this.admitDisk(files, directories);
+    const egressRecord =
+      input.envelope.network.length > 0
+        ? await this.egress.record(
+            files,
+            input.envelope.network.map((item) => item.target),
+          )
+        : null;
     const daemon = await this.daemon();
-    const imageId = await this.pinnedImageId();
+    const imageId = await this.pinnedImageId(this.options.image);
+    const route = egressRecord
+      ? await this.egress.prepare({
+          files,
+          record: egressRecord,
+          labels: this.identityLabels(input.identity, input.createIntentId),
+          deadlineEpoch: Math.floor(deadlineMs / 1000),
+          closed: async () => (await readJson(files.stop)) !== null,
+        })
+      : null;
     const expected = this.expectedPolicy(
       input.envelope,
       imageId,
       Math.floor(deadlineMs / 1000),
       directories.mounts,
       taskUser,
+      route,
     );
     const name = containerName(input.identity);
     let container = await this.inspectContainer(name);
@@ -227,7 +245,7 @@ export class ContainerExecutionBackend {
       const created = await this.command([
         "container",
         "create",
-        ...this.createArguments(input, name, expected, directories.mounts, taskUser),
+        ...this.createArguments(input, name, expected, directories.mounts, taskUser, route),
       ]);
       if (created.exitCode !== 0)
         throw new ContainerBackendError(
@@ -293,6 +311,12 @@ export class ContainerExecutionBackend {
       throw new ContainerBackendError("CONTAINER_NOT_RUNNING");
     const taskUser = container.Config.Labels?.[`${LABEL}task-user`];
     if (!taskUser) throw new ContainerBackendError("CONTAINER_POLICY_MISMATCH");
+    const egressRecord = await readJson<EgressRecord>(files.egress);
+    const proxyEnvironment = egressRecord
+      ? ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
+          .map((variable) => `${variable}=${egressProxyUrl(egressRecord)}`)
+          .concat(["NO_PROXY=", "no_proxy="])
+      : [];
     const { argv } = await this.options.readArguments(input.argumentsRef);
     if (
       !Array.isArray(argv) ||
@@ -313,7 +337,7 @@ export class ContainerExecutionBackend {
           taskUser,
           "--workdir",
           TASK_WORKDIR,
-          ...TASK_ENVIRONMENT.flatMap((variable) => ["--env", variable]),
+          ...[...TASK_ENVIRONMENT, ...proxyEnvironment].flatMap((variable) => ["--env", variable]),
           container.Id,
           ...argv,
         ],
@@ -372,9 +396,12 @@ export class ContainerExecutionBackend {
     if (observation.kind === "missing") return { state: "not_found", locator: null, observedAt };
     if (observation.kind !== "found") return { state: "unknown", locator: null, observedAt };
     const { container, locator } = observation;
-    if (container.State.Running) return { state: "running", locator, observedAt };
+    const files = await this.files(input.identity);
+    const egress = (await readJson(files.egress)) !== null;
+    if (container.State.Running || (egress && (await this.egress.running(files))))
+      return { state: "running", locator, observedAt };
     return {
-      state: isStopped(container) ? "stopped" : "unknown",
+      state: isStopped(container, this.networkMode(files.key, egress)) ? "stopped" : "unknown",
       locator,
       observedAt,
     };
@@ -386,6 +413,7 @@ export class ContainerExecutionBackend {
     const files = await this.files(input.identity);
     this.unwatchDisk(files.key);
     await writeOnce(files.stop, { stopIntentId: input.stopIntentId, stopFence: input.stopFence });
+    if (await readJson(files.egress)) await this.egress.stop(files);
     const observation = await this.observe(input);
     if (observation.kind === "missing") return { accepted: true };
     if (observation.kind !== "found" && observation.kind !== "restarted")
@@ -409,6 +437,15 @@ export class ContainerExecutionBackend {
     if (stop?.stopIntentId !== input.stopIntentId)
       throw new ContainerBackendError("CONTAINER_STOP_NOT_REQUESTED");
     const observation = await this.observe(input);
+    const destroyed = await readJson<DestroyedRecord>(files.destroyed);
+    const egress = (await readJson(files.egress)) !== null;
+    const egressProxy = egress
+      ? await this.egress.stoppedProxy({
+          files,
+          labels: this.identityLabels(input.identity, input.createIntentId),
+          destroyed: destroyed !== null,
+        })
+      : null;
     const checkedAt = this.options.now();
     const proof = {
       identity: input.identity,
@@ -420,7 +457,6 @@ export class ContainerExecutionBackend {
       validUntil: new Date(checkedAt.getTime() + this.options.proofValidityMs).toISOString(),
     };
     if (observation.kind === "missing") {
-      const destroyed = await readJson<DestroyedRecord>(files.destroyed);
       if (
         destroyed &&
         (input.locator === null ||
@@ -439,15 +475,18 @@ export class ContainerExecutionBackend {
         neverStarted: true,
         daemonId: observation.daemonId,
         create: await readJson(files.create),
+        egress: egressProxy,
         stop,
         checkedAt: proof.checkedAt,
       });
       return { basis: "never_created", ...proof, evidence: [evidence] };
     }
     if (observation.kind !== "found") throw refusal(observation);
-    if (!isStopped(observation.container)) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    if (!isStopped(observation.container, this.networkMode(files.key, egress)))
+      throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
     const evidence = await this.saveEvidence(files, {
       container: observation.container,
+      egress: egressProxy,
       daemonId: observation.daemonId,
       stop,
       checkedAt: proof.checkedAt,
@@ -470,15 +509,27 @@ export class ContainerExecutionBackend {
     const stop = await readJson<StopRecord>(files.stop);
     if (!stop) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
     this.unwatchDisk(files.key);
+    const egress = (await readJson(files.egress)) !== null;
     const observation = await this.observe(input);
     if (observation.kind === "missing") {
-      if (await readJson(files.destroyed)) return;
-      throw new ContainerBackendError("CONTAINER_STOP_UNVERIFIED");
+      if (!(await readJson(files.destroyed)))
+        throw new ContainerBackendError("CONTAINER_STOP_UNVERIFIED");
+      if (egress) await this.egress.destroy(files);
+      return;
     }
     if (observation.kind !== "found") throw refusal(observation);
-    if (!isStopped(observation.container)) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    if (!isStopped(observation.container, this.networkMode(files.key, egress)))
+      throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    const egressProxy = egress
+      ? await this.egress.stoppedProxy({
+          files,
+          labels: this.identityLabels(input.identity, input.createIntentId),
+          destroyed: false,
+        })
+      : null;
     const evidence = await this.saveEvidence(files, {
       container: observation.container,
+      egress: egressProxy,
       daemonId: observation.daemonId,
       stop,
       destroyed: true,
@@ -486,6 +537,11 @@ export class ContainerExecutionBackend {
     });
     await writeOnce(files.destroyed, { locator: observation.locator, evidence });
     await this.remove(observation.container.Id);
+    if (egress) await this.egress.destroy(files);
+  }
+
+  private networkMode(key: string, egress: boolean) {
+    return egress ? egressNames(key).network : "none";
   }
 
   private async observe(target: EnvironmentTarget): Promise<Observation> {
@@ -562,6 +618,7 @@ export class ContainerExecutionBackend {
     expected: ReturnType<ContainerExecutionBackend["expectedPolicy"]>,
     mounts: readonly ContainerMount[],
     taskUser: string,
+    route: { readonly network: string; readonly proxyId: string } | null,
   ) {
     const labels = {
       ...this.identityLabels(input.identity, input.createIntentId),
@@ -570,6 +627,7 @@ export class ContainerExecutionBackend {
       [`${LABEL}runner-digest`]: input.runnerDigest,
       [`${LABEL}deadline`]: input.deadlineAt,
       [`${LABEL}task-user`]: taskUser,
+      ...(route ? { [`${LABEL}egress-proxy`]: route.proxyId } : {}),
     };
     return [
       "--name",
@@ -583,7 +641,7 @@ export class ContainerExecutionBackend {
       "--security-opt",
       "no-new-privileges=true",
       "--network",
-      "none",
+      expected.networkMode,
       "--restart",
       "no",
       "--pull",
@@ -600,10 +658,7 @@ export class ContainerExecutionBackend {
       "private",
       "--tmpfs",
       `${TASK_WORKDIR}:${expected.tmpfs[TASK_WORKDIR]}`,
-      ...mounts.flatMap((mount) => [
-        "--mount",
-        `type=bind,source=${mount.source},target=${mount.target}${mount.readOnly ? ",readonly" : ""}`,
-      ]),
+      ...mountArguments(mounts),
       "--stop-timeout",
       String(this.options.stopGraceSeconds),
       "--log-driver",
@@ -625,11 +680,13 @@ export class ContainerExecutionBackend {
     deadlineEpoch: number,
     mounts: readonly ContainerMount[],
     taskUser: string,
+    route: { readonly network: string; readonly proxyId: string } | null,
   ) {
     const { resources } = envelope;
     return {
       user: this.options.initUser,
       taskUser,
+      egressProxy: route?.proxyId ?? null,
       image: imageId,
       entrypoint: ["/bin/sh"],
       cmd: ["-c", INIT_SCRIPT, INIT_NAME, String(deadlineEpoch)],
@@ -637,7 +694,7 @@ export class ContainerExecutionBackend {
       capDrop: ["ALL"],
       capAdd: null,
       securityOpt: ["no-new-privileges=true"],
-      networkMode: "none",
+      networkMode: route?.network ?? "none",
       privileged: false,
       restartPolicy: "no",
       pidsLimit: resources.maxProcesses,
@@ -648,21 +705,7 @@ export class ContainerExecutionBackend {
         [TASK_WORKDIR]: `rw,nosuid,nodev,size=${resources.privateStorageBytes},mode=1777`,
       },
       binds: null,
-      hostMounts: mounts.map((mount) => ({
-        type: "bind",
-        source: mount.source,
-        target: mount.target,
-        readOnly: mount.readOnly,
-        rest: {},
-      })),
-      mounts: mounts.map((mount) => ({
-        type: "bind",
-        source: mount.source,
-        destination: mount.target,
-        mode: "",
-        rw: !mount.readOnly,
-        propagation: "rprivate",
-      })),
+      ...expectedMounts(mounts),
       devices: [],
       pidMode: "",
       ipcMode: "private",
@@ -699,8 +742,8 @@ export class ContainerExecutionBackend {
     };
   }
 
-  private async pinnedImageId() {
-    const { reference, digest } = this.options.image;
+  private async pinnedImageId(pinned: { readonly reference: string; readonly digest: string }) {
+    const { reference, digest } = pinned;
     const result = await this.command([
       "image",
       "inspect",
@@ -779,6 +822,9 @@ export class ContainerExecutionBackend {
       destroyed: path.join(directory, "destroyed.json"),
       diskGuard: path.join(directory, "disk-guard.json"),
       diskBreach: path.join(directory, "disk-breach.json"),
+      egress: path.join(directory, "egress.json"),
+      egressStartIntent: path.join(directory, "egress-start-intent.json"),
+      egressStarted: path.join(directory, "egress-started.json"),
       evidence: path.join(directory, "evidence"),
       invocations: path.join(directory, "invocations"),
     };
@@ -847,7 +893,9 @@ export class ContainerExecutionBackend {
         observedAt: this.now(),
       });
     }
-    return (await this.kill(containerId)) ? "settled" : "retry";
+    const killed = await this.kill(containerId);
+    const proxyKilled = (await readJson(files.egress)) ? await this.egress.kill(files) : true;
+    return killed && proxyKilled ? "settled" : "retry";
   }
 
   private async observeDisk(guard: DiskGuardRecord) {
@@ -909,15 +957,8 @@ function refusal(observation: Exclude<Observation, { readonly kind: "found" }>) 
   return new ContainerBackendError("CONTAINER_IDENTITY_CONFLICT");
 }
 
-function isStopped(container: Container) {
-  return (
-    !container.State.Running &&
-    !container.State.Paused &&
-    !container.State.Restarting &&
-    STOPPED_STATUSES.has(container.State.Status) &&
-    container.HostConfig.RestartPolicy?.Name === "no" &&
-    container.HostConfig["NetworkMode"] === "none"
-  );
+function isStopped(container: Container, networkMode: string) {
+  return hasStopped(container) && container.HostConfig["NetworkMode"] === networkMode;
 }
 
 function effectivePolicy(container: Container) {
@@ -925,6 +966,7 @@ function effectivePolicy(container: Container) {
   return {
     user: container.Config.User,
     taskUser: container.Config.Labels?.[`${LABEL}task-user`] ?? null,
+    egressProxy: container.Config.Labels?.[`${LABEL}egress-proxy`] ?? null,
     image: container.Image,
     entrypoint: container.Config.Entrypoint,
     cmd: container.Config.Cmd,
@@ -941,25 +983,7 @@ function effectivePolicy(container: Container) {
     nanoCpus: host["NanoCpus"],
     tmpfs: host["Tmpfs"],
     binds: host["Binds"] ?? null,
-    hostMounts: records(host["Mounts"])
-      .map(({ Type, Source, Target, ReadOnly, ...rest }) => ({
-        type: Type,
-        source: Source,
-        target: Target,
-        readOnly: ReadOnly === true,
-        rest,
-      }))
-      .sort((a, b) => compareText(String(a.target), String(b.target))),
-    mounts: records(container.Mounts)
-      .map((mount) => ({
-        type: mount["Type"],
-        source: mount["Source"],
-        destination: mount["Destination"],
-        mode: mount["Mode"],
-        rw: mount["RW"],
-        propagation: mount["Propagation"],
-      }))
-      .sort((a, b) => compareText(String(a.destination), String(b.destination))),
+    ...effectiveMounts(container),
     devices: host["Devices"] ?? [],
     pidMode: host["PidMode"],
     ipcMode: host["IpcMode"],
@@ -968,69 +992,10 @@ function effectivePolicy(container: Container) {
   };
 }
 
-function records(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is Record<string, unknown> =>
-          item !== null && typeof item === "object" && !Array.isArray(item),
-      )
-    : [];
-}
-
-function compareText(left: string, right: string) {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function containerName(identity: ExecutionEnvironmentIdentity) {
   return `himawari-env-${environmentKey(identity)}`;
 }
 
 function environmentKey(identity: ExecutionEnvironmentIdentity) {
   return sha256(`${identity.ownerId}\n${identity.agentId}\n${identity.environmentId}`).slice(0, 32);
-}
-
-async function writeOnce<T extends object>(file: string, value: T): Promise<T> {
-  try {
-    await writeFile(file, `${JSON.stringify(value)}\n`, { flag: "wx" });
-    return value;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const existing = await readJson<T>(file);
-    if (!existing) throw error;
-    return existing;
-  }
-}
-
-async function readJson<T = Record<string, unknown>>(file: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as T;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-function parseJson(text: string): Record<string, unknown> | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    return value !== null && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object")
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`)
-      .join(",")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
-function sha256(text: string) {
-  return createHash("sha256").update(text).digest("hex");
 }

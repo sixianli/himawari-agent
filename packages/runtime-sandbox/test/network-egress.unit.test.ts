@@ -85,6 +85,32 @@ describe("per-job public network egress", () => {
       await proxy.close();
     }
   });
+  it("listens on a configured address with a caller-provided token", async () => {
+    const token = "a".repeat(64);
+    const probe = await openNetworkEgress(["example.com:80"], async () => {});
+    const port = Number(new URL(probe.parentProxy.http).port);
+    await probe.close();
+    const proxy = await openNetworkEgress(["example.com:80"], async () => {}, {
+      host: "127.0.0.1",
+      port,
+      token,
+    });
+    try {
+      expect(proxy.parentProxy.http).toBe(`http://job:${token}@127.0.0.1:${port}`);
+      expect((await get(proxy, "http://example.com:81/")).status).toBe(403);
+      const wrong = { parentProxy: { http: `http://job:${"b".repeat(64)}@127.0.0.1:${port}` } };
+      expect((await get(wrong as typeof proxy, "http://example.com/")).status).toBe(407);
+    } finally {
+      await proxy.close();
+    }
+    await expect(
+      openNetworkEgress(["example.com:80"], async () => {}, {
+        host: "127.0.0.1",
+        port,
+        token: "short",
+      }),
+    ).rejects.toThrow("EGRESS_TOKEN_INVALID");
+  });
   it("rejects mixed public/private answers before connecting", async () => {
     lookup.mockResolvedValue([
       { address: "8.8.8.8", family: 4 },

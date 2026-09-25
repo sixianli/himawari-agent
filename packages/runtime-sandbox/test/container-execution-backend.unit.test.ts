@@ -33,6 +33,8 @@ import {
 
 const IMAGE_DIGEST = "bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e";
 const IMAGE_REFERENCE = "docker.io/library/busybox";
+const EGRESS_IMAGE_DIGEST = "e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd";
+const EGRESS_IMAGE_REFERENCE = "docker.io/library/node";
 const identity = {
   schemaVersion: EXECUTION_ENVIRONMENT_V1,
   ownerId: "owner-1",
@@ -72,7 +74,9 @@ interface FakeContainer {
     Entrypoint: string[];
     Cmd: string[];
     Image: string;
+    Env: string[];
   };
+  NetworkSettings: { Networks: Record<string, { Aliases: string[] | null }> };
   HostConfig: Record<string, unknown>;
   State: {
     Status: string;
@@ -93,7 +97,13 @@ class FakeDocker {
   reachable = true;
   cgroupVersion = "2";
   repoDigests = [`busybox@sha256:${IMAGE_DIGEST}`];
+  egressRepoDigests = [`node@sha256:${EGRESS_IMAGE_DIGEST}`];
   readonly containers = new Map<string, FakeContainer>();
+  readonly networks = new Map<string, Record<string, unknown>>();
+  tamperNetwork: (network: Record<string, unknown>) => void = () => {};
+  execHandler: (container: FakeContainer, args: readonly string[]) => number | null = (
+    container,
+  ) => (container.Name.startsWith("/himawari-egress-") ? 0 : null);
   readonly calls: string[][] = [];
   readonly execs: string[][] = [];
   tamper: (container: FakeContainer) => void = () => {};
@@ -126,8 +136,16 @@ class FakeDocker {
           SecurityOptions: ["name=seccomp,profile=builtin", "name=cgroupns"],
         }),
       );
-    if (group === "image" && command === "inspect")
-      return this.ok(JSON.stringify({ Id: "sha256:image-id", RepoDigests: this.repoDigests }));
+    if (group === "image" && command === "inspect") {
+      const egress = (args.at(-1) ?? "").startsWith(EGRESS_IMAGE_REFERENCE);
+      return this.ok(
+        JSON.stringify({
+          Id: egress ? "sha256:egress-image-id" : "sha256:image-id",
+          RepoDigests: egress ? this.egressRepoDigests : this.repoDigests,
+        }),
+      );
+    }
+    if (group === "network") return this.network(args);
     if (group !== "container") throw new Error(`unexpected docker command ${args.join(" ")}`);
     const target = args.at(-1) ?? "";
     if (command === "inspect") {
@@ -230,10 +248,14 @@ class FakeDocker {
         stderr: "Conflict. The container name is already in use",
         truncated: false,
       };
+    const image = args[index] ?? "";
+    const network = one("--network") ?? "bridge";
     const container: FakeContainer = {
       Id: `container-${++this.sequence}`.padEnd(64, "0"),
       Name: `/${name}`,
-      Image: "sha256:image-id",
+      Image: image.startsWith(EGRESS_IMAGE_REFERENCE)
+        ? "sha256:egress-image-id"
+        : "sha256:image-id",
       Config: {
         User: one("--user") ?? "",
         Labels: Object.fromEntries(
@@ -244,14 +266,16 @@ class FakeDocker {
         ),
         Entrypoint: [one("--entrypoint") ?? ""],
         Cmd: args.slice(index + 1),
-        Image: args[index] ?? "",
+        Image: image,
+        Env: [...(values.get("--env") ?? []), "PATH=/usr/local/bin:/usr/bin:/bin"],
       },
+      NetworkSettings: { Networks: network === "none" ? {} : { [network]: { Aliases: null } } },
       HostConfig: {
         ReadonlyRootfs: readOnly,
         CapDrop: values.get("--cap-drop") ?? null,
         CapAdd: null,
         SecurityOpt: values.get("--security-opt") ?? null,
-        NetworkMode: one("--network") ?? "bridge",
+        NetworkMode: network,
         Privileged: false,
         RestartPolicy: { Name: one("--restart") ?? "no", MaximumRetryCount: 0 },
         PidsLimit: Number(one("--pids-limit")),
@@ -312,9 +336,67 @@ class FakeDocker {
     if (!container) return this.missing(args[index] ?? "");
     if (!container.State.Running || container.State.Paused)
       return { exitCode: 1, stdout: "", stderr: "container is not running", truncated: false };
+    const handled = this.execHandler(container, args);
+    if (handled !== null) return { exitCode: handled, stdout: "", stderr: "", truncated: false };
     if (this.execTimeout) throw new DockerCommandTimeout();
     this.execs.push([...args]);
     return this.execResult;
+  }
+  private network(args: readonly string[]) {
+    const [, command] = args;
+    const name = args.at(-1) ?? "";
+    if (command === "create") {
+      const labels: Record<string, string> = {};
+      const options: Record<string, string> = {};
+      let internal = false;
+      for (let index = 2; index < args.length - 1; index++) {
+        const flag = args[index];
+        if (flag === "--internal") internal = true;
+        else if (flag === "--opt" || flag === "--label") {
+          const value = args[++index] ?? "";
+          const target = flag === "--opt" ? options : labels;
+          target[value.slice(0, value.indexOf("="))] = value.slice(value.indexOf("=") + 1);
+        }
+      }
+      const network = {
+        Name: name,
+        Id: `network-${++this.sequence}`,
+        Driver: "bridge",
+        Internal: internal,
+        EnableIPv6: false,
+        Options: options,
+        Labels: labels,
+      };
+      this.tamperNetwork(network);
+      this.networks.set(name, network);
+      return this.ok(network.Id);
+    }
+    if (command === "inspect") {
+      const network = this.networks.get(name);
+      return network
+        ? this.ok(JSON.stringify(network))
+        : { exitCode: 1, stdout: "", stderr: `Error: network ${name} not found`, truncated: false };
+    }
+    if (command === "connect") {
+      const alias = args[args.indexOf("--alias") + 1] ?? "";
+      const container = this.find(name);
+      const network = args.at(-2) ?? "";
+      if (!container || !this.networks.has(network)) return this.missing(name);
+      container.NetworkSettings.Networks[network] = { Aliases: [alias] };
+      return this.ok("");
+    }
+    if (command === "rm") {
+      if ([...this.containers.values()].some((item) => name in item.NetworkSettings.Networks))
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "network has active endpoints",
+          truncated: false,
+        };
+      this.networks.delete(name);
+      return this.ok(name);
+    }
+    throw new Error(`unexpected network command ${command}`);
   }
   private ok(stdout: string) {
     return { exitCode: 0, stdout, stderr: "", truncated: false };
@@ -362,6 +444,12 @@ function backend(
     },
     resolveDirectory: async (directory) => roots.get(directory.canonicalRootId) ?? null,
     hostDirectories: { maxScannedEntries: 200, maxProtectedEntries: 8 },
+    egress: {
+      image: { reference: EGRESS_IMAGE_REFERENCE, digest: EGRESS_IMAGE_DIGEST },
+      user: "65533:65533",
+      readyAttempts: 3,
+      readyIntervalMs: 1,
+    },
     diskGuard: {
       minFreeBytes: 1000,
       maxGrowthBytes: 500,
@@ -438,7 +526,7 @@ afterEach(async () => {
 });
 
 describe("container execution backend capabilities", () => {
-  it("declares lifecycle guarantees without task egress, bound to the daemon and pinned image", async () => {
+  it("declares lifecycle and task egress guarantees, bound to the daemon and pinned images", async () => {
     const capabilities = executionBackendCapabilitiesSchema.parse(await backend().capabilities());
     expect(capabilities).toMatchObject({
       backendRef: "container-docker:host-1",
@@ -452,8 +540,13 @@ describe("container execution backend capabilities", () => {
         "no-automatic-restart.v1",
         "protected-init-wall-clock-deadline.v1",
         "enforced-resource-limits.v1",
+        "task-egress-policy.v1",
       ].sort(),
     );
+    docker.egressRepoDigests = [`node@sha256:${"c".repeat(64)}`];
+    await expect(backend().capabilities()).rejects.toMatchObject({
+      code: "CONTAINER_IMAGE_UNQUALIFIED",
+    });
   });
 
   it("refuses an unreachable daemon, a missing pinned image and a daemon without cgroup v2", async () => {
@@ -538,10 +631,6 @@ describe("creating a container environment", () => {
           },
         },
         "CONTAINER_DIRECTORY_UNRESOLVED",
-      ],
-      [
-        { envelope: { ...envelope, network: [{ target: "registry.npmjs.org:443", source }] } },
-        "CONTAINER_POLICY_UNSUPPORTED",
       ],
       [{ imageDigest: "c".repeat(64) }, "CONTAINER_IMAGE_UNQUALIFIED"],
       [{ runnerDigest: "c".repeat(64) }, "CONTAINER_RUNNER_UNQUALIFIED"],
@@ -937,6 +1026,203 @@ describe("protecting the host disk behind writable directories", () => {
       consumedBytes: 1_000,
     });
     await first.stop(stopRequest(locator));
+  });
+});
+
+describe("routing task network access through a per-environment egress proxy", () => {
+  const withNetwork = {
+    envelope: { ...envelope, network: [{ target: "registry.npmjs.org:443", source }] },
+  };
+  const named = (prefix: string) => {
+    const container = [...docker.containers.values()].find((item) =>
+      item.Name.startsWith(`/${prefix}`),
+    );
+    if (!container) throw new Error(`no ${prefix} container`);
+    return container;
+  };
+  const request = { identity, createIntentId: "create-1" };
+  const callIndex = (command: string, target: string) =>
+    docker.calls.findIndex((call) => call[1] === command && call.at(-1) === target);
+
+  it("isolates the task on an internal network whose only route is a started, ready proxy", async () => {
+    const subject = backend();
+    const locator = await subject.create(createInput(withNetwork));
+    const [network] = [...docker.networks.values()];
+    expect(network).toMatchObject({
+      Internal: true,
+      EnableIPv6: false,
+      Options: { "com.docker.network.bridge.inhibit_ipv4": "true" },
+      Labels: { "io.himawari.environment.id": "environment-1" },
+    });
+    const networkName = String(network?.["Name"]);
+    const proxy = named("himawari-egress-");
+    const task = named("himawari-env-");
+    expect(proxy.Config.User).toBe("65533:65533");
+    expect(proxy.Image).toBe("sha256:egress-image-id");
+    expect(proxy.Config.Entrypoint).toEqual(["node"]);
+    expect(proxy.Config.Cmd).toEqual([
+      "/egress/egress-proxy-main.ts",
+      String(Date.parse("2026-09-25T11:00:00.000Z") / 1000),
+      "3128",
+    ]);
+    expect(proxy.Config.Env).toContain("HIMAWARI_EGRESS_TARGETS=registry.npmjs.org:443");
+    expect(proxy.HostConfig).toMatchObject({
+      ReadonlyRootfs: true,
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges=true"],
+      NetworkMode: "bridge",
+      RestartPolicy: { Name: "no" },
+      Mounts: [{ Type: "bind", Target: "/egress", ReadOnly: true }],
+    });
+    expect(proxy.NetworkSettings.Networks[networkName]?.Aliases).toEqual(["himawari-egress"]);
+    expect(proxy.State.Running).toBe(true);
+    expect(task.HostConfig["NetworkMode"]).toBe(networkName);
+    expect(Object.keys(task.NetworkSettings.Networks)).toEqual([networkName]);
+    expect(callIndex("start", proxy.Id)).toBeLessThan(
+      docker.calls.findIndex(
+        (call) => call[0] === "container" && call[1] === "create" && call.includes(networkName),
+      ),
+    );
+    expect(docker.execs.some((call) => call.includes(proxy.Id))).toBe(false);
+
+    argumentsByRef.set("arguments-1", { argv: ["true"] });
+    await subject.execute({
+      ...request,
+      locator,
+      stopFence: 0,
+      invocationId: "invocation-1",
+      argumentsRef: "arguments-1",
+      deadlineAt: "2026-09-25T10:30:00.000Z",
+    });
+    const exec = docker.execs[0] ?? [];
+    const proxyUrl = exec
+      .find((item) => item.startsWith("HTTPS_PROXY="))
+      ?.slice("HTTPS_PROXY=".length);
+    expect(proxyUrl).toMatch(/^http:\/\/job:[a-f0-9]{64}@himawari-egress:3128$/);
+    for (const variable of ["HTTP_PROXY", "http_proxy", "https_proxy"])
+      expect(exec).toContain(`${variable}=${proxyUrl}`);
+    expect(exec).toContain("NO_PROXY=");
+    expect(proxy.Config.Env).toContain(
+      `HIMAWARI_EGRESS_TOKEN=${new URL(proxyUrl ?? "http://x").password}`,
+    );
+  });
+
+  it("refuses a network the runtime did not make internal and host-unreachable", async () => {
+    for (const tamper of [
+      (network: Record<string, unknown>) => {
+        network["Internal"] = false;
+      },
+      (network: Record<string, unknown>) => {
+        network["Options"] = {};
+      },
+    ]) {
+      docker = new FakeDocker();
+      docker.tamperNetwork = tamper;
+      await expect(backend().create(createInput(withNetwork))).rejects.toMatchObject({
+        code: "CONTAINER_POLICY_MISMATCH",
+      });
+      expect(docker.calls.some((call) => call[1] === "start")).toBe(false);
+      expect(
+        [...docker.containers.values()].some((item) => item.Name.startsWith("/himawari-env-")),
+      ).toBe(false);
+    }
+  });
+
+  it("never creates the task when the proxy does not become ready", async () => {
+    docker.execHandler = (container) => (container.Name.startsWith("/himawari-egress-") ? 1 : null);
+    await expect(backend().create(createInput(withNetwork))).rejects.toMatchObject({
+      code: "CONTAINER_EGRESS_UNAVAILABLE",
+    });
+    expect(named("himawari-egress-").State.Running).toBe(false);
+    expect(
+      [...docker.containers.values()].some((item) => item.Name.startsWith("/himawari-env-")),
+    ).toBe(false);
+  });
+
+  it("closes the egress before the task and proves the stop only when both are stopped", async () => {
+    const subject = backend();
+    const locator = await subject.create(createInput(withNetwork));
+    const proxy = named("himawari-egress-");
+    const task = named("himawari-env-");
+    await subject.stop(stopRequest(locator));
+    expect(callIndex("stop", proxy.Id)).toBeGreaterThanOrEqual(0);
+    expect(callIndex("stop", proxy.Id)).toBeLessThan(callIndex("stop", task.Id));
+    const proof = executionEnvironmentStopProofSchema.parse(
+      await subject.verifyStopped(stopRequest(locator)),
+    );
+    expect(proof.basis).toBe("verified_stopped");
+    expect(JSON.parse(await subject.readEvidence(proof.evidence[0]?.ref ?? ""))).toMatchObject({
+      egress: { Id: proxy.Id, State: { Running: false } },
+    });
+
+    docker.start(proxy);
+    expect((await subject.inspect({ ...request, locator })).state).toBe("running");
+    await expect(subject.verifyStopped(stopRequest(locator))).rejects.toMatchObject({
+      code: "CONTAINER_RESTARTED",
+    });
+    docker.exit(proxy);
+    docker.containers.delete(proxy.Id);
+    await expect(subject.verifyStopped(stopRequest(locator))).rejects.toMatchObject({
+      code: "CONTAINER_STOP_UNVERIFIED",
+    });
+  });
+
+  it("destroys the task, proxy and network and keeps proving the stop", async () => {
+    const subject = backend();
+    const locator = await subject.create(createInput(withNetwork));
+    await subject.stop(stopRequest(locator));
+    await subject.destroy({ ...request, locator });
+    await subject.destroy({ ...request, locator });
+    expect(docker.containers.size).toBe(0);
+    expect(docker.networks.size).toBe(0);
+    expect(
+      executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(stopRequest(locator)))
+        .basis,
+    ).toBe("verified_stopped");
+  });
+
+  it("seals the environment when a stop arrives while the egress proxy is prepared", async () => {
+    const subject = backend();
+    docker.afterCreate = async () => {
+      docker.afterCreate = async () => {};
+      await subject.stop(stopRequest(null));
+    };
+    await expect(subject.create(createInput(withNetwork))).rejects.toMatchObject({
+      code: "CONTAINER_EXECUTION_CLOSED",
+    });
+    expect(docker.calls.some((call) => call[1] === "start")).toBe(false);
+    expect(
+      executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(stopRequest(null)))
+        .basis,
+    ).toBe("never_created");
+  });
+
+  it("kills the proxy together with the task when the disk guard trips", async () => {
+    await hostDirectory("repo");
+    let free = 10_000;
+    const subject = backend({
+      diskGuard: {
+        minFreeBytes: 1000,
+        maxGrowthBytes: 500,
+        intervalMs: 10,
+        freeBytes: async () => free,
+      },
+    });
+    const locator = await subject.create(
+      createInput({
+        envelope: {
+          ...withNetwork.envelope,
+          directories: [directory("repo", "write")],
+        },
+      }),
+    );
+    free = 9_000;
+    await vi.waitFor(async () =>
+      expect(await subject.diskGuardBreach({ ...request, locator })).not.toBeNull(),
+    );
+    await vi.waitFor(() => expect(named("himawari-egress-").State.Running).toBe(false));
+    expect(named("himawari-env-").State.Running).toBe(false);
+    await subject.stop(stopRequest(locator));
   });
 });
 

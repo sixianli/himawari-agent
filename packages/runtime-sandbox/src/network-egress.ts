@@ -73,10 +73,16 @@ function endToEnd(headers: IncomingMessage["headers"]) {
 export async function openNetworkEgress(
   allowedDomains: readonly string[],
   assertCurrent: () => Promise<void>,
+  listen: { readonly host: string; readonly port: number; readonly token: string } = {
+    host: "127.0.0.1",
+    port: 0,
+    token: randomBytes(32).toString("hex"),
+  },
 ) {
   if (typeof assertCurrent !== "function") throw new Error("EGRESS_AUTHORITY_REQUIRED");
+  if (!/^[a-f0-9]{64}$/.test(listen.token)) throw new Error("EGRESS_TOKEN_INVALID");
   const allowed = new Set(allowedDomains);
-  const token = randomBytes(32).toString("hex");
+  const token = listen.token;
   const expectedAuth = Buffer.from(`Basic ${Buffer.from(`job:${token}`).toString("base64")}`);
   const sockets = new Set<Socket>();
   let stopped = false;
@@ -216,7 +222,7 @@ export async function openNetworkEgress(
   server.on("clientError", (_error, socket) => socket.destroy());
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(listen.port, listen.host, () => {
       server.removeListener("error", reject);
       resolve();
     });
@@ -256,7 +262,7 @@ export async function openNetworkEgress(
     ]).then(() => {});
     return closing;
   }
-  const url = `http://job:${token}@127.0.0.1:${address.port}`;
+  const url = `http://job:${token}@${listen.host}:${address.port}`;
   return Object.freeze({
     parentProxy: Object.freeze({ http: url, https: url, noProxy: "" }),
     close,

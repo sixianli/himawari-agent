@@ -24,7 +24,8 @@ export type ContainerBackendErrorCode =
   | "CONTAINER_GIT_METADATA_OUTSIDE"
   | "CONTAINER_DISK_GUARD_UNAVAILABLE"
   | "CONTAINER_DISK_FLOOR"
-  | "CONTAINER_DISK_GUARD_TRIPPED";
+  | "CONTAINER_DISK_GUARD_TRIPPED"
+  | "CONTAINER_EGRESS_UNAVAILABLE";
 
 export class ContainerBackendError extends Error {
   readonly code: ContainerBackendErrorCode;

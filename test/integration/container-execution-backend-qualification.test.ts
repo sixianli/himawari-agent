@@ -41,6 +41,8 @@ const evidencePath = process.env["HIMAWARI_CONTAINER_EVIDENCE_PATH"];
 const workRoot = process.env["HIMAWARI_CONTAINER_WORK_ROOT"] ?? os.tmpdir();
 const IMAGE_REFERENCE = "docker.io/library/busybox";
 const IMAGE_DIGEST = "bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e";
+const EGRESS_IMAGE_REFERENCE = "docker.io/library/node";
+const EGRESS_IMAGE_DIGEST = "e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd";
 const RESOURCES = {
   cpuMillicores: 500,
   memoryBytes: 128 * 1024 * 1024,
@@ -85,6 +87,12 @@ function backend(host = dockerHost, overrides: Partial<ContainerExecutionBackend
       return value;
     },
     resolveDirectory: async (directory) => approved.get(directory.canonicalRootId) ?? null,
+    egress: {
+      image: { reference: EGRESS_IMAGE_REFERENCE, digest: EGRESS_IMAGE_DIGEST },
+      user: "65533:65533",
+      readyAttempts: 50,
+      readyIntervalMs: 100,
+    },
     hostDirectories: { maxScannedEntries: 20_000, maxProtectedEntries: 256 },
     diskGuard: { ...DISK_GUARD, freeBytes: hostFreeBytes },
     ...overrides,
@@ -168,7 +176,11 @@ async function containersOfRun() {
   return listed.stdout.split("\n").filter(Boolean);
 }
 
-function environment(deadlineSeconds = 600, directories: ReturnType<typeof grant>[] = []) {
+function environment(
+  deadlineSeconds = 600,
+  directories: ReturnType<typeof grant>[] = [],
+  targets: string[] = [],
+) {
   sequence += 1;
   const identity: ExecutionEnvironmentIdentity = {
     schemaVersion: EXECUTION_ENVIRONMENT_V1,
@@ -193,7 +205,7 @@ function environment(deadlineSeconds = 600, directories: ReturnType<typeof grant
       envelope: {
         schemaVersion: EXECUTION_ENVELOPE_V1,
         directories,
-        network: [],
+        network: targets.map((target) => ({ target, source: grant(target, "read").source })),
         resources: RESOURCES,
       },
       policyDigest: "b".repeat(64),
@@ -263,6 +275,19 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
     const ids = listed.stdout.split("\n").filter(Boolean);
     if (ids.length) await direct("container", "rm", "--force", ...ids);
     observations["leftoverContainersRemoved"] = ids.length;
+    const networks = (
+      await direct(
+        "network",
+        "ls",
+        "--quiet",
+        "--filter",
+        `label=io.himawari.environment.run=${runId}`,
+      )
+    ).stdout
+      .split("\n")
+      .filter(Boolean);
+    if (networks.length) await direct("network", "rm", ...networks);
+    observations["leftoverNetworksRemoved"] = networks.length;
     if (evidencePath)
       await writeFile(evidencePath, `${JSON.stringify({ runId, observations }, null, 2)}\n`);
     await rm(stateDirectory, { recursive: true, force: true });
@@ -272,7 +297,7 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
   it("declares capabilities only for the reachable runtime holding the pinned image", async () => {
     const capabilities = await backend().capabilities();
     observations["capabilities"] = capabilities;
-    expect(capabilities.guarantees).not.toContain("task-egress-policy.v1");
+    expect(capabilities.guarantees).toContain("task-egress-policy.v1");
     expect(capabilities.guarantees).toContain("protected-init-wall-clock-deadline.v1");
     const unreachable = backend("unix:///nonexistent-himawari.sock");
     await expect(unreachable.capabilities()).rejects.toMatchObject({
@@ -865,4 +890,219 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
       await asRoot("rm", "-rf", "/p/root-owned");
     }
   });
+
+  it(
+    "routes only approved public targets through the task egress and blocks every bypass",
+    { timeout: 120_000 },
+    async () => {
+      const connectionsSeen: string[] = [];
+      const listener = createServer((socket) => {
+        connectionsSeen.push(String(socket.remoteAddress));
+        socket.destroy();
+      });
+      await new Promise<void>((resolve) => listener.listen(0, "0.0.0.0", resolve));
+      const hostPort = (listener.address() as { port: number }).port;
+      const hostAddress =
+        Object.values(os.networkInterfaces())
+          .flat()
+          .find((item) => item && item.family === "IPv4" && !item.internal)?.address ?? "";
+      try {
+        const subject = backend();
+        const target = environment(600, [], ["example.com:80", "example.com:443", "localhost:80"]);
+        const locator = await subject.create(target.create);
+        const [network] = (
+          await direct(
+            "network",
+            "ls",
+            "--format",
+            "{{.Name}}",
+            "--filter",
+            `label=io.himawari.environment.id=${target.identity.environmentId}`,
+          )
+        ).stdout
+          .split("\n")
+          .filter(Boolean);
+        const networkInfo = JSON.parse(
+          (await direct("network", "inspect", "--format", "{{json .}}", network ?? "")).stdout,
+        );
+        const subnet = String(networkInfo.IPAM?.Config?.[0]?.Subnet ?? "");
+        const subnetPrefix = `${subnet.slice(0, subnet.lastIndexOf("."))}.`;
+        const hostAddresses = (
+          await direct(
+            "container",
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--label",
+            `io.himawari.environment.run=${runId}`,
+            `${IMAGE_REFERENCE}@sha256:${IMAGE_DIGEST}`,
+            "ip",
+            "-4",
+            "-o",
+            "addr",
+          )
+        ).stdout
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/)[3] ?? "")
+          .filter(Boolean);
+        const facts = lines(
+          (
+            await run(
+              subject,
+              target,
+              locator,
+              [
+                'TOKEN=$(echo "$HTTPS_PROXY" | sed "s#^http://job:\\([a-f0-9]*\\)@.*#\\1#"); AUTH=$(printf "job:%s" "$TOKEN" | base64 | tr -d "\\n")',
+                'connect() { printf "CONNECT %s HTTP/1.1\\r\\nHost: %s\\r\\n%b\\r\\n" "$1" "$1" "$2" | nc -w 10 himawari-egress 3128 2>/dev/null | head -1 | tr -d "\\r"; }',
+                'echo "proxy_variable=$(echo "$HTTP_PROXY" | sed "s/job:[a-f0-9]*@/job:TOKEN@/")"',
+                'echo "allowed_http=$(wget -q -T 15 -O - http://example.com/ 2>/dev/null | grep -c "Example Domain")"',
+                'echo "allowed_connect=$(connect example.com:443 "Proxy-Authorization: Basic $AUTH\\r\\n")"',
+                'echo "unapproved_host=$(connect example.org:443 "Proxy-Authorization: Basic $AUTH\\r\\n")"',
+                'echo "unapproved_port=$(connect example.com:8443 "Proxy-Authorization: Basic $AUTH\\r\\n")"',
+                'echo "private_answer=$( (printf "GET http://localhost/ HTTP/1.1\\r\\nHost: localhost\\r\\nProxy-Authorization: Basic %s\\r\\nConnection: close\\r\\n\\r\\n" "$AUTH"; sleep 3) | nc -w 10 himawari-egress 3128 2>/dev/null | tr -d "\\r" | grep -E "^HTTP/|^X-Himawari-Egress-Error" | tr "\\n" "|")"',
+                'echo "missing_auth=$(connect example.com:443 "")"',
+                'echo "direct_ipv4=$(nc -w 3 1.1.1.1 80 </dev/null >/dev/null 2>&1 && echo open || echo blocked)"',
+                'echo "direct_ipv6=$(nc -w 3 2606:4700:4700::1111 80 </dev/null >/dev/null 2>&1 && echo open || echo blocked)"',
+                'echo "direct_udp=$( (echo x | nc -u -w 2 8.8.8.8 53) >/dev/null 2>&1 && echo sent || echo blocked)"',
+                'echo "dns_external=$(nslookup -timeout=3 example.com 2>/dev/null | grep -c "^Address: [0-9]")"',
+                'echo "dns_direct=$(nslookup -timeout=3 example.com 8.8.8.8 >/dev/null 2>&1 && echo open || echo blocked)"',
+                'echo "metadata=$(nc -w 3 169.254.169.254 80 </dev/null >/dev/null 2>&1 && echo open || echo blocked)"',
+                `echo "host_address=$(nc -w 3 ${hostAddress} ${hostPort} </dev/null >/dev/null 2>&1 && echo open || echo blocked)"`,
+                `echo "host_docker_internal=$(nc -w 3 host.docker.internal ${hostPort} </dev/null >/dev/null 2>&1 && echo open || echo blocked)"`,
+                `echo "orbstack_host=$(nc -w 3 0.250.250.254 ${hostPort} </dev/null >/dev/null 2>&1 && echo open || echo blocked)"`,
+              ].join("; "),
+            )
+          ).stdout,
+        );
+        const report: Record<string, unknown> = {
+          network: {
+            name: network,
+            internal: networkInfo.Internal,
+            options: networkInfo.Options,
+            subnet,
+          },
+          runtimeHostAddresses: hostAddresses,
+          hostAddressTested: hostAddress,
+          hostPort,
+          facts,
+        };
+        observations["egress"] = report;
+        expect(hostAddresses.length).toBeGreaterThan(0);
+        expect(hostAddresses.filter((address) => address.startsWith(subnetPrefix))).toEqual([]);
+        expect(networkInfo).toMatchObject({
+          Internal: true,
+          EnableIPv6: false,
+          Options: { "com.docker.network.bridge.inhibit_ipv4": "true" },
+        });
+        expect(facts).toMatchObject({
+          proxy_variable: "http://job:TOKEN@himawari-egress:3128",
+          allowed_http: "1",
+          allowed_connect: "HTTP/1.1 200 Connection Established",
+          unapproved_host: "HTTP/1.1 403 Forbidden",
+          unapproved_port: "HTTP/1.1 403 Forbidden",
+          private_answer: "HTTP/1.1 403 Forbidden|X-Himawari-Egress-Error: target-denied|",
+          missing_auth: "HTTP/1.1 407 Proxy Authentication Required",
+          direct_ipv4: "blocked",
+          direct_ipv6: "blocked",
+          direct_udp: "blocked",
+          dns_external: "0",
+          dns_direct: "blocked",
+          metadata: "blocked",
+          host_address: "blocked",
+          host_docker_internal: "blocked",
+          orbstack_host: "blocked",
+        });
+        report["hostListenerConnections"] = [...connectionsSeen];
+        expect(connectionsSeen).toEqual([]);
+
+        const proof = await stopAndProve(subject, target, locator);
+        const evidence = JSON.parse(await subject.readEvidence(proof.evidence[0]?.ref ?? ""));
+        report["proofEgress"] = { Name: evidence.egress?.Name, State: evidence.egress?.State };
+        expect(evidence.egress?.State).toMatchObject({ Running: false });
+        await subject.destroy({ ...target, locator });
+        const remaining = await direct("network", "inspect", network ?? "");
+        report["networkRemovedByDestroy"] = remaining.exitCode !== 0;
+        expect(remaining.exitCode).not.toBe(0);
+      } finally {
+        await new Promise<void>((resolve) => listener.close(() => resolve()));
+      }
+    },
+  );
+
+  it("keeps each task's egress unreachable from other tasks", { timeout: 120_000 }, async () => {
+    const subject = backend();
+    const first = environment(600, [], ["example.com:80"]);
+    const second = environment(600, [], ["example.com:80"]);
+    const firstLocator = await subject.create(first.create);
+    const secondLocator = await subject.create(second.create);
+    const proxyOf = async (environmentId: string) => {
+      const [id] = (
+        await direct(
+          "container",
+          "ls",
+          "--quiet",
+          "--filter",
+          `label=io.himawari.environment.id=${environmentId}`,
+          "--filter",
+          "label=io.himawari.environment.part=egress-proxy",
+        )
+      ).stdout
+        .split("\n")
+        .filter(Boolean);
+      const networks = JSON.parse(
+        (
+          await direct(
+            "container",
+            "inspect",
+            "--format",
+            "{{json .NetworkSettings.Networks}}",
+            id ?? "",
+          )
+        ).stdout,
+      ) as Record<string, { IPAddress: string }>;
+      return Object.entries(networks).find(([name]) => name.startsWith("himawari-net-"))?.[1]
+        .IPAddress;
+    };
+    const secondProxy = await proxyOf(second.identity.environmentId);
+    const firstProxy = await proxyOf(first.identity.environmentId);
+    const facts = lines(
+      (
+        await run(
+          subject,
+          first,
+          firstLocator,
+          [
+            `echo "own_proxy=$(nslookup himawari-egress 2>/dev/null | grep -c "Address: ${firstProxy}")"`,
+            `echo "other_proxy=$(nc -w 3 ${secondProxy} 3128 </dev/null >/dev/null 2>&1 && echo open || echo blocked)"`,
+          ].join("; "),
+        )
+      ).stdout,
+    );
+    observations["egressIsolation"] = { firstProxy, secondProxy, facts };
+    expect(facts).toEqual({ own_proxy: "1", other_proxy: "blocked" });
+    await stopAndProve(subject, first, firstLocator);
+    await stopAndProve(subject, second, secondLocator);
+  });
+
+  it(
+    "ends the egress proxy with the environment at its deadline",
+    { timeout: 60_000 },
+    async () => {
+      const subject = backend();
+      const target = environment(10, [], ["example.com:80"]);
+      const started = Date.now();
+      const locator = await subject.create(target.create);
+      let state = "running";
+      while (state === "running" && Date.now() - started < 40_000) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        state = (await subject.inspect({ ...target, locator })).state;
+      }
+      const elapsedMs = Date.now() - started;
+      observations["egressDeadline"] = { deadlineSeconds: 10, elapsedMs, state };
+      expect(state).toBe("stopped");
+      expect(elapsedMs).toBeLessThan(20_000);
+      expect((await stopAndProve(subject, target, locator)).basis).toBe("verified_stopped");
+    },
+  );
 });
