@@ -35,3 +35,16 @@ export function workspaceClaimsConflict(
   }
   return true;
 }
+export function workspaceClaimCovers(
+  outer: SandboxWorkspaceClaim,
+  inner: SandboxWorkspaceClaim,
+): boolean {
+  const root = outer.lineage.at(-1);
+  return (
+    outer.file === undefined &&
+    outer.hostId === inner.hostId &&
+    root !== undefined &&
+    inner.lineage.some((item) => item.device === root.device && item.inode === root.inode) &&
+    (outer.access === "write" || inner.access === "read")
+  );
+}

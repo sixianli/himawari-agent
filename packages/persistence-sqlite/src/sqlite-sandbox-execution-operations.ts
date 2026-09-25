@@ -68,6 +68,79 @@ interface AuthorityDependencies {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const id = (v: unknown): v is string =>
   typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(v);
+export function parseWorkspaceClaims(
+  raw: unknown,
+  hostId: string,
+  fail: SqliteApplicationFailure,
+): SandboxWorkspaceClaim[] {
+  if (!Array.isArray(raw))
+    return fail("PORT_INVALID_OPERATION", "Invalid directory identity chain");
+  return raw.map((c) => {
+    if (
+      !c ||
+      !id(c.ref) ||
+      !id(c.canonicalRootId) ||
+      c.hostId !== hostId ||
+      !["read", "write"].includes(c.access) ||
+      !Array.isArray(c.lineage) ||
+      c.lineage.length === 0 ||
+      c.lineage.length > 256 ||
+      new Set(
+        c.lineage.map((i: SandboxWorkspaceClaim["lineage"][number]) => `${i?.device}:${i?.inode}`),
+      ).size !== c.lineage.length ||
+      c.lineage.some(
+        (i: SandboxWorkspaceClaim["lineage"][number]) => !i || !id(i.device) || !id(i.inode),
+      )
+    )
+      return fail("PORT_INVALID_OPERATION", "Invalid directory identity chain");
+    if (
+      c.file !== undefined &&
+      (!c.file ||
+        typeof c.file.name !== "string" ||
+        c.file.name.length === 0 ||
+        Buffer.byteLength(c.file.name) > 255 ||
+        c.file.name.includes("/") ||
+        c.file.name === "." ||
+        c.file.name === ".." ||
+        Array.from(c.file.name as string).some(
+          (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+        ) ||
+        c.file.name !== c.file.name.normalize("NFC").toLowerCase() ||
+        typeof c.file.atomicPublish !== "boolean" ||
+        (c.file.versionDigest !== undefined &&
+          (typeof c.file.versionDigest !== "string" ||
+            !/^[a-f0-9]{64}$/.test(c.file.versionDigest))) ||
+        (c.file.identity !== null &&
+          (!c.file.identity || !id(c.file.identity.device) || !id(c.file.identity.inode))))
+    )
+      return fail("PORT_INVALID_OPERATION", "Invalid file resource identity");
+    return {
+      ref: c.ref,
+      hostId: c.hostId,
+      canonicalRootId: c.canonicalRootId,
+      access: c.access,
+      ...(c.file === undefined
+        ? {}
+        : {
+            file: {
+              name: c.file.name,
+              identity:
+                c.file.identity === null
+                  ? null
+                  : { device: c.file.identity.device, inode: c.file.identity.inode },
+              atomicPublish: c.file.atomicPublish,
+              ...(c.file.versionDigest === undefined
+                ? {}
+                : { versionDigest: c.file.versionDigest }),
+            },
+          }),
+      lineage: c.lineage.map((i: SandboxWorkspaceClaim["lineage"][number]) => ({
+        device: i.device,
+        inode: i.inode,
+      })),
+    };
+  });
+}
 export class SqliteSandboxExecutionOperations {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -546,73 +619,7 @@ export class SqliteSandboxExecutionOperations {
     }
     if (!Array.isArray(raw) || raw.length === 0 || raw.length > 64)
       return this.fail("PORT_INVALID_OPERATION", "Verified workspace coverage required");
-    const claims = raw.map((c) => {
-      if (
-        !c ||
-        !id(c.ref) ||
-        !id(c.canonicalRootId) ||
-        c.hostId !== plan.identity.hostId ||
-        !["read", "write"].includes(c.access) ||
-        !Array.isArray(c.lineage) ||
-        c.lineage.length === 0 ||
-        c.lineage.length > 256 ||
-        new Set(
-          c.lineage.map(
-            (i: SandboxWorkspaceClaim["lineage"][number]) => `${i?.device}:${i?.inode}`,
-          ),
-        ).size !== c.lineage.length ||
-        c.lineage.some(
-          (i: SandboxWorkspaceClaim["lineage"][number]) => !i || !id(i.device) || !id(i.inode),
-        )
-      )
-        return this.fail("PORT_INVALID_OPERATION", "Invalid directory identity chain");
-      if (
-        c.file !== undefined &&
-        (!c.file ||
-          typeof c.file.name !== "string" ||
-          c.file.name.length === 0 ||
-          Buffer.byteLength(c.file.name) > 255 ||
-          c.file.name.includes("/") ||
-          c.file.name === "." ||
-          c.file.name === ".." ||
-          Array.from(c.file.name as string).some(
-            (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-          ) ||
-          c.file.name !== c.file.name.normalize("NFC").toLowerCase() ||
-          typeof c.file.atomicPublish !== "boolean" ||
-          (c.file.versionDigest !== undefined &&
-            (typeof c.file.versionDigest !== "string" ||
-              !/^[a-f0-9]{64}$/.test(c.file.versionDigest))) ||
-          (c.file.identity !== null &&
-            (!c.file.identity || !id(c.file.identity.device) || !id(c.file.identity.inode))))
-      )
-        return this.fail("PORT_INVALID_OPERATION", "Invalid file resource identity");
-      return {
-        ref: c.ref,
-        hostId: c.hostId,
-        canonicalRootId: c.canonicalRootId,
-        access: c.access,
-        ...(c.file === undefined
-          ? {}
-          : {
-              file: {
-                name: c.file.name,
-                identity:
-                  c.file.identity === null
-                    ? null
-                    : { device: c.file.identity.device, inode: c.file.identity.inode },
-                atomicPublish: c.file.atomicPublish,
-                ...(c.file.versionDigest === undefined
-                  ? {}
-                  : { versionDigest: c.file.versionDigest }),
-              },
-            }),
-        lineage: c.lineage.map((i: SandboxWorkspaceClaim["lineage"][number]) => ({
-          device: i.device,
-          inode: i.inode,
-        })),
-      };
-    });
+    const claims = parseWorkspaceClaims(raw, plan.identity.hostId, this.fail);
     if (
       new Set(claims.map((c) => c.ref)).size !== claims.length ||
       !same([...claims.map((c) => c.ref)].sort(), [...conflictRefs].sort())
@@ -620,13 +627,32 @@ export class SqliteSandboxExecutionOperations {
       return this.fail("PORT_CONFLICT", "Workspace claims do not cover frozen environment");
     return claims;
   }
-  private assertAvailable(
+  assertAvailable(
     claims: readonly SandboxWorkspaceClaim[],
     exceptJob: string,
     now: string,
+    exceptEnvironment = "",
   ): void {
     this.queue.assertFair(claims, exceptJob, now);
     for (const claim of claims) {
+      const leases = this.db
+        .prepare(
+          `SELECT l.claim_json AS claim, e.state AS state FROM execution_environment_leases l
+          JOIN execution_environments e ON e.environment_id=l.environment_id
+          WHERE l.host_id=? AND l.released_at IS NULL AND l.environment_id != ?`,
+        )
+        .all(claim.hostId, exceptEnvironment) as { claim: string; state: string }[];
+      for (const lease of leases)
+        if (
+          conflicts(
+            claim,
+            JSON.parse(lease.claim) as SandboxWorkspaceClaim,
+            lease.state === "unknown",
+          )
+        )
+          this.fail("PORT_CONFLICT", "Workspace remains leased by a task environment", {
+            reasonCode: "WORKSPACE_OCCUPIED",
+          });
       const legacy = this.db
         .prepare(
           "SELECT job_id FROM sandbox_legacy_occupancy WHERE released_at IS NULL AND (host_id=? OR host_id IS NULL) AND job_id != ? LIMIT 1",

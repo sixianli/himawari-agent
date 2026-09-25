@@ -28,6 +28,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { SqliteExecutionEnvironmentOperations } from "./sqlite-execution-environment-operations.ts";
 import type {
   SqliteCapabilityInvocationObservationInput,
   SqliteRunPayloadArtifactOperations,
@@ -468,6 +469,7 @@ function grantRecord(row: GrantRow): Record<string, unknown> {
 
 export class SqliteCapabilityInvocationOperations {
   private readonly sandboxExecutions: SqliteSandboxExecutionOperations;
+  private readonly executionEnvironments: SqliteExecutionEnvironmentOperations;
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
@@ -549,11 +551,26 @@ export class SqliteCapabilityInvocationOperations {
         this.assertAuthority(authority(value), owner, agent, now),
       live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
     });
+    this.executionEnvironments = new SqliteExecutionEnvironmentOperations(database, fail, {
+      authority: (value, owner, agent, now) =>
+        this.assertAuthority(authority(value), owner, agent, now),
+      disk: assertDiskHeadroom,
+      assertAvailable: (claims, exceptEnvironment, now) =>
+        this.sandboxExecutions.assertAvailable(claims, "", now, exceptEnvironment),
+    });
   }
 
   execute(operation: string, value: unknown): unknown {
     try {
       const scoped = this.scopedInput(value);
+      if (operation.startsWith("capabilityInvocation.executionEnvironment.")) {
+        return this.executionEnvironments.execute(
+          operation.slice("capabilityInvocation.executionEnvironment.".length),
+          scoped.input,
+          scoped.ownerId,
+          scoped.agentId,
+        );
+      }
       if (operation.startsWith("capabilityInvocation.sandboxV2.")) {
         return this.sandboxExecutions.execute(
           operation.slice("capabilityInvocation.sandboxV2.".length),

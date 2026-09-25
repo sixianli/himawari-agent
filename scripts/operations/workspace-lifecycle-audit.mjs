@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
 
-const sections = ["executions", "legacy", "queue"];
+const sections = ["executions", "legacy", "queue", "environments"];
 function assertArgument(condition) {
   if (!condition) throw new Error("WORKSPACE_AUDIT_ARGUMENT_INVALID");
 }
@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 47 ||
+        version > 48 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -131,6 +131,44 @@ export function auditWorkspaceLifecycle({
               "FRESH_HOST_RELEASE_PROOF",
             ],
           }));
+      } else if (section === "environments") {
+        rows =
+          version < 48
+            ? []
+            : db
+                .prepare(`SELECT e.environment_id AS environmentId, j.run_id AS runId, e.role,
+          e.generation, e.state, e.stop_fence AS stopFence, u.status AS runStatus,
+          (SELECT count(*) FROM execution_environment_leases l WHERE l.environment_id=e.environment_id AND l.released_at IS NULL) AS activeLeases,
+          (SELECT count(*) FROM execution_environment_calls c WHERE c.environment_id=e.environment_id AND c.completed_at IS NULL) AS openCalls,
+          EXISTS(SELECT 1 FROM execution_environment_release_receipts x WHERE x.environment_id=e.environment_id) AS releaseReceiptPresent
+          FROM execution_environments e JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+          JOIN runs u ON u.id=j.run_id AND u.owner_id=j.owner_id AND u.agent_id=j.agent_id
+          WHERE j.owner_id=? AND j.agent_id=? AND e.environment_id>? ORDER BY e.environment_id LIMIT ?`)
+                .all(ownerId, agentId, afterId, limit)
+                .map((row) => {
+                  const released = row.state === "released" && Boolean(row.releaseReceiptPresent);
+                  const reasons = [];
+                  if (!released) reasons.push("ENVIRONMENT_RELEASE_UNCONFIRMED");
+                  if (row.state === "unknown") reasons.push("ENVIRONMENT_CREATE_UNKNOWN");
+                  if (row.activeLeases) reasons.push("ENVIRONMENT_LEASE_ACTIVE");
+                  if (
+                    ["completed", "failed", "cancelled"].includes(row.runStatus) &&
+                    (!released || row.activeLeases)
+                  )
+                    reasons.push("TERMINAL_RUN_HAS_RESOURCE_OBLIGATION");
+                  return {
+                    ...row,
+                    releaseReceiptPresent: Boolean(row.releaseReceiptPresent),
+                    reasons,
+                    requiredEvidence: released
+                      ? []
+                      : [
+                          "ORIGINAL_ENVIRONMENT_IDENTITY",
+                          "LATE_CREATE_FENCED",
+                          "FRESH_BACKEND_STOP_PROOF",
+                        ],
+                  };
+                });
       } else {
         rows =
           version < 35
@@ -174,7 +212,8 @@ export function auditWorkspaceLifecycle({
         liveHostVerified: false,
         repairEligible: false,
         rows,
-        nextAfterId: rows.length === limit ? rows.at(-1).jobId : null,
+        nextAfterId:
+          rows.length === limit ? (rows.at(-1).jobId ?? rows.at(-1).environmentId) : null,
       };
     })();
   } finally {

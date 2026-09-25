@@ -95,6 +95,22 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
       "retain while resource or reconciliation obligations exist",
     ),
   ),
+  ...[
+    "execution_jobs",
+    "execution_environments",
+    "execution_environment_stop_intents",
+    "execution_environment_leases",
+    "execution_environment_calls",
+    "execution_environment_release_receipts",
+  ].map((table) =>
+    entry(
+      table,
+      "ExecutionEnvironmentStorePort",
+      "task environment identity, lease, stop fence and immutable release for one Run",
+      "metadata_only",
+      "retain until the environment is released; cascade with Run deletion afterwards",
+    ),
+  ),
   entry(
     "sandbox_jobs",
     "SandboxJobJournalPort",

@@ -14,6 +14,8 @@ export * from "./conversation.js";
 export * from "./coordination.js";
 export * from "./delegation.js";
 export * from "./durability.js";
+export * from "./execution-backend.js";
+export * from "./execution-environment.js";
 export * from "./gateway.js";
 export * from "./github.js";
 export * from "./governance.js";

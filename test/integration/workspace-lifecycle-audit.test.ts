@@ -14,8 +14,10 @@ import {
   OWNER_ID,
   openSandboxJournal,
   operationsForDatabase,
+  RUN_ID,
   SERVICE_AUTHORITY,
   T1,
+  T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 type AuditInput = {
@@ -27,7 +29,8 @@ type AuditInput = {
   limit?: number;
 };
 interface AuditRow {
-  jobId: string;
+  jobId?: string;
+  environmentId?: string;
   status?: string;
   reasons: string[];
   requiredEvidence: string[];
@@ -200,7 +203,7 @@ describe("workspace lifecycle read-only audit", () => {
     const result = auditWorkspaceLifecycle(f.input);
     expect(result).toMatchObject({
       mode: "read_only",
-      schemaSequence: 47,
+      schemaSequence: 48,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -216,6 +219,116 @@ describe("workspace lifecycle read-only audit", () => {
     expect(f.database.prepare("SELECT count(*) AS n FROM sandbox_release_receipts").get()).toEqual({
       n: 0,
     });
+  });
+
+  it("lists task environments whose lease or release is unresolved without changing the database", async () => {
+    const f = await fixture();
+    const environment = (operation: string, input: Record<string, unknown>) =>
+      operationsForDatabase(f.database).execute(
+        `capabilityInvocation.executionEnvironment.${operation}`,
+        {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          input: { authority: SERVICE_AUTHORITY, now: T1, ...input },
+        },
+      );
+    const lease = {
+      ref: "lease-audit",
+      hostId: "environment-audit-host",
+      canonicalRootId: "root-audit",
+      access: "write",
+      lineage: [
+        { device: "1", inode: "1" },
+        { device: "1", inode: "30" },
+      ],
+    };
+    environment("reserve", {
+      runId: RUN_ID,
+      hostId: lease.hostId,
+      role: "primary",
+      rotationReason: "initial",
+      backendRef: "fake-container",
+      envelope: {
+        schemaVersion: "execution-envelope.v1",
+        directories: [
+          {
+            hostId: lease.hostId,
+            grantRef: "grant-audit",
+            canonicalRootId: lease.canonicalRootId,
+            access: "write",
+            source: {
+              authorizationRef: "grant-audit",
+              decidedBy: "user",
+              delegationListRef: null,
+              expiresAt: T2,
+            },
+          },
+        ],
+        network: [],
+        resources: {
+          cpuMillicores: 1000,
+          memoryBytes: 536870912,
+          maxProcesses: 128,
+          privateStorageBytes: 268435456,
+        },
+      },
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      deadlineAt: T2,
+      leases: [lease],
+      ids: {
+        executionJobId: "execution-job-audit",
+        environmentId: "environment-audit",
+        createIntentId: "create-audit",
+      },
+    });
+    environment("requestStop", {
+      environmentId: "environment-audit",
+      stopIntentId: "stop-audit",
+      reason: "run_cancelled",
+      stoppedResourceRefs: [],
+    });
+    const before = f.database.serialize();
+    const input = { ...f.input, section: "environments" };
+    expect(auditWorkspaceLifecycle(input).rows).toEqual([
+      expect.objectContaining({
+        environmentId: "environment-audit",
+        runId: RUN_ID,
+        role: "primary",
+        generation: 1,
+        state: "stop_requested",
+        stopFence: 1,
+        activeLeases: 1,
+        openCalls: 0,
+        releaseReceiptPresent: false,
+        reasons: ["ENVIRONMENT_RELEASE_UNCONFIRMED", "ENVIRONMENT_LEASE_ACTIVE"],
+        requiredEvidence: [
+          "ORIGINAL_ENVIRONMENT_IDENTITY",
+          "LATE_CREATE_FENCED",
+          "FRESH_BACKEND_STOP_PROOF",
+        ],
+      }),
+    ]);
+    expect(f.database.serialize()).toEqual(before);
+    environment("acceptRelease", {
+      environmentId: "environment-audit",
+      proof: { basis: "create_not_dispatched" },
+    });
+    expect(auditWorkspaceLifecycle(input)).toMatchObject({
+      nextAfterId: null,
+      rows: [
+        {
+          environmentId: "environment-audit",
+          state: "released",
+          activeLeases: 0,
+          releaseReceiptPresent: true,
+          reasons: [],
+          requiredEvidence: [],
+        },
+      ],
+    });
+    expect(auditWorkspaceLifecycle({ ...input, limit: 1 }).nextAfterId).toBe("environment-audit");
   });
 
   it("reports resource incidents without disclosing their protected evidence", async () => {

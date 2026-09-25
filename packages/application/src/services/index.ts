@@ -62,6 +62,7 @@ export * from "./scheduler-service.js";
 export * from "./session-deletion-coordinator.js";
 export * from "./session-trace-recorder.js";
 export * from "./suggestion-service.js";
+export * from "./task-environment-coordinator.js";
 export * from "./thread-checkpoint-service.js";
 export * from "./thread-command-service.js";
 export * from "./thread-deletion-coordination-service.js";

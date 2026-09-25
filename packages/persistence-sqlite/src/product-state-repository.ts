@@ -20,6 +20,7 @@ import type {
   CommitStateAndEventsResult,
   DeploymentAuthorityStatePort,
   DurableGitHubMonitorHistoryPolicyPort,
+  ExecutionEnvironmentStorePort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
@@ -410,6 +411,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {
     return this.durable.sandboxExecutionJournal(ownerId, agentId);
+  }
+
+  executionEnvironmentStore(ownerId: OwnerId, agentId: AgentId): ExecutionEnvironmentStorePort {
+    return this.durable.executionEnvironmentStore(ownerId, agentId);
   }
 
   sandboxJobJournal(ownerId: OwnerId, agentId: AgentId): SandboxJobJournalPort {

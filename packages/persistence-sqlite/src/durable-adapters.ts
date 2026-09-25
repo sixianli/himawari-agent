@@ -10,6 +10,7 @@ import type {
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
+  ExecutionEnvironmentStorePort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -546,6 +547,35 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+    });
+  }
+
+  executionEnvironmentStore(ownerId: OwnerId, agentId: AgentId): ExecutionEnvironmentStorePort {
+    const operation = (name: keyof ExecutionEnvironmentStorePort) =>
+      `capabilityInvocation.executionEnvironment.${name}`;
+    return Object.freeze<ExecutionEnvironmentStorePort>({
+      reserve: (input) => this.context.write(operation("reserve"), { ownerId, agentId, input }),
+      beginCreate: (input) =>
+        this.context.write(operation("beginCreate"), { ownerId, agentId, input }),
+      recordCreated: (input) =>
+        this.context.write(operation("recordCreated"), { ownerId, agentId, input }),
+      recordCreateUnknown: (input) =>
+        this.context.write(operation("recordCreateUnknown"), { ownerId, agentId, input }),
+      linkCall: (input) => this.context.write(operation("linkCall"), { ownerId, agentId, input }),
+      completeCall: (input) =>
+        this.context.write(operation("completeCall"), { ownerId, agentId, input }),
+      requestStop: (input) =>
+        this.context.write(operation("requestStop"), { ownerId, agentId, input }),
+      acknowledgeStop: (input) =>
+        this.context.write(operation("acknowledgeStop"), { ownerId, agentId, input }),
+      acceptRelease: (input) =>
+        this.context.write(operation("acceptRelease"), { ownerId, agentId, input }),
+      read: (environmentId) =>
+        this.context.read(operation("read"), { ownerId, agentId, input: { environmentId } }),
+      readRun: (runId) =>
+        this.context.read(operation("readRun"), { ownerId, agentId, input: { runId } }),
+      listUnreleased: (input) =>
+        this.context.read(operation("listUnreleased"), { ownerId, agentId, input }),
     });
   }
 

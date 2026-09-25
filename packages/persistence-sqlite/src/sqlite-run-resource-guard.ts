@@ -34,6 +34,15 @@ export const RUN_RESOURCES_RELEASED_SQL = `
     SELECT 1 FROM sandbox_legacy_occupancy occupancy JOIN sandbox_jobs job USING(job_id)
     WHERE job.owner_id=r.owner_id AND job.agent_id=r.agent_id AND job.run_id=r.id
       AND occupancy.released_at IS NULL
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM execution_environments environment
+    JOIN execution_jobs job ON job.execution_job_id=environment.execution_job_id
+    WHERE job.owner_id=r.owner_id AND job.agent_id=r.agent_id AND job.run_id=r.id
+      AND NOT EXISTS (
+        SELECT 1 FROM execution_environment_release_receipts receipt
+        WHERE receipt.environment_id=environment.environment_id AND receipt.accepted_at<=@resourceNow
+      )
   )`;
 
 /** The only reconciliation state that may be claimed for result delivery.

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:f932c1d89b2d9a61aa009032c321bc7c24439ede59038ce7ecd650daa193a615"
+contract_sha256: "sha256:72d23383a3803d496a999f0960491ec7ead3f5f843bbba4564f4f165abd7c52e"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -23,9 +23,11 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～47 的工作区占用、执行和排队元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～48 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
-Schema 39 的自动审查记录不属于这三个工作区分区；空列表不证明没有审查或授权记录。
+Schema 39 的自动审查记录不属于这四个工作区分区；空列表不证明没有审查或授权记录。
+
+Schema 48 新增任务级执行环境：一轮对话里多次工具调用共用的隔离环境，它持有环境级占用（`lease`，整个环境持有的工作目录占用登记，释放前会冲突的其他任务不能动这些目录）。这些记录只在 `environments` 分区列出，不出现在按单次调用列出的 `executions` 分区；现有执行路线不会创建这类记录，所以通常为空页。
 
 Schema 46 的目录移动合同复用原执行、占用和队列表；此清单不能替代目录 inode 和发布记录核验。Schema 44 的绑定历史与 Schema 45 的批次关联同原队列一起保留；本清单按原队列身份报告是否已经准入，不把重新绑定解释为已执行或可重放。
 
@@ -64,9 +66,9 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
   --section executions --limit 100
 ```
 
-依次读取三个分区：`executions` 是新版执行与占用；`legacy` 是旧版未释放保护；`queue` 是持久排队记录。Schema 28～34 尚无持久队列表，`queue` 返回空页，不能理解为已存在该功能但当前没有任务。
+依次读取四个分区：`executions` 是新版执行与占用；`legacy` 是旧版未释放保护；`queue` 是持久排队记录；`environments` 是任务级执行环境及其环境级占用。Schema 28～34 尚无持久队列表，`queue` 返回空页；Schema 47 及更早没有环境表，`environments` 返回空页。这些空页都不能理解为已存在该功能但当前没有任务。
 
-当 `nextAfterId` 非空，用该值作为同一分区下一次调用的 `--after` 参数。保留每一页和其参数，直到返回空游标；恰好填满一页时可能还需要读取一次空页。分页按 job ID 排序，`queue.sequence` 才是原排队次序，不能按报告展示次序重排队列。
+当 `nextAfterId` 非空，用该值作为同一分区下一次调用的 `--after` 参数。保留每一页和其参数，直到返回空游标；恰好填满一页时可能还需要读取一次空页。前三个分区按 job ID 分页，`environments` 按环境 ID 分页；`queue.sequence` 才是原排队次序，不能按报告展示次序重排队列。
 
 工具没有 `--repair`、`--apply` 或写入选项，未知参数直接拒绝。核查结束后，把需要宿主证明的条目交给对应的恢复流程；不要直接改表或重新执行原工具。
 
@@ -74,7 +76,9 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 
 `recoveryStatus=scheduled` 表示等待核查，`recoveryAction` 为 inspect/stop，`recoveryNextAttemptAt` 为最早核查时间；它不证明后台此刻正在执行。Schema 43 之前该时间字段为空。`unresolved` 与空的下一时间表示本次已结束且没有自动重试，不能将它画成仍在核查。只读报告不改变这些记录。
 
-`releaseReceiptPresent` 表示已绑定资源的永久回执；`reservationReleaseReceiptPresent` 表示未绑定预约的独立回执。后者不补造资源 supervision 或工具结果，停止标记仍保留；只有回执存在且没有有效 claim/barrier，才不再列为未确认的资源责任。字段只反映数据库记录，仍不证明当前宿主安全，也不授予重新执行或修改数据库的权限。
+`environments` 分区里，`state` 是环境当前状态，`stopFence` 是停止标记（大于 0 表示已请求停止，此后不再接受新调用），`activeLeases` 是未释放的环境级占用数，`openCalls` 是尚未结束的调用数，`releaseReceiptPresent` 表示环境的永久释放回执。只有状态为 `released` 且回执存在，才不再列为未确认的环境责任。
+
+`executions` 分区里，`releaseReceiptPresent` 表示已绑定资源的永久回执；`reservationReleaseReceiptPresent` 表示未绑定预约的独立回执。后者不补造资源 supervision 或工具结果，停止标记仍保留；只有回执存在且没有有效 claim/barrier，才不再列为未确认的资源责任。字段只反映数据库记录，仍不证明当前宿主安全，也不授予重新执行或修改数据库的权限。
 
 首先核对输出 `mode=read_only`、Owner/Agent、Schema 和分区。下表说明主要原因代码；同一条目可以有多个原因。
 
@@ -90,6 +94,9 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 | `RESULT_DELIVERY_PENDING` | 原结果交接尚未确认 | 当前披露权限；不得因此重新锁定或执行 |
 | `RESULT_UNRESOLVED` / `EFFECT_UNRESOLVED` | 结果或修改效果尚无明确记录 | 原发布记录或其他独立效果证据 |
 | `LEGACY_WORKSPACE_PROTECTION_ACTIVE` | 旧版占用尚未释放 | 旧宿主身份及实际清理情况 |
+| `ENVIRONMENT_RELEASE_UNCONFIRMED` | 任务级执行环境没有已接收的释放回执 | 执行后端对原环境身份给出的新停止证明；迟到的创建请求是否已被停止标记挡住 |
+| `ENVIRONMENT_CREATE_UNKNOWN` | 创建请求已发出但结果未知，环境可能已经存在 | 按原创建记录向执行后端核查；不能重新创建一个替代环境 |
+| `ENVIRONMENT_LEASE_ACTIVE` | 环境级占用仍有效，冲突的任务会被挡住 | 同上；占用只随释放回执一起解除 |
 | `QUEUED_WITHOUT_DISPATCH_COMMIT` | 该排队条目没有对应准入和调用回执 | 原请求绑定、当前权限与目标；这不是重发许可 |
 | `QUEUE_CANCELLED` / `QUEUE_ADMITTED` | 队列记录已取消或已有对应准入 | 保留历史；不要创建第二次执行 |
 | `QUEUE_ADMISSION_REQUIRES_RECONCILIATION` | 队列与准入记录需逐条核对 | 不据此猜测已派发或未派发 |
