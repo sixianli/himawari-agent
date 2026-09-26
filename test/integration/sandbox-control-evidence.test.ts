@@ -104,7 +104,9 @@ async function fixture(options: { qualified?: boolean; completed?: boolean } = {
   let hostChecks = 0;
   let hostFailure: Error | undefined;
   let admissionChecks = 0;
+  let machineBootId = "11111111-2222-4333-8444-555555555555";
   const control = createProductionSandboxControl({
+    machineBootId: async () => machineBootId,
     fixedFileCompleted: async () => options.completed === true,
     now,
     read: async (_plan, key) => structuredClone(stored.get(key)),
@@ -162,6 +164,9 @@ async function fixture(options: { qualified?: boolean; completed?: boolean } = {
     directory,
     setPlatform: (value: string) => {
       platform = value;
+    },
+    restartMachine: () => {
+      machineBootId = "66666666-7777-4888-9999-aaaaaaaaaaaa";
     },
     set: (value: Partial<JobHostControlObservation>) => {
       observation = { ...observation, ...value };
@@ -593,3 +598,64 @@ it.each([
     } else expect(result.resource.cleanup).toBe("unknown");
   },
 );
+
+async function crashJobHost(f: Awaited<ReturnType<typeof fixture>>) {
+  await f.finishControl();
+  await rm(path.join(f.directory, "final.json"));
+}
+
+it.each(["inspect", "stop"] as const)(
+  "releases a started SRT call after the machine restarted without contacting the lost Job Host: %s",
+  async (command) => {
+    const f = await fixture();
+    f.set({ phase: "running", taskStarted: true });
+    await crashJobHost(f);
+    await expect(
+      f.control.backend.inspect(f.record, new AbortController().signal),
+    ).rejects.toThrow();
+    f.restartMachine();
+    const before = [...f.order];
+    const resource = await f.control.backend[command](f.record, new AbortController().signal);
+    expect(f.order.filter((step) => step === "stop")).toEqual(
+      before.filter((step) => step === "stop"),
+    );
+    expect(resource).toMatchObject({
+      supervision: "released",
+      cleanup: "process_group_gone",
+      evidence: {
+        subject: { kind: "local_process", processIdentityRef: expect.any(String) },
+      },
+    });
+    const released = resource as Extract<typeof resource, { supervision: "released" }>;
+    const facts = { ...f.record.facts, resource: released };
+    await expect(f.control.evidence(f.record.plan, facts)).resolves.toHaveLength(1);
+    await expect(
+      f.control.evidence(f.record.plan, {
+        ...facts,
+        resource: { ...released, cleanup: "confirmed" },
+      }),
+    ).rejects.toThrow("SANDBOX_CONTROL_EVIDENCE_CHANGED");
+  },
+);
+
+it("keeps a crashed Job Host blocking while the machine has not restarted", async () => {
+  const f = await fixture();
+  f.set({ phase: "running", taskStarted: true });
+  await crashJobHost(f);
+  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow();
+});
+
+it("keeps a control record saved without a machine boot identity blocking after a restart", async () => {
+  const f = await fixture();
+  f.set({ phase: "running", taskStarted: true });
+  const saved = [...f.stored.values()].find(
+    (artifact) =>
+      artifact.value && typeof artifact.value === "object" && "control" in artifact.value,
+  );
+  if (!saved) throw new Error("missing stored control");
+  const { machineBootId: _machineBootId, ...legacy } = saved.value as Record<string, unknown>;
+  saved.value = legacy;
+  await crashJobHost(f);
+  f.restartMachine();
+  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow();
+});

@@ -16,6 +16,7 @@ import {
   queryJobHostControl,
   readJobHostFinalEvidence,
 } from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/index.js";
+import { readMachineBootId } from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host-control-client.js";
 
 // Temporary Linux helpers are a probe-only override, never product configuration.
 if (process.platform === "linux" && process.env.HIMAWARI_R4_HELPERS) {
@@ -174,6 +175,7 @@ if (process.argv.includes("--worker")) {
           },
         });
         const product = createProductionSandboxControl({
+          machineBootId: () => readMachineBootId(),
           now: () => new Date().toISOString(),
           read: async (_plan, key) => artifacts.get(key),
           write: async (_plan, key, value) => {

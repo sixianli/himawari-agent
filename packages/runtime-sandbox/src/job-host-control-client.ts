@@ -2,3 +2,4 @@
 export type { JobHostControlBinding, JobHostControlObservation } from "./job-host-control.ts";
 export { queryJobHostControl, readJobHostFinalEvidence } from "./job-host-control.ts";
 export { readLinuxNamespaceState } from "./linux-namespace.ts";
+export { readMachineBootId } from "./machine-boot.ts";

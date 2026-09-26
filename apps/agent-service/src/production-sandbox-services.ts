@@ -59,6 +59,7 @@ import {
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
+import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
 import {
   importProductionCopySave,
   prepareProductionCopySave,
@@ -1384,6 +1385,7 @@ export async function createProductionSandboxServices(options: {
     },
   };
   const control = createProductionSandboxControl({
+    machineBootId: () => readMachineBootId(),
     fixedFileCompleted: async (record) => {
       const result = record.facts.result;
       if (

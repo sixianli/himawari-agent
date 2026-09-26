@@ -38,6 +38,7 @@ interface StoredControl {
   readonly bootId: string;
   readonly processIdentityRef: string;
   readonly policyDigest: string;
+  readonly machineBootId?: string;
 }
 interface StoredObservation {
   readonly fingerprint: string;
@@ -45,8 +46,18 @@ interface StoredObservation {
   readonly resourceSequence: number;
   readonly observation: JobHostControlObservation;
 }
+interface StoredRestart {
+  readonly fingerprint: string;
+  readonly environmentId: string;
+  readonly resourceSequence: number;
+  readonly restart: {
+    readonly recordedMachineBootId: string;
+    readonly currentMachineBootId: string;
+  };
+}
 interface Options {
   readonly now: () => string;
+  readonly machineBootId: () => Promise<string>;
   readonly read: (
     plan: SandboxExecutionPlanV2,
     key: string,
@@ -149,7 +160,7 @@ export function createProductionSandboxControl(options: Options) {
       throw error;
     }
   };
-  const readControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
+  const readStoredControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
     const stored = await options.read(plan, key(plan));
     const value = stored?.value as StoredControl | undefined;
     if (
@@ -159,6 +170,17 @@ export function createProductionSandboxControl(options: Options) {
     )
       throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
     sandboxJobControlBindingSchema.parse(value.control);
+    return value;
+  };
+  const restartedSince = async (control: StoredControl) => {
+    if (control.machineBootId === undefined) return undefined;
+    const current = await options.machineBootId();
+    return current === control.machineBootId
+      ? undefined
+      : { recordedMachineBootId: control.machineBootId, currentMachineBootId: current };
+  };
+  const readControl = async (plan: SandboxExecutionPlanV2): Promise<StoredControl> => {
+    const value = await readStoredControl(plan);
     const directory = await lstat(value.control.directory);
     if (
       !directory.isDirectory() ||
@@ -277,11 +299,57 @@ export function createProductionSandboxControl(options: Options) {
       return "controlled";
     return "lost";
   };
+  const observeAfterRestart = async (
+    record: SandboxExecutionRecord,
+    control: StoredControl,
+    restart: StoredRestart["restart"],
+  ): Promise<SandboxResourceObservation> => {
+    await options.host(record.plan);
+    const old = record.facts.resource;
+    const sequence = old.sequence + 1;
+    const stored = await options.write(record.plan, observationKey(record.plan, sequence), {
+      fingerprint: record.plan.semanticFingerprint,
+      environmentId: record.plan.environmentId,
+      resourceSequence: sequence,
+      restart,
+    } satisfies StoredRestart);
+    const now = options.now();
+    return sandboxResourceObservationSchema.parse({
+      schemaVersion: old.schemaVersion,
+      creator: old.creator,
+      environmentId: old.environmentId,
+      policyDigest: old.policyDigest,
+      scopeDigest: old.scopeDigest,
+      sequence,
+      occurredAt: now,
+      supervisor: old.supervisor,
+      resourceRef: old.resourceRef,
+      status:
+        old.status.kind === "task"
+          ? { kind: "task", state: "exited" }
+          : old.status.kind === "service"
+            ? { kind: "service", readiness: "unavailable" }
+            : old.status,
+      metrics: old.metrics,
+      ...resourceState("process_group_gone"),
+      evidence: {
+        ref: stored.ref,
+        digest: stored.digest,
+        profileRef: record.plan.binding.profileRef,
+        qualificationRef: record.plan.binding.qualificationRef,
+        validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+        subject: { kind: "local_process", processIdentityRef: control.processIdentityRef },
+      },
+    });
+  };
   const observeUnchecked = async (
     record: SandboxExecutionRecord,
     command: "inspect" | "stop",
     signal?: AbortSignal,
   ): Promise<SandboxResourceObservation> => {
+    const control = await readStoredControl(record.plan);
+    const restart = await restartedSince(control);
+    if (restart) return observeAfterRestart(record, control, restart);
     // Stop the authenticated original host promptly, then verify its resulting
     // state. File verification must never delay delivery of a stop request.
     if (command === "stop") await inspect(record.plan, "stop", signal);
@@ -459,6 +527,7 @@ export function createProductionSandboxControl(options: Options) {
         bootId: observation.bootId,
         processIdentityRef: observation.processIdentityRef,
         policyDigest: observation.policyDigest,
+        machineBootId: await options.machineBootId(),
       } satisfies StoredControl);
       return true;
     },
@@ -585,8 +654,31 @@ export function createProductionSandboxControl(options: Options) {
     ): Promise<Awaited<ReturnType<SandboxExecutionEvidencePort["verify"]>>["evidence"]> {
       const resource = facts.resource;
       if (resource.supervision !== "controlled" && resource.supervision !== "released") return [];
-      const control = await readControl(plan);
       const artifact = await options.read(plan, observationKey(plan, resource.sequence));
+      const restarted = artifact?.value as StoredRestart | undefined;
+      if (restarted && "restart" in restarted) {
+        const control = await readStoredControl(plan);
+        const restart = await restartedSince(control);
+        if (
+          !artifact ||
+          !restart ||
+          artifact.ref !== resource.evidence.ref ||
+          artifact.digest !== resource.evidence.digest ||
+          restarted.fingerprint !== plan.semanticFingerprint ||
+          restarted.environmentId !== plan.environmentId ||
+          restarted.resourceSequence !== resource.sequence ||
+          restarted.restart.recordedMachineBootId !== restart.recordedMachineBootId ||
+          !same(resourceState("process_group_gone"), {
+            supervision: resource.supervision,
+            cleanup: resource.cleanup,
+          }) ||
+          resource.evidence.subject.kind !== "local_process" ||
+          resource.evidence.subject.processIdentityRef !== control.processIdentityRef
+        )
+          throw new Error("SANDBOX_CONTROL_EVIDENCE_CHANGED");
+        return [{ ref: artifact.ref, digest: artifact.digest }];
+      }
+      const control = await readControl(plan);
       const value = artifact?.value as StoredObservation | undefined;
       if (
         !artifact ||
