@@ -529,3 +529,67 @@ it.each([
   const result = await f.control.refreshEvidence(record);
   expect(result.resource.supervision).toBe(scenario === "verified" ? "released" : "lost");
 });
+
+it.each([
+  ["darwin", "group-gone", "released"],
+  ["linux", "group-gone", "released"],
+  ["darwin", "group-present", "lost"],
+  ["darwin", "flag-absent", "lost"],
+  ["darwin", "host-alive", "lost"],
+  ["darwin", "cleanup-unknown", "lost"],
+  ["darwin", "interrupted", "lost"],
+  ["darwin", "task-running", "lost"],
+  ["darwin", "flag-invalid", "rejected"],
+] as const)(
+  "releases a finished SRT call on %s only once its task group is gone: %s",
+  async (platform, scenario, supervision) => {
+    const f = await fixture();
+    f.setPlatform(platform);
+    const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+    const departedPid = child.pid;
+    await once(child, "exit");
+    if (!departedPid) throw new Error("child PID missing");
+    f.set({
+      phase: scenario === "interrupted" ? "stopping" : "finished",
+      taskStarted: true,
+      taskProcessExited: scenario !== "task-running",
+      stdioClosed: false,
+      srtReset: scenario !== "cleanup-unknown",
+      processId: scenario === "host-alive" ? process.pid : departedPid,
+      ...(scenario === "flag-absent"
+        ? {}
+        : {
+            taskProcessGroupGone: (scenario === "flag-invalid"
+              ? "yes"
+              : scenario !== "group-present") as boolean,
+          }),
+    });
+    if (supervision === "rejected") {
+      await expect(f.control.refreshEvidence(f.record)).rejects.toThrow(
+        "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+      );
+      return;
+    }
+    const result = await f.control.refreshEvidence(f.record);
+    expect(result.resource.supervision).toBe(supervision);
+    if (supervision === "released") {
+      expect(result.resource).toMatchObject({
+        cleanup: "process_group_gone",
+        evidence: { subject: { kind: "local_process" } },
+      });
+      expect(result.evidence).toHaveLength(1);
+      const resource = result.resource as Extract<
+        typeof result.resource,
+        { supervision: "released" }
+      >;
+      const facts = { ...f.record.facts, resource };
+      await expect(f.control.evidence(f.record.plan, facts)).resolves.toHaveLength(1);
+      await expect(
+        f.control.evidence(f.record.plan, {
+          ...facts,
+          resource: { ...resource, cleanup: "confirmed" },
+        }),
+      ).rejects.toThrow("SANDBOX_CONTROL_EVIDENCE_CHANGED");
+    } else expect(result.resource.cleanup).toBe("unknown");
+  },
+);

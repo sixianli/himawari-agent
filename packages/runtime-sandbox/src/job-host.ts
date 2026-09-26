@@ -389,7 +389,12 @@ export function prepareSandboxJobHost(
       taskProcessExited: completion?.["taskProcessExited"] === true,
       stdioClosed: completion?.["stdioClosed"] === true,
       srtReset: completion?.["srtReset"] === true,
-      taskTreeCleanup: taskStarted === false ? "not_started" : "unknown",
+      taskTreeCleanup:
+        taskStarted === false
+          ? "not_started"
+          : taskStarted === true && completion?.["taskProcessGroupGone"] === true
+            ? "process_group_gone"
+            : "unknown",
     });
   });
   send({ type: "prepare", request, ...(controlBinding ? { control: controlBinding } : {}) });

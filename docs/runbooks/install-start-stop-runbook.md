@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:988ef1954d8cee1e2f95edf7660b35ffe879e459554ae57c805d3d93cc8c27bb"
+contract_sha256: "sha256:79797c595364dc8d05aeb78e3dca00e9c1ae139e03778487f0b4891ea5290ddc"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -461,7 +461,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 
 恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
 
-Linux 前台清理证据要求原 PID namespace init 已消失及完整终态；Mac 已启动任务没有全树保证时继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
+Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，释放记录的 cleanup 为 `confirmed`。按 ADR 0033，已启动的 SRT 任务在原 Job Host 已退出、SRT 已复位、任务进程组（主进程及仍留在同一组的子进程）经 Job Host 终态证据确认全部消失时，也释放占用，cleanup 记为 `process_group_gone`，含义是“停止未经严格确认”：用 `setsid` 等方式离开进程组的后代不被跟踪，可能仍在运行。终态证据没有进程组字段、进程组仍在或无法发出信号时继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
 
 ### 资源输出分页保留
 

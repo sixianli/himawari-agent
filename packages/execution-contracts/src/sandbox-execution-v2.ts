@@ -312,7 +312,7 @@ export const sandboxResourceObservationSchema = variant("supervision", {
   released: object({
     ...resourceFields,
     supervision: literal("released"),
-    cleanup: literal("confirmed"),
+    cleanup: enumeration(["confirmed", "process_group_gone"]),
     evidence: supervisionEvidence,
   }),
 });
@@ -444,6 +444,7 @@ export function validateSandboxExecutionFacts(
       obs.supervision === "released" &&
       (!same(prior.resource.status, obs.status) ||
         !same(prior.resource.metrics, obs.metrics) ||
+        prior.resource.cleanup !== obs.cleanup ||
         !same(prior.resource.evidence.subject, obs.evidence.subject))
     )
       fail("released resource facts are immutable");

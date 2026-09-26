@@ -270,6 +270,39 @@ it("returns observed resource usage without converting it into cleanup confirmat
   });
 });
 
+it.each([
+  [true, true, "process_group_gone"],
+  [true, false, "unknown"],
+  [false, true, "unknown"],
+] as const)(
+  "reports the task group gone only from a started task's own completion: started %s, group gone %s",
+  async (started, groupGone, cleanup) => {
+    const process = child();
+    const input = request();
+    const host = prepareSandboxJobHost(input);
+    process.emitMessage({
+      type: "ready",
+      jobId: "job",
+      attemptId: "attempt",
+      policyDigest: input.policyDigest,
+    });
+    await host.ready;
+    if (started) host.start();
+    process.emitMessage({
+      type: "result",
+      reason: "exited",
+      resources: null,
+      taskStarted: started,
+      taskProcessExited: started,
+      stdioClosed: true,
+      srtReset: true,
+      taskProcessGroupGone: groupGone,
+    });
+    process.emit("close");
+    expect((await host.result).taskTreeCleanup).toBe(started ? cleanup : "not_started");
+  },
+);
+
 it("expires supervision and rejects replaced boot identities without granting a new start", async () => {
   vi.useFakeTimers();
   const process = child();

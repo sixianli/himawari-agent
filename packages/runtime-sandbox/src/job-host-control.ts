@@ -42,6 +42,7 @@ export interface JobHostControlObservation {
   readonly taskProcessExited: boolean;
   readonly stdioClosed: boolean;
   readonly srtReset: boolean;
+  readonly taskProcessGroupGone?: boolean;
 }
 const maximumBytes = 16384;
 const signature = (token: string, body: string) =>
@@ -120,7 +121,8 @@ function verify(binding: JobHostControlBinding, encoded: string): JobHostControl
             value.readiness.readyAt > value.observedAt)))) ||
     [value.taskStarted, value.taskProcessExited, value.stdioClosed, value.srtReset].some(
       (flag) => typeof flag !== "boolean",
-    )
+    ) ||
+    (value.taskProcessGroupGone !== undefined && typeof value.taskProcessGroupGone !== "boolean")
   )
     throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
   return Object.freeze(value);

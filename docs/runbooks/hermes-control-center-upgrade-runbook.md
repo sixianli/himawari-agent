@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b68d66d510d4666cbe31e31284d045e143a73b400cbb0a27c84ca7a7737e56ce"
+contract_sha256: "sha256:e04d0c7cc813503e8c18a6059b0fe4a5f389f4754564d59193b7e61f1ca7f3e6"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -374,7 +374,7 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 历史占用可先按[只读核查流程](workspace-lifecycle-audit-runbook.md)从对应源码 checkout 读取已验证的数据库副本。该入口不随安装产物自动变成管理命令，也不执行迁移、解锁或重放；现场宿主停止证明与具体修复仍需单独核对。
 
-JobHost 控制探针现含脱离原进程组的持续写入子进程，在 Stop 和 Worker 崩溃后独立读取文件。2026-09-20 的隔离实测中，Linux namespace 释放后无新增写入；Mac 后代仍继续写入，必须保持未知清理并拦住竞争预约。构建产品探针还检查执行前拒绝竞争预约、永久释放后才允许预约及独立数据库读回。这些探针的安装资格为合成夹具，不能替代本 Runbook 要求的最终安装路径、运行账号和权限资格；两个探针也不构成第二个并发 writer 的完整联合验收。见[本次证据边界](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/README.md)。
+JobHost 控制探针现含脱离原进程组的持续写入子进程，在 Stop 和 Worker 崩溃后独立读取文件。2026-09-20 的隔离实测中，Linux namespace 释放后无新增写入；Mac 后代仍继续写入。按 ADR 0033，Mac 上任务进程组全部消失后照样释放占用，cleanup 记为 `process_group_gone`（停止未经严格确认），离开进程组的后代继续写入是所有者已接受的风险；探针只在 cleanup 为 `confirmed` 时要求观察之后没有新增写入。构建产品探针还检查执行前拒绝竞争预约、永久释放后才允许预约及独立数据库读回。这些探针的安装资格为合成夹具，不能替代本 Runbook 要求的最终安装路径、运行账号和权限资格；两个探针也不构成第二个并发 writer 的完整联合验收。见[本次证据边界](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-platform-01/README.md)。
 
 Schema 37 为原调用的恢复结果建立 writer 屏障。恢复结果保存在受保护的 `pi-file-recovery:<invocationId>` Trace artifact 中，与原 Worker 输出分开；不覆盖原输出，也不创建第二个调用回执。旧 writer 不理解该来源，不得直接写入新库。
 

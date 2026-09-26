@@ -11,6 +11,7 @@ import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
+import { stopProcessGroup } from "./process-group.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
 import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
 
@@ -25,6 +26,7 @@ let workerSequence = 0;
 let controlSequence = 0;
 let control: Awaited<ReturnType<typeof openJobHostControl>> | undefined;
 let managerReset = false;
+let taskProcessGroupGone = false;
 let readiness: ReturnType<typeof startReadinessProbe> | undefined;
 let readyAt: string | null = null;
 let lastWorkerTick = performance.now();
@@ -89,6 +91,12 @@ async function finish() {
   killTask();
   readiness?.cancel();
   await readiness?.result.catch(() => false);
+  if (userTaskStarted && task?.pid !== undefined)
+    taskProcessGroupGone = await stopProcessGroup(task.pid, {
+      timeoutMs: Math.min(1000, request?.cleanupTimeoutMs ?? 1000),
+      intervalMs: 10,
+      kill: (pid, signal) => process.kill(pid, signal),
+    });
   let reset = false;
   clearTimeout(emergency);
   emergency = setTimeout(() => process.exit(1), request?.cleanupTimeoutMs ?? 5000);
@@ -120,6 +128,7 @@ async function finish() {
     taskProcessExited: exited,
     stdioClosed: closed,
     srtReset: reset,
+    taskProcessGroupGone,
   });
   // IPC drains before disconnect; final close remains bounded by emergency.
   if (process.connected) process.disconnect();
@@ -210,6 +219,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
         taskProcessExited: exited,
         stdioClosed: closed,
         srtReset: managerReset,
+        taskProcessGroupGone,
       }),
       () => stop("cancelled"),
     );

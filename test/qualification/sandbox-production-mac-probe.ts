@@ -448,9 +448,10 @@ export async function qualifyProductionSandbox(
       : await services.broker.journal.read(plan.identity);
     const observation = record && "facts" in record ? record.facts.resource : record?.observation;
     assert.ok(observation);
+    const releasedCleanup = process.platform === "linux" ? "confirmed" : "process_group_gone";
     if ("supervision" in observation) {
-      assert.equal(observation.supervision, process.platform === "linux" ? "released" : "lost");
-      assert.equal(observation.cleanup, process.platform === "linux" ? "confirmed" : "unknown");
+      assert.equal(observation.supervision, "released");
+      assert.equal(observation.cleanup, releasedCleanup);
     } else
       assert.equal(observation.state, process.platform === "linux" ? "released" : "quarantined");
     if (revokeToObservedStopMs !== null)
@@ -472,8 +473,8 @@ export async function qualifyProductionSandbox(
         })
       : null;
     if (projected) {
-      assert.equal(projected.allReleased, process.platform === "linux");
-      assert.equal(projected.pendingResources, process.platform !== "linux");
+      assert.equal(projected.allReleased, true);
+      assert.equal(projected.pendingResources, false);
     }
     if (withdraw) {
       assert.ok(v2Plan);
@@ -492,17 +493,16 @@ export async function qualifyProductionSandbox(
     await browser?.stopped();
     if (competingReservation) {
       assert.ok(record && "facts" in record);
-      assert.equal(Boolean(record.releaseReceipt), process.platform === "linux");
-      assert.equal(record.workspaceBlocked, process.platform !== "linux");
+      assert.equal(Boolean(record.releaseReceipt), true);
+      assert.equal(record.workspaceBlocked, false);
       // A competitor using the original revoked Grant cannot test release:
       // current authority rejects it before workspace admission is reached.
-      if (!withdraw && process.platform === "linux") {
+      if (!withdraw) {
         await preparations.reserve(competingReservation);
         const admitted = await preparations.readAdmission(competingReservation.plan.identity);
         assert.ok(admitted?.phase === "reserved");
         assert.equal(admitted.plan.identity.jobId, competingReservation.plan.identity.jobId);
-      } else if (!withdraw)
-        await assert.rejects(preparations.reserve(competingReservation), occupied);
+      }
     }
     {
       const resultOutputRef =
@@ -592,12 +592,12 @@ export async function qualifyProductionSandbox(
         : null,
       platform: process.platform,
       resourceProjection: projected,
-      cleanup: process.platform === "linux" ? "confirmed" : "unknown",
+      cleanup: v2 ? releasedCleanup : "unknown",
       replayExecuted: false,
       workspaceProtection: v2
         ? {
             blockedBeforeExecution: true,
-            admittedAfterExecution: withdraw ? null : process.platform === "linux",
+            admittedAfterExecution: withdraw ? null : true,
             occupiedAfterExecution: record && "facts" in record ? record.workspaceBlocked : null,
           }
         : null,

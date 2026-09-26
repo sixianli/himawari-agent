@@ -289,21 +289,20 @@ if (process.argv.includes("--worker")) {
         if (scenario === "stop") {
           assert.equal(workerResult.stdout, "denied\n");
           assert.equal(workerResult.reason, "cancelled");
-          assert.equal(workerResult.taskTreeCleanup, "unknown");
+          assert.equal(workerResult.taskTreeCleanup, "process_group_gone");
         }
         let observed;
         for (let i = 0; i < 20; i++) {
           observed = await product.observe(record);
-          if (
-            (scenario !== "never-started" && process.platform !== "linux") ||
-            observed.supervision === "released"
-          )
-            break;
+          if (observed.supervision === "released") break;
           await delay(100);
         }
+        assert.equal(observed.supervision, "released");
         assert.equal(
-          observed.supervision,
-          scenario === "never-started" || process.platform === "linux" ? "released" : "lost",
+          observed.cleanup,
+          scenario === "never-started" || process.platform === "linux"
+            ? "confirmed"
+            : "process_group_gone",
         );
         if (observed.supervision === "released")
           assert.equal(
@@ -319,7 +318,7 @@ if (process.argv.includes("--worker")) {
           await delay(300);
           const after = await readFile(writerPath);
           descendantWritesAfterObservation = after.length - before.length;
-          if (observed.supervision === "released") assert.deepEqual(after, before);
+          if (observed.cleanup === "confirmed") assert.deepEqual(after, before);
         }
         const reservationRelease = await product.verifyReservationRelease(plan, stopRequestedAt);
         if (scenario === "never-started") {

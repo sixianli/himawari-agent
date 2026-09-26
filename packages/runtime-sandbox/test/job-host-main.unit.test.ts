@@ -144,7 +144,9 @@ beforeEach(() => {
       processBoundary.connected = false;
       Object.assign(boundary.process, { connected: false });
     }),
-    kill: vi.fn(),
+    kill: vi.fn((pid: number, signal: string | number) => {
+      if (pid < 0 && signal === 0) throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    }),
     exit: vi.fn(),
     stderr: { write: vi.fn() },
   };
@@ -285,11 +287,12 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       taskProcessExited: true,
       stdioClosed: true,
       srtReset: true,
+      taskProcessGroupGone: true,
       exitCode: 0,
     });
     expect(boundary.manager.reset).toHaveBeenCalledOnce();
     expect(control.finish).not.toHaveBeenCalled();
-    expect(processBoundary.kill).not.toHaveBeenCalled();
+    expect(processBoundary.kill.mock.calls).toEqual([[-7000, 0]]);
     expect(resource.stop).toHaveBeenCalled();
     expect(processBoundary.disconnect).toHaveBeenCalledOnce();
   });
@@ -406,7 +409,51 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await closeTask();
     expect(control.finish).toHaveBeenCalledOnce();
     expect(probe.active()).toBe(false);
-    expect(observe()).toMatchObject({ phase: "finished", srtReset: true });
+    expect(observe()).toMatchObject({
+      phase: "finished",
+      srtReset: true,
+      taskProcessGroupGone: true,
+    });
+  });
+  it("ends same-group survivors after the task exits and reports the group gone", async () => {
+    let probes = 0;
+    processBoundary.kill.mockImplementation((pid: number, signal: string | number) => {
+      if (pid === -7000 && signal === 0 && ++probes > 1)
+        throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    });
+    await prepare();
+    await startLinux();
+    await closeTask();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(processBoundary.kill.mock.calls).toEqual([
+      [-7000, 0],
+      [-7000, "SIGKILL"],
+      [-7000, 0],
+    ]);
+    expect(result()).toMatchObject({ reason: "exited", taskProcessGroupGone: true });
+  });
+  it.each([
+    ["still-present", () => {}],
+    [
+      "not-permitted",
+      () => {
+        throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+      },
+    ],
+  ] as const)("keeps the stop unconfirmed when the task group is %s", async (_kind, signal) => {
+    processBoundary.kill.mockImplementation(signal);
+    await prepare();
+    await startLinux();
+    await closeTask();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(result()).toMatchObject({ reason: "exited", taskProcessGroupGone: false });
+  });
+  it("never probes a task group that did not start", async () => {
+    await prepare();
+    listeners.get("disconnect")?.();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(result()).toMatchObject({ taskStarted: false, taskProcessGroupGone: false });
+    expect(processBoundary.kill).not.toHaveBeenCalled();
   });
   it.each([
     "output",

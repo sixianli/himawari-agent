@@ -195,7 +195,7 @@ export interface JobHostResult {
   readonly stdioClosed: boolean;
   readonly srtReset: boolean;
   /** Process/group exit is not evidence that detached descendants are gone. */
-  readonly taskTreeCleanup: "not_started" | "unknown";
+  readonly taskTreeCleanup: "not_started" | "process_group_gone" | "unknown";
 }
 
 /** Authenticated only while attached to the original owned fork/IPC channel.

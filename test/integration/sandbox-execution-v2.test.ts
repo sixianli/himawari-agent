@@ -706,6 +706,45 @@ describe("R1 strict branches, bindings and observation history", () => {
       ),
     ).toThrow("transition");
   });
+  it("records a process-group release apart from a confirmed stop and never rewrites either", () => {
+    const f = fixture();
+    const c = context(f.plan, f.facts);
+    const lost = loss(f);
+    const reconciling = sandboxExecutionFactsSchema.parse({
+      ...lost,
+      resource: { ...lost.resource, supervision: "reconciling", sequence: 3 },
+    });
+    const groupGone = sandboxExecutionFactsSchema.parse({
+      ...released(f),
+      resource: { ...released(f).resource, cleanup: "process_group_gone", sequence: 4 },
+    });
+    expect(validateSandboxExecutionFacts(f.plan, groupGone, c, reconciling).resource).toMatchObject(
+      {
+        supervision: "released",
+        cleanup: "process_group_gone",
+      },
+    );
+    expect(() =>
+      sandboxExecutionFactsSchema.parse({
+        ...released(f),
+        resource: { ...released(f).resource, cleanup: "unknown" },
+      }),
+    ).toThrow();
+    const confirmed = sandboxExecutionFactsSchema.parse({
+      ...groupGone,
+      resource: { ...groupGone.resource, cleanup: "confirmed", sequence: 5 },
+    });
+    expect(() => validateSandboxExecutionFacts(f.plan, confirmed, c, groupGone)).toThrow(
+      "immutable",
+    );
+    const downgraded = sandboxExecutionFactsSchema.parse({
+      ...released(f),
+      resource: { ...released(f).resource, cleanup: "process_group_gone", sequence: 4 },
+    });
+    expect(() => validateSandboxExecutionFacts(f.plan, downgraded, c, released(f))).toThrow(
+      "immutable",
+    );
+  });
   it("pending preparation is not a failed operation and cannot continue the model", () => {
     const f = fixture();
     const { evidence: _evidence, ...resource } = f.facts.resource as Extract<

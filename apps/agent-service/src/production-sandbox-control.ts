@@ -90,6 +90,14 @@ function processAbsent(pid: number): boolean {
     return !!error && typeof error === "object" && "code" in error && error.code === "ESRCH";
   }
 }
+type ControlState = "controlled" | "released" | "process_group_gone" | "lost";
+const resourceState = (state: ControlState) =>
+  ({
+    controlled: { supervision: "controlled", cleanup: "pending" },
+    released: { supervision: "released", cleanup: "confirmed" },
+    process_group_gone: { supervision: "released", cleanup: "process_group_gone" },
+    lost: { supervision: "lost", cleanup: "unknown" },
+  })[state];
 function neverStartedReleased(
   raw: JobHostControlObservation,
   namespace: "alive" | "released" | "unknown",
@@ -195,7 +203,7 @@ export function createProductionSandboxControl(options: Options) {
     record: SandboxExecutionRecord,
     raw: JobHostControlObservation,
     qualification: SandboxRuntimeQualification,
-  ): Promise<"controlled" | "released" | "lost"> => {
+  ): Promise<ControlState> => {
     if (
       raw.bootId !== record.facts.environment.supervisor.bootId ||
       raw.sessionId !== record.facts.environment.supervisor.supervisorId ||
@@ -241,6 +249,15 @@ export function createProductionSandboxControl(options: Options) {
     // A finished, never-started environment can be released only after the
     // original host PID is absent. PID reuse/permission errors remain unknown.
     if (neverStartedReleased(raw, namespace)) return "released";
+    if (
+      raw.taskStarted &&
+      raw.phase === "finished" &&
+      raw.taskProcessExited &&
+      raw.srtReset &&
+      raw.taskProcessGroupGone === true &&
+      processAbsent(raw.processId)
+    )
+      return "process_group_gone";
     // Mac's accepted profile binds inherited SRT restrictions and sampled
     // supervision, not a promise of arbitrary descendant reclamation. Linux's
     // stronger tree requirement is not inferred from this Mac evidence.
@@ -312,7 +329,7 @@ export function createProductionSandboxControl(options: Options) {
           observation: raw,
         });
     }
-    let state: "controlled" | "released" | "lost" = "lost";
+    let state: ControlState = "lost";
     try {
       if (host) state = await classify(record, raw, host.qualification);
     } catch (error) {
@@ -342,7 +359,10 @@ export function createProductionSandboxControl(options: Options) {
           : old.status.kind === "task"
             ? {
                 kind: "task",
-                state: raw.taskProcessExited || state === "released" ? "exited" : "unknown",
+                state:
+                  raw.taskProcessExited || state === "released" || state === "process_group_gone"
+                    ? "exited"
+                    : "unknown",
               }
             : old.status.kind === "service"
               ? { kind: "service", readiness: "unavailable" }
@@ -354,8 +374,7 @@ export function createProductionSandboxControl(options: Options) {
             peakMemoryBytes: raw.resources.peakObservedMemoryBytes,
           }
         : old.metrics,
-      supervision: state,
-      cleanup: state === "released" ? "confirmed" : state === "controlled" ? "pending" : "unknown",
+      ...resourceState(state),
       ...(state === "lost"
         ? { reasonCode }
         : {
@@ -581,13 +600,16 @@ export function createProductionSandboxControl(options: Options) {
         value.resourceSequence !== resource.sequence ||
         resource.evidence.subject.kind !== "local_process" ||
         resource.evidence.subject.processIdentityRef !== value.observation.processIdentityRef ||
-        (await classify(
-          { plan, facts, workspaces: [], startedAt: null, operationRevision: 0 },
-          value.observation,
-          (
-            await options.host(plan)
-          ).qualification,
-        )) !== resource.supervision
+        !same(
+          resourceState(
+            await classify(
+              { plan, facts, workspaces: [], startedAt: null, operationRevision: 0 },
+              value.observation,
+              (await options.host(plan)).qualification,
+            ),
+          ),
+          { supervision: resource.supervision, cleanup: resource.cleanup },
+        )
       )
         throw new Error("SANDBOX_CONTROL_EVIDENCE_CHANGED");
       const proofs = [{ ref: artifact.ref, digest: artifact.digest }];
