@@ -130,6 +130,7 @@ it("limits Agent imports to risk-reducing sandbox control", async () => {
   ).toBe(true);
   const control = await import("@himawari-agent/runtime-sandbox/control");
   expect(Object.keys(control).sort()).toEqual([
+    "containerRunnerDigest",
     "queryJobHostControl",
     "readJobHostFinalEvidence",
     "readLinuxNamespaceState",

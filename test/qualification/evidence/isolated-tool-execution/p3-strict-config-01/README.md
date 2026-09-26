@@ -30,6 +30,14 @@
 - 集成测试的夹具要在 `/tmp` 下建临时目录，Claude 的命令沙箱不允许，所以由用户在本机终端运行：`npx vitest run --config vitest.workspace.ts --project integration test/integration/production-task-environment-route.test.ts --reporter verbose`。
 - 代码版本：提交 `64ea356` 加本次改动（即本证据所在提交）。`npm run typecheck`、`npm run lint`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志去掉了终端颜色控制字符。
 
+## 完整 npm test 第一次运行（提交 `39a454f`，失败）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-39a454f`（`39a454f` 包含本次提交 `e155106`，之后只多了一个补交旧证据文件的提交）。结果：contracts 379、unit 2048、e2e 3、pi-compat 130 全部通过；integration 1829 项中 1 项失败，报告在 [`npm-test-39a454f-failed.tar.gz`](npm-test-39a454f-failed.tar.gz)。
+
+- 失败的是 [`workspace-boundaries.test.ts`](../../../../integration/workspace/workspace-boundaries.test.ts) 的 “limits Agent imports to risk-reducing sandbox control”。它逐个列出 Agent 允许使用的 `@himawari-agent/runtime-sandbox/control` 入口导出了哪些名字，本次新增的 `containerRunnerDigest` 不在列表里。
+- 这是本次改动造成的测试失败，不是环境问题。提交前运行的 `npm run check:boundaries` 只检查引用路径，不检查这个名单，所以没有发现。
+- 处理：把 `containerRunnerDigest` 加进这份名单。它只按固定内容计算摘要，不启动、不控制任何进程，符合这个入口“只做降低风险的只读操作”的用途；此前加入 `readMachineBootId` 时（提交 `d5b22e9`）也是这样处理的。修改后该测试文件 217 项通过。
+
 ## 未验证的部分
 
 - 没有用真实 Docker 走一遍严格模式；容器路线的真实安装资格本来就尚未完成。
