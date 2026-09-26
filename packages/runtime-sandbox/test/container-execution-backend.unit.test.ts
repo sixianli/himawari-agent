@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONTAINER_RUNNER_DIGEST,
   ContainerExecutionBackend,
+  containerRunnerDigest,
 } from "../src/execution-backend/container-execution-backend.ts";
 import {
   type DockerCommand,
@@ -512,6 +513,7 @@ function backend(
       freeBytes: (directory) => freeBytes(directory),
     },
     credentialIssuer: issuer.issuer,
+    runtime: null,
     ...overrides,
   });
 }
@@ -981,6 +983,47 @@ describe("mounting approved host directories", () => {
     });
     await backend().create(createInput(withDirectories(directory("inside", "write"))));
     expect(docker.containers.size).toBe(1);
+  });
+});
+
+describe("mounting the installed runtime read-only", () => {
+  const runtimeDigest = "f".repeat(64);
+  async function runtimeRoot() {
+    const root = path.join(hostRoot, "runtime");
+    await mkdir(path.join(root, "node_modules"), { recursive: true });
+    return root;
+  }
+
+  it("mounts the installed runtime read-only and binds its digest into the runner digest", async () => {
+    const source = await runtimeRoot();
+    const subject = backend({ runtime: { source, digest: runtimeDigest } });
+    expect(containerRunnerDigest(null)).toBe(CONTAINER_RUNNER_DIGEST);
+    expect(containerRunnerDigest(runtimeDigest)).not.toBe(CONTAINER_RUNNER_DIGEST);
+    await expect(subject.create(createInput())).rejects.toMatchObject({
+      code: "CONTAINER_RUNNER_UNQUALIFIED",
+    });
+    expect(docker.containers.size).toBe(0);
+    await subject.create(createInput({ runnerDigest: containerRunnerDigest(runtimeDigest) }));
+    const container = docker.only();
+    expect(container.HostConfig["Mounts"]).toEqual([
+      { Type: "bind", Source: source, Target: "/opt/himawari", ReadOnly: true },
+    ]);
+    expect(container.Config.Labels["io.himawari.environment.runtime-digest"]).toBe(runtimeDigest);
+  });
+
+  it("refuses a runtime that is missing, not a directory or reached through a link, before the runtime is touched", async () => {
+    const source = await runtimeRoot();
+    const file = path.join(hostRoot, "runtime-file");
+    await writeFile(file, "");
+    const link = path.join(hostRoot, "runtime-link");
+    await symlink(source, link);
+    for (const candidate of [path.join(hostRoot, "absent"), file, link]) {
+      const subject = backend({ runtime: { source: candidate, digest: runtimeDigest } });
+      await expect(
+        subject.create(createInput({ runnerDigest: containerRunnerDigest(runtimeDigest) })),
+      ).rejects.toMatchObject({ code: "CONTAINER_RUNNER_UNQUALIFIED" });
+    }
+    expect(docker.calls.filter((call) => call[1] === "create")).toEqual([]);
   });
 });
 

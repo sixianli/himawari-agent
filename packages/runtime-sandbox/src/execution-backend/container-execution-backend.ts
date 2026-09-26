@@ -1,4 +1,13 @@
-import { chmod, mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import {
   EXECUTION_BACKEND_PROTOCOL_V1,
@@ -69,12 +78,21 @@ const RESERVED_VARIABLES = [
 const LABEL = "io.himawari.environment.";
 const INSPECT_OUTPUT_BYTES = 4 * 1024 * 1024;
 
-export const CONTAINER_RUNNER_DIGEST = sha256(
-  canonical({
-    init: ["/bin/sh", "-c", INIT_SCRIPT, INIT_NAME],
-    task: { environment: TASK_ENVIRONMENT, workdir: TASK_WORKDIR },
-  }),
-);
+export const RUNTIME_MOUNT_TARGET = "/opt/himawari";
+
+export function containerRunnerDigest(runtimeDigest: string | null) {
+  return sha256(
+    canonical({
+      init: ["/bin/sh", "-c", INIT_SCRIPT, INIT_NAME],
+      task: { environment: TASK_ENVIRONMENT, workdir: TASK_WORKDIR },
+      ...(runtimeDigest
+        ? { runtime: { target: RUNTIME_MOUNT_TARGET, digest: runtimeDigest } }
+        : {}),
+    }),
+  );
+}
+
+export const CONTAINER_RUNNER_DIGEST = containerRunnerDigest(null);
 
 export { ContainerBackendError, type ContainerBackendErrorCode };
 export type {
@@ -107,6 +125,7 @@ export interface ContainerExecutionBackendOptions {
   };
   readonly egress: ContainerEgressOptions;
   readonly credentialIssuer: TemporaryCredentialIssuer | null;
+  readonly runtime: { readonly source: string; readonly digest: string } | null;
 }
 
 interface DiskGuardRecord {
@@ -210,8 +229,9 @@ export class ContainerExecutionBackend {
   }): Promise<ExecutionEnvironmentLocator> {
     if (input.imageDigest !== this.options.image.digest)
       throw new ContainerBackendError("CONTAINER_IMAGE_UNQUALIFIED");
-    if (input.runnerDigest !== CONTAINER_RUNNER_DIGEST)
+    if (input.runnerDigest !== containerRunnerDigest(this.options.runtime?.digest ?? null))
       throw new ContainerBackendError("CONTAINER_RUNNER_UNQUALIFIED");
+    const runtimeMounts = await this.runtimeMounts();
     const deadlineMs = Date.parse(input.deadlineAt);
     if (deadlineMs - this.options.now().getTime() <= 1000)
       throw new ContainerBackendError("CONTAINER_DEADLINE_PASSED");
@@ -225,6 +245,9 @@ export class ContainerExecutionBackend {
       masks: await this.masks(),
     });
     const taskUser = this.taskUser(directories);
+    const mounts = [...directories.mounts, ...runtimeMounts].sort((a, b) =>
+      a.target < b.target ? -1 : a.target > b.target ? 1 : 0,
+    );
     await this.admitDisk(files, directories);
     const egressRecord =
       input.envelope.network.length > 0
@@ -248,7 +271,7 @@ export class ContainerExecutionBackend {
       input.envelope,
       imageId,
       Math.floor(deadlineMs / 1000),
-      directories.mounts,
+      mounts,
       taskUser,
       route,
     );
@@ -266,7 +289,7 @@ export class ContainerExecutionBackend {
       const created = await this.command([
         "container",
         "create",
-        ...this.createArguments(input, name, expected, directories.mounts, taskUser, route),
+        ...this.createArguments(input, name, expected, mounts, taskUser, route),
       ]);
       if (created.exitCode !== 0)
         throw new ContainerBackendError(
@@ -767,6 +790,7 @@ export class ContainerExecutionBackend {
       [`${LABEL}deadline`]: input.deadlineAt,
       [`${LABEL}task-user`]: taskUser,
       ...(route ? { [`${LABEL}egress-proxy`]: route.proxyId } : {}),
+      ...(this.options.runtime ? { [`${LABEL}runtime-digest`]: this.options.runtime.digest } : {}),
     };
     return [
       "--name",
@@ -984,6 +1008,20 @@ export class ContainerExecutionBackend {
     await chmod(file, 0o444);
     await chmod(folder, 0o555);
     return { file: await realpath(file), directory: await realpath(folder) };
+  }
+
+  private async runtimeMounts(): Promise<ContainerMount[]> {
+    const runtime = this.options.runtime;
+    if (!runtime) return [];
+    const info = await lstat(runtime.source).catch(() => null);
+    const resolved = await realpath(runtime.source).catch(() => null);
+    if (
+      !info?.isDirectory() ||
+      resolved !== runtime.source ||
+      !/^[a-f0-9]{64}$/.test(runtime.digest)
+    )
+      throw new ContainerBackendError("CONTAINER_RUNNER_UNQUALIFIED");
+    return [{ source: runtime.source, target: RUNTIME_MOUNT_TARGET, readOnly: true }];
   }
 
   private taskUser(directories: PreparedHostDirectories) {

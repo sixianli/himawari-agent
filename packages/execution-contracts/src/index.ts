@@ -16,3 +16,4 @@ export { CONTRACT_ERROR_CODE, ContractValidationError } from "./validation.ts";
 
 export * from "./sandbox-readiness.ts";
 export * from "./environment-operation-v2.ts";
+export * from "./pi-container-runner-v1.ts";

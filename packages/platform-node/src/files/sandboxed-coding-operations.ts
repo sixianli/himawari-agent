@@ -26,7 +26,7 @@ export async function createSandboxedCodingOperations(input: {
   readonly preparedFile?: SandboxPreparedFile;
   readonly shell: string;
   readonly privateDirectory: string;
-  readonly binaryDirectory: string;
+  readonly commandPath: string;
   readonly maxOutputBytes: number;
   readonly signal?: AbortSignal;
   readonly onPreparedWrite?: (proof: {
@@ -250,7 +250,7 @@ export async function createSandboxedCodingOperations(input: {
         const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
           cwd: grant.displayPath,
           env: {
-            PATH: input.binaryDirectory,
+            PATH: input.commandPath,
             HOME: input.privateDirectory,
             TMPDIR: input.privateDirectory,
             CLAUDE_CODE_TMPDIR: input.privateDirectory,

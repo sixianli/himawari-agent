@@ -132,6 +132,7 @@ export class ContainerQualification {
       hostDirectories: { maxScannedEntries: 20_000, maxProtectedEntries: 256 },
       diskGuard: { ...DISK_GUARD, freeBytes: hostFreeBytes },
       credentialIssuer: null,
+      runtime: null,
       ...overrides,
     });
     const port: ExecutionBackendPort = subject;

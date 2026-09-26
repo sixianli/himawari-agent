@@ -112,7 +112,7 @@ async function setup(initial?: string) {
       expectedTarget,
       shell: "/bin/bash",
       privateDirectory,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
       onPreparedWrite: journal.prepared,
       onVerifiedWrite: journal.verified,

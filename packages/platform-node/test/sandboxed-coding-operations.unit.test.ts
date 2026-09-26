@@ -49,7 +49,7 @@ async function setup(initial?: string) {
     targetPath: file,
     shell: "/bin/bash",
     privateDirectory: root,
-    binaryDirectory: "/usr/bin",
+    commandPath: "/usr/bin",
     maxOutputBytes: 4096,
   });
   return { root, file, grant, port };
@@ -63,7 +63,7 @@ describe("sandboxed coding file operations", () => {
       targetPath: file,
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
       async onPreparedWrite() {
         calls++;
@@ -90,7 +90,7 @@ describe("sandboxed coding file operations", () => {
       targetPath: file,
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
       async onVerifiedWrite() {
         reached();
@@ -134,7 +134,7 @@ describe("sandboxed coding file operations", () => {
       targetPath: file,
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
     });
     await expect(
@@ -181,7 +181,7 @@ describe("sandboxed coding file operations", () => {
       grant,
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
     });
     await expect(port.executeCommand({ cwd: root, command: "true", onData() {} })).rejects.toThrow(
@@ -220,7 +220,7 @@ describe("sandboxed shell result boundary", () => {
       grant: { ...grant, operations: ["read"] },
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 64,
     });
     let output = "";
@@ -276,7 +276,7 @@ it.each(["unchanged", "create", "content", "inode", "created"] as const)(
       expectedTarget,
       shell: "/bin/bash",
       privateDirectory: root,
-      binaryDirectory: "/usr/bin",
+      commandPath: "/usr/bin",
       maxOutputBytes: 4096,
     });
     if (unchanged) {
@@ -307,7 +307,7 @@ it("keeps directory coordination while creating previously missing parents", asy
     },
     shell: "/bin/bash",
     privateDirectory: root,
-    binaryDirectory: "/usr/bin",
+    commandPath: "/usr/bin",
     maxOutputBytes: 4096,
   });
   await port.makeDirectory(path.dirname(file));

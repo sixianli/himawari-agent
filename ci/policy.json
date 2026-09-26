@@ -211,7 +211,8 @@
         "test/integration/openrouter-embedding-live.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
         "test/integration/container-runtime-restart-qualification.test.ts",
-        "test/integration/container-browser-qualification.test.ts"
+        "test/integration/container-browser-qualification.test.ts",
+        "test/integration/container-pi-runner-qualification.test.ts"
       ],
       "fileParallelism": false
     },
@@ -282,6 +283,13 @@
       "kind": "qualification",
       "project": "qualification-container-browser",
       "reason": "真实浏览器测试样例需要单独构建的浏览器镜像和联网出口，只能单独 opt-in",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-pi-runner-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-runner",
+      "reason": "容器内 Pi runner 需要已构建的 runtime 和本机构建的 runner 镜像，只能单独 opt-in",
       "allowedModifiers": ["skip"]
     },
     {

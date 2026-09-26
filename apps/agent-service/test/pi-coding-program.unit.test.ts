@@ -115,7 +115,7 @@ describe("installed Pi coding program boundary", () => {
       expect.objectContaining({
         targetPath: "/workspace/README.md",
         privateDirectory: "/private-runner",
-        binaryDirectory: "/runtime/pi-tools/bin",
+        commandPath: "/runtime/pi-tools/bin",
         grant: expect.objectContaining({
           hostId: "host-program",
           id: "directory-program",

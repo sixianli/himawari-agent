@@ -10,8 +10,8 @@ import {
   createPiFilePublicationJournal,
   createSandboxedCodingOperations,
   createWorkspaceCopyPublication,
-  exportPiOutputFile,
 } from "@himawari-agent/platform-node";
+import { writeForegroundPiResult } from "./pi-foreground-result.js";
 
 // Installed program only. Worker launches it under SRT with fixed host identities.
 // Import Pi only after its process-local offline and private-directory settings.
@@ -213,7 +213,7 @@ try {
         ...(input.scope.preparedFile ? { preparedFile: input.scope.preparedFile } : {}),
         shell: path.join(binaryDirectory, "bash"),
         privateDirectory: input.privateDirectory,
-        binaryDirectory,
+        commandPath: binaryDirectory,
         maxOutputBytes: input.maxOutputBytes,
       });
       const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
@@ -317,31 +317,14 @@ try {
         streamOutput(true);
         process.exitCode = commandExitCode ?? (result.isError ? 1 : 0);
       } else {
-        const details =
-          result.details && typeof result.details === "object"
-            ? ({ ...result.details } as Record<string, unknown>)
-            : {};
-        const fullPath = details["fullOutputPath"];
-        delete details["fullOutputPath"];
-        const fullOutput =
-          typeof fullPath === "string"
-            ? await exportPiOutputFile(fullPath, input.privateDirectory, input.maxOutputBytes)
-            : null;
-        const content = result.content.map((part) =>
-          part.type === "text" && typeof fullPath === "string"
-            ? { ...part, text: part.text.replaceAll(fullPath, "本次受保护结果的 fullOutput 字段") }
-            : part,
-        );
-        const output = JSON.stringify({
-          schemaVersion: "pi-result.v1",
+        await writeForegroundPiResult({
           tool: input.tool,
-          content,
-          details,
-          fullOutput,
-          isError: result.isError,
+          result,
           commandExitCode,
           verifiedWrite,
-          ...(input.scope.preparedFile ? { fileCommitClosed: true } : {}),
+          privateDirectory: input.privateDirectory,
+          maxOutputBytes: input.maxOutputBytes,
+          closing: input.scope.preparedFile ? { fileCommitClosed: true } : {},
           source: {
             workspace: input.workspace,
             toolCallId: input.scope.toolCallId,
@@ -350,13 +333,6 @@ try {
             parameters,
           },
         });
-        if (scanMachineSecrets(output).length) throw new Error("PI_RESULT_SECRET_REJECTED");
-        if (Buffer.byteLength(output) > input.maxOutputBytes)
-          throw new Error("PI_RESULT_OUTPUT_LIMIT");
-        process.stdout.write(output);
-        if (result.isError)
-          process.exitCode =
-            commandExitCode && commandExitCode > 0 && commandExitCode < 256 ? commandExitCode : 1;
       }
     } catch (error) {
       if (
