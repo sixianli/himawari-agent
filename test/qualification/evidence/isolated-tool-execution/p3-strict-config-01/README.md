@@ -38,6 +38,10 @@
 - 这是本次改动造成的测试失败，不是环境问题。提交前运行的 `npm run check:boundaries` 只检查引用路径，不检查这个名单，所以没有发现。
 - 处理：把 `containerRunnerDigest` 加进这份名单。它只按固定内容计算摘要，不启动、不控制任何进程，符合这个入口“只做降低风险的只读操作”的用途；此前加入 `readMachineBootId` 时（提交 `d5b22e9`）也是这样处理的。修改后该测试文件 217 项通过。
 
+## 完整 npm test 第二次运行（提交 `bc6b134`，通过）
+
+修复后由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-bc6b134`，全部通过：contracts 379 项、unit 2048 项、integration 1829 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-bc6b134.tar.gz`](npm-test-bc6b134.tar.gz)。控制台输出去掉了本机沙箱打印的、与测试无关的 `failed to copy trust settings` 行。
+
 ## 未验证的部分
 
 - 没有用真实 Docker 走一遍严格模式；容器路线的真实安装资格本来就尚未完成。
