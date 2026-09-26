@@ -82,8 +82,40 @@ describe("quality policy and dormant schedule", () => {
         return value;
       },
     ],
+    [
+      "floating container image",
+      (value) => {
+        value.container.images[0] = "docker.io/library/busybox:latest";
+        return value;
+      },
+    ],
+    [
+      "no container images",
+      (value) => {
+        value.container.images = [];
+        return value;
+      },
+    ],
   ])("rejects %s", (_name, mutate) => {
     expect(() => validateQualityPolicy(mutate(structuredClone(policy)))).toThrow("POLICY_INVALID");
+  });
+  it("pins exactly the images the container qualification runs", () => {
+    const source = readFileSync(
+      path.join(
+        repositoryRoot,
+        "test/integration/container-execution-backend-qualification.test.ts",
+      ),
+      "utf8",
+    );
+    const pinned = [
+      ...source.matchAll(
+        /const (\w+)_REFERENCE = "([^"]+)";\s*const \1_DIGEST = "([a-f0-9]{64})";/g,
+      ),
+    ]
+      .map((match) => `${match[2]}@sha256:${match[3]}`)
+      .sort();
+    expect(pinned).toHaveLength(2);
+    expect([...policy.container.images].sort()).toEqual(pinned);
   });
   it.each([
     [
@@ -108,6 +140,18 @@ describe("quality policy and dormant schedule", () => {
       "missing check",
       (value) => {
         delete value.jobs.dependencies;
+      },
+    ],
+    [
+      "container job without pinned images",
+      (value) => {
+        value.jobs.container.steps.splice(4, 1);
+      },
+    ],
+    [
+      "container job on another runtime",
+      (value) => {
+        value.jobs.container.steps[5].env.HIMAWARI_CONTAINER_DOCKER_HOST = "tcp://elsewhere:2375";
       },
     ],
     [

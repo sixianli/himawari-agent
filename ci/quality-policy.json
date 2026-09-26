@@ -2,17 +2,24 @@
   "schemaVersion": 1,
   "defaultBranch": "main",
   "schedule": { "enabled": false, "cron": "23 3 * * *", "timezone": "UTC" },
-  "checks": ["scale", "thread-scale", "brands", "dependencies", "node-observation"],
+  "checks": ["scale", "thread-scale", "brands", "dependencies", "node-observation", "container"],
   "brands": ["chrome", "edge"],
   "timeoutsMinutes": {
     "scale": 60,
     "thread-scale": 60,
     "brands": 30,
     "dependencies": 15,
-    "node-observation": 15
+    "node-observation": 15,
+    "container": 30
   },
   "retentionDays": { "reports": 30, "diagnostics": 7 },
   "securityFreshnessHours": 24,
+  "container": {
+    "images": [
+      "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+      "docker.io/library/node@sha256:e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd"
+    ]
+  },
   "nodeObservation": {
     "version": "24.11.1",
     "scope": "两个 TypeScript 配置与政策、上下文、汇总、覆盖率工具的兼容性观察，不扩大产品支持范围，不验证该 ABI 的生产 SQLite 绑定",

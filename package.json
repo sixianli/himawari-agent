@@ -22,6 +22,7 @@
     "install:node-runtime": "node scripts/install-node-runtime.mjs",
     "qualify:scale": "node scripts/ci/quality.mjs --check scale --tools .ci-output/tools",
     "qualify:thread-scale": "node scripts/ci/quality.mjs --check thread-scale --tools .ci-output/tools",
+    "qualify:container": "node scripts/ci/quality.mjs --check container --tools .ci-output/tools",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:v0.2-coverage && npm run check:v0.2-invariants && npm run check:secrets && npm run check:ci-policy",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:local-pi": "node scripts/check-local-pi.mjs",

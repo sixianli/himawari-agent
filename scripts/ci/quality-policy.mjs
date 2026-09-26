@@ -10,13 +10,18 @@ const object = (properties) => ({
   additionalProperties: false,
 });
 const constant = (value) => ({ const: value });
-const checks = ["scale", "thread-scale", "brands", "dependencies", "node-observation"];
+const checks = ["scale", "thread-scale", "brands", "dependencies", "node-observation", "container"];
 const timeouts = {
   scale: 60,
   "thread-scale": 60,
   brands: 30,
   dependencies: 15,
   "node-observation": 15,
+  container: 30,
+};
+const CONTAINER_RUNTIME = {
+  HIMAWARI_CONTAINER_DOCKER_CLI: "/usr/bin/docker",
+  HIMAWARI_CONTAINER_DOCKER_HOST: "unix:///var/run/docker.sock",
 };
 const distribution = object({
   filename: { type: "string", pattern: "^[A-Za-z0-9._-]+$" },
@@ -38,6 +43,17 @@ const validate = ajv.compile(
     timeoutsMinutes: constant(timeouts),
     retentionDays: constant({ reports: 30, diagnostics: 7 }),
     securityFreshnessHours: constant(24),
+    container: object({
+      images: {
+        type: "array",
+        minItems: 1,
+        uniqueItems: true,
+        items: {
+          type: "string",
+          pattern: "^docker\\.io/library/[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$",
+        },
+      },
+    }),
     nodeObservation: object({
       version: { type: "string", pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
       scope: { type: "string", minLength: 1 },
@@ -116,8 +132,12 @@ export function validateQualityWorkflow(policy, source, toolchain) {
                 run(`${node} node_modules/playwright/cli.js install --with-deps chrome msedge`),
               ]
             : []),
+          ...(check === "container"
+            ? [run(policy.container.images.map((image) => `docker pull ${image}`).join("\n"))]
+            : []),
           run(
             `${node} scripts/ci/quality.mjs --check ${check} --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality${check === "brands" ? " --artifact-directory .ci-output/build" : ""}`,
+            check === "container" ? { env: CONTAINER_RUNTIME } : {},
           ),
           run(
             `${node} scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools`,

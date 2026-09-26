@@ -219,6 +219,51 @@ jobs:
           path: .ci-output/public/diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+  container:
+    runs-on: ubuntu-24.04
+    if: ${{ github.ref == 'refs/heads/main' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.22.3
+      - name: 安装固定工具
+        run: node scripts/ci/install-tools.mjs --directory .ci-output/tools
+      - name: 隔离依赖与原生探针
+        run: node scripts/ci/install-dependencies.mjs --tools .ci-output/tools --evidence .ci-output/installation
+      - name: 按固定摘要拉取资格验证镜像
+        run: |-
+          docker pull docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          docker pull docker.io/library/node@sha256:e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd
+      - name: 执行独立质量检测
+        env:
+          HIMAWARI_CONTAINER_DOCKER_CLI: /usr/bin/docker
+          HIMAWARI_CONTAINER_DOCKER_HOST: unix:///var/run/docker.sock
+        run: .ci-output/tools/bin/node scripts/ci/quality.mjs --check container --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality
+      - name: 核验公开材料
+        if: always()
+        run: .ci-output/tools/bin/node scripts/ci/publish.mjs --mode quality --input .ci-output/quality --output .ci-output/public --tools .ci-output/tools
+        id: publish
+      - name: 保存本次检测结果
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-${{ github.run_id }}-${{ github.run_attempt }}-container
+          path: .ci-output/public/reports/
+          if-no-files-found: error
+          retention-days: 30
+      - name: 保存失败诊断
+        if: ${{ always() && steps.publish.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-container
+          path: .ci-output/public/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
   handoff:
     runs-on: ubuntu-24.04
     if: ${{ github.ref == 'refs/heads/main' && inputs.ci_run_id != '' }}

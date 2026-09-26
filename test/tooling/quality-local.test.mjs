@@ -327,6 +327,50 @@ describe("periodic quality policy and evidence", () => {
       readFileSync(path.join(state.root, "docs/execution/evidence/historical.json"), "utf8"),
     ).toBe("immutable historical evidence\n");
   });
+  it("runs the container qualification only against a named runtime and fails closed without one", async () => {
+    const runtime = {
+      HIMAWARI_CONTAINER_DOCKER_CLI: "/fixture/docker",
+      HIMAWARI_CONTAINER_DOCKER_HOST: "unix:///fixture/docker.sock",
+    };
+    for (const missing of Object.keys(runtime)) {
+      const env = { GITHUB_ACTIONS: "false", ...runtime };
+      delete env[missing];
+      const report = await runQuality("container", {
+        output: `.ci-output/container-without-${missing}`,
+        env,
+      });
+      expect(report.status).toBe("failed");
+      expect(report.error).toBe("CI_QUALITY_CONTAINER_RUNTIME_REQUIRED");
+    }
+    expect(state.calls).toEqual([]);
+    const env = {
+      GITHUB_ACTIONS: "false",
+      DOCKER_HOST: "tcp://elsewhere:2375",
+      HIMAWARI_CONTAINER_WORK_ROOT: "/fixture/work",
+      ...runtime,
+    };
+    const report = await runQuality("container", { env });
+    expect(report.status).toBe("passed");
+    const call = state.calls.find((entry) => entry.name === "container");
+    expect(call.args).toContain("qualification-container");
+    expect(call.args).toEqual(expect.arrayContaining(["--maxWorkers", "1"]));
+    expect(call.env).toMatchObject({
+      HIMAWARI_CONTAINER_QUALIFICATION: "1",
+      HIMAWARI_CONTAINER_WORK_ROOT: "/fixture/work",
+      HIMAWARI_CONTAINER_EVIDENCE_PATH: path.join(
+        state.root,
+        ".ci-output/container/measurement.json",
+      ),
+      ...runtime,
+    });
+    expect(call.env).not.toHaveProperty("DOCKER_HOST");
+    expect(call.env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(report.observations[0].measurementSha256).toMatch(/^[a-f0-9]{64}$/);
+    state.skip = true;
+    expect(
+      (await runQuality("container", { output: ".ci-output/container-skipped", env })).status,
+    ).toBe("failed");
+  });
   it("retains nonzero child failures and failed infrastructure as failed reports", async () => {
     state.fail = "scale";
     const report = await runQuality("scale");
