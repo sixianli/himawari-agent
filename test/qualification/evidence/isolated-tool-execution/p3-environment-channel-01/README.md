@@ -47,6 +47,8 @@
 
 其他：Worker 与传输相关的集成测试（`execution-worker-process`、`failure-recovery-matrix`、`external-action-reconciliation`）和 UDS 传输合同测试照常通过；`unit` 与 `contracts` 两个项目共 2388 项通过；`format:check`、`typecheck`、`lint`、`check:boundaries`、`check:ci-policy`、`check:v0.2-coverage`、`check:v0.2-invariants`、`check:secrets` 通过。
 
+**正式的 `npm test`**：提交 `5a88eee` 之后在本机沙箱外运行，构建和测试两步都通过：contracts 368 项、unit 2020 项、integration 1781 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。和上一次（`a15e4ba`）相比，contracts 多 13 项、unit 多 5 项、integration 多 2 项，正是本批新增的测试。报告在 [`npm-test-5a88eee.tar.gz`](npm-test-5a88eee.tar.gz)，安装包只记录了 SHA-256。
+
 ## 没有覆盖的部分
 
 - 产品装配：Agent 用 `RemoteExecutionBackend`、Worker 按配置启用容器适配器，都还没有接入，第三批做。
