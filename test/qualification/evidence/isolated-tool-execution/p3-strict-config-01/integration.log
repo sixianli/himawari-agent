@@ -1,0 +1,299 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.0880000000001928,"at":"2026-09-26T16:22:31.663Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.13645899999983,"at":"2026-09-26T16:22:31.696Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.45187499999974534,"at":"2026-09-26T16:22:31.697Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0700830000000678,"at":"2026-09-26T16:22:31.699Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8299170000000231,"at":"2026-09-26T16:22:31.700Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.23954200000025594,"at":"2026-09-26T16:22:31.760Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.62791700000025,"at":"2026-09-26T16:22:31.792Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.43508399999973335,"at":"2026-09-26T16:22:31.793Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0280830000001515,"at":"2026-09-26T16:22:31.795Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6506669999998849,"at":"2026-09-26T16:22:31.796Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7540420000000267,"at":"2026-09-26T16:22:31.800Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.883291999999983,"at":"2026-09-26T16:22:31.832Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.8818750000000364,"at":"2026-09-26T16:22:31.833Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6273329999999078,"at":"2026-09-26T16:22:31.835Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.9751660000001721,"at":"2026-09-26T16:22:31.836Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.22479199999997945,"at":"2026-09-26T16:22:31.842Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.636665999999877,"at":"2026-09-26T16:22:31.874Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.36899999999968713,"at":"2026-09-26T16:22:31.874Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6476250000000618,"at":"2026-09-26T16:22:31.875Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5478339999999662,"at":"2026-09-26T16:22:31.876Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > runs a container tool call inside the Run's task environment and releases it when the Run finishes 744ms
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7513330000001588,"at":"2026-09-26T16:22:32.400Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":43.887917000000016,"at":"2026-09-26T16:22:32.444Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":4.1198330000006536,"at":"2026-09-26T16:22:32.448Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.016208000000006,"at":"2026-09-26T16:22:32.451Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5555420000000595,"at":"2026-09-26T16:22:32.451Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.28979200000048877,"at":"2026-09-26T16:22:32.507Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.96966599999996,"at":"2026-09-26T16:22:32.540Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2592500000000655,"at":"2026-09-26T16:22:32.540Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7770000000000437,"at":"2026-09-26T16:22:32.541Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.49175000000013824,"at":"2026-09-26T16:22:32.542Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6573340000004464,"at":"2026-09-26T16:22:32.545Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.18574999999964,"at":"2026-09-26T16:22:32.578Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.35812499999974534,"at":"2026-09-26T16:22:32.578Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6259159999999611,"at":"2026-09-26T16:22:32.579Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5216250000003129,"at":"2026-09-26T16:22:32.580Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.20595800000046438,"at":"2026-09-26T16:22:32.585Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.61533299999974,"at":"2026-09-26T16:22:32.620Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6714999999994689,"at":"2026-09-26T16:22:32.620Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7624999999998181,"at":"2026-09-26T16:22:32.622Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.342916999999943,"at":"2026-09-26T16:22:32.624Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > stops the whole task environment when a container call's result is lost 752ms
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6409580000008646,"at":"2026-09-26T16:22:33.220Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.07758300000023,"at":"2026-09-26T16:22:33.252Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3887910000003103,"at":"2026-09-26T16:22:33.253Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9710830000003625,"at":"2026-09-26T16:22:33.254Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5014999999993961,"at":"2026-09-26T16:22:33.255Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.3257499999999709,"at":"2026-09-26T16:22:33.324Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.672082999999475,"at":"2026-09-26T16:22:33.363Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2687919999998485,"at":"2026-09-26T16:22:33.363Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0532499999999345,"at":"2026-09-26T16:22:33.365Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5325000000002547,"at":"2026-09-26T16:22:33.365Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.306749999999738,"at":"2026-09-26T16:22:33.370Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":54.30937499999982,"at":"2026-09-26T16:22:33.425Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.40320799999972223,"at":"2026-09-26T16:22:33.425Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6388749999996435,"at":"2026-09-26T16:22:33.426Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.638625000000502,"at":"2026-09-26T16:22:33.427Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2684589999998934,"at":"2026-09-26T16:22:33.434Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.10083399999985,"at":"2026-09-26T16:22:33.472Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3904160000001866,"at":"2026-09-26T16:22:33.473Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6261249999997744,"at":"2026-09-26T16:22:33.474Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6589999999996508,"at":"2026-09-26T16:22:33.475Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.5944159999999101,"at":"2026-09-26T16:22:33.493Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":57.62833299999966,"at":"2026-09-26T16:22:33.551Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.40454199999931006,"at":"2026-09-26T16:22:33.552Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7596659999999247,"at":"2026-09-26T16:22:33.553Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6696249999995416,"at":"2026-09-26T16:22:33.554Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.46795900000051915,"at":"2026-09-26T16:22:33.615Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.4340830000001,"at":"2026-09-26T16:22:33.653Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.31958399999984977,"at":"2026-09-26T16:22:33.654Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9130419999992228,"at":"2026-09-26T16:22:33.655Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.605333000000428,"at":"2026-09-26T16:22:33.656Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7579580000001442,"at":"2026-09-26T16:22:33.662Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":41.55370900000071,"at":"2026-09-26T16:22:33.703Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.30495799999971496,"at":"2026-09-26T16:22:33.704Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5692500000004657,"at":"2026-09-26T16:22:33.705Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4454589999995733,"at":"2026-09-26T16:22:33.705Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2324159999998301,"at":"2026-09-26T16:22:33.710Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.62325000000055,"at":"2026-09-26T16:22:33.743Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":1.291374999999789,"at":"2026-09-26T16:22:33.744Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.247417000000496,"at":"2026-09-26T16:22:33.747Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.9429579999996349,"at":"2026-09-26T16:22:33.748Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > reuses the Run's task environment for a later container call 1104ms
+stderr | test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.419499999999971,"at":"2026-09-26T16:22:34.233Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.74591700000019,"at":"2026-09-26T16:22:34.268Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.25516700000025594,"at":"2026-09-26T16:22:34.269Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6153750000003129,"at":"2026-09-26T16:22:34.270Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5417090000000826,"at":"2026-09-26T16:22:34.270Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > refuses a container operation binding when task environments are not configured 509ms
+stderr | test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.431999999999789,"at":"2026-09-26T16:22:34.680Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.997041999999965,"at":"2026-09-26T16:22:34.713Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.26720900000054826,"at":"2026-09-26T16:22:34.713Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0090000000000146,"at":"2026-09-26T16:22:34.715Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.6286250000002838,"at":"2026-09-26T16:22:34.716Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > releases a reserved container call that never started when the Run is cancelled 486ms
+stderr | test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1823750000003201,"at":"2026-09-26T16:22:35.160Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.72283400000015,"at":"2026-09-26T16:22:35.197Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.248833999999988,"at":"2026-09-26T16:22:35.197Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.124166999999943,"at":"2026-09-26T16:22:35.199Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5242910000006304,"at":"2026-09-26T16:22:35.199Z"}
+
+ ✓  integration  test/integration/production-task-environment-route.test.ts > rejects a reserved container release while its task environment is still running 465ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  01:22:28
+   Duration  7.03s (transform 1.24s, setup 0ms, import 2.84s, tests 4.06s, environment 0ms)

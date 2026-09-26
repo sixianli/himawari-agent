@@ -1,0 +1,52 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |unit| apps/execution-worker/test/production-task-environment-backend.unit.test.ts > Worker task environment backend > refuses to start without a host binding that routes operations to the backend 1ms
+ ✓ |unit| apps/execution-worker/test/production-task-environment-backend.unit.test.ts > Worker task environment backend > refuses bindings that disagree on the mounted runtime 0ms
+ ✓ |unit| apps/execution-worker/test/production-task-environment-backend.unit.test.ts > Worker task environment backend > resolves only approved roots of the same host 1ms
+ ✓ |unit| apps/execution-worker/test/production-task-environment-backend.unit.test.ts > task environment container route > hands the exact argv to the backend once and returns the recorded output as bytes 1ms
+ ✓ |unit| apps/execution-worker/test/production-task-environment-backend.unit.test.ts > task environment container route > forgets the argv and reports failure when the backend or output is lost 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > loads a versioned configuration without deriving paths from cwd 3ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > validates an endpoint requiring reasoning without accepting contradictory capabilities 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > accepts an optional capability deployment snapshot reference with strict fields 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > accepts an optional task environment backend with pinned images and rejects unsafe shapes 2ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects unknown fields recursively and raw machine-secret material 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects relative paths, insecure public origins, duplicate descriptors, and unsafe limits 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > parses bounded public HTTP and identity configuration without defaults 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > accepts built-in accounts without external identity fields and rejects unbounded sessions 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > accepts an explicit HTTPS origin port only when the fixed endpoint matches it 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects unsafe or incomplete public field configuration.http.listenHost 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects unsafe or incomplete public field configuration.identity.issuer 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects unsafe or incomplete public field configuration.identity.jwksUrl 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > rejects unsafe or incomplete public field configuration.identity.recentAuthentication.maximumAgeMilliseconds 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > strict product configuration > reads only a regular non-writable-by-others JSON file 3ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > state-root lifecycle > creates restricted data/runtime/cache partitions and atomically round-trips authority 13ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > state-root lifecycle > atomically publishes and generation-checks the Agent Service boot binding 18ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > state-root lifecycle > refuses an existing broadly accessible root and an unknown authority field 2ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > runtime health model > separates liveness, readiness, required dependencies and provider degradation 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > runtime health model > requires identity trust in public mode and authenticates detailed status 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase configuration fails 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase secret-references fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase deployment-lock fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase authority fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase sqlite-migrations fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase payload-keyring fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase repositories-recovery fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase models-memory fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase worker fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase scheduler-recovery fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > rolls back cleanly when startup phase http-readiness fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > continues safe shutdown after drain phase revoke-readiness-admission fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > continues safe shutdown after drain phase stop-scheduler-publisher fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > continues safe shutdown after drain phase settle-inflight-runs fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > continues safe shutdown after drain phase close-memory-sqlite-socket fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > startup and drain coordinator > continues safe shutdown after drain phase release-authority-lock fails 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > validates the versioned Run policy and rejects inconsistent Memory bounds 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > parses private search without allowing a mixed directory grant 0ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > accepts a dedicated review model and rejects one the router could also select 1ms
+ ✓ |unit| packages/platform-node/test/startup-configuration.unit.test.ts > accepts a TypeSafe decision model as the configured reviewer and rejects its invalid shapes 1ms
+
+ Test Files  2 passed (2)
+      Tests  44 passed (44)
+   Start at  01:19:24
+   Duration  1.27s (transform 882ms, setup 0ms, import 1.42s, tests 61ms, environment 0ms)

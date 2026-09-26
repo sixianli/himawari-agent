@@ -1,0 +1,23 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90m/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent[39m
+
+ [32m✓[39m [30m[45m integration [49m[39m test/integration/sandbox-control-evidence.test.ts [2m([22m[2m61 tests[22m[2m)[22m[33m 17323[2mms[22m[39m
+   [33m[2m✓[22m[39m keeps the authenticated control timeout when no final proof exists [33m 1217[2mms[22m[39m
+   [33m[2m✓[22m[39m refuses changed live process policyDigest [33m 352[2mms[22m[39m
+   [33m[2m✓[22m[39m refuses substituted persisted observation digest [33m 322[2mms[22m[39m
+   [33m[2m✓[22m[39m refuses substituted persisted observation fingerprint [33m 1078[2mms[22m[39m
+   [33m[2m✓[22m[39m attests a never-started reservation only with independent host exit proof: alive [33m 452[2mms[22m[39m
+   [33m[2m✓[22m[39m attests a never-started reservation only with independent host exit proof: started [33m 342[2mms[22m[39m
+   [33m[2m✓[22m[39m attests a never-started reservation only with independent host exit proof: cleanup-unknown [33m 508[2mms[22m[39m
+   [33m[2m✓[22m[39m attests a never-started reservation only with independent host exit proof: verified [33m 419[2mms[22m[39m
+   [33m[2m✓[22m[39m releases only a qualified fixed file terminal program: unqualified [33m 368[2mms[22m[39m
+   [33m[2m✓[22m[39m releases only a qualified fixed file terminal program: unverified [33m 369[2mms[22m[39m
+   [33m[2m✓[22m[39m releases only a qualified fixed file terminal program: arbitrary [33m 312[2mms[22m[39m
+   [33m[2m✓[22m[39m releases only a qualified fixed file terminal program: cleanup-unknown [33m 304[2mms[22m[39m
+   [33m[2m✓[22m[39m releases a finished SRT call on darwin only once its task group is gone: group-gone [33m 328[2mms[22m[39m
+   [33m[2m✓[22m[39m releases a finished SRT call on darwin only once its task group is gone: flag-absent [33m 340[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m61 passed[39m[22m[90m (61)[39m
+[2m   Start at [22m 23:06:44
+[2m   Duration [22m 18.93s[2m (transform 966ms, setup 0ms, import 1.49s, tests 17.32s, environment 0ms)[22m

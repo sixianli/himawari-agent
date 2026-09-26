@@ -1,0 +1,11 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |integration| test/integration/sandbox-unconfirmed-purge.test.ts > unconfirmed SRT record purge admin CLI > lists exactly the unconfirmed SRT records of this agent without changing the database 189ms
+ ✓ |integration| test/integration/sandbox-unconfirmed-purge.test.ts > unconfirmed SRT record purge admin CLI > deletes nothing without the listed digest, with a stale digest or while the service holds the state root 103ms
+ ✓ |integration| test/integration/sandbox-unconfirmed-purge.test.ts > unconfirmed SRT record purge admin CLI > deletes only the listed records and their own rows, records the deletion and frees their Run 123ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  00:07:14
+   Duration  1.98s (transform 968ms, setup 0ms, import 1.47s, tests 416ms, environment 0ms)
