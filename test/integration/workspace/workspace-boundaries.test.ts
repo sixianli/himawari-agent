@@ -133,5 +133,6 @@ it("limits Agent imports to risk-reducing sandbox control", async () => {
     "queryJobHostControl",
     "readJobHostFinalEvidence",
     "readLinuxNamespaceState",
+    "readMachineBootId",
   ]);
 });
