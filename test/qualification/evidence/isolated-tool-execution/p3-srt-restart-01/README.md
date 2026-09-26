@@ -30,6 +30,12 @@ node packages/runtime-sandbox/scripts/probe-job-host-control.mjs 2>&1 | tee test
 - [`machine-boot.log`](machine-boot.log)：2 项通过；本机 macOS 读到合法的开机标识，连续两次读取相同。
 - [`mac-job-host-control.log`](mac-job-host-control.log)：真实 Job Host 和 SRT 的 7 个场景全部通过，登记时读取开机标识不影响原有路径；两个写入程序场景在释放后又写入 30 和 28 字节，属于已接受的风险。
 
+## 完整 npm test（提交 `d5b22e9`）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-d5b22e9-3`，全部通过：contracts 379 项、unit 2046 项、integration 1822 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-d5b22e9.tar.gz`](npm-test-d5b22e9.tar.gz)。
+
+在这之前：`b40b4ef` 的 CI 规则检查不允许条件跳过的测试写法 `it.runIf`，由 `3d9a074` 改正；`3d9a074` 的完整测试有 1 项失败，原因是 [`workspace-boundaries.test.ts`](../../../../integration/workspace/workspace-boundaries.test.ts) 固定了 `@himawari-agent/runtime-sandbox/control` 的导出列表，由 `d5b22e9` 补上 `readMachineBootId`。`d5b22e9` 的前两次运行（输出目录 `npm-test-d5b22e9`、`npm-test-d5b22e9-2`，未存档）在打包阶段失败，没有执行测试：访达在构建目录各层（最深到 `node_modules`）写入了 `.DS_Store`（访达记录文件夹显示设置的文件），产物校验报 `ARTIFACT_CONTENT_MISMATCH`，清理报 `ENOTEMPTY`。关闭访达窗口后重跑通过。
+
 ## 未验证的部分
 
 - 没有真正重启机器验证“重启后开机标识不同、记录被释放”；这一点只由注入开机标识的测试覆盖。
