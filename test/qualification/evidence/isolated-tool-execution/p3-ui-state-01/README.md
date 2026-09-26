@@ -33,6 +33,10 @@
 - 浏览器测试由用户在本机终端运行：`node scripts/test-execution-chain-browser.mjs chrome test/qualification/evidence/isolated-tool-execution/p3-ui-state-01/browser-chrome`，运行前由 Claude 执行了 `npm run build:browser`（前端包 gzip 后共 179,111 字节，上限 184,320 字节）。浏览器通过隔离的 HTTP 测试服务器取得后端状态，没有调用真实模型，也没有经过真实 Worker。
 - 代码版本：提交 `d8f697f` 加本次改动（即本证据所在提交）。`npm run typecheck`、`npm run lint`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志里本机沙箱打印的、与测试无关的 `failed to copy trust settings` 行已去掉。
 
+## 完整 npm test（提交 `8b13fbc`）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-8b13fbc`，全部通过：contracts 379 项、unit 2049 项、integration 1829 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-8b13fbc.tar.gz`](npm-test-8b13fbc.tar.gz)。控制台输出里没有本机沙箱打印的 `failed to copy trust settings` 行，原样保留。
+
 ## 未验证的部分
 
 - 在 macOS 上，SRT 工具调用正常结束后的释放依据也是 `process_group_gone`，所以这类步骤会显示“已完成 · 停止未经严格确认”；这是按 ADR 0033 如实显示，没有用真实产品路径在浏览器里走过一遍。
