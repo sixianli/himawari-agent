@@ -16,6 +16,8 @@ date: "2026-08-25"
 
 本轮只增加架构决定与设计文档，未改运行路径；现有 Mac 未知清理和 Linux namespace 证据保持原含义，不能推定已取得新容器资格。ADR 0030 的持久释放事实继续保留，新环境级 lease 与 proof 尚待接入。[SOURCE: docs/adr/0031-isolated-tool-execution.md]
 
+2026-09-26 的 [ADR 0033](adr/0033-process-sandbox-default-and-optional-containers.md) 再次部分修正 0031：macOS 和 Linux 默认都用 SRT 模式（每次调用一个 Job Host 进程，在 SRT 限制下运行工具），进程组全部消失即释放目录并标明“停止未经严格确认”；上面的任务级容器环境只在配置里明确打开 `taskEnvironments` 后的严格模式下使用。新的释放规则、删除旧未确认记录的管理命令和界面状态说明尚未实现，见[新 Spec 的两种执行模式](execution/specs/2026-09-24-isolated-tool-execution-design.md#modes)。[SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]
+
 ### 控制中心展示与执行选择（2026-09-10）
 
 控制中心采用已确认的侧栏、聊天阅读区、固定输入和按需详情；Light/Dark 与六种主题色保存在客户端界面偏好中，三语与管理模块入口继续保留。原始品牌/原型资源不覆盖。

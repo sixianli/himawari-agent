@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: ""
 superseded_by: ""
+amended_by: "docs/adr/0033-process-sandbox-default-and-optional-containers.md"
 date: "2026-09-16"
 ---
 
@@ -16,6 +17,8 @@ date: "2026-09-16"
 基线 `753fb63` 的 SQLite 实验复现了资源已结束、ACK 已确认而工作区仍被占用的问题：在释放凭证到期时及到期后 11ms、151ms 接收 ACK，`released_at` 保持为空，后续写入被拦截。该实验使用隔离 SQLite 和受控平台证据，不是生产环境复测。原始命令、测试源和日志见 [Plan 的实施记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 ## 决定
+
+> 2026-09-26 起，第 3 条和第 5 条在 SRT 模式下已由 [ADR 0033](0033-process-sandbox-default-and-optional-containers.md#amendments) 部分修正：脱离进程组的后代程序不再作为挡住目录的条件；以前留下的未确认记录经所有者授权后整批删除。本文以下内容保留原决定。
 
 将资源释放作为接纳时经过宿主验证、持久保存且不会因时间推进而撤销的历史事实。Himawari 继续使用 SQLite 的事务、现有身份和权威栅栏；Pi 继续负责工具与 Agent Loop。
 
