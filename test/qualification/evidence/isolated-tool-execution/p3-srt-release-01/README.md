@@ -41,6 +41,12 @@ HIMAWARI_LIVE_SANDBOX_PROBE=1 HIMAWARI_QUALIFY_INSTALLED_RUNTIME="$PWD/dist/node
 - [`qualify-production-v2.json`](qualify-production-v2.json)：经真实 Agent、Worker、SQLite 和 SRT 的产品路径通过。调用结束后记录为 `released`，清理依据是 `process_group_gone`，目录不再被占用（`occupiedAfterExecution: false`），竞争任务可以取得这个目录（`admittedAfterExecution: true`）。执行前竞争任务被挡住（`blockedBeforeExecution: true`）。`productionSuitable: false` 表示这是测试夹具，不是安装资格。
 - [`qualify-production-v2.stderr.log`](qualify-production-v2.stderr.log)：准入阶段计时和构建工具输出，没有凭据。
 
+## 完整 npm test（提交 `1eae76a`）
+
+提交后由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-1eae76a-2`，全部通过：contracts 379 项、unit 2044 项、integration 1818 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-1eae76a.tar.gz`](npm-test-1eae76a.tar.gz)。控制台输出去掉了本机沙箱打印的、与测试无关的 `failed to copy trust settings of system certificate` 行。
+
+第一次运行（输出目录 `.ci-output/npm-test-1eae76a`，未存档）在打包阶段失败，没有执行任何测试：构建期间访达在构建目录各层写入了 `.DS_Store`（记录文件夹显示设置的文件），产物校验报 `ARTIFACT_CONTENT_MISMATCH`，清理时删除 `node_modules` 报 `ENOTEMPTY`。这是环境问题，与代码无关；换新目录重跑后通过。
+
 ## 发现和未验证的部分
 
 - 资源投影（[`qualify-production-v2.json`](qualify-production-v2.json) 的 `resourceProjection`）目前对这种释放显示 `RESOURCE_RELEASE_CONFIRMED`，没有区分“停止未经严格确认”。界面状态属于 P3 补充的第三项（ITE-27），在那一步处理。
