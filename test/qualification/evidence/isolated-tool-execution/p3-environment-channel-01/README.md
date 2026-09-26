@@ -66,4 +66,4 @@
 - application 层新增 `ExecutionEnvironmentLifecyclePort`（执行后端接口去掉 `execute`）。协调服务和 `RemoteExecutionBackend` 都改用它。协调服务本来就不调用 `execute`。
 - Worker 去掉 `execute` 分支，以及只为它加的错误码 `WORKER_AUTHORIZATION_REQUIRED`。
 
-上文“测试”一节里，关于 `execute` 的那几项已相应调整。反例里保留了一条“带 `execute` 的环境请求被拒绝”。
+上文“测试”一节里，关于 `execute` 的那几项已相应调整。修正提交 `59dceec` 之后运行的 `npm test` 全部通过：contracts 379 项、unit 2022 项、integration 1781 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-59dceec.tar.gz`](npm-test-59dceec.tar.gz)。反例里保留了一条“带 `execute` 的环境请求被拒绝”。
