@@ -595,6 +595,52 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-stop-not-strict.png`),
         });
+        await send({
+          reset: true,
+          status: "completed",
+          state: {
+            ...state,
+            revision: "browser-strict-mode-unavailable",
+            displayPhase: "completed",
+            reasonCode: "EXECUTION_COMPLETED",
+            effectSummary: [{ itemId: "strict-bash", outcome: "not_dispatched" }],
+            operations: [
+              {
+                itemId: "strict-bash",
+                displayPhase: "not_dispatched",
+                reasonCode: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+                lastObservedAt: at,
+                executionMilliseconds: null,
+              },
+            ],
+          },
+          records: [
+            {
+              id: "strict-bash-record",
+              sequence: 1,
+              itemId: "strict-bash",
+              kind: "tool",
+              phase: "failed",
+              name: "bash",
+              text: "",
+              input: '{"command":"npm test"}',
+              output: "",
+              occurredAt: at,
+            },
+          ],
+        });
+        await page.goto(`${baseUrl}/threads/thread-main`);
+        const strictStep = page.locator(".turn-process .tool-record .step-status");
+        await expect(strictStep).toHaveCount(1);
+        await expect(strictStep.first()).toContainText("严格模式下不可用");
+        await expect(strictStep.first()).not.toContainText("完成");
+        await page.reload();
+        await expect(page.locator(".turn-process .tool-record .step-status").first()).toContainText(
+          "严格模式下不可用",
+        );
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-strict-mode-unavailable.png`),
+        });
         assert.deepEqual(errors, []);
         cases.push({
           width,
@@ -605,6 +651,7 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
           noTraceReplay: true,
           stopNotStrictlyConfirmed: true,
           executionRecordDeleted: true,
+          strictModeUnavailable: true,
         });
       } finally {
         await context.close();

@@ -226,6 +226,12 @@ function preDispatchFailure(error: unknown): { reasonCode: string; modelContent:
         reasonCode: "WORKER_AUTHORIZATION_DENIED",
         modelContent: "操作尚未派发：目录授权已失效或不可用。",
       };
+    case "SANDBOX_STRICT_MODE_UNAVAILABLE":
+      return {
+        reasonCode: code,
+        modelContent:
+          "操作未执行：当前是严格模式，所有工具都必须在容器里运行，这个工具还不能在容器里运行，所以在严格模式下不可用。不要改用其他方式执行同样的操作，请告诉用户这个限制。",
+      };
     case "SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED":
       return {
         reasonCode: "DIRECTORY_TARGET_CHANGED",

@@ -177,6 +177,7 @@ export const messages = {
   "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
   "chat.reason.commandEffectUnverified":
     "コマンドは失敗しました。ワークスペースのファイルが変更された可能性がありますが、影響は未確認です",
+  "chat.reason.strictModeUnavailable": "厳格モードでは使用できません",
   "chat.phase.unresolved": "結果未確認",
   "chat.phase.preparing": "準備中",
   "chat.phase.started": "実行中",

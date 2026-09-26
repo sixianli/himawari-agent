@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:61faea3fbdec6cbb82c17cf9dfb92b2c5fa3723ead23f475330e3e41eacc03ff"
+contract_sha256: "sha256:59474236e066c9c1bbe3e9c62de51353a5a6ad1ee5840e0d71b053a53ae97d9c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -236,7 +236,7 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 生产通用 Worker 现在通过既有 Payload UDS 的 `payload.invocation.validate` 校验 Agent 当前持久调用权限；不支持此操作的旧 Agent 会拒绝继续执行，升级须使用匹配服务产物，不能降级成仅凭内存委派放行。该查询不读取正文、不缓存批准、不再消费额度；外发前与输入解密返回前均重新检查。事件流挂起期间仍检查撤销并向原 Worker 请求停止，受保护诊断区分“已请求”与“发送未确认”，两者均不是效果终结或资源释放证明。资源扫描在 Run 仍运行时也识别 Grant/Handle 撤销、期限失效和能力禁用，排定原资源有限 stop；未绑定预约先禁止启动，未知停止仍保留占用。现有 Schema 43、历史结果保留和恢复点规则不变；实际目录授权与平台停止能力仍须按目标现场检查，不能以这些本地测试替代资格或生产操作授权。
 
-可选配置 `taskEnvironments`（任务环境，即一轮对话专用的 Docker 容器）默认不写，不写时产品行为不变：安装声明里后端不是 `srt`（本机沙箱）的工具调用一律以 `SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE` 拒绝。写入后，Agent Service 通过 Worker 取得和停止容器，Worker 用配置里的 Docker 程序绝对路径、可选 `dockerHost`（Docker 服务的连接地址，不写时用 Docker 自己的默认连接）、固定摘要的执行镜像与出网代理镜像创建容器；runner 摘要（容器里启动程序和挂载运行时的固定布局算出的 SHA-256 值）不再写在配置里，Agent Service 和 Worker 都从签名安装声明里的运行时摘要自动计算，旧配置里如果还有 `runnerDigest`，启动时以 `CONFIGURATION_UNKNOWN_FIELD` 拒绝，删掉这一项即可。容器状态记录保存在 `<stateRoot>/runtime/task-environments`，属于本机运行状态：备份恢复包不包含它，恢复也不会覆盖它。把数据库恢复到较早的时间点后，数据库里登记的任务环境可能与这些记录和实际容器不一致，这种情况的处理尚未验证。Worker 启动时如果没有任何沙箱主机绑定把操作指向该 `backendRef`，或这些绑定的运行时目录、摘要不一致，就以 `TASK_ENVIRONMENT_BINDING_UNAVAILABLE`、`TASK_ENVIRONMENT_RUNTIME_AMBIGUOUS` 拒绝启动。本段只记录配置和组装；经产品路径的真实 Docker 安装资格尚未完成，不能据此在生产配置中启用。
+可选配置 `taskEnvironments`（任务环境，即一轮对话专用的 Docker 容器）默认不写，不写时产品行为不变：安装声明里后端不是 `srt`（本机沙箱）的工具调用一律以 `SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE` 拒绝。写入后即进入严格模式：安装声明里后端是 `srt` 的工具调用，包括旧版文件读取和 Worker 发起的子任务，在准入前一律以 `SANDBOX_STRICT_MODE_UNAVAILABLE` 拒绝，不写入任何执行记录，也不改用 SRT 执行，会话里对应的工具步骤显示“严格模式下不可用”；Agent Service 通过 Worker 取得和停止容器，Worker 用配置里的 Docker 程序绝对路径、可选 `dockerHost`（Docker 服务的连接地址，不写时用 Docker 自己的默认连接）、固定摘要的执行镜像与出网代理镜像创建容器；runner 摘要（容器里启动程序和挂载运行时的固定布局算出的 SHA-256 值）不再写在配置里，Agent Service 和 Worker 都从签名安装声明里的运行时摘要自动计算，旧配置里如果还有 `runnerDigest`，启动时以 `CONFIGURATION_UNKNOWN_FIELD` 拒绝，删掉这一项即可。容器状态记录保存在 `<stateRoot>/runtime/task-environments`，属于本机运行状态：备份恢复包不包含它，恢复也不会覆盖它。把数据库恢复到较早的时间点后，数据库里登记的任务环境可能与这些记录和实际容器不一致，这种情况的处理尚未验证。Worker 启动时如果没有任何沙箱主机绑定把操作指向该 `backendRef`，或这些绑定的运行时目录、摘要不一致，就以 `TASK_ENVIRONMENT_BINDING_UNAVAILABLE`、`TASK_ENVIRONMENT_RUNTIME_AMBIGUOUS` 拒绝启动。本段只记录配置和组装；经产品路径的真实 Docker 安装资格尚未完成，不能据此在生产配置中启用。
 
 ## Authoritative Sources
 

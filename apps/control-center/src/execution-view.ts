@@ -355,6 +355,7 @@ export function executionStateLabel(
     DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
     FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",
     SANDBOX_COMMAND_EFFECT_UNVERIFIED: "chat.reason.commandEffectUnverified",
+    SANDBOX_STRICT_MODE_UNAVAILABLE: "chat.reason.strictModeUnavailable",
   };
   return (
     (reasonCode && Object.hasOwn(reasonLabels, reasonCode)

@@ -1077,13 +1077,14 @@ export async function createProductionSandboxServices(options: {
     prepare: async (input, call, parentCall, signal) => {
       signal?.throwIfAborted();
       const selected = await entryFor(input.capabilityRef, input.capabilityVersion);
-      if (selected.binding.operationBindings) {
-        const descriptor = selected.binding.operationBindings.find(
-          (item) => item.operation === input.operation,
-        );
-        if (!descriptor) throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
-        return prepareRuntimeV2(input, call, parentCall, descriptor, signal);
-      }
+      const descriptor = selected.binding.operationBindings?.find(
+        (item) => item.operation === input.operation,
+      );
+      if (selected.binding.operationBindings && !descriptor)
+        throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
+      if (environments && (descriptor?.backendRef ?? SRT_BACKEND_REF) === SRT_BACKEND_REF)
+        throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
+      if (descriptor) return prepareRuntimeV2(input, call, parentCall, descriptor, signal);
       const existing = await journal.readByInvocation({
         runId: input.requestScope.runId,
         invocationId: input.invocationId,
@@ -1178,6 +1179,7 @@ export async function createProductionSandboxServices(options: {
     scopes,
     appliesTo,
     prepare: async (input, request) => {
+      if (environments) throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
       const childEntry = await entryFor(input.capabilityRef, input.capabilityVersion);
       if (childEntry.binding.operationBindings) {
         const replay = await replayReservation(input);

@@ -396,6 +396,42 @@ it("refuses a container operation binding when task environments are not configu
   ).toBeUndefined();
 });
 
+it.each([
+  ["an SRT operation binding", { ...read, backendRef: "srt" }, false],
+  ["a legacy SRT file read", read, true],
+] as const)(
+  "refuses %s before admission when strict mode is on",
+  async (_name, binding, legacy) => {
+    const lifecycle = new Lifecycle();
+    const f = await productionSandboxScope(binding, undefined, {
+      piParameters: { path: "notes.txt" },
+      directoryOperations: ["read"],
+      profileRef: "authorized-project.v1",
+      legacyFileRead: legacy,
+      taskEnvironments: { backendRef: BACKEND, imageDigest: IMAGE_DIGEST, lifecycle },
+    });
+    cleanups.push(f.close);
+    await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow(
+      "SANDBOX_STRICT_MODE_UNAVAILABLE",
+    );
+    expect(
+      await f.services.brokerV2.preparations.readAdmissionByInvocation({
+        runId: RUN_ID,
+        invocationId: f.input.invocationId,
+      }),
+    ).toBeUndefined();
+    expect(
+      await f.repository
+        .sandboxJobJournal(OWNER_ID, AGENT_ID)
+        .readByInvocation({ runId: RUN_ID, invocationId: f.input.invocationId }),
+    ).toBeUndefined();
+    expect(
+      await f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID).readRun(RUN_ID),
+    ).toBeUndefined();
+    expect(lifecycle.calls).toEqual([]);
+  },
+);
+
 it("releases a reserved container call that never started when the Run is cancelled", async () => {
   const { f, lifecycle, executed, prepare } = await setup();
   const prepared = await prepare();

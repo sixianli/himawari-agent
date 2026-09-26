@@ -1,0 +1,1136 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > keeps the real lifecycle writer valid after renewing beyond the original lease TTL 270ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: delivered 214ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: cancelled 218ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: input-rejected 224ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: crash-after-output 213ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: crash-before-transition 209ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers original answer delivery after the execution deadline: checkpoint-race 214ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > executes only once when two real SQLite dispatch pumps claim concurrently 205ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > does not dispatch an external action after an attempt is interrupted at context 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > cancels a started runtime once for its exact execution attempt 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > keeps the Run attempt occupied until deferred cancellation finishes 197ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rejects a second active attempt and isolates an ended lease from the next attempt 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > attempts worker cancellation once and retains its failure diagnostic 196ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > commits one protected final assistant through the coordinator and reads it after reopen 322ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > removes settled completion projections on 'thread' deletion while shared=false 212ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > removes settled completion projections on 'run' deletion while shared=false 209ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > removes settled completion projections on 'thread' deletion while shared=true 212ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > removes settled completion projections on 'run' deletion while shared=true 210ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > retains a Payload referenced only by a surviving completion checkpoint 188ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers a crash before the assistant transaction without another model attempt 326ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > recovers a crash after the assistant transaction without another model attempt 426ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > replays completion receipts after outbox cleanup and rejects changed completion semantics 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > replays a pre-execution-lease completion receipt with its legacy fingerprint 201ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > keeps completion atomic when its last reliable event insert fails 218ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > allows a concurrent rename but refuses completion after Trash 439ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > does not overwrite a completed checkpoint when cancellation arrives later 252ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > reconciles an old successful checkpoint without output without calling the model 214ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > fails a Thread runtime with invalid successful output: no-answer 199ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > fails a Thread runtime with invalid successful output: empty-ref 207ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rejects completion scope, stale fences, stale CAS, and insufficient final Payload classification 191ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > enforces typed checkpoint CAS, active Payload scope, Trace scope, and deployment fencing 197ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves completion and its receipt for an authorized replay after lease release 204ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rejects cross-scope cancellation before touching the runtime 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > keeps cancellation authoritative when successful runtime output races with it 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > retains observed output through cancellation until governed Run deletion 237ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > completes a non-Thread Run with explicit no-answer output 225ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > completes a non-Thread Run with explicit assistant-answer output 209ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > makes an admitted Thread Run visible to the production Run lifecycle 209ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > transitions the relational Run with durable receipts/events and idempotent replay after reopen 344ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rejects stale CAS, illegal transitions and mutated replay semantics without additional events 199ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > fails closed on cross-scope reads, commands and deployment or lease fences 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > replays a committed receipt after authority release without allowing a new transition 196ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > reserves Thread completion for atomic assistant/Turn/Run commit 207ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > persists failed without fabricating an assistant 191ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > persists cancelled without fabricating an assistant 194ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rolls back Run and receipt when the reliable event insert fails 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > does not expose a Run whose session_id breaks relational admission scope 193ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > does not expose a Run whose trigger_id breaks relational admission scope 215ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > accepts a Thread-bound Run from a trigger without a Thread before any Turn exists 193ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > replays durable transition receipts independently of outbox retention 190ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > prevents creating a second product-state truth for an admitted relational Run 188ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rejects Thread admission when the requested Run already belongs to product state 186ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > lets the existing RunCoordinator cancel the admitted relational Run with a durable checkpoint 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > cancels the relational Run atomically with checkpoint, lease and receipt 189ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > rolls back cancellation state, checkpoint, lease and receipt when outbox insertion fails 190ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > resolves a claimed Run from its original trigger after a later Owner message 190ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > freezes execution policy across factory recreation and rejects a different claimed source 201ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > executes persistent dispatch through the real Pi loop (100, unknown=false, denied=false) 1519ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > executes persistent dispatch through the real Pi loop (100, unknown=false, denied=true) 303ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > executes persistent dispatch through the real Pi loop (+0, unknown=false, denied=false) 222ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > executes persistent dispatch through the real Pi loop (100, unknown=true, denied=false) 253ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > publishes approval, resume and cancellation as durable Thread events without duplicate replay 190ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > persists selected model and depth at admission across repository reopen 352ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'file conflict before dispatch' 221ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'failed product without Pi error' 207ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'strict mode refusal before dispatch' 222ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'structured pre-dispatch rejection wit…' 215ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown result contradicts not sent e…' 230ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'accepted dispatch contradicts legacy …' 218ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown dispatch evidence is not a su…' 195ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'invalid dispatch evidence is not a su…' 210ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'not sent evidence without an outcome …' 201ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts not sent evidence' 215ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown product without Pi error' 214ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown result outranks admission code' 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'unknown result outranks file conflict' 205ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'legacy unknown error code' 217ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'confirmed product success' 201ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts admission code' 223ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts file conflict' 208ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'legacy tool success' 207ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > projects encrypted execution history with owner isolation and no raw reasoning or credentials 269ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > persists a generated title and publishes its update without changing Run state 194ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > keeps the real lifecycle writer valid after renewing beyond the original lease TTL 94ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: delivered 211ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: cancelled 222ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: input-rejected 208ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: crash-after-output 219ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: crash-before-transition 213ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers original answer delivery after the execution deadline: checkpoint-race 225ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > executes only once when two real SQLite dispatch pumps claim concurrently 216ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > does not dispatch an external action after an attempt is interrupted at context 79ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > cancels a started runtime once for its exact execution attempt 78ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > keeps the Run attempt occupied until deferred cancellation finishes 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rejects a second active attempt and isolates an ended lease from the next attempt 87ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > attempts worker cancellation once and retains its failure diagnostic 83ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > commits one protected final assistant through the coordinator and reads it after reopen 96ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > removes settled completion projections on 'thread' deletion while shared=false 93ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > removes settled completion projections on 'run' deletion while shared=false 106ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > removes settled completion projections on 'thread' deletion while shared=true 99ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > removes settled completion projections on 'run' deletion while shared=true 92ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > retains a Payload referenced only by a surviving completion checkpoint 114ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers a crash before the assistant transaction without another model attempt 155ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > recovers a crash after the assistant transaction without another model attempt 322ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > replays completion receipts after outbox cleanup and rejects changed completion semantics 126ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > replays a pre-execution-lease completion receipt with its legacy fingerprint 86ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > keeps completion atomic when its last reliable event insert fails 82ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > allows a concurrent rename but refuses completion after Trash 192ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > does not overwrite a completed checkpoint when cancellation arrives later 85ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > reconciles an old successful checkpoint without output without calling the model 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > fails a Thread runtime with invalid successful output: no-answer 95ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > fails a Thread runtime with invalid successful output: empty-ref 84ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rejects completion scope, stale fences, stale CAS, and insufficient final Payload classification 307ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > enforces typed checkpoint CAS, active Payload scope, Trace scope, and deployment fencing 107ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves completion and its receipt for an authorized replay after lease release 317ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rejects cross-scope cancellation before touching the runtime 86ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > keeps cancellation authoritative when successful runtime output races with it 79ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > retains observed output through cancellation until governed Run deletion 102ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > completes a non-Thread Run with explicit no-answer output 87ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > completes a non-Thread Run with explicit assistant-answer output 90ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > makes an admitted Thread Run visible to the production Run lifecycle 204ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > transitions the relational Run with durable receipts/events and idempotent replay after reopen 383ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rejects stale CAS, illegal transitions and mutated replay semantics without additional events 493ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > fails closed on cross-scope reads, commands and deployment or lease fences 351ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > replays a committed receipt after authority release without allowing a new transition 246ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > reserves Thread completion for atomic assistant/Turn/Run commit 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > persists failed without fabricating an assistant 77ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > persists cancelled without fabricating an assistant 87ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rolls back Run and receipt when the reliable event insert fails 229ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > does not expose a Run whose session_id breaks relational admission scope 75ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > does not expose a Run whose trigger_id breaks relational admission scope 84ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > accepts a Thread-bound Run from a trigger without a Thread before any Turn exists 82ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > replays durable transition receipts independently of outbox retention 94ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > prevents creating a second product-state truth for an admitted relational Run 223ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rejects Thread admission when the requested Run already belongs to product state 212ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > lets the existing RunCoordinator cancel the admitted relational Run with a durable checkpoint 197ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > cancels the relational Run atomically with checkpoint, lease and receipt 74ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > rolls back cancellation state, checkpoint, lease and receipt when outbox insertion fails 86ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > resolves a claimed Run from its original trigger after a later Owner message 83ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > freezes execution policy across factory recreation and rejects a different claimed source 97ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > executes persistent dispatch through the real Pi loop (100, unknown=false, denied=false) 182ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > executes persistent dispatch through the real Pi loop (100, unknown=false, denied=true) 225ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > executes persistent dispatch through the real Pi loop (+0, unknown=false, denied=false) 114ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > executes persistent dispatch through the real Pi loop (100, unknown=true, denied=false) 149ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > publishes approval, resume and cancellation as durable Thread events without duplicate replay 80ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > persists selected model and depth at admission across repository reopen 88ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'file conflict before dispatch' 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'failed product without Pi error' 94ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'strict mode refusal before dispatch' 89ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'structured pre-dispatch rejection wit…' 88ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown result contradicts not sent e…' 77ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'accepted dispatch contradicts legacy …' 78ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown dispatch evidence is not a su…' 79ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'invalid dispatch evidence is not a su…' 83ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'not sent evidence without an outcome …' 83ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts not sent evidence' 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown product without Pi error' 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown result outranks admission code' 85ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'unknown result outranks file conflict' 78ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'legacy unknown error code' 78ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'confirmed product success' 78ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts admission code' 81ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts file conflict' 84ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'legacy tool success' 85ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > projects encrypted execution history with owner isolation and no raw reasoning or credentials 121ms
+ ✓ |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > persists a generated title and publishes its update without changing Run state 127ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.5855420000002596,"at":"2026-09-26T17:09:54.481Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.80625000000009,"at":"2026-09-26T17:09:54.515Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4057500000003529,"at":"2026-09-26T17:09:54.515Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.2050420000000486,"at":"2026-09-26T17:09:54.517Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.0022090000002208,"at":"2026-09-26T17:09:54.518Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.39116699999976845,"at":"2026-09-26T17:09:54.519Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.78566600000022,"at":"2026-09-26T17:09:54.552Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3502080000002934,"at":"2026-09-26T17:09:54.552Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9701669999999467,"at":"2026-09-26T17:09:54.553Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6431249999995998,"at":"2026-09-26T17:09:54.554Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=false) 529ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.17824999999993452,"at":"2026-09-26T17:09:54.954Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.286375000000135,"at":"2026-09-26T17:09:54.987Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.37645800000018426,"at":"2026-09-26T17:09:54.987Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1410000000000764,"at":"2026-09-26T17:09:54.988Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.48725000000013097,"at":"2026-09-26T17:09:54.989Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7945410000002084,"at":"2026-09-26T17:09:54.990Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.05308300000024,"at":"2026-09-26T17:09:55.023Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2843750000001819,"at":"2026-09-26T17:09:55.023Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1488330000001952,"at":"2026-09-26T17:09:55.025Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7199169999998958,"at":"2026-09-26T17:09:55.025Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > binds a file read to its existing directory grant (legacy=true) 470ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects a missing file binding before consuming authority (legacy=false) 393ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects a missing file binding before consuming authority (legacy=true) 387ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects a missing runtime context before scope preparation 396ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects a missing runtime deadline before scope preparation 399ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.360500000000684,"at":"2026-09-26T17:09:57.011Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.267165999999634,"at":"2026-09-26T17:09:57.048Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3061250000000655,"at":"2026-09-26T17:09:57.048Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8134589999999662,"at":"2026-09-26T17:09:57.050Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.46733300000050804,"at":"2026-09-26T17:09:57.050Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2799169999998412,"at":"2026-09-26T17:09:57.051Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.5126250000003,"at":"2026-09-26T17:09:57.083Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2617079999999987,"at":"2026-09-26T17:09:57.084Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7271670000000086,"at":"2026-09-26T17:09:57.085Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.629917000000205,"at":"2026-09-26T17:09:57.086Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > does not allow a caller to substitute the parent request 486ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.47583399999984977,"at":"2026-09-26T17:09:57.486Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.02774999999929,"at":"2026-09-26T17:09:57.523Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.43387499999971624,"at":"2026-09-26T17:09:57.524Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7930409999999029,"at":"2026-09-26T17:09:57.526Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5617499999998472,"at":"2026-09-26T17:09:57.526Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.9871669999993173,"at":"2026-09-26T17:09:57.536Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.635957999999846,"at":"2026-09-26T17:09:57.572Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2888330000005226,"at":"2026-09-26T17:09:57.573Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6232089999994059,"at":"2026-09-26T17:09:57.574Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4599160000007032,"at":"2026-09-26T17:09:57.574Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.22387499999967986,"at":"2026-09-26T17:09:57.576Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.330417000000125,"at":"2026-09-26T17:09:57.608Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3720000000002983,"at":"2026-09-26T17:09:57.609Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.664625000000342,"at":"2026-09-26T17:09:57.611Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.3665420000006634,"at":"2026-09-26T17:09:57.613Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.5296669999997903,"at":"2026-09-26T17:09:57.615Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.06850000000031,"at":"2026-09-26T17:09:57.652Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2987089999996897,"at":"2026-09-26T17:09:57.652Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.092000000000553,"at":"2026-09-26T17:09:57.654Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5864169999995283,"at":"2026-09-26T17:09:57.655Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > prepares a child with a fresh identity and inherited, bounded authority 569ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is absent 405ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is unknown 404ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.562790999999379,"at":"2026-09-26T17:09:58.868Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.58874999999989,"at":"2026-09-26T17:09:58.906Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.33399999999983265,"at":"2026-09-26T17:09:58.907Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.611417000000074,"at":"2026-09-26T17:09:58.908Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8134159999999611,"at":"2026-09-26T17:09:58.909Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is initializing 450ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.560500000000502,"at":"2026-09-26T17:09:59.334Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":42.076584000000366,"at":"2026-09-26T17:09:59.376Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2817089999998643,"at":"2026-09-26T17:09:59.376Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5730830000002243,"at":"2026-09-26T17:09:59.377Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.34337500000037835,"at":"2026-09-26T17:09:59.378Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > refuses a child whose parent is expired 471ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6057919999993828,"at":"2026-09-26T17:09:59.853Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":42.39616699999988,"at":"2026-09-26T17:09:59.896Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.33583400000043184,"at":"2026-09-26T17:09:59.896Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6459169999998267,"at":"2026-09-26T17:09:59.897Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.3586670000004233,"at":"2026-09-26T17:09:59.898Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.18695800000023155,"at":"2026-09-26T17:09:59.906Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.19895799999995,"at":"2026-09-26T17:09:59.942Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.94012500000008,"at":"2026-09-26T17:09:59.944Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.1031670000002123,"at":"2026-09-26T17:09:59.948Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.0347499999998035,"at":"2026-09-26T17:09:59.949Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rejects child resource expansion while preserving the live parent 569ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.628499999998894,"at":"2026-09-26T17:10:00.449Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.13087500000074,"at":"2026-09-26T17:10:00.487Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3208749999994325,"at":"2026-09-26T17:10:00.487Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6505830000005517,"at":"2026-09-26T17:10:00.488Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.38820900000064285,"at":"2026-09-26T17:10:00.489Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.15974999999889405,"at":"2026-09-26T17:10:00.496Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.155415999999605,"at":"2026-09-26T17:10:00.529Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2993339999993623,"at":"2026-09-26T17:10:00.529Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6669170000004669,"at":"2026-09-26T17:10:00.530Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.2540420000004815,"at":"2026-09-26T17:10:00.532Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1900000000005093,"at":"2026-09-26T17:10:00.536Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.41316699999879,"at":"2026-09-26T17:10:00.574Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.7509579999987182,"at":"2026-09-26T17:10:00.575Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox file and delegation lineage > rechecks revocation before returning a bound reservation replay 622ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.753833000000668,"at":"2026-09-26T17:10:01.033Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":43.3054170000014,"at":"2026-09-26T17:10:01.076Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4546669999999722,"at":"2026-09-26T17:10:01.077Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7358340000009775,"at":"2026-09-26T17:10:01.078Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5629159999989497,"at":"2026-09-26T17:10:01.079Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.3309590000008029,"at":"2026-09-26T17:10:01.085Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.92091699999946,"at":"2026-09-26T17:10:01.123Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3617919999996957,"at":"2026-09-26T17:10:01.123Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8754159999989497,"at":"2026-09-26T17:10:01.125Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5249590000003082,"at":"2026-09-26T17:10:01.125Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.41141699999934644,"at":"2026-09-26T17:10:01.126Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.46508300000096,"at":"2026-09-26T17:10:01.159Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28479200000037963,"at":"2026-09-26T17:10:01.160Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6012920000011945,"at":"2026-09-26T17:10:01.161Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5084999999999127,"at":"2026-09-26T17:10:01.162Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > verifies an empty output observation without inventing result evidence 586ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5543330000000424,"at":"2026-09-26T17:10:01.624Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.93924999999945,"at":"2026-09-26T17:10:01.662Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2856659999997646,"at":"2026-09-26T17:10:01.662Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6208750000005239,"at":"2026-09-26T17:10:01.663Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.45345799999995506,"at":"2026-09-26T17:10:01.664Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (valid) 509ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.364332999999533,"at":"2026-09-26T17:10:02.166Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":50.541290999999546,"at":"2026-09-26T17:10:02.216Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.38404199999968114,"at":"2026-09-26T17:10:02.217Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6294159999997646,"at":"2026-09-26T17:10:02.218Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.3835829999989073,"at":"2026-09-26T17:10:02.218Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-ref) 556ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.923333000000639,"at":"2026-09-26T17:10:02.713Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":51.05620799999997,"at":"2026-09-26T17:10:02.764Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4391249999989668,"at":"2026-09-26T17:10:02.764Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6644999999989523,"at":"2026-09-26T17:10:02.766Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4472089999999298,"at":"2026-09-26T17:10:02.766Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-digest) 548ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.2667920000003505,"at":"2026-09-26T17:10:03.222Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":45.09970799999974,"at":"2026-09-26T17:10:03.267Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3311249999987922,"at":"2026-09-26T17:10:03.267Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5957909999997355,"at":"2026-09-26T17:10:03.269Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.3337499999997817,"at":"2026-09-26T17:10:03.269Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-length) 501ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.49470800000017334,"at":"2026-09-26T17:10:03.809Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":43.31929200000013,"at":"2026-09-26T17:10:03.853Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3779580000009446,"at":"2026-09-26T17:10:03.853Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6615000000001601,"at":"2026-09-26T17:10:03.854Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5090000000000146,"at":"2026-09-26T17:10:03.855Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > requires exact invocation output bytes and provenance (wrong-effect) 587ms
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.3562920000003942,"at":"2026-09-26T17:10:04.311Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.46012499999961,"at":"2026-09-26T17:10:04.350Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.37758299999950395,"at":"2026-09-26T17:10:04.351Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.576708000000508,"at":"2026-09-26T17:10:04.352Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.42758300000059535,"at":"2026-09-26T17:10:04.352Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > does not claim all resources released while an admission remains unbound 496ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > production sandbox protected output and scope verification > reports only installed capability limits and classifies foreground handles 696ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > refuses a delegated child before admission when strict mode is on 521ms
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.9317920000012236,"at":"2026-09-26T17:10:06.048Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":41.769542,"at":"2026-09-26T17:10:06.090Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.45554099999935715,"at":"2026-09-26T17:10:06.090Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8227079999996931,"at":"2026-09-26T17:10:06.091Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.45054200000049605,"at":"2026-09-26T17:10:06.092Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.3522499999999127,"at":"2026-09-26T17:10:06.100Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.57008300000052,"at":"2026-09-26T17:10:06.140Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5475420000002487,"at":"2026-09-26T17:10:06.141Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6204589999997552,"at":"2026-09-26T17:10:06.142Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.41808300000047893,"at":"2026-09-26T17:10:06.142Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.13145800000165764,"at":"2026-09-26T17:10:06.143Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.951499999999214,"at":"2026-09-26T17:10:06.182Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3507500000014261,"at":"2026-09-26T17:10:06.182Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6156660000015108,"at":"2026-09-26T17:10:06.183Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.40174999999908323,"at":"2026-09-26T17:10:06.183Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.12349999999969441,"at":"2026-09-26T17:10:06.184Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.27754199999981,"at":"2026-09-26T17:10:06.217Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.2907500000001164,"at":"2026-09-26T17:10:06.217Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5350830000006681,"at":"2026-09-26T17:10:06.218Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.40208399999937683,"at":"2026-09-26T17:10:06.218Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5365419999998267,"at":"2026-09-26T17:10:06.223Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.72404199999983,"at":"2026-09-26T17:10:06.261Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.41258299999935844,"at":"2026-09-26T17:10:06.261Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.143332999999984,"at":"2026-09-26T17:10:06.263Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4217919999991864,"at":"2026-09-26T17:10:06.264Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.26112499999908323,"at":"2026-09-26T17:10:06.264Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.764665999999124,"at":"2026-09-26T17:10:06.302Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.30262500000026193,"at":"2026-09-26T17:10:06.302Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.3193330000012793,"at":"2026-09-26T17:10:06.304Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5152909999997064,"at":"2026-09-26T17:10:06.304Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.32295800000065356,"at":"2026-09-26T17:10:06.305Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.222499999999854,"at":"2026-09-26T17:10:06.337Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3539999999993597,"at":"2026-09-26T17:10:06.338Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.2883750000000873,"at":"2026-09-26T17:10:06.339Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5207500000014988,"at":"2026-09-26T17:10:06.340Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6947920000002341,"at":"2026-09-26T17:10:06.343Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.94404199999917,"at":"2026-09-26T17:10:06.381Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3086669999993319,"at":"2026-09-26T17:10:06.381Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5896250000005239,"at":"2026-09-26T17:10:06.382Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.36516599999959,"at":"2026-09-26T17:10:06.382Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.22529100000065228,"at":"2026-09-26T17:10:06.382Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.839708999999857,"at":"2026-09-26T17:10:06.414Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4495420000002923,"at":"2026-09-26T17:10:06.415Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7299580000017158,"at":"2026-09-26T17:10:06.416Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.34958299999925657,"at":"2026-09-26T17:10:06.416Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > legacy sandbox parent lineage > admits one legacy parent and bounds child authority without relaunching it 843ms
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.187832999999955,"at":"2026-09-26T17:10:06.839Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.16716599999927,"at":"2026-09-26T17:10:06.878Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.47837499999877764,"at":"2026-09-26T17:10:06.879Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7940830000006827,"at":"2026-09-26T17:10:06.880Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5466670000005251,"at":"2026-09-26T17:10:06.881Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2267919999994774,"at":"2026-09-26T17:10:06.883Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.410124999998516,"at":"2026-09-26T17:10:06.915Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.26416700000118,"at":"2026-09-26T17:10:06.915Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0677919999998267,"at":"2026-09-26T17:10:06.917Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6220000000012078,"at":"2026-09-26T17:10:06.918Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.181124999999156,"at":"2026-09-26T17:10:06.920Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.670334000000366,"at":"2026-09-26T17:10:06.951Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.25604199999906996,"at":"2026-09-26T17:10:06.952Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.4924159999991389,"at":"2026-09-26T17:10:06.953Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.3877909999991971,"at":"2026-09-26T17:10:06.953Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > freezes the host file version and rejects changes while waiting 538ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.5895410000011907,"at":"2026-09-26T17:10:07.375Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":38.329499999999825,"at":"2026-09-26T17:10:07.414Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28549999999995634,"at":"2026-09-26T17:10:07.414Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6137920000001031,"at":"2026-09-26T17:10:07.415Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4271249999983411,"at":"2026-09-26T17:10:07.416Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1972909999985859,"at":"2026-09-26T17:10:07.422Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.15620800000033,"at":"2026-09-26T17:10:07.454Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.40195800000037707,"at":"2026-09-26T17:10:07.455Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.146082999999635,"at":"2026-09-26T17:10:07.456Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6862909999999829,"at":"2026-09-26T17:10:07.457Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (released) 548ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.2942500000008295,"at":"2026-09-26T17:10:07.914Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":40.25229099999888,"at":"2026-09-26T17:10:07.954Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3906669999996666,"at":"2026-09-26T17:10:07.955Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6244580000002316,"at":"2026-09-26T17:10:07.956Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.37924999999995634,"at":"2026-09-26T17:10:07.956Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.23108399999910034,"at":"2026-09-26T17:10:07.969Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.308334000001196,"at":"2026-09-26T17:10:08.002Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.8387500000008004,"at":"2026-09-26T17:10:08.003Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8797500000000582,"at":"2026-09-26T17:10:08.005Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.434624999999869,"at":"2026-09-26T17:10:08.007Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (still-running) 538ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.549750000000131,"at":"2026-09-26T17:10:08.462Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.28375000000051,"at":"2026-09-26T17:10:08.500Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3120829999988928,"at":"2026-09-26T17:10:08.500Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.648457999999664,"at":"2026-09-26T17:10:08.501Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.42637500000091677,"at":"2026-09-26T17:10:08.502Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.19179199999962293,"at":"2026-09-26T17:10:08.508Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.00583299999926,"at":"2026-09-26T17:10:08.544Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3413749999999709,"at":"2026-09-26T17:10:08.545Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8071249999993597,"at":"2026-09-26T17:10:08.546Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.506083000000217,"at":"2026-09-26T17:10:08.546Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (unbound-artifact) 538ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.3647909999999683,"at":"2026-09-26T17:10:08.987Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":40.01787500000137,"at":"2026-09-26T17:10:09.027Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3351250000014261,"at":"2026-09-26T17:10:09.028Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6288749999985157,"at":"2026-09-26T17:10:09.029Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.41204100000322796,"at":"2026-09-26T17:10:09.029Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.21179099999790196,"at":"2026-09-26T17:10:09.035Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.4285830000008,"at":"2026-09-26T17:10:09.071Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3220000000001164,"at":"2026-09-26T17:10:09.071Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8491250000006403,"at":"2026-09-26T17:10:09.072Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4146249999976135,"at":"2026-09-26T17:10:09.073Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (wrong-invocation) 527ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5906250000007276,"at":"2026-09-26T17:10:09.514Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":40.515167000001384,"at":"2026-09-26T17:10:09.554Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.42433299999902374,"at":"2026-09-26T17:10:09.555Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6407079999989946,"at":"2026-09-26T17:10:09.556Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.49429199999940465,"at":"2026-09-26T17:10:09.557Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2580420000012964,"at":"2026-09-26T17:10:09.564Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.29149999999936,"at":"2026-09-26T17:10:09.596Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3124160000006668,"at":"2026-09-26T17:10:09.597Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8431669999990845,"at":"2026-09-26T17:10:09.598Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5022079999980633,"at":"2026-09-26T17:10:09.599Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production) 588ms
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.3979580000013812,"at":"2026-09-26T17:10:10.104Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.24737499999901,"at":"2026-09-26T17:10:10.141Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4224999999969441,"at":"2026-09-26T17:10:10.141Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7889589999977034,"at":"2026-09-26T17:10:10.143Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6697500000009313,"at":"2026-09-26T17:10:10.143Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.19574999999895226,"at":"2026-09-26T17:10:10.150Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.19800000000032,"at":"2026-09-26T17:10:10.182Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28354100000069593,"at":"2026-09-26T17:10:10.183Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8129580000022543,"at":"2026-09-26T17:10:10.184Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory)
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.41854199999943376,"at":"2026-09-26T17:10:10.184Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > fixed file recovery into the original SQLite invocation > requires release and bound durable output (production-directory) 574ms
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.26408299999820883,"at":"2026-09-26T17:10:11.743Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.5157500000022992,"at":"2026-09-26T17:10:11.743Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":54.81408300000112,"at":"2026-09-26T17:10:11.798Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":54.80912499999977,"at":"2026-09-26T17:10:11.798Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6202919999996084,"at":"2026-09-26T17:10:11.799Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.7455829999998969,"at":"2026-09-26T17:10:11.799Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8796669999974256,"at":"2026-09-26T17:10:11.800Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9459999999999127,"at":"2026-09-26T17:10:11.800Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5308750000003783,"at":"2026-09-26T17:10:11.801Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.423040999998193,"at":"2026-09-26T17:10:11.801Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.24737499999901047,"at":"2026-09-26T17:10:11.803Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":43.121917000000394,"at":"2026-09-26T17:10:11.847Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4837499999994179,"at":"2026-09-26T17:10:11.847Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9471249999987776,"at":"2026-09-26T17:10:11.849Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5646249999990687,"at":"2026-09-26T17:10:11.850Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.5441250000003492,"at":"2026-09-26T17:10:11.866Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":48.29833300000246,"at":"2026-09-26T17:10:11.914Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.47837499999877764,"at":"2026-09-26T17:10:11.915Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9466250000004948,"at":"2026-09-26T17:10:11.917Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.790540999998484,"at":"2026-09-26T17:10:11.917Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6272500000013679,"at":"2026-09-26T17:10:11.927Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.13304199999766,"at":"2026-09-26T17:10:11.963Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3680000000022119,"at":"2026-09-26T17:10:11.964Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.393207999997685,"at":"2026-09-26T17:10:11.966Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.0475420000002487,"at":"2026-09-26T17:10:11.967Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates 1708ms
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2448340000009921,"at":"2026-09-26T17:10:13.246Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.484959000001254,"at":"2026-09-26T17:10:13.247Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":44.800999999999476,"at":"2026-09-26T17:10:13.291Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3965829999979178,"at":"2026-09-26T17:10:13.292Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":45.64941700000054,"at":"2026-09-26T17:10:13.292Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.33908399999927497,"at":"2026-09-26T17:10:13.293Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8006669999995211,"at":"2026-09-26T17:10:13.293Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7466669999994338,"at":"2026-09-26T17:10:13.294Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.6549579999991693,"at":"2026-09-26T17:10:13.294Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.38950000000113505,"at":"2026-09-26T17:10:13.294Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1522079999995185,"at":"2026-09-26T17:10:13.296Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.56495899999936,"at":"2026-09-26T17:10:13.329Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28637499999967986,"at":"2026-09-26T17:10:13.329Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6875,"at":"2026-09-26T17:10:13.330Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4418340000011085,"at":"2026-09-26T17:10:13.331Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.0739580000008573,"at":"2026-09-26T17:10:13.336Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.984042000000045,"at":"2026-09-26T17:10:13.376Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.36808300000120653,"at":"2026-09-26T17:10:13.377Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6407079999989946,"at":"2026-09-26T17:10:13.378Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.46595800000068266,"at":"2026-09-26T17:10:13.378Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.12762500000098953,"at":"2026-09-26T17:10:13.387Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":31.70416699999987,"at":"2026-09-26T17:10:13.419Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.29883300000074087,"at":"2026-09-26T17:10:13.419Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.5270840000011958,"at":"2026-09-26T17:10:13.420Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.38487500000337604,"at":"2026-09-26T17:10:13.421Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates 1448ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (cancelled-before) 416ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (revoked-before) 868ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (stale-authority) 635ms
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > does not acquire occupancy or lose candidates when preparation authority changes (cancelled-during) 1790ms
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.6152910000018892,"at":"2026-09-26T17:10:17.628Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":40.27208299999984,"at":"2026-09-26T17:10:17.668Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3572089999979653,"at":"2026-09-26T17:10:17.669Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8220000000001164,"at":"2026-09-26T17:10:17.670Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5610000000015134,"at":"2026-09-26T17:10:17.671Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1547500000015134,"at":"2026-09-26T17:10:17.675Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.53679199999897,"at":"2026-09-26T17:10:17.708Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3497079999979178,"at":"2026-09-26T17:10:17.709Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.1907500000015716,"at":"2026-09-26T17:10:17.710Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5996669999985897,"at":"2026-09-26T17:10:17.711Z"}
+
+ ✓ |integration| test/integration/production-sandbox-lineage.test.ts > freezes three directory resources and rejects a queued path replacement before admission 579ms
+
+ Test Files  2 passed (2)
+      Tests  204 passed (204)
+   Start at  02:09:19
+   Duration  58.10s (transform 1.36s, setup 0ms, import 3.41s, tests 54.49s, environment 0ms)

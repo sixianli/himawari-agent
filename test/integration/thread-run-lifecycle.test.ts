@@ -2933,6 +2933,15 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       marker: null,
     },
     {
+      name: "strict mode refusal before dispatch",
+      outcome: "failed",
+      dispatchState: "not_sent",
+      code: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+      phase: "failed",
+      marker: "not_dispatched",
+      reasonCode: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+    },
+    {
       name: "structured pre-dispatch rejection with a new reason",
       outcome: "failed",
       dispatchState: "not_sent",
@@ -3047,6 +3056,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
   ])("preserves product outcome evidence: $name", async (item) => {
     const { outcome, code, phase, marker } = item;
     const dispatchState = "dispatchState" in item ? item.dispatchState : undefined;
+    const reasonCode = "reasonCode" in item ? item.reasonCode : undefined;
     const setup = await executionFixture();
     const payloadRef = "outcome-evidence";
     await setup.repository
@@ -3130,6 +3140,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         itemId: tool?.itemId,
         displayPhase: marker ?? phase,
         executionMilliseconds: null,
+        ...(reasonCode ? { reasonCode } : {}),
       }),
     ]);
     expect(state.effectSummary).toEqual([

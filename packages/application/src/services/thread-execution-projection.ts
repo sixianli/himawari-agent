@@ -27,6 +27,7 @@ const SAFE_TOOL_REASON_CODES = new Set([
   "DIRECTORY_TARGET_CHANGED",
   "FILE_VERSION_CONFLICT",
   "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+  "SANDBOX_STRICT_MODE_UNAVAILABLE",
 ]);
 
 function object(value: unknown): Record<string, unknown> {

@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SandboxExecutionRecord, WorkerExecuteRequest } from "@himawari-agent/application";
+import type {
+  ExecutionEnvironmentLifecyclePort,
+  SandboxExecutionRecord,
+  WorkerExecuteRequest,
+} from "@himawari-agent/application";
 import {
   executionV2MessageSchema,
   PI_FIXED_FILE_CONTRACT,
@@ -29,6 +33,7 @@ import {
   AGENT_ID,
   grantHandle,
   OWNER_ID,
+  RUN_ID,
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
@@ -437,6 +442,35 @@ describe("production sandbox protected output and scope verification", () => {
 });
 
 describe("legacy sandbox parent lineage", () => {
+  it("refuses a delegated child before admission when strict mode is on", async () => {
+    const calls: string[] = [];
+    const refuse = (name: string) => async (): Promise<never> => {
+      calls.push(name);
+      throw new Error("unexpected task environment call");
+    };
+    const lifecycle: ExecutionEnvironmentLifecyclePort = {
+      capabilities: refuse("capabilities"),
+      create: refuse("create"),
+      inspect: refuse("inspect"),
+      stop: refuse("stop"),
+      verifyStopped: refuse("verifyStopped"),
+      destroy: refuse("destroy"),
+    };
+    const f = await productionSandboxScope(descriptor, undefined, {
+      taskEnvironments: { backendRef: "container-test", imageDigest: "b".repeat(64), lifecycle },
+    });
+    cleanups.push(f.close);
+    await expect(
+      f.services.child.prepare(childInput(f), request(f.input.invocationId)),
+    ).rejects.toThrow("SANDBOX_STRICT_MODE_UNAVAILABLE");
+    expect(
+      await f.repository
+        .sandboxJobJournal(OWNER_ID, AGENT_ID)
+        .readByInvocation({ runId: RUN_ID, invocationId: "child-invocation" }),
+    ).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+
   it("admits one legacy parent and bounds child authority without relaunching it", async () => {
     const f = await fixture(true);
     const prepared = await f.services.runtime.prepare(f.input, f.call);

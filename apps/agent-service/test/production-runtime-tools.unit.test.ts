@@ -85,6 +85,32 @@ describe("ProductionRuntimeTools", () => {
     },
   );
 
+  it("reports a tool refused by strict mode as not dispatched and unavailable in strict mode", async () => {
+    const f = fixture();
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected admission");
+    };
+    const prepare = vi.fn(async (): Promise<never> => {
+      throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
+    });
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+    });
+    expect(result.modelContent).toContain("严格模式");
+    expect(result.modelContent).toContain("不要改用其他方式");
+    expect(await tool.execute(invocation)).toEqual(result);
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(f.request).not.toHaveBeenCalled();
+  });
+
   it("binds a protected recovery checkpoint before dispatch and preserves it on replay", async () => {
     const f = fixture();
     const call = {

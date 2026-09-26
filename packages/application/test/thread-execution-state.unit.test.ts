@@ -39,6 +39,7 @@ describe("backend execution state", () => {
   it.each([
     ["WORKER_DEADLINE_EXCEEDED", "WORKER_DEADLINE_EXCEEDED"],
     ["SANDBOX_COMMAND_EFFECT_UNVERIFIED", "SANDBOX_COMMAND_EFFECT_UNVERIFIED"],
+    ["SANDBOX_STRICT_MODE_UNAVAILABLE", "SANDBOX_STRICT_MODE_UNAVAILABLE"],
     ["/private/host/token", "TOOL_FAILED"],
   ] as const)("projects only allowlisted tool failure reasons (%s)", (reason, expected) => {
     const state = projectThreadExecutionState(

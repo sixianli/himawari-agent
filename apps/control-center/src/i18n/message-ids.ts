@@ -156,6 +156,7 @@ export const MESSAGE_IDS = [
   "chat.reason.directoryTargetChanged",
   "chat.reason.fileVersionConflict",
   "chat.reason.commandEffectUnverified",
+  "chat.reason.strictModeUnavailable",
 
   "chat.phase.preparing",
   "chat.phase.updated",

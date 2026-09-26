@@ -134,6 +134,9 @@ describe("durable execution presentation", () => {
     expect(executionStateLabel("failed", "SANDBOX_COMMAND_EFFECT_UNVERIFIED")).toBe(
       "chat.reason.commandEffectUnverified",
     );
+    expect(executionStateLabel("not_dispatched", "SANDBOX_STRICT_MODE_UNAVAILABLE")).toBe(
+      "chat.reason.strictModeUnavailable",
+    );
     expect(executionStateLabel("unresolved", "RESOURCE_STATE_UNCONFIRMED")).toBe(
       "chat.phase.unresolved",
     );
