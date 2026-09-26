@@ -19,3 +19,13 @@
 - 这一步新增了 `resolve` 应答的必填字段，Agent 和 Worker 必须一起升级。
 
 提交后运行的 `npm test` 全部通过：contracts 379 项、unit 2022 项、integration 1802 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-a756946.tar.gz`](npm-test-a756946.tar.gz)。
+
+## 第二步：Agent 取得和停止任务环境（提交 `7c04b72`）
+
+- Agent：[`production-task-environments.ts`](../../../../../apps/agent-service/src/production-task-environments.ts) 在工具调用的后端等于配置的容器后端时，经 `TaskEnvironmentCoordinator` 和 `RemoteExecutionBackend`（通过 Worker 连接远程操作环境的适配层）取得本轮的任务环境，并在 `resolve` 应答里把环境绑定交给 Worker；Worker 登记执行前，Agent 把这次调用挂到环境上，执行结束后标记完成。未配置任务环境时，这类调用直接以 `SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE` 拒绝。
+- 环境身份：每次调用仍保留自己的环境编号（数据库要求唯一），任务环境编号放在执行事实的 `taskEnvironmentId` 字段里传递。
+- 目录占用：同一轮对话自己的主环境占用的目录，不再阻挡本轮后续的调用；其他轮次仍被阻挡。
+- 停止：一轮对话结束或取消时，`stopRun` 带上原因（`run_finished` 或 `run_cancelled`）停止本轮全部环境。已预留但从未开始执行的容器调用，用新的释放证明 `task_environment_released` 解除预留；数据库只在该轮在此后端上的全部主环境都有释放回执、且证明列出的环境与记录一致时才接受。
+- 测试：[`production-task-environment-route.test.ts`](../../../../../test/integration/production-task-environment-route.test.ts) 6 项，覆盖正常执行并在结束时释放、结果丢失时停止环境、两次调用复用同一环境、未配置时拒绝、取消时解除未开始的预留、环境仍在运行时拒绝伪造的释放证明。
+
+提交后运行的 `npm test` 全部通过：contracts 379 项、unit 2022 项、integration 1808 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-7c04b72.tar.gz`](npm-test-7c04b72.tar.gz)。
