@@ -28,6 +28,11 @@ export const RUN_RESOURCES_RELEASED_SQL = `
         SELECT 1 FROM sandbox_execution_records resource
         WHERE resource.job_id=queued.job_id AND resource.owner_id=r.owner_id
           AND resource.agent_id=r.agent_id AND resource.run_id=r.id
+      ) AND NOT EXISTS (
+        SELECT 1 FROM deletion_tombstones deleted
+        WHERE deleted.object_type='sandbox_execution' AND deleted.object_id=queued.job_id
+          AND deleted.owner_id=r.owner_id AND deleted.agent_id=r.agent_id
+          AND deleted.status='verified'
       )))
   )
   AND NOT EXISTS (

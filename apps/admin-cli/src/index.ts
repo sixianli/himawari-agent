@@ -28,6 +28,7 @@ import {
 import { runAccountCommand } from "./account-command.js";
 import { runCapabilitiesCommand } from "./capabilities-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
+import { runSandboxCommand } from "./sandbox-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
 
 export const adminCliWorkspace = {
@@ -759,6 +760,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "account") {
       output.write(`${JSON.stringify(await runAccountCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "sandbox") {
+      output.write(`${JSON.stringify(await runSandboxCommand(arguments_, output))}\n`);
       return 0;
     }
     const parsed = parseArguments(arguments_);
