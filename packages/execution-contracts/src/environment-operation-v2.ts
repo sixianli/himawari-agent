@@ -22,7 +22,6 @@ import {
 export const ENVIRONMENT_OPERATIONS = [
   "capabilities",
   "create",
-  "execute",
   "inspect",
   "stop",
   "verifyStopped",
@@ -64,16 +63,6 @@ const requestBranches = {
     environmentDeadlineAt: timestamp,
     ...bounds,
   }),
-  execute: object({
-    operation: literal("execute"),
-    ...target,
-    stopFence: integer(0),
-    invocationId: machineString,
-    argumentsRef: machineString,
-    invocationDeadlineAt: timestamp,
-    credential: nullable(object({ secretRef: machineString, approvalRef: machineString })),
-    ...bounds,
-  }),
   inspect: object({ operation: literal("inspect"), ...target, ...bounds }),
   stop: object({ operation: literal("stop"), ...stopTarget, ...bounds }),
   verifyStopped: object({ operation: literal("verifyStopped"), ...stopTarget, ...bounds }),
@@ -83,7 +72,6 @@ const requestBranches = {
 const resultSchemas = {
   capabilities: executionBackendCapabilitiesSchema,
   create: executionEnvironmentLocatorSchema,
-  execute: object({ outputRef: machineString, observedAt: timestamp }),
   inspect: object({
     state: enumeration(["running", "stopped", "not_found", "unknown"]),
     locator: nullable(executionEnvironmentLocatorSchema),

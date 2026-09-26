@@ -62,3 +62,5 @@ export interface ExecutionBackendPort {
   ): Promise<ExecutionEnvironmentStopProof>;
   destroy(input: ExecutionBackendEnvironmentRequest): Promise<void>;
 }
+
+export type ExecutionEnvironmentLifecyclePort = Omit<ExecutionBackendPort, "execute">;

@@ -585,11 +585,6 @@ function parseExecutionV2Message(input: unknown): ExecutionV2Message {
         "$.scope",
         "environment operations stay inside the environment's owner, agent and Run",
       );
-    if (parsed.payload.operation === "execute" && parsed.authorizationRef === null)
-      throw new ContractValidationError(
-        "$.authorizationRef",
-        "an environment execute requires the invocation's authorization",
-      );
   }
   if (parsed.type.startsWith("worker.subtask.")) {
     const { ownerId, agentId, runId, workerRunId } = parsed.scope;

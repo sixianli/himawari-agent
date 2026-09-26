@@ -125,15 +125,9 @@ function subject(worker: FakeWorker, resultTimeoutMs = 200) {
 }
 
 describe("remote execution backend over execution.v2", () => {
-  it("sends each operation in the environment's Run scope and returns the Worker's typed result", async () => {
+  it("sends a create in the environment's Run scope and returns the Worker's typed result", async () => {
     const worker = new FakeWorker();
-    worker.reply = (request) =>
-      request.type === "environment.operation.execute" && request.payload.operation === "create"
-        ? { outcome: "succeeded", result: locator }
-        : {
-            outcome: "succeeded",
-            result: { outputRef: "output-1", observedAt: "2026-09-26T10:00:01.000Z" },
-          };
+    worker.reply = () => ({ outcome: "succeeded", result: locator });
     const backend = subject(worker);
     expect(
       await backend.create({
@@ -146,17 +140,7 @@ describe("remote execution backend over execution.v2", () => {
         deadlineAt: "2026-09-26T11:00:00.000Z",
       }),
     ).toEqual(locator);
-    expect(
-      await backend.execute({
-        ...target,
-        stopFence: 0,
-        invocationId: "invocation-1",
-        argumentsRef: "payload-arguments-1",
-        deadlineAt: "2026-09-26T10:05:00.000Z",
-        authorizationRef: "authorization-1",
-      }),
-    ).toEqual({ outputRef: "output-1", observedAt: "2026-09-26T10:00:01.000Z" });
-    const [create, execute] = worker.requests;
+    const [create] = worker.requests;
     expect(create).toMatchObject({
       risk: "medium",
       authorizationRef: null,
@@ -175,16 +159,6 @@ describe("remote execution backend over execution.v2", () => {
         environmentDeadlineAt: "2026-09-26T11:00:00.000Z",
         requestedAt: "2026-09-26T10:00:00.000Z",
         deadlineAt: "2026-09-26T10:01:00.000Z",
-      },
-    });
-    expect(execute).toMatchObject({
-      risk: "high",
-      authorizationRef: "authorization-1",
-      idempotencyKey: "environment-execute:environment-1:invocation-1",
-      payload: {
-        operation: "execute",
-        invocationDeadlineAt: "2026-09-26T10:05:00.000Z",
-        credential: null,
       },
     });
   });

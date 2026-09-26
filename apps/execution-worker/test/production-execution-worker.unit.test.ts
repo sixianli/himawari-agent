@@ -1367,9 +1367,8 @@ describe("production execution Worker", () => {
       runnerDigest: "c".repeat(64),
       environmentDeadlineAt: fixture.times.deadline,
     });
-    const execute = operation(
-      "environment-execute-unit",
-      {
+    expect(() =>
+      operation("environment-execute-unit", {
         operation: "execute",
         identity,
         createIntentId: "environment-create-unit",
@@ -1378,10 +1377,9 @@ describe("production execution Worker", () => {
         invocationId: "invocation-unit",
         argumentsRef: "payload-arguments-unit",
         invocationDeadlineAt: fixture.times.deadline,
-        credential: { secretRef: "secret-registry", approvalRef: "approval-unit" },
-      },
-      { risk: "high", authorizationRef: "authorization-unit" },
-    );
+        credential: null,
+      }),
+    ).toThrow();
     const inspect = operation("environment-inspect-unit", {
       operation: "inspect",
       identity,
@@ -1404,10 +1402,6 @@ describe("production execution Worker", () => {
         calls.push(["create", input]);
         return locator;
       },
-      execute: async (input: unknown) => {
-        calls.push(["execute", input]);
-        return { outputRef: "container-output-unit", observedAt: fixture.times.start };
-      },
       inspect: async (input: unknown) => {
         calls.push(["inspect", input]);
         throw Object.assign(new Error("runtime changed"), { code: "CONTAINER_RUNTIME_CHANGED" });
@@ -1420,10 +1414,9 @@ describe("production execution Worker", () => {
     };
     const registered = await workerFixture({ environments: backend });
     await registered.worker.request(handshake());
-    for (const request of [create, create, execute, inspect])
-      await registered.worker.request(request);
+    for (const request of [create, create, inspect]) await registered.worker.request(request);
     await registered.worker.waitForIdle();
-    expect(calls.map(([name]) => name)).toEqual(["create", "execute", "inspect"]);
+    expect(calls.map(([name]) => name)).toEqual(["create", "inspect"]);
     expect(calls[0]?.[1]).toEqual({
       identity,
       createIntentId: "environment-create-unit",
@@ -1432,17 +1425,6 @@ describe("production execution Worker", () => {
       imageDigest: "b".repeat(64),
       runnerDigest: "c".repeat(64),
       deadlineAt: fixture.times.deadline,
-    });
-    expect(calls[1]?.[1]).toEqual({
-      identity,
-      createIntentId: "environment-create-unit",
-      locator,
-      stopFence: 0,
-      invocationId: "invocation-unit",
-      argumentsRef: "payload-arguments-unit",
-      deadlineAt: fixture.times.deadline,
-      authorizationRef: "authorization-unit",
-      credential: { secretRef: "secret-registry", approvalRef: "approval-unit" },
     });
     const results = (await readEvents(registered.worker)).filter(
       (event) => event.type === "environment.operation.result",
@@ -1454,11 +1436,6 @@ describe("production execution Worker", () => {
         outcome: "succeeded",
         result: locator,
         errorCode: null,
-      }),
-      expect.objectContaining({
-        requestId: "environment-execute-unit",
-        outcome: "succeeded",
-        result: { outputRef: "container-output-unit", observedAt: fixture.times.start },
       }),
       expect.objectContaining({
         requestId: "environment-inspect-unit",

@@ -8,7 +8,7 @@ import {
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import type { ExecutionTransportPort } from "../ports/coordination.js";
-import type { ExecutionBackendPort } from "../ports/execution-backend.js";
+import type { ExecutionEnvironmentLifecyclePort } from "../ports/execution-backend.js";
 
 export class RemoteExecutionBackendError extends Error {
   readonly code: string;
@@ -41,7 +41,7 @@ type PayloadOf<TOperation extends EnvironmentOperation> = Omit<
   "operation" | "requestedAt" | "deadlineAt"
 >;
 
-export class RemoteExecutionBackend implements ExecutionBackendPort {
+export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort {
   private readonly options: RemoteExecutionBackendOptions;
 
   constructor(options: RemoteExecutionBackendOptions) {
@@ -52,7 +52,7 @@ export class RemoteExecutionBackend implements ExecutionBackendPort {
     return this.send("capabilities", {}, null, null);
   }
 
-  create(input: Parameters<ExecutionBackendPort["create"]>[0]) {
+  create(input: Parameters<ExecutionEnvironmentLifecyclePort["create"]>[0]) {
     const { deadlineAt, ...rest } = input;
     return this.send(
       "create",
@@ -62,22 +62,11 @@ export class RemoteExecutionBackend implements ExecutionBackendPort {
     );
   }
 
-  execute(input: Parameters<ExecutionBackendPort["execute"]>[0]) {
-    const { deadlineAt, authorizationRef, credential, ...rest } = input;
-    return this.send(
-      "execute",
-      { ...rest, invocationDeadlineAt: deadlineAt, credential: credential ?? null },
-      input.identity,
-      `environment-execute:${input.identity.environmentId}:${input.invocationId}`,
-      authorizationRef,
-    );
-  }
-
-  inspect(input: Parameters<ExecutionBackendPort["inspect"]>[0]) {
+  inspect(input: Parameters<ExecutionEnvironmentLifecyclePort["inspect"]>[0]) {
     return this.send("inspect", input, input.identity, null);
   }
 
-  stop(input: Parameters<ExecutionBackendPort["stop"]>[0]) {
+  stop(input: Parameters<ExecutionEnvironmentLifecyclePort["stop"]>[0]) {
     return this.send(
       "stop",
       input,
@@ -86,11 +75,11 @@ export class RemoteExecutionBackend implements ExecutionBackendPort {
     );
   }
 
-  verifyStopped(input: Parameters<ExecutionBackendPort["verifyStopped"]>[0]) {
+  verifyStopped(input: Parameters<ExecutionEnvironmentLifecyclePort["verifyStopped"]>[0]) {
     return this.send("verifyStopped", input, input.identity, null);
   }
 
-  async destroy(input: Parameters<ExecutionBackendPort["destroy"]>[0]) {
+  async destroy(input: Parameters<ExecutionEnvironmentLifecyclePort["destroy"]>[0]) {
     await this.send(
       "destroy",
       input,
@@ -104,7 +93,6 @@ export class RemoteExecutionBackend implements ExecutionBackendPort {
     fields: PayloadOf<TOperation>,
     identity: ExecutionEnvironmentIdentity | null,
     stateChangeKey: string | null,
-    authorizationRef: string | null = null,
   ): Promise<EnvironmentOperationResults[TOperation]> {
     const requestedAt = this.options.now();
     const messageId = stateChangeKey ?? this.options.nextId(`environment-${operation}`);
@@ -116,8 +104,8 @@ export class RemoteExecutionBackend implements ExecutionBackendPort {
       correlationId: identity ? `environment:${identity.environmentId}` : messageId,
       causationId: null,
       dataClassification: "private",
-      risk: operation === "execute" ? "high" : "medium",
-      authorizationRef,
+      risk: "medium",
+      authorizationRef: null,
       scope: {
         ...this.options.authority(),
         ownerId: this.options.ownerId,

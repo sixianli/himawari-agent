@@ -1,6 +1,6 @@
 import type {
   CapabilityExecutionHandle,
-  ExecutionBackendPort,
+  ExecutionEnvironmentLifecyclePort,
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
@@ -37,7 +37,6 @@ export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   DELEGATION_REQUIRED: "WORKER_DELEGATION_REQUIRED",
   DEADLINE_EXPIRED: "WORKER_DEADLINE_EXPIRED",
   SUBTASK_NOT_ACTIVE: "WORKER_SUBTASK_NOT_ACTIVE",
-  AUTHORIZATION_REQUIRED: "WORKER_AUTHORIZATION_REQUIRED",
 } as const);
 
 type ProductionWorkerErrorCode =
@@ -76,7 +75,7 @@ export interface ProductionExecutionWorkerOptions {
   readonly adapters: readonly RegisteredWorkerAdapter[];
   readonly hostOperations?: RegisteredHostOperationAdapter;
   readonly subtasks?: RegisteredWorkerSubtaskAdapter;
-  readonly environments?: ExecutionBackendPort;
+  readonly environments?: ExecutionEnvironmentLifecyclePort;
   readonly delegations?: {
     accept(handle: DelegatedCapabilityHandleV2): unknown;
     getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
@@ -796,7 +795,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 
   private async executeEnvironmentOperation(
     request: EnvironmentOperationRequest,
-    backend: ExecutionBackendPort,
+    backend: ExecutionEnvironmentLifecyclePort,
   ): Promise<void> {
     let outcome: { outcome: "succeeded" | "failed"; result: unknown; errorCode: string | null };
     try {
@@ -1296,7 +1295,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 }
 
 async function environmentOperation(
-  backend: ExecutionBackendPort,
+  backend: ExecutionEnvironmentLifecyclePort,
   request: EnvironmentOperationRequest,
 ): Promise<unknown> {
   const { payload } = request;
@@ -1312,18 +1311,6 @@ async function environmentOperation(
         imageDigest: payload.imageDigest,
         runnerDigest: payload.runnerDigest,
         deadlineAt: payload.environmentDeadlineAt,
-      });
-    case "execute":
-      return backend.execute({
-        identity: payload.identity,
-        createIntentId: payload.createIntentId,
-        locator: payload.locator,
-        stopFence: payload.stopFence,
-        invocationId: payload.invocationId,
-        argumentsRef: payload.argumentsRef,
-        deadlineAt: payload.invocationDeadlineAt,
-        authorizationRef: executeAuthorization(request),
-        ...(payload.credential ? { credential: payload.credential } : {}),
       });
     case "inspect":
       return backend.inspect({
@@ -1350,10 +1337,4 @@ async function environmentOperation(
       });
       return { destroyed: true };
   }
-}
-
-function executeAuthorization(request: EnvironmentOperationRequest): string {
-  if (request.authorizationRef === null)
-    throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.AUTHORIZATION_REQUIRED);
-  return request.authorizationRef;
 }

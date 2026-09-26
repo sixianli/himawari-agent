@@ -55,3 +55,15 @@
 - 调用参数和输出的读取，第二批做。
 - Worker 的结果事件只保存在内存里，Worker 重启后丢失；Agent 那时会等到超时并按“状态未知”处理，由协调服务再查询环境。本批没有另测 Worker 重启。
 - 真实容器上经通道的端到端运行，放到第三批和产品一起验证。
+
+## 后续修正（2026-09-26）
+
+第二批做完后发现，Worker 读写调用参数和输出的 Payload 方法，都绑定在某一次工具调用的授权上（`readInput(request)`、`writeOutput(request, …)`）。每次工具调用因此必须照旧走 `work.execute` 的 v2 流程（执行计划里本来就有 `backendRef` 和 `environmentId`），才能保留调用授权、回执、披露检查和执行记录。
+
+如果环境通道再单独提供 `execute`，就成了一条绕开这些检查的平行路径。所以修正如下：
+
+- 环境通道只保留生命周期操作：`capabilities`、`create`、`inspect`、`stop`、`verifyStopped`、`destroy`。带 `execute` 的环境请求，现在在合同层面就被当作未知操作拒绝。
+- application 层新增 `ExecutionEnvironmentLifecyclePort`（执行后端接口去掉 `execute`）。协调服务和 `RemoteExecutionBackend` 都改用它。协调服务本来就不调用 `execute`。
+- Worker 去掉 `execute` 分支，以及只为它加的错误码 `WORKER_AUTHORIZATION_REQUIRED`。
+
+上文“测试”一节里，关于 `execute` 的那几项已相应调整。反例里保留了一条“带 `execute` 的环境请求被拒绝”。

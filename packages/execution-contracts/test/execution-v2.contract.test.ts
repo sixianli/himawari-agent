@@ -130,15 +130,6 @@ describe("Execution v2 environment operations", () => {
       { operation: "capabilities" },
       { operation: "inspect", ...environmentTarget },
       {
-        operation: "execute",
-        ...environmentTarget,
-        stopFence: 0,
-        invocationId: "invocation-01",
-        argumentsRef: "payload-arguments-01",
-        invocationDeadlineAt: "2026-08-26T00:00:30.000Z",
-        credential: null,
-      },
-      {
         operation: "stop",
         ...environmentTarget,
         stopIntentId: "environment-stop-01",
@@ -170,7 +161,6 @@ describe("Execution v2 environment operations", () => {
           observedAt: "2026-08-26T00:00:05.000Z",
         },
       ],
-      ["execute", { outputRef: "container-output-01", observedAt: "2026-08-26T00:00:05.000Z" }],
       ["stop", { accepted: true }],
       ["verifyStopped", stopProof],
       ["destroy", { destroyed: true }],
@@ -224,7 +214,7 @@ describe("Execution v2 environment operations", () => {
       environmentOperation({ ...environmentPayload, deadlineAt: "2026-08-25T00:00:00.000Z" }),
     ],
     [
-      "an execute without authorization",
+      "a command execution, which only work.execute may carry",
       environmentOperation({
         operation: "execute",
         ...environmentTarget,

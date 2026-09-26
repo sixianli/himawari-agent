@@ -4,7 +4,7 @@ import {
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
 import type { CapabilityInvocationAuthority } from "../ports/capability-invocations.js";
-import type { ExecutionBackendPort } from "../ports/execution-backend.js";
+import type { ExecutionEnvironmentLifecyclePort } from "../ports/execution-backend.js";
 import type {
   ExecutionEnvironmentRecord,
   ExecutionEnvironmentRotationReason,
@@ -69,7 +69,7 @@ const ROTATION_AFTER_STOP: Readonly<
 
 export class TaskEnvironmentCoordinator {
   private readonly store: ExecutionEnvironmentStorePort;
-  private readonly backend: ExecutionBackendPort;
+  private readonly backend: ExecutionEnvironmentLifecyclePort;
   private readonly ids: { next(prefix: string): string };
   private readonly clock: { now(): string };
   private readonly authority: () => CapabilityInvocationAuthority;
@@ -77,7 +77,7 @@ export class TaskEnvironmentCoordinator {
 
   constructor(options: {
     readonly store: ExecutionEnvironmentStorePort;
-    readonly backend: ExecutionBackendPort;
+    readonly backend: ExecutionEnvironmentLifecyclePort;
     readonly ids: { next(prefix: string): string };
     readonly clock: { now(): string };
     readonly authority: () => CapabilityInvocationAuthority;
@@ -297,7 +297,7 @@ export class TaskEnvironmentCoordinator {
   private async create(record: ExecutionEnvironmentRecord): Promise<ExecutionEnvironmentRecord> {
     const environmentId = record.identity.environmentId;
     await this.store.beginCreate({ ...this.authorized(), environmentId });
-    let locator: Awaited<ReturnType<ExecutionBackendPort["create"]>>;
+    let locator: Awaited<ReturnType<ExecutionEnvironmentLifecyclePort["create"]>>;
     try {
       locator = await this.backend.create({
         identity: record.identity,
