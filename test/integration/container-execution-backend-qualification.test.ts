@@ -642,6 +642,7 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
           stopFence: 0,
           invocationId: `invocation-${randomUUID()}`,
           argumentsRef: ref,
+          authorizationRef: "authorization-q",
           deadlineAt: new Date(Date.now() + 150_000).toISOString(),
         })
         .then(
@@ -1034,6 +1035,7 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
           stopFence: 0,
           invocationId,
           argumentsRef: invocationId,
+          authorizationRef: "authorization-q",
           deadlineAt: new Date(Date.now() + 60_000).toISOString(),
           credential: { secretRef: "secret-registry", approvalRef: "approval-q" },
         });

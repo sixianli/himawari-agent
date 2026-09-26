@@ -1,3 +1,8 @@
+import {
+  environmentOperationRequestPayloadSchema,
+  environmentOperationResultPayloadSchema,
+  environmentOperationScopeMatches,
+} from "./environment-operation-v2.ts";
 import { withSandboxExecutionSupport } from "./sandbox-execution-support.ts";
 import { type SandboxJobIdentity, sandboxJobIdentitySchema } from "./sandbox-execution-v1.ts";
 import {
@@ -36,6 +41,8 @@ export const EXECUTION_V2_MESSAGE_TYPES = [
   "host.operation.result",
   "worker.subtask.execute",
   "worker.subtask.result",
+  "environment.operation.execute",
+  "environment.operation.result",
 ] as const;
 
 export type ExecutionV2MessageType = (typeof EXECUTION_V2_MESSAGE_TYPES)[number];
@@ -473,6 +480,16 @@ export const workerSubtaskResultEventSchema = object({
   }),
 });
 
+export const executeEnvironmentOperationRequestSchema = object({
+  ...requestEnvelope("environment.operation.execute"),
+  payload: environmentOperationRequestPayloadSchema,
+});
+
+export const environmentOperationResultEventSchema = object({
+  ...envelope("event", "environment.operation.result"),
+  payload: environmentOperationResultPayloadSchema,
+});
+
 const schemasByType = {
   "worker.handshake": workerHandshakeRequestSchema,
   "worker.handshake.accepted": workerHandshakeAcceptedSchema,
@@ -492,6 +509,8 @@ const schemasByType = {
   "host.operation.result": hostOperationResultEventSchema,
   "worker.subtask.execute": executeWorkerSubtaskRequestSchema,
   "worker.subtask.result": workerSubtaskResultEventSchema,
+  "environment.operation.execute": executeEnvironmentOperationRequestSchema,
+  "environment.operation.result": environmentOperationResultEventSchema,
 } as const satisfies Record<ExecutionV2MessageType, Schema<unknown>>;
 
 type SchemaByType = typeof schemasByType;
@@ -543,6 +562,34 @@ function parseExecutionV2Message(input: unknown): ExecutionV2Message {
         "host operation messages require owner, agent, Run and Worker Run scope",
       );
     }
+  }
+  if (
+    parsed.type === "environment.operation.execute" ||
+    parsed.type === "environment.operation.result"
+  ) {
+    const { ownerId, agentId, runId, workerRunId } = parsed.scope;
+    const runless = parsed.payload.operation === "capabilities";
+    if (
+      ownerId === null ||
+      agentId === null ||
+      (!runless && (runId === null || workerRunId === null))
+    )
+      throw new ContractValidationError(
+        "$.scope",
+        "environment operation messages require owner and agent, and outside capability queries Run and Worker Run scope",
+      );
+  }
+  if (parsed.type === "environment.operation.execute") {
+    if (!environmentOperationScopeMatches(parsed.scope, parsed.payload))
+      throw new ContractValidationError(
+        "$.scope",
+        "environment operations stay inside the environment's owner, agent and Run",
+      );
+    if (parsed.payload.operation === "execute" && parsed.authorizationRef === null)
+      throw new ContractValidationError(
+        "$.authorizationRef",
+        "an environment execute requires the invocation's authorization",
+      );
   }
   if (parsed.type.startsWith("worker.subtask.")) {
     const { ownerId, agentId, runId, workerRunId } = parsed.scope;

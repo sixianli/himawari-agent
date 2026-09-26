@@ -11,6 +11,52 @@ const executeMessage = messages.find(({ type }) => type === "work.execute");
 if (!executeMessage) throw new TypeError("work.execute fixture is missing");
 const hostOperationMessage = messages.find(({ type }) => type === "host.operation.execute");
 if (!hostOperationMessage) throw new TypeError("host.operation.execute fixture is missing");
+function fixture(type: string) {
+  const message = messages.find((item) => item.type === type);
+  if (!message) throw new TypeError(`${type} fixture is missing`);
+  return message;
+}
+const environmentRequest = fixture("environment.operation.execute");
+const environmentResult = fixture("environment.operation.result");
+const environmentPayload = environmentRequest.payload as Record<string, unknown>;
+const environmentTarget = {
+  identity: environmentPayload["identity"],
+  createIntentId: environmentPayload["createIntentId"],
+  locator: (environmentResult.payload as Record<string, unknown>)["result"],
+};
+const stopProof = {
+  basis: "verified_stopped",
+  identity: environmentPayload["identity"],
+  createIntentId: "environment-create-01",
+  stopIntentId: "environment-stop-01",
+  stopFence: 1,
+  verifierRef: "container-docker:host-01",
+  checkedAt: "2026-08-26T00:00:06.000Z",
+  validUntil: "2026-08-26T00:01:06.000Z",
+  evidence: [{ ref: "container-evidence-01", digest: "f".repeat(64) }],
+  locator: environmentTarget.locator,
+  coverage: [
+    "environment_terminated",
+    "no_restart",
+    "execute_closed",
+    "egress_closed",
+    "credentials_revoked",
+  ],
+};
+function environmentOperation(payload: Record<string, unknown>, overrides = {}) {
+  return {
+    ...environmentRequest,
+    ...overrides,
+    payload: {
+      requestedAt: "2026-08-26T00:00:00.000Z",
+      deadlineAt: "2026-08-26T00:01:00.000Z",
+      ...payload,
+    },
+  };
+}
+function environmentOutcome(payload: Record<string, unknown>) {
+  return { ...environmentResult, payload: { ...environmentResult.payload, ...payload } };
+}
 
 const forbiddenKeys = new Set([
   "apiKey",
@@ -75,6 +121,135 @@ describe("Execution v2 compatibility fixtures", () => {
     expect(collectKeys(messages).filter((key) => forbiddenKeys.has(key))).toEqual([]);
     for (const forbidden of ["@octokit/", "mem0ai", "fastify", "JwtPayload"])
       expect(serialized).not.toContain(forbidden);
+  });
+});
+
+describe("Execution v2 environment operations", () => {
+  it("carries every backend operation with its own fields and typed result", () => {
+    const requests = [
+      { operation: "capabilities" },
+      { operation: "inspect", ...environmentTarget },
+      {
+        operation: "execute",
+        ...environmentTarget,
+        stopFence: 0,
+        invocationId: "invocation-01",
+        argumentsRef: "payload-arguments-01",
+        invocationDeadlineAt: "2026-08-26T00:00:30.000Z",
+        credential: null,
+      },
+      {
+        operation: "stop",
+        ...environmentTarget,
+        stopIntentId: "environment-stop-01",
+        stopFence: 1,
+      },
+      {
+        operation: "verifyStopped",
+        ...environmentTarget,
+        stopIntentId: "environment-stop-01",
+        stopFence: 1,
+      },
+      { operation: "destroy", ...environmentTarget },
+    ];
+    for (const payload of requests) {
+      const message = environmentOperation(
+        payload,
+        payload.operation === "execute"
+          ? { risk: "high", authorizationRef: "authorization-01" }
+          : {},
+      );
+      expect(executionV2MessageSchema.parse(message)).toEqual(message);
+    }
+    const results = [
+      [
+        "inspect",
+        {
+          state: "stopped",
+          locator: environmentTarget.locator,
+          observedAt: "2026-08-26T00:00:05.000Z",
+        },
+      ],
+      ["execute", { outputRef: "container-output-01", observedAt: "2026-08-26T00:00:05.000Z" }],
+      ["stop", { accepted: true }],
+      ["verifyStopped", stopProof],
+      ["destroy", { destroyed: true }],
+    ] as const;
+    for (const [operation, result] of results) {
+      const message = environmentOutcome({ operation, result });
+      expect(executionV2MessageSchema.parse(message)).toEqual(message);
+    }
+    const runless = environmentOperation(
+      { operation: "capabilities" },
+      { scope: { ...environmentRequest.scope, runId: null, workerRunId: null } },
+    );
+    expect(executionV2MessageSchema.parse(runless)).toEqual(runless);
+    const failed = environmentOutcome({
+      outcome: "failed",
+      result: null,
+      errorCode: "CONTAINER_NOT_RUNNING",
+    });
+    expect(executionV2MessageSchema.parse(failed)).toEqual(failed);
+    const unknown = environmentOutcome({ outcome: "result_unknown", result: null });
+    expect(executionV2MessageSchema.parse(unknown)).toEqual(unknown);
+  });
+
+  it.each([
+    [
+      "a Run scope other than the environment's",
+      { ...environmentRequest, scope: { ...environmentRequest.scope, runId: "run-02" } },
+    ],
+    [
+      "a missing Worker Run scope",
+      { ...environmentRequest, scope: { ...environmentRequest.scope, workerRunId: null } },
+    ],
+    [
+      "a capabilities query without an owner",
+      environmentOperation(
+        { operation: "capabilities" },
+        { scope: { ...environmentRequest.scope, ownerId: null, runId: null, workerRunId: null } },
+      ),
+    ],
+    ["an unknown operation", environmentOperation({ operation: "exec_shell" })],
+    [
+      "a create without its envelope",
+      environmentOperation({ ...environmentPayload, envelope: undefined }),
+    ],
+    [
+      "fields from another operation",
+      environmentOperation({ operation: "inspect", ...environmentTarget, stopFence: 1 }),
+    ],
+    [
+      "a deadline before the request",
+      environmentOperation({ ...environmentPayload, deadlineAt: "2026-08-25T00:00:00.000Z" }),
+    ],
+    [
+      "an execute without authorization",
+      environmentOperation({
+        operation: "execute",
+        ...environmentTarget,
+        stopFence: 0,
+        invocationId: "invocation-01",
+        argumentsRef: "payload-arguments-01",
+        invocationDeadlineAt: "2026-08-26T00:00:30.000Z",
+        credential: null,
+      }),
+    ],
+    ["a success without a result", environmentOutcome({ result: null })],
+    ["a failure without an error code", environmentOutcome({ outcome: "failed", result: null })],
+    [
+      "a result of another operation",
+      environmentOutcome({ operation: "create", result: stopProof }),
+    ],
+    [
+      "an incomplete stop proof",
+      environmentOutcome({
+        operation: "verifyStopped",
+        result: { ...stopProof, coverage: ["environment_terminated"] },
+      }),
+    ],
+  ])("rejects %s", (_case, input) => {
+    expect(() => executionV2MessageSchema.parse(input)).toThrow(ContractValidationError);
   });
 });
 

@@ -197,6 +197,7 @@ export class ContainerQualification {
       stopFence: 0,
       invocationId: `invocation-${randomUUID()}`,
       argumentsRef: ref,
+      authorizationRef: "authorization-q",
       deadlineAt: new Date(Date.now() + 60_000).toISOString(),
     });
     return subject.readOutput(outputRef);

@@ -89,6 +89,19 @@ class ChildWorkerTransport implements ExecutionTransportPort {
       });
       return null;
     }
+    if (message.type === "environment.operation.execute") {
+      this.append(message, "environment.operation.result", {
+        requestId: message.messageId,
+        operation: message.payload.operation,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(message.messageId),
+        outcome: "failed",
+        result: null,
+        errorCode: "WORKER_ADAPTER_NOT_REGISTERED",
+        completedAt: new Date().toISOString(),
+      });
+      return null;
+    }
     if (message.type === "host.operation.execute") {
       this.append(message, "host.operation.result", {
         requestId: message.messageId,
@@ -184,7 +197,8 @@ class ChildWorkerTransport implements ExecutionTransportPort {
       | "work.cancelled"
       | "work.reconciled"
       | "host.operation.result"
-      | "worker.subtask.result",
+      | "worker.subtask.result"
+      | "environment.operation.result",
     payload: unknown,
   ): void {
     nextMessageId += 1;

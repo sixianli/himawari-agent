@@ -153,6 +153,9 @@ async function workerFixture(
       typeof ProductionExecutionWorker
     >[0]["hostOperations"];
     readonly subtasks?: ConstructorParameters<typeof ProductionExecutionWorker>[0]["subtasks"];
+    readonly environments?: ConstructorParameters<
+      typeof ProductionExecutionWorker
+    >[0]["environments"];
   } = {},
 ) {
   const events = options.unknownResult
@@ -273,6 +276,7 @@ async function workerFixture(
       ...(options.sandboxV2 ? { sandboxV2: options.sandboxV2 } : {}),
       ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
       ...(options.subtasks ? { subtasks: options.subtasks } : {}),
+      ...(options.environments ? { environments: options.environments } : {}),
       now: options.now ?? (() => adapters.clock.now()),
       nextId: (type) => adapters.ids.next(type),
     }),
@@ -1303,6 +1307,180 @@ describe("production execution Worker", () => {
     });
     await expired.worker.request(handshake());
     await expect(expired.worker.request(request)).rejects.toMatchObject({
+      code: "WORKER_DEADLINE_EXPIRED",
+    });
+    expect(expiredCalls).toBe(0);
+  });
+
+  it("forwards each environment operation to the registered backend once and fails closed without one", async () => {
+    const identity = {
+      schemaVersion: "execution-environment.v1",
+      ownerId: fixture.owner.id,
+      agentId: fixture.agent.id,
+      runId: fixture.runs.monitoring.id,
+      hostId: "host-unit",
+      executionJobId: "execution-job-unit",
+      environmentId: "environment-unit",
+      environmentGeneration: 1,
+      role: "primary",
+    } as const;
+    const locator = {
+      backendRef: "container-docker:unit",
+      runtimeInstanceId: "daemon-unit",
+      runtimeEnvironmentId: "d".repeat(64),
+      createIntentId: "environment-create-unit",
+      effectivePolicyDigest: "e".repeat(64),
+    };
+    const operation = (messageId: string, payload: Record<string, unknown>, extra = {}) => {
+      const request = executionV2MessageSchema.parse({
+        ...requestEnvelope("environment.operation.execute"),
+        messageId,
+        idempotencyKey: messageId,
+        ...extra,
+        payload: {
+          requestedAt: fixture.times.start,
+          deadlineAt: fixture.times.deadline,
+          ...payload,
+        },
+      });
+      if (request.kind !== "request" || request.type !== "environment.operation.execute")
+        throw new TypeError("environment request fixture is invalid");
+      return request;
+    };
+    const create = operation("environment-create-unit", {
+      operation: "create",
+      identity,
+      createIntentId: "environment-create-unit",
+      envelope: {
+        schemaVersion: "execution-envelope.v1",
+        directories: [],
+        network: [],
+        resources: {
+          cpuMillicores: 500,
+          memoryBytes: 134217728,
+          maxProcesses: 64,
+          privateStorageBytes: 16777216,
+        },
+      },
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      environmentDeadlineAt: fixture.times.deadline,
+    });
+    const execute = operation(
+      "environment-execute-unit",
+      {
+        operation: "execute",
+        identity,
+        createIntentId: "environment-create-unit",
+        locator,
+        stopFence: 0,
+        invocationId: "invocation-unit",
+        argumentsRef: "payload-arguments-unit",
+        invocationDeadlineAt: fixture.times.deadline,
+        credential: { secretRef: "secret-registry", approvalRef: "approval-unit" },
+      },
+      { risk: "high", authorizationRef: "authorization-unit" },
+    );
+    const inspect = operation("environment-inspect-unit", {
+      operation: "inspect",
+      identity,
+      createIntentId: "environment-create-unit",
+      locator,
+    });
+
+    const absent = await workerFixture();
+    await absent.worker.request(handshake());
+    await expect(absent.worker.request(create)).rejects.toMatchObject({
+      code: PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+    });
+
+    const calls: [string, unknown][] = [];
+    const backend = {
+      capabilities: async () => {
+        throw new Error("unused");
+      },
+      create: async (input: unknown) => {
+        calls.push(["create", input]);
+        return locator;
+      },
+      execute: async (input: unknown) => {
+        calls.push(["execute", input]);
+        return { outputRef: "container-output-unit", observedAt: fixture.times.start };
+      },
+      inspect: async (input: unknown) => {
+        calls.push(["inspect", input]);
+        throw Object.assign(new Error("runtime changed"), { code: "CONTAINER_RUNTIME_CHANGED" });
+      },
+      stop: async () => ({ accepted: true as const }),
+      verifyStopped: async () => {
+        throw new Error("unused");
+      },
+      destroy: async () => {},
+    };
+    const registered = await workerFixture({ environments: backend });
+    await registered.worker.request(handshake());
+    for (const request of [create, create, execute, inspect])
+      await registered.worker.request(request);
+    await registered.worker.waitForIdle();
+    expect(calls.map(([name]) => name)).toEqual(["create", "execute", "inspect"]);
+    expect(calls[0]?.[1]).toEqual({
+      identity,
+      createIntentId: "environment-create-unit",
+      envelope: create.payload.operation === "create" ? create.payload.envelope : null,
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      deadlineAt: fixture.times.deadline,
+    });
+    expect(calls[1]?.[1]).toEqual({
+      identity,
+      createIntentId: "environment-create-unit",
+      locator,
+      stopFence: 0,
+      invocationId: "invocation-unit",
+      argumentsRef: "payload-arguments-unit",
+      deadlineAt: fixture.times.deadline,
+      authorizationRef: "authorization-unit",
+      credential: { secretRef: "secret-registry", approvalRef: "approval-unit" },
+    });
+    const results = (await readEvents(registered.worker)).filter(
+      (event) => event.type === "environment.operation.result",
+    );
+    expect(results.map((event) => event.payload)).toEqual([
+      expect.objectContaining({
+        requestId: "environment-create-unit",
+        operation: "create",
+        outcome: "succeeded",
+        result: locator,
+        errorCode: null,
+      }),
+      expect.objectContaining({
+        requestId: "environment-execute-unit",
+        outcome: "succeeded",
+        result: { outputRef: "container-output-unit", observedAt: fixture.times.start },
+      }),
+      expect.objectContaining({
+        requestId: "environment-inspect-unit",
+        outcome: "failed",
+        result: null,
+        errorCode: "CONTAINER_RUNTIME_CHANGED",
+      }),
+    ]);
+
+    let expiredCalls = 0;
+    const expired = await workerFixture({
+      now: () => fixture.times.deadline,
+      environments: {
+        ...backend,
+        create: async () => {
+          expiredCalls += 1;
+          return locator;
+        },
+      },
+    });
+    await expired.worker.request(handshake());
+    await expect(expired.worker.request(create)).rejects.toMatchObject({
       code: "WORKER_DEADLINE_EXPIRED",
     });
     expect(expiredCalls).toBe(0);

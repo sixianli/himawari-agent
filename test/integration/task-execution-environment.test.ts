@@ -4,13 +4,22 @@ import {
   decideEnvelopeChange,
   type ExecutionBackendPort,
   type ExecutionEnvironmentStorePort,
+  ExecutionWorkerService,
+  RemoteExecutionBackend,
   type SandboxWorkspaceClaim,
   TaskEnvironmentCoordinator,
 } from "@himawari-agent/application";
+import { ProductionExecutionWorker } from "@himawari-agent/execution-worker";
 import {
+  createReferenceAdapterSet,
+  ScriptedExternalActionReconciliationPort,
+} from "@himawari-agent/testing";
+import {
+  EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionEnvelope,
   type ExecutionEnvironmentLocator,
   type ExecutionEnvironmentStopProof,
+  executionV2MessageSchema,
   STOP_PROOF_COVERAGE,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
@@ -167,7 +176,83 @@ class FakeBackend implements ExecutionBackendPort {
   async destroy() {}
 }
 
-async function openFixture() {
+async function throughWorker(backend: FakeBackend, now: () => string) {
+  const adapters = createReferenceAdapterSet();
+  const worker = new ProductionExecutionWorker({
+    service: new ExecutionWorkerService({
+      handles: adapters.capabilityRegistry,
+      capability: adapters.capability,
+      secrets: adapters.secret,
+      reconciliation: new ScriptedExternalActionReconciliationPort({}),
+      clock: adapters.clock,
+      ids: adapters.ids,
+    }),
+    workerInstanceId: SERVICE_AUTHORITY.workerInstanceId,
+    workerBootId: SERVICE_AUTHORITY.workerBootId,
+    bootTokenRef: "boot-token-environment",
+    deploymentId: SERVICE_AUTHORITY.product.deploymentId,
+    authorityEpoch: SERVICE_AUTHORITY.product.authorityEpoch,
+    fencingToken: SERVICE_AUTHORITY.product.fencingToken,
+    maximumResourceCeiling: {
+      maxWallTimeMs: 30_000,
+      maxCpuTimeMs: 30_000,
+      maxMemoryBytes: 134_217_728,
+      maxOutputBytes: 4_096,
+      maxProgressEvents: 100,
+    },
+    adapters: [],
+    environments: backend,
+    now,
+    nextId: (() => {
+      let id = 0;
+      return (scope: string) => `${scope}-${++id}`;
+    })(),
+  });
+  const handshake = executionV2MessageSchema.parse({
+    schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+    kind: "request",
+    type: "worker.handshake",
+    messageId: "handshake-environment",
+    correlationId: "handshake-environment",
+    causationId: null,
+    dataClassification: "private",
+    risk: "low",
+    authorizationRef: null,
+    scope: {
+      ...SERVICE_AUTHORITY.product,
+      ownerId: null,
+      agentId: null,
+      runId: null,
+      workerRunId: null,
+    },
+    idempotencyKey: "handshake-environment",
+    payload: {
+      agentServiceInstanceId: SERVICE_AUTHORITY.agentServiceInstanceId,
+      bootTokenRef: "boot-token-environment",
+      supportedSchemaVersions: [EXECUTION_V2_SCHEMA_VERSION],
+      requestedAt: now(),
+    },
+  });
+  if (handshake.kind !== "request") throw new TypeError("handshake fixture is invalid");
+  await worker.request(handshake);
+  let id = 0;
+  return {
+    worker,
+    backend: new RemoteExecutionBackend({
+      transport: worker,
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      authority: () => SERVICE_AUTHORITY.product,
+      nextId: (scope) => `${scope}-${++id}`,
+      now,
+      requestTimeoutMs: 60_000,
+      resultTimeoutMs: 2_000,
+      pollIntervalMs: 5,
+    }),
+  };
+}
+
+async function openFixture(options: { readonly throughWorker?: boolean } = {}) {
   const journal = await openSandboxJournal(true);
   const database = journal.database;
   database
@@ -204,10 +289,11 @@ async function openFixture() {
   const backend = new FakeBackend();
   let now = T1;
   let counter = 0;
+  const channel = options.throughWorker ? await throughWorker(backend, () => now) : null;
   const coordinatorFor = (store: ExecutionEnvironmentStorePort) =>
     new TaskEnvironmentCoordinator({
       store,
-      backend,
+      backend: channel?.backend ?? backend,
       ids: { next: (prefix) => `${prefix}-${++counter}` },
       clock: { now: () => now },
       authority: () => SERVICE_AUTHORITY,
@@ -217,6 +303,7 @@ async function openFixture() {
   let repositoryOpen = true;
   return {
     backend,
+    worker: channel?.worker ?? null,
     receipts: [
       {
         invocationId: "invocation-capability-invocation",
@@ -275,8 +362,8 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
-async function fixture() {
-  const f = await openFixture();
+async function fixture(options: Parameters<typeof openFixture>[0] = {}) {
+  const f = await openFixture(options);
   cleanups.push(f.close);
   return f;
 }
@@ -957,5 +1044,52 @@ describe("changing the environment envelope", () => {
       "stop_requested",
     ]);
     await expect(acquire(f, RUN_B, lease)).rejects.toEqual(reason("WORKSPACE_OCCUPIED"));
+  });
+});
+
+describe("task environments behind the authenticated Worker channel", () => {
+  it("creates, shares, stops and releases one environment through the Worker", async () => {
+    const f = await fixture({ throughWorker: true });
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    const again = await acquire(f, RUN_ID, lease);
+    expect(again.identity).toEqual(first.identity);
+    expect(first.locator?.runtimeEnvironmentId).toBe(`runtime-${first.identity.environmentId}`);
+    const released = await f.coordinator.stop({
+      environmentId: first.identity.environmentId,
+      reason: "run_finished",
+      stoppedResourceRefs: [],
+    });
+    expect(released.state).toBe("released");
+    expect(f.backend.calls.filter((call) => !call.startsWith("capabilities"))).toEqual([
+      `create:${first.createIntentId}`,
+      `stop:${first.createIntentId}`,
+      `verify:${first.createIntentId}`,
+    ]);
+    const results = [];
+    for await (const event of f.worker?.events(null) ?? [])
+      if (event.type === "environment.operation.result") results.push(event.payload);
+    expect(results.map((result) => [result.operation, result.outcome])).toEqual([
+      ["capabilities", "succeeded"],
+      ["create", "succeeded"],
+      ["capabilities", "succeeded"],
+      ["stop", "succeeded"],
+      ["verifyStopped", "succeeded"],
+    ]);
+    await f.reopen();
+    expect((await f.store.readRun(RUN_ID))?.environments[0]).toMatchObject({
+      state: "released",
+      identity: first.identity,
+    });
+  });
+
+  it("resolves a lost create response by inspecting through the Worker without creating twice", async () => {
+    const f = await fixture({ throughWorker: true });
+    f.backend.createMode = "response_lost";
+    const record = await acquire(f, RUN_ID, root("root-a", 10, "write"));
+    expect(record.state).toBe("ready");
+    expect(record.locator?.createIntentId).toBe(record.createIntentId);
+    expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(1);
+    expect(f.backend.calls).toContain(`inspect:${record.createIntentId}`);
   });
 });

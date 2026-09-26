@@ -43,6 +43,7 @@ export interface ExecutionBackendPort {
       readonly invocationId: string;
       readonly argumentsRef: string;
       readonly deadlineAt: string;
+      readonly authorizationRef: string;
       readonly credential?: { readonly secretRef: string; readonly approvalRef: string };
     },
   ): Promise<{ readonly outputRef: string; readonly observedAt: string }>;

@@ -1,5 +1,6 @@
 import type {
   CapabilityExecutionHandle,
+  ExecutionBackendPort,
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
@@ -36,6 +37,7 @@ export const PRODUCTION_WORKER_ERROR_CODES = Object.freeze({
   DELEGATION_REQUIRED: "WORKER_DELEGATION_REQUIRED",
   DEADLINE_EXPIRED: "WORKER_DEADLINE_EXPIRED",
   SUBTASK_NOT_ACTIVE: "WORKER_SUBTASK_NOT_ACTIVE",
+  AUTHORIZATION_REQUIRED: "WORKER_AUTHORIZATION_REQUIRED",
 } as const);
 
 type ProductionWorkerErrorCode =
@@ -74,6 +76,7 @@ export interface ProductionExecutionWorkerOptions {
   readonly adapters: readonly RegisteredWorkerAdapter[];
   readonly hostOperations?: RegisteredHostOperationAdapter;
   readonly subtasks?: RegisteredWorkerSubtaskAdapter;
+  readonly environments?: ExecutionBackendPort;
   readonly delegations?: {
     accept(handle: DelegatedCapabilityHandleV2): unknown;
     getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
@@ -97,6 +100,10 @@ type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
 type HostOperationRequest = Extract<ExecutionV2Request, { type: "host.operation.execute" }>;
 type WorkerSubtaskRequest = Extract<ExecutionV2Request, { type: "worker.subtask.execute" }>;
+type EnvironmentOperationRequest = Extract<
+  ExecutionV2Request,
+  { type: "environment.operation.execute" }
+>;
 
 type SubtaskCapabilityInput = Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0];
 
@@ -239,6 +246,17 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       }
       if (this.isReplay(parsed)) return null;
       this.track(this.executeHostOperation(parsed));
+      return null;
+    }
+    if (parsed.type === "environment.operation.execute") {
+      if (this.isReplay(parsed, false)) return null;
+      this.assertDeadline(parsed.payload.deadlineAt);
+      if (!this.options.environments)
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+        );
+      if (this.isReplay(parsed)) return null;
+      this.track(this.executeEnvironmentOperation(parsed, this.options.environments));
       return null;
     }
     if (parsed.type === "worker.subtask.execute") {
@@ -776,6 +794,44 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     }
   }
 
+  private async executeEnvironmentOperation(
+    request: EnvironmentOperationRequest,
+    backend: ExecutionBackendPort,
+  ): Promise<void> {
+    let outcome: { outcome: "succeeded" | "failed"; result: unknown; errorCode: string | null };
+    try {
+      outcome = {
+        outcome: "succeeded",
+        result: await environmentOperation(backend, request),
+        errorCode: null,
+      };
+    } catch (error) {
+      outcome = { outcome: "failed", result: null, errorCode: errorCode(error) };
+    }
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "environment.operation.result",
+      messageId: this.options.nextId("environment-operation-result"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        requestId: request.messageId,
+        operation: request.payload.operation,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(request.messageId),
+        ...outcome,
+        completedAt: this.options.now(),
+      },
+    });
+    if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
+    this.eventsByCursor.push(event);
+  }
+
   private async executeSubtask(request: WorkerSubtaskRequest): Promise<void> {
     const controller = new AbortController();
     const observation: SubtaskExecutionObservation = { unknownExternalActionIds: new Set() };
@@ -1237,4 +1293,67 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     this.sequenceByRequest.set(requestId, sequence);
     return sequence;
   }
+}
+
+async function environmentOperation(
+  backend: ExecutionBackendPort,
+  request: EnvironmentOperationRequest,
+): Promise<unknown> {
+  const { payload } = request;
+  switch (payload.operation) {
+    case "capabilities":
+      return backend.capabilities();
+    case "create":
+      return backend.create({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        envelope: payload.envelope,
+        policyDigest: payload.policyDigest,
+        imageDigest: payload.imageDigest,
+        runnerDigest: payload.runnerDigest,
+        deadlineAt: payload.environmentDeadlineAt,
+      });
+    case "execute":
+      return backend.execute({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+        stopFence: payload.stopFence,
+        invocationId: payload.invocationId,
+        argumentsRef: payload.argumentsRef,
+        deadlineAt: payload.invocationDeadlineAt,
+        authorizationRef: executeAuthorization(request),
+        ...(payload.credential ? { credential: payload.credential } : {}),
+      });
+    case "inspect":
+      return backend.inspect({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+      });
+    case "stop":
+    case "verifyStopped": {
+      const request = {
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+        stopIntentId: payload.stopIntentId,
+        stopFence: payload.stopFence,
+      };
+      return payload.operation === "stop" ? backend.stop(request) : backend.verifyStopped(request);
+    }
+    case "destroy":
+      await backend.destroy({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+      });
+      return { destroyed: true };
+  }
+}
+
+function executeAuthorization(request: EnvironmentOperationRequest): string {
+  if (request.authorizationRef === null)
+    throw new ProductionExecutionWorkerError(PRODUCTION_WORKER_ERROR_CODES.AUTHORIZATION_REQUIRED);
+  return request.authorizationRef;
 }

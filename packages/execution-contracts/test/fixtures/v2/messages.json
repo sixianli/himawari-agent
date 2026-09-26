@@ -73,7 +73,9 @@
       "workerRunId": null
     },
     "idempotencyKey": "worker-readiness-01",
-    "payload": { "requestedAt": "2026-08-26T00:00:01.000Z" }
+    "payload": {
+      "requestedAt": "2026-08-26T00:00:01.000Z"
+    }
   },
   {
     "schemaVersion": "execution.v2",
@@ -560,6 +562,108 @@
       "actualCostMicros": 120,
       "durationMs": 2400,
       "completedAt": "2026-08-26T00:00:04.400Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "request",
+    "type": "environment.operation.execute",
+    "messageId": "execution-v2-environment-create-01",
+    "correlationId": "correlation-run-01",
+    "causationId": null,
+    "dataClassification": "private",
+    "risk": "medium",
+    "authorizationRef": null,
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "environment-worker-run-01"
+    },
+    "idempotencyKey": "environment-create-01:idempotency",
+    "payload": {
+      "operation": "create",
+      "identity": {
+        "schemaVersion": "execution-environment.v1",
+        "ownerId": "owner-01",
+        "agentId": "agent-01",
+        "runId": "run-01",
+        "hostId": "host-01",
+        "executionJobId": "execution-job-01",
+        "environmentId": "environment-01",
+        "environmentGeneration": 1,
+        "role": "primary"
+      },
+      "createIntentId": "environment-create-01",
+      "envelope": {
+        "schemaVersion": "execution-envelope.v1",
+        "directories": [
+          {
+            "hostId": "host-01",
+            "grantRef": "grant-01",
+            "canonicalRootId": "root-01",
+            "access": "write",
+            "source": {
+              "authorizationRef": "authorization-01",
+              "decidedBy": "user",
+              "delegationListRef": null,
+              "expiresAt": "2026-08-26T01:00:00.000Z"
+            }
+          }
+        ],
+        "network": [],
+        "resources": {
+          "cpuMillicores": 1000,
+          "memoryBytes": 536870912,
+          "maxProcesses": 256,
+          "privateStorageBytes": 268435456
+        }
+      },
+      "policyDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "imageDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "runnerDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "environmentDeadlineAt": "2026-08-26T01:00:00.000Z",
+      "requestedAt": "2026-08-26T00:00:00.000Z",
+      "deadlineAt": "2026-08-26T00:01:00.000Z"
+    }
+  },
+  {
+    "schemaVersion": "execution.v2",
+    "kind": "event",
+    "type": "environment.operation.result",
+    "messageId": "execution-v2-environment-result-01",
+    "correlationId": "correlation-run-01",
+    "causationId": "execution-v2-environment-create-01",
+    "dataClassification": "private",
+    "risk": "medium",
+    "authorizationRef": null,
+    "scope": {
+      "deploymentId": "deployment-01",
+      "authorityEpoch": 8,
+      "fencingToken": 3,
+      "ownerId": "owner-01",
+      "agentId": "agent-01",
+      "runId": "run-01",
+      "workerRunId": "environment-worker-run-01"
+    },
+    "payload": {
+      "requestId": "execution-v2-environment-create-01",
+      "operation": "create",
+      "cursor": "worker-cursor-60",
+      "sequence": 1,
+      "outcome": "succeeded",
+      "result": {
+        "backendRef": "container-docker:host-01",
+        "runtimeInstanceId": "daemon-01",
+        "runtimeEnvironmentId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "createIntentId": "environment-create-01",
+        "effectivePolicyDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "errorCode": null,
+      "completedAt": "2026-08-26T00:00:05.000Z"
     }
   }
 ]
