@@ -23,6 +23,7 @@ export const dockerExecutable = process.env["HIMAWARI_CONTAINER_DOCKER_CLI"] ?? 
 export const dockerHost = process.env["HIMAWARI_CONTAINER_DOCKER_HOST"] ?? "";
 export const evidencePath = process.env["HIMAWARI_CONTAINER_EVIDENCE_PATH"];
 const workRoot = process.env["HIMAWARI_CONTAINER_WORK_ROOT"] ?? os.tmpdir();
+export const runnerImageId = process.env["HIMAWARI_CONTAINER_RUNNER_IMAGE_ID"] ?? "";
 export const IMAGE_REFERENCE = "docker.io/library/busybox";
 export const IMAGE_DIGEST = "bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e";
 export const EGRESS_IMAGE_REFERENCE = "docker.io/library/node";
@@ -103,7 +104,7 @@ export class ContainerQualification {
     const subject = new ContainerExecutionBackend({
       backendRef: "container-docker:qualification",
       docker: dockerCli(dockerExecutable, host ? ["--host", host] : []),
-      image: { reference: IMAGE_REFERENCE, digest: IMAGE_DIGEST },
+      image: { reference: IMAGE_REFERENCE, digest: IMAGE_DIGEST, pin: "registry-digest" },
       initUser: "65532:65532",
       taskUser: "65534:65534",
       stateDirectory: this.stateDirectory,
@@ -119,7 +120,11 @@ export class ContainerQualification {
       },
       resolveDirectory: async (directory) => this.approved.get(directory.canonicalRootId) ?? null,
       egress: {
-        image: { reference: EGRESS_IMAGE_REFERENCE, digest: EGRESS_IMAGE_DIGEST },
+        image: {
+          reference: EGRESS_IMAGE_REFERENCE,
+          digest: EGRESS_IMAGE_DIGEST,
+          pin: "registry-digest",
+        },
         user: "65533:65533",
         readyAttempts: 50,
         readyIntervalMs: 100,

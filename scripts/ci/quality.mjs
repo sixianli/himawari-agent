@@ -239,8 +239,9 @@ function qualificationEnvironment(check, evidence, env) {
     const runtime = {
       HIMAWARI_CONTAINER_DOCKER_CLI: env.HIMAWARI_CONTAINER_DOCKER_CLI,
       HIMAWARI_CONTAINER_DOCKER_HOST: env.HIMAWARI_CONTAINER_DOCKER_HOST,
+      HIMAWARI_CONTAINER_RUNNER_IMAGE_ID: env.HIMAWARI_CONTAINER_RUNNER_IMAGE_ID,
     };
-    if (!runtime.HIMAWARI_CONTAINER_DOCKER_CLI || !runtime.HIMAWARI_CONTAINER_DOCKER_HOST)
+    if (Object.values(runtime).some((value) => !value))
       throw new Error("CI_QUALITY_CONTAINER_RUNTIME_REQUIRED");
     return {
       HIMAWARI_CONTAINER_QUALIFICATION: "1",

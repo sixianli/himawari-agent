@@ -101,6 +101,7 @@ class FakeDocker {
   cgroupVersion = "2";
   repoDigests = [`busybox@sha256:${IMAGE_DIGEST}`];
   egressRepoDigests = [`node@sha256:${EGRESS_IMAGE_DIGEST}`];
+  readonly localImages = new Set<string>();
   readonly containers = new Map<string, FakeContainer>();
   readonly networks = new Map<string, Record<string, unknown>>();
   tamperNetwork: (network: Record<string, unknown>) => void = () => {};
@@ -142,6 +143,16 @@ class FakeDocker {
         }),
       );
     if (group === "image" && command === "inspect") {
+      const local = args.at(-1) ?? "";
+      if (local.startsWith("sha256:"))
+        return this.localImages.has(local)
+          ? this.ok(JSON.stringify({ Id: local, RepoDigests: [] }))
+          : {
+              exitCode: 1,
+              stdout: "[]",
+              stderr: `Error response from daemon: No such image: ${local}`,
+              truncated: false,
+            };
       const egress = (args.at(-1) ?? "").startsWith(EGRESS_IMAGE_REFERENCE);
       return this.ok(
         JSON.stringify({
@@ -258,9 +269,7 @@ class FakeDocker {
     const container: FakeContainer = {
       Id: `container-${++this.sequence}`.padEnd(64, "0"),
       Name: `/${name}`,
-      Image: image.startsWith(EGRESS_IMAGE_REFERENCE)
-        ? "sha256:egress-image-id"
-        : "sha256:image-id",
+      Image: image,
       Config: {
         User: one("--user") ?? "",
         Labels: Object.fromEntries(
@@ -470,7 +479,7 @@ function backend(
   return new ContainerExecutionBackend({
     backendRef: "container-docker:host-1",
     docker: docker.run,
-    image: { reference: IMAGE_REFERENCE, digest: IMAGE_DIGEST },
+    image: { reference: IMAGE_REFERENCE, digest: IMAGE_DIGEST, pin: "registry-digest" },
     initUser: "65532:65532",
     taskUser: "65534:65534",
     stateDirectory,
@@ -487,7 +496,11 @@ function backend(
     resolveDirectory: async (directory) => roots.get(directory.canonicalRootId) ?? null,
     hostDirectories: { maxScannedEntries: 200, maxProtectedEntries: 8 },
     egress: {
-      image: { reference: EGRESS_IMAGE_REFERENCE, digest: EGRESS_IMAGE_DIGEST },
+      image: {
+        reference: EGRESS_IMAGE_REFERENCE,
+        digest: EGRESS_IMAGE_DIGEST,
+        pin: "registry-digest",
+      },
       user: "65533:65533",
       readyAttempts: 3,
       readyIntervalMs: 1,
@@ -591,6 +604,33 @@ describe("container execution backend capabilities", () => {
     await expect(backend().capabilities()).rejects.toMatchObject({
       code: "CONTAINER_IMAGE_UNQUALIFIED",
     });
+  });
+
+  it("pins a locally built image by its content ID and creates from the verified ID", async () => {
+    const localId = "d".repeat(64);
+    const runner = { reference: "himawari/runner", digest: localId, pin: "image-id" } as const;
+    await expect(backend({ image: runner }).capabilities()).rejects.toMatchObject({
+      code: "CONTAINER_IMAGE_UNQUALIFIED",
+    });
+    docker.localImages.add(`sha256:${localId}`);
+    await expect(
+      backend({ image: { ...runner, pin: "registry-digest" } }).capabilities(),
+    ).rejects.toMatchObject({ code: "CONTAINER_IMAGE_UNQUALIFIED" });
+    const subject = backend({ image: runner });
+    await subject.capabilities();
+    await subject.create(createInput({ imageDigest: localId }));
+    const created = docker.calls.find((call) => call[1] === "create") ?? [];
+    expect(created).toContain(`sha256:${localId}`);
+    expect(created.join("\n")).not.toContain("himawari/runner");
+    expect(docker.only().Image).toBe(`sha256:${localId}`);
+  });
+
+  it("creates registry images from the ID it verified rather than the mutable reference", async () => {
+    await started();
+    const created = docker.calls.find((call) => call[1] === "create") ?? [];
+    expect(created).toContain("sha256:image-id");
+    expect(created.join("\n")).not.toContain(`${IMAGE_REFERENCE}@sha256`);
+    expect(docker.only().Image).toBe("sha256:image-id");
   });
 
   it("refuses an unreachable daemon, a missing pinned image and a daemon without cgroup v2", async () => {

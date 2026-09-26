@@ -47,6 +47,7 @@ import {
   IMAGE_REFERENCE,
   lines,
   RESOURCES,
+  runnerImageId,
   stopAndProve,
 } from "./container-qualification-support.ts";
 
@@ -1109,6 +1110,57 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
       };
     },
   );
+
+  it("runs the Pi tool programs from the locally built runner image as the directory owner", async () => {
+    expect(runnerImageId, "HIMAWARI_CONTAINER_RUNNER_IMAGE_ID").toMatch(/^[a-f0-9]{64}$/);
+    const repo = await tree(await mkdtemp(path.join(hostRoot, "runner-")), {
+      "src/needle.ts": "export const needle = 1;\n",
+      "notes/other.md": "nothing here\n",
+    });
+    await approve("runner-repo", repo);
+    const subject = backend(dockerHost, {
+      image: { reference: "himawari/runner", digest: runnerImageId, pin: "image-id" },
+    });
+    const target = environment(600, [grant("runner-repo", "write")]);
+    const locator = await subject.create({ ...target.create, imageDigest: runnerImageId });
+    const root = "/workspaces/runner-repo";
+    const output = await run(
+      subject,
+      target,
+      locator,
+      [
+        `bash -c 'echo bash=\${BASH_VERSINFO[0]}'`,
+        `echo node=$(node --version)`,
+        `echo git=$(git --version | cut -d" " -f3)`,
+        `echo rg=$(rg --version | head -n1 | cut -d" " -f2)`,
+        `echo fd=$(fd --version | cut -d" " -f2)`,
+        `echo rg_match=$(rg -l needle ${root})`,
+        `echo fd_files=$(fd -t f . ${root} | sort | tr "\\n" ",")`,
+        `git -C ${root} init -q && git -C ${root} -c user.name=q -c user.email=q@example.invalid add . && git -C ${root} -c user.name=q -c user.email=q@example.invalid commit -q -m runner && echo git_commit=ok`,
+        `echo root_write=$(touch /usr/local/bin/himawari 2>/dev/null && echo allowed || echo denied)`,
+        `echo network=$(node -e "fetch('https://example.com').then(() => console.log('reached'), () => console.log('unreachable'))")`,
+        `echo user=$(id -u)`,
+      ].join("\n"),
+    );
+    const found = lines(output.stdout);
+    expect(output.exitCode, output.stderr).toBe(0);
+    expect(found).toEqual({
+      bash: "5",
+      node: "v22.22.3",
+      git: "2.54.0",
+      rg: "15.1.0",
+      fd: "10.2.0",
+      rg_match: `${root}/src/needle.ts`,
+      fd_files: `${root}/notes/other.md,${root}/src/needle.ts,`,
+      git_commit: "ok",
+      root_write: "denied",
+      network: "unreachable",
+      user: String((await lstat(repo)).uid),
+    });
+    expect(git(repo, "log", "--format=%s").trim()).toBe("runner");
+    observations["runnerImage"] = { imageId: runnerImageId, programs: found };
+    expect((await stopAndProve(subject, target, locator)).basis).toBe("verified_stopped");
+  });
 
   it(
     "ends the egress proxy with the environment at its deadline",

@@ -331,6 +331,7 @@ describe("periodic quality policy and evidence", () => {
     const runtime = {
       HIMAWARI_CONTAINER_DOCKER_CLI: "/fixture/docker",
       HIMAWARI_CONTAINER_DOCKER_HOST: "unix:///fixture/docker.sock",
+      HIMAWARI_CONTAINER_RUNNER_IMAGE_ID: "e".repeat(64),
     };
     for (const missing of Object.keys(runtime)) {
       const env = { GITHUB_ACTIONS: "false", ...runtime };

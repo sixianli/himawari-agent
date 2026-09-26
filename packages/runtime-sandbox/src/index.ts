@@ -8,3 +8,4 @@ export type { JobHostRequest, JobHostResult, JobHostSupervision } from "./job-ho
 export { prepareJobPolicy } from "./job-policy.ts";
 export * from "./policy.js";
 export * from "./qualification.js";
+export type { PinnedImage } from "./execution-backend/container-records.ts";

@@ -148,7 +148,13 @@ describe("quality policy and dormant schedule", () => {
     [
       "container job on another runtime",
       (value) => {
-        value.jobs.container.steps[5].env.HIMAWARI_CONTAINER_DOCKER_HOST = "tcp://elsewhere:2375";
+        value.jobs.container.steps[6].env.HIMAWARI_CONTAINER_DOCKER_HOST = "tcp://elsewhere:2375";
+      },
+    ],
+    [
+      "container job without the runner image build",
+      (value) => {
+        value.jobs.container.steps.splice(5, 1);
       },
     ],
     [

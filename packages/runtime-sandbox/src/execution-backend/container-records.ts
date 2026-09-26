@@ -3,6 +3,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import type { ContainerMount } from "./host-directories.ts";
 
 export const NEVER = "0001-01-01T00:00:00Z";
+
+export interface PinnedImage {
+  readonly reference: string;
+  readonly digest: string;
+  readonly pin: "registry-digest" | "image-id";
+}
 export const STOPPED_STATUSES = new Set(["exited", "created", "dead"]);
 
 export interface Container {

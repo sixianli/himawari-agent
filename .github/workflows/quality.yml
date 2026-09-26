@@ -239,6 +239,9 @@ jobs:
         run: |-
           docker pull docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
           docker pull docker.io/library/node@sha256:e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd
+      - name: 构建 runner 镜像并记下内容 ID
+        run: |-
+          echo "HIMAWARI_CONTAINER_RUNNER_IMAGE_ID=$(docker build --pull=false --quiet packages/runtime-sandbox/runner-image | cut -d: -f2)" >> "$GITHUB_ENV"
       - name: 执行独立质量检测
         env:
           HIMAWARI_CONTAINER_DOCKER_CLI: /usr/bin/docker

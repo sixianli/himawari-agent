@@ -133,7 +133,12 @@ export function validateQualityWorkflow(policy, source, toolchain) {
               ]
             : []),
           ...(check === "container"
-            ? [run(policy.container.images.map((image) => `docker pull ${image}`).join("\n"))]
+            ? [
+                run(policy.container.images.map((image) => `docker pull ${image}`).join("\n")),
+                run(
+                  'echo "HIMAWARI_CONTAINER_RUNNER_IMAGE_ID=$(docker build --pull=false --quiet packages/runtime-sandbox/runner-image | cut -d: -f2)" >> "$GITHUB_ENV"',
+                ),
+              ]
             : []),
           run(
             `${node} scripts/ci/quality.mjs --check ${check} --base "$CI_BASE" --tools .ci-output/tools --output .ci-output/quality${check === "brands" ? " --artifact-directory .ci-output/build" : ""}`,

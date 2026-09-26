@@ -10,6 +10,7 @@ import {
   hasStopped,
   mountArguments,
   NEVER,
+  type PinnedImage,
   parseJson,
   readJson,
   sha256,
@@ -31,7 +32,7 @@ const READY_SCRIPT = `const s=require("node:net").connect(${EGRESS_PORT},"127.0.
 const LABEL = "io.himawari.environment.";
 
 export interface ContainerEgressOptions {
-  readonly image: { readonly reference: string; readonly digest: string };
+  readonly image: PinnedImage;
   readonly user: string;
   readonly readyAttempts: number;
   readonly readyIntervalMs: number;
@@ -42,7 +43,7 @@ export interface EgressRuntime {
   readonly stopGraceSeconds: number;
   command(args: readonly string[]): Promise<DockerCommandResult>;
   inspectContainer(nameOrId: string): Promise<Container | null>;
-  pinnedImageId(image: { readonly reference: string; readonly digest: string }): Promise<string>;
+  pinnedImageId(image: PinnedImage): Promise<string>;
   remove(containerId: string): Promise<void>;
   kill(containerId: string): Promise<boolean>;
 }
@@ -112,7 +113,7 @@ export class ContainerEgress {
       const created = await this.runtime.command([
         "container",
         "create",
-        ...this.createArguments(names.proxy, labels, runtimeFiles.directory, input),
+        ...this.createArguments(names.proxy, labels, runtimeFiles.directory, imageId, input),
       ]);
       if (created.exitCode !== 0)
         throw new ContainerBackendError(
@@ -323,6 +324,7 @@ export class ContainerEgress {
     name: string,
     labels: Record<string, string>,
     runtimeDirectory: string,
+    imageId: string,
     input: { readonly record: EgressRecord; readonly deadlineEpoch: number },
   ) {
     return [
@@ -367,7 +369,7 @@ export class ContainerEgress {
       `HIMAWARI_EGRESS_TARGETS=${input.record.targets.join(",")}`,
       "--entrypoint",
       "node",
-      `${this.options.image.reference}@sha256:${this.options.image.digest}`,
+      imageId,
       ...proxyCommand(input.deadlineEpoch),
     ];
   }

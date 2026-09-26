@@ -22,6 +22,7 @@ import {
   hasStopped,
   mountArguments,
   NEVER,
+  type PinnedImage,
   parseJson,
   readJson,
   sha256,
@@ -84,7 +85,7 @@ export type {
 export interface ContainerExecutionBackendOptions {
   readonly backendRef: string;
   readonly docker: DockerCommand;
-  readonly image: { readonly reference: string; readonly digest: string };
+  readonly image: PinnedImage;
   readonly initUser: string;
   readonly taskUser: string;
   readonly stateDirectory: string;
@@ -807,7 +808,7 @@ export class ContainerExecutionBackend {
       TASK_WORKDIR,
       "--entrypoint",
       "/bin/sh",
-      `${this.options.image.reference}@sha256:${this.options.image.digest}`,
+      expected.image,
       ...expected.cmd,
     ];
   }
@@ -880,25 +881,27 @@ export class ContainerExecutionBackend {
     };
   }
 
-  private async pinnedImageId(pinned: { readonly reference: string; readonly digest: string }) {
-    const { reference, digest } = pinned;
+  private async pinnedImageId({ reference, digest, pin }: PinnedImage) {
+    if (!/^[a-f0-9]{64}$/.test(digest))
+      throw new ContainerBackendError("CONTAINER_IMAGE_UNQUALIFIED");
     const result = await this.command([
       "image",
       "inspect",
       "--format",
       "{{json .}}",
-      `${reference}@sha256:${digest}`,
+      pin === "image-id" ? `sha256:${digest}` : `${reference}@sha256:${digest}`,
     ]);
     const image = result.exitCode === 0 ? parseJson(result.stdout) : null;
+    const id = image?.["Id"];
     const repoDigests = image?.["RepoDigests"];
-    if (
-      !image ||
-      typeof image["Id"] !== "string" ||
-      !Array.isArray(repoDigests) ||
-      !repoDigests.some((item) => String(item).endsWith(`@sha256:${digest}`))
-    )
+    const pinned =
+      pin === "image-id"
+        ? id === `sha256:${digest}`
+        : Array.isArray(repoDigests) &&
+          repoDigests.some((item) => String(item).endsWith(`@sha256:${digest}`));
+    if (typeof id !== "string" || !pinned)
       throw new ContainerBackendError("CONTAINER_IMAGE_UNQUALIFIED");
-    return image["Id"];
+    return id;
   }
 
   private async inspectContainer(nameOrId: string): Promise<Container | null> {
