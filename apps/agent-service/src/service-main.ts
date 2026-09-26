@@ -11,6 +11,7 @@ import {
   type IdGeneratorPort,
   type ProductConfiguration,
   recoverSandboxExecutionsAtStartup,
+  RemoteExecutionBackend,
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
@@ -700,8 +701,38 @@ export async function runAgentService(
       ...(automaticReview ? { automaticReview } : {}),
     });
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
+    const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
       workerSupport: () => workerSandboxSupport,
+      ...(taskEnvironmentConfiguration
+        ? {
+            taskEnvironments: {
+              backendRef: taskEnvironmentConfiguration.backendRef,
+              imageDigest: taskEnvironmentConfiguration.image.digest,
+              runnerDigest: taskEnvironmentConfiguration.runnerDigest,
+              lifecycle: new RemoteExecutionBackend({
+                transport: {
+                  request: (message) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.request(message);
+                  },
+                  events: (afterCursor) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.events(afterCursor);
+                  },
+                },
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                authority: () => invocationAuthority().product,
+                nextId: (scope) => `${scope}:${randomUUID()}`,
+                now: () => clock.now(),
+                requestTimeoutMs: configuration.deadlines.workerRequestMs,
+                resultTimeoutMs: configuration.deadlines.runMs,
+                pollIntervalMs: 100,
+              }),
+            },
+          }
+        : {}),
       configuration,
       repository,
       protector,

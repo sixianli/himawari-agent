@@ -162,6 +162,21 @@ export interface CapabilityDeploymentConfiguration {
   readonly sha256: string;
 }
 
+export interface TaskEnvironmentImageConfiguration {
+  readonly reference: string;
+  readonly digest: string;
+  readonly pin: "registry-digest" | "image-id";
+}
+
+export interface TaskEnvironmentConfiguration {
+  readonly backendRef: string;
+  readonly dockerExecutable: string;
+  readonly dockerHost: string | null;
+  readonly image: TaskEnvironmentImageConfiguration;
+  readonly egressImage: TaskEnvironmentImageConfiguration;
+  readonly runnerDigest: string;
+}
+
 /** Host-owned, versioned instructions; never supplied by a browser message. */
 /** Routing selection only. Directory and action grants remain separate durable authority. */
 export interface FileReadRouteConfiguration {
@@ -238,6 +253,8 @@ export interface ProductConfiguration {
   readonly runPolicy?: RunPolicyConfiguration;
   /** Present only when a verified capability deployment snapshot is configured. */
   readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
+  /** Present only when tool calls may run in per-Run task environments. */
+  readonly taskEnvironments?: TaskEnvironmentConfiguration;
   /** Present only for a configured public HTTP composition. */
   readonly http?: HttpConfiguration;
   /** Present only for a configured public identity composition. */

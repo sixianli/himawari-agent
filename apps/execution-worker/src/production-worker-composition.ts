@@ -33,6 +33,7 @@ import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 import { createProductionSandboxWorker } from "./production-sandbox-worker.js";
+import { createWorkerTaskEnvironments } from "./production-task-environment-backend.js";
 import { WorkerDelegationStore } from "./worker-delegation-store.js";
 
 export const PRODUCTION_WORKER_COMPOSITION_ERROR_CODES = Object.freeze({
@@ -521,7 +522,18 @@ export async function createProductionWorkerComposition(
       ),
     });
   };
+  const taskEnvironments = configuration.taskEnvironments
+    ? createWorkerTaskEnvironments({
+        configuration: configuration.taskEnvironments,
+        runtimeDirectory: configuration.runtimeDirectory,
+        bindings: deployment.snapshot.capabilities.flatMap((entry) =>
+          entry.binding.kind === "sandbox" ? [entry.binding.value] : [],
+        ),
+        now: () => new Date(clock.now()),
+      })
+    : undefined;
   const worker = new ProductionExecutionWorker({
+    ...(taskEnvironments ? { environments: taskEnvironments.environments } : {}),
     ...(deployment.snapshot.capabilities.some((entry) => entry.binding.kind === "sandbox")
       ? {
           sandboxV2: new ProductionSandboxExecutionV2({
@@ -529,6 +541,7 @@ export async function createProductionWorkerComposition(
             peer: peerBinding,
             payloads,
             clock,
+            ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
           }),
           sandbox: createProductionSandboxWorker({
             configuration,

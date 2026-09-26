@@ -18,6 +18,8 @@ import {
   type ProductConfiguration,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type TaskEnvironmentConfiguration,
+  type TaskEnvironmentImageConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -142,6 +144,54 @@ function parseCapabilityDeploymentConfiguration(value: unknown): CapabilityDeplo
   return Object.freeze({
     snapshotPath: absolutePath(input["snapshotPath"], `${field}.snapshotPath`),
     sha256: sha256Reference(input["sha256"], `${field}.sha256`),
+  });
+}
+
+function hexDigest(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^[a-f0-9]{64}$/.test(candidate) || /^0{64}$/.test(candidate)) {
+    throw invalid(field, "must be a lowercase 64-character hex digest");
+  }
+  return candidate;
+}
+
+function parseTaskEnvironmentImage(
+  value: unknown,
+  field: string,
+): TaskEnvironmentImageConfiguration {
+  const input = record(value, field);
+  rejectUnknown(input, ["reference", "digest", "pin"], field);
+  const pin = input["pin"];
+  if (pin !== "registry-digest" && pin !== "image-id") {
+    throw invalid(`${field}.pin`, "must be registry-digest or image-id");
+  }
+  return Object.freeze({
+    reference: safeReference(input["reference"], `${field}.reference`),
+    digest: hexDigest(input["digest"], `${field}.digest`),
+    pin,
+  });
+}
+
+function parseTaskEnvironmentConfiguration(value: unknown): TaskEnvironmentConfiguration {
+  const field = "configuration.taskEnvironments";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["backendRef", "dockerExecutable", "dockerHost", "image", "egressImage", "runnerDigest"],
+    field,
+  );
+  const backendRef = safeReference(input["backendRef"], `${field}.backendRef`);
+  if (backendRef === "srt") throw invalid(`${field}.backendRef`, "must not be the SRT backend");
+  return Object.freeze({
+    backendRef,
+    dockerExecutable: absolutePath(input["dockerExecutable"], `${field}.dockerExecutable`),
+    dockerHost:
+      input["dockerHost"] === null
+        ? null
+        : safeReference(input["dockerHost"], `${field}.dockerHost`),
+    image: parseTaskEnvironmentImage(input["image"], `${field}.image`),
+    egressImage: parseTaskEnvironmentImage(input["egressImage"], `${field}.egressImage`),
+    runnerDigest: hexDigest(input["runnerDigest"], `${field}.runnerDigest`),
   });
 }
 
@@ -888,6 +938,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "publicMode",
       "runPolicy",
       "capabilityDeployment",
+      "taskEnvironments",
       "http",
       "identity",
       "modelDescriptors",
@@ -950,6 +1001,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     input["capabilityDeployment"] === undefined
       ? undefined
       : parseCapabilityDeploymentConfiguration(input["capabilityDeployment"]);
+  const taskEnvironments =
+    input["taskEnvironments"] === undefined
+      ? undefined
+      : parseTaskEnvironmentConfiguration(input["taskEnvironments"]);
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
@@ -1115,6 +1170,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     publicMode,
     ...(runPolicy === undefined ? {} : { runPolicy }),
     ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
+    ...(taskEnvironments === undefined ? {} : { taskEnvironments }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),
     modelDescriptors,

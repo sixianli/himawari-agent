@@ -222,6 +222,57 @@ describe("strict product configuration", () => {
     );
   });
 
+  it("accepts an optional task environment backend with pinned images and rejects unsafe shapes", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-task-environment-config");
+    const taskEnvironments = () => ({
+      backendRef: "container-docker:local",
+      dockerExecutable: "/usr/local/bin/docker",
+      dockerHost: "unix:///var/run/docker.sock",
+      image: { reference: "himawari/runner", digest: "b".repeat(64), pin: "image-id" },
+      egressImage: {
+        reference: "docker.io/library/node",
+        digest: "c".repeat(64),
+        pin: "registry-digest",
+      },
+      runnerDigest: "d".repeat(64),
+    });
+    const parse = (value: unknown) => {
+      const input = config(stateRoot);
+      input["taskEnvironments"] = value;
+      return parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    };
+    expect(
+      parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z"),
+    ).not.toHaveProperty("taskEnvironments");
+    expect(parse(taskEnvironments()).taskEnvironments).toEqual(taskEnvironments());
+    expect(
+      parse({ ...taskEnvironments(), dockerHost: null }).taskEnvironments?.dockerHost,
+    ).toBeNull();
+
+    for (const unknown of [
+      { ...taskEnvironments(), unexpected: true },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, unexpected: true } },
+    ])
+      expect(() => parse(unknown)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }),
+      );
+    for (const invalid of [
+      { ...taskEnvironments(), backendRef: "srt" },
+      { ...taskEnvironments(), dockerExecutable: "docker" },
+      { ...taskEnvironments(), dockerHost: "" },
+      { ...taskEnvironments(), runnerDigest: "D".repeat(64) },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, digest: "b".repeat(63) } },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, pin: "tag" } },
+      {
+        ...taskEnvironments(),
+        egressImage: { ...taskEnvironments().egressImage, digest: `sha256:${"c".repeat(64)}` },
+      },
+    ])
+      expect(() => parse(invalid)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+      );
+  });
+
   it("rejects unknown fields recursively and raw machine-secret material", () => {
     const stateRoot = path.join(tmpdir(), "himawari-config-reject");
     expect(() =>

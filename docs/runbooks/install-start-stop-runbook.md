@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:44fddd7946bf9237ef84f4c5558bb9ee082d1c4c29a770951e37c58571b114b3"
+contract_sha256: "sha256:988ef1954d8cee1e2f95edf7660b35ffe879e459554ae57c805d3d93cc8c27bb"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -12,6 +12,7 @@ date: "2026-08-27"
 
 <!-- runbook-contract:
 - apps/agent-service/src/production-copy-save.ts
+- apps/execution-worker/src/production-task-environment-backend.ts
 - packages/platform-node/src/files/workspace-copy-publication.ts
 - packages/platform-node/src/files/pi-file-publication.ts
 - apps/agent-service/src/production-workspace-copies.ts
@@ -232,6 +233,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后仅补交核验得到的原结果。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
 
 生产通用 Worker 现在通过既有 Payload UDS 的 `payload.invocation.validate` 校验 Agent 当前持久调用权限；不支持此操作的旧 Agent 会拒绝继续执行，升级须使用匹配服务产物，不能降级成仅凭内存委派放行。该查询不读取正文、不缓存批准、不再消费额度；外发前与输入解密返回前均重新检查。事件流挂起期间仍检查撤销并向原 Worker 请求停止，受保护诊断区分“已请求”与“发送未确认”，两者均不是效果终结或资源释放证明。资源扫描在 Run 仍运行时也识别 Grant/Handle 撤销、期限失效和能力禁用，排定原资源有限 stop；未绑定预约先禁止启动，未知停止仍保留占用。现有 Schema 43、历史结果保留和恢复点规则不变；实际目录授权与平台停止能力仍须按目标现场检查，不能以这些本地测试替代资格或生产操作授权。
+
+可选配置 `taskEnvironments`（任务环境，即一轮对话专用的 Docker 容器）默认不写，不写时产品行为不变：安装声明里后端不是 `srt`（本机沙箱）的工具调用一律以 `SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE` 拒绝。写入后，Agent Service 通过 Worker 取得和停止容器，Worker 用配置里的 Docker 程序绝对路径、可选 `dockerHost`、固定摘要的执行镜像与出网代理镜像创建容器，容器状态记录保存在 `<stateRoot>/runtime/task-environments`，属于本机运行状态：备份恢复包不包含它，恢复也不会覆盖它。把数据库恢复到较早的时间点后，数据库里登记的任务环境可能与这些记录和实际容器不一致，这种情况的处理尚未验证。Worker 启动时如果没有任何沙箱主机绑定把操作指向该 `backendRef`，或这些绑定的运行时目录、摘要不一致，或 `runnerDigest` 与挂载运行时算出的值不同，就以 `TASK_ENVIRONMENT_BINDING_UNAVAILABLE`、`TASK_ENVIRONMENT_RUNTIME_AMBIGUOUS`、`TASK_ENVIRONMENT_RUNNER_MISMATCH` 拒绝启动。本段只记录配置和组装；经产品路径的真实 Docker 安装资格尚未完成，不能据此在生产配置中启用。
 
 ## Authoritative Sources
 
