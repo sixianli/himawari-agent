@@ -379,7 +379,6 @@ export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExe
       environment &&
       (!resolvedScope ||
         environment.identity.role !== "primary" ||
-        environment.identity.environmentId !== record.plan.environmentId ||
         environment.identity.ownerId !== record.plan.identity.ownerId ||
         environment.identity.agentId !== record.plan.identity.agentId ||
         environment.identity.runId !== record.plan.identity.runId ||

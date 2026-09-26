@@ -25,7 +25,10 @@ import {
 } from "@himawari-agent/platform-node";
 import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-model-disclosure.ts";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
-import { createProductionSandboxServices } from "../../apps/agent-service/src/production-sandbox-services.ts";
+import {
+  createProductionSandboxServices,
+  type ProductionTaskEnvironments,
+} from "../../apps/agent-service/src/production-sandbox-services.ts";
 import { macSandboxDeployment } from "./mac-sandbox-deployment.ts";
 import {
   AGENT_ID,
@@ -71,6 +74,8 @@ export async function productionSandboxScope(
     readonly reserveAuthorization?: boolean;
     readonly policyAuthorization?: { readonly key: string; readonly revision: number };
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
+    readonly taskEnvironments?: ProductionTaskEnvironments;
+    readonly profileRef?: string;
   } = {},
 ) {
   const f = await openSandboxJournal(
@@ -154,6 +159,10 @@ export async function productionSandboxScope(
     entry.manifest.integrity = `sha256:${runnerDigest}`;
     entry.manifest.artifact.digest = `sha256:${runnerDigest}`;
     entry.manifest.runtime.argv = [executable, runner];
+  }
+  if (options.profileRef) {
+    entry.binding.value.profileRef = options.profileRef;
+    entry.qualification.sandbox.profileRef = options.profileRef;
   }
   const actualRoot = entry.binding.value.roots[0];
   if (options.realFileIdentity)
@@ -487,6 +496,7 @@ export async function productionSandboxScope(
       clock,
       ids: { next: () => `scope-id:${++counter}` },
       workerSupport: () => workerSupport,
+      ...(options.taskEnvironments ? { taskEnvironments: options.taskEnvironments } : {}),
     });
     if (!result) throw new Error("composition absent");
     return result;

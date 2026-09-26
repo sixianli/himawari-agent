@@ -398,11 +398,15 @@ describe("production sandbox protected output and scope verification", () => {
   );
   it("does not claim all resources released while an admission remains unbound", async () => {
     const f = await fixture();
-    expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: true,
+    });
     const prepared = await f.services.runtime.prepare(f.input, f.call);
     if (!("reservation" in prepared)) throw new Error("Expected reservation");
     await f.services.brokerV2.preparations.reserve({ ...prepared, invocation: f.input });
-    expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: false,
+    });
     expect(
       (
         await f.services.brokerV2.preparations.readAdmissionByInvocation({

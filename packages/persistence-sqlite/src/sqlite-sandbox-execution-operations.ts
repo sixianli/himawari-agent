@@ -532,7 +532,7 @@ export class SqliteSandboxExecutionOperations {
             current.facts.resource.supervision !== "initializing"
           )
             return this.fail("PORT_CONFLICT", "Start sequence changed");
-          this.assertAvailable(current.workspaces, identity.jobId, now);
+          this.assertAvailable(current.workspaces, identity.jobId, now, "", current.plan);
           this.db
             .prepare(
               "UPDATE sandbox_execution_records SET started_at=?,start_policy_digest=? WHERE job_id=? AND started_at IS NULL",
@@ -632,6 +632,7 @@ export class SqliteSandboxExecutionOperations {
     exceptJob: string,
     now: string,
     exceptEnvironment = "",
+    owner?: Pick<SandboxExecutionPlanV2, "identity" | "backendRef">,
   ): void {
     this.queue.assertFair(claims, exceptJob, now);
     for (const claim of claims) {
@@ -639,9 +640,18 @@ export class SqliteSandboxExecutionOperations {
         .prepare(
           `SELECT l.claim_json AS claim, e.state AS state FROM execution_environment_leases l
           JOIN execution_environments e ON e.environment_id=l.environment_id
-          WHERE l.host_id=? AND l.released_at IS NULL AND l.environment_id != ?`,
+          JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+          WHERE l.host_id=? AND l.released_at IS NULL AND l.environment_id != ?
+          AND NOT (e.role='primary' AND e.backend_ref=? AND j.owner_id=? AND j.agent_id=? AND j.run_id=?)`,
         )
-        .all(claim.hostId, exceptEnvironment) as { claim: string; state: string }[];
+        .all(
+          claim.hostId,
+          exceptEnvironment,
+          owner?.backendRef ?? "",
+          owner?.identity.ownerId ?? "",
+          owner?.identity.agentId ?? "",
+          owner?.identity.runId ?? "",
+        ) as { claim: string; state: string }[];
       for (const lease of leases)
         if (
           conflicts(
@@ -839,7 +849,7 @@ export class SqliteSandboxExecutionOperations {
     if (plan.mode === "service" && plan.operationContract.kind !== "service_start")
       return this.fail("PORT_INVALID_OPERATION", "Service request requires its existing resource");
     this.authority.live(plan, input.invocation.authority, input.invocation.consumedAt);
-    this.assertAvailable(workspaces, plan.identity.jobId, input.invocation.consumedAt);
+    this.assertAvailable(workspaces, plan.identity.jobId, input.invocation.consumedAt, "", plan);
     if (
       this.db
         .prepare("SELECT 1 FROM sandbox_jobs WHERE job_id=? OR receipt_ref=? OR attempt_id=?")
@@ -932,7 +942,7 @@ export class SqliteSandboxExecutionOperations {
       )
     )
       return this.fail("PORT_CONFLICT", "Environment differs from reservation");
-    this.assertAvailable(admission.workspaces, plan.identity.jobId, input.now);
+    this.assertAvailable(admission.workspaces, plan.identity.jobId, input.now, "", plan);
     this.db
       .prepare(
         "UPDATE sandbox_execution_records SET preparation_state='bound',started_at=?,start_policy_digest=?,facts_json=?,sequence=2 WHERE job_id=? AND preparation_state='reserved'",
@@ -1002,7 +1012,7 @@ export class SqliteSandboxExecutionOperations {
         "Service request persistence is outside this delivery scope",
       );
     this.authority.live(plan, input.invocation.authority, input.invocation.consumedAt);
-    this.assertAvailable(workspaces, plan.identity.jobId, input.invocation.consumedAt);
+    this.assertAvailable(workspaces, plan.identity.jobId, input.invocation.consumedAt, "", plan);
     if (
       this.db
         .prepare("SELECT 1 FROM sandbox_jobs WHERE job_id=? OR receipt_ref=? OR attempt_id=?")
@@ -1324,7 +1334,13 @@ export class SqliteSandboxExecutionOperations {
       return this.fail("PORT_CONFLICT", "Continuation operation revision changed");
     this.authority.live(current.plan, input.authority, input.now);
     if (input.kind === "continue")
-      this.assertAvailable(current.workspaces, current.plan.identity.jobId, input.now);
+      this.assertAvailable(
+        current.workspaces,
+        current.plan.identity.jobId,
+        input.now,
+        "",
+        current.plan,
+      );
     if (this.hasPendingIntent(current.plan.identity.jobId))
       return this.fail("PORT_CONFLICT", "Dispatched operation remains uncertain");
     if (input.kind === "continue" && this.releases.hasContradiction(current.plan.identity.jobId))

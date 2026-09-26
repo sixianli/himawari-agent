@@ -114,6 +114,9 @@ export interface ProductionPayloadBrokerHandlerOptions {
       facts: SandboxExecutionFacts,
     ) => Promise<void>;
     readonly verifyStart: (plan: SandboxExecutionPlanV2) => Promise<void>;
+    readonly resolveEnvironment?: (
+      plan: SandboxExecutionPlanV2,
+    ) => Promise<PayloadBrokerSandboxExecutionResult["payload"]["environment"]>;
     readonly resolveScope: (
       plan: SandboxExecutionPlanV2,
     ) => Promise<NonNullable<PayloadBrokerSandboxExecutionResult["payload"]["resolvedScope"]>>;
@@ -412,8 +415,9 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       if (command.kind === "resolve") {
         await current(true);
         const resolvedScope = await configured.resolveScope(record.plan);
+        const environment = (await configured.resolveEnvironment?.(record.plan)) ?? null;
         await current(true);
-        return { record, applied: false, resolvedScope, environment: null, output: null };
+        return { record, applied: false, resolvedScope, environment, output: null };
       }
       if (command.kind === "register_control") {
         if (record.phase !== "reserved" || !configured.registerControl)

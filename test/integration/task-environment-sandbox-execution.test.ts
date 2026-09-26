@@ -24,11 +24,13 @@ const locator = {
   effectivePolicyDigest: "e".repeat(64),
 };
 
+const TASK_ENVIRONMENT = "environment-task-1";
+
 async function containerPlan(): Promise<SandboxExecutionPlanV2> {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const admission = sandboxV2Admission(f);
-  const plan = { ...admission.plan, backendRef: BACKEND, environmentId: "environment-task-1" };
+  const plan = { ...admission.plan, backendRef: BACKEND };
   const facts = {
     ...admission.facts,
     environment: {
@@ -49,7 +51,7 @@ function environmentIdentity(plan: SandboxExecutionPlanV2) {
     runId: plan.identity.runId,
     hostId: plan.identity.hostId,
     executionJobId: "execution-job-1",
-    environmentId: plan.environmentId,
+    environmentId: TASK_ENVIRONMENT,
     environmentGeneration: 1,
     role: "primary" as const,
   };
@@ -81,6 +83,7 @@ function containerFacts(
     deadlineAt: plan.effectiveDeadlineAt,
     supervisor,
     workspaceConflictRefs: ["workspace"],
+    taskEnvironmentId: TASK_ENVIRONMENT,
     executionJobId: "execution-job-1",
     environmentGeneration: 1,
     runtimeInstanceId: locator.runtimeInstanceId,
@@ -120,7 +123,7 @@ function released(plan: SandboxExecutionPlanV2, subject: Record<string, unknown>
     sequence: 3,
     evidence: {
       ...taskEnvironmentCallEvidence({
-        environmentId: plan.environmentId,
+        environmentId: TASK_ENVIRONMENT,
         invocationId: plan.identity.invocationId,
         createIntentId: locator.createIntentId,
         runtimeInstanceId: locator.runtimeInstanceId,
@@ -227,7 +230,7 @@ describe("task environment execution facts", () => {
     const settled = validate(
       plan,
       containerFacts(plan, {
-        resource: released(plan, { kind: "task_environment", environmentId: plan.environmentId }),
+        resource: released(plan, { kind: "task_environment", environmentId: TASK_ENVIRONMENT }),
       }),
     );
     expect(settled.resource.supervision).toBe("released");
@@ -265,11 +268,13 @@ describe("task environment execution facts", () => {
     ).toThrow("task environment binding mismatch");
   });
 
-  it("requires task environment evidence naming the same environment", async () => {
+  it("requires task environment evidence naming the bound task environment", async () => {
     const plan = await containerPlan();
+    expect(plan.environmentId).not.toBe(TASK_ENVIRONMENT);
     for (const subject of [
       { kind: "local_process", processIdentityRef: "process-1" },
       { kind: "task_environment", environmentId: "environment-other" },
+      { kind: "task_environment", environmentId: plan.environmentId },
     ])
       expect(() =>
         validate(plan, containerFacts(plan, { resource: released(plan, subject) })),
@@ -305,7 +310,7 @@ describe("task environment execution facts", () => {
 describe("task environment call evidence", () => {
   it("is stable for one call and distinct across calls and creations", () => {
     const base = {
-      environmentId: "environment-task-1",
+      environmentId: TASK_ENVIRONMENT,
       invocationId: "invocation-1",
       createIntentId: locator.createIntentId,
       runtimeInstanceId: locator.runtimeInstanceId,
@@ -341,7 +346,7 @@ describe("resolve reply environment binding", () => {
     );
     expect(parsed.type).toBe("payload.sandbox.execution.result");
     if (parsed.type !== "payload.sandbox.execution.result") return;
-    expect(parsed.payload.environment?.identity.environmentId).toBe(plan.environmentId);
+    expect(parsed.payload.environment?.identity.environmentId).toBe(TASK_ENVIRONMENT);
     expect(payloadBrokerV1MessageSchema.parse(resolveReply(plan, null, scopeFor(plan))).type).toBe(
       "payload.sandbox.execution.result",
     );
@@ -354,11 +359,10 @@ describe("resolve reply environment binding", () => {
     );
   });
 
-  it("rejects a binding for another environment, Run, backend or creation", async () => {
+  it("rejects a binding for another Run, host, role, backend or creation", async () => {
     const plan = await containerPlan();
     const identity = environmentIdentity(plan);
     for (const changed of [
-      { identity: { ...identity, environmentId: "environment-other" } },
       { identity: { ...identity, runId: "run-other" } },
       { identity: { ...identity, hostId: "host-other" } },
       { identity: { ...identity, role: "network_helper" } },

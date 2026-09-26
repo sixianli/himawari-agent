@@ -43,6 +43,7 @@ export interface ProductionRunCompositionOptions {
     recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
       runId: Parameters<RunCoordinator["cancel"]>[0]["runId"],
+      reason: "run_finished" | "run_cancelled",
     ): Promise<{ released: boolean }>;
   };
   readonly configuration: Pick<

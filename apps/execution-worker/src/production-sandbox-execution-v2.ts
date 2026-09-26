@@ -781,7 +781,7 @@ export class ProductionSandboxExecutionV2 {
       throw new Error("SANDBOX_SCOPE_CHANGED");
     if (
       !environment ||
-      environment.identity.environmentId !== plan.environmentId ||
+      environment.identity.runId !== plan.identity.runId ||
       environment.locator.backendRef !== plan.backendRef
     )
       throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
@@ -935,7 +935,7 @@ export class ProductionSandboxExecutionV2 {
           cleanup: "confirmed",
           evidence: {
             ...taskEnvironmentCallEvidence({
-              environmentId: plan.environmentId,
+              environmentId: environment.identity.environmentId,
               invocationId: plan.identity.invocationId,
               createIntentId: environment.createIntentId,
               runtimeInstanceId: environment.locator.runtimeInstanceId,
@@ -944,7 +944,10 @@ export class ProductionSandboxExecutionV2 {
             qualificationRef: plan.binding.qualificationRef,
             profileRef: plan.binding.profileRef,
             validUntil: plan.effectiveDeadlineAt,
-            subject: { kind: "task_environment", environmentId: plan.environmentId },
+            subject: {
+              kind: "task_environment",
+              environmentId: environment.identity.environmentId,
+            },
           },
         },
       }),
@@ -967,6 +970,7 @@ export class ProductionSandboxExecutionV2 {
         schemaVersion: "sandbox-execution.v2",
         kind: "container",
         environmentId: plan.environmentId,
+        taskEnvironmentId: environment.identity.environmentId,
         resourceRef: null,
         creator: plan.identity,
         mode: plan.mode,

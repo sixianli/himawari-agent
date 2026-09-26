@@ -48,6 +48,7 @@ afterEach(async () => {
 });
 
 const BACKEND = "container-local";
+const TASK_ENVIRONMENT = "environment-task-1";
 const PARAMETERS = { path: "notes.txt", workspace: "/untrusted", authorizationRef: "forged" };
 const locator = {
   backendRef: BACKEND,
@@ -80,7 +81,6 @@ async function run(scenario: Scenario) {
     ...admitted.plan,
     operation: tool,
     backendRef: BACKEND,
-    environmentId: "environment-task-1",
     operationContract:
       scenario === "bash"
         ? { kind: "command", ...PI_RUNNER_CONTRACT }
@@ -128,7 +128,7 @@ async function run(scenario: Scenario) {
       runId: plan.identity.runId,
       hostId: plan.identity.hostId,
       executionJobId: "execution-job-1",
-      environmentId: plan.environmentId,
+      environmentId: TASK_ENVIRONMENT,
       environmentGeneration: 1,
       role: "primary" as const,
     },
@@ -284,13 +284,13 @@ const released = (plan: SandboxExecutionPlanV2) => ({
   cleanup: "confirmed",
   evidence: {
     ...taskEnvironmentCallEvidence({
-      environmentId: plan.environmentId,
+      environmentId: TASK_ENVIRONMENT,
       invocationId: plan.identity.invocationId,
       createIntentId: locator.createIntentId,
       runtimeInstanceId: locator.runtimeInstanceId,
       runtimeEnvironmentId: locator.runtimeEnvironmentId,
     }),
-    subject: { kind: "task_environment", environmentId: plan.environmentId },
+    subject: { kind: "task_environment", environmentId: TASK_ENVIRONMENT },
   },
 });
 
@@ -303,7 +303,7 @@ it("runs a read inside the bound task environment and records the call under its
   expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("container-execute"));
   const [call] = executed;
   expect(call).toMatchObject({
-    identity: { environmentId: plan.environmentId, executionJobId: "execution-job-1" },
+    identity: { environmentId: TASK_ENVIRONMENT, executionJobId: "execution-job-1" },
     createIntentId: locator.createIntentId,
     locator,
     stopFence: 0,
@@ -333,6 +333,8 @@ it("runs a read inside the bound task environment and records the call under its
   ]);
   expect(history[0]?.environment).toMatchObject({
     kind: "container",
+    environmentId: plan.environmentId,
+    taskEnvironmentId: TASK_ENVIRONMENT,
     executionJobId: "execution-job-1",
     runtimeEnvironmentId: locator.runtimeEnvironmentId,
     createIntentId: locator.createIntentId,

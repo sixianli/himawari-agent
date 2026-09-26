@@ -158,6 +158,7 @@ export const sandboxEnvironmentSchema = variant("kind", {
   container: object({
     ...environmentFields,
     kind: literal("container"),
+    taskEnvironmentId: machineString,
     executionJobId: machineString,
     environmentGeneration: integer(1),
     runtimeInstanceId: machineString,
@@ -417,7 +418,7 @@ export function validateSandboxExecutionFacts(
       env.kind === "local"
         ? subject.kind !== "local_process"
         : env.kind === "container"
-          ? subject.kind !== "task_environment" || subject.environmentId !== env.environmentId
+          ? subject.kind !== "task_environment" || subject.environmentId !== env.taskEnvironmentId
           : subject.kind !== "remote_connection" || subject.connectionRef !== env.connectionRef
     )
       fail("supervision subject mismatch");

@@ -36,7 +36,6 @@ export class SqliteSandboxReservationRelease {
       !stoppedAt ||
       !proof ||
       proof.schemaVersion !== "sandbox-reservation-release.v1" ||
-      proof.basis !== "host_never_started" ||
       !proof.identity ||
       Object.keys(proof.identity).length !== Object.keys(plan.identity).length ||
       Object.entries(plan.identity).some(
@@ -52,15 +51,50 @@ export class SqliteSandboxReservationRelease {
       proof.checkedAt > acceptedAt ||
       proof.validUntil <= acceptedAt ||
       Date.parse(proof.validUntil) - Date.parse(proof.checkedAt) > 30_000 ||
-      !reference(proof.processIdentityRef) ||
-      !/^job-host-process:/.test(proof.processIdentityRef) ||
-      typeof proof.controlSessionId !== "string" ||
-      !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(proof.controlSessionId) ||
+      !this.basisHolds(plan, proof) ||
       !reference(proof.evidence?.ref) ||
       typeof proof.evidence?.digest !== "string" ||
       !/^[a-f0-9]{64}$/.test(proof.evidence.digest)
     )
       this.fail("PORT_INVALID_OPERATION", "Invalid reservation release verification");
+  }
+
+  private basisHolds(
+    plan: SandboxExecutionPlanV2,
+    proof: SandboxReservationReleaseVerification,
+  ): boolean {
+    if (proof.basis === "host_never_started")
+      return (
+        reference(proof.processIdentityRef) &&
+        /^job-host-process:/.test(proof.processIdentityRef) &&
+        typeof proof.controlSessionId === "string" &&
+        /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(proof.controlSessionId)
+      );
+    if (proof.basis !== "task_environment_released" || !Array.isArray(proof.taskEnvironmentIds))
+      return false;
+    const rows = this.db
+      .prepare(
+        `SELECT e.environment_id AS environmentId,r.environment_id AS released
+         FROM execution_environments e
+         JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+         LEFT JOIN execution_environment_release_receipts r ON r.environment_id=e.environment_id
+         WHERE e.role='primary' AND e.backend_ref=? AND j.owner_id=? AND j.agent_id=? AND j.run_id=? AND j.host_id=?
+         ORDER BY e.environment_id`,
+      )
+      .all(
+        plan.backendRef,
+        plan.identity.ownerId,
+        plan.identity.agentId,
+        plan.identity.runId,
+        plan.identity.hostId,
+      ) as { environmentId: string; released: string | null }[];
+    const claimed = [...proof.taskEnvironmentIds].sort();
+    return (
+      rows.length > 0 &&
+      rows.every((row) => row.released !== null) &&
+      claimed.length === rows.length &&
+      rows.every((row, index) => row.environmentId === claimed[index])
+    );
   }
 
   read(

@@ -868,7 +868,7 @@ it.each([true, false])("checks resource release before completing a Run: %s", as
   const stopRun = vi.fn(async () => ({ released }));
   const f = await fixture(suffix, runtime, undefined, { stopRun });
   const result = await f.coordinator.execute(f.input);
-  expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+  expect(stopRun).toHaveBeenCalledWith(f.input.runId, "run_finished");
   expect(result.run.run.status).toBe(released ? "completed" : "reconciling_external_result");
 });
 
@@ -916,7 +916,7 @@ it.each(["reject", "throw"] as const)(
         reasonCode: "OWNER_REQUESTED",
       })
       .catch((error: unknown) => error);
-    expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+    expect(stopRun).toHaveBeenCalledWith(f.input.runId, "run_cancelled");
     expect(result).toBeInstanceOf(AggregateError);
     expect((result as AggregateError).errors).toEqual([error]);
     expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
@@ -941,7 +941,7 @@ it("starts resource stopping while runtime cancellation is still pending", async
     reasonCode: "OWNER_REQUESTED",
   });
   try {
-    await vi.waitFor(() => expect(stopRun).toHaveBeenCalledWith(f.input.runId));
+    await vi.waitFor(() => expect(stopRun).toHaveBeenCalledWith(f.input.runId, "run_cancelled"));
     expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("cancelled");
   } finally {
     release();

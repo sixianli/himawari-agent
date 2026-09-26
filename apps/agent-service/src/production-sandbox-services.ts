@@ -31,6 +31,7 @@ import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
+  type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
   type SandboxExecutionPlanV2,
@@ -73,12 +74,19 @@ import { createProductionSandboxFileRecovery } from "./production-sandbox-file-r
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
+import {
+  createProductionTaskEnvironments,
+  type ProductionTaskEnvironments,
+} from "./production-task-environments.js";
+
+export type { ProductionTaskEnvironments } from "./production-task-environments.js";
 
 // Job directory names encode the full digest compactly: SRT appends Unix socket
 // names below them. External reconciliation IDs retain their separate contract.
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
+const SRT_BACKEND_REF = "srt";
 
 /** Composition only: existing grants, protected Run artifacts and the existing
  * job journal retain authority. Neither inventory nor this factory issues it. */
@@ -94,6 +102,7 @@ export async function createProductionSandboxServices(options: {
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
   readonly workerSupport?: () => SandboxExecutionSupport | undefined;
+  readonly taskEnvironments?: ProductionTaskEnvironments;
 }) {
   const { configuration, repository, protector, clock, ids } = options;
   if (!configuration.capabilityDeployment) return undefined;
@@ -134,6 +143,15 @@ export async function createProductionSandboxServices(options: {
     });
   }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
+  const environments = options.taskEnvironments
+    ? createProductionTaskEnvironments({
+        configuration: options.taskEnvironments,
+        store: repository.executionEnvironmentStore(configuration.ownerId, configuration.agentId),
+        authority: options.authority,
+        clock,
+        ids,
+      })
+    : undefined;
   const preparations = repository.sandboxExecutionPreparations(
     configuration.ownerId,
     configuration.agentId,
@@ -1009,6 +1027,20 @@ export async function createProductionSandboxServices(options: {
       environmentId: `environment:${hash(input.invocationId)}`,
     });
     const resolved = await resolve(plan);
+    if (descriptor.backendRef !== SRT_BACKEND_REF) {
+      if (descriptor.backendRef !== environments?.backendRef || !grant)
+        throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+      await environments.acquire({
+        runId: call.runId,
+        hostId,
+        grant,
+        claims: resolved.workspaceClaims,
+        binding,
+        deadlineAt: new Date(
+          Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
+        ).toISOString(),
+      });
+    }
     const reservation = sandboxExecutionReservationSchema.parse({
       schemaVersion: "sandbox-preparation.v1",
       identity: plan.identity,
@@ -1525,6 +1557,17 @@ export async function createProductionSandboxServices(options: {
     }
     return { outputs, effectEvidence, fixedFileClosed };
   };
+  const taskEnvironmentFor = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
+    const container = facts.environment.kind === "container";
+    if (container !== (plan.backendRef !== SRT_BACKEND_REF))
+      throw new Error("SANDBOX_TASK_ENVIRONMENT_BINDING_CHANGED");
+    if (!container) return undefined;
+    if (!environments || plan.backendRef !== environments.backendRef)
+      throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    return environments;
+  };
+  const supervisionEvidence = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) =>
+    taskEnvironmentFor(plan, facts)?.evidence(plan, facts) ?? control.evidence(plan, facts);
   const evidence: SandboxExecutionEvidencePort = {
     verify: async ({ plan, facts, now }) => {
       const { outputs, effectEvidence } = await verifyOutput({ plan, facts, now });
@@ -1537,7 +1580,7 @@ export async function createProductionSandboxServices(options: {
         checkedAt: now,
         validUntil: new Date(Date.parse(now) + 1000).toISOString(),
         outputs,
-        evidence: [...(await control.evidence(plan, facts)), ...effectEvidence],
+        evidence: [...(await supervisionEvidence(plan, facts)), ...effectEvidence],
       };
     },
   };
@@ -1555,7 +1598,8 @@ export async function createProductionSandboxServices(options: {
     const observed =
       retainedRelease && record.releaseReceipt
         ? { resource: record.facts.resource, evidence: [] }
-        : await control.refreshEvidence(record, action, signal);
+        : ((await taskEnvironmentFor(record.plan, record.facts)?.observe(record)) ??
+          (await control.refreshEvidence(record, action, signal)));
     const facts = { ...record.facts, resource: observed.resource };
     const now = clock.now();
     return {
@@ -2006,9 +2050,12 @@ export async function createProductionSandboxServices(options: {
     resources: {
       recoverPending: (signal: AbortSignal, maximum: number) =>
         resourceRecovery.pump(signal, maximum),
-      stopRun: async (runId: RuntimeToolInvocation["runId"]) => {
+      stopRun: async (
+        runId: RuntimeToolInvocation["runId"],
+        reason: "run_finished" | "run_cancelled",
+      ) => {
         let afterJobId: string | null = null;
-        let released = true;
+        let released = environments ? await environments.stopRun(runId, reason) : true;
         const stops: Promise<void>[] = [];
         for (;;) {
           const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
@@ -2031,13 +2078,15 @@ export async function createProductionSandboxServices(options: {
                       })
                     ).admission;
                     if (admission.phase === "reserved") {
+                      const container = plan.backendRef !== SRT_BACKEND_REF;
                       // Stop only the original registered host; missing binding remains unknown.
-                      await control.stopPreparation(plan);
+                      if (!container) await control.stopPreparation(plan);
                       if (!admission.stopRequestedAt) throw new Error("SANDBOX_STOP_FENCE_MISSING");
-                      const verification = await control.verifyReservationRelease(
-                        plan,
-                        admission.stopRequestedAt,
-                      );
+                      if (container && !environments)
+                        throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                      const verification = container
+                        ? await environments?.releaseReservation(plan, admission.stopRequestedAt)
+                        : await control.verifyReservationRelease(plan, admission.stopRequestedAt);
                       if (verification)
                         admission = (
                           await preparations.releaseReservation({
@@ -2114,7 +2163,16 @@ export async function createProductionSandboxServices(options: {
           : stream.output(record, query),
       registerControl: control.register,
       observeVerifiedControl: refreshVerification,
-      verifyPreparation: control.verifyPreparation,
+      verifyPreparation: async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
+        const taskEnvironment = taskEnvironmentFor(plan, facts);
+        if (!taskEnvironment) return control.verifyPreparation(plan, facts);
+        const admission = await preparations.readAdmission(plan.identity);
+        if (admission?.phase !== "reserved")
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_BINDING_CHANGED");
+        await taskEnvironment.verifyPreparation(plan, facts, admission.workspaces);
+      },
+      resolveEnvironment: async (plan: SandboxExecutionPlanV2) =>
+        plan.backendRef === SRT_BACKEND_REF ? null : ((await environments?.binding(plan)) ?? null),
       reconciliation,
       hostId,
       journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),

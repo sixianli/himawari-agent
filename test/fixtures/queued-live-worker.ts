@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import {
   type CapabilityInvocationAuthority,
+  type ExecutionEnvironmentLifecyclePort,
   ExecutionWorkerService,
 } from "@himawari-agent/application";
 import {
@@ -12,7 +13,10 @@ import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
 import { ProductionExecutionWorker } from "../../apps/execution-worker/src/production-execution-worker.ts";
 import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
-import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import {
+  ProductionSandboxExecutionV2,
+  type SandboxContainerRoute,
+} from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { WorkerDelegationStore } from "../../apps/execution-worker/src/worker-delegation-store.ts";
 import type { productionSandboxScope } from "./production-sandbox-scope.ts";
 import { AGENT_ID, OWNER_ID } from "./sqlite-capability-invocation-fixture.ts";
@@ -24,9 +28,14 @@ export async function queuedLiveWorker(
   f: Awaited<ReturnType<typeof productionSandboxScope>>,
   authority: CapabilityInvocationAuthority,
   beforeResolvedReply?: () => Promise<void>,
+  taskEnvironments?: {
+    readonly containers: SandboxContainerRoute;
+    readonly environments: ExecutionEnvironmentLifecyclePort;
+    readonly clock: { now(): string };
+  },
 ) {
   const directory = await mkdtemp("/tmp/h-qr-");
-  const clock = { now: () => new Date().toISOString() };
+  const clock = taskEnvironments?.clock ?? { now: () => new Date().toISOString() };
   let sequence = 0;
   const ids = { next: () => `queued-live:${++sequence}` };
   const common = {
@@ -87,6 +96,7 @@ export async function queuedLiveWorker(
     peer: { ...authority, ...authority.product },
     payloads,
     clock,
+    ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
   });
   const adapters = [
     {
@@ -116,6 +126,7 @@ export async function queuedLiveWorker(
   const worker = new ProductionExecutionWorker({
     service,
     sandboxV2: sandbox,
+    ...(taskEnvironments ? { environments: taskEnvironments.environments } : {}),
     ...identity,
     bootTokenRef: common.credential.tokenRef,
     ...authority.product,

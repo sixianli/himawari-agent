@@ -22,19 +22,27 @@ export interface SandboxReleaseReceipt {
 
 /** Host-only attestation for an environment that never started user code.
  * It creates no runtime binding, execution permission or business result. */
-export interface SandboxReservationReleaseVerification {
+interface SandboxReservationReleaseBase {
   readonly schemaVersion: "sandbox-reservation-release.v1";
-  readonly basis: "host_never_started";
   readonly identity: SandboxJobIdentity;
   readonly environmentId: string;
   readonly semanticFingerprint: string;
   readonly stopRequestedAt: string;
   readonly checkedAt: string;
   readonly validUntil: string;
-  readonly processIdentityRef: string;
-  readonly controlSessionId: string;
   readonly evidence: { readonly ref: string; readonly digest: string };
 }
+
+export type SandboxReservationReleaseVerification =
+  | (SandboxReservationReleaseBase & {
+      readonly basis: "host_never_started";
+      readonly processIdentityRef: string;
+      readonly controlSessionId: string;
+    })
+  | (SandboxReservationReleaseBase & {
+      readonly basis: "task_environment_released";
+      readonly taskEnvironmentIds: readonly string[];
+    });
 
 export interface SandboxReservationReleaseReceipt {
   readonly acceptedAt: string;

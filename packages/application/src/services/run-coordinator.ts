@@ -122,7 +122,9 @@ export class RunExecutionInterruptedError extends Error {
 }
 
 export interface RunCoordinatorDependencies {
-  readonly resources?: { stopRun(runId: RunId): Promise<{ released: boolean }> };
+  readonly resources?: {
+    stopRun(runId: RunId, reason: "run_finished" | "run_cancelled"): Promise<{ released: boolean }>;
+  };
   readonly clock?: ClockPort;
   readonly runs: RunLifecyclePort;
   readonly checkpoints: RunCheckpointStore;
@@ -275,9 +277,11 @@ export class RunCoordinator {
     const resources = this.dependencies.resources;
     if (resources)
       cancellations.push(
-        this.requestCleanup(() => resources.stopRun(input.runId)).catch((error: unknown) => {
-          failures.push({ target: "resource", error });
-        }),
+        this.requestCleanup(() => resources.stopRun(input.runId, "run_cancelled")).catch(
+          (error: unknown) => {
+            failures.push({ target: "resource", error });
+          },
+        ),
       );
     attempt.interruption = Promise.all(cancellations).then(() => {
       attempt.interruptionResult = Object.freeze({
@@ -540,7 +544,9 @@ export class RunCoordinator {
     let resources: { readonly released: boolean } | undefined;
     if (resourcePort) {
       try {
-        resources = await this.requestCleanup(() => resourcePort.stopRun(input.runId));
+        resources = await this.requestCleanup(() =>
+          resourcePort.stopRun(input.runId, "run_finished"),
+        );
       } catch (error: unknown) {
         this.assertExecutionActive(attempt);
         const recorded = await this.dependencies.trace.record({
@@ -788,7 +794,7 @@ export class RunCoordinator {
     const resources = this.dependencies.resources;
     const stops: (() => Promise<unknown>)[] = [
       ...(cancelRuntime ? [() => this.dependencies.runtime.cancel(input.runId)] : []),
-      ...(resources ? [() => resources.stopRun(input.runId)] : []),
+      ...(resources ? [() => resources.stopRun(input.runId, "run_cancelled")] : []),
       ...[...(this.activeWorkers.get(input.runId) ?? [])].map(
         (workerRunId) => () => this.requireWorkers().cancel(workerRunId, input.reasonCode),
       ),

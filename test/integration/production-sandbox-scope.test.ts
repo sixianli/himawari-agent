@@ -329,7 +329,9 @@ it("persists a finite stop for unbound reservations without claiming resource re
     invocation: f.input,
   });
   if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
-  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+  expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+    released: false,
+  });
   const saved = await f.services.brokerV2.preparations.readAdmission(
     admitted.admission.plan.identity,
   );
@@ -427,7 +429,9 @@ it("stops bound foreground records without declaring unverified resources releas
       },
     },
   });
-  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+  expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+    released: false,
+  });
   expect(reconcile).toHaveBeenCalledWith(
     expect.objectContaining({ identity: plan.identity, action: "stop" }),
   );
@@ -524,7 +528,7 @@ it.each(["pending", "rejected"] as const)(
         }
         return { applied: false, record: bound.record };
       });
-    const stopping = f.services.resources.stopRun(f.call.runId);
+    const stopping = f.services.resources.stopRun(f.call.runId, "run_cancelled");
     try {
       await vi.waitFor(() =>
         expect(reconcile).toHaveBeenCalledWith(
@@ -618,9 +622,11 @@ it.each(["stopRun", "recovery"] as const)(
     cleanups.push(() => server.finish());
     await f.services.brokerV2.registerControl(plan, binding);
     if (mode === "stopRun") {
-      await f.services.resources.stopRun(f.call.runId);
+      await f.services.resources.stopRun(f.call.runId, "run_cancelled");
       await exited;
-      expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+      expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+        released: true,
+      });
     } else {
       // The original host has exited without starting code; the terminal Run is
       // discovered by the production recovery lane, without a new user stop.
@@ -676,7 +682,9 @@ it.each(["stopRun", "recovery"] as const)(
     }
     const previousStops = stops;
     f.setNow(T2);
-    expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: true,
+    });
     expect(stops).toBe(previousStops);
     expect(await f.services.brokerV2.preparations.readAdmission(plan.identity)).toEqual(saved);
     await expect(f.services.brokerV2.verifyStart(plan)).rejects.toThrow();
