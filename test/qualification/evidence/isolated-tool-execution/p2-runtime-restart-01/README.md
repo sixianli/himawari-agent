@@ -63,6 +63,8 @@ HIMAWARI_CONTAINER_RESTART_QUALIFICATION=1 HIMAWARI_CONTAINER_RESTART_COMMAND='[
 
 Hermes 在 `/data/himawari-p2-20260925-01/source` 里运行。重启命令设为 `["<等待脚本的路径>"]`，其余变量和[第二批](../p2-original-directory-01/README.md#verification)相同。测试进入等待后，由用户执行 `sudo systemctl restart docker`。
 
+**正式的 `npm test`**：提交 `e765f53` 之后在本机沙箱外运行 `npm test`，同时覆盖上一个提交 `2e76a4d`（资格验证入口）；那次提交的 `npm test` 被会话中断，没有结果。构建和测试两步都通过：contracts 355 项、unit 2012 项、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。这两个提交改的是 CI 脚本、tooling 测试和资格测试，都不在 `npm test` 的范围里，所以数量与上一批相同；tooling 测试的结果见[资格验证入口的记录](../p2-qualification-entry-01/README.md)。报告在 [`npm-test-e765f53.tar.gz`](npm-test-e765f53.tar.gz)，安装包只记录了 SHA-256。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。
 
 ## 没有覆盖的部分
