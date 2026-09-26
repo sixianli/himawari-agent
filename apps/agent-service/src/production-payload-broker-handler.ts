@@ -27,12 +27,12 @@ import type {
 import {
   type PayloadBrokerInputReadRequest,
   type PayloadBrokerInvocationValidateRequest,
-  payloadInvocationValidateRequestSchema,
   type PayloadBrokerOutputWriteRequest,
   type PayloadBrokerSandboxExecutionRequest,
   type PayloadBrokerSandboxExecutionResult,
   type PayloadBrokerSandboxJobRequest,
   type PayloadBrokerSandboxJobResult,
+  payloadInvocationValidateRequestSchema,
   payloadSandboxExecutionRequestSchema,
   payloadSandboxJobRequestSchema,
   type SandboxExecutionPlanV2,
@@ -289,7 +289,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   > {
     try {
@@ -326,7 +326,13 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           action: control.kind === "stop" ? "stop" : "inspect",
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       const lookup = {
         handleRef: request.payload.handleRef,
@@ -407,7 +413,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         await current(true);
         const resolvedScope = await configured.resolveScope(record.plan);
         await current(true);
-        return { record, applied: false, resolvedScope, output: null };
+        return { record, applied: false, resolvedScope, environment: null, output: null };
       }
       if (command.kind === "register_control") {
         if (record.phase !== "reserved" || !configured.registerControl)
@@ -415,7 +421,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         await current(true);
         await configured.registerControl(record.plan, command.control);
         await current(true);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "bind") {
         if (!configured.preparations || !configured.verifyPreparation)
@@ -431,13 +437,19 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           now: this.#options.clock.now(),
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       if (record.phase === "reserved") {
         if (command.kind !== "read" && command.kind !== "inspect")
           throw new Error("runtime not bound");
         await current(false);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "start") {
         await current(true);
@@ -450,7 +462,13 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           now: this.#options.clock.now(),
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       let observedVerification: SandboxExecutionVerification | undefined;
       if (command.kind === "observe_control") {
@@ -502,14 +520,20 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           command.kind === "append"
             ? await configured.journal.append(input)
             : await configured.journal.recordOperation(input);
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       if (command.kind === "append_output") {
         if (!bound || !configured.appendOutput) throw new Error("output writer unavailable");
         await current(false);
         await configured.appendOutput(bound, command.chunk);
         await current(false);
-        return { record, applied: true, resolvedScope: null, output: null };
+        return { record, applied: true, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "output") {
         if (!bound || !configured.readOutput) throw new Error("output reader unavailable");
@@ -520,11 +544,11 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           limit: command.limit,
         });
         await current(false);
-        return { record, applied: false, resolvedScope: null, output };
+        return { record, applied: false, resolvedScope: null, environment: null, output };
       }
       if (command.kind === "read" || command.kind === "inspect") {
         await current(false);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       // Resource control requires a real supervisor. A journal row is never a
       // successful stop or a source of invented output cursors.

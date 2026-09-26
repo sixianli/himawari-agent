@@ -2,25 +2,32 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type {
-  CapabilityInvocationRequest,
-  ClockPort,
-  ProductConfiguration,
+import {
+  type CapabilityInvocationRequest,
+  type ClockPort,
+  type ProductConfiguration,
+  taskEnvironmentCallEvidence,
 } from "@himawari-agent/application";
 import {
   type ExecutionAdmissionPeerBinding,
+  type ExecutionEnvironmentIdentity,
+  type ExecutionEnvironmentLocator,
   type ExecutionV2Request,
   executionV2MessageSchema,
   type PayloadBrokerSandboxExecutionResult,
+  PI_CONTAINER_RUNNER_PATH,
+  PI_CONTAINER_WORKSPACE_ROOT,
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
   piCodingToolNameSchema,
+  piContainerRunnerInputSchema,
   piRunnerInputSchema,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
+  type SandboxTaskEnvironmentBinding,
   type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
   sandboxScopeSchema,
@@ -59,12 +66,31 @@ interface Entry {
   supervision?: Promise<void>;
   acknowledge?: (result: SandboxWorkerResult) => void;
 }
+export interface SandboxContainerRoute {
+  readonly backendRef: string;
+  execute(input: {
+    readonly identity: ExecutionEnvironmentIdentity;
+    readonly createIntentId: string;
+    readonly locator: ExecutionEnvironmentLocator;
+    readonly stopFence: number;
+    readonly invocationId: string;
+    readonly argv: readonly string[];
+    readonly deadlineAt: string;
+    readonly authorizationRef: string;
+  }): Promise<{
+    readonly exitCode: number;
+    readonly stdout: Uint8Array;
+    readonly truncated: boolean;
+  }>;
+}
 interface Options {
   configuration: Pick<ProductConfiguration, "capabilityDeployment">;
   peer: ExecutionAdmissionPeerBinding;
   payloads: ProductionPayloadBrokerClient;
   clock: ClockPort;
+  containers?: SandboxContainerRoute;
 }
+const CONTAINER_TOOLS = new Set(["read", "bash", "find", "grep", "ls"]);
 /** Foreground v2 supervision through the existing broker. Unsupported operation
  * contracts never fall back to a generic or v1 runner. No database lives here. */
 export class ProductionSandboxExecutionV2 {
@@ -194,6 +220,8 @@ export class ProductionSandboxExecutionV2 {
       if (initial.phase !== "reserved") return this.unknown(entry);
       if (entry.cancelled || this.closed) return this.unknown(entry);
       const plan = initial.plan;
+      if (this.options.containers && plan.backendRef === this.options.containers.backendRef)
+        return await this.runInEnvironment(entry, initial, this.options.containers);
       const piRunner = plan.operationContract.ref === PI_RUNNER_CONTRACT.ref;
       if (piRunner) {
         const tool = piCodingToolNameSchema.parse(plan.operation);
@@ -718,6 +746,262 @@ export class ProductionSandboxExecutionV2 {
         await entry.host.result;
       }
     }
+  }
+  private async runInEnvironment(
+    entry: Entry,
+    initial: Extract<Record, { phase: "reserved" }>,
+    containers: SandboxContainerRoute,
+  ): Promise<SandboxWorkerResult> {
+    const plan = initial.plan;
+    const tool = piCodingToolNameSchema.parse(plan.operation);
+    if (
+      plan.mode !== "foreground" ||
+      plan.operationContract.ref !== PI_RUNNER_CONTRACT.ref ||
+      plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
+      !CONTAINER_TOOLS.has(tool) ||
+      plan.operationContract.kind !== (tool === "bash" ? "command" : "fixed_read")
+    )
+      throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
+    await this.hostBinding(plan);
+    const resolved = await this.rpc(entry, { kind: "resolve" });
+    const scope = resolved.resolvedScope?.scope;
+    const environment = resolved.environment;
+    if (
+      !scope ||
+      scope.authorizationRef !== plan.authorizationRef ||
+      scope.operation !== plan.operation ||
+      scope.schemaVersion !== "sandbox-scope.v1" ||
+      scope.profileRef !== "authorized-project.v1" ||
+      scope.workspaceCopy ||
+      scope.copySave ||
+      scope.fileTarget ||
+      scope.preparedFile ||
+      scope.directoryMove
+    )
+      throw new Error("SANDBOX_SCOPE_CHANGED");
+    if (
+      !environment ||
+      environment.identity.environmentId !== plan.environmentId ||
+      environment.locator.backendRef !== plan.backendRef
+    )
+      throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
+    const input = await this.options.payloads.readInput(entry.invocation);
+    if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+    const grant = scope.directoryGrant;
+    const runnerInput = piContainerRunnerInputSchema.parse({
+      schemaVersion: "pi-container-runner.v1",
+      tool,
+      toolCallId: scope.toolCallId,
+      hostId: plan.identity.hostId,
+      canonicalRootId: grant.canonicalRootId,
+      workspace: `${PI_CONTAINER_WORKSPACE_ROOT}/${grant.canonicalRootId}`,
+      grantRef: grant.ref,
+      grantRevision: grant.revision,
+      authorizationRef: grant.authorizationRef,
+      access: grant.operations.some((operation) => operation !== "read") ? "write" : "read",
+      expiresAt: scope.expiresAt,
+      maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+      parametersJson: new TextDecoder("utf-8", { fatal: true }).decode(input),
+    });
+    const facts = sandboxExecutionFactsSchema.parse(
+      this.environmentFacts(plan, initial, environment),
+    );
+    if (entry.cancelled || this.closed) return this.unknown(entry);
+    const bound = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
+    if (!bound.applied || entry.cancelled || this.closed) return this.unknown(entry);
+    const current = await this.rpc(entry, { kind: "resolve" });
+    if (
+      entry.cancelled ||
+      this.closed ||
+      JSON.stringify(current.resolvedScope) !== JSON.stringify(resolved.resolvedScope) ||
+      JSON.stringify(current.environment) !== JSON.stringify(environment)
+    )
+      return this.unknown(entry);
+    let completed: Awaited<ReturnType<SandboxContainerRoute["execute"]>> | null = null;
+    try {
+      completed = await containers.execute({
+        identity: environment.identity,
+        createIntentId: environment.createIntentId,
+        locator: environment.locator,
+        stopFence: environment.stopFence,
+        invocationId: plan.identity.invocationId,
+        argv: ["node", PI_CONTAINER_RUNNER_PATH, JSON.stringify(runnerInput)],
+        deadlineAt: plan.effectiveDeadlineAt,
+        authorizationRef: plan.authorizationRef,
+      });
+    } catch {
+      completed = null;
+    }
+    const resultFields = {
+      schemaVersion: "sandbox-execution.v2",
+      identity: plan.identity,
+      environmentId: plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+      occurredAt: this.options.clock.now(),
+    };
+    if (!completed) {
+      await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: 2,
+        expectedOperationRevision: 0,
+        facts: sandboxExecutionFactsSchema.parse({
+          ...facts,
+          result: { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+          resource: {
+            ...facts.resource,
+            sequence: 3,
+            occurredAt: this.options.clock.now(),
+            supervision: "lost",
+            cleanup: "unknown",
+            reasonCode: "CONTAINER_EXECUTE_UNKNOWN",
+          },
+        }),
+      });
+      return this.unknown(entry);
+    }
+    const ref = await this.options.payloads.writeOutput(
+      entry.invocation,
+      completed.stdout,
+      "application/octet-stream",
+    );
+    const output = {
+      ref,
+      digest: createHash("sha256").update(completed.stdout).digest("hex"),
+      byteLength: completed.stdout.byteLength,
+    };
+    const command = plan.operationContract.kind === "command";
+    const settled = sandboxExecutionFactsSchema.parse({
+      ...facts,
+      result: completed.truncated
+        ? {
+            ...resultFields,
+            kind: "error",
+            output,
+            reasonCode: "SANDBOX_OUTPUT_LIMIT",
+            termination: { type: "failure" },
+          }
+        : command || completed.exitCode === 0
+          ? {
+              ...resultFields,
+              kind: "result",
+              output,
+              completion: command
+                ? { type: "exit", exitCode: completed.exitCode }
+                : { type: "value" },
+            }
+          : {
+              ...resultFields,
+              kind: "error",
+              output,
+              reasonCode: "SANDBOX_OPERATION_FAILED",
+              termination: { type: "failure" },
+            },
+      effect: completed.truncated
+        ? { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" }
+        : command
+          ? { kind: "not_asserted" }
+          : { kind: "not_applicable" },
+      resource: {
+        ...facts.resource,
+        sequence: 3,
+        occurredAt: this.options.clock.now(),
+        supervision: "stopping",
+        cleanup: "pending",
+        reasonCode: "CONTAINER_CALL_RETURNED",
+      },
+    });
+    const stopping = await this.rpc(entry, {
+      kind: "append",
+      expectedSequence: 2,
+      expectedOperationRevision: 0,
+      facts: settled,
+    });
+    const { reasonCode: _reason, ...resourceFields } =
+      settled.resource as typeof settled.resource & {
+        reasonCode?: string;
+      };
+    await this.rpc(entry, {
+      kind: "append",
+      expectedSequence: 3,
+      expectedOperationRevision: stopping.record.operationRevision,
+      facts: sandboxExecutionFactsSchema.parse({
+        ...settled,
+        resource: {
+          ...resourceFields,
+          sequence: 4,
+          occurredAt: this.options.clock.now(),
+          supervision: "released",
+          cleanup: "confirmed",
+          evidence: {
+            ...taskEnvironmentCallEvidence({
+              environmentId: plan.environmentId,
+              invocationId: plan.identity.invocationId,
+              createIntentId: environment.createIntentId,
+              runtimeInstanceId: environment.locator.runtimeInstanceId,
+              runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
+            }),
+            qualificationRef: plan.binding.qualificationRef,
+            profileRef: plan.binding.profileRef,
+            validUntil: plan.effectiveDeadlineAt,
+            subject: { kind: "task_environment", environmentId: plan.environmentId },
+          },
+        },
+      }),
+    });
+    return this.unknown(entry);
+  }
+  private environmentFacts(
+    plan: SandboxExecutionPlanV2,
+    initial: Extract<Record, { phase: "reserved" }>,
+    environment: SandboxTaskEnvironmentBinding,
+  ) {
+    const supervisor = {
+      supervisorId: environment.locator.runtimeEnvironmentId,
+      bootId: environment.locator.runtimeInstanceId,
+      epoch: 1,
+    };
+    return {
+      schemaVersion: "sandbox-execution.v2",
+      environment: {
+        schemaVersion: "sandbox-execution.v2",
+        kind: "container",
+        environmentId: plan.environmentId,
+        resourceRef: null,
+        creator: plan.identity,
+        mode: plan.mode,
+        backendRef: plan.backendRef,
+        authorizationRef: plan.authorizationRef,
+        scopeDigest: plan.binding.scopeDigest,
+        policyDigest: environment.locator.effectivePolicyDigest,
+        deadlineAt: plan.effectiveDeadlineAt,
+        supervisor,
+        workspaceConflictRefs: initial.reservation.workspaceConflictRefs,
+        executionJobId: environment.identity.executionJobId,
+        environmentGeneration: environment.identity.environmentGeneration,
+        runtimeInstanceId: environment.locator.runtimeInstanceId,
+        runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
+        createIntentId: environment.createIntentId,
+        stopFence: environment.stopFence,
+      },
+      result: null,
+      effect: { kind: "unknown", reasonCode: "SANDBOX_NOT_STARTED" },
+      resource: {
+        schemaVersion: "sandbox-execution.v2",
+        environmentId: plan.environmentId,
+        creator: plan.identity,
+        policyDigest: environment.locator.effectivePolicyDigest,
+        scopeDigest: plan.binding.scopeDigest,
+        sequence: 2,
+        occurredAt: this.options.clock.now(),
+        supervisor,
+        resourceRef: null,
+        status: { kind: "foreground" },
+        metrics: null,
+        supervision: "initializing",
+        cleanup: "pending",
+      },
+    };
   }
   private entry(request: Control) {
     const entry = this.entries.get(request.payload.targetRequestId);

@@ -1,4 +1,8 @@
 import {
+  executionEnvironmentIdentitySchema,
+  executionEnvironmentLocatorSchema,
+} from "./execution-environment-v1.ts";
+import {
   sandboxExecutionPlanSchema,
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
@@ -317,6 +321,13 @@ const executionWireRecord: Schema<
     return boundExecutionWireShape.parse(value, path);
   },
 };
+export const sandboxTaskEnvironmentBindingSchema = object({
+  identity: executionEnvironmentIdentitySchema,
+  createIntentId: machineString,
+  locator: executionEnvironmentLocatorSchema,
+  stopFence: integer(0),
+});
+export type SandboxTaskEnvironmentBinding = InferSchema<typeof sandboxTaskEnvironmentBindingSchema>;
 const sandboxExecutionResultShape = object({
   ...envelope("response", "payload.sandbox.execution.result"),
   payload: object({
@@ -324,6 +335,7 @@ const sandboxExecutionResultShape = object({
     record: executionWireRecord,
     applied: booleanValue,
     resolvedScope: nullable(resolvedSandboxScopeSchema),
+    environment: nullable(sandboxTaskEnvironmentBindingSchema),
     output: nullable(sandboxResourceOutputPageSchema),
   }),
 });
@@ -331,7 +343,7 @@ export type PayloadBrokerSandboxExecutionResult = InferSchema<typeof sandboxExec
 export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExecutionResult> = {
   parse(value, path = "$") {
     const result = sandboxExecutionResultShape.parse(value, path);
-    const { record, resolvedScope, output } = result.payload;
+    const { record, resolvedScope, environment, output } = result.payload;
     if (record.phase === "bound")
       validateSandboxExecutionFacts(record.plan, record.facts, {
         environment: record.facts.environment,
@@ -363,6 +375,19 @@ export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExe
         resolvedScope.scope.agentId !== record.plan.identity.agentId)
     )
       throw new ContractValidationError(path, "sandbox execution scope mismatch");
+    if (
+      environment &&
+      (!resolvedScope ||
+        environment.identity.role !== "primary" ||
+        environment.identity.environmentId !== record.plan.environmentId ||
+        environment.identity.ownerId !== record.plan.identity.ownerId ||
+        environment.identity.agentId !== record.plan.identity.agentId ||
+        environment.identity.runId !== record.plan.identity.runId ||
+        environment.identity.hostId !== record.plan.identity.hostId ||
+        environment.locator.backendRef !== record.plan.backendRef ||
+        environment.locator.createIntentId !== environment.createIntentId)
+    )
+      throw new ContractValidationError(path, "sandbox task environment mismatch");
     return result;
   },
 };

@@ -4,9 +4,9 @@ import {
   type PayloadBrokerHandshakeAccepted,
   type PayloadBrokerHandshakeRequest,
   type PayloadBrokerInputReadRequest,
-  type PayloadBrokerInvocationValidateRequest,
-  type PayloadBrokerInvocationValidated,
   type PayloadBrokerInputReadResult,
+  type PayloadBrokerInvocationValidated,
+  type PayloadBrokerInvocationValidateRequest,
   type PayloadBrokerMessage,
   type PayloadBrokerOutputWriteAccepted,
   type PayloadBrokerOutputWriteRequest,
@@ -97,7 +97,7 @@ export interface PayloadBrokerTrustedHandler {
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   >;
 
@@ -655,7 +655,7 @@ export class PayloadUdsClient {
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   > {
     this.assertConnected();
@@ -681,6 +681,7 @@ export class PayloadUdsClient {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.RESPONSE_IDENTITY_MISMATCH, 502);
     if (
       (command.kind === "resolve") !== (result.payload.resolvedScope !== null) ||
+      (command.kind !== "resolve" && result.payload.environment !== null) ||
       (command.kind === "output") !== (result.payload.output !== null) ||
       ((command.kind === "read" ||
         command.kind === "resolve" ||
@@ -702,6 +703,7 @@ export class PayloadUdsClient {
       record: result.payload.record,
       applied: result.payload.applied,
       resolvedScope: result.payload.resolvedScope,
+      environment: result.payload.environment,
       output: result.payload.output,
     };
   }

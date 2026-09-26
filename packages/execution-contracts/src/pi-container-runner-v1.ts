@@ -12,6 +12,8 @@ import {
 
 export const PI_CONTAINER_RUNNER_V1 = "pi-container-runner.v1" as const;
 export const PI_CONTAINER_WORKSPACE_ROOT = "/workspaces";
+export const PI_CONTAINER_RUNNER_PATH =
+  "/opt/himawari/node_modules/@himawari-agent/agent-service/dist/capability-programs/container-pi-main.js";
 
 const parametersJson: Schema<string> = {
   parse(value, location = "$") {

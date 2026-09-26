@@ -155,6 +155,16 @@ export const sandboxEnvironmentSchema = variant("kind", {
     privateDirectoryOwnerRef: machineString,
   }),
   remote: object({ ...environmentFields, kind: literal("remote"), connectionRef: machineString }),
+  container: object({
+    ...environmentFields,
+    kind: literal("container"),
+    executionJobId: machineString,
+    environmentGeneration: integer(1),
+    runtimeInstanceId: machineString,
+    runtimeEnvironmentId: machineString,
+    createIntentId: machineString,
+    stopFence: integer(0),
+  }),
 });
 export type SandboxEnvironment = InferSchema<typeof sandboxEnvironmentSchema>;
 const handleFields = {
@@ -265,6 +275,7 @@ const supervisionEvidence = object({
   subject: variant("kind", {
     local_process: object({ kind: literal("local_process"), processIdentityRef: machineString }),
     remote_connection: object({ kind: literal("remote_connection"), connectionRef: machineString }),
+    task_environment: object({ kind: literal("task_environment"), environmentId: machineString }),
   }),
 });
 export const sandboxResourceObservationSchema = variant("supervision", {
@@ -362,6 +373,14 @@ export function validateSandboxExecutionFacts(
     Date.parse(plan.effectiveDeadlineAt) > Date.parse(env.deadlineAt)
   )
     fail("environment scope mismatch");
+  if (
+    env.kind === "container" &&
+    (env.mode !== "foreground" ||
+      env.supervisor.supervisorId !== env.runtimeEnvironmentId ||
+      env.supervisor.bootId !== env.runtimeInstanceId ||
+      env.supervisor.epoch !== 1)
+  )
+    fail("task environment binding mismatch");
   const sharedRequest = plan.mode === "service" && plan.operationContract.kind !== "service_start";
   if (
     !sharedRequest &&
@@ -397,7 +416,9 @@ export function validateSandboxExecutionFacts(
     if (
       env.kind === "local"
         ? subject.kind !== "local_process"
-        : subject.kind !== "remote_connection" || subject.connectionRef !== env.connectionRef
+        : env.kind === "container"
+          ? subject.kind !== "task_environment" || subject.environmentId !== env.environmentId
+          : subject.kind !== "remote_connection" || subject.connectionRef !== env.connectionRef
     )
       fail("supervision subject mismatch");
     if (
