@@ -34,6 +34,8 @@ for (const [address, prefix] of [
 ] as const)
   reserved.addSubnet(address, prefix, "ipv6");
 
+const PROXY_CHALLENGE = 'Basic realm="himawari-egress"';
+
 export function isPublicEgressAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) return !reserved.check(address, "ipv4");
@@ -124,7 +126,7 @@ export async function openNetworkEgress(
     { maxHeaderSize: 16384, requestTimeout: 10000, headersTimeout: 10000 },
     (req, res) => {
       if (!authenticated(req)) {
-        res.writeHead(407);
+        res.writeHead(407, { "Proxy-Authenticate": PROXY_CHALLENGE });
         res.end();
         return;
       }
@@ -181,7 +183,9 @@ export async function openNetworkEgress(
   server.on("connect", (req, clientStream, head) => {
     const client = clientStream as Socket;
     if (!authenticated(req)) {
-      client.end("HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n");
+      client.end(
+        `HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: ${PROXY_CHALLENGE}\r\nConnection: close\r\n\r\n`,
+      );
       return;
     }
     const timer = setTimeout(() => client.destroy(), 10000);

@@ -210,7 +210,8 @@
         "test/integration/openrouter-generation-live.test.ts",
         "test/integration/openrouter-embedding-live.test.ts",
         "test/integration/container-execution-backend-qualification.test.ts",
-        "test/integration/container-runtime-restart-qualification.test.ts"
+        "test/integration/container-runtime-restart-qualification.test.ts",
+        "test/integration/container-browser-qualification.test.ts"
       ],
       "fileParallelism": false
     },
@@ -274,6 +275,13 @@
       "kind": "qualification",
       "project": "qualification-container-restart",
       "reason": "重启容器运行时会中断同一台机器上的其他容器，只能单独 opt-in 并由调用方给出重启命令",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-browser-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-browser",
+      "reason": "真实浏览器测试样例需要单独构建的浏览器镜像和联网出口，只能单独 opt-in",
       "allowedModifiers": ["skip"]
     },
     {

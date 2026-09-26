@@ -85,6 +85,40 @@ describe("per-job public network egress", () => {
       await proxy.close();
     }
   });
+  it("challenges unauthenticated HTTP and CONNECT requests with a Basic proxy scheme", async () => {
+    const real = await vi.importActual<typeof import("node:net")>("node:net");
+    const proxy = await openNetworkEgress(["example.com:443"], async () => {});
+    const endpoint = new URL(proxy.parentProxy.http);
+    try {
+      const challenge = await new Promise<string | undefined>((resolve, reject) => {
+        request(
+          { host: endpoint.hostname, port: endpoint.port, path: "http://example.com/" },
+          (res) => {
+            res.resume();
+            resolve(res.headers["proxy-authenticate"]);
+          },
+        )
+          .on("error", reject)
+          .end();
+      });
+      expect(challenge).toBe('Basic realm="himawari-egress"');
+      const tunnel = await new Promise<string>((resolve, reject) => {
+        const client = real.connect(Number(endpoint.port), endpoint.hostname);
+        let response = "";
+        client.on("data", (data) => {
+          response += data;
+        });
+        client.on("close", () => resolve(response));
+        client.on("error", reject);
+        client.write("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");
+      });
+      expect(tunnel).toMatch(/^HTTP\/1\.1 407 /);
+      expect(tunnel).toContain('\r\nProxy-Authenticate: Basic realm="himawari-egress"\r\n');
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      await proxy.close();
+    }
+  });
   it("listens on a configured address with a caller-provided token", async () => {
     const token = "a".repeat(64);
     const probe = await openNetworkEgress(["example.com:80"], async () => {});
