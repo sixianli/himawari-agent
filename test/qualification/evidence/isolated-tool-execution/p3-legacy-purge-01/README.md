@@ -35,6 +35,10 @@
 - 反向检查：临时让 Run 结束检查不识别删除标记后，“删除”场景在 Run 可以结束的断言处失败；恢复后通过。
 - 相关回归：`sqlite-sandbox-execution-v2`、`workspace-lifecycle-audit`、`sqlite-governed-deletion`、`sandbox-resource-recovery-scheduling` 集成测试共 262 项，admin-cli 单元测试 27 项，persistence-sqlite 合同测试 33 项，全部通过；`npm run typecheck`、`npm run lint`（只有提示级信息）、`npm run check:boundaries` 通过。
 
+## 完整 npm test（提交 `b5c58de`）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-b5c58de`，全部通过：contracts 379 项、unit 2046 项、integration 1825 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-b5c58de.tar.gz`](npm-test-b5c58de.tar.gz)。控制台输出去掉了本机沙箱打印的、与测试无关的 `failed to copy trust settings` 行。
+
 ## 未验证的部分
 
 - 没有对任何真实数据库执行删除。所有者已授权在所有机器上执行，执行放在本提交和完整 `npm test` 之后。
