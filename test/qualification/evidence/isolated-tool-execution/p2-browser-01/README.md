@@ -98,6 +98,8 @@
 
 密钥扫描 `npm run check:secrets` 把 `driver.mjs` 中把代理密码交给 CDP 的那一处 `password: decodeURIComponent` 认作写死的密码。这个值其实来自任务环境变量里的代理地址，是误报。已按项目登记测试文件误报的做法，在 [`machine-secret-scan-baseline.json`](../../../../../scripts/machine-secret-scan-baseline.json) 为这一处匹配文本登记一条，绑定文件、规则和摘要；文本一旦改变，扫描就会重新报出来。登记后扫描通过。
 
+**正式的 `npm test`**：提交 `a15e4ba` 之后在本机沙箱外运行，构建和测试两步都通过：contracts 355 项、unit 2015 项（比上一次多 1 项，是本批新增的出口代理测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-a15e4ba.tar.gz`](npm-test-a15e4ba.tar.gz)，安装包只记录了 SHA-256。
+
 两个平台运行的改动文件 SHA-256 相同，见 `browser-files.sha256`。原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。
 
 ## 没有覆盖的部分
