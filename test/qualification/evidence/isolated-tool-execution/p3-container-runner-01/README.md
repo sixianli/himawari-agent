@@ -78,6 +78,8 @@ Mac 上把受保护的文件放进测试目录时，注意到一条 P2 已有的
 
 Hermes 上用的也是这份 Mac 构建的 runtime，因为 Hermes 没有安装构建工具。runner 用到的都是纯 JS 模块，所以这次验证有效；但正式部署时，Hermes 应该使用 Linux 版安装包。
 
+**正式的 `npm test`**：提交 `6b8fd9c` 之后在本机沙箱外运行，构建和测试两步都通过：contracts 379 项、unit 2022 项、integration 1781 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。和上一次（`5a88eee`）相比，contracts 多 11 项（容器 runner 输入合同），unit 多 2 项（runtime 挂载）。报告在 [`npm-test-6b8fd9c.tar.gz`](npm-test-6b8fd9c.tar.gz)，安装包只记录了 SHA-256。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。
 
 ## 没有覆盖的部分
