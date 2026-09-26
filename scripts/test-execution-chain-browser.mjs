@@ -552,6 +552,49 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await expect(
           page.getByRole("button", { name: "再次停止并检查清理", exact: true }),
         ).toHaveCount(0);
+        await send({
+          status: "cancelled",
+          state: {
+            ...state,
+            revision: "browser-resource-process-group-gone",
+            displayPhase: "stopped",
+            reasonCode: "RUN_STOPPED_NOT_STRICTLY_CONFIRMED",
+            availableActions: [],
+            operations: [
+              {
+                ...state.operations[0],
+                displayPhase: "completed",
+                reasonCode: "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+              },
+              {
+                ...state.operations[1],
+                displayPhase: "completed",
+                reasonCode: "EXECUTION_RECORD_DELETED",
+              },
+            ],
+            effectSummary: state.effectSummary.map((effect) => ({
+              ...effect,
+              outcome: "succeeded",
+            })),
+          },
+        });
+        const steps = page.locator(".turn-process .tool-record .step-status");
+        await expect(page.locator(".turn-process .process-result").first()).toContainText(
+          "停止未经严格确认",
+        );
+        await expect(page.locator(".execution-next-action")).toContainText(
+          "离开进程组的程序可能仍在运行",
+        );
+        await expect(steps.nth(0)).toContainText("完成 · 停止未经严格确认");
+        await expect(steps.nth(1)).toContainText("执行记录已删除");
+        await expect(steps.nth(1)).not.toContainText("完成");
+        await page.reload();
+        await expect(page.locator(".turn-process .tool-record .step-status").nth(1)).toContainText(
+          "执行记录已删除",
+        );
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-stop-not-strict.png`),
+        });
         assert.deepEqual(errors, []);
         cases.push({
           width,
@@ -560,6 +603,8 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
           backendState: true,
           reconnect: true,
           noTraceReplay: true,
+          stopNotStrictlyConfirmed: true,
+          executionRecordDeleted: true,
         });
       } finally {
         await context.close();

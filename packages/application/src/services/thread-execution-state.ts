@@ -196,9 +196,17 @@ export function projectThreadExecutionState(
   if (resources) {
     for (const operation of operations) {
       const resource = resources.operations.find((item) => item.itemId === operation.itemId);
-      if (!resource || ["released", "not_dispatched"].includes(resource.phase)) continue;
-      const phase = resourceDisplayPhase(resource.phase);
+      if (!resource || resource.phase === "not_dispatched") continue;
       const index = operations.indexOf(operation);
+      if (resource.phase === "released" || resource.phase === "record_deleted") {
+        if (
+          resource.reasonCode !== "RESOURCE_RELEASE_CONFIRMED" &&
+          operation.displayPhase !== "not_dispatched"
+        )
+          operations[index] = { ...operation, reasonCode: resource.reasonCode };
+        continue;
+      }
+      const phase = resourceDisplayPhase(resource.phase);
       operations[index] = {
         ...operation,
         displayPhase: operation.displayPhase === "not_dispatched" ? "unresolved" : phase,
@@ -265,7 +273,11 @@ export function projectThreadExecutionState(
         : displayPhase === "not_dispatched"
           ? "RUN_CANCELLED_BEFORE_DISPATCH"
           : displayPhase === "stopped"
-            ? "RUN_CANCELLED_RESOURCES_RELEASED"
+            ? resources?.operations.some(
+                (operation) => operation.reasonCode === "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+              )
+              ? "RUN_STOPPED_NOT_STRICTLY_CONFIRMED"
+              : "RUN_CANCELLED_RESOURCES_RELEASED"
             : run.status === "cancelled"
               ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
               : displayPhase === "unresolved"

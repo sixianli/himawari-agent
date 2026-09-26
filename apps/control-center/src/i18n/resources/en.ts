@@ -156,6 +156,8 @@ export const messages = {
   "chat.resource.verifying": "Checking the original request",
   "chat.resource.queued": "Waiting for resources",
   "chat.resource.executing": "Executing",
+  "chat.resource.stopNotStrictlyConfirmed": "Stop not strictly confirmed",
+  "chat.resource.recordDeleted": "Execution record deleted",
   "chat.reason.admissionConflict": "Resource or request state conflicted during admission",
   "chat.reason.authorizationDenied": "Execution authorization expired or was denied",
   "chat.reason.authorityUnavailable": "Execution authority is unavailable",
@@ -189,6 +191,8 @@ export const messages = {
     "The operation was not dispatched. If it is still needed, submit a new request; current permissions and workspace state will be checked again.",
   "chat.nextAction.stoppedWithResults":
     "This run stopped. Completed tool records and results remain below; review them before continuing.",
+  "chat.nextAction.stopNotStrictlyConfirmed":
+    "Stop not strictly confirmed: the task's process group has ended, but programs that left the group may still be running, changing files or using the network. Check the affected folders before continuing.",
   "chat.nextAction.partial":
     "Some tool operations completed before this run failed. Review each result; a later failure does not undo earlier operations.",
   "chat.nextAction.failed":

@@ -131,6 +131,96 @@ describe("backend execution state", () => {
       }).displayPhase,
     ).toBe("unresolved");
   });
+  it("says a stop was not strictly confirmed when a process-group release ended the Run", () => {
+    const released = (reasonCode: string) => ({
+      itemId: "saved",
+      phase: "released" as const,
+      reasonCode,
+      lastObservedAt: at(5),
+    });
+    const resources = {
+      revision: "resource-1",
+      allReleased: true,
+      pendingResources: false,
+      unresolvedResultItemIds: [],
+      phase: null,
+      reasonCode: "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+      lastObservedAt: at(5),
+      operations: [released("RESOURCE_STOP_NOT_STRICTLY_CONFIRMED")],
+    };
+    const cancelled = projectThreadExecutionState(
+      { ...run, status: "cancelled" },
+      [record(1, "saved", "completed")],
+      true,
+      resources,
+    );
+    expect(cancelled).toMatchObject({
+      displayPhase: "stopped",
+      reasonCode: "RUN_STOPPED_NOT_STRICTLY_CONFIRMED",
+      availableActions: [],
+      effectSummary: [{ itemId: "saved", outcome: "succeeded" }],
+      operations: [
+        {
+          itemId: "saved",
+          displayPhase: "completed",
+          reasonCode: "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+        },
+      ],
+    });
+    expect(threadExecutionStateSchema.parse(cancelled)).toEqual(cancelled);
+    const strict = projectThreadExecutionState(
+      { ...run, status: "cancelled" },
+      [record(1, "saved", "completed")],
+      true,
+      { ...resources, operations: [released("RESOURCE_RELEASE_CONFIRMED")] },
+    );
+    expect(strict).toMatchObject({
+      displayPhase: "stopped",
+      reasonCode: "RUN_CANCELLED_RESOURCES_RELEASED",
+      operations: [{ itemId: "saved", displayPhase: "completed", reasonCode: "TOOL_SUCCEEDED" }],
+    });
+  });
+
+  it("shows a deleted execution record without calling the step successful or blocking the Run", () => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "completed" },
+      [record(1, "old-call", "completed"), record(2, "new-call", "completed")],
+      true,
+      {
+        revision: "resource-1",
+        allReleased: true,
+        pendingResources: false,
+        unresolvedResultItemIds: [],
+        phase: null,
+        reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+        lastObservedAt: at(5),
+        operations: [
+          {
+            itemId: "old-call",
+            phase: "record_deleted",
+            reasonCode: "EXECUTION_RECORD_DELETED",
+            lastObservedAt: null,
+          },
+          {
+            itemId: "new-call",
+            phase: "released",
+            reasonCode: "RESOURCE_RELEASE_CONFIRMED",
+            lastObservedAt: at(5),
+          },
+        ],
+      },
+    );
+    expect(state).toMatchObject({
+      displayPhase: "completed",
+      availableActions: [],
+      operations: [
+        { itemId: "old-call", displayPhase: "completed", reasonCode: "EXECUTION_RECORD_DELETED" },
+        { itemId: "new-call", displayPhase: "completed", reasonCode: "TOOL_SUCCEEDED" },
+      ],
+    });
+    expect(threadExecutionStateSchema.parse(state)).toEqual(state);
+  });
+
   it("does not hide an unrendered resource behind a completed Run or a last successful tool", () => {
     const state = projectThreadExecutionState(
       { ...run, status: "completed" },
@@ -376,7 +466,12 @@ describe("execution state history read boundary", () => {
     return { projection, read, listRuns };
   }
   it("rejects resource changes across the Trace read even when the Run revision is unchanged", async () => {
-    const inventory = { admissions: [], queue: [], legacyResourcesPending: false };
+    const inventory = {
+      admissions: [],
+      queue: [],
+      legacyResourcesPending: false,
+      deletedPlans: [],
+    };
     const readInventory = vi
       .fn()
       .mockResolvedValueOnce(inventory)

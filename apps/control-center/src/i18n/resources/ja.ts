@@ -161,6 +161,8 @@ export const messages = {
   "chat.resource.verifying": "元のリクエストを確認中",
   "chat.resource.queued": "リソース待機中",
   "chat.resource.executing": "実行中",
+  "chat.resource.stopNotStrictlyConfirmed": "停止は厳密に確認されていません",
+  "chat.resource.recordDeleted": "実行記録は削除されました",
   "chat.reason.admissionConflict": "受付時にリソースまたはリクエストの状態が競合しました",
   "chat.reason.authorizationDenied": "実行権限の期限切れまたは拒否により停止しました",
   "chat.reason.authorityUnavailable": "実行権限を確認できません",
@@ -194,6 +196,8 @@ export const messages = {
     "操作は派遣されていません。必要であれば新しいリクエストを送信してください。現在の権限とワークスペース状態が再確認されます。",
   "chat.nextAction.stoppedWithResults":
     "この実行は停止しました。完了したツール記録と結果は下に残っています。続行する前に確認してください。",
+  "chat.nextAction.stopNotStrictlyConfirmed":
+    "停止は厳密に確認されていません。タスクのプロセスグループは終了しましたが、グループを離れたプログラムがまだ実行中で、ファイルの変更やネットワーク接続を続けている可能性があります。続行する前に関係するフォルダを確認してください。",
   "chat.nextAction.partial":
     "この実行が失敗する前に一部のツール操作は完了しました。結果を個別に確認してください。後続の失敗によって以前の操作が取り消されることはありません。",
   "chat.nextAction.failed":

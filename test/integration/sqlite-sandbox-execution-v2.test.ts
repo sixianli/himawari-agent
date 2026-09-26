@@ -10,6 +10,7 @@ import {
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
+  type SandboxExecutionRunInventory,
 } from "@himawari-agent/application";
 import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
 import {
@@ -25,6 +26,7 @@ import {
   openQualifiedDatabase,
   readMigrationLedger,
   SqliteProductStateRepository,
+  SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
@@ -154,6 +156,12 @@ function resource(
       cleanup: state === "released" ? "confirmed" : state === "lost" ? "unknown" : "pending",
     },
   });
+}
+function readRunInventory(f: Fixture, runId: string) {
+  return operationsForDatabase(f.database).execute(
+    "capabilityInvocation.sandboxV2.readRunInventory",
+    { ownerId: OWNER_ID, agentId: AGENT_ID, input: { runId } },
+  ) as SandboxExecutionRunInventory;
 }
 function start(f: Fixture, a = admission(f)) {
   const record = call(f, "admit", a).record;
@@ -2048,6 +2056,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           admissions: [{ phase: "bound", record }],
           queue: [],
           legacyResourcesPending: false,
+          deletedPlans: [],
         },
         payloads: { get: async () => f.scopePayload },
         protector: f.protector,
@@ -2059,8 +2068,121 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         pendingResources: false,
         phase: null,
         unresolvedResultItemIds: [`tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`],
+        operations: [{ phase: "released", reasonCode: "RESOURCE_RELEASE_CONFIRMED" }],
       });
       expect(call(f, "read", record.plan.identity)?.releaseReceipt).toEqual(record.releaseReceipt);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("names a process-group release a stop without strict confirmation", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "stopping"));
+      const released = resource(record, "released");
+      record = append(
+        f,
+        record,
+        sandboxExecutionFactsSchema.parse({
+          ...released,
+          resource: { ...released.resource, cleanup: "process_group_gone" },
+        }),
+      );
+      expect(record.releaseReceipt?.acceptedAt).toBe(T1);
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const inventory = readRunInventory(f, record.plan.identity.runId);
+      const projection = await readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId: record.plan.identity.runId,
+        now: T2,
+        inventory,
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        itemId: (id) => `tool:${id}`,
+      });
+      expect(projection).toMatchObject({
+        allReleased: true,
+        pendingResources: false,
+        phase: null,
+        operations: [
+          {
+            itemId: `tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`,
+            phase: "released",
+            reasonCode: "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+          },
+        ],
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("shows an owner-purged unconfirmed record as deleted without blocking its Run", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const runId = record.plan.identity.runId;
+      const project = (inventory: SandboxExecutionRunInventory) =>
+        readThreadExecutionResources({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId,
+          runId,
+          now: T2,
+          inventory,
+          payloads: { get: async () => f.scopePayload },
+          protector: f.protector,
+          digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+          itemId: (id) => `tool:${id}`,
+        });
+      expect(await project(readRunInventory(f, runId))).toMatchObject({
+        allReleased: false,
+        pendingResources: true,
+        phase: "unresolved",
+      });
+      const purge = new SqliteUnconfirmedSandboxPurge({
+        databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => T1,
+      });
+      const listed = purge.list();
+      expect(listed.records.map((entry) => entry.jobId)).toEqual([record.plan.identity.jobId]);
+      purge.purge(listed.digest);
+
+      const inventory = readRunInventory(f, runId);
+      expect(inventory).toEqual({
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: false,
+        deletedPlans: [record.plan],
+      });
+      const itemId = `tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`;
+      expect(await project(inventory)).toEqual(
+        expect.objectContaining({
+          allReleased: true,
+          pendingResources: false,
+          phase: null,
+          unresolvedResultItemIds: [],
+          operations: [
+            {
+              itemId,
+              phase: "record_deleted",
+              reasonCode: "EXECUTION_RECORD_DELETED",
+              lastObservedAt: null,
+            },
+          ],
+        }),
+      );
     } finally {
       await f.close();
     }

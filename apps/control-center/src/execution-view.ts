@@ -340,6 +340,9 @@ export function executionStateLabel(
     RESOURCE_CHECK_IN_PROGRESS: "chat.resource.verifying",
     RESOURCE_QUEUE_WAITING: "chat.resource.queued",
     RESOURCE_EXECUTION_OBSERVED: "chat.resource.executing",
+    RESOURCE_STOP_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
+    RUN_STOPPED_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
+    EXECUTION_RECORD_DELETED: "chat.resource.recordDeleted",
     WORKER_ADMISSION_CONFLICT: "chat.reason.admissionConflict",
     WORKER_AUTHORIZATION_DENIED: "chat.reason.authorizationDenied",
     WORKER_AUTHORITY_UNAVAILABLE: "chat.reason.authorityUnavailable",
@@ -381,6 +384,8 @@ export function executionNextAction(state: ThreadExecutionState): MessageId | un
     return "chat.nextAction.unresolved";
   }
   if (state.displayPhase === "not_dispatched") return "chat.nextAction.notDispatched";
+  if (state.reasonCode === "RUN_STOPPED_NOT_STRICTLY_CONFIRMED")
+    return "chat.nextAction.stopNotStrictlyConfirmed";
   if (
     state.displayPhase === "stopped" &&
     state.effectSummary.some(

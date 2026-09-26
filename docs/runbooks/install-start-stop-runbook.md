@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7fc92e6dcb85e21ce875cd71edbac4859aa4d8656038fafbe4694a2e1409a465"
+contract_sha256: "sha256:be42c29fc563999ff75e4b48065f0864bcf88d3093cbfe0600be5af217e25e60"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -463,7 +463,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 
 恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
 
-Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，释放记录的 cleanup 为 `confirmed`。按 ADR 0033，已启动的 SRT 任务在原 Job Host 已退出、SRT 已复位、任务进程组（主进程及仍留在同一组的子进程）经 Job Host 终态证据确认全部消失时，也释放占用，cleanup 记为 `process_group_gone`，含义是“停止未经严格确认”：用 `setsid` 等方式离开进程组的后代不被跟踪，可能仍在运行。Agent 登记 Job Host 时同时保存本机开机标识（macOS 的 `kern.bootsessionuuid`、Linux 的 `/proc/sys/kernel/random/boot_id`）；之后核查时开机标识已变，说明机器重启过、原进程组必然已不存在，不再联系原 Job Host，直接按 `process_group_gone` 释放。终态证据没有进程组字段、进程组仍在、无法发出信号，或 Job Host 崩溃而机器没有重启时继续 unknown；没有保存开机标识的旧登记在重启后也继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
+Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，释放记录的 cleanup 为 `confirmed`。按 ADR 0033，已启动的 SRT 任务在原 Job Host 已退出、SRT 已复位、任务进程组（主进程及仍留在同一组的子进程）经 Job Host 终态证据确认全部消失时，也释放占用，cleanup 记为 `process_group_gone`，含义是“停止未经严格确认”：用 `setsid` 等方式离开进程组的后代不被跟踪，可能仍在运行。Agent 登记 Job Host 时同时保存本机开机标识（macOS 的 `kern.bootsessionuuid`、Linux 的 `/proc/sys/kernel/random/boot_id`）；之后核查时开机标识已变，说明机器重启过、原进程组必然已不存在，不再联系原 Job Host，直接按 `process_group_gone` 释放。会话页面把这种释放显示为“停止未经严格确认”：工具步骤显示“已完成 · 停止未经严格确认”，被停止的一轮对话还会说明离开进程组的程序可能仍在运行、修改文件或联网。终态证据没有进程组字段、进程组仍在、无法发出信号，或 Job Host 崩溃而机器没有重启时继续 unknown；没有保存开机标识的旧登记在重启后也继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
 
 <a id="purge-unconfirmed-srt-records"></a>
 
@@ -480,7 +480,7 @@ Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，
 
 留痕：`deletion_tombstones` 为每条被删记录写一条 `sandbox_execution` 删除标记，保存原执行计划（只有编号、引用和摘要，不含工具输入输出），供界面找回对应的工具步骤；另写一条 `sandbox_unconfirmed_purge` 汇总，保存摘要、被删编号和各类条数。`audit_records` 写一条 `sandbox.unconfirmed_records_deleted` 审计事件，目标是清单摘要。
 
-删除后的效果：这些记录不再挡住目录；某个 Run 如果只因这些记录没能结束，Run 结束检查不再把它们算作未释放的资源，已准入但执行记录已删除的排队记录也不再阻止 Run 结束。删除不会停止任何进程：原工具程序或离开进程组的后代如果仍在运行，可能继续写入目录，这是 ADR 0033 中所有者已接受的风险。删除不可撤销，没有回退步骤；数据库恢复到删除前的恢复点会让这些记录重新出现。界面显示“执行记录已删除”尚未实现，在那之前，历史对话里对应的工具步骤可能不显示资源状态，经过排队的调用可能显示为未确认。验证来源：[真实命令行与 SQLite 回归](../../test/integration/sandbox-unconfirmed-purge.test.ts)。
+删除后的效果：这些记录不再挡住目录；某个 Run 如果只因这些记录没能结束，Run 结束检查不再把它们算作未释放的资源，已准入但执行记录已删除的排队记录也不再阻止 Run 结束。删除不会停止任何进程：原工具程序或离开进程组的后代如果仍在运行，可能继续写入目录，这是 ADR 0033 中所有者已接受的风险。删除不可撤销，没有回退步骤；数据库恢复到删除前的恢复点会让这些记录重新出现。删除后，历史对话里对应的工具步骤显示“执行记录已删除”，不显示为已完成。验证来源：[真实命令行与 SQLite 回归](../../test/integration/sandbox-unconfirmed-purge.test.ts)。
 
 ### 资源输出分页保留
 

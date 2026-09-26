@@ -49,6 +49,7 @@ it("keeps a currently observed execution active until its missing result becomes
           legacyResourcesPending: false,
           queue: [],
           admissions: [{ phase: "bound", record: { ...record, facts } }],
+          deletedPlans: [],
         },
         now,
         payloads: { get: async () => f.scopePayload },
@@ -135,6 +136,7 @@ describe("historical resource display", () => {
         legacyResourcesPending: false,
         queue: [],
         admissions: [{ phase: "bound", record: stored }],
+        deletedPlans: [],
       };
       const read = (snapshot = inventory, now = T1) =>
         readThreadExecutionResources({
@@ -259,6 +261,20 @@ it("projects the production queue and reservation from SQLite without renewing a
     ).toMatchObject({ displayPhase: "preparing", reasonCode: "RESOURCE_START_UNCONFIRMED" });
     expect(await read(admitted)).toMatchObject({ phase: "preparing", allReleased: false });
     expect((await read(admitted)).operations).toHaveLength(1);
+    const reservedAdmission = admitted.admissions[0];
+    if (reservedAdmission?.phase !== "reserved") throw new Error("expected reservation");
+    expect(
+      await read({ ...admitted, admissions: [], deletedPlans: [reservedAdmission.plan] }),
+    ).toMatchObject({
+      allReleased: true,
+      pendingResources: false,
+      phase: null,
+      operations: [{ phase: "record_deleted", reasonCode: "EXECUTION_RECORD_DELETED" }],
+    });
+    expect(await read({ ...admitted, admissions: [] })).toMatchObject({
+      allReleased: false,
+      phase: "unresolved",
+    });
     await expect(
       read({
         ...admitted,

@@ -138,6 +138,37 @@ describe("durable execution presentation", () => {
       "chat.phase.unresolved",
     );
     expect(executionStateLabel("unresolved", "FUTURE_REASON")).toBe("chat.phase.unresolved");
+    expect(executionStateLabel("completed", "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED")).toBe(
+      "chat.resource.stopNotStrictlyConfirmed",
+    );
+    expect(executionStateLabel("stopped", "RUN_STOPPED_NOT_STRICTLY_CONFIRMED")).toBe(
+      "chat.resource.stopNotStrictlyConfirmed",
+    );
+    expect(executionStateLabel("completed", "EXECUTION_RECORD_DELETED")).toBe(
+      "chat.resource.recordDeleted",
+    );
+    expect(executionStateLabel("completed", "RESOURCE_RELEASE_CONFIRMED")).toBe(
+      "chat.phase.completed",
+    );
+  });
+
+  it("explains what a stop without strict confirmation leaves running", () => {
+    const state: ThreadExecutionState = {
+      runRevision: 1,
+      revision: "state-1",
+      lastObservedAt: new Date(1000).toISOString(),
+      displayPhase: "stopped",
+      reasonCode: "RUN_STOPPED_NOT_STRICTLY_CONFIRMED",
+      availableActions: [],
+      needsAttention: false,
+      timing: { reviewMilliseconds: null, executionMilliseconds: null },
+      effectSummary: [{ itemId: "call", outcome: "succeeded" }],
+      operations: [],
+    };
+    expect(executionNextAction(state)).toBe("chat.nextAction.stopNotStrictlyConfirmed");
+    expect(executionNextAction({ ...state, reasonCode: "RUN_CANCELLED_RESOURCES_RELEASED" })).toBe(
+      "chat.nextAction.stoppedWithResults",
+    );
   });
   it("merges replayed out-of-order observations without erasing tool input", () => {
     const started = record(1, 10, { kind: "tool", name: "read", input: '{"path":"README.md"}' });

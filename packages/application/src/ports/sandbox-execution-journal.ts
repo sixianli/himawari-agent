@@ -227,6 +227,7 @@ export interface SandboxExecutionRunInventory {
   readonly queue: readonly NonNullable<
     Awaited<ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>>
   >[];
+  readonly deletedPlans: readonly SandboxExecutionPlanV2[];
 }
 /** Product-owned link to the protected Pi batch captured before this queue was created. */
 export interface SandboxQueuedToolBatch {

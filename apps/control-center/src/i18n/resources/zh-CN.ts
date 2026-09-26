@@ -147,6 +147,8 @@ export const messages = {
   "chat.resource.verifying": "正在核验原请求",
   "chat.resource.queued": "正在等待资源",
   "chat.resource.executing": "正在执行",
+  "chat.resource.stopNotStrictlyConfirmed": "停止未经严格确认",
+  "chat.resource.recordDeleted": "执行记录已删除",
   "chat.reason.admissionConflict": "准入时发现资源或请求状态冲突",
   "chat.reason.authorizationDenied": "执行权限已失效或不允许",
   "chat.reason.authorityUnavailable": "当前执行权不可用",
@@ -176,6 +178,8 @@ export const messages = {
     "本次操作没有派发。若仍需执行，请发起新请求；系统会重新检查当前权限和工作区状态。",
   "chat.nextAction.stoppedWithResults":
     "本轮已停止。下方保留着已完成的工具记录和结果；请先查看，再决定下一步。",
+  "chat.nextAction.stopNotStrictlyConfirmed":
+    "停止未经严格确认：任务的进程组已经结束，但离开进程组的程序可能仍在运行、修改文件或联网。请先检查相关目录，再决定下一步。",
   "chat.nextAction.partial":
     "本轮失败前已有部分工具操作完成。请逐项查看结果；后续失败不会自动撤销先前操作。",
   "chat.nextAction.failed":

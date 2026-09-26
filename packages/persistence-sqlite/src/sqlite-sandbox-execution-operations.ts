@@ -193,10 +193,22 @@ export class SqliteSandboxExecutionOperations {
           WHERE jobs.owner_id=? AND jobs.agent_id=? AND jobs.run_id=? AND occupancy.released_at IS NULL LIMIT 1`,
             )
             .get(owner, agent, runId) !== undefined;
+        const deletedPlans = (
+          this.db
+            .prepare(
+              `SELECT json_extract(record_json,'$.plan') AS plan FROM deletion_tombstones
+          WHERE object_type='sandbox_execution' AND status='verified' AND owner_id=? AND agent_id=?
+            AND json_extract(record_json,'$.plan.identity.runId')=? ORDER BY object_id LIMIT 10001`,
+            )
+            .all(owner, agent, runId) as { plan: string }[]
+        ).map((row) => sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)));
+        if (deletedPlans.length > 10000)
+          return this.fail("PORT_INVALID_OPERATION", "SANDBOX_RUN_INVENTORY_LIMIT");
         return {
           admissions,
           queue: this.queue.readRun(owner, agent, runId, 10000),
           legacyResourcesPending,
+          deletedPlans,
         };
       })();
     }

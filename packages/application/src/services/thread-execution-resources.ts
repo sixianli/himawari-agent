@@ -14,13 +14,17 @@ export type ThreadResourcePhase =
   | "verifying"
   | "stopping"
   | "unresolved"
-  | "not_dispatched";
+  | "not_dispatched"
+  | "record_deleted";
 export interface ThreadExecutionResources {
   readonly revision: string;
   readonly allReleased: boolean;
   readonly pendingResources: boolean;
   readonly unresolvedResultItemIds: readonly string[];
-  readonly phase: Exclude<ThreadResourcePhase, "released" | "not_dispatched"> | null;
+  readonly phase: Exclude<
+    ThreadResourcePhase,
+    "released" | "not_dispatched" | "record_deleted"
+  > | null;
   readonly reasonCode: string;
   readonly lastObservedAt: string | null;
   readonly operations: readonly {
@@ -31,6 +35,7 @@ export interface ThreadExecutionResources {
   }[];
 }
 const priority: Record<ThreadResourcePhase, number> = {
+  record_deleted: 0,
   released: 0,
   not_dispatched: 1,
   preparing: 2,
@@ -60,7 +65,9 @@ export async function readThreadExecutionResources(input: {
   const operations = new Map<string, ThreadExecutionResources["operations"][number]>();
   const unresolvedResultItemIds = new Set<string>();
   let pendingResources = inventory.legacyResourcesPending;
-  let allReleased = inventory.admissions.length > 0 && !inventory.legacyResourcesPending;
+  let allReleased =
+    inventory.admissions.length + inventory.deletedPlans.length > 0 &&
+    !inventory.legacyResourcesPending;
   let lastObservedAt: string | null = null;
   const add = async (
     plan: SandboxExecutionPlanCandidateV2,
@@ -134,7 +141,10 @@ export async function readThreadExecutionResources(input: {
     let reason: string;
     if (released) {
       phase = "released";
-      reason = "RESOURCE_RELEASE_CONFIRMED";
+      reason =
+        resource?.supervision === "released" && resource.cleanup === "process_group_gone"
+          ? "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED"
+          : "RESOURCE_RELEASE_CONFIRMED";
     } else if (recovering) {
       phase = recovery.action === "stop" ? "stopping" : "verifying";
       reason =
@@ -192,6 +202,13 @@ export async function readThreadExecutionResources(input: {
     )
       unresolvedResultItemIds.add(itemId);
   }
+  const deleted = new Set<string>();
+  for (const plan of inventory.deletedPlans) {
+    if (admitted.has(plan.identity.jobId) || deleted.has(plan.identity.jobId))
+      throw new Error("THREAD_EXECUTION_RESOURCE_DUPLICATE_ADMISSION");
+    deleted.add(plan.identity.jobId);
+    await add(plan, "record_deleted", "EXECUTION_RECORD_DELETED", null);
+  }
   for (const queued of inventory.queue) {
     // An admitted queue row and its journal are the same attempt, not two resources.
     const admittedPlan = admitted.get(queued.plan.identity.jobId);
@@ -200,6 +217,7 @@ export async function readThreadExecutionResources(input: {
         throw new Error("THREAD_EXECUTION_RESOURCE_QUEUE_MISMATCH");
       continue;
     }
+    if (queued.status === "admitted" && deleted.has(queued.plan.identity.jobId)) continue;
     if (queued.status === "cancelled") {
       await add(queued.plan, "not_dispatched", "RESOURCE_QUEUE_CANCELLED", null);
       continue;
