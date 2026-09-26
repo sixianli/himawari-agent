@@ -8,7 +8,6 @@ import {
   mkdtemp,
   readdir,
   readFile,
-  realpath,
   rename,
   rm,
   stat,
@@ -18,20 +17,9 @@ import {
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import type { ExecutionBackendPort } from "@himawari-agent/application";
+import { executionEnvironmentStopProofSchema } from "@himawari-agent/execution-contracts";
 import {
-  EXECUTION_ENVELOPE_V1,
-  EXECUTION_ENVIRONMENT_V1,
-  type ExecutionEnvironmentIdentity,
-  type ExecutionEnvironmentLocator,
-  executionEnvironmentStopProofSchema,
-} from "@himawari-agent/execution-contracts";
-import {
-  CONTAINER_RUNNER_DIGEST,
-  ContainerExecutionBackend,
   type ContainerExecutionBackendOptions,
-  dockerCli,
-  type HostDirectoryIdentity,
   hostFreeBytes,
 } from "@himawari-agent/runtime-sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -936,7 +924,7 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
           '  const token = String(request.headers.authorization ?? "").replace(/^Bearer /, "");',
           "  const entry = tokens[token];",
           '  const ok = request.url === "/pkg" && entry !== undefined && Date.parse(entry.expiresAt) > Date.now();',
-          '  console.log(`${ok ? 200 : 401} ${createHash("sha256").update(token).digest("hex").slice(0, 16)}`);',
+          '  console.log((ok ? 200 : 401) + " " + createHash("sha256").update(token).digest("hex").slice(0, 16));',
           '  response.writeHead(ok ? 200 : 401).end(ok ? "package-ok\\n" : "denied\\n");',
           '}).listen(8080, "0.0.0.0");',
         ].join("\n"),
@@ -1064,7 +1052,7 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
         target,
         locator,
         [
-          'echo "inherited=${REGISTRY_TOKEN:-absent}"',
+          '[ -n "$REGISTRY_TOKEN" ] && echo inherited=present || echo inherited=absent',
           `echo "copied=$(${request("$(cat /tmp/copied-token)")})"`,
           "touch /tmp/go",
           "for i in $(seq 1 50); do [ -s /tmp/background.txt ] && break; sleep 0.2; done",

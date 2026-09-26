@@ -1726,7 +1726,7 @@ describe("docker command runner", () => {
   it("passes values to the command without letting them redirect the daemon", async () => {
     const run = dockerCli(
       process.execPath,
-      script("process.stdout.write(`${process.env.REGISTRY_TOKEN}|${process.env.DOCKER_HOST}`)"),
+      script("process.stdout.write(process.env.REGISTRY_TOKEN + '|' + process.env.DOCKER_HOST)"),
     );
     const result = await run([], {
       timeoutMs: 5000,
