@@ -29,3 +29,13 @@
 - 测试：[`production-task-environment-route.test.ts`](../../../../../test/integration/production-task-environment-route.test.ts) 6 项，覆盖正常执行并在结束时释放、结果丢失时停止环境、两次调用复用同一环境、未配置时拒绝、取消时解除未开始的预留、环境仍在运行时拒绝伪造的释放证明。
 
 提交后运行的 `npm test` 全部通过：contracts 379 项、unit 2022 项、integration 1808 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-7c04b72.tar.gz`](npm-test-7c04b72.tar.gz)。
+
+## 第三步：由配置显式开启，并在两端组装（提交 `4889f3a`）
+
+- 配置：新增可选的 `taskEnvironments` 配置段（后端名称、Docker 程序路径和可选的 `dockerHost`、固定摘要的执行镜像和出网代理镜像、runner 摘要）。不写这一段时行为不变，容器后端的调用仍被拒绝；后端名称不能是 `srt`，摘要必须是 64 位小写十六进制。
+- Worker：[`production-task-environment-backend.ts`](../../../../../apps/execution-worker/src/production-task-environment-backend.ts) 建一个 `ContainerExecutionBackend`，既处理环境生命周期请求，也作为容器路线的执行入口（每次调用单独登记 argv，读回输出后转成字节）。以下情况 Worker 拒绝启动：没有沙箱主机绑定把操作指向该后端；这些绑定的运行时目录或摘要不一致；配置的 runner 摘要与运行时算出的不同。目录只解析到同一主机上已批准的根目录。
+- 容器状态记录放在 `<stateRoot>/runtime/task-environments`：备份恢复会整体替换 `data/`，放在那里会丢掉仍在运行的容器的记录。
+- Agent：服务入口用现有的 Worker 连接建 `RemoteExecutionBackend`，交给沙箱服务。
+- 测试：[`startup-configuration.unit.test.ts`](../../../../../packages/platform-node/test/startup-configuration.unit.test.ts) 新增 1 项，[`production-task-environment-backend.unit.test.ts`](../../../../../apps/execution-worker/test/production-task-environment-backend.unit.test.ts) 6 项。
+
+提交后运行的 `npm test` 全部通过：contracts 379 项、unit 2029 项、integration 1808 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-4889f3a.tar.gz`](npm-test-4889f3a.tar.gz)。
