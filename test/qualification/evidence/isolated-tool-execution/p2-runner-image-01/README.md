@@ -81,6 +81,8 @@
 
 这次完整运行 tooling 时，还发现上一个提交 `e765f53` 漏改了一处：`policy.test.mjs` 写死了 11 个 Vitest 项目，而新增重启测试后是 12 个。已单独提交 `cb98f47` 修正，修正前的输出是 `tooling-01-before-count-fix.log`。
 
+**正式的 `npm test`**：提交 `86b349b` 之后在本机沙箱外运行，构建和测试两步都通过：contracts 355 项、unit 2014 项（比上一次多 2 项，正是本批新增的 2 项后端测试）、integration 1779 项、e2e 3 项、pi-compat 130 项，没有失败或跳过。报告在 [`npm-test-86b349b.tar.gz`](npm-test-86b349b.tar.gz)，安装包只记录了 SHA-256。
+
 原始输出打包在 [`raw-logs.tar.gz`](raw-logs.tar.gz)。
 
 ## 没有覆盖的部分
