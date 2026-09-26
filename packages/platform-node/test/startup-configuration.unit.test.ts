@@ -234,7 +234,6 @@ describe("strict product configuration", () => {
         digest: "c".repeat(64),
         pin: "registry-digest",
       },
-      runnerDigest: "d".repeat(64),
     });
     const parse = (value: unknown) => {
       const input = config(stateRoot);
@@ -248,9 +247,22 @@ describe("strict product configuration", () => {
     expect(
       parse({ ...taskEnvironments(), dockerHost: null }).taskEnvironments?.dockerHost,
     ).toBeNull();
+    const { dockerHost: _omitted, ...withoutDockerHost } = taskEnvironments();
+    expect(parse(withoutDockerHost).taskEnvironments).toEqual({
+      ...withoutDockerHost,
+      dockerHost: null,
+    });
+    for (const required of ["backendRef", "dockerExecutable", "image", "egressImage"]) {
+      const incomplete: Record<string, unknown> = taskEnvironments();
+      delete incomplete[required];
+      expect(() => parse(incomplete)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+      );
+    }
 
     for (const unknown of [
       { ...taskEnvironments(), unexpected: true },
+      { ...taskEnvironments(), runnerDigest: "d".repeat(64) },
       { ...taskEnvironments(), image: { ...taskEnvironments().image, unexpected: true } },
     ])
       expect(() => parse(unknown)).toThrowError(
@@ -260,7 +272,6 @@ describe("strict product configuration", () => {
       { ...taskEnvironments(), backendRef: "srt" },
       { ...taskEnvironments(), dockerExecutable: "docker" },
       { ...taskEnvironments(), dockerHost: "" },
-      { ...taskEnvironments(), runnerDigest: "D".repeat(64) },
       { ...taskEnvironments(), image: { ...taskEnvironments().image, digest: "b".repeat(63) } },
       { ...taskEnvironments(), image: { ...taskEnvironments().image, pin: "tag" } },
       {

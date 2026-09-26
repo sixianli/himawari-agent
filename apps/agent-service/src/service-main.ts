@@ -709,7 +709,6 @@ export async function runAgentService(
             taskEnvironments: {
               backendRef: taskEnvironmentConfiguration.backendRef,
               imageDigest: taskEnvironmentConfiguration.image.digest,
-              runnerDigest: taskEnvironmentConfiguration.runnerDigest,
               lifecycle: new RemoteExecutionBackend({
                 transport: {
                   request: (message) => {

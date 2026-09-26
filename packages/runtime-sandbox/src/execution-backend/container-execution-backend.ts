@@ -37,6 +37,14 @@ import {
   sha256,
   writeOnce,
 } from "./container-records.ts";
+import {
+  containerRunnerDigest,
+  INIT_NAME,
+  INIT_SCRIPT,
+  RUNTIME_MOUNT_TARGET,
+  TASK_ENVIRONMENT,
+  TASK_WORKDIR,
+} from "./container-runner.ts";
 import { type DockerCommand, DockerCommandTimeout } from "./docker-command.ts";
 import {
   ContainerEgress,
@@ -60,15 +68,6 @@ import {
   type TemporaryCredentialRecord,
 } from "./temporary-credential.ts";
 
-const INIT_SCRIPT = 'd=$1; while [ "$(date +%s)" -lt "$d" ]; do sleep 1; done';
-const INIT_NAME = "himawari-init";
-const TASK_WORKDIR = "/tmp";
-const TASK_ENVIRONMENT = [
-  "HOME=/tmp",
-  "TMPDIR=/tmp",
-  "XDG_CACHE_HOME=/tmp/.cache",
-  "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-];
 const PROXY_VARIABLES = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"];
 const RESERVED_VARIABLES = [
   ...TASK_ENVIRONMENT.map((variable) => variable.slice(0, variable.indexOf("="))),
@@ -78,23 +77,10 @@ const RESERVED_VARIABLES = [
 const LABEL = "io.himawari.environment.";
 const INSPECT_OUTPUT_BYTES = 4 * 1024 * 1024;
 
-export const RUNTIME_MOUNT_TARGET = "/opt/himawari";
-
-export function containerRunnerDigest(runtimeDigest: string | null) {
-  return sha256(
-    canonical({
-      init: ["/bin/sh", "-c", INIT_SCRIPT, INIT_NAME],
-      task: { environment: TASK_ENVIRONMENT, workdir: TASK_WORKDIR },
-      ...(runtimeDigest
-        ? { runtime: { target: RUNTIME_MOUNT_TARGET, digest: runtimeDigest } }
-        : {}),
-    }),
-  );
-}
-
 export const CONTAINER_RUNNER_DIGEST = containerRunnerDigest(null);
 
 export { ContainerBackendError, type ContainerBackendErrorCode };
+export { containerRunnerDigest, RUNTIME_MOUNT_TARGET };
 export type {
   TemporaryCredentialIssuer,
   TemporaryCredentialRequest,

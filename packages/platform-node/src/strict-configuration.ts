@@ -177,7 +177,7 @@ function parseTaskEnvironmentConfiguration(value: unknown): TaskEnvironmentConfi
   const input = record(value, field);
   rejectUnknown(
     input,
-    ["backendRef", "dockerExecutable", "dockerHost", "image", "egressImage", "runnerDigest"],
+    ["backendRef", "dockerExecutable", "dockerHost", "image", "egressImage"],
     field,
   );
   const backendRef = safeReference(input["backendRef"], `${field}.backendRef`);
@@ -186,12 +186,11 @@ function parseTaskEnvironmentConfiguration(value: unknown): TaskEnvironmentConfi
     backendRef,
     dockerExecutable: absolutePath(input["dockerExecutable"], `${field}.dockerExecutable`),
     dockerHost:
-      input["dockerHost"] === null
+      input["dockerHost"] === null || input["dockerHost"] === undefined
         ? null
         : safeReference(input["dockerHost"], `${field}.dockerHost`),
     image: parseTaskEnvironmentImage(input["image"], `${field}.image`),
     egressImage: parseTaskEnvironmentImage(input["egressImage"], `${field}.egressImage`),
-    runnerDigest: hexDigest(input["runnerDigest"], `${field}.runnerDigest`),
   });
 }
 

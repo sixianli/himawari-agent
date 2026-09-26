@@ -8,7 +8,6 @@ import type { SandboxHostBinding } from "@himawari-agent/execution-contracts";
 import {
   ContainerExecutionBackend,
   type ContainerExecutionBackendOptions,
-  containerRunnerDigest,
   dockerCli,
   hostFreeBytes,
 } from "@himawari-agent/runtime-sandbox";
@@ -76,8 +75,6 @@ export function createWorkerTaskEnvironments(input: {
     )
   )
     throw new Error("TASK_ENVIRONMENT_RUNTIME_AMBIGUOUS");
-  if (containerRunnerDigest(first.runtimeDigest) !== configuration.runnerDigest)
-    throw new Error("TASK_ENVIRONMENT_RUNNER_MISMATCH");
   const resolveDirectory: ContainerExecutionBackendOptions["resolveDirectory"] = async (
     directory,
   ) => {

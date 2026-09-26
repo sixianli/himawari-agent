@@ -21,11 +21,11 @@ import {
   type SandboxTaskEnvironmentBinding,
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
+import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox/control";
 
 export interface ProductionTaskEnvironments {
   readonly backendRef: string;
   readonly imageDigest: string;
-  readonly runnerDigest: string;
   readonly lifecycle: ExecutionEnvironmentLifecyclePort;
 }
 
@@ -174,7 +174,7 @@ export function createProductionTaskEnvironments(options: {
         ],
         policyDigest: digest({ profileRef: input.binding.profileRef, envelope }),
         imageDigest: configuration.imageDigest,
-        runnerDigest: configuration.runnerDigest,
+        runnerDigest: containerRunnerDigest(input.binding.runtimeDigest),
         deadlineAt: input.deadlineAt,
       });
     },

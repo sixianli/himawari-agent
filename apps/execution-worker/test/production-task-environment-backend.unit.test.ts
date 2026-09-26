@@ -4,7 +4,6 @@ import {
   PI_RUNNER_CONTRACT,
   type SandboxHostBinding,
 } from "@himawari-agent/execution-contracts";
-import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox";
 import { describe, expect, it } from "vitest";
 import {
   createWorkerTaskEnvironments,
@@ -13,7 +12,7 @@ import {
 
 const BACKEND = "container-docker:local";
 const RUNTIME_DIGEST = "d".repeat(64);
-const configuration = (runnerDigest = containerRunnerDigest(RUNTIME_DIGEST)) =>
+const configuration = () =>
   ({
     backendRef: BACKEND,
     dockerExecutable: "/usr/local/bin/docker",
@@ -24,7 +23,6 @@ const configuration = (runnerDigest = containerRunnerDigest(RUNTIME_DIGEST)) =>
       digest: "c".repeat(64),
       pin: "registry-digest",
     },
-    runnerDigest,
   }) satisfies TaskEnvironmentConfiguration;
 
 function binding(
@@ -71,9 +69,9 @@ function binding(
   } as SandboxHostBinding;
 }
 
-const create = (bindings: readonly SandboxHostBinding[], runnerDigest?: string) =>
+const create = (bindings: readonly SandboxHostBinding[]) =>
   createWorkerTaskEnvironments({
-    configuration: configuration(runnerDigest),
+    configuration: configuration(),
     runtimeDirectory: "/var/himawari/runtime",
     bindings,
     now: () => new Date("2026-09-26T00:00:00.000Z"),
@@ -100,10 +98,6 @@ describe("Worker task environment backend", () => {
         binding({ capabilityRef: "capability:other", runtimeRoot: "/opt/other" }),
       ]),
     ).toThrow("TASK_ENVIRONMENT_RUNTIME_AMBIGUOUS");
-  });
-
-  it("refuses a configured runner digest that the mounted runtime does not produce", () => {
-    expect(() => create([binding()], "f".repeat(64))).toThrow("TASK_ENVIRONMENT_RUNNER_MISMATCH");
   });
 
   it("resolves only approved roots of the same host", async () => {

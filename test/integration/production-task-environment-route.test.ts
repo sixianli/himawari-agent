@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   type ExecutionEnvironmentLifecyclePort,
   RemoteExecutionBackend,
@@ -12,6 +13,7 @@ import {
   STOP_PROOF_COVERAGE,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox";
 import { afterEach, expect, it } from "vitest";
 import type { SandboxContainerRoute } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
@@ -27,7 +29,6 @@ import {
 
 const BACKEND = "container-test";
 const IMAGE_DIGEST = "b".repeat(64);
-const RUNNER_DIGEST = "c".repeat(64);
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
@@ -146,7 +147,6 @@ async function setup(outcome: "returned" | "lost" = "returned") {
     taskEnvironments: {
       backendRef: BACKEND,
       imageDigest: IMAGE_DIGEST,
-      runnerDigest: RUNNER_DIGEST,
       lifecycle: environments,
     },
   });
@@ -213,12 +213,13 @@ it("runs a container tool call inside the Run's task environment and releases it
   const store = f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
   const run = await store.readRun(RUN_ID);
   const [environment] = run?.environments ?? [];
+  const snapshot = JSON.parse(await readFile(f.capabilityDeployment.snapshotPath, "utf8"));
   expect(run?.environments).toHaveLength(1);
   expect(environment).toMatchObject({
     state: "ready",
     backendRef: BACKEND,
     imageDigest: IMAGE_DIGEST,
-    runnerDigest: RUNNER_DIGEST,
+    runnerDigest: containerRunnerDigest(snapshot.capabilities[0].binding.value.runtimeDigest),
   });
   const environmentId = environment?.identity.environmentId ?? "";
   expect(prepared.plan.environmentId).toBe(`environment:${hash(f.input.invocationId)}`);

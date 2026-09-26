@@ -174,7 +174,6 @@ export interface TaskEnvironmentConfiguration {
   readonly dockerHost: string | null;
   readonly image: TaskEnvironmentImageConfiguration;
   readonly egressImage: TaskEnvironmentImageConfiguration;
-  readonly runnerDigest: string;
 }
 
 /** Host-owned, versioned instructions; never supplied by a browser message. */
