@@ -209,7 +209,8 @@
         "test/integration/thread-scale-qualification.test.ts",
         "test/integration/openrouter-generation-live.test.ts",
         "test/integration/openrouter-embedding-live.test.ts",
-        "test/integration/container-execution-backend-qualification.test.ts"
+        "test/integration/container-execution-backend-qualification.test.ts",
+        "test/integration/container-runtime-restart-qualification.test.ts"
       ],
       "fileParallelism": false
     },
@@ -266,6 +267,13 @@
       "kind": "qualification",
       "project": "qualification-container",
       "reason": "真实容器运行时的资格验证依赖显式 opt-in 与可用的 Docker 兼容运行时",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-runtime-restart-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-restart",
+      "reason": "重启容器运行时会中断同一台机器上的其他容器，只能单独 opt-in 并由调用方给出重启命令",
       "allowedModifiers": ["skip"]
     },
     {

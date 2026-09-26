@@ -6,8 +6,8 @@ import {
   lstat,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   realpath,
   rename,
   rm,
@@ -35,79 +35,31 @@ import {
   hostFreeBytes,
 } from "@himawari-agent/runtime-sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  ContainerQualification,
+  DISK_GUARD,
+  direct,
+  dockerHost,
+  EGRESS_IMAGE_DIGEST,
+  EGRESS_IMAGE_REFERENCE,
+  grant,
+  IMAGE_DIGEST,
+  IMAGE_REFERENCE,
+  lines,
+  RESOURCES,
+  stopAndProve,
+} from "./container-qualification-support.ts";
 
 const enabled = process.env["HIMAWARI_CONTAINER_QUALIFICATION"] === "1";
 const containerDescribe = enabled ? describe : describe.skip;
-const dockerExecutable = process.env["HIMAWARI_CONTAINER_DOCKER_CLI"] ?? "docker";
-const dockerHost = process.env["HIMAWARI_CONTAINER_DOCKER_HOST"] ?? "";
-const evidencePath = process.env["HIMAWARI_CONTAINER_EVIDENCE_PATH"];
-const workRoot = process.env["HIMAWARI_CONTAINER_WORK_ROOT"] ?? os.tmpdir();
-const IMAGE_REFERENCE = "docker.io/library/busybox";
-const IMAGE_DIGEST = "bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e";
-const EGRESS_IMAGE_REFERENCE = "docker.io/library/node";
-const EGRESS_IMAGE_DIGEST = "e58326d0d441090181ac150dc2078d3e2cf6a0d42e809aebba3ef5880935ffdd";
-const RESOURCES = {
-  cpuMillicores: 500,
-  memoryBytes: 128 * 1024 * 1024,
-  maxProcesses: 64,
-  privateStorageBytes: 16 * 1024 * 1024,
-};
-const runId = `run-q-${randomUUID().slice(0, 8)}`;
-const observations: Record<string, unknown> = {};
-
-const docker = dockerCli(dockerExecutable, dockerHost ? ["--host", dockerHost] : []);
-const direct = async (...args: string[]) =>
-  docker(args, { timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
-
-const DISK_GUARD = {
-  minFreeBytes: 1024 * 1024 * 1024,
-  maxGrowthBytes: 256 * 1024 * 1024,
-  intervalMs: 1000,
-};
+const qualification = new ContainerQualification();
+const { runId, observations, argumentsByRef, approved } = qualification;
+const backend = qualification.backend.bind(qualification);
+const environment = qualification.environment.bind(qualification);
+const run = qualification.run.bind(qualification);
 
 let stateDirectory: string;
 let hostRoot: string;
-let sequence = 0;
-const argumentsByRef = new Map<string, { readonly argv: readonly string[] }>();
-const approved = new Map<string, HostDirectoryIdentity>();
-
-function backend(host = dockerHost, overrides: Partial<ContainerExecutionBackendOptions> = {}) {
-  const subject = new ContainerExecutionBackend({
-    backendRef: "container-docker:qualification",
-    docker: dockerCli(dockerExecutable, host ? ["--host", host] : []),
-    image: { reference: IMAGE_REFERENCE, digest: IMAGE_DIGEST },
-    initUser: "65532:65532",
-    taskUser: "65534:65534",
-    stateDirectory,
-    commandTimeoutMs: 30_000,
-    stopGraceSeconds: 1,
-    proofValidityMs: 60_000,
-    maxOutputBytes: 64 * 1024,
-    now: () => new Date(Math.floor(Date.now())),
-    readArguments: async (ref) => {
-      const value = argumentsByRef.get(ref);
-      if (!value) throw new Error("unknown arguments");
-      return value;
-    },
-    resolveDirectory: async (directory) => approved.get(directory.canonicalRootId) ?? null,
-    egress: {
-      image: { reference: EGRESS_IMAGE_REFERENCE, digest: EGRESS_IMAGE_DIGEST },
-      user: "65533:65533",
-      readyAttempts: 50,
-      readyIntervalMs: 100,
-    },
-    hostDirectories: { maxScannedEntries: 20_000, maxProtectedEntries: 256 },
-    diskGuard: { ...DISK_GUARD, freeBytes: hostFreeBytes },
-    credentialIssuer: null,
-    ...overrides,
-  });
-  const port: ExecutionBackendPort = subject;
-  return Object.assign(port, {
-    readOutput: subject.readOutput.bind(subject),
-    readEvidence: subject.readEvidence.bind(subject),
-    diskGuardBreach: subject.diskGuardBreach.bind(subject),
-  });
-}
 
 async function approve(canonicalRootId: string, directory: string) {
   const info = await lstat(directory);
@@ -117,21 +69,6 @@ async function approve(canonicalRootId: string, directory: string) {
     inode: String(info.ino),
   });
   return directory;
-}
-
-function grant(canonicalRootId: string, access: "read" | "write") {
-  return {
-    hostId: "host-q",
-    grantRef: `grant-${canonicalRootId}`,
-    canonicalRootId,
-    access,
-    source: {
-      authorizationRef: `authorization-${canonicalRootId}`,
-      decidedBy: "user" as const,
-      delegationListRef: null,
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-    },
-  };
 }
 
 async function tree(root: string, files: Record<string, string>) {
@@ -180,122 +117,14 @@ async function containersOfRun() {
   return listed.stdout.split("\n").filter(Boolean);
 }
 
-function environment(
-  deadlineSeconds = 600,
-  directories: ReturnType<typeof grant>[] = [],
-  targets: string[] = [],
-) {
-  sequence += 1;
-  const identity: ExecutionEnvironmentIdentity = {
-    schemaVersion: EXECUTION_ENVIRONMENT_V1,
-    ownerId: "owner-q",
-    agentId: "agent-q",
-    runId,
-    hostId: "host-q",
-    executionJobId: `job-${sequence}`,
-    environmentId: `${runId}-environment-${sequence}`,
-    environmentGeneration: 1,
-    role: "primary",
-  };
-  const createIntentId = `create-${sequence}`;
-  const deadlineAt = new Date(Date.now() + deadlineSeconds * 1000).toISOString();
-  return {
-    identity,
-    createIntentId,
-    deadlineAt,
-    create: {
-      identity,
-      createIntentId,
-      envelope: {
-        schemaVersion: EXECUTION_ENVELOPE_V1,
-        directories,
-        network: targets.map((target) => ({ target, source: grant(target, "read").source })),
-        resources: RESOURCES,
-      },
-      policyDigest: "b".repeat(64),
-      imageDigest: IMAGE_DIGEST,
-      runnerDigest: CONTAINER_RUNNER_DIGEST,
-      deadlineAt,
-    },
-  };
-}
-
-async function run(
-  subject: ReturnType<typeof backend>,
-  target: { identity: ExecutionEnvironmentIdentity; createIntentId: string },
-  locator: ExecutionEnvironmentLocator,
-  script: string,
-) {
-  const ref = `arguments-${randomUUID()}`;
-  argumentsByRef.set(ref, { argv: ["sh", "-c", script] });
-  const { outputRef } = await subject.execute({
-    identity: target.identity,
-    createIntentId: target.createIntentId,
-    locator,
-    stopFence: 0,
-    invocationId: `invocation-${randomUUID()}`,
-    argumentsRef: ref,
-    deadlineAt: new Date(Date.now() + 60_000).toISOString(),
-  });
-  return subject.readOutput(outputRef);
-}
-
-function lines(stdout: string) {
-  return Object.fromEntries(
-    stdout
-      .trim()
-      .split("\n")
-      .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
-  );
-}
-
-async function stopAndProve(
-  subject: ReturnType<typeof backend>,
-  target: { identity: ExecutionEnvironmentIdentity; createIntentId: string },
-  locator: ExecutionEnvironmentLocator,
-  stopIntentId = "stop-1",
-) {
-  const request = { ...target, locator, stopIntentId, stopFence: 1 };
-  await subject.stop(request);
-  return executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(request));
-}
-
 containerDescribe("container execution backend on a real runtime", { timeout: 60_000 }, () => {
   beforeAll(async () => {
-    const root = await realpath(workRoot);
-    stateDirectory = await mkdtemp(path.join(root, "container-qualification-"));
-    hostRoot = await mkdtemp(path.join(root, "container-host-"));
+    await qualification.setup();
+    stateDirectory = qualification.stateDirectory;
+    hostRoot = qualification.hostRoot;
   });
   afterAll(async () => {
-    if (!enabled) return;
-    const listed = await direct(
-      "container",
-      "ls",
-      "--all",
-      "--quiet",
-      "--filter",
-      `label=io.himawari.environment.run=${runId}`,
-    );
-    const ids = listed.stdout.split("\n").filter(Boolean);
-    if (ids.length) await direct("container", "rm", "--force", ...ids);
-    observations["leftoverContainersRemoved"] = ids.length;
-    const networks = (
-      await direct(
-        "network",
-        "ls",
-        "--quiet",
-        "--filter",
-        `label=io.himawari.environment.run=${runId}`,
-      )
-    ).stdout
-      .split("\n")
-      .filter(Boolean);
-    if (networks.length) await direct("network", "rm", ...networks);
-    observations["leftoverNetworksRemoved"] = networks.length;
-    if (evidencePath)
-      await writeFile(evidencePath, `${JSON.stringify({ runId, observations }, null, 2)}\n`);
-    await rm(stateDirectory, { recursive: true, force: true });
-    await rm(hostRoot, { recursive: true, force: true });
+    if (enabled) await qualification.cleanup();
   });
 
   it("declares capabilities only for the reachable runtime holding the pinned image", async () => {

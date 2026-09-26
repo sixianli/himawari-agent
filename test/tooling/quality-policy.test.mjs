@@ -101,15 +101,12 @@ describe("quality policy and dormant schedule", () => {
   });
   it("pins exactly the images the container qualification runs", () => {
     const source = readFileSync(
-      path.join(
-        repositoryRoot,
-        "test/integration/container-execution-backend-qualification.test.ts",
-      ),
+      path.join(repositoryRoot, "test/integration/container-qualification-support.ts"),
       "utf8",
     );
     const pinned = [
       ...source.matchAll(
-        /const (\w+)_REFERENCE = "([^"]+)";\s*const \1_DIGEST = "([a-f0-9]{64})";/g,
+        /const (\w+)_REFERENCE = "([^"]+)";\s*export const \1_DIGEST =\s*"([a-f0-9]{64})";/g,
       ),
     ]
       .map((match) => `${match[2]}@sha256:${match[3]}`)
