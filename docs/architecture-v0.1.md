@@ -634,4 +634,4 @@ Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚�
 执行与验收记录：[SOURCE: docs/execution/specs/2026-09-10-control-center-local-acceptance-design.md]、[SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md]。
 
 
-受保护安装校验由 platform-node 实现，见 [ADR 0028](adr/0028-protected-runtime-installation.md)。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效，普通可写安装仍走完整校验。
+受保护安装校验由 platform-node 实现，见 [ADR 0034](adr/0034-runtime-verification-by-inode-metadata.md)（取代 ADR 0028）。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效。未配置保护记录的安装（含 Mac）在每个进程首次使用某个期望摘要时逐字节完整审计，并记录全部目录与文件的元数据指纹（设备号、inode、权限、所有者、大小、修改时间和纳秒级 `ctime`）；此后每次调用只复核元数据，任何差异都丢弃指纹并重新完整审计，审计失败即拒绝。

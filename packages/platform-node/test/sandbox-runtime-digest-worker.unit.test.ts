@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({
   root: "",
+  mode: "digest" as "digest" | "fingerprint",
   port: { postMessage: vi.fn() } as { postMessage: ReturnType<typeof vi.fn> } | null,
   opened: vi.fn(),
   read: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("node:worker_threads", () => ({
     return boundary.port;
   },
   get workerData() {
-    return boundary.root;
+    return { root: boundary.root, mode: boundary.mode };
   },
 }));
 vi.mock("node:fs", async (original) => {
@@ -47,6 +48,7 @@ beforeEach(() => {
   root = realpathSync(mkdtempSync(path.join(tmpdir(), "runtime-digest-contract-")));
   chmodSync(root, 0o700);
   boundary.root = root;
+  boundary.mode = "digest";
   boundary.port = { postMessage: vi.fn() };
 });
 afterEach(() => {
@@ -77,14 +79,51 @@ describe("installed runtime byte verification worker", () => {
         mode: 0o600,
       },
     ];
-    expect(boundary.port?.postMessage).toHaveBeenCalledExactlyOnceWith(
-      createHash("sha256").update(JSON.stringify(files)).digest("hex"),
-    );
+    expect(boundary.port?.postMessage).toHaveBeenCalledExactlyOnceWith({
+      digest: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
+      fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     expect(boundary.read.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
-  it.each(["relative", "noncanonical", "writable-directory", "writable-file", "symlink"])(
-    "rejects unsafe %s without publishing a digest",
-    async (kind) => {
+  it("fingerprints the same tree without reading file bytes", async () => {
+    put("z.txt", "last");
+    put("nested/a.txt", "first");
+    await load();
+    const audited = boundary.port?.postMessage.mock.calls[0]?.[0];
+    vi.resetModules();
+    boundary.read.mockClear();
+    boundary.mode = "fingerprint";
+    boundary.port = { postMessage: vi.fn() };
+    chmodSync(path.join(root, "z.txt"), 0o200);
+    chmodSync(path.join(root, "z.txt"), 0o600);
+    await load();
+    expect(boundary.read).not.toHaveBeenCalled();
+    const current = boundary.port?.postMessage.mock.calls[0]?.[0];
+    expect(current).toEqual({ fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(current.fingerprint).not.toBe(audited.fingerprint);
+  });
+  it("gives an unchanged tree the fingerprint recorded by the byte audit", async () => {
+    put("nested/a.txt", "first");
+    await load();
+    const audited = boundary.port?.postMessage.mock.calls[0]?.[0];
+    vi.resetModules();
+    boundary.mode = "fingerprint";
+    boundary.port = { postMessage: vi.fn() };
+    await load();
+    expect(boundary.port?.postMessage).toHaveBeenCalledExactlyOnceWith({
+      fingerprint: audited.fingerprint,
+    });
+  });
+  it.each(
+    (["digest", "fingerprint"] as const).flatMap((mode) =>
+      ["relative", "noncanonical", "writable-directory", "writable-file", "symlink"].map(
+        (kind) => [kind, mode] as const,
+      ),
+    ),
+  )(
+    "rejects unsafe %s in %s mode without publishing a result",
+    async (kind, mode) => {
+      boundary.mode = mode;
       put("file", "fixture");
       if (kind === "relative") boundary.root = "relative/runtime";
       if (kind === "noncanonical") boundary.root = root + "/../" + path.basename(root);
@@ -103,7 +142,7 @@ describe("installed runtime byte verification worker", () => {
       boundary.opened.mockImplementation((value) => {
         calls++;
         return calls === (kind === "opened identity" ? 1 : 2)
-          ? { ...value, ino: value.ino + 1 }
+          ? { ...value, ino: value.ino + 1n }
           : value;
       });
       await expect(load()).rejects.toThrow("SANDBOX_HOST_CHANGED");

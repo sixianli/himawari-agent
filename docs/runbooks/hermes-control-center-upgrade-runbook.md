@@ -316,9 +316,9 @@ v5 已完成后的服务恢复验收可使用 `scripts/operations/hermes-protect
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 
-未配置受保护安装时，完整安装校验在独立工作线程逐字节读取全部文件，保留路径、权限、文件身份和前后变化检查，不使用跨任务校验缓存。验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
+未配置受保护安装时，每个进程首次使用某个期望摘要会在独立工作线程逐字节读取全部文件，保留路径、权限、文件身份和前后变化检查，并记录元数据指纹；此后每次调用只复核元数据，任何差异都丢弃指纹并重新完整审计，见 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]。验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
 
-ADR 0028 的受保护 Linux 安装是上述逐次全量校验的显式替代路径。迁移前准备独立系统运行账号、由 root 保护的安装/启动入口和 `/etc/himawari` 中的版本记录，保留部署账号管理权限。账号不得加入 sudo、Docker 或其他特权组；systemd 使用 `User=himawari`、`NoNewPrivileges=yes`，子进程明确继承 `HIMAWARI_RUNTIME_PROTECTION_FILE`。运行数据和私有秘密仍由运行账号持有；签名私钥不能交给它。Himawari 自有父目录只给予必要穿越权限，不公开同级服务。共享的 `/data/hermes` 属于另一套 Hermes Agent，其权限会被该服务重设为 0700，不能依赖一次 chmod，也不得停用它的安全加固。系统单元以 `TemporaryFileSystem=/data/hermes:ro,mode=0755` 和 `BindPaths=/data/hermes/himawari` 提供私有目录视图，宿主父目录保留原所有者和 0700。root 持有安装及保护记录的要求保持不变。启动时可写的能力快照和 attestation 放在私有运行数据目录，不能要求服务修改受保护资格目录。
+ADR 0034 沿用 ADR 0028 的受保护 Linux 安装，作为上述逐次复核的显式替代路径。迁移前准备独立系统运行账号、由 root 保护的安装/启动入口和 `/etc/himawari` 中的版本记录，保留部署账号管理权限。账号不得加入 sudo、Docker 或其他特权组；systemd 使用 `User=himawari`、`NoNewPrivileges=yes`，子进程明确继承 `HIMAWARI_RUNTIME_PROTECTION_FILE`。运行数据和私有秘密仍由运行账号持有；签名私钥不能交给它。Himawari 自有父目录只给予必要穿越权限，不公开同级服务。共享的 `/data/hermes` 属于另一套 Hermes Agent，其权限会被该服务重设为 0700，不能依赖一次 chmod，也不得停用它的安全加固。系统单元以 `TemporaryFileSystem=/data/hermes:ro,mode=0755` 和 `BindPaths=/data/hermes/himawari` 提供私有目录视图，宿主父目录保留原所有者和 0700。root 持有安装及保护记录的要求保持不变。启动时可写的能力快照和 attestation 放在私有运行数据目录，不能要求服务修改受保护资格目录。
 
 停服前先以新账号在同样的 systemd 私有目录视图中验证：父目录由 root 持有且为 0755，仅能看到 himawari 子目录，映射目录的 device/inode 与原目录一致，Node 确实可执行。此检查失败时保留原服务，不能先停服再验证账号能否启动解释器。正式单元和六组验收均使用相同视图、NoNewPrivileges 和 capability 限制；限定临时单元设置运行期限，并在异常后停止、释放。
 

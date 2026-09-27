@@ -26,33 +26,68 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { digestRegularFile } from "./artifact-verifier.js";
 import { verifyProtectedRuntime } from "./protected-runtime.js";
+import type { SandboxRuntimeDigestRequest } from "./sandbox-runtime-digest-worker.js";
 
 /** Same path/hash/size/mode digest as the installation artifact inventory.
  * Read the actual closure, including SRT helper files; a manifest hash alone
  * cannot establish that installed executable code is unchanged. */
-export function digestSandboxRuntime(root: string): Promise<string> {
+export async function digestSandboxRuntime(root: string): Promise<string> {
+  return (await auditSandboxRuntime(root)).digest;
+}
+
+function inspectSandboxRuntime(
+  request: SandboxRuntimeDigestRequest,
+): Promise<{ digest?: string; fingerprint: string }> {
   // Source checkout uses Node's native TypeScript erasure; packaged code uses
   // the compiled sibling. This keeps the same verifier in tests and releases.
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL(`./sandbox-runtime-digest-worker.${extension}`, import.meta.url),
-      { workerData: root },
+      { workerData: request },
     );
     let received = false;
     worker.once("message", (value: unknown) => {
-      if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+      const result = value as { digest?: unknown; fingerprint?: unknown } | null;
+      if (
+        typeof result?.fingerprint !== "string" ||
+        !/^[a-f0-9]{64}$/.test(result.fingerprint) ||
+        (request.mode === "digest"
+          ? typeof result.digest !== "string" || !/^[a-f0-9]{64}$/.test(result.digest)
+          : result.digest !== undefined)
+      ) {
         reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
         return;
       }
       received = true;
-      resolve(value);
+      resolve(result as { digest?: string; fingerprint: string });
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
       if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
     });
   });
+}
+
+async function auditSandboxRuntime(root: string) {
+  const result = await inspectSandboxRuntime({ root, mode: "digest" });
+  return { digest: result.digest as string, fingerprint: result.fingerprint };
+}
+
+const runtimeAudits = new Map<string, string>();
+async function unprotectedRuntimeMatches(root: string, expected: string): Promise<boolean> {
+  const key = `${root}\0${expected}`;
+  const audited = runtimeAudits.get(key);
+  if (
+    audited !== undefined &&
+    (await inspectSandboxRuntime({ root, mode: "fingerprint" })).fingerprint === audited
+  )
+    return true;
+  runtimeAudits.delete(key);
+  const { digest, fingerprint } = await auditSandboxRuntime(root);
+  if (digest !== expected) return false;
+  runtimeAudits.set(key, fingerprint);
+  return true;
 }
 
 async function checkedPath(filename: string, directory: boolean) {
@@ -166,7 +201,7 @@ export async function verifySandboxHost(input: {
   if (
     (await digestRegularFile(binding.executable.path)) !== `sha256:${binding.executable.sha256}` ||
     (await digestRegularFile(binding.runner.path)) !== `sha256:${binding.runner.sha256}` ||
-    (await digestSandboxRuntime(binding.runtimeRoot)) !== binding.runtimeDigest
+    !(await unprotectedRuntimeMatches(binding.runtimeRoot, binding.runtimeDigest))
   )
     throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }

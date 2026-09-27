@@ -12,6 +12,7 @@ import {
   stat,
   symlink,
   unlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { release, tmpdir } from "node:os";
@@ -127,6 +128,50 @@ it("checks the complete installed closure again on every verification", async ()
   await verifySandboxHost(input);
   await writeFile(path.join(input.binding.runtimeRoot, "helper"), "changed");
   await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("detects a same-size rewrite whose timestamps were restored after a verified run", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  const helper = path.join(input.binding.runtimeRoot, "helper");
+  const before = await stat(helper);
+  await writeFile(helper, "HELPER");
+  await utimes(helper, before.atime, before.mtime);
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("detects a same-size file renamed over the runtime after a verified run", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  const helper = path.join(input.binding.runtimeRoot, "helper");
+  const before = await stat(helper);
+  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "replacement");
+  await writeFile(replacement, "HELPER", { mode: 0o600 });
+  await utimes(replacement, before.atime, before.mtime);
+  await rename(replacement, helper);
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("accepts an unchanged runtime again and re-reads bytes after an identical replacement", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  await verifySandboxHost(input);
+  const helper = path.join(input.binding.runtimeRoot, "helper");
+  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "replacement");
+  await writeFile(replacement, "helper", { mode: 0o600 });
+  await rename(replacement, helper);
+  await verifySandboxHost(input);
+  await writeFile(helper, "helpeR");
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("does not let an audit of one expected digest vouch for another", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  const other = digest("other runtime");
+  await expect(
+    verifySandboxHost({
+      ...input,
+      binding: { ...input.binding, runtimeDigest: other },
+      qualification: { ...input.qualification, runtimeDigest: other },
+    }),
+  ).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
 });
 it("uses the installation inventory digest convention", async () => {
   const input = await fixture();
