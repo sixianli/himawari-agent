@@ -38,6 +38,7 @@
 ## 完整 npm test
 
 - 提交 `02dbfc6`：由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-02dbfc6`，运行期间没有改动工作区。unit 有 10 项失败，其余通过：contracts 380、unit 2059/2069、integration 1852、e2e 3、pi-compat 130，报告在 [`npm-test-02dbfc6-failed.tar.gz`](npm-test-02dbfc6-failed.tar.gz)。10 项都在 [`pi-coding-program.unit.test.ts`](../../../../../apps/agent-service/test/pi-coding-program.unit.test.ts)，属于测试缺陷，不是产品缺陷：这个测试把整个 `@himawari-agent/platform-node` 换成只含两个函数的替身，而本次把结果格式化和 `isPiHostPublication` 移进了 `platform-node`，替身里没有它们，runner 在测试里一开始就出错。修正方法是保留真实的 `platform-node`，只替换它原来就替换的两个边界（沙箱文件操作和完整输出导出），断言不变；修正后该文件 84 项通过。这个文件不在上面的重点测试里，是完整运行才发现的。
+- 提交 `b95a76b`（上述测试修正）：由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-b95a76b`，运行期间没有改动工作区，全部通过：contracts 380、unit 2069、integration 1852、e2e 3、pi-compat 130，报告在 [`npm-test-b95a76b.tar.gz`](npm-test-b95a76b.tar.gz)。这次运行覆盖 `02dbfc6` 的全部产品改动。托管的 GitHub 检查没有运行（`hosted gate: not_executed`）。
 
 ## 未验证的部分
 
