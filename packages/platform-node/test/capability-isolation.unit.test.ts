@@ -373,6 +373,20 @@ describe("capability process isolation", () => {
     },
   );
 
+  it("reports the exit of a process that stops before reading its whole input", async () => {
+    const result = await runSandboxedProcess(
+      {
+        command: "/bin/sh",
+        args: ["-c", "exit 3"],
+        cwd: "/",
+        environment: {},
+        ceiling: { ...CEILING, maxWallTimeMs: 10_000 },
+      },
+      new Uint8Array(4 * 1024 * 1024),
+    );
+    expect(result).toMatchObject({ exitCode: 3, timedOut: false, outputLimitExceeded: false });
+  });
+
   it("enforces wall time when supervising the sandbox process group", async () => {
     const timedOut = await runSandboxedProcess(
       {
@@ -471,6 +485,21 @@ describe("frozen sandbox launch boundary", () => {
       });
     },
   );
+  it("reports an unsafe helper even when the host namespace probe also fails", async () => {
+    const { backend, binding } = await backendFixture();
+    await writeFile(path.join(binding.runtimeRoot, "bin/prlimit"), "");
+    await writeFile(
+      path.join(path.dirname(binding.runtimeRoot), "bwrap"),
+      "#!/bin/sh\n" +
+        'if [ "$1" = "--version" ]; then echo \'bubblewrap 0.11.2\'; exit 0; fi\n' +
+        "exit 1\n",
+      { mode: 0o700 },
+    );
+    await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
+  });
   it("refuses host filesystem access with group write permissions", async () => {
     const { backend, binding } = await backendFixture();
     const filesystem = binding.filesystem[0];

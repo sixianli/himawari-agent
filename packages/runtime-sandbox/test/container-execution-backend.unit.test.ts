@@ -1507,14 +1507,19 @@ describe("publishing prepared files from the host for a container environment", 
   it("refuses a commit that races a stop request instead of writing after the stop", async () => {
     const { subject, request, locator } = await started();
     const commit = vi.fn(async () => committed);
-    const stopping = subject.stop(stopRequest(locator));
-    const racing = subject.publishOnHost(publication(request), commit);
-    await stopping;
-    await racing.catch(() => {});
+    const [stopped, raced] = await Promise.allSettled([
+      subject.stop(stopRequest(locator)),
+      subject.publishOnHost(publication(request), commit),
+    ]);
+    expect(stopped.status).toBe("fulfilled");
     const proof = await subject.verifyStopped(stopRequest(locator));
     expect(proof.basis).toBe("verified_stopped");
-    if (commit.mock.calls.length) await expect(racing).resolves.toEqual(committed);
-    else await expect(racing).rejects.toMatchObject({ code: "CONTAINER_EXECUTION_CLOSED" });
+    if (commit.mock.calls.length) expect(raced).toEqual({ status: "fulfilled", value: committed });
+    else
+      expect(raced).toMatchObject({
+        status: "rejected",
+        reason: { code: "CONTAINER_EXECUTION_CLOSED" },
+      });
   });
 });
 
