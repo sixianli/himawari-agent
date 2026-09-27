@@ -480,6 +480,17 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           throw new Error("control observation unavailable");
         await current(false);
         observedVerification = await configured.observeVerifiedControl(bound);
+        if (
+          bound.facts.resource.supervision === "controlled" &&
+          observedVerification.facts.resource.supervision === "released"
+        )
+          return {
+            record: wire(bound),
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
         command = {
           kind: "append",
           expectedSequence: command.expectedSequence,
