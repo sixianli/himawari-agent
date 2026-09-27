@@ -15,6 +15,7 @@ import {
 import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
 import {
   type SandboxExecutionFacts,
+  type SandboxOperationContract,
   sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateV2Schema,
 } from "@himawari-agent/execution-contracts";
@@ -2445,6 +2446,89 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
+  async function completeFailedExecution(
+    f: Awaited<ReturnType<typeof openSandboxJournal>>,
+    suffix: string,
+    operationContract: SandboxOperationContract,
+    effect: SandboxExecutionFacts["effect"],
+    failure: { readonly reasonCode: string; readonly termination: unknown },
+  ) {
+    const record = start(f, admission(f, suffix, undefined, "write", operationContract));
+    const output = { ref: `output${suffix}`, digest: "f".repeat(64), byteLength: 0 };
+    const observedOutput = operationsForDatabase(f.database).execute(
+      "capabilityInvocationResult.observeOutput",
+      {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          invocationId: record.plan.identity.invocationId,
+          payload: outputPayload(output.ref, `sha256:${output.digest}`),
+        }),
+      },
+    ) as { artifact?: Record<string, unknown> };
+    expect(observedOutput.artifact).toMatchObject({
+      runId: record.plan.identity.runId,
+      purpose: "worker_result",
+      operationKey: `capability-output:${record.plan.identity.invocationId}`,
+      payloadRef: output.ref,
+      contentDigest: `sha256:${output.digest}`,
+    });
+    const failed = sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      effect,
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity: record.plan.identity,
+        environmentId: record.plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: operationContract.ref, version: operationContract.version },
+        occurredAt: T1,
+        kind: "error",
+        output,
+        ...failure,
+      },
+    });
+    let settled = append(f, record, failed, true);
+    settled = append(f, settled, resource(settled, "stopping"));
+    settled = append(f, settled, resource(settled, "released"));
+    const journal = Object.fromEntries(
+      [
+        "read",
+        "append",
+        "prepareIntent",
+        "dispatchIntent",
+        "acknowledgeIntent",
+        "observeIntent",
+      ].map((name) => [
+        name,
+        async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+      ]),
+    ) as unknown as SandboxExecutionJournalPort;
+    const complete = createProductionSandboxToolResult({
+      journal,
+      preparations: {
+        readAdmissionByInvocation: async () => ({
+          phase: "bound",
+          record: call(f, "read", settled.plan.identity) as SandboxExecutionRecord,
+        }),
+      },
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verifyFresh: async (current) => {
+        const facts = current.releaseReceipt ? current.facts : resource(current, "released");
+        const proof = context(current, facts).verification;
+        if (!proof) throw new Error("missing synthetic evidence");
+        return proof;
+      },
+    });
+    const receipt = vi.fn(async (_value: unknown) => {});
+    const completion = await complete(
+      { runId: settled.plan.identity.runId, invocationId: settled.plan.identity.invocationId },
+      { assertDisclosure: async () => {}, saveReceipt: receipt },
+    );
+    return { completion, receipt, output };
+  }
+
   it("retains a failed command as a known failure with unverified file effects", async () => {
     const f = await openSandboxJournal();
     try {
@@ -2459,92 +2543,42 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       expect(command).toMatchObject({ code: 7 });
       expect(await readFile(changedFile, "utf8")).toBe("partial");
 
-      const record = start(
+      const { completion, receipt } = await completeFailedExecution(
         f,
-        admission(f, "-failed-command", undefined, "write", {
-          ref: "shell",
-          version: "1",
-          kind: "command",
-        }),
-      );
-      const output = { ref: "output", digest: "f".repeat(64), byteLength: 0 };
-      const observedOutput = operationsForDatabase(f.database).execute(
-        "capabilityInvocationResult.observeOutput",
-        {
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          input: outputObservation({
-            invocationId: record.plan.identity.invocationId,
-            payload: outputPayload(output.ref, `sha256:${output.digest}`),
-          }),
-        },
-      ) as { artifact?: Record<string, unknown> };
-      expect(observedOutput.artifact).toMatchObject({
-        runId: record.plan.identity.runId,
-        purpose: "worker_result",
-        operationKey: `capability-output:${record.plan.identity.invocationId}`,
-        payloadRef: output.ref,
-        contentDigest: `sha256:${output.digest}`,
-      });
-      const failedCommand = sandboxExecutionFactsSchema.parse({
-        ...record.facts,
-        effect: { kind: "not_asserted" },
-        result: {
-          schemaVersion: "sandbox-execution.v2",
-          identity: record.plan.identity,
-          environmentId: record.plan.environmentId,
-          policyDigest: record.facts.environment.policyDigest,
-          contract: { ref: "shell", version: "1" },
-          occurredAt: T1,
-          kind: "error",
-          output,
-          reasonCode: "exit_failed",
-          termination: { type: "exit", exitCode: 7 },
-        },
-      });
-      let settled = append(f, record, failedCommand, true);
-      settled = append(f, settled, resource(settled, "stopping"));
-      settled = append(f, settled, resource(settled, "released"));
-      const journal = Object.fromEntries(
-        [
-          "read",
-          "append",
-          "prepareIntent",
-          "dispatchIntent",
-          "acknowledgeIntent",
-          "observeIntent",
-        ].map((name) => [
-          name,
-          async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
-        ]),
-      ) as unknown as SandboxExecutionJournalPort;
-      const complete = createProductionSandboxToolResult({
-        journal,
-        preparations: {
-          readAdmissionByInvocation: async () => ({
-            phase: "bound",
-            record: call(f, "read", settled.plan.identity) as SandboxExecutionRecord,
-          }),
-        },
-        authority: () => SERVICE_AUTHORITY,
-        now: () => T1,
-        verifyFresh: async (current) => {
-          const facts = current.releaseReceipt ? current.facts : resource(current, "released");
-          const proof = context(current, facts).verification;
-          if (!proof) throw new Error("missing synthetic evidence");
-          return proof;
-        },
-      });
-      const receipt = vi.fn(async () => {});
-      const completion = await complete(
-        { runId: settled.plan.identity.runId, invocationId: settled.plan.identity.invocationId },
-        { assertDisclosure: async () => {}, saveReceipt: receipt },
+        "-failed-command",
+        { ref: "shell", version: "1", kind: "command" },
+        { kind: "not_asserted" },
+        { reasonCode: "exit_failed", termination: { type: "exit", exitCode: 7 } },
       );
       expect(completion).toMatchObject({
         outcome: "failed",
+        outputRef: null,
         errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
       });
       expect(receipt).toHaveBeenCalledTimes(1);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("hands a failed read-only tool's own error output to the model", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const { completion, receipt, output } = await completeFailedExecution(
+        f,
+        "-failed-read",
+        { ref: "fixed-read", version: "1", kind: "fixed_read" },
+        { kind: "not_applicable" },
+        { reasonCode: "SANDBOX_OPERATION_FAILED", termination: { type: "failure" } },
+      );
+      const expected = {
+        outcome: "failed",
+        outputRef: output.ref,
+        errorCode: "SANDBOX_OPERATION_FAILED",
+        externalActionId: null,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
     } finally {
       await f.close();
     }

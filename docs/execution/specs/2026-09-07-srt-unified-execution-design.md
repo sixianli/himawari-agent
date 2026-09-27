@@ -420,7 +420,7 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 #### R5 实现说明（2026-09-09）
 
-安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。
+安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，Worker 已保存的 Pi 自身错误输出（例如“文件不存在”）经过与成功结果相同的披露检查后交给模型，让模型能据此换路径或改做法；bash（command）失败仍只交出错误码说明，因为非零退出不能证明工作区没有被改动。
 
 预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 PATH，不从用户 HOME 或系统 PATH 寻找替代搜索器。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
 

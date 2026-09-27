@@ -132,7 +132,9 @@ export function createProductionSandboxToolResult(options: {
           : {
               outcome: "failed",
               outputRef:
-                result.kind === "error" && result.reasonCode === "FILE_VERSION_CONFLICT"
+                result.kind === "error" &&
+                (result.reasonCode === "FILE_VERSION_CONFLICT" ||
+                  plan.operationContract.kind === "fixed_read")
                   ? result.output.ref
                   : null,
               errorCode:

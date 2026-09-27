@@ -1404,27 +1404,21 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
-      await this.#assertDisclosure(invocation, key, internal);
-      await this.#assertOutputObserved(invocation, key, handleRef, completion.outputRef);
-      const payload = await this.#options.payloads.get(completion.outputRef);
-      if (
-        !payload ||
-        RANK.indexOf(payload.dataClassification) > RANK.indexOf(invocation.dataClassification)
-      )
-        reject();
-      const bytes = await this.#options.protector.unprotect({
-        ownerId: this.#options.ownerId,
-        agentId: this.#options.agentId,
-        payload,
-      });
-      if (bytes.byteLength > maxOutputBytes) throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
+      const output = await this.#observedOutput(
+        invocation,
+        key,
+        handleRef,
+        completion.outputRef,
+        maxOutputBytes,
+        internal,
+      );
       return {
         dispatchState: "accepted",
         outcome: "succeeded",
-        resultRef: payload.ref,
+        resultRef: output.ref,
         errorCode: null,
         externalActionId: null,
-        modelContent: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        modelContent: output.text,
       };
     } else if (!completion || completion.outcome === "result_unknown") {
       return {
@@ -1435,6 +1429,24 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
+      if (completion.outputRef && !commandEffectUnverified) {
+        const output = await this.#observedOutput(
+          invocation,
+          key,
+          handleRef,
+          completion.outputRef,
+          maxOutputBytes,
+          internal,
+        );
+        return {
+          dispatchState: "accepted",
+          outcome: completion.outcome,
+          resultRef: output.ref,
+          errorCode: completion.errorCode,
+          externalActionId: completion.externalActionId,
+          modelContent: output.text,
+        };
+      }
       return {
         dispatchState: "accepted",
         outcome: completion.outcome,
@@ -1446,6 +1458,31 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           : "操作未确认成功。",
       };
     }
+  }
+
+  async #observedOutput(
+    invocation: RuntimeToolInvocation,
+    key: string,
+    handleRef: string,
+    outputRef: string,
+    maxOutputBytes: number,
+    internal: boolean,
+  ): Promise<{ readonly ref: string; readonly text: string }> {
+    await this.#assertDisclosure(invocation, key, internal);
+    await this.#assertOutputObserved(invocation, key, handleRef, outputRef);
+    const payload = await this.#options.payloads.get(outputRef);
+    if (
+      !payload ||
+      RANK.indexOf(payload.dataClassification) > RANK.indexOf(invocation.dataClassification)
+    )
+      reject();
+    const bytes = await this.#options.protector.unprotect({
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      payload,
+    });
+    if (bytes.byteLength > maxOutputBytes) throw new Error("WORKER_OUTPUT_LIMIT_EXCEEDED");
+    return { ref: payload.ref, text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
   }
 
   async #assertOutputObserved(

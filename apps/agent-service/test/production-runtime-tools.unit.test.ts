@@ -395,6 +395,34 @@ describe("ProductionRuntimeTools", () => {
       f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
     ).toHaveLength(1);
   });
+  it.each([
+    ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
+    ["output:unobserved", { outcome: "result_unknown", resultRef: null }],
+  ] as const)(
+    "gives the model a failed read's error output only when the Worker produced it (%s)",
+    async (outputRef, expected) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef,
+          errorCode: "SANDBOX_OPERATION_FAILED",
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject(expected);
+      if (expected.outcome !== "failed") expect(result.modelContent).not.toContain("已读取结果");
+    },
+  );
   it.each([true, false])(
     "uses worker end timing only for settled effects (%s)",
     async (settled) => {
