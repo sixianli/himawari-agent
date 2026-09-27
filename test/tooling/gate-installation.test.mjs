@@ -28,7 +28,7 @@ import { gateLock, installGateDependencies } from "../../scripts/ci/install-gate
 
 let root;
 beforeEach(() => {
-  root = mkdtempSync(path.join(tmpdir(), "gate-installation-"));
+  root = realpathSync(mkdtempSync(path.join(tmpdir(), "gate-installation-")));
   copyFileSync("package-lock.json", path.join(root, "package-lock.json"));
   state.calls = [];
   state.fail = false;

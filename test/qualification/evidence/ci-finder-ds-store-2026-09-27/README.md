@@ -32,7 +32,7 @@ npx vitest run --config vitest.workspace.ts --project tooling --reporter verbose
 - `npm run typecheck`、`npm run lint`、`npm run check:ci-policy`、`npm run check:secrets` 通过。
 - 完整测试（`npm test`）不运行 tooling 项目，它由单独的 `policy` 检查运行（见 [`check-policy.mjs`](../../../../scripts/ci/check-policy.mjs)）。Claude 在命令沙箱之外运行了两次 `node scripts/ci/local.mjs --check policy`，结果在 [`policy-checks.tar.gz`](policy-checks.tar.gz)：
   - 第一次（提交 `d261c07`，输出 `policy-d261c07`）：治理快照检查因 `.DS_Store` 失败，tooling 测试没有运行。
-  - 第二次（`d261c07` 加文档治理这项改动，输出 `policy-d261c07-2`）：治理快照检查通过；tooling 1073 项中 1071 项通过，2 项失败。失败的是 [`gate-installation.test.mjs`](../../../tooling/gate-installation.test.mjs) 和 [`main-confirmation.test.mjs`](../../../tooling/main-confirmation.test.mjs)：测试期望 `/tmp/...`，程序给出的是 `/private/tmp/...`。macOS 上 `/tmp` 和系统临时目录都经过一层链接指向 `/private` 下，测试拿未解析的路径去比已解析的路径。撤掉本次改动后这两项照样失败，与 `.DS_Store` 无关；项目正式的 `policy` 检查在 GitHub 的 Linux 机器上运行，那里没有这层链接。这两项另行处理，本次没有改。
+  - 第二次（`d261c07` 加文档治理这项改动，输出 `policy-d261c07-2`）：治理快照检查通过；tooling 1073 项中 1071 项通过，2 项失败。失败的是 [`gate-installation.test.mjs`](../../../tooling/gate-installation.test.mjs) 和 [`main-confirmation.test.mjs`](../../../tooling/main-confirmation.test.mjs)：测试期望 `/tmp/...`，程序给出的是 `/private/tmp/...`。macOS 上 `/tmp` 和系统临时目录都经过一层链接指向 `/private` 下，测试拿未解析的路径去比已解析的路径。撤掉本次改动后这两项照样失败，与 `.DS_Store` 无关；项目正式的 `policy` 检查在 GitHub 的 Linux 机器上运行，那里没有这层链接。这两项另行处理，本次没有改，后续修复见[临时目录路径不一致的记录](../ci-macos-tmp-realpath-2026-09-27/README.md)。
 
 ## 完整 npm test（提交 `7f9ad63`，通过）
 
