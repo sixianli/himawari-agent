@@ -26,8 +26,11 @@ vi.mock("node:fs/promises", async (original) => ({
   lstat: boundary.metadata,
   realpath: boundary.canonical,
 }));
-vi.mock("@himawari-agent/platform-node", () => ({
+vi.mock("@himawari-agent/platform-node", async (original) => ({
+  ...(await original<object>()),
   createSandboxedCodingOperations: boundary.operations,
+}));
+vi.mock("../../../packages/platform-node/src/files/pi-output-export.ts", () => ({
   exportPiOutputFile: boundary.exportFile,
 }));
 vi.mock("@himawari-agent/runtime-pi", () => ({ executeSandboxedPiCodingTool: boundary.execute }));

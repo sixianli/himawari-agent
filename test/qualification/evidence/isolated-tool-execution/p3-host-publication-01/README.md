@@ -35,6 +35,10 @@
 - 代码版本：提交 `ac2e50e` 加本次改动（即本证据所在提交）。`npm run typecheck`、`npm run lint`、`npm run format:check`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志去掉了终端颜色控制字符和本机沙箱打印的 `failed to copy trust settings` 行。
 - 重跑：`npx vitest run --config vitest.workspace.ts test/integration/production-task-environment-route.test.ts packages/runtime-sandbox/test/container-execution-backend.unit.test.ts apps/execution-worker/test/production-task-environment-backend.unit.test.ts`（集成夹具要在 `/tmp` 下建目录、监听本机端口，须在本机沙箱之外运行）。
 
+## 完整 npm test
+
+- 提交 `02dbfc6`：由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-02dbfc6`，运行期间没有改动工作区。unit 有 10 项失败，其余通过：contracts 380、unit 2059/2069、integration 1852、e2e 3、pi-compat 130，报告在 [`npm-test-02dbfc6-failed.tar.gz`](npm-test-02dbfc6-failed.tar.gz)。10 项都在 [`pi-coding-program.unit.test.ts`](../../../../../apps/agent-service/test/pi-coding-program.unit.test.ts)，属于测试缺陷，不是产品缺陷：这个测试把整个 `@himawari-agent/platform-node` 换成只含两个函数的替身，而本次把结果格式化和 `isPiHostPublication` 移进了 `platform-node`，替身里没有它们，runner 在测试里一开始就出错。修正方法是保留真实的 `platform-node`，只替换它原来就替换的两个边界（沙箱文件操作和完整输出导出），断言不变；修正后该文件 84 项通过。这个文件不在上面的重点测试里，是完整运行才发现的。
+
 ## 未验证的部分
 
 - 路由测试里的容器是测试替身，没有在真实 Docker 上跑过严格模式的发布；后端测试用的是模拟的 `docker` 命令。
