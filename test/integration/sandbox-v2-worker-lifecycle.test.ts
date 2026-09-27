@@ -42,6 +42,7 @@ it.each([
   "pi",
   "pi-fixed",
   "pi-fixed-without-target",
+  "pi-recovered-during-delivery",
   "replay",
   "bind-ack-loss",
   "registration-revoked",
@@ -59,6 +60,7 @@ it.each([
   const service = scenario === "service";
   const piScenario = scenario.startsWith("pi");
   const validPi = piScenario && scenario !== "pi-fixed-without-target";
+  const recoveredDuringDelivery = scenario === "pi-recovered-during-delivery";
   const fixedTarget = {
     schemaVersion: "sandbox-file-target.v1",
     relativePath: "file.txt",
@@ -102,11 +104,14 @@ it.each([
             operationContract: {
               kind: "fixed_read" as const,
               ref: "pi-coding-tool",
-              version: scenario === "pi" ? "1" : "2",
+              version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
             },
           }
         : admitted.plan;
   const calls: string[] = [];
+  let reconcilingResource: unknown;
+  let releasedResource: unknown;
+  let reconcilingReads = 0;
   let bound = false;
   let facts = admitted.facts;
   let resolveResult!: (value: unknown) => void;
@@ -134,7 +139,7 @@ it.each([
         stdout: new TextEncoder().encode("result"),
         taskStarted: true,
         taskProcessExited: true,
-        exitCode: 0,
+        exitCode: recoveredDuringDelivery ? 1 : 0,
       });
     }),
     cancel: vi.fn(() =>
@@ -280,6 +285,56 @@ it.each([
           },
         };
       }
+      if (
+        command.kind === "read" &&
+        recoveredDuringDelivery &&
+        facts.resource.supervision === "reconciling" &&
+        ++reconcilingReads > 1
+      ) {
+        const { reasonCode: _reason, ...reconciling } = facts.resource as typeof facts.resource & {
+          reasonCode?: string;
+        };
+        facts = {
+          ...facts,
+          resource: {
+            ...reconciling,
+            sequence: reconciling.sequence + 1,
+            supervision: "released",
+            cleanup: "confirmed",
+            evidence: {
+              ref: "release-proof",
+              subject: { kind: "local_process", processIdentityRef: "task-process" },
+              digest: "b".repeat(64),
+              profileRef: plan.binding.profileRef,
+              qualificationRef: plan.binding.qualificationRef,
+              validUntil: plan.effectiveDeadlineAt,
+            },
+          },
+        } as unknown as typeof facts;
+        releasedResource = facts.resource;
+      }
+      if (
+        command.kind === "append" &&
+        recoveredDuringDelivery &&
+        command.facts?.result &&
+        reconcilingResource === undefined
+      ) {
+        const { evidence: _evidence, ...resource } = facts.resource as typeof facts.resource & {
+          evidence?: unknown;
+        };
+        facts = {
+          ...facts,
+          resource: {
+            ...resource,
+            sequence: facts.resource.sequence + 1,
+            supervision: "reconciling",
+            cleanup: "unknown",
+            reasonCode: "SANDBOX_RECONCILIATION_REQUESTED",
+          },
+        } as typeof facts;
+        reconcilingResource = facts.resource;
+        throw new Error("Observation CAS failed");
+      }
       if (command.kind === "append" || command.kind === "operation") {
         if (!command.facts) throw new Error("facts missing");
         facts = command.facts;
@@ -405,7 +460,18 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "normal" || scenario === "command" || scenario === "network" || validPi) {
+  if (recoveredDuringDelivery) {
+    expect(calls.lastIndexOf("operation")).toBeGreaterThan(calls.indexOf("append"));
+    expect(facts.result).toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_OPERATION_FAILED",
+      output: { ref: "output", byteLength: 6 },
+    });
+    expect(facts.effect).toEqual({ kind: "not_applicable" });
+    expect(reconcilingResource).toMatchObject({ supervision: "reconciling" });
+    expect(reconcilingReads).toBe(2);
+    expect(facts.resource).toEqual(releasedResource);
+  } else if (scenario === "normal" || scenario === "command" || scenario === "network" || validPi) {
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({

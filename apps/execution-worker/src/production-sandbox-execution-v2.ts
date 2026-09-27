@@ -101,6 +101,9 @@ interface Options {
   clock: ClockPort;
   containers?: SandboxContainerRoute;
 }
+const COMPLETION_RECORD_ATTEMPTS = 5;
+const RECOVERY_SETTLE_WAIT_MS = 35000;
+const RECOVERY_POLL_MS = 250;
 const CONTAINER_TOOLS = new Set(["read", "bash", "find", "grep", "ls"]);
 const HOST_PUBLICATION_CONTRACTS: ReadonlyMap<string, readonly string[]> = new Map([
   [PI_PREPARED_FILE_CONTRACT.version, ["write", "edit"]],
@@ -670,8 +673,6 @@ export class ProductionSandboxExecutionV2 {
         digest: createHash("sha256").update(result.stdout).digest("hex"),
         byteLength: result.stdout.byteLength,
       };
-      const { evidence: _evidence, ...resourceFields } = latest.facts
-        .resource as typeof latest.facts.resource & { evidence?: unknown };
       const fileConflict =
         knownExit &&
         result.exitCode === 1 &&
@@ -691,8 +692,7 @@ export class ProductionSandboxExecutionV2 {
           scope: sandboxScopeSchema.parse(resolved.scope),
           workspace: compiled.cwd,
         });
-      const observation = sandboxExecutionFactsSchema.parse({
-        ...latest.facts,
+      const operation = {
         effect:
           knownExit && plan.operationContract.kind === "fixed_read"
             ? { kind: "not_applicable" }
@@ -732,24 +732,8 @@ export class ProductionSandboxExecutionV2 {
                     reasonCode: fileConflict ? "FILE_VERSION_CONFLICT" : "SANDBOX_OPERATION_FAILED",
                     termination: { type: "failure" },
                   },
-        resource: {
-          ...resourceFields,
-          ...(resourceFields.status.kind === "task" && result.taskProcessExited
-            ? { status: { kind: "task", state: "exited" } }
-            : {}),
-          sequence: latest.facts.resource.sequence + 1,
-          occurredAt: this.options.clock.now(),
-          supervision: "lost",
-          cleanup: "unknown",
-          reasonCode: "SANDBOX_CLEANUP_UNCONFIRMED",
-        },
-      });
-      await this.rpc(entry, {
-        kind: "append",
-        expectedSequence: latest.facts.resource.sequence,
-        expectedOperationRevision: latest.operationRevision,
-        facts: observation,
-      });
+      };
+      await this.recordCompletion(entry, latest, operation, result.taskProcessExited);
       await this.reduceRisk(entry, "reconcile");
       return this.unknown(entry);
     } catch {
@@ -1093,6 +1077,74 @@ export class ProductionSandboxExecutionV2 {
     if (!entry || JSON.stringify(entry.request.scope) !== JSON.stringify(request.scope))
       throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
     return entry;
+  }
+  private async recordCompletion(
+    entry: Entry,
+    initial: Extract<Record, { phase: "bound" }>,
+    operation: { readonly effect: unknown; readonly result: unknown },
+    taskProcessExited: boolean,
+  ) {
+    let current = initial;
+    for (let attempt = 1; ; attempt++) {
+      current = await this.afterRecovery(entry, current);
+      const { evidence: _evidence, ...resource } = current.facts
+        .resource as typeof current.facts.resource & { evidence?: unknown };
+      try {
+        await this.rpc(
+          entry,
+          resource.supervision === "released"
+            ? {
+                kind: "operation",
+                expectedSequence: resource.sequence,
+                expectedOperationRevision: current.operationRevision,
+                facts: sandboxExecutionFactsSchema.parse({ ...current.facts, ...operation }),
+              }
+            : {
+                kind: "append",
+                expectedSequence: resource.sequence,
+                expectedOperationRevision: current.operationRevision,
+                facts: sandboxExecutionFactsSchema.parse({
+                  ...current.facts,
+                  ...operation,
+                  resource: {
+                    ...resource,
+                    ...(resource.status.kind === "task" && taskProcessExited
+                      ? { status: { kind: "task", state: "exited" } }
+                      : {}),
+                    sequence: resource.sequence + 1,
+                    occurredAt: this.options.clock.now(),
+                    supervision: "lost",
+                    cleanup: "unknown",
+                    reasonCode: "SANDBOX_CLEANUP_UNCONFIRMED",
+                  },
+                }),
+              },
+        );
+        return;
+      } catch (error) {
+        const latest = (await this.rpc(entry, { kind: "read" })).record;
+        if (
+          attempt >= COMPLETION_RECORD_ATTEMPTS ||
+          latest.phase !== "bound" ||
+          (latest.facts.resource.sequence === resource.sequence &&
+            latest.operationRevision === current.operationRevision)
+        )
+          throw error;
+        current = latest;
+      }
+    }
+  }
+  private async afterRecovery(entry: Entry, record: Extract<Record, { phase: "bound" }>) {
+    const waitUntil = performance.now() + RECOVERY_SETTLE_WAIT_MS;
+    let current = record;
+    while (current.facts.resource.supervision === "reconciling") {
+      if (performance.now() >= waitUntil) throw new Error("SANDBOX_RECOVERY_UNSETTLED");
+      await delay(RECOVERY_POLL_MS);
+      const latest = (await this.rpc(entry, { kind: "read" })).record;
+      if (latest.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
+      current = latest;
+    }
+    return current;
   }
   private async reduceRisk(entry: Entry, kind: "reconcile" | "stop") {
     const record = (await this.rpc(entry, { kind: "read" })).record;
