@@ -413,6 +413,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0048_task_execution_environments.sql",
   },
+  {
+    sequence: 49,
+    name: "thread_title_budget",
+    changeSet: "thread-title-budget",
+    phase: "contract" as const,
+    file: "0049_thread_title_budget.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

@@ -443,6 +443,7 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
       estimatedCostMicros: descriptor.estimatedCostMicros,
       limits: this.#limits,
       pricing: descriptor.pricing,
+      budgetAccount: input.budgetAccount ?? "run",
       reservedAt,
       executionLease: this.#context.executionLease,
       authority: {
@@ -522,6 +523,12 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
     }
     nonEmptyText(input.logicalSlot, "logicalSlot");
     source(input.source);
+    if (
+      input.budgetAccount !== undefined &&
+      input.budgetAccount !== "run" &&
+      input.budgetAccount !== "thread-title"
+    )
+      throw invalid("Model invocation budget account is not supported");
     positiveSafeInteger(input.ordinal, "ordinal");
     const estimatedCostMicros = safeNonNegativeInteger(
       input.estimatedCostMicros,

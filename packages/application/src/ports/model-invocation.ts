@@ -35,7 +35,10 @@ export interface ModelInvocationAdmissionInput {
   readonly estimatedCostMicros: number;
   /** Frozen descriptor pricing, expressed in USD per million tokens. */
   readonly pricing: ModelInvocationPricing;
+  readonly budgetAccount?: ModelInvocationBudgetAccount;
 }
+
+export type ModelInvocationBudgetAccount = "run" | "thread-title";
 
 export interface ModelInvocationPricing {
   readonly input: number;

@@ -201,7 +201,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
           return options.generateTitle(request, prompt, {
             context: gate.context,
             begin: async (input) => {
-              const result = await gate.begin(input);
+              const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
               if (result.disposition !== "fresh") return result;
               const { permit } = result;
               return {

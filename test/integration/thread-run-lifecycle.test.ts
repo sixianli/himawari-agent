@@ -2546,6 +2546,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       const titleGate = new Promise<void>((resolve) => {
         releaseTitle = resolve;
       });
+      let titleOperationKey: string | undefined;
       const generateTitle = vi.fn(
         async (request: RuntimeRequest, _prompt: string, gate: ModelInvocationAdmissionPort) => {
           onTitleRequested();
@@ -2563,6 +2564,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
             estimatedCostMicros: model.descriptor.estimatedCostMicros,
           });
           if (admittedTitle.disposition !== "fresh") throw new Error("Title admission was denied");
+          titleOperationKey = admittedTitle.identity.budgetOperationKey;
           await admittedTitle.permit.markStarted();
           await titleGate;
           await admittedTitle.permit.settle({
@@ -2697,6 +2699,19 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect(
           await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
         ).toMatchObject({ titleSource: "automatic" });
+        const runId = admitted.message.runId;
+        if (!runId || !titleOperationKey) throw new Error("Missing title budget identity");
+        const budgets = setup.repository.modelBudgetPort(ownerId, agentId, authority, lease);
+        await expect(
+          budgets.read({ parent: { kind: "thread-title", runId }, limit: 10 }),
+        ).resolves.toMatchObject({
+          account: { status: "active", reservedCostMicros: 0 },
+          allocations: [{ operationKey: titleOperationKey, status: "settled" }],
+        });
+        const runBudget = await budgets.read({ parent: { kind: "run", runId }, limit: 100 });
+        expect(runBudget?.allocations.map(({ operationKey }) => operationKey)).not.toContain(
+          titleOperationKey,
+        );
       } else {
         expect(generateTitle).toHaveBeenCalledTimes(1);
         expect(titleFailure).toHaveBeenCalledWith(

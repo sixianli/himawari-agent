@@ -1853,6 +1853,92 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
+    it("keeps an unknown thread title in its own account so the Run can be claimed again", async () => {
+      const fixtureState = await identityFixture();
+      try {
+        const titleInput = (claim: typeof fixtureState.claim) =>
+          identityInput(claim, {
+            logicalSlot: `thread-title:${RUN_ID}`,
+            source: "model-port",
+            budgetAccount: "thread-title",
+          });
+        const title = await fixtureState.identity.begin(titleInput(fixtureState.claim));
+        if (title.disposition !== "fresh") throw new Error("Expected a fresh title identity");
+        expect(title.identity.budgetAccountId).toBe(`thread-title:${RUN_ID}`);
+        const transition = {
+          runId: RUN_ID,
+          invocationId: title.identity.invocationId,
+          budgetOperationKey: title.identity.budgetOperationKey,
+          executionLease: fixtureState.claim,
+          at: NOW,
+        };
+        await fixtureState.identity.markStarted(transition);
+        await fixtureState.identity.markUnknown({ ...transition, reasonCode: "cancel_unresolved" });
+
+        await expect(
+          fixtureState.budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 }),
+        ).resolves.toBeUndefined();
+        await expect(
+          fixtureState.budget.read({ parent: { kind: "thread-title", runId: RUN_ID }, limit: 10 }),
+        ).resolves.toMatchObject({
+          account: {
+            accountId: `thread-title:${RUN_ID}`,
+            parent: { kind: "thread-title", runId: RUN_ID },
+            status: "reconcile_required",
+            reservedCostMicros: 100,
+          },
+          allocations: [{ operationKey: title.identity.budgetOperationKey, status: "unknown" }],
+        });
+        await expect(
+          fixtureState.identity.begin(
+            identityInput(fixtureState.claim, {
+              logicalSlot: `thread-title:${RUN_ID}`,
+              source: "model-port",
+            }),
+          ),
+        ).resolves.toMatchObject({
+          disposition: "blocked",
+          reasonCode: "MODEL_INVOCATION_IDENTITY_CONFLICT",
+        });
+
+        await fixtureState.dispatch.release({
+          runId: RUN_ID,
+          expectedLeaseRevision: fixtureState.claim.expectedLeaseRevision,
+          executionLeaseId: fixtureState.claim.executionLeaseId,
+          releasedAt: LATER,
+        });
+        const reclaimed = claimFromRunExecutionLease(
+          await fixtureState.dispatch.claim({
+            runId: RUN_ID,
+            expectedRunRevision: 1,
+            expectedLeaseRevision: 2,
+            executionLeaseId: createRunExecutionLeaseId("execution-model-title-reclaimed"),
+            claimedAt: LATER,
+            expiresAt: FAR_FUTURE,
+          }),
+        );
+        await expect(fixtureState.identity.begin(titleInput(reclaimed))).resolves.toMatchObject({
+          disposition: "replay",
+          identity: { invocationId: title.identity.invocationId, status: "unknown" },
+          reasonCode: "MODEL_INVOCATION_RECONCILIATION_REQUIRED",
+        });
+        await expect(
+          fixtureState.identity.settle({
+            ...transition,
+            actualCostMicros: 40,
+            at: LATER,
+          }),
+        ).resolves.toMatchObject({ status: "settled", actualCostMicros: 40 });
+        await expect(
+          fixtureState.budget.read({ parent: { kind: "thread-title", runId: RUN_ID }, limit: 10 }),
+        ).resolves.toMatchObject({
+          account: { status: "active", reservedCostMicros: 0, spentCostMicros: 40 },
+        });
+      } finally {
+        await fixtureState.resource.repository.close();
+      }
+    });
+
     it("rejects semantic conflicts and preserves settled identity facts", async () => {
       const fixtureState = await identityFixture();
       try {
@@ -2054,7 +2140,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         "model_invocation_identities",
       ];
       const before = tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all());
-      const migration = (await loadBundledMigrations()).find(({ sequence }) => sequence === 25);
+      const migration = (await loadBundledMigrations()).find(({ sequence }) => sequence === 49);
       if (!migration) throw new Error("MIGRATION_MISSING");
       database.transaction(() => database.exec(migration.sql))();
       expect(tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all())).toEqual(
