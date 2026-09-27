@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3a89cf924300b43aff629dedd33b3c7cc0984f112a0c4eaaa3e53d15d7c1f422"
+contract_sha256: "sha256:c44eb6b59db50263f368bf270f061bed1f9db380ac4152351384d49434dbdb16"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -199,7 +199,7 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 2026-09-27 将隔离执行分支提交 `c71adbd5f23a88834512ad26112f587d6fa993b9` 部署到 Hermes，数据库从 schema 32 迁移到 48，安装根为 `/opt/himawari/releases/2026-09-27-c71adbd`。所有者说明当时没有用户，因此不在数据库副本上预演，直接执行第 4、5 步；资格验证和签署仍照常进行，因为启动脚本要核对签署回执。跨多个 schema 升级时，停服后按顺序执行：完整备份并验证、`db migrate`、所有者批准的删除（`delete purge`、`sandbox purge-unconfirmed`），再切换。断网构建需要把以往构建的 npm 缓存合并到本次缓存，并在构建源码目录的 `.npmrc` 写 `prefer-offline=true`，否则 npm 会因缓存过期尝试联网而失败。
 
-Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时，第 6 步的 `capabilities register` 会以 `ADMIN_CAPABILITY_REVIEW_REQUIRED` 拒绝，切换脚本中的“已注册能力不变”检查也会失败；目前没有更新“同版本、只换程序”登记的正式命令，也不得手工改表。本次所有者选择先启动、以后补登记：续做脚本只接受 `himawari.pi-coding` 的 `integrity` 与 `artifact.digest` 两个字段的差异，没有写登记表。服务运行时只检查登记的状态、版本和允许的操作，实际程序由签署的部署快照核对。另外，Worker 等待 Agent 发布启动绑定的期限固定为 30 秒，以往启动约需 20–25 秒；本次迁移后首次启动超时，由 systemd 重启后就绪，切换脚本应以两个进程的 `service.ready` 为准并检查重启次数。执行记录、差异明细与冻结脚本见[本次部署证据](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md)。
+Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时，第 6 步的 `capabilities register` 会以 `ADMIN_CAPABILITY_REVIEW_REQUIRED` 拒绝，切换脚本中的“已注册能力不变”检查也会失败；目前没有更新“同版本、只换程序”登记的正式命令，也不得手工改表。本次所有者选择先启动、以后补登记：续做脚本只接受 `himawari.pi-coding` 的 `integrity` 与 `artifact.digest` 两个字段的差异，没有写登记表。服务运行时只检查登记的状态、版本和允许的操作，实际程序由签署的部署快照核对。另外，Worker 等待 Agent 发布启动绑定的期限固定为 30 秒，以往启动约需 20–25 秒；本次迁移后首次启动超时，由 systemd 重启后就绪，切换脚本应以两个进程的 `service.ready` 为准并检查重启次数。升级前除核对执行记录的清理标记外，还必须查出 `sandbox_workspace_occupancy` 中 `released_at` 为空的占用，以及 `sandbox_workspace_barriers` 中未解决的保护，并逐条对照所属执行和 Run；本次漏查了占用表，v4 缺陷留下的两条旧占用在上线后挡住了所有写文件请求，处理见证据中的[旧占用修正](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md#occupancy-fix)。执行记录、差异明细与冻结脚本见[本次部署证据](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md)。
 
 发布文档与源码应在同一份干净的候选源码中核对和生成 `contract_sha256`，并用同一候选执行严格文档检查。主工作区存在未提交修改时，先导出已提交源码，再只叠加本次明确纳入的修改；不能用主工作区的摘要给另一份 Git 归档作保证。提交后重新导出该提交复验，防止未提交的前端或脚本内容影响摘要。
 

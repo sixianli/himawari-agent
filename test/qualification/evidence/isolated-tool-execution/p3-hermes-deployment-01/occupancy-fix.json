@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-27T10:38:25.290Z",
+  "ownerApproval": "direct database edit as a one-time exception, 2026-09-27",
+  "blockedRun": "run:123a9630-dd47-4d61-b7c3-06d791fdbea4",
+  "blockedOperation": "write",
+  "workspace": "/data/hermes/himawari/workspaces/default",
+  "rows": [
+    {"jobId": "jCY6j9zf0mrgap6bDAGZZ8bkf3GB8Ryjg9SHW1T5mIgY", "startedAt": "2026-09-12T18:13:55.664Z", "access": "read", "cleanup": "confirmed", "supervision": "released", "runStatus": "completed", "openIntents": 0, "barriers": 0, "releasedAtBefore": null, "releasedAtAfter": "2026-09-27T10:38:25.290Z"},
+    {"jobId": "jwkbSiSxIJrFPpuuaMHWyWaK4jjRgIMsVlCkYDh0zNVc", "startedAt": "2026-09-15T01:39:30.273Z", "access": "read", "cleanup": "confirmed", "supervision": "released", "runStatus": "completed", "openIntents": 0, "barriers": 0, "releasedAtBefore": null, "releasedAtAfter": "2026-09-27T10:38:25.290Z"}
+  ],
+  "hostCheck": "only three himawari processes existed, all started 2026-09-27 19:02 JST; no process from 2026-09-12 or 2026-09-15 under the service account",
+  "backup": "state/data/manual-before-occupancy-fix-2026-09-27/product.sqlite",
+  "backupIntegrity": "ok",
+  "backupUnreleasedTargets": 2,
+  "rowsChanged": 2,
+  "unreleasedOccupancyAfter": 0,
+  "legacyOccupancyUnreleased": 0,
+  "releaseReceiptsWritten": 0,
+  "auditRecordWritten": false,
+  "serviceRestarted": false,
+  "healthAfter": "ready"
+}
