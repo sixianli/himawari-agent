@@ -36,14 +36,17 @@
 | 真实浏览器：[`test-execution-chain-browser.mjs`](../../../../../scripts/test-execution-chain-browser.mjs) 执行状态场景新增一步 | 未声明时没有状态条；严格模式两个程序时状态条文字、侧栏两个转圈标记（宽度 ≥ 1024）、面板三段内容和 4 个列表项；Esc 关闭且焦点回到状态条；点“打开所属对话：研究记录”跳到该对话并关闭面板；换成默认模式且没有程序后，点开状态条即刷新为“默认模式 · 没有程序在运行”，侧栏标记消失；刷新页面后仍然正确 | [`browser-chrome.log`](browser-chrome.log) 和 [`browser-chrome/result.json`](browser-chrome/result.json)：已安装的 Google Chrome，12 个场景通过，其中 8 个执行状态场景（宽度 320、390、1024、1440 × 明暗）都含这一步；截图如 [`state-1024-light-environment-strict.png`](browser-chrome/state-1024-light-environment-strict.png)、[`state-390-light-environment-strict.png`](browser-chrome/state-390-light-environment-strict.png)、[`state-1440-light-environment-default.png`](browser-chrome/state-1440-light-environment-default.png) |
 
 - 功能实现前，新增测试按预期失败：契约不认识新查询（[`contracts-before.log`](contracts-before.log)）；数据库没有列表（[`integration-before.log`](integration-before.log)）；准入没有暴露拒绝原因（[`integration-route-before.log`](integration-route-before.log)）；不可用工具模块不存在（[`unit-environment-before.log`](unit-environment-before.log)）；页面配置没有声明（[`unit-http-before.log`](unit-http-before.log)，接线测试晚于实现写成，取证时临时换回提交前的两个接线文件）；页面找不到状态条（[`browser-chrome-before.log`](browser-chrome-before.log)）。
-- [`production-http-composition-process.test.ts`](../../../../integration/production-http-composition-process.test.ts) 在已安装的 `service-main` 上断言配置声明为真、查询返回默认模式空快照；这项需要预先打包的安装产物，只在完整 `npm test` 里运行，本次尚未运行。
+- [`production-http-composition-process.test.ts`](../../../../integration/production-http-composition-process.test.ts) 在已安装的 `service-main` 上断言配置声明为真、查询返回默认模式空快照；这项需要预先打包的安装产物，只在完整 `npm test` 里运行，已在下面的完整运行中通过（未跳过）。
 - 浏览器测试通过隔离的 HTTP 测试服务器取得后端状态，没有经过真实 Agent Service 或 Worker。运行前由 Claude 执行了 `npm run build:browser`（前端包 gzip 后共 182,582 字节，上限 184,320 字节；入口脚本 151,158 字节，上限 153,600 字节）。
 - 顺带修正：[`biome.json`](../../../../../biome.json) 把 v5 效果图的两个 HTML 文件加入与 v4 效果图相同的免检查名单，否则 `npm run lint` 失败。
 - 代码版本：提交 `206f0f1` 加本次改动（即本证据所在提交）。`npm run typecheck`、`npm run lint`、`npm run format:check`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志去掉了终端颜色控制字符和本机沙箱打印的 `failed to copy trust settings` 行。
 - 重跑：`npm run build:browser && node scripts/test-execution-chain-browser.mjs chrome <输出目录>`；集成测试 `npx vitest run --config vitest.workspace.ts test/integration/sqlite-sandbox-execution-v2.test.ts test/integration/production-task-environment-route.test.ts test/integration/sandbox-v2-payload-broker.test.ts`（夹具要在 `/tmp` 下建目录、监听本机端口）。
 
+## 完整 npm test
+
+提交 `d4a98ef`：由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-d4a98ef`，运行期间没有改动工作区，全部通过：contracts 380、unit 2064、integration 1847、e2e 3、pi-compat 130，报告在 [`npm-test-d4a98ef.tar.gz`](npm-test-d4a98ef.tar.gz)。托管的 GitHub 检查没有运行（`hosted gate: not_executed`）。`d4a98ef` 之前的一个提交 `60dbab9` 只把 v5 效果图加入免检查名单，也被这次运行覆盖。
+
 ## 未验证的部分
 
-- 完整 `npm test` 尚未运行，已安装 `service-main` 的断言也因此未运行。
 - 没有在真实 Docker 和真实 Worker 上看严格模式下的状态条；列表来自执行记录，为空不证明宿主上没有残留进程。
 - 只在 Google Chrome 上跑了浏览器测试。
