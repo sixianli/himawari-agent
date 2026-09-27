@@ -14,6 +14,8 @@
 - 打包成压缩包（[`artifact-archive.py`](../../../../scripts/ci/artifact-archive.py)）时同样跳过，压缩包和清单保持一致，也不会因为访达在打包途中删改它而读取失败。
 - 名字相近的文件（`DS_Store`、`.DS_Store.js`）、名为 `.DS_Store` 的文件夹里的文件、名为 `.DS_Store` 的符号链接仍按原规则拒绝。
 
+- 文档治理工具副本的检查（[`sync-governance.mjs`](../../../../scripts/ci/sync-governance.mjs)）要求 `tools/document-governance/` 里只有登记过的 7 个文件。访达在这里也写了 `.DS_Store`（2026-09-26），`policy` 检查因此报“治理快照包含未登记文件”，没有运行工具测试就失败了。这里同样只跳过名字恰好是 `.DS_Store` 的普通文件；名字相近的文件、`.DS_Store` 目录里的文件、符号链接仍被拒绝。
+
 代价：打包目录里任何名为 `.DS_Store` 的普通文件都不再被核对，也不会进入压缩包，产品本身不需要这种文件。删除打包目录时访达同时写入可能报 `ENOTEMPTY`（目录不为空），这次没有处理。
 
 ## 测试
@@ -26,7 +28,11 @@ npx vitest run --config vitest.workspace.ts --project tooling --reporter verbose
 
 - 改动前：[`tooling-before.log`](tooling-before.log) 中“在各层目录写入 `.DS_Store` 后核对仍通过”失败，报错正是 `ARTIFACT_CONTENT_MISMATCH`；[`tooling-archive-before.log`](tooling-archive-before.log) 中“写入 `.DS_Store` 前后打出的压缩包完全相同”失败。
 - 改动后：[`tooling.log`](tooling.log) 中 [`artifact.test.mjs`](../../../tooling/artifact.test.mjs) 32 项全部通过，含上面两项、三种相近名字仍被拒绝、符号链接仍被拒绝，以及原有的全部打包核对测试。
-- `npm run typecheck`、`npm run lint`、`npm run check:ci-policy`、`npm run check:secrets` 通过。整个 tooling 测试项目在 Claude 的命令沙箱里有 49 项因不能写 `/tmp` 等限制失败。完整测试（`npm test`）不运行 tooling 项目，它由单独的 `policy` 检查运行（见 [`check-policy.mjs`](../../../../scripts/ci/check-policy.mjs)），这项检查尚未运行。
+- 文档治理检查：[`toolchain.test.mjs`](../../../tooling/toolchain.test.mjs) 新增 5 项。改动前 [`governance-before.log`](governance-before.log) 中 2 项失败：新增的“忽略各层 `.DS_Store`”，以及原有的“仓库原始快照可独立验证”（它复制真实目录，带上了访达写的文件）；改动后 [`governance.log`](governance.log) 31 项全部通过。
+- `npm run typecheck`、`npm run lint`、`npm run check:ci-policy`、`npm run check:secrets` 通过。
+- 完整测试（`npm test`）不运行 tooling 项目，它由单独的 `policy` 检查运行（见 [`check-policy.mjs`](../../../../scripts/ci/check-policy.mjs)）。Claude 在命令沙箱之外运行了两次 `node scripts/ci/local.mjs --check policy`，结果在 [`policy-checks.tar.gz`](policy-checks.tar.gz)：
+  - 第一次（提交 `d261c07`，输出 `policy-d261c07`）：治理快照检查因 `.DS_Store` 失败，tooling 测试没有运行。
+  - 第二次（`d261c07` 加文档治理这项改动，输出 `policy-d261c07-2`）：治理快照检查通过；tooling 1073 项中 1071 项通过，2 项失败。失败的是 [`gate-installation.test.mjs`](../../../tooling/gate-installation.test.mjs) 和 [`main-confirmation.test.mjs`](../../../tooling/main-confirmation.test.mjs)：测试期望 `/tmp/...`，程序给出的是 `/private/tmp/...`。macOS 上 `/tmp` 和系统临时目录都经过一层链接指向 `/private` 下，测试拿未解析的路径去比已解析的路径。撤掉本次改动后这两项照样失败，与 `.DS_Store` 无关；项目正式的 `policy` 检查在 GitHub 的 Linux 机器上运行，那里没有这层链接。这两项另行处理，本次没有改。
 
 ## 完整 npm test（提交 `7f9ad63`，通过）
 
