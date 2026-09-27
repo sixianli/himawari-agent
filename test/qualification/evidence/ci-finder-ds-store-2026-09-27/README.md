@@ -26,4 +26,8 @@ npx vitest run --config vitest.workspace.ts --project tooling --reporter verbose
 
 - 改动前：[`tooling-before.log`](tooling-before.log) 中“在各层目录写入 `.DS_Store` 后核对仍通过”失败，报错正是 `ARTIFACT_CONTENT_MISMATCH`；[`tooling-archive-before.log`](tooling-archive-before.log) 中“写入 `.DS_Store` 前后打出的压缩包完全相同”失败。
 - 改动后：[`tooling.log`](tooling.log) 中 [`artifact.test.mjs`](../../../tooling/artifact.test.mjs) 32 项全部通过，含上面两项、三种相近名字仍被拒绝、符号链接仍被拒绝，以及原有的全部打包核对测试。
-- `npm run typecheck`、`npm run lint`、`npm run check:ci-policy`、`npm run check:secrets` 通过。整个 tooling 测试项目在 Claude 的命令沙箱里有 49 项因不能写 `/tmp` 等限制失败，由用户终端里的完整测试覆盖。
+- `npm run typecheck`、`npm run lint`、`npm run check:ci-policy`、`npm run check:secrets` 通过。整个 tooling 测试项目在 Claude 的命令沙箱里有 49 项因不能写 `/tmp` 等限制失败。完整测试（`npm test`）不运行 tooling 项目，它由单独的 `policy` 检查运行（见 [`check-policy.mjs`](../../../../scripts/ci/check-policy.mjs)），这项检查尚未运行。
+
+## 完整 npm test（提交 `7f9ad63`，通过）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-7f9ad63`，访达保持打开，全部通过：contracts 379、unit 2060、integration 1842、e2e 3、pi-compat 130，报告在 [`npm-test-7f9ad63.tar.gz`](../isolated-tool-execution/p3-srt-crash-01/npm-test-7f9ad63.tar.gz)。它的打包步骤用的就是改动后的清单和打包脚本；tooling 测试项目不在完整测试里。无法确定访达这次是否显示过打包目录，所以这次通过只说明打包没有受到干扰，不能单独证明忽略 `.DS_Store` 起了作用；这一点由上面的自动测试覆盖。

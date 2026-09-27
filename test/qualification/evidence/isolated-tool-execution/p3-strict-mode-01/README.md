@@ -35,6 +35,15 @@
 - 浏览器测试通过隔离的 HTTP 测试服务器取得后端状态，没有经过真实 Agent Service 或 Worker。运行前由 Claude 执行了 `npm run build:browser`（前端包 gzip 后共 179,189 字节，上限 184,320 字节）。
 - 代码版本：提交 `9d0568e` 加本次改动（即本证据所在提交）。`npm run typecheck`、`npm run lint`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志去掉了终端颜色控制字符和本机沙箱打印的 `failed to copy trust settings` 行。
 
+## 完整 npm test
+
+第一次（提交 `80cf668`，作废）：由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-80cf668`。contracts 379、unit 2050、e2e 3、pi-compat 130 全部通过；integration 1834 项中 1 项失败，报告在 [`npm-test-80cf668-failed.tar.gz`](npm-test-80cf668-failed.tar.gz)。
+
+- 失败的是 [`workspace-boundaries.test.ts`](../../../../integration/workspace/workspace-boundaries.test.ts) 的 “limits Agent imports to risk-reducing sandbox control”：测试期望的导出名单比代码实际导出多了 `processGroupPresent`、`readJobHostStartEvidence`、`readProcessStartToken` 三项。
+- 原因：这次运行打包的是 `80cf668`，运行期间 Claude 提交了下一项改动 `fa3fef3`，其中修改了这份测试名单。测试读到的是新名单，拿去和 `80cf668` 的旧代码比较，于是不符。这是运行期间改动工作区造成的，不是 `80cf668` 的缺陷，这次结果不作为 `80cf668` 的验证。
+
+第二次（提交 `7f9ad63`，通过）：由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-7f9ad63`，全部通过：contracts 379、unit 2060、integration 1842、e2e 3、pi-compat 130，报告在 [`npm-test-7f9ad63.tar.gz`](../p3-srt-crash-01/npm-test-7f9ad63.tar.gz)。`7f9ad63` 包含本次提交 `80cf668`，之后的两个提交分别是[同一次开机崩溃后释放](../p3-srt-crash-01/README.md)和完整测试忽略 `.DS_Store`，所以这次结果也覆盖本次提交。
+
 ## 未验证的部分
 
 - 没有用真实 Docker 和真实 Worker 走一遍严格模式；容器路线的真实安装资格尚未完成。

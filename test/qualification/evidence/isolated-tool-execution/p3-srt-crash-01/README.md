@@ -46,9 +46,12 @@ node packages/runtime-sandbox/scripts/probe-job-host-control.mjs
 - 真实探针第一次运行在第一个场景（`stop`，与本次改动无关的准备阶段）失败，Worker 报 `JOB_HOST_NOT_READY`，见 [`mac-job-host-control-run1-failed.log`](mac-job-host-control-run1-failed.log)。Job Host 的错误输出被产品丢弃，当时没有拿到原因。随后检查 SRT 依赖正常；临时让构建产物转发 Job Host 错误输出后重跑通过，然后重新构建去掉这处临时改动，又连续两次通过（第 2 次紧接在重新构建之后）。原因未确认。
 - `npm run typecheck`、`npm run lint`、`npm run check:boundaries`、`npm run check:ci-policy`、`npm run check:secrets` 通过。日志去掉了终端颜色控制字符和本机沙箱打印的 `failed to copy trust settings` 行。
 
+## 完整 npm test（提交 `7f9ad63`，通过）
+
+由用户在本机终端运行 `npm test -- --output .ci-output/npm-test-7f9ad63`，全部通过：contracts 379 项、unit 2060 项、integration 1842 项、e2e 3 项、pi-compat 130 项，报告在 [`npm-test-7f9ad63.tar.gz`](npm-test-7f9ad63.tar.gz)。`7f9ad63` 在本次提交 `fa3fef3` 之后只多了一个完整测试打包核对忽略 `.DS_Store` 的改动（见[那次改动的记录](../../ci-finder-ds-store-2026-09-27/README.md)），所以这次结果也覆盖本次提交。控制台输出去掉了本机沙箱打印的、与测试无关的 `failed to copy trust settings` 行。
+
 ## 未验证的部分
 
 - 没有在 Linux 上运行。Linux 上 SRT 用 bubblewrap 并要求“父进程退出时随之退出”，Job Host 崩溃后任务一般会被系统一并结束；探针在这种情况下跳过“继续挡住”的检查，直接要求释放。
 - “组长编号已分给新进程”只用写入不同标记的方式模拟，没有真正等到系统复用进程编号。
 - 开始记录在任务启动后才写，这之间 Job Host 崩溃时没有开始记录，占用继续挡住，需要重启或删除旧记录的命令处理。
-- 完整 `npm test` 尚未运行。
