@@ -1,0 +1,294 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > binds preparation to the original ready host and rejects replacement 234ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > returns observation proof from one host verification without caching later observations 212ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > samples live process state after slow host verification instead of aging the sample 211ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > delivers stop before expensive host verification and still requires cleanup evidence 235ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > keeps the authenticated control timeout when no final proof exists 1272ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > retains protected host diagnostics with safe reason for undefined 253ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > retains protected host diagnostics with safe reason for EACCES 241ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > requires stored exact evidence and never promotes a Linux sample to tree proof 235ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not release a finished environment while its host is alive 266ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects directory inode replacement and changed supervisor identity 247ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed supervisorId 239ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed bootId 250ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed epoch 292ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed policyDigest 285ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed privateDirectoryOwnerRef 240ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > rejects preparation with changed privateDirectoryRef 229ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses missing or substituted stored control (missing) 234ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses missing or substituted stored control (fingerprint) 226ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses missing or substituted stored control (environmentId) 221ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses to register another jobId 228ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses to register another attemptId 235ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses changed live process bootId 243ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses changed live process processIdentityRef 263ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses changed live process policyDigest 251ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation ref 221ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation digest 207ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation fingerprint 314ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation environmentId 314ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation resourceSequence 254ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation bootId 257ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > refuses substituted persisted observation processIdentityRef 303ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not classify incomplete supervision as controlled (no-task) 320ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not classify incomplete supervision as controlled (exited) 275ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not classify incomplete supervision as controlled (no-samples) 213ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not classify incomplete supervision as controlled (expired) 234ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > does not classify incomplete supervision as controlled (supervisor-changed) 254ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > sends an unbound stop to the original authenticated host without reauthorizing execution 206ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: alive 242ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: started 232ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: cleanup-unknown 235ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: verified 252ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: verified 239ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: unqualified 251ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: unverified 252ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: arbitrary 245ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: interrupted 305ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: alive 275ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases only a qualified fixed file terminal program: cleanup-unknown 232ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: group-gone 239ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on linux only once its task group is gone: group-gone 307ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: group-present 293ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: flag-absent 259ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: host-alive 265ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: cleanup-unknown 322ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: interrupted 353ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: task-running 251ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a finished SRT call on darwin only once its task group is gone: flag-invalid 533ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a started SRT call after the machine restarted without contacting the lost Job Host: inspect 278ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > releases a started SRT call after the machine restarted without contacting the lost Job Host: stop 357ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host and group gone 348ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host start replaced 288ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leader start replaced 235ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host alive 241ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leader alive 246ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leaderless group alive 242ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: no start record 266ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: start record from another host 249ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: start record tampered 241ms
+ ✓ |integration| test/integration/sandbox-control-evidence.test.ts > keeps a control record saved without a machine boot identity blocking after a restart 206ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/domain 1ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-sandbox -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/domain -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/gateway-contracts -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-contracts -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/application -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/runtime-pi -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/persistence-sqlite -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/memory-mem0 -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-github -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/integration-web -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/platform-node -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/testing -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/agent-service -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/agent-service -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/agent-service -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/agent-service -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/execution-worker -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/persistence-sqlite 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/platform-node 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/control-center -> @himawari-agent/admin-cli 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/memory-mem0 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/integration-github 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/integration-web 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/testing 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/agent-service 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/execution-worker 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > workspace dependency negative probes > rejects @himawari-agent/admin-cli -> @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node: imports from @himawari-agent/domain 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node: imports from @himawari-agent/application 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node: imports from @himawari-agent/gateway-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node: imports from @himawari-agent/execution-contracts 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node: imports from @himawari-agent/control-center 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows node: imports from a Node adapter 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects fastify from the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects better-sqlite3 from the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects node:fs from the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > rejects @himawari-agent/application from the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows react in the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows react-dom/client in the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows react-intl in the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows marked in the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > allows @himawari-agent/gateway-contracts in the browser-only workspace 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > keeps SRT dependencies owned by runtime-sandbox 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > runtime-specific import negative probes > keeps Pi dependencies owned by runtime-pi 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version ^1.2.3 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version ~1.2.3 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version latest 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version file:../pi-mono 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version ../pi-mono 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > rejects non-exact external version 1.2 0ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > pins every direct external dependency and every internal dependency to 0.0.0 7ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > committed manifest and lock constraints > contains no local pi-mono or file/link dependency locator 2ms
+ ✓ |integration| test/integration/workspace/workspace-boundaries.test.ts > limits Agent imports to risk-reducing sandbox control 8ms
+
+ Test Files  2 passed (2)
+      Tests  286 passed (286)
+   Start at  10:47:37
+   Duration  20.74s (transform 1.02s, setup 0ms, import 1.53s, tests 19.02s, environment 0ms)

@@ -12,6 +12,7 @@ import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-name
 import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
 import { stopProcessGroup } from "./process-group.ts";
+import { readProcessStartToken } from "./process-identity.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
 import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
 
@@ -27,6 +28,8 @@ let controlSequence = 0;
 let control: Awaited<ReturnType<typeof openJobHostControl>> | undefined;
 let managerReset = false;
 let taskProcessGroupGone = false;
+let processStartToken: string | undefined;
+let taskProcessGroup: { processGroupId: number; startToken: string } | undefined;
 let readiness: ReturnType<typeof startReadinessProbe> | undefined;
 let readyAt: string | null = null;
 let lastWorkerTick = performance.now();
@@ -136,6 +139,20 @@ async function finish() {
   emergency?.unref();
   process.exitCode = reset ? 0 : 1;
 }
+async function recordStart(groupId: number) {
+  try {
+    const [host, leader] = await Promise.all([
+      readProcessStartToken(process.pid),
+      readProcessStartToken(groupId),
+    ]);
+    if (!host || !leader || !control) return;
+    processStartToken = host;
+    taskProcessGroup = { processGroupId: groupId, startToken: leader };
+    await control.recordStart();
+  } catch {
+    return;
+  }
+}
 function stop(cause: string) {
   if (phase === "finished") return;
   if (phase !== "stopping") reason = cause;
@@ -220,6 +237,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
         stdioClosed: closed,
         srtReset: managerReset,
         taskProcessGroupGone,
+        ...(processStartToken && taskProcessGroup ? { processStartToken, taskProcessGroup } : {}),
       }),
       () => stop("cancelled"),
     );
@@ -313,6 +331,7 @@ async function start() {
       taskIdentityRef: `sandbox-process:${randomUUID()}`,
       taskStartedAt: new Date().toISOString(),
     });
+    void recordStart(task.pid);
     if (request?.readiness) {
       readiness = startReadinessProbe({
         probe: request.readiness,

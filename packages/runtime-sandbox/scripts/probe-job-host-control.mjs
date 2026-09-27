@@ -16,7 +16,12 @@ import {
   queryJobHostControl,
   readJobHostFinalEvidence,
 } from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/index.js";
-import { readMachineBootId } from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host-control-client.js";
+import {
+  processGroupPresent,
+  readJobHostStartEvidence,
+  readMachineBootId,
+  readProcessStartToken,
+} from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host-control-client.js";
 
 // Temporary Linux helpers are a probe-only override, never product configuration.
 if (process.platform === "linux" && process.env.HIMAWARI_R4_HELPERS) {
@@ -70,6 +75,7 @@ if (process.argv.includes("--worker")) {
       "stdin",
       "writer-stop",
       "writer-worker-crash",
+      "host-crash",
     ]) {
       const directory = path.join(root, String(results.length));
       await mkdir(directory, { mode: 0o700 });
@@ -118,9 +124,11 @@ if (process.argv.includes("--worker")) {
             ? "use POSIX qw(setsid); use Time::HiRes qw(time usleep); my $p=fork(); defined($p) or die 'fork'; if (!$p) { setsid() >= 0 or die 'setsid'; open(my $f, '>>', $ARGV[0]) or die 'open'; select((select($f), $|=1)[0]); my $end=time()+4; while(time()<$end) { print $f qq(x\\n); usleep(20000); } exit(0); } sleep(4);"
             : scenario === "stdin"
               ? "binmode STDIN; local $/; my $input=<STDIN>; print $input; $|=1; sleep(4);"
-              : scenario === "observed-escape"
-                ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
-                : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
+              : scenario === "host-crash"
+                ? "print qq(started\\n); $|=1; sleep(8);"
+                : scenario === "observed-escape"
+                  ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
+                  : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
           ...(writerScenario ? [writerPath] : []),
         ],
         ...(scenario === "stdin"
@@ -260,6 +268,51 @@ if (process.argv.includes("--worker")) {
               await delay(20);
             }
           } else await delay(300);
+        }
+        if (scenario === "host-crash") {
+          stage = "start-record";
+          let start;
+          for (let i = 0; i < 30 && !start; i++) {
+            try {
+              start = await readJobHostStartEvidence(binding);
+            } catch {
+              await delay(100);
+            }
+          }
+          assert.ok(start);
+          assert.equal(start.processId, inspected.processId);
+          assert.equal(start.processStartToken, await readProcessStartToken(start.processId));
+          const group = start.taskProcessGroup.processGroupId;
+          assert.equal(start.taskProcessGroup.startToken, await readProcessStartToken(group));
+          stage = "host-crash";
+          process.kill(start.processId, "SIGKILL");
+          await exited;
+          assert.equal(await readProcessStartToken(start.processId), null);
+          const groupOutlivedHost = processGroupPresent(group);
+          if (process.platform === "darwin") assert.ok(groupOutlivedHost);
+          if (groupOutlivedHost) {
+            stage = "blocked-while-group-alive";
+            await assert.rejects(product.observe(record));
+            process.kill(-group, "SIGKILL");
+          }
+          stage = "group-ends";
+          for (let i = 0; i < 100 && processGroupPresent(group); i++) await delay(20);
+          assert.equal(processGroupPresent(group), false);
+          const observed = await product.observe(record);
+          assert.equal(observed.supervision, "released");
+          assert.equal(observed.cleanup, "process_group_gone");
+          assert.equal(
+            (await product.evidence(plan, { ...record.facts, resource: observed })).length,
+            1,
+          );
+          results.push({
+            scenario,
+            passed: true,
+            cleanup: observed.cleanup,
+            groupOutlivedHost,
+            blockedWhileGroupAlive: groupOutlivedHost,
+          });
+          continue;
         }
         const stopRequestedAt = new Date().toISOString();
         if (scenario !== "observed-escape") {

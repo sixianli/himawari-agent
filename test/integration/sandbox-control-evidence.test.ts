@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import path from "node:path";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
@@ -15,6 +15,10 @@ import {
   type JobHostControlObservation,
   openJobHostControl,
 } from "../../packages/runtime-sandbox/src/job-host-control.ts";
+import {
+  processGroupPresent,
+  readProcessStartToken,
+} from "../../packages/runtime-sandbox/src/process-identity.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -160,6 +164,8 @@ async function fixture(options: { qualified?: boolean; completed?: boolean } = {
     },
     record: bound,
     binding,
+    processIdentityRef: observation.processIdentityRef,
+    recordStart: () => server.recordStart(),
     stored,
     directory,
     setPlatform: (value: string) => {
@@ -638,12 +644,127 @@ it.each(["inspect", "stop"] as const)(
   },
 );
 
-it("keeps a crashed Job Host blocking while the machine has not restarted", async () => {
-  const f = await fixture();
-  f.set({ phase: "running", taskStarted: true });
-  await crashJobHost(f);
-  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow();
-});
+async function running(options: { detached: boolean; script?: string }) {
+  const child = spawn("/bin/sh", ["-c", options.script ?? "exec sleep 30"], {
+    detached: options.detached,
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  if (!child.pid) throw new Error("child PID missing");
+  const pid = child.pid;
+  cleanups.push(async () => {
+    try {
+      process.kill(options.detached ? -pid : pid, "SIGKILL");
+    } catch {}
+  });
+  const token = await readProcessStartToken(pid);
+  if (!token) throw new Error("child start token missing");
+  return { child, pid, token };
+}
+
+async function vanish(pid: number, group: boolean) {
+  try {
+    process.kill(group ? -pid : pid, "SIGKILL");
+  } catch {}
+  for (let attempt = 0; attempt < 500; attempt++) {
+    if (group ? !processGroupPresent(pid) : (await readProcessStartToken(pid)) === null) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("process did not vanish");
+}
+
+it.each([
+  ["host and group gone", "released"],
+  ["host start replaced", "released"],
+  ["leader start replaced", "released"],
+  ["host alive", "blocked"],
+  ["leader alive", "blocked"],
+  ["leaderless group alive", "blocked"],
+  ["no start record", "blocked"],
+  ["start record from another host", "identity"],
+  ["start record tampered", "tampered"],
+] as const)(
+  "decides a same-boot Job Host crash from the recorded identities: %s",
+  async (scenario, outcome) => {
+    const f = await fixture();
+    const host = await running({ detached: false });
+    const leader = await running({
+      detached: true,
+      script: scenario === "leaderless group alive" ? "sleep 30 & read line" : "exec sleep 30",
+    });
+    f.set({
+      phase: "running",
+      taskStarted: true,
+      processId: host.pid,
+      processStartToken: scenario === "host start replaced" ? "replaced host start" : host.token,
+      taskProcessGroup: {
+        processGroupId: leader.pid,
+        startToken: scenario === "leader start replaced" ? "replaced leader start" : leader.token,
+      },
+      ...(scenario === "start record from another host"
+        ? { processIdentityRef: `job-host-process:${randomUUID()}` }
+        : {}),
+    });
+    if (scenario !== "no start record") await f.recordStart();
+    if (scenario === "start record tampered") {
+      const file = path.join(f.directory, "started.json");
+      const envelope = JSON.parse(await readFile(file, "utf8")) as { body: string };
+      await writeFile(
+        file,
+        JSON.stringify({ ...envelope, body: envelope.body.replace('"running"', '"finished"') }),
+      );
+    }
+    await crashJobHost(f);
+    if (!["host alive", "host start replaced"].includes(scenario)) await vanish(host.pid, false);
+    if (scenario === "leaderless group alive") {
+      leader.child.stdin.end("go\n");
+      await once(leader.child, "exit");
+      expect(processGroupPresent(leader.pid)).toBe(true);
+    } else if (!["leader alive", "leader start replaced"].includes(scenario))
+      await vanish(leader.pid, true);
+    let record: SandboxExecutionRecord = f.record;
+    const released = async (command: "inspect" | "stop") => {
+      const resource = await f.control.backend[command](record, new AbortController().signal);
+      expect(f.order).not.toContain("stop");
+      expect(resource).toMatchObject({
+        supervision: "released",
+        cleanup: "process_group_gone",
+        sequence: record.facts.resource.sequence + 1,
+        evidence: {
+          subject: { kind: "local_process", processIdentityRef: f.processIdentityRef },
+        },
+      });
+      const resourceReleased = resource as Extract<typeof resource, { supervision: "released" }>;
+      const facts = { ...record.facts, resource: resourceReleased };
+      await expect(f.control.evidence(record.plan, facts)).resolves.toHaveLength(1);
+      await expect(
+        f.control.evidence(record.plan, {
+          ...facts,
+          resource: { ...resourceReleased, cleanup: "confirmed" },
+        }),
+      ).rejects.toThrow("SANDBOX_CONTROL_EVIDENCE_CHANGED");
+      record = { ...record, facts };
+    };
+    for (const command of ["inspect", "stop"] as const) {
+      if (outcome === "released") {
+        await released(command);
+        continue;
+      }
+      const attempt = f.control.backend[command](record, new AbortController().signal);
+      await expect(attempt).rejects.toThrow(
+        {
+          blocked: "ENOENT",
+          identity: "SANDBOX_CONTROL_IDENTITY_CHANGED",
+          tampered: "JOB_HOST_CONTROL_EVIDENCE_INVALID",
+        }[outcome],
+      );
+    }
+    if (outcome === "blocked" && scenario !== "no start record") {
+      if (scenario === "host alive") await vanish(host.pid, false);
+      else await vanish(leader.pid, true);
+      await released("stop");
+    }
+  },
+);
 
 it("keeps a control record saved without a machine boot identity blocking after a restart", async () => {
   const f = await fixture();

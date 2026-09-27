@@ -43,10 +43,17 @@ export interface JobHostControlObservation {
   readonly stdioClosed: boolean;
   readonly srtReset: boolean;
   readonly taskProcessGroupGone?: boolean;
+  readonly processStartToken?: string;
+  readonly taskProcessGroup?: {
+    readonly processGroupId: number;
+    readonly startToken: string;
+  };
 }
 const maximumBytes = 16384;
 const signature = (token: string, body: string) =>
   createHmac("sha256", token).update(body).digest("hex");
+const startToken = (value: unknown) =>
+  typeof value === "string" && value.length > 0 && value.length <= 128;
 function equal(a: string, b: string): boolean {
   return a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
@@ -122,19 +129,24 @@ function verify(binding: JobHostControlBinding, encoded: string): JobHostControl
     [value.taskStarted, value.taskProcessExited, value.stdioClosed, value.srtReset].some(
       (flag) => typeof flag !== "boolean",
     ) ||
-    (value.taskProcessGroupGone !== undefined && typeof value.taskProcessGroupGone !== "boolean")
+    (value.taskProcessGroupGone !== undefined && typeof value.taskProcessGroupGone !== "boolean") ||
+    (value.processStartToken !== undefined && !startToken(value.processStartToken)) ||
+    (value.taskProcessGroup !== undefined &&
+      (!value.taskProcessGroup ||
+        !Number.isSafeInteger(value.taskProcessGroup.processGroupId) ||
+        value.taskProcessGroup.processGroupId <= 1 ||
+        !startToken(value.taskProcessGroup.startToken)))
   )
     throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
   return Object.freeze(value);
 }
 
-/** Only read the original signed exit fact. Absence/tampering is unknown, never
- * an instruction to relaunch or kill the PID found in an old receipt. */
-export async function readJobHostFinalEvidence(
+async function readSignedFile(
   binding: JobHostControlBinding,
+  name: "final.json" | "started.json",
 ): Promise<JobHostControlObservation> {
   await validateJobHostControlBinding(binding);
-  const file = path.join(binding.directory, "final.json");
+  const file = path.join(binding.directory, name);
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const metadata = await handle.stat();
@@ -143,12 +155,36 @@ export async function readJobHostFinalEvidence(
     const buffer = Buffer.alloc(maximumBytes + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     if (bytesRead > maximumBytes) throw new Error("JOB_HOST_CONTROL_TOO_LARGE");
-    const observation = verify(binding, buffer.subarray(0, bytesRead).toString("utf8"));
-    if (observation.phase !== "finished") throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
-    return observation;
+    return verify(binding, buffer.subarray(0, bytesRead).toString("utf8"));
   } finally {
     await handle.close();
   }
+}
+
+/** Only read the original signed exit fact. Absence/tampering is unknown, never
+ * an instruction to relaunch or kill the PID found in an old receipt. */
+export async function readJobHostFinalEvidence(
+  binding: JobHostControlBinding,
+): Promise<JobHostControlObservation> {
+  const observation = await readSignedFile(binding, "final.json");
+  if (observation.phase !== "finished") throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
+  return observation;
+}
+
+export async function readJobHostStartEvidence(
+  binding: JobHostControlBinding,
+): Promise<
+  JobHostControlObservation &
+    Required<Pick<JobHostControlObservation, "processStartToken" | "taskProcessGroup">>
+> {
+  const observation = await readSignedFile(binding, "started.json");
+  if (!observation.taskStarted || !observation.processStartToken || !observation.taskProcessGroup)
+    throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
+  return {
+    ...observation,
+    processStartToken: observation.processStartToken,
+    taskProcessGroup: observation.taskProcessGroup,
+  };
 }
 
 export async function queryJobHostControl(
@@ -253,24 +289,28 @@ export async function openJobHostControl(
     server.once("error", reject);
     server.listen(path.join(binding.directory, "control.sock"), resolve);
   });
+  const persist = async (name: "final" | "started") => {
+    const encoded = encode();
+    const temporary = path.join(binding.directory, `${name}.pending`);
+    const file = await open(temporary, "wx", 0o600);
+    try {
+      await file.writeFile(encoded);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await rename(temporary, path.join(binding.directory, `${name}.json`));
+    const directory = await open(binding.directory, constants.O_RDONLY);
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  };
   return {
+    recordStart: () => persist("started"),
     async finish() {
-      const encoded = encode();
-      const temporary = path.join(binding.directory, "final.pending");
-      const file = await open(temporary, "wx", 0o600);
-      try {
-        await file.writeFile(encoded);
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await rename(temporary, path.join(binding.directory, "final.json"));
-      const directory = await open(binding.directory, constants.O_RDONLY);
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
+      await persist("final");
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

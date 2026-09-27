@@ -24,9 +24,12 @@ import {
 } from "@himawari-agent/execution-contracts";
 import {
   type JobHostControlObservation,
+  processGroupPresent,
   queryJobHostControl,
   readJobHostFinalEvidence,
+  readJobHostStartEvidence,
   readLinuxNamespaceState,
+  readProcessStartToken,
 } from "@himawari-agent/runtime-sandbox/control";
 
 interface StoredControl {
@@ -53,6 +56,17 @@ interface StoredRestart {
   readonly restart: {
     readonly recordedMachineBootId: string;
     readonly currentMachineBootId: string;
+  };
+}
+interface StoredCrash {
+  readonly fingerprint: string;
+  readonly environmentId: string;
+  readonly resourceSequence: number;
+  readonly crash: {
+    readonly start: JobHostControlObservation;
+    readonly checkedAt: string;
+    readonly host: "absent" | "replaced";
+    readonly processGroup: "absent" | "leader_replaced";
   };
 }
 interface Options {
@@ -83,6 +97,14 @@ const key = (plan: SandboxExecutionPlanV2) =>
   `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}`;
 const observationKey = (plan: SandboxExecutionPlanV2, sequence: number) =>
   `${key(plan)}:observation:${sequence}`;
+class UnreachableHost {
+  readonly error: unknown;
+  constructor(error: unknown) {
+    this.error = error;
+  }
+}
+const errorCode = (error: unknown) =>
+  error && typeof error === "object" && "code" in error ? error.code : undefined;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const within = (parent: string, child: string) => {
   const relative = path.relative(parent, child);
@@ -191,11 +213,11 @@ export function createProductionSandboxControl(options: Options) {
       throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
     return value;
   };
-  const inspect = async (
+  const attempt = async (
     plan: SandboxExecutionPlanV2,
     command: "inspect" | "stop",
     signal?: AbortSignal,
-  ) => {
+  ): Promise<JobHostControlObservation | UnreachableHost> => {
     const stored = await readControl(plan);
     let observation: JobHostControlObservation;
     try {
@@ -206,8 +228,7 @@ export function createProductionSandboxControl(options: Options) {
       } catch (proofError) {
         // An absent final file is not the cause of a failed live request. Keep
         // its timeout/permission/connection reason; invalid final proof still wins.
-        if (proofError instanceof Error && "code" in proofError && proofError.code === "ENOENT")
-          throw requestError;
+        if (errorCode(proofError) === "ENOENT") return new UnreachableHost(requestError);
         throw proofError;
       }
     }
@@ -220,6 +241,60 @@ export function createProductionSandboxControl(options: Options) {
     )
       throw new Error("SANDBOX_CONTROL_IDENTITY_CHANGED");
     return observation;
+  };
+  const inspect = async (
+    plan: SandboxExecutionPlanV2,
+    command: "inspect" | "stop",
+    signal?: AbortSignal,
+  ) => {
+    const observation = await attempt(plan, command, signal);
+    if (observation instanceof UnreachableHost) throw observation.error;
+    return observation;
+  };
+  const crashedWithinBoot = async (
+    record: SandboxExecutionRecord,
+  ): Promise<StoredCrash["crash"] | undefined> => {
+    const stored = await readControl(record.plan);
+    let start: Awaited<ReturnType<typeof readJobHostStartEvidence>>;
+    try {
+      start = await readJobHostStartEvidence(stored.control);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return undefined;
+      throw error;
+    }
+    if (
+      start.bootId !== stored.bootId ||
+      start.processIdentityRef !== stored.processIdentityRef ||
+      start.policyDigest !== stored.policyDigest ||
+      start.observedAt > options.now()
+    )
+      throw new Error("SANDBOX_CONTROL_IDENTITY_CHANGED");
+    if (
+      start.bootId !== record.facts.environment.supervisor.bootId ||
+      start.sessionId !== record.facts.environment.supervisor.supervisorId ||
+      start.policyDigest !== record.facts.environment.policyDigest
+    )
+      return undefined;
+    const hostToken = await readProcessStartToken(start.processId);
+    if (hostToken === start.processStartToken) return undefined;
+    if (
+      start.linuxNamespace &&
+      (await readLinuxNamespaceState(start.linuxNamespace)) !== "released"
+    )
+      return undefined;
+    const { processGroupId, startToken } = start.taskProcessGroup;
+    let processGroup: StoredCrash["crash"]["processGroup"] = "absent";
+    if (processGroupPresent(processGroupId)) {
+      const leaderToken = await readProcessStartToken(processGroupId);
+      if (leaderToken === null || leaderToken === startToken) return undefined;
+      processGroup = "leader_replaced";
+    }
+    return {
+      start,
+      checkedAt: options.now(),
+      host: hostToken === null ? "absent" : "replaced",
+      processGroup,
+    };
   };
   const classify = async (
     record: SandboxExecutionRecord,
@@ -299,10 +374,10 @@ export function createProductionSandboxControl(options: Options) {
       return "controlled";
     return "lost";
   };
-  const observeAfterRestart = async (
+  const observeGone = async (
     record: SandboxExecutionRecord,
     control: StoredControl,
-    restart: StoredRestart["restart"],
+    fact: Pick<StoredRestart, "restart"> | Pick<StoredCrash, "crash">,
   ): Promise<SandboxResourceObservation> => {
     await options.host(record.plan);
     const old = record.facts.resource;
@@ -311,8 +386,8 @@ export function createProductionSandboxControl(options: Options) {
       fingerprint: record.plan.semanticFingerprint,
       environmentId: record.plan.environmentId,
       resourceSequence: sequence,
-      restart,
-    } satisfies StoredRestart);
+      ...fact,
+    } satisfies StoredRestart | StoredCrash);
     const now = options.now();
     return sandboxResourceObservationSchema.parse({
       schemaVersion: old.schemaVersion,
@@ -349,10 +424,18 @@ export function createProductionSandboxControl(options: Options) {
   ): Promise<SandboxResourceObservation> => {
     const control = await readStoredControl(record.plan);
     const restart = await restartedSince(control);
-    if (restart) return observeAfterRestart(record, control, restart);
+    if (restart) return observeGone(record, control, { restart });
+    const afterCrash = async (unreachable: UnreachableHost) => {
+      const crash = await crashedWithinBoot(record);
+      if (!crash) throw unreachable.error;
+      return observeGone(record, control, { crash });
+    };
     // Stop the authenticated original host promptly, then verify its resulting
     // state. File verification must never delay delivery of a stop request.
-    if (command === "stop") await inspect(record.plan, "stop", signal);
+    if (command === "stop") {
+      const stopped = await attempt(record.plan, "stop", signal);
+      if (stopped instanceof UnreachableHost) return afterCrash(stopped);
+    }
     // Read installed bytes before sampling a live process. A slow disk must not
     // consume the observation's freshness window before classification begins.
     let host: Awaited<ReturnType<Options["host"]>> | undefined;
@@ -368,7 +451,8 @@ export function createProductionSandboxControl(options: Options) {
           ? "SANDBOX_HOST_UNAVAILABLE"
           : classified;
     }
-    const raw = await inspect(record.plan, "inspect", signal);
+    const raw = await attempt(record.plan, "inspect", signal);
+    if (raw instanceof UnreachableHost) return afterCrash(raw);
     if (record.plan.operationContract.kind === "service_start") {
       if (!host) throw new Error("SANDBOX_HOST_UNAVAILABLE");
       const { binding } = host;
@@ -655,6 +739,27 @@ export function createProductionSandboxControl(options: Options) {
       const resource = facts.resource;
       if (resource.supervision !== "controlled" && resource.supervision !== "released") return [];
       const artifact = await options.read(plan, observationKey(plan, resource.sequence));
+      const crashed = artifact?.value as StoredCrash | undefined;
+      if (artifact && crashed && "crash" in crashed) {
+        const control = await readStoredControl(plan);
+        if (
+          artifact.ref !== resource.evidence.ref ||
+          artifact.digest !== resource.evidence.digest ||
+          crashed.fingerprint !== plan.semanticFingerprint ||
+          crashed.environmentId !== plan.environmentId ||
+          crashed.resourceSequence !== resource.sequence ||
+          crashed.crash.start.bootId !== control.bootId ||
+          crashed.crash.start.processIdentityRef !== control.processIdentityRef ||
+          !same(resourceState("process_group_gone"), {
+            supervision: resource.supervision,
+            cleanup: resource.cleanup,
+          }) ||
+          resource.evidence.subject.kind !== "local_process" ||
+          resource.evidence.subject.processIdentityRef !== control.processIdentityRef
+        )
+          throw new Error("SANDBOX_CONTROL_EVIDENCE_CHANGED");
+        return [{ ref: artifact.ref, digest: artifact.digest }];
+      }
       const restarted = artifact?.value as StoredRestart | undefined;
       if (restarted && "restart" in restarted) {
         const control = await readStoredControl(plan);

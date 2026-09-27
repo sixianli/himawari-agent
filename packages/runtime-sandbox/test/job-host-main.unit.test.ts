@@ -16,6 +16,7 @@ const boundary = vi.hoisted(() => ({
   readiness: vi.fn(),
   observe: vi.fn(),
   snapshot: vi.fn(),
+  startToken: vi.fn(),
   manager: {
     checkDependenciesAsync: vi.fn(),
     isSupportedPlatform: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("../src/job-host-control.ts", () => ({ openJobHostControl: boundary.cont
 vi.mock("../src/linux-namespace.ts", () => ({ captureLinuxNamespace: boundary.namespace }));
 vi.mock("../src/network-egress.ts", () => ({ openNetworkEgress: boundary.egress }));
 vi.mock("../src/readiness-probe.ts", () => ({ startReadinessProbe: boundary.readiness }));
+vi.mock("../src/process-identity.ts", () => ({ readProcessStartToken: boundary.startToken }));
 vi.mock("../src/resource-observer.ts", () => ({
   observeTaskResources: boundary.observe,
   readProcessSnapshot: boundary.snapshot,
@@ -68,7 +70,7 @@ let network: {
   observation: ReturnType<typeof vi.fn>;
   parentProxy: string;
 };
-let control: { finish: ReturnType<typeof vi.fn> };
+let control: { finish: ReturnType<typeof vi.fn>; recordStart: ReturnType<typeof vi.fn> };
 let resource: { stop: ReturnType<typeof vi.fn>; current: ReturnType<typeof vi.fn> };
 const request = (): JobHostRequest => ({
   jobId: "job-entry",
@@ -169,7 +171,7 @@ beforeEach(() => {
     observation: vi.fn(() => ({ blocked: 0 })),
     parentProxy: "http://127.0.0.1:9999",
   };
-  control = { finish: vi.fn(async () => {}) };
+  control = { finish: vi.fn(async () => {}), recordStart: vi.fn(async () => {}) };
   resource = { stop: vi.fn(), current: vi.fn(() => ({ cpuTimeMs: 12, memoryBytes: 1024 })) };
   boundary.spawn.mockReturnValue(task);
   boundary.realpath.mockImplementation(async (value) => value);
@@ -181,6 +183,7 @@ beforeEach(() => {
   boundary.namespace.mockResolvedValue({ ref: "namespace-owned" });
   boundary.egress.mockResolvedValue(network);
   boundary.snapshot.mockResolvedValue([]);
+  boundary.startToken.mockImplementation(async (pid: number) => `start-of-${pid}`);
   boundary.observe.mockReturnValue(resource);
   boundary.readiness.mockReturnValue({ cancel: vi.fn(), result: Promise.resolve(true) });
   boundary.manager.checkDependenciesAsync.mockResolvedValue({ errors: [], warnings: [] });
@@ -414,6 +417,79 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       srtReset: true,
       taskProcessGroupGone: true,
     });
+  });
+  it.each(["linux", "darwin"])(
+    "records the host and task group start identities once the %s task starts",
+    async (platform) => {
+      Object.assign(boundary.process, { platform });
+      await prepare(request(), {
+        control: {
+          sessionId: SESSION,
+          jobId: "job-entry",
+          attemptId: "attempt-entry",
+          directory: "/control",
+        },
+      });
+      const observe = boundary.control.mock.calls[0]?.[1];
+      expect(observe()).not.toHaveProperty("taskProcessGroup");
+      if (platform === "linux") await startLinux();
+      else {
+        await receive("start");
+        task.emit("spawn");
+        await settle();
+      }
+      expect(control.recordStart).toHaveBeenCalledOnce();
+      expect(boundary.startToken.mock.calls.map(([pid]) => pid).sort()).toEqual([6000, 7000]);
+      expect(observe()).toMatchObject({
+        taskStarted: true,
+        processStartToken: "start-of-6000",
+        taskProcessGroup: { processGroupId: 7000, startToken: "start-of-7000" },
+        linuxNamespace: platform === "linux" ? { ref: "namespace-owned" } : null,
+      });
+    },
+  );
+  it.each([
+    ["leader already gone", async (): Promise<string | null> => null],
+    [
+      "identity unreadable",
+      async (): Promise<string | null> => {
+        throw new Error("PROCESS_START_TOKEN_UNAVAILABLE");
+      },
+    ],
+  ] as const)("keeps running without a start record when the %s", async (_kind, token) => {
+    boundary.startToken.mockImplementation(async (pid: number) =>
+      pid === 7000 ? token() : `start-of-${pid}`,
+    );
+    await prepare(request(), {
+      control: {
+        sessionId: SESSION,
+        jobId: "job-entry",
+        attemptId: "attempt-entry",
+        directory: "/control",
+      },
+    });
+    await startLinux();
+    const observe = boundary.control.mock.calls[0]?.[1];
+    expect(control.recordStart).not.toHaveBeenCalled();
+    expect(observe()).toMatchObject({ phase: "running", taskStarted: true });
+    expect(observe()).not.toHaveProperty("taskProcessGroup");
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "exited", taskStarted: true });
+  });
+  it("keeps running when writing the start record fails", async () => {
+    control.recordStart.mockRejectedValue(new Error("disk full"));
+    await prepare(request(), {
+      control: {
+        sessionId: SESSION,
+        jobId: "job-entry",
+        attemptId: "attempt-entry",
+        directory: "/control",
+      },
+    });
+    await startLinux();
+    expect(control.recordStart).toHaveBeenCalledOnce();
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "exited", taskStarted: true });
   });
   it("ends same-group survivors after the task exits and reports the group gone", async () => {
     let probes = 0;

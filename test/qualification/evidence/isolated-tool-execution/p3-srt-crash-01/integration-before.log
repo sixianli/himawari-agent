@@ -1,0 +1,76 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ❯ test/integration/sandbox-control-evidence.test.ts (69 tests | 8 failed | 60 skipped) 2095ms
+   × decides a same-boot Job Host crash from the recorded identities: host and group gone 269ms
+   × decides a same-boot Job Host crash from the recorded identities: host start replaced 230ms
+   × decides a same-boot Job Host crash from the recorded identities: leader start replaced 219ms
+   × decides a same-boot Job Host crash from the recorded identities: host alive 229ms
+   × decides a same-boot Job Host crash from the recorded identities: leader alive 236ms
+   × decides a same-boot Job Host crash from the recorded identities: leaderless group alive 229ms
+   × decides a same-boot Job Host crash from the recorded identities: start record from another host 233ms
+   × decides a same-boot Job Host crash from the recorded identities: start record tampered 230ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host and group gone
+Error: connect ENOENT /private/tmp/r4-evidence-LbrMDw/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host start replaced
+Error: connect ENOENT /private/tmp/r4-evidence-6Bt4bt/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leader start replaced
+Error: connect ENOENT /private/tmp/r4-evidence-aUhuaH/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: host alive
+Error: connect ENOENT /private/tmp/r4-evidence-PsEzRU/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leader alive
+Error: connect ENOENT /private/tmp/r4-evidence-98xaRR/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: leaderless group alive
+Error: connect ENOENT /private/tmp/r4-evidence-mYKmqx/control/control.sock
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: start record from another host
+AssertionError: expected [Function] to throw error including 'SANDBOX_CONTROL_IDENTITY_CHANGED' but got 'connect ENOENT /private/tmp/r4-eviden…'
+
+Expected: "SANDBOX_CONTROL_IDENTITY_CHANGED"
+Received: "connect ENOENT /private/tmp/r4-evidence-QI9ghP/control/control.sock"
+
+ ❯ test/integration/sandbox-control-evidence.test.ts:753:28
+    751|       }
+    752|       const attempt = f.control.backend[command](record, new AbortCont…
+    753|       await expect(attempt).rejects.toThrow(
+       |                            ^
+    754|         {
+    755|           blocked: "ENOENT",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  test/integration/sandbox-control-evidence.test.ts > decides a same-boot Job Host crash from the recorded identities: start record tampered
+AssertionError: expected [Function] to throw error including 'JOB_HOST_CONTROL_EVIDENCE_INVALID' but got 'connect ENOENT /private/tmp/r4-eviden…'
+
+Expected: "JOB_HOST_CONTROL_EVIDENCE_INVALID"
+Received: "connect ENOENT /private/tmp/r4-evidence-QLU8Gp/control/control.sock"
+
+ ❯ test/integration/sandbox-control-evidence.test.ts:753:28
+    751|       }
+    752|       const attempt = f.control.backend[command](record, new AbortCont…
+    753|       await expect(attempt).rejects.toThrow(
+       |                            ^
+    754|         {
+    755|           blocked: "ENOENT",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 1 passed | 60 skipped (69)
+   Start at  10:37:14
+   Duration  3.54s (transform 904ms, setup 0ms, import 1.35s, tests 2.09s, environment 0ms)
