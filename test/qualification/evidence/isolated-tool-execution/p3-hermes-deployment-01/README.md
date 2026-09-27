@@ -24,7 +24,7 @@
 - 临时 sudo 已收回：删除了 `/etc/sudoers.d/99-himawari-claude-20260927` 和到期清理定时器，`visudo -c` 通过，`sudo -n true` 失败。
 - **有一处与正式流程不同**：能力登记里 `himawari.pi-coding` 仍是旧程序指纹，详见[能力登记没有更新](#registry-deviation)。
 - **上线后发现旧占用挡住写文件**，已由所有者批准直接改库修正，详见[上线后发现：旧占用挡住所有写文件请求](#occupancy-fix)。
-- **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，Hermes 上还没有部署这个修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。
+- **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。这个修正已于同日 21:22（日本时间）部署到 Hermes，详见[修正上线：4f2b776](#fix-deploy)。
 
 ## 可核验证据
 
@@ -99,12 +99,46 @@ Runbook 第 6 步写的正式做法 `himawari capabilities register` 在这里�
 
 佐证：Hermes 上 2026-09-14 的网页搜索 `302ab4dc` 也出现过同样的“先判失去控制、Worker 再提交”，那次 Worker 先写成功，所以没有丢结果；区别只在谁先写到数据库。本机用真实 Pi 程序读不存在的文件、不制造竞争时，结果能正常写入并返回“失败”。
 
-修正（提交 `4f2b776`）：Worker 提交结果被拒时重新读取记录；如果后台恢复正在进行（“对账中”），先等它结束再写，避免打断恢复；记录已释放时只写操作结果，否则照旧写一条“失去控制”并带上结果。只有记录确实被别人改过才重试，最多 5 次。新增的场景 `pi-recovered-during-delivery`（[`sandbox-v2-worker-lifecycle.test.ts`](../../../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)）在修正前失败（结果一直是“未知”），修正后通过。修正提交后，由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-4f2b776`（项目规定的完整测试，运行期间没有改动工作区），全部通过：contracts 380、unit 2069、integration 1853、e2e 3、pi-compat 130，报告在 [`npm-test-4f2b776.tar.gz`](npm-test-4f2b776.tar.gz)。托管的 GitHub 检查没有运行（`hosted gate: not_executed`）。Linux 上的真实竞争时机没有在本机重现，修正在 Hermes 上的效果要部署后才能确认。
+修正（提交 `4f2b776`）：Worker 提交结果被拒时重新读取记录；如果后台恢复正在进行（“对账中”），先等它结束再写，避免打断恢复；记录已释放时只写操作结果，否则照旧写一条“失去控制”并带上结果。只有记录确实被别人改过才重试，最多 5 次。新增的场景 `pi-recovered-during-delivery`（[`sandbox-v2-worker-lifecycle.test.ts`](../../../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)）在修正前失败（结果一直是“未知”），修正后通过。修正提交后，由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-4f2b776`（项目规定的完整测试，运行期间没有改动工作区），全部通过：contracts 380、unit 2069、integration 1853、e2e 3、pi-compat 130，报告在 [`npm-test-4f2b776.tar.gz`](npm-test-4f2b776.tar.gz)。托管的 GitHub 检查没有运行（`hosted gate: not_executed`）。Linux 上的真实竞争时机没有在本机重现；修正已部署（见[修正上线：4f2b776](#fix-deploy)），但部署时没有发起真实对话，所以在 Hermes 上还没有观察到它实际起作用。
 
 仍然存在、没有在这次修正里处理的：
 
 - 已经卡住的 `run:f52264fe…` 不会因为部署新版本而恢复，它的结果从未入库。
 - Pi 读文件返回错误时，模型看到的是“操作未确认成功。”，看不到“文件不存在”，可能导致模型不知道下一步该做什么。本机复现里看到了这一点，这是另一处需要单独修正的问题。
+
+<a id="fix-deploy"></a>
+## 修正上线：4f2b776
+
+日期：2026-09-27（日本时间 21:05–21:24）。所有者批准“部署并重启”，并在自己的终端里用 sudo 密码开了 12 小时的临时 root 权限。部署的源码是提交 `d6516794530b75df65ff9f3dbc34653f271817b3`，它包含修正 `4f2b776` 和上面这些记录；与已上线的 `c71adbd` 相比，产品代码只改了 Worker 的 [`production-sandbox-execution-v2.ts`](../../../../../apps/execution-worker/src/production-sandbox-execution-v2.ts)。数据库结构没变（仍是 schema 48），所以这次不迁移、不删除任何数据。
+
+结果：
+
+- 生产服务已运行新版本：Agent 和 Worker 都在 21:22:39 写出 `service.ready`，这次没有出现 Worker 启动超时，服务没有自动重启；`/health/ready` 返回 `ready`；进程 uid 998、`NoNewPrivs` 为 1；服务看到的安装目录是只读挂载的 `/opt/himawari/releases/2026-09-27-4f2b776`；从运行中进程的视图读到的 Worker 程序里包含新代码（`SANDBOX_RECOVERY_UNSETTLED`）。
+- 停服时间约 70 秒（21:21:28 停服到 21:22:39 就绪），中间做了完整备份并校验。
+- 卡住的 `run:f52264fe…` 按所有者要求没有处理，仍停在对账中。
+- 能力登记里 `himawari.pi-coding` 的旧指纹仍未更新，差异与上一次完全相同（两个指纹字段），切换脚本只接受这一种差异，没有写登记表。
+- 临时 root 权限已收回：删除了 `/etc/sudoers.d/99-himawari-claude-4f2b776`，停掉了到期清理定时器，之后 `sudo -n true` 要求密码。
+
+证据在 [`fix-4f2b776/`](fix-4f2b776/)：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`build.json`](fix-4f2b776/build.json) | 源码归档（3979 个文件）、源码清单、准备清单和运行时摘要 `fbce5ae6…7716`。在断网的 systemd 单元里一次构建成功。与 `c71adbd` 的安装相比只有 7 个文件不同：改过的 Worker 程序、3 个启动脚本（里面写着构建目录路径）和 3 个随构建路径变化的 better-sqlite3 编译文件；23 个网页静态文件完全相同 |
+| [`qualification.json`](fix-4f2b776/qualification.json)、[`platform-probes.json`](fix-4f2b776/platform-probes.json)、[`protected-runtime-probe.json`](fix-4f2b776/protected-runtime-probe.json)、[`signer-preflight.json`](fix-4f2b776/signer-preflight.json)、[`web-static-installed.json`](fix-4f2b776/web-static-installed.json)、[`workspace-links.json`](fix-4f2b776/workspace-links.json) | 六组资格验证全部通过（Pi 22 项、组合、允许网络 10 项、拒绝网络 7 项、Worker 被杀后清理、公开搜索 3 项），签署回执摘要 `907607f5…acfc57`。资格阶段服务没有停，也没有写生产数据库 |
+| [`database-before.json`](fix-4f2b776/database-before.json)、[`database-before-switch.json`](fix-4f2b776/database-before-switch.json) | 停服后和切换前：schema 48，90 个 Run、38 个对话、83 条执行记录（全部已清理、已释放），唯一未结束的 Run 是 `run:f52264fe…` |
+| [`backup-verify.json`](fix-4f2b776/backup-verify.json) | 切换前完整恢复点 `before-4f2b776-2026-09-27`：schema 48，完整性检查 `ok`，15,076 个 Payload |
+| [`registry-deviation.json`](fix-4f2b776/registry-deviation.json) | 能力登记与部署快照的差异，与[能力登记没有更新](#registry-deviation)相同 |
+| [`cutover.json`](fix-4f2b776/cutover.json)、[`postflight.json`](fix-4f2b776/postflight.json) | 切换结果和启动后检查 |
+| [`deployment-helpers.zip`](fix-4f2b776/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-4f2b776/deployment-helpers.sha256) | 本次实际运行的构建、资格、签署、启动和切换脚本；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-4f2b776/`，运行前用 `frozen.sha256` 逐一核对过 |
+
+和上一次切换脚本相比，这次的 `hermes-4f2b776-cutover.py` 去掉了迁移和删除步骤；把“能力登记不变”检查换成上一次续做脚本里“只接受 pi-coding 两个指纹字段差异”的检查；允许唯一未结束的 Run 是 `run:f52264fe…`；新版本启动失败时也会停掉它并恢复旧的 unit、配置和保护记录后启动旧版本（结构版本相同，旧版本能直接用这个数据库）。这次没有触发回退。
+
+没有验证的部分：
+
+- 没有发起任何模型请求，也没有用真实浏览器走聊天。修正在 Linux 真实竞争时机下是否生效，要等下次出现“先判失去控制、Worker 再提交结果”时，看 Run 是否正常结束、执行记录里是否有操作结果。
+- 公开入口的首页没有从本机经 Cloudflare 打开；只检查了本机 `/health/ready` 和资格阶段、切换前以运行账号读回的 23 个静态文件。不带正式主机名直接请求本机首页返回 403，这次没有查它具体按什么拒绝。
+
+需要回到 `c71adbd` 时：停服，用切换目录 `qualifications/2026-09-27-4f2b776-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动。数据库结构相同，不需要恢复备份；`/opt/himawari/releases/2026-09-27-c71adbd` 保留未动。
 
 ## 恢复方式
 
