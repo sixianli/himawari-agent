@@ -120,20 +120,17 @@ describe("installed runtime byte verification worker", () => {
         (kind) => [kind, mode] as const,
       ),
     ),
-  )(
-    "rejects unsafe %s in %s mode without publishing a result",
-    async (kind, mode) => {
-      boundary.mode = mode;
-      put("file", "fixture");
-      if (kind === "relative") boundary.root = "relative/runtime";
-      if (kind === "noncanonical") boundary.root = root + "/../" + path.basename(root);
-      if (kind === "writable-directory") chmodSync(root, 0o777);
-      if (kind === "writable-file") chmodSync(path.join(root, "file"), 0o666);
-      if (kind === "symlink") symlinkSync(path.join(root, "file"), path.join(root, "link"));
-      await expect(load()).rejects.toThrow("SANDBOX_HOST_PATH_UNSAFE");
-      expect(boundary.port?.postMessage).not.toHaveBeenCalled();
-    },
-  );
+  )("rejects unsafe %s in %s mode without publishing a result", async (kind, mode) => {
+    boundary.mode = mode;
+    put("file", "fixture");
+    if (kind === "relative") boundary.root = "relative/runtime";
+    if (kind === "noncanonical") boundary.root = root + "/../" + path.basename(root);
+    if (kind === "writable-directory") chmodSync(root, 0o777);
+    if (kind === "writable-file") chmodSync(path.join(root, "file"), 0o666);
+    if (kind === "symlink") symlinkSync(path.join(root, "file"), path.join(root, "link"));
+    await expect(load()).rejects.toThrow("SANDBOX_HOST_PATH_UNSAFE");
+    expect(boundary.port?.postMessage).not.toHaveBeenCalled();
+  });
   it.each(["opened identity", "changed during read"])(
     "rejects %s and does not publish a partial proof",
     async (kind) => {

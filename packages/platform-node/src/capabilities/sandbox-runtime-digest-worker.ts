@@ -23,7 +23,8 @@ export interface SandboxRuntimeDigestRequest {
  * Agent event loop. Digest mode reads every byte; fingerprint mode reads only the
  * inode metadata that any content, permission or replacement change must alter. */
 function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
-  if (mode !== "digest" && mode !== "fingerprint") throw new Error("SANDBOX_HOST_DIGEST_MODE_INVALID");
+  if (mode !== "digest" && mode !== "fingerprint")
+    throw new Error("SANDBOX_HOST_DIGEST_MODE_INVALID");
   if (typeof root !== "string" || !path.isAbsolute(root) || path.normalize(root) !== root)
     throw new Error("SANDBOX_HOST_PATH_UNSAFE");
   const files: { path: string; sha256: string; bytes: number; mode: number }[] = [];
