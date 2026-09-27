@@ -1,0 +1,60 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > requires an absolute archive and the fixed Python interpreter
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > ignores Finder .DS_Store files written after packaging at any depth 514ms
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a similar name
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a suffixed name
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a directory
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects a .DS_Store symbolic link
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid node-version payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid source-tree payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid entrypoint payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid native-binary payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid test-adapter payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid dependency-identity payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid runtime-identity payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > packages nested import-only dependencies and rejects missing mandatory dependencies
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > checks exact regular-file bytes, modes, dependency identity and platform
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects single byte
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing migration
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing dependency
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects extra file
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong source SHA
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong ABI
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong OS
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong lock
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > keeps generation time outside the payload content digest
+ × |tooling| test/tooling/artifact.test.mjs > same-artifact verification > leaves Finder .DS_Store files out of the archive 479ms
+   → expected 'f06e95f1d52e8e7854b341a1172f73d200f62…' to be '36cf76aaffc9f36eb5e5c64641c0bcca7edcf…' // Object.is equality
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > creates a deterministic archive, verifies it, and streams prevalidated members
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar ../escape before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar /absolute before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar symbolic before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar hardlink before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar duplicate before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar fifo before writing any member
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/artifact.test.mjs > same-artifact verification > leaves Finder .DS_Store files out of the archive
+AssertionError: expected 'f06e95f1d52e8e7854b341a1172f73d200f62…' to be '36cf76aaffc9f36eb5e5c64641c0bcca7edcf…' // Object.is equality
+
+Expected: "36cf76aaffc9f36eb5e5c64641c0bcca7edcf2ea466b5c50945a944e9eb87032"
+Received: "f06e95f1d52e8e7854b341a1172f73d200f620119c4db020446d56353d6dc0bb"
+
+ ❯ test/tooling/artifact.test.mjs:347:42
+    345|       await writeFile(path.join(payload, directory, ".DS_Store"), "Fin…
+    346|     runArchiveTool("create", payload, withFinder, { python });
+    347|     expect(await digestFile(withFinder)).toBe(await digestFile(clean));
+       |                                          ^
+    348|     const extracted = path.join(temporary, "extracted");
+    349|     await verifyArtifact({ archive: withFinder, context, python, extra…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 30 skipped (32)
+   Start at  11:46:46
+   Duration  1.49s (transform 100ms, setup 0ms, import 395ms, tests 994ms, environment 0ms)

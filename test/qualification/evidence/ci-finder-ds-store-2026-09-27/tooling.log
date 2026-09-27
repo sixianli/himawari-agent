@@ -1,0 +1,40 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > requires an absolute archive and the fixed Python interpreter 9ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > ignores Finder .DS_Store files written after packaging at any depth 489ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a similar name 391ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a suffixed name 416ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a directory 410ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects a .DS_Store symbolic link 348ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid node-version payload 206ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid source-tree payload 306ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid entrypoint payload 290ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid native-binary payload 380ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid test-adapter payload 485ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid dependency-identity payload 497ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid runtime-identity payload 398ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > packages nested import-only dependencies and rejects missing mandatory dependencies 912ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > checks exact regular-file bytes, modes, dependency identity and platform 330ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects single byte 332ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing migration 322ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing dependency 294ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects extra file 476ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong source SHA 230ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong ABI 195ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong OS 212ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong lock 153ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > keeps generation time outside the payload content digest 168ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > leaves Finder .DS_Store files out of the archive 611ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > creates a deterministic archive, verifies it, and streams prevalidated members 815ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar ../escape before writing any member 294ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar /absolute before writing any member 394ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar symbolic before writing any member 301ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar hardlink before writing any member 369ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar duplicate before writing any member 278ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar fifo before writing any member 256ms
+
+ Test Files  1 passed (1)
+      Tests  32 passed (32)
+   Start at  11:46:48
+   Duration  12.04s (transform 90ms, setup 0ms, import 384ms, tests 11.57s, environment 0ms)

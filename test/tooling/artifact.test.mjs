@@ -1,6 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -105,6 +115,34 @@ describe("same-artifact verification", () => {
     expect(() =>
       runArchiveTool("extract", "/input", "/output", { python: "/usr/bin/false" }),
     ).toThrow("ARTIFACT_PYTHON_VERSION_MISMATCH");
+  });
+  it("ignores Finder .DS_Store files written after packaging at any depth", async () => {
+    const { payload } = await fixture();
+    for (const directory of ["", "runtime", "runtime/node_modules/better-sqlite3/build"])
+      await writeFile(path.join(payload, directory, ".DS_Store"), "Finder view state");
+    await expect(verifyExtractedArtifact(payload, { context })).resolves.toBeDefined();
+    expect(
+      (await collectArtifactFiles(payload)).filter((file) => file.path.endsWith(".DS_Store")),
+    ).toEqual([]);
+  });
+  it.each([
+    ["similar name", "runtime/DS_Store"],
+    ["suffixed name", "runtime/.DS_Store.js"],
+    ["directory", "runtime/.DS_Store/index.js"],
+  ])("still rejects an unrecorded file with a %s", async (_kind, name) => {
+    const { payload } = await fixture();
+    await mkdir(path.dirname(path.join(payload, name)), { recursive: true });
+    await writeFile(path.join(payload, name), "unrecorded", { mode: 0o644 });
+    await expect(verifyExtractedArtifact(payload, { context })).rejects.toThrow(
+      "ARTIFACT_CONTENT_MISMATCH",
+    );
+  });
+  it("still rejects a .DS_Store symbolic link", async () => {
+    const { payload } = await fixture();
+    await symlink("/etc/hosts", path.join(payload, "runtime/.DS_Store"));
+    await expect(verifyExtractedArtifact(payload, { context })).rejects.toThrow(
+      "ARTIFACT_LINK_FORBIDDEN:runtime/.DS_Store",
+    );
   });
   it.each([
     ["node-version", "ARTIFACT_NODE_VERSION_MISMATCH"],
@@ -307,6 +345,21 @@ describe("same-artifact verification", () => {
     copy.generatedAt = "2026-09-04T00:00:00.000Z";
     expect(copy.contentSha256).toBe(record.contentSha256);
     expect(() => assertArtifactRecord({ ...copy, unknown: true })).toThrow();
+  });
+  it("leaves Finder .DS_Store files out of the archive", async () => {
+    const { temporary, payload, record } = await fixture();
+    const clean = path.join(temporary, "clean.tar.gz");
+    const withFinder = path.join(temporary, "finder.tar.gz");
+    runArchiveTool("create", payload, clean, { python });
+    for (const directory of ["", "runtime/node_modules"])
+      await writeFile(path.join(payload, directory, ".DS_Store"), "Finder view state");
+    runArchiveTool("create", payload, withFinder, { python });
+    expect(await digestFile(withFinder)).toBe(await digestFile(clean));
+    const extracted = path.join(temporary, "extracted");
+    await verifyArtifact({ archive: withFinder, context, python, extractTo: extracted });
+    expect(existsSync(path.join(extracted, ".DS_Store"))).toBe(false);
+    expect(existsSync(path.join(extracted, "runtime/node_modules/.DS_Store"))).toBe(false);
+    expect(record.files.some((file) => file.path.endsWith(".DS_Store"))).toBe(false);
   });
   it("creates a deterministic archive, verifies it, and streams prevalidated members", async () => {
     const { temporary, payload, record } = await fixture();

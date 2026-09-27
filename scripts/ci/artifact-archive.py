@@ -29,6 +29,8 @@ def create(source, archive):
                         raise ValueError("ARTIFACT_LINK_FORBIDDEN")
                     if filename.is_dir():
                         continue
+                    if filename.name == ".DS_Store":
+                        continue
                     if not filename.is_file():
                         raise ValueError("ARTIFACT_SPECIAL_FILE_FORBIDDEN")
                     name = filename.relative_to(source).as_posix()

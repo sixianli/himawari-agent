@@ -22,6 +22,7 @@ export async function collectArtifactFiles(root, { normalizeModes = false } = {}
       const filename = path.join(directory, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`ARTIFACT_LINK_FORBIDDEN:${name}`);
       if (entry.isDirectory()) await visit(filename, name);
+      else if (entry.isFile() && entry.name === ".DS_Store") continue;
       else if (entry.isFile()) {
         const info = await lstat(filename);
         const mode = normalizeModes ? (info.mode & 0o111 ? 0o755 : 0o644) : info.mode & 0o777;
