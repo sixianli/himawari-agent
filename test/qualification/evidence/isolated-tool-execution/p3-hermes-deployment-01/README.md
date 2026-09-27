@@ -24,6 +24,7 @@
 - 临时 sudo 已收回：删除了 `/etc/sudoers.d/99-himawari-claude-20260927` 和到期清理定时器，`visudo -c` 通过，`sudo -n true` 失败。
 - **有一处与正式流程不同**：能力登记里 `himawari.pi-coding` 仍是旧程序指纹，详见[能力登记没有更新](#registry-deviation)。
 - **上线后发现旧占用挡住写文件**，已由所有者批准直接改库修正，详见[上线后发现：旧占用挡住所有写文件请求](#occupancy-fix)。
+- **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，Hermes 上还没有部署这个修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。
 
 ## 可核验证据
 
@@ -71,6 +72,39 @@ Runbook 第 6 步写的正式做法 `himawari capabilities register` 在这里�
 **这是升级前检查的遗漏**：只核对了执行记录的清理标记，没有核对占用表里是否还有未解除的占用。
 
 现有命令都处理不了这两条：只读核查工具不修改数据，旧未确认记录的删除命令只处理清理结果为 `unknown` 的记录。所有者同意作为一次例外，直接在数据库里改这两行（[`occupancy-fix.json`](occupancy-fix.json)）：以服务账号运行，先只读预览，再用 SQLite 备份接口把整个数据库复制到 `state/data/manual-before-occupancy-fix-2026-09-27/` 并检查完整性；然后在一个事务里，只在 `released_at` 仍为空时把这两行设为当前时间，要求恰好改 2 行；最后读回，未解除占用为 0。改之前核实了服务账号下只有 19:02 启动的三个进程，当年的工具进程都已不存在。没有写释放回执、没有写审计记录、没有重启服务，改后健康检查仍为 `ready`。这绕过了 ADR 0030 第 5 条要求的“逐条条件更新”的正式命令，以后应补上正式命令。
+
+<a id="result-lost"></a>
+## 上线后发现：工具结果被后台恢复挤掉
+
+占用修正后，所有者在同一个对话里重试，Run `run:f52264fe-b2b1-4bb6-a687-e9facdc06070` 又停在 `reconciling_external_result`（结果未确认、等待对账的状态）。所有者同意后，只解密了这次工具调用在 19:47:09–19:47:16 写下的监控和结果记录，没有解密对话内容；数据库只读查询。
+
+查到的事实（时间为 UTC 10:47）：
+
+| 时间 | 谁 | 记下了什么 |
+| --- | --- | --- |
+| 13.196 | 进程宿主（运行沙箱进程的监督程序） | 仍在运行 |
+| 13.238 | 进程宿主 | 已结束，进程组全部消失 |
+| 13.470 | Agent 的实时观测 | 第 4 条资源记录：失去控制（`SANDBOX_CONTROL_UNCONFIRMED`） |
+| 13.606 | Worker | 写入 Pi 的输出：一份正常的 `pi-result.v1`，内容是文件不存在（`PI_FILE_MISSING`），程序退出码 1 |
+| 14.884–16.605 | Agent 的后台资源恢复 | 第 5 条“对账中”、第 6 条“已释放”，占用解除；恢复记录版本 3、尝试 1 次 |
+| 16.775 | Agent | 工具结果：`WORKER_RESULT_RECONCILIATION_REQUIRED`（结果未确认） |
+
+执行记录里的操作结果始终为空，也就是 Worker 的结果从没写进数据库。
+
+原因（依据上表和代码，另有本机复现）：
+
+1. Agent 观测时，宿主文件里还是 13.196 的“运行中”，但 Linux 进程命名空间在 13.238 已经消失。[`production-sandbox-control.ts`](../../../../../apps/agent-service/src/production-sandbox-control.ts) 的判定要求“运行中”时命名空间也还在，不满足就判为失去控制。这个判定偏保守，但本身不会丢数据。Mac 上的判定不看命名空间，所以本机测试一直碰不到这个时机。
+2. 一旦记录是“失去控制”，Agent 的后台资源恢复（[`sandbox-resource-recovery.ts`](../../../../../packages/application/src/services/sandbox-resource-recovery.ts)）马上把它当成要核查的对象，写入“对账中”，把记录序号从 4 推到 5。
+3. Worker 这时正带着结果提交第 5 条记录，要求当前序号仍是 4，于是被数据库拒绝。旧代码（[`production-sandbox-execution-v2.ts`](../../../../../apps/execution-worker/src/production-sandbox-execution-v2.ts)）把这个失败吞掉，直接回报“结果未知”，结果就永久丢了。恢复只能证明进程已清理，不能补出结果，所以 Run 停在对账中。
+
+佐证：Hermes 上 2026-09-14 的网页搜索 `302ab4dc` 也出现过同样的“先判失去控制、Worker 再提交”，那次 Worker 先写成功，所以没有丢结果；区别只在谁先写到数据库。本机用真实 Pi 程序读不存在的文件、不制造竞争时，结果能正常写入并返回“失败”。
+
+修正（提交 `4f2b776`）：Worker 提交结果被拒时重新读取记录；如果后台恢复正在进行（“对账中”），先等它结束再写，避免打断恢复；记录已释放时只写操作结果，否则照旧写一条“失去控制”并带上结果。只有记录确实被别人改过才重试，最多 5 次。新增的场景 `pi-recovered-during-delivery`（[`sandbox-v2-worker-lifecycle.test.ts`](../../../../../test/integration/sandbox-v2-worker-lifecycle.test.ts)）在修正前失败（结果一直是“未知”），修正后通过。修正提交后，由 Claude 在本机运行 `npm test -- --output .ci-output/npm-test-4f2b776`（项目规定的完整测试，运行期间没有改动工作区），全部通过：contracts 380、unit 2069、integration 1853、e2e 3、pi-compat 130，报告在 [`npm-test-4f2b776.tar.gz`](npm-test-4f2b776.tar.gz)。托管的 GitHub 检查没有运行（`hosted gate: not_executed`）。Linux 上的真实竞争时机没有在本机重现，修正在 Hermes 上的效果要部署后才能确认。
+
+仍然存在、没有在这次修正里处理的：
+
+- 已经卡住的 `run:f52264fe…` 不会因为部署新版本而恢复，它的结果从未入库。
+- Pi 读文件返回错误时，模型看到的是“操作未确认成功。”，看不到“文件不存在”，可能导致模型不知道下一步该做什么。本机复现里看到了这一点，这是另一处需要单独修正的问题。
 
 ## 恢复方式
 
