@@ -641,6 +641,85 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-strict-mode-unavailable.png`),
         });
+        await expect(page.locator(".environment-line")).toHaveCount(0);
+        await send({
+          environment: {
+            mode: "strict",
+            programs: [
+              {
+                threadId: "thread-main",
+                kind: "service",
+                toolName: "bash",
+                startedAt: "2026-09-20T03:04:00.000Z",
+              },
+              {
+                threadId: "thread-research",
+                kind: "background",
+                toolName: "bash",
+                startedAt: "2026-09-20T03:13:00.000Z",
+              },
+            ],
+            unavailableTools: [
+              { toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" },
+              { toolName: "read", reasonCode: "SANDBOX_BINDING_SRT_ONLY" },
+            ],
+          },
+        });
+        await page.goto(`${baseUrl}/threads/thread-main`);
+        const line = page.getByRole("button", { name: "严格模式 · 2 个程序在运行" });
+        await expect(line).toHaveAttribute("aria-expanded", "false");
+        const runningMarkers = page.getByRole("img", { name: "有程序在运行" });
+        if (width >= 1024) await expect(runningMarkers).toHaveCount(2);
+        await line.click();
+        const panel = page.getByRole("dialog", { name: "执行环境" });
+        await expect(panel).toBeVisible();
+        await expect(line).toHaveAttribute("aria-expanded", "true");
+        for (const text of [
+          "当前模式",
+          "每个工具都在本轮对话专用的容器里运行。",
+          "模式由安装配置决定，页面上不能切换。",
+          "仍在运行的程序",
+          "服务",
+          "后台任务",
+          "严格模式下不可用的工具",
+          "只能在进程级沙箱（SRT）里运行",
+          "安装声明没有逐项写明可在容器里运行",
+          "工具内部再发起的子任务也不可用。",
+        ])
+          await expect(panel).toContainText(text);
+        await expect(panel.getByRole("listitem")).toHaveCount(4);
+        await expect(
+          panel.getByRole("button", { name: /^打开所属对话：Tokyo headlines / }),
+        ).toBeVisible();
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-environment-strict.png`),
+        });
+        await page.keyboard.press("Escape");
+        await expect(panel).toHaveCount(0);
+        await expect(line).toBeFocused();
+        await line.click();
+        await page.getByRole("button", { name: "打开所属对话：研究记录" }).click();
+        await expect(page).toHaveURL(/\/threads\/thread-research/);
+        await expect(page.getByRole("dialog", { name: "执行环境" })).toHaveCount(0);
+        await send({ environment: { mode: "srt", programs: [], unavailableTools: [] } });
+        await page.getByRole("button", { name: "严格模式 · 2 个程序在运行" }).click();
+        const idleLine = page.getByRole("button", { name: "默认模式 · 没有程序在运行" });
+        await expect(idleLine).toHaveAttribute("aria-expanded", "true");
+        const idlePanel = page.getByRole("dialog", { name: "执行环境" });
+        for (const text of [
+          "工具在本机的进程级沙箱（SRT）里运行",
+          "停止只保证工具的进程组已结束",
+          "没有正在运行的程序。",
+          "默认模式下没有因为模式而不可用的工具。",
+        ])
+          await expect(idlePanel).toContainText(text);
+        if (width >= 1024) await expect(runningMarkers).toHaveCount(0);
+        await page.reload();
+        await expect(page.getByRole("button", { name: "默认模式 · 没有程序在运行" })).toBeVisible();
+        await page.screenshot({
+          path: path.join(output, `state-${width}-${colorScheme}-environment-default.png`),
+        });
+        await send({ environment: null });
         assert.deepEqual(errors, []);
         cases.push({
           width,
@@ -652,6 +731,7 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
           stopNotStrictlyConfirmed: true,
           executionRecordDeleted: true,
           strictModeUnavailable: true,
+          executionEnvironment: true,
         });
       } finally {
         await context.close();

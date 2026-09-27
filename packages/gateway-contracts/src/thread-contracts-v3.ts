@@ -38,6 +38,8 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.execution_snapshot",
   "thread.execution_state",
   "thread.execution_state_snapshot",
+  "thread.execution_environment",
+  "thread.execution_environment_snapshot",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
@@ -627,12 +629,41 @@ const threadExecutionStateSnapshotSchema = object({
   }),
 });
 
+export const threadExecutionEnvironmentSchema = object({
+  mode: enumeration(["srt", "strict"]),
+  programs: array(
+    object({
+      threadId: nullable(machineString),
+      kind: enumeration(["background", "service"]),
+      toolName: machineString,
+      startedAt: timestamp,
+    }),
+  ),
+  unavailableTools: array(
+    object({
+      toolName: machineString,
+      reasonCode: enumeration(["SANDBOX_OPERATION_SRT_ONLY", "SANDBOX_BINDING_SRT_ONLY"]),
+    }),
+  ),
+});
+export type ThreadExecutionEnvironment = InferSchema<typeof threadExecutionEnvironmentSchema>;
+const threadExecutionEnvironmentQuerySchema = object({
+  ...envelope("query", "thread.execution_environment"),
+  payload: object({}),
+});
+const threadExecutionEnvironmentSnapshotSchema = object({
+  ...envelope("snapshot", "thread.execution_environment_snapshot"),
+  payload: object({ environment: threadExecutionEnvironmentSchema, generatedAt: timestamp }),
+});
+
 const schemasByType = {
   "thread.message.submit_configured": submitConfiguredThreadMessageSchema,
   "thread.run.cancel": cancelThreadRunSchema,
   "thread.execution": threadExecutionQuerySchema,
   "thread.execution_state": threadExecutionStateQuerySchema,
   "thread.execution_state_snapshot": threadExecutionStateSnapshotSchema,
+  "thread.execution_environment": threadExecutionEnvironmentQuerySchema,
+  "thread.execution_environment_snapshot": threadExecutionEnvironmentSnapshotSchema,
   "thread.execution_snapshot": threadExecutionSnapshotSchema,
   "thread.create": createThreadV3CommandSchema,
   "thread.message.submit": submitThreadMessageV3CommandSchema,

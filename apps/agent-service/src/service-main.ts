@@ -83,6 +83,7 @@ import {
 } from "./production-run-memory.js";
 import { createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
+import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionSandboxServices } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -1076,6 +1077,17 @@ export async function runAgentService(
         authority: () => activeAuthority.authorityFence(),
         executionAuthority: () => activeAuthority.authorityLease(),
         secretSources: sources,
+        executionEnvironment: {
+          mode:
+            sandboxServices?.executionMode ?? (configuration.taskEnvironments ? "strict" : "srt"),
+          unavailableTools: async () =>
+            sandboxServices?.executionMode === "strict"
+              ? strictModeUnavailableTools({
+                  runPolicy: configuration.runPolicy,
+                  refusal: sandboxServices.strictModeRefusal,
+                })
+              : [],
+        },
         ...dependencies.httpOptions,
         health,
       });

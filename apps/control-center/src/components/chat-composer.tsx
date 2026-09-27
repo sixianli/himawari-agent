@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { ModelPicker } from "./model-picker.js";
@@ -37,6 +37,7 @@ export function ChatComposer({
   message,
   canSend = true,
   retryPending = false,
+  environment,
 }: {
   readonly draft: string;
   readonly onDraft: (draft: string) => void;
@@ -53,6 +54,7 @@ export function ChatComposer({
   readonly message: (id: MessageId) => string;
   readonly canSend?: boolean;
   readonly retryPending?: boolean;
+  readonly environment?: ReactNode;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -70,6 +72,7 @@ export function ChatComposer({
     canSend && connected && !pending && !reading && (retryPending || Boolean(draft.trim()));
   return (
     <>
+      {environment}
       <form
         className="composer"
         onSubmit={(event) => {

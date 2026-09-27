@@ -306,6 +306,12 @@ describe("production HTTP composition", () => {
       identityFetcher,
       now: () => new Date(NOW),
       createSessionToken: () => "session-token-production-http",
+      executionEnvironment: {
+        mode: "strict",
+        unavailableTools: async () => [
+          { toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" },
+        ],
+      },
     });
     try {
       const bootstrap = await composition.app.inject({
@@ -340,6 +346,7 @@ describe("production HTTP composition", () => {
       });
       expect(configResponse.statusCode).toBe(200);
       expect(configResponse.json()).toMatchObject({
+        executionEnvironmentAvailable: true,
         installedGatewayV2Operations: [
           "approval.list",
           "approval.detail",
@@ -663,6 +670,27 @@ describe("production HTTP composition", () => {
           runs: [{ runId: "run:production-http-owner", status: "accepted" }],
         },
       });
+      const environment = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.execution_environment"),
+          messageId: "message:production-http-environment",
+          payload: {},
+        },
+      });
+      expect(environment.statusCode).toBe(200);
+      expect(environment.json()).toMatchObject({
+        type: "thread.execution_environment_snapshot",
+        payload: {
+          environment: {
+            mode: "strict",
+            programs: [],
+            unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" }],
+          },
+        },
+      });
 
       identityLookupAvailable = false;
       const missingFreshnessConfig = await composition.app.inject({
@@ -767,6 +795,24 @@ describe("production HTTP composition", () => {
       expect(restartedDetail.json()).toMatchObject({
         payload: { thread: { revision: 2 }, runs: [{ status: "accepted" }] },
       });
+      const restartedConfig = await composition.app.inject({
+        method: "GET",
+        url: "/api/control-center/v1/config",
+        headers: requestHeaders(token, cookie),
+      });
+      expect(restartedConfig.json()).toMatchObject({ executionEnvironmentAvailable: false });
+      const environmentNotInstalled = await composition.app.inject({
+        method: "POST",
+        url: "/api/gateway/thread/v3/queries",
+        headers: requestHeaders(token, cookie),
+        payload: {
+          ...envelope("query", "thread.execution_environment"),
+          messageId: "message:production-http-environment-restarted",
+          payload: {},
+        },
+      });
+      expect(environmentNotInstalled.statusCode).not.toBe(200);
+      expect(JSON.stringify(environmentNotInstalled.json())).not.toContain("programs");
 
       const persistedSession = (
         await repository.sessionDeviceState().listSessions(config.ownerId, true)

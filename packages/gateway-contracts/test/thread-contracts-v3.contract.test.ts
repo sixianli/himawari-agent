@@ -14,6 +14,7 @@ import {
   threadEventsV3SubscriptionSchema,
   threadExecutionRecordSchema,
   threadGatewayMessageSchema,
+  threadExecutionEnvironmentSchema,
   threadExecutionStateSchema,
 } from "@himawari-agent/gateway-contracts";
 import { describe, expect, it } from "vitest";
@@ -62,6 +63,58 @@ describe("Thread Gateway v3 contracts", () => {
     expect(() =>
       threadGatewayMessageSchema.parse({ ...legacy, payload: { ...legacy.payload, state: {} } }),
     ).toThrow();
+  });
+
+  it("describes the execution environment without internal identities or command text", () => {
+    const query = {
+      ...envelope,
+      kind: "query",
+      type: "thread.execution_environment",
+      payload: {},
+    };
+    expect(threadGatewayMessageSchema.parse(query)).toEqual(query);
+    expect(() =>
+      threadGatewayMessageSchema.parse({ ...query, payload: { threadId: "thread-s2" } }),
+    ).toThrow();
+    const environment = {
+      mode: "strict",
+      programs: [
+        {
+          threadId: "thread-s2",
+          kind: "service",
+          toolName: "bash",
+          startedAt: "2026-09-27T00:00:00.000Z",
+        },
+        {
+          threadId: null,
+          kind: "background",
+          toolName: "bash",
+          startedAt: "2026-09-27T00:01:00.000Z",
+        },
+      ],
+      unavailableTools: [
+        { toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" },
+        { toolName: "read", reasonCode: "SANDBOX_BINDING_SRT_ONLY" },
+      ],
+    };
+    expect(threadExecutionEnvironmentSchema.parse(environment)).toEqual(environment);
+    const snapshot = {
+      ...envelope,
+      kind: "snapshot",
+      type: "thread.execution_environment_snapshot",
+      payload: { environment, generatedAt: "2026-09-27T00:00:00.000Z" },
+    };
+    expect(threadGatewayMessageSchema.parse(snapshot)).toEqual(snapshot);
+    const [program] = environment.programs;
+    for (const patch of [
+      { mode: "default" },
+      { programs: [{ ...program, kind: "foreground" }] },
+      { programs: [{ ...program, command: "npm run dev" }] },
+      { programs: [{ ...program, jobId: "job-s2" }] },
+      { programs: [{ ...program, startedAt: null }] },
+      { unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_STRICT_MODE_UNAVAILABLE" }] },
+    ])
+      expect(() => threadExecutionEnvironmentSchema.parse({ ...environment, ...patch })).toThrow();
   });
 
   it("rejects invented phases, timing and unknown action commands in execution state", () => {

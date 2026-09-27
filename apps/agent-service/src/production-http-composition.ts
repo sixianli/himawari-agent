@@ -27,6 +27,7 @@ import {
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
+  readThreadExecutionEnvironment,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
@@ -60,6 +61,7 @@ import {
   registerIdentityAuthenticationRoutes,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance } from "fastify";
 import {
   createProductionApprovalGateway,
@@ -113,6 +115,10 @@ export interface ProductionHttpCompositionOptions {
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
   readonly health?: RuntimeHealthModel;
+  readonly executionEnvironment?: {
+    readonly mode: ThreadExecutionEnvironment["mode"];
+    readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
+  };
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   /** Core owns the authority lifecycle and supplies the current product fence. */
@@ -471,6 +477,7 @@ function routeOptions(
   modelCatalog: ProductionHttpCompositionOptions["modelCatalog"],
   canCancelRun: boolean,
   workspaceCopiesAvailable: boolean,
+  executionEnvironmentAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -493,6 +500,7 @@ function routeOptions(
     browserConfiguration: {
       executionPresentationAvailable: true,
       executionStateAvailable: true,
+      executionEnvironmentAvailable,
       canCancelRun,
       availableModels: modelCatalog ?? [],
       installedGatewayV2Operations: [
@@ -694,6 +702,7 @@ export async function createProductionHttpComposition(
     authority: () => authorityForConfiguration(configuration, options.authority()),
     recentAuthentication,
   });
+  const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
@@ -731,6 +740,24 @@ export async function createProductionHttpComposition(
         digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
       },
     }),
+    ...(environment
+      ? {
+          executionEnvironment: {
+            read: async (scope: { ownerId: string; agentId: string }) => {
+              if (scope.ownerId !== ownerId || scope.agentId !== agentId)
+                throw new ApplicationPortError(
+                  PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+                  "THREAD_EXECUTION_ENVIRONMENT_SCOPE_MISMATCH",
+                );
+              return readThreadExecutionEnvironment({
+                programs: repository.sandboxExecutionPreparations(ownerId, agentId),
+                mode: environment.mode,
+                unavailableTools: environment.unavailableTools,
+              });
+            },
+          },
+        }
+      : {}),
     repository: threads,
     checkpoints: repository.threadDistillationState(),
     commands: threadCommands,
@@ -817,6 +844,7 @@ export async function createProductionHttpComposition(
       options.modelCatalog,
       Boolean(options.cancelRun),
       Boolean(workspaceCopies),
+      Boolean(options.executionEnvironment),
     ),
     gatewayV2,
     threadSearch,

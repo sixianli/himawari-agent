@@ -30,6 +30,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
+import { readThreadExecutionEnvironment } from "../../packages/application/src/services/thread-execution-environment.ts";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
 import {
   sandboxV2Admission as admission,
@@ -2071,6 +2072,147 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         operations: [{ phase: "released", reasonCode: "RESOURCE_RELEASE_CONFIRMED" }],
       });
       expect(call(f, "read", record.plan.identity)?.releaseReceipt).toEqual(record.releaseReceipt);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("lists started background and service programs until their release is recorded", async () => {
+    const f = await openSandboxJournal();
+    try {
+      f.database
+        .prepare("UPDATE capability_handles SET record_json=json_set(record_json,'$.maxUses',10)")
+        .run();
+      const longRunning = (suffix: string, mode: "background" | "service") => {
+        const a = admission(f, suffix, undefined, "read");
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...a.plan,
+          mode,
+          operationContract:
+            mode === "background"
+              ? { ref: "task-create", version: "1", kind: "task_start" }
+              : {
+                  ref: "service-create",
+                  version: "1",
+                  kind: "service_start",
+                  readinessProbeRef: "ready",
+                },
+        });
+        const resourceRef = `resource${suffix}`;
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...a.facts,
+          environment: { ...a.facts.environment, mode, resourceRef },
+          resource: {
+            ...a.facts.resource,
+            resourceRef,
+            status:
+              mode === "background"
+                ? { kind: "task", state: "starting" }
+                : { kind: "service", readiness: "starting" },
+          },
+        });
+        return { ...a, plan, facts };
+      };
+      const releasedAs = (
+        record: SandboxExecutionRecord,
+        cleanup: "confirmed" | "process_group_gone",
+      ) => {
+        const stopping = append(f, record, resource(record, "stopping"));
+        const released = resource(stopping, "released");
+        return append(
+          f,
+          stopping,
+          sandboxExecutionFactsSchema.parse({
+            ...released,
+            resource: {
+              ...released.resource,
+              cleanup,
+              status:
+                record.plan.mode === "background"
+                  ? { kind: "task", state: "exited" }
+                  : { kind: "service", readiness: "unavailable" },
+            },
+          }),
+        );
+      };
+      const startedAs = (
+        suffix: string,
+        mode: "background" | "service",
+        state: "controlled" | "stopping" | "lost",
+      ) => {
+        const record = start(f, longRunning(suffix, mode));
+        return append(f, record, resource(record, state));
+      };
+      releasedAs(start(f, longRunning("-d-confirmed", "background")), "confirmed");
+      releasedAs(start(f, longRunning("-e-group-gone", "service")), "process_group_gone");
+      const foreground = start(f, admission(f, "-f-foreground", undefined, "read"));
+      append(f, foreground, resource(foreground, "controlled"));
+      call(f, "admit", longRunning("-g-not-started", "background"));
+      const running = startedAs("-a-task", "background", "controlled");
+      const stoppingService = startedAs("-b-service", "service", "stopping");
+      const lostTask = startedAs("-c-lost", "background", "lost");
+
+      const list = (afterJobId: string | null, limit: number) =>
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.listRunningPrograms",
+          { ownerId: OWNER_ID, agentId: AGENT_ID, input: { afterJobId, limit } },
+        ) as SandboxExecutionRecord[];
+      const jobIds = (records: readonly SandboxExecutionRecord[]) =>
+        records.map((record) => record.plan.identity.jobId);
+      expect(jobIds(list(null, 100))).toEqual(["job-a-task", "job-b-service", "job-c-lost"]);
+      expect(list(null, 100)).toEqual([running, stoppingService, lostTask]);
+      expect(jobIds(list(null, 1))).toEqual(["job-a-task"]);
+      expect(jobIds(list("job-a-task", 1))).toEqual(["job-b-service"]);
+      expect(jobIds(list("job-c-lost", 100))).toEqual([]);
+      for (const input of [
+        { afterJobId: null, limit: 0 },
+        { afterJobId: null, limit: 101 },
+        { afterJobId: "", limit: 1 },
+      ])
+        expect(() =>
+          operationsForDatabase(f.database).execute(
+            "capabilityInvocation.sandboxV2.listRunningPrograms",
+            { ownerId: OWNER_ID, agentId: AGENT_ID, input },
+          ),
+        ).toThrow();
+      expect(
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.listRunningPrograms",
+          { ownerId: OWNER_ID, agentId: "agent-other", input: { afterJobId: null, limit: 100 } },
+        ),
+      ).toEqual([]);
+
+      const environment = await readThreadExecutionEnvironment({
+        programs: {
+          listRunningPrograms: async (input) => list(input.afterJobId, input.limit),
+        },
+        mode: "strict",
+        unavailableTools: async () => [
+          { toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" },
+        ],
+        pageSize: 2,
+      });
+      expect(environment).toEqual({
+        mode: "strict",
+        programs: [running, stoppingService, lostTask].map((record) => ({
+          threadId: record.plan.identity.threadId,
+          kind: record.plan.mode,
+          toolName: record.plan.operation,
+          startedAt: record.startedAt,
+        })),
+        unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" }],
+      });
+      await expect(
+        readThreadExecutionEnvironment({
+          programs: {
+            listRunningPrograms: async (input) => list(input.afterJobId, input.limit),
+          },
+          mode: "srt",
+          unavailableTools: async () => [],
+          pageSize: 1,
+          maximumPrograms: 2,
+        }),
+      ).rejects.toThrow("THREAD_EXECUTION_ENVIRONMENT_LIMIT");
     } finally {
       await f.close();
     }

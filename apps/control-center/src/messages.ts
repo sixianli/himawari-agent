@@ -99,6 +99,7 @@ export function threadQueryMessage(
   type:
     | "thread.execution"
     | "thread.execution_state"
+    | "thread.execution_environment"
     | "thread.list"
     | "thread.detail"
     | "thread.search"

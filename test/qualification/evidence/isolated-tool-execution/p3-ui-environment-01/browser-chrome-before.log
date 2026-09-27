@@ -1,0 +1,75 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+ExpectError: expect(locator).toHaveAttribute(expected) failed
+
+Locator: getByRole('button', { name: '严格模式 · 2 个程序在运行' })
+Expected: "false"
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "to.have.attribute.value" with timeout 5000ms
+  - waiting for getByRole('button', { name: '严格模式 · 2 个程序在运行' })
+
+    at captureRawStack (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/node_modules/playwright-core/lib/coreBundle.js:9681:17)
+    at callMatcherAsStep (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/node_modules/playwright/lib/matchers/expect.js:13310:57)
+    at Object.toHaveAttribute (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/node_modules/playwright/lib/matchers/expect.js:13300:23)
+    at qualifyExecutionState (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:670:28)
+    at async qualify (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:748:9)
+    at async qualifyExecutionChainFixture (/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:782:19)
+    at async file:///Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/scripts/test-execution-chain-browser.mjs:807:19 {
+  matcherResult: {
+    name: 'toHaveAttribute',
+    expected: 'false',
+    message: 'expect(locator).toHaveAttribute(expected) failed\n' +
+      '\n' +
+      "Locator: getByRole('button', { name: '严格模式 · 2 个程序在运行' })\n" +
+      'Expected: "false"\n' +
+      'Timeout: 5000ms\n' +
+      'Error: element(s) not found\n' +
+      '\n' +
+      'Call log:\n' +
+      '  - Expect "to.have.attribute.value" with timeout 5000ms\n' +
+      "  - waiting for getByRole('button', { name: '严格模式 · 2 个程序在运行' })\n",
+    pass: false,
+    actual: undefined,
+    log: [
+      '  - Expect "to.have.attribute.value" with timeout 5000ms',
+      "  - waiting for getByRole('button', { name: '严格模式 · 2 个程序在运行' })"
+    ],
+    timeout: 5000,
+    ariaSnapshot: '- link "跳到主要内容":\n' +
+      '  - /url: "#main-content"\n' +
+      '- banner:\n' +
+      '  - button "显示列表"\n' +
+      '  - heading "Tokyo headlines en-430" [level=1]\n' +
+      '  - button "设置"\n' +
+      '- main:\n' +
+      '  - region "Tokyo headlines en-430":\n' +
+      '    - status: "命令状态: 尚无变更"\n' +
+      '    - region "已提交消息":\n' +
+      '      - article: 请总结当前计划。\n' +
+      '      - article:\n' +
+      '        - strong: Himawari\n' +
+      '        - text: 第 1 轮\n' +
+      '        - group:\n' +
+      '          - text: 思考 0 次 · 工具调用 1 次 已完成\n' +
+      '          - list "执行过程":\n' +
+      '            - listitem:\n' +
+      '              - group: bash npm test 严格模式下不可用 · 暂无时长\n' +
+      '        - paragraph: 计划处于实施阶段。\n' +
+      '        - button "从此轮 Fork"\n' +
+      '    - text: 消息草稿\n' +
+      '    - textbox "消息草稿":\n' +
+      '      - /placeholder: 有什么想交给 Himawari？\n' +
+      '      - text: Keep this draft while the current Run is active\n' +
+      '    - button "添加文本附件": ＋\n' +
+      '    - group: 受控测试模型 A 关闭\n' +
+      '    - button "发送": ↑\n' +
+      '    - text: 需要你确认的操作，会在当前对话中询问'
+  }
+}
+
+Node.js v22.22.3

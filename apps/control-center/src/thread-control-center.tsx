@@ -1,6 +1,7 @@
 import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
 import type {
+  ThreadExecutionEnvironment,
   ThreadExecutionRecord,
   ThreadExecutionState,
   ThreadGatewayRequestResult,
@@ -10,6 +11,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ChatComposer } from "./components/chat-composer.js";
+import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { ChatHistory } from "./components/chat-history.js";
@@ -131,6 +133,8 @@ export function useThreadControlCenter(
   }, [connection]);
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
   const [pendingThreadIds, setPendingThreadIds] = useState<readonly string[]>([]);
+  const [environment, setEnvironment] = useState<ThreadExecutionEnvironment>();
+  const [environmentFailed, setEnvironmentFailed] = useState(false);
   const listPages = useRef(1);
   const [collection, setCollection] = useState<ThreadCollectionSnapshot>();
   const [searchResults, setSearchResults] = useState<ThreadCollectionSnapshot>();
@@ -245,6 +249,21 @@ export function useThreadControlCenter(
     [client, message],
   );
 
+  const loadEnvironment = useCallback(async () => {
+    if (!client || !configuration?.executionEnvironmentAvailable) return;
+    try {
+      const snapshot = await client.queryThread(
+        threadQueryMessage(configuration, "thread.execution_environment", {}),
+      );
+      if (snapshot.type !== "thread.execution_environment_snapshot")
+        throw new Error("THREAD_EXECUTION_ENVIRONMENT_INVALID");
+      setEnvironment(snapshot.payload.environment);
+      setEnvironmentFailed(false);
+    } catch {
+      setEnvironmentFailed(true);
+    }
+  }, [client, configuration]);
+
   const refresh = useCallback(
     async (force = false) => {
       if (!active || !client || !configuration) return;
@@ -321,6 +340,7 @@ export function useThreadControlCenter(
           };
         }
         setCollection(expandedList);
+        void loadEnvironment();
         if (configuration.installedGatewayV2Operations?.includes("approval.list")) {
           void listPendingRunApprovals(client, configuration)
             .then((approvals) => {
@@ -472,6 +492,7 @@ export function useThreadControlCenter(
       active,
       client,
       configuration,
+      loadEnvironment,
       loadPayloads,
       onUnauthorized,
       route.afterCursor,
@@ -532,6 +553,15 @@ export function useThreadControlCenter(
     connection,
     detail?.payload.runs.length,
   ]);
+
+  const programCount = environment?.programs.length ?? 0;
+  useEffect(() => {
+    if (!active || connection !== "connected" || !programCount) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadEnvironment();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [active, connection, programCount, loadEnvironment]);
 
   const settleMutation = useCallback(
     async (
@@ -924,6 +954,9 @@ export function useThreadControlCenter(
       }
       searchResults={searchResults?.payload.threads ?? []}
       pendingThreadIds={projectedPendingThreadIds}
+      runningThreadIds={(environment?.programs ?? []).flatMap((program) =>
+        program.threadId ? [program.threadId] : [],
+      )}
       contentByRef={contentByRef}
       loading={loading}
       hasLoaded={collection !== undefined}
@@ -1124,6 +1157,28 @@ export function useThreadControlCenter(
               : undefined
           }
           message={message}
+          environment={
+            configuration?.executionEnvironmentAvailable ? (
+              <ExecutionEnvironmentLine
+                environment={environment}
+                failed={environmentFailed}
+                threadTitle={(threadId) => {
+                  const thread = [...threadItems, ...(searchResults?.payload.threads ?? [])].find(
+                    (item) => item.threadId === threadId,
+                  );
+                  if (!thread) return undefined;
+                  return (
+                    (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled")
+                  );
+                }}
+                onOpen={() => void loadEnvironment()}
+                onOpenThread={(threadId) =>
+                  navigate({ ...route, objectId: threadId, status: null, view: "content" })
+                }
+                message={message}
+              />
+            ) : null
+          }
           canSend={
             Boolean(unresolvedSubmission) ||
             ((!detail || detail.payload.thread.status === "active") &&

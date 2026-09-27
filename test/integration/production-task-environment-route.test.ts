@@ -397,11 +397,11 @@ it("refuses a container operation binding when task environments are not configu
 });
 
 it.each([
-  ["an SRT operation binding", { ...read, backendRef: "srt" }, false],
-  ["a legacy SRT file read", read, true],
+  ["an SRT operation binding", { ...read, backendRef: "srt" }, false, "SANDBOX_OPERATION_SRT_ONLY"],
+  ["a legacy SRT file read", read, true, "SANDBOX_BINDING_SRT_ONLY"],
 ] as const)(
   "refuses %s before admission when strict mode is on",
-  async (_name, binding, legacy) => {
+  async (_name, binding, legacy, reasonCode) => {
     const lifecycle = new Lifecycle();
     const f = await productionSandboxScope(binding, undefined, {
       piParameters: { path: "notes.txt" },
@@ -411,6 +411,14 @@ it.each([
       taskEnvironments: { backendRef: BACKEND, imageDigest: IMAGE_DIGEST, lifecycle },
     });
     cleanups.push(f.close);
+    expect(f.services.executionMode).toBe("strict");
+    await expect(
+      f.services.strictModeRefusal({
+        capabilityRef: f.input.capabilityRef,
+        capabilityVersion: f.input.capabilityVersion,
+        operation: f.input.operation,
+      }),
+    ).resolves.toBe(reasonCode);
     await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow(
       "SANDBOX_STRICT_MODE_UNAVAILABLE",
     );
@@ -428,6 +436,48 @@ it.each([
     expect(
       await f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID).readRun(RUN_ID),
     ).toBeUndefined();
+    expect(lifecycle.calls).toEqual([]);
+  },
+);
+
+it.each([
+  ["strict mode with a container binding", read, true, "strict", null],
+  ["SRT mode with an SRT binding", { ...read, backendRef: "srt" }, false, "srt", null],
+  [
+    "strict mode with an undeclared operation",
+    { ...read, operation: "write" },
+    true,
+    "strict",
+    null,
+  ],
+] as const)(
+  "reports no strict-mode refusal for %s",
+  async (_name, binding, strict, mode, reasonCode) => {
+    const lifecycle = new Lifecycle();
+    const f = await productionSandboxScope(binding, undefined, {
+      piParameters: { path: "notes.txt" },
+      directoryOperations: ["read"],
+      profileRef: "authorized-project.v1",
+      ...(strict
+        ? { taskEnvironments: { backendRef: BACKEND, imageDigest: IMAGE_DIGEST, lifecycle } }
+        : {}),
+    });
+    cleanups.push(f.close);
+    expect(f.services.executionMode).toBe(mode);
+    await expect(
+      f.services.strictModeRefusal({
+        capabilityRef: f.input.capabilityRef,
+        capabilityVersion: f.input.capabilityVersion,
+        operation: "read",
+      }),
+    ).resolves.toBe(reasonCode);
+    await expect(
+      f.services.strictModeRefusal({
+        capabilityRef: "capability-missing",
+        capabilityVersion: f.input.capabilityVersion,
+        operation: "read",
+      }),
+    ).rejects.toThrow("SANDBOX_HOST_BINDING_UNAVAILABLE");
     expect(lifecycle.calls).toEqual([]);
   },
 );

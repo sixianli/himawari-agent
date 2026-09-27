@@ -130,6 +130,35 @@
   border-radius: 50%;
   background: var(--danger);
 }
+.thread-running {
+  width: 7px;
+  height: 11px;
+  flex: none;
+  display: inline-flex;
+  justify-content: center;
+  overflow: visible;
+}
+.thread-running::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  flex: none;
+  box-sizing: border-box;
+  border: 2px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: thread-running-spin 1s linear infinite;
+}
+@keyframes thread-running-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thread-running::before {
+    animation: none;
+  }
+}
 :where(.thread-row) .action-menu > button {
   width: 30px;
   min-height: 30px;
@@ -225,6 +254,119 @@
   margin: 0;
   min-height: 36px;
   gap: 6px;
+}
+.environment-line {
+  position: relative;
+  width: calc(100% - 60px);
+  max-width: 680px;
+  flex: none;
+  margin: 8px auto -4px;
+}
+.environment-line > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 28px;
+  margin: 0 0 0 2px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.environment-line > button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.environment-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 9;
+  width: 440px;
+  max-width: 100%;
+  max-height: min(560px, calc(100vh - 260px));
+  overflow: auto;
+  padding: 4px 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 12px 35px #0004;
+  font-size: 13px;
+}
+.environment-panel section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.environment-panel section:last-child {
+  border: 0;
+}
+.environment-panel h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.environment-panel p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.environment-panel .environment-mode {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+}
+.environment-panel ul {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.environment-panel li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+}
+.environment-panel li > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.environment-panel small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.environment-panel li > small {
+  margin-left: auto;
+  text-align: right;
+}
+.environment-panel li > button {
+  flex: none;
+  max-width: 48%;
+  min-height: 30px;
+  margin-left: auto;
+  padding: 4px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.environment-panel li > button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
 }
 .composer-hint {
   width: calc(100% - 60px);
@@ -504,7 +646,8 @@
     flex-basis: 202px;
   }
   .composer,
-  .composer-hint {
+  .composer-hint,
+  .environment-line {
     width: calc(100% - 36px);
   }
   :where(.thread-row) .action-menu > button {
@@ -571,6 +714,13 @@
   }
   .thread-attention {
     forced-color-adjust: none;
+  }
+  .thread-running::before {
+    border-color: GrayText;
+    border-top-color: CanvasText;
+  }
+  .environment-line > button {
+    border: 1px solid ButtonText;
   }
 }
 .turn-process > summary {

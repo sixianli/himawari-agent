@@ -17,6 +17,7 @@ const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const executionRecords = new Map();
 const executionStates = new Map();
+let executionEnvironment;
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
 const acceptedGovernanceCommands = new Map();
@@ -948,6 +949,13 @@ function handleThreadQuery(message) {
       },
     };
   }
+  if (message.type === "thread.execution_environment" && executionEnvironment) {
+    return {
+      ...common,
+      type: "thread.execution_environment_snapshot",
+      payload: { environment: executionEnvironment, generatedAt: new Date().toISOString() },
+    };
+  }
   if (message.type === "thread.search") {
     return {
       ...common,
@@ -1215,6 +1223,7 @@ async function handleRequest(request, response) {
         ? {
             executionPresentationAvailable: true,
             executionStateAvailable: executionStates.size > 0,
+            executionEnvironmentAvailable: executionEnvironment !== undefined,
             canCancelRun: true,
             availableModels: [
               {
@@ -1289,6 +1298,7 @@ async function handleRequest(request, response) {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if ("environment" in input) executionEnvironment = input.environment ?? undefined;
     const thread = threads.get(input.threadId);
     const run = thread?.runs.find((item) => item.runId === input.runId);
     if (!run) {

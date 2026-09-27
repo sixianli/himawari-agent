@@ -30,6 +30,7 @@ export interface ThreadSidebarProps {
   readonly onPin?: (thread: Thread) => void;
   readonly onArchive?: (thread: Thread) => void;
   readonly pendingThreadIds?: readonly string[];
+  readonly runningThreadIds?: readonly string[];
 }
 export function ThreadSidebar({
   threads,
@@ -51,6 +52,7 @@ export function ThreadSidebar({
   onPin,
   onArchive,
   pendingThreadIds = [],
+  runningThreadIds = [],
 }: ThreadSidebarProps) {
   const { message } = useControlCenterIntl();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -86,6 +88,12 @@ export function ThreadSidebar({
           className="thread-attention"
           role="img"
           aria-label={message("review.needsAttention")}
+        />
+      ) : runningThreadIds.includes(thread.threadId) ? (
+        <span
+          className="thread-running"
+          role="img"
+          aria-label={message("chat.environment.threadRunning")}
         />
       ) : (
         <span className="thread-dot-space" />

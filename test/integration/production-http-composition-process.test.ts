@@ -1379,6 +1379,20 @@ it("executes authenticated HTTP requests through installed service-main and read
     }
     expect(result.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
     await readAnswer(result);
+    expect(browser.body).toMatchObject({ executionEnvironmentAvailable: true });
+    const environment = await httpRequest(running.address, "/api/gateway/thread/v3/queries", {
+      ...jsonRequestBody({
+        ...envelope("query", "thread.execution_environment"),
+        authority: currentAuthority,
+        payload: {},
+      }),
+      headers: requestHeaders(token, cookie),
+    });
+    expect(environment.status).toBe(200);
+    expect(environment.body).toMatchObject({
+      type: "thread.execution_environment_snapshot",
+      payload: { environment: { mode: "srt", programs: [], unavailableTools: [] } },
+    });
     const ready = await httpRequest(running.address, "/health/ready");
     expect(ready.status).toBe(200);
     expect(ready.body).toMatchObject({ status: "ready" });

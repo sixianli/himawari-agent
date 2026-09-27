@@ -178,6 +178,35 @@ export const messages = {
   "chat.reason.commandEffectUnverified":
     "コマンドは失敗しました。ワークスペースのファイルが変更された可能性がありますが、影響は未確認です",
   "chat.reason.strictModeUnavailable": "厳格モードでは使用できません",
+  "chat.environment.title": "実行環境",
+  "chat.environment.mode.srt": "デフォルトモード",
+  "chat.environment.mode.strict": "厳格モード",
+  "chat.environment.running": "{count} 個のプログラムが実行中",
+  "chat.environment.idle": "実行中のプログラムはありません",
+  "chat.environment.currentMode": "現在のモード",
+  "chat.environment.srtMeaning":
+    "ツールはこのコンピューター上のプロセス単位のサンドボックス（SRT）で実行され、アクセスできるファイルとネットワークが制限されます。停止で保証されるのはツールのプロセスグループの終了だけで、グループを離れたプログラムは動き続けている可能性があります。",
+  "chat.environment.strictMeaning": "すべてのツールは、このターン専用のコンテナーで実行されます。",
+  "chat.environment.fixed": "モードはインストール設定で決まり、この画面では変更できません。",
+  "chat.environment.programs": "実行中のプログラム",
+  "chat.environment.noPrograms": "実行中のプログラムはありません。",
+  "chat.environment.kind.background": "バックグラウンドタスク",
+  "chat.environment.kind.service": "サービス",
+  "chat.environment.startedAt": "{time} 開始",
+  "chat.environment.openThread": "所属する会話を開く：{title}",
+  "chat.environment.otherThread": "現在の一覧にない会話",
+  "chat.environment.unavailable": "厳格モードで使用できないツール",
+  "chat.environment.toolAvailability": "ツールの利用状況",
+  "chat.environment.reason.SANDBOX_OPERATION_SRT_ONLY":
+    "プロセス単位のサンドボックス（SRT）でのみ実行できます",
+  "chat.environment.reason.SANDBOX_BINDING_SRT_ONLY":
+    "インストール宣言に、操作ごとにコンテナーで実行できることが記載されていません",
+  "chat.environment.strictNote":
+    "ツールの内部から開始するサブタスクも使用できません。これらのツールを呼び出すと、該当する手順に「厳格モードでは使用できません」と表示され、別の方法では実行されません。",
+  "chat.environment.noneUnavailable":
+    "デフォルトモードでは、モードが原因で使用できないツールはありません。",
+  "chat.environment.threadRunning": "実行中のプログラムあり",
+  "chat.environment.readFailed": "実行環境を読み取れません。しばらくしてから開き直してください。",
   "chat.phase.unresolved": "結果未確認",
   "chat.phase.preparing": "準備中",
   "chat.phase.started": "実行中",

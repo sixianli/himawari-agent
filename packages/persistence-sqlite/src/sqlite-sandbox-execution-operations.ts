@@ -341,6 +341,33 @@ export class SqliteSandboxExecutionOperations {
         this.read(sandboxExecutionPlanV2Schema.parse(JSON.parse(r.plan)).identity, owner, agent),
       );
     }
+    if (operation === "listRunningPrograms") {
+      const { afterJobId, limit } = input;
+      if (
+        (afterJobId !== null && !id(afterJobId)) ||
+        !Number.isSafeInteger(limit) ||
+        Number(limit) < 1 ||
+        Number(limit) > 100
+      )
+        return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+      return this.db.transaction(() =>
+        (
+          this.db
+            .prepare(`SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND job_id>?
+          AND resource_ref IS NOT NULL AND started_at IS NOT NULL
+          AND json_extract(plan_json,'$.mode') IN ('background','service')
+          AND json_extract(facts_json,'$.resource.supervision')!='released'
+          ORDER BY job_id LIMIT ?`)
+            .all(owner, agent, afterJobId ?? "", limit) as { plan: string }[]
+        ).map((row) =>
+          this.read(
+            sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)).identity,
+            owner,
+            agent,
+          ),
+        ),
+      )();
+    }
     this.authority.disk();
     return this.db
       .transaction(() => {

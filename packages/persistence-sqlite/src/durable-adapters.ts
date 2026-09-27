@@ -489,6 +489,12 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      listRunningPrograms: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listRunningPrograms", {
+          ownerId,
+          agentId,
+          input,
+        }),
       readRunInventory: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.readRunInventory", {
           ownerId,

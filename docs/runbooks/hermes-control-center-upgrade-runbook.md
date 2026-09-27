@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:08c76ad538f7999433a5c85896207090aedcb18848bbdf13f1ecfa1201d9174b"
+contract_sha256: "sha256:a8c1d2f44a39bb1e5dfc222ed909258a55f146f71ce81320ea67653fe44f6df4"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -120,6 +120,8 @@ Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对
 只读网络重试只在原调用仍运行时发生：声明零费用的 GET 与固定公开 `web_search_exa` 查询，对明确暂时错误最多重试一次；默认退避 250 ms，有有效 Retry-After 时至少等待该值，原期限不足则停止。GET 每次重查当前授权和秘密句柄，搜索在重试前建立新代理连接以重新触发出口检查，并沿用原 MCP 请求期限；任意写入、未知非幂等结果和有费用的 endpoint 不自动重发。重启、备份恢复或权威迁移不会恢复重试计数或重新执行历史工具；此策略没有新增恢复表、迁移或部署开关。
 
 内部资源快照 `readRunInventory` 只读取已有同主体 Run 的预约、绑定、队列历史及旧格式未释放标记，不变更数据库版本、额度或执行权。生产 `thread.execution_state` 已将该快照与 Run/Trace 聚合，读取期间资源或 Run 改变时拒绝混合结论。历史 Scope 仅用于验证原工具归属，不读取或续发当前 Grant；停止、核验和资源状态未确认通过既有 `reasonCode` 表达，保持 v3 阶段枚举兼容。工具效果与资源清理分别保留；当前准备或受控执行尚无最终结果不等于结果未知，显式未知、观察失效或停止后无结果仍显示未确认。已释放但未交接的内部结果仍显示结果未确认。当前可见会话每两秒重新只读核验，隐藏或断线时停止该轮询，不把连接心跳或本地计时当作执行事实；空快照与旧权限都不能代替当前宿主停止证明或本 Runbook 的现场核验。读取超过任一 10,000 条上限时必须报告失败，不接受截断后继续操作。
+
+新增的 `thread.execution_environment` 查询（读取当前执行模式、仍在运行的后台或服务类程序、严格模式下不可用的工具）只有服务配置声明 `executionEnvironmentAvailable` 时才由新页面使用；未声明时页面不显示输入框上方的状态条和侧栏转圈标记。这个查询只读已有执行记录和安装声明，不含命令内容和内部编号，不新增 migration，也不能停止程序或切换模式。安装验收须核对状态条显示的模式与本机配置一致（写了 `taskEnvironments` 时为“严格模式”，否则为“默认模式”）；列表为空不证明宿主上没有残留进程，不能代替本 Runbook 的现场核验。实现与本地证据见[执行环境显示的记录](../../test/qualification/evidence/isolated-tool-execution/p3-ui-environment-01/README.md)。
 
 原运行调度现在可补交已经保存的完成输出：仅接受原 `runtime_settled/completed`，或清理未确认而保存输出的记录。恢复仍要求原冻结输入、当前权威和执行租约，并在写入回答的同一事务核对 checkpoint revision、原结果、全部前台/后台资源的永久释放、队列及未解除保护；不延长业务执行期限、不调用模型/工具、不发起第二轮清理。原输出保存后或 Run 状态变更前中断均保留可恢复身份；未知输出不能走该路径。取消先提交时不写回答。原输入不能读取或校验失败时保存 `RUN_COMPLETION_DELIVERY_REJECTED` 并保留原输出，停止自动补交；不得通过改诊断码或续发旧授权强行恢复。备份/迁移须共同保留冻结输入、checkpoint、回答 Payload、完成命令与消息身份；本变更沿用 Schema 43，升级仍须替换唯一 writer，不能因 schema 相同认定旧程序具有这些行为检查。该能力由现有 Run 调度触发；仅运行资源核查的无 Web 模式不因此创建模型/Run 执行服务。
 

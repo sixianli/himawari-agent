@@ -55,6 +55,12 @@ export interface ProductThreadGatewayAdapterDependencies {
       nextSequence: number | null;
     }>;
   };
+  readonly executionEnvironment?: {
+    read(input: {
+      ownerId: string;
+      agentId: string;
+    }): Promise<import("@himawari-agent/gateway-contracts").ThreadExecutionEnvironment>;
+  };
   readonly validateModelSelection?: (
     selection: { modelRef: string; thinkingLevel: string },
     classification: string,
@@ -284,6 +290,21 @@ export class ProductThreadGatewayAdapter
         return parseResult({
           ...responseEnvelope(query, "snapshot", "thread.execution_state_snapshot"),
           payload: { ...query.payload, state, generatedAt },
+        });
+      }
+      case "thread.execution_environment": {
+        if (!this.#dependencies.executionEnvironment)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_ENVIRONMENT_NOT_INSTALLED",
+          );
+        const environment = await this.#dependencies.executionEnvironment.read({
+          ownerId,
+          agentId,
+        });
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.execution_environment_snapshot"),
+          payload: { environment, generatedAt },
         });
       }
       case "thread.execution": {

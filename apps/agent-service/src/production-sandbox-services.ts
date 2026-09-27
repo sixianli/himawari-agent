@@ -190,6 +190,17 @@ export async function createProductionSandboxServices(options: {
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
     return { binding: entry.binding.value, qualification: entry.qualification.sandbox };
   };
+  const strictRefusal = (
+    binding: Awaited<ReturnType<typeof entryFor>>["binding"],
+    operation: string,
+  ): "SANDBOX_OPERATION_SRT_ONLY" | "SANDBOX_BINDING_SRT_ONLY" | null => {
+    if (!environments) return null;
+    if (!binding.operationBindings) return "SANDBOX_BINDING_SRT_ONLY";
+    return binding.operationBindings.find((item) => item.operation === operation)?.backendRef ===
+      SRT_BACKEND_REF
+      ? "SANDBOX_OPERATION_SRT_ONLY"
+      : null;
+  };
   const verifyParent = async (
     scope: SandboxExecutionScope,
     plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
@@ -1082,7 +1093,7 @@ export async function createProductionSandboxServices(options: {
       );
       if (selected.binding.operationBindings && !descriptor)
         throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
-      if (environments && (descriptor?.backendRef ?? SRT_BACKEND_REF) === SRT_BACKEND_REF)
+      if (strictRefusal(selected.binding, input.operation))
         throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
       if (descriptor) return prepareRuntimeV2(input, call, parentCall, descriptor, signal);
       const existing = await journal.readByInvocation({
@@ -1977,6 +1988,16 @@ export async function createProductionSandboxServices(options: {
     },
   });
   return {
+    executionMode: environments ? ("strict" as const) : ("srt" as const),
+    strictModeRefusal: async (input: {
+      readonly capabilityRef: string;
+      readonly capabilityVersion: string;
+      readonly operation: string;
+    }) =>
+      strictRefusal(
+        (await entryFor(input.capabilityRef, input.capabilityVersion)).binding,
+        input.operation,
+      ),
     rebindQueuedRun: async (
       request: Pick<
         RuntimeRequest,
