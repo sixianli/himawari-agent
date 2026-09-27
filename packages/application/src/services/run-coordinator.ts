@@ -25,7 +25,11 @@ import type {
   WorkerRunPort,
   WorkerRunRequest,
 } from "../ports/index.js";
-import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/index.js";
+import {
+  ApplicationPortError,
+  CONTEXT_MEMORY_UNAVAILABLE,
+  PORT_ERROR_CODES,
+} from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
@@ -440,21 +444,59 @@ export class RunCoordinator {
       this.assertExecutionActive(attempt);
     }
 
-    if (storedCheckpoint.checkpoint.contextRef === null) {
-      const formed = await this.dependencies.context.form({
-        ...input.context,
-        signal: attempt.cancellation.signal,
-        ...(input.executionDeadlineAt === undefined
-          ? {}
-          : { deadlineAt: input.executionDeadlineAt }),
-      });
+    if (
+      storedCheckpoint.checkpoint.contextRef === null &&
+      storedCheckpoint.checkpoint.terminalStatus === null
+    ) {
+      const formed = await this.dependencies.context
+        .form({
+          ...input.context,
+          signal: attempt.cancellation.signal,
+          ...(input.executionDeadlineAt === undefined
+            ? {}
+            : { deadlineAt: input.executionDeadlineAt }),
+        })
+        .catch((error: unknown) => {
+          if (
+            error instanceof ApplicationPortError &&
+            error.code === PORT_ERROR_CODES.PROVIDER_FAILURE &&
+            error.message === CONTEXT_MEMORY_UNAVAILABLE &&
+            !attempt.cancellation.signal.aborted
+          )
+            return undefined;
+          throw error;
+        });
       this.assertExecutionActive(attempt);
-      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
-        ...storedCheckpoint.checkpoint,
-        phase: "context_formed",
-        contextRef: formed.contextEnvelopeRef,
-        lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
-      });
+      if (formed) {
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: "context_formed",
+          contextRef: formed.contextEnvelopeRef,
+          lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
+        });
+      } else {
+        const failure = await this.dependencies.trace.record({
+          ...this.traceScope(input),
+          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
+          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          eventType: "runtime.failed",
+          payload: {
+            type: "runtime.failed",
+            runId: input.runId,
+            errorCode: CONTEXT_MEMORY_UNAVAILABLE,
+            occurredAt: new Date(this.executionNow()).toISOString(),
+          },
+        });
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: "runtime_settled",
+          lastTraceEventId: failure.event.id,
+          terminalStatus: "failed",
+          output: null,
+          diagnosticCode: CONTEXT_MEMORY_UNAVAILABLE,
+        });
+      }
       this.assertExecutionActive(attempt);
     }
 

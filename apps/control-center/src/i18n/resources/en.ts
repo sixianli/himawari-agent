@@ -98,6 +98,8 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
+  "chat.error.contextMemoryUnavailable":
+    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
   "chat.toolCount": "{count} tool calls",
   "chat.responseText": "Response text",
@@ -141,6 +143,7 @@ export const messages = {
   "chat.activity.output": "Writing response",
   "chat.activity.preparingTool": "Preparing tool call",
   "chat.activity.waitingModel": "Waiting for model",
+  "chat.activity.buildingContext": "Looking up related memory",
   "chat.lastActivity": "Last progress {time} ago",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
@@ -229,6 +232,8 @@ export const messages = {
     "Some tool operations completed before this run failed. Review each result; a later failure does not undo earlier operations.",
   "chat.nextAction.failed":
     "Review the failed operation and workspace state before submitting a new request; a failed result does not prove its effects were rolled back.",
+  "chat.nextAction.failedBeforeAnyOperation":
+    "No tool operation ran in this turn. You can send it again.",
   "appearance.title": "Appearance and accent",
   "appearance.theme": "Theme",
   "appearance.accent": "Accent color",

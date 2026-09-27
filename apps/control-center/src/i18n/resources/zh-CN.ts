@@ -92,6 +92,8 @@ export const messages = {
   "chat.error.rateLimited": "模型服务当前限流。请稍后重试，或为下一轮选择其他已配置模型。",
   "chat.error.authFailed": "模型服务认证失败。请检查服务端的模型凭据和访问权限。",
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
+  "chat.error.contextMemoryUnavailable":
+    "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
   "chat.error.failed": "本轮执行失败。已保存的消息和过程记录仍可查看。",
   "chat.toolCount": "工具调用 {count} 次",
   "chat.responseText": "文字响应",
@@ -134,6 +136,7 @@ export const messages = {
   "chat.activity.output": "正在生成回答",
   "chat.activity.preparingTool": "正在准备工具调用",
   "chat.activity.waitingModel": "等待模型响应",
+  "chat.activity.buildingContext": "正在查找相关记忆",
   "chat.lastActivity": "{time} 前收到进展",
   "chat.progressDelayed": "暂未收到新的进展。连接正常不代表任务仍在推进；可等待结果或停止本轮。",
   "chat.thinkingPrivate": "已收到模型思考事件；当前服务未提供可公开展示的思考摘要。",
@@ -211,6 +214,7 @@ export const messages = {
     "本轮失败前已有部分工具操作完成。请逐项查看结果；后续失败不会自动撤销先前操作。",
   "chat.nextAction.failed":
     "请查看失败操作的记录并核对工作区，再决定是否发起新请求；失败结果不证明副作用已撤销。",
+  "chat.nextAction.failedBeforeAnyOperation": "本轮没有执行任何工具操作，可以直接重新发送。",
   "appearance.title": "外观与主题色",
   "appearance.theme": "外观",
   "appearance.accent": "主题色",

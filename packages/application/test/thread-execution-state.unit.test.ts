@@ -60,6 +60,23 @@ describe("backend execution state", () => {
     expect(threadExecutionStateSchema.parse(state)).toEqual(state);
   });
 
+  it("says the Run is looking up memory while it builds context, and only then", () => {
+    const building = projectThreadExecutionState({ ...run, status: "building_context" }, [], true);
+    expect(building).toMatchObject({
+      displayPhase: "preparing",
+      reasonCode: "RUN_BUILDING_CONTEXT",
+    });
+    expect(threadExecutionStateSchema.parse(building)).toEqual(building);
+    expect(projectThreadExecutionState({ ...run, status: "accepted" }, [], true)).toMatchObject({
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+    });
+    expect(projectThreadExecutionState(run, [], true)).toMatchObject({
+      displayPhase: "model_waiting",
+      reasonCode: "EXECUTION_MODEL_WAITING",
+    });
+  });
+
   it("shows resource recovery while preserving the successful tool effect", () => {
     const state = projectThreadExecutionState(
       { ...run, status: "cancelled" },

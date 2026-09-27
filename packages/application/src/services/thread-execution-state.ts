@@ -283,7 +283,11 @@ export function projectThreadExecutionState(
               ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
               : displayPhase === "unresolved"
                 ? "EXECUTION_RESULT_UNCONFIRMED"
-                : `EXECUTION_${displayPhase.toUpperCase()}`,
+                : displayPhase === "preparing" &&
+                    run.status === "building_context" &&
+                    operations.length === 0
+                  ? "RUN_BUILDING_CONTEXT"
+                  : `EXECUTION_${displayPhase.toUpperCase()}`,
     availableActions,
     needsAttention: availableActions.includes("review_approval"),
     timing: {

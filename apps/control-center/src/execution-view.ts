@@ -17,6 +17,8 @@ export function executionFailureMessage(records: readonly ThreadExecutionRecord[
       return "chat.error.authFailed";
     case "PI_MODEL_UNAVAILABLE":
       return "chat.error.unavailable";
+    case "CONTEXT_MEMORY_UNAVAILABLE":
+      return "chat.error.contextMemoryUnavailable";
     default:
       return "chat.error.failed";
   }
@@ -336,6 +338,7 @@ export function executionStateLabel(
   reasonCode?: string,
 ): MessageId {
   const reasonLabels: Readonly<Record<string, MessageId>> = {
+    RUN_BUILDING_CONTEXT: "chat.activity.buildingContext",
     RESOURCE_STOP_IN_PROGRESS: "chat.resource.stopping",
     RESOURCE_CHECK_IN_PROGRESS: "chat.resource.verifying",
     RESOURCE_QUEUE_WAITING: "chat.resource.queued",
@@ -395,8 +398,10 @@ export function executionNextAction(state: ThreadExecutionState): MessageId | un
   )
     return "chat.nextAction.stoppedWithResults";
   if (state.displayPhase === "failed")
-    return state.effectSummary.some((effect) => effect.outcome === "succeeded")
-      ? "chat.nextAction.partial"
-      : "chat.nextAction.failed";
+    return state.effectSummary.length === 0
+      ? "chat.nextAction.failedBeforeAnyOperation"
+      : state.effectSummary.some((effect) => effect.outcome === "succeeded")
+        ? "chat.nextAction.partial"
+        : "chat.nextAction.failed";
   return undefined;
 }

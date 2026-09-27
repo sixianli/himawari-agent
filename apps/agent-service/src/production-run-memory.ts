@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
+  CONTEXT_MEMORY_UNAVAILABLE,
   type DurableMemoryService,
   type DurableMemoryServiceOptions,
   type MemoryPort,
@@ -54,6 +55,7 @@ export function createProductionRunMemory(options: {
   readonly now: () => string;
 }): Pick<MemoryPort, "search"> & { project: NonNullable<DurableMemoryServiceOptions["project"]> } {
   const scope = new AsyncLocalStorage<MemorySearchRequest>();
+  const providerFailedSearches = new WeakSet<MemorySearchRequest>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
     memory: ProductMemoryRecord;
@@ -183,16 +185,25 @@ export function createProductionRunMemory(options: {
       const timeoutMs = Math.max(1, Math.floor(remaining()));
       const timeout = AbortSignal.timeout(timeoutMs);
       const signal = context?.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
-      const response = await send({ timeoutMs, signal });
-      if (!Number.isSafeInteger(response.usage?.prompt_tokens) || response.usage.prompt_tokens < 0)
-        throw new Error("EMBEDDING_USAGE_MISSING");
-      if (
-        response.data.length !== 1 ||
-        response.data[0]?.index !== 0 ||
-        response.data[0].embedding.length !== options.configuration.memory.dimensions ||
-        !response.data[0].embedding.every(Number.isFinite)
-      )
-        throw new Error("EMBEDDING_VECTOR_INVALID");
+      let response: Awaited<ReturnType<typeof send>>;
+      try {
+        response = await send({ timeoutMs, signal });
+        if (
+          !Number.isSafeInteger(response.usage?.prompt_tokens) ||
+          response.usage.prompt_tokens < 0
+        )
+          throw new Error("EMBEDDING_USAGE_MISSING");
+        if (
+          response.data.length !== 1 ||
+          response.data[0]?.index !== 0 ||
+          response.data[0].embedding.length !== options.configuration.memory.dimensions ||
+          !response.data[0].embedding.every(Number.isFinite)
+        )
+          throw new Error("EMBEDDING_VECTOR_INVALID");
+      } catch (error) {
+        if (context && !context.signal?.aborted) providerFailedSearches.add(context);
+        throw error;
+      }
       await permit.settle({
         inputTokens: response.usage.prompt_tokens,
         outputTokens: 0,
@@ -223,20 +234,28 @@ export function createProductionRunMemory(options: {
           "MEMORY_QUERY_CLASSIFICATION_MISMATCH",
         );
       return scope.run(request, async () => {
-        const found = await options.memory.search({
-          ownerId: request.ownerId,
-          agentId: request.agentId,
-          queryRef: request.queryRef,
-          policy: {
-            limit: request.limit,
-            allowedClassifications: (
-              ["public", "private", "sensitive", "restricted"] as const
-            ).filter(
-              (_classification, index, all) =>
-                index <= all.indexOf(request.dataClassification ?? "public"),
-            ),
-          },
-        });
+        const found = await options.memory
+          .search({
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            queryRef: request.queryRef,
+            policy: {
+              limit: request.limit,
+              allowedClassifications: (
+                ["public", "private", "sensitive", "restricted"] as const
+              ).filter(
+                (_classification, index, all) =>
+                  index <= all.indexOf(request.dataClassification ?? "public"),
+              ),
+            },
+          })
+          .catch((error: unknown) => {
+            if (!providerFailedSearches.has(request)) throw error;
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.PROVIDER_FAILURE,
+              CONTEXT_MEMORY_UNAVAILABLE,
+            );
+          });
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,

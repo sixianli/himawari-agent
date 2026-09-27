@@ -52,6 +52,8 @@ export interface MemoryCorrection {
   readonly correctedAt: string;
 }
 
+export const CONTEXT_MEMORY_UNAVAILABLE = "CONTEXT_MEMORY_UNAVAILABLE";
+
 export interface MemoryPort {
   search(request: MemorySearchRequest): Promise<readonly MemoryCandidate[]>;
   proposeWrite(proposal: MemoryWriteProposal): Promise<void>;

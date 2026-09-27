@@ -375,6 +375,7 @@ export class ThreadExecutionProjection {
                       "PI_MODEL_RATE_LIMITED",
                       "PI_MODEL_AUTH_FAILED",
                       "PI_MODEL_UNAVAILABLE",
+                      "CONTEXT_MEMORY_UNAVAILABLE",
                     ].includes(text(envelope["errorCode"]))
                       ? text(envelope["errorCode"])
                       : "RUNTIME_EXECUTION_FAILED",

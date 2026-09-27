@@ -90,6 +90,12 @@ describe("durable execution presentation", () => {
       expected: "chat.nextAction.failed",
     },
     {
+      displayPhase: "failed",
+      availableActions: [],
+      effectSummary: [],
+      expected: "chat.nextAction.failedBeforeAnyOperation",
+    },
+    {
       displayPhase: "completed",
       availableActions: [],
       effectSummary: [{ itemId: "call", outcome: "succeeded" }],
@@ -117,6 +123,9 @@ describe("durable execution presentation", () => {
     );
     expect(executionStateLabel("unresolved", "RESOURCE_CHECK_IN_PROGRESS")).toBe(
       "chat.resource.verifying",
+    );
+    expect(executionStateLabel("preparing", "RUN_BUILDING_CONTEXT")).toBe(
+      "chat.activity.buildingContext",
     );
     expect(executionStateLabel("preparing", "RESOURCE_QUEUE_WAITING")).toBe("chat.resource.queued");
     expect(executionStateLabel("preparing", "RESOURCE_EXECUTION_OBSERVED")).toBe(
@@ -237,6 +246,9 @@ it("shows only known failure messages from replayed execution records", () => {
     "chat.error.failed",
   );
   expect(executionFailureMessage([])).toBe("chat.error.failed");
+  expect(executionFailureMessage([{ ...failed, text: "CONTEXT_MEMORY_UNAVAILABLE" }])).toBe(
+    "chat.error.contextMemoryUnavailable",
+  );
 });
 
 it("excludes approval wait from tool time and keeps the first completed message boundary", () => {

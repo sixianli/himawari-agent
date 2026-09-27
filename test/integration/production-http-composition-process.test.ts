@@ -56,6 +56,7 @@ let provider: ReturnType<typeof createHttpsServer> | undefined;
 let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
 let jwks: JSONWebKeySet;
 let providerAvailable = true;
+let dropEmbeddingConnections = false;
 let providerSubject = subject;
 const providerRequests: Array<{
   readonly path: string;
@@ -179,6 +180,10 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
       return;
     }
     if (requestPath === "/v1/embeddings") {
+      if (dropEmbeddingConnections) {
+        request.socket.destroy();
+        return;
+      }
       let body = "";
       request.on("data", (chunk) => {
         body += chunk;
@@ -1126,7 +1131,7 @@ async function writeServiceCapabilitySnapshot() {
   return { snapshotPath: capabilityDeploymentPath, sha256: capabilityDeploymentSha256 };
 }
 
-it("executes authenticated HTTP requests through installed service-main and reads results after restart", async () => {
+async function openInstalledMain() {
   stateRoot = await mkdtemp("/tmp/hma-main-state-");
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
@@ -1285,26 +1290,7 @@ it("executes authenticated HTTP requests through installed service-main and read
     });
     expect(result.status).toBe(200);
   };
-  await command("thread.create", "installed-main-create", {
-    threadId: "thread-production-main",
-    answerLocale: "zh-CN",
-    resultRef: await upload("installed-main-create-payload", "create"),
-  });
-  const sessionId = (session.body as { session: { id: string } }).session.id;
-  await command("thread.message.submit", "installed-main-submit", {
-    threadId: "thread-production-main",
-    expectedRevision: 1,
-    messageId: "message:installed-main",
-    turnId: "turn:installed-main",
-    runId: "run:installed-main",
-    sessionId,
-    contentRef: await upload("installed-main-content", "你好"),
-    sourceProofRef: "proof:installed-main",
-    dataClassification: "private",
-    occurredAt: new Date().toISOString(),
-    resultRef: await upload("installed-main-submit-payload", "submit"),
-  });
-  const detail = async () => {
+  const query = async (type: string, payload: object) => {
     const config = await httpRequest(running.address, "/api/control-center/v1/config", {
       headers: requestHeaders(token, cookie),
     });
@@ -1316,22 +1302,24 @@ it("executes authenticated HTTP requests through installed service-main and read
     };
     return httpRequest(running.address, "/api/gateway/thread/v3/queries", {
       ...jsonRequestBody({
-        ...envelope("query", "thread.detail"),
+        ...envelope("query", type),
         authority: {
           deploymentId: current.deploymentId,
           authorityEpoch: current.authorityEpoch,
           fencingToken: current.fencingToken,
         },
-        payload: { threadId: "thread-production-main", afterSequence: 0, limit: 100 },
+        payload,
       }),
       headers: requestHeaders(token, cookie),
     });
   };
-  const readAnswer = async (detail: HttpResult) => {
+  const readAnswer = async (detail: HttpResult, runId?: string) => {
     const payload = detail.body as {
-      payload: { messages: Array<{ role: string; contentRef: string }> };
+      payload: { messages: Array<{ role: string; contentRef: string; runId?: string | null }> };
     };
-    const answer = payload.payload.messages.find(({ role }) => role === "agent");
+    const answer = payload.payload.messages.find(
+      (message) => message.role === "agent" && (runId === undefined || message.runId === runId),
+    );
     if (!answer) throw new Error("PERSISTENT_ANSWER_MISSING");
     const browser = await httpRequest(running.address, "/api/control-center/v1/config", {
       headers: requestHeaders(token, cookie),
@@ -1345,6 +1333,89 @@ it("executes authenticated HTTP requests through installed service-main and read
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({ content: "安装后的持久回答" });
   };
+  const submit = async (input: {
+    threadId: string;
+    expectedRevision: number;
+    name: string;
+    runId: string;
+    content: string;
+  }) =>
+    command("thread.message.submit", `${input.name}-submit`, {
+      threadId: input.threadId,
+      expectedRevision: input.expectedRevision,
+      messageId: `message:${input.name}`,
+      turnId: `turn:${input.name}`,
+      runId: input.runId,
+      sessionId: (session.body as { session: { id: string } }).session.id,
+      contentRef: await upload(`${input.name}-content`, input.content),
+      sourceProofRef: `proof:${input.name}`,
+      dataClassification: "private",
+      occurredAt: new Date().toISOString(),
+      resultRef: await upload(`${input.name}-submit-payload`, "submit"),
+    });
+  return {
+    browser,
+    upload,
+    command,
+    query,
+    readAnswer,
+    submit,
+    running: () => running,
+    restart: async () => {
+      await stopChild(running.main);
+      await stopChild(running.worker);
+      running = await start();
+    },
+    stop: async () => {
+      await stopChild(running.main);
+      await stopChild(running.worker);
+    },
+  };
+}
+
+async function waitForRunToLeaveExecution(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  threadId: string,
+  runId: string,
+) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const detail = await service.query("thread.detail", {
+      threadId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(detail.status).toBe(200);
+    const run = (
+      detail.body as { payload: { runs: Array<{ runId: string; status: string }> } }
+    ).payload.runs.find((candidate) => candidate.runId === runId);
+    if (run && !["accepted", "building_context", "running"].includes(run.status))
+      return { detail, run };
+    if (Date.now() >= deadline) return { detail, run };
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+it("executes authenticated HTTP requests through installed service-main and reads results after restart", async () => {
+  const service = await openInstalledMain();
+  await service.command("thread.create", "installed-main-create", {
+    threadId: "thread-production-main",
+    answerLocale: "zh-CN",
+    resultRef: await service.upload("installed-main-create-payload", "create"),
+  });
+  await service.submit({
+    threadId: "thread-production-main",
+    expectedRevision: 1,
+    name: "installed-main",
+    runId: "run:installed-main",
+    content: "你好",
+  });
+  const detail = () =>
+    service.query("thread.detail", {
+      threadId: "thread-production-main",
+      afterSequence: 0,
+      limit: 100,
+    });
 
   try {
     let result = await detail();
@@ -1378,22 +1449,15 @@ it("executes authenticated HTTP requests through installed service-main and read
       }
     }
     expect(result.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
-    await readAnswer(result);
-    expect(browser.body).toMatchObject({ executionEnvironmentAvailable: true });
-    const environment = await httpRequest(running.address, "/api/gateway/thread/v3/queries", {
-      ...jsonRequestBody({
-        ...envelope("query", "thread.execution_environment"),
-        authority: currentAuthority,
-        payload: {},
-      }),
-      headers: requestHeaders(token, cookie),
-    });
+    await service.readAnswer(result);
+    expect(service.browser.body).toMatchObject({ executionEnvironmentAvailable: true });
+    const environment = await service.query("thread.execution_environment", {});
     expect(environment.status).toBe(200);
     expect(environment.body).toMatchObject({
       type: "thread.execution_environment_snapshot",
       payload: { environment: { mode: "srt", programs: [], unavailableTools: [] } },
     });
-    const ready = await httpRequest(running.address, "/health/ready");
+    const ready = await httpRequest(service.running().address, "/health/ready");
     expect(ready.status).toBe(200);
     expect(ready.body).toMatchObject({ status: "ready" });
     expect(providerRequests.some(({ path: route }) => route === "/v1/embeddings")).toBe(true);
@@ -1401,21 +1465,111 @@ it("executes authenticated HTTP requests through installed service-main and read
     const requestsBeforeRestart = providerRequests.filter(({ path: route }) =>
       route.startsWith("/v1/"),
     ).length;
-    await stopChild(running.main);
-    await stopChild(running.worker);
-    running = await start();
+    await service.restart();
     const restored = await detail();
     expect(restored.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
-    await readAnswer(restored);
+    await service.readAnswer(restored);
     expect(providerRequests.filter(({ path: route }) => route.startsWith("/v1/")).length).toBe(
       requestsBeforeRestart,
     );
-    await stopChild(running.worker);
-    const unavailable = await httpRequest(running.address, "/health/ready");
+    await stopChild(service.running().worker);
+    const unavailable = await httpRequest(service.running().address, "/health/ready");
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).not.toMatchObject({ status: "ready" });
   } finally {
-    await stopChild(running.main);
-    await stopChild(running.worker);
+    await service.stop();
+  }
+}, 90_000);
+
+it("fails a turn whose memory lookup loses the provider connection while the service keeps serving", async () => {
+  const service = await openInstalledMain();
+  const threadId = "thread-memory-connection-lost";
+  try {
+    await service.command("thread.create", "memory-lost-create", {
+      threadId,
+      answerLocale: "zh-CN",
+      resultRef: await service.upload("memory-lost-create-payload", "create"),
+    });
+    const generationRequestsBefore = providerRequests.filter(
+      ({ path: route }) => route === "/v1/chat/completions",
+    ).length;
+    dropEmbeddingConnections = true;
+    await service.submit({
+      threadId,
+      expectedRevision: 1,
+      name: "memory-lost-first",
+      runId: "run:memory-lost-first",
+      content: "读取 x.txt 文件内容给我",
+    });
+    const failed = await waitForRunToLeaveExecution(service, threadId, "run:memory-lost-first");
+    dropEmbeddingConnections = false;
+    expect(failed.run?.status).toBe("failed");
+    expect(service.running().main.exitCode).toBeNull();
+    const ready = await httpRequest(service.running().address, "/health/ready");
+    expect(ready.status).toBe(200);
+    expect(ready.body).toMatchObject({ status: "ready" });
+    expect(
+      providerRequests.filter(({ path: route }) => route === "/v1/chat/completions").length,
+    ).toBe(generationRequestsBefore);
+    const execution = await service.query("thread.execution", {
+      threadId,
+      runId: "run:memory-lost-first",
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(execution.status).toBe(200);
+    const records = (
+      execution.body as {
+        payload: { records: Array<{ kind: string; phase: string; text: string }> };
+      }
+    ).payload.records;
+    expect(records).toContainEqual(
+      expect.objectContaining({
+        kind: "status",
+        phase: "failed",
+        text: "CONTEXT_MEMORY_UNAVAILABLE",
+      }),
+    );
+    expect(records.some((record) => record.kind === "tool")).toBe(false);
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      expect(
+        database
+          .prepare(
+            "SELECT phase, terminal_status AS terminalStatus, diagnostic_code AS diagnosticCode FROM run_coordination_checkpoints WHERE run_id = ?",
+          )
+          .get("run:memory-lost-first"),
+      ).toEqual({
+        phase: "failed",
+        terminalStatus: "failed",
+        diagnosticCode: "CONTEXT_MEMORY_UNAVAILABLE",
+      });
+      expect(
+        database
+          .prepare(
+            "SELECT source, status, reason_code AS reasonCode FROM model_invocation_identities WHERE run_id = ?",
+          )
+          .all("run:memory-lost-first"),
+      ).toEqual([{ source: "embedding", status: "unknown", reasonCode: "transport_unresolved" }]);
+    } finally {
+      database.close();
+    }
+
+    const revision = (failed.detail.body as { payload: { thread: { revision: number } } }).payload
+      .thread.revision;
+    await service.submit({
+      threadId,
+      expectedRevision: revision,
+      name: "memory-lost-second",
+      runId: "run:memory-lost-second",
+      content: "再试一次",
+    });
+    const completed = await waitForRunToLeaveExecution(service, threadId, "run:memory-lost-second");
+    expect(completed.run?.status).toBe("completed");
+    await service.readAnswer(completed.detail, "run:memory-lost-second");
+    expect(service.running().main.exitCode).toBeNull();
+  } finally {
+    dropEmbeddingConnections = false;
+    await service.stop();
   }
 }, 90_000);

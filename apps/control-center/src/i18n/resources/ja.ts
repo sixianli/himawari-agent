@@ -102,6 +102,8 @@ export const messages = {
   "chat.error.authFailed":
     "モデルサービスの認証に失敗しました。サーバーの認証情報とアクセス権限を確認してください。",
   "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
+  "chat.error.contextMemoryUnavailable":
+    "関連する記憶の検索中にモデルサービスへの接続に失敗しました。このターンでは対話モデルを呼び出しておらず、ツールも実行していません。",
   "chat.error.failed":
     "この実行は失敗しました。保存済みのメッセージと実行記録は引き続き確認できます。",
   "chat.toolCount": "ツール呼び出し {count} 回",
@@ -146,6 +148,7 @@ export const messages = {
   "chat.activity.output": "回答を生成中",
   "chat.activity.preparingTool": "ツール呼び出しを準備中",
   "chat.activity.waitingModel": "モデルの応答を待機中",
+  "chat.activity.buildingContext": "関連する記憶を検索中",
   "chat.lastActivity": "最後の進捗は {time} 前",
   "chat.progressDelayed":
     "新しい進捗が届いていません。接続中でも処理が進んでいるとは限りません。結果を待つか、この実行を停止できます。",
@@ -232,6 +235,8 @@ export const messages = {
     "この実行が失敗する前に一部のツール操作は完了しました。結果を個別に確認してください。後続の失敗によって以前の操作が取り消されることはありません。",
   "chat.nextAction.failed":
     "新しいリクエストを送信する前に、失敗した操作とワークスペースの状態を確認してください。失敗結果だけでは副作用が取り消されたとは確認できません。",
+  "chat.nextAction.failedBeforeAnyOperation":
+    "このターンではツール操作を実行していません。そのまま再送信できます。",
   "appearance.title": "外観とアクセント",
   "appearance.theme": "テーマ",
   "appearance.accent": "アクセント色",
