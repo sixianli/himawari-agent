@@ -212,7 +212,8 @@
         "test/integration/container-execution-backend-qualification.test.ts",
         "test/integration/container-runtime-restart-qualification.test.ts",
         "test/integration/container-browser-qualification.test.ts",
-        "test/integration/container-pi-runner-qualification.test.ts"
+        "test/integration/container-pi-runner-qualification.test.ts",
+        "test/integration/product-path-browser.test.ts"
       ],
       "fileParallelism": false
     },
@@ -290,6 +291,13 @@
       "kind": "qualification",
       "project": "qualification-container-runner",
       "reason": "容器内 Pi runner 需要已构建的 runtime 和本机构建的 runner 镜像，只能单独 opt-in",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/product-path-browser.test.ts",
+      "kind": "qualification",
+      "project": "qualification-product-path",
+      "reason": "产品路径浏览器 E2E 需要已构建的安装包、本机 Chrome 和沙箱运行时，单次运行十几分钟，只能单独 opt-in",
       "allowedModifiers": ["skip"]
     },
     {
