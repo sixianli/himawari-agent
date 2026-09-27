@@ -38,7 +38,9 @@
         "docs/assets/control-center/2026-09-15-v4/source.html",
         "docs/assets/control-center/2026-09-15-v4/index.html",
         "docs/assets/control-center/2026-09-16-state-review-r3/source.html",
-        "docs/assets/control-center/2026-09-16-state-review-r3/index.html"
+        "docs/assets/control-center/2026-09-16-state-review-r3/index.html",
+        "docs/assets/control-center/2026-09-27-v5/source.html",
+        "docs/assets/control-center/2026-09-27-v5/index.html"
       ],
       "linter": {
         "enabled": false
