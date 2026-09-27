@@ -1,15 +1,13 @@
-import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { scanMachineSecrets } from "@himawari-agent/application";
 import { piRunnerInputSchema } from "@himawari-agent/execution-contracts";
 import {
-  ConstrainedHostFileSystem,
-  createDirectoryMoveJournal,
   createPiFilePublicationJournal,
   createSandboxedCodingOperations,
-  createWorkspaceCopyPublication,
+  isPiHostPublication,
+  publishPreparedPiOperation,
 } from "@himawari-agent/platform-node";
 import { writeForegroundPiResult } from "./pi-foreground-result.js";
 
@@ -80,88 +78,21 @@ try {
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
   if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))
     throw new Error("PI_FIXED_FILE_CONTRACT_INVALID");
-  if (input.tool === "save_copy") {
-    if (
-      input.executionMode !== "foreground" ||
-      !input.scope.copySave ||
-      args["operationId"] !== input.scope.copySave.operationId ||
-      args["expectedHash"] !== input.scope.copySave.canonicalHash ||
-      Object.keys(args).some((key) => !["operationId", "expectedHash"].includes(key))
-    )
-      throw new Error("COPY_SAVE_INPUT_CHANGED");
-    const journal = await createWorkspaceCopyPublication(input);
-    let conflict = false;
-    const verifiedCopySave = await journal.execute().catch(async (error) => {
-      const proof = await journal.conflicted(error);
-      conflict = true;
-      return proof;
-    });
-    const output = JSON.stringify({
-      schemaVersion: "pi-result.v1",
+  const tool = input.tool;
+  if (isPiHostPublication(input) || tool === "save_copy" || tool === "move_directory") {
+    const { output, exitCode } = await publishPreparedPiOperation({
+      hostId,
       tool: input.tool,
-      isError: conflict,
-      ...(conflict
-        ? {
-            fileConflict: {
-              operationId: input.scope.copySave.operationId,
-              canonicalHash: input.scope.copySave.canonicalHash,
-            },
-          }
-        : {}),
-      content: [
-        {
-          type: "text",
-          text: conflict
-            ? "原文件或依赖已变化；尚未开始保存，副本保留。"
-            : "本次副本改动已逐文件保存并核验。",
-        },
-      ],
-      verifiedCopySave,
-      fileCommitClosed: true,
-      source: {
-        workspace: input.workspace,
-        toolCallId: input.scope.toolCallId,
-        directoryGrantRef: input.scope.directoryGrant.ref,
-        directoryGrantRevision: input.scope.directoryGrant.revision,
-        parameters,
-      },
+      executionMode: input.executionMode,
+      scope: input.scope,
+      workspace: input.workspace,
+      privateDirectory: input.privateDirectory,
+      commandPath: binaryDirectory,
+      maxOutputBytes: input.maxOutputBytes,
+      parametersJson: input.parametersJson,
     });
-    if (Buffer.byteLength(output) > input.maxOutputBytes || scanMachineSecrets(output).length)
-      throw new Error("PI_RESULT_OUTPUT_LIMIT");
     process.stdout.write(output);
-    if (conflict) process.exitCode = 1;
-  } else if (input.tool === "move_directory") {
-    const move = input.scope.directoryMove;
-    if (
-      !move ||
-      input.executionMode !== "foreground" ||
-      typeof args["path"] !== "string" ||
-      typeof args["destination"] !== "string" ||
-      path.resolve(input.workspace, args["path"]) !==
-        path.join(input.workspace, move.sourceRelativePath) ||
-      path.resolve(input.workspace, args["destination"]) !==
-        path.join(input.workspace, move.destinationRelativePath)
-    )
-      throw new Error("HOST_DIRECTORY_MOVE_SCOPE_CHANGED");
-    const verifiedMove = await createDirectoryMoveJournal(input).execute();
-    const output = JSON.stringify({
-      schemaVersion: "pi-result.v1",
-      tool: input.tool,
-      content: [{ type: "text", text: "目录已移动。后续操作需要重新解析目标位置。" }],
-      isError: false,
-      verifiedMove,
-      fileCommitClosed: true,
-      source: {
-        workspace: input.workspace,
-        toolCallId: input.scope.toolCallId,
-        directoryGrantRef: input.scope.directoryGrant.ref,
-        directoryGrantRevision: input.scope.directoryGrant.revision,
-        parameters,
-      },
-    });
-    if (Buffer.byteLength(output) > input.maxOutputBytes || scanMachineSecrets(output).length)
-      throw new Error("PI_RESULT_OUTPUT_LIMIT");
-    process.stdout.write(output);
+    if (exitCode !== 0) process.exitCode = exitCode;
   } else {
     let verifiedWrite: { path: string; contentDigest: string; byteLength: number } | null = null;
     let verificationStarted = false;
@@ -169,199 +100,96 @@ try {
       input.scope.fileTarget && ["write", "edit"].includes(input.tool)
         ? createPiFilePublicationJournal(input)
         : undefined;
-    let publicationAttempted = false;
-    try {
-      const operations = await createSandboxedCodingOperations({
-        onCommitStarting: async () => {
-          publicationAttempted = true;
-          await publication?.commitStarting();
-        },
-        ...(publication ? { onPreparedWrite: publication.prepared } : {}),
-        onVerifiedWrite: async (proof) => {
-          if (verificationStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
-          verificationStarted = true;
-          await publication?.verified(proof);
-          verifiedWrite = proof;
-        },
-        grant: {
-          id: input.scope.directoryGrant.ref,
-          revision: input.scope.directoryGrant.revision,
-          hostId,
-          canonicalRootId: input.scope.directoryGrant.canonicalRootId,
-          displayPath: input.workspace,
-          operations: input.scope.workspaceCopy
-            ? ([
-                "read",
-                "create",
-                "update",
-                "move",
-                "trash",
-                "restore",
-                "permanent_delete",
-              ] as const)
-            : input.scope.directoryGrant.operations,
-          authorizationRef: input.scope.directoryGrant.authorizationRef,
-          expiresAt: input.scope.expiresAt,
-          revokedAt: null,
-          dataClassification: "private",
-          disclosure: "worker",
-          pathPolicy: "same_filesystem_no_links",
-          mountPolicy: "fixed_device",
-        },
-        ...(["read", "edit", "write"].includes(input.tool) && target ? { targetPath: target } : {}),
-        ...(input.scope.fileTarget ? { expectedTarget: input.scope.fileTarget } : {}),
-        ...(input.scope.preparedFile ? { preparedFile: input.scope.preparedFile } : {}),
-        shell: path.join(binaryDirectory, "bash"),
-        privateDirectory: input.privateDirectory,
-        commandPath: binaryDirectory,
-        maxOutputBytes: input.maxOutputBytes,
-      });
-      const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
-      let commandExitCode: number | null = null;
-      const commandOutput: Buffer[] = [];
-      let commandBytes = 0;
-      let emittedBytes = 0;
-      const streamOutput = (final: boolean) => {
-        if (input.executionMode === "foreground") return;
-        const all = Buffer.concat(commandOutput);
-        const text = all.toString("utf8");
-        if (
-          scanMachineSecrets(text).length ||
-          /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)
-        )
-          throw new Error("PI_RESULT_SECRET_REJECTED");
-        const end = final ? all.length : all.lastIndexOf(10) + 1;
-        if (end > emittedBytes) process.stdout.write(all.subarray(emittedBytes, end));
-        emittedBytes = Math.max(emittedBytes, end);
-      };
-      const commitPrepared = async () => {
-        const prepared = input.scope.preparedFile;
-        if (
-          !prepared ||
-          !target ||
-          !input.scope.fileTarget ||
-          !["write", "edit"].includes(input.tool)
-        )
-          throw new Error("PI_PREPARED_TARGET_REQUIRED");
-        const grant = {
-          id: input.scope.directoryGrant.ref,
-          revision: input.scope.directoryGrant.revision,
-          hostId,
-          canonicalRootId: input.scope.directoryGrant.canonicalRootId,
-          displayPath: input.workspace,
-          operations: input.scope.directoryGrant.operations,
-          authorizationRef: input.scope.directoryGrant.authorizationRef,
-          expiresAt: input.scope.expiresAt,
-          revokedAt: null,
-          dataClassification: "private" as const,
-          disclosure: "worker" as const,
-          pathPolicy: "same_filesystem_no_links" as const,
-          mountPolicy: "fixed_device" as const,
-        };
-        const platform = new ConstrainedHostFileSystem();
-        const bytes = await platform.readPublication(grant, prepared.content);
-        const resultBytes = await platform.readPublication(grant, prepared.result);
-        if (
-          createHash("sha256").update(bytes).digest("hex") !== prepared.contentDigest ||
-          createHash("sha256").update(resultBytes).digest("hex") !== prepared.resultDigest ||
-          resultBytes.length > input.maxOutputBytes
-        )
-          throw new Error("PI_PREPARED_CONTENT_CHANGED");
-        const result = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resultBytes));
-        if (
-          !result ||
-          result.isError !== false ||
-          !Array.isArray(result.content) ||
-          result.content.some(
-            (part: { type?: unknown; text?: unknown }) =>
-              part.type !== "text" || typeof part.text !== "string",
-          )
-        )
-          throw new Error("PI_PREPARED_RESULT_INVALID");
-        await operations.writeFile(target, new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-        return result as {
-          content: { type: "text"; text: string }[];
-          details?: unknown;
-          isError: boolean;
-        };
-      };
-      const result = input.scope.preparedFile
-        ? await commitPrepared()
-        : await executeSandboxedPiCodingTool({
-            name: input.tool,
-            toolCallId: input.scope.toolCallId,
-            cwd: input.workspace,
-            parameters,
-            operations: {
-              ...operations,
-              async executeCommand(command) {
-                const completed = await operations.executeCommand({
-                  ...command,
-                  onData: (bytes) => {
-                    command.onData(bytes);
-                    if (input.executionMode !== "foreground") {
-                      commandBytes += bytes.length;
-                      if (commandBytes > input.maxOutputBytes)
-                        throw new Error("PI_RESULT_OUTPUT_LIMIT");
-                      commandOutput.push(Buffer.from(bytes));
-                      streamOutput(false);
-                    }
-                  },
-                });
-                commandExitCode = completed.exitCode;
-                return completed;
-              },
+    const operations = await createSandboxedCodingOperations({
+      onCommitStarting: async () => {
+        await publication?.commitStarting();
+      },
+      ...(publication ? { onPreparedWrite: publication.prepared } : {}),
+      onVerifiedWrite: async (proof) => {
+        if (verificationStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+        verificationStarted = true;
+        await publication?.verified(proof);
+        verifiedWrite = proof;
+      },
+      grant: {
+        id: input.scope.directoryGrant.ref,
+        revision: input.scope.directoryGrant.revision,
+        hostId,
+        canonicalRootId: input.scope.directoryGrant.canonicalRootId,
+        displayPath: input.workspace,
+        operations: input.scope.workspaceCopy
+          ? (["read", "create", "update", "move", "trash", "restore", "permanent_delete"] as const)
+          : input.scope.directoryGrant.operations,
+        authorizationRef: input.scope.directoryGrant.authorizationRef,
+        expiresAt: input.scope.expiresAt,
+        revokedAt: null,
+        dataClassification: "private",
+        disclosure: "worker",
+        pathPolicy: "same_filesystem_no_links",
+        mountPolicy: "fixed_device",
+      },
+      ...(["read", "edit", "write"].includes(input.tool) && target ? { targetPath: target } : {}),
+      ...(input.scope.fileTarget ? { expectedTarget: input.scope.fileTarget } : {}),
+      shell: path.join(binaryDirectory, "bash"),
+      privateDirectory: input.privateDirectory,
+      commandPath: binaryDirectory,
+      maxOutputBytes: input.maxOutputBytes,
+    });
+    const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
+    let commandExitCode: number | null = null;
+    const commandOutput: Buffer[] = [];
+    let commandBytes = 0;
+    let emittedBytes = 0;
+    const streamOutput = (final: boolean) => {
+      if (input.executionMode === "foreground") return;
+      const all = Buffer.concat(commandOutput);
+      const text = all.toString("utf8");
+      if (
+        scanMachineSecrets(text).length ||
+        /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)
+      )
+        throw new Error("PI_RESULT_SECRET_REJECTED");
+      const end = final ? all.length : all.lastIndexOf(10) + 1;
+      if (end > emittedBytes) process.stdout.write(all.subarray(emittedBytes, end));
+      emittedBytes = Math.max(emittedBytes, end);
+    };
+    const result = await executeSandboxedPiCodingTool({
+      name: tool,
+      toolCallId: input.scope.toolCallId,
+      cwd: input.workspace,
+      parameters,
+      operations: {
+        ...operations,
+        async executeCommand(command) {
+          const completed = await operations.executeCommand({
+            ...command,
+            onData: (bytes) => {
+              command.onData(bytes);
+              if (input.executionMode !== "foreground") {
+                commandBytes += bytes.length;
+                if (commandBytes > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
+                commandOutput.push(Buffer.from(bytes));
+                streamOutput(false);
+              }
             },
           });
-      if (input.executionMode !== "foreground") {
-        streamOutput(true);
-        process.exitCode = commandExitCode ?? (result.isError ? 1 : 0);
-      } else {
-        await writeForegroundPiResult({
-          tool: input.tool,
-          result,
-          commandExitCode,
-          verifiedWrite,
-          privateDirectory: input.privateDirectory,
-          maxOutputBytes: input.maxOutputBytes,
-          closing: input.scope.preparedFile ? { fileCommitClosed: true } : {},
-          source: {
-            workspace: input.workspace,
-            toolCallId: input.scope.toolCallId,
-            directoryGrantRef: input.scope.directoryGrant.ref,
-            directoryGrantRevision: input.scope.directoryGrant.revision,
-            parameters,
-          },
-        });
-      }
-    } catch (error) {
-      if (
-        !publication ||
-        !input.scope.preparedFile ||
-        input.scope.fileTarget?.missingParents ||
-        publicationAttempted ||
-        !(error instanceof Error) ||
-        ![
-          "PI_FILE_VERSION_CHANGED",
-          "HOST_FILE_IDENTITY_CHANGED",
-          "HOST_FILE_CONTENT_CHANGED",
-          "HOST_FILE_TARGET_EXISTS",
-        ].includes(error.message)
-      )
-        throw error;
-      const fileConflict = await publication.conflicted();
-      const output = JSON.stringify({
-        schemaVersion: "pi-result.v1",
+          commandExitCode = completed.exitCode;
+          return completed;
+        },
+      },
+    });
+    if (input.executionMode !== "foreground") {
+      streamOutput(true);
+      process.exitCode = commandExitCode ?? (result.isError ? 1 : 0);
+    } else {
+      await writeForegroundPiResult({
         tool: input.tool,
-        isError: true,
-        fileConflict,
-        fileCommitClosed: true,
-        content: [
-          {
-            type: "text",
-            text: "目标文件已变化，候选保留，尚未开始发布。请读取最新内容并通过原权限流程重新生成。",
-          },
-        ],
+        result,
+        commandExitCode,
+        verifiedWrite,
+        privateDirectory: input.privateDirectory,
+        maxOutputBytes: input.maxOutputBytes,
+        closing: {},
         source: {
           workspace: input.workspace,
           toolCallId: input.scope.toolCallId,
@@ -370,10 +198,6 @@ try {
           parameters,
         },
       });
-      if (Buffer.byteLength(output) > input.maxOutputBytes || scanMachineSecrets(output).length)
-        throw new Error("PI_RESULT_OUTPUT_LIMIT");
-      process.stdout.write(output);
-      process.exitCode = 1;
     }
   }
 } catch {

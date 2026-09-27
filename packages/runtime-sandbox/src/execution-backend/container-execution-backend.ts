@@ -171,6 +171,7 @@ interface DestroyedRecord {
 export class ContainerExecutionBackend {
   private readonly options: ContainerExecutionBackendOptions;
   private readonly diskWatches = new Map<string, NodeJS.Timeout>();
+  private readonly hostPublications = new Map<string, number>();
   private readonly egress: ContainerEgress;
 
   constructor(options: ContainerExecutionBackendOptions) {
@@ -545,6 +546,54 @@ export class ContainerExecutionBackend {
     };
   }
 
+  async publishOnHost(
+    input: EnvironmentTarget & {
+      readonly stopFence: number;
+      readonly invocationId: string;
+      readonly deadlineAt: string;
+    },
+    commit: () => Promise<{ readonly exitCode: number; readonly stdout: Uint8Array }>,
+  ): Promise<{ readonly exitCode: number; readonly stdout: Uint8Array }> {
+    const files = await this.files(input.identity);
+    this.hostPublications.set(files.key, (this.hostPublications.get(files.key) ?? 0) + 1);
+    try {
+      if (await readJson(files.stop)) throw new ContainerBackendError("CONTAINER_EXECUTION_CLOSED");
+      if (Date.parse(input.deadlineAt) <= this.options.now().getTime())
+        throw new ContainerBackendError("CONTAINER_DEADLINE_PASSED");
+      const observation = await this.observe(input);
+      if (observation.kind !== "found") throw refusal(observation);
+      const { container } = observation;
+      if (await this.guardDisk(files, container.Id))
+        throw new ContainerBackendError("CONTAINER_DISK_GUARD_TRIPPED");
+      if (!container.State.Running || container.State.Paused)
+        throw new ContainerBackendError("CONTAINER_NOT_RUNNING");
+      const invocationKey = sha256(input.invocationId);
+      try {
+        await writeFile(
+          path.join(files.invocations, `${invocationKey}.started`),
+          `${JSON.stringify({ invocationId: input.invocationId, kind: "host_publication" })}\n`,
+          { flag: "wx", mode: 0o644 },
+        );
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
+        throw new ContainerBackendError("CONTAINER_IDENTITY_CONFLICT");
+      }
+      const result = await commit();
+      await writeOnce(path.join(files.invocations, `${invocationKey}.json`), {
+        invocationId: input.invocationId,
+        kind: "host_publication",
+        exitCode: result.exitCode,
+        stdoutDigest: sha256(Buffer.from(result.stdout).toString("base64")),
+        byteLength: result.stdout.byteLength,
+      });
+      return result;
+    } finally {
+      const remaining = (this.hostPublications.get(files.key) ?? 1) - 1;
+      if (remaining) this.hostPublications.set(files.key, remaining);
+      else this.hostPublications.delete(files.key);
+    }
+  }
+
   async stop(
     input: EnvironmentTarget & { readonly stopIntentId: string; readonly stopFence: number },
   ): Promise<{ readonly accepted: true }> {
@@ -577,6 +626,8 @@ export class ContainerExecutionBackend {
     const stop = await readJson<StopRecord>(files.stop);
     if (stop?.stopIntentId !== input.stopIntentId)
       throw new ContainerBackendError("CONTAINER_STOP_NOT_REQUESTED");
+    if (this.hostPublications.has(files.key))
+      throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
     if (!(await this.revokeCredential(files, false)))
       throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
     const credential = await readJson<CredentialRevokedRecord>(files.credentialRevoked);
@@ -652,7 +703,8 @@ export class ContainerExecutionBackend {
   async destroy(input: EnvironmentTarget): Promise<void> {
     const files = await this.files(input.identity);
     const stop = await readJson<StopRecord>(files.stop);
-    if (!stop) throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
+    if (!stop || this.hostPublications.has(files.key))
+      throw new ContainerBackendError("CONTAINER_NOT_STOPPED");
     if (!(await this.revokeCredential(files, false)))
       throw new ContainerBackendError("CONTAINER_CREDENTIAL_NOT_REVOKED");
     this.unwatchDisk(files.key);

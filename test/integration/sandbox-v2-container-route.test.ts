@@ -226,6 +226,9 @@ async function run(scenario: Scenario) {
         truncated: scenario === "output-truncated",
       };
     },
+    publish: async () => {
+      throw new Error("unexpected host publication");
+    },
   };
   const worker = new ProductionSandboxExecutionV2({
     configuration: { capabilityDeployment: {} as never },

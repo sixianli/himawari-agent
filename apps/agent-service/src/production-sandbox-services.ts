@@ -444,9 +444,10 @@ export async function createProductionSandboxServices(options: {
       )
     )
       throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    let workspaceClaim = await timed("workspace_identity", () =>
+    const directoryClaim = await timed("workspace_identity", () =>
       resolveSandboxWorkspaceClaim({ binding, scope: directoryScope }),
     );
+    let workspaceClaim = directoryClaim;
     const fixed =
       plan.schemaVersion === "sandbox-execution.v2" && fixedFileContract(plan.operationContract);
     const staged =
@@ -521,7 +522,7 @@ export async function createProductionSandboxServices(options: {
           : await resolveProductionCopySaveClaims({ scope: directoryScope, binding });
       if (!workspaceClaims.length) throw new Error("COPY_SAVE_CLAIMS_REQUIRED");
     }
-    return { binding, qualification, workspaceClaims, ...resolved };
+    return { binding, qualification, workspaceClaims, directoryClaim, ...resolved };
   };
   const fixedFileContract = (contract: { readonly ref: string; readonly version: string }) =>
     contract.ref === PI_FIXED_FILE_CONTRACT.ref &&
@@ -1046,7 +1047,7 @@ export async function createProductionSandboxServices(options: {
         runId: call.runId,
         hostId,
         grant,
-        claims: resolved.workspaceClaims,
+        claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
         binding,
         deadlineAt: new Date(
           Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),

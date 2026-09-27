@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import {
   type ExecutionEnvironmentLifecyclePort,
   RemoteExecutionBackend,
@@ -8,13 +9,16 @@ import {
 import {
   type ExecutionEnvironmentLocator,
   type ExecutionEnvironmentStopProof,
+  PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
+  PI_WRITE_VERIFIER,
   type SandboxOperationBinding,
   STOP_PROOF_COVERAGE,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
 import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxContainerRoute } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
 import { queuedLiveWorker } from "../fixtures/queued-live-worker.ts";
@@ -31,6 +35,7 @@ const BACKEND = "container-test";
 const IMAGE_DIGEST = "b".repeat(64);
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+  vi.useRealTimers();
   for (const close of cleanups.splice(0).reverse()) await close();
 });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -42,6 +47,34 @@ const read: SandboxOperationBinding = {
   scopeSource: "grant_targets",
   directoryOperations: ["read"],
   network: "disabled",
+};
+
+const preparedWrite: SandboxOperationBinding = {
+  operation: "write",
+  mode: "foreground",
+  contract: {
+    ...PI_PREPARED_FILE_CONTRACT,
+    kind: "verified_effect",
+    verifierRef: PI_WRITE_VERIFIER.ref,
+    verifierVersion: PI_WRITE_VERIFIER.version,
+    targetRef: PI_WRITE_VERIFIER.targetRef,
+  },
+  backendRef: BACKEND,
+  scopeSource: "grant_targets",
+  directoryOperations: ["read", "create", "update"],
+  network: "disabled",
+};
+const writeOptions = {
+  realFileIdentity: true,
+  piParameters: { path: "file.txt", content: "candidate" },
+  directoryOperations: ["read", "create", "update"] as const,
+  resourceCeiling: {
+    maxWallTimeMs: 10000,
+    maxCpuTimeMs: 10000,
+    maxMemoryBytes: 268435456,
+    maxOutputBytes: 65536,
+    maxProgressEvents: 10,
+  },
 };
 
 class Lifecycle implements ExecutionEnvironmentLifecyclePort {
@@ -114,7 +147,16 @@ class Lifecycle implements ExecutionEnvironmentLifecyclePort {
   async destroy() {}
 }
 
-async function setup(outcome: "returned" | "lost" = "returned") {
+async function setup(
+  outcome: "returned" | "lost" | "closed" = "returned",
+  binding: SandboxOperationBinding = read,
+  options: Omit<Parameters<typeof productionSandboxScope>[2] & object, "taskEnvironments"> = {
+    piParameters: { path: "notes.txt" },
+    directoryOperations: ["read"],
+  },
+  beforePrepare: (workspace: string) => Promise<void> = async () => {},
+  beforeCommit: (workspace: string) => Promise<void> = async () => {},
+) {
   const lifecycle = new Lifecycle();
   const remote = {
     worker: undefined as undefined | Awaited<ReturnType<typeof queuedLiveWorker>>["worker"],
@@ -140,9 +182,8 @@ async function setup(outcome: "returned" | "lost" = "returned") {
     resultTimeoutMs: 5_000,
     pollIntervalMs: 5,
   });
-  const f = await productionSandboxScope(read, undefined, {
-    piParameters: { path: "notes.txt" },
-    directoryOperations: ["read"],
+  const f = await productionSandboxScope(binding, undefined, {
+    ...options,
     profileRef: "authorized-project.v1",
     taskEnvironments: {
       backendRef: BACKEND,
@@ -151,7 +192,9 @@ async function setup(outcome: "returned" | "lost" = "returned") {
     },
   });
   cleanups.push(f.close);
+  await beforePrepare(f.host.workspace);
   const executed: Parameters<SandboxContainerRoute["execute"]>[0][] = [];
+  const published: Omit<Parameters<SandboxContainerRoute["publish"]>[0], "commit">[] = [];
   const containers: SandboxContainerRoute = {
     backendRef: BACKEND,
     execute: async (input) => {
@@ -162,6 +205,14 @@ async function setup(outcome: "returned" | "lost" = "returned") {
         stdout: new TextEncoder().encode('{"schemaVersion":"pi-result.v1","content":"notes"}'),
         truncated: false,
       };
+    },
+    publish: async ({ commit, ...input }) => {
+      published.push(input);
+      if (outcome === "closed") throw new Error("CONTAINER_EXECUTION_CLOSED");
+      await beforeCommit(f.host.workspace);
+      const committed = await commit();
+      if (outcome === "lost") throw new Error("publication response lost");
+      return committed;
     },
   };
   const live = await queuedLiveWorker(f, SERVICE_AUTHORITY, undefined, {
@@ -204,7 +255,7 @@ async function setup(outcome: "returned" | "lost" = "returned") {
     if (!("reservation" in prepared)) throw new Error("expected a sandbox-execution.v2 admission");
     return prepared;
   };
-  return { f, lifecycle, executed, live, prepare, dispatch };
+  return { f, lifecycle, executed, published, live, prepare, dispatch };
 }
 
 it("runs a container tool call inside the Run's task environment and releases it when the Run finishes", async () => {
@@ -549,4 +600,130 @@ it("rejects a reserved container release while its task environment is still run
   expect(await f.services.brokerV2.preparations.readAdmission(plan.identity)).not.toHaveProperty(
     "releaseReceipt",
   );
+});
+
+async function preparedWriteSetup(
+  outcome: "returned" | "lost" | "closed",
+  beforeCommit: (workspace: string) => Promise<void> = async () => {},
+) {
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.parse(T1) });
+  const setupResult = await setup(
+    outcome,
+    preparedWrite,
+    writeOptions,
+    (workspace) => writeFile(path.join(workspace, "file.txt"), "before"),
+    beforeCommit,
+  );
+  const prepared = await setupResult.prepare();
+  expect(
+    (
+      await setupResult.f.services.brokerV2.preparations.reserve({
+        ...prepared,
+        invocation: setupResult.f.input,
+      })
+    ).applied,
+  ).toBe(true);
+  await setupResult.dispatch(prepared.plan);
+  const store = setupResult.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environment = (await store.readRun(RUN_ID))?.environments[0];
+  const record = await setupResult.f.repository
+    .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+    .read(prepared.plan.identity);
+  const content = await readFile(path.join(setupResult.f.host.workspace, "file.txt"), "utf8");
+  return { ...setupResult, prepared, store, environment, record, content };
+}
+
+it("publishes a prepared write from the host under the Run's task environment", async () => {
+  const { f, executed, published, prepared, store, environment, record, content } =
+    await preparedWriteSetup("returned");
+  expect(prepared.plan.backendRef).toBe(BACKEND);
+  expect(content).toBe("candidate");
+  expect(executed).toEqual([]);
+  expect(published).toEqual([
+    {
+      identity: environment?.identity,
+      createIntentId: environment?.createIntentId,
+      locator: environment?.locator,
+      stopFence: 0,
+      invocationId: prepared.plan.identity.invocationId,
+      deadlineAt: prepared.plan.effectiveDeadlineAt,
+      authorizationRef: prepared.plan.authorizationRef,
+    },
+  ]);
+  const environmentId = environment?.identity.environmentId ?? "";
+  expect(record?.facts.environment).toMatchObject({
+    kind: "container",
+    taskEnvironmentId: environmentId,
+  });
+  expect(record?.facts.result).toMatchObject({ kind: "result", completion: { type: "value" } });
+  expect(record?.facts.effect).toMatchObject({
+    kind: "verified",
+    verifierRef: PI_WRITE_VERIFIER.ref,
+    evidence: {
+      ref: record?.facts.result?.kind === "result" ? record.facts.result.output.ref : "",
+    },
+  });
+  expect(record?.facts.resource).toMatchObject({
+    supervision: "released",
+    evidence: { subject: { kind: "task_environment", environmentId } },
+  });
+  expect(record?.releaseReceipt).not.toBeNull();
+  expect((await store.read(environmentId))?.calls).toEqual([
+    expect.objectContaining({
+      invocationId: prepared.plan.identity.invocationId,
+      completedAt: expect.any(String),
+    }),
+  ]);
+  expect(await f.services.resources.stopRun(RUN_ID, "run_finished")).toEqual({ released: true });
+  expect(await store.read(environmentId)).toMatchObject({ state: "released" });
+});
+
+it("keeps the user's newer file and records a version conflict when it changed after preparation", async () => {
+  const { published, record, content } = await preparedWriteSetup("returned", (workspace) =>
+    writeFile(path.join(workspace, "file.txt"), "edited by the user"),
+  );
+  expect(published).toHaveLength(1);
+  expect(content).toBe("edited by the user");
+  expect(record?.facts.result).toMatchObject({
+    kind: "error",
+    reasonCode: "FILE_VERSION_CONFLICT",
+  });
+  expect(record?.facts.effect).toMatchObject({ kind: "verified" });
+  expect(record?.facts.resource.supervision).toBe("released");
+});
+
+it("writes nothing and stops the environment when its task environment refuses host publication", async () => {
+  const { f, published, store, environment, record, content } = await preparedWriteSetup("closed");
+  expect(published).toHaveLength(1);
+  expect(content).toBe("before");
+  expect(record?.facts.result).toMatchObject({ kind: "unknown" });
+  expect(record?.facts.resource.supervision).toBe("lost");
+  expect(await f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({ released: true });
+  expect(await store.read(environment?.identity.environmentId ?? "")).toMatchObject({
+    state: "released",
+  });
+});
+
+it("treats a lost host publication reply as an unknown effect", async () => {
+  const { record } = await preparedWriteSetup("lost");
+  expect(record?.facts.result).toMatchObject({ kind: "unknown" });
+  expect(record?.facts.effect.kind).toBe("unknown");
+  expect(record?.facts.resource.supervision).toBe("lost");
+});
+
+it("refuses a write without a prepared candidate on the container route", async () => {
+  const { f, executed, published, prepare, dispatch } = await setup(
+    "returned",
+    { ...preparedWrite, contract: { ...preparedWrite.contract, ...PI_FIXED_FILE_CONTRACT } },
+    writeOptions,
+    (workspace) => writeFile(path.join(workspace, "file.txt"), "before"),
+  );
+  const prepared = await prepare();
+  await f.services.brokerV2.preparations.reserve({ ...prepared, invocation: f.input });
+  await dispatch(prepared.plan);
+  expect(executed).toEqual([]);
+  expect(published).toEqual([]);
+  expect(await readFile(path.join(f.host.workspace, "file.txt"), "utf8")).toBe("before");
+  const admission = await f.services.brokerV2.preparations.readAdmission(prepared.plan.identity);
+  expect(admission?.phase).toBe("reserved");
 });

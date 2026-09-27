@@ -17,7 +17,7 @@ const INIT_USER = "65532:65532";
 const TASK_USER = "65534:65534";
 const EGRESS_USER = "65533:65533";
 
-type ContainerCalls = Pick<ContainerExecutionBackend, "execute" | "readOutput">;
+type ContainerCalls = Pick<ContainerExecutionBackend, "execute" | "readOutput" | "publishOnHost">;
 
 export function taskEnvironmentRoute(
   backendRef: string,
@@ -48,6 +48,19 @@ export function taskEnvironmentRoute(
       } finally {
         argumentsByRef.delete(argumentsRef);
       }
+    },
+    publish({ commit, ...input }) {
+      return backend.publishOnHost(
+        {
+          identity: input.identity,
+          createIntentId: input.createIntentId,
+          locator: input.locator,
+          stopFence: input.stopFence,
+          invocationId: input.invocationId,
+          deadlineAt: input.deadlineAt,
+        },
+        commit,
+      );
     },
   };
 }

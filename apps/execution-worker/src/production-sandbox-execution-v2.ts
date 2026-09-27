@@ -35,6 +35,7 @@ import {
 import {
   CapabilityDeploymentSnapshotLoader,
   hasVerifiedPiFileConflict,
+  publishPreparedPiOperation,
   resolveSandboxWorkspaceRoot,
   revalidateCapabilityDeploymentSnapshot,
   verifyPiWriteEvidence,
@@ -82,6 +83,16 @@ export interface SandboxContainerRoute {
     readonly stdout: Uint8Array;
     readonly truncated: boolean;
   }>;
+  publish(input: {
+    readonly identity: ExecutionEnvironmentIdentity;
+    readonly createIntentId: string;
+    readonly locator: ExecutionEnvironmentLocator;
+    readonly stopFence: number;
+    readonly invocationId: string;
+    readonly deadlineAt: string;
+    readonly authorizationRef: string;
+    readonly commit: () => Promise<{ readonly exitCode: number; readonly stdout: Uint8Array }>;
+  }): Promise<{ readonly exitCode: number; readonly stdout: Uint8Array }>;
 }
 interface Options {
   configuration: Pick<ProductConfiguration, "capabilityDeployment">;
@@ -91,6 +102,11 @@ interface Options {
   containers?: SandboxContainerRoute;
 }
 const CONTAINER_TOOLS = new Set(["read", "bash", "find", "grep", "ls"]);
+const HOST_PUBLICATION_CONTRACTS: ReadonlyMap<string, readonly string[]> = new Map([
+  [PI_PREPARED_FILE_CONTRACT.version, ["write", "edit"]],
+  [PI_DIRECTORY_MOVE_CONTRACT.version, ["move_directory"]],
+  [PI_COPY_SAVE_CONTRACT.version, ["save_copy"]],
+]);
 /** Foreground v2 supervision through the existing broker. Unsupported operation
  * contracts never fall back to a generic or v1 runner. No database lives here. */
 export class ProductionSandboxExecutionV2 {
@@ -754,15 +770,18 @@ export class ProductionSandboxExecutionV2 {
   ): Promise<SandboxWorkerResult> {
     const plan = initial.plan;
     const tool = piCodingToolNameSchema.parse(plan.operation);
+    const publication = plan.operationContract.kind === "verified_effect";
     if (
       plan.mode !== "foreground" ||
       plan.operationContract.ref !== PI_RUNNER_CONTRACT.ref ||
-      plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
-      !CONTAINER_TOOLS.has(tool) ||
-      plan.operationContract.kind !== (tool === "bash" ? "command" : "fixed_read")
+      (publication
+        ? !HOST_PUBLICATION_CONTRACTS.get(plan.operationContract.version)?.includes(tool)
+        : plan.operationContract.version !== PI_RUNNER_CONTRACT.version ||
+          !CONTAINER_TOOLS.has(tool) ||
+          plan.operationContract.kind !== (tool === "bash" ? "command" : "fixed_read"))
     )
       throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
-    await this.hostBinding(plan);
+    const binding = await this.hostBinding(plan);
     const resolved = await this.rpc(entry, { kind: "resolve" });
     const scope = resolved.resolvedScope?.scope;
     const environment = resolved.environment;
@@ -773,10 +792,13 @@ export class ProductionSandboxExecutionV2 {
       scope.schemaVersion !== "sandbox-scope.v1" ||
       scope.profileRef !== "authorized-project.v1" ||
       scope.workspaceCopy ||
-      scope.copySave ||
-      scope.fileTarget ||
-      scope.preparedFile ||
-      scope.directoryMove
+      (plan.operationContract.version === PI_PREPARED_FILE_CONTRACT.version) !==
+        Boolean(scope.preparedFile && scope.fileTarget) ||
+      (plan.operationContract.version !== PI_PREPARED_FILE_CONTRACT.version &&
+        Boolean(scope.fileTarget || scope.preparedFile)) ||
+      (plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version) !==
+        Boolean(scope.directoryMove) ||
+      (plan.operationContract.version === PI_COPY_SAVE_CONTRACT.version) !== Boolean(scope.copySave)
     )
       throw new Error("SANDBOX_SCOPE_CHANGED");
     if (
@@ -787,6 +809,11 @@ export class ProductionSandboxExecutionV2 {
       throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
     const input = await this.options.payloads.readInput(entry.invocation);
     if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+    const parametersJson = new TextDecoder("utf-8", { fatal: true }).decode(input);
+    const root = publication ? await resolveSandboxWorkspaceRoot({ binding, scope }) : null;
+    if (publication && !root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
+    const privateDirectory = path.join(binding.privateRoot, plan.identity.jobId);
+    if (publication) await mkdir(privateDirectory, { mode: 0o700 });
     const grant = scope.directoryGrant;
     const runnerInput = piContainerRunnerInputSchema.parse({
       schemaVersion: "pi-container-runner.v1",
@@ -801,7 +828,7 @@ export class ProductionSandboxExecutionV2 {
       access: grant.operations.some((operation) => operation !== "read") ? "write" : "read",
       expiresAt: scope.expiresAt,
       maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
-      parametersJson: new TextDecoder("utf-8", { fatal: true }).decode(input),
+      parametersJson,
     });
     const facts = sandboxExecutionFactsSchema.parse(
       this.environmentFacts(plan, initial, environment),
@@ -818,17 +845,50 @@ export class ProductionSandboxExecutionV2 {
     )
       return this.unknown(entry);
     let completed: Awaited<ReturnType<SandboxContainerRoute["execute"]>> | null = null;
+    let published: "published" | "conflict" | null = null;
+    const target = {
+      identity: environment.identity,
+      createIntentId: environment.createIntentId,
+      locator: environment.locator,
+      stopFence: environment.stopFence,
+      invocationId: plan.identity.invocationId,
+      deadlineAt: plan.effectiveDeadlineAt,
+      authorizationRef: plan.authorizationRef,
+    };
     try {
-      completed = await containers.execute({
-        identity: environment.identity,
-        createIntentId: environment.createIntentId,
-        locator: environment.locator,
-        stopFence: environment.stopFence,
-        invocationId: plan.identity.invocationId,
-        argv: ["node", PI_CONTAINER_RUNNER_PATH, JSON.stringify(runnerInput)],
-        deadlineAt: plan.effectiveDeadlineAt,
-        authorizationRef: plan.authorizationRef,
-      });
+      if (publication && root) {
+        const committed = await containers.publish({
+          ...target,
+          commit: async () => {
+            const result = await publishPreparedPiOperation({
+              hostId: plan.identity.hostId,
+              tool,
+              executionMode: plan.mode,
+              scope: sandboxScopeSchema.parse(scope),
+              workspace: root.canonicalPath,
+              privateDirectory,
+              commandPath: path.join(binding.runtimeRoot, "pi-tools", "bin"),
+              maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+              parametersJson,
+            });
+            return { exitCode: result.exitCode, stdout: new TextEncoder().encode(result.output) };
+          },
+        });
+        published = verifyPiWriteEvidence({
+          bytes: committed.stdout,
+          parameters: JSON.parse(parametersJson),
+          plan,
+          scope: sandboxScopeSchema.parse(scope),
+          workspace: root.canonicalPath,
+        });
+        if ((published === "conflict") !== (committed.exitCode === 1) || committed.exitCode > 1)
+          throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        completed = { ...committed, truncated: false };
+      } else
+        completed = await containers.execute({
+          ...target,
+          argv: ["node", PI_CONTAINER_RUNNER_PATH, JSON.stringify(runnerInput)],
+        });
     } catch {
       completed = null;
     }
@@ -873,35 +933,56 @@ export class ProductionSandboxExecutionV2 {
     const command = plan.operationContract.kind === "command";
     const settled = sandboxExecutionFactsSchema.parse({
       ...facts,
-      result: completed.truncated
-        ? {
-            ...resultFields,
-            kind: "error",
-            output,
-            reasonCode: "SANDBOX_OUTPUT_LIMIT",
-            termination: { type: "failure" },
-          }
-        : command || completed.exitCode === 0
+      result: published
+        ? published === "conflict"
           ? {
-              ...resultFields,
-              kind: "result",
-              output,
-              completion: command
-                ? { type: "exit", exitCode: completed.exitCode }
-                : { type: "value" },
-            }
-          : {
               ...resultFields,
               kind: "error",
               output,
-              reasonCode: "SANDBOX_OPERATION_FAILED",
+              reasonCode: "FILE_VERSION_CONFLICT",
               termination: { type: "failure" },
-            },
-      effect: completed.truncated
-        ? { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" }
-        : command
-          ? { kind: "not_asserted" }
-          : { kind: "not_applicable" },
+            }
+          : { ...resultFields, kind: "result", output, completion: { type: "value" } }
+        : completed.truncated
+          ? {
+              ...resultFields,
+              kind: "error",
+              output,
+              reasonCode: "SANDBOX_OUTPUT_LIMIT",
+              termination: { type: "failure" },
+            }
+          : command || completed.exitCode === 0
+            ? {
+                ...resultFields,
+                kind: "result",
+                output,
+                completion: command
+                  ? { type: "exit", exitCode: completed.exitCode }
+                  : { type: "value" },
+              }
+            : {
+                ...resultFields,
+                kind: "error",
+                output,
+                reasonCode: "SANDBOX_OPERATION_FAILED",
+                termination: { type: "failure" },
+              },
+      effect: published
+        ? plan.operationContract.kind === "verified_effect"
+          ? {
+              kind: "verified",
+              verifierRef: plan.operationContract.verifierRef,
+              verifierVersion: plan.operationContract.verifierVersion,
+              targetRef: plan.operationContract.targetRef,
+              evidence: { ref: output.ref, digest: output.digest },
+              occurredAt: this.options.clock.now(),
+            }
+          : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" }
+        : completed.truncated
+          ? { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" }
+          : command
+            ? { kind: "not_asserted" }
+            : { kind: "not_applicable" },
       resource: {
         ...facts.resource,
         sequence: 3,

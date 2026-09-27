@@ -1,0 +1,171 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.20887500000026193,"at":"2026-09-27T05:16:25.688Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.75725000000057,"at":"2026-09-27T05:16:25.721Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5343749999992724,"at":"2026-09-27T05:16:25.722Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.7273750000003929,"at":"2026-09-27T05:16:25.724Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7497919999987062,"at":"2026-09-27T05:16:25.724Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1635839999999007,"at":"2026-09-27T05:16:26.770Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":33.661542000001646,"at":"2026-09-27T05:16:26.804Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.28325000000040745,"at":"2026-09-27T05:16:26.805Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.6888339999986783,"at":"2026-09-27T05:16:26.806Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.5703340000000026,"at":"2026-09-27T05:16:26.806Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2544580000012502,"at":"2026-09-27T05:16:27.952Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":34.23250000000007,"at":"2026-09-27T05:16:27.987Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.42479199999979755,"at":"2026-09-27T05:16:27.987Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.9891250000000582,"at":"2026-09-27T05:16:27.989Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7769580000003771,"at":"2026-09-27T05:16:27.989Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7367919999996957,"at":"2026-09-27T05:16:30.391Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":112.55966699999954,"at":"2026-09-27T05:16:30.505Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":7.019542000000001,"at":"2026-09-27T05:16:30.513Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":4.115583000000697,"at":"2026-09-27T05:16:30.521Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":2.2605419999999867,"at":"2026-09-27T05:16:30.523Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.2575830000023416,"at":"2026-09-27T05:16:31.661Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":37.788958000001,"at":"2026-09-27T05:16:31.699Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.3023749999993015,"at":"2026-09-27T05:16:31.700Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.601582999999664,"at":"2026-09-27T05:16:31.701Z"}
+
+stderr | test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4312499999978172,"at":"2026-09-27T05:16:31.701Z"}
+
+ ❯ |integration| test/integration/production-task-environment-route.test.ts (16 tests | 5 failed) 13768ms
+   × publishes a prepared write from the host under the Run's task environment 1113ms
+   × keeps the user's newer file and records a version conflict when it changed after preparation 1076ms
+   × writes nothing and stops the environment when its task environment refuses host publication 1180ms
+   × treats a lost host publication reply as an unknown effect 2662ms
+   × refuses a write without a prepared candidate on the container route 1052ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-task-environment-route.test.ts > publishes a prepared write from the host under the Run's task environment
+Error: SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED
+ ❯ Object.acquire apps/agent-service/src/production-task-environments.ts:136:15
+    134|         claim.canonicalRootId !== input.grant.canonicalRootId
+    135|       )
+    136|         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+       |               ^
+    137|       const access = input.grant.operations.some((operation) => operat…
+    138|         ? ("write" as const)
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:1045:26
+ ❯ Object.prepare test/integration/production-task-environment-route.test.ts:251:22
+ ❯ preparedWriteSetup test/integration/production-task-environment-route.test.ts:609:20
+ ❯ test/integration/production-task-environment-route.test.ts:631:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |integration| test/integration/production-task-environment-route.test.ts > keeps the user's newer file and records a version conflict when it changed after preparation
+Error: SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED
+ ❯ Object.acquire apps/agent-service/src/production-task-environments.ts:136:15
+    134|         claim.canonicalRootId !== input.grant.canonicalRootId
+    135|       )
+    136|         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+       |               ^
+    137|       const access = input.grant.operations.some((operation) => operat…
+    138|         ? ("write" as const)
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:1045:26
+ ❯ Object.prepare test/integration/production-task-environment-route.test.ts:251:22
+ ❯ preparedWriteSetup test/integration/production-task-environment-route.test.ts:609:20
+ ❯ test/integration/production-task-environment-route.test.ts:673:42
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |integration| test/integration/production-task-environment-route.test.ts > writes nothing and stops the environment when its task environment refuses host publication
+Error: SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED
+ ❯ Object.acquire apps/agent-service/src/production-task-environments.ts:136:15
+    134|         claim.canonicalRootId !== input.grant.canonicalRootId
+    135|       )
+    136|         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+       |               ^
+    137|       const access = input.grant.operations.some((operation) => operat…
+    138|         ? ("write" as const)
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:1045:26
+ ❯ Object.prepare test/integration/production-task-environment-route.test.ts:251:22
+ ❯ preparedWriteSetup test/integration/production-task-environment-route.test.ts:609:20
+ ❯ test/integration/production-task-environment-route.test.ts:688:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |integration| test/integration/production-task-environment-route.test.ts > treats a lost host publication reply as an unknown effect
+Error: SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED
+ ❯ Object.acquire apps/agent-service/src/production-task-environments.ts:136:15
+    134|         claim.canonicalRootId !== input.grant.canonicalRootId
+    135|       )
+    136|         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+       |               ^
+    137|       const access = input.grant.operations.some((operation) => operat…
+    138|         ? ("write" as const)
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:1045:26
+ ❯ Object.prepare test/integration/production-task-environment-route.test.ts:251:22
+ ❯ preparedWriteSetup test/integration/production-task-environment-route.test.ts:609:20
+ ❯ test/integration/production-task-environment-route.test.ts:700:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |integration| test/integration/production-task-environment-route.test.ts > refuses a write without a prepared candidate on the container route
+Error: SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED
+ ❯ Object.acquire apps/agent-service/src/production-task-environments.ts:136:15
+    134|         claim.canonicalRootId !== input.grant.canonicalRootId
+    135|       )
+    136|         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+       |               ^
+    137|       const access = input.grant.operations.some((operation) => operat…
+    138|         ? ("write" as const)
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:1045:26
+ ❯ prepare test/integration/production-task-environment-route.test.ts:251:22
+ ❯ test/integration/production-task-environment-route.test.ts:713:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 11 passed (16)
+   Start at  14:16:14
+   Duration  17.26s (transform 1.42s, setup 0ms, import 3.39s, tests 13.77s, environment 0ms)

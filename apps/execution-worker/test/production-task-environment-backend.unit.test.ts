@@ -164,6 +164,9 @@ describe("task environment container route", () => {
         seen.push({ ...input, argv: argumentsByRef.get(input.argumentsRef) });
         return { outputRef: "container-output:1", observedAt: "2026-09-26T00:00:01.000Z" };
       },
+      publishOnHost: async () => {
+        throw new Error("unreachable");
+      },
       readOutput: async (outputRef) => {
         expect(outputRef).toBe("container-output:1");
         return {
@@ -203,6 +206,9 @@ describe("task environment container route", () => {
       readOutput: async () => {
         throw new Error("unreachable");
       },
+      publishOnHost: async () => {
+        throw new Error("unreachable");
+      },
     });
     await expect(lost.execute(target)).rejects.toThrow("CONTAINER_NOT_RUNNING");
     const unread = taskEnvironmentRoute(BACKEND, argumentsByRef, {
@@ -213,8 +219,42 @@ describe("task environment container route", () => {
       readOutput: async () => {
         throw new Error("CONTAINER_OUTPUT_UNKNOWN");
       },
+      publishOnHost: async () => {
+        throw new Error("unreachable");
+      },
     });
     await expect(unread.execute(target)).rejects.toThrow("CONTAINER_OUTPUT_UNKNOWN");
     expect(argumentsByRef.size).toBe(0);
+  });
+
+  it("hands a host publication to the backend's gate with only the environment target", async () => {
+    const seen: unknown[] = [];
+    const committed = { exitCode: 0, stdout: new TextEncoder().encode("published") };
+    const route = taskEnvironmentRoute(BACKEND, new Map(), {
+      execute: async () => {
+        throw new Error("unreachable");
+      },
+      readOutput: async () => {
+        throw new Error("unreachable");
+      },
+      publishOnHost: async (input, commit) => {
+        seen.push(input);
+        return commit();
+      },
+    });
+    const { argv: _argv, ...publication } = target;
+    await expect(route.publish({ ...publication, commit: async () => committed })).resolves.toBe(
+      committed,
+    );
+    expect(seen).toEqual([
+      {
+        identity: target.identity,
+        createIntentId: target.createIntentId,
+        locator: target.locator,
+        stopFence: target.stopFence,
+        invocationId: target.invocationId,
+        deadlineAt: target.deadlineAt,
+      },
+    ]);
   });
 });

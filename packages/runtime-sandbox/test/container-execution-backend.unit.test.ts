@@ -1437,6 +1437,87 @@ describe("executing in a container environment", () => {
   });
 });
 
+describe("publishing prepared files from the host for a container environment", () => {
+  const publication = (request: Awaited<ReturnType<typeof started>>["request"]) => ({
+    ...request,
+    stopFence: 0,
+    invocationId: "invocation-publish",
+    deadlineAt: "2026-09-25T10:30:00.000Z",
+  });
+  const committed = { exitCode: 0, stdout: new TextEncoder().encode('{"published":true}') };
+
+  it("runs the host commit once for a running environment without entering the container", async () => {
+    const { subject, request } = await started();
+    const commit = vi.fn(async () => committed);
+    await expect(subject.publishOnHost(publication(request), commit)).resolves.toEqual(committed);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(docker.execs).toEqual([]);
+    await expect(subject.publishOnHost(publication(request), commit)).rejects.toMatchObject({
+      code: "CONTAINER_IDENTITY_CONFLICT",
+    });
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses before committing after a stop, past the deadline, on another runtime or after a restart", async () => {
+    const { subject, request, locator } = await started();
+    const commit = vi.fn(async () => committed);
+    const call = (overrides: Record<string, unknown> = {}) =>
+      subject.publishOnHost({ ...publication(request), ...overrides }, commit);
+    await expect(call({ deadlineAt: "2026-09-25T10:00:00.000Z" })).rejects.toMatchObject({
+      code: "CONTAINER_DEADLINE_PASSED",
+    });
+    await expect(
+      call({ locator: { ...locator, runtimeInstanceId: "daemon-2" } }),
+    ).rejects.toMatchObject({ code: "CONTAINER_RUNTIME_CHANGED" });
+    const container = docker.only();
+    docker.exit(container);
+    docker.start(container);
+    await expect(call()).rejects.toMatchObject({ code: "CONTAINER_RESTARTED" });
+    await subject.stop(stopRequest(locator));
+    await expect(call()).rejects.toMatchObject({ code: "CONTAINER_EXECUTION_CLOSED" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("does not prove the environment stopped while a host commit is still writing", async () => {
+    const { subject, request, locator } = await started();
+    let finish: (value: typeof committed) => void = () => {};
+    const writing = new Promise<typeof committed>((resolve) => {
+      finish = resolve;
+    });
+    let entered: () => void = () => {};
+    const inside = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = subject.publishOnHost(publication(request), async () => {
+      entered();
+      return writing;
+    });
+    await inside;
+    await subject.stop(stopRequest(locator));
+    await expect(subject.verifyStopped(stopRequest(locator))).rejects.toMatchObject({
+      code: "CONTAINER_NOT_STOPPED",
+    });
+    finish(committed);
+    await expect(pending).resolves.toEqual(committed);
+    await expect(subject.verifyStopped(stopRequest(locator))).resolves.toMatchObject({
+      basis: "verified_stopped",
+    });
+  });
+
+  it("refuses a commit that races a stop request instead of writing after the stop", async () => {
+    const { subject, request, locator } = await started();
+    const commit = vi.fn(async () => committed);
+    const stopping = subject.stop(stopRequest(locator));
+    const racing = subject.publishOnHost(publication(request), commit);
+    await stopping;
+    await racing.catch(() => {});
+    const proof = await subject.verifyStopped(stopRequest(locator));
+    expect(proof.basis).toBe("verified_stopped");
+    if (commit.mock.calls.length) await expect(racing).resolves.toEqual(committed);
+    else await expect(racing).rejects.toMatchObject({ code: "CONTAINER_EXECUTION_CLOSED" });
+  });
+});
+
 describe("handing a temporary credential to one call in a fresh environment", () => {
   const credential = { secretRef: "secret-registry", approvalRef: "approval-7" };
   function call(
