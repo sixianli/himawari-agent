@@ -1,0 +1,59 @@
+{
+  "outputSchemaVersion": 1,
+  "command": "delete.purge",
+  "deletionId": "deletion-run-86c2a243f6c8c60be83630bc",
+  "objectType": "run",
+  "objectId": "run:2058c816-b008-402f-8b0f-965782d3d03c",
+  "lifecycle": "deleted_verified",
+  "purgeDeadlineAt": "2026-09-27T09:37:03.596Z",
+  "targets": {
+    "product": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:03.596Z"
+    },
+    "payload": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:04.254Z"
+    },
+    "trace": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:03.596Z"
+    },
+    "inbox": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:03.596Z"
+    },
+    "search": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:04.267Z"
+    },
+    "cache": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:04.307Z"
+    },
+    "archive": {
+      "status": "verified",
+      "attempts": 1,
+      "errorCode": null,
+      "verifiedAt": "2026-09-27T09:37:04.308Z"
+    }
+  },
+  "payloadFileCount": 0,
+  "externalEffectTombstoneCount": 6,
+  "associatedTaskIds": [],
+  "pausedTaskIds": [],
+  "priorProductStatus": null,
+  "updatedAt": "2026-09-27T09:37:04.308Z"
+}

@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-27T10:04:00Z",
+  "sourceCommit": "c71adbd5f23a88834512ad26112f587d6fa993b9",
+  "runtimeDigest": "f103d99f4dbb9871ee32b820a7e820b8229c84bda5dd0fbf827fd1cfa17b9031",
+  "serviceActive": true,
+  "restartsDuringFirstStart": 1,
+  "firstStartFailure": "WORKER_STARTUP_TIMEOUT",
+  "livePhysicalMount": "/dev/nvme0n1p2[/opt/himawari/releases/2026-09-27-c71adbd] ro",
+  "configChangedTopLevelKeys": [
+    "capabilityDeployment"
+  ],
+  "schema": 48,
+  "activeRuns": 0,
+  "foreignKeyErrors": 0,
+  "health": {
+    "status": "ready"
+  },
+  "httpIndexStatus": 200,
+  "httpIndexAssetsOk": 2,
+  "staticFilesCheckedAsRuntimeAccount": 23,
+  "history": {
+    "threads": 37,
+    "thread_messages": 151,
+    "runs": 87
+  },
+  "modelCallsByDeployment": 0,
+  "temporarySudoRevoked": true
+}
