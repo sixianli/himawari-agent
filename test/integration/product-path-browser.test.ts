@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
   type Browser,
   type BrowserContext,
@@ -25,6 +26,12 @@ const outputDirectory = path.resolve(
 const NOTE = "项目代号：向日葵";
 
 const script: ModelScript = ({ lastUserText, toolResults }) => {
+  if (lastUserText.includes("连续读取两个文件") && toolResults.length < 2)
+    return {
+      kind: "tool",
+      name: "read",
+      arguments: { path: toolResults.length === 0 ? "notes.txt" : "second.txt" },
+    };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("读取 notes.txt"))
     return { kind: "tool", name: "read", arguments: { path: "notes.txt" } };
@@ -107,6 +114,46 @@ async function sendToolRequest(text: string) {
   return toolAnswers().nth(before);
 }
 
+function executionReadback() {
+  const database = openQualifiedDatabase(installation.databasePath);
+  try {
+    return database
+      .prepare(`SELECT resource.job_id AS jobId, resource.run_id AS runId,
+      json_extract(resource.facts_json,'$.result.kind') AS result,
+      json_extract(resource.facts_json,'$.resource.supervision') AS supervision,
+      run.status AS runStatus,
+      EXISTS(SELECT 1 FROM sandbox_release_receipts receipt WHERE receipt.job_id=resource.job_id) AS released,
+      (SELECT COUNT(*) FROM sandbox_execution_intents intent WHERE intent.job_id=resource.job_id AND intent.kind='tool_result') AS intents
+      FROM sandbox_execution_records resource JOIN runs run ON run.id=resource.run_id ORDER BY resource.job_id`)
+      .all() as Array<{
+      jobId: string;
+      runId: string;
+      result: string;
+      supervision: string;
+      runStatus: string;
+      released: number;
+      intents: number;
+    }>;
+  } finally {
+    database.close();
+  }
+}
+
+function observedToolReplies(userText: string) {
+  return installation.modelRequests.flatMap(({ body }) => {
+    if (!Array.isArray(body["tools"]) || !Array.isArray(body["messages"])) return [];
+    const messages = body["messages"] as Array<{
+      role?: string;
+      content?: unknown;
+      tool_call_id?: string;
+    }>;
+    const index = messages.findLastIndex((message) => message.role === "user");
+    if (!JSON.stringify(messages[index]?.content).includes(userText)) return [];
+    const results = messages.slice(index + 1).filter((message) => message.role === "tool");
+    return results.length ? [results.map((message) => message.tool_call_id)] : [];
+  });
+}
+
 async function newThread() {
   await page
     .getByRole("link", { name: "新建对话" })
@@ -134,6 +181,9 @@ productDescribe(
       });
       installation.setModelScript(script);
       await writeFile(path.join(installation.workspace, "notes.txt"), NOTE, { mode: 0o600 });
+      await writeFile(path.join(installation.workspace, "second.txt"), "第二份结果", {
+        mode: 0o600,
+      });
       await installation.start();
       browser = await chromium.launch({
         channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
@@ -227,6 +277,87 @@ productDescribe(
         expect(installation.running()).toBe(true);
       });
     });
+
+    it("delivers both sequential tool results in one turn exactly once", async () => {
+      await scenario("08-two-tools", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const text = "请连续读取两个文件";
+        await send(text);
+        await uiExpect
+          .poll(
+            async () => {
+              if (
+                await page
+                  .getByText(/工具返回：/)
+                  .filter({ hasText: "第二份结果" })
+                  .count()
+              )
+                return true;
+              const allow = page.getByRole("button", { name: "允许这一次" }).first();
+              if (await allow.isVisible()) await allow.click();
+              return false;
+            },
+            { timeout: 300_000 },
+          )
+          .toBe(true);
+        await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+          timeout: 300_000,
+        });
+        const rows = executionReadback().filter((record) => !before.has(record.jobId));
+        await writeFile(
+          path.join(outputDirectory, "08-two-tools-readback.json"),
+          JSON.stringify({ rows, modelReplies: observedToolReplies(text) }, null, 2),
+        );
+        expect(rows).toHaveLength(2);
+        expect(new Set(rows.map((record) => record.runId)).size).toBe(1);
+        for (const row of rows)
+          expect(row).toMatchObject({
+            result: "result",
+            supervision: "released",
+            runStatus: "completed",
+            released: 1,
+            intents: 1,
+          });
+        const replies = observedToolReplies(text);
+        expect(replies.map((ids) => ids.length)).toEqual([1, 2]);
+        expect(new Set(replies[1]).size).toBe(2);
+      });
+    });
+
+    it("completes thirty repeated reads without stranding a result or replaying a tool", async () => {
+      await scenario("09-thirty-reads", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        for (let index = 1; index <= 30; index++) {
+          const text = `第 ${index} 次读取 notes.txt`;
+          await uiExpect(await sendToolRequest(text)).toContainText(NOTE);
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+            timeout: 300_000,
+          });
+          const rows = executionReadback().filter((record) => !before.has(record.jobId));
+          await writeFile(
+            path.join(outputDirectory, "09-thirty-reads-readback.json"),
+            JSON.stringify(
+              { completed: index, rows, modelReplies: observedToolReplies(text) },
+              null,
+              2,
+            ),
+          );
+          expect(rows).toHaveLength(index);
+          for (const row of rows)
+            expect(row).toMatchObject({
+              result: "result",
+              supervision: "released",
+              runStatus: "completed",
+              released: 1,
+              intents: 1,
+            });
+          expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          await uiExpect(page.getByText(/结果未确认|结果仍未确认/)).toHaveCount(0);
+        }
+      });
+    }, 1_800_000);
 
     it("shows the connection loss while the service restarts and recovers afterwards", async () => {
       await scenario("07-service-restart", async () => {
