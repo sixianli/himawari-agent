@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   type RunExecutionLeaseClaim,
+  type RuntimeToolInvocation,
   recoverSandboxExecutionsAtStartup,
   type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
@@ -12,7 +13,11 @@ import {
   type SandboxExecutionRecord,
   type SandboxExecutionRunInventory,
 } from "@himawari-agent/application";
-import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
+import {
+  createIdempotencyKey,
+  createRunExecutionLeaseId,
+  createRunId,
+} from "@himawari-agent/domain";
 import {
   type SandboxExecutionFacts,
   type SandboxOperationContract,
@@ -29,7 +34,12 @@ import {
   SqliteProductStateRepository,
   SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
+import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
+import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
+import { createFauxModelFixture } from "../../packages/runtime-pi/test/faux-model-fixture.ts";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
 import { readThreadExecutionEnvironment } from "../../packages/application/src/services/thread-execution-environment.ts";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
@@ -2711,6 +2721,960 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(freshChecks).toEqual([]);
         }
       } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["known-released", "known-unreleased", "unknown-released", "cancelled"] as const)(
+    "discovers a known sandbox result for a stranded Run without executable replay: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        if (scenario !== "unknown-released") record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        if (scenario !== "known-unreleased")
+          record = append(f, record, resource(record, "released"));
+        const runId = createRunId(record.plan.identity.runId);
+        f.database
+          .prepare("UPDATE runs SET status=? WHERE id=?")
+          .run(scenario === "cancelled" ? "cancelled" : "reconciling_external_result", runId);
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        f.database
+          .prepare(`INSERT INTO run_coordination_checkpoints
+          (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+          VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+          .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        try {
+          const dispatch = reopened.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            SERVICE_AUTHORITY.product,
+            SERVICE_AUTHORITY.lease,
+            "recovery-consumer",
+          );
+          const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
+          expect(candidates).toEqual(
+            scenario === "known-released"
+              ? [expect.objectContaining({ runId, action: "resume_tool_result" })]
+              : [],
+          );
+        } finally {
+          await reopened.close();
+        }
+        const current = call(f, "read", record.plan.identity);
+        expect(current).toEqual(record);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "valid",
+    "checkpoint-changed",
+    "operation-changed",
+    "resource-changed",
+    "expired",
+    "cancelled",
+  ] as const)(
+    "claims a known result only against its current durable versions: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const runId = createRunId(record.plan.identity.runId);
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(runId);
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        f.database
+          .prepare(`INSERT INTO run_coordination_checkpoints
+          (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+          VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+          .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        try {
+          const dispatch = reopened.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            SERVICE_AUTHORITY.product,
+            SERVICE_AUTHORITY.lease,
+            "result-recovery",
+          );
+          const candidate = (await dispatch.listClaimable({ now: T1, limit: 10 }))[0];
+          if (!candidate) throw new Error("Missing recovery candidate");
+          const recovery = {
+            jobId: record.plan.identity.jobId,
+            invocationId: record.plan.identity.invocationId,
+            semanticFingerprint: record.plan.semanticFingerprint,
+            checkpointRevision: 1,
+            operationRevision: record.operationRevision,
+            resourceSequence: record.facts.resource.sequence,
+            completedStreamOrdinal: 1,
+            deadlineAt: scenario === "expired" ? T1 : T2,
+          };
+          if (scenario === "checkpoint-changed")
+            f.database
+              .prepare("UPDATE run_coordination_checkpoints SET revision=revision+1 WHERE run_id=?")
+              .run(runId);
+          if (scenario === "operation-changed")
+            f.database
+              .prepare(
+                "UPDATE sandbox_execution_records SET operation_revision=operation_revision+1 WHERE job_id=?",
+              )
+              .run(recovery.jobId);
+          if (scenario === "resource-changed")
+            f.database
+              .prepare("UPDATE sandbox_execution_records SET sequence=sequence+1 WHERE job_id=?")
+              .run(recovery.jobId);
+          if (scenario === "cancelled")
+            f.database
+              .prepare("UPDATE runs SET status='cancelled',revision=revision+1 WHERE id=?")
+              .run(runId);
+          const claim = {
+            runId,
+            expectedRunRevision: candidate.runRevision,
+            expectedLeaseRevision: candidate.leaseRevision,
+            executionLeaseId: createRunExecutionLeaseId("known-result-lease"),
+            claimedAt: T1,
+            expiresAt: T2,
+            toolResultRecovery: recovery,
+          };
+          if (scenario === "valid") {
+            await expect(dispatch.claim(claim)).resolves.toMatchObject({ replayed: false });
+            expect(f.database.prepare("SELECT status FROM runs WHERE id=?").get(runId)).toEqual({
+              status: "running",
+            });
+            expect(
+              f.database
+                .prepare(
+                  "SELECT phase,diagnostic_code FROM run_coordination_checkpoints WHERE run_id=?",
+                )
+                .get(runId),
+            ).toEqual({ phase: "runtime_running", diagnostic_code: "RUNTIME_TOOL_RESULT_UNKNOWN" });
+            const rival = reopened.runDispatch(
+              OWNER_ID,
+              AGENT_ID,
+              SERVICE_AUTHORITY.product,
+              SERVICE_AUTHORITY.lease,
+              "result-rival",
+            );
+            await expect(
+              rival.claim({
+                ...claim,
+                executionLeaseId: createRunExecutionLeaseId("rival-result-lease"),
+              }),
+            ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          } else {
+            await expect(dispatch.claim(claim)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+            expect(
+              f.database
+                .prepare("SELECT released_at FROM run_execution_leases WHERE run_id=?")
+                .get(runId),
+            ).toEqual({ released_at: T1 });
+          }
+        } finally {
+          await reopened.close();
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "new-boot",
+    "expired-tool",
+    "prepared",
+    "dispatched",
+    "stale-lease",
+    "revoked",
+    "continue-denied",
+    "missing-deadline",
+    "expired-run",
+    "pending-control",
+  ] as const)(
+    "reads a released result under current authority without adopting old execution rights: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let admitted = admission(f);
+        if (scenario === "expired-tool") {
+          const deadline = new Date(Date.parse(T1) + 500).toISOString();
+          admitted = {
+            ...admitted,
+            plan: { ...admitted.plan, effectiveDeadlineAt: deadline },
+            facts: {
+              ...admitted.facts,
+              environment: { ...admitted.facts.environment, deadlineAt: deadline },
+            },
+          };
+        }
+        let record = start(f, admitted);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const intent = {
+          identity: record.plan.identity,
+          intentId: "recovery-result-intent",
+          kind: "tool_result" as const,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          context: context(record, record.facts),
+        };
+        if (["prepared", "dispatched"].includes(scenario)) call(f, "prepareIntent", intent);
+        if (scenario === "dispatched") call(f, "dispatchIntent", intent);
+        if (scenario === "revoked")
+          f.database
+            .prepare(
+              "UPDATE capability_handles SET revoked_at=?, record_json=json_set(record_json,'$.revokedAt',?) WHERE id=?",
+            )
+            .run(T1, T1, record.plan.handleRef);
+        if (scenario === "pending-control")
+          f.database
+            .prepare(
+              "INSERT INTO sandbox_execution_intents(intent_id,job_id,kind,sequence,operation_revision,authority_json,created_at,dispatched_at) VALUES(?,?,?,?,?,?,?,?)",
+            )
+            .run(
+              "pending-control",
+              record.plan.identity.jobId,
+              "continue",
+              record.facts.resource.sequence,
+              record.operationRevision,
+              JSON.stringify(SERVICE_AUTHORITY),
+              T1,
+              T1,
+            );
+        const recovery = {
+          ...intent,
+          now: scenario === "expired-tool" ? new Date(Date.parse(T1) + 1000).toISOString() : T1,
+          context: {
+            ...intent.context,
+            ...(scenario === "missing-deadline"
+              ? {}
+              : { resultDeliveryDeadlineAt: scenario === "expired-run" ? T1 : T2 }),
+          },
+          authority: {
+            ...SERVICE_AUTHORITY,
+            agentServiceBootId: "restarted-agent",
+            workerBootId: "restarted-worker",
+          },
+          resultRecoveryLease: {
+            ...record.plan.executionLease,
+            ...(scenario === "stale-lease" ? { expectedLeaseRevision: 999 } : {}),
+          },
+          ...(scenario === "continue-denied" ? { kind: "continue" as const } : {}),
+        };
+        const stored = f.database
+          .prepare("SELECT record_json FROM capability_invocation_receipts WHERE receipt_ref=?")
+          .get(record.plan.identity.receiptRef);
+        if (
+          [
+            "stale-lease",
+            "revoked",
+            "continue-denied",
+            "missing-deadline",
+            "expired-run",
+            "pending-control",
+          ].includes(scenario)
+        ) {
+          expect(() => call(f, "prepareIntent", recovery)).toThrow();
+        } else {
+          expect(() => call(f, "prepareIntent", recovery)).not.toThrow();
+          expect(() => call(f, "dispatchIntent", recovery)).not.toThrow();
+          expect(
+            f.database
+              .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ count: 1 });
+        }
+        expect(
+          f.database
+            .prepare("SELECT record_json FROM capability_invocation_receipts WHERE receipt_ref=?")
+            .get(record.plan.identity.receiptRef),
+        ).toEqual(stored);
+        expect(call(f, "read", record.plan.identity)).toEqual(record);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "late",
+    "batch",
+    "coding",
+    "coding-denied",
+    "new-boot",
+    "changed-model",
+    "changed-tools",
+    "changed-capability",
+    "cancelled",
+    "expired",
+    "missing-continuation",
+    "model-unknown",
+    "competing",
+    "claim-crash",
+    "receipt-crash",
+    "original-crash",
+    "old-suspension",
+  ] as const)(
+    "resumes the production Run and Pi from a late SQLite result without dispatching its tool again: %s",
+    async (scenario) => {
+      let authority = SERVICE_AUTHORITY;
+      let now = T1;
+      let failAfterReceipt = false;
+      const f = await openSandboxJournal(false, [], true);
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      const hash = (value: unknown) =>
+        createHash("sha256")
+          .update(
+            JSON.stringify(value, (_key, entry) =>
+              entry && typeof entry === "object" && !Array.isArray(entry)
+                ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)))
+                : entry,
+            ),
+          )
+          .digest("hex");
+      const clock = { now: () => now };
+      const adapters = createReferenceAdapterSet({ clock });
+      const runId = createRunId(f.plan.identity.runId);
+      const toolCallId = "late-original-call";
+      const coding = scenario === "coding" || scenario === "coding-denied";
+      const parentKey = hash([runId, toolCallId]);
+      const childToolCallId = coding ? `file-phase:${hash([parentKey, "read"])}` : toolCallId;
+      const key = hash([runId, childToolCallId]);
+      const invocationId = `runtime-tool:${key}`;
+      const handleRef = f.plan.handleRef;
+      const originalTool = {
+        name: coding ? "read" : `authorized_${hash(handleRef).slice(0, 24)}`,
+        id: toolCallId,
+        arguments: coding ? { path: "original.txt" } : { inputRef: f.plan.inputRef },
+      };
+      const codingBinding = {
+        workerInstanceId: authority.workerInstanceId,
+        revision: 1,
+        hostId: f.plan.identity.hostId,
+        grant: { ...f.directoryGrant, disclosure: "model" as const },
+        capabilityRef: f.plan.capabilityRef,
+        capabilityVersion: f.plan.capabilityVersion,
+        maximumBytes: 4096,
+        threadId: f.plan.identity.threadId ?? "",
+        modelRef: "model-fixture",
+        modelIdentity: "fixture-local-model",
+      };
+      const model = await createFauxModelFixture(
+        "已收到迟到结果",
+        scenario === "batch"
+          ? [
+              { name: "local_probe", id: "probe-before", arguments: {} },
+              originalTool,
+              { name: "local_probe", id: "probe-after", arguments: {} },
+            ]
+          : originalTool,
+      );
+      const probes: string[] = [];
+      const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+      const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
+      let record: SandboxExecutionRecord | undefined;
+      let calls = 0;
+      let fixtureFailure: unknown;
+      const request = vi.fn(async () => {
+        throw new Error("ORIGINAL_TOOL_MUST_NOT_RESTART");
+      });
+      const complete = createProductionSandboxToolResult({
+        preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+        journal: repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+        authority: () => authority,
+        now: clock.now,
+        verifyFresh: async (current) => {
+          const proof = context(current, current.facts).verification;
+          if (!proof) throw new Error("Fixture host proof missing");
+          return proof;
+        },
+      });
+      const make = (instanceId: string) => {
+        const peer = { ...authority.product, ...authority };
+        const tools = new ProductionRuntimeTools({
+          ...(coding
+            ? {
+                coding: {
+                  ...codingBinding,
+                  grantId: codingBinding.grant.id,
+                  enabledTools: ["read" as const],
+                },
+                fileRead: {
+                  binding: async () => codingBinding,
+                  issue: async (): Promise<never> => {
+                    throw new Error("RECOVERY_CANNOT_ISSUE_HANDLE");
+                  },
+                  authorize: async () =>
+                    scenario === "coding-denied"
+                      ? {
+                          decision: "DENY" as const,
+                          reasonCode: "CURRENT_DISCLOSURE_DENIED",
+                          alternativesAllowed: false,
+                        }
+                      : {
+                          decision: "ALLOW" as const,
+                          basis: { type: "policy" as const, ref: "fixture-permission" },
+                          executionScope: {
+                            capabilityRef: f.plan.capabilityRef,
+                            operations: ["read"],
+                            exactResourceRef: null,
+                            resourcePrefixes: [],
+                            maxDataClassification: "private" as const,
+                            sideEffects: ["none" as const],
+                            maxCostMicrosPerUse: 0,
+                            maxFrequency: { count: 1, intervalMs: null },
+                          },
+                        },
+                },
+              }
+            : {}),
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities: repository.capabilityStore(OWNER_ID, AGENT_ID),
+          invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          artifacts,
+          payloads,
+          protector: f.protector,
+          completeSandboxToolResult: (input, delivery) =>
+            complete(input, {
+              ...delivery,
+              saveReceipt: async (value) => {
+                await delivery.saveReceipt(value);
+                if (failAfterReceipt) {
+                  failAfterReceipt = false;
+                  throw new Error("TEST_CRASH_AFTER_RESULT_RECEIPT");
+                }
+              },
+            }),
+          sandbox: {
+            journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            scopes: {
+              read: async () => {
+                throw new Error("RECOVERY_CANNOT_PREPARE_SCOPE");
+              },
+            },
+            preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+            prepare: async () => {
+              throw new Error("RECOVERY_CANNOT_PREPARE_EXECUTION");
+            },
+          },
+          authority: () => authority,
+          peer: () => peer,
+          parents: createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer })
+            .writer,
+          assertRunActive: async () => {
+            const stored = await repository
+              .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+              .readRun(runId);
+            if (stored?.run.status !== "running") throw new Error("RUN_NOT_ACTIVE");
+          },
+          ceiling: f.plan.resourceCeiling,
+          clock,
+          ids: adapters.ids,
+          fileReadEnabled: false,
+          transport: { request, async *events() {} },
+        });
+        if (scenario === "batch") {
+          const list = tools.listAuthorized.bind(tools);
+          tools.listAuthorized = async (...args) => [
+            ...(await list(...args)),
+            {
+              name: "local_probe",
+              capabilityRef: "fixture.probe",
+              capabilityHandleRef: null,
+              description: "pure local probe",
+              parameters: { type: "object", properties: {} },
+            },
+          ];
+          const preflight = tools.preflight.bind(tools);
+          tools.preflight = async (call) =>
+            call.capabilityRef === "fixture.probe"
+              ? { allowed: true, permissionDecisionRef: "fixture-probe", reasonCode: "pure-read" }
+              : preflight(call);
+        }
+        if (scenario === "changed-capability") {
+          const recover = tools.recoverResult.bind(tools);
+          tools.recoverResult = (call, binding) =>
+            recover(call, { ...binding, capabilityRef: "unrelated-capability" });
+        }
+        if (scenario === "changed-tools") {
+          const list = tools.listAuthorized.bind(tools);
+          tools.listAuthorized = async (...args) => {
+            const descriptors = await list(...args);
+            return calls > 0 ? [] : descriptors;
+          };
+        }
+        const execute = tools.execute.bind(tools);
+        tools.execute = async (invocation: RuntimeToolInvocation, options) => {
+          if (invocation.capabilityRef === "fixture.probe") {
+            probes.push(invocation.toolCallId);
+            return {
+              outcome: "succeeded",
+              resultRef: null,
+              errorCode: null,
+              externalActionId: null,
+              modelContent: "probe result",
+            };
+          }
+          calls++;
+          const executing = coding
+            ? {
+                ...invocation,
+                toolCallId: childToolCallId,
+                capabilityRef: f.plan.capabilityRef,
+                capabilityHandleRef: handleRef,
+                arguments: { inputRef: f.plan.inputRef },
+              }
+            : invocation;
+          if (!record) {
+            const admitted = admission(f);
+            const original = {
+              ...admitted,
+              invocation: { ...admitted.invocation, invocationId, idempotencyKey: invocationId },
+              plan: { ...admitted.plan, identity: { ...admitted.plan.identity, invocationId } },
+            };
+            const bound = {
+              ...original,
+              facts: {
+                ...original.facts,
+                environment: {
+                  ...original.facts.environment,
+                  creator: original.plan.identity,
+                },
+                resource: { ...original.facts.resource, creator: original.plan.identity },
+              },
+            };
+            try {
+              record = start(f, bound);
+            } catch (error) {
+              fixtureFailure = error;
+              throw error;
+            }
+            const executionLease = invocation.context?.executionLease;
+            if (!executionLease || !invocation.context?.continuationRef)
+              throw new Error("Original continuation missing");
+            const {
+              executionLease: _lease,
+              continuationRef: _ref,
+              ...contextScope
+            } = invocation.context;
+            const semantic = {
+              ...executing,
+              context: {
+                ...contextScope,
+                authority: {
+                  deploymentId: executionLease.deploymentId,
+                  authorityEpoch: executionLease.authorityEpoch,
+                  fencingToken: executionLease.fencingToken,
+                },
+              },
+            };
+            if (coding) {
+              const persist = async (suffix: string, value: unknown) =>
+                artifacts.commit({
+                  runId,
+                  purpose: "trace",
+                  operationKey: `runtime-file-read:${parentKey}:${suffix}`,
+                  payload: await f.protector.protect({
+                    ownerId: OWNER_ID,
+                    agentId: AGENT_ID,
+                    ref: `coding-recovery-${suffix}`,
+                    dataClassification: "private",
+                    contentType: "application/json",
+                    createdAt: T1,
+                    plaintext: Buffer.from(JSON.stringify(value)),
+                  }),
+                });
+              const handle = await repository
+                .capabilityStore(OWNER_ID, AGENT_ID)
+                .getExecutionHandle(handleRef);
+              await persist("context", {
+                call: { ...invocation, context: semantic.context },
+                binding: codingBinding,
+                tool: "read",
+                authorityFence: authority.product.fencingToken,
+                requestedAt: T1,
+                expiresAt: invocation.executionDeadlineAt,
+              });
+              await persist("handle", { handle, inputRef: f.plan.inputRef });
+            }
+            await artifacts.commit({
+              runId,
+              purpose: "trace",
+              operationKey: `runtime-tool-intent:${key}`,
+              payload: await f.protector.protect({
+                ownerId: OWNER_ID,
+                agentId: AGENT_ID,
+                ref: "late-original-intent",
+                dataClassification: "private",
+                contentType: "application/json",
+                createdAt: T1,
+                plaintext: Buffer.from(
+                  JSON.stringify({
+                    fingerprint: hash(semantic),
+                    recovery: {
+                      version: "tool-batch-recovery.v1",
+                      continuationRef: invocation.context.continuationRef,
+                      toolCallId,
+                    },
+                    request: {
+                      schemaVersion: "execution.v2",
+                      kind: "request",
+                      type: "work.execute",
+                      messageId: invocationId,
+                      correlationId: `run:${runId}`,
+                      causationId: runId,
+                      dataClassification: "private",
+                      risk: "high",
+                      authorizationRef: original.invocation.authorizationRef,
+                      scope: original.invocation.requestScope,
+                      idempotencyKey: invocationId,
+                      payload: {
+                        capabilityId: original.invocation.capabilityRef,
+                        capabilityVersion: original.invocation.capabilityVersion,
+                        operation: original.invocation.operation,
+                        inputRef: original.invocation.inputRef,
+                        capabilityHandleRef: handleRef,
+                        delegatedContextRefs: [],
+                        secretRefs: [],
+                        resourceCeiling: original.invocation.resourceCeiling,
+                        requestedAt: T1,
+                        deadlineAt: T2,
+                      },
+                    },
+                  }),
+                ),
+              }),
+            });
+          }
+          return execute(executing, options);
+        };
+        return createProductionRunComposition({
+          repository,
+          configuration: {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+            deadlines: { runMs: 120000, workerRequestMs: 10000, providerRequestMs: 10000 },
+            budgets: {
+              globalCostMicros: 100,
+              perRunCostMicros: 100,
+              perClassificationCostMicros: {
+                public: 100,
+                private: 100,
+                sensitive: 0,
+                restricted: 0,
+              },
+            },
+          },
+          authority: {
+            authorityFence: () => authority.product,
+            authorityLease: () => authority.lease,
+            assertActive: async () => {},
+            isAccepting: () => true,
+          },
+          models: {
+            resolve: async (ref) => ({
+              ...(await model.models.resolve(model.descriptor.ref)),
+              descriptor: {
+                ...model.descriptor,
+                ref,
+                ...(scenario === "changed-model" && calls > 0
+                  ? { version: "changed-provider" }
+                  : {}),
+              },
+            }),
+          },
+          modelRegistry: [{ ...model.descriptor, ref: "model-fixture" }],
+          protector: f.protector,
+          memory: adapters.memory,
+          tools,
+          policy: async () => ({
+            modelRef: "model-fixture",
+            systemInstructionRef: "restart-prompt",
+            policyVersion: "late-result-policy",
+            policies: [],
+            capabilities: [],
+            capabilityHandleRefs: coding ? [] : [handleRef],
+            maxMemoryClassification: "private",
+            memoryLimit: 1,
+            maxSelectedMemories: 0,
+          }),
+          clock,
+          ids: adapters.ids,
+          instanceId,
+          cwd: f.resource.stateRoot,
+          agentDir: path.join(f.resource.stateRoot, "pi-agent"),
+          onFailure: () => {},
+        });
+      };
+      try {
+        const first = make("sandbox-consumer");
+        const lease = await repository
+          .runDispatch(OWNER_ID, AGENT_ID, authority.product, authority.lease, "sandbox-consumer")
+          .assertHeld({
+            runId,
+            executionLeaseId: createRunExecutionLeaseId(f.plan.executionLease.executionLeaseId),
+            expectedLeaseRevision: f.plan.executionLease.expectedLeaseRevision,
+            at: T1,
+          });
+        const stored = await repository
+          .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+          .readRun(runId);
+        if (!stored) throw new Error("Run missing");
+        const input = await first.input.create({
+          lease,
+          candidate: {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId,
+            sessionId: stored.run.sessionId,
+            threadId: stored.run.threadId ?? null,
+            triggerId: stored.run.triggerId,
+            runRevision: stored.revision,
+            leaseRevision: lease.revision,
+            runStatus: "running",
+            checkpointPhase: null,
+            action: "resume",
+          },
+        });
+        const attempted = await first.coordinator.execute(input);
+        expect(attempted.run.run.status, JSON.stringify(attempted)).toBe(
+          "reconciling_external_result",
+        );
+        expect(calls).toBe(1);
+        if (!record) throw new Error(`Original job missing: ${String(fixtureFailure)}`);
+        const bytes = Buffer.from("来自原工具的已核验结果");
+        const output = {
+          ref: "late-output",
+          digest: createHash("sha256").update(bytes).digest("hex"),
+          byteLength: bytes.byteLength,
+        };
+        const payload = await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: output.ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: bytes,
+          createdAt: T1,
+        });
+        await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+          payload,
+          handleRef,
+          authority,
+          now: T1,
+          invocationId,
+          plaintextByteLength: bytes.byteLength,
+        });
+        record = append(
+          f,
+          record,
+          sandboxExecutionFactsSchema.parse({
+            ...record.facts,
+            effect: { kind: "not_applicable" },
+            result: {
+              schemaVersion: "sandbox-execution.v2",
+              identity: record.plan.identity,
+              environmentId: record.plan.environmentId,
+              policyDigest: record.facts.environment.policyDigest,
+              contract: { ref: "fixed-read", version: "1" },
+              occurredAt: T1,
+              kind: "result",
+              output,
+              completion: { type: "value" },
+            },
+          }),
+          true,
+        );
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        if (scenario === "old-suspension")
+          f.database
+            .prepare("UPDATE run_coordination_checkpoints SET suspension_json=? WHERE run_id=?")
+            .run(
+              JSON.stringify({
+                version: "runtime-suspension.v1",
+                executionDeadlineAt: input.executionDeadlineAt,
+                continuationRef: output.ref,
+                approval: {
+                  approvalRequestId: "previous-approval",
+                  semanticSnapshotHash: "previous-snapshot",
+                  expiresAt: input.executionDeadlineAt,
+                },
+              }),
+              runId,
+            );
+        if (scenario === "original-crash") {
+          f.database
+            .prepare("UPDATE runs SET status='running',revision=revision+1 WHERE id=?")
+            .run(runId);
+          f.database
+            .prepare(
+              "UPDATE run_coordination_checkpoints SET phase='runtime_running',diagnostic_code=NULL,revision=revision+1 WHERE run_id=?",
+            )
+            .run(runId);
+          f.database
+            .prepare(
+              "DELETE FROM trace_events WHERE run_id=? AND event_type='runtime.result_unknown'",
+            )
+            .run(runId);
+        }
+        if (scenario === "new-boot")
+          authority = {
+            ...authority,
+            agentServiceBootId: "new-agent-boot",
+            workerBootId: "new-worker-boot",
+          };
+        if (scenario === "cancelled")
+          f.database
+            .prepare("UPDATE runs SET status='cancelled',revision=revision+1 WHERE id=?")
+            .run(runId);
+        if (scenario === "expired") now = new Date(Date.parse(T1) + 121000).toISOString();
+        if (scenario === "missing-continuation")
+          f.database
+            .prepare(
+              "DELETE FROM run_payload_artifacts WHERE run_id=? AND operation_key LIKE 'runtime-continuation:%'",
+            )
+            .run(runId);
+        if (scenario === "model-unknown")
+          f.database
+            .prepare(
+              "UPDATE model_invocation_identities SET status='unknown',reason_code='provider_unresolved',observed_at=?,actual_cost_micros=NULL,settled_at=NULL WHERE run_id=?",
+            )
+            .run(T1, runId);
+        if (scenario === "claim-crash") {
+          const port = repository.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            authority.product,
+            authority.lease,
+            "crashed-recovery",
+          );
+          const candidate = (await port.listClaimable({ now, limit: 1 }))[0];
+          const checkpoint = await repository
+            .runCheckpointStore(OWNER_ID, AGENT_ID, authority.product)
+            .read(runId);
+          if (!candidate || !checkpoint || !input.executionDeadlineAt)
+            throw new Error("Recovery proof missing");
+          await port.claim({
+            runId,
+            expectedRunRevision: candidate.runRevision,
+            expectedLeaseRevision: candidate.leaseRevision,
+            executionLeaseId: createRunExecutionLeaseId("crashed-result-lease"),
+            claimedAt: now,
+            expiresAt: new Date(Date.parse(now) + 30000).toISOString(),
+            toolResultRecovery: {
+              jobId: record.plan.identity.jobId,
+              invocationId,
+              semanticFingerprint: record.plan.semanticFingerprint,
+              checkpointRevision: checkpoint.revision,
+              operationRevision: record.operationRevision,
+              resourceSequence: record.facts.resource.sequence,
+              completedStreamOrdinal: 1,
+              deadlineAt: input.executionDeadlineAt,
+            },
+          });
+          now = new Date(Date.parse(now) + 31000).toISOString();
+        }
+        if (scenario === "receipt-crash") {
+          failAfterReceipt = true;
+          expect(await make("interrupted-delivery").dispatcher.pump()).toMatchObject({
+            claimed: 1,
+            settled: 0,
+            unknown: 1,
+          });
+          expect(model.observed).toHaveLength(1);
+        }
+        const outcomes =
+          scenario === "competing"
+            ? await Promise.all([
+                make("first-recovery").dispatcher.pump(),
+                make("second-recovery").dispatcher.pump(),
+              ])
+            : [await make("restarted-consumer").dispatcher.pump()];
+        if (
+          ["changed-model", "changed-tools", "changed-capability", "coding-denied"].includes(
+            scenario,
+          )
+        ) {
+          expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 0, unknown: 1 });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("reconciling_external_result");
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          return;
+        }
+        if (["cancelled", "expired", "missing-continuation", "model-unknown"].includes(scenario)) {
+          expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe(scenario === "cancelled" ? "cancelled" : "reconciling_external_result");
+          return;
+        }
+        expect(
+          outcomes.reduce((sum, result) => sum + result.settled, 0),
+          JSON.stringify(outcomes),
+        ).toBe(1);
+        expect(
+          (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))?.run
+            .status,
+        ).toBe("completed");
+        expect(calls).toBe(1);
+        expect(request).not.toHaveBeenCalled();
+        expect(model.observed).toHaveLength(2);
+        expect(JSON.stringify(model.observed.at(-1))).toContain("来自原工具的已核验结果");
+        if (scenario === "batch") {
+          expect(probes).toEqual(["probe-before", "probe-after"]);
+          const sent = model.observed.at(-1) as {
+            messages: { role: string; toolCallId?: string }[];
+          };
+          expect(
+            sent.messages
+              .filter((message) => message.role === "toolResult")
+              .map((message) => message.toolCallId),
+          ).toEqual(["probe-before", toolCallId, "probe-after"]);
+        }
+      } finally {
+        await repository.close();
         await f.close();
       }
     },

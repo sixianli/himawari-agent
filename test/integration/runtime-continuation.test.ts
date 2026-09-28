@@ -82,6 +82,27 @@ describe("protected runtime continuation boundary", () => {
     );
   });
 
+  it("keeps a known-result delivery binding out of the original task scope", async () => {
+    const f = fixture();
+    const snapshot = { waitingToolCallId: "original-call" };
+    const ref = await f.service.save(request, snapshot);
+    const resumed = {
+      ...request,
+      continuationRef: ref,
+      knownToolResult: {
+        capabilityRef: "original-capability",
+        continuationRef: ref,
+        toolCallId: "original-call",
+        jobId: "original-job",
+        invocationId: "original-invocation",
+      },
+    };
+    expect(await f.service.load(resumed, ref)).toEqual(snapshot);
+    await expect(f.service.load({ ...resumed, modelRef: "changed" }, ref)).rejects.toThrow(
+      "RUNTIME_CONTINUATION_CONTEXT_CHANGED",
+    );
+  });
+
   it("rejects an authority change and checks cancellation before materializing content", async () => {
     const f = fixture();
     const ref = await f.service.save(request, { privateContent: "synthetic-only" });

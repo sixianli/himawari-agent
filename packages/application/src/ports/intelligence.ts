@@ -155,7 +155,16 @@ export interface ModelPort {
   invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent>;
 }
 
+export interface RuntimeKnownToolResult {
+  readonly capabilityRef: string;
+  readonly jobId: string;
+  readonly invocationId: string;
+  readonly continuationRef: PayloadRef;
+  readonly toolCallId: string;
+}
+
 export interface RuntimeRequest {
+  readonly knownToolResult?: RuntimeKnownToolResult;
   readonly thinkingLevel?: import("./run-execution-source.js").RunThinkingLevel;
   /** Product checkpoint for resuming the same logical tool batch. */
   readonly continuationRef?: PayloadRef;
@@ -501,6 +510,10 @@ export type RuntimeToolExecutionResult = RuntimeToolSettledResult | RuntimeToolS
  * `runId + toolCallId`.
  */
 export interface RuntimeToolPort {
+  recoverResult?(
+    invocation: RuntimeToolInvocation,
+    recovery: RuntimeKnownToolResult,
+  ): Promise<RuntimeToolSettledResult>;
   /** List tools permitted to be offered, including requests that still require authorization. */
   listAuthorized(
     runId: RunId,

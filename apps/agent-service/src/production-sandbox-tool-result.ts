@@ -22,6 +22,10 @@ export interface SandboxToolCompletion {
   readonly externalActionId: null;
 }
 export interface SandboxToolDelivery {
+  readonly resultRecovery?: {
+    readonly executionLease: SandboxExecutionRecord["plan"]["executionLease"];
+    readonly deadlineAt: string;
+  };
   /** Recheck the original Handle, Run, authority, Grant and model disclosure. */
   assertDisclosure(): Promise<void>;
   /** A protected receipt for this handoff, separate from the returned tool result. */
@@ -109,6 +113,9 @@ export function createProductionSandboxToolResult(options: {
           await delivery.assertDisclosure();
           const verification = await options.verifyFresh(record);
           const context: SandboxExecutionProjectionContext = {
+            ...(delivery.resultRecovery
+              ? { resultDeliveryDeadlineAt: delivery.resultRecovery.deadlineAt }
+              : {}),
             now: options.now(),
             environment: record.facts.environment,
             operationContract: plan.operationContract,
@@ -140,6 +147,9 @@ export function createProductionSandboxToolResult(options: {
               })
             ).record;
           const intent = () => ({
+            ...(delivery.resultRecovery
+              ? { resultRecoveryLease: delivery.resultRecovery.executionLease }
+              : {}),
             identity: plan.identity,
             intentId,
             kind: "tool_result" as const,

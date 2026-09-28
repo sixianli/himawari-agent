@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fb6298412ae8db27ad03a7acc6a3cf76d9b8da8752d7cd4fdb5ceafb86bd6329"
+contract_sha256: "sha256:862d3a405371d8e8d02f8df6d66990e2cd8fb4c0e35e9d0b2a916a43b11ad570"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -481,7 +481,7 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 ### 工具执行前检查点与恢复引用
 
-生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，页面归为“尚未派发”；旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放，也未启用 Run 自动恢复。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
+生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，页面归为“尚未派发”；旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放。对原 Run 未取消、未过期，已有确定结果与永久释放回执且原批次凭据完整的调用，调度器可领取原 Run 的新租约，仅交付旧结果并继续 Pi；原工具不会再次启动。缺失快照、权限变化、未确认控制或模型费用仍未知时保留待核对状态，不能通过重发清除未知。恢复沿用原模型 stream ordinal，保留原调用回执、交付 intent 与受保护 Payload；没有新增表或迁移。详见[已核验工具结果恢复合同](../execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md#恢复条件与用户行为)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
 
 ### Schema 38 纯联网范围

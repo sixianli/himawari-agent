@@ -20,6 +20,8 @@ import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/doma
 import {
   ContractValidationError,
   type SandboxExecutionPlan,
+  type SandboxExecutionPlanV2,
+  sandboxExecutionPlanV2Schema,
   type SandboxJobIdentity,
   sandboxExecutionPlanSchema,
   sandboxJobIdentitySchema,
@@ -550,6 +552,8 @@ export class SqliteCapabilityInvocationOperations {
       authority: (value, owner, agent, now) =>
         this.assertAuthority(authority(value), owner, agent, now),
       live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
+      result: (plan, value, executionLease, now) =>
+        this.assertSandboxResultReadable(plan, authority(value), executionLease, now),
     });
     this.executionEnvironments = new SqliteExecutionEnvironmentOperations(database, fail, {
       authority: (value, owner, agent, now) =>
@@ -677,6 +681,37 @@ export class SqliteCapabilityInvocationOperations {
       this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job exceeds its consumed invocation");
     }
     this.assertSandboxLease(plan, authority, now);
+  }
+
+  private assertSandboxResultReadable(
+    plan: SandboxExecutionPlanV2,
+    currentAuthority: AuthorityInput,
+    executionLease: SandboxExecutionPlanV2["executionLease"],
+    now: string,
+  ): void {
+    this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
+    const bound = sandboxExecutionPlanV2Schema.parse({ ...plan, executionLease });
+    this.assertSandboxLease(bound, currentAuthority, now);
+    const row = this.readReceiptByInvocationScope(
+      plan.identity.ownerId,
+      plan.identity.agentId,
+      plan.handleRef,
+      plan.identity.invocationId,
+    );
+    if (!row) this.fail("PORT_NOT_FOUND", "Original invocation receipt is missing");
+    const receipt = receiptFromRow(row);
+    if (
+      receipt.receiptRef !== plan.identity.receiptRef ||
+      receipt.runId !== plan.identity.runId ||
+      receipt.semanticFingerprint !== plan.semanticFingerprint ||
+      receipt.inputRef !== plan.inputRef ||
+      receipt.operation !== plan.operation ||
+      receipt.capabilityRef !== plan.capabilityRef ||
+      receipt.capabilityVersion !== plan.capabilityVersion ||
+      receipt.authorizationRef !== plan.authorizationRef
+    )
+      this.fail("PORT_NOT_AUTHORITATIVE", "Known result does not match its original invocation");
+    this.assertReceiptReadable(receipt, now);
   }
 
   private assertSandboxLease(
@@ -1181,6 +1216,10 @@ export class SqliteCapabilityInvocationOperations {
     ) {
       return this.fail("PORT_HANDLE_REVOKED", "Capability invocation receipt has expired");
     }
+    return this.assertReceiptReadable(receipt, input.now);
+  }
+
+  private assertReceiptReadable(receipt: FrozenReceipt, now: string): FrozenReceipt {
     const handleRow = this.readHandle(receipt.handleRef);
     if (!handleRow)
       return this.fail("PORT_NOT_FOUND", `Capability handle ${receipt.handleRef} not found`);
@@ -1199,7 +1238,7 @@ export class SqliteCapabilityInvocationOperations {
       !capability.declaration.operations.includes(receipt.operation) ||
       current.revokedAt !== null ||
       current.workerEndedAt !== null ||
-      timestamp(input.now, "now") >= timestamp(current.expiresAt, "handle.expiresAt")
+      timestamp(now, "now") >= timestamp(current.expiresAt, "handle.expiresAt")
     ) {
       return this.fail("PORT_HANDLE_REVOKED", "Capability Handle is no longer readable");
     }
@@ -1207,7 +1246,7 @@ export class SqliteCapabilityInvocationOperations {
       operation: receipt.operation,
       dataClassification: receipt.dataClassification,
       deadlineAt: receipt.deadlineAt,
-      consumedAt: input.now,
+      consumedAt: now,
     });
     return receipt;
   }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,6 +33,38 @@ const output = {
 process.exitCode = await agent.runAgentService(process.argv.slice(2), output, process.stderr, {
   secretSources: sources,
   modelCompositionFactory: async ({ configuration, repository }) => {
+    const journal = repository.sandboxExecutionJournal.bind(repository);
+    repository.sandboxExecutionJournal = (...args) => {
+      const port = journal(...args);
+      const prepare = port.prepareIntent.bind(port);
+      return {
+        ...port,
+        prepareIntent: async (input) => {
+          const result = await prepare(input);
+          const fault = process.env.HIMAWARI_TEST_DELIVERY_CRASH;
+          if (
+            fault &&
+            input.kind === "tool_result" &&
+            (await readFile(fault, "utf8").then(
+              () => true,
+              () => false,
+            ))
+          ) {
+            await rename(fault, `${fault}.consumed`);
+            await writeFile(
+              `${fault}.entered`,
+              JSON.stringify({
+                jobId: input.identity.jobId,
+                runId: input.identity.runId,
+                at: new Date().toISOString(),
+              }),
+            );
+            await new Promise(() => {});
+          }
+          return result;
+        },
+      };
+    };
     const clock = { now: () => new Date().toISOString() };
     const ids = { next: (scope) => `${scope}:${randomUUID()}` };
     const handles = new platform.EphemeralSecretPort({ clock, ids });

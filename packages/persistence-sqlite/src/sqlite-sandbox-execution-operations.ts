@@ -62,6 +62,12 @@ interface AuthorityDependencies {
   ): void;
   validateQueued(value: unknown, owner: string, agent: string): void;
   live(plan: SandboxExecutionPlanV2, authority: CapabilityInvocationAuthority, now: string): void;
+  result(
+    plan: SandboxExecutionPlanV2,
+    authority: CapabilityInvocationAuthority,
+    executionLease: SandboxExecutionPlanV2["executionLease"],
+    now: string,
+  ): void;
   authority(value: unknown, owner: string, agent: string, now: string): void;
   disk(): void;
 }
@@ -1330,13 +1336,13 @@ export class SqliteSandboxExecutionOperations {
     }
     return { record: this.read(current.plan.identity, owner, agent), applied: true };
   }
-  private hasPendingIntent(jobId: string): boolean {
+  private hasPendingIntent(jobId: string, resultRecovery = false): boolean {
     return Boolean(
       this.db
         .prepare(
-          "SELECT 1 FROM sandbox_execution_intents WHERE job_id=? AND dispatched_at IS NOT NULL AND acknowledged_at IS NULL LIMIT 1",
+          "SELECT 1 FROM sandbox_execution_intents WHERE job_id=? AND dispatched_at IS NOT NULL AND acknowledged_at IS NULL AND (?=0 OR kind<>'tool_result') LIMIT 1",
         )
-        .get(jobId),
+        .get(jobId, resultRecovery ? 1 : 0),
     );
   }
   private intent(
@@ -1346,6 +1352,12 @@ export class SqliteSandboxExecutionOperations {
   ) {
     if (!id(input.intentId) || !["tool_result", "continue"].includes(input.kind))
       return this.fail("PORT_INVALID_OPERATION", "Invalid continuation intent");
+    const recovering = input.resultRecoveryLease !== undefined;
+    if (recovering && input.kind !== "tool_result")
+      return this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Result recovery cannot grant executable continuation",
+      );
     const old = this.db
       .prepare("SELECT * FROM sandbox_execution_intents WHERE intent_id=?")
       .get(input.intentId) as
@@ -1363,15 +1375,33 @@ export class SqliteSandboxExecutionOperations {
       (old.job_id !== current.plan.identity.jobId ||
         old.kind !== input.kind ||
         old.sequence !== input.expectedSequence ||
-        old.authority_json !== JSON.stringify(input.authority))
+        (!recovering && old.authority_json !== JSON.stringify(input.authority)))
     )
       return this.fail("PORT_CONFLICT", "Intent binding changed");
-    if (old?.dispatched_at) return { applied: false };
+    if (old?.dispatched_at && !recovering) return { applied: false };
     if (current.facts.resource.sequence !== input.expectedSequence)
       return this.fail("PORT_CONFLICT", "Continuation sequence changed");
     if (old && old.operation_revision !== current.operationRevision)
       return this.fail("PORT_CONFLICT", "Continuation operation revision changed");
-    this.authority.live(current.plan, input.authority, input.now);
+    if (input.resultRecoveryLease) {
+      const deadline = input.context.resultDeliveryDeadlineAt;
+      if (!deadline || !Number.isFinite(Date.parse(deadline)) || deadline <= input.now)
+        return this.fail(
+          "PORT_NOT_AUTHORITATIVE",
+          "Original Run deadline is required for result recovery",
+        );
+      if (
+        current.plan.mode !== "foreground" ||
+        !current.releaseReceipt ||
+        current.facts.resource.supervision !== "released" ||
+        !["result", "error"].includes(current.facts.result?.kind ?? "") ||
+        this.releases.hasContradiction(current.plan.identity.jobId)
+      )
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Known result is not permanently released");
+      this.authority.result(current.plan, input.authority, input.resultRecoveryLease, input.now);
+    } else {
+      this.authority.live(current.plan, input.authority, input.now);
+    }
     if (input.kind === "continue")
       this.assertAvailable(
         current.workspaces,
@@ -1380,7 +1410,7 @@ export class SqliteSandboxExecutionOperations {
         "",
         current.plan,
       );
-    if (this.hasPendingIntent(current.plan.identity.jobId))
+    if (this.hasPendingIntent(current.plan.identity.jobId, recovering))
       return this.fail("PORT_CONFLICT", "Dispatched operation remains uncertain");
     if (input.kind === "continue" && this.releases.hasContradiction(current.plan.identity.jobId))
       return this.fail("PORT_CONFLICT", "Resource incident remains unresolved");
@@ -1394,8 +1424,9 @@ export class SqliteSandboxExecutionOperations {
       currentAuthority: true,
       currentFence: true,
     });
-    if (!projection.continuePi || (input.kind === "tool_result" && !projection.deliverToolResult))
+    if (input.kind === "tool_result" ? !projection.deliverToolResult : !projection.continuePi)
       return this.fail("PORT_NOT_AUTHORITATIVE", "Continuation is not safe");
+    if (old?.dispatched_at) return { applied: false };
     if (operation === "prepareIntent") {
       if (old) return { applied: false };
       this.db

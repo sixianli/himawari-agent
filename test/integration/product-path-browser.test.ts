@@ -25,7 +25,8 @@ const outputDirectory = path.resolve(
 );
 const NOTE = "项目代号：向日葵";
 
-const script: ModelScript = ({ lastUserText, toolResults }) => {
+const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
+  if (!hasTools) return { kind: "text", text: "工具恢复验证" };
   if (lastUserText.includes("连续读取两个文件") && toolResults.length < 2)
     return {
       kind: "tool",
@@ -358,6 +359,86 @@ productDescribe(
         }
       });
     }, 1_800_000);
+
+    it.each(["read", "write"] as const)(
+      "recovers the original tool result after a process crash during durable delivery: %s",
+      async (tool) => {
+        const name = `10-delivery-crash-${tool}`;
+        await scenario(name, async () => {
+          await newThread();
+          const before = new Set(executionReadback().map((record) => record.jobId));
+          await installation.armDeliveryCrash();
+          const text =
+            tool === "read" ? "交付中重启：请读取 notes.txt" : "交付中重启：请写入 hello.txt";
+          await send(text);
+          await uiExpect
+            .poll(
+              async () => {
+                const allow = page.getByRole("button", { name: "允许这一次" }).first();
+                if (await allow.isVisible()) await allow.click();
+                return installation.deliveryCrashEntered();
+              },
+              { timeout: 300_000 },
+            )
+            .not.toBeNull();
+          const entered = await installation.deliveryCrashEntered();
+          await installation.crash();
+          await uiExpect
+            .poll(
+              () => {
+                const database = openQualifiedDatabase(installation.databasePath);
+                try {
+                  return database
+                    .prepare(
+                      "SELECT COUNT(*) AS count FROM authority_leases WHERE released_at IS NULL AND expires_at>?",
+                    )
+                    .get(new Date().toISOString());
+                } finally {
+                  database.close();
+                }
+              },
+              { timeout: 40_000 },
+            )
+            .toEqual({ count: 0 });
+          const interrupted = executionReadback().filter((record) => !before.has(record.jobId));
+          await writeFile(
+            path.join(outputDirectory, `${name}-before.json`),
+            JSON.stringify({ entered, interrupted }, null, 2),
+          );
+          expect(interrupted).toHaveLength(1);
+          expect(interrupted[0]).toMatchObject({ result: "result", released: 1, intents: 1 });
+          if (tool === "write")
+            expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+              "你好，Himawari",
+            );
+          await installation.start();
+          await page.reload();
+          await uiExpect(toolAnswers().last()).toBeVisible({ timeout: 300_000 });
+          if (tool === "read") await uiExpect(noteAnswer()).toBeVisible();
+          if (tool === "write")
+            expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+              "你好，Himawari",
+            );
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+            timeout: 300_000,
+          });
+          const rows = executionReadback().filter((record) => !before.has(record.jobId));
+          const replies = observedToolReplies(text);
+          await writeFile(
+            path.join(outputDirectory, `${name}-after.json`),
+            JSON.stringify({ entered, rows, replies }, null, 2),
+          );
+          expect(rows).toHaveLength(1);
+          expect(rows[0]).toMatchObject({
+            result: "result",
+            released: 1,
+            intents: 1,
+            runStatus: "completed",
+          });
+          expect(replies.map((ids) => ids.length)).toEqual([1]);
+        });
+      },
+    );
 
     it("shows the connection loss while the service restarts and recovers afterwards", async () => {
       await scenario("07-service-restart", async () => {

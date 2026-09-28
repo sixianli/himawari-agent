@@ -875,6 +875,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               | undefined);
       if (request.continuationRef && (!continuation || continuation.identity !== identity))
         throw new Error("RUNTIME_CONTINUATION_BINDING_CHANGED");
+      if (
+        request.knownToolResult &&
+        (!continuation ||
+          request.knownToolResult.continuationRef !== request.continuationRef ||
+          request.knownToolResult.toolCallId !== continuation.batch.waitingToolCallId)
+      )
+        throw new Error("RUNTIME_KNOWN_RESULT_BATCH_MISMATCH");
       if (continuation) {
         if (
           !Number.isSafeInteger(continuation.turnIndex) ||
@@ -1285,7 +1292,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         error instanceof Error && error.message.startsWith("PI_UNKNOWN_EVENT_TYPE:")
           ? "PI_UNKNOWN_EVENT_TYPE"
           : "PI_RUNTIME_ERROR";
-      emit(unknownTool ?? runtimeFailure(request, this.now(), code));
+      emit(
+        unknownTool ??
+          (request.knownToolResult
+            ? {
+                type: "runtime.result_unknown",
+                runId: request.runId,
+                toolCallId: request.knownToolResult.toolCallId,
+                capabilityRef: request.knownToolResult.capabilityRef,
+                externalActionId: request.knownToolResult.jobId,
+                occurredAt: this.now(),
+              }
+            : runtimeFailure(request, this.now(), code)),
+      );
       this.#activeSessions.delete(request.runId);
     }
   }
@@ -1408,56 +1427,76 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           arguments: safeArguments(parameters),
           dataClassification: request.dataClassification,
         };
-        const decision = await this.#dependencies.tools.preflight(invocation);
-        signal?.throwIfAborted();
-        if (!decision.allowed) {
-          return {
-            content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
-            details: {
-              permissionDecisionRef: decision.permissionDecisionRef,
-              reasonCode: decision.reasonCode,
-              productOutcome: "failed",
-              dispatchState: "not_sent",
-            },
-            isError: true,
-          };
-        }
-        reconciliation.assertKnown();
-        // Persist the exact Pi batch before a product tool can enqueue or cause
-        // effects. A failed checkpoint is a known non-execution, not a lost result.
-        try {
-          const continuationRef = await reconciliation.checkpoint(invocation);
-          if (continuationRef && invocation.context)
-            invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
-        } catch {
-          return {
-            content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
-            details: {
-              productOutcome: "failed",
-              dispatchState: "not_sent",
-              errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
-            },
-            isError: true,
-          };
-        }
-        signal?.throwIfAborted();
         let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
-        try {
-          result = await this.#dependencies.tools.execute(
-            invocation,
-            ...(signal ? [{ signal }] : []),
-          );
-        } catch {
-          // Once execution was entered, a thrown transport/storage error does not
-          // prove that an external effect was absent. Do not disclose raw errors to Pi.
-          result = {
-            outcome: "result_unknown",
-            dispatchState: "possibly_sent",
-            resultRef: null,
-            errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
-            externalActionId: null,
-            modelContent: "Tool execution needs reconciliation before continuing.",
-          };
+        const recovery = request.knownToolResult;
+        if (recovery?.toolCallId === toolCallId) {
+          try {
+            if (!this.#dependencies.tools.recoverResult)
+              throw new Error("RUNTIME_KNOWN_RESULT_READER_UNAVAILABLE");
+            result = await this.#dependencies.tools.recoverResult(invocation, recovery);
+          } catch {
+            result = {
+              outcome: "result_unknown",
+              dispatchState: "possibly_sent",
+              resultRef: null,
+              errorCode: "RUNTIME_KNOWN_RESULT_UNAVAILABLE",
+              externalActionId: recovery.jobId,
+              modelContent: "原工具结果仍需核验，未重新执行。",
+            };
+          }
+        } else {
+          const decision = await this.#dependencies.tools.preflight(invocation);
+          signal?.throwIfAborted();
+          if (!decision.allowed) {
+            return {
+              content: [
+                { type: "text", text: `Blocked by product policy: ${decision.reasonCode}` },
+              ],
+              details: {
+                permissionDecisionRef: decision.permissionDecisionRef,
+                reasonCode: decision.reasonCode,
+                productOutcome: "failed",
+                dispatchState: "not_sent",
+              },
+              isError: true,
+            };
+          }
+          reconciliation.assertKnown();
+          // Persist the exact Pi batch before a product tool can enqueue or cause
+          // effects. A failed checkpoint is a known non-execution, not a lost result.
+          try {
+            const continuationRef = await reconciliation.checkpoint(invocation);
+            if (continuationRef && invocation.context)
+              invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
+          } catch {
+            return {
+              content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
+              details: {
+                productOutcome: "failed",
+                dispatchState: "not_sent",
+                errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
+              },
+              isError: true,
+            };
+          }
+          signal?.throwIfAborted();
+          try {
+            result = await this.#dependencies.tools.execute(
+              invocation,
+              ...(signal ? [{ signal }] : []),
+            );
+          } catch {
+            // Once execution was entered, a thrown transport/storage error does not
+            // prove that an external effect was absent. Do not disclose raw errors to Pi.
+            result = {
+              outcome: "result_unknown",
+              dispatchState: "possibly_sent",
+              resultRef: null,
+              errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
+              externalActionId: null,
+              modelContent: "Tool execution needs reconciliation before continuing.",
+            };
+          }
         }
         if (result.outcome === "awaiting_approval") {
           try {

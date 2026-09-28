@@ -185,12 +185,37 @@ export class RunCoordinator {
   }
 
   async execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    if (input.runtime.knownToolResult) throw new Error("KNOWN_RESULT_REQUIRES_RECOVERY_ENTRY");
+    return this.executeOwned(input, false);
+  }
+
+  async resumeToolResult(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    const saved = await this.readCheckpoint(input.runId);
+    const run = await this.requireRun(input.runId);
+    if (
+      !input.runtime.knownToolResult ||
+      input.runtime.knownToolResult.continuationRef !== input.runtime.continuationRef ||
+      run.run.status !== "running" ||
+      saved?.checkpoint.phase !== "runtime_running" ||
+      saved.checkpoint.diagnosticCode !== "RUNTIME_TOOL_RESULT_UNKNOWN" ||
+      saved.checkpoint.terminalStatus !== null ||
+      saved.checkpoint.output !== null ||
+      saved.checkpoint.contextRef === null
+    )
+      throw new Error("KNOWN_RESULT_RECOVERY_CHECKPOINT_CHANGED");
+    return this.executeOwned(input, true);
+  }
+
+  private async executeOwned(
+    input: ExecuteCoordinatedRunInput,
+    knownResultRecovery: boolean,
+  ): Promise<CoordinatedRunResult> {
     this.assertScope(input);
     const expiredWait = await this.finishExpiredApprovalWait(input);
     if (expiredWait) return expiredWait;
     const attempt = this.beginExecutionAttempt(input);
     try {
-      return await this.executeAttempt(input, attempt);
+      return await this.executeAttempt(input, attempt, knownResultRecovery);
     } finally {
       clearTimeout(attempt.deadlineTimer);
       if (attempt.interruption) await attempt.interruption;
@@ -385,6 +410,7 @@ export class RunCoordinator {
   private async executeAttempt(
     input: ExecuteCoordinatedRunInput,
     attempt: ExecutionAttempt,
+    knownResultRecovery = false,
   ): Promise<CoordinatedRunResult> {
     const initialCheckpoint = await this.readCheckpoint(input.runId);
     this.assertExecutionActive(attempt);
@@ -414,7 +440,8 @@ export class RunCoordinator {
     const interrupted =
       storedCheckpoint.checkpoint.phase === "runtime_running" &&
       storedCheckpoint.checkpoint.terminalStatus === null &&
-      !queuedToolBatch;
+      !queuedToolBatch &&
+      !knownResultRecovery;
     const missingOutput =
       storedCheckpoint.checkpoint.terminalStatus === "completed" &&
       storedCheckpoint.checkpoint.output === null;
@@ -526,7 +553,7 @@ export class RunCoordinator {
 
     this.assertExecutionActive(attempt);
     const workerOutcome =
-      storedCheckpoint.checkpoint.terminalStatus === null
+      storedCheckpoint.checkpoint.terminalStatus === null && !knownResultRecovery
         ? await this.runWorkers(input, storedRun, storedCheckpoint, attempt)
         : { run: storedRun, checkpoint: storedCheckpoint };
     this.assertExecutionActive(attempt);
@@ -1017,7 +1044,7 @@ export class RunCoordinator {
     let observed = initialCheckpoint.checkpoint.runtimeEventCount;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
-      ...(storedCheckpoint.checkpoint.suspension
+      ...(!input.runtime.knownToolResult && storedCheckpoint.checkpoint.suspension
         ? { continuationRef: storedCheckpoint.checkpoint.suspension.continuationRef }
         : {}),
       executionLease: input.executionLease,
@@ -1102,7 +1129,9 @@ export class RunCoordinator {
             ? "RUNTIME_FINAL_ANSWER_INVALID"
             : event.type === "runtime.failed"
               ? event.errorCode
-              : null,
+              : input.runtime.knownToolResult && !terminalStatus
+                ? "RUNTIME_TOOL_RESULT_UNKNOWN"
+                : null,
         });
         this.assertExecutionActive(attempt);
         if (terminalStatus) break;
@@ -1218,8 +1247,11 @@ export class RunCoordinator {
         command = input.commands.running;
         break;
     }
-    if (continuationRef) {
+    if (continuationRef || input.runtime.knownToolResult) {
       const fingerprint = threadCommandFingerprint({
+        ...(input.runtime.knownToolResult
+          ? { recoveryLease: input.executionLease.executionLeaseId }
+          : {}),
         runId: input.runId,
         continuationRef,
         nextStatus,

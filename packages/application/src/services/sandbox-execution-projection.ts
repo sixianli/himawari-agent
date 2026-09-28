@@ -11,6 +11,7 @@ import type { SandboxExecutionVerification } from "../ports/sandbox-execution.js
 import type { SandboxReleaseReceipt } from "../ports/sandbox-execution-journal.js";
 
 export interface SandboxExecutionProjectionContext {
+  readonly resultDeliveryDeadlineAt?: string;
   readonly now: string;
   readonly environment: SandboxEnvironment;
   /** Resolve by capability/version from the trusted catalog, not request arguments. */
@@ -173,8 +174,8 @@ export function projectSandboxExecution(
     (resource.supervision === "controlled" && !supervisionVerified) ||
     (resource.supervision === "released" && !released);
   const active = context.runState === "active" && now < Date.parse(plan.effectiveDeadlineAt);
-  const canAct =
-    active &&
+  const disclosureAllowed =
+    context.runState === "active" &&
     context.currentAuthority &&
     context.currentFence &&
     context.modelDisclosureAllowed &&
@@ -183,11 +184,19 @@ export function projectSandboxExecution(
     settled &&
     !needsReconciliation &&
     (controlled || released);
+  const canAct = active && disclosureAllowed;
+  const canRecoverResult =
+    disclosureAllowed &&
+    released &&
+    plan.mode === "foreground" &&
+    (result?.kind === "result" || result?.kind === "error") &&
+    context.resultDeliveryDeadlineAt !== undefined &&
+    now < Date.parse(context.resultDeliveryDeadlineAt);
   return Object.freeze({
     conclusion,
     // Known output remains visible after resource loss; user and model disclosure are independent.
     showResult: context.userDisclosureAllowed && outputProtected,
-    deliverToolResult: canAct && !context.resultAlreadyDelivered,
+    deliverToolResult: (canAct || canRecoverResult) && !context.resultAlreadyDelivered,
     continuePi: canAct,
     dispatchNewOperation: canAct,
     invokeService:

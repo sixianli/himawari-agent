@@ -30,6 +30,7 @@ import {
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
+import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 
 export interface ProductionRunCompositionOptions {
@@ -131,6 +132,15 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
   });
+  const prepareToolResultRecovery = createProductionToolResultRecovery({
+    ownerId,
+    agentId,
+    repository,
+    artifacts,
+    checkpoints,
+    protector,
+    clock,
+  });
   const continuations = new RuntimeContinuationService({
     artifacts,
     payloads,
@@ -138,6 +148,17 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
     authorizeAuthorityChange: async (request, ref, previousAuthority) => {
+      if (request.knownToolResult) {
+        const prepared = await prepareToolResultRecovery(request);
+        return (
+          prepared !== undefined &&
+          prepared.binding.continuationRef === ref &&
+          canonicalAuthorizationSnapshot(prepared.binding) ===
+            canonicalAuthorizationSnapshot(request.knownToolResult) &&
+          canonicalAuthorizationSnapshot(prepared.previousAuthority) ===
+            canonicalAuthorizationSnapshot(previousAuthority)
+        );
+      }
       const saved = await checkpoints.read(request.runId);
       const recovery = saved?.queuedToolBatch;
       if (
@@ -269,6 +290,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     coordinator,
     input: (candidate) => input.create(candidate),
+    prepareToolResultRecovery,
     reconcile: createProductionRunReconciler({
       ownerId,
       agentId,

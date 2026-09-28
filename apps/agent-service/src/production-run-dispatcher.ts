@@ -19,6 +19,7 @@ import {
   PORT_ERROR_CODES,
   RunExecutionInterruptedError,
 } from "@himawari-agent/application";
+import type { PreparedToolResultRecovery } from "./production-tool-result-recovery.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
 
 export const PRODUCTION_RUN_DISPATCH_ERROR_CODES = Object.freeze({
@@ -82,7 +83,14 @@ export type ProductionRunReconciler = (input: ProductionRunReconciliationInput) 
 export interface ProductionRunDispatcherOptions {
   readonly authority: Pick<ProductionAuthorityLifecycle, "assertActive" | "isAccepting">;
   readonly dispatch: RunDispatchPort;
-  readonly coordinator: Pick<RunCoordinator, "execute" | "recoverCompleted" | "interruptExecution">;
+  readonly coordinator: Pick<
+    RunCoordinator,
+    "execute" | "recoverCompleted" | "interruptExecution"
+  > &
+    Partial<Pick<RunCoordinator, "resumeToolResult">>;
+  readonly prepareToolResultRecovery?: (
+    candidate: RunDispatchCandidate,
+  ) => Promise<PreparedToolResultRecovery | undefined>;
   readonly input: ProductionRunInputFactory;
   readonly reconcile: ProductionRunReconciler;
   readonly clock: ClockPort;
@@ -307,6 +315,15 @@ export class ProductionRunDispatcher {
     let conflicts = 0;
     for (const candidate of candidates) {
       if (!this.isAccepting()) break;
+      const recovery =
+        candidate.action === "resume_tool_result"
+          ? await this.#options.prepareToolResultRecovery?.(candidate)
+          : undefined;
+      if (
+        candidate.action === "resume_tool_result" &&
+        (!recovery || !this.#options.coordinator.resumeToolResult)
+      )
+        continue;
       const leaseId =
         this.#options.nextExecutionLeaseId?.({
           candidate,
@@ -322,6 +339,7 @@ export class ProductionRunDispatcher {
       try {
         const claimedAt = this.#options.clock.now();
         lease = await this.#options.dispatch.claim({
+          ...(recovery ? { toolResultRecovery: recovery.claim } : {}),
           runId: candidate.runId,
           expectedRunRevision: candidate.runRevision,
           expectedLeaseRevision: candidate.leaseRevision,
@@ -368,7 +386,20 @@ export class ProductionRunDispatcher {
           await reconcileLeaseFailure();
           continue;
         }
-        const canonicalInput = this.bindInput(input, candidate, claim);
+        const canonicalInput = this.bindInput(
+          recovery
+            ? {
+                ...input,
+                runtime: {
+                  ...input.runtime,
+                  continuationRef: recovery.binding.continuationRef,
+                  knownToolResult: recovery.binding,
+                },
+              }
+            : input,
+          candidate,
+          claim,
+        );
         if (renewal.failure()) {
           await reconcileLeaseFailure();
           continue;
@@ -376,9 +407,11 @@ export class ProductionRunDispatcher {
         let result: CoordinatedRunResult;
         try {
           result =
-            candidate.action === "deliver_completed"
-              ? await this.#options.coordinator.recoverCompleted(canonicalInput)
-              : await this.#options.coordinator.execute(canonicalInput);
+            recovery && this.#options.coordinator.resumeToolResult
+              ? await this.#options.coordinator.resumeToolResult(canonicalInput)
+              : candidate.action === "deliver_completed"
+                ? await this.#options.coordinator.recoverCompleted(canonicalInput)
+                : await this.#options.coordinator.execute(canonicalInput);
         } catch (error) {
           await renewal.stop();
           if (renewal.failure()) {

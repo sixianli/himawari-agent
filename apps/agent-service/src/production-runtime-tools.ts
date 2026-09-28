@@ -24,6 +24,7 @@ import {
   type RuntimeToolInvocation,
   type RuntimeToolPort,
   type RuntimeToolSettledResult,
+  type SandboxExecutionPreparationPort,
   type WorkerDelegationAdmissionServiceOptions,
   WorkerDelegationService,
 } from "@himawari-agent/application";
@@ -247,6 +248,8 @@ function preDispatchFailure(error: unknown): { reasonCode: string; modelContent:
 
 type SandboxAdmission = NonNullable<WorkerDelegationAdmissionServiceOptions["sandbox"]>;
 export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
+  readonly preparations?: SandboxAdmission["preparations"] &
+    Partial<Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation">>;
   readonly prepare: (
     admission: ConsumeCapabilityInvocationInput,
     invocation: RuntimeToolInvocation,
@@ -536,6 +539,202 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         reasonCode: "GOVERNED_HANDLE_INVALID",
       };
     }
+  }
+
+  async recoverResult(
+    invocation: RuntimeToolInvocation,
+    recovery: NonNullable<RuntimeRequest["knownToolResult"]>,
+  ): Promise<RuntimeToolSettledResult> {
+    const recoveryLease = invocation.context?.executionLease;
+    const recoveryDeadline = invocation.executionDeadlineAt;
+    if (
+      !recoveryLease ||
+      !recoveryDeadline ||
+      !Number.isFinite(Date.parse(recoveryDeadline)) ||
+      this.#options.clock.now() >= recoveryDeadline
+    )
+      reject();
+    if (
+      !invocation.context ||
+      invocation.toolCallId !== recovery.toolCallId ||
+      invocation.capabilityRef !== recovery.capabilityRef ||
+      invocation.context.continuationRef !== recovery.continuationRef ||
+      !recovery.invocationId.startsWith("runtime-tool:") ||
+      !this.#options.completeSandboxToolResult
+    )
+      reject();
+    const artifact = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey: `runtime-tool-intent:${recovery.invocationId.slice("runtime-tool:".length)}`,
+    });
+    if (!artifact) reject();
+    const saved = (await this.#readJson(artifact.payloadRef)) as {
+      fingerprint?: string;
+      request?: unknown;
+      recovery?: { version?: string; continuationRef?: string; toolCallId?: string };
+    };
+    const original = executionV2MessageSchema.parse(saved.request);
+    if (
+      original.kind !== "request" ||
+      original.type !== "work.execute" ||
+      original.messageId !== recovery.invocationId ||
+      original.scope.runId !== invocation.runId ||
+      original.scope.ownerId !== this.#options.ownerId ||
+      original.scope.agentId !== this.#options.agentId ||
+      saved.recovery?.version !== "tool-batch-recovery.v1" ||
+      saved.recovery.continuationRef !== recovery.continuationRef ||
+      saved.recovery.toolCallId !== invocation.toolCallId
+    )
+      reject();
+    const receive = async (child: RuntimeToolInvocation): Promise<RuntimeToolSettledResult> => {
+      const key = digest([child.runId, child.toolCallId]);
+      if (
+        `runtime-tool:${key}` !== recovery.invocationId ||
+        saved.fingerprint !== digest(executionIdentity(child, original.scope)) ||
+        original.payload.capabilityHandleRef !== child.capabilityHandleRef ||
+        original.payload.capabilityId !== child.capabilityRef ||
+        original.payload.inputRef !== child.arguments["inputRef"]
+      )
+        reject();
+      const admission = await this.#options.sandbox?.preparations?.readAdmissionByInvocation?.({
+        runId: child.runId,
+        invocationId: recovery.invocationId,
+      });
+      if (admission?.phase !== "bound" || admission.record.plan.identity.jobId !== recovery.jobId)
+        reject();
+      const record = admission.record;
+      const assertDisclosure = async () => {
+        await this.#options.assertRunActive(child.runId);
+        if (
+          !child.context ||
+          !child.executionDeadlineAt ||
+          !Number.isFinite(Date.parse(child.executionDeadlineAt)) ||
+          this.#options.clock.now() >= child.executionDeadlineAt ||
+          record.plan.handleRef !== child.capabilityHandleRef ||
+          record.plan.inputRef !== child.arguments["inputRef"]
+        )
+          reject();
+      };
+      await assertDisclosure();
+      const completion = await this.#options.completeSandboxToolResult?.(
+        { runId: child.runId, invocationId: recovery.invocationId },
+        {
+          assertDisclosure,
+          resultRecovery: {
+            executionLease: recoveryLease,
+            deadlineAt: recoveryDeadline,
+          },
+          saveReceipt: async (value) => {
+            await this.#saveRecoveryJson(child, `runtime-sandbox-delivery:${key}`, value);
+          },
+        },
+      );
+      if (!completion) reject();
+      const outcome = await this.#completionOutcome(
+        child,
+        key,
+        record.plan.handleRef,
+        completion,
+        record.plan.resourceCeiling.maxOutputBytes,
+        true,
+        {
+          assertDisclosure,
+          readOutput: async (ref) => {
+            await assertDisclosure();
+            const result = record.facts.result;
+            if (
+              !result ||
+              (result.kind !== "result" && result.kind !== "error") ||
+              result.output.ref !== ref
+            )
+              reject();
+            const payload = await this.#options.payloads.get(ref);
+            if (
+              !payload ||
+              RANK.indexOf(payload.dataClassification) > RANK.indexOf(child.dataClassification)
+            )
+              reject();
+            const bytes = await this.#options.protector.unprotect({
+              ownerId: this.#options.ownerId,
+              agentId: this.#options.agentId,
+              payload,
+            });
+            if (
+              bytes.byteLength !== result.output.byteLength ||
+              bytes.byteLength > record.plan.resourceCeiling.maxOutputBytes ||
+              createHash("sha256").update(bytes).digest("hex") !== result.output.digest
+            )
+              reject();
+            await assertDisclosure();
+            return { ref, text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
+          },
+        },
+      );
+      await this.#saveRecoveryJson(child, `runtime-tool-recovered-result:${key}`, outcome);
+      return outcome;
+    };
+    if (invocation.capabilityHandleRef !== null) {
+      if (!this.#exposed.get(invocation.runId)?.has(invocation.capabilityHandleRef)) reject();
+      return receive(invocation);
+    }
+    const services = this.#options.fileRead;
+    if (!services || !this.#exposed.has(invocation.runId)) reject();
+    const key = digest([invocation.runId, invocation.toolCallId]);
+    const ctx = this.#workflowContext(invocation, key);
+    const recovering: FileReadExecutionContext = {
+      ...ctx,
+      canResumeAuthority: async (previous) =>
+        digest(previous) ===
+        digest({
+          deploymentId: original.scope.deploymentId,
+          authorityEpoch: original.scope.authorityEpoch,
+          fencingToken: original.scope.fencingToken,
+        }),
+      save: async (suffix) => {
+        const previous = await this.#options.artifacts.lookup({
+          runId: invocation.runId,
+          purpose: "trace",
+          operationKey: `runtime-file-read:${key}:${suffix}`,
+        });
+        if (!previous) reject();
+        return { ref: previous.payloadRef, value: await this.#readJson(previous.payloadRef) };
+      },
+      phase: async (handle, phase, inputRef) =>
+        receive({
+          ...invocation,
+          toolCallId: `file-phase:${digest([key, phase])}`,
+          capabilityRef: handle.capabilityRef,
+          capabilityHandleRef: handle.ref,
+          arguments: { inputRef },
+        }),
+    };
+    const readOnlyServices = {
+      ...services,
+      issue: async (): Promise<never> => {
+        throw new Error("RESULT_RECOVERY_CANNOT_ISSUE_HANDLE");
+      },
+    };
+    const coding = this.#codingTool(invocation);
+    const result = coding
+      ? await executeProductionCodingRequest(invocation, coding, readOnlyServices, recovering)
+      : await new ProductionFileReadWorkflow(readOnlyServices).execute(invocation, recovering);
+    if (result.outcome === "awaiting_approval" || result.dispatchState === "not_sent") reject();
+    return result;
+  }
+
+  async #saveRecoveryJson(invocation: RuntimeToolInvocation, operationKey: string, value: unknown) {
+    const existing = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey,
+    });
+    if (existing) {
+      if (digest(await this.#readJson(existing.payloadRef)) !== digest(value))
+        throw new Error("RUNTIME_KNOWN_RESULT_RECEIPT_CHANGED");
+      return;
+    }
+    await this.#writeJson(invocation, operationKey, value);
   }
 
   async execute(
@@ -1366,6 +1565,10 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     completion: WorkerToolCompletion | undefined,
     maxOutputBytes: number,
     internal: boolean,
+    recovered?: {
+      assertDisclosure(): Promise<void>;
+      readOutput(ref: string): Promise<{ ref: string; text: string }>;
+    },
   ): Promise<RuntimeToolSettledResult> {
     if (
       completion?.outcome === "failed" &&
@@ -1385,8 +1588,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         receipt.errorCode === "FILE_VERSION_CONFLICT" &&
         receipt.outputRef === completion.outputRef
       ) {
-        await this.#assertDisclosure(invocation, key, internal);
-        await this.#writeJson(invocation, `runtime-tool-diagnostic:${key}`, {
+        await (recovered?.assertDisclosure() ?? this.#assertDisclosure(invocation, key, internal));
+        await this.#saveRecoveryJson(invocation, `runtime-tool-diagnostic:${key}`, {
           stage: "verified_no_file_effect",
           reasonCode: "FILE_VERSION_CONFLICT",
           invocationId: `runtime-tool:${key}`,
@@ -1404,14 +1607,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     }
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
-      const output = await this.#observedOutput(
-        invocation,
-        key,
-        handleRef,
-        completion.outputRef,
-        maxOutputBytes,
-        internal,
-      );
+      const output = recovered
+        ? await recovered.readOutput(completion.outputRef)
+        : await this.#observedOutput(
+            invocation,
+            key,
+            handleRef,
+            completion.outputRef,
+            maxOutputBytes,
+            internal,
+          );
       return {
         dispatchState: "accepted",
         outcome: "succeeded",
@@ -1430,14 +1635,16 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
       if (completion.outputRef && !commandEffectUnverified) {
-        const output = await this.#observedOutput(
-          invocation,
-          key,
-          handleRef,
-          completion.outputRef,
-          maxOutputBytes,
-          internal,
-        );
+        const output = recovered
+          ? await recovered.readOutput(completion.outputRef)
+          : await this.#observedOutput(
+              invocation,
+              key,
+              handleRef,
+              completion.outputRef,
+              maxOutputBytes,
+              internal,
+            );
         return {
           dispatchState: "accepted",
           outcome: completion.outcome,

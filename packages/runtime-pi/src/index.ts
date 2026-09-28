@@ -39,3 +39,5 @@ export {
 export { executeSandboxedPiCodingTool } from "./sandboxed-coding-executor.js";
 
 export { preparePiFileMutation } from "./prepare-file-mutation.js";
+
+export { inspectPiToolBatch } from "./pi-tool-batch-continuation.js";

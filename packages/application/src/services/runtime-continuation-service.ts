@@ -109,7 +109,12 @@ export class RuntimeContinuationService implements RuntimeContinuationPort {
   }
 
   private scope(request: RuntimeRequest) {
-    const { continuationRef: _continuation, executionLease, ...semantic } = request;
+    const {
+      continuationRef: _continuation,
+      knownToolResult: _knownToolResult,
+      executionLease,
+      ...semantic
+    } = request;
     // A fresh consumer/lease may resume. Authority changes need separate queue proof; task inputs remain exact.
     return {
       ...semantic,

@@ -1,4 +1,8 @@
-import type { RunExecutionLease, RunReconciliationPort } from "@himawari-agent/application";
+import type {
+  RunExecutionLease,
+  RunReconciliationPort,
+  RunToolResultRecoveryClaim,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
@@ -11,6 +15,7 @@ import {
 import type Database from "better-sqlite3";
 import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
 import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
+import { SANDBOX_TOOL_RESULT_RECOVERY_SQL } from "./sqlite-sandbox-tool-result-recovery.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
 
@@ -215,7 +220,7 @@ export class SqliteRunDispatchOperations {
         `SELECT r.id, r.owner_id, r.agent_id, r.session_id, r.trigger_id, r.thread_id,
           r.revision, r.status, c.phase AS checkpoint_phase, c.terminal_status AS checkpoint_terminal_status,
           COALESCE(l.revision, 0) AS lease_revision,
-          current_turn.turn_index
+          current_turn.turn_index, (${SANDBOX_TOOL_RESULT_RECOVERY_SQL}) AS tool_result_recovery
          FROM runs r
          LEFT JOIN run_coordination_checkpoints c
            ON c.run_id = r.id AND c.owner_id = r.owner_id AND c.agent_id = r.agent_id
@@ -244,6 +249,7 @@ export class SqliteRunDispatchOperations {
              ))
              ))
              OR (${RUN_COMPLETION_RECOVERY_SQL})
+             OR (${SANDBOX_TOOL_RESULT_RECOVERY_SQL})
            )
            AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= @resourceNow)
            AND NOT EXISTS (
@@ -384,6 +390,10 @@ export class SqliteRunDispatchOperations {
         VALUES (?, ?, ?, 1, 'reconciling_external_result', 0, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET revision = revision + 1,
         phase = 'reconciling_external_result', diagnostic_code = CASE
+          WHEN run_coordination_checkpoints.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN'
+            AND run_coordination_checkpoints.terminal_status IS NULL
+            AND run_coordination_checkpoints.output_kind IS NULL
+            THEN 'RUNTIME_TOOL_RESULT_UNKNOWN'
           WHEN excluded.diagnostic_code='RUN_COMPLETION_DELIVERY_REJECTED' THEN excluded.diagnostic_code
           WHEN (run_coordination_checkpoints.phase='runtime_settled' AND run_coordination_checkpoints.terminal_status='completed')
             OR (run_coordination_checkpoints.phase='reconciling_external_result'
@@ -398,6 +408,7 @@ export class SqliteRunDispatchOperations {
   }
 
   async claim(input: {
+    readonly toolResultRecovery?: RunToolResultRecoveryClaim;
     readonly runId: string;
     readonly expectedRunRevision: number;
     readonly expectedLeaseRevision: number;
@@ -409,6 +420,7 @@ export class SqliteRunDispatchOperations {
   }
 
   private claimSync(input: {
+    readonly toolResultRecovery?: RunToolResultRecoveryClaim;
     readonly runId: string;
     readonly expectedRunRevision: number;
     readonly expectedLeaseRevision: number;
@@ -473,7 +485,9 @@ export class SqliteRunDispatchOperations {
       if (run.revision !== expectedRunRevision) {
         return this.fail("PORT_CONFLICT", "Run revision conflict", { runId });
       }
-      this.assertDispatchable(run, claimedAt);
+      if (input.toolResultRecovery)
+        this.assertToolResultRecovery(run, input.toolResultRecovery, claimedAt);
+      this.assertDispatchable(run, claimedAt, input.toolResultRecovery !== undefined);
       const revision = expectedLeaseRevision + 1;
       this.database
         .prepare(
@@ -510,6 +524,16 @@ export class SqliteRunDispatchOperations {
           expiresAt,
           expiresAt,
         );
+      if (input.toolResultRecovery) {
+        this.database
+          .prepare(`UPDATE runs SET status='running', revision=revision+1,
+          updated_at=? WHERE id=? AND owner_id=? AND agent_id=?`)
+          .run(claimedAt, runId, this.scope.ownerId, this.scope.agentId);
+        this.database
+          .prepare(`UPDATE run_coordination_checkpoints SET phase='runtime_running',
+          diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN', revision=revision+1, updated_at=? WHERE run_id=? AND owner_id=? AND agent_id=?`)
+          .run(claimedAt, runId, this.scope.ownerId, this.scope.agentId);
+      }
       const created = this.readLease(runId);
       if (!created)
         return this.fail("PORT_INVALID_OPERATION", "Claimed lease could not be read", { runId });
@@ -802,10 +826,12 @@ export class SqliteRunDispatchOperations {
         ? reconciliation
           ? "reconcile"
           : "start"
-        : checkpointPhase === "reconciling_external_result" ||
-            row["checkpoint_terminal_status"] === "completed"
-          ? "deliver_completed"
-          : "resume";
+        : row["tool_result_recovery"] === 1
+          ? "resume_tool_result"
+          : checkpointPhase === "reconciling_external_result" ||
+              row["checkpoint_terminal_status"] === "completed"
+            ? "deliver_completed"
+            : "resume";
     return {
       ownerId: createOwnerId(text(row["owner_id"], "owner_id")),
       agentId: createAgentId(text(row["agent_id"], "agent_id")),
@@ -939,7 +965,49 @@ export class SqliteRunDispatchOperations {
     } as const;
   }
 
-  private assertDispatchable(run: RunRow, now: string): void {
+  private assertToolResultRecovery(run: RunRow, input: RunToolResultRecoveryClaim, now: string) {
+    const checkpointRevision = safeInteger(input.checkpointRevision, "checkpointRevision", 1);
+    const operationRevision = safeInteger(input.operationRevision, "operationRevision");
+    const sequence = safeInteger(input.resourceSequence, "resourceSequence", 1);
+    const ordinal = safeInteger(input.completedStreamOrdinal, "completedStreamOrdinal", 1);
+    const deadline = instant(input.deadlineAt, "deadlineAt");
+    if (!isAfter(deadline, now))
+      this.fail("PORT_CONFLICT", "Original Run deadline has expired", { runId: run.id });
+    const matching = this.database
+      .prepare(`SELECT 1 FROM runs r
+      JOIN run_coordination_checkpoints c ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
+      JOIN sandbox_execution_records result ON result.run_id=r.id AND result.owner_id=r.owner_id AND result.agent_id=r.agent_id
+      WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+        AND (${SANDBOX_TOOL_RESULT_RECOVERY_SQL})
+        AND c.revision=@checkpointRevision
+        AND result.job_id=@jobId AND result.invocation_id=@invocationId
+        AND result.operation_revision=@operationRevision AND result.sequence=@sequence
+        AND json_extract(result.plan_json,'$.semanticFingerprint')=@fingerprint
+        AND result.preparation_state<>'reserved'
+        AND json_extract(result.plan_json,'$.mode')='foreground'
+        AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
+        AND json_extract(result.facts_json,'$.resource.supervision')='released'
+        AND NOT EXISTS (SELECT 1 FROM model_invocation_identities model
+          WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
+            AND model.source='agent-stream' AND model.ordinal>@ordinal AND model.status<>'released')`)
+      .get({
+        runId: run.id,
+        ownerId: this.scope.ownerId,
+        agentId: this.scope.agentId,
+        resourceNow: now,
+        checkpointRevision,
+        jobId: text(input.jobId, "jobId"),
+        invocationId: text(input.invocationId, "invocationId"),
+        operationRevision,
+        sequence,
+        fingerprint: text(input.semanticFingerprint, "semanticFingerprint"),
+        ordinal,
+      });
+    if (!matching)
+      this.fail("PORT_CONFLICT", "Known tool result changed before recovery", { runId: run.id });
+  }
+
+  private assertDispatchable(run: RunRow, now: string, toolResultRecovery = false): void {
     const queuedRecovery = readQueuedToolBatch(
       this.database,
       this.scope.ownerId,
@@ -979,12 +1047,14 @@ export class SqliteRunDispatchOperations {
       if (!ready) this.fail("PORT_CONFLICT", "Run approval is still pending", { runId: run.id });
     }
     if (
+      !toolResultRecovery &&
       !completionRecovery &&
       !RUN_DISPATCHABLE_STATUSES.includes(run.status as (typeof RUN_DISPATCHABLE_STATUSES)[number])
     ) {
       this.fail("PORT_CONFLICT", "Run is not execution-eligible", { runId: run.id });
     }
     if (
+      !toolResultRecovery &&
       !completionRecovery &&
       !queuedRecovery &&
       RECONCILIATION_CHECKPOINT_PHASES.includes(
@@ -996,6 +1066,7 @@ export class SqliteRunDispatchOperations {
       });
     }
     if (
+      !toolResultRecovery &&
       !completionRecovery &&
       !queuedRecovery &&
       run.checkpointPhase !== null &&

@@ -196,6 +196,7 @@ export interface SandboxExecutionJournalPort {
   }): Promise<void>;
 }
 export interface SandboxContinuationIntentInput {
+  readonly resultRecoveryLease?: SandboxExecutionPlanV2["executionLease"];
   readonly identity: SandboxJobIdentity;
   readonly intentId: string;
   readonly kind: "tool_result" | "continue";

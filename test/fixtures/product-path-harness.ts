@@ -211,6 +211,9 @@ export interface ProductPathInstallation {
   setEmbeddingAvailable(available: boolean): void;
   start(): Promise<void>;
   stop(): Promise<void>;
+  crash(): Promise<void>;
+  armDeliveryCrash(): Promise<void>;
+  deliveryCrashEntered(): Promise<{ jobId: string; runId: string } | null>;
   running(): boolean;
   close(): Promise<void>;
 }
@@ -671,6 +674,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_RUNTIME_ROOT: runtimeRoot,
     HIMAWARI_TEST_CONFIGURATION: configurationPath,
     HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
+    HIMAWARI_TEST_DELIVERY_CRASH: path.join(testRoot, "delivery-crash"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
   };
   const serviceArgs = [
@@ -788,6 +792,24 @@ export async function installProductPath(options: {
     },
     start,
     stop,
+    crash: async () => {
+      const current = processes;
+      processes = undefined;
+      if (!current) throw new Error("PRODUCT_PATH_NOT_RUNNING");
+      current.main.kill("SIGKILL");
+      current.worker.kill("SIGKILL");
+      if (!(await exited(current.main, 5000)) || !(await exited(current.worker, 5000)))
+        throw new Error("PRODUCT_PATH_CRASH_TIMEOUT");
+    },
+    armDeliveryCrash: async () => {
+      await rm(`${serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH}.entered`, { force: true });
+      await writeFile(serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH, "armed");
+    },
+    deliveryCrashEntered: async () =>
+      readFile(`${serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH}.entered`, "utf8").then(
+        (text) => JSON.parse(text),
+        () => null,
+      ),
     running: () => (processes ? alive(processes.main) : false),
     close: async () => {
       await stop();

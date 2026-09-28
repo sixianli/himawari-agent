@@ -36,7 +36,7 @@ interface RunDispatchRecord {
   readonly leaseRevision: number;
 }
 
-export type RunDispatchAction = "start" | "resume" | "deliver_completed";
+export type RunDispatchAction = "start" | "resume" | "deliver_completed" | "resume_tool_result";
 
 export interface RunDispatchCandidate extends RunDispatchRecord {
   readonly action: RunDispatchAction;
@@ -64,6 +64,17 @@ export interface RunExecutionLease {
 
 export interface RunExecutionLeaseReceipt extends RunExecutionLease {
   readonly replayed: boolean;
+}
+
+export interface RunToolResultRecoveryClaim {
+  readonly jobId: string;
+  readonly invocationId: string;
+  readonly semanticFingerprint: string;
+  readonly checkpointRevision: number;
+  readonly operationRevision: number;
+  readonly resourceSequence: number;
+  readonly completedStreamOrdinal: number;
+  readonly deadlineAt: string;
 }
 
 export interface RunExecutionLeaseClaim {
@@ -121,6 +132,7 @@ export interface RunDispatchPort {
     readonly limit: number;
   }): Promise<readonly RunReconciliationCandidate[]>;
   claim(input: {
+    readonly toolResultRecovery?: RunToolResultRecoveryClaim;
     readonly runId: RunId;
     readonly expectedRunRevision: number;
     readonly expectedLeaseRevision: number;

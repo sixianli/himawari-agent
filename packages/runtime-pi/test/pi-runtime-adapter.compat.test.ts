@@ -2911,6 +2911,105 @@ it.each(["saved", "storage-failed"] as const)(
   },
 );
 
+it.each(["known", "rejected", "missing-reader", "wrong-call"] as const)(
+  "restores a known result without reentering tool execution: %s",
+  async (scenario) => {
+    const model = await createFauxModelFixture("已收到原结果", {
+      name: "controlled_action",
+      id: "late-result-call",
+      arguments: { value: "original" },
+    });
+    const projection = new RecordingProjection();
+    const snapshots = new Map<string, unknown>();
+    const slots: number[] = [];
+    const preflight = vi.fn(async () => ({
+      allowed: true,
+      permissionDecisionRef: "test",
+      reasonCode: "test",
+    }));
+    const execute = vi.fn(async () => ({
+      outcome: "result_unknown" as const,
+      resultRef: null,
+      errorCode: "WAIT_EXPIRED",
+      externalActionId: "original-job",
+      modelContent: "结果待核查",
+    }));
+    const recoverResult = vi.fn(async () => {
+      if (scenario === "rejected") throw new Error("RESULT_NO_LONGER_DISCLOSABLE");
+      return {
+        outcome: "succeeded" as const,
+        resultRef: "original-output",
+        errorCode: null,
+        externalActionId: "original-job",
+        modelContent: "原工具的确定结果",
+      };
+    });
+    const tools = {
+      listAuthorized: async () => [
+        {
+          name: "controlled_action",
+          description: "test",
+          capabilityRef: "test.late-result",
+          capabilityHandleRef: null,
+          parameters: { type: "object", properties: { value: { type: "string" } } },
+        },
+      ],
+      preflight,
+      execute,
+      ...(scenario === "missing-reader" ? {} : { recoverResult }),
+    };
+    const create = () =>
+      new PiAgentRuntimeAdapter({
+        projection,
+        tools,
+        models: model.models,
+        cwd: process.cwd(),
+        now: () => NOW,
+        admission: async (scope) => allowAdmission(scope),
+        logicalSlot: (_request, ordinal) => {
+          slots.push(ordinal);
+          return `late-result:${ordinal}`;
+        },
+        continuations: {
+          save: async (_request, value) => {
+            const ref = `late-snapshot:${snapshots.size}`;
+            snapshots.set(ref, structuredClone(value));
+            return ref;
+          },
+          load: async (_request, ref) => structuredClone(snapshots.get(ref)),
+        },
+      });
+    const input = { ...request, modelRef: model.descriptor.ref };
+    expect((await collect(create().run(input))).at(-1)?.type).toBe("runtime.result_unknown");
+    expect(execute).toHaveBeenCalledTimes(1);
+    const resumedInput = {
+      ...input,
+      continuationRef: "late-snapshot:0",
+      knownToolResult: {
+        capabilityRef: "test.late-result",
+        continuationRef: "late-snapshot:0",
+        toolCallId: scenario === "wrong-call" ? "different-call" : "late-result-call",
+        jobId: "original-job",
+        invocationId: "original-invocation",
+      },
+    };
+    const resumed = await collect(create().run(resumedInput));
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(snapshots.size).toBe(1);
+    if (scenario === "known") {
+      expect(recoverResult).toHaveBeenCalledTimes(1);
+      expect(resumed.at(-1)?.type).toBe("runtime.completed");
+      expect(slots).toEqual([1, 2]);
+      expect(JSON.stringify(model.observed.at(-1))).toContain("原工具的确定结果");
+    } else {
+      expect(resumed.at(-1)?.type).not.toBe("runtime.completed");
+      expect(slots).toEqual([1]);
+      expect(model.observed).toHaveLength(1);
+    }
+  },
+);
+
 it("forwards Pi cancellation to a product tool without persisting the signal in its identity", async () => {
   const model = await createFauxModelFixture("Must not answer after Stop", {
     name: "restaurant_search",
