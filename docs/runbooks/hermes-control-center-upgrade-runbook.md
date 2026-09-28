@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:4b54c9abee7396b5a0d85b9e25ee4d519f7c7fb4b81555d0b10790dbe064badd"
+contract_sha256: "sha256:12674846855fbd7991e1465f0cc35a99fa2f0fe88276a0a783242e8ef8428813"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -314,6 +314,8 @@ v5 已完成后的服务恢复验收可使用 `scripts/operations/hermes-protect
 主机、路径、身份、预算不明确；静态合同或实际安装验证失败；签名/摘要/权限/namespace 证据不匹配；活跃 Run 无法正常停机；恢复点不通过；迁移、身份、握手失败；需要放宽授权、访问其他用户数据或修改 Cloudflare 策略。停止依赖步骤，继续不依赖它的源码修复和验证。
 
 ## Troubleshooting
+
+后台核查与操作结果并发写入时的版本处理，见[安装与诊断手册的核查说明](install-start-stop-runbook.md#troubleshooting)。该处理保留原资源事实、恢复所有权和期限检查，不新增数据格式，不改变本手册的备份、权威迁移或部署操作步骤；它不授权重放原工具。
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 

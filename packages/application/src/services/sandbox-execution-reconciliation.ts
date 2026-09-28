@@ -179,44 +179,68 @@ export class SandboxExecutionReconciliationService {
       fromBackend = false,
       supplied?: SandboxExecutionVerification,
     ) => {
-      if (!record) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
-      if (fromBackend) assertActive();
-      let now = this.options.now();
-      const facts = { ...record.facts, resource };
-      if (supplied && JSON.stringify(supplied.facts) !== JSON.stringify(facts))
-        throw new Error("SANDBOX_RECONCILIATION_EVIDENCE_CHANGED");
-      const verification =
-        resource.supervision === "released"
-          ? (supplied ?? (await this.options.evidence.verify({ plan: record.plan, facts, now })))
-          : null;
-      now = this.options.now();
-      if (fromBackend) assertActive();
-      const mutation = await this.options.journal.append({
-        identity,
-        expectedSequence: record.facts.resource.sequence,
-        expectedOperationRevision: record.operationRevision,
-        expectedRecoveryRevision: recovery.revision,
-        authority: input.authority,
-        now,
-        facts,
-        context: {
-          now,
-          environment: record.facts.environment,
-          operationContract: record.plan.operationContract,
-          verification,
-          currentResourceSequence: resource.sequence,
-          runState: "terminated",
-          currentAuthority: false,
-          currentFence: false,
-          userDisclosureAllowed: false,
-          modelDisclosureAllowed: false,
-          conflictingWorkspaceRisk: true,
-          pendingApprovalOrReconciliation: true,
-          resultAlreadyDelivered: false,
-        },
-      });
-      record = mutation.record;
-      return mutation;
+      let suppliedProof = supplied;
+      for (;;) {
+        if (!record) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
+        if (fromBackend) assertActive();
+        const observed = record;
+        let now = this.options.now();
+        const facts = { ...observed.facts, resource };
+        if (suppliedProof && JSON.stringify(suppliedProof.facts) !== JSON.stringify(facts))
+          throw new Error("SANDBOX_RECONCILIATION_EVIDENCE_CHANGED");
+        const verification =
+          resource.supervision === "released"
+            ? (suppliedProof ??
+              (await this.options.evidence.verify({ plan: observed.plan, facts, now })))
+            : null;
+        now = this.options.now();
+        if (fromBackend) assertActive();
+        try {
+          const mutation = await this.options.journal.append({
+            identity,
+            expectedSequence: observed.facts.resource.sequence,
+            expectedOperationRevision: observed.operationRevision,
+            expectedRecoveryRevision: recovery.revision,
+            authority: input.authority,
+            now,
+            facts,
+            context: {
+              now,
+              environment: observed.facts.environment,
+              operationContract: observed.plan.operationContract,
+              verification,
+              currentResourceSequence: resource.sequence,
+              runState: "terminated",
+              currentAuthority: false,
+              currentFence: false,
+              userDisclosureAllowed: false,
+              modelDisclosureAllowed: false,
+              conflictingWorkspaceRisk: true,
+              pendingApprovalOrReconciliation: true,
+              resultAlreadyDelivered: false,
+            },
+          });
+          record = mutation.record;
+          return mutation;
+        } catch (error) {
+          if (
+            !fromBackend ||
+            !(error instanceof Error) ||
+            !("code" in error) ||
+            error.code !== "PORT_CONFLICT"
+          )
+            throw error;
+          const latest = await refreshOwned();
+          assertActive();
+          if (
+            latest.operationRevision === observed.operationRevision ||
+            JSON.stringify(latest.facts.resource) !== JSON.stringify(observed.facts.resource) ||
+            JSON.stringify(latest.facts.environment) !== JSON.stringify(observed.facts.environment)
+          )
+            throw error;
+          suppliedProof = undefined;
+        }
+      }
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     let removeAbortListener = () => {};

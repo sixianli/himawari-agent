@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:05492205534bfa99ca7aa61349387efa49dbecc3aecb3e0599a94b1a51758dc3"
+contract_sha256: "sha256:54cbe04fe9b8ea38e916ab9c0a894b696339f3583a8f1a06fa4784a9e9d3eff7"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -448,6 +448,8 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 要求把本地安装通过等同 Mac/Hermes transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
 
 ## Troubleshooting
+
+后台核查已取得资源观察、但操作结果在核验证据或写入期间更新时，只要原资源事实和环境身份完全未变、恢复所有权仍有效，就在同一次恢复期限内读取最新操作结果并重新核验证据，再尝试保存释放事实。操作版本竞争本身不再作为失控原因。资源序号或身份改变、恢复被接管、证据失效和恢复超时仍按原规则拒绝；这项处理不会重新执行工具，也不解除缺少释放证明的占用。
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 

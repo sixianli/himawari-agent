@@ -1826,6 +1826,71 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     },
   );
 
+  it.each(["backend-observation", "proof-verification"] as const)(
+    "accepts verified cleanup when operation completion races with %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      const entered = deferred<SandboxExecutionRecord>();
+      const resume = deferred<void>();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              if (window === "proof-verification") {
+                entered.resolve(call(f, "read", record.plan.identity) as SandboxExecutionRecord);
+                await resume.promise;
+              }
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: {
+            inspect: async (current) => {
+              if (window === "backend-observation") {
+                entered.resolve(current);
+                await resume.promise;
+              }
+              return resource(current, "released").resource;
+            },
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          },
+        });
+        const recovery = service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const observed = await entered.promise;
+        const completed = append(f, observed, result(f, observed), true);
+        resume.resolve();
+        const finished = await recovery;
+        expect(finished.record.facts.result).toEqual(completed.facts.result);
+        expect(finished.record.recovery?.status).toBe("resolved");
+        expect(finished.record.facts.resource.supervision).toBe("released");
+        expect(finished.record.workspaceBlocked).toBe(false);
+        expect(call(f, "admit", admission(f, "-after-race")).applied).toBe(true);
+      } finally {
+        resume.resolve();
+        await f.close();
+      }
+    },
+  );
+
   it.each(["revision", "owner", "finished", "deadline"] as const)(
     "rejects stale recovery proof through the repository port: %s",
     async (scenario) => {
