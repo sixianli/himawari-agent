@@ -94,6 +94,7 @@ date: "2026-08-27"
 - packages/runtime-sandbox/src/job-host-control-client.ts
 - packages/runtime-sandbox/src/machine-boot.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-unconfirmed-purge.ts
+- packages/persistence-sqlite/src/sqlite-run-diagnostics.ts
 - packages/runtime-sandbox/src/linux-namespace.ts
 - packages/execution-contracts/src/sandbox-preparation-v2.ts
 - packages/persistence-sqlite/src/migrations/0029_sandbox_execution_preparation.sql
@@ -484,6 +485,24 @@ Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，
 留痕：`deletion_tombstones` 为每条被删记录写一条 `sandbox_execution` 删除标记，保存原执行计划（只有编号、引用和摘要，不含工具输入输出），供界面找回对应的工具步骤；另写一条 `sandbox_unconfirmed_purge` 汇总，保存摘要、被删编号和各类条数。`audit_records` 写一条 `sandbox.unconfirmed_records_deleted` 审计事件，目标是清单摘要。
 
 删除后的效果：这些记录不再挡住目录；某个 Run 如果只因这些记录没能结束，Run 结束检查不再把它们算作未释放的资源，已准入但执行记录已删除的排队记录也不再阻止 Run 结束。删除不会停止任何进程：原工具程序或离开进程组的后代如果仍在运行，可能继续写入目录，这是 ADR 0033 中所有者已接受的风险。删除不可撤销，没有回退步骤；数据库恢复到删除前的恢复点会让这些记录重新出现。删除后，历史对话里对应的工具步骤显示“执行记录已删除”，不显示为已完成。验证来源：[真实命令行与 SQLite 回归](../../test/integration/sandbox-unconfirmed-purge.test.ts)。
+
+<a id="diagnose-run"></a>
+
+### 查看某一轮执行的诊断记录
+
+工具执行出错或一轮对话卡住时，失败细节保存在受保护诊断里（加密保存的 Trace 记录，页面和普通日志都不显示）。管理员可以在服务所在的机器上，用管理命令行读取某一个 Run（一轮对话的执行）的诊断：
+
+`himawari diagnose run --config <绝对配置路径> --secret-dir <密钥目录的绝对路径> --run <Run 编号>`
+
+- 只读：以只读方式打开数据库，不取 state root（产品状态目录）的独占锁，服务运行时也能用，不修改任何数据。
+- 输出一行 JSON，包含三部分：
+  - `run`：这个 Run 的编号、所属对话 `threadId`、状态和创建、更新时间。
+  - `sandboxJobs`：这个 Run 的每一条沙箱执行记录（沙箱是隔离运行工具程序的环境）：调用编号 `jobId`、工具调用编号 `toolCallId`、当前序号、资源状态 `supervision`（例如 `controlled` 受控、`lost` 失去控制、`reconciling` 正在核查、`released` 已释放）、清理结果 `cleanup`、原因码、后台核查记录 `recovery`、每一步观察记录 `observations`，以及结果投递记录 `intents`（把结果交给模型或继续执行的记录）。
+  - `diagnostics`：解密后的诊断正文，只包括工具诊断（`runtime-tool-diagnostic:*`）、沙箱控制诊断（`sandbox-control:*:diagnostic:*`）和每次控制检查的原始观察（`sandbox-control:*:observation:*`）。不输出模型输入、工具输出，也不输出沙箱控制连接的登记记录（其中含控制凭据）。某一条解不开时，这一条只给出错误码（例如密钥不可用时为 `PAYLOAD_KEY_UNAVAILABLE`），其余照常输出。
+- 输出可能含文件路径和错误原文，属于私人数据：只保存到本机受保护的证据目录（目录 `0700`、文件 `0600`），不贴到页面、普通日志或公开位置。在真实数据上运行前须得到所有者同意，并以能读取密钥目录和数据库的账号执行。
+- 错误码：Run 不存在或不属于本配置的 Owner、Agent 时为 `ADMIN_RUN_NOT_FOUND`；参数缺失、重复或配置里负责 Payload 加密的密钥引用不是恰好一个时为 `ADMIN_ARGUMENT_INVALID`。两种情况都不输出任何记录。
+
+验证来源：[真实命令行与 SQLite 回归](../../test/integration/admin-diagnose-run.test.ts)。
 
 ### 资源输出分页保留
 

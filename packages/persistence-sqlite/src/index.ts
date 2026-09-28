@@ -13,6 +13,7 @@ export * from "./sqlite-capability-invocation-operations.js";
 export * from "./sqlite-governed-deletion.js";
 export * from "./sqlite-github-history-policy.js";
 export * from "./sqlite-recovery-point.js";
+export * from "./sqlite-run-diagnostics.js";
 export * from "./sqlite-run-payload-artifact-operations.js";
 export * from "./sqlite-sandbox-unconfirmed-purge.js";
 export * from "./sqlite-run-dispatch-operations.js";

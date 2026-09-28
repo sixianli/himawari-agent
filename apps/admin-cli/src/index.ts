@@ -27,6 +27,7 @@ import {
 } from "@himawari-agent/platform-node";
 import { runAccountCommand } from "./account-command.js";
 import { runCapabilitiesCommand } from "./capabilities-command.js";
+import { runDiagnoseCommand } from "./diagnose-command.js";
 import { runInitializeCommand } from "./initialize-command.js";
 import { runSandboxCommand } from "./sandbox-command.js";
 import { runWorkspaceCommand } from "./workspace-command.js";
@@ -760,6 +761,10 @@ export async function runAdminCli(
     }
     if (arguments_[0] === "account") {
       output.write(`${JSON.stringify(await runAccountCommand(arguments_))}\n`);
+      return 0;
+    }
+    if (arguments_[0] === "diagnose") {
+      output.write(`${JSON.stringify(await runDiagnoseCommand(arguments_))}\n`);
       return 0;
     }
     if (arguments_[0] === "sandbox") {
