@@ -415,57 +415,86 @@ describe("v2 observation over authenticated UDS and SQLite", () => {
     ).rejects.toThrow();
     expect(f.verificationCounts().externalVerifications).toBe(1);
   });
-  it("keeps a controlled foreground record unchanged when a control check finds the process already gone", async () => {
-    const f = await fixture(false, false, false, true);
-    await f.request({
-      kind: "start",
-      expectedSequence: 1,
-      policyDigest: f.record.facts.environment.policyDigest,
-    });
-    const evidence = {
-      ref: "agent-control-evidence",
-      digest: "a".repeat(64),
-      profileRef: f.record.plan.binding.profileRef,
-      qualificationRef: f.record.plan.binding.qualificationRef,
-      validUntil: T2,
-      subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
-    };
-    const verification = (sequence: number, state: "controlled" | "process_group_gone") => {
-      const facts = sandboxExecutionFactsSchema.parse({
-        ...f.record.facts,
-        resource: {
-          ...f.record.facts.resource,
-          sequence,
-          supervision: state === "controlled" ? "controlled" : "released",
-          cleanup: state === "controlled" ? "pending" : "process_group_gone",
-          evidence,
-        },
+  it.each(["process_group_gone", "exit_cleanup_pending"] as const)(
+    "keeps a controlled foreground record unchanged when a control check finds the process %s",
+    async (exit) => {
+      const f = await fixture(false, false, false, true);
+      await f.request({
+        kind: "start",
+        expectedSequence: 1,
+        policyDigest: f.record.facts.environment.policyDigest,
       });
-      return {
-        facts,
-        identity: f.record.plan.identity,
-        environmentId: f.record.plan.environmentId,
-        policyDigest: facts.environment.policyDigest,
-        resourceSequence: sequence,
-        checkedAt: T1,
+      const evidence = {
+        ref: "agent-control-evidence",
+        digest: "a".repeat(64),
+        profileRef: f.record.plan.binding.profileRef,
+        qualificationRef: f.record.plan.binding.qualificationRef,
         validUntil: T2,
-        evidence: [evidence],
-        outputs: [],
+        subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
       };
-    };
-    f.observe(verification(2, "controlled"));
-    const controlled = await f.request({ kind: "observe_control", expectedSequence: 1 });
-    if (controlled.record.phase !== "bound") throw new Error("expected bound execution");
-    f.observe(verification(3, "process_group_gone"));
-    const finished = await f.request({ kind: "observe_control", expectedSequence: 2 });
-    expect(finished.applied).toBe(false);
-    if (finished.record.phase !== "bound") throw new Error("expected bound execution");
-    expect(finished.record.facts.resource.sequence).toBe(2);
-    expect(finished.record.facts.resource.supervision).toBe("controlled");
-    const reread = await f.request({ kind: "read" });
-    if (reread.record.phase !== "bound") throw new Error("expected bound execution");
-    expect(reread.record.facts).toEqual(controlled.record.facts);
-  });
+      const verification = (
+        sequence: number,
+        state: "controlled" | "process_group_gone" | "exit_cleanup_pending" | "unconfirmed",
+      ) => {
+        const { evidence: _evidence, ...unsupervised } = f.record.facts
+          .resource as typeof f.record.facts.resource & { evidence?: unknown };
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...f.record.facts,
+          resource:
+            state === "controlled" || state === "process_group_gone"
+              ? {
+                  ...f.record.facts.resource,
+                  sequence,
+                  supervision: state === "controlled" ? "controlled" : "released",
+                  cleanup: state === "controlled" ? "pending" : "process_group_gone",
+                  evidence,
+                }
+              : {
+                  ...unsupervised,
+                  sequence,
+                  supervision: "lost",
+                  cleanup: "unknown",
+                  reasonCode:
+                    state === "exit_cleanup_pending"
+                      ? "SANDBOX_TASK_EXIT_CLEANUP_PENDING"
+                      : "SANDBOX_CONTROL_UNCONFIRMED",
+                },
+        });
+        return {
+          facts,
+          identity: f.record.plan.identity,
+          environmentId: f.record.plan.environmentId,
+          policyDigest: facts.environment.policyDigest,
+          resourceSequence: sequence,
+          checkedAt: T1,
+          validUntil: T2,
+          evidence: [evidence],
+          outputs: [],
+        };
+      };
+      f.observe(verification(2, "controlled"));
+      const controlled = await f.request({ kind: "observe_control", expectedSequence: 1 });
+      if (controlled.record.phase !== "bound") throw new Error("expected bound execution");
+      f.observe(verification(3, exit));
+      const finished = await f.request({ kind: "observe_control", expectedSequence: 2 });
+      expect(finished.applied).toBe(false);
+      if (finished.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(finished.record.facts.resource.sequence).toBe(2);
+      expect(finished.record.facts.resource.supervision).toBe("controlled");
+      const reread = await f.request({ kind: "read" });
+      if (reread.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(reread.record.facts).toEqual(controlled.record.facts);
+      f.observe(verification(3, "unconfirmed"));
+      const unconfirmed = await f.request({ kind: "observe_control", expectedSequence: 2 });
+      expect(unconfirmed.applied).toBe(true);
+      if (unconfirmed.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(unconfirmed.record.facts.resource).toMatchObject({
+        sequence: 3,
+        supervision: "lost",
+        reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+      });
+    },
+  );
   it("reserves before compilation and binds a later digest once over real UDS", async () => {
     const f = await fixture(true);
     expect((await f.request({ kind: "read" })).record.phase).toBe("reserved");

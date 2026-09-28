@@ -480,9 +480,12 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           throw new Error("control observation unavailable");
         await current(false);
         observedVerification = await configured.observeVerifiedControl(bound);
+        const observedResource = observedVerification.facts.resource;
         if (
           bound.facts.resource.supervision === "controlled" &&
-          observedVerification.facts.resource.supervision === "released"
+          (observedResource.supervision === "released" ||
+            (observedResource.supervision === "lost" &&
+              observedResource.reasonCode === "SANDBOX_TASK_EXIT_CLEANUP_PENDING"))
         )
           return {
             record: wire(bound),

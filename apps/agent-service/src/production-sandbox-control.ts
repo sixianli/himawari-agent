@@ -123,12 +123,18 @@ function processAbsent(pid: number): boolean {
     return !!error && typeof error === "object" && "code" in error && error.code === "ESRCH";
   }
 }
-type ControlState = "controlled" | "released" | "process_group_gone" | "lost";
+type ControlState =
+  | "controlled"
+  | "released"
+  | "process_group_gone"
+  | "exit_cleanup_pending"
+  | "lost";
 const resourceState = (state: ControlState) =>
   ({
     controlled: { supervision: "controlled", cleanup: "pending" },
     released: { supervision: "released", cleanup: "confirmed" },
     process_group_gone: { supervision: "released", cleanup: "process_group_gone" },
+    exit_cleanup_pending: { supervision: "lost", cleanup: "unknown" },
     lost: { supervision: "lost", cleanup: "unknown" },
   })[state];
 function neverStartedReleased(
@@ -372,6 +378,14 @@ export function createProductionSandboxControl(options: Options) {
       options.now() < record.plan.effectiveDeadlineAt
     )
       return "controlled";
+    if (
+      raw.taskStarted &&
+      raw.taskProcessExited &&
+      !processAbsent(raw.processId) &&
+      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500 &&
+      options.now() < record.plan.effectiveDeadlineAt
+    )
+      return "exit_cleanup_pending";
     return "lost";
   };
   const observeGone = async (
@@ -488,7 +502,8 @@ export function createProductionSandboxControl(options: Options) {
       await saveDiagnostic(record.plan, command, "classification", error);
       reasonCode = sandboxReconciliationFailureReason(error);
     }
-    if (command === "stop" && state === "controlled") state = "lost";
+    if (command === "stop" && (state === "controlled" || state === "exit_cleanup_pending"))
+      state = "lost";
     const old = record.facts.resource;
     const now = options.now();
     return sandboxResourceObservationSchema.parse({
@@ -527,18 +542,20 @@ export function createProductionSandboxControl(options: Options) {
           }
         : old.metrics,
       ...resourceState(state),
-      ...(state === "lost"
-        ? { reasonCode }
-        : {
-            evidence: {
-              ref: stored.ref,
-              digest: stored.digest,
-              profileRef: record.plan.binding.profileRef,
-              qualificationRef: record.plan.binding.qualificationRef,
-              validUntil: new Date(Date.parse(now) + 1000).toISOString(),
-              subject: { kind: "local_process", processIdentityRef: raw.processIdentityRef },
-            },
-          }),
+      ...(state === "exit_cleanup_pending"
+        ? { reasonCode: "SANDBOX_TASK_EXIT_CLEANUP_PENDING" }
+        : state === "lost"
+          ? { reasonCode }
+          : {
+              evidence: {
+                ref: stored.ref,
+                digest: stored.digest,
+                profileRef: record.plan.binding.profileRef,
+                qualificationRef: record.plan.binding.qualificationRef,
+                validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+                subject: { kind: "local_process", processIdentityRef: raw.processIdentityRef },
+              },
+            }),
     });
   };
   const observe = async (

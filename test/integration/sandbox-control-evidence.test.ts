@@ -311,6 +311,42 @@ it("does not release a finished environment while its host is alive", async () =
   expect(resource.supervision).toBe("lost");
   expect(resource.cleanup).toBe("unknown");
 });
+it.each(["running", "stopping", "finished"] as const)(
+  "reports a %s host whose task exited as cleanup pending, not as an unconfirmed control loss",
+  async (phase) => {
+    const f = await fixture();
+    f.set({
+      phase,
+      taskStarted: true,
+      taskProcessExited: true,
+      resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+    });
+    const resource = await f.control.observe(f.record);
+    expect(resource).toMatchObject({
+      supervision: "lost",
+      cleanup: "unknown",
+      reasonCode: "SANDBOX_TASK_EXIT_CLEANUP_PENDING",
+    });
+    expect(await f.control.evidence(f.record.plan, { ...f.record.facts, resource })).toEqual([]);
+    const expired = await f.control.observe({
+      ...f.record,
+      plan: { ...f.record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
+      facts: { ...f.record.facts, resource },
+    });
+    expect(expired).toMatchObject({
+      supervision: "lost",
+      reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+    });
+    const stopped = await f.control.backend.stop(
+      { ...f.record, facts: { ...f.record.facts, resource: expired } },
+      new AbortController().signal,
+    );
+    expect(stopped).toMatchObject({
+      supervision: "lost",
+      reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+    });
+  },
+);
 it("rejects directory inode replacement and changed supervisor identity", async () => {
   const f = await fixture();
   f.set({ bootId: randomUUID() });
