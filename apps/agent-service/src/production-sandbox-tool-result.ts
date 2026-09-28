@@ -78,62 +78,95 @@ export function createProductionSandboxToolResult(options: {
     if (plan.identity.runId !== input.runId || plan.identity.invocationId !== input.invocationId)
       throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
     const waitUntil = performance.now() + RECOVERY_SETTLE_WAIT_MS;
-    while (awaitingRecovery(record)) {
-      if (record.recovery?.status === "unresolved") return undefined;
-      if (performance.now() >= waitUntil) throw new Error("SANDBOX_RECOVERY_UNSETTLED");
-      await delay(RECOVERY_POLL_MS);
-      const latest = await options.preparations.readAdmissionByInvocation(input);
-      if (latest?.phase !== "bound") throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
-      record = latest.record;
-    }
-    if ((!record.facts.result || record.facts.result.kind === "unknown") && options.recoverResult)
-      record = await options.recoverResult(record);
-    const result = record.facts.result;
-    if (!result || result.kind === "unknown" || result.kind === "started") return undefined;
-    await delivery.assertDisclosure();
-    const verification = await options.verifyFresh(record);
-    const context: SandboxExecutionProjectionContext = {
-      now: options.now(),
-      environment: record.facts.environment,
-      operationContract: plan.operationContract,
-      verification,
-      releaseReceipt: record.releaseReceipt ?? null,
-      currentResourceSequence: verification.facts.resource.sequence,
-      runState: "active",
-      currentAuthority: true,
-      currentFence: true,
-      userDisclosureAllowed: false,
-      modelDisclosureAllowed: true,
-      conflictingWorkspaceRisk: false,
-      pendingApprovalOrReconciliation: false,
-      resultAlreadyDelivered: false,
-    };
-    const projection = projectSandboxExecution(plan, verification.facts, context);
-    if (!projection.deliverToolResult) return undefined;
-    await delivery.assertDisclosure();
-    if (verification.facts.resource.sequence !== record.facts.resource.sequence)
-      record = (
-        await options.journal.append({
-          identity: plan.identity,
-          expectedSequence: record.facts.resource.sequence,
-          expectedOperationRevision: record.operationRevision,
-          facts: verification.facts,
-          authority: options.authority(),
-          now: options.now(),
-          context,
-        })
-      ).record;
     const intentId = `sandbox-tool-result:${createHash("sha256").update(plan.semanticFingerprint).digest("hex")}`;
-    const intent = () => ({
-      identity: plan.identity,
-      intentId,
-      kind: "tool_result" as const,
-      expectedSequence: record.facts.resource.sequence,
-      authority: options.authority(),
-      now: options.now(),
-      context,
-    });
-    await options.journal.prepareIntent(intent());
+    const readCurrent = async () => {
+      const latest = await options.preparations.readAdmissionByInvocation(input);
+      if (
+        latest?.phase !== "bound" ||
+        latest.record.plan.semanticFingerprint !== plan.semanticFingerprint
+      )
+        throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
+      return latest.record;
+    };
+    const prepare = async () => {
+      for (;;) {
+        if (performance.now() >= waitUntil) throw new Error("SANDBOX_RECOVERY_UNSETTLED");
+        const observed = record;
+        try {
+          while (awaitingRecovery(record)) {
+            if (record.recovery?.status === "unresolved") return undefined;
+            if (performance.now() >= waitUntil) throw new Error("SANDBOX_RECOVERY_UNSETTLED");
+            await delay(RECOVERY_POLL_MS);
+            record = await readCurrent();
+          }
+          if (
+            (!record.facts.result || record.facts.result.kind === "unknown") &&
+            options.recoverResult
+          )
+            record = await options.recoverResult(record);
+          const result = record.facts.result;
+          if (!result || result.kind === "unknown" || result.kind === "started") return undefined;
+          await delivery.assertDisclosure();
+          const verification = await options.verifyFresh(record);
+          const context: SandboxExecutionProjectionContext = {
+            now: options.now(),
+            environment: record.facts.environment,
+            operationContract: plan.operationContract,
+            verification,
+            releaseReceipt: record.releaseReceipt ?? null,
+            currentResourceSequence: verification.facts.resource.sequence,
+            runState: "active",
+            currentAuthority: true,
+            currentFence: true,
+            userDisclosureAllowed: false,
+            modelDisclosureAllowed: true,
+            conflictingWorkspaceRisk: false,
+            pendingApprovalOrReconciliation: false,
+            resultAlreadyDelivered: false,
+          };
+          const projection = projectSandboxExecution(plan, verification.facts, context);
+          if (!projection.deliverToolResult) return undefined;
+          await delivery.assertDisclosure();
+          if (verification.facts.resource.sequence !== record.facts.resource.sequence)
+            record = (
+              await options.journal.append({
+                identity: plan.identity,
+                expectedSequence: record.facts.resource.sequence,
+                expectedOperationRevision: record.operationRevision,
+                facts: verification.facts,
+                authority: options.authority(),
+                now: options.now(),
+                context,
+              })
+            ).record;
+          const intent = () => ({
+            identity: plan.identity,
+            intentId,
+            kind: "tool_result" as const,
+            expectedSequence: record.facts.resource.sequence,
+            authority: options.authority(),
+            now: options.now(),
+            context,
+          });
+          await options.journal.prepareIntent(intent());
+          return { result, projection, context, intent };
+        } catch (error) {
+          if (!(error instanceof Error) || !("code" in error) || error.code !== "PORT_CONFLICT")
+            throw error;
+          const latest = await readCurrent();
+          if (
+            latest.operationRevision === observed.operationRevision &&
+            latest.facts.resource.sequence === observed.facts.resource.sequence
+          )
+            throw error;
+          await delivery.assertDisclosure();
+          record = latest;
+        }
+      }
+    };
+    const prepared = await prepare();
+    if (!prepared) return undefined;
+    const { result, projection, context, intent } = prepared;
     await delivery.assertDisclosure();
     // A repeated handoff retries only the immutable receipt, never executable work.
     await options.journal.dispatchIntent(intent());

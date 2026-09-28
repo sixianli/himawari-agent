@@ -2716,6 +2716,120 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     },
   );
 
+  it.each(["released", "unresolved", "cancelled"] as const)(
+    "refreshes a foreground handoff overtaken during verification: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      const entered = deferred<void>();
+      const resume = deferred<void>();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        const identity = record.plan.identity;
+        const journal = Object.fromEntries(
+          [
+            "read",
+            "append",
+            "prepareIntent",
+            "dispatchIntent",
+            "acknowledgeIntent",
+            "observeIntent",
+          ].map((name) => [
+            name,
+            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+          ]),
+        ) as unknown as SandboxExecutionJournalPort;
+        let checks = 0;
+        const complete = createProductionSandboxToolResult({
+          journal,
+          preparations: {
+            readAdmissionByInvocation: async () => ({
+              phase: "bound",
+              record: call(f, "read", identity) as SandboxExecutionRecord,
+            }),
+          },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          verifyFresh: async (current) => {
+            if (++checks === 1) {
+              entered.resolve();
+              await resume.promise;
+            }
+            const proof = context(
+              current,
+              current.releaseReceipt ? current.facts : resource(current, "released"),
+            ).verification;
+            if (!proof) throw new Error("missing fixture proof");
+            return proof;
+          },
+        });
+        const receipt = vi.fn(async () => {});
+        const delivered = complete(
+          { runId: identity.runId, invocationId: identity.invocationId },
+          {
+            assertDisclosure: async () => {
+              if (scenario === "cancelled" && checks > 0) throw new Error("disclosure cancelled");
+            },
+            saveReceipt: receipt,
+          },
+        );
+        const outcome = delivered.then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+        await entered.promise;
+        const recovery = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (value) => call(f, "read", value),
+            append: async (value) => call(f, "append", value),
+            beginRecovery: async (value) => call(f, "beginRecovery", value),
+            finishRecovery: async (value) => call(f, "finishRecovery", value),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          backend: reconciliationBackend({
+            inspect: async (current) =>
+              resource(current, scenario === "unresolved" ? "lost" : "released").resource,
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        await recovery.reconcile({
+          identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        resume.resolve();
+        if (scenario === "released") {
+          expect(await outcome).toMatchObject({
+            value: { outcome: "succeeded", outputRef: "output" },
+          });
+          expect(receipt).toHaveBeenCalledTimes(1);
+          expect(checks).toBe(2);
+          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+        } else {
+          if (scenario === "unresolved") expect(await outcome).toEqual({ value: undefined });
+          else expect(await outcome).toMatchObject({ error: expect.any(Error) });
+          expect(receipt).not.toHaveBeenCalled();
+        }
+      } finally {
+        resume.resolve();
+        await f.close();
+      }
+    },
+  );
+
   async function completeFailedExecution(
     f: Awaited<ReturnType<typeof openSandboxJournal>>,
     suffix: string,

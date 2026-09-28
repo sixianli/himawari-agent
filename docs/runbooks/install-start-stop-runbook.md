@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:71e393d59e832ef3802a572569dd0079eecac866886c6fd570f7e063b13aca25"
+contract_sha256: "sha256:57bd5fa1e24c3369f0b45397b7c6a58b2049e195ea4ae50fc5b9d739bfd2a602"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -453,7 +453,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
-工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。核查期限届满仍保留占用并记录 unresolved。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
+工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
 
 Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
