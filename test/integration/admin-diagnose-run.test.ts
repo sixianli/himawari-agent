@@ -121,6 +121,13 @@ function configuration(stateRoot: string) {
 
 const CONTROL = `sandbox-control:${"a".repeat(64)}`;
 const DIAGNOSTICS = {
+  [`${CONTROL}:diagnostic:preparation-failure`]: {
+    command: "prepare",
+    stage: "prepare",
+    reasonCode: "SANDBOX_PREPARATION_FAILED",
+    hostStage: "sdk_initialize",
+    systemCode: "EIO",
+  },
   "runtime-tool-diagnostic:operation-cancelled": {
     stage: "accepted",
     reasonCode: "WORKER_CANCELLATION_OBSERVED",
@@ -287,7 +294,7 @@ describe("himawari diagnose run", () => {
       createdAt: T1,
       errorCode: "PAYLOAD_KEY_UNAVAILABLE",
     });
-    expect(report.diagnostics).toHaveLength(4);
+    expect(report.diagnostics).toHaveLength(5);
     expect(output.value()).not.toContain("SECRET-CONTROL-TOKEN");
     expect(output.value()).not.toContain("PRIVATE-MODEL-INPUT");
   });

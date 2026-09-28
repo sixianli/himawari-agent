@@ -62,7 +62,8 @@ function awaitingRecovery(record: SandboxExecutionRecord) {
  * projection and durable continuation intents can hand a foreground result to Pi.
  */
 export function createProductionSandboxToolResult(options: {
-  preparations: Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation">;
+  preparations: Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation"> &
+    Partial<Pick<SandboxExecutionPreparationPort, "authorizeReservationResult">>;
   journal: SandboxExecutionJournalPort;
   verifyFresh(record: SandboxExecutionRecord): Promise<SandboxExecutionVerification>;
   recoverResult?(record: SandboxExecutionRecord): Promise<SandboxExecutionRecord>;
@@ -75,7 +76,33 @@ export function createProductionSandboxToolResult(options: {
   ): Promise<SandboxToolCompletion | null | undefined> => {
     const admission = await options.preparations.readAdmissionByInvocation(input);
     if (!admission) return null;
-    if (admission.phase !== "bound") return undefined;
+    if (admission.phase === "reserved") {
+      if (
+        admission.plan.mode !== "foreground" ||
+        admission.releaseReceipt?.verification.basis !== "host_never_started" ||
+        admission.workspaceBlocked
+      )
+        return undefined;
+      if (!options.preparations.authorizeReservationResult)
+        throw new Error("SANDBOX_RESULT_AUTHORITY_UNAVAILABLE");
+      await delivery.assertDisclosure();
+      await options.preparations.authorizeReservationResult({
+        identity: admission.plan.identity,
+        authority: options.authority(),
+        now: options.now(),
+        executionLease: delivery.resultRecovery?.executionLease ?? admission.plan.executionLease,
+        deadlineAt: delivery.resultRecovery?.deadlineAt ?? admission.plan.effectiveDeadlineAt,
+      });
+      const result: SandboxToolCompletion = {
+        outcome: "failed",
+        outputRef: null,
+        errorCode: "SANDBOX_TOOL_NOT_STARTED",
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(result);
+      await delivery.assertDisclosure();
+      return result;
+    }
     let record = admission.record;
     const { plan } = record;
     if (plan.mode !== "foreground") return null;

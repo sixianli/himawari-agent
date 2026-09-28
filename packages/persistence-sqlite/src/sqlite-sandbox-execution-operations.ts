@@ -536,6 +536,29 @@ export class SqliteSandboxExecutionOperations {
             .run(JSON.stringify(recovery), now, identity.jobId);
           return { admission: { ...admission, stopRequestedAt: now, recovery }, applied: true };
         }
+        if (operation === "authorizeReservationResult") {
+          const request = raw as Parameters<
+            SandboxExecutionPreparationPort["authorizeReservationResult"]
+          >[0];
+          const admission = this.readAdmission(identity, owner, agent);
+          if (
+            !admission ||
+            admission.phase !== "reserved" ||
+            admission.plan.mode !== "foreground" ||
+            !admission.stopRequestedAt ||
+            admission.releaseReceipt?.verification.basis !== "host_never_started" ||
+            admission.workspaceBlocked ||
+            !Number.isFinite(Date.parse(request.deadlineAt)) ||
+            request.deadlineAt <= now ||
+            admission.releaseReceipt.acceptedAt > now
+          )
+            return this.fail(
+              "PORT_NOT_AUTHORITATIVE",
+              "Reservation result is not permanently released",
+            );
+          this.authority.result(admission.plan, request.authority, request.executionLease, now);
+          return undefined;
+        }
         if (operation === "releaseReservation") {
           const admission = this.readAdmission(identity, owner, agent);
           if (!admission || admission.phase !== "reserved")

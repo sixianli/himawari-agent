@@ -8,10 +8,15 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
   AND EXISTS (
     SELECT 1 FROM sandbox_execution_records result
     WHERE result.owner_id=r.owner_id AND result.agent_id=r.agent_id AND result.run_id=r.id
-      AND result.preparation_state<>'reserved'
       AND json_extract(result.plan_json,'$.mode')='foreground'
-      AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
-      AND json_extract(result.facts_json,'$.resource.supervision')='released'
+      AND ((result.preparation_state<>'reserved'
+        AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
+        AND json_extract(result.facts_json,'$.resource.supervision')='released')
+        OR (result.preparation_state='reserved' AND EXISTS (
+          SELECT 1 FROM sandbox_reservation_release_receipts reservation
+          WHERE reservation.job_id=result.job_id AND reservation.accepted_at<=@resourceNow
+            AND json_extract(reservation.verification_json,'$.basis')='host_never_started'
+        )))
   )
   AND NOT EXISTS (
     SELECT 1 FROM model_invocation_identities model

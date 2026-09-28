@@ -17,6 +17,8 @@ import {
   type SandboxExecutionPlanV2,
   type SandboxHostBinding,
   type SandboxJobControlBinding,
+  type SandboxPreparationDiagnostic,
+  sandboxPreparationDiagnosticSchema,
   type SandboxResourceObservation,
   type SandboxRuntimeQualification,
   sandboxJobControlBindingSchema,
@@ -42,6 +44,18 @@ interface StoredControl {
   readonly processIdentityRef: string;
   readonly policyDigest: string;
   readonly machineBootId?: string;
+}
+interface StoredPreparationControl {
+  readonly version: "sandbox-preparation-control.v1";
+  readonly identity: SandboxExecutionPlanV2["identity"];
+  readonly fingerprint: string;
+  readonly environmentId: string;
+  readonly control: SandboxJobControlBinding;
+  readonly directoryDevice: string;
+  readonly directoryInode: string;
+  readonly policyDigest: string;
+  readonly machineBootId: string;
+  readonly executionLease: SandboxExecutionPlanV2["executionLease"];
 }
 interface StoredObservation {
   readonly fingerprint: string;
@@ -218,6 +232,57 @@ export function createProductionSandboxControl(options: Options) {
     )
       throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
     return value;
+  };
+  const readPreparationControl = async (plan: SandboxExecutionPlanV2) => {
+    const artifact = await options.read(plan, `${key(plan)}:preparation`);
+    const value = artifact?.value as StoredPreparationControl | undefined;
+    if (
+      !value ||
+      value.version !== "sandbox-preparation-control.v1" ||
+      !same(value.identity, plan.identity) ||
+      value.fingerprint !== plan.semanticFingerprint ||
+      value.environmentId !== plan.environmentId ||
+      !same(value.executionLease, plan.executionLease)
+    )
+      throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+    sandboxJobControlBindingSchema.parse(value.control);
+    const directory = await lstat(value.control.directory);
+    if (
+      !directory.isDirectory() ||
+      directory.isSymbolicLink() ||
+      String(directory.dev) !== value.directoryDevice ||
+      String(directory.ino) !== value.directoryInode ||
+      (directory.mode & 0o077) !== 0 ||
+      (typeof process.getuid === "function" && directory.uid !== process.getuid())
+    )
+      throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
+    if (value.machineBootId !== (await options.machineBootId()))
+      throw new Error("SANDBOX_PREPARATION_MACHINE_CHANGED");
+    return value;
+  };
+  const inspectPreparation = async (
+    plan: SandboxExecutionPlanV2,
+    command: "inspect" | "stop",
+    signal?: AbortSignal,
+  ) => {
+    if (await options.read(plan, key(plan))) return inspect(plan, command, signal);
+    const stored = await readPreparationControl(plan);
+    let observation: JobHostControlObservation;
+    try {
+      observation = await queryJobHostControl(stored.control, command, 1000, signal);
+    } catch (error) {
+      try {
+        observation = await readJobHostFinalEvidence(stored.control);
+      } catch (proofError) {
+        if (errorCode(proofError) === "ENOENT") throw error;
+        throw proofError;
+      }
+    }
+    if (signal?.aborted) throw new Error("SANDBOX_CONTROL_ABORTED");
+    if (observation.policyDigest !== stored.policyDigest || observation.observedAt > options.now())
+      throw new Error("SANDBOX_CONTROL_IDENTITY_CHANGED");
+    await readPreparationControl(plan);
+    return observation;
   };
   const attempt = async (
     plan: SandboxExecutionPlanV2,
@@ -592,6 +657,80 @@ export function createProductionSandboxControl(options: Options) {
     return [];
   };
   return {
+    async recordPreparationDiagnostic(
+      plan: SandboxExecutionPlanV2,
+      input: SandboxPreparationDiagnostic,
+    ) {
+      const diagnostic = sandboxPreparationDiagnosticSchema.parse(input);
+      const operationKey = `${key(plan)}:diagnostic:preparation-failure`;
+      if (await options.read(plan, operationKey)) return;
+      await options.write(plan, operationKey, {
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        observedAt: options.now(),
+        command: "prepare",
+        ...diagnostic,
+      });
+    },
+    async registerPreparation(
+      plan: SandboxExecutionPlanV2,
+      input: SandboxJobControlBinding,
+      policyDigest: string,
+    ): Promise<boolean> {
+      const control = sandboxJobControlBindingSchema.parse(input);
+      if (
+        control.jobId !== plan.identity.jobId ||
+        control.attemptId !== plan.identity.attemptId ||
+        !/^[a-f0-9]{64}$/.test(policyDigest)
+      )
+        throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+      const { binding } = await options.admit(plan);
+      if (
+        (await realpath(control.directory)) !== control.directory ||
+        !within(binding.privateRoot, control.directory) ||
+        [
+          binding.runtimeRoot,
+          ...binding.readOnlyToolchainPaths,
+          ...binding.roots.map((root) => root.canonicalPath),
+        ].some(
+          (root) =>
+            root === control.directory ||
+            within(root, control.directory) ||
+            within(control.directory, root),
+        )
+      )
+        throw new Error("SANDBOX_CONTROL_SCOPE_INVALID");
+      const existing = await options.read(plan, `${key(plan)}:preparation`);
+      if (existing) {
+        const saved = await readPreparationControl(plan);
+        if (!same(saved.control, control) || saved.policyDigest !== policyDigest)
+          throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+        return false;
+      }
+      if (await options.read(plan, key(plan)))
+        throw new Error("SANDBOX_CONTROL_ALREADY_REGISTERED");
+      const metadata = await lstat(control.directory);
+      if (
+        !metadata.isDirectory() ||
+        metadata.isSymbolicLink() ||
+        (metadata.mode & 0o077) !== 0 ||
+        (typeof process.getuid === "function" && metadata.uid !== process.getuid())
+      )
+        throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
+      await options.write(plan, `${key(plan)}:preparation`, {
+        version: "sandbox-preparation-control.v1",
+        identity: plan.identity,
+        fingerprint: plan.semanticFingerprint,
+        environmentId: plan.environmentId,
+        control,
+        policyDigest,
+        directoryDevice: String(metadata.dev),
+        directoryInode: String(metadata.ino),
+        machineBootId: await options.machineBootId(),
+        executionLease: plan.executionLease,
+      } satisfies StoredPreparationControl);
+      return true;
+    },
     async register(
       plan: SandboxExecutionPlanV2,
       input: SandboxJobControlBinding,
@@ -624,6 +763,11 @@ export function createProductionSandboxControl(options: Options) {
         observation.observedAt > options.now()
       )
         throw new Error("SANDBOX_CONTROL_NOT_PREPARED");
+      if (await options.read(plan, `${key(plan)}:preparation`)) {
+        const prepared = await readPreparationControl(plan);
+        if (!same(prepared.control, control) || prepared.policyDigest !== observation.policyDigest)
+          throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+      }
       const metadata = await lstat(control.directory);
       await options.write(plan, key(plan), {
         fingerprint: plan.semanticFingerprint,
@@ -640,7 +784,7 @@ export function createProductionSandboxControl(options: Options) {
     },
     async stopPreparation(plan: SandboxExecutionPlanV2, signal?: AbortSignal) {
       return withDiagnostic(plan, "stop", async () => {
-        const observation = await inspect(plan, "stop", signal);
+        const observation = await inspectPreparation(plan, "stop", signal);
         // This is a cleanup request receipt, never an environment release proof.
         // A stopped reservation remains protected until independent verification.
         await options.write(plan, `${key(plan)}:preparation-stop:${observation.sequence}`, {
@@ -664,7 +808,7 @@ export function createProductionSandboxControl(options: Options) {
           throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
         // Recheck installed host identity, never the expired operation Grant.
         await options.host(plan);
-        const raw = await inspect(plan, "inspect", signal);
+        const raw = await inspectPreparation(plan, "inspect", signal);
         const namespace = raw.linuxNamespace
           ? await readLinuxNamespaceState(raw.linuxNamespace)
           : "unknown";

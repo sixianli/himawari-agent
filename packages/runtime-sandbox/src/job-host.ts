@@ -1,8 +1,12 @@
 import { fork } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { sandboxHostFailureDetailSchema } from "@himawari-agent/execution-contracts";
 import type { JobHostControlBinding } from "./job-host-control.js";
 import {
+  JOB_HOST_FAILURE_STAGES,
+  JOB_HOST_SYSTEM_CODES,
+  type JobHostDiagnostic,
   type JobHostRequest,
   type JobHostResult,
   type JobHostSupervision,
@@ -39,21 +43,35 @@ export function prepareSandboxJobHost(
   value: JobHostRequest,
   controlDirectory?: string,
   assertNetworkAuthority?: () => Promise<void>,
+  preparedControl?: JobHostControlBinding,
 ): SandboxJobHost {
   const request = parseJobHostRequest(value);
   if (request.policy.allowedDomains.length && !assertNetworkAuthority)
     throw new Error("JOB_HOST_NETWORK_AUTHORITY_REQUIRED");
-  const sessionId = randomUUID();
+  const sessionId = preparedControl?.sessionId ?? randomUUID();
   const controlBinding =
     controlDirectory === undefined
       ? undefined
-      : Object.freeze({
-          directory: controlDirectory,
-          token: randomBytes(32).toString("hex"),
-          sessionId,
-          jobId: request.jobId,
-          attemptId: request.attemptId,
-        });
+      : preparedControl
+        ? Object.freeze({ ...preparedControl })
+        : Object.freeze({
+            directory: controlDirectory,
+            token: randomBytes(32).toString("hex"),
+            sessionId,
+            jobId: request.jobId,
+            attemptId: request.attemptId,
+          });
+  if (
+    preparedControl &&
+    (preparedControl.directory !== controlDirectory ||
+      preparedControl.jobId !== request.jobId ||
+      preparedControl.attemptId !== request.attemptId ||
+      !/^[a-f0-9]{64}$/.test(preparedControl.token) ||
+      !/^[a-f0-9-]{36}$/.test(preparedControl.sessionId))
+  )
+    throw new Error("JOB_HOST_CONTROL_BINDING_INVALID");
+  const diagnosticStarted = performance.now();
+  let diagnostic: JobHostDiagnostic | undefined;
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
   let ipcSequence = 0;
@@ -160,16 +178,48 @@ export function prepareSandboxJobHost(
               : "alive",
         }
       : null;
+  const recordTimeout = (
+    code:
+      | "JOB_HOST_HEARTBEAT_EXPIRED"
+      | "JOB_HOST_PREPARATION_TIMEOUT"
+      | "JOB_HOST_EXECUTION_DEADLINE",
+  ) => {
+    const bounded = (value: number) =>
+      Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)));
+    diagnostic ??= {
+      stage: prepared ? "launch" : "request",
+      systemCode: "UNKNOWN",
+      detail: sandboxHostFailureDetailSchema.parse({
+        code,
+        command: "heartbeat",
+        phase: started ? "running" : prepared ? "ready" : "preparing",
+        elapsedMs: Math.max(0, bounded(performance.now() - diagnosticStarted)),
+        messageAgeMs: bounded(performance.now() - lastMessageTick),
+        deadlineRemainingMs: bounded(Date.parse(request.deadlineAt) - Date.now()),
+        expectedSequence: ipcSequence + 1,
+        receivedSequence: null,
+      }),
+    };
+  };
   const supervisionTimer = setInterval(() => {
-    if (!ended && performance.now() - lastMessageTick > 1500) cancel("host_failure");
+    if (!ended && performance.now() - lastMessageTick > 1500) {
+      recordTimeout("JOB_HOST_HEARTBEAT_EXPIRED");
+      cancel("host_failure");
+    }
     if (!ended && !cancelled) send({ type: "heartbeat" });
   }, 250);
   const timer = setTimeout(
-    () => cancel("deadline"),
+    () => {
+      recordTimeout("JOB_HOST_EXECUTION_DEADLINE");
+      cancel("deadline");
+    },
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
   );
   const preparationTimer = setTimeout(
-    () => cancel("host_failure"),
+    () => {
+      recordTimeout("JOB_HOST_PREPARATION_TIMEOUT");
+      cancel("host_failure");
+    },
     Math.min(30000, Math.max(1, Date.parse(request.deadlineAt) - Date.now())),
   );
   // Job Host diagnostics are never propagated into user tool output.
@@ -248,6 +298,29 @@ export function prepareSandboxJobHost(
         if (!ended) send({ type: "authority_result", checkId, allowed });
         if (!allowed) cancel("cancelled");
       })();
+      return;
+    }
+    if (message["type"] === "diagnostic") {
+      if (
+        !JOB_HOST_FAILURE_STAGES.some((stage) => stage === message["stage"]) ||
+        !JOB_HOST_SYSTEM_CODES.some((code) => code === message["systemCode"])
+      ) {
+        cancel("host_failure");
+        return;
+      }
+      let detail: JobHostDiagnostic["detail"];
+      try {
+        if (message["detail"] !== undefined)
+          detail = sandboxHostFailureDetailSchema.parse(message["detail"]);
+      } catch {
+        cancel("host_failure");
+        return;
+      }
+      diagnostic ??= {
+        ...(detail ? { detail } : {}),
+        stage: message["stage"] as JobHostDiagnostic["stage"],
+        systemCode: message["systemCode"] as JobHostDiagnostic["systemCode"],
+      };
       return;
     }
     if (message["type"] === "ready") {
@@ -361,6 +434,7 @@ export function prepareSandboxJobHost(
           ? false
           : null;
     resolveResult({
+      ...(diagnostic ? { diagnostic } : {}),
       network: (() => {
         const value = completion?.["network"];
         if (!value || typeof value !== "object") return null;

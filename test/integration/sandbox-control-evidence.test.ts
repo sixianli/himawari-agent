@@ -35,7 +35,9 @@ afterEach(async () => {
 
 // A real authenticated socket and durable journal exercise the product verifier.
 // The supervisor and qualification facts here are synthetic, not platform qualification.
-async function fixture(options: { qualified?: boolean; completed?: boolean } = {}) {
+async function fixture(
+  options: { qualified?: boolean; completed?: boolean; preparationOnly?: boolean } = {},
+) {
   let clockOffset = 0;
   let hostElapsed = 0;
   const order: string[] = [];
@@ -142,7 +144,7 @@ async function fixture(options: { qualified?: boolean; completed?: boolean } = {
       return verifiedHost();
     },
   });
-  await control.register(record.plan, binding);
+  if (!options.preparationOnly) await control.register(record.plan, binding);
   const facts = {
     ...record.facts,
     environment: {
@@ -844,4 +846,86 @@ it("keeps a control record saved without a machine boot identity blocking after 
   await expect(
     f.control.observe(f.record, "inspect", new AbortController().signal),
   ).rejects.toThrow();
+});
+
+it.each([
+  "no-final",
+  "not-reset",
+  "task-started",
+  "machine-changed",
+  "binding-changed",
+  "directory-changed",
+] as const)(
+  "preparation seed cannot grant release without original proof: %s",
+  async (scenario) => {
+    const f = await fixture({ preparationOnly: true });
+    await f.control.registerPreparation(
+      f.record.plan,
+      f.binding,
+      f.record.facts.environment.policyDigest,
+    );
+    expect(
+      await f.control.registerPreparation(
+        f.record.plan,
+        f.binding,
+        f.record.facts.environment.policyDigest,
+      ),
+    ).toBe(false);
+    await expect(f.control.verifyPreparation(f.record.plan, f.record.facts)).rejects.toThrow();
+    if (scenario === "binding-changed") {
+      await expect(
+        f.control.registerPreparation(
+          f.record.plan,
+          { ...f.binding, token: "b".repeat(64) },
+          f.record.facts.environment.policyDigest,
+        ),
+      ).rejects.toThrow();
+      return;
+    }
+    if (scenario === "machine-changed") f.restartMachine();
+    if (scenario === "directory-changed") {
+      await rename(f.directory, `${f.directory}-old`);
+      await mkdir(f.directory, { mode: 0o700 });
+    }
+    if (scenario === "not-reset" || scenario === "task-started") {
+      f.set({
+        taskStarted: scenario === "task-started",
+        srtReset: scenario !== "not-reset",
+        processId: 2147483647,
+      });
+      await f.finishControl();
+    }
+    const proof = await f.control
+      .verifyReservationRelease(f.record.plan, new Date().toISOString())
+      .catch(() => undefined);
+    expect(proof).toBeUndefined();
+  },
+);
+
+it("retains the first bounded preparation diagnostic and rejects private text", async () => {
+  const f = await fixture({ preparationOnly: true });
+  const first = {
+    stage: "prepare" as const,
+    reasonCode: "SANDBOX_PREPARATION_FAILED" as const,
+    hostStage: "sdk_initialize" as const,
+    hostDetail: null,
+    systemCode: "EIO" as const,
+  };
+  await f.control.recordPreparationDiagnostic(f.record.plan, first);
+  await f.control.recordPreparationDiagnostic(f.record.plan, {
+    ...first,
+    stage: "bind",
+    reasonCode: "SANDBOX_BIND_FAILED",
+    hostStage: null,
+  });
+  await expect(
+    f.control.recordPreparationDiagnostic(f.record.plan, {
+      ...first,
+      systemCode: "private credential",
+    } as never),
+  ).rejects.toThrow();
+  const diagnostics = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]?.[1].value).toMatchObject(first);
+  expect(JSON.stringify(diagnostics)).not.toContain("private credential");
 });

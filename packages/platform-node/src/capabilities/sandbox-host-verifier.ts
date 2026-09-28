@@ -198,10 +198,15 @@ export async function verifySandboxHost(input: {
     ])
   )
     return;
+  const [executableDigest, runnerDigest, runtimeMatches] = await Promise.all([
+    digestRegularFile(binding.executable.path),
+    digestRegularFile(binding.runner.path),
+    unprotectedRuntimeMatches(binding.runtimeRoot, binding.runtimeDigest),
+  ]);
   if (
-    (await digestRegularFile(binding.executable.path)) !== `sha256:${binding.executable.sha256}` ||
-    (await digestRegularFile(binding.runner.path)) !== `sha256:${binding.runner.sha256}` ||
-    !(await unprotectedRuntimeMatches(binding.runtimeRoot, binding.runtimeDigest))
+    executableDigest !== `sha256:${binding.executable.sha256}` ||
+    runnerDigest !== `sha256:${binding.runner.sha256}` ||
+    !runtimeMatches
   )
     throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }

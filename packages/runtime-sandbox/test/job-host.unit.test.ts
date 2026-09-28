@@ -477,3 +477,61 @@ it("does not authorize a late successful check after cancellation", async () => 
   worker.emit("close");
   expect((await host.result).taskTreeCleanup).toBe("unknown");
 });
+
+it("retains only bounded infrastructure failure stages outside tool output", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "diagnostic", stage: "sdk_initialize", systemCode: "EIO" });
+  process.emitMessage({ type: "diagnostic", stage: "secret-content", systemCode: "private-value" });
+  process.emit("close");
+  const result = await host.result;
+  expect(result.diagnostic).toEqual({ stage: "sdk_initialize", systemCode: "EIO" });
+  expect(result.stdout.byteLength).toBe(0);
+  expect(result.stderr.byteLength).toBe(0);
+});
+
+it("preserves authenticated failure detail and rejects unbounded private fields", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  const detail = {
+    code: "JOB_HOST_WORKER_LEASE_INVALID",
+    command: "heartbeat",
+    phase: "ready",
+    elapsedMs: 2500,
+    messageAgeMs: 1600,
+    deadlineRemainingMs: 5000,
+    expectedSequence: 3,
+    receivedSequence: 3,
+  };
+  process.emitMessage({ type: "diagnostic", stage: "launch", systemCode: "UNKNOWN", detail });
+  process.emitMessage({
+    type: "diagnostic",
+    stage: "launch",
+    systemCode: "UNKNOWN",
+    detail: { ...detail, code: "private-error" },
+  });
+  process.emit("close");
+  expect((await host.result).diagnostic).toEqual({
+    stage: "launch",
+    systemCode: "UNKNOWN",
+    detail,
+  });
+});
+
+it("retains the parent heartbeat expiry as the first private failure", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  await vi.advanceTimersByTimeAsync(1750);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "request",
+    systemCode: "UNKNOWN",
+    detail: {
+      code: "JOB_HOST_HEARTBEAT_EXPIRED",
+      command: "heartbeat",
+      phase: "preparing",
+      receivedSequence: null,
+    },
+  });
+});

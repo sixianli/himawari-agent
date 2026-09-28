@@ -535,6 +535,12 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      authorizeReservationResult: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.authorizeReservationResult", {
+          ownerId,
+          agentId,
+          input,
+        }),
       readAdmissionByInvocation: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.readAdmissionByInvocation", {
           ownerId,

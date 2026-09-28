@@ -30,6 +30,8 @@ import {
 } from "@himawari-agent/platform-node";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 
+import { prepareProductPathTiming } from "./product-path-timing.ts";
+
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const publicHost = "agent.example.test";
 export const publicOrigin = `https://${publicHost}`;
@@ -213,6 +215,8 @@ export interface ProductPathInstallation {
   stop(): Promise<void>;
   crash(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
+  armPreparationFailure(): Promise<void>;
+  diagnose(runId: string): unknown;
   deliveryCrashEntered(): Promise<{ jobId: string; runId: string } | null>;
   running(): boolean;
   close(): Promise<void>;
@@ -222,6 +226,8 @@ export async function installProductPath(options: {
   readonly artifact: string;
   readonly context: string;
   readonly logDirectory: string;
+  readonly timing?: boolean;
+  readonly sourceRoot?: string;
 }): Promise<ProductPathInstallation> {
   const testRoot = await realpath(await mkdtemp("/tmp/hma-pp-"));
   const stateRoot = path.join(testRoot, "state");
@@ -436,20 +442,39 @@ export async function installProductPath(options: {
   const frontPort = await listen(front);
 
   const installEnv = { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" };
-  run(
-    process.execPath,
-    [
-      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
-      "--prefix",
-      runtimePrefix,
-      "--artifact",
-      options.artifact,
-      "--context",
-      options.context,
-    ],
-    installEnv,
-    testRoot,
-  );
+  if (options.sourceRoot) {
+    run(
+      process.execPath,
+      [
+        path.join(repositoryRoot, "test/fixtures/product-path-install.mjs"),
+        runtimePrefix,
+        options.artifact,
+        options.context,
+        options.sourceRoot,
+      ],
+      {
+        ...installEnv,
+        GIT_DIR: path.join(repositoryRoot, ".git"),
+        GIT_WORK_TREE: options.sourceRoot,
+      },
+      testRoot,
+    );
+  } else {
+    run(
+      process.execPath,
+      [
+        path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
+        "--prefix",
+        runtimePrefix,
+        "--artifact",
+        options.artifact,
+        "--context",
+        options.context,
+      ],
+      installEnv,
+      testRoot,
+    );
+  }
   run("tar", ["-xzf", options.artifact, "-C", testRoot, "browser"], installEnv, testRoot);
   const runtimeRoot = path.join(runtimePrefix, "lib/himawari-agent");
 
@@ -666,15 +691,25 @@ export async function installProductPath(options: {
     testRoot,
   );
 
+  const timingManifest = path.join(testRoot, "timing-manifest.json");
+  const timingHook = path.join(repositoryRoot, "test/fixtures/product-path-timing-hook.mjs");
+  if (options.timing) await prepareProductPathTiming(runtimeRoot, timingManifest);
   const serviceEnv = {
     ...process.env,
     NODE_PATH: "",
     NODE_OPTIONS: "",
     NODE_EXTRA_CA_CERTS: certificates.ca,
+    ...(options.timing
+      ? {
+          HIMAWARI_TEST_TIMING_MANIFEST: timingManifest,
+          HIMAWARI_TEST_TIMING_OUTPUT: path.join(options.logDirectory, "tool-timing.jsonl"),
+        }
+      : {}),
     HIMAWARI_TEST_RUNTIME_ROOT: runtimeRoot,
     HIMAWARI_TEST_CONFIGURATION: configurationPath,
     HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
     HIMAWARI_TEST_DELIVERY_CRASH: path.join(testRoot, "delivery-crash"),
+    HIMAWARI_TEST_PREPARATION_FAILURE: path.join(testRoot, "preparation-failure"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
   };
   const serviceArgs = [
@@ -729,16 +764,28 @@ export async function installProductPath(options: {
       process.execPath,
       [
         "--no-global-search-paths",
+        ...(options.timing ? ["--import", timingHook] : []),
         path.join(repositoryRoot, "test/fixtures/production-service-main-child.mjs"),
         ...serviceArgs,
       ],
       { cwd: testRoot, stdio: ["pipe", "pipe", "pipe"], env: serviceEnv },
     );
-    const worker = spawn(path.join(runtimePrefix, "bin/himawari-execution-worker"), serviceArgs, {
-      cwd: testRoot,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: serviceEnv,
-    });
+    const worker = spawn(
+      process.execPath,
+      [
+        "--no-global-search-paths",
+        "--import",
+        path.join(repositoryRoot, "test/fixtures/product-path-preparation-hook.mjs"),
+        ...(options.timing ? ["--import", timingHook] : []),
+        path.join(runtimeRoot, "node_modules/@himawari-agent/execution-worker/dist/main.js"),
+        ...serviceArgs,
+      ],
+      {
+        cwd: testRoot,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: serviceEnv,
+      },
+    );
     processes = { main, worker };
     await logTo("agent", main);
     await logTo("worker", worker);
@@ -801,6 +848,27 @@ export async function installProductPath(options: {
       if (!(await exited(current.main, 5000)) || !(await exited(current.worker, 5000)))
         throw new Error("PRODUCT_PATH_CRASH_TIMEOUT");
     },
+    armPreparationFailure: async () => {
+      await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
+    },
+    diagnose: (runId) =>
+      JSON.parse(
+        run(
+          path.join(runtimePrefix, "bin/himawari"),
+          [
+            "diagnose",
+            "run",
+            "--config",
+            configurationPath,
+            "--secret-dir",
+            secretDirectory,
+            "--run",
+            runId,
+          ],
+          serviceEnv,
+          testRoot,
+        ),
+      ),
     armDeliveryCrash: async () => {
       await rm(`${serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH}.entered`, { force: true });
       await writeFile(serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH, "armed");

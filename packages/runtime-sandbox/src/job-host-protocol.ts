@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { SandboxHostFailureDetail } from "@himawari-agent/execution-contracts";
 import type { SandboxPolicyInput } from "./policy.ts";
 import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
@@ -169,7 +170,39 @@ export function quoteJobArgument(argument: string): string {
   return `'${argument.replaceAll("'", `'"'"'`)}'`;
 }
 
+export const JOB_HOST_FAILURE_STAGES = [
+  "request",
+  "policy",
+  "control",
+  "resource_snapshot",
+  "dependencies",
+  "network",
+  "sdk_initialize",
+  "launch",
+] as const;
+export const JOB_HOST_SYSTEM_CODES = [
+  "UNKNOWN",
+  "EACCES",
+  "EPERM",
+  "ENOENT",
+  "EIO",
+  "ENOSPC",
+  "EMFILE",
+  "ENFILE",
+  "ENOMEM",
+  "EAGAIN",
+  "EADDRINUSE",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EINVAL",
+] as const;
+export interface JobHostDiagnostic {
+  readonly detail?: SandboxHostFailureDetail;
+  readonly stage: (typeof JOB_HOST_FAILURE_STAGES)[number];
+  readonly systemCode: (typeof JOB_HOST_SYSTEM_CODES)[number];
+}
 export interface JobHostResult {
+  readonly diagnostic?: JobHostDiagnostic;
   readonly network?: {
     readonly deniedTargets: number;
     readonly deniedAddresses: number;

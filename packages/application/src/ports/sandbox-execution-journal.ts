@@ -238,6 +238,13 @@ export interface SandboxQueuedToolBatch {
   readonly authority: CapabilityInvocationAuthority["product"];
 }
 export interface SandboxExecutionPreparationPort {
+  authorizeReservationResult(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly executionLease: SandboxExecutionPlanV2["executionLease"];
+    readonly deadlineAt: string;
+    readonly now: string;
+  }): Promise<void>;
   /** Read all resource and queue facts for one Run atomically, or reject the bounded read.
    * No authority renewal, dispatch, usage consumption, queue advancement or recovery. */
   readRunInventory(input: { readonly runId: string }): Promise<SandboxExecutionRunInventory>;

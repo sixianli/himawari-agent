@@ -46,6 +46,8 @@ it.each([
   "replay",
   "bind-ack-loss",
   "registration-revoked",
+  "preparation-registration-ack-loss",
+  "preparation-failed",
   "revoked-running",
   "finished-during-check",
   "background",
@@ -151,7 +153,13 @@ it.each([
       }),
     ),
   };
-  mocks.prepare.mockImplementation((request) => {
+  mocks.prepare.mockImplementation((request, _directory, _authority, control) => {
+    host.controlBinding = control;
+    if (scenario === "preparation-failed") {
+      host.ready = Promise.reject(new Error("JOB_HOST_NOT_READY"));
+      void host.ready.catch(() => {});
+    }
+    calls.push("host-fork");
     parseJobHostRequest({ ...request, deadlineAt: new Date(Date.now() + 60000).toISOString() });
     if (piScenario) {
       const input = JSON.parse(Buffer.from(request.stdinBase64, "base64").toString("utf8"));
@@ -236,6 +244,11 @@ it.each([
       command: { kind: string; facts?: typeof facts },
     ) => {
       calls.push(command.kind);
+      if (
+        command.kind === "register_preparation_control" &&
+        scenario === "preparation-registration-ack-loss"
+      )
+        throw new Error("registration ack lost");
       if (
         command.kind === "resolve" &&
         scenario === "finished-during-check" &&
@@ -472,6 +485,8 @@ it.each([
     expect(reconcilingReads).toBe(2);
     expect(facts.resource).toEqual(releasedResource);
   } else if (scenario === "normal" || scenario === "command" || scenario === "network" || validPi) {
+    expect(calls).toContain("register_preparation_control");
+    expect(calls.indexOf("register_preparation_control")).toBeLessThan(calls.indexOf("host-fork"));
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({
@@ -480,9 +495,20 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "pi-fixed-without-target") {
+  if (scenario === "pi-fixed-without-target" || scenario === "preparation-registration-ack-loss") {
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.cancel).not.toHaveBeenCalled();
   } else expect(host.cancel).toHaveBeenCalled();
+  if (
+    [
+      "preparation-registration-ack-loss",
+      "preparation-failed",
+      "registration-revoked",
+      "bind-ack-loss",
+    ].includes(scenario)
+  ) {
+    expect(calls.filter((kind) => kind === "preparation_diagnostic")).toHaveLength(1);
+    expect(host.start).not.toHaveBeenCalled();
+  }
   await worker.shutdown();
 });

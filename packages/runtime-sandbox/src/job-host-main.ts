@@ -1,13 +1,23 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import {
+  SANDBOX_HOST_FAILURE_CODES,
+  sandboxHostFailureDetailSchema,
+} from "@himawari-agent/execution-contracts";
 import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
-import { type JobHostRequest, parseJobHostRequest } from "./job-host-protocol.ts";
+import {
+  JOB_HOST_SYSTEM_CODES,
+  type JobHostDiagnostic,
+  type JobHostRequest,
+  parseJobHostRequest,
+} from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { compileSandboxPolicy } from "./policy.ts";
@@ -18,6 +28,7 @@ import { observeTaskResources, readProcessSnapshot } from "./resource-observer.t
 
 // This entry is forked by the trusted Worker with a clean environment before any
 // SDK import. The task gets pipes only; it never inherits this IPC channel.
+const diagnosticStarted = performance.now();
 const bootId = randomUUID();
 const processStartedAt = new Date().toISOString();
 const processIdentityRef = `job-host-process:${randomUUID()}`;
@@ -41,6 +52,7 @@ let userTaskStarted = false;
 let linuxNamespace: LinuxNamespaceIdentity | null = null;
 let phase: "waiting" | "preparing" | "ready" | "running" | "stopping" | "finished" = "waiting";
 let reason = "exited";
+let failureStage: JobHostDiagnostic["stage"] = "request";
 let total = 0;
 let exited = false;
 let closed = false;
@@ -169,6 +181,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
   if (phase !== "waiting") throw new Error("JOB_HOST_ALREADY_PREPARED");
   phase = "preparing";
   request = parseJobHostRequest(value);
+  failureStage = "policy";
   const privateDirectory = await realpath(request.policy.privateDirectory);
   if (
     process.env["HOME"] !== privateDirectory ||
@@ -204,6 +217,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
         throw new Error("JOB_HOST_CONTROL_SCOPE_OVERLAP");
     }
     const policyInput = request.policy;
+    failureStage = "control";
     control = await openJobHostControl(
       binding,
       () => ({
@@ -242,7 +256,9 @@ async function prepare(value: unknown, controlValue?: unknown) {
       () => stop("cancelled"),
     );
   }
+  failureStage = "resource_snapshot";
   if (request.resourceLimits) await readProcessSnapshot();
+  failureStage = "dependencies";
   const dependencies = await SandboxManager.checkDependenciesAsync();
   if (
     !SandboxManager.isSupportedPlatform() ||
@@ -260,6 +276,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
   // mandatory routing implementation. Both proxy schemes disable all bypasses.
   sdkOperation = (async () => {
     const configuration = JSON.parse(policy.policyJson);
+    failureStage = "network";
     egress = await openNetworkEgress(
       configuration.network.allowedDomains,
       networkAuthority.assertCurrent,
@@ -269,6 +286,19 @@ async function prepare(value: unknown, controlValue?: unknown) {
       return;
     }
     configuration.network.parentProxy = egress.parentProxy;
+    failureStage = "sdk_initialize";
+    const javaAgentJarPath = fileURLToPath(
+      new URL(
+        "../vendor/java-proxy-agent/srt-proxy-agent.jar",
+        import.meta.resolve("@anthropic-ai/sandbox-runtime"),
+      ),
+    );
+    if (
+      (await realpath(javaAgentJarPath)) !== javaAgentJarPath ||
+      !(await stat(javaAgentJarPath)).isFile()
+    )
+      throw new Error("JOB_HOST_JAVA_AGENT_INVALID");
+    configuration.javaAgentJarPath = javaAgentJarPath;
     await SandboxManager.initialize(configuration, undefined, false);
   })();
   await sdkOperation;
@@ -276,6 +306,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
     await finish();
     return;
   }
+  failureStage = "launch";
   phase = "ready";
   send({
     type: "ready",
@@ -434,6 +465,8 @@ async function start() {
   }
 }
 process.on("message", (message: unknown) => {
+  const receivedAt = Date.now();
+  const expectedSequence = workerSequence + 1;
   void (async () => {
     if (!message || typeof message !== "object" || !("type" in message))
       throw new Error("JOB_HOST_MESSAGE_INVALID");
@@ -460,6 +493,7 @@ process.on("message", (message: unknown) => {
     if (message.type === "prepare") {
       if (sessionId !== undefined) throw new Error("JOB_HOST_SESSION_REPLACED");
       sessionId = message.sessionId;
+      send({ type: "heartbeat" });
       heartbeat = setInterval(() => {
         if (performance.now() - lastWorkerTick > 1500) stop("host_failure");
         else send({ type: "heartbeat" });
@@ -490,10 +524,55 @@ process.on("message", (message: unknown) => {
       /^E[A-Z0-9_]{1,40}$/.test(error.code)
         ? error.code
         : "UNKNOWN";
-    process.stderr.write(`JOB_HOST_SYSTEM_${systemCode}\n`);
-    process.stderr.write(
-      `${error instanceof Error && /^JOB_HOST_[A-Z_]+$/.test(error.message) ? error.message : "JOB_HOST_PREPARATION_FAILED"}\n`,
-    );
+    if (request) {
+      send({
+        type: "diagnostic",
+        stage: failureStage,
+        detail: (() => {
+          const incoming =
+            message && typeof message === "object" ? (message as Record<string, unknown>) : {};
+          const age =
+            typeof incoming["observedAt"] === "string"
+              ? receivedAt - Date.parse(incoming["observedAt"])
+              : NaN;
+          const bounded = (value: number) =>
+            Number.isFinite(value)
+              ? Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)))
+              : null;
+          return sandboxHostFailureDetailSchema.parse({
+            code:
+              error instanceof Error &&
+              SANDBOX_HOST_FAILURE_CODES.some((code) => code === error.message)
+                ? error.message
+                : "UNKNOWN",
+            command: ["prepare", "heartbeat", "start", "cancel", "authority_result"].includes(
+              incoming["type"] as string,
+            )
+              ? incoming["type"]
+              : "unknown",
+            phase,
+            elapsedMs: Math.max(0, bounded(performance.now() - diagnosticStarted) ?? 0),
+            messageAgeMs: bounded(age),
+            deadlineRemainingMs: bounded(
+              request ? Date.parse(request.deadlineAt) - Date.now() : NaN,
+            ),
+            expectedSequence,
+            receivedSequence:
+              Number.isSafeInteger(incoming["sequence"]) && (incoming["sequence"] as number) >= 0
+                ? incoming["sequence"]
+                : null,
+          });
+        })(),
+        systemCode: JOB_HOST_SYSTEM_CODES.some((code) => code === systemCode)
+          ? systemCode
+          : "UNKNOWN",
+      });
+    } else {
+      process.stderr.write(`JOB_HOST_SYSTEM_${systemCode}\n`);
+      process.stderr.write(
+        `${error instanceof Error && /^JOB_HOST_[A-Z_]+$/.test(error.message) ? error.message : "JOB_HOST_PREPARATION_FAILED"}\n`,
+      );
+    }
     reason = "host_failure";
     stop("host_failure");
   });

@@ -113,14 +113,17 @@ export function createProductionToolResultRecovery(options: {
       .readRunInventory({ runId: candidate.runId });
     const matches: PreparedToolResultRecovery[] = [];
     for (const admission of inventory.admissions) {
-      if (admission.phase !== "bound") continue;
-      const { record } = admission;
-      const { plan, facts } = record;
+      const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
+      const known =
+        admission.phase === "bound"
+          ? admission.record.releaseReceipt &&
+            admission.record.facts.resource.supervision === "released" &&
+            ["result", "error"].includes(admission.record.facts.result?.kind ?? "")
+          : admission.releaseReceipt?.verification.basis === "host_never_started" &&
+            !admission.workspaceBlocked;
       if (
+        !known ||
         plan.mode !== "foreground" ||
-        !record.releaseReceipt ||
-        facts.resource.supervision !== "released" ||
-        !["result", "error"].includes(facts.result?.kind ?? "") ||
         !plan.identity.invocationId.startsWith("runtime-tool:")
       )
         continue;
@@ -211,8 +214,14 @@ export function createProductionToolResultRecovery(options: {
           invocationId: plan.identity.invocationId,
           semanticFingerprint: plan.semanticFingerprint,
           checkpointRevision: saved.revision,
-          operationRevision: record.operationRevision,
-          resourceSequence: facts.resource.sequence,
+          ...(admission.phase === "reserved" && admission.releaseReceipt
+            ? { reservationReleaseDigest: admission.releaseReceipt.verification.evidence.digest }
+            : {}),
+          operationRevision: admission.phase === "bound" ? admission.record.operationRevision : 0,
+          resourceSequence:
+            admission.phase === "bound"
+              ? admission.record.facts.resource.sequence
+              : admission.reservation.sequence,
           completedStreamOrdinal: batch.completedStreamOrdinal,
           deadlineAt: frozen["deadlineAt"],
         },

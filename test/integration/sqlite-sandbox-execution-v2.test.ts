@@ -8,6 +8,7 @@ import {
   type RuntimeToolInvocation,
   recoverSandboxExecutionsAtStartup,
   type SandboxExecutionJournalPort,
+  type SandboxExecutionAdmissionRecord,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
@@ -3037,9 +3038,17 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "receipt-crash",
     "original-crash",
     "old-suspension",
+    "preparation-failed",
+    "preparation-unreleased",
+    "preparation-coding",
+    "preparation-new-boot",
+    "preparation-cancelled",
+    "preparation-expired",
+    "preparation-model-unknown",
   ] as const)(
     "resumes the production Run and Pi from a late SQLite result without dispatching its tool again: %s",
     async (scenario) => {
+      const variant = scenario.replace(/^preparation-/, "");
       let authority = SERVICE_AUTHORITY;
       let now = T1;
       let failAfterReceipt = false;
@@ -3063,7 +3072,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       const adapters = createReferenceAdapterSet({ clock });
       const runId = createRunId(f.plan.identity.runId);
       const toolCallId = "late-original-call";
-      const coding = scenario === "coding" || scenario === "coding-denied";
+      const preparation = scenario.startsWith("preparation-");
+      const coding =
+        scenario === "coding" || scenario === "coding-denied" || scenario === "preparation-coding";
       const parentKey = hash([runId, toolCallId]);
       const childToolCallId = coding ? `file-phase:${hash([parentKey, "read"])}` : toolCallId;
       const key = hash([runId, childToolCallId]);
@@ -3100,6 +3111,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
       const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
       let record: SandboxExecutionRecord | undefined;
+      let reservation: Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }> | undefined;
       let calls = 0;
       let fixtureFailure: unknown;
       const request = vi.fn(async () => {
@@ -3254,7 +3266,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                 arguments: { inputRef: f.plan.inputRef },
               }
             : invocation;
-          if (!record) {
+          if (!record && !reservation) {
             const admitted = admission(f);
             const original = {
               ...admitted,
@@ -3273,7 +3285,26 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               },
             };
             try {
-              record = start(f, bound);
+              if (preparation) {
+                const result = await repository
+                  .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
+                  .reserve({
+                    ...original,
+                    reservation: {
+                      schemaVersion: "sandbox-preparation.v1",
+                      identity: original.plan.identity,
+                      environmentId: original.plan.environmentId,
+                      resourceRef: null,
+                      mode: "foreground",
+                      workspaceConflictRefs: original.workspaces.map((item) => item.ref),
+                      sequence: 1,
+                      createdAt: T1,
+                    },
+                  });
+                if (result.admission.phase !== "reserved")
+                  throw new Error("Expected unbound fixture");
+                reservation = result.admission;
+              } else record = start(f, bound);
             } catch (error) {
               fixtureFailure = error;
               throw error;
@@ -3471,7 +3502,35 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "reconciling_external_result",
         );
         expect(calls).toBe(1);
-        if (!record) throw new Error(`Original job missing: ${String(fixtureFailure)}`);
+        if (!record && !reservation)
+          throw new Error(`Original job missing: ${String(fixtureFailure)}`);
+        if (reservation && variant !== "unreleased") {
+          const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+          await preparations.interruptReservation({
+            identity: reservation.plan.identity,
+            authority,
+            now: T1,
+            reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+          });
+          await preparations.releaseReservation({
+            identity: reservation.plan.identity,
+            authority,
+            now: T1,
+            verification: {
+              schemaVersion: "sandbox-reservation-release.v1",
+              basis: "host_never_started",
+              identity: reservation.plan.identity,
+              environmentId: reservation.plan.environmentId,
+              semanticFingerprint: reservation.plan.semanticFingerprint,
+              stopRequestedAt: T1,
+              checkedAt: T1,
+              validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+              processIdentityRef: "job-host-process:original",
+              controlSessionId: "11111111-1111-4111-8111-111111111111",
+              evidence: { ref: "authenticated-never-started", digest: "a".repeat(64) },
+            },
+          });
+        }
         const bytes = Buffer.from("来自原工具的已核验结果");
         const output = {
           ref: "late-output",
@@ -3487,36 +3546,38 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           plaintext: bytes,
           createdAt: T1,
         });
-        await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
-          payload,
-          handleRef,
-          authority,
-          now: T1,
-          invocationId,
-          plaintextByteLength: bytes.byteLength,
-        });
-        record = append(
-          f,
-          record,
-          sandboxExecutionFactsSchema.parse({
-            ...record.facts,
-            effect: { kind: "not_applicable" },
-            result: {
-              schemaVersion: "sandbox-execution.v2",
-              identity: record.plan.identity,
-              environmentId: record.plan.environmentId,
-              policyDigest: record.facts.environment.policyDigest,
-              contract: { ref: "fixed-read", version: "1" },
-              occurredAt: T1,
-              kind: "result",
-              output,
-              completion: { type: "value" },
-            },
-          }),
-          true,
-        );
-        record = append(f, record, resource(record, "stopping"));
-        record = append(f, record, resource(record, "released"));
+        if (record) {
+          await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+            payload,
+            handleRef,
+            authority,
+            now: T1,
+            invocationId,
+            plaintextByteLength: bytes.byteLength,
+          });
+          record = append(
+            f,
+            record,
+            sandboxExecutionFactsSchema.parse({
+              ...record.facts,
+              effect: { kind: "not_applicable" },
+              result: {
+                schemaVersion: "sandbox-execution.v2",
+                identity: record.plan.identity,
+                environmentId: record.plan.environmentId,
+                policyDigest: record.facts.environment.policyDigest,
+                contract: { ref: "fixed-read", version: "1" },
+                occurredAt: T1,
+                kind: "result",
+                output,
+                completion: { type: "value" },
+              },
+            }),
+            true,
+          );
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+        }
         f.database
           .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
           .run(T1, runId);
@@ -3551,24 +3612,24 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             )
             .run(runId);
         }
-        if (scenario === "new-boot")
+        if (variant === "new-boot")
           authority = {
             ...authority,
             agentServiceBootId: "new-agent-boot",
             workerBootId: "new-worker-boot",
           };
-        if (scenario === "cancelled")
+        if (variant === "cancelled")
           f.database
             .prepare("UPDATE runs SET status='cancelled',revision=revision+1 WHERE id=?")
             .run(runId);
-        if (scenario === "expired") now = new Date(Date.parse(T1) + 121000).toISOString();
+        if (variant === "expired") now = new Date(Date.parse(T1) + 121000).toISOString();
         if (scenario === "missing-continuation")
           f.database
             .prepare(
               "DELETE FROM run_payload_artifacts WHERE run_id=? AND operation_key LIKE 'runtime-continuation:%'",
             )
             .run(runId);
-        if (scenario === "model-unknown")
+        if (variant === "model-unknown")
           f.database
             .prepare(
               "UPDATE model_invocation_identities SET status='unknown',reason_code='provider_unresolved',observed_at=?,actual_cost_micros=NULL,settled_at=NULL WHERE run_id=?",
@@ -3586,7 +3647,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           const checkpoint = await repository
             .runCheckpointStore(OWNER_ID, AGENT_ID, authority.product)
             .read(runId);
-          if (!candidate || !checkpoint || !input.executionDeadlineAt)
+          if (!candidate || !checkpoint || !input.executionDeadlineAt || !record)
             throw new Error("Recovery proof missing");
           await port.claim({
             runId,
@@ -3639,7 +3700,11 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(request).not.toHaveBeenCalled();
           return;
         }
-        if (["cancelled", "expired", "missing-continuation", "model-unknown"].includes(scenario)) {
+        if (
+          ["cancelled", "expired", "missing-continuation", "model-unknown", "unreleased"].includes(
+            variant,
+          )
+        ) {
           expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
           expect(model.observed).toHaveLength(1);
           expect(calls).toBe(1);
@@ -3647,7 +3712,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           expect(
             (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
               ?.run.status,
-          ).toBe(scenario === "cancelled" ? "cancelled" : "reconciling_external_result");
+          ).toBe(variant === "cancelled" ? "cancelled" : "reconciling_external_result");
           return;
         }
         expect(
@@ -3661,7 +3726,29 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(calls).toBe(1);
         expect(request).not.toHaveBeenCalled();
         expect(model.observed).toHaveLength(2);
-        expect(JSON.stringify(model.observed.at(-1))).toContain("来自原工具的已核验结果");
+        expect(JSON.stringify(model.observed.at(-1))).toContain(
+          preparation ? "SANDBOX_TOOL_NOT_STARTED" : "来自原工具的已核验结果",
+        );
+        if (reservation) {
+          expect(JSON.stringify(model.observed.at(-1))).toContain("工具未启动");
+          const original = await repository
+            .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
+            .readAdmission(reservation.plan.identity);
+          expect(original).toMatchObject({
+            phase: "reserved",
+            releaseReceipt: { verification: { basis: "host_never_started" } },
+          });
+          expect(
+            f.database
+              .prepare("SELECT started_at FROM sandbox_execution_records WHERE job_id=?")
+              .get(reservation.plan.identity.jobId),
+          ).toEqual({ started_at: null });
+          expect(
+            f.database
+              .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=?")
+              .get(reservation.plan.identity.jobId),
+          ).toEqual({ count: 0 });
+        }
         if (scenario === "batch") {
           expect(probes).toEqual(["probe-before", "probe-after"]);
           const sent = model.observed.at(-1) as {

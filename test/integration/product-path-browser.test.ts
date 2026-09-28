@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
@@ -101,7 +101,7 @@ function toolAnswers() {
   return page.getByText(/工具返回：/);
 }
 
-async function sendToolRequest(text: string) {
+async function beginToolRequest(text: string) {
   const before = await toolAnswers().count();
   await send(text);
   const allow = page.getByRole("button", { name: "允许这一次" });
@@ -111,6 +111,11 @@ async function sendToolRequest(text: string) {
     })
     .toBe(true);
   if ((await allow.count()) > 0) await allow.first().click();
+  return before;
+}
+
+async function sendToolRequest(text: string) {
+  const before = await beginToolRequest(text);
   await uiExpect(toolAnswers()).toHaveCount(before + 1, { timeout: 300_000 });
   return toolAnswers().nth(before);
 }
@@ -360,6 +365,133 @@ productDescribe(
       });
     }, 1_800_000);
 
+    it("delivers a verified preparation failure and exposes its private diagnostic through the CLI", async () => {
+      await scenario("12-preparation-failure", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const file = path.join(installation.workspace, "hello.txt");
+        await writeFile(file, "原文件必须保持不变");
+        await installation.armPreparationFailure();
+        const text = "准备失败验证：请写入 hello.txt";
+        await uiExpect(await sendToolRequest(text)).toContainText("工具未启动");
+        await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+          timeout: 300_000,
+        });
+        expect(await readFile(file, "utf8")).toBe("原文件必须保持不变");
+        const rows = executionReadback().filter((record) => !before.has(record.jobId));
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ runStatus: "completed", intents: 0 });
+        const row = rows[0];
+        if (!row) throw new Error("Preparation job missing");
+        const database = openQualifiedDatabase(installation.databasePath);
+        let proof: unknown;
+        try {
+          proof = database
+            .prepare(`SELECT r.preparation_state AS phase,r.started_at AS startedAt,
+          json_extract(receipt.verification_json,'$.basis') AS basis FROM sandbox_execution_records r
+          JOIN sandbox_reservation_release_receipts receipt ON receipt.job_id=r.job_id WHERE r.job_id=?`)
+            .get(row.jobId);
+        } finally {
+          database.close();
+        }
+        expect(proof).toEqual({ phase: "reserved", startedAt: null, basis: "host_never_started" });
+        const diagnostic = installation.diagnose(row.runId) as {
+          diagnostics: Array<{ content: unknown }>;
+        };
+        expect(diagnostic.diagnostics).toContainEqual(
+          expect.objectContaining({
+            content: expect.objectContaining({
+              stage: "prepare",
+              hostStage: "sdk_initialize",
+              systemCode: "EIO",
+              reasonCode: "SANDBOX_PREPARATION_FAILED",
+            }),
+          }),
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain("private fixture preparation input");
+        expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+        await writeFile(
+          path.join(outputDirectory, "12-preparation-failure-readback.json"),
+          JSON.stringify(
+            { rows, proof, diagnostic, modelReplies: observedToolReplies(text) },
+            null,
+            2,
+          ),
+        );
+      });
+    });
+
+    it("measures thirty approved writes without stranding or replaying a tool", async () => {
+      await scenario("11-thirty-writes", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const timings: Array<{
+          jobId: string;
+          requestedAt: string;
+          acknowledgedAt: string;
+          durationMs: number;
+        }> = [];
+        for (let index = 1; index <= 30; index++) {
+          const text = `第 ${index} 次写入 hello.txt`;
+          await sendToolRequest(text);
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+            timeout: 300_000,
+          });
+          expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+            "你好，Himawari",
+          );
+          const rows = executionReadback().filter((record) => !before.has(record.jobId));
+          const database = openQualifiedDatabase(installation.databasePath);
+          try {
+            for (const row of rows) {
+              if (timings.some((item) => item.jobId === row.jobId)) continue;
+              const timing = database
+                .prepare(`SELECT json_extract(r.plan_json,'$.requestedAt') AS requestedAt,
+                i.acknowledged_at AS acknowledgedAt FROM sandbox_execution_records r
+                JOIN sandbox_execution_intents i ON i.job_id=r.job_id AND i.kind='tool_result' WHERE r.job_id=?`)
+                .get(row.jobId) as { requestedAt: string; acknowledgedAt: string };
+              expect(timing.acknowledgedAt).toBeTypeOf("string");
+              const durationMs = Date.parse(timing.acknowledgedAt) - Date.parse(timing.requestedAt);
+              expect(durationMs).toBeGreaterThanOrEqual(0);
+              timings.push({ jobId: row.jobId, ...timing, durationMs });
+            }
+          } finally {
+            database.close();
+          }
+          const sorted = timings.map((item) => item.durationMs).sort((a, b) => a - b);
+          const lower = sorted[Math.floor((sorted.length - 1) / 2)];
+          const upper = sorted[Math.floor(sorted.length / 2)];
+          if (lower === undefined || upper === undefined) throw new Error("Tool timing missing");
+          await writeFile(
+            path.join(outputDirectory, "11-thirty-writes-readback.json"),
+            JSON.stringify(
+              {
+                completed: index,
+                rows,
+                timings,
+                modelReplies: observedToolReplies(text),
+                medianMs: (lower + upper) / 2,
+                maximumMs: sorted.at(-1),
+              },
+              null,
+              2,
+            ),
+          );
+          expect(rows).toHaveLength(index);
+          for (const row of rows)
+            expect(row).toMatchObject({
+              result: "result",
+              supervision: "released",
+              runStatus: "completed",
+              released: 1,
+              intents: 1,
+            });
+          expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          await uiExpect(page.getByText(/结果未确认|结果仍未确认/)).toHaveCount(0);
+        }
+      });
+    }, 1_800_000);
+
     it.each(["read", "write"] as const)(
       "recovers the original tool result after a process crash during durable delivery: %s",
       async (tool) => {
@@ -453,3 +585,279 @@ productDescribe(
     });
   },
 );
+
+const profileDescribe =
+  enabled && process.env["HIMAWARI_BASELINE_ARTIFACT"] ? describe : describe.skip;
+profileDescribe("alternating installed tool profiling", () => {
+  it("compares thirty successful writes per version with the same timing probes", async () => {
+    const sampleCount = Number(process.env["HIMAWARI_PROFILE_SAMPLE_COUNT"] ?? 30);
+    expect(Number.isInteger(sampleCount) && sampleCount >= 1 && sampleCount <= 30).toBe(true);
+    type Session = {
+      side: "before" | "after";
+      directory: string;
+      installation: ProductPathInstallation;
+      browser: Browser;
+      context: BrowserContext;
+      page: Page;
+    };
+    const sessions: Session[] = [];
+    const created: ProductPathInstallation[] = [];
+    const closed = new Set<ProductPathInstallation>();
+    const samples: Array<{
+      side: string;
+      directory: string;
+      index: number;
+      row: ReturnType<typeof executionReadback>[number];
+      requestedAt: string;
+      acknowledgedAt: string;
+      durationMs: number;
+    }> = [];
+    const failures: Array<{
+      directory: string;
+      index: number;
+      row: ReturnType<typeof executionReadback>[number];
+      reason:
+        | "baseline_synchronous_npm_discovery"
+        | "baseline_initial_heartbeat_gap"
+        | "baseline_prepare_envelope_expired";
+      npmDurationMs: number | null;
+    }> = [];
+    const close = async (current: Session) => {
+      if (closed.has(current.installation)) return;
+      await current.page
+        .screenshot({
+          path: path.join(outputDirectory, `${current.directory}-final.png`),
+          fullPage: true,
+        })
+        .catch(() => undefined);
+      await current.context.tracing
+        .stop({ path: path.join(outputDirectory, `${current.directory}-trace.zip`) })
+        .catch(() => undefined);
+      await current.browser.close();
+      await current.installation.close();
+      closed.add(current.installation);
+    };
+    const create = async (side: "before" | "after") => {
+      const capacity = await statfs(repositoryRoot);
+      if (capacity.bavail * capacity.bsize < 1_500_000_000)
+        throw new Error("PRODUCT_PROFILE_DISK_CAPACITY");
+      const ordinal = sessions.filter((current) => current.side === side).length + 1;
+      const directory = ordinal === 1 ? side : `${side}-${ordinal}`;
+      const artifact =
+        process.env[side === "before" ? "HIMAWARI_BASELINE_ARTIFACT" : "HIMAWARI_TEST_ARTIFACT"];
+      const buildContext =
+        process.env[side === "before" ? "HIMAWARI_BASELINE_CONTEXT" : "HIMAWARI_TEST_CONTEXT"];
+      if (!artifact || !buildContext) throw new Error("PRODUCT_PROFILE_ARTIFACT_REQUIRED");
+      const sourceRoot = side === "before" ? process.env["HIMAWARI_BASELINE_SOURCE"] : undefined;
+      installation = await installProductPath({
+        artifact,
+        context: buildContext,
+        timing: true,
+        ...(sourceRoot ? { sourceRoot } : {}),
+        logDirectory: path.join(outputDirectory, directory, "service-logs"),
+      });
+      created.push(installation);
+      installation.setModelScript(script);
+      await installation.start();
+      browser = await chromium.launch({
+        channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+        args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
+      });
+      context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+      await context.tracing.start({ screenshots: true, snapshots: true });
+      page = await context.newPage();
+      const current: Session = { side, directory, installation, browser, context, page };
+      sessions.push(current);
+      await page.goto(`${installation.origin}/`);
+      await page.getByRole("button", { name: "登录 Himawari" }).click();
+      await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+      await newThread();
+      return current;
+    };
+    try {
+      const active = { before: await create("before"), after: await create("after") };
+      for (let index = 1; index <= sampleCount; index++) {
+        const order: Array<"before" | "after"> =
+          index % 2 ? ["before", "after"] : ["after", "before"];
+        for (const side of order) {
+          for (;;) {
+            const current = active[side];
+            ({ installation, browser, context, page } = current);
+            const before = new Set(executionReadback().map((row) => row.jobId));
+            const text = `交替样本 ${index} 写入 hello.txt`;
+            const beforeAnswers = await beginToolRequest(text);
+            let baselineFailure: (typeof failures)[number] | undefined;
+            await uiExpect
+              .poll(
+                async () => {
+                  if ((await toolAnswers().count()) > beforeAnswers) return true;
+                  const rows = executionReadback().filter((row) => !before.has(row.jobId));
+                  const row = rows[0];
+                  if (rows.length !== 1 || !row || row.result !== null || row.intents !== 0)
+                    return false;
+                  const events = (
+                    await readFile(
+                      path.join(
+                        outputDirectory,
+                        current.directory,
+                        "service-logs/tool-timing.jsonl",
+                      ),
+                      "utf8",
+                    )
+                  )
+                    .trim()
+                    .split("\n")
+                    .map((line) => JSON.parse(line) as Record<string, unknown>)
+                    .filter((event) => event["jobId"] === row.jobId);
+                  if (side !== "before") return false;
+                  const npm = events.find(
+                    (event) => event["stage"] === "host.npm_global_discovery",
+                  );
+                  const cancel = events.find(
+                    (event) => event["kind"] === "ipc_send" && event["type"] === "cancel",
+                  );
+                  const firstReply = events.find((event) => event["kind"] === "ipc_receive");
+                  const initialGap =
+                    !!npm &&
+                    !!cancel &&
+                    !!firstReply &&
+                    Number(firstReply["at"]) > Number(cancel["at"]) &&
+                    Number(firstReply["at"]) - Number(firstReply["startedAt"]) > 1500;
+                  const blockedDiscovery =
+                    !!npm &&
+                    Number(npm["durationMs"]) > 1500 &&
+                    events.some(
+                      (event) =>
+                        event["kind"] === "host_machine_code" &&
+                        event["code"] === "JOB_HOST_WORKER_LEASE_INVALID",
+                    );
+                  const expiredPrepare =
+                    !events.some((event) => event["stage"] === "host.prepare") &&
+                    events.some(
+                      (event) =>
+                        event["kind"] === "host_ipc_receive" &&
+                        event["type"] === "prepare" &&
+                        Number(event["ageMs"]) > 1500,
+                    ) &&
+                    events.some(
+                      (event) =>
+                        event["kind"] === "host_machine_code" &&
+                        event["code"] === "JOB_HOST_WORKER_LEASE_INVALID",
+                    );
+                  if (
+                    (!initialGap && !blockedDiscovery && !expiredPrepare) ||
+                    !events.some((event) => event["kind"] === "host_close") ||
+                    events.some(
+                      (event) => event["kind"] === "ipc_receive" && event["type"] === "started",
+                    )
+                  )
+                    return false;
+                  const db = openQualifiedDatabase(installation.databasePath);
+                  try {
+                    expect(
+                      db
+                        .prepare(
+                          "SELECT preparation_state AS phase, started_at AS started FROM sandbox_execution_records WHERE job_id=?",
+                        )
+                        .get(row.jobId),
+                    ).toEqual({ phase: "reserved", started: null });
+                  } finally {
+                    db.close();
+                  }
+                  baselineFailure = {
+                    directory: current.directory,
+                    index,
+                    row,
+                    reason: blockedDiscovery
+                      ? "baseline_synchronous_npm_discovery"
+                      : expiredPrepare
+                        ? "baseline_prepare_envelope_expired"
+                        : "baseline_initial_heartbeat_gap",
+                    npmDurationMs: npm ? Number(npm["durationMs"]) : null,
+                  };
+                  return true;
+                },
+                { timeout: 300_000 },
+              )
+              .toBe(true);
+            if (baselineFailure) {
+              failures.push(baselineFailure);
+              await writeFile(
+                path.join(outputDirectory, "baseline-failures.json"),
+                JSON.stringify(failures, null, 2),
+              );
+              await close(current);
+              await close(active.after);
+              expect(failures.length).toBeLessThan(10);
+              active.before = await create("before");
+              active.after = await create("after");
+              continue;
+            }
+            const answer = toolAnswers().nth(beforeAnswers);
+            await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+              timeout: 300_000,
+            });
+            const rows = executionReadback().filter((row) => !before.has(row.jobId));
+            const row = rows[0];
+            await writeFile(
+              path.join(outputDirectory, `${side}-${index}-readback.json`),
+              JSON.stringify(
+                {
+                  side,
+                  index,
+                  directory: current.directory,
+                  rows,
+                  answer: await answer.innerText(),
+                  diagnostics: row ? installation.diagnose(row.runId) : null,
+                },
+                null,
+                2,
+              ),
+            );
+            expect(rows).toHaveLength(1);
+            expect(row).toMatchObject({
+              result: "result",
+              supervision: "released",
+              runStatus: "completed",
+              released: 1,
+              intents: 1,
+            });
+            if (!row) throw new Error("PRODUCT_PROFILE_RESULT_MISSING");
+            expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+              "你好，Himawari",
+            );
+            expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+            const db = openQualifiedDatabase(installation.databasePath);
+            try {
+              const times = db
+                .prepare(`SELECT json_extract(r.plan_json,'$.requestedAt') AS requestedAt,
+                i.acknowledged_at AS acknowledgedAt FROM sandbox_execution_records r JOIN sandbox_execution_intents i ON i.job_id=r.job_id AND i.kind='tool_result' WHERE r.job_id=?`)
+                .get(row.jobId) as { requestedAt: string; acknowledgedAt: string };
+              expect(times?.acknowledgedAt).toBeTypeOf("string");
+              samples.push({
+                side,
+                directory: current.directory,
+                index,
+                row,
+                ...times,
+                durationMs: Date.parse(times.acknowledgedAt) - Date.parse(times.requestedAt),
+              });
+            } finally {
+              db.close();
+            }
+            await writeFile(
+              path.join(outputDirectory, "samples.json"),
+              JSON.stringify(samples, null, 2),
+            );
+            break;
+          }
+        }
+      }
+      expect(samples.filter((sample) => sample.side === "before")).toHaveLength(sampleCount);
+      expect(samples.filter((sample) => sample.side === "after")).toHaveLength(sampleCount);
+    } finally {
+      for (const current of sessions) await close(current);
+      for (const current of created) if (!closed.has(current)) await current.close();
+    }
+  }, 1_800_000);
+});

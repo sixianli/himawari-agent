@@ -9,6 +9,7 @@ const boundary = vi.hoisted(() => ({
   process: {},
   spawn: vi.fn(),
   realpath: vi.fn(),
+  stat: vi.fn(),
   compile: vi.fn(),
   control: vi.fn(),
   namespace: vi.fn(),
@@ -28,7 +29,7 @@ const boundary = vi.hoisted(() => ({
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
 vi.mock("node:child_process", () => ({ spawn: boundary.spawn }));
-vi.mock("node:fs/promises", () => ({ realpath: boundary.realpath }));
+vi.mock("node:fs/promises", () => ({ realpath: boundary.realpath, stat: boundary.stat }));
 vi.mock("@anthropic-ai/sandbox-runtime", () => ({ SandboxManager: boundary.manager }));
 vi.mock("../src/policy.ts", () => ({ compileSandboxPolicy: boundary.compile }));
 vi.mock("../src/job-host-control.ts", () => ({ openJobHostControl: boundary.control }));
@@ -175,6 +176,7 @@ beforeEach(() => {
   resource = { stop: vi.fn(), current: vi.fn(() => ({ cpuTimeMs: 12, memoryBytes: 1024 })) };
   boundary.spawn.mockReturnValue(task);
   boundary.realpath.mockImplementation(async (value) => value);
+  boundary.stat.mockResolvedValue({ isFile: () => true });
   boundary.compile.mockResolvedValue({
     policyDigest: DIGEST,
     policyJson: JSON.stringify({ network: { allowedDomains: [] } }),
@@ -258,11 +260,12 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       stdinBase64: Buffer.from("private input").toString("base64"),
       resourceLimits: { maxCpuTimeMs: 1000, maxMemoryBytes: 10000 },
     });
-    expect(sent[0]).toMatchObject({
+    expect(sent[0]).toMatchObject({ type: "heartbeat", sessionId: SESSION, sequence: 1 });
+    expect(sent[1]).toMatchObject({
       type: "ready",
       sessionId: SESSION,
       jobId: "job-entry",
-      sequence: 1,
+      sequence: 2,
     });
     expect(boundary.spawn).not.toHaveBeenCalled();
     expect(boundary.manager.initialize.mock.calls[0]?.[0].network.parentProxy).toBe(
@@ -637,9 +640,66 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     );
     await prepare();
     const stderr = processBoundary.stderr.write.mock.calls.flat().join("");
-    expect(stderr).toContain("JOB_HOST_SYSTEM_EACCES");
-    expect(stderr).toContain("JOB_HOST_PREPARATION_FAILED");
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "diagnostic",
+        stage: "sdk_initialize",
+        systemCode: "EACCES",
+      }),
+    );
+    expect(stderr).toBe("");
     expect(stderr).not.toContain("private credential");
+  });
+  it("acknowledges liveness before preparation can occupy the event loop", async () => {
+    let messagesAtInitialization: Record<string, unknown>[] = [];
+    boundary.manager.initialize.mockImplementation(async () => {
+      messagesAtInitialization = [...sent];
+    });
+    await prepare();
+    expect(messagesAtInitialization).toContainEqual(
+      expect.objectContaining({ type: "heartbeat", sessionId: SESSION }),
+    );
+    expect(boundary.spawn).not.toHaveBeenCalled();
+  });
+  it("identifies a stale Worker message after ready without exposing its payload", async () => {
+    await prepare();
+    await receive("heartbeat", { observedAt: new Date(Date.now() - 1501).toISOString() });
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "diagnostic",
+        detail: expect.objectContaining({
+          code: "JOB_HOST_WORKER_LEASE_INVALID",
+          command: "heartbeat",
+          phase: "ready",
+          messageAgeMs: 1501,
+          deadlineRemainingMs: 10000,
+          expectedSequence: 2,
+          receivedSequence: 2,
+        }),
+      }),
+    );
+    expect(boundary.spawn).not.toHaveBeenCalled();
+    expect(processBoundary.stderr.write).not.toHaveBeenCalled();
+  });
+  it("keeps SDK errors opaque while retaining bounded diagnostic timing", async () => {
+    boundary.manager.initialize.mockRejectedValue(
+      Object.assign(new Error("JOB_HOST_private_input"), {
+        code: "EIO",
+        syscall: "/private/input",
+      }),
+    );
+    await prepare();
+    const diagnostic = sent.find((item) => item["type"] === "diagnostic");
+    expect(diagnostic).toMatchObject({
+      detail: {
+        code: "UNKNOWN",
+        command: "prepare",
+        phase: "preparing",
+        elapsedMs: expect.any(Number),
+      },
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("private_input");
+    expect(JSON.stringify(diagnostic)).not.toContain("/private/input");
   });
   it("rejects execution without its IPC parent", async () => {
     Reflect.deleteProperty(boundary.process, "send");

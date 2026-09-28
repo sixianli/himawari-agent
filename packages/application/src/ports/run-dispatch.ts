@@ -67,6 +67,7 @@ export interface RunExecutionLeaseReceipt extends RunExecutionLease {
 }
 
 export interface RunToolResultRecoveryClaim {
+  readonly reservationReleaseDigest?: string;
   readonly jobId: string;
   readonly invocationId: string;
   readonly semanticFingerprint: string;

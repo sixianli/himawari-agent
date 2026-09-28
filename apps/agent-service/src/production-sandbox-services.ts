@@ -2194,6 +2194,8 @@ export async function createProductionSandboxServices(options: {
         record.plan.mode === "foreground"
           ? readForegroundOutput(record, query)
           : stream.output(record, query),
+      recordPreparationDiagnostic: control.recordPreparationDiagnostic,
+      registerPreparationControl: control.registerPreparation,
       registerControl: control.register,
       observeVerifiedControl: (record: Parameters<typeof refreshObservation>[0]) =>
         refreshObservation(record),

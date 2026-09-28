@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -27,6 +27,8 @@ import {
   piRunnerInputSchema,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
+  type SandboxPreparationDiagnostic,
+  sandboxPreparationDiagnosticSchema,
   type SandboxTaskEnvironmentBinding,
   type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
@@ -232,6 +234,7 @@ export class ProductionSandboxExecutionV2 {
       throw new Error("SANDBOX_EXECUTION_BINDING_CHANGED");
   }
   private async run(entry: Entry): Promise<SandboxWorkerResult> {
+    let stage: SandboxPreparationDiagnostic["stage"] | undefined;
     try {
       const initial = (await this.rpc(entry, { kind: "read" })).record;
       this.assertRequest(entry, initial.plan);
@@ -241,6 +244,7 @@ export class ProductionSandboxExecutionV2 {
       const plan = initial.plan;
       if (this.options.containers && plan.backendRef === this.options.containers.backendRef)
         return await this.runInEnvironment(entry, initial, this.options.containers);
+      stage = "prepare";
       const piRunner = plan.operationContract.ref === PI_RUNNER_CONTRACT.ref;
       if (piRunner) {
         const tool = piCodingToolNameSchema.parse(plan.operation);
@@ -378,6 +382,22 @@ export class ProductionSandboxExecutionV2 {
             ),
           )
         : input;
+      const controlBinding = {
+        directory: controlDirectory,
+        token: randomBytes(32).toString("hex"),
+        sessionId: randomUUID(),
+        jobId: plan.identity.jobId,
+        attemptId: plan.identity.attemptId,
+      };
+      stage = "register_preparation_control";
+      await this.rpc(entry, {
+        kind: "register_preparation_control",
+        expectedSequence: 1,
+        control: controlBinding,
+        policyDigest: compiled.policyDigest,
+      });
+      if (entry.cancelled || this.closed) return this.unknown(entry);
+      stage = "prepare";
       const host = prepareSandboxJobHost(
         {
           jobId: plan.identity.jobId,
@@ -413,11 +433,13 @@ export class ProductionSandboxExecutionV2 {
           )
             throw new Error("SANDBOX_SCOPE_CHANGED");
         },
+        controlBinding,
       );
       entry.host = host;
       await host.ready;
       const identity = host.inspect();
       if (!identity || !host.controlBinding) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      stage = "register_control";
       await this.rpc(entry, {
         kind: "register_control",
         expectedSequence: 1,
@@ -475,12 +497,14 @@ export class ProductionSandboxExecutionV2 {
         host.cancel();
         return this.unknown(entry);
       }
+      stage = "bind";
       const started = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
       if (!started.applied || entry.cancelled || this.closed) {
         host.cancel();
         return this.unknown(entry);
       }
       // Agent revalidates scope and installed bytes in the bind CAS. Host start is single-use.
+      stage = "execute";
       const launchBinding = await this.hostBinding(plan);
       if (
         readiness &&
@@ -736,8 +760,39 @@ export class ProductionSandboxExecutionV2 {
       await this.recordCompletion(entry, latest, operation, result.taskProcessExited);
       await this.reduceRisk(entry, "reconcile");
       return this.unknown(entry);
-    } catch {
+    } catch (error) {
       entry.host?.cancel();
+      if (!stage) return this.unknown(entry);
+      const result = await entry.host?.result;
+      const systemCode =
+        result?.diagnostic?.systemCode ??
+        (error && typeof error === "object" && "code" in error ? error.code : "UNKNOWN");
+      const diagnostic = {
+        stage,
+        reasonCode:
+          stage === "bind"
+            ? "SANDBOX_BIND_FAILED"
+            : stage === "register_control" || stage === "register_preparation_control"
+              ? "SANDBOX_CONTROL_REGISTRATION_FAILED"
+              : stage === "execute"
+                ? "SANDBOX_EXECUTION_FAILED"
+                : "SANDBOX_PREPARATION_FAILED",
+        hostStage: result?.diagnostic?.stage ?? null,
+        hostDetail: result?.diagnostic?.detail ?? null,
+        systemCode,
+      };
+      try {
+        let parsed: SandboxPreparationDiagnostic;
+        try {
+          parsed = sandboxPreparationDiagnosticSchema.parse(diagnostic);
+        } catch {
+          parsed = sandboxPreparationDiagnosticSchema.parse({
+            ...diagnostic,
+            systemCode: "UNKNOWN",
+          });
+        }
+        await this.rpc(entry, { kind: "preparation_diagnostic", diagnostic: parsed });
+      } catch {}
       return this.unknown(entry);
     } finally {
       // Even failed/uncertain bind replies retain the original host until bounded stop settles.

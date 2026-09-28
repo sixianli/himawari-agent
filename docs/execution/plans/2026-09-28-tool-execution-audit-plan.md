@@ -19,7 +19,7 @@ date: "2026-09-28"
 
 ## 目标与边界
 
-按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。
+按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。TE-01 至 TE-06 的本轮局部修复已完成；按第五份回复，本轮在 TE-06 验收及本地提交后停止，剩余场景由 Claude 新会话派发。当前结果见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。
 
 来源：[隔离工具执行设计](../specs/2026-09-24-isolated-tool-execution-design.md) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]、[既有实施计划](2026-09-24-isolated-tool-execution-plan.md) [SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]、[ADR 0033](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision) [SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]。
 
@@ -115,7 +115,7 @@ date: "2026-09-28"
 | TE-02 | confirmed，组件修复完成：清理 pending 原先被恢复服务当成终点，stop 又将其降为普通 lost；改为明确非终态观察，在原恢复期限内继续检查 | `settles an acknowledged stop whose host finishes cleanup inside the recovery deadline`；证据根下 `cleanup-pending-before.log`。扩展后的 12 条测试覆盖释放、超时、取消、身份错误、过期观察与真正 lost；修改前 2 失败、10 通过，修改后全部通过。真实认证 socket 和 SQLite 等相关回归 349 条通过（`te02-regression.log`）。提交 `eedfb42`；全部产品用户路径尚未验收，见[已批准提案](../specs/2026-09-28-sandbox-cleanup-observation-design.md) |
 | TE-03 | confirmed，局部修复完成：前台先进入 verifyFresh，后台完成核查/释放，旧序号导致 Observation replay changed，前台丢失交付机会 | `refreshes a foreground handoff overtaken during verification`：修改前 4 失败、2 通过，修改后 6 通过。`te03-before.log`、`te03-focused-after.log`；仅在派发前、版本确有改变时重新读取和核验，原 35 秒上限不变；相关回归、check、完整 npm test 通过，提交 `20377db` |
 | TE-04 | confirmed，局部修复已验证：Run 遇到 `runtime.result_unknown` 后保存 `RUNTIME_TOOL_RESULT_UNKNOWN` 且 output=null。自动恢复仅接受已有最终回答；资源释放不会自动消费工具结果 | 已核对 RunCoordinator、SQLite discovery、Pi 的 capture/restore 工具批次入口。既有测试明确拒绝重启时自动重放未知调用。Claude 已批准[恢复合同](../specs/2026-09-28-sandbox-tool-result-resumption-design.md)。已实现只交付入口；真实 SQLite 与生产调度/Pi 联合回归覆盖迟到结果、原进程中断、交付中断、批次恢复及拒绝边界，完整 npm test 4574 条通过，Mac 读取及写入交付中断恢复分别通过；完整任务验收仍待完成 |
-| TE-06 | uncertain 根因：产品写入获批后预留未绑定，Run 留在结果未知；单独重跑同一产物通过 | `product-path-te03-te05-run2/` 的数据库备份、interruption.json 与失败页面；`product-write-isolated/` 保留通过对照。尚未修复，不以重跑通过隐藏第一次失败 |
+| TE-06 | partially confirmed：原现场首次准备失败的触发原因仍 uncertain；准备失败后丢失控制关联的恢复缺口 confirmed | 原现场 reserved、未 bind，控制关联缺失。真实 Job Host 受控 SDK 初始化失败探针复现：任务未启动、已签名结束文件可由原密钥核验，但 Agent 未持久保存控制关联，登记 ENOENT，恢复 SANDBOX_CONTROL_BINDING_UNAVAILABLE。已按第四、五份回复完成重点、真实安装、完整 npm test/check 与两版各30成功样本的性能验收；历史首次触发原因仍 uncertain，见[已批准的数据与顺序提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md) |
 | TE-05 | confirmed（本机可控延迟），Hermes 当次因果仍 uncertain：finish 在异步清理前停止心跳，2 秒正常 reset/control.finish 等待期间心跳为 0，会触发 Worker 的 1.5 秒失联判断 | `te05-before.log` 两条失败；修复后心跳保持到清理结束，退出期限仍有效。`te05-after.log` 及 `te03-te05-regression.log`。使用真实 Job Host 入口、受控 OS/IPC/SRT 边界；不是磁盘满载实测，不推断 Hermes 历史失败根因；相关回归、check、完整 npm test 通过，提交 `266715d` |
 
 交接中的五个历史缺陷只作为线索；本轮不能把历史通过日志记成本轮验证。关于“后台核查导致所有故障”的说法目前仅 partially confirmed，仍需检查退出、停止及投递各自的窗口。
@@ -182,3 +182,43 @@ Claude 第三份回复已于 18:05 批准 [TE-04 持久恢复提案](../specs/20
 TE-04 的 Mac 崩溃验证发现历史审批快照会覆盖已核验结果的恢复引用；`product-te04-crash-2/` 保留首个有效现场失败，`te04-approval-snapshot-before-scoped.log` 两条同因失败、`te04-approval-snapshot-after.log` 两条通过。Coordinator 只在专用结果恢复入口采用已核对的原调用快照。先前第一轮产品测试因未等旧租约过期而启动失败，属于测试前提错误，不作为产品缺陷；没有放宽租约、费用或期限保护。
 
 独立读回 `te04-product-independent-readback.json` 确认两次崩溃恢复各只有一个 completed Run、一个 bound/released/result 作业、一个已派发并确认的 tool_result intent，agent-stream 序号 1、2 各一条 settled，数据库 quick_check=ok。写入场景还核对重启前后实际文件内容。`te04-product-process-cleanup.json` 确认四个本任务隔离安装没有残留 Agent/Worker/Job Host 进程。命令、源码摘要、产物 SHA256、红绿证据及限制统一保存在证据根的 `te04-verification.md`。本次提交交付已验证的 TE-04 修复，不代表全部计划验收完成。
+
+### TE-06 批准与实施验证
+
+以下保留第四份回复时的历史停点；最终本轮结论见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。
+
+TE-04 已在本地提交 `58e6c48`，完整任务仍开放。按 Claude 第三份回复要求继续检查 TE-06 原失败记录，确认 Worker 在 `host.ready` 之后才登记控制关联；准备失败跳过登记，Agent 无法认证遗留结束文件。原现场的准备错误、Worker catch 原因与宿主基础设施 stderr 未保存，尚不能确定首次触发原因或归因于某个并发写者。四次 prepare 探针与单独写入通过仅作对照。
+
+`te06-preparation-failure-probe.mjs` 使用实际 Job Host、签名最终文件及生产控制器，控制 SDK initialize 和 admission/Artifact 存储边界；断言失败复现关联缺失，日志与 JSON 在证据根。它不等于完整 Worker 产品 E2E；原历史 final 文件缺少已保存控制密钥，也不能补称已认证证明。
+
+现有持久数据不能还原原验证密钥，需要增加受保护的准备控制记录并提前至 fork 前登记。已编写[具体 TE-06 提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#建议的数据与执行顺序)，包含确定未启动的失败交付和有界诊断。Claude 已通过 `claude-reply-4.md` 批准四项改动，并要求保留首次私有诊断、测量修改前后 30 次工具调用的中位数和最大值；中位数增加超过 100 毫秒必须暂停。
+
+受控探针已先转为持久 Vitest 回归，保留真实失败再实施。重点回归验证原凭据、取消、期限、模型费用未知及缺失证明均不能越过原边界。`te06-product-failure-3/` 通过实际安装、浏览器审批和 CLI 诊断：原文件保持不变，task 未启动，认证的预留释放依据为 `host_never_started`，Run 完成且模型只收到一次工具结果；诊断保留 `prepare / sdk_initialize / EIO`，不含私有正文。第二次产品运行在场景执行前启动超时；后续加入启动阶段记录后通过，但超时原因仍 uncertain，保留 `te06-product-failure-2/`，不能称该问题已修复。修改前 30 次中位数 8403 ms、最大值 11035 ms，修改后第 8 次真实准备失败，只有 7 个完整成功样本，中位数 12664 ms、最大值 17773 ms；初步中位差 +4261 ms，未达到完整 30 对 30 验收。完整测试 4599 条中 5 条容器分支失败，诊断范围修正后原断言的 28 条针对性回归通过；修正后尚未全量复跑。最新构建和静态检查通过。当时按第四份回复性能停点暂停；第五份回复随后批准继续定位，当时 TE-06 尚未提交。新实际失败已有 prepare/launch/UNKNOWN 私有诊断，认证释放后 Run 正常结束，但首次触发原因未确定。详细证据见证据根 `te06-verification.md`。
+
+
+### 第五份回复后的诊断与测量
+
+**TE-06 本轮验收完成。** 保留 fork 前的受保护准备登记、全部身份/权限/释放核验、原1.5秒心跳及执行期限；没有新增跨调用核验缓存。Pi仍复用既有工具定义和批次恢复，产品负责受保护控制关联及结果交付。剩余场景未执行，不归档本计划。
+
+第五份回复期间确认并修复两个启动问题：prepare封套通过校验后立即发送首次heartbeat，消除“启动加初始化期间没有第一条消息”的间隙；固定SRT0.0.75查找Java代理前同步执行npm root -g会阻塞心跳，现通过SDK已有javaAgentJarPath参数指定同一已核验安装的随包JAR。真实失败捕获3116.09ms的npm阻塞；1600ms慢命令注入及500ms启动加1150ms同步初始化均有失败再通过的回归。机器诊断保留白名单错误码、命令、phase、消息年龄、序号和期限余量，不保存任意SDK正文。
+
+新增登记的主要成本是一次必要的完整宿主核验。每次核验内，原有node/runner摘要及runtime新鲜检查由串行改为并发；每次调用的证据要求不变，67条身份、内容和权限回归通过。最少完整核验次数为12→13；轮询和观察会增加次数，不能把全部作业固定描述成12/13。原先8/9只统计Agent部分入口。
+
+|验收项|结果和证据（均在原证据根）|
+|---|---|
+|两版各前30个成功调用|旧版中位9773.5ms、最大19899ms；修改版中位8925.5ms、最大16705ms，中位减少848ms，满足增量≤100ms。最终完整分段和逐次核验为te06-r5-final-performance/profile-summary.json|
+|采集与失败口径|alternating-6得到旧版29/修改版30成功，旧版另有3次已解释失败；原Vitest失败报告保留。相同产物和探针再成对补测1次，补足旧版第30成功；额外修改版第31成功单列，不替换较慢样本。不是单次未中断30对30通过；两次命令和夹具摘要均保留|
+|旧版3次失败|两次首次心跳晚于取消；第三次prepare封套到达已1567ms，按原1500ms规则拒绝，尚未进入初始化。全时间线、SQLite及未释放现场保留；没有重放或手工清除占用|
+|新增准备登记|登记RPC中位566.11ms，内部核验548.89ms，加密0.37ms、SQLite写0.48ms。fork→ready中位736→180.5ms；完整阶段表见te06-r5-final-report.md|
+|完整项目测试|te06-r5-build-3真实产物；te06-r5-full/local-summary.json为local_passed。unit2096、contracts381、integration1992、e2e3、pi-compat134，共4606通过，0失败、0跳过；容器路径修正已包含|
+|静态检查|te06-r5-check-final.log：npm run check通过，包含最终采样器类型、格式及边界检查|
+|最终真实安装准备失败|te06-r5-product-failure：浏览器审批、CLI诊断、实际文件和SQLite读回通过。文件不变、reserved/未启动、认证host_never_started释放、Run完成、模型消费一次；单独资格项目1通过、13筛选未运行，不替代完整Mac产品资格|
+|文档与交接|四份受影响Runbook语义核对并重新封存，严格校验结果见te06-r5-docs-final.log。独立交接为.ci-output/handoff/2026-09-28-codex-round1-summary.md；TE-06提交以Git记录及交接为准|
+
+最初+4261ms来自非交替、修改版仅7成功样本的比较；原日志只够定位宿主核验累计中位差约+2882.8ms，其余不能追溯成唯一原因，不能将不同样本的中位数直接相加。新探针确认主要成本为逐次runtime遍历和摘要，而非Payload/SQLite；观察到过磁盘99%和高CPU，但不能断言该系统状态导致原历史差值。原历史准备触发、te06-product-failure-2场景前启动超时仍uncertain。
+
+修改版第13个成功调用在宿主正常ready/started/result/close之后出现worker.rpc.reconcile抛错，留有execute/UNKNOWN诊断；实际文件、释放、唯一intent与模型消费均通过。它不是准备失败，精确RPC拒绝原因仍待剩余交错排查；不得据30成功宣称所有内部调用没有异常。
+
+为保留证据并缓解本机磁盘压力，八个已停机成功安装的重复prefix经逐文件、类型、权限和链接核验后完整压缩；state、secrets、workspace、jobs和所有失败安装均保留。归档和恢复说明见te06-r5-final-report.md及各根runtime-archive.txt，恢复会产生新inode。本轮只重启自有/tmp/hma-pp-*安装，未操作Hermes。
+
+后续由Claude派发运行中停止/重启、执行期限、finish各步崩溃、剩余交错以及最终未筛选Mac产品资格与总报告。本轮不继续这些场景，不声称Linux或生产验收完成。

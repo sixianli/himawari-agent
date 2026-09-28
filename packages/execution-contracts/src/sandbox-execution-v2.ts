@@ -628,7 +628,94 @@ export const sandboxJobControlBindingSchema = object({
 export type SandboxJobControlBinding = InferSchema<typeof sandboxJobControlBindingSchema>;
 
 /** Authenticated Worker requests carry facts and locators, never database authority. */
+export const SANDBOX_HOST_FAILURE_CODES = [
+  "UNKNOWN",
+  "JOB_HOST_HEARTBEAT_EXPIRED",
+  "JOB_HOST_PREPARATION_TIMEOUT",
+  "JOB_HOST_EXECUTION_DEADLINE",
+  "JOB_HOST_ALREADY_PREPARED",
+  "JOB_HOST_CONTROL_BINDING_INVALID",
+  "JOB_HOST_CONTROL_SCOPE_OVERLAP",
+  "JOB_HOST_DEPENDENCIES_UNAVAILABLE",
+  "JOB_HOST_ENVIRONMENT_INVALID",
+  "JOB_HOST_LAUNCH_INVALID",
+  "JOB_HOST_JAVA_AGENT_INVALID",
+  "JOB_HOST_MESSAGE_INVALID",
+  "JOB_HOST_NAMESPACE_GATE_INVALID",
+  "JOB_HOST_NOT_READY",
+  "JOB_HOST_POLICY_CHANGED",
+  "JOB_HOST_SESSION_INVALID",
+  "JOB_HOST_SESSION_REPLACED",
+  "JOB_HOST_START_ABORTED",
+  "JOB_HOST_WORKER_LEASE_INVALID",
+] as const;
+export const sandboxHostFailureDetailSchema = object({
+  code: enumeration(SANDBOX_HOST_FAILURE_CODES),
+  command: enumeration(["prepare", "heartbeat", "start", "cancel", "authority_result", "unknown"]),
+  phase: enumeration(["waiting", "preparing", "ready", "running", "stopping", "finished"]),
+  elapsedMs: integer(0, 86_400_000),
+  messageAgeMs: nullable(integer(-86_400_000, 86_400_000)),
+  deadlineRemainingMs: nullable(integer(-86_400_000, 86_400_000)),
+  expectedSequence: integer(0),
+  receivedSequence: nullable(integer(0)),
+});
+export type SandboxHostFailureDetail = InferSchema<typeof sandboxHostFailureDetailSchema>;
+export const sandboxPreparationDiagnosticSchema = object({
+  stage: enumeration([
+    "prepare",
+    "register_preparation_control",
+    "register_control",
+    "bind",
+    "execute",
+  ]),
+  reasonCode: enumeration([
+    "SANDBOX_PREPARATION_FAILED",
+    "SANDBOX_CONTROL_REGISTRATION_FAILED",
+    "SANDBOX_BIND_FAILED",
+    "SANDBOX_EXECUTION_FAILED",
+  ]),
+  hostDetail: nullable(sandboxHostFailureDetailSchema),
+  hostStage: nullable(
+    enumeration([
+      "request",
+      "policy",
+      "control",
+      "resource_snapshot",
+      "dependencies",
+      "network",
+      "sdk_initialize",
+      "launch",
+    ]),
+  ),
+  systemCode: enumeration([
+    "UNKNOWN",
+    "EACCES",
+    "EPERM",
+    "ENOENT",
+    "EIO",
+    "ENOSPC",
+    "EMFILE",
+    "ENFILE",
+    "ENOMEM",
+    "EAGAIN",
+    "EADDRINUSE",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EINVAL",
+  ]),
+});
+export type SandboxPreparationDiagnostic = InferSchema<typeof sandboxPreparationDiagnosticSchema>;
 export const sandboxExecutionBrokerCommandSchema = variant("kind", {
+  preparation_diagnostic: object({
+    kind: literal("preparation_diagnostic"),
+    diagnostic: sandboxPreparationDiagnosticSchema,
+  }),
+  register_preparation_control: object({
+    kind: literal("register_preparation_control"),
+    expectedSequence: integer(1, 1),
+    control: sandboxJobControlBindingSchema,
+    policyDigest: digest,
+  }),
   register_control: object({
     kind: literal("register_control"),
     expectedSequence: integer(1, 1),

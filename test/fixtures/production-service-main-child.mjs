@@ -3,6 +3,9 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+const startupStage = (stage) =>
+  process.stdout.write(`${JSON.stringify({ event: "test.startup", stage })}\n`);
+startupStage("imports_started");
 process.env.MEM0_TELEMETRY = "false";
 process.env.MEM0_TELEMETRY_SAMPLE_RATE = "0";
 const root = process.env.HIMAWARI_TEST_RUNTIME_ROOT;
@@ -13,6 +16,7 @@ const [agent, platform] = await Promise.all([
   loadPackage("@himawari-agent/agent-service"),
   loadPackage("@himawari-agent/platform-node"),
 ]);
+startupStage("imports_completed");
 const sources = {
   provider: new platform.RestrictedProviderSecretSource(process.env.HIMAWARI_TEST_SECRET_DIRECTORY),
   keys: new platform.RestrictedSecretFileSource(process.env.HIMAWARI_TEST_SECRET_DIRECTORY),
@@ -30,9 +34,11 @@ const output = {
     return true;
   },
 };
+startupStage("service_starting");
 process.exitCode = await agent.runAgentService(process.argv.slice(2), output, process.stderr, {
   secretSources: sources,
   modelCompositionFactory: async ({ configuration, repository }) => {
+    startupStage("model_composition");
     const journal = repository.sandboxExecutionJournal.bind(repository);
     repository.sandboxExecutionJournal = (...args) => {
       const port = journal(...args);
@@ -99,13 +105,15 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
     };
   },
   memoryCompositionFactory: async ({ configuration }) => {
+    startupStage("memory_import_started");
     const { Memory } = await import(
       pathToFileURL(path.join(root, "node_modules/mem0ai/dist/oss/index.mjs")).href
     ).catch((error) => {
       if (error.code === "ERR_MODULE_NOT_FOUND") process.stderr.write(`${error.message}\n`);
       throw error;
     });
-    return agent.createProductionMemoryCompositionFromConfiguration({
+    startupStage("memory_composition_started");
+    const composition = await agent.createProductionMemoryCompositionFromConfiguration({
       configuration,
       secretSource: sources.provider,
       load: async () => ({
@@ -123,5 +131,7 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
         },
       }),
     });
+    startupStage("memory_composition_completed");
+    return composition;
   },
 });

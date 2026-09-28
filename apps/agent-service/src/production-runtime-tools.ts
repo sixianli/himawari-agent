@@ -601,9 +601,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         runId: child.runId,
         invocationId: recovery.invocationId,
       });
-      if (admission?.phase !== "bound" || admission.record.plan.identity.jobId !== recovery.jobId)
-        reject();
-      const record = admission.record;
+      if (!admission) reject();
+      const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
+      if (plan.identity.jobId !== recovery.jobId) reject();
       const assertDisclosure = async () => {
         await this.#options.assertRunActive(child.runId);
         if (
@@ -611,8 +611,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           !child.executionDeadlineAt ||
           !Number.isFinite(Date.parse(child.executionDeadlineAt)) ||
           this.#options.clock.now() >= child.executionDeadlineAt ||
-          record.plan.handleRef !== child.capabilityHandleRef ||
-          record.plan.inputRef !== child.arguments["inputRef"]
+          plan.handleRef !== child.capabilityHandleRef ||
+          plan.inputRef !== child.arguments["inputRef"]
         )
           reject();
       };
@@ -634,15 +634,15 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       const outcome = await this.#completionOutcome(
         child,
         key,
-        record.plan.handleRef,
+        plan.handleRef,
         completion,
-        record.plan.resourceCeiling.maxOutputBytes,
+        plan.resourceCeiling.maxOutputBytes,
         true,
         {
           assertDisclosure,
           readOutput: async (ref) => {
             await assertDisclosure();
-            const result = record.facts.result;
+            const result = admission.phase === "bound" ? admission.record.facts.result : null;
             if (
               !result ||
               (result.kind !== "result" && result.kind !== "error") ||
@@ -662,7 +662,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
             });
             if (
               bytes.byteLength !== result.output.byteLength ||
-              bytes.byteLength > record.plan.resourceCeiling.maxOutputBytes ||
+              bytes.byteLength > plan.resourceCeiling.maxOutputBytes ||
               createHash("sha256").update(bytes).digest("hex") !== result.output.digest
             )
               reject();
@@ -1660,9 +1660,12 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         resultRef: null,
         errorCode: completion.errorCode,
         externalActionId: completion.externalActionId,
-        modelContent: commandEffectUnverified
-          ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
-          : "操作未确认成功。",
+        modelContent:
+          completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
+            ? "工具未启动：准备阶段失败，已确认清理完成。"
+            : commandEffectUnverified
+              ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+              : "操作未确认成功。",
       };
     }
   }

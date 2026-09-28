@@ -38,6 +38,7 @@ import {
   payloadSandboxJobRequestSchema,
   type SandboxExecutionPlanV2,
   type SandboxJobControlBinding,
+  type SandboxPreparationDiagnostic,
 } from "@himawari-agent/execution-contracts";
 import type {
   PayloadBrokerOutputReceipt,
@@ -102,6 +103,15 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly journal: SandboxExecutionJournalPort;
     readonly preparations?: SandboxExecutionPreparationPort;
     /** Verify current scope, Grant and installed host before registering; caller rechecks authority. */
+    readonly recordPreparationDiagnostic?: (
+      plan: SandboxExecutionPlanV2,
+      diagnostic: SandboxPreparationDiagnostic,
+    ) => Promise<void>;
+    readonly registerPreparationControl?: (
+      plan: SandboxExecutionPlanV2,
+      control: SandboxJobControlBinding,
+      policyDigest: string,
+    ) => Promise<boolean>;
     readonly registerControl?: (
       plan: SandboxExecutionPlanV2,
       control: SandboxJobControlBinding,
@@ -353,7 +363,9 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       if (
         admission?.phase === "reserved" &&
         admission.stopRequestedAt &&
-        ["resolve", "register_control", "bind"].includes(request.payload.command.kind)
+        ["resolve", "register_preparation_control", "register_control", "bind"].includes(
+          request.payload.command.kind,
+        )
       )
         throw new Error("sandbox reservation stopped");
       const bound =
@@ -419,6 +431,25 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         const environment = (await configured.resolveEnvironment?.(record.plan)) ?? null;
         await current(true);
         return { record, applied: false, resolvedScope, environment, output: null };
+      }
+      if (command.kind === "preparation_diagnostic") {
+        if (!configured.recordPreparationDiagnostic)
+          throw new Error("preparation diagnostic unavailable");
+        await current(false);
+        await configured.recordPreparationDiagnostic(record.plan, command.diagnostic);
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
+      }
+      if (command.kind === "register_preparation_control") {
+        if (record.phase !== "reserved" || !configured.registerPreparationControl)
+          throw new Error("preparation control registration unavailable");
+        await current(true);
+        await configured.registerPreparationControl(
+          record.plan,
+          command.control,
+          command.policyDigest,
+        );
+        await current(true);
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "register_control") {
         if (record.phase !== "reserved" || !configured.registerControl)

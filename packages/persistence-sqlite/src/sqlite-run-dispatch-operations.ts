@@ -983,10 +983,16 @@ export class SqliteRunDispatchOperations {
         AND result.job_id=@jobId AND result.invocation_id=@invocationId
         AND result.operation_revision=@operationRevision AND result.sequence=@sequence
         AND json_extract(result.plan_json,'$.semanticFingerprint')=@fingerprint
-        AND result.preparation_state<>'reserved'
         AND json_extract(result.plan_json,'$.mode')='foreground'
-        AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
-        AND json_extract(result.facts_json,'$.resource.supervision')='released'
+        AND ((@reservationDigest IS NULL AND result.preparation_state<>'reserved'
+          AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
+          AND json_extract(result.facts_json,'$.resource.supervision')='released')
+          OR (@reservationDigest IS NOT NULL AND result.preparation_state='reserved' AND EXISTS (
+            SELECT 1 FROM sandbox_reservation_release_receipts reservation WHERE reservation.job_id=result.job_id
+              AND reservation.accepted_at<=@resourceNow
+              AND json_extract(reservation.verification_json,'$.basis')='host_never_started'
+              AND json_extract(reservation.verification_json,'$.evidence.digest')=@reservationDigest
+          )))
         AND NOT EXISTS (SELECT 1 FROM model_invocation_identities model
           WHERE model.owner_id=r.owner_id AND model.agent_id=r.agent_id AND model.run_id=r.id
             AND model.source='agent-stream' AND model.ordinal>@ordinal AND model.status<>'released')`)
@@ -1000,6 +1006,7 @@ export class SqliteRunDispatchOperations {
         invocationId: text(input.invocationId, "invocationId"),
         operationRevision,
         sequence,
+        reservationDigest: input.reservationReleaseDigest ?? null,
         fingerprint: text(input.semanticFingerprint, "semanticFingerprint"),
         ordinal,
       });
