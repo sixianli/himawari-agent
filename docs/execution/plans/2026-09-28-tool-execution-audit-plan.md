@@ -19,7 +19,7 @@ date: "2026-09-28"
 
 ## 目标与边界
 
-按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。TE-01 至 TE-06 的本轮局部修复已完成；按第五份回复，本轮在 TE-06 验收及本地提交后停止，剩余场景由 Claude 新会话派发。当前结果见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。
+按 `.ci-output/handoff/2026-09-28-codex-tool-execution-brief.md` 系统检查工具执行、停止、释放与结果交付，逐项复现并修复。初始版本为 `fc2b318`，分支为 `claude/isolated-tool-execution`，开始时工作区干净。本文是开放的排查计划，不代表全量验收完成。第一轮 TE-01 至 TE-06 的局部修复已完成，历史结果见[第五份回复后的诊断与测量](#第五份回复后的诊断与测量)。第二轮按新交接继续：TE-07 已提交；收尾阶段重启发现 TE-08；Claude 已拒绝宿主保存完整输出的提案，批准在原尝试失效且有签名退出和释放证明时写入 `SANDBOX_TOOL_RESULT_LOST` 并唯一交付。已按[批准范围与未批准提案](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)完成本地修复验证，提交与报告见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)。完整审计尚未完成。
 
 来源：[隔离工具执行设计](../specs/2026-09-24-isolated-tool-execution-design.md) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]、[既有实施计划](2026-09-24-isolated-tool-execution-plan.md) [SOURCE: docs/execution/plans/2026-09-24-isolated-tool-execution-plan.md]、[ADR 0033](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision) [SOURCE: docs/adr/0033-process-sandbox-default-and-optional-containers.md]。
 
@@ -68,7 +68,7 @@ date: "2026-09-28"
 | W/B | 启动恢复保留结果且禁止重放；真实 Worker 重启待验证 |
 | W/F | 两方恢复同一结果的 CAS 冲突待验证 |
 | W/X | Worker 取消及运行权限重查；停止后迟到结果不得复活 Run，待验证 |
-| W/H | result 在子进程 close 后才完成；不是收到 IPC result 就完成。退出前崩溃及输出管道未关闭待验证 |
+| W/H | TE-08 真实收尾重启确认 Worker 内存输出丢失；不重启保持原结果，重启以确定丢失错误唯一交付。真实 finish 六个位置与 Worker 收到结果 IPC、journal 仍为空的崩溃窗口已验证；输出管道未关闭窗口仍待核对 |
 | W/I | Worker 不负责投递 intent；经过 D 的交错另行检查 |
 | C/R | 资源 CAS 与 recovery revision 保护陈旧观察；竞争是否误终结恢复待验证 |
 | C/S | 旧候选 CAS 被拒；下一轮发现负责重读，待验证 |
@@ -80,7 +80,7 @@ date: "2026-09-28"
 | C/I | intent 派发前检查资源序号；派发后回执幂等需结合模型消费检查 |
 | R/S | 恢复 owner/revision CAS、SQL 事务前换所有者、过期与 finishRecovery 的既有 SQLite 用例已在 full-te03-te05 通过；真实服务中跨进程故障时序仍待验证 |
 | R/D | confirmed：TE-03；真实 SQLite 复现前台核验期间被后台接管的反向窗口。释放、unresolved、取消三种结局均已验证 |
-| R/B | 已核对并运行真实 SQLite 关闭/重开、旧观察失效、迟到 proof 拒绝用例，保护已知结果且不重放；真实运行中重启服务仍待验证 |
+| R/B | 已核对并运行真实 SQLite 关闭/重开、旧观察失效、迟到 proof 拒绝用例，保护已知结果且不重放；第二轮实际长 Bash 运行中重启验证不重放、可释放，之后取消不向模型交付；收尾重启丢失原输出见 TE-08。其余窗口仍待验证 |
 | R/F | released 后恢复操作结果；finishRecovery 读取最新记录，但读取到写入之间的窗口待验证 |
 | R/X | deferred 真实 SQLite 用例验证 stop 接管 inspect 后旧回调不能覆盖新终点，重复 stop 不发第二次；full-te03-te05 通过，真实停止收尾待验证 |
 | R/H | TE-02 组件级失败已复现；真实 socket 的 pending 分类已有通过测试，真实 SRT 停止链路仍待验证 |
@@ -91,7 +91,7 @@ date: "2026-09-28"
 | S/X | 既有 SQLite 测试验证终止 Run/撤权触发 stop、预留先阻止 start、失败 stop 保持暂停；本轮全量通过。失败后的新证据处理尚待扩展 |
 | S/H | Job Host 不直接唤醒 SQLite 调度；终态到来能否避免旧 unresolved 永久阻塞待验证 |
 | S/I | TE-04 由现有 Run dispatcher 单独恢复已核验结果；资源调度器仍不持有模型/工具端口。真实 SQLite 竞争领取、费用未知及版本变化均拒绝不安全恢复 |
-| D/B | TE-04 真实 SQLite 覆盖新 boot、已派发回执和旧租约拒绝；Mac 实际终止 Agent/Worker 后在新 fence 下恢复读取结果已通过。执行中的工具重启仍待验证 |
+| D/B | TE-04 真实 SQLite 覆盖新 boot、已派发回执和旧租约拒绝；Mac 实际终止 Agent/Worker 后在新 fence 下恢复 read/write 原结果已通过。执行中重启无重放、认证释放及随后页面取消已通过；未保存输出保证边界按 TE-08 处理 |
 | D/F | F 返回的新 operation revision 应被 D 使用；竞争失败待验证 |
 | D/X | 每个交付阶段检查披露权限；等待循环内取消响应待验证 |
 | D/H | 经控制校验间接观察终态；前台等待不构成释放证明 |
@@ -116,7 +116,8 @@ date: "2026-09-28"
 | TE-03 | confirmed，局部修复完成：前台先进入 verifyFresh，后台完成核查/释放，旧序号导致 Observation replay changed，前台丢失交付机会 | `refreshes a foreground handoff overtaken during verification`：修改前 4 失败、2 通过，修改后 6 通过。`te03-before.log`、`te03-focused-after.log`；仅在派发前、版本确有改变时重新读取和核验，原 35 秒上限不变；相关回归、check、完整 npm test 通过，提交 `20377db` |
 | TE-04 | confirmed，局部修复已验证：Run 遇到 `runtime.result_unknown` 后保存 `RUNTIME_TOOL_RESULT_UNKNOWN` 且 output=null。自动恢复仅接受已有最终回答；资源释放不会自动消费工具结果 | 已核对 RunCoordinator、SQLite discovery、Pi 的 capture/restore 工具批次入口。既有测试明确拒绝重启时自动重放未知调用。Claude 已批准[恢复合同](../specs/2026-09-28-sandbox-tool-result-resumption-design.md)。已实现只交付入口；真实 SQLite 与生产调度/Pi 联合回归覆盖迟到结果、原进程中断、交付中断、批次恢复及拒绝边界，完整 npm test 4574 条通过，Mac 读取及写入交付中断恢复分别通过；完整任务验收仍待完成 |
 | TE-06 | partially confirmed：原现场首次准备失败的触发原因仍 uncertain；准备失败后丢失控制关联的恢复缺口 confirmed | 原现场 reserved、未 bind，控制关联缺失。真实 Job Host 受控 SDK 初始化失败探针复现：任务未启动、已签名结束文件可由原密钥核验，但 Agent 未持久保存控制关联，登记 ENOENT，恢复 SANDBOX_CONTROL_BINDING_UNAVAILABLE。已按第四、五份回复完成重点、真实安装、完整 npm test/check 与两版各30成功样本的性能验收；历史首次触发原因仍 uncertain，见[已批准的数据与顺序提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md) |
-| TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存；完整任务仍开放。进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md) |
+| TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存，修复提交 `f1519e7`；完整任务仍开放。进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md) |
+| TE-08 | confirmed，已修复并通过本地验证：真实 SRT reset 后重启 Agent/Worker，完整 read 输出已从宿主到达 Worker，但只保存在 Worker 内存；重启后资源释放成功，result=null、intent=0、Run 停在 reconciling_external_result。签名控制终态不保存原输出与退出结果，既有结果发现又要求 result/error 已存在 | `round2/restart-1`：运行中重启和收尾不重启对照通过，收尾重启失败（2 通过、1 失败、15 未执行）。失败安装 `/private/tmp/hma-pp-Vp0WPJ`；`te08-red-readback.json` 为独立数据库和控制文件读回。完整原始输出不等于已被 Agent 认证接纳的成功结果。[原输出持久保存未批准，本轮改为确定的结果丢失错误](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)，测试和证据见[TE-08 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-verification.md)；现在仅在已接受释放、原签名任务退出、无确定结果且原 fence 已失效时，用 operation revision 保存确定的 SANDBOX_TOOL_RESULT_LOST，再沿原 Pi 批次唯一交付；效果未知不改写，原输出保存前退出仍是明确保证边界。相关集成 469 条、旧写者 16 条、预算 2 条、Mac 定向 9 条及 IPC 接收补验 2 条通过；完整 npm test 4651 条通过，Runbook 已封存。提交见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)，整轮最终无筛选资格待后续执行 |
 | TE-05 | confirmed（本机可控延迟），Hermes 当次因果仍 uncertain：finish 在异步清理前停止心跳，2 秒正常 reset/control.finish 等待期间心跳为 0，会触发 Worker 的 1.5 秒失联判断 | `te05-before.log` 两条失败；修复后心跳保持到清理结束，退出期限仍有效。`te05-after.log` 及 `te03-te05-regression.log`。使用真实 Job Host 入口、受控 OS/IPC/SRT 边界；不是磁盘满载实测，不推断 Hermes 历史失败根因；相关回归、check、完整 npm test 通过，提交 `266715d` |
 
 交接中的五个历史缺陷只作为线索；本轮不能把历史通过日志记成本轮验证。关于“后台核查导致所有故障”的说法目前仅 partially confirmed，仍需检查退出、停止及投递各自的窗口。

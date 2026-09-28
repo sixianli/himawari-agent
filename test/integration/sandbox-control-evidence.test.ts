@@ -969,3 +969,35 @@ it("retains the first bounded preparation diagnostic and rejects private text", 
   expect(diagnostics[0]?.[1].value).toMatchObject(first);
   expect(JSON.stringify(diagnostics)).not.toContain("private credential");
 });
+
+it.each([
+  "finished",
+  "missing",
+  "unstarted",
+  "running",
+  "wrong-policy",
+  "wrong-boot",
+  "tampered",
+] as const)("authenticates task exit before recording a lost result: %s", async (scenario) => {
+  const f = await fixture();
+  f.set({
+    phase: "finished",
+    taskStarted: scenario !== "unstarted",
+    taskProcessExited: scenario !== "running",
+    stdioClosed: true,
+    srtReset: true,
+    taskProcessGroupGone: true,
+    ...(scenario === "wrong-policy" ? { policyDigest: "f".repeat(64) } : {}),
+    ...(scenario === "wrong-boot" ? { bootId: "replacement-boot" } : {}),
+  });
+  if (scenario !== "missing") await f.finishControl();
+  if (scenario === "tampered") {
+    const filename = path.join(f.directory, "final.json");
+    const encoded = JSON.parse(await readFile(filename, "utf8"));
+    encoded.body = encoded.body.replace('"taskStarted":true', '"taskStarted":false');
+    await writeFile(filename, JSON.stringify(encoded));
+  }
+  if (["wrong-policy", "wrong-boot", "tampered"].includes(scenario))
+    await expect(f.control.hasExitedTask(f.record)).rejects.toThrow();
+  else expect(await f.control.hasExitedTask(f.record)).toBe(scenario === "finished");
+});

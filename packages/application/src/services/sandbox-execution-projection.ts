@@ -1,4 +1,5 @@
 import {
+  isSandboxToolResultLost,
   type SandboxEnvironment,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
@@ -174,6 +175,11 @@ export function projectSandboxExecution(
     (resource.supervision === "controlled" && !supervisionVerified) ||
     (resource.supervision === "released" && !released);
   const active = context.runState === "active" && now < Date.parse(plan.effectiveDeadlineAt);
+  const lostResult =
+    plan.mode === "foreground" &&
+    acceptedRelease &&
+    outputProtected &&
+    isSandboxToolResultLost(result);
   const disclosureAllowed =
     context.runState === "active" &&
     context.currentAuthority &&
@@ -181,10 +187,9 @@ export function projectSandboxExecution(
     context.modelDisclosureAllowed &&
     !context.conflictingWorkspaceRisk &&
     !context.pendingApprovalOrReconciliation &&
-    settled &&
-    !needsReconciliation &&
+    ((settled && !needsReconciliation) || lostResult) &&
     (controlled || released);
-  const canAct = active && disclosureAllowed;
+  const canAct = active && disclosureAllowed && !lostResult;
   const canRecoverResult =
     disclosureAllowed &&
     released &&
@@ -196,7 +201,8 @@ export function projectSandboxExecution(
     conclusion,
     // Known output remains visible after resource loss; user and model disclosure are independent.
     showResult: context.userDisclosureAllowed && outputProtected,
-    deliverToolResult: (canAct || canRecoverResult) && !context.resultAlreadyDelivered,
+    deliverToolResult:
+      ((active && disclosureAllowed) || canRecoverResult) && !context.resultAlreadyDelivered,
     continuePi: canAct,
     dispatchNewOperation: canAct,
     invokeService:

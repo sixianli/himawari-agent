@@ -10,7 +10,17 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
     WHERE result.owner_id=r.owner_id AND result.agent_id=r.agent_id AND result.run_id=r.id
       AND json_extract(result.plan_json,'$.mode')='foreground'
       AND ((result.preparation_state<>'reserved'
-        AND json_extract(result.facts_json,'$.result.kind') IN ('result','error')
+        AND (json_extract(result.facts_json,'$.result.kind') IN ('result','error')
+          OR (COALESCE(json_extract(result.facts_json,'$.result.kind'),'unknown')='unknown'
+            AND json_extract(result.plan_json,'$.backendRef')='srt'
+            AND json_extract(result.plan_json,'$.originalDeadlineAt')>@resourceNow
+            AND EXISTS (SELECT 1 FROM sandbox_release_receipts released WHERE released.job_id=result.job_id AND released.accepted_at<=@resourceNow)
+            AND EXISTS (SELECT 1 FROM deployments deployment
+              WHERE deployment.id=json_extract(result.plan_json,'$.executionLease.deploymentId')
+                AND deployment.owner_id=r.owner_id AND deployment.agent_id=r.agent_id AND deployment.status='active'
+                AND (deployment.authority_epoch>json_extract(result.plan_json,'$.executionLease.authorityEpoch')
+                  OR (deployment.authority_epoch=json_extract(result.plan_json,'$.executionLease.authorityEpoch')
+                    AND deployment.fencing_token>json_extract(result.plan_json,'$.executionLease.fencingToken'))))))
         AND json_extract(result.facts_json,'$.resource.supervision')='released')
         OR (result.preparation_state='reserved' AND EXISTS (
           SELECT 1 FROM sandbox_reservation_release_receipts reservation

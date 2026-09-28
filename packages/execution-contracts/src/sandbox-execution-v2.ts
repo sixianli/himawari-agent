@@ -228,6 +228,33 @@ export const sandboxOperationResultSchema = variant("kind", {
   unknown: object({ ...resultFields, kind: literal("unknown"), reasonCode: machineString }),
 });
 export type SandboxOperationResult = InferSchema<typeof sandboxOperationResultSchema>;
+
+export const SANDBOX_TOOL_RESULT_LOST = "SANDBOX_TOOL_RESULT_LOST";
+export const sandboxLostResultOperationKey = (invocationId: string) =>
+  `sandbox-tool-result-lost:${invocationId}`;
+export function isSandboxToolResultLost(result: SandboxOperationResult | null | undefined) {
+  return (
+    result?.kind === "error" &&
+    result.reasonCode === SANDBOX_TOOL_RESULT_LOST &&
+    result.termination.type === "failure"
+  );
+}
+export function isSandboxExecutionFenceSuperseded(
+  plan: SandboxExecutionPlanV2,
+  current: Pick<
+    SandboxExecutionPlanV2["executionLease"],
+    "deploymentId" | "authorityEpoch" | "fencingToken"
+  >,
+) {
+  const original = plan.executionLease;
+  return (
+    current.deploymentId === original.deploymentId &&
+    (current.authorityEpoch > original.authorityEpoch ||
+      (current.authorityEpoch === original.authorityEpoch &&
+        current.fencingToken > original.fencingToken))
+  );
+}
+
 export const sandboxEffectObservationSchema = variant("kind", {
   not_applicable: object({ kind: literal("not_applicable") }),
   not_asserted: object({ kind: literal("not_asserted") }),

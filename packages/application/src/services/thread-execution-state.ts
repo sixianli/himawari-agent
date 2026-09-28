@@ -17,6 +17,7 @@ function resourceDisplayPhase(phase: ThreadResourcePhase): ThreadExecutionState[
 
 type Interval = readonly [number, number];
 const SAFE_TOOL_REASON_CODES = new Set([
+  "SANDBOX_TOOL_RESULT_LOST",
   "WORKER_ADMISSION_CONFLICT",
   "WORKER_AUTHORIZATION_DENIED",
   "WORKER_AUTHORITY_UNAVAILABLE",

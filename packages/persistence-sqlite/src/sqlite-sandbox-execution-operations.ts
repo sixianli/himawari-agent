@@ -14,6 +14,8 @@ import {
 } from "@himawari-agent/application/sandbox-execution-projection";
 import { workspaceClaimsConflict as conflicts } from "@himawari-agent/application/workspace-claims";
 import {
+  isSandboxExecutionFenceSuperseded,
+  isSandboxToolResultLost,
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
@@ -26,6 +28,7 @@ import {
   sandboxExecutionPlanV2Schema,
   sandboxExecutionReservationSchema,
   sandboxJobIdentitySchema,
+  sandboxLostResultOperationKey,
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
@@ -1289,7 +1292,34 @@ export class SqliteSandboxExecutionOperations {
             out.ref,
             `sha256:${out.digest}`,
           );
-      if (!exists && !recovered)
+      const lost = isSandboxToolResultLost(facts.result);
+      if (
+        lost &&
+        !same(current.facts.result, facts.result) &&
+        (!operationOnly ||
+          !current.releaseReceipt ||
+          current.workspaceBlocked ||
+          current.plan.mode !== "foreground" ||
+          current.plan.backendRef !== "srt" ||
+          current.facts.resource.supervision !== "released" ||
+          !isSandboxExecutionFenceSuperseded(current.plan, input.authority.product) ||
+          input.now >= current.plan.originalDeadlineAt)
+      )
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Lost result recovery is not authorized");
+      const lostOutput =
+        lost &&
+        this.db
+          .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
+        WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=? AND p.lifecycle_state='active'`)
+          .get(
+            owner,
+            agent,
+            current.plan.identity.runId,
+            sandboxLostResultOperationKey(current.plan.identity.invocationId),
+            out.ref,
+            `sha256:${out.digest}`,
+          );
+      if (!exists && !recovered && !lostOutput)
         return this.fail("PORT_CONFLICT", "Output is not durably bound to invocation");
     }
     const projection = projectSandboxExecution(current.plan, facts, {

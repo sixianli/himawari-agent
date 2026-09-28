@@ -274,6 +274,19 @@ export interface ProductPathInstallation {
   crash(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
   armPreparationFailure(): Promise<void>;
+  armFinishGate(
+    stage?:
+      | "before-reset"
+      | "after-reset"
+      | "before-final"
+      | "after-final"
+      | "before-result"
+      | "after-result",
+  ): Promise<void>;
+  finishGateEntered(): Promise<{ pid: number; at: string } | null>;
+  releaseFinishGate(): Promise<void>;
+  finishGateOutput(): Promise<string>;
+  finishGateResultReceived(): Promise<string | null>;
   diagnose(runId: string): unknown;
   deliveryCrashEntered(): Promise<{ jobId: string; runId: string } | null>;
   running(): boolean;
@@ -769,6 +782,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
     HIMAWARI_TEST_DELIVERY_CRASH: path.join(testRoot, "delivery-crash"),
     HIMAWARI_TEST_PREPARATION_FAILURE: path.join(testRoot, "preparation-failure"),
+    HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
   };
   const serviceArgs = [
@@ -909,6 +923,47 @@ export async function installProductPath(options: {
     },
     armPreparationFailure: async () => {
       await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
+    },
+    armFinishGate: async (stage = "after-reset") => {
+      const gate = serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE;
+      for (const suffix of [
+        ".entered",
+        ".released",
+        ".output.jsonl",
+        ".consumed",
+        ".result-received",
+      ])
+        await rm(`${gate}${suffix}`, { force: true });
+      await writeFile(gate, stage);
+    },
+    finishGateEntered: async () =>
+      readFile(`${serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE}.entered`, "utf8").then(
+        (text) => JSON.parse(text),
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      ),
+    releaseFinishGate: async () => {
+      await writeFile(`${serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE}.released`, "released");
+    },
+    finishGateResultReceived: async () =>
+      readFile(`${serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE}.result-received`, "utf8").catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      ),
+    finishGateOutput: async () => {
+      const lines = await readFile(
+        `${serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE}.output.jsonl`,
+        "utf8",
+      );
+      return lines
+        .trim()
+        .split("\n")
+        .map((line) => Buffer.from(JSON.parse(line).bytes, "base64").toString("utf8"))
+        .join("");
     },
     diagnose: (runId) =>
       JSON.parse(

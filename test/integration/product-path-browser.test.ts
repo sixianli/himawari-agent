@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFile, readdir, statfs, writeFile } from "node:fs/promises";
+import { readdir, readFile, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
@@ -35,7 +35,7 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       arguments: { path: toolResults.length === 0 ? "notes.txt" : "second.txt" },
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
-  if (lastUserText.includes("运行中停止验证"))
+  if (lastUserText.includes("运行中停止验证") || lastUserText.includes("执行中重启验证"))
     return {
       kind: "tool",
       name: "bash",
@@ -152,6 +152,48 @@ function executionReadback() {
   } finally {
     database.close();
   }
+}
+
+async function readJobHostStarts() {
+  const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
+  return Promise.all(
+    (await readdir(jobsRoot))
+      .filter((name) => name.startsWith("control-"))
+      .map(async (name) => {
+        const encoded = await readFile(path.join(jobsRoot, name, "started.json"), "utf8").catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return null;
+            throw error;
+          },
+        );
+        if (encoded === null) return null;
+        return JSON.parse(JSON.parse(encoded).body) as {
+          jobId: string;
+          processId: number;
+          taskProcessGroup: { processGroupId: number };
+        };
+      }),
+  );
+}
+
+async function waitForExpiredServiceLease() {
+  await uiExpect
+    .poll(
+      () => {
+        const database = openQualifiedDatabase(installation.databasePath);
+        try {
+          return database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM authority_leases WHERE released_at IS NULL AND expires_at>?",
+            )
+            .get(new Date().toISOString());
+        } finally {
+          database.close();
+        }
+      },
+      { timeout: 40_000 },
+    )
+    .toEqual({ count: 0 });
 }
 
 function observedToolReplies(userText: string) {
@@ -517,33 +559,15 @@ productDescribe(
         const job = current[0];
         if (!job) throw new Error("STOP_TEST_JOB_MISSING");
         expect(job).toMatchObject({ released: 0, runStatus: "running", intents: 0 });
-        const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
-        const readStarts = async () =>
-          Promise.all(
-            (await readdir(jobsRoot))
-              .filter((name) => name.startsWith("control-"))
-              .map(async (name) => {
-                const encoded = await readFile(
-                  path.join(jobsRoot, name, "started.json"),
-                  "utf8",
-                ).catch((error: NodeJS.ErrnoException) => {
-                  if (error.code === "ENOENT") return null;
-                  throw error;
-                });
-                if (encoded === null) return null;
-                return JSON.parse(JSON.parse(encoded).body) as {
-                  jobId: string;
-                  processId: number;
-                  taskProcessGroup: { processGroupId: number };
-                };
-              }),
-          );
         await uiExpect
-          .poll(async () => (await readStarts()).some((entry) => entry?.jobId === job.jobId), {
-            timeout: 60_000,
-          })
+          .poll(
+            async () => (await readJobHostStarts()).some((entry) => entry?.jobId === job.jobId),
+            {
+              timeout: 60_000,
+            },
+          )
           .toBe(true);
-        const host = (await readStarts()).find((entry) => entry?.jobId === job.jobId);
+        const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
         expect(host).toBeDefined();
         if (!host) throw new Error("STOP_TEST_HOST_MISSING");
         const taskProcesses = () =>
@@ -626,6 +650,222 @@ productDescribe(
           await writeFile(
             path.join(outputDirectory, "13-stop-running-after.json"),
             JSON.stringify(readback(), null, 2),
+          );
+        }
+      });
+    });
+
+    it("reclaims an interrupted running tool after restarting the test services without replay", async () => {
+      await scenario("14-restart-running", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const text = "执行中重启验证";
+        await beginToolRequest(text);
+        await uiExpect
+          .poll(() => executionReadback().filter((record) => !before.has(record.jobId)), {
+            timeout: 60_000,
+          })
+          .toHaveLength(1);
+        const job = executionReadback().find((record) => !before.has(record.jobId));
+        if (!job) throw new Error("RESTART_TEST_JOB_MISSING");
+        await uiExpect
+          .poll(
+            async () => (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId),
+            { timeout: 60_000 },
+          )
+          .toBeTruthy();
+        const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
+        if (!host) throw new Error("RESTART_TEST_HOST_MISSING");
+        await uiExpect
+          .poll(
+            () =>
+              execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
+                .split("\n")
+                .some(
+                  (line) =>
+                    line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 120`,
+                ),
+            { timeout: 60_000 },
+          )
+          .toBe(true);
+        await writeFile(
+          path.join(outputDirectory, "14-restart-running-before.json"),
+          JSON.stringify({ host, rows: executionReadback() }, null, 2),
+        );
+        await installation.crash();
+        await waitForExpiredServiceLease();
+        await installation.start();
+        await page.reload();
+        await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+        const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
+        try {
+          await uiExpect
+            .poll(() => rows()[0], { timeout: 60_000 })
+            .toMatchObject({ jobId: job.jobId, released: 1 });
+          expect(rows()).toHaveLength(1);
+          expect(
+            (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
+          ).toHaveLength(1);
+          expect(observedToolReplies(text)).toEqual([]);
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toBeVisible({
+            timeout: 30_000,
+          });
+          await page.getByRole("button", { name: "停止", exact: true }).click();
+          await uiExpect
+            .poll(() => rows()[0], { timeout: 40_000 })
+            .toMatchObject({ runStatus: "cancelled", released: 1, intents: 0 });
+        } finally {
+          await writeFile(
+            path.join(outputDirectory, "14-restart-running-after.json"),
+            JSON.stringify(
+              {
+                rows: rows(),
+                starts: await readJobHostStarts(),
+                replies: observedToolReplies(text),
+              },
+              null,
+              2,
+            ),
+          );
+        }
+      });
+    });
+
+    it.each([false, true])(
+      "settles host cleanup with the accepted result contract: restart=%s",
+      async (restart) => {
+        const name = `15-restart-cleanup-${restart}`;
+        await scenario(name, async () => {
+          await newThread();
+          const before = new Set(executionReadback().map((record) => record.jobId));
+          await installation.armFinishGate();
+          const text = `收尾重启 ${restart}：请读取 notes.txt`;
+          await beginToolRequest(text);
+          await uiExpect
+            .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
+            .not.toBeNull();
+          const entered = await installation.finishGateEntered();
+          const output = await installation.finishGateOutput();
+          expect(output).toContain(NOTE);
+          await writeFile(
+            path.join(outputDirectory, `${name}-before.json`),
+            JSON.stringify({ entered, output, rows: executionReadback() }, null, 2),
+          );
+          if (restart) await installation.crash();
+          await installation.releaseFinishGate();
+          if (restart) {
+            await waitForExpiredServiceLease();
+            await installation.start();
+            await page.reload();
+          }
+          const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
+          try {
+            await uiExpect
+              .poll(() => rows()[0], { timeout: 90_000 })
+              .toMatchObject({
+                runStatus: "completed",
+                released: 1,
+                intents: 1,
+                result: restart ? "error" : "result",
+              });
+            expect(rows()).toHaveLength(1);
+            if (restart) {
+              await uiExpect(page.getByText(/SANDBOX_TOOL_RESULT_LOST/).last()).toBeVisible({
+                timeout: 10_000,
+              });
+              await uiExpect(page.getByText(/结果仍未确认/)).toHaveCount(0);
+              expect(
+                (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
+              ).toHaveLength(1);
+            } else await uiExpect(noteAnswer()).toBeVisible({ timeout: 10_000 });
+            expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          } finally {
+            await writeFile(
+              path.join(outputDirectory, `${name}-after.json`),
+              JSON.stringify(
+                {
+                  rows: rows(),
+                  starts: await readJobHostStarts(),
+                  replies: observedToolReplies(text),
+                },
+                null,
+                2,
+              ),
+            );
+          }
+        });
+      },
+    );
+
+    it.each([
+      "before-reset",
+      "after-reset",
+      "before-final",
+      "after-final",
+      "before-result",
+      "after-result",
+    ] as const)("keeps crash recovery bounded by signed task exit at %s", async (stage) => {
+      const name = `16-finish-crash-${stage}`;
+      await scenario(name, async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const text = `${stage} 崩溃：请读取 notes.txt`;
+        await installation.armFinishGate(stage);
+        await beginToolRequest(text);
+        await uiExpect
+          .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
+          .not.toBeNull();
+        const entered = await installation.finishGateEntered();
+        if (!entered) throw new Error("FINISH_CRASH_GATE_MISSING");
+        expect(await installation.finishGateOutput()).toContain(NOTE);
+        if (stage === "after-result")
+          await uiExpect.poll(() => installation.finishGateResultReceived()).not.toBeNull();
+        const resultReceivedAt = await installation.finishGateResultReceived();
+        if (stage === "before-result") expect(resultReceivedAt).toBeNull();
+        const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
+        expect(rows()[0]?.result).toBeNull();
+        await writeFile(
+          path.join(outputDirectory, `${name}-before.json`),
+          JSON.stringify({ entered, resultReceivedAt, rows: rows() }, null, 2),
+        );
+        await installation.crash();
+        process.kill(entered.pid, "SIGKILL");
+        await waitForExpiredServiceLease();
+        await installation.start();
+        await page.reload();
+        const signedExit = ["after-final", "before-result", "after-result"].includes(stage);
+        try {
+          await uiExpect.poll(() => rows()[0], { timeout: 90_000 }).toMatchObject({ released: 1 });
+          if (signedExit) {
+            await uiExpect
+              .poll(() => rows()[0], { timeout: 90_000 })
+              .toMatchObject({ runStatus: "completed", result: "error", intents: 1 });
+            await uiExpect(page.getByText(/SANDBOX_TOOL_RESULT_LOST/).last()).toBeVisible();
+            expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          } else {
+            expect(rows()[0]).toMatchObject({ result: null, intents: 0 });
+            expect(observedToolReplies(text)).toEqual([]);
+            await page.getByRole("button", { name: "停止", exact: true }).click();
+            await uiExpect
+              .poll(() => rows()[0], { timeout: 40_000 })
+              .toMatchObject({ runStatus: "cancelled", released: 1, intents: 0 });
+          }
+          expect(rows()).toHaveLength(1);
+          expect(
+            (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
+          ).toHaveLength(1);
+        } finally {
+          await writeFile(
+            path.join(outputDirectory, `${name}-after.json`),
+            JSON.stringify(
+              {
+                rows: rows(),
+                starts: await readJobHostStarts(),
+                replies: observedToolReplies(text),
+              },
+              null,
+              2,
+            ),
           );
         }
       });

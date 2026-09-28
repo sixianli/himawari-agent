@@ -10,8 +10,8 @@ import {
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
-  recoverSandboxExecutionsAtStartup,
   RemoteExecutionBackend,
+  recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
@@ -29,7 +29,6 @@ import {
   assertProductionSecretSource,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
-  TypeSafeJevTransport,
   EXECUTION_UDS_ERROR_CODES,
   ExecutionAdmissionUdsServer,
   ExecutionUdsError,
@@ -47,6 +46,7 @@ import {
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
   stableErrorCode,
+  TypeSafeJevTransport,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
@@ -59,6 +59,7 @@ import { createProductionAuthorityLifecycle } from "./production-authority-lifec
 import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
+import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import {
   createProductionHttpComposition,
@@ -83,7 +84,6 @@ import {
 } from "./production-run-memory.js";
 import { createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
-import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionSandboxServices } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
@@ -1014,6 +1014,7 @@ export async function runAgentService(
         ...(sandboxServices
           ? {
               resources: sandboxServices.resources,
+              recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
               prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
             }
           : {}),

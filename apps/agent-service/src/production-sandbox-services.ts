@@ -15,6 +15,7 @@ import {
   type RuntimeToolInvocation,
   resolveSandboxActionGrant,
   type SandboxExecutionEvidencePort,
+  type SandboxExecutionRecord,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
   SandboxResourceRecoveryService,
@@ -26,11 +27,13 @@ import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/acti
 import {
   assertSandboxExecutionSupport,
   executionV2MessageSchema,
+  isSandboxToolResultLost,
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
+  SANDBOX_TOOL_RESULT_LOST,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -45,6 +48,7 @@ import {
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
   sandboxExecutionScopeSchema,
+  sandboxLostResultOperationKey,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
@@ -72,6 +76,7 @@ import { configuredModelDisclosureIdentity } from "./production-model-disclosure
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
+import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
@@ -1479,14 +1484,16 @@ export async function createProductionSandboxServices(options: {
         previous.plan.semanticFingerprint === plan.semanticFingerprint &&
         JSON.stringify(previous.facts.result) === JSON.stringify(facts.result);
       if (!retained) {
-        const artifact = await repository
-          .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
-          .lookupOutput({
-            handleRef: plan.handleRef,
-            invocationId: plan.identity.invocationId,
-            authority: options.authority(),
-            now,
-          });
+        const artifact = isSandboxToolResultLost(facts.result)
+          ? undefined
+          : await repository
+              .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
+              .lookupOutput({
+                handleRef: plan.handleRef,
+                invocationId: plan.identity.invocationId,
+                authority: options.authority(),
+                now,
+              });
         const recovered =
           (fixedFileContract(plan.operationContract) ||
             (plan.operationContract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
@@ -1498,7 +1505,15 @@ export async function createProductionSandboxServices(options: {
                 operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
               })
             : undefined;
+        const lost = isSandboxToolResultLost(facts.result)
+          ? await artifacts().lookup({
+              runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+              purpose: "trace",
+              operationKey: sandboxLostResultOperationKey(plan.identity.invocationId),
+            })
+          : undefined;
         if (
+          lost?.payloadRef !== facts.result.output.ref &&
           (!artifact || artifact.payloadRef !== facts.result.output.ref) &&
           recovered?.payloadRef !== facts.result.output.ref
         )
@@ -1831,13 +1846,41 @@ export async function createProductionSandboxServices(options: {
       };
     },
   });
+  const recoverLostResult = createProductionSandboxLostResultRecovery({
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    verifyExited: (record) => control.hasExitedTask(record),
+    verifyFresh: (record) => refreshVerification(record, true),
+    saveOutput: async ({ plan }) => {
+      const plaintext = Buffer.from(SANDBOX_TOOL_RESULT_LOST);
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("sandbox-result-lost"),
+        dataClassification: "public",
+        contentType: "text/plain",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace",
+        operationKey: sandboxLostResultOperationKey(plan.identity.invocationId),
+        payload,
+      });
+      return { ref: saved.ref, digest: bytesHash(plaintext), byteLength: plaintext.length };
+    },
+  });
+  const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
+    recoverLostResult(await recoverFileResult(record));
   const completeToolResult = createProductionSandboxToolResult({
     preparations,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     authority: options.authority,
     now: () => clock.now(),
     verifyFresh: (record) => refreshVerification(record, true),
-    recoverResult: recoverFileResult,
+    recoverResult: recoverMissingToolResult,
   });
   const outputOptions = {
     ownerId: configuration.ownerId,
@@ -2078,6 +2121,7 @@ export async function createProductionSandboxServices(options: {
     },
     runtime,
     completeToolResult,
+    recoverMissingToolResult,
     child,
     managedTasks,
     resources: {

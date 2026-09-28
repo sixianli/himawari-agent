@@ -8,6 +8,7 @@ import type {
   RunPayloadArtifactPort,
   RunToolResultRecoveryClaim,
   RuntimeRequest,
+  SandboxExecutionRecord,
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import { executionV2MessageSchema } from "@himawari-agent/execution-contracts";
@@ -34,6 +35,9 @@ export function createProductionToolResultRecovery(options: {
   readonly checkpoints: RunCheckpointStore;
   readonly protector: PayloadProtectorPort;
   readonly clock: ClockPort;
+  readonly recoverMissingResult?: (
+    record: SandboxExecutionRecord,
+  ) => Promise<SandboxExecutionRecord>;
 }) {
   const { ownerId, agentId, repository, artifacts, checkpoints, protector, clock } = options;
   const payloads = repository.payloadStore(ownerId, agentId);
@@ -112,7 +116,14 @@ export function createProductionToolResultRecovery(options: {
       .sandboxExecutionPreparations(ownerId, agentId)
       .readRunInventory({ runId: candidate.runId });
     const matches: PreparedToolResultRecovery[] = [];
-    for (const admission of inventory.admissions) {
+    for (let admission of inventory.admissions) {
+      if (
+        admission.phase === "bound" &&
+        options.recoverMissingResult &&
+        (!admission.record.facts.result || admission.record.facts.result.kind === "unknown")
+      ) {
+        admission = { ...admission, record: await options.recoverMissingResult(admission.record) };
+      }
       const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
       const known =
         admission.phase === "bound"

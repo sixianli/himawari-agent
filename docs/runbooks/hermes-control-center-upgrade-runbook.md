@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3ac0b760effa9e5fb5454e8c63a06a57a6bacf15398c9d7110a9258e262d2b25"
+contract_sha256: "sha256:3f200bf2c0cf0ccc66cf64c3f7b1ec790257b5ad1356f7472301634b249391aa"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -11,6 +11,10 @@ date: "2026-09-11"
 # Hermes 控制中心升级与真实验收
 
 <!-- runbook-contract:
+- apps/agent-service/src/production-sandbox-lost-result-recovery.ts
+- apps/agent-service/src/production-tool-result-recovery.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-tool-result-recovery.ts
+- packages/execution-contracts/src/sandbox-execution-v2.ts
 - apps/agent-service/src/production-copy-save.ts
 - packages/platform-node/src/files/workspace-copy-publication.ts
 - packages/platform-node/src/files/pi-file-publication.ts
@@ -126,7 +130,13 @@ Job Host 还在 DNS 解析前、拨号前通过原认证 Worker IPC 逐次核对
 
 原运行调度现在可补交已经保存的完成输出：仅接受原 `runtime_settled/completed`，或清理未确认而保存输出的记录。恢复仍要求原冻结输入、当前权威和执行租约，并在写入回答的同一事务核对 checkpoint revision、原结果、全部前台/后台资源的永久释放、队列及未解除保护；不延长业务执行期限、不调用模型/工具、不发起第二轮清理。原输出保存后或 Run 状态变更前中断均保留可恢复身份；未知输出不能走该路径。取消先提交时不写回答。原输入不能读取或校验失败时保存 `RUN_COMPLETION_DELIVERY_REJECTED` 并保留原输出，停止自动补交；不得通过改诊断码或续发旧授权强行恢复。备份/迁移须共同保留冻结输入、checkpoint、回答 Payload、完成命令与消息身份；本变更沿用 Schema 43，升级仍须替换唯一 writer，不能因 schema 相同认定旧程序具有这些行为检查。该能力由现有 Run 调度触发；仅运行资源核查的无 Web 模式不因此创建模型/Run 执行服务。
 
-工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后仅补交核验得到的原结果。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；bash 失败仍只给出错误码说明。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
+工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后只按原结果或下述确定结果丢失的边界交付。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；bash 失败仍只给出错误码说明。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
+
+前台 SRT 工具在重启前尚未被 Agent 持久接纳的输出不保证保存。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。
+
+此错误沿原 Pi 批次交付一次，模型得到“工具已运行并结束，但输出和退出结果在服务重启时丢失；没有重新执行。它可能已经产生了效果，是否重做请先确认。”当前 Run、租约、取消、期限、披露与预算仍须核验；取消或过期不能复活或补交，旧 Handle 不因恢复而取得新 fence 权限。没有签名退出证明或原尝试仍可提交时不能声称丢失。页面仅将这一已释放的确定错误显示为失败，不推断工作区效果已核验。
+
+升级、备份和恢复应共同保留原控制关联、签名控制证据、释放回执、operation journal、原 Pi 批次及交付记录，还有既有受保护 trace 中的 `sandbox-tool-result-lost:<invocationId>` 固定错误 Payload。本修改不扩展恢复包或迁移包范围；数据库恢复点不等于保存了宿主原控制目录，缺少匹配的原签名证据时不得新认定结果丢失。这里不新增原工具输出的宿主明文文件，不新增表、迁移、状态或队列；同 schema 不证明旧 writer 理解本错误的恢复和交付语义。仍须替换唯一 writer，回退前核对匹配程序和完整恢复点。参见[工具执行排查记录](../execution/plans/2026-09-28-tool-execution-audit-plan.md#缺陷和待验证项)；Linux 现场资格不能由 Mac 证据替代。
 
 生产通用 Worker 现在通过既有 Payload UDS 的 `payload.invocation.validate` 校验 Agent 当前持久调用权限；不支持此操作的旧 Agent 会拒绝继续执行，升级须使用匹配服务产物，不能降级成仅凭内存委派放行。该查询不读取正文、不缓存批准、不再消费额度；外发前与输入解密返回前均重新检查。事件流挂起期间仍检查撤销并向原 Worker 请求停止，受保护诊断区分“已请求”与“发送未确认”，两者均不是效果终结或资源释放证明。资源扫描在 Run 仍运行时也识别 Grant/Handle 撤销、期限失效和能力禁用，排定原资源有限 stop；未绑定预约先禁止启动，未知停止仍保留占用。现有 Schema 43、历史结果保留和恢复点规则不变；实际目录授权与平台停止能力仍须按目标现场检查，不能以这些本地测试替代资格或生产操作授权。
 

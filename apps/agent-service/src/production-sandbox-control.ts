@@ -18,10 +18,10 @@ import {
   type SandboxHostBinding,
   type SandboxJobControlBinding,
   type SandboxPreparationDiagnostic,
-  sandboxPreparationDiagnosticSchema,
   type SandboxResourceObservation,
   type SandboxRuntimeQualification,
   sandboxJobControlBindingSchema,
+  sandboxPreparationDiagnosticSchema,
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -669,6 +669,27 @@ export function createProductionSandboxControl(options: Options) {
     return [];
   };
   return {
+    async hasExitedTask(record: SandboxExecutionRecord): Promise<boolean> {
+      if (record.facts.environment.kind !== "local") return false;
+      const stored = await readControl(record.plan);
+      let observation: JobHostControlObservation;
+      try {
+        observation = await readJobHostFinalEvidence(stored.control);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") return false;
+        throw error;
+      }
+      if (
+        observation.bootId !== stored.bootId ||
+        observation.processIdentityRef !== stored.processIdentityRef ||
+        observation.policyDigest !== stored.policyDigest ||
+        observation.observedAt > options.now() ||
+        observation.privateDirectoryRef !== record.facts.environment.privateDirectoryRef
+      )
+        throw new Error("SANDBOX_CONTROL_IDENTITY_CHANGED");
+      await readControl(record.plan);
+      return observation.taskStarted && observation.taskProcessExited;
+    },
     async recordPreparationDiagnostic(
       plan: SandboxExecutionPlanV2,
       input: SandboxPreparationDiagnostic,

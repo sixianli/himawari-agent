@@ -1,7 +1,10 @@
-import type { SandboxExecutionPlanCandidateV2 } from "@himawari-agent/execution-contracts";
+import {
+  isSandboxToolResultLost,
+  type SandboxExecutionPlanCandidateV2,
+} from "@himawari-agent/execution-contracts";
+import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observability.js";
 import type { SandboxExecutionRunInventory } from "../ports/sandbox-execution-journal.js";
-import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
 import { projectSandboxExecution } from "./sandbox-execution-projection.js";
 import { readSandboxScopeSnapshot } from "./sandbox-scope-service.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
@@ -196,6 +199,11 @@ export async function readThreadExecutionResources(input: {
     if (
       entry.phase === "bound" &&
       !awaitingResult &&
+      !(
+        plan.mode === "foreground" &&
+        released &&
+        isSandboxToolResultLost(entry.record.facts.result)
+      ) &&
       (!entry.record.facts.result ||
         entry.record.facts.result.kind === "unknown" ||
         entry.record.facts.effect.kind === "unknown")

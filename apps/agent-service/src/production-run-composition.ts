@@ -17,6 +17,7 @@ import {
   RuntimeContinuationService,
   type RuntimeRequest,
   type RuntimeToolPort,
+  type SandboxExecutionRecord,
   SessionTraceRecorder,
   type WorkerRunPort,
 } from "@himawari-agent/application";
@@ -30,8 +31,8 @@ import {
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
-import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
+import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
 export interface ProductionRunCompositionOptions {
   readonly generateTitle?: (
@@ -40,6 +41,9 @@ export interface ProductionRunCompositionOptions {
     admission: ModelInvocationAdmissionPort,
   ) => Promise<string>;
   readonly onTitleFailure?: (error: unknown) => void;
+  readonly recoverMissingToolResult?: (
+    record: SandboxExecutionRecord,
+  ) => Promise<SandboxExecutionRecord>;
   readonly resources?: {
     recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
@@ -133,6 +137,9 @@ export function createProductionRunComposition(options: ProductionRunComposition
     ids,
   });
   const prepareToolResultRecovery = createProductionToolResultRecovery({
+    ...(options.recoverMissingToolResult
+      ? { recoverMissingResult: options.recoverMissingToolResult }
+      : {}),
     ownerId,
     agentId,
     repository,

@@ -14,6 +14,7 @@ import type {
   SandboxOperationContract,
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
+import { isSandboxToolResultLost } from "@himawari-agent/execution-contracts";
 
 export interface SandboxToolCompletion {
   readonly outcome: "succeeded" | "failed";
@@ -221,16 +222,19 @@ export function createProductionSandboxToolResult(options: {
               outcome: "failed",
               outputRef:
                 result.kind === "error" &&
+                !isSandboxToolResultLost(result) &&
                 (result.reasonCode === "FILE_VERSION_CONFLICT" ||
                   plan.operationContract.kind === "fixed_read")
                   ? result.output.ref
                   : null,
               errorCode:
-                sandboxCommandEffectReason({
-                  operationKind: record.plan.operationContract.kind,
-                  result: record.facts.result,
-                  effectKind: record.facts.effect.kind,
-                }) ?? (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
+                (isSandboxToolResultLost(result) && result.kind === "error"
+                  ? result.reasonCode
+                  : sandboxCommandEffectReason({
+                      operationKind: record.plan.operationContract.kind,
+                      result: record.facts.result,
+                      effectKind: record.facts.effect.kind,
+                    })) ?? (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
               externalActionId: null,
             };
       await delivery.saveReceipt(completion);

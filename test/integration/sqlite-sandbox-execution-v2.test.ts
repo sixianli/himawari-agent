@@ -7,8 +7,8 @@ import {
   type RunExecutionLeaseClaim,
   type RuntimeToolInvocation,
   recoverSandboxExecutionsAtStartup,
-  type SandboxExecutionJournalPort,
   type SandboxExecutionAdmissionRecord,
+  type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
   type SandboxExecutionRecord,
@@ -39,11 +39,11 @@ import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
-import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
-import { createFauxModelFixture } from "../../packages/runtime-pi/test/faux-model-fixture.ts";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
 import { readThreadExecutionEnvironment } from "../../packages/application/src/services/thread-execution-environment.ts";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
+import { createFauxModelFixture } from "../../packages/runtime-pi/test/faux-model-fixture.ts";
 import {
   sandboxV2Admission as admission,
   sandboxV2Call as call,
@@ -2727,13 +2727,20 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     },
   );
 
-  it.each(["known-released", "known-unreleased", "unknown-released", "cancelled"] as const)(
+  it.each([
+    "known-released",
+    "known-unreleased",
+    "unknown-released",
+    "lost-candidate",
+    "cancelled",
+  ] as const)(
     "discovers a known sandbox result for a stranded Run without executable replay: %s",
     async (scenario) => {
       const f = await openSandboxJournal();
       try {
         let record = start(f);
-        if (scenario !== "unknown-released") record = append(f, record, result(f, record), true);
+        if (!["unknown-released", "lost-candidate"].includes(scenario))
+          record = append(f, record, result(f, record), true);
         record = append(f, record, resource(record, "stopping"));
         if (scenario !== "known-unreleased")
           record = append(f, record, resource(record, "released"));
@@ -2749,6 +2756,18 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
           VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
           .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+        const authority =
+          scenario === "lost-candidate"
+            ? {
+                ...SERVICE_AUTHORITY,
+                product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+                lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+              }
+            : SERVICE_AUTHORITY;
+        if (scenario === "lost-candidate") {
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+        }
         const reopened = await SqliteProductStateRepository.open({
           stateRoot: f.resource.stateRoot,
           minimumFreeBytes: 0,
@@ -2758,13 +2777,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           const dispatch = reopened.runDispatch(
             OWNER_ID,
             AGENT_ID,
-            SERVICE_AUTHORITY.product,
-            SERVICE_AUTHORITY.lease,
+            authority.product,
+            authority.lease,
             "recovery-consumer",
           );
           const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
           expect(candidates).toEqual(
-            scenario === "known-released"
+            ["known-released", "lost-candidate"].includes(scenario)
               ? [expect.objectContaining({ runId, action: "resume_tool_result" })]
               : [],
           );
@@ -3022,6 +3041,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
 
   it.each([
     "late",
+    "loss-stale-handle",
+    "loss-coding",
+    "loss-cancelled",
+    "loss-expired",
+    "loss-coding-competing",
+    "loss-coding-denied",
+    "loss-coding-budget",
     "batch",
     "coding",
     "coding-denied",
@@ -3048,7 +3074,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   ] as const)(
     "resumes the production Run and Pi from a late SQLite result without dispatching its tool again: %s",
     async (scenario) => {
-      const variant = scenario.replace(/^preparation-/, "");
+      const variant = scenario.replace(/^(preparation|loss)-/, "");
       let authority = SERVICE_AUTHORITY;
       let now = T1;
       let failAfterReceipt = false;
@@ -3073,8 +3099,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       const runId = createRunId(f.plan.identity.runId);
       const toolCallId = "late-original-call";
       const preparation = scenario.startsWith("preparation-");
-      const coding =
-        scenario === "coding" || scenario === "coding-denied" || scenario === "preparation-coding";
+      const lost = scenario.startsWith("loss-");
+      const coding = variant.startsWith("coding");
       const parentKey = hash([runId, toolCallId]);
       const childToolCallId = coding ? `file-phase:${hash([parentKey, "read"])}` : toolCallId;
       const key = hash([runId, childToolCallId]);
@@ -3109,7 +3135,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       );
       const probes: string[] = [];
       const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
-      const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
       let record: SandboxExecutionRecord | undefined;
       let reservation: Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }> | undefined;
       let calls = 0;
@@ -3129,6 +3154,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         },
       });
       const make = (instanceId: string) => {
+        const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
         const peer = { ...authority.product, ...authority };
         const tools = new ProductionRuntimeTools({
           ...(coding
@@ -3144,7 +3170,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                     throw new Error("RECOVERY_CANNOT_ISSUE_HANDLE");
                   },
                   authorize: async () =>
-                    scenario === "coding-denied"
+                    variant === "coding-denied"
                       ? {
                           decision: "DENY" as const,
                           reasonCode: "CURRENT_DISCLOSURE_DENIED",
@@ -3409,6 +3435,51 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           return execute(executing, options);
         };
         return createProductionRunComposition({
+          ...(lost
+            ? {
+                recoverMissingToolResult: async (current: SandboxExecutionRecord) => {
+                  const { createProductionSandboxLostResultRecovery } = await import(
+                    "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+                  );
+                  return createProductionSandboxLostResultRecovery({
+                    journal: repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+                    authority: () => authority,
+                    now: clock.now,
+                    verifyExited: async () => true,
+                    verifyFresh: async (value) => {
+                      const proof = context(value, value.facts).verification;
+                      if (!proof) throw new Error("Fixture proof missing");
+                      return proof;
+                    },
+                    saveOutput: async (value) => {
+                      const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+                      const payload = await f.protector.protect({
+                        ownerId: OWNER_ID,
+                        agentId: AGENT_ID,
+                        ref: "recovered-loss",
+                        dataClassification: "private",
+                        contentType: "text/plain",
+                        plaintext: bytes,
+                        createdAt: now,
+                      });
+                      const saved = await repository
+                        .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+                        .commit({
+                          runId,
+                          purpose: "trace",
+                          operationKey: `sandbox-tool-result-lost:${value.plan.identity.invocationId}`,
+                          payload,
+                        });
+                      return {
+                        ref: saved.ref,
+                        digest: createHash("sha256").update(bytes).digest("hex"),
+                        byteLength: bytes.length,
+                      };
+                    },
+                  })(current);
+                },
+              }
+            : {}),
           repository,
           configuration: {
             ownerId: OWNER_ID,
@@ -3417,7 +3488,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             deadlines: { runMs: 120000, workerRequestMs: 10000, providerRequestMs: 10000 },
             budgets: {
               globalCostMicros: 100,
-              perRunCostMicros: 100,
+              perRunCostMicros: variant === "coding-budget" && calls > 0 ? 0 : 100,
               perClassificationCostMicros: {
                 public: 100,
                 private: 100,
@@ -3547,34 +3618,36 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           createdAt: T1,
         });
         if (record) {
-          await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
-            payload,
-            handleRef,
-            authority,
-            now: T1,
-            invocationId,
-            plaintextByteLength: bytes.byteLength,
-          });
-          record = append(
-            f,
-            record,
-            sandboxExecutionFactsSchema.parse({
-              ...record.facts,
-              effect: { kind: "not_applicable" },
-              result: {
-                schemaVersion: "sandbox-execution.v2",
-                identity: record.plan.identity,
-                environmentId: record.plan.environmentId,
-                policyDigest: record.facts.environment.policyDigest,
-                contract: { ref: "fixed-read", version: "1" },
-                occurredAt: T1,
-                kind: "result",
-                output,
-                completion: { type: "value" },
-              },
-            }),
-            true,
-          );
+          if (!lost) {
+            await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+              payload,
+              handleRef,
+              authority,
+              now: T1,
+              invocationId,
+              plaintextByteLength: bytes.byteLength,
+            });
+            record = append(
+              f,
+              record,
+              sandboxExecutionFactsSchema.parse({
+                ...record.facts,
+                effect: { kind: "not_applicable" },
+                result: {
+                  schemaVersion: "sandbox-execution.v2",
+                  identity: record.plan.identity,
+                  environmentId: record.plan.environmentId,
+                  policyDigest: record.facts.environment.policyDigest,
+                  contract: { ref: "fixed-read", version: "1" },
+                  occurredAt: T1,
+                  kind: "result",
+                  output,
+                  completion: { type: "value" },
+                },
+              }),
+              true,
+            );
+          }
           record = append(f, record, resource(record, "stopping"));
           record = append(f, record, resource(record, "released"));
         }
@@ -3611,6 +3684,17 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               "DELETE FROM trace_events WHERE run_id=? AND event_type='runtime.result_unknown'",
             )
             .run(runId);
+        }
+        if (lost) {
+          authority = {
+            ...authority,
+            product: { ...authority.product, fencingToken: 2 },
+            lease: { ...authority.lease, fencingToken: 2 },
+            agentServiceBootId: "replacement-agent",
+            workerBootId: "replacement-worker",
+          };
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
         }
         if (variant === "new-boot")
           authority = {
@@ -3678,17 +3762,47 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           });
           expect(model.observed).toHaveLength(1);
         }
-        const outcomes =
-          scenario === "competing"
-            ? await Promise.all([
-                make("first-recovery").dispatcher.pump(),
-                make("second-recovery").dispatcher.pump(),
-              ])
-            : [await make("restarted-consumer").dispatcher.pump()];
+        if (variant === "stale-handle") {
+          const originalHandle = await repository
+            .capabilityStore(OWNER_ID, AGENT_ID)
+            .getExecutionHandle(handleRef);
+          expect(originalHandle).toMatchObject({ authorityFence: 1 });
+          expect(authority.product.fencingToken).toBe(2);
+        }
+        const outcomes = ["competing", "coding-competing"].includes(variant)
+          ? await Promise.all([
+              make("first-recovery").dispatcher.pump(),
+              make("second-recovery").dispatcher.pump(),
+            ])
+          : [await make("restarted-consumer").dispatcher.pump()];
+        if (variant === "coding-budget") {
+          expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("failed");
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          if (!record) throw new Error("Lost result fixture missing");
+          const persisted = await repository
+            .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+            .read(record.plan.identity);
+          expect(persisted?.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+          });
+          expect(persisted?.releaseReceipt).toEqual(record.releaseReceipt);
+          return;
+        }
         if (
-          ["changed-model", "changed-tools", "changed-capability", "coding-denied"].includes(
-            scenario,
-          )
+          [
+            "changed-model",
+            "changed-tools",
+            "changed-capability",
+            "coding-denied",
+            "stale-handle",
+          ].includes(variant)
         ) {
           expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 0, unknown: 1 });
           expect(
@@ -3727,8 +3841,32 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(request).not.toHaveBeenCalled();
         expect(model.observed).toHaveLength(2);
         expect(JSON.stringify(model.observed.at(-1))).toContain(
-          preparation ? "SANDBOX_TOOL_NOT_STARTED" : "来自原工具的已核验结果",
+          lost
+            ? "SANDBOX_TOOL_RESULT_LOST"
+            : preparation
+              ? "SANDBOX_TOOL_NOT_STARTED"
+              : "来自原工具的已核验结果",
         );
+        if (lost) {
+          if (!record) throw new Error("Lost result fixture missing");
+          expect(JSON.stringify(model.observed.at(-1))).toContain(
+            "它可能已经产生了效果，是否重做请先确认",
+          );
+          expect(
+            f.database
+              .prepare(
+                "SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=? AND kind='tool_result'",
+              )
+              .get(record.plan.identity.jobId),
+          ).toEqual({ count: 1 });
+          expect(
+            (
+              await repository
+                .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+                .read(record.plan.identity)
+            )?.releaseReceipt,
+          ).toEqual(record.releaseReceipt);
+        }
         if (reservation) {
           expect(JSON.stringify(model.observed.at(-1))).toContain("工具未启动");
           const original = await repository
@@ -4063,6 +4201,197 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           ).toEqual({ released_at: T1 });
         } else expect(() => append(f, record, changed)).toThrow();
       } finally {
+        await f.close();
+      }
+    },
+  );
+  it.each([
+    "lost",
+    "original-first",
+    "loss-first",
+    "competing",
+    "same-fence",
+    "unreleased",
+    "unsigned",
+    "not-exited",
+  ] as const)(
+    "settles a released lost result with SQLite operation ordering: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        const original = result(f, record);
+        record = append(f, record, resource(record, "stopping"));
+        if (scenario !== "unreleased") record = append(f, record, resource(record, "released"));
+        const release = record.releaseReceipt;
+        let authority = SERVICE_AUTHORITY;
+        if (scenario !== "same-fence") {
+          authority = {
+            ...SERVICE_AUTHORITY,
+            product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+            lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+          };
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+        }
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const writeOriginal = async () =>
+          journal.recordOperation({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            facts: { ...original, resource: record.facts.resource },
+            authority,
+            now: T1,
+            context: context(record, { ...original, resource: record.facts.resource }),
+          });
+        const saveOutput = vi.fn(async () => {
+          const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+          const payload = await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "lost-result-payload",
+            dataClassification: "private",
+            contentType: "text/plain",
+            plaintext: bytes,
+            createdAt: T1,
+          });
+          if (!repository) throw new Error("Fixture repository missing");
+          const saved = await repository
+            .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+            .commit({
+              runId: createRunId(record.plan.identity.runId),
+              purpose: "trace",
+              operationKey: `sandbox-tool-result-lost:${record.plan.identity.invocationId}`,
+              payload,
+            });
+          return {
+            ref: saved.ref,
+            digest: createHash("sha256").update(bytes).digest("hex"),
+            byteLength: bytes.length,
+          };
+        });
+        let raced = false;
+        const { createProductionSandboxLostResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+        );
+        const recover = createProductionSandboxLostResultRecovery({
+          journal,
+          authority: () => authority,
+          now: () => T1,
+          verifyExited: async () => {
+            if (scenario === "original-first" && !raced) {
+              raced = true;
+              await writeOriginal();
+            }
+            return !["unsigned", "not-exited"].includes(scenario);
+          },
+          saveOutput,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("Fixture proof missing");
+            return proof;
+          },
+        });
+        if (scenario === "competing") await Promise.all([recover(record), recover(record)]);
+        else await recover(record);
+        const current = await journal.read(record.plan.identity);
+        if (!current) throw new Error("Missing recovered record");
+        expect(current.releaseReceipt).toEqual(release);
+        expect(current.facts.resource).toEqual(record.facts.resource);
+        if (["same-fence", "unreleased", "unsigned", "not-exited"].includes(scenario)) {
+          expect(current.facts.result).toBeNull();
+          expect(saveOutput).not.toHaveBeenCalled();
+        } else if (scenario === "original-first") {
+          expect(current.facts.result).toEqual(original.result);
+          expect(current.operationRevision).toBe(1);
+        } else {
+          expect(current.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+            termination: { type: "failure" },
+          });
+          expect(current.facts.effect).toEqual(record.facts.effect);
+          expect(current.operationRevision).toBe(1);
+          const threadId = current.plan.identity.threadId;
+          if (!threadId) throw new Error("Fixture thread missing");
+          expect(
+            await readThreadExecutionResources({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              threadId,
+              runId: current.plan.identity.runId,
+              now: T1,
+              inventory: {
+                admissions: [{ phase: "bound", record: current }],
+                queue: [],
+                legacyResourcesPending: false,
+                deletedPlans: [],
+              },
+              payloads: { get: async () => f.scopePayload },
+              protector: f.protector,
+              digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+              itemId: (id) => `tool:${id}`,
+            }),
+          ).toMatchObject({
+            allReleased: true,
+            pendingResources: false,
+            unresolvedResultItemIds: [],
+          });
+          await expect(
+            journal.recordOperation({
+              identity: record.plan.identity,
+              expectedSequence: current.facts.resource.sequence,
+              expectedOperationRevision: current.operationRevision,
+              facts: { ...original, resource: current.facts.resource },
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              context: context(current, { ...original, resource: current.facts.resource }),
+            }),
+          ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+          await expect(writeOriginal()).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          record = current;
+          await expect(writeOriginal()).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          expect((await recover(current)).facts.result).toEqual(current.facts.result);
+          const complete = createProductionSandboxToolResult({
+            journal,
+            preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+            authority: () => authority,
+            now: () => T1,
+            verifyFresh: async (value) => {
+              const proof = context(value, value.facts).verification;
+              if (!proof) throw new Error("Fixture proof missing");
+              return proof;
+            },
+          });
+          f.database
+            .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
+            .run(record.plan.identity.runId);
+          const receipt = vi.fn(async () => {});
+          await expect(
+            complete(
+              {
+                runId: record.plan.identity.runId,
+                invocationId: record.plan.identity.invocationId,
+              },
+              {
+                assertDisclosure: async () => {
+                  throw new Error("cancelled");
+                },
+                saveReceipt: receipt,
+              },
+            ),
+          ).rejects.toThrow("cancelled");
+          expect(receipt).not.toHaveBeenCalled();
+        }
+      } finally {
+        await repository?.close();
         await f.close();
       }
     },
