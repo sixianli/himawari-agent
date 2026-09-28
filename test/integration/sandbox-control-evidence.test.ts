@@ -735,6 +735,46 @@ async function vanish(pid: number, group: boolean) {
   throw new Error("process did not vanish");
 }
 
+it.each(["inspect", "stop"] as const)(
+  "verifies the original group after its signed final observation could not confirm cleanup: %s",
+  async (command) => {
+    const f = await fixture();
+    const host = await running({ detached: false });
+    const leader = await running({ detached: true });
+    f.set({
+      phase: "running",
+      taskStarted: true,
+      processId: host.pid,
+      processStartToken: host.token,
+      taskProcessGroup: { processGroupId: leader.pid, startToken: leader.token },
+    });
+    await f.recordStart();
+    f.set({
+      taskProcessExited: true,
+      stdioClosed: true,
+      srtReset: true,
+      taskProcessGroupGone: false,
+    });
+    await f.finishControl();
+    const finalBefore = await readFile(path.join(f.directory, "final.json"), "utf8");
+    await vanish(host.pid, false);
+    const blocked = settled(
+      await f.control.observe(f.record, command, new AbortController().signal),
+    );
+    expect(blocked).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+    const record = { ...f.record, facts: { ...f.record.facts, resource: blocked } };
+    await vanish(leader.pid, true);
+    const resource = settled(
+      await f.control.observe(record, command, new AbortController().signal),
+    );
+    expect(resource).toMatchObject({ supervision: "released", cleanup: "process_group_gone" });
+    await expect(
+      f.control.evidence(record.plan, { ...record.facts, resource }),
+    ).resolves.toHaveLength(1);
+    expect(await readFile(path.join(f.directory, "final.json"), "utf8")).toBe(finalBefore);
+  },
+);
+
 it.each([
   ["host and group gone", "released"],
   ["host start replaced", "released"],

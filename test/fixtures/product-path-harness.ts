@@ -45,7 +45,7 @@ const authority = { deploymentId, authorityEpoch: 1, fencingToken: 1 };
 const audience = "access-audience-product-path";
 const subject = "subject-product-path";
 const bootstrapToken = "bootstrap-token-product-path";
-const codingTools = ["read", "write", "edit", "ls"] as const;
+const codingTools = ["read", "write", "edit", "ls", "bash"] as const;
 
 export type ModelRequest = {
   readonly path: string;
@@ -199,6 +199,64 @@ function run(command: string, args: readonly string[], env: NodeJS.ProcessEnv, c
       `${path.basename(command)} ${args[0] ?? ""} failed: ${result.stderr || result.stdout || result.error?.message}`,
     );
   return result.stdout;
+}
+
+async function prepareProductPathBash(testRoot: string, runtimeRoot: string, logDirectory: string) {
+  const fileHash = async (filename: string) =>
+    createHash("sha256")
+      .update(await readFile(filename))
+      .digest("hex");
+  const source = "/bin/bash";
+  const candidate = path.join(testRoot, "test-bash");
+  const installed = path.join(runtimeRoot, "pi-tools/bin/bash");
+  const commands: Array<{
+    command: string;
+    args: readonly string[];
+    status: number | null;
+    signal: string | null;
+    stdout: string;
+    stderr: string;
+  }> = [];
+  const checked = (command: string, args: readonly string[]) => {
+    const result = spawnSync(command, args, { encoding: "utf8", timeout: 15_000 });
+    commands.push({
+      command,
+      args,
+      status: result.status,
+      signal: result.signal,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    });
+    if (result.status !== 0) throw new Error(`PRODUCT_PATH_BASH_UNAVAILABLE: ${command}`);
+    return result.stdout;
+  };
+  const sourceSha256 = await fileHash(source);
+  let installedSha256: string | null = null;
+  try {
+    await copyFile(source, candidate);
+    await chmod(candidate, 0o755);
+    if (process.platform === "darwin") checked("/usr/bin/codesign", ["-f", "-s", "-", candidate]);
+    await mkdir(path.dirname(installed), { recursive: true });
+    await copyFile(candidate, installed);
+    await chmod(installed, 0o755);
+    installedSha256 = await fileHash(installed);
+    if (process.platform === "darwin") {
+      checked("/usr/bin/codesign", ["-dv", "--verbose=2", installed]);
+      checked("/usr/bin/codesign", ["--verify", "--verbose=2", installed]);
+      checked("/usr/bin/otool", ["-L", installed]);
+    }
+    if (checked(installed, ["-c", "printf product-path-bash-ok"]) !== "product-path-bash-ok")
+      throw new Error("PRODUCT_PATH_BASH_OUTPUT_INVALID");
+  } finally {
+    await writeFile(
+      path.join(logDirectory, "bash-toolchain.json"),
+      JSON.stringify(
+        { source, sourceSha256, candidate, installed, installedSha256, commands },
+        null,
+        2,
+      ),
+    );
+  }
 }
 
 export interface ProductPathInstallation {
@@ -477,6 +535,7 @@ export async function installProductPath(options: {
   }
   run("tar", ["-xzf", options.artifact, "-C", testRoot, "browser"], installEnv, testRoot);
   const runtimeRoot = path.join(runtimePrefix, "lib/himawari-agent");
+  await prepareProductPathBash(testRoot, runtimeRoot, options.logDirectory);
 
   const layout = await initializeStateRoot(stateRoot);
   const databasePath = path.join(layout.data, "product.sqlite");
@@ -963,7 +1022,12 @@ async function writeCodingSnapshot(input: {
       contract: {
         ref: "pi-coding-tool",
         version: "1",
-        kind: ["write", "edit"].includes(operation) ? "verified_effect" : "fixed_read",
+        kind:
+          operation === "bash"
+            ? "command"
+            : ["write", "edit"].includes(operation)
+              ? "verified_effect"
+              : "fixed_read",
         ...(["write", "edit"].includes(operation)
           ? { verifierRef: "pi-atomic-write", verifierVersion: "1", targetRef: "pi-input:path" }
           : {}),

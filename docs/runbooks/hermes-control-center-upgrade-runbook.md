@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:89d0f480be4ca2ab2dcdd038823c24c83821744ea9b5c8b0e044a9d50242fc7c"
+contract_sha256: "sha256:3ac0b760effa9e5fb5454e8c63a06a57a6bacf15398c9d7110a9258e262d2b25"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -382,6 +382,8 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 新合同尚无生产切换或 Linux 资格。采用前须对实际安装字节、最终运行身份和目标文件系统完成资格并明确选择合同 3；旧合同 1/2 的行为保留，普通源码升级不自动改部署绑定。本节不授权启用模型、付费调用、生产迁移或部署。
 
 ### Schema 37 固定文件发布恢复
+
+升级后核查原作业时，已完成清理但终态中的 `taskProcessGroupGone` 为 false，不再阻止按原签名开始记录和当前进程身份补做核验；没有原身份依据或原进程组仍存活时继续保留占用。证明仍仅为 `process_group_gone`，不能推断离组后代已停止；数据格式及本手册的部署授权要求不变。详细边界见[原环境核查约束](install-start-stop-runbook.md#v2-原环境核查约束2026-09-09)。[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 
 历史占用可先按[只读核查流程](workspace-lifecycle-audit-runbook.md)从对应源码 checkout 读取已验证的数据库副本。该入口不随安装产物自动变成管理命令，也不执行迁移、解锁或重放；现场宿主停止证明与具体修复仍需单独核对。
 

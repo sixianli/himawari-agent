@@ -552,6 +552,18 @@ export function createProductionSandboxControl(options: Options) {
       await saveDiagnostic(record.plan, command, "classification", error);
       reasonCode = sandboxReconciliationFailureReason(error);
     }
+    if (
+      host &&
+      state === "lost" &&
+      raw.phase === "finished" &&
+      raw.taskStarted &&
+      raw.taskProcessExited &&
+      raw.srtReset &&
+      raw.taskProcessGroupGone === false
+    ) {
+      const crash = await crashedWithinBoot(record);
+      if (crash) return observeGone(record, control, { crash });
+    }
     if (state === "exit_cleanup_pending")
       return {
         kind: "cleanup_pending",

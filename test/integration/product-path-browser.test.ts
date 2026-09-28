@@ -1,4 +1,5 @@
-import { readFile, statfs, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { readFile, readdir, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
@@ -34,6 +35,14 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       arguments: { path: toolResults.length === 0 ? "notes.txt" : "second.txt" },
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
+  if (lastUserText.includes("运行中停止验证"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command: "printf 'running'; /bin/sleep 120; printf 'late-result'",
+      },
+    };
   if (lastUserText.includes("读取 notes.txt"))
     return { kind: "tool", name: "read", arguments: { path: "notes.txt" } };
   if (lastUserText.includes("读取 missing.txt"))
@@ -491,6 +500,136 @@ productDescribe(
         }
       });
     }, 1_800_000);
+
+    it("stops a running tool, releases only with proof, and never revives the cancelled run", async () => {
+      await scenario("13-stop-running", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const text = "运行中停止验证";
+        await beginToolRequest(text);
+        await uiExpect
+          .poll(() => executionReadback().filter((record) => !before.has(record.jobId)), {
+            timeout: 60_000,
+          })
+          .toHaveLength(1);
+        const current = executionReadback().filter((record) => !before.has(record.jobId));
+        expect(current).toHaveLength(1);
+        const job = current[0];
+        if (!job) throw new Error("STOP_TEST_JOB_MISSING");
+        expect(job).toMatchObject({ released: 0, runStatus: "running", intents: 0 });
+        const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
+        const readStarts = async () =>
+          Promise.all(
+            (await readdir(jobsRoot))
+              .filter((name) => name.startsWith("control-"))
+              .map(async (name) => {
+                const encoded = await readFile(
+                  path.join(jobsRoot, name, "started.json"),
+                  "utf8",
+                ).catch((error: NodeJS.ErrnoException) => {
+                  if (error.code === "ENOENT") return null;
+                  throw error;
+                });
+                if (encoded === null) return null;
+                return JSON.parse(JSON.parse(encoded).body) as {
+                  jobId: string;
+                  processId: number;
+                  taskProcessGroup: { processGroupId: number };
+                };
+              }),
+          );
+        await uiExpect
+          .poll(async () => (await readStarts()).some((entry) => entry?.jobId === job.jobId), {
+            timeout: 60_000,
+          })
+          .toBe(true);
+        const host = (await readStarts()).find((entry) => entry?.jobId === job.jobId);
+        expect(host).toBeDefined();
+        if (!host) throw new Error("STOP_TEST_HOST_MISSING");
+        const taskProcesses = () =>
+          execFileSync("/bin/ps", ["-axo", "pid=,pgid=,command="], { encoding: "utf8" })
+            .split("\n")
+            .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
+            .filter((match) => match && Number(match[2]) === host.taskProcessGroup.processGroupId)
+            .map((match) => ({ pid: Number(match?.[1]), command: match?.[3] ?? "" }));
+        await uiExpect
+          .poll(() => taskProcesses().some(({ command }) => command === "/bin/sleep 120"), {
+            timeout: 60_000,
+          })
+          .toBe(true);
+        const shellPid = taskProcesses().find(({ command }) => command === "/bin/sleep 120")?.pid;
+        if (!shellPid) throw new Error("STOP_TEST_TASK_MISSING");
+        const alive = (pid: number) => {
+          try {
+            process.kill(pid, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            if ((error as NodeJS.ErrnoException).code === "EPERM") return true;
+            throw error;
+          }
+        };
+        expect(alive(host.processId)).toBe(true);
+        expect(alive(shellPid)).toBe(true);
+        const readback = () => {
+          const database = openQualifiedDatabase(installation.databasePath);
+          try {
+            return {
+              rows: executionReadback().filter((record) => record.jobId === job.jobId),
+              occupancy: database
+                .prepare(
+                  "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+                )
+                .all(job.jobId),
+              receipts: database
+                .prepare(
+                  "SELECT accepted_at AS acceptedAt, verification_json AS verification FROM sandbox_release_receipts WHERE job_id=?",
+                )
+                .all(job.jobId),
+              hostAlive: alive(host.processId),
+              groupAlive: alive(-host.taskProcessGroup.processGroupId),
+              shellAlive: alive(shellPid),
+              replies: observedToolReplies(text),
+            };
+          } finally {
+            database.close();
+          }
+        };
+        await writeFile(
+          path.join(outputDirectory, "13-stop-running-before.json"),
+          JSON.stringify(readback(), null, 2),
+        );
+        try {
+          await page.getByRole("button", { name: "停止", exact: true }).click();
+          await uiExpect.poll(() => readback().hostAlive, { timeout: 40_000 }).toBe(false);
+          await uiExpect
+            .poll(() => readback().rows[0], { timeout: 40_000 })
+            .toMatchObject({
+              released: 1,
+              runStatus: "cancelled",
+              intents: 0,
+            });
+          const stopped = readback();
+          expect(stopped.groupAlive).toBe(false);
+          expect(stopped.shellAlive).toBe(false);
+          expect(stopped.receipts).toHaveLength(1);
+          expect(stopped.occupancy.length).toBeGreaterThan(0);
+          for (const entry of stopped.occupancy)
+            expect(entry).toMatchObject({ releasedAt: expect.any(String) });
+          expect(stopped.replies).toEqual([]);
+          await page.reload();
+          await uiExpect(composer()).toBeVisible();
+          await send("停止后继续");
+          await uiExpect(page.getByText("普通回答已完成").last()).toBeVisible({ timeout: 60_000 });
+          expect(readback()).toEqual(stopped);
+        } finally {
+          await writeFile(
+            path.join(outputDirectory, "13-stop-running-after.json"),
+            JSON.stringify(readback(), null, 2),
+          );
+        }
+      });
+    });
 
     it.each(["read", "write"] as const)(
       "recovers the original tool result after a process crash during durable delivery: %s",
