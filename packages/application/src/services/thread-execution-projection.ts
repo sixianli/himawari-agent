@@ -1,3 +1,4 @@
+import type { RunCheckpointStore } from "../ports/run-checkpoints.js";
 import { createAgentId, createOwnerId, createRunId, createThreadId } from "@himawari-agent/domain";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
@@ -16,6 +17,7 @@ import { redactTracePayload } from "./trace-redaction.js";
 
 const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_TOOL_RESULT_LOST",
+  "SANDBOX_TOOL_DEADLINE_EXCEEDED",
   "WORKER_ADMISSION_CONFLICT",
   "WORKER_AUTHORIZATION_DENIED",
   "WORKER_AUTHORITY_UNAVAILABLE",
@@ -81,6 +83,7 @@ export class ThreadExecutionProjection {
     readonly payloads: (ownerId: string, agentId: string) => PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly resources?: ThreadExecutionResourceReader;
+    readonly checkpoints?: Pick<RunCheckpointStore, "read">;
   };
   constructor(dependencies: {
     readonly threads: ThreadRepositoryPort;
@@ -88,6 +91,7 @@ export class ThreadExecutionProjection {
     readonly payloads: (ownerId: string, agentId: string) => PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly resources?: ThreadExecutionResourceReader;
+    readonly checkpoints?: Pick<RunCheckpointStore, "read">;
   }) {
     this.dependencies = dependencies;
   }
@@ -446,6 +450,7 @@ export class ThreadExecutionProjection {
             PORT_ERROR_CODES.NOT_AUTHORITATIVE,
             "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
           );
+        const checkpoint = await this.dependencies.checkpoints?.read(runId);
         const after = (await this.dependencies.threads.listRuns(ownerId, agentId, threadId)).find(
           (run) => run.runId === runId,
         );
@@ -454,7 +459,13 @@ export class ThreadExecutionProjection {
             PORT_ERROR_CODES.NOT_AUTHORITATIVE,
             "THREAD_EXECUTION_CHANGED_DURING_READ",
           );
-        return projectThreadExecutionState(after, records, input.canCancelRun, resources);
+        return projectThreadExecutionState(
+          after,
+          records,
+          input.canCancelRun,
+          resources,
+          checkpoint?.checkpoint,
+        );
       }
       if (page.nextSequence <= afterSequence)
         throw new ApplicationPortError(

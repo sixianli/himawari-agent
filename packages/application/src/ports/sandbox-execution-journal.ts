@@ -180,17 +180,24 @@ export interface SandboxExecutionJournalPort {
     readonly identity: SandboxJobIdentity;
     readonly authority: CapabilityInvocationAuthority;
     readonly now: string;
+    readonly recoveryPurpose?: "deadline_failure";
   }): Promise<{
     readonly receipt: FrozenCapabilityInvocationReceipt;
     readonly output: RunPayloadArtifact | undefined;
   }>;
   importResult(
     input: Parameters<SandboxExecutionJournalPort["append"]>[0] & {
+      readonly recoveryPurpose?: "deadline_failure";
       readonly payload: PayloadRecord;
       readonly source: {
         readonly binding: string;
         readonly digest: string;
         readonly byteLength: number;
+        readonly controlArtifact?: {
+          readonly operationKey: string;
+          readonly payloadRef: string;
+          readonly contentDigest: string;
+        };
         readonly artifacts: readonly {
           readonly operationKey: string;
           readonly payloadRef: string;

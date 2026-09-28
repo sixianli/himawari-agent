@@ -722,6 +722,7 @@ export async function createProductionHttpComposition(
     ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
     execution: new ThreadExecutionProjection({
       threads,
+      checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
       trace: repository.traceStore(),
       payloads: () => repository.payloadStore(ownerId, agentId),
       protector: payloadProtector,

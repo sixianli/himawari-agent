@@ -14,7 +14,10 @@ import type {
   SandboxOperationContract,
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
-import { isSandboxToolResultLost } from "@himawari-agent/execution-contracts";
+import {
+  isSandboxToolResultLost,
+  SANDBOX_TOOL_DEADLINE_EXCEEDED,
+} from "@himawari-agent/execution-contracts";
 
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE =
@@ -55,7 +58,10 @@ export function sandboxCommandEffectReason(input: {
     : null;
 }
 
-const RECOVERY_SETTLE_WAIT_MS = 35000;
+export const RECOVERY_SETTLE_WAIT_MS = 35000;
+export { SANDBOX_TOOL_DEADLINE_EXCEEDED } from "@himawari-agent/execution-contracts";
+export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
+  "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
 const RECOVERY_POLL_MS = 250;
 
 function awaitingRecovery(record: SandboxExecutionRecord) {
@@ -228,6 +234,7 @@ export function createProductionSandboxToolResult(options: {
                 result.kind === "error" &&
                 !isSandboxToolResultLost(result) &&
                 result.reasonCode !== SANDBOX_HOST_COMPLETION_CONTRADICTED &&
+                result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
                 (result.reasonCode === "FILE_VERSION_CONFLICT" ||
                   plan.operationContract.kind === "fixed_read")
                   ? result.output.ref

@@ -138,14 +138,19 @@ export function executionToolPhase(
   records: readonly ThreadExecutionRecord[],
   run: RunSummary,
 ): MessageId | undefined {
+  const reason = [...records]
+    .filter(
+      (record) => record.itemId === item.itemId && record.name.startsWith("runtime.tool_reason."),
+    )
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
   const marker = [...records]
     .filter(
       (record) => record.itemId === item.itemId && record.name.startsWith("runtime.tool_outcome."),
     )
     .sort((a, b) => a.sequence - b.sequence)
     .at(-1);
-  if (!marker || marker.sequence < item.sequence) return undefined;
-  switch (marker.name) {
+  switch (marker && marker.sequence >= item.sequence ? marker.name : undefined) {
     case "runtime.tool_outcome.not_dispatched":
       return "chat.phase.notDispatched";
     case "runtime.tool_outcome.unresolved":
@@ -155,7 +160,9 @@ export function executionToolPhase(
       // changed a file. Keep that uncertainty without a perpetual active phase.
       return isTerminalRun(run) ? "chat.phase.unresolved" : "chat.phase.preparing";
     default:
-      return undefined;
+      return item.phase === "failed" && reason && reason.sequence >= item.sequence
+        ? executionStateLabel("failed", reason.name.slice("runtime.tool_reason.".length))
+        : undefined;
   }
 }
 
@@ -354,6 +361,8 @@ export function executionStateLabel(
     WORKER_OPERATION_UNAVAILABLE: "chat.reason.operationUnavailable",
     WORKER_ADMISSION_UNAVAILABLE: "chat.reason.admissionUnavailable",
     WORKER_DEADLINE_EXCEEDED: "chat.reason.deadlineExceeded",
+    RUN_EXECUTION_DEADLINE_EXCEEDED: "chat.reason.runDeadlineExceeded",
+    SANDBOX_TOOL_DEADLINE_EXCEEDED: "chat.reason.toolDeadlineExceeded",
     WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",
     DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
     FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",

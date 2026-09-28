@@ -214,7 +214,7 @@ export function ExecutionProcess({
               ? effect?.outcome === "succeeded"
                 ? "chat.phase.completed"
                 : effect?.outcome === "failed"
-                  ? "chat.phase.failed"
+                  ? (executionToolPhase(item, records, run) ?? "chat.phase.failed")
                   : undefined
               : undefined;
             const elapsed = operation

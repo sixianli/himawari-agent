@@ -159,6 +159,8 @@ export const messages = {
   "chat.reason.admissionAlreadyRecorded": "请求已记录，请先检查原请求状态",
   "chat.reason.operationUnavailable": "当前执行方式不可用",
   "chat.reason.admissionUnavailable": "执行准入服务暂不可用",
+  "chat.reason.runDeadlineExceeded": "本轮执行期限已到，清理已完成，本轮已结束",
+  "chat.reason.toolDeadlineExceeded": "工具执行超时，已终止并完成清理",
   "chat.reason.deadlineExceeded": "执行期限已到，操作未派发",
   "chat.reason.resourceCeilingChanged": "允许的资源上限已变化，操作未派发",
   "chat.reason.directoryTargetChanged": "目录位置或目标已变化",

@@ -12,6 +12,7 @@ import type {
   SandboxExecutionFacts,
   SandboxTaskTermination,
 } from "@himawari-agent/execution-contracts";
+import { sandboxExecutionFactsSchema } from "@himawari-agent/execution-contracts";
 import type { createProductionSandboxStream } from "./production-sandbox-stream.js";
 
 export function createProductionSandboxStreamResultRecovery(options: {
@@ -22,6 +23,7 @@ export function createProductionSandboxStreamResultRecovery(options: {
   payloads: Pick<PayloadStorePort, "get">;
   protector: PayloadProtectorPort;
   nextRef(): string;
+  verifyExited(record: SandboxExecutionRecord): Promise<boolean>;
   facts(
     record: SandboxExecutionRecord,
     bytes: Uint8Array,
@@ -46,10 +48,19 @@ export function createProductionSandboxStreamResultRecovery(options: {
       return record;
     const recovered = await options.stream.recover(record);
     if (!recovered) return record;
+    const deadline = recovered.termination.reasonCode === "deadline";
+    if (deadline && options.now() < plan.effectiveDeadlineAt) return record;
+    if (deadline && !(await options.verifyExited(record))) return record;
+    const purpose = deadline ? { recoveryPurpose: "deadline_failure" as const } : {};
+    const source = {
+      ...recovered.source,
+      ...(deadline ? { controlArtifact: await options.stream.controlArtifact(record) } : {}),
+    };
     const original = await options.journal.readResultRecovery({
       identity: plan.identity,
       authority: options.authority(),
       now: options.now(),
+      ...purpose,
     });
     let payload: PayloadRecord;
     if (original.output) {
@@ -84,11 +95,32 @@ export function createProductionSandboxStreamResultRecovery(options: {
         createdAt: options.now(),
       });
     }
-    const facts = await options.facts(record, recovered.bytes, recovered.termination, {
+    const output = {
       ref: payload.ref,
       digest: recovered.source.digest,
       byteLength: recovered.source.byteLength,
-    });
+    };
+    const facts = deadline
+      ? sandboxExecutionFactsSchema.parse({
+          ...current,
+          effect:
+            plan.operationContract.kind === "fixed_read"
+              ? { kind: "not_applicable" }
+              : { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            policyDigest: current.environment.policyDigest,
+            contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+            occurredAt: options.now(),
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+            termination: { type: "failure" },
+            output,
+          },
+        })
+      : await options.facts(record, recovered.bytes, recovered.termination, output);
     const now = options.now();
     const context: SandboxExecutionProjectionContext = {
       now,
@@ -127,7 +159,8 @@ export function createProductionSandboxStreamResultRecovery(options: {
           now,
           context,
           payload,
-          source: recovered.source,
+          source,
+          ...purpose,
         })
       ).record;
     } catch (error) {

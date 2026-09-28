@@ -270,6 +270,7 @@ export interface ProductPathInstallation {
   readonly modelRequests: ModelRequest[];
   setModelScript(script: ModelScript): void;
   setEmbeddingAvailable(available: boolean): void;
+  setRunDeadline(milliseconds: number): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
   crash(): Promise<void>;
@@ -949,6 +950,12 @@ export async function installProductPath(options: {
     },
     setEmbeddingAvailable: (available) => {
       embeddingAvailable = available;
+    },
+    setRunDeadline: async (milliseconds) => {
+      if (processes || !Number.isSafeInteger(milliseconds) || milliseconds < 1000)
+        throw new Error("PRODUCT_PATH_DEADLINE_CONFIGURATION_INVALID");
+      configuration.deadlines.runMs = milliseconds;
+      await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
     },
     start,
     stop,

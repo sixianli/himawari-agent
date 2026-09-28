@@ -86,9 +86,12 @@ export function createProductionSandboxStream(
       if (
         !terminal.end ||
         !terminal.termination ||
-        terminal.termination.reasonCode !== "exited" ||
+        !(
+          (terminal.termination.reasonCode === "exited" &&
+            terminal.termination.exitCode !== null) ||
+          (terminal.termination.reasonCode === "deadline" && terminal.termination.exitCode === null)
+        ) ||
         !terminal.termination.taskProcessExited ||
-        terminal.termination.exitCode === null ||
         terminal.index > record.plan.resourceCeiling.maxOutputBytes
       )
         throw new Error("SANDBOX_STREAM_TERMINATION_INVALID");
@@ -138,6 +141,16 @@ export function createProductionSandboxStream(
           digest: hash(bytes),
           byteLength: offset,
         },
+      };
+    },
+    async controlArtifact(record: SandboxExecutionRecord) {
+      const operationKey = `sandbox-control:${key(record.plan.identity)}`;
+      const saved = await readStored(record, operationKey);
+      if (!saved) throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+      return {
+        operationKey,
+        payloadRef: saved.artifact.payloadRef,
+        contentDigest: saved.artifact.contentDigest,
       };
     },
     async termination(record: SandboxExecutionRecord) {

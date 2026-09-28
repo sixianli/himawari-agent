@@ -248,8 +248,567 @@ async function assertCompletionBlocked(f: Fixture, plan: ReturnType<typeof admis
   }
 }
 describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", (execution) => {
+  it.each(["normal", "deadline"] as const)(
+    "preserves the first durable result in a deadline race: %s",
+    async (first) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const normal = result(f, record);
+        if (normal.result?.kind !== "result") throw new Error("missing normal result");
+        const { completion: _completion, ...fields } = normal.result;
+        const deadline = sandboxExecutionFactsSchema.parse({
+          ...record.facts,
+          result: {
+            ...fields,
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+            termination: { type: "failure" },
+          },
+        });
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const write = (facts: SandboxExecutionFacts) =>
+          journal.recordOperation({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            facts,
+            context: context(record, facts),
+          });
+        const winner = first === "normal" ? normal : deadline;
+        const late = first === "normal" ? deadline : normal;
+        await write(winner);
+        await expect(write(late)).rejects.toThrow();
+        const current = await journal.read(record.plan.identity);
+        expect(current?.facts.result).toEqual(winner.result);
+        expect(current?.operationRevision).toBe(record.operationRevision + 1);
+        expect(current?.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "exited",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "cancelled",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: false,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "exited",
+      exitCode: 0,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: false,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: true,
+    },
+  ] as const)(
+    "recovers only exited deadline stream evidence: $reasonCode/$taskProcessExited/$signatureValid/$expired",
+    async ({ recoverable, signatureValid, expired, ...termination }) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        const candidate = admission(f);
+        const toolDeadline = new Date(Date.parse(T1) + 500).toISOString();
+        let record = start(f, {
+          ...candidate,
+          invocation: { ...candidate.invocation, deadlineAt: toolDeadline },
+          plan: { ...candidate.plan, effectiveDeadlineAt: toolDeadline },
+          facts: {
+            ...candidate.facts,
+            environment: { ...candidate.facts.environment, deadlineAt: toolDeadline },
+          },
+        });
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const { createProductionSandboxStream } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        let next = 0;
+        const stream = createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          artifacts: () => opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+          clock: { now: () => T1 },
+          ids: { next: () => `deadline-stream-${++next}` },
+        });
+        const bytes = Buffer.from("partial output before timeout");
+        await stream.append(record, {
+          index: 0,
+          offset: 0,
+          bytesBase64: bytes.toString("base64"),
+          end: true,
+          termination,
+        });
+        if (recoverable)
+          await expect(stream.recover(record)).resolves.toMatchObject({ termination, bytes });
+        else
+          await expect(stream.recover(record)).rejects.toThrow(
+            "SANDBOX_STREAM_TERMINATION_INVALID",
+          );
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const info = await journal.readResultRecovery({
+          identity: record.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        });
+        const artifacts = opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY);
+        await artifacts.commit({
+          runId: createRunId(record.plan.identity.runId),
+          purpose: "trace",
+          operationKey: `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`,
+          payload: await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "agent-proof-control",
+            dataClassification: "restricted",
+            contentType: "application/json",
+            plaintext: Buffer.from("{}"),
+            createdAt: T1,
+          }),
+        });
+        const readRecovery = vi.fn(
+          async (_input: Parameters<typeof journal.readResultRecovery>[0]) => info,
+        );
+        const importResult = vi.fn(async (_input: Parameters<typeof journal.importResult>[0]) => ({
+          record,
+          applied: true,
+        }));
+        const { createProductionSandboxStreamResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream-result-recovery.ts"
+        );
+        const recover = createProductionSandboxStreamResultRecovery({
+          journal: { read: journal.read, readResultRecovery: readRecovery, importResult },
+          authority: () => SERVICE_AUTHORITY,
+          now: () =>
+            expired
+              ? T2
+              : termination.reasonCode === "exited" && termination.exitCode === 0
+                ? T1
+                : new Date(Date.parse(toolDeadline) + 1).toISOString(),
+          stream,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          nextRef: () => "agent-recovered-output",
+          verifyExited: async () => {
+            if (!signatureValid) throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
+            return true;
+          },
+          facts: async () => record.facts,
+        });
+        if (!recoverable || !signatureValid) await expect(recover(record)).rejects.toThrow();
+        else await recover(record);
+        if (recoverable && signatureValid && !expired && termination.reasonCode === "deadline") {
+          expect(readRecovery).toHaveBeenCalledWith(
+            expect.objectContaining({ recoveryPurpose: "deadline_failure" }),
+          );
+          expect(importResult).toHaveBeenCalledWith(
+            expect.objectContaining({
+              recoveryPurpose: "deadline_failure",
+              facts: expect.objectContaining({
+                result: expect.objectContaining({
+                  kind: "error",
+                  reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                }),
+              }),
+              source: expect.objectContaining({
+                controlArtifact: expect.objectContaining({ payloadRef: "agent-proof-control" }),
+              }),
+            }),
+          );
+        } else {
+          for (const args of readRecovery.mock.calls)
+            expect(args[0]).not.toHaveProperty("recoveryPurpose");
+          for (const args of importResult.mock.calls)
+            expect(args[0]).not.toHaveProperty("recoveryPurpose");
+          if (!recoverable || !signatureValid || expired)
+            expect(importResult).not.toHaveBeenCalled();
+        }
+        expect(
+          (await opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID).read(record.plan.identity))
+            ?.facts.result,
+        ).toBeNull();
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "released",
+    "before-deadline",
+    "unreleased",
+    "missing-receipt",
+    "occupancy",
+    "barrier",
+    "queued",
+    "reserved",
+    "environment",
+    "live-lease",
+    "run-revision",
+    "checkpoint-revision",
+    "lease-revision",
+    "input-ref",
+    "input-digest",
+    "deadline-changed",
+    "revoked-authority",
+    "cancelled",
+    "completed",
+    "failed",
+    "rollback",
+    "budget-unknown",
+  ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      let record = start(f);
+      if (scenario !== "unreleased") {
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+      }
+      const runId = createRunId(record.plan.identity.runId);
+      let now = T1;
+      const opened = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      repository = opened;
+      if (scenario === "queued" || scenario === "reserved") {
+        const a = admission(f, "-pending");
+        operationsForDatabase(f.database).execute(
+          `capabilityInvocation.sandboxV2.${scenario === "queued" ? "enqueue" : "reserve"}`,
+          {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: {
+              plan: a.plan,
+              invocation: a.invocation,
+              workspaces: a.workspaces,
+              reservation: {
+                schemaVersion: "sandbox-preparation.v1",
+                identity: a.plan.identity,
+                environmentId: a.plan.environmentId,
+                resourceRef: null,
+                mode: a.plan.mode,
+                workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                sequence: 1,
+                createdAt: a.plan.requestedAt,
+              },
+            },
+          },
+        );
+      }
+      if (scenario === "environment")
+        await opened.executionEnvironmentStore(OWNER_ID, AGENT_ID).reserve({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          runId,
+          hostId: record.plan.identity.hostId,
+          role: "primary",
+          rotationReason: "initial",
+          backendRef: "fake-container",
+          envelope: {
+            schemaVersion: "execution-envelope.v1",
+            directories: [],
+            network: [],
+            resources: {
+              cpuMillicores: 1000,
+              memoryBytes: 536870912,
+              maxProcesses: 128,
+              privateStorageBytes: 268435456,
+            },
+          },
+          policyDigest: "a".repeat(64),
+          imageDigest: "b".repeat(64),
+          runnerDigest: "c".repeat(64),
+          deadlineAt: T2,
+          leases: [],
+          ids: {
+            executionJobId: "expiry-environment-job",
+            environmentId: "expiry-environment",
+            createIntentId: "expiry-environment-create",
+          },
+        });
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "expired-run-input",
+        dataClassification: "private",
+        contentType: "application/json",
+        createdAt: T1,
+        plaintext: Buffer.from(
+          JSON.stringify({ version: "run-execution-input.v2", deadlineAt: T2 }),
+        ),
+      });
+      await opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY).commit({
+        runId,
+        purpose: "context",
+        operationKey: "run-execution-input:v1",
+        payload,
+      });
+      f.database
+        .prepare("UPDATE runs SET status='reconciling_external_result', revision=10 WHERE id=?")
+        .run(runId);
+      f.database
+        .prepare(`INSERT INTO run_coordination_checkpoints
+        (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+        VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+        .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+      f.database
+        .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+        .run(T1, runId);
+      now = scenario === "before-deadline" ? T1 : T2;
+      const leaseExpiresAt = new Date(Date.parse(T2) + 30_000).toISOString();
+      if (scenario === "missing-receipt")
+        f.database.prepare("DELETE FROM sandbox_release_receipts").run();
+      if (scenario === "occupancy")
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_occupancy(job_id,scope_ref,host_id,claim_json) SELECT job_id,scope_ref || '-late',host_id,claim_json FROM sandbox_workspace_occupancy LIMIT 1",
+          )
+          .run();
+      if (scenario === "barrier")
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_barriers(job_id,barrier_id,kind,reason_code,created_at) VALUES(?,'late-barrier','control_unacknowledged','TEST_UNCONFIRMED',?)",
+          )
+          .run(record.plan.identity.jobId, T1);
+      if (scenario === "live-lease")
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=NULL, expires_at=?")
+          .run(leaseExpiresAt);
+      if (scenario === "revoked-authority")
+        f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+      if (["cancelled", "completed", "failed"].includes(scenario)) {
+        f.database.prepare("UPDATE runs SET status=?").run(scenario);
+        f.database
+          .prepare("UPDATE run_coordination_checkpoints SET phase=?,terminal_status=?")
+          .run(scenario, scenario);
+      }
+      if (scenario === "rollback")
+        f.database.exec(
+          "CREATE TRIGGER fail_expiry BEFORE UPDATE ON run_coordination_checkpoints BEGIN SELECT RAISE(ABORT, 'expiry-checkpoint-failed'); END",
+        );
+      if (scenario === "budget-unknown")
+        f.database
+          .prepare(
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',1,0,'reconcile_required',1) ON CONFLICT(owner_id,agent_id,account_id) DO UPDATE SET status='reconcile_required'",
+          )
+          .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId);
+      const state = () => ({
+        run: f.database.prepare("SELECT status,revision FROM runs WHERE id=?").get(runId),
+        checkpoint: f.database
+          .prepare(
+            "SELECT phase,terminal_status,revision,diagnostic_code,context_ref FROM run_coordination_checkpoints WHERE run_id=?",
+          )
+          .get(runId),
+        lease: f.database.prepare("SELECT * FROM run_execution_leases WHERE run_id=?").get(runId),
+        journal: call(f, "read", record.plan.identity),
+        intents: f.database
+          .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents")
+          .get(),
+      });
+      const before = state();
+      const recovery = opened.runReconciliation(
+        OWNER_ID,
+        AGENT_ID,
+        SERVICE_AUTHORITY.product,
+        SERVICE_AUTHORITY.lease,
+        "expiry-consumer",
+      );
+      const input = {
+        runId,
+        expectedRunRevision: scenario === "run-revision" ? 9 : 10,
+        expectedCheckpointRevision: scenario === "checkpoint-revision" ? 0 : 1,
+        expectedLeaseRevision: scenario === "lease-revision" ? 0 : 1,
+        executionLeaseId: createRunExecutionLeaseId("expiry-only-lease"),
+        frozenInputRef: scenario === "input-ref" ? "missing" : payload.ref,
+        frozenInputDigest:
+          scenario === "input-digest" ? `sha256:${"0".repeat(64)}` : payload.contentDigest,
+        originalDeadlineAt: scenario === "deadline-changed" ? T1 : T2,
+        at: now,
+        leaseExpiresAt,
+      };
+      if (["released", "budget-unknown"].includes(scenario)) {
+        const dispatch = opened.runDispatch(
+          OWNER_ID,
+          AGENT_ID,
+          SERVICE_AUTHORITY.product,
+          SERVICE_AUTHORITY.lease,
+          "expiry-consumer",
+        );
+        expect(await dispatch.listReconciliationRequired({ now, limit: 10 })).toEqual([
+          expect.objectContaining({ runId, action: "reconcile" }),
+        ]);
+        expect(await dispatch.listClaimable({ now, limit: 10 })).toEqual([]);
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: true });
+        const after = state();
+        expect(after.run).toEqual({ status: "failed", revision: 11 });
+        expect(after.checkpoint).toMatchObject({
+          phase: "failed",
+          terminal_status: "failed",
+          revision: 2,
+          diagnostic_code: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+          context_ref: "payload-capability-invocation-trigger",
+        });
+        expect(after.lease).toMatchObject({
+          consumer_id: "expiry-consumer",
+          execution_lease_id: "expiry-only-lease",
+          released_at: now,
+        });
+        expect(after.journal).toEqual(before.journal);
+        expect(after.intents).toEqual(before.intents);
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
+        expect(state()).toEqual(after);
+      } else if (["cancelled", "completed", "failed"].includes(scenario)) {
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
+        expect(state()).toEqual(before);
+      } else {
+        await expect(recovery.settleExpired(input)).rejects.toThrow();
+        expect(state()).toEqual(before);
+      }
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
+
+  it.each(["ordinary", "deadline-purpose-only"] as const)(
+    "requires durable deadline proof for recovery metadata: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const input = {
+          identity: record.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          ...(scenario === "deadline-purpose-only"
+            ? { recoveryPurpose: "deadline_failure" as const }
+            : {}),
+        };
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        if (scenario === "ordinary")
+          await expect(journal.readResultRecovery(input)).resolves.toMatchObject({
+            receipt: { receiptRef: record.plan.identity.receiptRef },
+          });
+        else
+          await expect(journal.readResultRecovery(input)).rejects.toMatchObject({
+            code: "PORT_NOT_AUTHORITATIVE",
+          });
+        expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
   it.each([
     "fresh",
+    "deadline-purpose-only",
+    "deadline-valid",
+    "deadline-repeat",
+    "deadline-run-before",
+    "deadline-run-after",
+    "deadline-no-purpose",
+    "deadline-no-end",
+    "deadline-no-control",
+    "deadline-no-release",
+    "deadline-control-ref",
+    "deadline-control-digest",
+    "deadline-end-ref",
+    "deadline-end-digest",
+    "deadline-success",
+    "deadline-revoked",
+    "deadline-cancelled",
+    "deadline-authority-expired",
+    "deadline-control-inactive",
+    "deadline-end-inactive",
+    "deadline-other-error",
+    "deadline-handle-expired",
+    "deadline-known-winner",
     "reuse",
     "competing",
     "cancelled",
@@ -269,9 +828,31 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     const f = await openSandboxJournal();
     let repository: SqliteProductStateRepository | undefined;
     try {
-      let record = start(f);
+      const deadlineRecovery =
+        scenario.startsWith("deadline-") && scenario !== "deadline-purpose-only";
+      const toolDeadline = new Date(Date.parse(T1) + 500).toISOString();
+      const recoveryNow =
+        scenario === "deadline-run-after"
+          ? T2
+          : scenario === "deadline-run-before"
+            ? new Date(Date.parse(T2) - 1).toISOString()
+            : new Date(Date.parse(toolDeadline) + 1).toISOString();
+      const candidate = admission(f);
+      const prepared = deadlineRecovery
+        ? {
+            ...candidate,
+            invocation: { ...candidate.invocation, deadlineAt: toolDeadline },
+            plan: { ...candidate.plan, effectiveDeadlineAt: toolDeadline },
+            facts: {
+              ...candidate.facts,
+              environment: { ...candidate.facts.environment, deadlineAt: toolDeadline },
+            },
+          }
+        : candidate;
+      let record = start(f, prepared);
       record = append(f, record, resource(record, "stopping"));
-      record = append(f, record, resource(record, "released"));
+      if (scenario !== "deadline-no-release")
+        record = append(f, record, resource(record, "released"));
       const opened = await SqliteProductStateRepository.open({
         stateRoot: f.resource.stateRoot,
         minimumFreeBytes: 0,
@@ -316,27 +897,63 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         offset: 0,
         bytesBase64: bytes.toString("base64"),
         end: true,
-        termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+        termination: deadlineRecovery
+          ? { exitCode: null, reasonCode: "deadline", taskProcessExited: true }
+          : { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
       });
       const saved = await stream.recover(record);
       if (!saved?.source.artifacts[0]) throw new Error("missing stream");
+      const controlKey = `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`;
+      let controlArtifact:
+        | { operationKey: string; payloadRef: string; contentDigest: string }
+        | undefined;
+      if (deadlineRecovery && scenario !== "deadline-no-control") {
+        const controlPayload = await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: "deadline-control",
+          dataClassification: "restricted",
+          contentType: "application/json",
+          plaintext: Buffer.from(JSON.stringify({ identity: record.plan.identity })),
+          createdAt: T1,
+        });
+        const artifact = await opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority).commit({
+          runId: createRunId(record.plan.identity.runId),
+          purpose: "trace",
+          operationKey: controlKey,
+          payload: controlPayload,
+        });
+        controlArtifact = {
+          operationKey: controlKey,
+          payloadRef: artifact.artifact.payloadRef,
+          contentDigest: artifact.artifact.contentDigest,
+        };
+      }
       const facts = sandboxExecutionFactsSchema.parse({
         ...record.facts,
         effect: { kind: "not_applicable" },
         result: {
           schemaVersion: "sandbox-execution.v2",
-          kind: "result",
           identity: record.plan.identity,
           environmentId: record.plan.environmentId,
           policyDigest: record.facts.environment.policyDigest,
           contract: { ref: "fixed-read", version: "1" },
-          occurredAt: T1,
-          completion: { type: "value" },
+          occurredAt: deadlineRecovery ? recoveryNow : T1,
+          ...(deadlineRecovery && scenario !== "deadline-success"
+            ? {
+                kind: "error",
+                reasonCode:
+                  scenario === "deadline-other-error"
+                    ? "SANDBOX_TOOL_RESULT_LOST"
+                    : "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                termination: { type: "failure" },
+              }
+            : { kind: "result", completion: { type: "value" } }),
           output: { ref: payload.ref, digest: saved.source.digest, byteLength: bytes.length },
         },
       });
       const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
-      const writeWorker = async () => {
+      const writeWorker = async (workerFacts = facts) => {
         await opened.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
           handleRef: record.plan.handleRef,
           invocationId: record.plan.identity.invocationId,
@@ -349,13 +966,31 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           identity: record.plan.identity,
           expectedSequence: record.facts.resource.sequence,
           expectedOperationRevision: record.operationRevision,
-          facts,
+          facts: workerFacts,
           authority: SERVICE_AUTHORITY,
           now: T1,
-          context: context(record, facts),
+          context: context(record, workerFacts),
         });
       };
       if (scenario.startsWith("worker/")) await writeWorker();
+      let knownWinner: SandboxExecutionRecord | undefined;
+      if (scenario === "deadline-known-winner") {
+        const workerFacts = sandboxExecutionFactsSchema.parse({
+          ...facts,
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity: record.plan.identity,
+            environmentId: record.plan.environmentId,
+            policyDigest: record.facts.environment.policyDigest,
+            contract: { ref: "fixed-read", version: "1" },
+            occurredAt: T1,
+            kind: "result",
+            completion: { type: "value" },
+            output: { ref: payload.ref, digest: saved.source.digest, byteLength: bytes.length },
+          },
+        });
+        knownWinner = (await writeWorker(workerFacts)).record;
+      }
       authority = {
         ...SERVICE_AUTHORITY,
         product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
@@ -363,13 +998,41 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       };
       f.database.prepare("UPDATE deployments SET fencing_token=2").run();
       f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
-      const originalInfo = await journal.readResultRecovery({
-        identity: record.plan.identity,
-        authority,
-        now: T1,
-      });
-      expect(originalInfo.receipt.dataClassification).toBe("private");
-      if (scenario === "reuse") expect(originalInfo.output?.payloadRef).toBe(payload.ref);
+      if (!deadlineRecovery) {
+        const originalInfo = await journal.readResultRecovery({
+          identity: record.plan.identity,
+          authority,
+          now: T1,
+        });
+        expect(originalInfo.receipt.dataClassification).toBe("private");
+        if (scenario === "reuse") expect(originalInfo.output?.payloadRef).toBe(payload.ref);
+      }
+      if (scenario === "deadline-no-end")
+        f.database
+          .prepare(
+            "DELETE FROM run_payload_artifacts WHERE operation_key LIKE 'sandbox-stream-end:%'",
+          )
+          .run();
+      if (scenario === "deadline-control-inactive" || scenario === "deadline-end-inactive")
+        f.database
+          .prepare("UPDATE payloads SET lifecycle_state='trashed' WHERE ref=?")
+          .run(
+            scenario === "deadline-control-inactive"
+              ? controlArtifact?.payloadRef
+              : saved.source.artifacts.at(-1)?.payloadRef,
+          );
+      if (scenario === "deadline-handle-expired")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET expires_at=?,record_json=json_set(record_json,'$.expiresAt',?)",
+          )
+          .run(T1, T1);
+      if (scenario === "deadline-revoked")
+        f.database.prepare("UPDATE capability_handles SET revoked_at=?").run(T1);
+      if (scenario === "deadline-cancelled")
+        f.database.prepare("UPDATE runs SET status='cancelled'").run();
+      if (scenario === "deadline-authority-expired")
+        f.database.prepare("UPDATE authority_leases SET expires_at=?").run(T1);
       if (scenario === "cancelled") f.database.prepare("UPDATE runs SET status='cancelled'").run();
       if (scenario === "revoked")
         f.database.prepare("UPDATE capability_handles SET revoked_at=?").run(T1);
@@ -382,7 +1045,15 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expectedSequence: record.facts.resource.sequence + (scenario === "wrong-sequence" ? 1 : 0),
         expectedOperationRevision: record.operationRevision,
         authority,
-        now: scenario === "expired" ? record.plan.originalDeadlineAt : T1,
+        now: deadlineRecovery
+          ? recoveryNow
+          : scenario === "expired"
+            ? record.plan.originalDeadlineAt
+            : T1,
+        ...((deadlineRecovery && scenario !== "deadline-no-purpose") ||
+        scenario === "deadline-purpose-only"
+          ? { recoveryPurpose: "deadline_failure" as const }
+          : {}),
         facts,
         context: { ...context(record, facts), releaseReceipt: record.releaseReceipt ?? null },
         payload:
@@ -390,9 +1061,45 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ? { ...payload, dataClassification: "public" as const }
             : payload,
         source:
-          scenario === "wrong-digest" ? { ...saved.source, digest: "0".repeat(64) } : saved.source,
+          scenario === "wrong-digest"
+            ? { ...saved.source, digest: "0".repeat(64) }
+            : {
+                ...saved.source,
+                artifacts: saved.source.artifacts.map((artifact, index) =>
+                  index === saved.source.artifacts.length - 1
+                    ? {
+                        ...artifact,
+                        ...(scenario === "deadline-end-ref" ? { payloadRef: "replaced-end" } : {}),
+                        ...(scenario === "deadline-end-digest"
+                          ? { contentDigest: `sha256:${"0".repeat(64)}` }
+                          : {}),
+                      }
+                    : artifact,
+                ),
+                ...(controlArtifact
+                  ? {
+                      controlArtifact: {
+                        ...controlArtifact,
+                        ...(scenario === "deadline-control-ref"
+                          ? { payloadRef: "replaced-control" }
+                          : {}),
+                        ...(scenario === "deadline-control-digest"
+                          ? { contentDigest: `sha256:${"0".repeat(64)}` }
+                          : {}),
+                      },
+                    }
+                  : {}),
+              },
       };
-      if (scenario.includes("/")) {
+      if (knownWinner) {
+        const imported = await journal.importResult(input);
+        expect(imported).toEqual({ record: knownWinner, applied: false });
+        expect(await journal.read(record.plan.identity)).toEqual(knownWinner);
+        expect(knownWinner.facts.result?.kind).toBe("result");
+        expect(
+          f.database.prepare("SELECT COUNT(*) AS count FROM sandbox_operation_observations").get(),
+        ).toEqual({ count: 1 });
+      } else if (scenario.includes("/")) {
         const { createProductionSandboxLostResultRecovery } = await import(
           "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
         );
@@ -454,8 +1161,26 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             )
             .get(),
         ).toEqual({ count: 1 });
-      } else if (["fresh", "reuse", "competing"].includes(scenario)) {
-        if (scenario === "competing") {
+      } else if (
+        [
+          "fresh",
+          "reuse",
+          "competing",
+          "deadline-valid",
+          "deadline-repeat",
+          "deadline-run-before",
+        ].includes(scenario)
+      ) {
+        if (deadlineRecovery)
+          await expect(
+            journal.readResultRecovery({
+              identity: record.plan.identity,
+              authority,
+              now: recoveryNow,
+              recoveryPurpose: "deadline_failure",
+            } as Parameters<typeof journal.readResultRecovery>[0]),
+          ).resolves.toMatchObject({ receipt: { receiptRef: record.plan.identity.receiptRef } });
+        if (scenario === "competing" || scenario === "deadline-repeat") {
           const attempts = await Promise.allSettled([
             journal.importResult(input),
             journal.importResult(input),
@@ -476,7 +1201,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(
           f.database
             .prepare(
-              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind')='result'",
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
             )
             .get(),
         ).toEqual({ count: 1 });

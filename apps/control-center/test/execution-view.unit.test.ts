@@ -44,6 +44,26 @@ const run: RunSummary = {
 };
 describe("durable execution presentation", () => {
   it.each([
+    ["runtime.tool_outcome.failed", "chat.reason.toolDeadlineExceeded"],
+    ["runtime.tool_reason.SANDBOX_TOOL_DEADLINE_EXCEEDED", "chat.reason.toolDeadlineExceeded"],
+    ["runtime.tool_outcome.unresolved", "chat.phase.unresolved"],
+    ["runtime.tool_outcome.not_dispatched", "chat.phase.notDispatched"],
+  ] as const)("retains deadline reasons without overriding %s", (outcome, expected) => {
+    const failed = record(2, 2, { kind: "tool", name: "bash", phase: "failed" });
+    expect(
+      executionToolPhase(
+        failed,
+        [
+          failed,
+          record(3, 2, { name: "runtime.tool_reason.SANDBOX_TOOL_DEADLINE_EXCEEDED" }),
+          record(4, 2, { name: outcome }),
+        ],
+        { ...run, status: "completed" },
+      ),
+    ).toBe(expected);
+  });
+
+  it.each([
     {
       displayPhase: "unresolved",
       availableActions: [],
@@ -479,5 +499,16 @@ it.each(["cancelled", "failed", "completed"] as const)(
       }),
     ).toBeUndefined();
     expect(recordedInterval([tool, preparing], tool.itemId, "runtime.tool_execution")).toBeNull();
+  },
+);
+
+it.each(["RUN_EXECUTION_DEADLINE_EXCEEDED", "SANDBOX_TOOL_DEADLINE_EXCEEDED"])(
+  "localizes the deadline reason %s",
+  (reason) => {
+    expect(executionStateLabel("failed", reason)).toBe(
+      reason === "RUN_EXECUTION_DEADLINE_EXCEEDED"
+        ? "chat.reason.runDeadlineExceeded"
+        : "chat.reason.toolDeadlineExceeded",
+    );
   },
 );

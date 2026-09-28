@@ -20,6 +20,44 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it.each(["deadline", "revoked"] as const)(
+    "stops waiting for a hung result verification after %s",
+    async (mode) => {
+      const f = fixture(mode === "deadline" ? 150 : 10_000);
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const completeSandboxToolResult = vi.fn(async () => {
+        await pending;
+        return undefined;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      let outcome: Awaited<ReturnType<ProductionRuntimeTools["execute"]>> | undefined;
+      const execution = tool.execute(invocation).then((value) => {
+        outcome = value;
+      });
+      try {
+        await vi.waitFor(() => expect(completeSandboxToolResult).toHaveBeenCalledOnce());
+        if (mode === "revoked") f.revoke();
+        await vi.waitFor(
+          () => expect(outcome).toMatchObject({ outcome: "result_unknown", resultRef: null }),
+          { timeout: 1000 },
+        );
+        expect(f.request.mock.calls.filter(([item]) => item.type === "work.execute")).toHaveLength(
+          1,
+        );
+        expect(f.request.mock.calls.filter(([item]) => item.type === "work.cancel")).toHaveLength(
+          mode === "revoked" ? 1 : 0,
+        );
+      } finally {
+        release();
+        await execution;
+      }
+    },
+  );
+
   it("passes the active cancellation signal into preparation before Worker dispatch", async () => {
     const f = fixture();
     const controller = new AbortController();

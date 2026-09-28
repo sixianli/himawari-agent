@@ -927,64 +927,67 @@ it("network-only reports exit status without asserting the absence of remote eff
   ).toThrow();
 });
 
-describe("bounded result loss disclosure", () => {
-  it.each(["read", "write", "shell"] as const)(
-    "delivers a lost %s result without inventing its effects",
-    (kind) => {
-      const f = fixture(kind);
-      const original = released(f);
-      const proof = context(f.plan, original);
-      const facts = sandboxExecutionFactsSchema.parse({
-        ...original,
-        effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_RESULT_LOST" },
-        result: {
-          schemaVersion: "sandbox-execution.v2",
-          identity,
-          environmentId: original.environment.environmentId,
-          policyDigest: hash,
-          contract: { ref: f.plan.operationContract.ref, version: "1" },
-          occurredAt: at,
-          kind: "error",
-          output,
-          reasonCode: "SANDBOX_TOOL_RESULT_LOST",
-          termination: { type: "failure" },
-        },
-      });
-      const input = {
-        ...context(f.plan, facts),
-        releaseReceipt: { acceptedAt: at, verification: proof.verification },
-      };
-      expect(projectSandboxExecution(f.plan, facts, input)).toMatchObject({
-        conclusion: "failed",
-        deliverToolResult: true,
-        resourceObligationReleased: true,
-        reuseEnvironment: false,
-      });
-      expect(facts.effect).toEqual({ kind: "unknown", reasonCode: "SANDBOX_TOOL_RESULT_LOST" });
-      for (const denied of [
-        { runState: "terminated" as const },
-        { currentAuthority: false },
-        { currentFence: false },
-        { modelDisclosureAllowed: false },
-        { conflictingWorkspaceRisk: true },
-        { resultAlreadyDelivered: true },
-        { now: deadline },
-        { verification: { ...input.verification, outputs: [] } },
-      ])
+describe.each(["SANDBOX_TOOL_RESULT_LOST", "SANDBOX_TOOL_DEADLINE_EXCEEDED"])(
+  "bounded failure disclosure %s",
+  (reasonCode) => {
+    it.each(["read", "write", "shell"] as const)(
+      "delivers a bounded %s failure without inventing its effects",
+      (kind) => {
+        const f = fixture(kind);
+        const original = released(f);
+        const proof = context(f.plan, original);
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...original,
+          effect: { kind: "unknown", reasonCode: reasonCode },
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity,
+            environmentId: original.environment.environmentId,
+            policyDigest: hash,
+            contract: { ref: f.plan.operationContract.ref, version: "1" },
+            occurredAt: at,
+            kind: "error",
+            output,
+            reasonCode: reasonCode,
+            termination: { type: "failure" },
+          },
+        });
+        const input = {
+          ...context(f.plan, facts),
+          releaseReceipt: { acceptedAt: at, verification: proof.verification },
+        };
+        expect(projectSandboxExecution(f.plan, facts, input)).toMatchObject({
+          conclusion: "failed",
+          deliverToolResult: true,
+          resourceObligationReleased: true,
+          reuseEnvironment: false,
+        });
+        expect(facts.effect).toEqual({ kind: "unknown", reasonCode: reasonCode });
+        for (const denied of [
+          { runState: "terminated" as const },
+          { currentAuthority: false },
+          { currentFence: false },
+          { modelDisclosureAllowed: false },
+          { conflictingWorkspaceRisk: true },
+          { resultAlreadyDelivered: true },
+          { now: deadline },
+          { verification: { ...input.verification, outputs: [] } },
+        ])
+          expect(
+            projectSandboxExecution(f.plan, facts, { ...input, ...denied }).deliverToolResult,
+          ).toBe(false);
+        if (!facts.result) throw new Error("Lost result fixture missing");
         expect(
-          projectSandboxExecution(f.plan, facts, { ...input, ...denied }).deliverToolResult,
+          projectSandboxExecution(
+            f.plan,
+            {
+              ...facts,
+              result: { ...facts.result, reasonCode: "SOME_UNKNOWN_FAILURE" },
+            } as SandboxExecutionFacts,
+            input,
+          ).deliverToolResult,
         ).toBe(false);
-      if (!facts.result) throw new Error("Lost result fixture missing");
-      expect(
-        projectSandboxExecution(
-          f.plan,
-          {
-            ...facts,
-            result: { ...facts.result, reasonCode: "SOME_UNKNOWN_FAILURE" },
-          } as SandboxExecutionFacts,
-          input,
-        ).deliverToolResult,
-      ).toBe(false);
-    },
-  );
-});
+      },
+    );
+  },
+);

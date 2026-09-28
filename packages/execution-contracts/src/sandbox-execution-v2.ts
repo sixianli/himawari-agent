@@ -229,6 +229,7 @@ export const sandboxOperationResultSchema = variant("kind", {
 });
 export type SandboxOperationResult = InferSchema<typeof sandboxOperationResultSchema>;
 
+export const SANDBOX_TOOL_DEADLINE_EXCEEDED = "SANDBOX_TOOL_DEADLINE_EXCEEDED";
 export const SANDBOX_TOOL_RESULT_LOST = "SANDBOX_TOOL_RESULT_LOST";
 export const sandboxLostResultOperationKey = (invocationId: string) =>
   `sandbox-tool-result-lost:${invocationId}`;

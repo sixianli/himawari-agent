@@ -1893,6 +1893,7 @@ export async function createProductionSandboxServices(options: {
     payloads,
     protector,
     nextRef: () => ids.next("sandbox-stream-recovery"),
+    verifyExited: (record) => control.hasExitedTask(record),
     facts: async (record, bytes, termination, output) => {
       const plan = record.plan;
       const contract = plan.operationContract;

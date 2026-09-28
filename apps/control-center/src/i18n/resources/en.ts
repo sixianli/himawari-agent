@@ -168,6 +168,10 @@ export const messages = {
   "chat.reason.admissionAlreadyRecorded": "Request already recorded; check its original status",
   "chat.reason.operationUnavailable": "This execution method is unavailable",
   "chat.reason.admissionUnavailable": "Execution admission service is unavailable",
+  "chat.reason.runDeadlineExceeded":
+    "The Run deadline expired; cleanup is complete and this Run has ended",
+  "chat.reason.toolDeadlineExceeded":
+    "The tool timed out; it was terminated and cleanup is complete",
   "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
   "chat.reason.resourceCeilingChanged":
     "Allowed resource limits changed; the operation was not dispatched",

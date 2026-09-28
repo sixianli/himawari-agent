@@ -53,6 +53,12 @@ it.each([
   "background",
   "background-ack-loss",
   "service",
+  "stream-resource-race",
+  "stream-ack-race",
+  "stream-unchanged-rejected",
+  "stream-authority-revoked",
+  "stream-environment-changed",
+  "stream-repeated-race",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
@@ -63,6 +69,9 @@ it.each([
   const piScenario = scenario.startsWith("pi");
   const validPi = piScenario && scenario !== "pi-fixed-without-target";
   const recoveredDuringDelivery = scenario === "pi-recovered-during-delivery";
+  const streamScenario = scenario.startsWith("stream-");
+  let streamAttempts = 0;
+  const streamChunks = new Map<number, unknown>();
   const fixedTarget = {
     schemaVersion: "sandbox-file-target.v1",
     relativePath: "file.txt",
@@ -123,7 +132,11 @@ it.each([
   const host = {
     ready: Promise.resolve(),
     started: Promise.resolve({ processId: 1234 }),
-    readOutput: () => ({ bytes: new Uint8Array(), nextOffset: 0, end: true }),
+    readOutput: () => ({
+      bytes: streamScenario ? new TextEncoder().encode("result") : new Uint8Array(),
+      nextOffset: streamScenario ? 6 : 0,
+      end: true,
+    }),
     result,
     completed: result.then(() => null),
     controlBinding: {
@@ -242,9 +255,44 @@ it.each([
     sandboxExecution: async (
       _invocation: unknown,
       _identity: unknown,
-      command: { kind: string; facts?: typeof facts },
+      command: {
+        kind: string;
+        facts?: typeof facts;
+        expectedSequence?: number;
+        chunk?: { index: number; end: boolean; bytesBase64: string };
+      },
     ) => {
       calls.push(command.kind);
+      if (command.kind === "read" && scenario === "stream-authority-revoked" && streamAttempts)
+        throw new Error("authority changed");
+      if (command.kind === "append_output" && streamScenario) {
+        if (!command.chunk) throw new Error("stream chunk missing");
+        streamAttempts++;
+        const changed =
+          scenario === "stream-repeated-race" ||
+          (streamAttempts === 1 &&
+            [
+              "stream-resource-race",
+              "stream-ack-race",
+              "stream-authority-revoked",
+              "stream-environment-changed",
+            ].includes(scenario));
+        if (changed)
+          facts = {
+            ...facts,
+            resource: { ...facts.resource, sequence: facts.resource.sequence + 1 },
+          };
+        if (scenario === "stream-environment-changed")
+          facts = { ...facts, environment: { ...facts.environment, policyDigest: "e".repeat(64) } };
+        if (scenario === "stream-ack-race" && streamAttempts === 1)
+          streamChunks.set(command.chunk.index, command.chunk);
+        if (changed || scenario === "stream-unchanged-rejected")
+          throw new Error("sandbox job rejected");
+        expect(command.expectedSequence).toBe(facts.resource.sequence);
+        if (streamChunks.has(command.chunk.index))
+          expect(command.chunk).toEqual(streamChunks.get(command.chunk.index));
+        streamChunks.set(command.chunk.index, command.chunk);
+      }
       if (
         command.kind === "register_preparation_control" &&
         scenario === "preparation-registration-ack-loss"
@@ -419,6 +467,23 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (streamScenario) {
+    const recoverable = ["stream-resource-race", "stream-ack-race"].includes(scenario);
+    expect(host.start).toHaveBeenCalledOnce();
+    expect(streamAttempts).toBe(recoverable ? 2 : scenario === "stream-repeated-race" ? 5 : 1);
+    expect([...streamChunks.values()]).toEqual(
+      recoverable
+        ? [expect.objectContaining({ index: 0, end: true, bytesBase64: "cmVzdWx0" })]
+        : [],
+    );
+    if (recoverable)
+      expect(facts.result).toMatchObject({ kind: "result", output: { byteLength: 6 } });
+    else expect(facts.result?.kind).not.toBe("result");
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(host.start).toHaveBeenCalledOnce();
+    await worker.shutdown();
+    return;
+  }
   if (scenario === "network") {
     expect(mocks.policy).toHaveBeenCalledWith(
       expect.objectContaining({

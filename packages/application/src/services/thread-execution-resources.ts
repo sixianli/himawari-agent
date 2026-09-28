@@ -202,7 +202,10 @@ export async function readThreadExecutionResources(input: {
       !(
         plan.mode === "foreground" &&
         released &&
-        isSandboxToolResultLost(entry.record.facts.result)
+        (isSandboxToolResultLost(entry.record.facts.result) ||
+          (entry.record.facts.result?.kind === "error" &&
+            entry.record.facts.result.reasonCode === "SANDBOX_TOOL_DEADLINE_EXCEEDED" &&
+            entry.record.facts.result.termination.type === "failure"))
       ) &&
       (!entry.record.facts.result ||
         entry.record.facts.result.kind === "unknown" ||

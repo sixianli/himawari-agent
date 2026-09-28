@@ -14,7 +14,10 @@ import {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
-import { RUN_COMPLETION_RECOVERY_SQL } from "./sqlite-run-resource-guard.ts";
+import {
+  RUN_COMPLETION_RECOVERY_SQL,
+  RUN_EXPIRED_RECONCILIATION_SQL,
+} from "./sqlite-run-resource-guard.ts";
 import { SANDBOX_TOOL_RESULT_RECOVERY_SQL } from "./sqlite-sandbox-tool-result-recovery.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
@@ -182,6 +185,10 @@ export class SqliteRunDispatchOperations {
               readonly limit: number;
             },
           );
+        case "runDispatch.settleExpired":
+          return this.settleExpiredSync(
+            value as Parameters<RunReconciliationPort["settleExpired"]>[0],
+          );
         case "runDispatch.quarantine":
           return this.quarantineSync(value as Parameters<RunReconciliationPort["quarantine"]>[0]);
         case "runDispatch.claim":
@@ -305,8 +312,9 @@ export class SqliteRunDispatchOperations {
          ) current_turn
            ON current_turn.run_id = r.id AND current_turn.owner_id = r.owner_id
              AND current_turn.agent_id = r.agent_id
-         WHERE r.owner_id = ? AND r.agent_id = ?
-           AND r.status IN ('accepted', 'building_context', 'running', 'reconciling_external_result')
+         WHERE r.owner_id = @ownerId AND r.agent_id = @agentId
+           AND ((
+           r.status IN ('accepted', 'building_context', 'running', 'reconciling_external_result')
            AND NOT (r.status = 'reconciling_external_result'
              AND COALESCE(c.phase, '') = 'reconciling_external_result')
            AND (
@@ -320,12 +328,134 @@ export class SqliteRunDispatchOperations {
                  AND budget.status = 'reconcile_required'
              )
            )
-           AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= ?)
+           ) OR (${RUN_EXPIRED_RECONCILIATION_SQL}))
+           AND (l.run_id IS NULL OR l.released_at IS NOT NULL OR l.expires_at <= @resourceNow)
          ORDER BY r.created_at, r.id
-         LIMIT ?`,
+         LIMIT @limit`,
       )
-      .all(this.scope.ownerId, this.scope.agentId, now, limit);
+      .all({ ownerId: this.scope.ownerId, agentId: this.scope.agentId, resourceNow: now, limit });
     return rows.map((row) => this.candidate(record(row), true));
+  }
+
+  async settleExpired(input: Parameters<RunReconciliationPort["settleExpired"]>[0]) {
+    return this.settleExpiredSync(input);
+  }
+
+  private settleExpiredSync(input: Parameters<RunReconciliationPort["settleExpired"]>[0]) {
+    const runId = createRunId(input.runId);
+    const at = instant(input.at, "at");
+    const deadlineAt = instant(input.originalDeadlineAt, "originalDeadlineAt");
+    const leaseExpiresAt = instant(input.leaseExpiresAt, "leaseExpiresAt");
+    assertTimeOrder(at, leaseExpiresAt, "leaseExpiresAt");
+    const executionLeaseId = machineText(input.executionLeaseId, "executionLeaseId");
+    const runRevision = safeInteger(input.expectedRunRevision, "expectedRunRevision");
+    const checkpointRevision = safeInteger(
+      input.expectedCheckpointRevision,
+      "expectedCheckpointRevision",
+    );
+    const leaseRevision = safeInteger(input.expectedLeaseRevision, "expectedLeaseRevision");
+    const frozenInputRef = machineText(input.frozenInputRef, "frozenInputRef");
+    const frozenInputDigest = machineText(input.frozenInputDigest, "frozenInputDigest");
+    return this.database
+      .transaction(() => {
+        this.assertCurrentAuthority(at);
+        const run = this.readRun(runId);
+        if (!run)
+          return this.fail("PORT_NOT_AUTHORITATIVE", "Expired Run is outside the bound scope");
+        if (["completed", "failed", "cancelled"].includes(run.status)) return { settled: false };
+        if (run.revision !== runRevision || run.leaseRevision !== leaseRevision)
+          return this.fail("PORT_CONFLICT", "Expired Run revision changed");
+        const currentLease = this.readLease(runId);
+        if (currentLease && currentLease.releasedAt === null && isAfter(currentLease.expiresAt, at))
+          return this.fail("PORT_CONFLICT", "Expired Run still has a live execution lease");
+        if (this.readLeaseByExecutionId(executionLeaseId))
+          return this.fail("PORT_CONFLICT", "Expiry execution lease identity is already in use");
+        const ready = this.database
+          .prepare(`SELECT 1 FROM runs r
+        JOIN run_coordination_checkpoints c ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
+        WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+          AND c.revision=@checkpointRevision AND @deadlineAt<=@resourceNow
+          AND (${RUN_EXPIRED_RECONCILIATION_SQL})
+          AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records plan
+            WHERE plan.owner_id=r.owner_id AND plan.agent_id=r.agent_id AND plan.run_id=r.id
+              AND json_extract(plan.plan_json,'$.originalDeadlineAt')<>@deadlineAt)
+          AND EXISTS (SELECT 1 FROM run_payload_artifacts input
+            JOIN payloads payload ON payload.ref=input.payload_ref AND payload.owner_id=input.owner_id AND payload.agent_id=input.agent_id
+            WHERE input.owner_id=r.owner_id AND input.agent_id=r.agent_id AND input.run_id=r.id
+              AND input.purpose='context' AND input.operation_key='run-execution-input:v1'
+              AND input.payload_ref=@frozenInputRef AND input.content_digest=@frozenInputDigest
+              AND payload.content_digest=input.content_digest AND payload.lifecycle_state='active'
+              AND payload.content_type='application/json')`)
+          .get({
+            runId,
+            ownerId: this.scope.ownerId,
+            agentId: this.scope.agentId,
+            checkpointRevision,
+            deadlineAt,
+            resourceNow: at,
+            frozenInputRef,
+            frozenInputDigest,
+          });
+        if (!ready)
+          return this.fail(
+            "PORT_CONFLICT",
+            "Expired Run is not ready for authenticated settlement",
+          );
+        this.database
+          .prepare(`INSERT INTO run_execution_leases (
+        owner_id,agent_id,run_id,revision,authority_lease_id,deployment_id,authority_epoch,
+        fencing_token,consumer_id,execution_lease_id,claimed_at,initial_expires_at,expires_at,released_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+        ON CONFLICT(owner_id,agent_id,run_id) DO UPDATE SET
+          revision=excluded.revision,authority_lease_id=excluded.authority_lease_id,
+          deployment_id=excluded.deployment_id,authority_epoch=excluded.authority_epoch,
+          fencing_token=excluded.fencing_token,consumer_id=excluded.consumer_id,
+          execution_lease_id=excluded.execution_lease_id,claimed_at=excluded.claimed_at,
+          initial_expires_at=excluded.initial_expires_at,expires_at=excluded.expires_at,released_at=NULL`)
+          .run(
+            this.scope.ownerId,
+            this.scope.agentId,
+            runId,
+            leaseRevision + 1,
+            this.scope.authorityLease.leaseId,
+            this.scope.authority.deploymentId,
+            this.scope.authority.authorityEpoch,
+            this.scope.authority.fencingToken,
+            this.scope.consumerId,
+            executionLeaseId,
+            at,
+            leaseExpiresAt,
+            leaseExpiresAt,
+          );
+        this.assertHeldInTransaction({
+          runId,
+          expectedLeaseRevision: leaseRevision + 1,
+          executionLeaseId,
+          at,
+        });
+        this.database
+          .prepare(`UPDATE runs SET status='failed',revision=revision+1,updated_at=?
+        WHERE id=? AND owner_id=? AND agent_id=? AND revision=?`)
+          .run(at, runId, this.scope.ownerId, this.scope.agentId, runRevision);
+        this.database
+          .prepare(`UPDATE run_coordination_checkpoints SET phase='failed',terminal_status='failed',
+        diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED',revision=revision+1,updated_at=?
+        WHERE run_id=? AND owner_id=? AND agent_id=? AND revision=?`)
+          .run(at, runId, this.scope.ownerId, this.scope.agentId, checkpointRevision);
+        this.database
+          .prepare(`UPDATE run_execution_leases SET released_at=?,revision=revision+1
+        WHERE run_id=? AND owner_id=? AND agent_id=? AND revision=? AND execution_lease_id=?`)
+          .run(
+            at,
+            runId,
+            this.scope.ownerId,
+            this.scope.agentId,
+            leaseRevision + 1,
+            executionLeaseId,
+          );
+        return { settled: true };
+      })
+      .immediate();
   }
 
   async quarantine(input: Parameters<RunReconciliationPort["quarantine"]>[0]): Promise<void> {

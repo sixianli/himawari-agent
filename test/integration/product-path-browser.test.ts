@@ -35,6 +35,12 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       arguments: { path: toolResults.length === 0 ? "notes.txt" : "second.txt" },
     };
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
+  if (lastUserText.includes("原执行期限验证"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: "printf 'deadline-running'; /bin/sleep 600; printf 'deadline-late'" },
+    };
   if (lastUserText.includes("运行中停止验证") || lastUserText.includes("执行中重启验证"))
     return {
       kind: "tool",
@@ -250,6 +256,10 @@ productDescribe(
         artifact,
         context: contextFile,
         logDirectory: path.join(outputDirectory, "service-logs"),
+        ...(process.env["HIMAWARI_TEST_SOURCE_ROOT"]
+          ? { sourceRoot: process.env["HIMAWARI_TEST_SOURCE_ROOT"] }
+          : {}),
+        timing: process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1",
       });
       installation.setModelScript(script);
       await writeFile(path.join(installation.workspace, "notes.txt"), NOTE, { mode: 0o600 });
@@ -669,6 +679,198 @@ productDescribe(
         }
       });
     });
+
+    it.each(["worker", "recovery", "run"] as const)(
+      "terminates a running tool at its original deadline with authenticated cleanup: %s",
+      async (mode) => {
+        const name = `30-original-deadline-${mode}`;
+        const runExpiry = mode === "run";
+        if (runExpiry) {
+          await installation.stop();
+          await installation.setRunDeadline(90_000);
+          await installation.start();
+          await page.reload();
+        }
+        try {
+          await scenario(name, async () => {
+            await newThread();
+            const before = new Set(executionReadback().map((record) => record.jobId));
+            const text = "原执行期限验证";
+            if (mode === "recovery") await installation.armFinishGate("after-end");
+            await beginToolRequest(text);
+            await uiExpect
+              .poll(() => executionReadback().filter((record) => !before.has(record.jobId)), {
+                timeout: 60_000,
+              })
+              .toHaveLength(1);
+            const job = executionReadback().find((record) => !before.has(record.jobId));
+            if (!job) throw new Error("DEADLINE_TEST_JOB_MISSING");
+            await uiExpect
+              .poll(
+                async () => (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId),
+                {
+                  timeout: 60_000,
+                },
+              )
+              .toBeTruthy();
+            const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
+            if (!host) throw new Error("DEADLINE_TEST_HOST_MISSING");
+            const alive = (pid: number) => {
+              try {
+                process.kill(pid, 0);
+                return true;
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+                if ((error as NodeJS.ErrnoException).code === "EPERM") return true;
+                throw error;
+              }
+            };
+            const readback = () => {
+              const database = openQualifiedDatabase(installation.databasePath);
+              try {
+                return {
+                  observedAt: new Date().toISOString(),
+                  rows: executionReadback().filter((record) => record.jobId === job.jobId),
+                  execution: database
+                    .prepare(
+                      "SELECT plan_json AS plan, started_at AS startedAt, facts_json AS facts FROM sandbox_execution_records WHERE job_id=?",
+                    )
+                    .get(job.jobId) as { plan: string; startedAt: string; facts: string },
+                  occupancy: database
+                    .prepare(
+                      "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+                    )
+                    .all(job.jobId),
+                  receipts: database
+                    .prepare(
+                      "SELECT accepted_at AS acceptedAt, verification_json AS verification FROM sandbox_release_receipts WHERE job_id=?",
+                    )
+                    .all(job.jobId),
+                  hostAlive: alive(host.processId),
+                  groupAlive: alive(-host.taskProcessGroup.processGroupId),
+                  replies: observedToolReplies(text),
+                  modelMessages: observedToolMessages(text),
+                };
+              } finally {
+                database.close();
+              }
+            };
+            await uiExpect
+              .poll(
+                () =>
+                  execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
+                    .split("\n")
+                    .some(
+                      (line) =>
+                        line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 600`,
+                    ),
+                { timeout: 60_000 },
+              )
+              .toBe(true);
+            const running = readback();
+            const plan = JSON.parse(running.execution.plan) as {
+              originalDeadlineAt: string;
+              effectiveDeadlineAt: string;
+            };
+            expect(running.rows[0]).toMatchObject({
+              released: 0,
+              runStatus: "running",
+              intents: 0,
+            });
+            expect(running.hostAlive).toBe(true);
+            const remaining = Date.parse(plan.effectiveDeadlineAt) - Date.now();
+            expect(remaining).toBeGreaterThan(runExpiry ? 45_000 : 240_000);
+            expect(remaining).toBeLessThanOrEqual(runExpiry ? 90_000 : 300_000);
+            if (runExpiry) expect(plan.effectiveDeadlineAt).toBe(plan.originalDeadlineAt);
+            await writeFile(
+              path.join(outputDirectory, `${name}-before.json`),
+              JSON.stringify({ host, ...running }, null, 2),
+            );
+            try {
+              if (mode === "recovery") {
+                await uiExpect
+                  .poll(() => installation.finishGateEntered(), { timeout: remaining + 40_000 })
+                  .not.toBeNull();
+                await uiExpect.poll(() => readback().rows[0]?.streamEnds).toBe(1);
+                await installation.crash();
+                await installation.releaseFinishGate();
+                await waitForExpiredServiceLease();
+                await installation.start();
+                await page.reload();
+              }
+              await uiExpect
+                .poll(() => readback().hostAlive, { timeout: remaining + 40_000 })
+                .toBe(false);
+              const stoppedAt = Date.now();
+              expect(stoppedAt).toBeGreaterThanOrEqual(Date.parse(plan.effectiveDeadlineAt));
+              await uiExpect.poll(() => readback().rows[0]?.released, { timeout: 40_000 }).toBe(1);
+              await uiExpect
+                .poll(
+                  () =>
+                    ["completed", "failed", "cancelled"].includes(
+                      readback().rows[0]?.runStatus ?? "",
+                    ),
+                  { timeout: 40_000 },
+                )
+                .toBe(true);
+              const ended = readback();
+              if (runExpiry) {
+                expect(ended.rows[0]).toMatchObject({ runStatus: "failed", intents: 0 });
+                expect(observedToolReplies(text)).toEqual([]);
+                await uiExpect(
+                  page.getByText("本轮执行期限已到，清理已完成，本轮已结束", { exact: true }),
+                ).toBeVisible();
+              } else {
+                expect(ended.rows[0]).toMatchObject({
+                  runStatus: "completed",
+                  result: "error",
+                  reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                  definiteOperations: 1,
+                  intents: 1,
+                });
+                expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+                const deadlineMessage =
+                  "SANDBOX_TOOL_DEADLINE_EXCEEDED：工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
+                expect(JSON.stringify(observedToolMessages(text))).toContain(deadlineMessage);
+                const process = page.locator(".turn-process").last();
+                if ((await process.getAttribute("open")) === null)
+                  await process.locator(":scope > summary").click();
+                await uiExpect(
+                  process
+                    .locator(".step-status")
+                    .filter({ hasText: "工具执行超时，已终止并完成清理" }),
+                ).toBeVisible();
+              }
+              expect(ended.groupAlive).toBe(false);
+              expect(ended.execution.plan).toBe(running.execution.plan);
+              expect(ended.receipts).toHaveLength(1);
+              expect(ended.occupancy.length).toBeGreaterThan(0);
+              for (const entry of ended.occupancy)
+                expect(entry).toMatchObject({ releasedAt: expect.any(String) });
+              expect(
+                (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
+              ).toHaveLength(1);
+              if (!runExpiry)
+                await uiExpect(page.getByText(/结果未确认|结果仍未确认/)).toHaveCount(0);
+              expect(JSON.stringify(observedToolMessages(text))).not.toContain("deadline-late");
+              expect(JSON.stringify(observedToolMessages(text))).not.toContain("deadline-running");
+            } finally {
+              await writeFile(
+                path.join(outputDirectory, `${name}-after.json`),
+                JSON.stringify(readback(), null, 2),
+              );
+            }
+          });
+        } finally {
+          if (runExpiry) {
+            await installation.stop();
+            await installation.setRunDeadline(900_000);
+            await installation.start();
+            await page.reload();
+          }
+        }
+      },
+    );
 
     it("reclaims an interrupted running tool after restarting the test services without replay", async () => {
       await scenario("14-restart-running", async () => {

@@ -40,6 +40,7 @@ describe("backend execution state", () => {
     ["WORKER_DEADLINE_EXCEEDED", "WORKER_DEADLINE_EXCEEDED"],
     ["SANDBOX_COMMAND_EFFECT_UNVERIFIED", "SANDBOX_COMMAND_EFFECT_UNVERIFIED"],
     ["SANDBOX_TOOL_RESULT_LOST", "SANDBOX_TOOL_RESULT_LOST"],
+    ["SANDBOX_TOOL_DEADLINE_EXCEEDED", "SANDBOX_TOOL_DEADLINE_EXCEEDED"],
     ["SANDBOX_STRICT_MODE_UNAVAILABLE", "SANDBOX_STRICT_MODE_UNAVAILABLE"],
     ["/private/host/token", "TOOL_FAILED"],
   ] as const)("projects only allowlisted tool failure reasons (%s)", (reason, expected) => {
@@ -631,3 +632,42 @@ describe("execution state history read boundary", () => {
     });
   });
 });
+
+it.each([true, false])(
+  "shows a terminal Run deadline only with authenticated resource release: %s",
+  (released) => {
+    const state = projectThreadExecutionState(
+      { ...run, status: "failed" },
+      [record(1, "unknown-tool", "updated")],
+      true,
+      {
+        revision: "deadline-resource",
+        allReleased: released,
+        pendingResources: !released,
+        unresolvedResultItemIds: ["unknown-tool"],
+        phase: released ? null : "unresolved",
+        reasonCode: released ? "RESOURCE_RELEASE_CONFIRMED" : "RESOURCE_STATE_UNCONFIRMED",
+        lastObservedAt: at(4),
+        operations: [
+          {
+            itemId: "unknown-tool",
+            phase: released ? "released" : "unresolved",
+            reasonCode: released ? "RESOURCE_RELEASE_CONFIRMED" : "RESOURCE_STATE_UNCONFIRMED",
+            lastObservedAt: at(4),
+          },
+        ],
+      },
+      {
+        phase: "failed",
+        terminalStatus: "failed",
+        diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      },
+    );
+    expect(state).toMatchObject({
+      displayPhase: released ? "failed" : "unresolved",
+      reasonCode: released ? "RUN_EXECUTION_DEADLINE_EXCEEDED" : "RESOURCE_STATE_UNCONFIRMED",
+      effectSummary: [{ itemId: "unknown-tool", outcome: "unknown" }],
+    });
+    expect(state.availableActions).toEqual(released ? [] : ["retry_cleanup"]);
+  },
+);

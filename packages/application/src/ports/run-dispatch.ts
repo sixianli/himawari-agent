@@ -175,6 +175,18 @@ export interface RunDispatchPort {
 
 /** Recovery can quarantine uncertain work, but cannot grant permission to execute it. */
 export interface RunReconciliationPort {
+  settleExpired(input: {
+    readonly runId: RunId;
+    readonly expectedRunRevision: number;
+    readonly expectedCheckpointRevision: number;
+    readonly expectedLeaseRevision: number;
+    readonly executionLeaseId: RunExecutionLeaseId;
+    readonly frozenInputRef: string;
+    readonly frozenInputDigest: string;
+    readonly originalDeadlineAt: string;
+    readonly at: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<{ readonly settled: boolean }>;
   quarantine(input: {
     readonly runId: RunId;
     readonly expectedRunRevision: number;

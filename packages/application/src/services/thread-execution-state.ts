@@ -1,3 +1,4 @@
+import type { RunCheckpoint } from "../ports/run-checkpoints.js";
 import type {
   ThreadExecutionRecord,
   ThreadExecutionState,
@@ -18,6 +19,7 @@ function resourceDisplayPhase(phase: ThreadResourcePhase): ThreadExecutionState[
 type Interval = readonly [number, number];
 const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_TOOL_RESULT_LOST",
+  "SANDBOX_TOOL_DEADLINE_EXCEEDED",
   "WORKER_ADMISSION_CONFLICT",
   "WORKER_AUTHORIZATION_DENIED",
   "WORKER_AUTHORITY_UNAVAILABLE",
@@ -75,6 +77,7 @@ export function projectThreadExecutionState(
   input: readonly ThreadExecutionRecord[],
   canCancelRun: boolean,
   resources?: ThreadExecutionResources,
+  checkpoint?: Pick<RunCheckpoint, "phase" | "terminalStatus" | "diagnosticCode">,
 ): ThreadExecutionState {
   const records = [...new Map(input.map((record) => [record.id, record])).values()].sort(
     (a, b) => a.sequence - b.sequence,
@@ -245,6 +248,14 @@ export function projectThreadExecutionState(
       displayPhase = "stopped";
     }
   }
+  const expiredAndReleased =
+    run.status === "failed" &&
+    checkpoint?.phase === "failed" &&
+    checkpoint.terminalStatus === "failed" &&
+    checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED" &&
+    resources?.allReleased === true &&
+    !resources.pendingResources;
+  if (expiredAndReleased) displayPhase = "failed";
   const availableActions: ThreadExecutionState["availableActions"][number][] = [];
   if (!terminal && canCancelRun) availableActions.push("stop");
   if (
@@ -265,30 +276,32 @@ export function projectThreadExecutionState(
         : run.updatedAt,
     ),
     displayPhase,
-    reasonCode: resources?.phase
-      ? displayPhase === "unresolved" &&
-        ["queued", "preparing", "executing"].includes(resources.phase)
-        ? "RESOURCE_STATE_UNCONFIRMED"
-        : resources.reasonCode
-      : resourceResultUnconfirmed
-        ? "EXECUTION_RESULT_UNCONFIRMED"
-        : displayPhase === "not_dispatched"
-          ? "RUN_CANCELLED_BEFORE_DISPATCH"
-          : displayPhase === "stopped"
-            ? resources?.operations.some(
-                (operation) => operation.reasonCode === "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
-              )
-              ? "RUN_STOPPED_NOT_STRICTLY_CONFIRMED"
-              : "RUN_CANCELLED_RESOURCES_RELEASED"
-            : run.status === "cancelled"
-              ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
-              : displayPhase === "unresolved"
-                ? "EXECUTION_RESULT_UNCONFIRMED"
-                : displayPhase === "preparing" &&
-                    run.status === "building_context" &&
-                    operations.length === 0
-                  ? "RUN_BUILDING_CONTEXT"
-                  : `EXECUTION_${displayPhase.toUpperCase()}`,
+    reasonCode: expiredAndReleased
+      ? "RUN_EXECUTION_DEADLINE_EXCEEDED"
+      : resources?.phase
+        ? displayPhase === "unresolved" &&
+          ["queued", "preparing", "executing"].includes(resources.phase)
+          ? "RESOURCE_STATE_UNCONFIRMED"
+          : resources.reasonCode
+        : resourceResultUnconfirmed
+          ? "EXECUTION_RESULT_UNCONFIRMED"
+          : displayPhase === "not_dispatched"
+            ? "RUN_CANCELLED_BEFORE_DISPATCH"
+            : displayPhase === "stopped"
+              ? resources?.operations.some(
+                  (operation) => operation.reasonCode === "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+                )
+                ? "RUN_STOPPED_NOT_STRICTLY_CONFIRMED"
+                : "RUN_CANCELLED_RESOURCES_RELEASED"
+              : run.status === "cancelled"
+                ? "RUN_CANCELLED_RESOURCE_STATE_UNCONFIRMED"
+                : displayPhase === "unresolved"
+                  ? "EXECUTION_RESULT_UNCONFIRMED"
+                  : displayPhase === "preparing" &&
+                      run.status === "building_context" &&
+                      operations.length === 0
+                    ? "RUN_BUILDING_CONTEXT"
+                    : `EXECUTION_${displayPhase.toUpperCase()}`,
     availableActions,
     needsAttention: availableActions.includes("review_approval"),
     timing: {

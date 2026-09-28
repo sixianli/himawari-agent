@@ -191,6 +191,8 @@ export class SqliteDurableAdapters {
   ): RunReconciliationPort {
     const scope = { ownerId, agentId, authority, authorityLease, consumerId };
     return Object.freeze<RunReconciliationPort>({
+      settleExpired: (input) =>
+        this.context.write("runDispatch.settleExpired", { ...scope, input }),
       quarantine: (input) => this.context.write("runDispatch.quarantine", { ...scope, input }),
     });
   }

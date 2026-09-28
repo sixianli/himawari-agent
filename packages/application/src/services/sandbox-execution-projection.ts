@@ -1,5 +1,6 @@
 import {
   isSandboxToolResultLost,
+  SANDBOX_TOOL_DEADLINE_EXCEEDED,
   type SandboxEnvironment,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
@@ -175,11 +176,14 @@ export function projectSandboxExecution(
     (resource.supervision === "controlled" && !supervisionVerified) ||
     (resource.supervision === "released" && !released);
   const active = context.runState === "active" && now < Date.parse(plan.effectiveDeadlineAt);
-  const lostResult =
+  const boundedFailure =
     plan.mode === "foreground" &&
     acceptedRelease &&
     outputProtected &&
-    isSandboxToolResultLost(result);
+    (isSandboxToolResultLost(result) ||
+      (result?.kind === "error" &&
+        result.reasonCode === SANDBOX_TOOL_DEADLINE_EXCEEDED &&
+        result.termination.type === "failure"));
   const disclosureAllowed =
     context.runState === "active" &&
     context.currentAuthority &&
@@ -187,9 +191,9 @@ export function projectSandboxExecution(
     context.modelDisclosureAllowed &&
     !context.conflictingWorkspaceRisk &&
     !context.pendingApprovalOrReconciliation &&
-    ((settled && !needsReconciliation) || lostResult) &&
+    ((settled && !needsReconciliation) || boundedFailure) &&
     (controlled || released);
-  const canAct = active && disclosureAllowed && !lostResult;
+  const canAct = active && disclosureAllowed && !boundedFailure;
   const canRecoverResult =
     disclosureAllowed &&
     released &&

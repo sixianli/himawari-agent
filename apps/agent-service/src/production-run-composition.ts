@@ -31,6 +31,7 @@ import {
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
+import { createProductionRunExpiry } from "./production-run-expiry.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -303,6 +304,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
       agentId,
       runs: repository.runLifecycle(ownerId, agentId, fence),
       recovery: repository.runReconciliation(ownerId, agentId, fence, lease, options.instanceId),
+      settleExpired: createProductionRunExpiry({
+        repository,
+        protector,
+        clock,
+        ids,
+        scope: [ownerId, agentId, fence, lease, options.instanceId],
+        executionLeaseDurationMs: 30_000,
+      }),
       clock,
     }),
     clock,

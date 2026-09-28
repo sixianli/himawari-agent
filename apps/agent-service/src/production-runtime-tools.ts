@@ -57,6 +57,9 @@ import {
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
 import {
+  RECOVERY_SETTLE_WAIT_MS,
+  SANDBOX_TOOL_DEADLINE_EXCEEDED,
+  SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE,
   type SandboxToolCompletion,
@@ -1290,6 +1293,35 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     const monotonicDeadline =
       performance.now() +
       Math.max(0, Date.parse(deadlineAt) - Date.parse(this.#options.clock.now()));
+    const resultRecovery =
+      this.#options.sandbox?.preparations?.readAdmissionByInvocation &&
+      invocation.context?.executionLease &&
+      invocation.executionDeadlineAt &&
+      this.#options.completeSandboxToolResult
+        ? {
+            executionLease: invocation.context.executionLease,
+            deadlineAt: invocation.executionDeadlineAt,
+          }
+        : undefined;
+    const replyDeadlineAt = resultRecovery
+      ? Math.min(
+          Date.parse(deadlineAt) + RECOVERY_SETTLE_WAIT_MS,
+          Date.parse(resultRecovery.deadlineAt),
+        )
+      : Date.parse(deadlineAt);
+    const replyMonotonicDeadline =
+      performance.now() + Math.max(0, replyDeadlineAt - Date.parse(this.#options.clock.now()));
+    const assertResultCurrent = async () => {
+      signal?.throwIfAborted();
+      if (!resultRecovery || Date.parse(this.#options.clock.now()) < Date.parse(deadlineAt))
+        return this.#assertDisclosure(invocation, key, internal);
+      await this.#options.assertRunActive(invocation.runId);
+      if (
+        Date.parse(this.#options.clock.now()) >= replyDeadlineAt ||
+        digest(this.#options.authority()) !== digest(authority)
+      )
+        reject();
+    };
     this.#parents.set(request.messageId, {
       parentMessageId: request.messageId,
       parentCorrelationId: request.correlationId,
@@ -1310,7 +1342,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
     const assertCurrent = async () => {
       try {
         signal?.throwIfAborted();
-        await this.#assertDisclosure(invocation, key, internal);
+        await assertResultCurrent();
       } catch (error) {
         authorityWithdrawn = true;
         throw error;
@@ -1361,8 +1393,8 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       let cursor: string | null = null;
       let workerStartedAt: string | undefined;
       while (
-        performance.now() < monotonicDeadline &&
-        Date.parse(this.#options.clock.now()) < Date.parse(deadlineAt)
+        performance.now() < replyMonotonicDeadline &&
+        Date.parse(this.#options.clock.now()) < replyDeadlineAt
       ) {
         await this.#options.assertRunActive(invocation.runId);
         const iterator: AsyncIterator<ExecutionV2Event> = this.#options.transport
@@ -1370,7 +1402,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           [Symbol.asyncIterator]();
         try {
           while (true) {
-            const next = await nextWithAuthority(iterator.next(), monotonicDeadline, assertCurrent);
+            const next = await nextWithAuthority(
+              iterator.next(),
+              replyMonotonicDeadline,
+              assertCurrent,
+            );
             if (next.done) break;
             const event = next.value;
             cursor = event.payload.cursor;
@@ -1393,18 +1429,24 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               digest(event.scope) !== digest(scope)
             )
               continue;
-            await this.#validate(invocation, internal);
+            await assertResultCurrent();
             let completion: WorkerToolCompletion | undefined =
               event.type === "work.result" ? event.payload : undefined;
             if (this.#options.completeSandboxToolResult) {
-              const verified = await this.#options.completeSandboxToolResult(
-                { runId: invocation.runId, invocationId: request.messageId },
-                {
-                  assertDisclosure: () => this.#assertDisclosure(invocation, key, internal),
-                  saveReceipt: async (value) => {
-                    await this.#writeJson(invocation, `runtime-sandbox-delivery:${key}`, value);
+              const verified = await nextWithAuthority(
+                this.#options.completeSandboxToolResult(
+                  { runId: invocation.runId, invocationId: request.messageId },
+                  {
+                    ...(resultRecovery ? { resultRecovery } : {}),
+                    assertDisclosure: assertResultCurrent,
+                    saveReceipt: async (value) => {
+                      await assertResultCurrent();
+                      await this.#writeJson(invocation, `runtime-sandbox-delivery:${key}`, value);
+                    },
                   },
-                },
+                ),
+                replyMonotonicDeadline,
+                assertCurrent,
               );
               if (verified !== null)
                 completion = verified ?? {
@@ -1439,6 +1481,19 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 completion,
                 ceiling.maxOutputBytes,
                 internal,
+                resultRecovery
+                  ? {
+                      assertDisclosure: assertResultCurrent,
+                      readOutput: (ref) =>
+                        this.#readSandboxOutput(
+                          invocation,
+                          request.messageId,
+                          ref,
+                          ceiling.maxOutputBytes,
+                          assertResultCurrent,
+                        ),
+                    }
+                  : undefined,
               );
             }
             const workerEndedAt = event.type === "work.result" ? event.payload.completedAt : null;
@@ -1452,9 +1507,9 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 ...outcome,
                 executionTiming: { startedAt: workerStartedAt, endedAt: workerEndedAt },
               };
-            await this.#validate(invocation, internal);
+            await assertResultCurrent();
             await this.#writeJson(invocation, `runtime-tool-result:${key}`, outcome);
-            await this.#assertDisclosure(invocation, key, internal);
+            await assertResultCurrent();
             return outcome;
           }
         } finally {
@@ -1463,7 +1518,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         }
         await beforeDeadline(
           new Promise<void>((resolve) => setTimeout(resolve, EVENT_POLL_MS)),
-          monotonicDeadline,
+          replyMonotonicDeadline,
         );
       }
     } catch (error) {
@@ -1669,15 +1724,57 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         modelContent:
           completion.errorCode === SANDBOX_TOOL_RESULT_LOST
             ? `${SANDBOX_TOOL_RESULT_LOST}：${SANDBOX_TOOL_RESULT_LOST_MESSAGE}`
-            : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
-              ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
-              : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
-                ? "工具未启动：准备阶段失败，已确认清理完成。"
-                : commandEffectUnverified
-                  ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
-                  : "操作未确认成功。",
+            : completion.errorCode === SANDBOX_TOOL_DEADLINE_EXCEEDED
+              ? `${SANDBOX_TOOL_DEADLINE_EXCEEDED}：${SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE}`
+              : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
+                ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
+                : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
+                  ? "工具未启动：准备阶段失败，已确认清理完成。"
+                  : commandEffectUnverified
+                    ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+                    : "操作未确认成功。",
       };
     }
+  }
+
+  async #readSandboxOutput(
+    invocation: RuntimeToolInvocation,
+    invocationId: string,
+    ref: string,
+    maxOutputBytes: number,
+    assertCurrent: () => Promise<void>,
+  ): Promise<{ ref: string; text: string }> {
+    await assertCurrent();
+    const admission = await this.#options.sandbox?.preparations?.readAdmissionByInvocation?.({
+      runId: invocation.runId,
+      invocationId,
+    });
+    const result = admission?.phase === "bound" ? admission.record.facts.result : null;
+    if (
+      !result ||
+      (result.kind !== "result" && result.kind !== "error") ||
+      result.output.ref !== ref
+    )
+      reject();
+    const payload = await this.#options.payloads.get(ref);
+    if (
+      !payload ||
+      RANK.indexOf(payload.dataClassification) > RANK.indexOf(invocation.dataClassification)
+    )
+      reject();
+    const bytes = await this.#options.protector.unprotect({
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      payload,
+    });
+    if (
+      bytes.byteLength > maxOutputBytes ||
+      bytes.byteLength !== result.output.byteLength ||
+      createHash("sha256").update(bytes).digest("hex") !== result.output.digest
+    )
+      reject();
+    await assertCurrent();
+    return { ref, text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
   }
 
   async #observedOutput(

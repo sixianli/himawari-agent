@@ -495,8 +495,8 @@ export class SqliteCapabilityInvocationOperations {
     this.runPayloadArtifacts = runPayloadArtifacts;
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
-      recovery: (plan, value, now) => {
-        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now);
+      recovery: (plan, value, now, deadlineFailure) => {
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now, deadlineFailure);
         const output = this.requireRunPayloadArtifacts().execute("runPayloadArtifact.lookup", {
           ownerId: plan.identity.ownerId,
           agentId: plan.identity.agentId,
@@ -513,7 +513,12 @@ export class SqliteCapabilityInvocationOperations {
         return { receipt, output };
       },
       importOutput: (plan, input) => {
-        const receipt = this.sandboxRecoveryReceipt(plan, authority(input.authority), input.now);
+        const receipt = this.sandboxRecoveryReceipt(
+          plan,
+          authority(input.authority),
+          input.now,
+          input.recoveryPurpose === "deadline_failure",
+        );
         if (
           input.payload.contentType !== "application/octet-stream" ||
           input.payload.dataClassification !== receipt.dataClassification ||
@@ -725,6 +730,7 @@ export class SqliteCapabilityInvocationOperations {
     plan: SandboxExecutionPlanV2,
     currentAuthority: AuthorityInput,
     now: string,
+    deadlineFailure = false,
   ): FrozenReceipt {
     this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
     const row = this.readReceiptByInvocationScope(
@@ -765,8 +771,12 @@ export class SqliteCapabilityInvocationOperations {
       !CAPABILITY_LIFECYCLES_WITH_AUTHORITY.has(handle.capabilityStatus) ||
       !capability.declaration.operations.includes(receipt.operation) ||
       now >= current.expiresAt ||
-      now >= receipt.effectiveExpiresAt ||
-      now >= receipt.deadlineAt
+      (deadlineFailure
+        ? plan.effectiveDeadlineAt > receipt.effectiveExpiresAt ||
+          plan.effectiveDeadlineAt > receipt.deadlineAt ||
+          now < plan.effectiveDeadlineAt ||
+          now >= plan.originalDeadlineAt
+        : now >= receipt.effectiveExpiresAt || now >= receipt.deadlineAt)
     )
       return this.fail(
         "PORT_NOT_AUTHORITATIVE",

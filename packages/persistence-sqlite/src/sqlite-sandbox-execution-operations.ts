@@ -58,6 +58,7 @@ interface AuthorityDependencies {
     plan: SandboxExecutionPlanV2,
     authority: CapabilityInvocationAuthority,
     now: string,
+    deadlineFailure?: boolean,
   ): Awaited<ReturnType<SandboxExecutionJournalPort["readResultRecovery"]>>;
   importOutput(plan: SandboxExecutionPlanV2, input: Input<"importResult">): string;
   consume(value: unknown, owner: string, agent: string): CapabilityInvocationConsumeResult;
@@ -594,19 +595,40 @@ export class SqliteSandboxExecutionOperations {
         const current = this.read(identity, owner, agent);
         if (!current) return this.fail("PORT_NOT_FOUND", "Sandbox execution missing");
         if (operation === "readResultRecovery") {
-          this.assertResultRecovery(current, now);
+          const deadlineFailure = this.deadlineRecoveryPurpose(input["recoveryPurpose"]);
+          this.assertResultRecovery(current, now, deadlineFailure);
+          if (deadlineFailure) this.assertDeadlineArtifacts(current);
           return this.authority.recovery(
             current.plan,
             input["authority"] as CapabilityInvocationAuthority,
             now,
+            deadlineFailure,
           );
         }
         if (operation === "importResult") {
           const request = raw as Input<"importResult">;
           if (current.facts.result && current.facts.result.kind !== "unknown")
             return { record: current, applied: false };
-          this.assertResultRecovery(current, now);
-          this.authority.recovery(current.plan, request.authority, now);
+          const deadlineFailure = this.deadlineRecoveryPurpose(request.recoveryPurpose);
+          this.assertResultRecovery(current, now, deadlineFailure);
+          if (deadlineFailure) {
+            const result = request.facts.result;
+            const effect = request.facts.effect;
+            if (
+              result?.kind !== "error" ||
+              result.reasonCode !== "SANDBOX_TOOL_DEADLINE_EXCEEDED" ||
+              result.termination.type !== "failure" ||
+              (current.plan.operationContract.kind === "fixed_read"
+                ? effect.kind !== "not_applicable"
+                : effect.kind !== "unknown")
+            )
+              return this.fail(
+                "PORT_NOT_AUTHORITATIVE",
+                "Deadline recovery requires a failure result",
+              );
+            this.assertDeadlineArtifacts(current, request.source);
+          }
+          this.authority.recovery(current.plan, request.authority, now, deadlineFailure);
           if (
             request.expectedSequence !== current.facts.resource.sequence ||
             request.expectedOperationRevision !== current.operationRevision
@@ -1213,7 +1235,49 @@ export class SqliteSandboxExecutionOperations {
       receipt: consumed.receipt,
     };
   }
-  private assertResultRecovery(current: SandboxExecutionRecord, now: string) {
+  private deadlineRecoveryPurpose(value: unknown): boolean {
+    if (value !== undefined && value !== "deadline_failure")
+      return this.fail("PORT_INVALID_OPERATION", "Unknown result recovery purpose");
+    return value === "deadline_failure";
+  }
+  private assertDeadlineArtifacts(
+    current: SandboxExecutionRecord,
+    source?: Input<"importResult">["source"],
+  ) {
+    const hash = (value: unknown) =>
+      createHash("sha256").update(JSON.stringify(value)).digest("hex");
+    const controlKey = `sandbox-control:${hash(current.plan.identity)}`;
+    const terminalKey = `sandbox-stream-end:${hash([current.plan.identity, current.plan.semanticFingerprint, current.facts.environment])}`;
+    for (const operationKey of [controlKey, terminalKey]) {
+      const artifact = this.db
+        .prepare(`SELECT a.payload_ref AS payloadRef,a.content_digest AS contentDigest
+        FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
+        WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=?
+        AND p.lifecycle_state='active' AND p.classification='restricted' AND p.content_type='application/json' AND p.content_digest=a.content_digest`)
+        .get(
+          current.plan.identity.ownerId,
+          current.plan.identity.agentId,
+          current.plan.identity.runId,
+          operationKey,
+        ) as { payloadRef: string; contentDigest: string } | undefined;
+      const expected =
+        operationKey === controlKey ? source?.controlArtifact : source?.artifacts.at(-1);
+      if (
+        !artifact ||
+        (source &&
+          (!expected ||
+            expected.operationKey !== operationKey ||
+            expected.payloadRef !== artifact.payloadRef ||
+            expected.contentDigest !== artifact.contentDigest))
+      )
+        return this.fail("PORT_NOT_AUTHORITATIVE", "Deadline recovery evidence binding changed");
+    }
+  }
+  private assertResultRecovery(
+    current: SandboxExecutionRecord,
+    now: string,
+    deadlineFailure = false,
+  ) {
     if (
       current.plan.mode !== "foreground" ||
       current.plan.backendRef !== "srt" ||
@@ -1223,7 +1287,10 @@ export class SqliteSandboxExecutionOperations {
       current.workspaceBlocked ||
       current.facts.resource.supervision !== "released" ||
       now >= current.plan.originalDeadlineAt ||
-      now >= current.plan.effectiveDeadlineAt ||
+      (deadlineFailure
+        ? now < current.plan.effectiveDeadlineAt ||
+          this.releases.hasContradiction(current.plan.identity.jobId)
+        : now >= current.plan.effectiveDeadlineAt) ||
       !this.db
         .prepare(
           `SELECT 1 FROM runs WHERE id=? AND owner_id=? AND agent_id=? AND status IN ('running','reconciling_external_result')`,

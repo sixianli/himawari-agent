@@ -12,6 +12,37 @@ export function record(value) {
       { mode: 0o600 },
     );
 }
+export function failure(error) {
+  const codes = new Set([
+    "PORT_CONFLICT",
+    "PORT_NOT_AUTHORITATIVE",
+    "PORT_HANDLE_REVOKED",
+    "PORT_INVALID_OPERATION",
+    "PORT_NOT_FOUND",
+    "EPERM",
+    "EACCES",
+    "ENOENT",
+    "ETIMEDOUT",
+  ]);
+  const reasons = new Map([
+    ["resource sequence changed", "SANDBOX_RESOURCE_SEQUENCE_CHANGED"],
+    ["receipt unavailable", "SANDBOX_RECEIPT_UNAVAILABLE"],
+    ["authority changed", "SANDBOX_AUTHORITY_CHANGED"],
+    ["reconciliation binding mismatch", "SANDBOX_RECONCILIATION_BINDING_MISMATCH"],
+    ["Capability invocation receipt has expired", "SANDBOX_RECEIPT_EXPIRED"],
+    ["Sandbox job exceeds its consumed invocation", "SANDBOX_INVOCATION_EXPIRED"],
+    ["Observation replay changed", "SANDBOX_OBSERVATION_REPLAY_CHANGED"],
+    ["SANDBOX_RECONCILIATION_SEQUENCE_CHANGED", "SANDBOX_RECONCILIATION_SEQUENCE_CHANGED"],
+    ["SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED", "SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED"],
+    ["WORKER_DEADLINE_EXCEEDED", "WORKER_DEADLINE_EXCEEDED"],
+    ["SANDBOX_STREAM_SEQUENCE_INVALID", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+  ]);
+  return {
+    systemCode: codes.has(error?.code) ? error.code : "UNKNOWN",
+    machineReason: reasons.get(error?.message) ?? "UNKNOWN",
+    validationError: error?.name === "ContractValidationError",
+  };
+}
 export function measure(stage, identity, action) {
   const parent = context.getStore();
   const id = `${process.pid}:${++sequence}`;
@@ -20,7 +51,7 @@ export function measure(stage, identity, action) {
   const cpu = process.cpuUsage();
   const jobId = identity?.jobId ?? parent?.jobId ?? null;
   const runId = identity?.runId ?? parent?.runId ?? null;
-  const finish = (outcome) =>
+  const finish = (outcome, error) =>
     record({
       kind: "span",
       id,
@@ -32,6 +63,7 @@ export function measure(stage, identity, action) {
       durationMs: performance.now() - started,
       cpu: process.cpuUsage(cpu),
       outcome,
+      ...(outcome === "threw" ? { failure: failure(error) } : {}),
     });
   return context.run({ id, jobId, runId }, () => {
     try {
@@ -43,14 +75,14 @@ export function measure(stage, identity, action) {
             return result;
           },
           (error) => {
-            finish("threw");
+            finish("threw", error);
             throw error;
           },
         );
       finish("returned");
       return value;
     } catch (error) {
-      finish("threw");
+      finish("threw", error);
       throw error;
     }
   });

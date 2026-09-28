@@ -79,6 +79,22 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
         },
       ],
     );
+  if (process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1")
+    definitions.push(
+      [
+        "agent-service/production-payload-broker-handler",
+        {
+          sandboxExecution: [
+            '"agent.sandbox.rpc." + value.payload.command.kind',
+            "value.payload.identity",
+          ],
+        },
+      ],
+      [
+        "application/services/sandbox-execution-reconciliation",
+        { reconcile: ['"agent.reconcile"', "input.identity"] },
+      ],
+    );
   const manifest: Record<string, { digest: string; source: string }> = {};
   const inventory: Array<{ module: string; functions: string[] }> = [];
   for (const [module, names] of definitions) {
@@ -117,10 +133,27 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
         const async =
           ts.canHaveModifiers(node) &&
           ts.getModifiers(node)?.some((item) => item.kind === ts.SyntaxKind.AsyncKeyword);
+        let measuredBody = body.getText(tree);
+        if (
+          module === "agent-service/production-payload-broker-handler" &&
+          named === "sandboxExecution"
+        ) {
+          const caught = body.statements.find(ts.isTryStatement)?.catchClause;
+          if (!caught || caught.variableDeclaration)
+            throw new Error("PRODUCT_TIMING_CATCH_CHANGED");
+          const begin = caught.getStart(tree) - body.getStart(tree);
+          const end = caught.block.getStart(tree) - body.getStart(tree);
+          measuredBody =
+            measuredBody.slice(0, begin) +
+            "catch (__hmaCaught) " +
+            measuredBody.slice(end, end + 1) +
+            '__hmaRecord({ kind: "caught_error", stage: "agent.sandbox.rpc." + value.payload.command.kind, jobId: value.payload.identity.jobId, runId: value.payload.identity.runId, failure: __hmaFailure(__hmaCaught) });' +
+            measuredBody.slice(end + 1);
+        }
         edits.push({
           start: body.getStart(tree),
           end: body.end,
-          value: `{ return __hmaMeasure(${definition[0]}, ${definition[1]}, ${async ? "async " : ""}() => ${body.getText(tree)}); }`,
+          value: `{ return __hmaMeasure(${definition[0]}, ${definition[1]}, ${async ? "async " : ""}() => ${measuredBody}); }`,
         });
         found.push(named as string);
         return;
@@ -139,7 +172,7 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
     const helper = new URL("./product-path-timing-runtime.mjs", import.meta.url).href;
     manifest[pathToFileURL(filename).href] = {
       digest: createHash("sha256").update(source).digest("hex"),
-      source: `import { measure as __hmaMeasure } from ${JSON.stringify(helper)};\n${modified}`,
+      source: `import { measure as __hmaMeasure, failure as __hmaFailure, record as __hmaRecord } from ${JSON.stringify(helper)};\n${modified}`,
     };
     inventory.push({ module, functions: found });
   }
