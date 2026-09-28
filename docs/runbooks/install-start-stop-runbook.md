@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b5d13dd5a0e6e90dbff70541b53124b4de492450334fa433d504de20b1b7b44f"
+contract_sha256: "sha256:05492205534bfa99ca7aa61349387efa49dbecc3aecb3e0599a94b1a51758dc3"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -450,6 +450,8 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 ## Troubleshooting
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
+
+工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务进程已经退出、Job Host（沙箱里负责启动和清理任务的宿主进程）正在收尾时，只要最近一次观察不超过 1.5 秒且未到执行期限，控制检查把这种状态记为 `SANDBOX_TASK_EXIT_CLEANUP_PENDING`（退出后正在清理）：它不写入执行记录，也不据此让 Worker 停止 Job Host；超过这段时间或已到执行期限仍按 `lost` 处理。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
 
 Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
