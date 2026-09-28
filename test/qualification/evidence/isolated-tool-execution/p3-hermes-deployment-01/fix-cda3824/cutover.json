@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 49,
+  "migrated": false,
+  "deletedRecords": 0,
+  "runtimeDigest": "315f6c54f77cf150ca8534c620de5e0072f3feaa80e3f4ef91817dbd14b8b8b0",
+  "receiptDigest": "6b2a154776e81e49a1b04326bf5d0311ad792142f6d011ae345707923607ee16",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "mainPid": 874277,
+  "backupId": "before-cda3824-2026-09-28",
+  "allowedActiveRuns": [
+    "run:3e15ce20-48db-4d49-a734-c157052d37dc"
+  ],
+  "modelCalls": 0,
+  "realModelAcceptance": "not_run_no_model_calls",
+  "sourceCommit": "cda38240f559ec9b0b934f8c3eaf6aa7e9d2cdc9",
+  "physicalPrefix": "/opt/himawari/releases/2026-09-28-cda3824",
+  "capabilityDeclarationsUnchanged": false,
+  "registryDeviation": "registry-deviation.json"
+}

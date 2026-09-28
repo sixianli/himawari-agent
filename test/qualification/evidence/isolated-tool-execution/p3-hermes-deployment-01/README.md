@@ -26,6 +26,7 @@
 - **上线后发现旧占用挡住写文件**，已由所有者批准直接改库修正，详见[上线后发现：旧占用挡住所有写文件请求](#occupancy-fix)。
 - **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。这个修正已于同日 21:22（日本时间）部署到 Hermes，详见[修正上线：4f2b776](#fix-deploy)。
 - **4f2b776 上线约 10 分钟后 Agent 崩溃重启一次**，原因已从 Hermes 数据查明，修正随 2026-09-28 的升级上线（schema 48 → 49），详见[升级到 116d6db](#fix-116d6db)。
+- **116d6db 上线后新建的对话卡在“结果未确认”**，原因是前台交付结果和后台核查争用同一条执行记录，在提交 `cda3824` 修正并于 13:05 上线，详见[修正上线：cda3824](#fix-cda3824)；排查中发现任务退出后的收尾阶段被误记为失去控制，在提交 `ddbdac7` 修正并于 14:11 上线，详见[修正上线：ddbdac7](#fix-ddbdac7)。
 
 ## 可核验证据
 
@@ -195,6 +196,80 @@ Runbook 第 6 步写的正式做法 `himawari capabilities register` 在这里�
 - 公开入口的首页没有从本机经 Cloudflare 打开；不带正式主机名直接请求本机首页仍返回 403。
 
 需要回到 `4f2b776` 时：停服，用旧版 CLI 恢复 `before-116d6db-2026-09-28`（schema 48），再从 `qualifications/2026-09-28-116d6db-cutover/private/` 恢复旧的 unit、配置、保护记录和启动证明后启动。schema 49 的数据库不能直接给 4f2b776 用。`/opt/himawari/releases/2026-09-27-4f2b776` 保留未动。
+
+<a id="fix-cda3824"></a>
+## 修正上线：cda3824
+
+日期：2026-09-28（日本时间 12:34–13:05）。所有者新建的对话“存诗一首”卡住，页面显示“结果未确认…先停止本轮并核验资源”，所有者要求“定位根因，然后修复”，看过原因后回复“可以切换”。部署的源码是提交 `cda38240f559ec9b0b934f8c3eaf6aa7e9d2cdc9`，产品代码只改了 `production-sandbox-tool-result.ts`。
+
+### 原因
+
+每个前台工具任务结束时，Worker 都会先把执行记录写成 `lost`（失去控制，原因 `SANDBOX_CLEANUP_UNCONFIRMED`），再由约每秒一次的后台核查把它推进到 `reconciling`（核查中）和 `released`（已释放）。前台把结果交给模型的代码在这中间读到 `lost`，就当作结果不可信而放弃交付，这一轮于是停在“结果未确认”，虽然后台核查随后确认了释放。结论来自代码和本机复现：新增的真实 SQLite 测试让交付与后台核查同时进行，修正前失败、修正后通过。在 Hermes 上读取生产数据库核对这一轮的记录时，被 Claude Code 的自动安全检查拦下，没有再试。
+
+修正后，交付遇到 `lost` 或 `reconciling` 时最多等 35 秒让后台核查结束：确认释放就照常交付；核查以 `unresolved`（未解决）结束则不交付，保留“结果未确认”；35 秒后仍未结束则报 `SANDBOX_RECOVERY_UNSETTLED`，不绕过核查。
+
+### 结果
+
+- 生产服务已运行新版本：切换脚本确认 Agent 和 Worker 都就绪，服务 13:04:51 启动，之后没有自动重启；运行时摘要 `315f6c54…b8b0`，签署回执摘要 `6b2a1547…ee16`。
+- 停服约 50 秒（13:04:01 停服，13:04:51 启动，13:05:25 两个进程都就绪）；中间做了完整备份 `before-cda3824-2026-09-28` 并校验，数据库结构仍是 schema 49，没有迁移，没有删除任何记录。
+- 卡住的 `run:3e15ce20…` 没有处理：它的沙箱已经释放，但修正不会回头补交已经放弃的交付，需要所有者在页面点“停止本轮”。切换脚本只允许这一个未结束的 Run。
+- 能力登记差异与 116d6db 时逐字节相同，没有写登记表。
+
+### 执行中出的问题
+
+- **资格脚本指向了错误的上一次切换记录**：用 116d6db 的脚本生成 cda3824 的脚本时，批量替换把“上一次切换目录”那一行也改成了新版本。运行前逐行比对时发现，手工改回指向 116d6db 的切换目录后再运行。
+- **复制候选安装用了约 20 分钟**（12:34:34 到 12:54:01），其余资格验证约 3 分钟；服务在这期间没有停。
+
+### 证据
+
+证据在 [`fix-cda3824/`](fix-cda3824/)，文件与[升级到 116d6db](#fix-116d6db) 的同名文件含义相同：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`build.json`](fix-cda3824/build.json) | 源码 4017 个文件；与 116d6db 相比变了 7 个安装文件（`production-sandbox-tool-result.js`、3 个启动脚本、3 个 better-sqlite3 编译文件），没有增删文件；本机上线前检查：`npm run check`、`npm test` 通过，产品路径 E2E 7/7 通过（只用假模型） |
+| [`qualification.json`](fix-cda3824/qualification.json)、[`platform-probes.json`](fix-cda3824/platform-probes.json)、[`protected-runtime-probe.json`](fix-cda3824/protected-runtime-probe.json)、[`signer-preflight.json`](fix-cda3824/signer-preflight.json)、[`web-static-installed.json`](fix-cda3824/web-static-installed.json)、[`workspace-links.json`](fix-cda3824/workspace-links.json) | 六组资格验证全部通过（Pi 22 项、组合、允许网络 10 项、拒绝网络 7 项、Worker 被杀后清理、公开搜索 3 项）；资格阶段服务没有停，也没有写生产数据库 |
+| [`database-before.json`](fix-cda3824/database-before.json)、[`database-before-switch.json`](fix-cda3824/database-before-switch.json) | 停服后和切换前：schema 49，92 个 Run、39 个对话、84 条执行记录，唯一未结束的 Run 是 `run:3e15ce20…` |
+| [`backup-verify.json`](fix-cda3824/backup-verify.json) | 恢复点 `before-cda3824-2026-09-28`：schema 49，完整性检查 `ok`，15,186 个 Payload |
+| [`registry-deviation.json`](fix-cda3824/registry-deviation.json)、[`web-static-preflight.json`](fix-cda3824/web-static-preflight.json) | 能力登记差异；停服前以运行账号读回 26 个网页文件 |
+| [`cutover.json`](fix-cda3824/cutover.json)、[`postflight.json`](fix-cda3824/postflight.json) | 切换结果和启动后检查 |
+| [`deployment-helpers.zip`](fix-cda3824/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-cda3824/deployment-helpers.sha256) | 本次实际运行的构建、资格、签署、启动和切换脚本；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-cda3824/` |
+
+需要回到 116d6db 时：停服，用切换目录 `qualifications/2026-09-28-cda3824-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动。数据库结构相同，不需要恢复备份。
+
+<a id="fix-ddbdac7"></a>
+## 修正上线：ddbdac7
+
+日期：2026-09-28（日本时间 13:45–14:11）。排查“存诗一首”时发现：任务进程已经退出、Job Host（沙箱里负责启动和清理任务的宿主进程）还在收尾的 1–5 秒里，控制检查把状态记成 `lost`（原因 `SANDBOX_CONTROL_UNCONFIRMED`），Worker 看到后取消 Job Host，后台核查也因此推迟。所有者回复“修复这个问题”，看过修正后回复“同意”。部署的源码是提交 `ddbdac7991a2bad87ae12530812e01cdde3d5984`，产品代码改了 `production-sandbox-control.ts` 和 `production-payload-broker-handler.ts`。
+
+修正后，任务进程已退出、Job Host 还在、最近一次观察不超过 1.5 秒且未到执行期限时，控制检查返回 `SANDBOX_TASK_EXIT_CLEANUP_PENDING`（退出后正在清理）；这种观察不写入执行记录，记录保持 `controlled`，Worker 不再取消 Job Host。超过这段时间或已到期限仍按 `lost` 处理。
+
+### 结果
+
+- 生产服务已运行新版本：Agent 和 Worker 都就绪，`/health/ready` 返回 `ready`；进程 uid 998、`NoNewPrivs` 为 1；服务看到的安装目录是只读挂载的 `/opt/himawari/releases/2026-09-28-ddbdac7`。到 14:28 检查时没有自动重启。运行时摘要 `38b0e376…e7a`，签署回执摘要 `47636f86…ece1`。
+- 停服约 50 秒（14:10:01 停服，14:10:52 启动，14:11:30 两个进程都就绪）；中间做了完整备份 `before-ddbdac7-2026-09-28` 并校验，schema 49，没有迁移，没有删除任何记录。
+- 卡住的 `run:3e15ce20…` 仍未处理，同上。能力登记差异仍与 116d6db 时相同。
+- 临时 root 权限（`/etc/sudoers.d/99-himawari-claude-20260928-b`）在写这份记录时还没有收回，会在 2026-09-29 02:28（日本时间）由到期定时器自动删除。
+
+### 执行中出的问题
+
+- **资格脚本的上一次切换记录再次被批量替换改错**，运行前发现并手工改为指向 cda3824 的切换目录。
+- **切换脚本的说明文字变成“从 ddbdac7 升级到 ddbdac7”**，同样是批量替换造成的，只影响说明，运行前改正。
+
+### 证据
+
+证据在 [`fix-ddbdac7/`](fix-ddbdac7/)，文件含义同上：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`build.json`](fix-ddbdac7/build.json) | 源码 4017 个文件；与 cda3824 相比变了 8 个安装文件（`production-payload-broker-handler.js`、`production-sandbox-control.js`、3 个启动脚本、3 个 better-sqlite3 编译文件），没有增删文件；本机上线前检查：`npm run check`、`npm test` 通过，产品路径 E2E 7/7 通过（只用假模型） |
+| [`qualification.json`](fix-ddbdac7/qualification.json)、[`platform-probes.json`](fix-ddbdac7/platform-probes.json)、[`protected-runtime-probe.json`](fix-ddbdac7/protected-runtime-probe.json)、[`signer-preflight.json`](fix-ddbdac7/signer-preflight.json)、[`web-static-installed.json`](fix-ddbdac7/web-static-installed.json)、[`workspace-links.json`](fix-ddbdac7/workspace-links.json) | 六组资格验证全部通过，项目与 cda3824 相同；资格阶段服务没有停，也没有写生产数据库 |
+| [`database-before.json`](fix-ddbdac7/database-before.json)、[`database-before-switch.json`](fix-ddbdac7/database-before-switch.json) | schema 49，92 个 Run、39 个对话、84 条执行记录，唯一未结束的 Run 是 `run:3e15ce20…` |
+| [`backup-verify.json`](fix-ddbdac7/backup-verify.json) | 恢复点 `before-ddbdac7-2026-09-28`：schema 49，完整性检查 `ok`，15,186 个 Payload |
+| [`registry-deviation.json`](fix-ddbdac7/registry-deviation.json)、[`web-static-preflight.json`](fix-ddbdac7/web-static-preflight.json) | 能力登记差异；停服前以运行账号读回 26 个网页文件 |
+| [`cutover.json`](fix-ddbdac7/cutover.json)、[`postflight.json`](fix-ddbdac7/postflight.json) | 切换结果和 14:28 的启动后检查 |
+| [`deployment-helpers.zip`](fix-ddbdac7/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-ddbdac7/deployment-helpers.sha256) | 本次实际运行的脚本；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-ddbdac7/` |
+
+需要回到 cda3824 时：停服，用 `qualifications/2026-09-28-ddbdac7-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动；数据库结构相同，不需要恢复备份。
 
 ## 恢复方式
 

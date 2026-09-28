@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-28T05:28:01Z",
+  "sourceCommit": "ddbdac7991a2bad87ae12530812e01cdde3d5984",
+  "runtimeDigest": "38b0e3769130dc703be37e1aaff4cfdaa49057c1b656e6e4ed7083a558f96e7a",
+  "serviceActive": true,
+  "activeSince": "2026-09-28T05:10:52Z",
+  "restartsSinceCutover": 0,
+  "mainPid": 1122980,
+  "runtimeUid": 998,
+  "noNewPrivs": true,
+  "livePhysicalMount": "/opt/himawari/releases/2026-09-28-ddbdac7 -> /data/hermes/himawari/releases/2026-09-11-control-center ro,nosuid,relatime",
+  "health": {
+    "status": "ready"
+  },
+  "activeRuns": [
+    "run:3e15ce20-48db-4d49-a734-c157052d37dc"
+  ],
+  "rootDiskFree": "11G of 108G",
+  "dataDiskFree": "161G of 458G",
+  "modelCallsByDeployment": 0,
+  "temporarySudo": {
+    "revoked": false,
+    "sudoersFile": "/etc/sudoers.d/99-himawari-claude-20260928-b",
+    "expiresAt": "2026-09-29T02:28:05+09:00"
+  }
+}

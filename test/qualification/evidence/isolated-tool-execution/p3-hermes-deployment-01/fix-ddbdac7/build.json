@@ -1,0 +1,36 @@
+{
+  "sourceCommit": "ddbdac7991a2bad87ae12530812e01cdde3d5984",
+  "sourceArchiveSha256": "b51497eb445500270c0ee456885e162dc03e3393e7aece6340c84f529ae98391",
+  "sourceManifestSha256": "6599cf997ae94d30e4c051c49b0e6d60d1b7c7df8a0275c1770bca81a34d2a72",
+  "sourceFiles": 4017,
+  "preparationSha256": "35e9d531eb687af22cb07cc5c278d6561cb029056974d19feb1ce8f457f32559",
+  "runtimeDigest": "38b0e3769130dc703be37e1aaff4cfdaa49057c1b656e6e4ed7083a558f96e7a",
+  "buildPassed": true,
+  "builtAs": "andy (uid 1000), no root",
+  "networkDuringBuild": "not_blocked; npm cache warm (prefer-offline), package-lock unchanged since cda3824",
+  "failedAttempts": 0,
+  "prefixFiles": 34573,
+  "removedPrefixFilesVscda3824": [],
+  "addedPrefixFilesVscda3824": [],
+  "changedPrefixFilesVscda3824": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-sandbox-control.js",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Makefile",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Release/.deps/ba23eeee118cd63e16015df367567cb043fed872.intermediate.d",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/config.gypi"
+  ],
+  "staticFiles": 26,
+  "localChecksBeforeDeploy": {
+    "npmRunCheck": "passed (exit 0)",
+    "npmTest": "passed (build/macos-arm64 and test/macos-arm64, exit 0)",
+    "productPathE2E": "7/7 passed, scripted model only",
+    "logs": [
+      "scratchpad/npm-test-teardown.log",
+      "scratchpad/pp-teardown.log",
+      "scratchpad/check-teardown.log"
+    ]
+  }
+}
