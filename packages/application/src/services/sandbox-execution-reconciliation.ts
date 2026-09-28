@@ -14,20 +14,23 @@ import type {
   SandboxExecutionRecord,
 } from "../ports/sandbox-execution-journal.js";
 
-/** Deliberately no prepare/start/invoke capability. The backend must match the
- * immutable environment and original process identity before any limited stop.
- * Absence of that identity is uncertainty, never permission to adopt a PID.
- */
+export interface SandboxCleanupPending {
+  readonly kind: "cleanup_pending";
+  readonly identity: SandboxJobIdentity;
+  readonly environmentId: string;
+  readonly resourceSequence: number;
+  readonly observedAt: string;
+}
+export type SandboxReconciliationObservation =
+  | SandboxCleanupPending
+  | { readonly kind: "observation"; readonly resource: SandboxResourceObservation }
+  | { readonly kind: "verified"; readonly verification: SandboxExecutionVerification };
 export interface SandboxReconciliationBackend {
-  /** A trusted host may return the observation and its proof from one verification.
-   * This avoids aging a short proof by auditing the same installation twice. */
-  observeVerified?(
+  observe(
     record: SandboxExecutionRecord,
     action: "inspect" | "stop",
     signal: AbortSignal,
-  ): Promise<SandboxExecutionVerification>;
-  inspect(record: SandboxExecutionRecord, signal: AbortSignal): Promise<SandboxResourceObservation>;
-  stop(record: SandboxExecutionRecord, signal: AbortSignal): Promise<SandboxResourceObservation>;
+  ): Promise<SandboxReconciliationObservation>;
 }
 
 /** Only fixed product reasons may leave the protected host diagnostics boundary. */
@@ -270,28 +273,60 @@ export class SandboxExecutionReconciliationService {
         }),
         (async () => {
           assertActive();
-          const supplied = await backend.observeVerified?.(
-            structuredClone(record),
-            input.action,
-            controller.signal,
-          );
-          const resource = supplied
-            ? supplied.facts.resource
-            : await backend[input.action](structuredClone(record), controller.signal);
-          assertActive();
-          if (!["released", "lost"].includes(resource.supervision))
-            throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
-          const parsed = sandboxResourceObservationSchema.parse(resource);
-          return append(
-            parsed.supervision === "lost"
-              ? {
-                  ...parsed,
-                  reasonCode: sandboxReconciliationFailureReason(new Error(parsed.reasonCode)),
-                }
-              : parsed,
-            true,
-            parsed.supervision === "released" ? supplied : undefined,
-          );
+          let action = input.action;
+          for (;;) {
+            const current = await refreshOwned();
+            assertActive();
+            const observed = await backend.observe(
+              structuredClone(current),
+              action,
+              controller.signal,
+            );
+            assertActive();
+            if (observed.kind === "cleanup_pending") {
+              const age = Date.parse(this.options.now()) - Date.parse(observed.observedAt);
+              if (
+                JSON.stringify(observed.identity) !== JSON.stringify(identity) ||
+                observed.environmentId !== current.plan.environmentId ||
+                observed.resourceSequence !== current.facts.resource.sequence ||
+                !Number.isFinite(age) ||
+                age < 0 ||
+                age > 1500
+              )
+                throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+              action = "inspect";
+              await new Promise<void>((resolve) => {
+                const finish = () => {
+                  clearTimeout(poll);
+                  controller.signal.removeEventListener("abort", finish);
+                  resolve();
+                };
+                const poll = setTimeout(finish, 250);
+                controller.signal.addEventListener("abort", finish, { once: true });
+                if (controller.signal.aborted) finish();
+              });
+              continue;
+            }
+            const supplied = observed.kind === "verified" ? observed.verification : undefined;
+            const resource = supplied
+              ? supplied.facts.resource
+              : observed.kind === "observation"
+                ? observed.resource
+                : undefined;
+            if (!resource || !["released", "lost"].includes(resource.supervision))
+              throw new Error("SANDBOX_RECONCILIATION_INCONCLUSIVE");
+            const parsed = sandboxResourceObservationSchema.parse(resource);
+            return append(
+              parsed.supervision === "lost"
+                ? {
+                    ...parsed,
+                    reasonCode: sandboxReconciliationFailureReason(new Error(parsed.reasonCode)),
+                  }
+                : parsed,
+              true,
+              parsed.supervision === "released" ? supplied : undefined,
+            );
+          }
         })(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(

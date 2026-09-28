@@ -9,6 +9,7 @@ import type {
   PayloadProtectorPort,
   PayloadRecord,
   PayloadStorePort,
+  SandboxCleanupPending,
   SandboxExecutionEvidencePort,
   SandboxExecutionFacts,
   SandboxExecutionJournalPort,
@@ -108,7 +109,7 @@ export interface ProductionPayloadBrokerHandlerOptions {
     /** Agent-owned observation and proof from one verification; never supplied over UDS. */
     readonly observeVerifiedControl?: (
       record: SandboxExecutionRecord,
-    ) => Promise<SandboxExecutionVerification>;
+    ) => Promise<SandboxExecutionVerification | SandboxCleanupPending>;
     readonly verifyPreparation?: (
       plan: SandboxExecutionPlanV2,
       facts: SandboxExecutionFacts,
@@ -479,13 +480,20 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         if (!configured.observeVerifiedControl || !bound)
           throw new Error("control observation unavailable");
         await current(false);
-        observedVerification = await configured.observeVerifiedControl(bound);
+        const observed = await configured.observeVerifiedControl(bound);
+        if ("kind" in observed)
+          return {
+            record: wire(bound),
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
+        observedVerification = observed;
         const observedResource = observedVerification.facts.resource;
         if (
           bound.facts.resource.supervision === "controlled" &&
-          (observedResource.supervision === "released" ||
-            (observedResource.supervision === "lost" &&
-              observedResource.reasonCode === "SANDBOX_TASK_EXIT_CLEANUP_PENDING"))
+          observedResource.supervision === "released"
         )
           return {
             record: wire(bound),

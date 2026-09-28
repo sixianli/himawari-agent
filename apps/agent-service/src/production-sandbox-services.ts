@@ -1600,7 +1600,7 @@ export async function createProductionSandboxServices(options: {
       };
     },
   };
-  const refreshVerification = async (
+  const refreshObservation = async (
     record: Parameters<typeof control.refreshEvidence>[0],
     retainedRelease = false,
     action: "inspect" | "stop" = "inspect",
@@ -1616,6 +1616,7 @@ export async function createProductionSandboxServices(options: {
         ? { resource: record.facts.resource, evidence: [] }
         : ((await taskEnvironmentFor(record.plan, record.facts)?.observe(record)) ??
           (await control.refreshEvidence(record, action, signal)));
+    if ("kind" in observed) return observed;
     const facts = { ...record.facts, resource: observed.resource };
     const now = clock.now();
     return {
@@ -1629,6 +1630,11 @@ export async function createProductionSandboxServices(options: {
       outputs,
       evidence: [...observed.evidence, ...effectEvidence],
     };
+  };
+  const refreshVerification = async (...args: Parameters<typeof refreshObservation>) => {
+    const observed = await refreshObservation(...args);
+    if ("kind" in observed) throw new Error("SANDBOX_CLEANUP_PENDING");
+    return observed;
   };
   const recoverFileResult = createProductionSandboxFileRecovery({
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
@@ -1849,9 +1855,10 @@ export async function createProductionSandboxServices(options: {
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     evidence,
     backend: {
-      ...control.backend,
-      observeVerified: (record, action, signal) =>
-        refreshVerification(record, false, action, signal),
+      observe: async (record, action, signal) => {
+        const observed = await refreshObservation(record, false, action, signal);
+        return "kind" in observed ? observed : { kind: "verified", verification: observed };
+      },
     },
     // Reconciliation verifies installed runtime bytes on the host as well as process facts.
     // Use the existing bounded maximum so mechanical-disk verification can finish.
@@ -2188,7 +2195,8 @@ export async function createProductionSandboxServices(options: {
           ? readForegroundOutput(record, query)
           : stream.output(record, query),
       registerControl: control.register,
-      observeVerifiedControl: refreshVerification,
+      observeVerifiedControl: (record: Parameters<typeof refreshObservation>[0]) =>
+        refreshObservation(record),
       verifyPreparation: async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
         const taskEnvironment = taskEnvironmentFor(plan, facts);
         if (!taskEnvironment) return control.verifyPreparation(plan, facts);

@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
+  type SandboxCleanupPending,
   type SandboxExecutionEvidencePort,
   type SandboxExecutionFacts,
   type SandboxExecutionRecord,
-  type SandboxReconciliationBackend,
   type SandboxReservationReleaseVerification,
   sandboxReconciliationFailureReason,
 } from "@himawari-agent/application";
@@ -134,8 +134,8 @@ const resourceState = (state: ControlState) =>
     controlled: { supervision: "controlled", cleanup: "pending" },
     released: { supervision: "released", cleanup: "confirmed" },
     process_group_gone: { supervision: "released", cleanup: "process_group_gone" },
-    exit_cleanup_pending: { supervision: "lost", cleanup: "unknown" },
     lost: { supervision: "lost", cleanup: "unknown" },
+    exit_cleanup_pending: null,
   })[state];
 function neverStartedReleased(
   raw: JobHostControlObservation,
@@ -379,11 +379,12 @@ export function createProductionSandboxControl(options: Options) {
     )
       return "controlled";
     if (
-      raw.taskStarted &&
-      raw.taskProcessExited &&
+      (raw.phase === "stopping" ||
+        (raw.taskStarted &&
+          raw.taskProcessExited &&
+          (raw.phase === "running" || (raw.phase === "finished" && raw.srtReset)))) &&
       !processAbsent(raw.processId) &&
-      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500 &&
-      options.now() < record.plan.effectiveDeadlineAt
+      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500
     )
       return "exit_cleanup_pending";
     return "lost";
@@ -435,7 +436,7 @@ export function createProductionSandboxControl(options: Options) {
     record: SandboxExecutionRecord,
     command: "inspect" | "stop",
     signal?: AbortSignal,
-  ): Promise<SandboxResourceObservation> => {
+  ): Promise<SandboxResourceObservation | SandboxCleanupPending> => {
     const control = await readStoredControl(record.plan);
     const restart = await restartedSince(control);
     if (restart) return observeGone(record, control, { restart });
@@ -479,6 +480,22 @@ export function createProductionSandboxControl(options: Options) {
       )
         throw new Error("SANDBOX_READINESS_BINDING_CHANGED");
     }
+    let state: ControlState = "lost";
+    try {
+      if (host) state = await classify(record, raw, host.qualification);
+    } catch (error) {
+      await saveDiagnostic(record.plan, command, "classification", error);
+      reasonCode = sandboxReconciliationFailureReason(error);
+    }
+    if (state === "exit_cleanup_pending")
+      return {
+        kind: "cleanup_pending",
+        identity: record.plan.identity,
+        environmentId: record.plan.environmentId,
+        resourceSequence: record.facts.resource.sequence,
+        observedAt: raw.observedAt,
+      };
+    if (command === "stop" && state === "controlled") state = "lost";
     const sequence = record.facts.resource.sequence + 1;
     const stored = await options.write(record.plan, observationKey(record.plan, sequence), {
       fingerprint: record.plan.semanticFingerprint,
@@ -495,15 +512,6 @@ export function createProductionSandboxControl(options: Options) {
           observation: raw,
         });
     }
-    let state: ControlState = "lost";
-    try {
-      if (host) state = await classify(record, raw, host.qualification);
-    } catch (error) {
-      await saveDiagnostic(record.plan, command, "classification", error);
-      reasonCode = sandboxReconciliationFailureReason(error);
-    }
-    if (command === "stop" && (state === "controlled" || state === "exit_cleanup_pending"))
-      state = "lost";
     const old = record.facts.resource;
     const now = options.now();
     return sandboxResourceObservationSchema.parse({
@@ -542,25 +550,23 @@ export function createProductionSandboxControl(options: Options) {
           }
         : old.metrics,
       ...resourceState(state),
-      ...(state === "exit_cleanup_pending"
-        ? { reasonCode: "SANDBOX_TASK_EXIT_CLEANUP_PENDING" }
-        : state === "lost"
-          ? { reasonCode }
-          : {
-              evidence: {
-                ref: stored.ref,
-                digest: stored.digest,
-                profileRef: record.plan.binding.profileRef,
-                qualificationRef: record.plan.binding.qualificationRef,
-                validUntil: new Date(Date.parse(now) + 1000).toISOString(),
-                subject: { kind: "local_process", processIdentityRef: raw.processIdentityRef },
-              },
-            }),
+      ...(state === "lost"
+        ? { reasonCode }
+        : {
+            evidence: {
+              ref: stored.ref,
+              digest: stored.digest,
+              profileRef: record.plan.binding.profileRef,
+              qualificationRef: record.plan.binding.qualificationRef,
+              validUntil: new Date(Date.parse(now) + 1000).toISOString(),
+              subject: { kind: "local_process", processIdentityRef: raw.processIdentityRef },
+            },
+          }),
     });
   };
   const observe = async (
     record: SandboxExecutionRecord,
-    command: "inspect" | "stop",
+    command: "inspect" | "stop" = "inspect",
     signal?: AbortSignal,
   ) => {
     return withDiagnostic(record.plan, command, () => observeUnchecked(record, command, signal));
@@ -725,7 +731,7 @@ export function createProductionSandboxControl(options: Options) {
       )
         throw new Error("SANDBOX_CONTROL_PREPARATION_CHANGED");
     },
-    observe: (record: SandboxExecutionRecord) => observe(record, "inspect"),
+    observe,
     // Carry proof produced by this same host/process verification. Do not repeat
     // the expensive installed-byte check after issuing a one-second proof.
     async refreshEvidence(
@@ -734,6 +740,7 @@ export function createProductionSandboxControl(options: Options) {
       signal?: AbortSignal,
     ) {
       const resource = await observe(record, command, signal);
+      if ("kind" in resource) return resource;
       return {
         resource,
         evidence:
@@ -745,10 +752,6 @@ export function createProductionSandboxControl(options: Options) {
             : [],
       };
     },
-    backend: {
-      inspect: (record, signal) => observe(record, "inspect", signal),
-      stop: (record, signal) => observe(record, "stop", signal),
-    } satisfies SandboxReconciliationBackend,
     async evidence(
       plan: SandboxExecutionPlanV2,
       facts: SandboxExecutionFacts,

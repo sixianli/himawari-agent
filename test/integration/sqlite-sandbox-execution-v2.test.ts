@@ -36,6 +36,8 @@ import { readThreadExecutionResources } from "../../packages/application/src/ser
 import {
   sandboxV2Admission as admission,
   sandboxV2Call as call,
+  reconciliationBackend,
+  verifiedReconciliationBackend,
 } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
@@ -654,7 +656,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               verify: async ({ plan, facts, now }) =>
                 freshObservation({ ...record, plan }, facts, now).context.verification,
             },
-            backend: {
+            backend: reconciliationBackend({
               inspect: async () => {
                 throw new Error("stop required");
               },
@@ -662,7 +664,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                 const stopped = resource(current, "released");
                 return { ...stopped.resource, occurredAt: at(3) };
               },
-            },
+            }),
           });
           record = (
             await service.reconcile({
@@ -1513,7 +1515,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               return scenario === "untrusted" ? { ...proof, evidence: [] } : proof;
             },
           },
-          backend: {
+          backend: reconciliationBackend({
             inspect: async () => {
               throw new Error("unused");
             },
@@ -1525,7 +1527,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               }
               return resource(current, "released").resource;
             },
-          },
+          }),
         });
         const request = {
           identity: record.plan.identity,
@@ -1587,7 +1589,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           evidence: { verify },
           now: () => T1,
           timeoutMs: 10,
-          backend: {
+          backend: reconciliationBackend({
             inspect: async (current) => {
               entered.resolve(current);
               return pending.promise;
@@ -1595,7 +1597,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             stop: async () => {
               throw new Error("unexpected stop");
             },
-          },
+          }),
         });
         const request = service.reconcile({
           identity: record.plan.identity,
@@ -1662,12 +1664,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         },
         now: () => now,
         timeoutMs: 1000,
-        backend: {
+        backend: reconciliationBackend({
           inspect: async (current) => resource(current, "released").resource,
           stop: async () => {
             throw new Error("unexpected stop");
           },
-        },
+        }),
       });
       const outcome = await Promise.allSettled([
         service.reconcile({
@@ -1733,7 +1735,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         },
         now: () => T1,
         timeoutMs: 1000,
-        backend: { inspect, stop: inspect },
+        backend: reconciliationBackend({ inspect, stop: inspect }),
       });
       await service.reconcile({
         identity: record.plan.identity,
@@ -1794,7 +1796,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
           now: () => now,
           timeoutMs: 1000,
-          backend: { inspect, stop: inspect },
+          backend: reconciliationBackend({ inspect, stop: inspect }),
         });
         const finished = await service.reconcile({
           identity: record.plan.identity,
@@ -1856,7 +1858,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
           now: () => T1,
           timeoutMs: 1000,
-          backend: {
+          backend: reconciliationBackend({
             inspect: async (current) => {
               if (window === "backend-observation") {
                 entered.resolve(current);
@@ -1867,7 +1869,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             stop: async () => {
               throw new Error("unexpected stop");
             },
-          },
+          }),
         });
         const recovery = service.reconcile({
           identity: record.plan.identity,
@@ -1886,6 +1888,96 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(call(f, "admit", admission(f, "-after-race")).applied).toBe(true);
       } finally {
         resume.resolve();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["released", "timeout", "abort", "wrong-identity", "stale", "lost"] as const)(
+    "settles cleanup observation within the original recovery: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      const controller = new AbortController();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "lost"));
+        const actions: string[] = [];
+        let now = T1;
+        const observe = async (current: SandboxExecutionRecord, action: string) => {
+          actions.push(action);
+          if (scenario === "lost")
+            return {
+              ...resource(current, "lost").resource,
+              reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+            };
+          if (actions.length > 1 && scenario === "released")
+            return resource(current, "released").resource;
+          if (scenario === "abort") controller.abort();
+          if (scenario === "timeout") now = new Date(Date.parse(T1) + 1000).toISOString();
+          return {
+            kind: "cleanup_pending",
+            identity:
+              scenario === "wrong-identity"
+                ? { ...current.plan.identity, jobId: "other" }
+                : current.plan.identity,
+            environmentId: current.plan.environmentId,
+            resourceSequence: current.facts.resource.sequence,
+            observedAt: scenario === "stale" ? "2000-01-01T00:00:00.000Z" : now,
+          } as const;
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => now,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: (current) => observe(current, "inspect"),
+            stop: (current) => observe(current, "stop"),
+          }),
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "stop",
+          signal: controller.signal,
+        });
+        expect(finished.record.facts.result).toEqual(record.facts.result);
+        expect(actions.filter((action) => action === "stop")).toHaveLength(1);
+        expect(finished.record.recovery?.attempts).toBe(1);
+        expect(finished.record.recovery?.deadlineAt).toBe(
+          new Date(Date.parse(T1) + 1000).toISOString(),
+        );
+        if (scenario === "released") {
+          expect(finished.record.recovery?.status).toBe("resolved");
+          expect(finished.record.facts.resource.supervision).toBe("released");
+          expect(finished.record.workspaceBlocked).toBe(false);
+          expect(actions).toContain("inspect");
+        } else {
+          expect(finished.record.recovery?.status).toBe("unresolved");
+          expect(finished.record.workspaceBlocked).toBe(true);
+          expect(actions).toEqual(["stop"]);
+          if (scenario === "timeout" || scenario === "abort")
+            expect(finished.record.recovery?.reasonCode).toBe(
+              scenario === "timeout"
+                ? "SANDBOX_RECONCILIATION_TIMED_OUT"
+                : "SANDBOX_RECONCILIATION_INTERRUPTED",
+            );
+        }
+      } finally {
         await f.close();
       }
     },
@@ -1988,7 +2080,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           now: () => T1,
           timeoutMs: 1000,
           evidence: { verify: repeated },
-          backend: { observeVerified, inspect: repeated, stop: repeated },
+          backend: verifiedReconciliationBackend(observeVerified),
         });
         const reconciled = await service.reconcile({
           identity: record.plan.identity,
@@ -2063,7 +2155,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               return scenario === "expired" ? { ...proof, validUntil: T1 } : proof;
             },
           },
-          ...(scenario === "unavailable" ? {} : { backend }),
+          ...(scenario === "unavailable" ? {} : { backend: reconciliationBackend(backend) }),
         });
         await service.reconcile({
           identity: record.plan.identity,
@@ -2538,7 +2630,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               return proof;
             },
           },
-          backend: {
+          backend: reconciliationBackend({
             inspect: async (current) => {
               await new Promise((resolve) => setTimeout(resolve, 50));
               if (scenario === "unresolved") throw new Error("SANDBOX_CONTROL_UNCONFIRMED");
@@ -2547,7 +2639,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             stop: async () => {
               throw new Error("unused");
             },
-          },
+          }),
         });
         let recovered: Promise<unknown> = Promise.resolve();
         const freshChecks: number[] = [];

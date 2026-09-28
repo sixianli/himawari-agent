@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   type CapabilityInvocationReceiptPort,
   type CapabilityInvocationResultPort,
+  type SandboxCleanupPending,
   type SandboxExecutionJournalPort,
   type SandboxExecutionPreparationPort,
   SandboxExecutionReconciliationService,
@@ -202,7 +203,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   let outputWrites = 0;
   let now = T1;
   let beforeVerify = async () => {};
-  let observation: SandboxExecutionVerification | undefined;
+  let observation: SandboxExecutionVerification | SandboxCleanupPending | undefined;
   let observationReads = 0;
   let externalVerifications = 0;
   const scopeReader = new SandboxScopeService({
@@ -339,7 +340,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     registrations: () => registrations,
     outputWrites: () => outputWrites,
     preparations,
-    observe: (value: SandboxExecutionVerification) => {
+    observe: (value: SandboxExecutionVerification | SandboxCleanupPending) => {
       observation = value;
     },
     verificationCounts: () => ({ observationReads, externalVerifications }),
@@ -475,7 +476,17 @@ describe("v2 observation over authenticated UDS and SQLite", () => {
       f.observe(verification(2, "controlled"));
       const controlled = await f.request({ kind: "observe_control", expectedSequence: 1 });
       if (controlled.record.phase !== "bound") throw new Error("expected bound execution");
-      f.observe(verification(3, exit));
+      f.observe(
+        exit === "exit_cleanup_pending"
+          ? {
+              kind: "cleanup_pending",
+              identity: f.record.plan.identity,
+              environmentId: f.record.plan.environmentId,
+              resourceSequence: 2,
+              observedAt: T1,
+            }
+          : verification(3, exit),
+      );
       const finished = await f.request({ kind: "observe_control", expectedSequence: 2 });
       expect(finished.applied).toBe(false);
       if (finished.record.phase !== "bound") throw new Error("expected bound execution");

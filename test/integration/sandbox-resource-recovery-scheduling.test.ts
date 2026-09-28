@@ -21,7 +21,11 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it, vi } from "vitest";
-import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
+import {
+  reconciliationBackend,
+  sandboxV2Admission,
+  sandboxV2Call,
+} from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
   OWNER_ID,
@@ -312,7 +316,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
           journal: f.journal,
           now: () => T1,
           timeoutMs: 1000,
-          backend: { inspect: stop, stop },
+          backend: reconciliationBackend({ inspect: stop, stop }),
           evidence: {
             verify: async () => {
               throw new Error("unexpected proof");
@@ -439,7 +443,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
           journal: f.journal,
           now: () => T1,
           timeoutMs: 1000,
-          backend: { inspect: waiting, stop: waiting },
+          backend: reconciliationBackend({ inspect: waiting, stop: waiting }),
           evidence,
         });
         const verify = vi.fn();
@@ -528,7 +532,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
         journal: f.journal,
         now: () => T1,
         timeoutMs: 1000,
-        backend: { inspect: stop, stop },
+        backend: reconciliationBackend({ inspect: stop, stop }),
         evidence: {
           verify: async ({ plan, facts, now }) => ({
             facts,
@@ -668,7 +672,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
           journal: f.journal,
           now: () => T1,
           timeoutMs: 30000,
-          backend: { inspect: held, stop },
+          backend: reconciliationBackend({ inspect: held, stop }),
           evidence: { verify: vi.fn() },
         });
         const before = await f.journal.read(f.identity);

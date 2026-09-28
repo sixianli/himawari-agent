@@ -22,6 +22,12 @@ import {
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
+function settled<T>(value: T): Exclude<T, { kind: "cleanup_pending" }> {
+  if (value && typeof value === "object" && "kind" in value)
+    throw new Error("unexpected cleanup pending");
+  return value as Exclude<T, { kind: "cleanup_pending" }>;
+}
+
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -198,15 +204,17 @@ it("returns observation proof from one host verification without caching later o
     taskStarted: true,
     resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
   });
-  const first = await f.control.refreshEvidence(f.record);
+  const first = settled(await f.control.refreshEvidence(f.record));
   expect(first.resource.supervision).toBe("controlled");
   expect(first.evidence).toHaveLength(1);
   expect(f.counts().hostChecks).toBe(1);
   f.setPlatform("linux");
-  const second = await f.control.refreshEvidence({
-    ...f.record,
-    facts: { ...f.record.facts, resource: first.resource },
-  });
+  const second = settled(
+    await f.control.refreshEvidence({
+      ...f.record,
+      facts: { ...f.record.facts, resource: first.resource },
+    }),
+  );
   expect(second.resource.supervision).toBe("lost");
   expect(second.evidence).toEqual([]);
   expect(f.counts().hostChecks).toBe(2);
@@ -219,7 +227,7 @@ it("samples live process state after slow host verification instead of aging the
     taskStarted: true,
     resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
   });
-  const checked = await f.control.refreshEvidence(f.record);
+  const checked = settled(await f.control.refreshEvidence(f.record));
   expect(checked.resource.supervision).toBe("controlled");
   expect(checked.evidence).toHaveLength(1);
   expect(f.counts().hostChecks).toBe(1);
@@ -227,10 +235,10 @@ it("samples live process state after slow host verification instead of aging the
 it("delivers stop before expensive host verification and still requires cleanup evidence", async () => {
   const f = await fixture();
   f.setHostElapsed(2000);
-  const resource = await f.control.backend.stop(f.record, new AbortController().signal);
+  const resource = await f.control.observe(f.record, "stop", new AbortController().signal);
   expect(f.order).toEqual(["stop", "verify-host"]);
-  expect(resource.supervision).toBe("lost");
-  expect(resource.cleanup).toBe("unknown");
+  expect(resource).toMatchObject({ kind: "cleanup_pending", identity: f.record.plan.identity });
+  expect(resource).not.toHaveProperty("supervision");
 });
 it("keeps the authenticated control timeout when no final proof exists", async () => {
   const f = await fixture();
@@ -252,9 +260,9 @@ it("keeps the authenticated control timeout when no final proof exists", async (
       stalled.close((error) => (error ? reject(error) : resolve())),
     );
   });
-  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow(
-    "JOB_HOST_CONTROL_TIMEOUT",
-  );
+  await expect(
+    f.control.observe(f.record, "inspect", new AbortController().signal),
+  ).rejects.toThrow("JOB_HOST_CONTROL_TIMEOUT");
   const diagnostics = [...f.stored.entries()].filter(([key]) => key.includes(":diagnostic:"));
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]?.[1].value).toMatchObject({ reasonCode: "SANDBOX_CONTROL_TIMED_OUT" });
@@ -267,7 +275,7 @@ it.each([
   const f = await fixture();
   const diagnostic = "private host path must stay in protected artifact";
   f.failHost(Object.assign(new Error(diagnostic), { code }));
-  const resource = await f.control.backend.stop(f.record, new AbortController().signal);
+  const resource = settled(await f.control.observe(f.record, "stop", new AbortController().signal));
   expect(f.order[0]).toBe("stop");
   expect(resource).toMatchObject({ supervision: "lost", cleanup: "unknown", reasonCode });
   expect(JSON.stringify(resource)).not.toContain(diagnostic);
@@ -290,7 +298,7 @@ it("requires stored exact evidence and never promotes a Linux sample to tree pro
     taskStarted: true,
     resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
   });
-  const resource = await f.control.observe(f.record);
+  const resource = settled(await f.control.observe(f.record));
   expect(resource.supervision).toBe("controlled");
   expect(await f.control.evidence(f.record.plan, { ...f.record.facts, resource })).toHaveLength(1);
   const artifact = [...f.stored.values()].at(-1);
@@ -300,14 +308,16 @@ it("requires stored exact evidence and never promotes a Linux sample to tree pro
     f.control.evidence(f.record.plan, { ...f.record.facts, resource }),
   ).rejects.toThrow();
   f.setPlatform("linux");
-  const next = await f.control.observe({ ...f.record, facts: { ...f.record.facts, resource } });
+  const next = settled(
+    await f.control.observe({ ...f.record, facts: { ...f.record.facts, resource } }),
+  );
   expect(next.supervision).toBe("lost");
   expect(next.cleanup).toBe("unknown");
 });
 it("does not release a finished environment while its host is alive", async () => {
   const f = await fixture();
   f.set({ phase: "finished", srtReset: true });
-  const resource = await f.control.observe(f.record);
+  const resource = settled(await f.control.observe(f.record));
   expect(resource.supervision).toBe("lost");
   expect(resource.cleanup).toBe("unknown");
 });
@@ -319,32 +329,27 @@ it.each(["running", "stopping", "finished"] as const)(
       phase,
       taskStarted: true,
       taskProcessExited: true,
+      srtReset: phase === "finished",
       resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
     });
-    const resource = await f.control.observe(f.record);
-    expect(resource).toMatchObject({
-      supervision: "lost",
-      cleanup: "unknown",
-      reasonCode: "SANDBOX_TASK_EXIT_CLEANUP_PENDING",
-    });
-    expect(await f.control.evidence(f.record.plan, { ...f.record.facts, resource })).toEqual([]);
-    const expired = await f.control.observe({
-      ...f.record,
-      plan: { ...f.record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
-      facts: { ...f.record.facts, resource },
-    });
-    expect(expired).toMatchObject({
-      supervision: "lost",
-      reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
-    });
-    const stopped = await f.control.backend.stop(
-      { ...f.record, facts: { ...f.record.facts, resource: expired } },
-      new AbortController().signal,
-    );
-    expect(stopped).toMatchObject({
-      supervision: "lost",
-      reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
-    });
+    const before = f.stored.size;
+    for (const command of ["inspect", "inspect", "stop"] as const) {
+      const observed = await f.control.observe(
+        {
+          ...f.record,
+          plan: { ...f.record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
+        },
+        command,
+      );
+      expect(observed).toMatchObject({
+        kind: "cleanup_pending",
+        identity: f.record.plan.identity,
+        environmentId: f.record.plan.environmentId,
+        resourceSequence: f.record.facts.resource.sequence,
+      });
+      expect("supervision" in observed).toBe(false);
+    }
+    expect(f.stored.size).toBe(before);
   },
 );
 it("rejects directory inode replacement and changed supervisor identity", async () => {
@@ -423,7 +428,7 @@ it.each([
     taskStarted: true,
     resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
   });
-  const resource = await f.control.observe(f.record);
+  const resource = settled(await f.control.observe(f.record));
   const artifact = [...f.stored.values()].at(-1);
   if (!artifact) throw new Error("Missing observation");
   if (field === "ref" || field === "digest") artifact[field] = "changed";
@@ -469,7 +474,13 @@ it.each(["no-task", "exited", "no-samples", "expired", "supervisor-changed"])(
               },
             }
           : f.record;
-    const resource = await f.control.observe(record);
+    const observed = await f.control.observe(record);
+    if (reason === "exited") {
+      expect(observed).toMatchObject({ kind: "cleanup_pending", identity: record.plan.identity });
+      expect(observed).not.toHaveProperty("supervision");
+      return;
+    }
+    const resource = settled(observed);
     expect(resource.supervision).toBe("lost");
     expect(resource.cleanup).toBe("unknown");
     expect(await f.control.evidence(record.plan, { ...record.facts, resource })).toEqual([]);
@@ -573,7 +584,13 @@ it.each([
       },
     },
   };
-  const result = await f.control.refreshEvidence(record);
+  const observed = await f.control.refreshEvidence(record);
+  if (scenario === "alive") {
+    expect(observed).toMatchObject({ kind: "cleanup_pending", identity: record.plan.identity });
+    expect(observed).not.toHaveProperty("resource");
+    return;
+  }
+  const result = settled(observed);
   expect(result.resource.supervision).toBe(scenario === "verified" ? "released" : "lost");
 });
 
@@ -617,7 +634,13 @@ it.each([
       );
       return;
     }
-    const result = await f.control.refreshEvidence(f.record);
+    const observed = await f.control.refreshEvidence(f.record);
+    if (scenario === "host-alive") {
+      expect(observed).toMatchObject({ kind: "cleanup_pending", identity: f.record.plan.identity });
+      expect(observed).not.toHaveProperty("resource");
+      return;
+    }
+    const result = settled(observed);
     expect(result.resource.supervision).toBe(supervision);
     if (supervision === "released") {
       expect(result.resource).toMatchObject({
@@ -653,11 +676,13 @@ it.each(["inspect", "stop"] as const)(
     f.set({ phase: "running", taskStarted: true });
     await crashJobHost(f);
     await expect(
-      f.control.backend.inspect(f.record, new AbortController().signal),
+      f.control.observe(f.record, "inspect", new AbortController().signal),
     ).rejects.toThrow();
     f.restartMachine();
     const before = [...f.order];
-    const resource = await f.control.backend[command](f.record, new AbortController().signal);
+    const resource = settled(
+      await f.control.observe(f.record, command, new AbortController().signal),
+    );
     expect(f.order.filter((step) => step === "stop")).toEqual(
       before.filter((step) => step === "stop"),
     );
@@ -759,7 +784,9 @@ it.each([
       await vanish(leader.pid, true);
     let record: SandboxExecutionRecord = f.record;
     const released = async (command: "inspect" | "stop") => {
-      const resource = await f.control.backend[command](record, new AbortController().signal);
+      const resource = settled(
+        await f.control.observe(record, command, new AbortController().signal),
+      );
       expect(f.order).not.toContain("stop");
       expect(resource).toMatchObject({
         supervision: "released",
@@ -785,7 +812,7 @@ it.each([
         await released(command);
         continue;
       }
-      const attempt = f.control.backend[command](record, new AbortController().signal);
+      const attempt = f.control.observe(record, command, new AbortController().signal);
       await expect(attempt).rejects.toThrow(
         {
           blocked: "ENOENT",
@@ -814,5 +841,7 @@ it("keeps a control record saved without a machine boot identity blocking after 
   saved.value = legacy;
   await crashJobHost(f);
   f.restartMachine();
-  await expect(f.control.backend.inspect(f.record, new AbortController().signal)).rejects.toThrow();
+  await expect(
+    f.control.observe(f.record, "inspect", new AbortController().signal),
+  ).rejects.toThrow();
 });

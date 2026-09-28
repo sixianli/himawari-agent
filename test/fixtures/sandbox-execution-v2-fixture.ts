@@ -1,6 +1,13 @@
-import type { SandboxExecutionJournalPort } from "@himawari-agent/application";
+import type {
+  SandboxCleanupPending,
+  SandboxExecutionJournalPort,
+  SandboxExecutionRecord,
+  SandboxExecutionVerification,
+  SandboxReconciliationBackend,
+} from "@himawari-agent/application";
 import {
   type SandboxOperationContract,
+  type SandboxResourceObservation,
   sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateV2Schema,
 } from "@himawari-agent/execution-contracts";
@@ -14,6 +21,34 @@ import {
 } from "./sqlite-capability-invocation-fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+export function reconciliationBackend(callbacks: {
+  inspect(
+    record: SandboxExecutionRecord,
+    signal: AbortSignal,
+  ): Promise<SandboxResourceObservation | SandboxCleanupPending>;
+  stop(
+    record: SandboxExecutionRecord,
+    signal: AbortSignal,
+  ): Promise<SandboxResourceObservation | SandboxCleanupPending>;
+}): SandboxReconciliationBackend {
+  return {
+    observe: async (record, action, signal) => {
+      const resource = await callbacks[action](record, signal);
+      return "kind" in resource ? resource : { kind: "observation", resource };
+    },
+  };
+}
+export function verifiedReconciliationBackend(
+  observe: (
+    record: SandboxExecutionRecord,
+    action: "inspect" | "stop",
+    signal: AbortSignal,
+  ) => Promise<SandboxExecutionVerification>,
+): SandboxReconciliationBackend {
+  return {
+    observe: async (...args) => ({ kind: "verified", verification: await observe(...args) }),
+  };
+}
 type Admission = Parameters<SandboxExecutionJournalPort["admit"]>[0];
 export function sandboxV2Admission(
   f: Fixture,
