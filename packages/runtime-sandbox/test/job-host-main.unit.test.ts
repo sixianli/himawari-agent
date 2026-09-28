@@ -647,4 +647,87 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     expect(processBoundary.stderr.write).toHaveBeenCalledWith("JOB_HOST_IPC_REQUIRED\n");
     expect((boundary.process as { exitCode: number }).exitCode).toBe(1);
   });
+  it.each(["reset", "control-finish"] as const)(
+    "keeps the Worker informed during slow cleanup: %s",
+    async (stage) => {
+      let resume = () => {};
+      const pending = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      if (stage === "reset") boundary.manager.reset.mockReturnValue(pending);
+      else control.finish.mockReturnValue(pending);
+      await prepare(
+        { ...request(), cleanupTimeoutMs: 5000 },
+        {
+          control: {
+            sessionId: SESSION,
+            jobId: "job-entry",
+            attemptId: "attempt-entry",
+            directory: "/control",
+          },
+        },
+      );
+      await startLinux();
+      await closeTask();
+      const before = sent.filter((item) => item["type"] === "heartbeat").length;
+      try {
+        for (let i = 0; i < 8; i++) {
+          await receive("heartbeat");
+          await vi.advanceTimersByTimeAsync(250);
+        }
+        expect(result()).toBeUndefined();
+        expect(processBoundary.exit).not.toHaveBeenCalled();
+        expect(sent.filter((item) => item["type"] === "heartbeat").length - before).toBe(8);
+      } finally {
+        resume();
+        await settle();
+      }
+      expect(result()).toMatchObject({
+        reason: "exited",
+        srtReset: true,
+        taskProcessExited: true,
+        taskProcessGroupGone: true,
+      });
+      expect(processBoundary.disconnect).toHaveBeenCalledOnce();
+      const finishedMessages = sent.length;
+      await vi.advanceTimersByTimeAsync(250);
+      expect(sent).toHaveLength(finishedMessages);
+    },
+  );
+
+  it.each(["reset", "control-finish"] as const)(
+    "keeps the cleanup exit deadline despite continuing heartbeats: %s",
+    async (stage) => {
+      let resume = () => {};
+      const pending = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      if (stage === "reset") boundary.manager.reset.mockReturnValue(pending);
+      else control.finish.mockReturnValue(pending);
+      await prepare(
+        { ...request(), cleanupTimeoutMs: 5000 },
+        {
+          control: {
+            sessionId: SESSION,
+            jobId: "job-entry",
+            attemptId: "attempt-entry",
+            directory: "/control",
+          },
+        },
+      );
+      await startLinux();
+      await closeTask();
+      try {
+        for (let i = 0; i < 20; i++) {
+          await receive("heartbeat");
+          await vi.advanceTimersByTimeAsync(250);
+        }
+        expect(result()).toBeUndefined();
+        expect(processBoundary.exit).toHaveBeenCalledExactlyOnceWith(1);
+      } finally {
+        resume();
+        await settle();
+      }
+    },
+  );
 });

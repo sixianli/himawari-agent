@@ -86,7 +86,6 @@ async function finish() {
   if (finishing) return;
   finishing = true;
   observer?.stop();
-  clearInterval(heartbeat);
   phase = "stopping";
   networkAuthority.close();
   void egress?.close();
@@ -121,6 +120,7 @@ async function finish() {
   } catch {
     reason = "host_failure";
   }
+  clearInterval(heartbeat);
   send({
     type: "result",
     network: egress?.observation() ?? null,
