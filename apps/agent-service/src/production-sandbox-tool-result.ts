@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   type CapabilityInvocationAuthority,
   projectSandboxExecution,
@@ -45,6 +46,14 @@ export function sandboxCommandEffectReason(input: {
     : null;
 }
 
+const RECOVERY_SETTLE_WAIT_MS = 35000;
+const RECOVERY_POLL_MS = 250;
+
+function awaitingRecovery(record: SandboxExecutionRecord) {
+  const { supervision } = record.facts.resource;
+  return supervision === "lost" || supervision === "reconciling";
+}
+
 /** Worker completion is a notification. Only the Agent's existing verified
  * projection and durable continuation intents can hand a foreground result to Pi.
  */
@@ -68,6 +77,15 @@ export function createProductionSandboxToolResult(options: {
     if (plan.mode !== "foreground") return null;
     if (plan.identity.runId !== input.runId || plan.identity.invocationId !== input.invocationId)
       throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
+    const waitUntil = performance.now() + RECOVERY_SETTLE_WAIT_MS;
+    while (awaitingRecovery(record)) {
+      if (record.recovery?.status === "unresolved") return undefined;
+      if (performance.now() >= waitUntil) throw new Error("SANDBOX_RECOVERY_UNSETTLED");
+      await delay(RECOVERY_POLL_MS);
+      const latest = await options.preparations.readAdmissionByInvocation(input);
+      if (latest?.phase !== "bound") throw new Error("SANDBOX_TOOL_RESULT_BINDING_CHANGED");
+      record = latest.record;
+    }
     if ((!record.facts.result || record.facts.result.kind === "unknown") && options.recoverResult)
       record = await options.recoverResult(record);
     const result = record.facts.result;

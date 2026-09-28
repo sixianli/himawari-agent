@@ -2446,6 +2446,119 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
+  it.each(["released", "unresolved"] as const)(
+    "Agent foreground result handoff started while background recovery is %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "lost"));
+        const identity = record.plan.identity;
+        const lostSequence = record.facts.resource.sequence;
+        const recovery = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (current) => call(f, "read", current),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          backend: {
+            inspect: async (current) => {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              if (scenario === "unresolved") throw new Error("SANDBOX_CONTROL_UNCONFIRMED");
+              return resource(current, "released").resource;
+            },
+            stop: async () => {
+              throw new Error("unused");
+            },
+          },
+        });
+        let recovered: Promise<unknown> = Promise.resolve();
+        const freshChecks: number[] = [];
+        const journal = Object.fromEntries(
+          [
+            "read",
+            "append",
+            "prepareIntent",
+            "dispatchIntent",
+            "acknowledgeIntent",
+            "observeIntent",
+          ].map((name) => [
+            name,
+            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+          ]),
+        ) as unknown as SandboxExecutionJournalPort;
+        const complete = createProductionSandboxToolResult({
+          journal,
+          preparations: {
+            readAdmissionByInvocation: async () => ({
+              phase: "bound",
+              record: call(f, "read", identity) as SandboxExecutionRecord,
+            }),
+          },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          verifyFresh: async (current) => {
+            freshChecks.push(current.facts.resource.sequence);
+            if (current.releaseReceipt) {
+              const proof = context(current, current.facts).verification;
+              if (!proof) throw new Error("missing synthetic evidence");
+              return proof;
+            }
+            await recovered.catch(() => undefined);
+            const proof = context(current, resource(current, "released")).verification;
+            if (!proof) throw new Error("missing synthetic evidence");
+            return proof;
+          },
+        });
+        const receipt = vi.fn(async () => {});
+        const delivered = complete(
+          { runId: identity.runId, invocationId: identity.invocationId },
+          { assertDisclosure: async () => {}, saveReceipt: receipt },
+        );
+        recovered = recovery.reconcile({
+          identity,
+          expectedSequence: lostSequence,
+          authority: { ...SERVICE_AUTHORITY, workerBootId: "background-recovery" },
+          action: "inspect",
+        });
+        const outcome = await delivered;
+        await recovered.catch(() => undefined);
+        const pending = call(f, "listPending", { afterJobId: null, limit: 10 }) as unknown[];
+        const final = call(f, "read", identity) as SandboxExecutionRecord;
+        expect(final.facts.result).toEqual(record.facts.result);
+        expect(final.facts.resource.sequence).toBe(lostSequence + 2);
+        if (scenario === "released") {
+          expect(outcome).toMatchObject({ outcome: "succeeded", outputRef: "output" });
+          expect(receipt).toHaveBeenCalledTimes(1);
+          expect(pending).toEqual([]);
+          expect(final.facts.resource.supervision).toBe("released");
+          expect(freshChecks).toEqual([lostSequence + 2]);
+        } else {
+          expect(outcome).toBeUndefined();
+          expect(receipt).not.toHaveBeenCalled();
+          expect(pending).toEqual([final]);
+          expect(final.facts.resource.supervision).toBe("lost");
+          expect(final.recovery?.status).toBe("unresolved");
+          expect(freshChecks).toEqual([]);
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
   async function completeFailedExecution(
     f: Awaited<ReturnType<typeof openSandboxJournal>>,
     suffix: string,
