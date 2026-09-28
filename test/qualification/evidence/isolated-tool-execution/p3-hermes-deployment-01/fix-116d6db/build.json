@@ -1,0 +1,53 @@
+{
+  "sourceCommit": "116d6db5417731828f2433ced9a99a06ecef5c6d",
+  "sourceArchiveSha256": "a67af4f730a7a370948e703cbaad65788f8d16385fc7de7e89ba93ac60e850bd",
+  "sourceManifestSha256": "5d6875d88dbf30ba3ede296270b22c70479dd8e828cc9e0941bad28761139e5f",
+  "sourceFiles": 3998,
+  "preparationSha256": "ca3d5ce89ae226338b4b50be790c77b45ad5443b2ecf2d16cf02b222d0134d9e",
+  "runtimeDigest": "9815e419ff314d32b0044003ba6f6ac8ecb3bc063ea09defc0bd19f4f9441c51",
+  "buildPassed": true,
+  "builtAs": "andy (uid 1000), no root",
+  "networkDuringBuild": "not_blocked; npm cache warm (prefer-offline), package-lock unchanged since 4f2b776",
+  "failedAttempts": 0,
+  "prefixFiles": 34573,
+  "removedPrefixFilesVs4f2b776": [],
+  "changedPrefixFilesVs4f2b776": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-payload-broker-handler.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-run-composition.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-run-memory.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-runtime-tools.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/agent-service/dist/production-sandbox-tool-result.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/application/dist/ports/intelligence.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/application/dist/services/model-invocation-admission-service.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/application/dist/services/run-coordinator.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/application/dist/services/thread-execution-projection.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/application/dist/services/thread-execution-state.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/migration-engine.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/migrations/0049_thread_title_budget.sql",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/sqlite-model-budget-operations.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/sqlite-model-invocation-operations.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/platform-node/dist/capabilities/isolation.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-host-verifier.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-runtime-digest-worker.js",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Makefile",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Release/.deps/ba23eeee118cd63e16015df367567cb043fed872.intermediate.d",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/config.gypi",
+    "share/control-center/assets/en-D9owTKQ-.js",
+    "share/control-center/assets/index-BYZ3m8Wo.js",
+    "share/control-center/assets/ja-CQtdDkYi.js",
+    "share/control-center/index.html"
+  ],
+  "staticFiles": 26,
+  "localChecksBeforeDeploy": {
+    "npmTest": "passed (local_passed, macos-arm64)",
+    "productPathE2E": "run13 8/8 passed, fake model only",
+    "securityCheck": {
+      "machineSecrets": "passed",
+      "gitleaks": "244 findings under test/, reviewed as SHA-256 digests and test tokens, no real secret",
+      "semgrep": "infrastructure_failed SEMGREP_TOOL_FAILED, not run to completion"
+    }
+  }
+}

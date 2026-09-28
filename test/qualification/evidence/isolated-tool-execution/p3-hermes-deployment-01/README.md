@@ -25,6 +25,7 @@
 - **有一处与正式流程不同**：能力登记里 `himawari.pi-coding` 仍是旧程序指纹，详见[能力登记没有更新](#registry-deviation)。
 - **上线后发现旧占用挡住写文件**，已由所有者批准直接改库修正，详见[上线后发现：旧占用挡住所有写文件请求](#occupancy-fix)。
 - **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。这个修正已于同日 21:22（日本时间）部署到 Hermes，详见[修正上线：4f2b776](#fix-deploy)。
+- **4f2b776 上线约 10 分钟后 Agent 崩溃重启一次**，原因已从 Hermes 数据查明，修正随 2026-09-28 的升级上线（schema 48 → 49），详见[升级到 116d6db](#fix-116d6db)。
 
 ## 可核验证据
 
@@ -139,6 +140,61 @@ Runbook 第 6 步写的正式做法 `himawari capabilities register` 在这里�
 - 公开入口的首页没有从本机经 Cloudflare 打开；只检查了本机 `/health/ready` 和资格阶段、切换前以运行账号读回的 23 个静态文件。不带正式主机名直接请求本机首页返回 403，这次没有查它具体按什么拒绝。
 
 需要回到 `c71adbd` 时：停服，用切换目录 `qualifications/2026-09-27-4f2b776-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动。数据库结构相同，不需要恢复备份；`/opt/himawari/releases/2026-09-27-c71adbd` 保留未动。
+
+<a id="fix-116d6db"></a>
+## 升级到 116d6db（schema 48 → 49）
+
+日期：2026-09-28（日本时间 09:05–11:29）。所有者批准“两个都按你建议的做，然后继续部署到 Hermes”，并在自己的终端里用 sudo 密码开了 12 小时的临时 root 权限。部署的源码是提交 `116d6db5417731828f2433ced9a99a06ecef5c6d`。与 `4f2b776` 相比，产品代码的改动来自这些提交：
+
+- `e7d735c`：查找记忆时嵌入模型（把文字转成向量用于检索的模型）请求断开，不再让 Agent 进程崩溃，而是把这一轮判为失败。
+- `16a6803`、`a788d31`、`2374390`：沙箱隔离拒绝和进程结果在高负载下保持一致；按文件元数据复查已审计的沙箱运行时；沙箱进程恰好在定时控制检查前退出时，不再误当作失去控制而丢掉退出结果。
+- `3412faa`：只读工具（read、ls、find、grep）失败时，把 Pi 自己的报错输出交给模型。
+- `116d6db`：生成对话标题的模型花费记到单独的“标题预算账户”，标题结果不确定时不再冻结这一轮对话自己的预算账户；为此新增迁移 49。
+
+<a id="crash-0927"></a>
+### 9 月 27 日 21:33 的崩溃
+
+4f2b776 上线后，Agent 在 2026-09-27 21:33:12（日本时间）写出 `runtime.failed`（`SERVICE_STARTUP_FAILED`）后退出，systemd 15 秒后自动重启。日志只有这个笼统的错误码，原因从数据库查明：所有者新发的一轮对话 `run:bf813a27…` 先查找记忆，调用 OpenRouter 的嵌入模型 `qwen/qwen3-embedding-8b`，请求开始 0.6 秒后断开，结果记为 `transport_unresolved`（不知道对方是否收到）；这个错误逃出了负责协调这一轮的代码，Run 停在 `reconciling_external_result`，调度循环把它当作运行失败，Agent 随即退出。这正是 `e7d735c` 修正的情况，证据在 [`crash-2026-09-27.json`](fix-116d6db/crash-2026-09-27.json)。
+
+### 结果
+
+- 生产服务已运行新版本：Agent 和 Worker 都写出 `service.ready`；`/health/ready` 返回 `ready`；进程 uid 998、`NoNewPrivs` 为 1；服务看到的安装目录是只读挂载的 `/opt/himawari/releases/2026-09-28-116d6db`；运行中进程视图里的 Agent 程序包含新代码（`CONTEXT_MEMORY_UNAVAILABLE`）。上线后到检查时没有自动重启。
+- 停服约 1 分钟（11:27:21 开始停服，11:28:43 两个进程都就绪），中间做了完整备份并校验，再把数据库从 schema 48 迁移到 49（只应用了迁移 49），外键检查 0 个错误，`quick_check` 为 `ok`。
+- 模型预算账户表已有 `title_run_id` 列；已有的 91 个账户都是 Run 账户，标题账户要等下一次生成标题时才会出现。
+- 卡住的 `run:bf813a27…` 没有处理，仍停在对账中；切换脚本只允许这一个未结束的 Run。
+- 能力登记里 `himawari.pi-coding` 的旧指纹仍未更新，差异与 4f2b776 时逐字节相同，没有写登记表。
+- 临时 root 权限已提前收回：删除了 `/etc/sudoers.d/99-himawari-claude-20260928`，停掉了到期清理定时器，之后 `sudo -n true` 要求密码。
+
+### 执行中出的问题
+
+- **第一次切换在入口检查处停下**（10:56）。生成切换脚本时，Claude 把 “4f2b776” 批量替换成 “116d6db”，把本应指向当前旧版本的 `OLD_START`、`OLD_PHYSICAL` 两行也改成了新版本，脚本发现服务定义里的启动命令对不上，报 `UNEXPECTED_SERVICE_UNIT` 退出。这个检查在停服和建切换目录之前，所以什么都没改。改回这两行后，与 4f2b776 的切换脚本逐行比对，只剩预期的差异。
+- **重新运行被 Claude Code 的自动安全检查拦下**。改由所有者在 Hermes 上运行 `bash ~/run-116d6db-cutover.sh`：先核对修正后脚本的摘要 `46ba8384…41e8`，装进 root 持有的 `/etc/himawari/deploy-116d6db/` 并核对全部 7 个脚本，再启动切换（11:26:37）。之后的等待、检查、收回权限和取证由 Claude 完成。
+- **这次构建没有放在断网单元里**：由普通用户 andy 直接运行 `build.sh`，网络没有被切断。依赖安装报告 `"cache": "warm"`，`package-lock.json` 自 4f2b776 以来没有变，依赖都来自本机缓存。
+
+### 证据
+
+证据在 [`fix-116d6db/`](fix-116d6db/)：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`build.json`](fix-116d6db/build.json) | 源码归档（3998 个文件）、源码清单、准备清单和运行时摘要 `9815e419…1c51`；与 4f2b776 相比变了 27 个安装文件（17 个产品程序和迁移文件、3 个启动脚本、3 个 better-sqlite3 编译文件、4 个网页文件），没有文件被删除；网页静态文件共 26 个（保留旧的 22 个资源，供已打开的页面继续加载）。另记录了本机上线前检查：`npm test` 通过、产品路径 E2E 8/8 通过（只用假模型）、安全检查里 semgrep 没有跑完（`SEMGREP_TOOL_FAILED`），gitleaks 的 244 条都是 `test/` 下的摘要和测试令牌 |
+| [`qualification.json`](fix-116d6db/qualification.json)、[`platform-probes.json`](fix-116d6db/platform-probes.json)、[`protected-runtime-probe.json`](fix-116d6db/protected-runtime-probe.json)、[`signer-preflight.json`](fix-116d6db/signer-preflight.json)、[`web-static-installed.json`](fix-116d6db/web-static-installed.json)、[`workspace-links.json`](fix-116d6db/workspace-links.json) | 六组资格验证全部通过（Pi 22 项、组合、允许网络 10 项、拒绝网络 7 项、Worker 被杀后清理、公开搜索 3 项），签署回执摘要 `10592fca…b1bb`。资格阶段服务没有停，也没有写生产数据库 |
+| [`database-before.json`](fix-116d6db/database-before.json)、[`database-after-migration.json`](fix-116d6db/database-after-migration.json)、[`database-before-switch.json`](fix-116d6db/database-before-switch.json) | 停服后 schema 48、迁移后和切换前 schema 49：91 个 Run、38 个对话、83 条执行记录（全部已清理、已释放），唯一未结束的 Run 是 `run:bf813a27…` |
+| [`backup-verify.json`](fix-116d6db/backup-verify.json)、[`migrate.json`](fix-116d6db/migrate.json) | 迁移前完整恢复点 `before-116d6db-2026-09-28`：schema 48，完整性检查 `ok`，15,082 个 Payload；迁移只应用了 49，迁移命令另存的快照在 `state/data/pre-migration-v9CS9P/` |
+| [`registry-deviation.json`](fix-116d6db/registry-deviation.json) | 能力登记差异，与 4f2b776 时相同 |
+| [`web-static-preflight.json`](fix-116d6db/web-static-preflight.json) | 停服前以运行账号读回新版本的 26 个网页文件 |
+| [`cutover.json`](fix-116d6db/cutover.json)、[`postflight.json`](fix-116d6db/postflight.json) | 切换结果和启动后检查 |
+| [`crash-2026-09-27.json`](fix-116d6db/crash-2026-09-27.json) | 上面崩溃的日志、模型调用记录和 Run 检查点 |
+| [`deployment-helpers.zip`](fix-116d6db/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-116d6db/deployment-helpers.sha256) | 本次实际运行的构建、资格、签署、启动和切换脚本（切换脚本是修正后的版本）；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-116d6db/` |
+
+和 4f2b776 的切换脚本相比，这次的 `hermes-116d6db-cutover.py` 在校验备份之后加了迁移 49 的步骤；迁移开始之后如果失败，只恢复旧的 unit、配置和保护记录，不启动旧版本（旧版本不能写 schema 49 的数据库），等所有者批准后再用备份恢复。这次没有触发回退。
+
+没有验证的部分：
+
+- 没有发起任何模型请求，也没有用真实浏览器走聊天。嵌入请求断开时是否真的只让这一轮失败、标题账户是否按设计出现，要等真实对话时再看。
+- 公开入口的首页没有从本机经 Cloudflare 打开；不带正式主机名直接请求本机首页仍返回 403。
+
+需要回到 `4f2b776` 时：停服，用旧版 CLI 恢复 `before-116d6db-2026-09-28`（schema 48），再从 `qualifications/2026-09-28-116d6db-cutover/private/` 恢复旧的 unit、配置、保护记录和启动证明后启动。schema 49 的数据库不能直接给 4f2b776 用。`/opt/himawari/releases/2026-09-27-4f2b776` 保留未动。
 
 ## 恢复方式
 

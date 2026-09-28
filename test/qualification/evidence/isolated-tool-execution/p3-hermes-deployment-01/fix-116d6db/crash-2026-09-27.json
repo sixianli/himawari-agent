@@ -1,0 +1,34 @@
+{
+  "observed": "2026-09-27T12:33:26Z himawari.service exit 1, systemd restart 15s later (NRestarts=1)",
+  "agentLog": [
+    {
+      "timestamp": "2026-09-27T12:33:12.465Z",
+      "event": "runtime.failed",
+      "code": "SERVICE_STARTUP_FAILED"
+    },
+    {
+      "timestamp": "2026-09-27T12:33:12.467Z",
+      "event": "service.draining",
+      "signal": "AUTHORITY_LOST"
+    }
+  ],
+  "run": "run:bf813a27-5e3e-4b50-a1f8-7d7bfb567784",
+  "modelInvocation": {
+    "logicalSlot": "context-memory-search:v1",
+    "source": "embedding",
+    "provider": "openrouter",
+    "model": "qwen/qwen3-embedding-8b",
+    "startedAt": "2026-09-27T12:33:11.611Z",
+    "observedAt": "2026-09-27T12:33:12.238Z",
+    "status": "unknown",
+    "reasonCode": "transport_unresolved"
+  },
+  "runCheckpoint": {
+    "phase": "reconciling_external_result",
+    "diagnosticCode": "RUN_EXECUTION_FAILED_WITHOUT_RESULT",
+    "updatedAt": "2026-09-27T12:33:12.309Z"
+  },
+  "rootCause": "embedding transport failure during context memory lookup escaped the run coordinator; the run dispatch loop reported it through failRuntime and the Agent exited",
+  "fix": "e7d735c (deployed in 116d6db)",
+  "runStillUnfinishedAfterDeploy": true
+}
