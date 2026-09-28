@@ -1,7 +1,10 @@
 import { fork } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { sandboxHostFailureDetailSchema } from "@himawari-agent/execution-contracts";
+import {
+  type SandboxTaskTermination,
+  sandboxHostFailureDetailSchema,
+} from "@himawari-agent/execution-contracts";
 import type { JobHostControlBinding } from "./job-host-control.js";
 import {
   JOB_HOST_FAILURE_STAGES,
@@ -19,10 +22,12 @@ export interface SandboxJobHost {
   /** Resolves only after the authenticated child reports the actual task identity. */
   readonly started: Promise<NonNullable<JobHostSupervision["task"]>>;
   readonly result: Promise<JobHostResult>;
+  readonly completed: Promise<SandboxTaskTermination | null>;
   /** Bounded merged stdout/stderr in authenticated arrival order. Reading never starts work. */
   readOutput(
     offset: number,
     limit: number,
+    channel?: "stdout",
   ): {
     bytes: Uint8Array;
     nextOffset: number;
@@ -109,6 +114,12 @@ export function prepareSandboxJobHost(
   const result = new Promise<JobHostResult>((resolve) => {
     resolveResult = resolve;
   });
+  let resolveCompleted!: (value: SandboxTaskTermination | null) => void;
+  const completed = new Promise<SandboxTaskTermination | null>((resolve) => {
+    resolveCompleted = resolve;
+  });
+  let taskCompletion: SandboxTaskTermination | null = null;
+  let completionContradicted = false;
   let prepared = false;
   let started = false;
   let cancelled = false;
@@ -368,11 +379,13 @@ export function prepareSandboxJobHost(
     } else if (message["type"] === "output") {
       if (
         !started ||
+        taskCompletion !== null ||
         completion !== undefined ||
         typeof message["bytes"] !== "string" ||
         message["bytes"].length > 131072 ||
         !["stdout", "stderr"].includes(message["channel"] as string)
       ) {
+        if (taskCompletion) completionContradicted = true;
         cancel("host_failure");
         return;
       }
@@ -387,12 +400,44 @@ export function prepareSandboxJobHost(
       received += bytes.byteLength;
       output.push(bytes);
       (message["channel"] === "stdout" ? stdout : stderr).push(bytes);
+    } else if (message["type"] === "completed") {
+      if (
+        !started ||
+        taskPid === undefined ||
+        taskCompletion ||
+        completion ||
+        message["reason"] !== "exited" ||
+        message["taskProcessExited"] !== true ||
+        message["stdioClosed"] !== true ||
+        !Number.isSafeInteger(message["exitCode"]) ||
+        (message["exitCode"] as number) < 0 ||
+        (message["exitCode"] as number) > 255
+      ) {
+        completionContradicted = true;
+        cancel("host_failure");
+        return;
+      }
+      taskCompletion = {
+        exitCode: message["exitCode"] as number,
+        reasonCode: "exited",
+        taskProcessExited: true,
+      };
+      resolveCompleted({ ...taskCompletion });
     } else if (message["type"] === "result") {
       if (completion !== undefined) {
         cancel("host_failure");
         return;
       }
       completion = message;
+      if (
+        taskCompletion &&
+        (message["exitCode"] !== taskCompletion.exitCode ||
+          message["taskProcessExited"] !== true ||
+          message["stdioClosed"] !== true ||
+          message["taskStarted"] !== true ||
+          message["reason"] !== taskCompletion.reasonCode)
+      )
+        completionContradicted = true;
       forceTimer ??= setTimeout(force, request.cleanupTimeoutMs);
     } else cancel("host_failure");
   });
@@ -402,13 +447,14 @@ export function prepareSandboxJobHost(
   });
   child.once("close", () => {
     ended = true;
+    resolveCompleted(null);
     clearInterval(supervisionTimer);
     clearTimeout(timer);
     clearTimeout(preparationTimer);
     clearTimeout(forceTimer);
     rejectReady(new Error("JOB_HOST_NOT_READY"));
     rejectStarted(new Error("JOB_HOST_START_UNCONFIRMED"));
-    const reason = completion?.["reason"];
+    const reason = completionContradicted ? "host_failure" : completion?.["reason"];
     const validReason = [
       "exited",
       "cancelled",
@@ -456,7 +502,10 @@ export function prepareSandboxJobHost(
       supervision: inspect(),
       reason: validReason ? (reason as JobHostResult["reason"]) : "host_failure",
       resources,
-      exitCode: typeof completion?.["exitCode"] === "number" ? completion["exitCode"] : null,
+      exitCode:
+        !completionContradicted && typeof completion?.["exitCode"] === "number"
+          ? completion["exitCode"]
+          : null,
       stdout: Buffer.concat(stdout),
       stderr: Buffer.concat(stderr),
       taskStarted,
@@ -477,20 +526,24 @@ export function prepareSandboxJobHost(
     ready,
     started: taskStarted,
     result,
-    readOutput(offset: number, limit: number) {
+    completed,
+    readOutput(offset: number, limit: number, channel?: "stdout") {
+      const chunks = channel === "stdout" ? stdout : output;
+      const length =
+        channel === "stdout" ? stdout.reduce((total, chunk) => total + chunk.length, 0) : received;
       if (
         !Number.isSafeInteger(offset) ||
         offset < 0 ||
-        offset > received ||
+        offset > length ||
         !Number.isSafeInteger(limit) ||
         limit < 1 ||
         limit > 1_048_576
       )
         throw new Error("JOB_HOST_OUTPUT_CURSOR_INVALID");
-      const bytes = Buffer.alloc(Math.min(limit, received - offset));
+      const bytes = Buffer.alloc(Math.min(limit, length - offset));
       let position = 0;
       let copied = 0;
-      for (const chunk of output) {
+      for (const chunk of chunks) {
         const from = Math.max(0, offset - position);
         if (from < chunk.length && copied < bytes.length)
           copied += chunk.copy(bytes, copied, from, from + bytes.length - copied);
@@ -500,7 +553,7 @@ export function prepareSandboxJobHost(
       return {
         bytes,
         nextOffset: offset + bytes.length,
-        end: ended && offset + bytes.length === received,
+        end: (ended || taskCompletion !== null) && offset + bytes.length === length,
       };
     },
     inspect,

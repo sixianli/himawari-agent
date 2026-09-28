@@ -631,6 +631,18 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      readResultRecovery: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readResultRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      importResult: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.importResult", {
+          ownerId,
+          agentId,
+          input,
+        }),
       prepareIntent: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.prepareIntent", {
           ownerId,

@@ -248,6 +248,266 @@ async function assertCompletionBlocked(f: Fixture, plan: ReturnType<typeof admis
   }
 }
 describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", (execution) => {
+  it.each([
+    "fresh",
+    "reuse",
+    "competing",
+    "cancelled",
+    "expired",
+    "revoked",
+    "source-removed",
+    "wrong-sequence",
+    "wrong-classification",
+    "wrong-digest",
+    "worker/import/lost",
+    "worker/lost/import",
+    "import/worker/lost",
+    "import/lost/worker",
+    "lost/worker/import",
+    "lost/import/worker",
+  ] as const)("atomically imports protected foreground stream output: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "stopping"));
+      record = append(f, record, resource(record, "released"));
+      const opened = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      repository = opened;
+      let authority = SERVICE_AUTHORITY;
+      const bytes = Buffer.from("原始输出🌻");
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "import-original",
+        dataClassification: "private",
+        contentType: "application/octet-stream",
+        plaintext: bytes,
+        createdAt: T1,
+      });
+      if (scenario === "reuse")
+        await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+          handleRef: record.plan.handleRef,
+          invocationId: record.plan.identity.invocationId,
+          authority,
+          now: T1,
+          payload,
+          plaintextByteLength: bytes.length,
+        });
+      let next = 0;
+      const { createProductionSandboxStream } = await import(
+        "../../apps/agent-service/src/production-sandbox-stream.ts"
+      );
+      const stream = createProductionSandboxStream({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+        protector: f.protector,
+        artifacts: () => opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority),
+        clock: { now: () => T1 },
+        ids: { next: () => `stream-${++next}` },
+      });
+      await stream.append(record, {
+        index: 0,
+        offset: 0,
+        bytesBase64: bytes.toString("base64"),
+        end: true,
+        termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+      });
+      const saved = await stream.recover(record);
+      if (!saved?.source.artifacts[0]) throw new Error("missing stream");
+      const facts = sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect: { kind: "not_applicable" },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          kind: "result",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: record.facts.environment.policyDigest,
+          contract: { ref: "fixed-read", version: "1" },
+          occurredAt: T1,
+          completion: { type: "value" },
+          output: { ref: payload.ref, digest: saved.source.digest, byteLength: bytes.length },
+        },
+      });
+      const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      const writeWorker = async () => {
+        await opened.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+          handleRef: record.plan.handleRef,
+          invocationId: record.plan.identity.invocationId,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          payload,
+          plaintextByteLength: bytes.length,
+        });
+        return journal.recordOperation({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          context: context(record, facts),
+        });
+      };
+      if (scenario.startsWith("worker/")) await writeWorker();
+      authority = {
+        ...SERVICE_AUTHORITY,
+        product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+        lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+      };
+      f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+      f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+      const originalInfo = await journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority,
+        now: T1,
+      });
+      expect(originalInfo.receipt.dataClassification).toBe("private");
+      if (scenario === "reuse") expect(originalInfo.output?.payloadRef).toBe(payload.ref);
+      if (scenario === "cancelled") f.database.prepare("UPDATE runs SET status='cancelled'").run();
+      if (scenario === "revoked")
+        f.database.prepare("UPDATE capability_handles SET revoked_at=?").run(T1);
+      if (scenario === "source-removed")
+        f.database
+          .prepare("DELETE FROM run_payload_artifacts WHERE payload_ref=?")
+          .run(saved.source.artifacts[0].payloadRef);
+      const input = {
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence + (scenario === "wrong-sequence" ? 1 : 0),
+        expectedOperationRevision: record.operationRevision,
+        authority,
+        now: scenario === "expired" ? record.plan.originalDeadlineAt : T1,
+        facts,
+        context: { ...context(record, facts), releaseReceipt: record.releaseReceipt ?? null },
+        payload:
+          scenario === "wrong-classification"
+            ? { ...payload, dataClassification: "public" as const }
+            : payload,
+        source:
+          scenario === "wrong-digest" ? { ...saved.source, digest: "0".repeat(64) } : saved.source,
+      };
+      if (scenario.includes("/")) {
+        const { createProductionSandboxLostResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+        );
+        const lost = createProductionSandboxLostResultRecovery({
+          journal,
+          authority: () => authority,
+          now: () => T1,
+          verifyExited: async () => true,
+          saveOutput: async () => {
+            const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+            const payload = await f.protector.protect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              ref: "lost-race-output",
+              dataClassification: "public",
+              contentType: "text/plain",
+              plaintext: bytes,
+              createdAt: T1,
+            });
+            const output = await opened
+              .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+              .commit({
+                runId: createRunId(record.plan.identity.runId),
+                purpose: "trace",
+                operationKey: `sandbox-tool-result-lost:${record.plan.identity.invocationId}`,
+                payload,
+              });
+            return {
+              ref: output.ref,
+              digest: createHash("sha256").update(bytes).digest("hex"),
+              byteLength: bytes.length,
+            };
+          },
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("missing proof");
+            return proof;
+          },
+        });
+        for (const [index, writer] of scenario.split("/").entries()) {
+          if (writer === "worker" && index > 0)
+            await expect(writeWorker()).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+          if (writer === "import") await journal.importResult(input);
+          if (writer === "lost") await lost(record);
+        }
+        const winner = await journal.read(record.plan.identity);
+        expect(winner?.operationRevision).toBe(1);
+        expect(winner?.releaseReceipt).toEqual(record.releaseReceipt);
+        if (scenario.startsWith("lost/"))
+          expect(winner?.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+          });
+        else expect(winner?.facts.result).toEqual(facts.result);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+      } else if (["fresh", "reuse", "competing"].includes(scenario)) {
+        if (scenario === "competing") {
+          const attempts = await Promise.allSettled([
+            journal.importResult(input),
+            journal.importResult(input),
+          ]);
+          expect(attempts.some((attempt) => attempt.status === "fulfilled")).toBe(true);
+        } else await journal.importResult(input);
+        const current = await journal.read(record.plan.identity);
+        expect(current?.facts.result).toEqual(facts.result);
+        expect(current?.operationRevision).toBe(1);
+        expect(current?.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE purpose='worker_result'",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind')='result'",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+        const protectedOutput = await repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref);
+        if (!protectedOutput) throw new Error("missing imported output");
+        expect(
+          Buffer.from(
+            await f.protector.unprotect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              payload: protectedOutput,
+            }),
+          ),
+        ).toEqual(bytes);
+      } else {
+        await expect(journal.importResult(input)).rejects.toThrow();
+        expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE purpose='worker_result'",
+            )
+            .get(),
+        ).toEqual({ count: 0 });
+        expect(await repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref)).toBeUndefined();
+      }
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
   useSqliteContractExecution(execution);
 
   describe("R2 SQLite durable execution resources", () => {
@@ -2732,6 +2992,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "known-unreleased",
     "unknown-released",
     "lost-candidate",
+    "stream-candidate",
     "cancelled",
   ] as const)(
     "discovers a known sandbox result for a stranded Run without executable replay: %s",
@@ -2739,7 +3000,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       const f = await openSandboxJournal();
       try {
         let record = start(f);
-        if (!["unknown-released", "lost-candidate"].includes(scenario))
+        if (!["unknown-released", "lost-candidate", "stream-candidate"].includes(scenario))
           record = append(f, record, result(f, record), true);
         record = append(f, record, resource(record, "stopping"));
         if (scenario !== "known-unreleased")
@@ -2774,6 +3035,28 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           now: () => T1,
         });
         try {
+          if (scenario === "stream-candidate") {
+            const { createProductionSandboxStream } = await import(
+              "../../apps/agent-service/src/production-sandbox-stream.ts"
+            );
+            let next = 0;
+            const stream = createProductionSandboxStream({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+              protector: f.protector,
+              artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority),
+              clock: { now: () => T1 },
+              ids: { next: () => `discovery-stream-${++next}` },
+            });
+            await stream.append(record, {
+              index: 0,
+              offset: 0,
+              bytesBase64: Buffer.from("原始结果").toString("base64"),
+              end: true,
+              termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+            });
+          }
           const dispatch = reopened.runDispatch(
             OWNER_ID,
             AGENT_ID,
@@ -2783,7 +3066,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           );
           const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
           expect(candidates).toEqual(
-            ["known-released", "lost-candidate"].includes(scenario)
+            ["known-released", "lost-candidate", "stream-candidate"].includes(scenario)
               ? [expect.objectContaining({ runId, action: "resume_tool_result" })]
               : [],
           );

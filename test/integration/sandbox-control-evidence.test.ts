@@ -161,6 +161,7 @@ async function fixture(
   };
   return {
     control,
+    now,
     finishControl,
     order,
     counts: () => ({ hostChecks, admissionChecks }),
@@ -316,6 +317,33 @@ it("requires stored exact evidence and never promotes a Linux sample to tree pro
   expect(next.supervision).toBe("lost");
   expect(next.cleanup).toBe("unknown");
 });
+it.each(["inspect", "stop"] as const)(
+  "keeps a frozen terminal observation pending while its host is alive: %s",
+  async (command) => {
+    const f = await fixture();
+    f.set({
+      phase: "finished",
+      taskStarted: true,
+      taskProcessExited: true,
+      stdioClosed: true,
+      srtReset: true,
+      taskProcessGroupGone: true,
+    });
+    await f.finishControl();
+    const terminalFile = await readFile(path.join(f.directory, "final.json"), "utf8");
+    f.setHostElapsed(3000);
+    const observed = await f.control.observe(f.record, command);
+    expect(observed).toMatchObject({ kind: "cleanup_pending", identity: f.record.plan.identity });
+    if (!("kind" in observed) || observed.kind !== "cleanup_pending")
+      throw new Error("EXPECTED_CLEANUP_PENDING");
+    const age = Date.parse(f.now()) - Date.parse(observed.observedAt);
+    expect(age).toBeGreaterThanOrEqual(0);
+    expect(age).toBeLessThanOrEqual(1500);
+    expect(await readFile(path.join(f.directory, "final.json"), "utf8")).toBe(terminalFile);
+    expect(() => process.kill(process.pid, 0)).not.toThrow();
+  },
+);
+
 it("does not release a finished environment while its host is alive", async () => {
   const f = await fixture();
   f.set({ phase: "finished", srtReset: true });

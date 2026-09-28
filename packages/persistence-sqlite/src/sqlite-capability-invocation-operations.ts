@@ -21,9 +21,9 @@ import {
   ContractValidationError,
   type SandboxExecutionPlan,
   type SandboxExecutionPlanV2,
-  sandboxExecutionPlanV2Schema,
   type SandboxJobIdentity,
   sandboxExecutionPlanSchema,
+  sandboxExecutionPlanV2Schema,
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
   validateSandboxJobObservation,
@@ -495,6 +495,44 @@ export class SqliteCapabilityInvocationOperations {
     this.runPayloadArtifacts = runPayloadArtifacts;
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
+      recovery: (plan, value, now) => {
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now);
+        const output = this.requireRunPayloadArtifacts().execute("runPayloadArtifact.lookup", {
+          ownerId: plan.identity.ownerId,
+          agentId: plan.identity.agentId,
+          runId: plan.identity.runId,
+          purpose: "worker_result",
+          operationKey: capabilityInvocationOutputOperationKey(plan.identity.invocationId),
+          authority: {
+            product: value.product,
+            leaseId: value.lease.leaseId,
+            leaseFencingToken: value.lease.fencingToken,
+          },
+          now,
+        }) as ResultArtifact | undefined;
+        return { receipt, output };
+      },
+      importOutput: (plan, input) => {
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(input.authority), input.now);
+        if (
+          input.payload.contentType !== "application/octet-stream" ||
+          input.payload.dataClassification !== receipt.dataClassification ||
+          input.source.byteLength > receipt.resourceCeiling.maxOutputBytes
+        )
+          return this.fail(
+            "PORT_INVALID_OPERATION",
+            "Recovered output differs from the frozen output contract",
+          );
+        return this.requireRunPayloadArtifacts().commitInvocationObservationWithinTransaction({
+          ownerId: receipt.ownerId,
+          agentId: receipt.agentId,
+          runId: receipt.runId,
+          invocationId: receipt.invocationId,
+          authority: input.authority,
+          now: input.now,
+          payload: input.payload,
+        }).ref;
+      },
       consume: (value, owner, agent) => this.consume(parseConsume(value), owner, agent),
       rebindQueued: (request, previous, owner, agent) => {
         const input = parseConsume(request.invocation);
@@ -683,6 +721,65 @@ export class SqliteCapabilityInvocationOperations {
     this.assertSandboxLease(plan, authority, now);
   }
 
+  private sandboxRecoveryReceipt(
+    plan: SandboxExecutionPlanV2,
+    currentAuthority: AuthorityInput,
+    now: string,
+  ): FrozenReceipt {
+    this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
+    const row = this.readReceiptByInvocationScope(
+      plan.identity.ownerId,
+      plan.identity.agentId,
+      plan.handleRef,
+      plan.identity.invocationId,
+    );
+    if (!row) return this.fail("PORT_NOT_FOUND", "Original recovery receipt is missing");
+    const receipt = receiptFromRow(row);
+    const handle = this.readHandle(receipt.handleRef);
+    if (!handle) return this.fail("PORT_NOT_FOUND", "Original recovery handle is missing");
+    const current = handleRecord(handle);
+    const capability = capabilityRecord(handle);
+    if (
+      receipt.receiptRef !== plan.identity.receiptRef ||
+      receipt.runId !== plan.identity.runId ||
+      receipt.semanticFingerprint !== plan.semanticFingerprint ||
+      receipt.inputRef !== plan.inputRef ||
+      receipt.operation !== plan.operation ||
+      receipt.capabilityRef !== plan.capabilityRef ||
+      receipt.capabilityVersion !== plan.capabilityVersion ||
+      receipt.authorizationRef !== plan.authorizationRef ||
+      receipt.authority.product.deploymentId !== plan.executionLease.deploymentId ||
+      receipt.authority.product.authorityEpoch !== plan.executionLease.authorityEpoch ||
+      receipt.authority.product.fencingToken !== plan.executionLease.fencingToken ||
+      !["running", "reconciling_external_result"].includes(handle.runStatus) ||
+      handle.handleRevokedAt !== null ||
+      current.revokedAt !== null ||
+      current.workerEndedAt !== null ||
+      current.ownerId !== receipt.ownerId ||
+      current.agentId !== receipt.agentId ||
+      current.runId !== receipt.runId ||
+      current.capabilityRef !== receipt.capabilityRef ||
+      current.capabilityVersion !== receipt.capabilityVersion ||
+      capability.ref !== receipt.capabilityRef ||
+      capability.declaration.version !== receipt.capabilityVersion ||
+      !CAPABILITY_LIFECYCLES_WITH_AUTHORITY.has(handle.capabilityStatus) ||
+      !capability.declaration.operations.includes(receipt.operation) ||
+      now >= current.expiresAt ||
+      now >= receipt.effectiveExpiresAt ||
+      now >= receipt.deadlineAt
+    )
+      return this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Original recovery identity or permission changed",
+      );
+    this.assertGrant(current, {
+      operation: receipt.operation,
+      dataClassification: receipt.dataClassification,
+      deadlineAt: receipt.deadlineAt,
+      consumedAt: now,
+    });
+    return receipt;
+  }
   private assertSandboxResultReadable(
     plan: SandboxExecutionPlanV2,
     currentAuthority: AuthorityInput,

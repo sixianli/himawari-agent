@@ -449,7 +449,8 @@ export function createProductionSandboxControl(options: Options) {
           raw.taskProcessExited &&
           (raw.phase === "running" || (raw.phase === "finished" && raw.srtReset)))) &&
       !processAbsent(raw.processId) &&
-      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500
+      ((raw.phase === "finished" && raw.stdioClosed && raw.srtReset) ||
+        Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500)
     )
       return "exit_cleanup_pending";
     return "lost";
@@ -570,7 +571,7 @@ export function createProductionSandboxControl(options: Options) {
         identity: record.plan.identity,
         environmentId: record.plan.environmentId,
         resourceSequence: record.facts.resource.sequence,
-        observedAt: raw.observedAt,
+        observedAt: raw.phase === "finished" ? options.now() : raw.observedAt,
       };
     if (command === "stop" && state === "controlled") state = "lost";
     const sequence = record.facts.resource.sequence + 1;

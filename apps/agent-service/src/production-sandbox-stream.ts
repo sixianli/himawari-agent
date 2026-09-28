@@ -20,7 +20,7 @@ export function createProductionSandboxStream(
     runId: record.plan.identity.runId as Parameters<RunPayloadArtifactPort["lookup"]>[0]["runId"],
     binding: key([record.plan.identity, record.plan.semanticFingerprint, record.facts.environment]),
   });
-  const read = async (record: SandboxExecutionRecord, operationKey: string) => {
+  const readStored = async (record: SandboxExecutionRecord, operationKey: string) => {
     const artifact = await options.artifacts().lookup({
       runId: scope(record).runId,
       purpose: "trace",
@@ -40,10 +40,19 @@ export function createProductionSandboxStream(
       agentId: options.agentId,
       payload,
     });
-    if (bytes.byteLength > 49152 || `sha256:${hash(bytes)}` !== artifact.contentDigest)
+    if (
+      bytes.byteLength > 49152 ||
+      `sha256:${hash(bytes)}` !== artifact.contentDigest ||
+      payload.contentDigest !== artifact.contentDigest
+    )
       throw new Error("SANDBOX_STREAM_ARTIFACT_CHANGED");
-    return JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes)) as unknown;
+    return {
+      value: JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes)) as unknown,
+      artifact,
+    };
   };
+  const read = async (record: SandboxExecutionRecord, operationKey: string) =>
+    (await readStored(record, operationKey))?.value;
   const save = async (record: SandboxExecutionRecord, operationKey: string, value: unknown) => {
     const payload = await options.protector.protect({
       ownerId: options.ownerId,
@@ -69,6 +78,68 @@ export function createProductionSandboxStream(
   const terminalKey = (record: SandboxExecutionRecord) =>
     `sandbox-stream-end:${scope(record).binding}`;
   return {
+    async recover(record: SandboxExecutionRecord) {
+      if (record.plan.mode !== "foreground") return null;
+      const saved = await readStored(record, terminalKey(record));
+      if (saved === undefined) return null;
+      const terminal = sandboxOutputChunkSchema.parse(saved.value);
+      if (
+        !terminal.end ||
+        !terminal.termination ||
+        terminal.termination.reasonCode !== "exited" ||
+        !terminal.termination.taskProcessExited ||
+        terminal.termination.exitCode === null ||
+        terminal.index > record.plan.resourceCeiling.maxOutputBytes
+      )
+        throw new Error("SANDBOX_STREAM_TERMINATION_INVALID");
+      const chunks: Buffer[] = [];
+      const artifacts: { operationKey: string; payloadRef: string; contentDigest: string }[] = [];
+      let offset = 0;
+      for (let index = 0; index <= terminal.index; index++) {
+        const operationKey = chunkKey(record, index);
+        const savedChunk = await readStored(record, operationKey);
+        if (!savedChunk) throw new Error("SANDBOX_STREAM_CHUNK_MISSING");
+        const { artifact } = savedChunk;
+        const chunk = sandboxOutputChunkSchema.parse(savedChunk.value);
+        const bytes = Buffer.from(chunk.bytesBase64, "base64");
+        if (
+          chunk.index !== index ||
+          chunk.offset !== offset ||
+          chunk.end !== (index === terminal.index) ||
+          bytes.toString("base64") !== chunk.bytesBase64 ||
+          bytes.length > 32768 ||
+          (!chunk.end && bytes.length === 0) ||
+          offset + bytes.length > record.plan.resourceCeiling.maxOutputBytes ||
+          (chunk.end && JSON.stringify(chunk) !== JSON.stringify(terminal))
+        )
+          throw new Error("SANDBOX_STREAM_SEQUENCE_INVALID");
+        chunks.push(bytes);
+        offset += bytes.length;
+        artifacts.push({
+          operationKey,
+          payloadRef: artifact.payloadRef,
+          contentDigest: artifact.contentDigest,
+        });
+      }
+      const operationKey = terminalKey(record);
+      const artifact = saved.artifact;
+      artifacts.push({
+        operationKey,
+        payloadRef: artifact.payloadRef,
+        contentDigest: artifact.contentDigest,
+      });
+      const bytes = Buffer.concat(chunks, offset);
+      return {
+        bytes,
+        termination: terminal.termination,
+        source: {
+          binding: scope(record).binding,
+          artifacts,
+          digest: hash(bytes),
+          byteLength: offset,
+        },
+      };
+    },
     async termination(record: SandboxExecutionRecord) {
       const saved = await read(record, terminalKey(record));
       return saved === undefined
@@ -76,7 +147,6 @@ export function createProductionSandboxStream(
         : (sandboxOutputChunkSchema.parse(saved).termination ?? null);
     },
     async append(record: SandboxExecutionRecord, input: SandboxOutputChunk) {
-      if (record.plan.mode === "foreground") throw new Error("SANDBOX_STREAM_MODE_INVALID");
       const chunk = sandboxOutputChunkSchema.parse(input);
       const bytes = Buffer.from(chunk.bytesBase64, "base64");
       if (

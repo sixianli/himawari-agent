@@ -182,6 +182,8 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     start: async (value) => sandboxV2Call(f, "start", value),
     append: async (value) => sandboxV2Call(f, "append", value),
     recordOperation: async (value) => sandboxV2Call(f, "recordOperation", value),
+    readResultRecovery: unavailable,
+    importResult: unavailable,
     prepareIntent: unavailable,
     dispatchIntent: unavailable,
     acknowledgeIntent: unavailable,

@@ -16,6 +16,10 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import { isSandboxToolResultLost } from "@himawari-agent/execution-contracts";
 
+export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
+export const SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE =
+  "执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。";
+
 export interface SandboxToolCompletion {
   readonly outcome: "succeeded" | "failed";
   readonly outputRef: string | null;
@@ -223,12 +227,15 @@ export function createProductionSandboxToolResult(options: {
               outputRef:
                 result.kind === "error" &&
                 !isSandboxToolResultLost(result) &&
+                result.reasonCode !== SANDBOX_HOST_COMPLETION_CONTRADICTED &&
                 (result.reasonCode === "FILE_VERSION_CONFLICT" ||
                   plan.operationContract.kind === "fixed_read")
                   ? result.output.ref
                   : null,
               errorCode:
-                (isSandboxToolResultLost(result) && result.kind === "error"
+                (result.kind === "error" &&
+                (isSandboxToolResultLost(result) ||
+                  result.reasonCode === SANDBOX_HOST_COMPLETION_CONTRADICTED)
                   ? result.reasonCode
                   : sandboxCommandEffectReason({
                       operationKind: record.plan.operationContract.kind,

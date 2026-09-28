@@ -64,6 +64,73 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("Job Host admission and observation", () => {
+  it.each([false, true])(
+    "freezes task stdout before host close and rejects a contradictory final result: %s",
+    async (contradictory) => {
+      const process = child();
+      const host = prepareSandboxJobHost(request());
+      process.emitMessage({
+        type: "ready",
+        jobId: "job",
+        attemptId: "attempt",
+        policyDigest: "a".repeat(64),
+      });
+      await host.ready;
+      host.start();
+      process.emitMessage({
+        type: "started",
+        pid: 4321,
+        taskIdentityRef: "sandbox-process:22222222-2222-2222-2222-222222222222",
+        taskStartedAt: new Date().toISOString(),
+      });
+      process.emitMessage({
+        type: "output",
+        channel: "stdout",
+        bytes: Buffer.from("original").toString("base64"),
+      });
+      process.emitMessage({
+        type: "output",
+        channel: "stderr",
+        bytes: Buffer.from("stderr").toString("base64"),
+      });
+      process.emitMessage({
+        type: "completed",
+        exitCode: 0,
+        reason: "exited",
+        taskProcessExited: true,
+        stdioClosed: true,
+      });
+      expect(await host.completed).toEqual({
+        exitCode: 0,
+        reasonCode: "exited",
+        taskProcessExited: true,
+      });
+      expect(Buffer.from(host.readOutput(0, 16, "stdout").bytes).toString()).toBe("original");
+      expect(host.readOutput(0, 16, "stdout").end).toBe(true);
+      let closed = false;
+      void host.result.then(() => {
+        closed = true;
+      });
+      await Promise.resolve();
+      expect(closed).toBe(false);
+      process.emitMessage({
+        type: "result",
+        exitCode: contradictory ? 1 : 0,
+        reason: "exited",
+        taskStarted: true,
+        taskProcessExited: true,
+        stdioClosed: true,
+        srtReset: true,
+        taskProcessGroupGone: true,
+      });
+      process.emit("close");
+      expect(await host.result).toMatchObject(
+        contradictory
+          ? { reason: "host_failure", exitCode: null }
+          : { reason: "exited", exitCode: 0 },
+      );
+    },
+  );
   it("separates task acknowledgement from preparation and reads bounded output without restarting", async () => {
     const process = child();
     const input = request();

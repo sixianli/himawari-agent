@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
-import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { createRunId } from "@himawari-agent/domain";
+import {
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
 import { afterEach, expect, it } from "vitest";
-import { createProductionSandboxStream } from "../../apps/agent-service/src/production-sandbox-stream.ts";
 import { createProductionSandboxOutput } from "../../apps/agent-service/src/production-sandbox-output.ts";
+import { createProductionSandboxStream } from "../../apps/agent-service/src/production-sandbox-stream.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
@@ -89,6 +94,62 @@ async function fixture(text = "first\u0000second\nlast") {
     bytes,
     payloads,
     payload,
+    savedArtifacts: () => {
+      const database = openQualifiedDatabase(path.join(f.resource.stateRoot, "product.sqlite"));
+      try {
+        return database
+          .prepare(
+            "SELECT operation_key AS operationKey, payload_ref AS ref FROM run_payload_artifacts WHERE purpose='trace'",
+          )
+          .all() as Array<{ operationKey: string; ref: string }>;
+      } finally {
+        database.close();
+      }
+    },
+    corruptArtifact: async (
+      operationKey: string,
+      corruption: "missing" | "digest" | "offset" | "length",
+    ) => {
+      const artifact = await outputOptions()
+        .artifacts()
+        .lookup({ runId: createRunId(record.plan.identity.runId), purpose: "trace", operationKey });
+      if (!artifact) throw new Error("missing fixture artifact");
+      let replacement: typeof payload | undefined;
+      if (corruption === "offset" || corruption === "length") {
+        const value = JSON.parse((await read(artifact.payloadRef)).toString());
+        if (corruption === "offset") value.offset++;
+        else value.bytesBase64 = "";
+        replacement = await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: `corrupt-${++next}`,
+          dataClassification: "restricted",
+          contentType: "application/json",
+          plaintext: Buffer.from(JSON.stringify(value)),
+          createdAt: T1,
+        });
+        await payloads.put(replacement);
+      }
+      const database = openQualifiedDatabase(path.join(f.resource.stateRoot, "product.sqlite"));
+      try {
+        if (corruption === "missing")
+          database
+            .prepare("DELETE FROM run_payload_artifacts WHERE operation_key=?")
+            .run(operationKey);
+        else if (corruption === "digest")
+          database
+            .prepare("UPDATE run_payload_artifacts SET content_digest=? WHERE operation_key=?")
+            .run(`sha256:${"0".repeat(64)}`, operationKey);
+        else if (replacement)
+          database
+            .prepare(
+              "UPDATE run_payload_artifacts SET payload_ref=?, content_digest=? WHERE operation_key=?",
+            )
+            .run(replacement.ref, replacement.contentDigest, operationKey);
+      } finally {
+        database.close();
+      }
+    },
     reopen: async () => {
       await repository.close();
       repository = await SqliteProductStateRepository.open({
@@ -222,3 +283,123 @@ it("rejects output holes, noncanonical encoding, empty nonterminal chunks and fl
   ])
     await expect(f.stream().append(record, chunk)).rejects.toThrow();
 });
+
+it("rejects substituting an encrypted stream end artifact for the original output Payload", async () => {
+  const f = await fixture("original-first-original-second");
+  const record = { ...f.record, plan: { ...f.record.plan, mode: "background" as const } };
+  const first = Buffer.from("original-first-");
+  const second = Buffer.from("original-second");
+  await f.stream().append(record, {
+    index: 0,
+    offset: 0,
+    bytesBase64: first.toString("base64"),
+    end: false,
+  });
+  await f.stream().append(record, {
+    index: 1,
+    offset: first.length,
+    bytesBase64: second.toString("base64"),
+    end: true,
+    termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+  });
+  await f.reopen();
+  const terminal = f
+    .savedArtifacts()
+    .find((artifact) => artifact.operationKey.startsWith("sandbox-stream-end:"));
+  expect(terminal).toBeDefined();
+  if (!terminal) throw new Error("missing stream end");
+  const plaintext = await f.read(terminal.ref);
+  expect(plaintext).not.toEqual(f.bytes);
+  expect(JSON.parse(plaintext.toString())).toMatchObject({
+    bytesBase64: second.toString("base64"),
+    offset: first.length,
+    end: true,
+  });
+  const result = f.record.facts.result;
+  if (!result || result.kind !== "result") throw new Error("missing original result");
+  await expect(
+    f.reader()(
+      {
+        ...record,
+        facts: {
+          ...record.facts,
+          result: { ...result, output: { ...result.output, ref: terminal.ref } },
+        },
+      },
+      { resourceRef: "task-fixture", cursor: null, limit: 32768 },
+    ),
+  ).rejects.toThrow("SANDBOX_OUTPUT_CHANGED");
+});
+
+it.each([
+  { name: "empty", text: "" },
+  { name: "multibyte", text: "x".repeat(32767) + "向日葵🌻".repeat(5000) },
+])(
+  "recovers the original foreground bytes across protected chunk boundaries: $name",
+  async ({ text }) => {
+    const f = await fixture(text);
+    const record = {
+      ...f.record,
+      plan: {
+        ...f.record.plan,
+        resourceCeiling: {
+          ...f.record.plan.resourceCeiling,
+          maxOutputBytes: Math.max(1, f.bytes.length),
+        },
+      },
+      facts: { ...f.record.facts, result: null },
+    };
+    const termination = { exitCode: 0, reasonCode: "exited", taskProcessExited: true };
+    let index = 0;
+    for (let offset = 0; offset < f.bytes.length; offset += 32768) {
+      const chunk = f.bytes.subarray(offset, offset + 32768);
+      await f.stream().append(record, {
+        index: index++,
+        offset,
+        bytesBase64: chunk.toString("base64"),
+        end: false,
+      });
+    }
+    await f.stream().append(record, {
+      index,
+      offset: f.bytes.length,
+      bytesBase64: "",
+      end: true,
+      termination,
+    });
+    await f.reopen();
+    const recovered = await f.stream().recover(record);
+    expect(recovered?.bytes).toEqual(f.bytes);
+    expect(recovered?.termination).toEqual(termination);
+    expect(record.facts.resource.resourceRef).toBeNull();
+    expect(
+      await f.stream().recover({
+        ...record,
+        plan: { ...record.plan, identity: { ...record.plan.identity, attemptId: "foreign" } },
+      }),
+    ).toBeNull();
+  },
+);
+
+it.each(["missing", "digest", "offset", "length"] as const)(
+  "rejects corrupted foreground recovery chunks: %s",
+  async (corruption) => {
+    const f = await fixture("original");
+    const record = { ...f.record, facts: { ...f.record.facts, result: null } };
+    await f
+      .stream()
+      .append(record, { index: 0, offset: 0, bytesBase64: f.bytes.toString("base64"), end: false });
+    expect(await f.stream().recover(record)).toBeNull();
+    await f.stream().append(record, {
+      index: 1,
+      offset: f.bytes.length,
+      bytesBase64: "",
+      end: true,
+      termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+    });
+    const source = (await f.stream().recover(record))?.source;
+    if (!source?.artifacts[0]) throw new Error("missing fixture source");
+    await f.corruptArtifact(source.artifacts[0].operationKey, corruption);
+    await expect(f.stream().recover(record)).rejects.toThrow(/^SANDBOX_STREAM_/);
+  },
+);

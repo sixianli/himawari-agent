@@ -776,7 +776,7 @@ export const sandboxExecutionBrokerCommandSchema = variant("kind", {
   }),
   append_output: object({
     kind: literal("append_output"),
-    resourceRef: machineString,
+    resourceRef: nullable(machineString),
     expectedSequence: integer(1),
     chunk: sandboxOutputChunkSchema,
   }),

@@ -15,9 +15,9 @@ import {
   type RuntimeToolInvocation,
   resolveSandboxActionGrant,
   type SandboxExecutionEvidencePort,
-  type SandboxExecutionRecord,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
+  type SandboxExecutionRecord,
   SandboxResourceRecoveryService,
   SandboxScopeService,
   scanMachineSecrets,
@@ -44,6 +44,7 @@ import {
   type SandboxOperationBinding,
   type SandboxScope,
   type SandboxWorkspaceCopy,
+  sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
@@ -56,6 +57,7 @@ import {
   CapabilityDeploymentSnapshotLoader,
   createDirectoryMoveJournal,
   createPiFilePublicationJournal,
+  hasVerifiedPiFileConflict,
   resolveSandboxDirectoryMoveScope,
   resolveSandboxFileScope,
   resolveSandboxWorkspaceClaim,
@@ -79,6 +81,7 @@ import { createProductionSandboxFileRecovery } from "./production-sandbox-file-r
 import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
+import { createProductionSandboxStreamResultRecovery } from "./production-sandbox-stream-result-recovery.js";
 import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
 import {
   createProductionTaskEnvironments,
@@ -1872,16 +1875,6 @@ export async function createProductionSandboxServices(options: {
       return { ref: saved.ref, digest: bytesHash(plaintext), byteLength: plaintext.length };
     },
   });
-  const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
-    recoverLostResult(await recoverFileResult(record));
-  const completeToolResult = createProductionSandboxToolResult({
-    preparations,
-    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
-    authority: options.authority,
-    now: () => clock.now(),
-    verifyFresh: (record) => refreshVerification(record, true),
-    recoverResult: recoverMissingToolResult,
-  });
   const outputOptions = {
     ownerId: configuration.ownerId,
     agentId: configuration.agentId,
@@ -1892,6 +1885,105 @@ export async function createProductionSandboxServices(options: {
     ids,
   };
   const stream = createProductionSandboxStream(outputOptions);
+  const recoverStreamResult = createProductionSandboxStreamResultRecovery({
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    stream,
+    payloads,
+    protector,
+    nextRef: () => ids.next("sandbox-stream-recovery"),
+    facts: async (record, bytes, termination, output) => {
+      const plan = record.plan;
+      const contract = plan.operationContract;
+      let effect = record.facts.effect;
+      let fileConflict = false;
+      if (contract.kind === "fixed_read") effect = { kind: "not_applicable" };
+      else if (contract.kind === "command" || contract.kind === "network_only")
+        effect = { kind: "not_asserted" };
+      else if (contract.kind === "verified_effect") {
+        const parameters = await readJson(plan.inputRef);
+        const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+        fileConflict =
+          termination.exitCode === 1 &&
+          hasVerifiedPiFileConflict({ bytes, parameters, plan, scope });
+        if (termination.exitCode === 0 || fileConflict) {
+          const outcome = verifyPiWriteEvidence({ bytes, parameters, plan, scope });
+          if (plan.operation === "save_copy") {
+            const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+            const root = binding.roots.find(
+              (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+            );
+            if (!root) throw new Error("COPY_SAVE_ROOT_UNAVAILABLE");
+            const saved = await importProductionCopySave({
+              scope,
+              workspace: root.canonicalPath,
+              privateDirectory: path.join(binding.privateRoot, plan.identity.jobId),
+              repository,
+              authority: options.authority().lease,
+              now: clock.now(),
+            });
+            const proof = JSON.parse(Buffer.from(bytes).toString()).verifiedCopySave;
+            if (
+              !saved ||
+              (outcome === "conflict" ? !saved.conflict : saved.operation.status !== "verified") ||
+              saved.operation.revision !== proof.revision
+            )
+              throw new Error("COPY_SAVE_CHECKPOINT_UNAVAILABLE");
+          }
+          effect = {
+            kind: "verified",
+            verifierRef: contract.verifierRef,
+            verifierVersion: contract.verifierVersion,
+            targetRef: contract.targetRef,
+            evidence: { ref: output.ref, digest: output.digest },
+            occurredAt: clock.now(),
+          };
+        }
+      }
+      const fields = {
+        schemaVersion: "sandbox-execution.v2",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: contract.ref, version: contract.version },
+        occurredAt: clock.now(),
+        output,
+      };
+      return sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect,
+        result:
+          contract.kind === "command" ||
+          contract.kind === "network_only" ||
+          termination.exitCode === 0
+            ? {
+                ...fields,
+                kind: "result",
+                completion:
+                  contract.kind === "command" || contract.kind === "network_only"
+                    ? { type: "exit", exitCode: termination.exitCode }
+                    : { type: "value" },
+              }
+            : {
+                ...fields,
+                kind: "error",
+                reasonCode: fileConflict ? "FILE_VERSION_CONFLICT" : "SANDBOX_OPERATION_FAILED",
+                termination: { type: "failure" },
+              },
+      });
+    },
+  });
+  const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
+    recoverLostResult(await recoverFileResult(await recoverStreamResult(record)));
+  const completeToolResult = createProductionSandboxToolResult({
+    preparations,
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    verifyFresh: (record) => refreshVerification(record, true),
+    recoverResult: recoverMissingToolResult,
+  });
   const readForegroundOutput = createProductionSandboxOutput(outputOptions);
   const reconciliation = new SandboxExecutionReconciliationService({
     hostId,

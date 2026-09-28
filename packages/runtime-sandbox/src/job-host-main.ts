@@ -422,6 +422,14 @@ async function start() {
   task.on("close", () => {
     clearTimeout(gateTimeout);
     closed = true;
+    if (userTaskStarted && exited && reason === "exited" && task?.exitCode !== null)
+      send({
+        type: "completed",
+        exitCode: task?.exitCode,
+        reason,
+        taskProcessExited: true,
+        stdioClosed: true,
+      });
     void finish();
   });
   for (const [stream, channel] of [

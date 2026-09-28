@@ -1,7 +1,10 @@
 import cp from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, renameSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { setTimeout } from "node:timers/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { isMainThread } from "node:worker_threads";
 
 const original = cp.fork;
 cp.fork = (file, args, options) => {
@@ -47,3 +50,36 @@ cp.fork = (file, args, options) => {
   return original(file, args, options);
 };
 syncBuiltinESMExports();
+
+if (isMainThread && process.argv[1].endsWith("/execution-worker/dist/main.js")) {
+  const { ProductionPayloadBrokerClient } = await import(
+    pathToFileURL(path.join(path.dirname(process.argv[1]), "production-payload-broker-client.js"))
+      .href
+  );
+  const sandboxExecution = ProductionPayloadBrokerClient.prototype.sandboxExecution;
+  ProductionPayloadBrokerClient.prototype.sandboxExecution = async function (...args) {
+    const command = args[2];
+    const gate = process.env.HIMAWARI_TEST_HOST_FINISH_GATE;
+    if (
+      !gate ||
+      command.kind !== "append_output" ||
+      command.resourceRef !== null ||
+      !command.chunk.end ||
+      !existsSync(`${gate}.consumed`)
+    )
+      return sandboxExecution.apply(this, args);
+    const stage = readFileSync(`${gate}.consumed`, "utf8");
+    if (!["before-end", "after-end"].includes(stage)) return sandboxExecution.apply(this, args);
+    const pause = async () => {
+      appendFileSync(
+        `${gate}.entered`,
+        JSON.stringify({ pid: process.pid, at: new Date().toISOString(), stage }),
+      );
+      while (!existsSync(`${gate}.released`)) await setTimeout(10);
+    };
+    if (stage === "before-end") await pause();
+    const result = await sandboxExecution.apply(this, args);
+    if (stage === "after-end") await pause();
+    return result;
+  };
+}

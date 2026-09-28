@@ -125,6 +125,7 @@ it.each([
     started: Promise.resolve({ processId: 1234 }),
     readOutput: () => ({ bytes: new Uint8Array(), nextOffset: 0, end: true }),
     result,
+    completed: result.then(() => null),
     controlBinding: {
       directory: `${root}/control`,
       token: "a".repeat(64),

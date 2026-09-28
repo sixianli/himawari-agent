@@ -1,6 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFile,
   chmod,
   copyFile,
   mkdir,
@@ -14,7 +15,7 @@ import {
 import { request as requestHttp } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { createServer as createNetServer } from "node:net";
-import { release } from "node:os";
+import { hostname, release } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
@@ -272,15 +273,19 @@ export interface ProductPathInstallation {
   start(): Promise<void>;
   stop(): Promise<void>;
   crash(): Promise<void>;
+  crashWorker(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
   armPreparationFailure(): Promise<void>;
   armFinishGate(
     stage?:
+      | "before-end"
+      | "after-end"
       | "before-reset"
       | "after-reset"
       | "before-final"
       | "after-final"
       | "before-result"
+      | "contradict-result"
       | "after-result",
   ): Promise<void>;
   finishGateEntered(): Promise<{ pid: number; at: string } | null>;
@@ -311,6 +316,29 @@ export async function installProductPath(options: {
   await mkdir(options.logDirectory, { recursive: true });
   for (const directory of [stateRoot, secretDirectory, workspace, jobsRoot, staticRoot])
     await mkdir(directory, { recursive: true, mode: 0o700 });
+  const recordHostIdentity = async (phase: string, generation: number) => {
+    const encoded = await readFile(
+      path.join(stateRoot, ".himawari-state-root.lock", "owner.json"),
+      "utf8",
+    ).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    const owner = encoded === null ? null : (JSON.parse(encoded) as Record<string, unknown>);
+    await appendFile(
+      path.join(options.logDirectory, "host-identity.jsonl"),
+      `${JSON.stringify({
+        at: new Date().toISOString(),
+        phase,
+        generation,
+        testRoot,
+        observerPid: process.pid,
+        hostname: hostname(),
+        lock: owner === null ? null : { host: owner["host"], pid: owner["pid"] },
+      })}\n`,
+    );
+  };
+  await recordHostIdentity("installation-before", 0);
   const certificates = await createCertificates(testRoot);
   const keyPair = await generateKeyPair("RS256", { extractable: true });
   const jwks: JSONWebKeySet = {
@@ -826,7 +854,7 @@ export async function installProductPath(options: {
   };
 
   let bootstrapped = false;
-  const start = async () => {
+  const startServices = async () => {
     if (processes) throw new Error("PRODUCT_PATH_ALREADY_RUNNING");
     if (generation > 0) {
       configuration.capabilityDeployment = await qualifyCapabilities();
@@ -888,6 +916,17 @@ export async function installProductPath(options: {
       bootstrapped = true;
     }
   };
+  const start = async () => {
+    const nextGeneration = generation + 1;
+    await recordHostIdentity("start-before", nextGeneration);
+    try {
+      await startServices();
+      await recordHostIdentity("start-ready", nextGeneration);
+    } catch (error) {
+      await recordHostIdentity("start-failed", nextGeneration);
+      throw error;
+    }
+  };
   const stop = async () => {
     const current = processes;
     processes = undefined;
@@ -896,6 +935,7 @@ export async function installProductPath(options: {
     await terminate(current.worker);
   };
 
+  await recordHostIdentity("installation-after", 0);
   return {
     origin: publicOrigin,
     frontPort,
@@ -920,6 +960,13 @@ export async function installProductPath(options: {
       current.worker.kill("SIGKILL");
       if (!(await exited(current.main, 5000)) || !(await exited(current.worker, 5000)))
         throw new Error("PRODUCT_PATH_CRASH_TIMEOUT");
+    },
+    crashWorker: async () => {
+      const current = processes;
+      if (!current || !alive(current.main)) throw new Error("PRODUCT_PATH_NOT_RUNNING");
+      current.worker.kill("SIGKILL");
+      if (!(await exited(current.worker, 5000)))
+        throw new Error("PRODUCT_PATH_WORKER_CRASH_TIMEOUT");
     },
     armPreparationFailure: async () => {
       await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f95a611ed547717ca81077cc7730a8769ce83d2d9ef88999d221c472eba15213"
+contract_sha256: "sha256:83965c29f25347fcefa5c62ae51728bf1532332d3566a4248591e9bf01d71960"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,7 +11,9 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 <!-- runbook-contract:
+- scripts/operations/hermes-ui-session-start.mjs
 - apps/agent-service/src/production-sandbox-lost-result-recovery.ts
+- apps/agent-service/src/production-sandbox-stream-result-recovery.ts
 - apps/agent-service/src/production-tool-result-recovery.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-tool-result-recovery.ts
 - apps/agent-service/src/production-copy-save.ts
@@ -237,9 +239,15 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 
 原运行调度现在可补交已经保存的完成输出：仅接受原 `runtime_settled/completed`，或清理未确认而保存输出的记录。恢复仍要求原冻结输入、当前权威和执行租约，并在写入回答的同一事务核对 checkpoint revision、原结果、全部前台/后台资源的永久释放、队列及未解除保护；不延长业务执行期限、不调用模型/工具、不发起第二轮清理。原输出保存后或 Run 状态变更前中断均保留可恢复身份；未知输出不能走该路径。取消先提交时不写回答。原输入不能读取或校验失败时保存 `RUN_COMPLETION_DELIVERY_REJECTED` 并保留原输出，停止自动补交；不得通过改诊断码或续发旧授权强行恢复。备份/迁移须共同保留冻结输入、checkpoint、回答 Payload、完成命令与消息身份；本变更沿用 Schema 43，升级仍须替换唯一 writer，不能因 schema 相同认定旧程序具有这些行为检查。该能力由现有 Run 调度触发；仅运行资源核查的无 Web 模式不因此创建模型/Run 执行服务。
 
-工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后只按原结果或下述确定结果丢失的边界交付。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；bash 失败仍只给出错误码说明。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
+工具结果现在保留产品派发证据 `dispatchState`（明确未派发、可能派发、已接收），旧记录缺少该字段时仍使用已知旧错误码。编码工具的准入前拒绝和 Pi 前置检查失败显示为未派发；未知、矛盾或无法识别的证据不能显示成功。Worker 取消通知须经过原沙箱结果核验；没有可信结果时保留结果未知并禁止重复派发，之后只按原结果或下述确定结果丢失的边界交付。只读工具（fixed_read，例如 read/ls/find/grep）报告确定的 Pi 工具错误时，模型拿到的是 Worker 已保存的 Pi 自身错误输出（例如“文件不存在”），它经过与成功结果相同的披露检查，并作为该调用的结果引用保存；bash 失败仍只给出错误码说明。取消原因保存在受保护诊断中，通知时间不能当作真实执行结束时间；升级、恢复或迁移不得据此删除占用、回滚已发生修改或续发权限。此变更沿用原 SQLite schema、Worker 协议和页面阶段，不构成完整错误分类、有限网络重试或平台停止资格。
 
-前台 SRT 工具在重启前尚未被 Agent 持久接纳的输出不保证保存。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。
+当提前完成 IPC 与最终 result IPC 的退出事实矛盾时，保存确定错误 `SANDBOX_HOST_COMPLETION_CONTRADICTED`；向模型交付明确失败说明，不携带可能自称成功的原 stdout。原输出和分块仍保留作诊断，成对重启不得将该错误覆盖成成功或重新执行。该错误不证明工具没有产生效果；原披露与效果核验继续适用。
+
+前台 SRT 现沿用受保护 Payload 通道额外保存 stdout 分块，任务正常退出时先保存带 termination 的结束块，再等待宿主清理。正常 Worker 的原始 stdout Payload 和结果消费者不变；恢复只在接纳释放后核验完整分块、原身份和当前权限，重组成普通 Payload，并将输出归属和 operation CAS 同事务保存。已有等价原 Payload 时复用，已确定 operation 优先，不能用当前文件内容代替旧 read 输出。备份和迁移须同时保留原 Run 的 `sandbox-stream-chunk:*`、`sandbox-stream-end:*`、对应加密 Payload、原调用回执和输出归属；分块 JSON 不是完整输出引用。每次调用增加分块副本与本机 RPC，结束 artifact 还会保存末块 JSON，容量评估不能只按原 stdout 长度计算。后台游标合同不变；完整性、取消、期限、披露和效果验证不放宽。见[前台结果恢复设计](../execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#恢复裁决与事务)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md]
+
+Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也不能停止本轮；需要成对重启服务。生产启动器在任一进程退出时会自动成对重启。将来的 Mac 常驻启动器必须保持同样的合同。现有 `hermes-ui-session-start.mjs` 先停止 Agent，再停止尚存活的 Worker，交由服务管理器重启整对；不能用只恢复 Worker 或修改业务 HTTP 就绪条件替代此步骤。这里说明所需进程合同，不授权生产重启；执行仍遵守本 Runbook 的现场检查与授权要求。
+
+前台没有完整结束块且没有确定 operation 时，不保证恢复原输出。只有已接受释放、原签名结束记录证明任务启动并退出、操作没有确定结果、且同一部署当前 epoch/fence 已严格超过原尝试时，恢复才以原 operation revision 比较写入 `SANDBOX_TOOL_RESULT_LOST`。该确定错误表示原输出和退出结果丢失，不表示工具没有产生效果；效果未知事实保留，原工具不得重放，已接受释放不得撤销。原确定结果先写入时优先，丢失错误先写入后迟到写者不能覆盖。
 
 此错误沿原 Pi 批次交付一次，模型得到“工具已运行并结束，但输出和退出结果在服务重启时丢失；没有重新执行。它可能已经产生了效果，是否重做请先确认。”当前 Run、租约、取消、期限、披露与预算仍须核验；取消或过期不能复活或补交，旧 Handle 不因恢复而取得新 fence 权限。没有签名退出证明或原尝试仍可提交时不能声称丢失。页面仅将这一已释放的确定错误显示为失败，不推断工作区效果已核验。
 
@@ -462,7 +470,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
-工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
+工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。已认证 `finished` 终态的签名时间固定，不作为活动心跳使用；宿主仍存活且任务退出、stdio 已关闭、SRT 已复位时，pending 观察时间取本次身份与终态核验时间，签名文件不改写。运行中观察仍核对原心跳时间，释放仍须证明原宿主和进程组已消失。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
 
 Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 

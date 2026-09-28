@@ -413,9 +413,11 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       if (
         "resourceRef" in command &&
         command.resourceRef !==
-          (record.phase === "bound"
-            ? record.facts.environment.resourceRef
-            : record.reservation.resourceRef)
+          (command.kind === "append_output" && record.plan.mode === "foreground"
+            ? null
+            : record.phase === "bound"
+              ? record.facts.environment.resourceRef
+              : record.reservation.resourceRef)
       )
         throw new Error("resource mismatch");
       if (

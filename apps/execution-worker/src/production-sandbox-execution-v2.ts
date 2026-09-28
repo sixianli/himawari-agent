@@ -28,10 +28,10 @@ import {
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
   type SandboxPreparationDiagnostic,
-  sandboxPreparationDiagnosticSchema,
   type SandboxTaskEnvironmentBinding,
   type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
+  sandboxPreparationDiagnosticSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -525,17 +525,26 @@ export class ProductionSandboxExecutionV2 {
       host.start();
       let streamIndex = 0;
       let streamOffset = 0;
+      let streamEnded = false;
       const flush = async (final: boolean, termination?: SandboxTaskTermination) => {
-        if (plan.mode === "foreground") return;
+        if (streamEnded) return;
         for (;;) {
-          const page = host.readOutput(streamOffset, 32768);
+          const page = host.readOutput(
+            streamOffset,
+            32768,
+            plan.mode === "foreground" ? "stdout" : undefined,
+          );
           if (page.bytes.length === 0 && !final) return;
           const record = entry.record;
-          if (!record || record.phase !== "bound" || !record.facts.environment.resourceRef)
+          if (
+            !record ||
+            record.phase !== "bound" ||
+            (plan.mode !== "foreground" && !record.facts.environment.resourceRef)
+          )
             throw new Error("SANDBOX_STREAM_BINDING_LOST");
           await this.rpc(entry, {
             kind: "append_output",
-            resourceRef: record.facts.environment.resourceRef,
+            resourceRef: plan.mode === "foreground" ? null : record.facts.environment.resourceRef,
             expectedSequence: record.facts.resource.sequence,
             chunk: {
               index: streamIndex,
@@ -547,6 +556,7 @@ export class ProductionSandboxExecutionV2 {
           });
           streamIndex++;
           streamOffset = page.nextOffset;
+          streamEnded = final && page.end;
           if (page.end || page.bytes.length === 0) return;
         }
       };
@@ -636,8 +646,22 @@ export class ProductionSandboxExecutionV2 {
       const completion = host.result.finally(() => {
         finished = true;
       });
+      let taskCompleted: SandboxTaskTermination | null = null;
+      let completionObserved = false;
+      const earlyCompletion = host.completed.then((value) => {
+        completionObserved = true;
+        taskCompleted = value;
+      });
       while (!finished) {
-        await Promise.race([completion, delay(250)]);
+        await Promise.race([
+          completion,
+          delay(250),
+          ...(!completionObserved ? [earlyCompletion] : []),
+        ]);
+        if (taskCompleted && plan.mode === "foreground") {
+          await flush(true, taskCompleted);
+          break;
+        }
         if (finished) break;
         const current = entry.record;
         if (!current || current.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
@@ -645,6 +669,10 @@ export class ProductionSandboxExecutionV2 {
           // Foreground network connections retain authority only while the same
           // Grant remains valid, just like background tasks and services.
           await this.rpc(entry, { kind: "resolve" });
+          if (taskCompleted && plan.mode === "foreground") {
+            await flush(true, taskCompleted);
+            break;
+          }
           // Completion can arrive during the asynchronous authority check. Its
           // final output/cleanup path below still verifies every durable fact;
           // do not enqueue a now-obsolete running-state observation first.
@@ -684,6 +712,15 @@ export class ProductionSandboxExecutionV2 {
             );
       const knownExit =
         result.taskStarted === true && result.taskProcessExited && result.exitCode !== null;
+      const reportedCompletion = await host.completed;
+      const completionContradicted =
+        plan.mode === "foreground" &&
+        reportedCompletion !== null &&
+        result.supervision?.state === "exited" &&
+        (!result.taskProcessExited ||
+          !result.stdioClosed ||
+          result.reason !== reportedCompletion.reasonCode ||
+          result.exitCode !== reportedCompletion.exitCode);
       const resultFields = {
         schemaVersion: "sandbox-execution.v2",
         identity: plan.identity,
@@ -718,7 +755,7 @@ export class ProductionSandboxExecutionV2 {
         });
       const operation = {
         effect:
-          knownExit && plan.operationContract.kind === "fixed_read"
+          (knownExit || completionContradicted) && plan.operationContract.kind === "fixed_read"
             ? { kind: "not_applicable" }
             : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
               ? { kind: "not_asserted" }
@@ -737,25 +774,35 @@ export class ProductionSandboxExecutionV2 {
         result:
           latest.facts.result?.kind === "started"
             ? latest.facts.result
-            : plan.mode !== "foreground" || !knownExit
-              ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
-              : ["command", "network_only"].includes(plan.operationContract.kind) ||
-                  result.exitCode === 0
-                ? {
-                    ...resultFields,
-                    kind: "result",
-                    output,
-                    completion: ["command", "network_only"].includes(plan.operationContract.kind)
-                      ? { type: "exit", exitCode: result.exitCode }
-                      : { type: "value" },
-                  }
-                : {
-                    ...resultFields,
-                    kind: "error",
-                    output,
-                    reasonCode: fileConflict ? "FILE_VERSION_CONFLICT" : "SANDBOX_OPERATION_FAILED",
-                    termination: { type: "failure" },
-                  },
+            : completionContradicted
+              ? {
+                  ...resultFields,
+                  kind: "error",
+                  output,
+                  reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+                  termination: { type: "failure" },
+                }
+              : plan.mode !== "foreground" || !knownExit
+                ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
+                : ["command", "network_only"].includes(plan.operationContract.kind) ||
+                    result.exitCode === 0
+                  ? {
+                      ...resultFields,
+                      kind: "result",
+                      output,
+                      completion: ["command", "network_only"].includes(plan.operationContract.kind)
+                        ? { type: "exit", exitCode: result.exitCode }
+                        : { type: "value" },
+                    }
+                  : {
+                      ...resultFields,
+                      kind: "error",
+                      output,
+                      reasonCode: fileConflict
+                        ? "FILE_VERSION_CONFLICT"
+                        : "SANDBOX_OPERATION_FAILED",
+                      termination: { type: "failure" },
+                    },
       };
       await this.recordCompletion(entry, latest, operation, result.taskProcessExited);
       await this.reduceRisk(entry, "reconcile");

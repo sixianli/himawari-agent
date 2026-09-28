@@ -206,6 +206,30 @@ afterEach(() => {
 });
 
 describe("Job Host entrypoint protocol and lifecycle", () => {
+  it("reports completed stdout before waiting for reset and keeps final cleanup separate", async () => {
+    let release!: () => void;
+    boundary.manager.reset.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await prepare();
+    await startLinux();
+    task.stdout.write("original");
+    await closeTask(0);
+    expect(sent.find((message) => message["type"] === "completed")).toMatchObject({
+      exitCode: 0,
+      reason: "exited",
+      taskProcessExited: true,
+      stdioClosed: true,
+    });
+    expect(result()).toBeUndefined();
+    expect(control.finish).not.toHaveBeenCalled();
+    release();
+    await settle();
+    expect(result()).toMatchObject({ exitCode: 0, reason: "exited", srtReset: true });
+  });
   it("routes egress checks through authenticated IPC and closes egress on a denied answer", async () => {
     await prepare();
     await startLinux();

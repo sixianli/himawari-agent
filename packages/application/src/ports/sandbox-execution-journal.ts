@@ -12,6 +12,8 @@ import type {
   FrozenCapabilityInvocationReceipt,
 } from "./capability-invocations.js";
 import type { HostFileIdentity } from "./host-files.js";
+import type { PayloadRecord } from "./observability.js";
+import type { RunPayloadArtifact } from "./run-payload-artifacts.js";
 import type { SandboxExecutionVerification } from "./sandbox-execution.js";
 
 /** Trusted journal receipt: proof was valid when accepted, not a renewable execution grant. */
@@ -173,6 +175,29 @@ export interface SandboxExecutionJournalPort {
   /** Late operation/effect evidence without inventing a resource transition. */
   recordOperation(
     input: Parameters<SandboxExecutionJournalPort["append"]>[0],
+  ): Promise<SandboxExecutionMutation>;
+  readResultRecovery(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly now: string;
+  }): Promise<{
+    readonly receipt: FrozenCapabilityInvocationReceipt;
+    readonly output: RunPayloadArtifact | undefined;
+  }>;
+  importResult(
+    input: Parameters<SandboxExecutionJournalPort["append"]>[0] & {
+      readonly payload: PayloadRecord;
+      readonly source: {
+        readonly binding: string;
+        readonly digest: string;
+        readonly byteLength: number;
+        readonly artifacts: readonly {
+          readonly operationKey: string;
+          readonly payloadRef: string;
+          readonly contentDigest: string;
+        }[];
+      };
+    },
   ): Promise<SandboxExecutionMutation>;
   /** Same-transaction sequence/Run/fence check. This is not permission to dispatch yet. */
   prepareIntent(input: SandboxContinuationIntentInput): Promise<{ readonly applied: boolean }>;

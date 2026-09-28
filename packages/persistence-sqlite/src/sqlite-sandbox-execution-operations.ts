@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CapabilityInvocationAuthority,
   CapabilityInvocationConsumeResult,
@@ -53,6 +54,12 @@ interface Row {
   operationRevision: number;
 }
 interface AuthorityDependencies {
+  recovery(
+    plan: SandboxExecutionPlanV2,
+    authority: CapabilityInvocationAuthority,
+    now: string,
+  ): Awaited<ReturnType<SandboxExecutionJournalPort["readResultRecovery"]>>;
+  importOutput(plan: SandboxExecutionPlanV2, input: Input<"importResult">): string;
   consume(value: unknown, owner: string, agent: string): CapabilityInvocationConsumeResult;
   rebindQueued(
     input: Parameters<SandboxExecutionPreparationPort["reserve"]>[0],
@@ -586,6 +593,81 @@ export class SqliteSandboxExecutionOperations {
           );
         const current = this.read(identity, owner, agent);
         if (!current) return this.fail("PORT_NOT_FOUND", "Sandbox execution missing");
+        if (operation === "readResultRecovery") {
+          this.assertResultRecovery(current, now);
+          return this.authority.recovery(
+            current.plan,
+            input["authority"] as CapabilityInvocationAuthority,
+            now,
+          );
+        }
+        if (operation === "importResult") {
+          const request = raw as Input<"importResult">;
+          if (current.facts.result && current.facts.result.kind !== "unknown")
+            return { record: current, applied: false };
+          this.assertResultRecovery(current, now);
+          this.authority.recovery(current.plan, request.authority, now);
+          if (
+            request.expectedSequence !== current.facts.resource.sequence ||
+            request.expectedOperationRevision !== current.operationRevision
+          )
+            return this.fail("PORT_CONFLICT", "Recovered result revision changed");
+          const out = request.facts.result;
+          const source = request.source;
+          const hash = (value: unknown) =>
+            createHash("sha256").update(JSON.stringify(value)).digest("hex");
+          const binding = hash([
+            current.plan.identity,
+            current.plan.semanticFingerprint,
+            current.facts.environment,
+          ]);
+          if (
+            !out ||
+            (out.kind !== "result" && out.kind !== "error") ||
+            !source ||
+            source.binding !== binding ||
+            source.digest !== out.output.digest ||
+            source.byteLength !== out.output.byteLength ||
+            !Number.isSafeInteger(source.byteLength) ||
+            source.byteLength < 0 ||
+            source.byteLength > current.plan.resourceCeiling.maxOutputBytes ||
+            request.payload.ref !== out.output.ref ||
+            request.payload.contentDigest !== `sha256:${source.digest}` ||
+            !Array.isArray(source.artifacts) ||
+            source.artifacts.length < 2 ||
+            source.artifacts.length > current.plan.resourceCeiling.maxOutputBytes + 2
+          )
+            return this.fail("PORT_INVALID_OPERATION", "Recovered output binding is invalid");
+          for (let index = 0; index < source.artifacts.length; index++) {
+            const artifact = source.artifacts[index];
+            const expectedKey =
+              index === source.artifacts.length - 1
+                ? `sandbox-stream-end:${binding}`
+                : `sandbox-stream-chunk:${hash([binding, index])}`;
+            if (
+              !artifact ||
+              artifact.operationKey !== expectedKey ||
+              !this.db
+                .prepare(`SELECT 1 FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
+                WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=?
+                AND a.payload_ref=? AND a.content_digest=? AND p.content_digest=a.content_digest AND p.lifecycle_state='active'
+                AND p.classification='restricted' AND p.content_type='application/json'`)
+                .get(
+                  owner,
+                  agent,
+                  current.plan.identity.runId,
+                  expectedKey,
+                  artifact.payloadRef,
+                  artifact.contentDigest,
+                )
+            )
+              return this.fail("PORT_CONFLICT", "Recovered output source changed");
+          }
+          const ref = this.authority.importOutput(current.plan, request);
+          if (ref !== out.output.ref)
+            return this.fail("PORT_CONFLICT", "Existing output must be verified and reused");
+          return this.append(request, current, owner, agent, true);
+        }
         if (["beginRecovery", "finishRecovery", "interruptRecovery"].includes(operation))
           return new SqliteSandboxRecoveryOperations(this.db, this.fail).mutate(
             operation,
@@ -1130,6 +1212,29 @@ export class SqliteSandboxExecutionOperations {
       applied: true,
       receipt: consumed.receipt,
     };
+  }
+  private assertResultRecovery(current: SandboxExecutionRecord, now: string) {
+    if (
+      current.plan.mode !== "foreground" ||
+      current.plan.backendRef !== "srt" ||
+      current.facts.environment.kind !== "local" ||
+      !current.startedAt ||
+      !current.releaseReceipt ||
+      current.workspaceBlocked ||
+      current.facts.resource.supervision !== "released" ||
+      now >= current.plan.originalDeadlineAt ||
+      now >= current.plan.effectiveDeadlineAt ||
+      !this.db
+        .prepare(
+          `SELECT 1 FROM runs WHERE id=? AND owner_id=? AND agent_id=? AND status IN ('running','reconciling_external_result')`,
+        )
+        .get(
+          current.plan.identity.runId,
+          current.plan.identity.ownerId,
+          current.plan.identity.agentId,
+        )
+    )
+      return this.fail("PORT_NOT_AUTHORITATIVE", "Foreground result recovery is unavailable");
   }
   private append(
     input: Input<"append">,

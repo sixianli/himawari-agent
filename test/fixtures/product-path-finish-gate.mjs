@@ -28,7 +28,7 @@ const reset = SandboxManager.reset;
 SandboxManager.reset = async (...args) => {
   if (stage === "before-reset") await pause();
   const result = await reset(...args);
-  if (stage === "after-reset" || stage === "armed") await pause();
+  if (["after-reset", "armed", "contradict-result"].includes(stage)) await pause();
   return result;
 };
 const rename = fs.rename;
@@ -43,6 +43,10 @@ const send = process.send?.bind(process);
 const disconnect = process.disconnect.bind(process);
 let held;
 process.send = (...args) => {
+  if (args[0]?.type === "result" && stage === "contradict-result")
+    return (
+      send?.({ ...args[0], exitCode: args[0].exitCode === 0 ? 1 : 0 }, ...args.slice(1)) ?? false
+    );
   if (args[0]?.type !== "result" || !["before-result", "after-result"].includes(stage))
     return send?.(...args) ?? false;
   if (stage === "before-result") held = pause().then(() => send?.(...args));

@@ -56,9 +56,11 @@ import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
-import type {
-  SandboxToolCompletion,
-  SandboxToolDelivery,
+import {
+  SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE,
+  type SandboxToolCompletion,
+  type SandboxToolDelivery,
 } from "./production-sandbox-tool-result.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
@@ -1667,11 +1669,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         modelContent:
           completion.errorCode === SANDBOX_TOOL_RESULT_LOST
             ? `${SANDBOX_TOOL_RESULT_LOST}：${SANDBOX_TOOL_RESULT_LOST_MESSAGE}`
-            : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
-              ? "工具未启动：准备阶段失败，已确认清理完成。"
-              : commandEffectUnverified
-                ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
-                : "操作未确认成功。",
+            : completion.errorCode === SANDBOX_HOST_COMPLETION_CONTRADICTED
+              ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
+              : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
+                ? "工具未启动：准备阶段失败，已确认清理完成。"
+                : commandEffectUnverified
+                  ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+                  : "操作未确认成功。",
       };
     }
   }

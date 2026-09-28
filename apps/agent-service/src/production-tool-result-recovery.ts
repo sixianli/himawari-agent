@@ -64,6 +64,7 @@ export function createProductionToolResultRecovery(options: {
         "RUNTIME_TOOL_RESULT_UNKNOWN",
         "RUNTIME_ATTEMPT_INTERRUPTED",
         "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
+        "SERVICE_STOPPING",
       ].includes(saved.checkpoint.diagnosticCode ?? "") ||
       saved.checkpoint.output !== null ||
       saved.checkpoint.terminalStatus !== null ||

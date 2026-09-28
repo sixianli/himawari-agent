@@ -58,6 +58,27 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
       },
     ],
   ];
+  if (process.env["HIMAWARI_TEST_TIMING_DETAIL"] === "1")
+    definitions.push(
+      [
+        "execution-worker/production-payload-broker-client",
+        { writeOutput: ['"worker.output.save"', "{runId: request.runId}"] },
+      ],
+      [
+        "agent-service/production-payload-broker-handler",
+        { writeOutputInternal: ['"agent.output.save"', "null"] },
+      ],
+      [
+        "agent-service/production-sandbox-stream",
+        {
+          append: ['"stream.append." + (input.end ? "end" : "data")', "record.plan.identity"],
+          save: [
+            '"stream.save." + (operationKey.startsWith("sandbox-stream-end:") ? "end-index" : "chunk")',
+            "record.plan.identity",
+          ],
+        },
+      ],
+    );
   const manifest: Record<string, { digest: string; source: string }> = {};
   const inventory: Array<{ module: string; functions: string[] }> = [];
   for (const [module, names] of definitions) {
