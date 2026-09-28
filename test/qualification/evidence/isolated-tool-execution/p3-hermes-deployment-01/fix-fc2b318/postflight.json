@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-28T07:53:58Z",
+  "sourceCommit": "fc2b318364ea7445841a53a133c9ff1b9de4bbe9",
+  "runtimeDigest": "9059b7f620247680e30eefa13d1c9c10fb7579f482235476cecbfe0dcff9843d",
+  "serviceActive": true,
+  "activeSince": "2026-09-28T07:51:46Z",
+  "restartsSinceCutover": 0,
+  "mainPid": 1735702,
+  "runtimeUid": 998,
+  "noNewPrivs": true,
+  "livePhysicalMount": "/opt/himawari/releases/2026-09-28-fc2b318 -> /data/hermes/himawari/releases/2026-09-11-control-center ro,nosuid,relatime",
+  "health": {
+    "status": "ready"
+  },
+  "homePage": {
+    "loopbackWithoutHostHeader": 403,
+    "loopbackWithPublicOriginHost": 200,
+    "reason": "publicMode is true, so requests whose Host is not himawari.siyi.win are refused"
+  },
+  "activeRuns": [
+    "run:3e15ce20-48db-4d49-a734-c157052d37dc"
+  ],
+  "rootDiskFree": "11G of 108G",
+  "dataDiskFree": "141G of 458G",
+  "modelCallsByDeployment": 0,
+  "temporarySudo": {
+    "revoked": true,
+    "revokedAt": "2026-09-28T16:55:10+09:00",
+    "sudoersFile": "/etc/sudoers.d/99-himawari-claude-20260928-b",
+    "method": "stopping the expiry timer also removed its transient service, so the rule file was removed directly; sudo -n then required a password"
+  }
+}

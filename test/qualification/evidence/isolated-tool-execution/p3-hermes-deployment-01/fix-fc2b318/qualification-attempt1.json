@@ -1,0 +1,133 @@
+{
+  "startedAt": "2026-09-28T15:17:58+09:00",
+  "failedAt": "2026-09-28T15:56:29+09:00",
+  "status": {
+    "phase": "qualification_failed_live_service_unchanged",
+    "passed": false,
+    "at": 1790578589.4541466,
+    "productionServiceChanged": false,
+    "productionDatabaseWritten": false
+  },
+  "exception": {
+    "exceptionType": "RuntimeError"
+  },
+  "failure": {
+    "phase": "network-installed",
+    "exitCode": 1,
+    "errorTypes": [],
+    "errorCodes": []
+  },
+  "networkScenarios": [
+    {
+      "scenario": "plain-http",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "socks-download",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "install",
+      "passed": false,
+      "reason": "host_failure",
+      "exitCode": null,
+      "taskTreeCleanup": "unknown",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "redirect-denied",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "cpu",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "memory",
+      "passed": true,
+      "reason": "resource_limit",
+      "exitCode": null,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "cancel",
+      "passed": true,
+      "reason": "cancelled",
+      "exitCode": null,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "proxy-variables-removed",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 0,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    },
+    {
+      "scenario": "host-secret-denied",
+      "passed": true,
+      "reason": "exited",
+      "exitCode": 1,
+      "taskTreeCleanup": "process_group_gone",
+      "namespaceState": "released"
+    }
+  ],
+  "failedScenario": [
+    {
+      "scenario": "install",
+      "policyDigest": "2bd8e2ea66e347b97dcc0b6cf68bcd02eff719611144b7ed57593beb0bbfed06",
+      "passed": false,
+      "reason": "host_failure",
+      "exitCode": null,
+      "resources": null,
+      "network": null,
+      "output": "\nadded 1 package in 780ms\nnpm notice\nnpm notice New major version of npm available! 11.8.0 -> 12.1.0\nnpm notice Changelog: https://github.com/npm/cli/releases/tag/v12.1.0\nnpm notice To update run: npm install -g npm@12.1.0\nnpm notice\n",
+      "artifactSha256": null,
+      "taskTreeCleanup": "unknown",
+      "linuxNamespace": {
+        "namespaceId": "pid:[4026534561]",
+        "initPid": 1526479,
+        "initStartTicks": "684804216"
+      },
+      "namespaceState": "released",
+      "hostNetNamespace": "net:[4026531840]"
+    }
+  ],
+  "concurrentDiskLoad": {
+    "device": "sda (rotational HDD holding /data)",
+    "busyShare": "about 96-98% of wall time in 5-10 s samples",
+    "source": "python3 snapshot of /data/hermes-hardening-20260928/backup/state.db started 15:34 by another session over SSH (PID 1442343, ionice -c2 -n7, nice 10); about 11.4 GB written"
+  },
+  "setAside": {
+    "qualificationDirectory": "/data/hermes/himawari/qualifications/2026-09-28-fc2b318-installation-attempt1",
+    "candidateRelease": "moved from /opt/himawari/releases/2026-09-28-fc2b318 to <qualificationDirectory>/candidate-release",
+    "candidateAuth": "moved from /etc/himawari/fc2b318-candidate.json to <qualificationDirectory>/fc2b318-candidate.json"
+  }
+}

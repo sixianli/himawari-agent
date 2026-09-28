@@ -27,6 +27,7 @@
 - **上线后发现读文件的结果会丢失、对话停在“对账中”**，原因已查明并在提交 `4f2b776` 修正，详见[上线后发现：工具结果被后台恢复挤掉](#result-lost)。这个修正已于同日 21:22（日本时间）部署到 Hermes，详见[修正上线：4f2b776](#fix-deploy)。
 - **4f2b776 上线约 10 分钟后 Agent 崩溃重启一次**，原因已从 Hermes 数据查明，修正随 2026-09-28 的升级上线（schema 48 → 49），详见[升级到 116d6db](#fix-116d6db)。
 - **116d6db 上线后新建的对话卡在“结果未确认”**，原因是前台交付结果和后台核查争用同一条执行记录，在提交 `cda3824` 修正并于 13:05 上线，详见[修正上线：cda3824](#fix-cda3824)；排查中发现任务退出后的收尾阶段被误记为失去控制，在提交 `ddbdac7` 修正并于 14:11 上线，详见[修正上线：ddbdac7](#fix-ddbdac7)。
+- **只读诊断命令 `himawari diagnose run` 随提交 `fc2b318` 于 16:52 上线**；第一次资格验证因另一个进程占满数据盘而失败，详见[上线：fc2b318](#fix-fc2b318)。临时 sudo 已在 16:55 收回。
 
 ## 可核验证据
 
@@ -270,6 +271,45 @@ Runbook 第 6 步写的正式做法 `himawari capabilities register` 在这里�
 | [`deployment-helpers.zip`](fix-ddbdac7/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-ddbdac7/deployment-helpers.sha256) | 本次实际运行的脚本；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-ddbdac7/` |
 
 需要回到 cda3824 时：停服，用 `qualifications/2026-09-28-ddbdac7-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动；数据库结构相同，不需要恢复备份。
+
+<a id="fix-fc2b318"></a>
+## 上线：fc2b318
+
+日期：2026-09-28（日本时间 15:17–16:55）。所有者要求把只读诊断命令 `himawari diagnose run`（打印某一轮执行的沙箱执行记录变化和解密后的诊断记录，见[安装启停手册“查看某一轮执行的诊断记录”](../../../../../docs/runbooks/install-start-stop-runbook.md#diagnose-run)）部署到 Hermes，回复“要！”。部署的源码是提交 `fc2b318364ea7445841a53a133c9ff1b9de4bbe9`；与 ddbdac7 相比，产品代码只增加了这个管理命令（`diagnose-command.ts`、`sqlite-run-diagnostics.ts`），沙箱执行相关代码没有变。
+
+### 结果
+
+- 生产服务已运行新版本：Agent 和 Worker 都就绪，`/health/ready` 返回 `ready`；进程 uid 998、`NoNewPrivs` 为 1；服务看到的安装目录是只读挂载的 `/opt/himawari/releases/2026-09-28-fc2b318`。到 16:53 检查时没有自动重启。运行时摘要 `9059b7f6…843d`，签署回执摘要 `ba83944f…7c55`。
+- 停服约 40 秒（16:51:06 停服，16:51:46 启动，16:52:20 两个进程都就绪）；中间做了完整备份 `before-fc2b318-2026-09-28` 并校验，schema 49，没有迁移，没有删除任何记录。
+- 用 `127.0.0.1` 访问首页返回 403，带上正式域名 `himawari.siyi.win` 作为 Host 时返回 200。原因是生产开启了公开模式（`publicMode`），只接受正式域名的请求，不是故障。
+- 卡住的 `run:3e15ce20…` 仍未处理；能力登记差异仍与 116d6db 时相同。
+- 临时 root 权限已收回：停止到期定时器时，systemd 连同它的临时撤权服务一起移除了，撤权服务因此没有运行；随后直接删除了 `/etc/sudoers.d/99-himawari-claude-20260928-b`，`sudo -n true` 要求输入密码。
+
+<a id="fc2b318-attempt1"></a>
+### 第一次资格验证失败
+
+第一次资格验证（15:17:58–15:56:29）在网络场景 `install`（在沙箱里运行 `npm install`）处失败，原因 `host_failure`（Job Host，即沙箱里负责启动和清理任务的宿主进程，被判定故障），`taskTreeCleanup` 为 `unknown`。但同一场景的输出里 npm 已经打印 `added 1 package in 780ms`，其余 9 个网络场景都通过。当时数据盘（`/data` 所在的机械硬盘 sda）被另一个会话启动的数据库快照进程占用，5–10 秒的采样里约 96–98% 的时间处于忙碌状态。所有者授权停止这个进程后，第四次资格验证（16:30–16:50）全部通过，`install` 的结果是 `exited`、`process_group_gone`。
+
+这支持“磁盘长时间忙碌时，工具正常完成也会被判成宿主故障”的推断，但还没有证实。它已作为候选缺陷交给工具执行排查（Job Host 超过 1.5 秒没有心跳就判为宿主故障，见 `packages/runtime-sandbox/src/job-host.ts`）。
+
+第二、三次运行没有进入探针：先后被根分区空间检查（要求空闲空间大于 10 GiB 加候选版本大小）和“候选授权文件已存在”检查挡住，原因是第一次留下的候选版本和授权文件还在。三样东西都挪进了 `qualifications/2026-09-28-fc2b318-installation-attempt1/`，没有删除。
+
+### 证据
+
+证据在 [`fix-fc2b318/`](fix-fc2b318/)，文件含义同上：
+
+| 文件 | 内容 |
+| --- | --- |
+| [`build.json`](fix-fc2b318/build.json) | 源码 4052 个文件；与 ddbdac7 相比新增 2 个安装文件（诊断命令和诊断读取），变了 8 个（2 个模块入口、3 个启动脚本、3 个 better-sqlite3 编译文件），没有删除；本机上线前检查：`npm run check`、`npm test` 在 `2a04c91` 通过；产品路径 E2E 没有重跑，因为改动只有管理命令 |
+| [`qualification-attempt1.json`](fix-fc2b318/qualification-attempt1.json) | 第一次资格验证的失败阶段、10 个网络场景的结果、失败场景的完整记录、当时的磁盘负载，以及挪开的三样东西的位置 |
+| [`qualification.json`](fix-fc2b318/qualification.json)、[`platform-probes.json`](fix-fc2b318/platform-probes.json)、[`protected-runtime-probe.json`](fix-fc2b318/protected-runtime-probe.json)、[`signer-preflight.json`](fix-fc2b318/signer-preflight.json)、[`web-static-installed.json`](fix-fc2b318/web-static-installed.json)、[`workspace-links.json`](fix-fc2b318/workspace-links.json) | 第四次资格验证：六组全部通过（Pi 22 项、组合、允许网络 10 项、拒绝网络 7 项、Worker 被杀后清理、公开搜索 3 项）；资格阶段服务没有停，也没有写生产数据库 |
+| [`database-before.json`](fix-fc2b318/database-before.json)、[`database-before-switch.json`](fix-fc2b318/database-before-switch.json) | schema 49，92 个 Run、39 个对话、84 条执行记录，唯一未结束的 Run 是 `run:3e15ce20…` |
+| [`backup-verify.json`](fix-fc2b318/backup-verify.json) | 恢复点 `before-fc2b318-2026-09-28`：schema 49，完整性检查 `ok`，15,186 个 Payload |
+| [`registry-deviation.json`](fix-fc2b318/registry-deviation.json)、[`web-static-preflight.json`](fix-fc2b318/web-static-preflight.json) | 能力登记差异；停服前以运行账号读回 26 个网页文件 |
+| [`cutover.json`](fix-fc2b318/cutover.json)、[`postflight.json`](fix-fc2b318/postflight.json) | 切换结果和 16:53 的启动后检查（含首页 403 的原因和临时 sudo 的收回方式） |
+| [`deployment-helpers.zip`](fix-fc2b318/deployment-helpers.zip)、[`deployment-helpers.sha256`](fix-fc2b318/deployment-helpers.sha256) | 本次实际运行的脚本；Hermes 上 root 持有的副本在 `/etc/himawari/deploy-fc2b318/`，运行前用其中的 `frozen.sha256` 核对过 |
+
+需要回到 ddbdac7 时：停服，用 `qualifications/2026-09-28-fc2b318-cutover/private/` 里的 `unit-before.service`、`production-before.json`、`authority-before.json`、`attestation-before.json` 恢复，`systemctl daemon-reload` 后启动；数据库结构相同，不需要恢复备份。
 
 ## 恢复方式
 
