@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readdir, readFile, statfs, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import {
@@ -119,22 +119,30 @@ function toolAnswers() {
 }
 
 async function beginToolRequest(text: string) {
-  const before = await toolAnswers().count();
   await send(text);
-  const allow = page.getByRole("button", { name: "允许这一次" });
+  const turn = page
+    .locator(".chat-turn")
+    .filter({
+      has: page.locator(".thread-message-owner").filter({
+        has: page.getByText(text, { exact: true }),
+      }),
+    })
+    .last();
+  const answers = turn.getByText(/工具返回：/);
+  const allow = turn.getByRole("button", { name: "允许这一次" });
   await uiExpect
-    .poll(async () => (await allow.count()) > 0 || (await toolAnswers().count()) > before, {
+    .poll(async () => (await allow.count()) > 0 || (await answers.count()) > 0, {
       timeout: 300_000,
     })
     .toBe(true);
   if ((await allow.count()) > 0) await allow.first().click();
-  return before;
+  return answers;
 }
 
 async function sendToolRequest(text: string) {
-  const before = await beginToolRequest(text);
-  await uiExpect(toolAnswers()).toHaveCount(before + 1, { timeout: 300_000 });
-  return toolAnswers().nth(before);
+  const answers = await beginToolRequest(text);
+  await uiExpect(answers).toHaveCount(1, { timeout: 300_000 });
+  return answers;
 }
 
 function executionReadback() {
@@ -240,6 +248,118 @@ async function newThread() {
     .click();
   await uiExpect(composer()).toBeVisible({ timeout: 20_000 });
 }
+
+productDescribe("product path tool request helper", () => {
+  it("ignores restored history and approves only the current turn before waiting for its result", async () => {
+    await mkdir(outputDirectory, { recursive: true });
+    const fixtureBrowser = await chromium.launch({
+      channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+    });
+    const fixtureContext = await fixtureBrowser.newContext();
+    await fixtureContext.tracing.start({ screenshots: true, snapshots: true });
+    page = await fixtureContext.newPage();
+    let status = "failed";
+    try {
+      await page.setContent(`
+        <div class="chat-turn">
+          <article class="thread-message-owner"><pre>请写入 hello.txt</pre></article>
+          <article><p>工具返回：已有 notes 结果</p><button id="old-approval">允许这一次</button></article>
+        </div>
+        <div class="chat-turn">
+          <article class="thread-message-owner"><pre>请读取 missing.txt</pre></article>
+          <article><p id="history-result">…</p></article>
+        </div>
+        <form><textarea name="message" placeholder="有什么想交给 Himawari？"></textarea><button>发送</button></form>
+      `);
+      await page.locator("form").evaluate((form) => {
+        const document = form.ownerDocument;
+        const input = document.querySelector("textarea");
+        const historicalResult = document.getElementById("history-result");
+        const oldApproval = document.getElementById("old-approval");
+        if (!input || !historicalResult || !oldApproval) throw new Error("HELPER_FIXTURE_MISSING");
+        oldApproval.addEventListener("click", () => {
+          oldApproval.dataset["approved"] = "true";
+        });
+        form.addEventListener("submit", (event: { preventDefault(): void }) => {
+          event.preventDefault();
+          const turn = document.createElement("div");
+          turn.className = "chat-turn";
+          turn.id = "current-turn";
+          const owner = document.createElement("article");
+          owner.className = "thread-message-owner";
+          const userText = document.createElement("pre");
+          userText.textContent = input.value;
+          owner.append(userText);
+          const assistant = document.createElement("article");
+          const answer = document.createElement("p");
+          answer.id = "current-result";
+          const allow = document.createElement("button");
+          allow.textContent = "允许这一次";
+          allow.addEventListener("click", () => {
+            turn.dataset["approved"] = "true";
+            allow.remove();
+          });
+          assistant.append(allow, answer);
+          turn.append(owner, assistant);
+          form.before(turn);
+          historicalResult.textContent = "工具返回：恢复的 missing 结果";
+        });
+      });
+      let completed = false;
+      const completion = sendToolRequest("请写入 hello.txt").then((answer) => {
+        completed = true;
+        return answer;
+      });
+      const first = await Promise.race([
+        completion.then(() => "completed"),
+        uiExpect(page.locator("#current-turn"))
+          .toHaveAttribute("data-approved", "true")
+          .then(() => "approved"),
+      ]);
+      expect(first).toBe("approved");
+      expect(completed).toBe(false);
+      await uiExpect(page.locator("#old-approval")).not.toHaveAttribute("data-approved", "true");
+      await uiExpect(page.locator("#history-result")).toHaveText("工具返回：恢复的 missing 结果");
+      await uiExpect(page.locator("#current-result")).toBeEmpty();
+      await page.locator("#current-result").evaluate((element) => {
+        element.textContent = "工具返回：本次写入结果";
+      });
+      await uiExpect(await completion).toHaveText("工具返回：本次写入结果");
+      await uiExpect(toolAnswers()).toHaveCount(3);
+      status = "passed";
+    } finally {
+      await writeFile(
+        path.join(outputDirectory, "helper-scope-readback.json"),
+        JSON.stringify(
+          {
+            status,
+            ...(await page.locator("body").evaluate((body) => {
+              const document = body.ownerDocument;
+              return {
+                oldApprovalClicked:
+                  document.getElementById("old-approval")?.dataset["approved"] === "true",
+                currentApprovalClicked:
+                  document.getElementById("current-turn")?.dataset["approved"] === "true",
+                currentResult: document.getElementById("current-result")?.textContent,
+                historicalResult: document.getElementById("history-result")?.textContent,
+              };
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+      await page.screenshot({
+        path: path.join(outputDirectory, "helper-scope.png"),
+        fullPage: true,
+      });
+      await fixtureContext.tracing.stop({
+        path: path.join(outputDirectory, "helper-scope-trace.zip"),
+      });
+      await fixtureBrowser.close();
+    }
+  }, 30_000);
+});
 
 productDescribe(
   "product path: real browser, installed service, sandboxed Pi tools",
@@ -2057,12 +2177,12 @@ profileDescribe("alternating installed tool profiling", () => {
             ({ installation, browser, context, page } = current);
             const before = new Set(executionReadback().map((row) => row.jobId));
             const text = `交替样本 ${index} 写入 hello.txt`;
-            const beforeAnswers = await beginToolRequest(text);
+            const answer = await beginToolRequest(text);
             let baselineFailure: (typeof failures)[number] | undefined;
             await uiExpect
               .poll(
                 async () => {
-                  if ((await toolAnswers().count()) > beforeAnswers) return true;
+                  if ((await answer.count()) > 0) return true;
                   const rows = executionReadback().filter((row) => !before.has(row.jobId));
                   const row = rows[0];
                   if (rows.length !== 1 || !row || row.result !== null || row.intents !== 0)
@@ -2165,7 +2285,7 @@ profileDescribe("alternating installed tool profiling", () => {
               active.after = await create("after");
               continue;
             }
-            const answer = toolAnswers().nth(beforeAnswers);
+            await uiExpect(answer).toHaveCount(1, { timeout: 300_000 });
             await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
               timeout: 300_000,
             });
