@@ -66,17 +66,17 @@ The user asked on 2026-09-29 that code and documentation never drift apart. Docu
 
 ## Test and Production Hosts
 
-The user decided on 2026-09-29 where tests run and where production lives; the rationale is in [ADR 0041](docs/adr/0041-test-hosts-and-production-server.md).
+The user decided on 2026-09-29 where tests run and where production lives, and on 2026-09-30 where test scratch data lives on Hermes; the rationale is in [ADR 0042](docs/adr/0042-hermes-test-scratch-on-root-disk.md), which supersedes ADR 0041.
 
 - Never run Himawari tests on the user's MacBook. This includes builds, `npm run check`, `npm test`, any Vitest project, and product-path qualification. Use the MacBook only for editing, review, and commits. If a test, build, or qualification process is found running on the MacBook, stop it.
-- Run Layers 0-3 and the Linux product path on Hermes over SSH, following "Hermes Connectivity" below. Keep checkouts, dependencies, builds, logs, and test installs in a task-owned directory under `/data`. This decision authorizes routine test work on Hermes; sudo and changes to Hermes services still require a user-run script.
+- Run Layers 0-3 and the Linux product path on Hermes over SSH, following "Hermes Connectivity" below. Keep checkouts, dependencies, toolchains, browsers, builds, logs, reports, and retained evidence in a task-owned directory under `/data`. `/data` is a slow mechanical disk (about 70 ms per synchronous write), so put scratch data created while tests run (SQLite files, sockets, product-path test installs, the test `TMPDIR`) in a task-owned 0700 directory on the root NVMe disk and pass it as `HIMAWARI_TEST_TEMP_ROOT`. Before each run, check the root disk and do not start if less than 10 GiB is free; record the scratch directory's peak size and the lowest root free space; after the run, copy retained failure evidence to `/data` and delete the scratch directory. This decision authorizes routine test work on Hermes; sudo and changes to Hermes services still require a user-run script.
 - Mac remains a supported product platform. Run Mac-specific verification (macOS sandbox, Mac installer, Mac bundled Bash, and other Mac-only runtime behavior) on the MacBook only when a change affects Mac-specific behavior or before a release, and only after the user approves that specific run, its scope, expected duration, and timing.
 - Production runs on the cloud server `84.247.157.41`. Every deployment or change there is a production operation and needs the user's explicit authorization for that deployment. Ask the user for access details instead of probing the host.
 - Results from one platform never stand in for the other: Mac results do not verify Linux behavior, and Linux results do not verify Mac behavior.
 
 ## Test Trigger Timing
 
-The user decided on 2026-09-29 how test layers are triggered during development; the rationale is in [ADR 0041](docs/adr/0041-test-hosts-and-production-server.md), which supersedes ADR 0038 and keeps its timing rules. Run each layer on the host given in "Test and Production Hosts". These rules take precedence over any per-defect full-test requirement in task briefs written before that date.
+The user decided on 2026-09-29 how test layers are triggered during development; the rationale is in [ADR 0042](docs/adr/0042-hermes-test-scratch-on-root-disk.md), which keeps the timing rules of ADR 0038 and ADR 0041. Run each layer on the host given in "Test and Production Hosts". These rules take precedence over any per-defect full-test requirement in task briefs written before that date.
 
 - Layer 0, targeted tests (the reproducing test and directly related test files): run before changing production code to show the failure, then after every change.
 - Layer 1, `npm run check`: before every commit.
@@ -94,7 +94,7 @@ The user decided on 2026-09-29 how test layers are triggered during development;
 - For authorized Hermes work, prefer `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 hermes-tailscale-breakglass`. This existing SSH alias connects as `andy` to the Tailscale address `100.64.53.104` (`hermes-home`); successful access was verified on 2026-09-21.
 - The `hermes`, `hermes-home`, and `hermes-cloudflare` SSH aliases currently use Cloudflare Access through `ssh-hermes.sinimite.work`. A timeout on that route does not establish that Hermes is offline. Inspect `ssh -G <alias>` and try the existing Tailscale route before asking the user about connectivity. If the Tailscale alias is unavailable, use `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 andy@100.64.53.104` with the existing credentials and host-key checks.
 - Diagnose configured routes autonomously within the authorized task. Ask the user only if available routes fail and a concrete network or access change requires their action; do not change SSH configuration, credentials, Tailscale settings, or host-key verification to bypass a failure.
-- Before substantial writes, read `/Users/triggerjames/.codex/references/hermes-operations.md` and verify `/data` with `findmnt` and `df`. Keep test checkouts, dependencies, build artifacts, and logs in a task-owned directory on that mounted data disk. Recheck runtime paths: noninteractive SSH may not have Node.js on `PATH`.
+- Before substantial writes, read `/Users/triggerjames/.codex/references/hermes-operations.md` and verify `/data` with `findmnt` and `df`. Keep test checkouts, dependencies, build artifacts, and logs in a task-owned directory on that mounted data disk; test scratch data follows "Test and Production Hosts". Recheck runtime paths: noninteractive SSH may not have Node.js on `PATH`.
 
 ## Disk Space Hygiene
 
