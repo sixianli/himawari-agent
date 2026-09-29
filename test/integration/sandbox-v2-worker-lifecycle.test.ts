@@ -53,6 +53,7 @@ it.each([
   "background",
   "background-ack-loss",
   "service",
+  "stream-incomplete-stdio",
   "stream-resource-race",
   "stream-ack-race",
   "stream-unchanged-rejected",
@@ -156,6 +157,8 @@ it.each([
         taskStarted: true,
         taskProcessExited: true,
         exitCode: recoveredDuringDelivery ? 1 : 0,
+        stdioClosed: scenario !== "stream-incomplete-stdio",
+        reason: "exited",
       });
     }),
     cancel: vi.fn(() =>
@@ -163,6 +166,7 @@ it.each([
         stdout: new Uint8Array(),
         taskStarted: false,
         taskProcessExited: false,
+        stdioClosed: false,
         exitCode: null,
       }),
     ),
@@ -307,6 +311,7 @@ it.each([
           stdout: new TextEncoder().encode("result"),
           taskStarted: true,
           taskProcessExited: true,
+          stdioClosed: true,
           exitCode: 0,
         });
         await Promise.resolve();
@@ -467,6 +472,22 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (scenario === "stream-incomplete-stdio") {
+    expect(host.start).toHaveBeenCalledOnce();
+    expect
+      .soft([...streamChunks.values()].some((chunk) => (chunk as { end: boolean }).end))
+      .toBe(false);
+    expect.soft(facts.result?.kind).not.toBe("result");
+    expect([...streamChunks.values()]).toEqual([
+      { index: 0, offset: 0, bytesBase64: "cmVzdWx0", end: false },
+    ]);
+    expect(facts.result).toMatchObject({ kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" });
+    expect(host.cancel).toHaveBeenCalled();
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(host.start).toHaveBeenCalledOnce();
+    await worker.shutdown();
+    return;
+  }
   if (streamScenario) {
     const recoverable = ["stream-resource-race", "stream-ack-race"].includes(scenario);
     expect(host.start).toHaveBeenCalledOnce();

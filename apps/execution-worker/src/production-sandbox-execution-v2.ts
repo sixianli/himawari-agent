@@ -715,7 +715,7 @@ export class ProductionSandboxExecutionV2 {
         }
       }
       const result = await completion;
-      await flush(true, {
+      await flush(result.stdioClosed === true, {
         exitCode: result.taskProcessExited ? result.exitCode : null,
         reasonCode: result.reason ?? "host_failure",
         taskProcessExited: result.taskProcessExited,
@@ -731,7 +731,10 @@ export class ProductionSandboxExecutionV2 {
               "application/octet-stream",
             );
       const knownExit =
-        result.taskStarted === true && result.taskProcessExited && result.exitCode !== null;
+        result.taskStarted === true &&
+        result.taskProcessExited &&
+        result.stdioClosed === true &&
+        result.exitCode !== null;
       const reportedCompletion = await host.completed;
       const completionContradicted =
         plan.mode === "foreground" &&

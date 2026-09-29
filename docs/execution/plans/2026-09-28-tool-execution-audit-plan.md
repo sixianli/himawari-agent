@@ -68,7 +68,7 @@ date: "2026-09-28"
 | W/B | 已修复 TE-08，已有启动隔离。B 保留已知输出但不重放；原结果未落盘的边界由加密分块恢复或合法 LOST 判定处理。 |
 | W/F | 已有保护。F 新增在读回前、写结果前插入第二个恢复写者：相同事实幂等，不同事实旧写者冲突；获胜记录、releaseReceipt 不变。 |
 | W/X | 已修复 TE-07/09。M 运行中停止后宿主/进程组退出、Run 取消、无模型交付；工具期限和 Run 期限分别收尾。 |
-| W/H | 已修复 TE-05/08/09 的既有窗口；**管道未关闭窗口新发现候选缺口，待独立复现**。Worker 的最终 flush/knownExit 未要求 stdioClosed，不能将这一项记为通过。 |
+| W/H | 已修复 TE-05/08/09 的既有窗口；TE-10 可控测试确认管道未关闭仍被标为成功，现已加入明确关闭检查并通过原复现。完整check和4855项npm test通过，独立提交见TE-10交付记录；最终无筛选资格仍待执行。 |
 | W/I | 无直接写者竞争，经过 D。W 不派发 intent；先保存结果再派发；I 先持久化后 Worker 迟到不能改已知事实。 |
 | C/R | 已有 CAS/owner 保护。C 新增观察挂起后释放抢先，旧观察被拒且释放不回滚；反序由 SQL resource sequence 与 recovery owner/revision 校验拒绝旧恢复证明。 |
 | C/S | 已有保护。S 新增 observation-first/schedule-first 两顺序：陈旧候选或陈旧 beginRecovery 拒绝，重读才排期；资源事实不倒退、attempt 不额外增长。 |
@@ -118,6 +118,7 @@ date: "2026-09-28"
 | TE-06 | partially confirmed：原现场首次准备失败的触发原因仍 uncertain；准备失败后丢失控制关联的恢复缺口 confirmed | 原现场 reserved、未 bind，控制关联缺失。真实 Job Host 受控 SDK 初始化失败探针复现：任务未启动、已签名结束文件可由原密钥核验，但 Agent 未持久保存控制关联，登记 ENOENT，恢复 SANDBOX_CONTROL_BINDING_UNAVAILABLE。已按第四、五份回复完成重点、真实安装、完整 npm test/check 与两版各30成功样本的性能验收；历史首次触发原因仍 uncertain，见[已批准的数据与顺序提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md) |
 | TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存，修复提交 `f1519e7`；完整任务仍开放。进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md) |
 | TE-08 | confirmed，已修复并通过本地验证：真实 SRT reset 后重启 Agent/Worker，完整 read 输出已从宿主到达 Worker，但只保存在 Worker 内存；重启后资源释放成功，result=null、intent=0、Run 停在 reconciling_external_result。签名控制终态不保存原输出与退出结果，既有结果发现又要求 result/error 已存在 | `round2/restart-1`：运行中重启和收尾不重启对照通过，收尾重启失败（2 通过、1 失败、15 未执行）。失败安装 `/private/tmp/hma-pp-Vp0WPJ`；`te08-red-readback.json` 为独立数据库和控制文件读回。完整原始输出不等于已被 Agent 认证接纳的成功结果。[先前 LOST 修复及后来批准的分块恢复补充](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)，测试和证据见[TE-08 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-verification.md)；该历史提交仅在已接受释放、原签名任务退出、无确定结果且原 fence 已失效时，用 operation revision 保存确定的 SANDBOX_TOOL_RESULT_LOST，再沿原 Pi 批次唯一交付；效果未知不改写，原输出保存前退出仍是明确保证边界。相关集成 469 条、旧写者 16 条、预算 2 条、Mac 定向 9 条及 IPC 接收补验 2 条通过；完整 npm test 4651 条通过，Runbook 已封存。提交见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)，整轮最终无筛选资格待后续执行 |
+| TE-10 | confirmed（可控 Host/Worker 边界）：主进程退出但输出管道未关闭，Host 如实报告 stdioClosed=false；Worker 却把传输结束当完整输出并保存成功结果 | `round2/te10-pipe-red-2` 为有效红测试：Host 证明测试通过，Worker 的 end=false 与非成功断言均失败。修复要求最终 flush 和 knownExit 明确 stdioClosed=true，保留前缀、未知结果、原清理与恢复边界；同测试 `te10-pipe-green-1` 2项通过，相邻首轮106项通过。完整check、重新构建、4855项npm test全部通过，四份Runbook重新封存、严格文档校验零警告。独立提交见[TE-10交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-delivery.json)；[TE-10 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-verification.md)。这不是实际 OS 管道泄漏或 Linux 平台验收 |
 | TE-09 | confirmed，已提交 `ac094b9`：两次真实300秒场景均按期限退出并认证释放，Run仍待核查。细分复验确认Agent未留清理汇报余量，Worker将deadline且exitCode:null的退出归为未知；本次结束块和普通Payload保存成功，旧场景缺块的具体RPC原因仍uncertain。原900秒后的无候选仅有SQL投影和源码证据 | `round2/deadline-1`及`round2/te09-r10-diagnostic-1`各为1失败、40筛选未执行。reply-10已批准工具超时错误一次交付并继续Run；仅到原Run期限才作failed兜底。reply-11已批准最小内部收尾端口及原子租约事务，见[到期收尾设计](../specs/2026-09-29-sandbox-deadline-settlement-design.md)。本机专项验证已通过；Worker真实300秒与Run90秒场景已通过。结束块保存后重启另确认普通恢复入口拒绝已过工具期限，reply-13批准限定期限用途并沿用Agent验签/SQLite绑定分工；相关SQLite整文件478项通过，第六版真实300秒恢复及22项受影响矩阵通过，补充边界10项通过；依赖边界检查发现新helper越层导入，复用既有application身份工厂后第七版90秒Run复验通过。完整check及npm test 4827项通过，四份Runbook已显式封存，严格文档校验零警告；[TE-09交付与提交记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-delivery.json)。整轮无筛选验收仍待后续执行。见[TE-09验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md#reply-10-细分诊断)及[stop-10](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-10.md) |
 | TE-08 方案 B | 已批准并完成本机实现验证，提交 `81a9fd2`：前台输出复用加密分块，结束块后服务退出可以在释放后恢复原字节；保留77fb033的合法LOST边界 | [方案 B 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-verification.md)保留早期失败、三方事务竞争、矛盾正文与终态pending时间红/绿证据。B7真实22项矩阵通过；reply-9原探针30对30中位增量−21.5ms通过，原288ms超标及因果不确定性保留。完整check通过；首次完整npm test的10项失败来自旧JobHost夹具缺completed，补齐后同文件17通过，第二次完整npm test为4697项全部通过、零失败与跳过。交付与提交见[方案 B 记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json)。整轮无筛选资格仍待后续执行 |
 | TE-05 | confirmed（本机可控延迟），Hermes 当次因果仍 uncertain：finish 在异步清理前停止心跳，2 秒正常 reset/control.finish 等待期间心跳为 0，会触发 Worker 的 1.5 秒失联判断 | `te05-before.log` 两条失败；修复后心跳保持到清理结束，退出期限仍有效。`te05-after.log` 及 `te03-te05-regression.log`。使用真实 Job Host 入口、受控 OS/IPC/SRT 边界；不是磁盘满载实测，不推断 Hermes 历史失败根因；相关回归、check、完整 npm test 通过，提交 `266715d` |
@@ -133,7 +134,7 @@ date: "2026-09-28"
 - [x] 阅读交接、当前指令、固定 Pi 入口、设计、ADR 及相关实现，建立写者表。
 - [x] TE-01 先失败证据。
 - [x] TE-01 局部修复和相关回归：4 条复现通过；原资源身份、期限、恢复所有权等既有回归通过。完整验收另计。
-- [ ] 45 对已逐对核对并补定向测试；W/H 管道未关闭窗口新发现候选缺口待复现，其余证据范围见审计表。真实产品最终无筛选验收仍单列。
+- [x] 45 对已逐对核对并补定向测试；W/H 管道未关闭窗口 TE-10 已复现修复且完整check/npm test通过，其余证据范围见审计表。真实产品最终无筛选验收仍单列。
 - [ ] 多工具、停止、重启、期限和重复运行的本机产品 E2E。
 - [ ] `npm run check`、`npm test`、全套 E2E、构建及文档校验。
 - [ ] Runbook 语义核对、重新封存，按独立缺陷提交。
@@ -235,3 +236,7 @@ TE-09 已独立提交 `ac094b9`。其后补充的测试没有改变产品状态�
 历史样本 13 的 `worker.rpc.reconcile` 仍缺少内部原因，真实 SQLite 已重现“已释放后旧序号请求被拒”的候选路径，但不能倒推为历史唯一根因。`resolve` 的内部异常会统一包装为 `SANDBOX_SCOPE_UNAVAILABLE`；新增测试探针只记录白名单原因，已通过核验前到期、核验中到期和私有异常脱敏测试。真实 300 秒复验通过，未出现 RPC 异常，因此旧 `resolve / UNKNOWN` 的确切触发原因仍未确认。完整证据见[诊断分析](../../../.ci-output/tool-execution-audit/2026-09-28/round2/unknown-diagnostics.md)。
 
 本阶段完整 check 通过；匹配当前提交的重新构建及完整 npm test 4853 项通过、零失败/跳过。该结果未包含随后静态发现的 W/H 管道未关闭候选缺口；其复现与处理将独立记录，不将整轮标为完成。
+
+### TE-10 输出完整性检查
+
+按已批准方案 B 的“不能把前缀作为完整成功”合同，Worker 的最终输出保存与结果分类增加明确的 stdioClosed 检查，不修改消息、状态或持久数据结构。Job Host 已正确区分 exit 与 close；无需复制 Pi 工具能力。失败发生在 Himawari 自有宿主清理事实到结果接纳的边界。可控测试负责精确安排 exit 后无 close 的窗口，真实 Mac 的一般输出、期限与恢复路径由最终产品资格另行验收。

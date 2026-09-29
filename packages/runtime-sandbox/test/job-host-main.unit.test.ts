@@ -230,6 +230,39 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await settle();
     expect(result()).toMatchObject({ exitCode: 0, reason: "exited", srtReset: true });
   });
+  it("reports incomplete stdio when the task exits but its pipes outlive bounded cleanup", async () => {
+    await prepare(
+      { ...request(), cleanupTimeoutMs: 1000 },
+      {
+        control: {
+          sessionId: SESSION,
+          jobId: "job-entry",
+          attemptId: "attempt-entry",
+          directory: "/control",
+        },
+      },
+    );
+    await startLinux();
+    task.stdout.write("prefix");
+    task.exitCode = 0;
+    task.emit("exit", 0, null);
+    for (let index = 0; index < 5; index++) {
+      await receive("heartbeat");
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    await settle();
+    expect(sent.some((message) => message["type"] === "completed")).toBe(false);
+    expect(result()).toMatchObject({
+      reason: "exited",
+      exitCode: 0,
+      taskProcessExited: true,
+      stdioClosed: false,
+      srtReset: true,
+      taskProcessGroupGone: true,
+    });
+    expect(control.finish).toHaveBeenCalledOnce();
+    expect(processBoundary.disconnect).toHaveBeenCalledOnce();
+  });
   it("routes egress checks through authenticated IPC and closes egress on a denied answer", async () => {
     await prepare();
     await startLinux();
