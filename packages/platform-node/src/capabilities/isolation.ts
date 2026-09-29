@@ -11,6 +11,7 @@ import type {
   CapabilityRuntimeQualifierPort,
   ClockPort,
 } from "@himawari-agent/application";
+import { waitForProcessOutput } from "../process-output.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -853,6 +854,7 @@ export async function runSandboxedProcess(
   let outputLimitExceeded = false;
   let timedOut = false;
   let terminal = false;
+  const interruption = new AbortController();
 
   const killGroup = (terminationSignal: NodeJS.Signals): void => {
     if (!child.pid || terminal) return;
@@ -883,7 +885,10 @@ export async function runSandboxedProcess(
   timeout.unref();
   const force = setTimeout(
     () => {
-      if (timedOut || outputLimitExceeded || signal?.aborted) killGroup("SIGKILL");
+      if (timedOut || outputLimitExceeded || signal?.aborted) {
+        killGroup("SIGKILL");
+        interruption.abort();
+      }
     },
     Math.min(launch.ceiling.maxWallTimeMs + 250, 60_000),
   );
@@ -891,13 +896,12 @@ export async function runSandboxedProcess(
   try {
     const result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
       (resolve, reject) => {
-        child.once("error", reject);
+        void waitForProcessOutput(child, interruption.signal).then(
+          ({ exitCode, signal }) => resolve({ exitCode, signal }),
+          reject,
+        );
         child.stdin.on("error", (error: NodeJS.ErrnoException) => {
           if (error.code !== "EPIPE") reject(error);
-        });
-        child.once("exit", (exitCode, exitSignal) => {
-          terminal = true;
-          resolve({ exitCode, signal: exitSignal });
         });
         if (stdin) child.stdin.end(stdin);
         else child.stdin.end();

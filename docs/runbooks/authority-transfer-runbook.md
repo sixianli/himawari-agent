@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f257e331d649e82b99a7c9fc46bac9a4ff4ccb3288785e7945f7f497191fae2a"
+contract_sha256: "sha256:b2aff2268baefd84b01acceb463ca2bbb2614f4ab1fa5e3a4348335185fe7424"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,8 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/platform-node/src/capabilities/isolation.ts
+- packages/platform-node/src/process-output.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts
 - docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md
@@ -546,3 +548,9 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 同一 Run 有多个资源时，停止入口会继续枚举后续页并独立请求各资源停止，最后汇总清理结论。一条资源等待或报错不阻止其他资源收到停止；只有每条资源均有永久释放回执且无残留保护时，整体才报告已释放。
 
 长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。具体写入内容仍使用精确单次批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。
+
+## 旧程序执行器的尾部输出（2026-09-29）
+
+程序主进程退出后，执行器继续读取 stdout/stderr，直到流结束，或输出连续安静 100ms；每段新输出重新计时。原期限、取消和输出上限在等待期间继续生效，返回的结构化字节不追加说明。该修复不改变能力准入、Mac 原生程序的资格要求、安装/迁移/恢复步骤或操作授权；退出码 0 仍不能代替文件效果校验或证明所有后代已停止。回归及批次范围见[工具执行排查计划](../execution/plans/2026-09-28-tool-execution-audit-plan.md)。
+
+[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]

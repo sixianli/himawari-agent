@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { CapabilityManifest } from "@himawari-agent/application";
@@ -522,4 +523,151 @@ describe("frozen sandbox launch boundary", () => {
       reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
     });
   });
+});
+
+async function inheritedProgramFixture(mode: "tail" | "continuous") {
+  const root = await mkdtemp(path.join(os.tmpdir(), "b6-output-"));
+  roots.push(root);
+  const marker = `B6_OUTPUT_${path.basename(root)}`;
+  const childFile = path.join(root, "child.cjs");
+  const readyFile = path.join(root, "ready.json");
+  const parentFile = path.join(root, "parent.cjs");
+  await writeFile(
+    childFile,
+    `
+const fs = require("node:fs");
+const parent = process.ppid;
+fs.writeFileSync(${JSON.stringify(readyFile)}, JSON.stringify({ pid: process.pid, parent }));
+const waitForExit = setInterval(() => {
+  if (process.ppid === parent) return;
+  clearInterval(waitForExit);
+  if (${JSON.stringify(mode)} === "tail") {
+    setTimeout(() => {
+      fs.writeSync(1, "child-tail\\n");
+      fs.writeSync(2, "stderr-tail\\n");
+      process.exit(0);
+    }, 50);
+  } else {
+    setInterval(() => fs.writeSync(1, "more-output\\n"), 20);
+  }
+}, 2);
+setTimeout(() => process.exit(99), 5000);
+`,
+  );
+  await writeFile(
+    parentFile,
+    `
+const fs = require("node:fs");
+fs.writeSync(1, "parent-start\\n");
+const child = require("node:child_process").spawn(process.execPath, [${JSON.stringify(childFile)}, ${JSON.stringify(marker)}], { stdio: ["ignore", "inherit", "inherit"] });
+child.unref();
+const ready = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(readyFile)})) process.exit(7);
+}, 2);
+`,
+  );
+  const processes = () =>
+    execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid=,command="], { encoding: "utf8" })
+      .split("\n")
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+        return match
+          ? [
+              {
+                pid: Number(match[1]),
+                ppid: Number(match[2]),
+                pgid: Number(match[3]),
+                command: match[4] ?? "",
+              },
+            ]
+          : [];
+      });
+  const identity = async () =>
+    JSON.parse(await readFile(readyFile, "utf8")) as { pid: number; parent: number };
+  return {
+    launch: {
+      command: process.execPath,
+      args: [parentFile],
+      cwd: root,
+      environment: {},
+      ceiling: { ...CEILING },
+    },
+    async parentExited() {
+      const known = await identity().catch(() => undefined);
+      if (!known) return false;
+      const rows = processes();
+      const child = rows.find((row) => row.pid === known.pid);
+      expect(child?.command).toContain(marker);
+      expect(child?.pgid).toBe(known.parent);
+      return !rows.some((row) => row.pid === known.parent);
+    },
+    async childGone() {
+      const known = await identity();
+      return !processes().some((row) => row.pid === known.pid && row.command.includes(marker));
+    },
+    async cleanup() {
+      const known = await identity().catch(() => undefined);
+      if (!known) return;
+      const child = processes().find(
+        (row) => row.pid === known.pid && row.command.includes(marker),
+      );
+      if (child) process.kill(child.pid, "SIGKILL");
+      await expect.poll(() => this.childGone(), { timeout: 1000 }).toBe(true);
+    },
+  };
+}
+
+describe("program output after the parent exits", () => {
+  it("collects delayed stdout and stderr from the original process group", async () => {
+    const fixture = await inheritedProgramFixture("tail");
+    try {
+      const result = await runSandboxedProcess(fixture.launch, null);
+      expect(result).toMatchObject({
+        exitCode: 7,
+        signal: null,
+        timedOut: false,
+        outputLimitExceeded: false,
+      });
+      expect(new TextDecoder().decode(result.stdout)).toBe("parent-start\nchild-tail\n");
+      expect(new TextDecoder().decode(result.stderr)).toBe("stderr-tail\n");
+      expect(await fixture.childGone()).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(["deadline", "output-limit", "cancel"] as const)(
+    "preserves %s after the parent exits",
+    async (mode) => {
+      const fixture = await inheritedProgramFixture("continuous");
+      const controller = new AbortController();
+      const running = runSandboxedProcess(
+        {
+          ...fixture.launch,
+          ceiling: { ...CEILING, maxOutputBytes: mode === "output-limit" ? 64 : 4096 },
+        },
+        null,
+        controller.signal,
+      );
+      try {
+        if (mode === "cancel") {
+          await expect.poll(() => fixture.parentExited(), { timeout: 1000 }).toBe(true);
+          controller.abort();
+        }
+        const result = await running;
+        expect(result).toMatchObject({
+          exitCode: 7,
+          timedOut: mode === "deadline",
+          outputLimitExceeded: mode === "output-limit",
+        });
+        if (mode === "deadline") expect(result.stdout.byteLength).toBeGreaterThan(64);
+        if (mode === "output-limit")
+          expect(result.stdout.byteLength + result.stderr.byteLength).toBeLessThanOrEqual(64);
+        await expect.poll(() => fixture.childGone(), { timeout: 1000 }).toBe(true);
+      } finally {
+        await fixture.cleanup();
+        await running;
+      }
+    },
+  );
 });
