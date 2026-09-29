@@ -402,6 +402,10 @@ export function useThreadControlCenter(
           },
         };
         setDetail(current);
+        void loadPayloads([
+          ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
+          ...current.payload.messages.map(({ contentRef }) => contentRef),
+        ]);
         if (configuration.executionPresentationAvailable) {
           await Promise.all(
             current.payload.runs.map(async (run) => {
@@ -453,18 +457,19 @@ export function useThreadControlCenter(
                 result.payload.runId !== run.runId
               )
                 throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
-              if (result.payload.state.runRevision !== run.revision)
+              if (result.payload.state.runRevision < run.revision)
                 throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
+              if (result.payload.state.runRevision > run.revision) return null;
               return [run.runId, result.payload.state] as const;
             }),
           );
           if (sequence !== refreshSequence.current) return;
-          setExecutionStates(Object.fromEntries(states));
+          if (states.some((state) => state === null)) {
+            refreshAgain.current = true;
+            return;
+          }
+          setExecutionStates(Object.fromEntries(states.filter((state) => state !== null)));
         }
-        void loadPayloads([
-          ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
-          ...current.payload.messages.map(({ contentRef }) => contentRef),
-        ]);
       } catch (caught) {
         if (controller.signal.aborted || sequence !== refreshSequence.current) return;
         const status =

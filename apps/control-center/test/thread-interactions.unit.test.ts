@@ -518,28 +518,176 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it.each(["scope", "revision"])("rejects a mismatched backend state (%s)", async (mismatch) => {
-    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
-    options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
+  it("rereads an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
+    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 5,
+      revision: "state-5",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
     const original = query.getMockImplementation();
-    query.mockImplementation(async (request, signal) =>
-      request.type === "thread.execution_state"
-        ? {
-            type: "thread.execution_state_snapshot",
-            payload: {
-              threadId: mismatch === "scope" ? "other-thread" : "thread-ui",
-              runId: "run-ui",
-              state: { runRevision: 2 },
-            },
-          }
-        : original?.(request, signal),
-    );
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "partial-record",
+                      sequence: 1,
+                      itemId: "assistant-output",
+                      kind: "message",
+                      phase: "completed",
+                      name: "",
+                      text: "已经显示的工具回复",
+                      input: "",
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
     await render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已经显示的工具回复");
+    const initialReads = query.mock.calls.filter(([request]) => request.type === "thread.detail");
+    expect(initialReads).toHaveLength(1);
+    let releaseBody!: (value: { content: string }) => void;
+    const body = new Promise<{ content: string }>((resolve) => {
+      releaseBody = resolve;
+    });
+    readText.mockImplementation(async (ref: string) =>
+      ref === "formal-answer" ? body : { content: "组件交互测试" },
+    );
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    state = {
+      ...state,
+      runRevision: 6,
+      revision: "state-6",
+      displayPhase: "completed",
+      reasonCode: "EXECUTION_COMPLETED",
+      availableActions: [],
+    };
     await refresh();
-    expect(document.body.textContent).toContain(messages["loading.retry"]);
-    expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+    expect.soft(container.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect
+      .soft(container.querySelector(".assistant-markdown")?.textContent)
+      .toBe("已经显示的工具回复");
+    expect.soft(readText).toHaveBeenCalledWith("formal-answer");
+    expect
+      .soft(container.querySelector(".process-result")?.textContent)
+      .toContain(messages["chat.phase.preparing"]);
+    runs = runs.map((run) => ({ ...run, revision: 6, status: "completed" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect
+      .soft(query.mock.calls.filter(([request]) => request.type === "thread.detail"))
+      .toHaveLength(3);
+    expect.soft(container.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect
+      .soft(container.querySelector(".process-result")?.textContent)
+      .toContain(messages["chat.phase.completed"]);
+    expect
+      .soft(container.querySelector(".assistant-markdown")?.textContent)
+      .toBe("已经显示的工具回复");
+    await act(async () => releaseBody({ content: "正式保存的工具回复" }));
+    expect(container.querySelectorAll(".assistant-markdown")).toHaveLength(1);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("正式保存的工具回复");
     expect(mutate).not.toHaveBeenCalled();
   });
+
+  it.each(["thread", "run", "older revision", "read error"])(
+    "rejects an invalid backend state but still loads message text (%s)",
+    async (mismatch) => {
+      runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+      threadMessages = [
+        {
+          messageId: "assistant-ui",
+          sequence: 1,
+          role: "agent",
+          contentRef: "formal-answer",
+          dataClassification: "private",
+          status: "committed",
+          turnId: "turn-ui",
+          runId: "run-ui",
+          committedAt: NOW,
+        },
+      ];
+      options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
+      const original = query.getMockImplementation();
+      query.mockImplementation(async (request, signal) => {
+        if (request.type === "thread.execution_state") {
+          if (mismatch === "read error") throw new Error("STATE_READ_FAILED");
+          return {
+            type: "thread.execution_state_snapshot",
+            payload: {
+              threadId: mismatch === "thread" ? "other-thread" : "thread-ui",
+              runId: mismatch === "run" ? "other-run" : "run-ui",
+              state: { runRevision: mismatch === "older revision" ? 2 : 4 },
+            },
+          };
+        }
+        return original?.(request, signal);
+      });
+      await render();
+      await refresh();
+      expect(document.body.textContent).toContain(messages["loading.retry"]);
+      expect(document.body.textContent).toContain(messages["loading.failedConversation"]);
+      expect(readText).toHaveBeenCalledWith("formal-answer");
+      expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+      expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+      expect(mutate).not.toHaveBeenCalled();
+    },
+  );
 
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
     runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];

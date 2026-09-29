@@ -135,7 +135,7 @@ export function ChatHistory({
                     agentMessages.map((item) => (
                       <AssistantMarkdown
                         key={item.messageId}
-                        text={contentByRef[item.contentRef] ?? "…"}
+                        text={contentByRef[item.contentRef] ?? (partial || "…")}
                       />
                     ))
                   ) : partial ? (
