@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -107,7 +108,7 @@ describe("file summary qualification configuration", () => {
 
   it("passes the candidate embedding identity and dimensions through the production Mem0 adapter", async () => {
     const config = await configuration();
-    const stateRoot = await mkdtemp("/tmp/hma-config-");
+    const stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-config-`);
     const constructed = vi.fn();
     const close = vi.fn();
     const resolve = vi.fn(async () => "offline-fixture-provider-value");

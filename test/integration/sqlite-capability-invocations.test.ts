@@ -68,6 +68,7 @@ import {
   seed,
   openSandboxJournal,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 class RecordingServiceTransport implements ExecutionTransportPort {
   readonly requests: ExecutionV2Request[] = [];
@@ -1626,7 +1627,7 @@ describe("durable sandbox invocation journal", () => {
         minimumFreeBytes: 0,
         now: () => T1,
       });
-      const directory = await mkdtemp("/tmp/hj-");
+      const directory = await mkdtemp(`${testTemporaryRoot()}/hj-`);
       const credential = { tokenRef: "test-boot", tokenValue: "0123456789abcdef0123456789abcdef" };
       const { agentServiceInstanceId, agentServiceBootId, workerInstanceId, workerBootId } =
         SERVICE_AUTHORITY;

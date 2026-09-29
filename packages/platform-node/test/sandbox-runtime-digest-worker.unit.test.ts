@@ -85,7 +85,7 @@ describe("installed runtime byte verification worker", () => {
     });
     expect(boundary.read.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
-  it("fingerprints the same tree without reading file bytes", async () => {
+  it("fingerprints unreadable files using changed metadata without reading file bytes", async () => {
     put("z.txt", "last");
     put("nested/a.txt", "first");
     await load();
@@ -95,7 +95,6 @@ describe("installed runtime byte verification worker", () => {
     boundary.mode = "fingerprint";
     boundary.port = { postMessage: vi.fn() };
     chmodSync(path.join(root, "z.txt"), 0o200);
-    chmodSync(path.join(root, "z.txt"), 0o600);
     await load();
     expect(boundary.read).not.toHaveBeenCalled();
     const current = boundary.port?.postMessage.mock.calls[0]?.[0];

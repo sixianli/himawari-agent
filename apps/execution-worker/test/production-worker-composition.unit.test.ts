@@ -17,6 +17,7 @@ import {
   createProductionWorkerComposition,
   PRODUCTION_WORKER_COMPOSITION_ERROR_CODES,
 } from "../src/index.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const NOW = "2026-09-05T00:00:00.000Z";
 const ENDPOINT_DIGEST = `sha256:${"a".repeat(64)}`;
@@ -303,7 +304,7 @@ describe("production Worker composition", () => {
   it.each(["next-call", "readiness", "rejected", "closed", "shutdown-cleanup"] as const)(
     "runs the next invocation in the same Worker after a non-preparation Payload disconnect: %s",
     async (mode) => {
-      const root = await mkdtemp("/tmp/h-f-worker-");
+      const root = await mkdtemp(`${testTemporaryRoot()}/h-f-worker-`);
       roots.push(root);
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
       const composition = await createProductionWorkerComposition({

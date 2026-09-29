@@ -21,6 +21,7 @@ import {
 } from "../../packages/runtime-sandbox/src/process-identity.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 function settled<T>(value: T): Exclude<T, { kind: "cleanup_pending" }> {
   if (value && typeof value === "object" && "kind" in value)
@@ -44,7 +45,7 @@ async function fixture(
   const now = () => new Date(Date.now() + clockOffset).toISOString();
   const f = await openSandboxJournal();
   cleanups.push(f.close);
-  const root = await realpath(await mkdtemp("/tmp/r4-evidence-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/r4-evidence-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const directory = path.join(root, "control");
   await mkdir(directory, { mode: 0o700 });

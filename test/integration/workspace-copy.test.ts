@@ -34,6 +34,7 @@ import {
   SERVICE_AUTHORITY,
   T0,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const execFile = promisify(execFileCallback);
 const roots: string[] = [];
@@ -48,7 +49,7 @@ async function fixture(
   platform = new ConstrainedHostFileSystem(),
   legacyCandidate = false,
 ) {
-  const root = await realpath(await mkdtemp("/tmp/himawari-copy-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/himawari-copy-`));
   roots.push(root);
   const source = path.join(root, "source");
   await mkdir(source);

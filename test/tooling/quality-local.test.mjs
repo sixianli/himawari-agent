@@ -215,6 +215,16 @@ const runLocal = (extra = {}) =>
   });
 
 describe("periodic quality policy and evidence", () => {
+  it("preserves the process test root when only the GitHub environment is supplied", async () => {
+    vi.stubEnv("HIMAWARI_TEST_TEMP_ROOT", state.root);
+    const result = await runQuality("scale");
+    expect(result.status).toBe("passed");
+    const child = state.calls.find((entry) => entry.name === "scale");
+    expect(path.dirname(child.env.TMPDIR)).toBe(state.root);
+    expect(child.env.HIMAWARI_TEST_TEMP_ROOT).toBe(state.root);
+    expect(existsSync(child.env.TMPDIR)).toBe(false);
+  });
+
   it("keeps enabled manual observation usable and preserves scheduled identity across brand isolation", async () => {
     const filename = path.join(state.root, "ci/quality-policy.json");
     const policy = JSON.parse(readFileSync(filename));

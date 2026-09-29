@@ -33,6 +33,7 @@ import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
 import { runTests } from "./test.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const json = (filename, value) =>
   writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
@@ -123,7 +124,7 @@ export async function runCheck({
   const files = [];
   let baselineCandidatePath;
   const comparisonDirectories = [];
-  const temporaryDirectory = mkdtempSync("/tmp/hci-");
+  const temporaryDirectory = mkdtempSync(`${testTemporaryRoot()}/hci-`);
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   try {
     if (hosted && (member.os !== process.platform || member.arch !== process.arch))
@@ -138,6 +139,7 @@ export async function runCheck({
       ),
       ...Object.fromEntries(
         [
+          "HIMAWARI_TEST_TEMP_ROOT",
           "GITHUB_ACTIONS",
           "GITHUB_EVENT_NAME",
           "GITHUB_EVENT_PATH",

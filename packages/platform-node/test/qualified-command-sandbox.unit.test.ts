@@ -355,8 +355,8 @@ describe("QualifiedCommandSandbox", () => {
     roots.push(root);
     const runtimeRoot = path.join(root, "runtime");
     const workspace = path.join(root, "workspace");
-    await mkdir(path.join(runtimeRoot, "usr/bin"), { recursive: true });
-    await mkdir(workspace);
+    await mkdir(path.join(runtimeRoot, "usr/bin"), { recursive: true, mode: 0o755 });
+    await mkdir(workspace, { mode: 0o700 });
     const bwrap = path.join(root, "bwrap");
     const prlimit = path.join(root, "prlimit");
     await writeFile(bwrap, "fixture");

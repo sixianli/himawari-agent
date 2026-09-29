@@ -44,6 +44,7 @@ it("upgrades an existing database with a private verified pre-migration snapshot
         cacheDirectory: path.join(stateRoot, "cache"),
         memory: { ...config.memory, storagePath: path.join(stateRoot, "data", "memory") },
       }),
+      { mode: 0o600 },
     );
     const databasePath = path.join(stateRoot, "data", "product.sqlite");
     const migrations = await loadBundledMigrations();

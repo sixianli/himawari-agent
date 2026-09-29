@@ -29,6 +29,7 @@ import {
   SERVICE_AUTHORITY,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -76,7 +77,7 @@ async function fixture(protocol = true, backendRef = "srt") {
     now: T1,
     reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
   });
-  const root = await realpath(await mkdtemp("/tmp/hma-seal-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-seal-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const directory = path.join(root, "control");
   await mkdir(directory, { mode: 0o700 });

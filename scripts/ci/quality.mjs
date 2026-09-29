@@ -17,6 +17,7 @@ import {
 import { validateQualityPolicy } from "./quality-policy.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 export async function quality({
   check,
@@ -36,7 +37,10 @@ export async function quality({
   if (existsSync(directory)) throw new Error("CI_QUALITY_OUTPUT_EXISTS");
   mkdirSync(directory, { recursive: true });
   const started = Date.now();
-  const temporaryDirectory = mkdtempSync("/tmp/hci-");
+  const temporaryRootValue = env.HIMAWARI_TEST_TEMP_ROOT ?? process.env.HIMAWARI_TEST_TEMP_ROOT;
+  const temporaryDirectory = mkdtempSync(
+    `${testTemporaryRoot({ HIMAWARI_TEST_TEMP_ROOT: temporaryRootValue })}/hci-`,
+  );
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   const report = {
     schemaVersion: 1,
@@ -83,6 +87,7 @@ export async function quality({
           .filter((key) => env[key] !== undefined)
           .map((key) => [key, env[key]]),
       ),
+      ...(temporaryRootValue === undefined ? {} : { HIMAWARI_TEST_TEMP_ROOT: temporaryRootValue }),
       HIMAWARI_CI_PYTHON: tools.python,
       HIMAWARI_CI_NPM: tools.npmCli,
       PLAYWRIGHT_BROWSERS_PATH:

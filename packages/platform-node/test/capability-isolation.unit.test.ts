@@ -233,7 +233,10 @@ describe("capability process isolation", () => {
     const fixture = await backendFixture();
     const hostFile = path.join(fixture.binding.filesystem[0]?.hostPath ?? "/missing", "input.txt");
     const runtimeFile = path.join(fixture.binding.runtimeRoot, "workspace", "input.txt");
-    await Promise.all([writeFile(hostFile, "fixture input\n"), writeFile(runtimeFile, "target\n")]);
+    await Promise.all([
+      writeFile(hostFile, "fixture input\n", { mode: 0o600 }),
+      writeFile(runtimeFile, "target\n", { mode: 0o600 }),
+    ]);
     const mcpManifest: CapabilityManifest = {
       ...programManifest(),
       scopes: {

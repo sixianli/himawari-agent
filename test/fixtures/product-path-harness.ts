@@ -35,6 +35,7 @@ import {
 import Database from "better-sqlite3";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { prepareProductPathTiming } from "./product-path-timing.ts";
 
 export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -306,6 +307,43 @@ export interface ProductPathInstallation {
   close(): Promise<void>;
 }
 
+export function productPathTemporaryPrefix(): string {
+  const parent = testTemporaryRoot();
+  if (process.env["HIMAWARI_TEST_TEMP_ROOT"] === undefined) return "/tmp/hma-pp-";
+  const prefix = path.join(parent, "pp-");
+  const installation = `${prefix}XXXXXX`;
+  const controlSocket = path.join(
+    installation,
+    "jobs",
+    `control-${"0".repeat(20)}`,
+    "control.sock",
+  );
+  const sockets = [
+    path.join(installation, "state/runtime/execution-admission.sock"),
+    controlSocket,
+    ...(process.platform === "linux"
+      ? [
+          path.join(
+            installation,
+            "jobs",
+            `j${"0".repeat(43)}`,
+            `claude-socks-${"0".repeat(16)}.sock`,
+          ),
+        ]
+      : []),
+  ];
+  const maximumBytes = process.platform === "darwin" ? 103 : 107;
+  for (const socket of sockets) {
+    const bytes = Buffer.byteLength(socket);
+    const limit = socket === controlSocket ? Math.min(100, maximumBytes) : maximumBytes;
+    if (bytes > limit)
+      throw new Error(
+        `HIMAWARI_TEST_TEMP_ROOT socket path requires ${bytes} bytes; limit ${limit}: ${socket}`,
+      );
+  }
+  return prefix;
+}
+
 export async function installProductPath(options: {
   readonly artifact: string;
   readonly context: string;
@@ -313,7 +351,7 @@ export async function installProductPath(options: {
   readonly timing?: boolean;
   readonly sourceRoot?: string;
 }): Promise<ProductPathInstallation> {
-  const testRoot = await realpath(await mkdtemp("/tmp/hma-pp-"));
+  const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
   const runtimePrefix = path.join(testRoot, "prefix");
   const staticRoot = path.join(testRoot, "browser");

@@ -28,13 +28,14 @@ import {
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 describe("current invocation authority over production Payload broker", () => {
   it.each(["grant", "handle", "expiry", "readonly-retry", "readonly-revoked"] as const)(
     "rejects %s withdrawal without another use or loss of original effects",
     async (mode) => {
       const resource = await openRepository();
-      const directory = await mkdtemp("/tmp/hla-");
+      const directory = await mkdtemp(`${testTemporaryRoot()}/hla-`);
       let now = T1;
       const common = {
         credential: { tokenRef: "live-authority", tokenValue: "0123456789abcdef0123456789abcdef" },

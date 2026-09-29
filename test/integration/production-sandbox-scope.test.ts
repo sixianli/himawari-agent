@@ -18,6 +18,7 @@ import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts"
 import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -559,7 +560,7 @@ it.each(["stopRun", "recovery"] as const)(
   async (mode) => {
     // Real SQLite, installed-byte checks, authenticated socket and process exit;
     // supervisor facts and platform qualification remain controlled test inputs.
-    vi.stubEnv("TMPDIR", "/tmp");
+    vi.stubEnv("TMPDIR", testTemporaryRoot());
     let f: Awaited<ReturnType<typeof productionSandboxScope>>;
     try {
       f = await productionSandboxScope(descriptor("read"));

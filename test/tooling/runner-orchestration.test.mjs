@@ -288,6 +288,26 @@ const run = (checkId, extra = {}) =>
   });
 
 describe("共享runner的调度、来源和失败传播", () => {
+  it("passes an explicit test root and its temporary directory to child processes", async () => {
+    vi.stubEnv("HIMAWARI_TEST_TEMP_ROOT", state.root);
+    try {
+      const result = await run("policy");
+      expect(result.status).toBe("passed");
+      const childEnvironment = state.calls[0].env;
+      const childTemporaryDirectory = execFileSync(
+        process.execPath,
+        ["-p", "require('node:os').tmpdir()"],
+        { env: childEnvironment, encoding: "utf8" },
+      ).trim();
+      expect(path.dirname(childTemporaryDirectory)).toBe(state.root);
+      expect(path.basename(childTemporaryDirectory)).toMatch(/^hci-/);
+      expect(childEnvironment.HIMAWARI_TEST_TEMP_ROOT).toBe(state.root);
+      expect(existsSync(childTemporaryDirectory)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(["both pass", "candidate fails", "comparison fails"])(
     "迁移时并行采集，等待双方退出后才清理：%s",
     async (mode) => {

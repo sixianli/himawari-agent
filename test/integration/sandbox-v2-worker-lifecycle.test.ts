@@ -32,6 +32,7 @@ import {
   serviceRequest,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -69,7 +70,7 @@ it.each([
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
-  const root = await mkdtemp("/tmp/r4-worker-v2-");
+  const root = await mkdtemp(`${testTemporaryRoot()}/r4-worker-v2-`);
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const admitted = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record;
   const service = scenario === "service";

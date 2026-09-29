@@ -45,6 +45,7 @@ import {
   T1,
   T2,
 } from "./sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** Real SQLite authorities, encrypted artifacts and installed-file checks;
@@ -103,7 +104,9 @@ export async function productionSandboxScope(
     .run(h.ref, h.authorizationRef, JSON.stringify(h), f.plan.handleRef);
   // Real JobHost control sockets must fit the platform's Unix socket path limit.
   const liveHostRoot = options.piRuntimeRoot
-    ? await mkdtemp(options.liveHostParent ? `${options.liveHostParent}/h-` : "/tmp/h-qh-")
+    ? await mkdtemp(
+        options.liveHostParent ? `${options.liveHostParent}/h-` : `${testTemporaryRoot()}/h-qh-`,
+      )
     : undefined;
   const host = await macSandboxDeployment(
     liveHostRoot ?? f.resource.stateRoot,
@@ -508,7 +511,7 @@ export async function productionSandboxScope(
   const connect = async (
     identity: import("@himawari-agent/execution-contracts").SandboxJobIdentity,
   ) => {
-    const directory = await mkdtemp("/tmp/r3-s-");
+    const directory = await mkdtemp(`${testTemporaryRoot()}/r3-s-`);
     const shared = {
       credential: { tokenRef: "scope-test", tokenValue: "0123456789abcdef0123456789abcdef" },
       agentServiceInstanceId: SERVICE_AUTHORITY.agentServiceInstanceId,

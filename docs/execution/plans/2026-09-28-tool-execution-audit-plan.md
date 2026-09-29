@@ -324,7 +324,7 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 ### 最终批次的测试位置与 Mac 资格（用户 2026-09-29 决定）
 
-用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，见 [ADR 0041](../../adr/0041-test-hosts-and-production-server.md#hosts) [SOURCE: docs/adr/0041-test-hosts-and-production-server.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格改在 Hermes 的 `/data` 上对最终版本执行；用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
+用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，当前规则见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#hosts) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格在 Hermes 上对最终版本执行：源码、依赖、工具、构建和证据在 `/data`，运行中的临时数据在根盘的任务目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
 
 第二轮不做 Mac 无筛选产品路径资格（用户决定）。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
 
@@ -334,4 +334,10 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 同一天用户要求代码和文档不得漂移：每个改变行为的提交都在同一提交中更新受影响的文档，提交前运行严格文档校验，改到 Runbook 覆盖的代码时复核并重新封存。规则写在 `AGENTS.md` 的 “Code and Documentation Consistency” 一节。
 
-2026-09-30 在 Hermes 上第一次跑整组单元测试，67 项因超时失败：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。
+2026-09-30 在 Hermes 上第一次跑整组单元测试，共 67 项失败，其中 64 项超时、3 项被权限检查拒绝：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。
+
+reply-32 将临时根解析集中到 `@himawari-agent/testing/temporary-root`，应用测试、根夹具和 CI 均通过包名导入。Hermes 使用短路径 `/tmp/h32`，每次运行前确认不存在并以 0700 创建；记录器采样根盘余量和临时目录占用，低于 10 GiB 停止，先保留现场再清理。三项权限失败已在 NVMe、`umask 0002` 下重现，均由测试夹具未指定权限造成；修正配置文件、绑定文件和运行时目录权限，生产检查保持严格。运行命令、报告、临时根核查、包解析检查和完整验证进度见[本次验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r32-verification.md)。
+
+NVMe 上整组 unit 首次复验为 2,143 通过、1 失败，原 67 项均已通过。新增失败来自测试把文件权限迅速改回原值，却假定状态变更时间一定不同；真实元数据诊断证实这个假定不稳定。夹具改为保留不可读权限，直接验证仅元数据读取和指纹变化，保留原断言；生产验证器未修改。定向的 Worker 与安装核验 45 项已通过，整组和最终验证结果由上述验证记录更新。
+
+集成验证另发现开发依赖的 `vendor/seccomp` 目录为同组可写的 0775，147 项被严格工具链检查拒绝；正式安装包对应目录已由构建规范为 0755。仅修正任务开发依赖目录权限并核对文件摘要不变后，同组 22 文件、403 项均通过。另有一次准备失败清理用例返回 `srtReset: false`，后续定向与整组未重现，首轮原因尚未确定；用例保留完整 Host 结果日志用于继续诊断，不放宽断言或期限，也不宣称这个间歇失败已修复。

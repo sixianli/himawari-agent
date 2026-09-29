@@ -99,6 +99,6 @@ TE-01 已做的局部修复继续保留：只有操作版本发生变化且资�
 
 随后运行真实产品路径：同轮多个工具、工具运行中停止、工具运行中重启隔离测试服务、执行期限届满、重复运行几十次。通过页面操作、SQLite 独立读回、模型请求中的结果消费次数共同验证，保留 trace 与报告。
 
-Claude 已批准停止和启动自动测试自己创建的 `/tmp/hma-pp-*` 隔离安装。此授权不包括用户服务或 Hermes。所有新增审批通过交接回复文件处理。
+初始 Mac 验收已批准停止和启动测试自己创建的 `/tmp/hma-pp-*` 隔离安装。当前开发验证按 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) 在 Hermes 上运行：测试安装、SQLite 和 socket 使用 `HIMAWARI_TEST_TEMP_ROOT` 指定的根盘任务目录，权限 0700；源码、依赖、报告与保留现场在 `/data`。共享测试包解析临时根并在创建产品安装前检查 socket 长度；每次运行记录空间峰值、转存现场并清理。授权只包括测试自有服务，不包括用户服务；Mac 专属验证及其他新增审批仍通过交接回复文件处理。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 
-完成后运行完整 `npm run check`、`npm test`、项目 E2E、Mac 产品路径 E2E，核对 Runbook 并封存，按独立缺陷提交；全部通过前不得报告整体完成。
+完成后按 [ADR 0042 的层级时机](../../adr/0042-hermes-test-scratch-on-root-disk.md#layers) 运行 `npm run check`、`npm test` 和所需产品 E2E，核对 Runbook 并封存，按独立缺陷提交；全部通过前不得报告整体完成。

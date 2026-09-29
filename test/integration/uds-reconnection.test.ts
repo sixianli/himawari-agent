@@ -11,6 +11,7 @@ import {
 import { udsFaultProxy } from "@himawari-agent/testing";
 import { expect, it, vi } from "vitest";
 import { serviceRequest, handle, T1 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 it.each(
   (["Payload", "Admission"] as const).flatMap((channel) =>
@@ -19,7 +20,7 @@ it.each(
     ),
   ),
 )("recovers subsequent %s operations through authenticated UDS: %s", async (channel, mode) => {
-  const root = await mkdtemp("/tmp/h-f-uds-");
+  const root = await mkdtemp(`${testTemporaryRoot()}/h-f-uds-`);
   const execute = serviceRequest();
   const peer = {
     agentServiceInstanceId: "agent",

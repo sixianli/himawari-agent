@@ -100,9 +100,9 @@ interface SandboxToolResultResumption {
 
 批准后的第一步是测试先行：在真实 SQLite + 生产 dispatcher/coordinator 中，先得到未知 checkpoint，再独立保存确定工具结果与释放证明，验证同一 Run 自动成为可恢复候选且最终完成；现状应失败。随后覆盖取消、期限、旧权限、缺失/篡改 continuation、多候选、重复领取以及模型请求不明。
 
-Mac 产品路径验收使用现有隔离安装与脚本模型：同轮多个工具、工具运行及收尾时停止/重启、35 秒等待结束后才取得释放、原执行期限到达、同一动作重复至少 30 次。通过页面行为、独立 SQLite 读回、原工具实际启动次数、每个模型请求内 toolCallId 的唯一性共同断言。已有授权只允许重启测试自己创建的 `/tmp/hma-pp-*` 安装；Hermes 仍须另行批准。
+产品路径验收使用现有隔离安装与脚本模型：同轮多个工具、工具运行及收尾时停止/重启、35 秒等待结束后才取得释放、原执行期限到达、同一动作重复至少 30 次。通过页面行为、独立 SQLite 读回、原工具实际启动次数、每个模型请求内 toolCallId 的唯一性共同断言。初始 Mac 验收使用 `/tmp/hma-pp-*`；当前按 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) 在 Hermes 运行，夹具通过 `@himawari-agent/testing/temporary-root` 解析 `HIMAWARI_TEST_TEMP_ROOT`，将测试安装放在根盘的任务自有 0700 短路径，报告与保留现场在 `/data`。只能停止和启动测试自己创建的服务，不涉及用户服务。Mac 专属验证须另获用户同意，Linux 结果不替代 Mac 结果。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 
-完成后运行相关回归、`npm run check`、完整 `npm test` 与新增 Mac 产品 E2E，核对受影响手册并单独提交。未通过上述验收前，不宣称 TE-04 或整个系统排查完成。
+完成后按 [ADR 0042 的层级时机](../../adr/0042-hermes-test-scratch-on-root-disk.md#layers) 运行相关回归、`npm run check`、完整 `npm test` 与所需产品 E2E，核对受影响手册并单独提交。未通过所需验收前，不宣称 TE-04 或整个系统排查完成。
 
 ### 实施前的失败模式与验证边界
 

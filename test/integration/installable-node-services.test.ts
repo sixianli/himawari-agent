@@ -12,6 +12,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 let testRoot = "";
@@ -220,7 +221,7 @@ async function writeCapabilityDeploymentSnapshot(): Promise<void> {
 beforeAll(async () => {
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-installable-services-"));
   prefix = path.join(testRoot, "prefix");
-  stateRoot = await mkdtemp("/tmp/hma-state-");
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-state-`);
   configurationPath = path.join(testRoot, "configuration.json");
   publicConfigurationPath = path.join(testRoot, "configuration-public.json");
   const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: contextFile } = process.env;

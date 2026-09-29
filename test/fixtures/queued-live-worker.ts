@@ -20,6 +20,7 @@ import {
 import { WorkerDelegationStore } from "../../apps/execution-worker/src/worker-delegation-store.ts";
 import type { productionSandboxScope } from "./production-sandbox-scope.ts";
 import { AGENT_ID, OWNER_ID } from "./sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 /** Real worker protocol and JobHost. Only the enclosing test supplies the model,
  * owner decision and controlled installation qualification. Execution messages
@@ -34,7 +35,7 @@ export async function queuedLiveWorker(
     readonly clock: { now(): string };
   },
 ) {
-  const directory = await mkdtemp("/tmp/h-qr-");
+  const directory = await mkdtemp(`${testTemporaryRoot()}/h-qr-`);
   const clock = taskEnvironments?.clock ?? { now: () => new Date().toISOString() };
   let sequence = 0;
   const ids = { next: () => `queued-live:${++sequence}` };

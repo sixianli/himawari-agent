@@ -16,6 +16,7 @@ import {
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -693,7 +694,7 @@ beforeAll(async () => {
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-production-http-process-"));
   cleanupRoots.push(testRoot);
   runtimePrefix = path.join(testRoot, "prefix");
-  stateRoot = await mkdtemp("/tmp/hma-http-state-");
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-http-state-`);
   cleanupRoots.push(stateRoot);
   staticRoot = path.join(testRoot, "browser");
   secretDirectory = path.join(testRoot, "secrets");
@@ -1132,7 +1133,7 @@ async function writeServiceCapabilitySnapshot() {
 }
 
 async function openInstalledMain() {
-  stateRoot = await mkdtemp("/tmp/hma-main-state-");
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-main-state-`);
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
   providerAvailable = true;

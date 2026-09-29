@@ -24,6 +24,7 @@ vi.mock("node:child_process", async (original) => {
 import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-host.ts";
 import { prepareJobPolicy } from "../../packages/runtime-sandbox/src/job-policy.ts";
 import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job-host-control.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -33,7 +34,7 @@ afterEach(async () => {
 it("recovers authenticated never-started cleanup when SDK preparation fails before ready", async () => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
-  const root = await realpath(await mkdtemp("/tmp/hma-prep-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const runtime = path.resolve("dist/node-runtime/node_modules");
   launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
@@ -107,7 +108,9 @@ it("recovers authenticated never-started cleanup when SDK preparation fails befo
     await host.result;
   });
   await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
-  expect(await host.result).toMatchObject({
+  const observed = await host.result;
+  process.stderr.write(`${JSON.stringify({ event: "sandbox.preparation.cleanup", observed })}\n`);
+  expect(observed).toMatchObject({
     reason: "host_failure",
     taskStarted: false,
     srtReset: true,
@@ -128,7 +131,7 @@ it("recovers authenticated never-started cleanup when SDK preparation fails befo
 });
 
 it("survives slow startup followed by bounded synchronous preparation without renewing the lease", async () => {
-  const root = await realpath(await mkdtemp("/tmp/hma-prep-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const runtime = path.resolve("dist/node-runtime/node_modules");
   launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
@@ -177,7 +180,7 @@ SandboxManager.initialize = async (...args) => {
 });
 
 it("prepares with the packaged Java agent when global npm discovery would block heartbeats", async () => {
-  const root = await realpath(await mkdtemp("/tmp/hma-prep-"));
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const runtime = path.resolve("dist/node-runtime/node_modules");
   launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");

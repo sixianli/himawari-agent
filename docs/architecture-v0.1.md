@@ -552,6 +552,8 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 开发时各层测试的运行时机和运行位置见 [ADR 0042](adr/0042-hermes-test-scratch-on-root-disk.md)：测试在 Hermes 上运行，源码、依赖、构建产物和证据放在 `/data`，测试运行中的临时数据放在根盘的任务目录（`/data` 是慢速机械硬盘），开发 Mac 不跑测试，Mac 专属验证经用户同意后按需在 Mac 上运行；完整构建和 `npm test` 按交付批次运行，改动涉及数据库结构、进程间协议、构建配置或测试运行方式时提前运行；生产部署到云服务器 `84.247.157.41`，每次都要用户授权；合并 PR 前的必需检查集合仍由 `ci/policy.json` 规定，不因此减少。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 
+测试临时根由 `@himawari-agent/testing/temporary-root` 的唯一 JavaScript 实现解析，供应用测试、根目录夹具及 CI 运行器通过包名复用。不设置 `HIMAWARI_TEST_TEMP_ROOT` 时保留 `/tmp` 默认值，产品路径安装前缀仍为 `/tmp/hma-pp-`；设置时要求目录已存在、为规范绝对路径、没有符号链接且当前账号可写入和遍历，否则明确失败。产品路径夹具在创建安装前核算控制、服务和 SRT socket 的 UTF-8 字节长度，不调整生产 socket 名称或上限。Hermes 每次运行由记录器创建短路径 0700 根，并将 `TMPDIR` 指向同一目录；CI 继续向子进程传递临时根。开发依赖中作为只读工具链的目录也须禁止同组和其他账号写入；锁定依赖安装使用 `umask 022`，测试仍在 `umask 0002` 下验证自身创建路径的权限。运行前及运行中检查根盘至少剩余 10 GiB，记录采样峰值与最低余量；需要保留的现场复制到 `/data` 后再删除临时根，同时核对根外的 `/tmp` 新条目。
+
 integration 的文件并行保留独立测试进程和模块状态，worker（同时执行文件的进程）数量由政策中的 CPU、内存和总数上限共同决定：每 2 个可用 CPU 核心、每 2048 MiB 物理内存分配一个，最多 4 个、至少 1 个。Vitest 配置和正式入口共用计算函数，政策检查拒绝数量漂移或关闭隔离；没有新增独占串行文件，重试、测试文件清单、资格排除项和产品期限保持原合同。旧政策仅迁移 integration 的调度字段，原始摘要和其他检查继续使用接受的基线。规则及证据范围见[CI 测试集合约束](execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)。
 
 `run.mjs` 是本地和 Actions 共用执行边界。每个检查只写自己的 `CheckResult`，输出保留退出码、实际计数和内容摘要。`aggregate.mjs` 先核对全部 `needs` 成功，再要求完整 12 份成员报告属于同一 repository、event、tested/head/base SHA、run/attempt、政策与工具链，并交叉核对构建和消费者归档摘要。部分重跑、旧报告、空执行、缺矩阵和篡改都不能得到 `passed`。
