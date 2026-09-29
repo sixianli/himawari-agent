@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:3384a6dad720972a46e7b3011fa2676962f97613248c3a96c6190d4621a0a654"
+contract_sha256: "sha256:ada2ba05a9f5ca7dbb9ce3913e50d9479cd4ab6aa2cf4e6efb023e64f766af48"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -222,6 +222,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、开发依赖、临时探针和数据库放在 `/data`。用户授权 NVMe 迁移时，仅完整安装前缀中的程序、运行依赖和静态页面复制到 `/opt/himawari/releases/<版本>`；先核对根盘确为 NVMe、剩余空间至少 10 GiB 且复制后仍保留该余量。数据库、附件、日志、备份与构建缓存继续位于 `/data`。
 
 ## Procedure
+
+TE-11 的执行事件传输使用固定分页版本：请求和响应均为 `x-himawari-events-pagination: 1`，响应另带 `x-himawari-events-page`（more/complete）及非空页的 `x-himawari-events-next-cursor`。升级时 Agent 与 Worker 必须取自同一安装产物并成对切换；旧新混用会拒绝事件读取，不能保留旧 Worker 单独更新 Agent。详情见[执行事件有界分页设计](../execution/specs/2026-09-29-execution-event-pagination-design.md#协议) [SOURCE: docs/execution/specs/2026-09-29-execution-event-pagination-design.md#协议]。本变更无数据库迁移；单次正文上限、认证和期限保持原值。缺少分页标记或单事件超限时停止并保留诊断，先核对两端产物身份，不能调高上限或重放工具。
 
 2026-09-16 的 v4 发布绑定源码提交 `0600b2958432a4592a52e5c01cf92794a7af7121`，构建与资格目录使用 `2026-09-16-v4-0600b29`。本次用户已经批准部署，并完成两小时临时 sudo 认证，实际到期时间为 `2026-09-16T01:22:45Z`；此授权只适用于本次执行，不得延长或作为后续部署的凭据。候选采用固定 Node/npm 工具链重新安装依赖、构建完整运行时，六组安装资格采用正式 `himawari` 账号和最终私有挂载路径。冻结辅助入口位于 `/etc/himawari/deploy-v4-0600b29/`，分别绑定源码、准备清单、运行时和辅助程序摘要；切换必须传入本次签署回执摘要。Pi 能力入口字节与现用版本相同，因此只核对注册能力声明不变，不运行历史 Registry 摘要迁移。沿用 schema 32 完整备份验证、仅替换 NVMe 只读绑定与签署启动配置；保留原 `2026-09-15-main-4f1e86f` 安装。不重新导入历史，也不更换模型或身份设置。此次没有新的付费模型预算，安装验证与生产页面验收不得冒充真实付费模型对话验收。脱敏证据及冻结脚本副本保存于 `test/qualification/evidence/control-center-v4/deployment-hermes/`。
 

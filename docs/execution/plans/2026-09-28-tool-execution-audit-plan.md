@@ -118,6 +118,7 @@ date: "2026-09-28"
 | TE-06 | partially confirmed：原现场首次准备失败的触发原因仍 uncertain；准备失败后丢失控制关联的恢复缺口 confirmed | 原现场 reserved、未 bind，控制关联缺失。真实 Job Host 受控 SDK 初始化失败探针复现：任务未启动、已签名结束文件可由原密钥核验，但 Agent 未持久保存控制关联，登记 ENOENT，恢复 SANDBOX_CONTROL_BINDING_UNAVAILABLE。已按第四、五份回复完成重点、真实安装、完整 npm test/check 与两版各30成功样本的性能验收；历史首次触发原因仍 uncertain，见[已批准的数据与顺序提案](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md) |
 | TE-07 | confirmed，局部修复已验证：真实 Mac 运行中停止后 Run 已取消、宿主和原进程组已退出，但签名终态保存的 `taskProcessGroupGone: false` 遮住后续进程身份核验，恢复结束为 unresolved，目录占用未释放 | `round2/stop-running-4` 为真实产品失败现场；可控认证 socket/真实进程用例 `verifies the original group after its signed final observation could not confirm cleanup` 在 inspect/stop 两路径先失败。沿用原签名开始记录、同开机身份检查和既有释放证明形状补核验；不延长期限、无迁移。控制证据 81 条、真实 Mac 停止回归、check 与完整 npm test 4608 条通过，4 份受影响 Runbook 已核对封存，修复提交 `f1519e7`；完整任务仍开放。进展见[第二轮证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/README.md) |
 | TE-08 | confirmed，已修复并通过本地验证：真实 SRT reset 后重启 Agent/Worker，完整 read 输出已从宿主到达 Worker，但只保存在 Worker 内存；重启后资源释放成功，result=null、intent=0、Run 停在 reconciling_external_result。签名控制终态不保存原输出与退出结果，既有结果发现又要求 result/error 已存在 | `round2/restart-1`：运行中重启和收尾不重启对照通过，收尾重启失败（2 通过、1 失败、15 未执行）。失败安装 `/private/tmp/hma-pp-Vp0WPJ`；`te08-red-readback.json` 为独立数据库和控制文件读回。完整原始输出不等于已被 Agent 认证接纳的成功结果。[先前 LOST 修复及后来批准的分块恢复补充](../specs/2026-09-29-sandbox-foreground-result-durability-design.md)，测试和证据见[TE-08 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-verification.md)；该历史提交仅在已接受释放、原签名任务退出、无确定结果且原 fence 已失效时，用 operation revision 保存确定的 SANDBOX_TOOL_RESULT_LOST，再沿原 Pi 批次唯一交付；效果未知不改写，原输出保存前退出仍是明确保证边界。相关集成 469 条、旧写者 16 条、预算 2 条、Mac 定向 9 条及 IPC 接收补验 2 条通过；完整 npm test 4651 条通过，Runbook 已封存。提交见[TE-08 交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-delivery.json)，整轮最终无筛选资格待后续执行 |
+| TE-11 | confirmed：累计事件单响应超过65,536字节；有界分页与A1轮询推进修复按reply-16独立交付 | 30项UDS矩阵、7项A1测试和73项相邻回归通过；原前置场景加连续30读8项通过。完整check通过，te11-full-2的4883项全通过且命令退出0；新[分页设计](../specs/2026-09-29-execution-event-pagination-design.md)和两份Runbook同步。A2失败测试与钩子不进入本提交，A2及最终无筛选资格仍未完成；[完整证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md) |
 | TE-10 | confirmed（可控 Host/Worker 边界）：主进程退出但输出管道未关闭，Host 如实报告 stdioClosed=false；Worker 却把传输结束当完整输出并保存成功结果 | `round2/te10-pipe-red-2` 为有效红测试：Host 证明测试通过，Worker 的 end=false 与非成功断言均失败。修复要求最终 flush 和 knownExit 明确 stdioClosed=true，保留前缀、未知结果、原清理与恢复边界；同测试 `te10-pipe-green-1` 2项通过，相邻首轮106项通过。完整check、重新构建、4855项npm test全部通过，四份Runbook重新封存、严格文档校验零警告。独立提交见[TE-10交付记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-delivery.json)；[TE-10 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te10-verification.md)。这不是实际 OS 管道泄漏或 Linux 平台验收 |
 | TE-09 | confirmed，已提交 `ac094b9`：两次真实300秒场景均按期限退出并认证释放，Run仍待核查。细分复验确认Agent未留清理汇报余量，Worker将deadline且exitCode:null的退出归为未知；本次结束块和普通Payload保存成功，旧场景缺块的具体RPC原因仍uncertain。原900秒后的无候选仅有SQL投影和源码证据 | `round2/deadline-1`及`round2/te09-r10-diagnostic-1`各为1失败、40筛选未执行。reply-10已批准工具超时错误一次交付并继续Run；仅到原Run期限才作failed兜底。reply-11已批准最小内部收尾端口及原子租约事务，见[到期收尾设计](../specs/2026-09-29-sandbox-deadline-settlement-design.md)。本机专项验证已通过；Worker真实300秒与Run90秒场景已通过。结束块保存后重启另确认普通恢复入口拒绝已过工具期限，reply-13批准限定期限用途并沿用Agent验签/SQLite绑定分工；相关SQLite整文件478项通过，第六版真实300秒恢复及22项受影响矩阵通过，补充边界10项通过；依赖边界检查发现新helper越层导入，复用既有application身份工厂后第七版90秒Run复验通过。完整check及npm test 4827项通过，四份Runbook已显式封存，严格文档校验零警告；[TE-09交付与提交记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-delivery.json)。整轮无筛选验收仍待后续执行。见[TE-09验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md#reply-10-细分诊断)及[stop-10](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-10.md) |
 | TE-08 方案 B | 已批准并完成本机实现验证，提交 `81a9fd2`：前台输出复用加密分块，结束块后服务退出可以在释放后恢复原字节；保留77fb033的合法LOST边界 | [方案 B 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-verification.md)保留早期失败、三方事务竞争、矛盾正文与终态pending时间红/绿证据。B7真实22项矩阵通过；reply-9原探针30对30中位增量−21.5ms通过，原288ms超标及因果不确定性保留。完整check通过；首次完整npm test的10项失败来自旧JobHost夹具缺completed，补齐后同文件17通过，第二次完整npm test为4697项全部通过、零失败与跳过。交付与提交见[方案 B 记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te08-b-delivery.json)。整轮无筛选资格仍待后续执行 |
@@ -240,3 +241,23 @@ TE-09 已独立提交 `ac094b9`。其后补充的测试没有改变产品状态�
 ### TE-10 输出完整性检查
 
 按已批准方案 B 的“不能把前缀作为完整成功”合同，Worker 的最终输出保存与结果分类增加明确的 stdioClosed 检查，不修改消息、状态或持久数据结构。Job Host 已正确区分 exit 与 close；无需复制 Pi 工具能力。失败发生在 Himawari 自有宿主清理事实到结果接纳的边界。可控测试负责精确安排 exit 后无 close 的窗口，真实 Mac 的一般输出、期限与恢复路径由最终产品资格另行验收。
+
+### 最终无筛选资格发现 TE-11
+
+TE-10已提交 `f635513`，4855项完整测试及check通过。随后从该HEAD重建，无筛选运行全部43项Mac产品资格（启用原性能基线），在同一服务累计作业后的第29次读取失败，7通过、1失败、35未执行，不能归档或宣称最终验收完成。详见[两轮总报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md)和[TE-11证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-verification.md)。该次停止时新增真实UDS红测试未提交、生产代码保持f635513；后续获批实现及A2新停止点见下一节。
+
+### reply-15 A2 恢复阻塞与后续审核
+
+TE-11有界分页及A1轮询推进已先红后绿，原连续30读在同一服务保留前置调用后通过。修复前本次前28读成功、第29读失败，阈值取决于累计事件大小，且之前还有前置工具调用；不能泛化为固定28次工具上限。
+
+A2真实安装故障注入确认：准备resolve的UDS响应断开后，预约reserved、无准备控制artifact、无释放回执，恢复停在unresolved；成对重启和原90秒Run期限后约40秒仍未进入终态。未放宽释放守卫或清占用，按[stop-14](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-14.md)提交准备封锁/释放证明提案。该段记录当时停止状态；reply-16裁定与独立提交范围见下节。
+
+B1期限后撤销检查、B2终态通知、B3真实脱离进程组输出场景按reply-15顺序待做；B4非沙箱UNKNOWN无到期路径只记录不修。事件历史内存/重复读取Backlog尚待独立创建提交。性能历史+288ms未通过与清理后−21.5ms通过并列保留，新最终30对30尚未运行。详见[总报告待决与验收范围](../../../.ci-output/tool-execution-audit/2026-09-28/round2/round2-final-report.md#reply-15-待决与验收范围)。
+
+### reply-16 TE-11 独立交付与 A2 前置检查
+
+Claude已批准先单独交付TE-11分页与A1，并要求A2失败场景及钩子留待A2修复提交。分页合同、失败处理与同包成对升级要求记录在[执行事件分页设计](../specs/2026-09-29-execution-event-pagination-design.md) [SOURCE: docs/execution/specs/2026-09-29-execution-event-pagination-design.md]。连续30读的持久回归已在此前提交中，本次沿用同一服务含前置调用的8场景通过证据；不能把筛选通过视为最终完整资格。
+
+A2批准的方向是在同一不可变准备附件key先写确定内容的封锁记录，限定本机SRT，并复用既有“工具未启动”交付；实施前必须证明旧版本先fork后登记的记录不能进入新依据。仍须测试最多一次的旧unresolved额外恢复、登记与封锁竞争及ACK丢失。批准不等于已实现，A2现场当前仍无终点。诊断丢失D和container预约自动恢复E须分别确认后处理，随后才是B1/B2/B3、Backlog及最终无筛选资格。
+
+TE-11独立提交前，当前源码的73项相邻测试、完整npm run check通过。首次全量4883项均通过但因并发纯文档提交0f7060f导致导出阶段testedSha不符，完整命令退出1；从0f7060f重建build-te11-3后重跑te11-full-2，280文件4883项全部通过、0失败/跳过，命令及报告导出退出0。两次原始结果均保留，不修改历史context。两份Runbook在语义核对后封存，严格文档校验随提交证据保存。

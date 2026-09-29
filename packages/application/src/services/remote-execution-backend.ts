@@ -130,23 +130,30 @@ export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort
   private async result(request: EnvironmentRequest): Promise<unknown> {
     const scope = JSON.stringify(request.scope);
     const deadline = Date.now() + this.options.resultTimeoutMs;
+    let cursor: string | null = null;
     while (Date.now() < deadline) {
-      for await (const event of this.options.transport.events(null)) {
-        if (
-          event.type !== "environment.operation.result" ||
-          event.payload.requestId !== request.messageId ||
-          event.causationId !== request.messageId ||
-          event.correlationId !== request.correlationId ||
-          event.payload.operation !== request.payload.operation ||
-          JSON.stringify(event.scope) !== scope
-        )
-          continue;
-        if (event.payload.outcome === "succeeded") return event.payload.result;
-        throw new RemoteExecutionBackendError(
-          event.payload.outcome === "failed" && event.payload.errorCode
-            ? event.payload.errorCode
-            : "EXECUTION_ENVIRONMENT_RESULT_UNKNOWN",
-        );
+      try {
+        for await (const event of this.options.transport.events(cursor)) {
+          cursor = event.payload.cursor;
+          if (
+            event.type !== "environment.operation.result" ||
+            event.payload.requestId !== request.messageId ||
+            event.causationId !== request.messageId ||
+            event.correlationId !== request.correlationId ||
+            event.payload.operation !== request.payload.operation ||
+            JSON.stringify(event.scope) !== scope
+          )
+            continue;
+          if (event.payload.outcome === "succeeded") return event.payload.result;
+          throw new RemoteExecutionBackendError(
+            event.payload.outcome === "failed" && event.payload.errorCode
+              ? event.payload.errorCode
+              : "EXECUTION_ENVIRONMENT_RESULT_UNKNOWN",
+          );
+        }
+      } catch (error) {
+        if (error instanceof RemoteExecutionBackendError) throw error;
+        throw new RemoteExecutionBackendError("EXECUTION_ENVIRONMENT_RESULT_UNKNOWN");
       }
       await new Promise((resolve) => setTimeout(resolve, this.options.pollIntervalMs));
     }

@@ -378,9 +378,18 @@ export class AuthenticatedUdsClient {
     readonly body?: Uint8Array;
     readonly contentType?: string;
     readonly headers?: Readonly<Record<string, string>>;
+    readonly signal?: AbortSignal;
+    readonly requestTimeoutMs?: number;
   }): Promise<AuthenticatedUdsHttpResponse> {
     if (input.body && input.body.byteLength > this.options.maximumBodyBytes) {
       throw errorFor(this.options.errorCodes, "BODY_TOO_LARGE", 413);
+    }
+    const requestTimeoutMs = Math.min(
+      input.requestTimeoutMs ?? this.options.requestTimeoutMs,
+      this.options.requestTimeoutMs,
+    );
+    if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
+      throw errorFor(this.options.errorCodes, "DEADLINE_EXCEEDED", 504);
     }
     return new Promise((resolve, reject) => {
       const body = input.body === undefined ? undefined : Buffer.from(input.body);
@@ -404,7 +413,8 @@ export class AuthenticatedUdsClient {
             [this.options.peerInstanceHeader]: this.options.peerInstanceId,
             ...(body === undefined ? {} : { "content-length": String(body.byteLength) }),
           },
-          timeout: this.options.requestTimeoutMs,
+          timeout: Math.max(1, Math.ceil(requestTimeoutMs)),
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
         (response) => {
           void (async () => {
@@ -430,7 +440,7 @@ export class AuthenticatedUdsClient {
       );
       deadlineTimer = setTimeout(() => {
         request.destroy(errorFor(this.options.errorCodes, "DEADLINE_EXCEEDED", 504));
-      }, this.options.requestTimeoutMs);
+      }, requestTimeoutMs);
       deadlineTimer.unref();
       request.once("timeout", () => {
         request.destroy(errorFor(this.options.errorCodes, "DEADLINE_EXCEEDED", 504));

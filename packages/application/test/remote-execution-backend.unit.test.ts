@@ -125,6 +125,67 @@ function subject(worker: FakeWorker, resultTimeoutMs = 200) {
 }
 
 describe("remote execution backend over execution.v2", () => {
+  it("advances the polling cursor after unrelated events and starts each operation from null", async () => {
+    const worker = new FakeWorker();
+    const original = worker.transport.events;
+    const cursors: (string | null)[] = [];
+    const delivered: string[] = [];
+    worker.transport.events = (afterCursor) => {
+      cursors.push(afterCursor);
+      const request = worker.requests.at(-1);
+      if (!request) throw new Error("Request fixture missing");
+      const matching = cursors.length % 3 === 0;
+      worker.emit(
+        request,
+        { outcome: "succeeded", result: { accepted: true } },
+        matching ? {} : { causationId: "unrelated-request" },
+      );
+      return (async function* () {
+        for await (const event of original(afterCursor)) {
+          delivered.push(event.payload.cursor);
+          yield event;
+        }
+      })();
+    };
+    const backend = subject(worker);
+    await expect(
+      backend.stop({ ...target, stopIntentId: "poll-1", stopFence: 1 }),
+    ).resolves.toEqual({ accepted: true });
+    expect(cursors).toEqual([null, "cursor-1", "cursor-2"]);
+    expect(delivered).toEqual(["cursor-1", "cursor-2", "cursor-3"]);
+    await expect(
+      backend.stop({ ...target, stopIntentId: "poll-2", stopFence: 1 }),
+    ).resolves.toEqual({ accepted: true });
+    expect(cursors).toEqual([null, "cursor-1", "cursor-2", null, "cursor-4", "cursor-5"]);
+  });
+
+  it.each(["WORKER_CURSOR_NOT_FOUND", "EXECUTION_UDS_REQUEST_FAILED"])(
+    "fails closed as result unknown when continuation fails with %s",
+    async (code) => {
+      const worker = new FakeWorker();
+      const original = worker.transport.events;
+      const cursors: (string | null)[] = [];
+      worker.transport.events = (afterCursor) => {
+        cursors.push(afterCursor);
+        return (async function* () {
+          if (cursors.length > 1) throw Object.assign(new Error(code), { code });
+          const request = worker.requests.at(-1);
+          if (!request) throw new Error("Request fixture missing");
+          worker.emit(
+            request,
+            { outcome: "succeeded", result: { accepted: true } },
+            { causationId: "unrelated-request" },
+          );
+          yield* original(afterCursor);
+        })();
+      };
+      await expect(
+        subject(worker).stop({ ...target, stopIntentId: "cursor-lost", stopFence: 1 }),
+      ).rejects.toMatchObject({ code: "EXECUTION_ENVIRONMENT_RESULT_UNKNOWN" });
+      expect(cursors).toEqual([null, "cursor-1"]);
+    },
+  );
+
   it("sends a create in the environment's Run scope and returns the Worker's typed result", async () => {
     const worker = new FakeWorker();
     worker.reply = () => ({ outcome: "succeeded", result: locator });
