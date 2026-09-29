@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5d47c8d2b2e871585c4b59413f8621b695432430728f3d261a49a995489c78ea"
+contract_sha256: "sha256:479e7be8b71afd1111ab6d0a5729525e5768631c4583eab5b0c54a942690c35e"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -362,7 +362,7 @@ ps -axo pid,command
 
 若目标已有活动服务、state-root lock、socket、authority 不匹配、schema 不完整或可用空间不足，停止；不得删除活锁、覆盖 state root 或猜测服务管理器命令。
 
-升级停旧服务之前，先从已核实的配置和 `db status` 确定实际产品数据库路径，再以只读连接统计尚未启动的 SRT 预约。将下面的绝对路径替换为该数据库路径；保存查询输出。数量不为 0 时停止升级并报告用户，不自动释放或删除记录。
+升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后数量不为 0 时停止升级并报告用户，不自动释放或删除记录。
 
 ~~~sh
 python3 - /absolute/path/product.sqlite <<'PYTHON'
@@ -396,7 +396,7 @@ mkdir -p <absolute-prefix>
 npm run install:node-runtime -- --prefix <absolute-prefix>
 ~~~
 
-5. 在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
+5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未启动的 SRT 预约统计](#live-state-preflight)，保存停服后的查询结果，非零时停止升级并报告用户，不启动新版。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service。Worker 先公布本次 `workerInstanceId/workerBootId`；Agent 取得当前 authority lease 后启动反向权限与 Payload 服务，再发布同时绑定双方实例、boot 和当前 authority 的启动文件，最后完成 Worker handshake。记录双方 `service.ready` 的 component、schema、identity 和 recovery counters；只存在 socket 或旧启动文件不算完成握手。
 7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
 8. 正常停止时先向 Agent Service 发送 `SIGTERM`。Agent 按已登记资源先停止接纳、等待在途工作，再逆序关闭依赖；Memory 消费者停止领取新任务并等待当前批次完成后，才关闭 Memory、模型、authority 和 SQLite。等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
