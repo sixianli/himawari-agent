@@ -54,6 +54,21 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Import `@earendil-works/pi-*` packages only from `packages/runtime-pi`; product domain, contracts, application code and entrypoints depend on product-owned types.
 - Keep published Pi dependencies in committed manifests and lockfiles. Local `../pi-mono` source linking must be opt-in, reversible and must not change committed dependency declarations.
 
+## Test Trigger Timing
+
+The user decided on 2026-09-29 how test layers are triggered during local development; the rationale is in [ADR 0038](docs/adr/0038-test-layer-trigger-timing.md). These rules take precedence over any per-defect full-test requirement in task briefs written before that date.
+
+- Layer 0, targeted tests (the reproducing test and directly related test files): run before changing production code to show the failure, then after every change.
+- Layer 1, `npm run check`: before every commit.
+- Layer 2, affected-module tests (the whole Vitest project containing the change, such as `unit`, plus integration test files that exercise the changed modules): when a defect or feature is stable and about to be committed. Each independent defect is still committed separately after Layers 0-2 pass.
+- Layer 3, build plus the full `npm test`: once per delivery batch (a group of changes handed over together for review or acceptance, normally no more than three independent defects), before push, PR, or merge, and at the end of a work round. Run it for the individual change instead when it touches the SQLite schema or migrations, the Agent-Worker protocol, authentication, or handshake, build or packaging configuration, dependency manifests or lockfiles, or the test runner itself (Vitest configuration, `scripts/ci/`, `ci/policy.json`).
+- Finish Layers 0-2 and a self-review before starting Layer 3. If Layer 3 fails, return to Layer 0, fix, pass Layers 0-2, then rerun Layer 3 once on the batch's final revision.
+- Layer 4, the Mac product path: run only the affected scenarios when a change affects installation, upgrade, process management, or sandbox runtime behavior; run the unfiltered qualification only at the end of a work round or before a release.
+- Layer 5, Linux/Hermes verification: only before deployment and only with the user's approval.
+- Documentation-only changes run documentation validation and Runbook checks only.
+- Reuse passing results while code, dependencies, test configuration, and relevant environment are unchanged. Commit messages and delivery reports must state which layers actually ran and which revision the full test covered; never describe an intermediate commit as fully tested when it was not.
+- These rules govern local development only. The required GitHub CI checks in `ci/policy.json` are unchanged.
+
 ## Hermes Connectivity
 
 - For authorized Hermes work, prefer `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 hermes-tailscale-breakglass`. This existing SSH alias connects as `andy` to the Tailscale address `100.64.53.104` (`hermes-home`); successful access was verified on 2026-09-21.
