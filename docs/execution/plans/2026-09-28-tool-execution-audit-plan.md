@@ -333,3 +333,5 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 用户决定：第二轮不能带着已发现的缺陷收尾。凡是已经发现、确认属于缺陷的问题，都要先修复，并各有先失败后通过的测试，然后再跑最终完整测试、Linux 无筛选资格和总报告。原本记为“已知限制”或 Backlog 的工具执行缺陷，也在这一轮修复；只有需要用户另做产品或设计决定、或需要在 Mac 上验证的项目，先由 Claude 向用户确认。
 
 同一天用户要求代码和文档不得漂移：每个改变行为的提交都在同一提交中更新受影响的文档，提交前运行严格文档校验，改到 Runbook 覆盖的代码时复核并重新封存。规则写在 `AGENTS.md` 的 “Code and Documentation Consistency” 一节。
+
+2026-09-30 在 Hermes 上第一次跑整组单元测试，67 项因超时失败：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。

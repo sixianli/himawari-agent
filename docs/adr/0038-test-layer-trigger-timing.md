@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0041-test-hosts-and-production-server.md"
+superseded_by: "docs/adr/0042-hermes-test-scratch-on-root-disk.md"
 date: "2026-09-29"
 ---
 
