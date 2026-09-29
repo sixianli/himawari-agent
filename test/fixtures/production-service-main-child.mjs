@@ -17,6 +17,36 @@ const [agent, platform] = await Promise.all([
   loadPackage("@himawari-agent/platform-node"),
 ]);
 startupStage("imports_completed");
+const payloadHandle = platform.PayloadUdsServer.prototype.handle;
+platform.PayloadUdsServer.prototype.handle = async function (request, response, body) {
+  const fault = process.env.HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE;
+  if (fault && request.url === "/payload/v1/sandbox/execution") {
+    const message = JSON.parse(body.toString("utf8"));
+    if (
+      message.payload?.command?.kind === "resolve" &&
+      (await readFile(fault, "utf8").then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      await rename(fault, `${fault}.consumed`);
+      await writeFile(
+        `${fault}.entered`,
+        JSON.stringify({
+          at: new Date().toISOString(),
+          pid: process.pid,
+          identity: message.payload.identity,
+          operation: "resolve",
+          fault: "UDS_RESPONSE_DESTROYED_BEFORE_PREPARATION_CONTROL",
+        }),
+      );
+      response.destroy();
+      return;
+    }
+  }
+  return payloadHandle.call(this, request, response, body);
+};
+
 const sources = {
   provider: new platform.RestrictedProviderSecretSource(process.env.HIMAWARI_TEST_SECRET_DIRECTORY),
   keys: new platform.RestrictedSecretFileSource(process.env.HIMAWARI_TEST_SECRET_DIRECTORY),
@@ -39,6 +69,22 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
   secretSources: sources,
   modelCompositionFactory: async ({ configuration, repository }) => {
     startupStage("model_composition");
+    const preparations = repository.sandboxExecutionPreparations.bind(repository);
+    repository.sandboxExecutionPreparations = (...args) => {
+      const port = preparations(...args);
+      const legacyInput = async (input) => {
+        const fault = process.env.HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE;
+        const mode = fault ? await readFile(fault, "utf8").catch(() => "") : "";
+        if (mode !== "legacy") return input;
+        const { preparationProtocol: _protocol, ...plan } = input.plan;
+        return { ...input, plan };
+      };
+      return {
+        ...port,
+        enqueue: async (input) => port.enqueue(await legacyInput(input)),
+        reserve: async (input) => port.reserve(await legacyInput(input)),
+      };
+    };
     const journal = repository.sandboxExecutionJournal.bind(repository);
     repository.sandboxExecutionJournal = (...args) => {
       const port = journal(...args);

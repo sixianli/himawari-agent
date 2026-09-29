@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CapabilityInvocationAuthority,
   SandboxExecutionAdmissionRecord,
@@ -6,6 +7,7 @@ import type {
   SandboxReservationReleaseVerification,
 } from "@himawari-agent/application";
 import type { SandboxExecutionPlanV2 } from "@himawari-agent/execution-contracts";
+import { SANDBOX_PREPARATION_PROTOCOL } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -63,6 +65,34 @@ export class SqliteSandboxReservationRelease {
     plan: SandboxExecutionPlanV2,
     proof: SandboxReservationReleaseVerification,
   ): boolean {
+    if (proof.basis === "preparation_not_authorized") {
+      if (plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL)
+        return this.fail("PORT_INVALID_OPERATION", "SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE");
+      return (
+        plan.backendRef === "srt" &&
+        Boolean(
+          this.db
+            .prepare(`
+        SELECT 1 FROM sandbox_execution_records r
+        JOIN run_payload_artifacts a ON a.owner_id=r.owner_id AND a.agent_id=r.agent_id AND a.run_id=r.run_id
+        WHERE r.job_id=? AND r.owner_id=? AND r.agent_id=? AND r.preparation_state='reserved'
+          AND r.started_at IS NULL AND r.reservation_stopped_at IS NOT NULL
+          AND json_extract(r.plan_json,'$.backendRef')='srt'
+          AND json_extract(r.plan_json,'$.preparationProtocol')=?
+          AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=?
+      `)
+            .get(
+              plan.identity.jobId,
+              plan.identity.ownerId,
+              plan.identity.agentId,
+              SANDBOX_PREPARATION_PROTOCOL,
+              `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}:preparation`,
+              proof.evidence?.ref ?? null,
+              `sha256:${proof.evidence?.digest}`,
+            ),
+        )
+      );
+    }
     if (proof.basis === "host_never_started")
       return (
         reference(proof.processIdentityRef) &&

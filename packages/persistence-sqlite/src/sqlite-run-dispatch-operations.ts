@@ -18,6 +18,7 @@ import {
   RUN_COMPLETION_RECOVERY_SQL,
   RUN_EXPIRED_RECONCILIATION_SQL,
 } from "./sqlite-run-resource-guard.ts";
+import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "./sqlite-sandbox-reservation-never-started.ts";
 import { SANDBOX_TOOL_RESULT_RECOVERY_SQL } from "./sqlite-sandbox-tool-result-recovery.ts";
 
 type Failure = (code: string, message: string, details?: Readonly<Record<string, string>>) => never;
@@ -1120,7 +1121,7 @@ export class SqliteRunDispatchOperations {
           OR (@reservationDigest IS NOT NULL AND result.preparation_state='reserved' AND EXISTS (
             SELECT 1 FROM sandbox_reservation_release_receipts reservation WHERE reservation.job_id=result.job_id
               AND reservation.accepted_at<=@resourceNow
-              AND json_extract(reservation.verification_json,'$.basis')='host_never_started'
+              AND ${SANDBOX_RESERVATION_NEVER_STARTED_SQL}
               AND json_extract(reservation.verification_json,'$.evidence.digest')=@reservationDigest
           )))
         AND NOT EXISTS (SELECT 1 FROM model_invocation_identities model

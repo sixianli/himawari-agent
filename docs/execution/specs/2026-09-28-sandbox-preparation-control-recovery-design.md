@@ -10,6 +10,8 @@ date: "2026-09-28"
 
 **审阅状态：Claude 已于 2026-09-28 19:55 批准；第五份回复范围内的实施与验收已完成，完整产品资格仍待后续任务。** 批准依据为 `.ci-output/handoff/2026-09-28-claude-reply-4.md`。 本提案处理 TE-06 已确认的恢复缺口。原现场第一次准备失败的触发原因仍不确定；不能把本提案解释成已证明原故障由磁盘、心跳或某个并发写者引起。
 
+2026-09-29 第二轮 reply-16、reply-17 已批准 A2 的准备封锁、新释放依据与计划协议字段；[追加设计](#第二轮-a2准备登记之前的封锁)尚未实现。TE-11 分页和 A1 已独立提交 `022c81a`，不能据此宣称 A2 已恢复。
+
 ## 阅读导航
 
 - [目标与来源](#目标与来源)
@@ -19,6 +21,7 @@ date: "2026-09-28"
 - [权限与失败边界](#权限与失败边界)
 - [替代方案](#替代方案)
 - [验收与审批范围](#验收与审批范围)
+- [第二轮 A2：准备登记之前的封锁](#第二轮-a2准备登记之前的封锁)
 
 ## 目标与来源
 
@@ -109,3 +112,43 @@ Claude 已于 2026-09-28 21:00 批准继续定位新增耗时与未注入准备�
 
 
 第五轮进一步发现固定 SRT 初始化的全局 npm 路径发现使用同步命令，可能阻塞准备期间的心跳。Job Host 通过 SDK 已有 `javaAgentJarPath` 参数指定当前安装内随包 JAR；完整 runtime 核验仍覆盖该文件，路径必须规范且为普通文件。缺失或不合法时失败，不搜索全局替代文件。没有修改第三方依赖、文件权限、网络许可或监督期限。真实子进程受控慢 npm 回归已由失败转为通过；最终交替采集加成对补测已取得两版各30成功样本；中位9773.5→8925.5毫秒，旧版另有3次已解释失败，修改版前30次均成功。完整npm test 4606条和npm run check通过，最终真实安装准备失败回归通过。采集曾因未分类的旧版过期prepare封套而停止，保留原失败报告，补测不覆盖原样本；详见[当前排查证据](../plans/2026-09-28-tool-execution-audit-plan.md#第五份回复后的诊断与测量)。
+
+## 第二轮 A2：准备登记之前的封锁
+
+### 已批准合同与交付
+
+本节来源为 [Claude reply-16](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-16.md)。真实准备 resolve 的 UDS 响应断开后，预约无准备附件，成对重启与原 Run 期限都不能推进；证据见 [A2 独立读回](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te11-a2-independent-readback.json)。该路径与已保存准备密钥的 TE-06 路径不同。
+
+批准的新依据 `preparation_not_authorized` 表示：准备登记被接受之前已经封锁，宿主从未获准创建。停止方与登记方竞争同一不可变附件 key `${key(plan)}:preparation`，沿用现有 immediate 事务先写者赢的规则，不改通用附件事务、不建表。封锁内容为固定 version、完整 identity、fingerprint、environmentId、executionLease、原 stopRequestedAt；不包含新时间或随机值。同一内容明文摘要确定，重复写按重放处理。
+
+封锁先赢时，后续登记读到封锁版本或写入冲突，不能成功登记，Worker 不得 fork。登记先赢或遇到不同摘要的 PORT_CONFLICT 时，回到原宿主认证核验或 UNKNOWN，不使用新依据。封锁存在但释放事务失败时保留封锁，下一次可用原内容继续验证释放。
+
+Agent 与 SQLite 都必须限定 `backendRef=srt`。SQLite 在接受回执同一事务中检查 reserved、started_at 为空、reservation_stopped_at 已存在，并验证 evidence.ref/digest 对应同 Run、purpose=trace、准确 preparation key 的 payload_ref/content_digest。SQLite 不解密、不验签；Agent 解释核对封锁内容。container 只能使用既有 task_environment_released 路径。
+
+释放并清除占用后，新依据与 host_never_started 同样给模型既有固定错误 SANDBOX_TOOL_NOT_STARTED：“工具未启动：准备阶段失败，已确认清理完成。”在原 Run 期限前交付，这一轮继续，不重放原调用。TypeScript 与 SQL 各用一个共享判断，统一用于恢复发现、派发再核验、重启恢复、前台交付和 authorizeReservationResult 五处；披露、撤权、租约与期限检查不放宽。
+
+### 新计划字段与旧 Worker 排除
+
+[Claude reply-17](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-17.md) 批准在 v2 计划增加可缺省的 `preparationProtocol: "register-before-host.v1"`。字段仅由 Agent 在新建 SRT 计划时写入；缺失的旧计划按原样解析，不填默认值，不重写持久数据，也不更改原语义指纹或宿主资格摘要。字段存在时严格校验固定字面量。容器路线不使用该标记作为释放依据。
+
+当前生产创建入口均在 `production-sandbox-services.ts`：`prepareRuntimeV2()` 为普通、网络及托管任务创建 v2 候选计划；`child.prepare()` 的 v2 分支为私有子调用创建候选计划。这两处在 backendRef 为 srt 时写字段。子调用不继承父计划的标记，而按当前路线写入。`rebindQueuedRun()` 只恢复已有排队计划并换租约，保留其原标记或原缺省状态，不能把旧计划升级为新协议。v1 创建分支不产生 v2 reserved 记录，保持既有合同。
+
+历史源码审查覆盖从 v2 Worker 引入提交 5d069ab 到 a2f51ba 父提交的全部 21 个相关源码变更点，并显式检查 fc2b318 与 a2f51ba 父提交，共 23 个修订快照、39 个不同源码摘要。路径为生产 composition → ProductionPayloadBrokerClient → PayloadUdsClient → parseJsonResponse → payloadBrokerV1MessageSchema → reserved/bound 计划 schema → v1 planShape/object。所有版本在 run 的首次 read 返回后才到 prepareSandboxJobHost；没有从执行请求取得未解析计划的生产入口。旧 parsePlan 将未知字段继续传给 v1 的 object，后者自 e996c50 起拒绝 unknown field，因此旧 Worker 收到新字段会在创建宿主前失败。源码节选、摘要及祖先关系见 [reply-17 历史兼容性证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-compatibility-sources.json)。这是固定历史源码证明，不是旧服务运行实验，不涉及 Hermes。
+
+新依据的 Agent 判断与 SQLite basisHolds 都要求本机 SRT 和该固定字段；SQLite 同时直接检查持久 plan_json 的 json_extract 值。缺字段使用可区分的 `SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE` 原因。已有 host_never_started 与 task_environment_released 依据不依赖新字段，行为保持。
+
+reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或机会。升级前的 reserved 记录（包括 TE-06 之后的中间版本）没有字段，永远不能使用新依据；无既有宿主证明时仍保留占用和 reconciling_external_result。新版 Agent 配旧 Worker 时，读取新计划失败，不能创建宿主；不会把旧记录标成新版。
+
+两份安装/升级 Runbook 在停旧服务前用只读查询统计 backendRef=srt、reserved、started_at 为空的记录。非零停止升级并报告，不自动释放。这是操作提示；安全证明依赖计划字段与严格解析，不依赖操作者排空承诺。
+
+### 封锁实现边界
+
+停止流程使用已经持久的原 stopRequestedAt，不生成新停止时间。自动恢复与 stopRun 均已读取带停止时间的 admission；向本地控制器传入该值后竞争同一 preparation key。没有新持久表、列、迁移或握手，也不改变准备登记命令。封锁之前检查现有控制记录；真实登记赢或写入冲突后重新读取现有记录，进入原核验路径。已有封锁内容必须逐项符合当前计划和原停止时间，不能据 version 字符串单独认定封锁成立。
+
+共享的 TypeScript 判断描述预约是否确定从未启动；共享 SQL 判断用于恢复发现与派发再核验。它们只识别已经被接受的释放依据，不替代权限、证据、披露或期限检查。Pi 继续复用固定版本 0.84.2 的工具结果交付与 Agent Loop；Himawari 负责持久封锁、资源证明和产品权限，没有新建模型工具协议。
+
+### 实施验证与明确限制
+
+保留缺证据拒绝释放的全部断言。实现前矩阵须覆盖：stop/登记两种先后、ACK 丢失、旧 boot 晚登记、job/attempt/指纹不符、已有控制、重复释放、事务回滚、封锁已存但释放事务失败再恢复、同 identity 改派新 Worker 仍不 fork、同封锁内容重放、container 拒绝及旧版本记录。真实 A2 场景须读回新 basis、占用释放、期限前的唯一 SANDBOX_TOOL_NOT_STARTED 模型交付和 Run 继续。
+
+登记已持久但 Worker 未收到 ACK 的情况不能使用新依据，现有路径仍无终点；这是明确待决限制，不在本次封锁方案的修复范围。准备失败诊断丢失 D 与 container 自动恢复分流 E 仍须独立测试确认，未据静态猜测声称修复。新增矩阵还包括缺字段双侧拒绝、新字段接受、两个创建入口、旧计划解析及旧依据兼容、旧记录启动恢复直到 Run 到期仍不释放和不交付“工具未启动”。上述矩阵已通过组件与真实 SQLite 测试；新版 A2 真实安装在原期限前完成唯一失败结果交付并继续原轮，成对重启不重复交付。独立旧格式安装在成对重启及原 Run 期限后仍保留占用、不交付“工具未启动”。原生产故障、测试夹具错误与修正后的结果分别保留；证据和具体命令见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。完整项目测试及本地提交状态以该记录为准。

@@ -18,6 +18,7 @@ import { createServer as createNetServer } from "node:net";
 import { hostname, release } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { PayloadRecord } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 import {
   applyMigrations,
@@ -26,9 +27,12 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   digestSandboxRuntime,
+  EnvelopePayloadProtector,
   initializeStateRoot,
+  RestrictedSecretFileSource,
   writeAuthorityFile,
 } from "@himawari-agent/platform-node";
+import Database from "better-sqlite3";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 
 import { prepareProductPathTiming } from "./product-path-timing.ts";
@@ -277,6 +281,8 @@ export interface ProductPathInstallation {
   crashWorker(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
   armPreparationFailure(): Promise<void>;
+  armPreparationTransportFailure(legacyPlan?: boolean): Promise<void>;
+  preparationTransportFailure(): Promise<unknown | null>;
   armFinishGate(
     stage?:
       | "before-end"
@@ -293,6 +299,7 @@ export interface ProductPathInstallation {
   releaseFinishGate(): Promise<void>;
   finishGateOutput(): Promise<string>;
   finishGateResultReceived(): Promise<string | null>;
+  sandboxDelivery(runId: string, invocationId: string): Promise<unknown | null>;
   diagnose(runId: string): unknown;
   deliveryCrashEntered(): Promise<{ jobId: string; runId: string } | null>;
   running(): boolean;
@@ -811,6 +818,10 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
     HIMAWARI_TEST_DELIVERY_CRASH: path.join(testRoot, "delivery-crash"),
     HIMAWARI_TEST_PREPARATION_FAILURE: path.join(testRoot, "preparation-failure"),
+    HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE: path.join(
+      testRoot,
+      "preparation-transport-failure",
+    ),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
   };
@@ -975,6 +986,20 @@ export async function installProductPath(options: {
       if (!(await exited(current.worker, 5000)))
         throw new Error("PRODUCT_PATH_WORKER_CRASH_TIMEOUT");
     },
+    armPreparationTransportFailure: async (legacyPlan = false) => {
+      await writeFile(
+        serviceEnv.HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE,
+        legacyPlan ? "legacy" : "armed",
+      );
+    },
+    preparationTransportFailure: async () =>
+      readFile(`${serviceEnv.HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE}.entered`, "utf8").then(
+        (text) => JSON.parse(text),
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      ),
     armPreparationFailure: async () => {
       await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
     },
@@ -1018,6 +1043,43 @@ export async function installProductPath(options: {
         .split("\n")
         .map((line) => Buffer.from(JSON.parse(line).bytes, "base64").toString("utf8"))
         .join("");
+    },
+    sandboxDelivery: async (runId, invocationId) => {
+      if (!invocationId.startsWith("runtime-tool:")) throw new Error("TEST_INVOCATION_REQUIRED");
+      const database = new Database(databasePath, { readonly: true });
+      try {
+        const row = database
+          .prepare(`SELECT a.created_at AS acceptedAt, p.ref,
+          p.classification AS dataClassification, p.content_type AS contentType, p.ciphertext,
+          p.encryption_metadata_json AS encryption, p.content_digest AS contentDigest, p.created_at AS createdAt
+          FROM run_payload_artifacts a JOIN payloads p ON p.owner_id=a.owner_id AND p.agent_id=a.agent_id AND p.ref=a.payload_ref
+          WHERE a.owner_id=? AND a.agent_id=? AND a.run_id=? AND a.purpose='trace' AND a.operation_key=?
+        `)
+          .get(
+            ownerId,
+            agentId,
+            runId,
+            `runtime-sandbox-delivery:${invocationId.slice("runtime-tool:".length)}`,
+          ) as
+          | (Omit<PayloadRecord, "encryption"> & { encryption: string; acceptedAt: string })
+          | undefined;
+        if (!row) return null;
+        const protector = new EnvelopePayloadProtector({
+          keys: new RestrictedSecretFileSource(secretDirectory),
+          activeKey: { keyRef: "payload-kek", kekVersion: "v1", dekVersion: "dek-v1" },
+        });
+        const plaintext = await protector.unprotect({
+          ownerId: createOwnerId(ownerId),
+          agentId: createAgentId(agentId),
+          payload: { ...row, encryption: JSON.parse(row.encryption) },
+        });
+        return {
+          acceptedAt: row.acceptedAt,
+          content: JSON.parse(Buffer.from(plaintext).toString("utf8")),
+        };
+      } finally {
+        database.close();
+      }
     },
     diagnose: (runId) =>
       JSON.parse(

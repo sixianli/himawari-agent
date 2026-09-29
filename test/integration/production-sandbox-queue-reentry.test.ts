@@ -54,7 +54,7 @@ function runtimeFingerprint(call: RuntimeToolInvocation) {
     )
     .digest("hex");
 }
-async function fixture() {
+async function fixture(legacy = false) {
   let authority = SERVICE_AUTHORITY;
   const f = await productionSandboxScope(
     {
@@ -178,8 +178,10 @@ async function fixture() {
         diagnosticCode: null,
       },
     });
-  const prepared = await f.services.runtime.prepare(f.input, f.call);
-  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const current = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in current)) throw new Error("expected v2");
+  const { preparationProtocol: _protocol, ...oldPlan } = current.plan;
+  const prepared = { ...current, plan: legacy ? oldPlan : current.plan };
   const position = await f.services.brokerV2.preparations.enqueue({
     ...prepared,
     invocation: f.input,
@@ -398,44 +400,50 @@ it("does not resume an original request that exceeds a tightened resource ceilin
   ).toBeUndefined();
 });
 
-it("rebinds a changed Worker boot through production services before exposing tools", async () => {
-  const f = await fixture();
-  f.changeBoot();
-  if (!f.call.context) throw new Error("context required");
-  await f.services.rebindQueuedRun({
-    runId: f.call.runId,
-    ...f.call.context,
-    capabilityHandleRefs: [f.input.handleRef],
-  });
-  const rebound = await f.services.brokerV2.preparations.readQueuedByInvocation({
-    runId: f.call.runId,
-    invocationId: f.input.invocationId,
-  });
-  expect(rebound).toMatchObject({
-    bindingRevision: 1,
-    sequence: f.position.sequence,
-    invocation: { authority: { workerBootId: "new-worker-boot" } },
-  });
-  const resumed = f.tool();
-  await resumed.listAuthorized(f.call.runId, [f.input.handleRef]);
-  const result = await resumed.execute(f.call);
-  const diagnostic = await f.artifacts().lookup({
-    runId: f.call.runId,
-    purpose: "trace",
-    operationKey: `runtime-tool-diagnostic:${f.input.invocationId.slice("runtime-tool:".length)}`,
-  });
-  const payload =
-    diagnostic && (await f.repository.payloadStore(OWNER_ID, AGENT_ID).get(diagnostic.payloadRef));
-  const detail =
-    payload && (await f.f.protector.unprotect({ ownerId: OWNER_ID, agentId: AGENT_ID, payload }));
-  expect(
-    "dispatchState" in result ? result.dispatchState : undefined,
-    detail ? Buffer.from(detail).toString() : JSON.stringify(result),
-  ).toBe("accepted");
-  expect(f.request.mock.calls.filter(([message]) => message.type === "work.execute")).toHaveLength(
-    1,
-  );
-});
+it.each([false, true])(
+  "rebinds a changed Worker boot without upgrading a queued plan (legacy=%s)",
+  async (legacy) => {
+    const f = await fixture(legacy);
+    f.changeBoot();
+    if (!f.call.context) throw new Error("context required");
+    await f.services.rebindQueuedRun({
+      runId: f.call.runId,
+      ...f.call.context,
+      capabilityHandleRefs: [f.input.handleRef],
+    });
+    const rebound = await f.services.brokerV2.preparations.readQueuedByInvocation({
+      runId: f.call.runId,
+      invocationId: f.input.invocationId,
+    });
+    expect(rebound).toMatchObject({
+      bindingRevision: 1,
+      sequence: f.position.sequence,
+      invocation: { authority: { workerBootId: "new-worker-boot" } },
+    });
+    expect(rebound?.plan).toEqual(f.prepared.plan);
+    expect(Object.hasOwn(rebound?.plan ?? {}, "preparationProtocol")).toBe(!legacy);
+    const resumed = f.tool();
+    await resumed.listAuthorized(f.call.runId, [f.input.handleRef]);
+    const result = await resumed.execute(f.call);
+    const diagnostic = await f.artifacts().lookup({
+      runId: f.call.runId,
+      purpose: "trace",
+      operationKey: `runtime-tool-diagnostic:${f.input.invocationId.slice("runtime-tool:".length)}`,
+    });
+    const payload =
+      diagnostic &&
+      (await f.repository.payloadStore(OWNER_ID, AGENT_ID).get(diagnostic.payloadRef));
+    const detail =
+      payload && (await f.f.protector.unprotect({ ownerId: OWNER_ID, agentId: AGENT_ID, payload }));
+    expect(
+      "dispatchState" in result ? result.dispatchState : undefined,
+      detail ? Buffer.from(detail).toString() : JSON.stringify(result),
+    ).toBe("accepted");
+    expect(
+      f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+    ).toHaveLength(1);
+  },
+);
 
 it("rebinds the original approval after real authority and Run lease replacement", async () => {
   const f = await fixture();

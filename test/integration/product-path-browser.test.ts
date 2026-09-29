@@ -441,6 +441,218 @@ productDescribe(
       });
     }, 1_800_000);
 
+    it.each([false, true])(
+      "handles a preparation transport failure across paired restart (legacy=%s)",
+      async (legacy) => {
+        const name = legacy ? "32-legacy-preparation-upgrade" : "31-preparation-transport-recovery";
+        const original = { installation, browser, context, page };
+        await installation.stop();
+        if (legacy) {
+          const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+          const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+          if (!artifact || !contextFile) throw new Error("PRODUCT_PATH_REQUIRES_ARTIFACT");
+          installation = await installProductPath({
+            artifact,
+            context: contextFile,
+            logDirectory: path.join(outputDirectory, "legacy-service-logs"),
+          });
+          installation.setModelScript(script);
+          await writeFile(path.join(installation.workspace, "notes.txt"), NOTE);
+        }
+        await installation.setRunDeadline(90_000);
+        await installation.start();
+        if (legacy) {
+          browser = await chromium.launch({
+            channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+            args: [
+              `--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`,
+            ],
+          });
+          context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+          await context.tracing.start({ screenshots: true, snapshots: true });
+          page = await context.newPage();
+          await page.goto(`${installation.origin}/`);
+          await page.getByRole("button", { name: "登录 Himawari" }).click();
+          await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+        } else await page.reload();
+        try {
+          await scenario(name, async () => {
+            await newThread();
+            const before = new Set(executionReadback().map((record) => record.jobId));
+            const text = "准备传输失败验证：请读取 notes.txt";
+            await installation.armPreparationTransportFailure(legacy);
+            await send(text);
+            const allow = page.getByRole("button", { name: "允许这一次" });
+            await uiExpect
+              .poll(
+                async () =>
+                  (await allow.count()) > 0 ||
+                  (await installation.preparationTransportFailure()) !== null,
+                { timeout: 60_000 },
+              )
+              .toBe(true);
+            if ((await allow.count()) > 0) await allow.first().click();
+            await uiExpect
+              .poll(() => installation.preparationTransportFailure(), { timeout: 60_000 })
+              .not.toBeNull();
+            const fault = await installation.preparationTransportFailure();
+            await uiExpect
+              .poll(() => executionReadback().filter((record) => !before.has(record.jobId)), {
+                timeout: 40_000,
+              })
+              .toHaveLength(1);
+            const job = executionReadback().find((record) => !before.has(record.jobId));
+            if (!job) throw new Error("Preparation failure job missing");
+            const readback = () => {
+              const database = openQualifiedDatabase(installation.databasePath);
+              try {
+                return {
+                  observedAt: new Date().toISOString(),
+                  rows: executionReadback().filter((record) => record.jobId === job.jobId),
+                  execution: database
+                    .prepare(
+                      "SELECT preparation_state AS phase, started_at AS startedAt, plan_json AS plan, recovery_json AS recovery FROM sandbox_execution_records WHERE job_id=?",
+                    )
+                    .get(job.jobId) as {
+                    phase: string;
+                    startedAt: string | null;
+                    plan: string;
+                    recovery: string | null;
+                  },
+                  reservationReleases: database
+                    .prepare(
+                      "SELECT accepted_at, verification_json FROM sandbox_reservation_release_receipts WHERE job_id=?",
+                    )
+                    .all(job.jobId),
+                  occupancy: database
+                    .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+                    .all(job.jobId),
+                  controlArtifacts: database
+                    .prepare(
+                      "SELECT operation_key FROM run_payload_artifacts WHERE run_id=? AND operation_key LIKE 'sandbox-control:%:preparation'",
+                    )
+                    .all(job.runId),
+                  checkpoint: database
+                    .prepare(
+                      "SELECT phase, terminal_status, diagnostic_code FROM run_coordination_checkpoints WHERE run_id=?",
+                    )
+                    .get(job.runId),
+                  replies: observedToolReplies(text),
+                  modelMessages: observedToolMessages(text),
+                  quickCheck: database.pragma("quick_check"),
+                };
+              } finally {
+                database.close();
+              }
+            };
+            const snapshots: unknown[] = [];
+            const record = async (stage: string) => {
+              const snapshot = readback();
+              const invocationId = JSON.parse(snapshot.execution.plan).identity.invocationId;
+              snapshots.push({
+                stage,
+                ...snapshot,
+                delivery: await installation.sandboxDelivery(job.runId, invocationId),
+              });
+              await writeFile(
+                path.join(outputDirectory, `${name}-readback.json`),
+                JSON.stringify({ fault, snapshots }, null, 2),
+              );
+            };
+            try {
+              expect(readback().execution).toMatchObject({ phase: "reserved", startedAt: null });
+              const plan = JSON.parse(readback().execution.plan);
+              const deadline = Date.parse(plan.originalDeadlineAt);
+              if (legacy) {
+                expect(Object.hasOwn(plan, "preparationProtocol")).toBe(false);
+                await uiExpect
+                  .poll(() => JSON.parse(readback().execution.recovery ?? "null")?.status, {
+                    timeout: 40_000,
+                  })
+                  .toBe("unresolved");
+                expect(readback().controlArtifacts).toEqual([]);
+              } else {
+                expect(plan.preparationProtocol).toBe("register-before-host.v1");
+                await uiExpect
+                  .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
+                  .toBe("completed");
+                expect(Date.now()).toBeLessThan(deadline);
+                const releases = readback().reservationReleases as Array<{
+                  accepted_at: string;
+                  verification_json: string;
+                }>;
+                expect(releases).toHaveLength(1);
+                expect(JSON.parse(releases[0]?.verification_json ?? "null")).toMatchObject({
+                  basis: "preparation_not_authorized",
+                });
+                expect(readback().occupancy).not.toEqual([]);
+                expect(readback().occupancy).not.toContainEqual({ released_at: null });
+                expect(readback().controlArtifacts).toHaveLength(1);
+                expect(readback().replies.map((ids) => ids.length)).toEqual([1]);
+                expect(JSON.stringify(readback().modelMessages)).toContain(
+                  "工具未启动：准备阶段失败，已确认清理完成。",
+                );
+                const delivery = await installation.sandboxDelivery(
+                  job.runId,
+                  plan.identity.invocationId,
+                );
+                expect(delivery).toMatchObject({
+                  content: {
+                    outcome: "failed",
+                    errorCode: "SANDBOX_TOOL_NOT_STARTED",
+                    outputRef: null,
+                  },
+                });
+                expect(readback().rows[0]).toMatchObject({ runStatus: "completed", intents: 0 });
+              }
+              await record("before-paired-restart");
+              await installation.crash();
+              await waitForExpiredServiceLease();
+              await installation.start();
+              await page.reload();
+              await record("after-paired-restart");
+              if (legacy) {
+                await uiExpect
+                  .poll(() => Date.now() >= deadline, {
+                    timeout: Math.max(1, deadline - Date.now()) + 5_000,
+                  })
+                  .toBe(true);
+                await record("original-run-deadline-reached");
+                expect(readback().rows[0]?.runStatus).toBe("reconciling_external_result");
+                expect(readback().reservationReleases).toEqual([]);
+                expect(readback().occupancy).toContainEqual({ released_at: null });
+                expect(readback().controlArtifacts).toEqual([]);
+                expect(readback().replies).toEqual([]);
+                expect(JSON.stringify(readback().modelMessages)).not.toContain("工具未启动");
+                expect(
+                  await installation.sandboxDelivery(job.runId, plan.identity.invocationId),
+                ).toBeNull();
+              } else {
+                expect(readback().rows[0]?.runStatus).toBe("completed");
+                expect(readback().replies.map((ids) => ids.length)).toEqual([1]);
+              }
+            } finally {
+              await record("final-observation");
+              await writeFile(
+                path.join(outputDirectory, `${name}-diagnose.json`),
+                JSON.stringify(installation.diagnose(job.runId), null, 2),
+              );
+            }
+          });
+        } finally {
+          await installation.stop();
+          if (legacy) {
+            await context.tracing.stop({ path: path.join(outputDirectory, "legacy-trace.zip") });
+            await browser.close();
+            await installation.close();
+            ({ installation, browser, context, page } = original);
+          } else await installation.setRunDeadline(900_000);
+          await installation.start();
+          await page.reload();
+        }
+      },
+    );
+
     it("delivers a verified preparation failure and exposes its private diagnostic through the CLI", async () => {
       await scenario("12-preparation-failure", async () => {
         await newThread();

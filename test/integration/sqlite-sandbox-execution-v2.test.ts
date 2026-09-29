@@ -4190,10 +4190,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "preparation-cancelled",
     "preparation-expired",
     "preparation-model-unknown",
+    "preparation-sealed",
+    "preparation-sealed-new-boot",
+    "preparation-sealed-expired",
+    "preparation-sealed-cancelled",
+    "preparation-sealed-model-unknown",
   ] as const)(
     "resumes the production Run and Pi from a late SQLite result without dispatching its tool again: %s",
     async (scenario) => {
-      const variant = scenario.replace(/^(preparation|loss)-/, "");
+      const variant = scenario.replace(/^(preparation|loss)-/, "").replace(/^sealed-/, "");
+      const sealed = scenario.startsWith("preparation-sealed");
       let authority = SERVICE_AUTHORITY;
       let now = T1;
       let failAfterReceipt = false;
@@ -4416,7 +4422,11 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             const original = {
               ...admitted,
               invocation: { ...admitted.invocation, invocationId, idempotencyKey: invocationId },
-              plan: { ...admitted.plan, identity: { ...admitted.plan.identity, invocationId } },
+              plan: {
+                ...admitted.plan,
+                identity: { ...admitted.plan.identity, invocationId },
+                ...(sealed ? { preparationProtocol: "register-before-host.v1" as const } : {}),
+              },
             };
             const bound = {
               ...original,
@@ -4702,13 +4712,50 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             now: T1,
             reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
           });
+          let sealedEvidence: { ref: string; digest: string } | undefined;
+          if (sealed) {
+            const plaintext = Buffer.from(
+              JSON.stringify({
+                version: "sandbox-preparation-sealed.v1",
+                identity: reservation.plan.identity,
+                fingerprint: reservation.plan.semanticFingerprint,
+                environmentId: reservation.plan.environmentId,
+                executionLease: reservation.plan.executionLease,
+                stopRequestedAt: T1,
+              }),
+            );
+            const payload = await f.protector.protect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              ref: "sealed-preparation",
+              dataClassification: "restricted",
+              contentType: "application/json",
+              plaintext,
+              createdAt: T1,
+            });
+            const saved = await repository
+              .runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
+                product: authority.product,
+                lease: authority.lease,
+              })
+              .commit({
+                runId,
+                purpose: "trace",
+                payload,
+                operationKey: `sandbox-control:${createHash("sha256").update(JSON.stringify(reservation.plan.identity)).digest("hex")}:preparation`,
+              });
+            sealedEvidence = {
+              ref: saved.ref,
+              digest: createHash("sha256").update(plaintext).digest("hex"),
+            };
+          }
           await preparations.releaseReservation({
             identity: reservation.plan.identity,
             authority,
             now: T1,
             verification: {
               schemaVersion: "sandbox-reservation-release.v1",
-              basis: "host_never_started",
+              basis: sealed ? "preparation_not_authorized" : "host_never_started",
               identity: reservation.plan.identity,
               environmentId: reservation.plan.environmentId,
               semanticFingerprint: reservation.plan.semanticFingerprint,
@@ -4717,7 +4764,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
               processIdentityRef: "job-host-process:original",
               controlSessionId: "11111111-1111-4111-8111-111111111111",
-              evidence: { ref: "authenticated-never-started", digest: "a".repeat(64) },
+              evidence: sealedEvidence ?? {
+                ref: "authenticated-never-started",
+                digest: "a".repeat(64),
+              },
             },
           });
         }
@@ -4993,7 +5043,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             .readAdmission(reservation.plan.identity);
           expect(original).toMatchObject({
             phase: "reserved",
-            releaseReceipt: { verification: { basis: "host_never_started" } },
+            releaseReceipt: {
+              verification: { basis: sealed ? "preparation_not_authorized" : "host_never_started" },
+            },
           });
           expect(
             f.database

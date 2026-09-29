@@ -9,6 +9,7 @@ import {
   type SandboxExecutionRecord,
   type SandboxExecutionVerification,
 } from "@himawari-agent/application";
+import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
 import type {
   SandboxEffectObservation,
   SandboxOperationContract,
@@ -90,7 +91,7 @@ export function createProductionSandboxToolResult(options: {
     if (admission.phase === "reserved") {
       if (
         admission.plan.mode !== "foreground" ||
-        admission.releaseReceipt?.verification.basis !== "host_never_started" ||
+        !isSandboxReservationNeverStarted(admission.plan, admission.releaseReceipt?.verification) ||
         admission.workspaceBlocked
       )
         return undefined;

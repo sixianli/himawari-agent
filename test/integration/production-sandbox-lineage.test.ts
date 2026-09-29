@@ -69,9 +69,15 @@ async function fixture(legacyFileRead = false, fileWorkflow = false) {
   cleanups.push(f.close);
   return f;
 }
-async function startParent(f: Fixture, controlled = true): Promise<SandboxExecutionRecord> {
-  const prepared = await f.services.runtime.prepare(f.input, f.call);
-  if (!("reservation" in prepared)) throw new Error("Expected v2 reservation");
+async function startParent(
+  f: Fixture,
+  controlled = true,
+  legacy = false,
+): Promise<SandboxExecutionRecord> {
+  const current = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+  const { preparationProtocol: _protocol, ...oldPlan } = current.plan;
+  const prepared = { ...current, plan: legacy ? oldPlan : current.plan };
   const reserved = await f.services.brokerV2.preparations.reserve({
     ...prepared,
     invocation: f.input,
@@ -229,33 +235,38 @@ describe("production sandbox file and delegation lineage", () => {
       "SANDBOX_PARENT_CHANGED",
     );
   });
-  it("prepares a child with a fresh identity and inherited, bounded authority", async () => {
-    const f = await fixture();
-    const parent = await startParent(f);
-    const child = await f.services.child.prepare(childInput(f), request(f.input.invocationId));
-    expect(child.plan.identity).toMatchObject({
-      invocationId: "child-invocation",
-      toolCallId: "child-invocation",
-      runId: parent.plan.identity.runId,
-      hostId: parent.plan.identity.hostId,
-    });
-    expect(child.plan.identity.jobId).not.toBe(parent.plan.identity.jobId);
-    expect(child.plan.executionLease).toEqual(parent.plan.executionLease);
-    expect(child.plan.resourceCeiling).toEqual(parent.plan.resourceCeiling);
-    expect(child.plan.effectiveDeadlineAt <= parent.plan.effectiveDeadlineAt).toBe(true);
-    const scope = await f.services.child.scopes.read(child.plan, f.input.invocationId);
-    expect(scope.parentToolCallId).toBe(parent.plan.identity.toolCallId);
-    if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
-    expect(scope.directoryGrant.operations).toEqual(["read"]);
-    expect(scope.networkAuthorizationRef).toBeNull();
-    expect(
-      await f.services.brokerV2.preparations.readAdmissionByInvocation({
-        runId: f.call.runId,
+  it.each([false, true])(
+    "prepares a child with its own protocol and bounded authority (legacy parent=%s)",
+    async (legacy) => {
+      const f = await fixture();
+      const parent = await startParent(f, true, legacy);
+      const child = await f.services.child.prepare(childInput(f), request(f.input.invocationId));
+      expect(child.plan.identity).toMatchObject({
         invocationId: "child-invocation",
-      }),
-    ).toBeUndefined();
-    expect(await handleUses(f)).toBe(1);
-  });
+        toolCallId: "child-invocation",
+        runId: parent.plan.identity.runId,
+        hostId: parent.plan.identity.hostId,
+      });
+      expect(child.plan).toMatchObject({ preparationProtocol: "register-before-host.v1" });
+      expect(Object.hasOwn(parent.plan, "preparationProtocol")).toBe(!legacy);
+      expect(child.plan.identity.jobId).not.toBe(parent.plan.identity.jobId);
+      expect(child.plan.executionLease).toEqual(parent.plan.executionLease);
+      expect(child.plan.resourceCeiling).toEqual(parent.plan.resourceCeiling);
+      expect(child.plan.effectiveDeadlineAt <= parent.plan.effectiveDeadlineAt).toBe(true);
+      const scope = await f.services.child.scopes.read(child.plan, f.input.invocationId);
+      expect(scope.parentToolCallId).toBe(parent.plan.identity.toolCallId);
+      if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
+      expect(scope.directoryGrant.operations).toEqual(["read"]);
+      expect(scope.networkAuthorizationRef).toBeNull();
+      expect(
+        await f.services.brokerV2.preparations.readAdmissionByInvocation({
+          runId: f.call.runId,
+          invocationId: "child-invocation",
+        }),
+      ).toBeUndefined();
+      expect(await handleUses(f)).toBe(1);
+    },
+  );
   it.each(["absent", "unknown", "initializing", "expired"])(
     "refuses a child whose parent is %s",
     async (state) => {
@@ -401,12 +412,15 @@ describe("production sandbox protected output and scope verification", () => {
       expect(await f.repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref)).toEqual(payload);
     },
   );
-  it("does not claim all resources released while an admission remains unbound", async () => {
+  it("does not claim all resources released while a legacy admission remains unbound", async () => {
     const f = await fixture();
     expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
       released: true,
     });
-    const prepared = await f.services.runtime.prepare(f.input, f.call);
+    const current = await f.services.runtime.prepare(f.input, f.call);
+    if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+    const { preparationProtocol: _protocol, ...legacyPlan } = current.plan;
+    const prepared = { ...current, plan: legacyPlan };
     if (!("reservation" in prepared)) throw new Error("Expected reservation");
     await f.services.brokerV2.preparations.reserve({ ...prepared, invocation: f.input });
     expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({

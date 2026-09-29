@@ -1,5 +1,6 @@
 import {
   isSandboxToolResultLost,
+  SANDBOX_PREPARATION_PROTOCOL,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   type SandboxEnvironment,
   type SandboxExecutionFacts,
@@ -10,7 +11,22 @@ import {
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import type { SandboxExecutionVerification } from "../ports/sandbox-execution.js";
-import type { SandboxReleaseReceipt } from "../ports/sandbox-execution-journal.js";
+import type {
+  SandboxReleaseReceipt,
+  SandboxReservationReleaseVerification,
+} from "../ports/sandbox-execution-journal.js";
+
+export function isSandboxReservationNeverStarted(
+  plan: SandboxExecutionPlanV2,
+  verification: SandboxReservationReleaseVerification | undefined,
+): boolean {
+  return (
+    verification?.basis === "host_never_started" ||
+    (verification?.basis === "preparation_not_authorized" &&
+      plan.backendRef === "srt" &&
+      plan.preparationProtocol === SANDBOX_PREPARATION_PROTOCOL)
+  );
+}
 
 export interface SandboxExecutionProjectionContext {
   readonly resultDeliveryDeadlineAt?: string;

@@ -11,6 +11,7 @@ import type {
 } from "@himawari-agent/application";
 import {
   hasVerifiedSandboxSupervision,
+  isSandboxReservationNeverStarted,
   projectSandboxExecution,
 } from "@himawari-agent/application/sandbox-execution-projection";
 import { workspaceClaimsConflict as conflicts } from "@himawari-agent/application/workspace-claims";
@@ -557,10 +558,14 @@ export class SqliteSandboxExecutionOperations {
             admission.phase !== "reserved" ||
             admission.plan.mode !== "foreground" ||
             !admission.stopRequestedAt ||
-            admission.releaseReceipt?.verification.basis !== "host_never_started" ||
+            !isSandboxReservationNeverStarted(
+              admission.plan,
+              admission.releaseReceipt?.verification,
+            ) ||
             admission.workspaceBlocked ||
             !Number.isFinite(Date.parse(request.deadlineAt)) ||
             request.deadlineAt <= now ||
+            !admission.releaseReceipt ||
             admission.releaseReceipt.acceptedAt > now
           )
             return this.fail(

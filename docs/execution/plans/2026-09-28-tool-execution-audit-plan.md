@@ -261,3 +261,12 @@ Claude已批准先单独交付TE-11分页与A1，并要求A2失败场景及钩�
 A2批准的方向是在同一不可变准备附件key先写确定内容的封锁记录，限定本机SRT，并复用既有“工具未启动”交付；实施前必须证明旧版本先fork后登记的记录不能进入新依据。仍须测试最多一次的旧unresolved额外恢复、登记与封锁竞争及ACK丢失。批准不等于已实现，A2现场当前仍无终点。诊断丢失D和container预约自动恢复E须分别确认后处理，随后才是B1/B2/B3、Backlog及最终无筛选资格。
 
 TE-11独立提交前，当前源码的73项相邻测试、完整npm run check通过。首次全量4883项均通过但因并发纯文档提交0f7060f导致导出阶段testedSha不符，完整命令退出1；从0f7060f重建build-te11-3后重跑te11-full-2，280文件4883项全部通过、0失败/跳过，命令及报告导出退出0。两次原始结果均保留，不修改历史context。两份Runbook在语义核对后封存，严格文档校验随提交证据保存。
+
+
+### reply-17 A2 新计划封锁与旧记录保护
+
+reply-17 已撤回 reply-16 的旧 unresolved 额外尝试；前节描述保留为历史要求，不再实施。新 SRT 计划带固定准备协议字段，旧计划缺省读取不回填，历史 Worker 在建宿主前由严格解析拒绝新字段。设计与静态历史证明见 [A2 准备封锁设计](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#第二轮-a2准备登记之前的封锁) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
+
+真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。登记成功但 ACK 丢失仍无终点；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
+
+A2 提交前完整 `npm run check` 与 `npm test` 均退出 0，4,924 项全部通过、零失败/跳过。四份受影响 Runbook 语义核对后重新封存，严格校验零错误/警告。真实新旧安装的数据库以只读 immutable 方式独立复核，原文件摘要不变。

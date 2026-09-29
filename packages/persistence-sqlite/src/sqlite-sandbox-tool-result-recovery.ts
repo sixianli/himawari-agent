@@ -1,4 +1,5 @@
 import { RUN_RESOURCES_RELEASED_SQL } from "./sqlite-run-resource-guard.ts";
+import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "./sqlite-sandbox-reservation-never-started.ts";
 
 export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
   r.status='reconciling_external_result'
@@ -28,7 +29,7 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
         OR (result.preparation_state='reserved' AND EXISTS (
           SELECT 1 FROM sandbox_reservation_release_receipts reservation
           WHERE reservation.job_id=result.job_id AND reservation.accepted_at<=@resourceNow
-            AND json_extract(reservation.verification_json,'$.basis')='host_never_started'
+            AND ${SANDBOX_RESERVATION_NEVER_STARTED_SQL}
         )))
   )
   AND NOT EXISTS (

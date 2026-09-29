@@ -319,10 +319,13 @@ it("manages the original task and live output through SQLite and authenticated U
   await expect(f.services.managedTasks.execute(call)).rejects.toThrow();
 });
 
-it("persists a finite stop for unbound reservations without claiming resource release", async () => {
+it("persists a finite stop for legacy unbound reservations without claiming resource release", async () => {
   const f = await productionSandboxScope(descriptor("read"));
   cleanups.push(f.close);
-  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  const current = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+  const { preparationProtocol: _protocol, ...legacyPlan } = current.plan;
+  const prepared = { ...current, plan: legacyPlan };
   if (!("reservation" in prepared)) throw new Error("expected v2");
   const admitted = await f.services.brokerV2.preparations.reserve({
     ...prepared,

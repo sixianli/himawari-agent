@@ -14,6 +14,7 @@ import {
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
+  SANDBOX_PREPARATION_PROTOCOL,
   type SandboxExecutionPlanV2,
   type SandboxHostBinding,
   type SandboxJobControlBinding,
@@ -169,6 +170,48 @@ function neverStartedReleased(
  * numeric PID. A live stop goes to the original authenticated Job Host only.
  */
 export function createProductionSandboxControl(options: Options) {
+  const assertStopRequestedAt = (stopRequestedAt: string | undefined): string => {
+    if (
+      !stopRequestedAt ||
+      !Number.isFinite(Date.parse(stopRequestedAt)) ||
+      new Date(stopRequestedAt).toISOString() !== stopRequestedAt ||
+      stopRequestedAt > options.now()
+    )
+      throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+    return stopRequestedAt;
+  };
+  const assertPreparationProtocol = (plan: SandboxExecutionPlanV2) => {
+    if (plan.backendRef !== "srt") throw new Error("SANDBOX_PREPARATION_BACKEND_UNSUPPORTED");
+    if (plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL)
+      throw new Error("SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE");
+  };
+  const sealedValue = (plan: SandboxExecutionPlanV2, stopRequestedAt: string) => ({
+    version: "sandbox-preparation-sealed.v1",
+    identity: plan.identity,
+    fingerprint: plan.semanticFingerprint,
+    environmentId: plan.environmentId,
+    executionLease: plan.executionLease,
+    stopRequestedAt,
+  });
+  const readSeal = async (plan: SandboxExecutionPlanV2, stopRequestedAt: string) => {
+    const artifact = await options.read(plan, `${key(plan)}:preparation`);
+    if (
+      !artifact ||
+      !artifact.value ||
+      typeof artifact.value !== "object" ||
+      !("version" in artifact.value) ||
+      artifact.value.version !== "sandbox-preparation-sealed.v1"
+    )
+      return undefined;
+    assertPreparationProtocol(plan);
+    if (
+      !same(artifact.value, sealedValue(plan, stopRequestedAt)) ||
+      artifact.digest !== createHash("sha256").update(JSON.stringify(artifact.value)).digest("hex")
+    )
+      throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+    if (await options.read(plan, key(plan))) throw new Error("SANDBOX_CONTROL_ALREADY_REGISTERED");
+    return { ref: artifact.ref, digest: artifact.digest };
+  };
   const saveDiagnostic = async (
     plan: SandboxExecutionPlanV2,
     command: "inspect" | "stop",
@@ -816,8 +859,30 @@ export function createProductionSandboxControl(options: Options) {
       } satisfies StoredControl);
       return true;
     },
-    async stopPreparation(plan: SandboxExecutionPlanV2, signal?: AbortSignal) {
+    async stopPreparation(plan: SandboxExecutionPlanV2, signal?: AbortSignal, stoppedAt?: string) {
       return withDiagnostic(plan, "stop", async () => {
+        const preparationKey = `${key(plan)}:preparation`;
+        const existing = await options.read(plan, preparationKey);
+        if (
+          (!existing && !(await options.read(plan, key(plan)))) ||
+          (existing?.value &&
+            typeof existing.value === "object" &&
+            "version" in existing.value &&
+            existing.value.version === "sandbox-preparation-sealed.v1")
+        ) {
+          assertPreparationProtocol(plan);
+          const stopRequestedAt = assertStopRequestedAt(stoppedAt);
+          await options.host(plan);
+          if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+          if (await options.read(plan, key(plan)))
+            throw new Error("SANDBOX_CONTROL_ALREADY_REGISTERED");
+          try {
+            await options.write(plan, preparationKey, sealedValue(plan, stopRequestedAt));
+          } catch (error) {
+            if (errorCode(error) !== "PORT_CONFLICT") throw error;
+          }
+          if (await readSeal(plan, stopRequestedAt)) return;
+        }
         const observation = await inspectPreparation(plan, "stop", signal);
         // This is a cleanup request receipt, never an environment release proof.
         // A stopped reservation remains protected until independent verification.
@@ -834,14 +899,24 @@ export function createProductionSandboxControl(options: Options) {
       signal?: AbortSignal,
     ): Promise<SandboxReservationReleaseVerification | undefined> {
       return withDiagnostic(plan, "inspect", async () => {
-        if (
-          !Number.isFinite(Date.parse(stopRequestedAt)) ||
-          new Date(stopRequestedAt).toISOString() !== stopRequestedAt ||
-          stopRequestedAt > options.now()
-        )
-          throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-        // Recheck installed host identity, never the expired operation Grant.
+        assertStopRequestedAt(stopRequestedAt);
         await options.host(plan);
+        const sealed = await readSeal(plan, stopRequestedAt);
+        if (sealed) {
+          if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+          const checkedAt = options.now();
+          return {
+            schemaVersion: "sandbox-reservation-release.v1",
+            basis: "preparation_not_authorized",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            semanticFingerprint: plan.semanticFingerprint,
+            stopRequestedAt,
+            checkedAt,
+            validUntil: new Date(Date.parse(checkedAt) + 1000).toISOString(),
+            evidence: sealed,
+          };
+        }
         const raw = await inspectPreparation(plan, "inspect", signal);
         const namespace = raw.linuxNamespace
           ? await readLinuxNamespaceState(raw.linuxNamespace)

@@ -11,6 +11,7 @@ import type {
   SandboxExecutionRecord,
 } from "@himawari-agent/application";
 import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
+import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
 import { executionV2MessageSchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { inspectPiToolBatch } from "@himawari-agent/runtime-pi";
@@ -131,8 +132,10 @@ export function createProductionToolResultRecovery(options: {
           ? admission.record.releaseReceipt &&
             admission.record.facts.resource.supervision === "released" &&
             ["result", "error"].includes(admission.record.facts.result?.kind ?? "")
-          : admission.releaseReceipt?.verification.basis === "host_never_started" &&
-            !admission.workspaceBlocked;
+          : isSandboxReservationNeverStarted(
+              admission.plan,
+              admission.releaseReceipt?.verification,
+            ) && !admission.workspaceBlocked;
       if (
         !known ||
         plan.mode !== "foreground" ||

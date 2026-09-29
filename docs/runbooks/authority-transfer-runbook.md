@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5043f8ed483dff14f6579debb840206b16658a0ef0df43a116ea29318f16d39e"
+contract_sha256: "sha256:f8107289cbbc8a90442499d441d03278090075219e0e150c8e6c2cf639b3c21a"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,9 @@ date: "2026-08-27"
 # 停机加密 Authority Transfer Runbook
 
 <!-- runbook-contract:
+- packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
+- packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts
+- docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md
 - docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md
 - apps/agent-service/src/production-run-expiry.ts
 - scripts/operations/hermes-ui-session-start.mjs
@@ -320,7 +323,7 @@ himawari transfer abandon --config <absolute-target-config-path> --secret-dir <a
 
 升级和恢复须保留原 `recovery_json` 的 owner、revision、次数、动作及时间。`scheduled` 表示已排定原资源核查，`nextAttemptAt` 是最早可检查时间；此时开始和结束时间为空。真正开始后才增加次数，终态 `unresolved` 没有下次自动重试。迁移只为旧记录补空的下次时间，不制造释放证明或恢复工具权限。Schema 42 或更旧 writer 不得写入新库；回退须停止新 writer 并恢复匹配旧版本的完整恢复点，禁止删除 migration ledger 或新字段来降级。
 
-已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；只有原宿主从未启动且已退出的证明才允许释放。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
+已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
 
 验收应独立读回释放凭据、claim/barrier 和恢复终点。已确认释放但业务结果未知时分别保留，不重发工具，也不以结果交接未完成恢复旧占用。原始预约核查异常沿用受保护 Trace，仅安全原因进入恢复状态。本地 SQLite、认证 socket 和受控宿主退出回归见[调度证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md)，不替代部署实例的证明或操作授权。无 Web 启动、权威丢失、有限关闭和 stop 优先级的回归见[生命周期证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md)。
 
@@ -507,9 +510,11 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 ### 工具执行前检查点与恢复引用
 
+新 SRT v2 计划的 `preparationProtocol=register-before-host.v1` 与同一准备附件键下的 `sandbox-preparation-sealed.v1` 必须原样保留，连同受保护 Payload、摘要和预约释放回执一并备份与恢复。封锁不是宿主控制凭据；只有原计划、原停止时间和附件对应关系通过核验时，`preparation_not_authorized` 才能表示宿主从未获准创建。旧计划不回填标记、不迁移摘要，永远不能使用新依据；已有登记但 ACK 丢失仍待核对。权威转移或数据库恢复本身不证明目标主机上的资源已释放，也不授权原工具重放。详情见[准备封锁与旧版本排除](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除]。
+
 生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，页面归为“尚未派发”；旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放。对原 Run 未取消、未过期，已有确定结果与永久释放回执且原批次凭据完整的调用，调度器可领取原 Run 的新租约，仅交付旧结果并继续 Pi；原工具不会再次启动。缺失快照、权限变化、未确认控制或模型费用仍未知时保留待核对状态，不能通过重发清除未知。恢复沿用原模型 stream ordinal，保留原调用回执、交付 intent 与受保护 Payload；没有新增表或迁移。详见[已核验工具结果恢复合同](../execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md#恢复条件与用户行为)。
 
-创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；缺少最终证明时仍待核对。首次准备、登记或 bind 失败由 `sandbox-control:*:diagnostic:preparation-failure` 保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
+创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；准备登记已被接受后缺少最终证明时仍待核对。首次准备、登记或 bind 失败由 `sandbox-control:*:diagnostic:preparation-failure` 保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
 
 ### Schema 38 纯联网范围

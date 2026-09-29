@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, rmdir } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 
@@ -47,6 +48,7 @@ it.each([
   "bind-ack-loss",
   "registration-revoked",
   "preparation-registration-ack-loss",
+  "preparation-sealed",
   "preparation-failed",
   "revoked-running",
   "finished-during-check",
@@ -297,6 +299,8 @@ it.each([
           expect(command.chunk).toEqual(streamChunks.get(command.chunk.index));
         streamChunks.set(command.chunk.index, command.chunk);
       }
+      if (command.kind === "register_preparation_control" && scenario === "preparation-sealed")
+        throw Object.assign(new Error("Preparation already sealed"), { code: "PORT_CONFLICT" });
       if (
         command.kind === "register_preparation_control" &&
         scenario === "preparation-registration-ack-loss"
@@ -582,7 +586,11 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "pi-fixed-without-target" || scenario === "preparation-registration-ack-loss") {
+  if (
+    scenario === "pi-fixed-without-target" ||
+    scenario === "preparation-registration-ack-loss" ||
+    scenario === "preparation-sealed"
+  ) {
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.cancel).not.toHaveBeenCalled();
   } else expect(host.cancel).toHaveBeenCalled();
@@ -595,6 +603,23 @@ it.each([
     ].includes(scenario)
   ) {
     expect(calls.filter((kind) => kind === "preparation_diagnostic")).toHaveLength(1);
+    expect(host.start).not.toHaveBeenCalled();
+  }
+  if (scenario === "preparation-sealed") {
+    await worker.shutdown();
+    await rmdir(
+      `${root}/control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
+    );
+    const replacement = new ProductionSandboxExecutionV2({
+      configuration: { capabilityDeployment: {} as never },
+      peer: { workerInstanceId: "worker", workerBootId: "replacement-boot" } as never,
+      payloads,
+      clock: { now: () => T1 },
+    });
+    await replacement.execute(request);
+    await replacement.shutdown();
+    expect(calls.filter((kind) => kind === "register_preparation_control")).toHaveLength(2);
+    expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.start).not.toHaveBeenCalled();
   }
   await worker.shutdown();

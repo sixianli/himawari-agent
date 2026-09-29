@@ -83,7 +83,10 @@ const additions = object({
   backendRef: machineString,
   environmentId: machineString,
 });
-type Additions = InferSchema<typeof additions>;
+export const SANDBOX_PREPARATION_PROTOCOL = "register-before-host.v1" as const;
+type Additions = InferSchema<typeof additions> & {
+  readonly preparationProtocol?: typeof SANDBOX_PREPARATION_PROTOCOL;
+};
 export type SandboxExecutionPlanV2 = Omit<SandboxExecutionPlan, "schemaVersion"> &
   Additions & {
     readonly schemaVersion: typeof SANDBOX_EXECUTION_V2_SCHEMA_VERSION;
@@ -98,8 +101,15 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
   path: string,
 ) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("expected a plan");
-  const { schemaVersion, mode, operationContract, backendRef, environmentId, ...admission } =
-    value as Record<string, unknown>;
+  const {
+    schemaVersion,
+    mode,
+    operationContract,
+    backendRef,
+    environmentId,
+    preparationProtocol,
+    ...admission
+  } = value as Record<string, unknown>;
   version.parse(schemaVersion, `${path}.schemaVersion`);
   const extra = additions.parse({ mode, operationContract, backendRef, environmentId }, path);
   const kind = extra.operationContract.kind;
@@ -111,7 +121,19 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
     fail("operation contract does not support execution mode");
   // Reuse the exact v1 admission validation; no default fingerprint or implicit v1 upgrade.
   const base = schema.parse({ ...admission, schemaVersion: "sandbox-execution.v1" }, path);
-  return Object.freeze({ ...base, ...extra, schemaVersion: SANDBOX_EXECUTION_V2_SCHEMA_VERSION });
+  return Object.freeze({
+    ...base,
+    ...extra,
+    schemaVersion: SANDBOX_EXECUTION_V2_SCHEMA_VERSION,
+    ...(Object.hasOwn(value, "preparationProtocol")
+      ? {
+          preparationProtocol: literal(SANDBOX_PREPARATION_PROTOCOL).parse(
+            preparationProtocol,
+            `${path}.preparationProtocol`,
+          ),
+        }
+      : {}),
+  });
 }
 export const sandboxExecutionPlanV2Schema: Schema<SandboxExecutionPlanV2> = {
   parse(value, path = "$") {

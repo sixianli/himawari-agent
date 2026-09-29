@@ -33,6 +33,7 @@ import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
+  SANDBOX_PREPARATION_PROTOCOL,
   SANDBOX_TOOL_RESULT_LOST,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
@@ -1045,6 +1046,9 @@ export async function createProductionSandboxServices(options: {
       mode: descriptor.mode,
       operationContract: descriptor.contract,
       backendRef: descriptor.backendRef,
+      ...(descriptor.backendRef === "srt"
+        ? { preparationProtocol: SANDBOX_PREPARATION_PROTOCOL }
+        : {}),
       environmentId: `environment:${hash(input.invocationId)}`,
     });
     const resolved = await resolve(plan);
@@ -1279,7 +1283,11 @@ export async function createProductionSandboxServices(options: {
           await freezeFileScope(scope, binding, descriptor.contract),
           input.invocationId,
         );
-        const { semanticFingerprint: _fingerprint, ...candidate } = prior;
+        const {
+          semanticFingerprint: _fingerprint,
+          preparationProtocol: _preparationProtocol,
+          ...candidate
+        } = prior;
         const plan = sandboxExecutionPlanCandidateV2Schema.parse({
           ...candidate,
           identity: {
@@ -1294,6 +1302,9 @@ export async function createProductionSandboxServices(options: {
           mode: descriptor.mode,
           operationContract: descriptor.contract,
           backendRef: descriptor.backendRef,
+          ...(descriptor.backendRef === "srt"
+            ? { preparationProtocol: SANDBOX_PREPARATION_PROTOCOL }
+            : {}),
           handleRef: handle.ref,
           inputRef: input.inputRef,
           operation: input.operation,
@@ -2032,7 +2043,15 @@ export async function createProductionSandboxServices(options: {
     hostId,
     preparations,
     reconciliation,
-    reservations: { stop: control.stopPreparation, verify: control.verifyReservationRelease },
+    reservations: {
+      stop: async (plan, signal) => {
+        const admission = await preparations.readAdmission(plan.identity);
+        if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
+          throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+        await control.stopPreparation(plan, signal, admission.stopRequestedAt);
+      },
+      verify: control.verifyReservationRelease,
+    },
     authority: options.authority,
     now: () => clock.now(),
     timeoutMs: 30000,
@@ -2250,7 +2269,8 @@ export async function createProductionSandboxServices(options: {
                     if (admission.phase === "reserved") {
                       const container = plan.backendRef !== SRT_BACKEND_REF;
                       // Stop only the original registered host; missing binding remains unknown.
-                      if (!container) await control.stopPreparation(plan);
+                      if (!container)
+                        await control.stopPreparation(plan, undefined, admission.stopRequestedAt);
                       if (!admission.stopRequestedAt) throw new Error("SANDBOX_STOP_FENCE_MISSING");
                       if (container && !environments)
                         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");

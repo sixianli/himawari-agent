@@ -991,3 +991,30 @@ describe.each(["SANDBOX_TOOL_RESULT_LOST", "SANDBOX_TOOL_DEADLINE_EXCEEDED"])(
     );
   },
 );
+
+describe("preparation protocol plan compatibility", () => {
+  it("preserves an old stored plan byte for byte without upgrading its protocol", () => {
+    const original = JSON.stringify(fixture().plan);
+    const parsed = sandboxExecutionPlanV2Schema.parse(JSON.parse(original));
+    expect(JSON.stringify(parsed)).toBe(original);
+    expect(Object.hasOwn(parsed, "preparationProtocol")).toBe(false);
+  });
+  it("accepts the fixed protocol on new plans and candidates without changing their identity", () => {
+    const old = fixture().plan;
+    const input = { ...old, backendRef: "srt", preparationProtocol: "register-before-host.v1" };
+    const parsed = sandboxExecutionPlanV2Schema.parse(input);
+    expect(parsed).toEqual(input);
+    expect(parsed.semanticFingerprint).toBe(old.semanticFingerprint);
+    expect(parsed.binding).toEqual(old.binding);
+    const { semanticFingerprint: _fingerprint, ...candidate } = input;
+    expect(sandboxExecutionPlanCandidateV2Schema.parse(candidate)).toEqual(candidate);
+  });
+  it.each([undefined, null, "", "register-before-host.v2", false])(
+    "rejects an explicitly invalid preparation protocol %s",
+    (preparationProtocol) => {
+      expect(() =>
+        sandboxExecutionPlanV2Schema.parse({ ...fixture().plan, preparationProtocol }),
+      ).toThrow();
+    },
+  );
+});
