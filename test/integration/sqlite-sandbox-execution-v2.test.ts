@@ -41,6 +41,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { describe, expect, it, vi } from "vitest";
+import { ProductionRunDispatchLoop } from "../../apps/agent-service/src/production-run-dispatch-loop.ts";
 import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
@@ -415,7 +416,9 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           end: true,
           termination,
         });
-        if (recoverable)
+        if (termination.reasonCode === "cancelled")
+          await expect(stream.recover(record)).resolves.toBeNull();
+        else if (recoverable)
           await expect(stream.recover(record)).resolves.toMatchObject({ termination, bytes });
         else
           await expect(stream.recover(record)).rejects.toThrow(
@@ -471,7 +474,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
           facts: async () => record.facts,
         });
-        if (!recoverable || !signatureValid) await expect(recover(record)).rejects.toThrow();
+        if ((!recoverable && termination.reasonCode !== "cancelled") || !signatureValid)
+          await expect(recover(record)).rejects.toThrow();
         else await recover(record);
         if (recoverable && signatureValid && !expired && termination.reasonCode === "deadline") {
           expect(readRecovery).toHaveBeenCalledWith(
@@ -504,6 +508,236 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ?.facts.result,
         ).toBeNull();
       } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    ...["cancelled", "output_limit", "resource_limit", "host_failure"].flatMap((reasonCode) =>
+      [null, 0, 1].map((exitCode) => ({
+        reasonCode,
+        exitCode,
+        taskProcessExited: true,
+        corruption: "none",
+        error: null,
+      })),
+    ),
+    ...["cancelled", "output_limit", "resource_limit", "host_failure", "exited", "deadline"].map(
+      (reasonCode) => ({
+        reasonCode,
+        exitCode: reasonCode === "exited" ? 0 : null,
+        taskProcessExited: false,
+        corruption: "none",
+        error: "SANDBOX_STREAM_TERMINATION_INVALID",
+      }),
+    ),
+    ...[
+      { reasonCode: "unrecognized", exitCode: null },
+      { reasonCode: "exited", exitCode: null },
+      { reasonCode: "deadline", exitCode: 0 },
+    ].map((termination) => ({
+      ...termination,
+      taskProcessExited: true,
+      corruption: "none",
+      error: "SANDBOX_STREAM_TERMINATION_INVALID",
+    })),
+    ...[
+      ["missing", "SANDBOX_STREAM_CHUNK_MISSING"],
+      ["digest", "SANDBOX_STREAM_ARTIFACT_CHANGED"],
+      ["binding", "SANDBOX_STREAM_CHUNK_MISSING"],
+      ["offset", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["index", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["end", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["base64", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["empty", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["terminal", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+    ].map(([corruption, error]) => ({
+      reasonCode: "host_failure",
+      exitCode: null,
+      taskProcessExited: true,
+      corruption,
+      error,
+    })),
+  ])(
+    "keeps valid unrecoverable streams unknown in the Agent loop: $reasonCode/$exitCode/$taskProcessExited/$corruption",
+    async ({ corruption, error, ...termination }) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      let loop: ProductionRunDispatchLoop | undefined;
+      try {
+        let record = start(f);
+        record = append(
+          f,
+          record,
+          sandboxExecutionFactsSchema.parse({
+            ...record.facts,
+            result: {
+              schemaVersion: "sandbox-execution.v2",
+              identity: record.plan.identity,
+              environmentId: record.plan.environmentId,
+              policyDigest: record.facts.environment.policyDigest,
+              contract: { ref: "fixed-read", version: "1" },
+              occurredAt: T1,
+              kind: "unknown",
+              reasonCode: "SANDBOX_EXIT_UNKNOWN",
+            },
+          }),
+          true,
+        );
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const { createProductionSandboxStream } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        const { createProductionSandboxStreamResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream-result-recovery.ts"
+        );
+        let next = 0;
+        const artifacts = opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY);
+        const stream = createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          artifacts: () => artifacts,
+          clock: { now: () => T1 },
+          ids: { next: () => `unrecoverable-stream-${++next}` },
+        });
+        const prefix = { index: 0, offset: 0, bytesBase64: "YWJj", end: false };
+        const terminal = { index: 1, offset: 3, bytesBase64: "", end: true, termination };
+        await stream.append(record, prefix);
+        if (!termination.taskProcessExited && termination.exitCode !== null) {
+          await expect(stream.append(record, terminal)).rejects.toThrow(
+            "termination requires a final output chunk",
+          );
+          return;
+        }
+        await stream.append(record, terminal);
+        const hash = (value: unknown) =>
+          createHash("sha256").update(JSON.stringify(value)).digest("hex");
+        const binding = hash([
+          record.plan.identity,
+          record.plan.semanticFingerprint,
+          record.facts.environment,
+        ]);
+        const chunkKey = `sandbox-stream-chunk:${hash([binding, 0])}`;
+        if (corruption === "missing")
+          f.database
+            .prepare("DELETE FROM run_payload_artifacts WHERE operation_key=?")
+            .run(chunkKey);
+        if (corruption === "digest")
+          f.database
+            .prepare("UPDATE run_payload_artifacts SET content_digest=? WHERE operation_key=?")
+            .run(`sha256:${"0".repeat(64)}`, chunkKey);
+        if (corruption === "binding")
+          f.database
+            .prepare("UPDATE run_payload_artifacts SET operation_key=? WHERE operation_key=?")
+            .run(`sandbox-stream-chunk:${hash(["other-binding", 0])}`, chunkKey);
+        const changed =
+          corruption === "offset"
+            ? { ...prefix, offset: 1 }
+            : corruption === "index"
+              ? { ...prefix, index: 1 }
+              : corruption === "end"
+                ? { ...prefix, end: true, termination }
+                : corruption === "base64"
+                  ? { ...prefix, bytesBase64: "YWJ=" }
+                  : corruption === "empty"
+                    ? { ...prefix, bytesBase64: "" }
+                    : corruption === "terminal"
+                      ? { ...terminal, termination: { ...termination, exitCode: 1 } }
+                      : null;
+        if (changed) {
+          const payload = await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "corrupted-stream",
+            dataClassification: "restricted",
+            contentType: "application/json",
+            plaintext: Buffer.from(JSON.stringify(changed)),
+            createdAt: T1,
+          });
+          await artifacts.commit({
+            runId: createRunId(record.plan.identity.runId),
+            purpose: "trace",
+            operationKey: "corrupted-stream-fixture",
+            payload,
+          });
+          f.database
+            .prepare(
+              "UPDATE run_payload_artifacts SET payload_ref=?,content_digest=? WHERE operation_key=?",
+            )
+            .run(
+              payload.ref,
+              payload.contentDigest,
+              corruption === "terminal" ? `sandbox-stream-end:${binding}` : chunkKey,
+            );
+        }
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const importResult = vi.fn(journal.importResult);
+        const readResultRecovery = vi.fn(journal.readResultRecovery);
+        const facts = vi.fn(async () => record.facts);
+        const recover = createProductionSandboxStreamResultRecovery({
+          journal: { read: journal.read, readResultRecovery, importResult },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          stream,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          nextRef: () => "must-not-import-output",
+          verifyExited: async () => true,
+          facts,
+        });
+        const before = await journal.read(record.plan.identity);
+        const payloadCount = () =>
+          f.database.prepare("SELECT COUNT(*) AS count FROM payloads").get();
+        const beforePayloads = payloadCount();
+        const onFailure = vi.fn();
+        let recoveries = 0;
+        loop = new ProductionRunDispatchLoop({
+          dispatcher: {
+            pump: async () => {
+              const recovered = await recover(record);
+              expect(recovered).toEqual(before);
+              recoveries++;
+            },
+            drain: async () => ({ drained: true, inFlight: 0 }),
+          },
+          fallbackScanIntervalMs: 60_000,
+          onFailure,
+        });
+        if (error) {
+          await expect(loop.start()).rejects.toThrow(error);
+          expect(loop.state).toBe("failed");
+          expect(onFailure).toHaveBeenCalledTimes(1);
+          expect(loop.wakeup()).toBe(false);
+        } else {
+          await expect(loop.start()).resolves.toBeUndefined();
+          expect(loop.state).toBe("running");
+          expect(loop.wakeup()).toBe(true);
+          await expect.poll(() => recoveries).toBe(2);
+          expect(loop.failure).toBeUndefined();
+          expect(onFailure).not.toHaveBeenCalled();
+        }
+        expect(await journal.read(record.plan.identity)).toEqual(before);
+        expect(before?.facts.result).toMatchObject({
+          kind: "unknown",
+          reasonCode: "SANDBOX_EXIT_UNKNOWN",
+        });
+        expect(payloadCount()).toEqual(beforePayloads);
+        expect(importResult).not.toHaveBeenCalled();
+        expect(readResultRecovery).not.toHaveBeenCalled();
+        expect(facts).not.toHaveBeenCalled();
+      } finally {
+        await loop?.stop(1000);
         await repository?.close();
         await f.close();
       }

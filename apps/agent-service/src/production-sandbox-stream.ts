@@ -83,13 +83,20 @@ export function createProductionSandboxStream(
       const saved = await readStored(record, terminalKey(record));
       if (saved === undefined) return null;
       const terminal = sandboxOutputChunkSchema.parse(saved.value);
+      const unrecoverable =
+        terminal.termination !== undefined &&
+        ["cancelled", "output_limit", "resource_limit", "host_failure"].includes(
+          terminal.termination.reasonCode,
+        );
       if (
         !terminal.end ||
         !terminal.termination ||
         !(
           (terminal.termination.reasonCode === "exited" &&
             terminal.termination.exitCode !== null) ||
-          (terminal.termination.reasonCode === "deadline" && terminal.termination.exitCode === null)
+          (terminal.termination.reasonCode === "deadline" &&
+            terminal.termination.exitCode === null) ||
+          unrecoverable
         ) ||
         !terminal.termination.taskProcessExited ||
         terminal.index > record.plan.resourceCeiling.maxOutputBytes
@@ -124,6 +131,7 @@ export function createProductionSandboxStream(
           contentDigest: artifact.contentDigest,
         });
       }
+      if (unrecoverable) return null;
       const operationKey = terminalKey(record);
       const artifact = saved.artifact;
       artifacts.push({

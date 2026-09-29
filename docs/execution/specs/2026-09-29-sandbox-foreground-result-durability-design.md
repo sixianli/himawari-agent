@@ -70,6 +70,8 @@ Claude 在 reply-4 撤回“只存一份”优化：原前提不成立，后台 
 4. 没有可恢复原结果，且满足原 LOST 条件：通过 operation revision 比较写入结果丢失错误。
 5. 证据不明：不伪造结果，继续既有有限恢复、原期限和停止路径。
 
+按 [reply-24](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-24.md)，Job Host 的结束原因分为可恢复与合法但不可恢复两类。`exited` 加非空退出码、`deadline` 加空退出码保持原恢复规则；`cancelled`、`output_limit`、`resource_limit`、`host_failure` 必须先通过原身份绑定、摘要、连续分块、长度及任务已退出核验，再返回不可恢复，保留 UNKNOWN 或既有确定错误，不导入输出或重新执行，也不因合法结束原因关闭 Agent。后四种原因的退出码可为空或协议允许的整数：最终报告直接保留任务退出码，清理失败也可能在正常退出后改写为 `host_failure`。未知原因、矛盾字段、任务未退出、缺失或损坏分块继续拒绝；不得把完整性检查移到不可恢复返回之后。真实 Mac 上的完整服务和界面复验留到下一批 R1/B3，组件验证不能替代它。
+
 LOST 要求已接受的释放证明、已认证任务启动并退出、缺少确定结果，以及原 Worker 尝试已确定不能再提交。合法 LOST 一旦写入，后来发现原输出也不能覆盖或再次交付，只能保留诊断证据。
 
 导入是 Agent 内部的受限事实写入，不放宽 Worker Payload Broker。原执行身份用于确定结果归属，当前 Agent 权限用于确认现在是否允许登记事实；两者分别验证。恢复在 Agent 内部从连续分块重组原 stdout，用普通 Payload 表示保存，归属键仍为 `capabilityInvocationOutputOperationKey(invocationId)`。分类来自核验后的冻结调用回执；前台合同沿用正常路径的 `application/octet-stream`，不接受 Worker 或分块自称的分类/类型。原 Worker 已保存 Payload 而尚未写 operation 时，核对摘要、长度、类型和分类后复用。加解密在事务外完成；普通输出 Payload 引用接纳与 operation CAS 必须在同一个 SQLite 事务中完成，并在事务内重查当前权限、原身份、operation revision、resource sequence 和已有结果。冲突后重读，不能换新 revision 强行覆盖赢家。

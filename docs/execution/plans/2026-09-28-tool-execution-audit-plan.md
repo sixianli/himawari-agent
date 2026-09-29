@@ -311,3 +311,9 @@ B1 已确认：真实交付意图提交后撤销 Grant/Handle，工具期限后�
 B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉标准终态通知。现在与普通状态转换共用回执和网关事件写入函数，在同一个事务内保存命令回执、待发布 run.failed、线程版本与网关事件；稳定幂等键与原 Run/期限绑定，重复调用不重复写入。独立构造 dispatcher 的既有用法保持。没有表结构、迁移或外部端口变化，合同见 [Run 到期](../specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期) [SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期]。
 
 第 0 层 54 项、第 1 层 check、第 2 层 unit 2120 项与 integration 2368 项全部通过；真实 SQLite 独立读回证明通知关联、重复调用及四处写入故障的整体回滚。失败记录、自查修正、最终提交与复跑方式见 [B2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md)。当前构建仅用于第 2 层安装测试并供 B3 复用，批次第 3 层及整轮资格未运行；下一项为真实 Mac 脱离进程组输出管道验证。
+
+### reply-24 R2：合法结束原因不关闭 Agent
+
+当前批次改为 B1、B2、R2；R1 与 B3 留到下一会话。R2 按 Job Host 的实际六种结束原因划分恢复语义：exited/deadline 保持原条件，cancelled/output_limit/resource_limit/host_failure 完整校验后返回不可恢复，不导入输出、不重放，也不因合法原因触发 Agent authority loss。非法原因、矛盾字段、未退出、绑定/摘要/分块损坏继续拒绝。源码依据、测试失败原因和验证范围见 [R2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r2-r24-verification.md)。
+
+已完成有效红测试和两个相关集成文件的回归，check 通过；随后运行第 2 层并独立提交，在 B3 补丁暂移开的已提交版本上执行本批第 3 层。实际运行结果及最终版本由验证报告记录。R1 尚未修改；B3 的旧“脱离后代存活即释放缺陷”判断已被 reply-23 撤销，当前未提交测试及 hma-pp-Vvii2j 现场继续保留，下一批按 ADR 0033 验证进程组释放与界面提示。
