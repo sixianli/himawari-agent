@@ -550,7 +550,7 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 `build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。资格脚本同时输出有界请求、响应、失败与主页面导航时间线，保留请求发起时的页面及主 frame 导航序号。URL 字段只含 origin 和 path，不采集请求头或正文；超限数量显式记录，页面异常另有保留上限。这些诊断不改变门禁错误分类。
 
-本机开发时各层测试的运行时机见 [ADR 0038](adr/0038-test-layer-trigger-timing.md)：完整构建和 `npm test` 按交付批次运行，改动涉及数据库结构、进程间协议、构建配置或测试运行方式时提前运行；合并 PR 前的必需检查集合仍由 `ci/policy.json` 规定，不因此减少。[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
+开发时各层测试的运行时机和运行位置见 [ADR 0041](adr/0041-test-hosts-and-production-server.md)：测试在 Hermes 上运行，开发 Mac 不跑测试，Mac 专属验证经用户同意后按需在 Mac 上运行；完整构建和 `npm test` 按交付批次运行，改动涉及数据库结构、进程间协议、构建配置或测试运行方式时提前运行；生产部署到云服务器 `84.247.157.41`，每次都要用户授权；合并 PR 前的必需检查集合仍由 `ci/policy.json` 规定，不因此减少。[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]
 
 integration 的文件并行保留独立测试进程和模块状态，worker（同时执行文件的进程）数量由政策中的 CPU、内存和总数上限共同决定：每 2 个可用 CPU 核心、每 2048 MiB 物理内存分配一个，最多 4 个、至少 1 个。Vitest 配置和正式入口共用计算函数，政策检查拒绝数量漂移或关闭隔离；没有新增独占串行文件，重试、测试文件清单、资格排除项和产品期限保持原合同。旧政策仅迁移 integration 的调度字段，原始摘要和其他检查继续使用接受的基线。规则及证据范围见[CI 测试集合约束](execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)。
 
