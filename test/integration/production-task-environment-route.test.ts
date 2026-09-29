@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   type ExecutionEnvironmentLifecyclePort,
   RemoteExecutionBackend,
+  TaskEnvironmentCoordinator,
   taskEnvironmentCallEvidence,
 } from "@himawari-agent/application";
 import {
@@ -18,6 +19,7 @@ import {
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
 import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox";
+import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxContainerRoute } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
@@ -559,6 +561,76 @@ it("releases a reserved container call that never started when the Run is cancel
   expect(executed).toEqual([]);
   expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(1);
 });
+
+it.each([true, false])(
+  "routes automatic reserved recovery through container release evidence (released=%s)",
+  async (released) => {
+    const { f, lifecycle, executed, prepare } = await setup();
+    const prepared = await prepare();
+    const preparations = f.services.brokerV2.preparations;
+    await preparations.reserve({ ...prepared, invocation: f.input });
+    const store = f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    const environment = (await store.readRun(RUN_ID))?.environments[0];
+    if (!environment) throw new Error("Task environment missing");
+    if (released) {
+      let nextId = 0;
+      const coordinator = new TaskEnvironmentCoordinator({
+        store,
+        backend: lifecycle,
+        authority: () => SERVICE_AUTHORITY,
+        clock: { now: () => T1 },
+        ids: { next: (scope) => `automatic-recovery:${scope}:${++nextId}` },
+      });
+      const stopped = await coordinator.stop({
+        environmentId: environment.identity.environmentId,
+        reason: "failure",
+        stoppedResourceRefs: [],
+      });
+      expect(stopped.state).toBe("released");
+      expect(stopped.releaseReceipt).toBeDefined();
+    }
+    await preparations.interruptReservation({
+      identity: prepared.plan.identity,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+    });
+    const signal = new AbortController().signal;
+    await f.services.resources.recoverPending(signal, 10);
+    const admission = await preparations.readAdmission(prepared.plan.identity);
+    expect(admission).toMatchObject({ phase: "reserved" });
+    const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+      readonly: true,
+    });
+    try {
+      const occupancy = database
+        .prepare("SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?")
+        .all(prepared.plan.identity.jobId);
+      expect(occupancy).not.toEqual([]);
+      expect(occupancy).toEqual([expect.objectContaining({ releasedAt: released ? T1 : null })]);
+    } finally {
+      database.close();
+    }
+    if (released) {
+      expect(admission).toMatchObject({
+        workspaceBlocked: false,
+        releaseReceipt: {
+          verification: {
+            basis: "task_environment_released",
+            taskEnvironmentIds: [environment.identity.environmentId],
+          },
+        },
+      });
+    } else {
+      expect(admission).not.toHaveProperty("releaseReceipt");
+      expect((await store.read(environment.identity.environmentId))?.state).toBe("ready");
+    }
+    await f.services.resources.recoverPending(signal, 10);
+    expect(await preparations.readAdmission(prepared.plan.identity)).toEqual(admission);
+    expect(executed).toEqual([]);
+    expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(released ? 1 : 0);
+  },
+);
 
 it("rejects a reserved container release while its task environment is still running", async () => {
   const { f, prepare } = await setup();

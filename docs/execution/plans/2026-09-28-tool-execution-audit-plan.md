@@ -277,3 +277,10 @@ A2 提交前完整 `npm run check` 与 `npm test` 均退出 0，4,924 项全部�
 A2 已独立提交 `b97aae8`。其后确认 D：Payload UDS 传输异常清除连接状态，Worker catch 未握手就发诊断，诊断再次被拒。新增组件测试先有 2 条失败，复用原 peer 握手后完整生命周期 27 条通过；新旧真实安装的同一断连注入都通过 CLI 读回一条受保护 prepare / SANDBOX_PREPARATION_FAILED，且 A2 的新旧释放边界不变。只重建诊断通道，不重发 resolve 或原工具。握手/权限仍失败时不能保证诊断持久，未增加新接口或备用日志。完整验证与提交状态见 [D 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/d-verification.md)。
 
 D 提交前完整 check、4,926 项 npm test、两项实际安装回归和四份 Runbook 封存均通过；严格文档校验零错误/警告。未增加接口或恢复用途。
+
+
+### E container 预约自动恢复分流
+
+D 已独立提交 `33c1590`。E 的有效红测试先用 TaskEnvironmentCoordinator 产生真实环境释放回执，再由自动预约恢复读取；旧实现错误调用本机控制，独立 SQL 仍读到未释放占用。分流到现有 environments.releaseReservation 后，释放及重复 pump 幂等通过；环境仍运行与伪造回执的拒绝检查保留。定向容器路线与 SRT 封锁矩阵 39 项通过，完整 check 通过；构建与完整项目验证、提交状态见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)。未新增接口、持久形状或重新调度规则，未执行 Docker/Linux 资格。
+
+E 提交前完整 check、构建、4,928 项 npm test 全部通过，零失败/跳过；四份 Runbook 完成 dry-run、确认封存及 check，严格文档校验零错误/警告。被测源码与提交前源码逐文件相同。

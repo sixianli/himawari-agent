@@ -157,3 +157,8 @@ reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或�
 ### D：断连后的准备失败诊断
 
 准备 resolve 传输失败会清除 Payload 客户端的连接状态；原 Worker catch 紧接着发送诊断，被本地握手前置检查拒绝，诊断再次失败而未持久。现只在保存诊断前发现连接不可用时，复用原 peer 身份和现有握手，再按既有 schema 与 Agent 权威检查保存受保护诊断；不重发失败操作、不创建宿主、不增加接口或持久队列。握手或权威仍无效时，诊断仍可能无法持久，不保证所有网络/重启故障均可记录。组件红绿与实际产品验证范围见 [D 诊断记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/d-verification.md)。
+
+
+### E：container 预约自动恢复分流
+
+自动预约恢复原先无条件调用本机准备控制，container 即使已有自己的环境释放回执，预约仍停在占用状态。现按 backendRef 分流，本机 SRT 保留准备控制封锁与核验；container 使用既有 environments.releaseReservation，并验证配置的后端一致。环境自身的 TaskEnvironmentCoordinator 负责停止并保存认证释放回执；预约恢复只读取该证明，不新增停止整轮环境的动作。环境仍在运行时不释放预约，也不放宽原 unresolved 调度规则。真实 SQLite、生产装配及受控环境生命周期的失败/通过证据见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)；这不是 Docker 或 Linux 现场资格。

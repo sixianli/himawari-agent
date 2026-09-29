@@ -2048,9 +2048,16 @@ export async function createProductionSandboxServices(options: {
         const admission = await preparations.readAdmission(plan.identity);
         if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
           throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-        await control.stopPreparation(plan, signal, admission.stopRequestedAt);
+        if (plan.backendRef === SRT_BACKEND_REF)
+          await control.stopPreparation(plan, signal, admission.stopRequestedAt);
       },
-      verify: control.verifyReservationRelease,
+      verify: async (plan, stopRequestedAt, signal) => {
+        if (plan.backendRef === SRT_BACKEND_REF)
+          return control.verifyReservationRelease(plan, stopRequestedAt, signal);
+        if (!environments || plan.backendRef !== environments.backendRef)
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+        return environments.releaseReservation(plan, stopRequestedAt);
+      },
     },
     authority: options.authority,
     now: () => clock.now(),
