@@ -321,3 +321,9 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 当前批次改为 B1、B2、R2；R1 与 B3 留到下一会话。R2 按 Job Host 的实际六种结束原因划分恢复语义：exited/deadline 保持原条件，cancelled/output_limit/resource_limit/host_failure 完整校验后返回不可恢复，不导入输出、不重放，也不因合法原因触发 Agent authority loss。非法原因、矛盾字段、未退出、绑定/摘要/分块损坏继续拒绝。源码依据、测试失败原因和验证范围见 [R2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r2-r24-verification.md)。
 
 已完成有效红测试和两个相关集成文件的回归，check 通过；随后运行第 2 层并独立提交，在 B3 补丁暂移开的已提交版本上执行本批第 3 层。实际运行结果及最终版本由验证报告记录。R1 尚未修改；B3 的旧“脱离后代存活即释放缺陷”判断已被 reply-23 撤销，当前未提交测试及 hma-pp-Vvii2j 现场继续保留，下一批按 ADR 0033 验证进程组释放与界面提示。
+
+### 最终批次的测试位置与 Mac 资格（用户 2026-09-29 决定）
+
+用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，见 [ADR 0041](../../adr/0041-test-hosts-and-production-server.md#hosts) [SOURCE: docs/adr/0041-test-hosts-and-production-server.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格改在 Hermes 的 `/data` 上对最终版本执行；用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
+
+第二轮不做 Mac 无筛选产品路径资格（用户决定）。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
