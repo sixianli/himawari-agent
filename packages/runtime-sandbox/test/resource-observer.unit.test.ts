@@ -60,9 +60,14 @@ describe("sampled task resources", () => {
         .observedCpuTimeMs,
     ).toBe(1200);
   });
-  it.each(["cpu", "memory"])(
-    "stops on observed %s overshoot with one bounded ps request at a time",
-    async (kind) => {
+  it.each([
+    ["cpu", 10],
+    ["memory", 10],
+    ["cpu", 11],
+    ["memory", 11],
+  ] as const)(
+    "stops on observed %s overshoot in group %s with one bounded ps request at a time",
+    async (kind, group) => {
       vi.useFakeTimers();
       const stop = vi.fn();
       let resolve!: (error: Error | null, stdout: string) => void;
@@ -78,7 +83,8 @@ describe("sampled task resources", () => {
       expect(options.timeout).toBe(1000);
       resolve(
         null,
-        row(10, 1, 10, kind === "memory" ? 2 : 1, kind === "cpu" ? "00:00.20" : "00:00.01"),
+        row(10, 1, 10, 0, "00:00.00") +
+          row(11, 10, group, kind === "memory" ? 2 : 1, kind === "cpu" ? "00:00.20" : "00:00.01"),
       );
       await vi.advanceTimersByTimeAsync(500);
       expect(stop).toHaveBeenCalledExactlyOnceWith("resource_limit");
@@ -87,18 +93,24 @@ describe("sampled task resources", () => {
       observer.stop();
     },
   );
-  it("stops on unavailable observation instead of inventing zero usage", async () => {
-    execFile.mockImplementation((_file, _args, _options, callback) =>
-      callback(new Error("denied"), ""),
-    );
-    const stop = vi.fn();
-    const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure");
-    expect(observer.current().samples).toBe(0);
-    observer.stop();
-  });
+  it.each(["unavailable", "invalid"])(
+    "stops on %s observation instead of inventing zero usage",
+    async (kind) => {
+      execFile.mockImplementation((_file, _args, _options, callback) =>
+        callback(
+          kind === "unavailable" ? new Error("denied") : null,
+          kind === "invalid" ? "invalid sample" : "",
+        ),
+      );
+      const stop = vi.fn();
+      const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure");
+      expect(observer.current().samples).toBe(0);
+      observer.stop();
+    },
+  );
   it("ignores a late observation after task completion", async () => {
     let resolve!: (error: Error | null, stdout: string) => void;
     execFile.mockImplementation((_file, _args, _options, callback) => {
@@ -142,14 +154,19 @@ describe("sampled task resources", () => {
 });
 
 it("uses the platform containment contract for a detached process group", async () => {
+  vi.useFakeTimers();
   execFile.mockImplementation((_file, _args, _options, callback) =>
     callback(null, row(10, 1, 10, 1, "00:00.01") + row(11, 10, 11, 1, "00:00.01")),
   );
   const stop = vi.fn();
   const observer = observeTaskResources(10, { maxCpuTimeMs: 1000, maxMemoryBytes: 1048576 }, stop);
-  await Promise.resolve();
-  await Promise.resolve();
-  if (process.platform === "linux") expect(stop).not.toHaveBeenCalled();
-  else expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure");
+  await vi.advanceTimersByTimeAsync(100);
+  expect(stop).not.toHaveBeenCalled();
+  expect(execFile).toHaveBeenCalledTimes(2);
+  expect(observer.current()).toEqual({
+    samples: 2,
+    observedCpuTimeMs: 20,
+    peakObservedMemoryBytes: 2048,
+  });
   observer.stop();
 });

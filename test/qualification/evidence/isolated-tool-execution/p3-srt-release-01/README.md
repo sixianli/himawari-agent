@@ -52,3 +52,7 @@ HIMAWARI_LIVE_SANDBOX_PROBE=1 HIMAWARI_QUALIFY_INSTALLED_RUNTIME="$PWD/dist/node
 - 资源投影（[`qualify-production-v2.json`](qualify-production-v2.json) 的 `resourceProjection`）目前对这种释放显示 `RESOURCE_RELEASE_CONFIRMED`，没有区分“停止未经严格确认”。界面状态属于 P3 补充的第三项（ITE-27），在那一步处理。
 - 这次没有在 Linux 上运行探针；Linux 上预期仍走 namespace 严格证明（`confirmed`），未实测。
 - 机器重启后按开机编号释放（Spec 第 6 条）还没有实现，留给下一个提交。
+
+## 2026-09-29：修正脱离后代的停止期望
+
+上述 2026-09-26 探针是历史执行证据，不证明任务可以在观测到脱离后代后继续运行。旧 `observed-escape` 断言要求 Mac 返回 `host_failure`，与 [ADR 0033 决定第 2、5 条](../../../../../docs/adr/0033-process-sandbox-default-and-optional-containers.md#decision) 不符。R1 已移除资源观察器中“脱离本身即停止”的分支，并将探针正常结束期望统一为 `exited`；CPU/内存超限、无效采样、PID 身份和原进程组释放检查保持。历史日志不改写；新版本真实 Mac 产品路径证据按 [R1/B3 批次](../../../../../.ci-output/tool-execution-audit/2026-09-28/round2/r1-batch-plan.md) 单独记录，不将本次单元测试等同于主机资格。

@@ -383,11 +383,7 @@ if (process.argv.includes("--worker")) {
           assert.ok(reservationRelease.evidence.ref);
         } else assert.equal(reservationRelease, undefined);
         if (scenario === "stdin") assert.equal(workerResult.stdout, "synthetic\u0000first\nsecond");
-        if (scenario === "observed-escape")
-          assert.equal(
-            workerResult.reason,
-            process.platform === "linux" ? "exited" : "host_failure",
-          );
+        if (scenario === "observed-escape") assert.equal(workerResult.reason, "exited");
         const filename = path.join(controlDirectory, "final.json");
         const envelope = JSON.parse(await readFile(filename, "utf8"));
         envelope.body = envelope.body.replace('"srtReset":true', '"srtReset":false');
