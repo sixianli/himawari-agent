@@ -180,6 +180,14 @@ SRT 模式不额外限制后台任务、服务类任务和无人值守任务，�
 
 已核对指定的只读 `pi-mono/packages/coding-agent` 0.84.2 源码和已安装的 Bash 类型：`BashOperations.exec` 提供命令、工作目录、取消信号、超时和输出回调；`grep.ts` 自己启动 `rg`，所以只代理 Bash 不能覆盖全部文件读写。继续使用 `createGovernedPiCodingTools()` / `createPiOperationsFromGovernedHostPort()` 和现有受限 runner。Pi 不提供产品的授权记录、工作目录 `lease` 或持久的环境终止证明，这些由 Himawari 自己的薄适配层和数据库记录承担，不另建第二套 Agent 循环、工具协议或权限数据库。
 
+2026-09-29，按 [ADR 0040](../../adr/0040-background-output-closed-after-bash-returns.md#decision)，受限 Bash 主进程退出后继续读取输出，每段新输出重置 100ms 等待；输出连续安静后返回原退出码和已收集输出，自然 close 先到时保持原结果。持续输出仍受原工具/Grant 期限、取消、输出和资源上限约束，不重放。调用结束时关闭读端，不主动结束脱离的后台程序；晚写原输出通道导致退出是已接受的行为，长期运行程序应把输出重定向到文件。模型说明原文：
+
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+
+说明不计入命令自身上限，但计入整份结果 JSON 上限，超限沿用 `PI_RESULT_OUTPUT_LIMIT`；不另设额度、不放宽上限、不改变协议或持久数据形状。目录释放仍核验 ADR 0033 的 `process_group_gone`。Pi 0.84.2 的 waitForChildProcess 未通过包 exports 或根入口公开，因此 Bash 与旧程序执行器共用 platform-node 内部 waitForProcessOutput，继续复用 Pi Bash 工厂和原输出通道。
+
+这项结果语义与 Job Host 的 stdioClosed 证据属于不同层：Bash 适配器完成后，Pi runner 发布已注明边界的结果并退出，Job Host 仍须满足原输出流关闭检查。界面应列出后台程序的要求仍适用；当前列表仅覆盖已登记的 background/service 作业，前台 Bash 自行脱离的后代尚不能列出，按 ADR 0040 记录为已知限制，不在本批实现。
+
 <a id="identity"></a>
 
 ## 任务身份与共享边界

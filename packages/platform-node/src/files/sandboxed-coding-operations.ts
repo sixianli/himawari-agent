@@ -15,6 +15,7 @@ import {
   sandboxFileTargetSchema,
   sandboxPreparedFileSchema,
 } from "@himawari-agent/execution-contracts";
+import { waitForProcessOutput } from "../process-output.js";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 
 /** A per-invocation adapter inside SRT, not an isolation backend or authority
@@ -246,61 +247,75 @@ export async function createSandboxedCodingOperations(input: {
         )
       )
         throw new Error("PI_SHELL_EFFECT_SCOPE_INCOMPLETE");
-      return new Promise((resolve, reject) => {
-        const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
-          cwd: grant.displayPath,
-          env: {
-            PATH: input.commandPath,
-            HOME: input.privateDirectory,
-            TMPDIR: input.privateDirectory,
-            CLAUDE_CODE_TMPDIR: input.privateDirectory,
-            PI_OFFLINE: "1",
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        let failure: Error | undefined;
-        let count = 0;
-        const stop = (error: Error) => {
-          failure ??= error;
-          child.kill("SIGKILL");
-        };
-        const abort = () => stop(new Error("PI_COMMAND_ABORTED"));
-        const timer = setTimeout(
-          () => stop(new Error("PI_COMMAND_TIMEOUT")),
-          Math.max(
-            1,
-            Math.min(
-              command.timeoutMs ?? Number.MAX_SAFE_INTEGER,
-              Date.parse(grant.expiresAt) - Date.now(),
-            ),
-          ),
-        );
-        command.signal?.addEventListener("abort", abort, { once: true });
-        if (command.signal?.aborted) abort();
-        const data = (bytes: Buffer) => {
-          count += bytes.length;
-          if (count > input.maxOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
-          else if (!failure) {
-            try {
-              command.onData(bytes);
-            } catch {
-              stop(new Error("PI_COMMAND_OUTPUT_REJECTED"));
-            }
-          }
-        };
-        child.stdout.on("data", data);
-        child.stderr.on("data", data);
-        child.once("error", (error) => {
-          failure = error;
-        });
-        child.once("close", (exitCode) => {
-          clearTimeout(timer);
-          command.signal?.removeEventListener("abort", abort);
-          if (failure) reject(failure);
-          else if (exitCode === null) reject(new Error("PI_COMMAND_SIGNALLED"));
-          else resolve({ exitCode });
-        });
+      const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
+        cwd: grant.displayPath,
+        env: {
+          PATH: input.commandPath,
+          HOME: input.privateDirectory,
+          TMPDIR: input.privateDirectory,
+          CLAUDE_CODE_TMPDIR: input.privateDirectory,
+          PI_OFFLINE: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       });
+      let failure: Error | undefined;
+      let count = 0;
+      const interruption = new AbortController();
+      const stop = (error: Error) => {
+        failure ??= error;
+        child.kill("SIGKILL");
+        interruption.abort();
+      };
+      const abort = () => stop(new Error("PI_COMMAND_ABORTED"));
+      const timer = setTimeout(
+        () => stop(new Error("PI_COMMAND_TIMEOUT")),
+        Math.max(
+          1,
+          Math.min(
+            command.timeoutMs ?? Number.MAX_SAFE_INTEGER,
+            Date.parse(grant.expiresAt) - Date.now(),
+          ),
+        ),
+      );
+      const data = (bytes: Buffer) => {
+        count += bytes.length;
+        if (count > input.maxOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
+        else if (!failure) {
+          try {
+            command.onData(bytes);
+          } catch {
+            stop(new Error("PI_COMMAND_OUTPUT_REJECTED"));
+          }
+        }
+      };
+      child.stdout.on("data", data);
+      child.stderr.on("data", data);
+      const completion = waitForProcessOutput(child, interruption.signal);
+      command.signal?.addEventListener("abort", abort, { once: true });
+      if (command.signal?.aborted) abort();
+      try {
+        const { exitCode, outputOpen } = await completion;
+        if (failure) throw failure;
+        if (exitCode === null) throw new Error("PI_COMMAND_SIGNALLED");
+        if (outputOpen) {
+          try {
+            command.onData(
+              Buffer.from(
+                "\n\n仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。\n",
+              ),
+            );
+          } catch {
+            throw new Error("PI_COMMAND_OUTPUT_REJECTED");
+          }
+        }
+        if (failure) throw failure;
+        return { exitCode };
+      } finally {
+        clearTimeout(timer);
+        command.signal?.removeEventListener("abort", abort);
+        child.stdout.off("data", data);
+        child.stderr.off("data", data);
+      }
     },
   };
 }

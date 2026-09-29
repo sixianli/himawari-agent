@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a149295fa6a0e9f1af815039aa3916c1783b20df21c28f7711d6a6aa2f170f88"
+contract_sha256: "sha256:6726ef9f6362058df5b3dfd6bfa9a3470cbba0dccecdda54262534c1f32fa07e"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -493,3 +493,15 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 程序主进程退出后，执行器继续读取 stdout/stderr，直到流结束，或输出连续安静 100ms；每段新输出重新计时。原期限、取消和输出上限在等待期间继续生效，返回的结构化字节不追加说明。该修复不改变能力准入、Mac 原生程序的资格要求、安装/迁移/恢复步骤或操作授权；退出码 0 仍不能代替文件效果校验或证明所有后代已停止。回归及批次范围见[工具执行排查计划](../execution/plans/2026-09-28-tool-execution-audit-plan.md)。
 
 [SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+
+## Bash 主进程退出后的输出等待（2026-09-29）
+
+依据 [ADR 0040](../adr/0040-background-output-closed-after-bash-returns.md#decision)，Bash 主进程退出、后台程序仍占用输出时，连续安静 100ms 后正常返回原退出码和已读输出；新输出重新计时，自然关闭不加说明。调用结束时关闭读端，不主动结束后台程序；未重定向的后台程序之后继续向原通道写输出，可能按已接受的行为退出。需要长期运行的程序应把 stdout/stderr 重定向到文件；已重定向或不再输出的后台程序可以继续运行。
+
+模型结果使用以下说明原文：
+
+> 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
+
+说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按 `process_group_gone` 核验，不证明脱离的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
+
+[SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]

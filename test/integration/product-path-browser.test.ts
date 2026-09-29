@@ -903,6 +903,282 @@ productDescribe(
       });
     });
 
+    it("records process-group release for a detached child holding foreground output", async () => {
+      await scenario("33-detached-output", async () => {
+        await newThread();
+        const text = "脱离进程组输出管道验证";
+        const marker = `B3_DETACHED_OUTPUT_${path.basename(path.dirname(installation.workspace))}`;
+        expect(marker).toMatch(/^[A-Za-z0-9_-]+$/);
+        const detachedProgram = [
+          'POSIX::setsid() >= 0 or die "setsid failed"',
+          "$|=1",
+          'print "b3-detached-output\\n"',
+          "sleep 120",
+        ].join("; ");
+        const command = `printf 'b3-before-background\\n'; /usr/bin/perl -MPOSIX -e '${detachedProgram}' '${marker}' & while [ ! -f b3-parent-release ]; do /bin/sleep 0.05; done; printf 'b3-parent-exited\\n'`;
+        let parentReleasedAt: number | undefined;
+        let modelReceivedAt: number | undefined;
+        installation.setModelScript((input) => {
+          if (input.lastUserText.includes(text) && input.toolResults.length > 0)
+            modelReceivedAt ??= Date.now();
+          return input.hasTools &&
+            input.lastUserText.includes(text) &&
+            input.toolResults.length === 0
+            ? { kind: "tool", name: "bash", arguments: { command } }
+            : script(input);
+        });
+        const startedAt = Date.now();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        let jobId: string | undefined;
+        let child:
+          | {
+              pid: number;
+              ppid: number;
+              pgid: number;
+              marker: string;
+              stdoutDescriptor: string;
+            }
+          | undefined;
+        let hostIdentity:
+          | { processId: number; taskProcessGroup: { processGroupId: number } }
+          | undefined;
+        const processRows = () =>
+          execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid=,stat=,command="], {
+            encoding: "utf8",
+          })
+            .split("\n")
+            .map((line) => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line))
+            .flatMap((match) =>
+              match
+                ? [
+                    {
+                      pid: Number(match[1]),
+                      ppid: Number(match[2]),
+                      pgid: Number(match[3]),
+                      state: match[4],
+                      command: match[5] ?? "",
+                    },
+                  ]
+                : [],
+            );
+        const processRow = (pid: number) => processRows().find((row) => row.pid === pid) ?? null;
+        const readback = () => {
+          const database = openQualifiedDatabase(installation.databasePath);
+          try {
+            const receipts = database
+              .prepare(
+                "SELECT accepted_at AS acceptedAt,verification_json AS verification,json_extract(verification_json,'$.facts.resource.cleanup') AS cleanup FROM sandbox_release_receipts WHERE job_id=?",
+              )
+              .all(jobId ?? "");
+            const processes = processRows();
+            const observedChild = child;
+            const observedHost = hostIdentity;
+            return {
+              observedAt: new Date().toISOString(),
+              elapsedMs: Date.now() - startedAt,
+              parentReleasedAt,
+              modelReceivedAt,
+              modelResultDelayMs:
+                parentReleasedAt !== undefined && modelReceivedAt !== undefined
+                  ? modelReceivedAt - parentReleasedAt
+                  : null,
+              child,
+              childProcess: observedChild
+                ? (processes.find((row) => row.pid === observedChild.pid) ?? null)
+                : null,
+              hostProcess: observedHost
+                ? (processes.find((row) => row.pid === observedHost.processId) ?? null)
+                : null,
+              originalGroupMembers: observedHost
+                ? processes.filter(
+                    (row) => row.pgid === observedHost.taskProcessGroup.processGroupId,
+                  )
+                : [],
+              rows: executionReadback().filter((record) => record.jobId === jobId),
+              execution: jobId
+                ? database
+                    .prepare(
+                      "SELECT plan_json AS plan,facts_json AS facts,started_at AS startedAt FROM sandbox_execution_records WHERE job_id=?",
+                    )
+                    .get(jobId)
+                : null,
+              receipts,
+              occupancy: database
+                .prepare(
+                  "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+                )
+                .all(jobId ?? ""),
+              modelMessages: observedToolMessages(text),
+              modelReplies: observedToolReplies(text),
+            };
+          } finally {
+            database.close();
+          }
+        };
+        const save = async (stage: string, observation = readback()) => {
+          await writeFile(
+            path.join(outputDirectory, `33-detached-output-${stage}.json`),
+            JSON.stringify(observation, null, 2),
+          );
+          return observation;
+        };
+        try {
+          await beginToolRequest(text);
+          await uiExpect
+            .poll(() => executionReadback().filter((record) => !before.has(record.jobId)), {
+              timeout: 60_000,
+            })
+            .toHaveLength(1);
+          jobId = executionReadback().find((record) => !before.has(record.jobId))?.jobId;
+          if (!jobId) throw new Error("B3_JOB_MISSING");
+          await uiExpect
+            .poll(
+              () => {
+                const candidate = processRows().find(
+                  (row) =>
+                    row.pgid === row.pid &&
+                    row.command.includes(marker) &&
+                    /^perl(?:\d+(?:\.\d+)*)?$/.test(
+                      path
+                        .basename(
+                          execFileSync("/bin/ps", ["-p", String(row.pid), "-o", "comm="], {
+                            encoding: "utf8",
+                          }).trim(),
+                        )
+                        .toLowerCase(),
+                    ),
+                );
+                if (candidate)
+                  child = {
+                    pid: candidate.pid,
+                    ppid: candidate.ppid,
+                    pgid: candidate.pgid,
+                    marker,
+                    stdoutDescriptor: execFileSync(
+                      "/usr/sbin/lsof",
+                      ["-a", "-p", String(candidate.pid), "-d", "1", "-F", "pftn"],
+                      { encoding: "utf8" },
+                    ),
+                  };
+                return child?.marker;
+              },
+              { timeout: 30_000 },
+            )
+            .toBe(marker);
+          if (!child) throw new Error("B3_CHILD_MISSING");
+          expect(child.pgid).toBe(child.pid);
+          expect(child.stdoutDescriptor).toMatch(/(?:^|\n)t(?:PIPE|FIFO|unix)(?:\n|$)/);
+          expect(processRow(child.pid)?.command).toContain(marker);
+          await uiExpect
+            .poll(async () => (await readJobHostStarts()).some((entry) => entry?.jobId === jobId), {
+              timeout: 30_000,
+            })
+            .toBe(true);
+          const host = (await readJobHostStarts()).find((entry) => entry?.jobId === jobId);
+          if (!host) throw new Error("B3_HOST_MISSING");
+          hostIdentity = host;
+          expect(child.pgid).not.toBe(host.taskProcessGroup.processGroupId);
+          await writeFile(
+            path.join(outputDirectory, "33-detached-output-start.json"),
+            JSON.stringify({ host, command, ...readback() }, null, 2),
+          );
+          parentReleasedAt = Date.now();
+          await writeFile(path.join(installation.workspace, "b3-parent-release"), "exit\n");
+          let released: ReturnType<typeof readback> | undefined;
+          await uiExpect
+            .poll(
+              () => {
+                const observation = readback();
+                if (observation.receipts.length > 0) released ??= observation;
+                return released !== undefined;
+              },
+              { timeout: 10_000 },
+            )
+            .toBe(true);
+          if (!released) throw new Error("B3_RELEASE_MISSING");
+          await save("release-accepted", released);
+          expect(released.receipts).toEqual([
+            expect.objectContaining({ cleanup: "process_group_gone" }),
+          ]);
+          expect(released.hostProcess).toBeNull();
+          expect(released.originalGroupMembers).toEqual([]);
+          expect(released.childProcess?.command).toContain(marker);
+          expect(released.occupancy).toEqual([
+            expect.objectContaining({ releasedAt: expect.any(String) }),
+          ]);
+          await uiExpect
+            .poll(() => readback().rows[0], { timeout: 10_000 })
+            .toMatchObject({
+              runStatus: "completed",
+              result: "result",
+              reasonCode: null,
+              definiteOperations: 1,
+              intents: 1,
+            });
+          expect(modelReceivedAt).toBeDefined();
+          expect((modelReceivedAt ?? Infinity) - parentReleasedAt).toBeLessThan(10_000);
+          const modelOutput = observedToolMessages(text)
+            .flat()
+            .map((message) => message.content);
+          expect(modelOutput).toHaveLength(1);
+          const result = JSON.parse(String(modelOutput[0]));
+          expect(result).toMatchObject({ commandExitCode: 0, isError: false });
+          expect(JSON.stringify(result.content)).toContain("b3-before-background");
+          expect(JSON.stringify(result.content)).toContain("b3-detached-output");
+          expect(JSON.stringify(result.content)).toContain("b3-parent-exited");
+          expect(JSON.stringify(result.content)).toContain(
+            "仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。",
+          );
+          expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          expect(
+            (await readJobHostStarts()).filter((entry) => entry?.jobId === jobId),
+          ).toHaveLength(1);
+          await save("model-completed");
+          const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
+          const finalRecords = [];
+          for (const name of (await readdir(jobsRoot)).filter((name) =>
+            name.startsWith("control-"),
+          )) {
+            const encoded = await readFile(path.join(jobsRoot, name, "final.json"), "utf8");
+            const final = JSON.parse(JSON.parse(encoded).body);
+            if (final.jobId === jobId) finalRecords.push(final);
+          }
+          await writeFile(
+            path.join(outputDirectory, "33-detached-output-host-final.json"),
+            JSON.stringify(finalRecords, null, 2),
+          );
+          expect(finalRecords).toHaveLength(1);
+          expect(finalRecords[0]).toMatchObject({ stdioClosed: true });
+          await uiExpect(page.getByText(/停止未经严格确认/).first()).toBeVisible({
+            timeout: 10_000,
+          });
+          await page
+            .getByText(/停止未经严格确认/)
+            .first()
+            .scrollIntoViewIfNeeded();
+          await writeFile(
+            path.join(outputDirectory, "33-detached-output-after-release-aria.txt"),
+            await page.locator("body").ariaSnapshot(),
+          );
+          await page.screenshot({
+            path: path.join(outputDirectory, "33-detached-output-after-release.png"),
+            fullPage: true,
+          });
+        } finally {
+          await save("before-fixture-cleanup");
+          await writeFile(path.join(installation.workspace, "b3-parent-release"), "exit\n");
+          const remaining = child ? processRow(child.pid) : null;
+          if (child && remaining?.pgid === child.pgid && remaining.command.includes(marker)) {
+            process.kill(child.pid, "SIGKILL");
+            const pid = child.pid;
+            await uiExpect.poll(() => processRow(pid), { timeout: 10_000 }).toBeNull();
+          }
+          await save("after-fixture-cleanup");
+          installation.setModelScript(script);
+        }
+      });
+    });
+
     it.each(["worker", "recovery", "run"] as const)(
       "terminates a running tool at its original deadline with authenticated cleanup: %s",
       async (mode) => {

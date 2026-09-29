@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   rename,
@@ -17,8 +18,11 @@ import {
   ConstrainedHostFileSystem,
   createSandboxedCodingOperations,
   exportPiOutputFile,
+  formatForegroundPiResult,
 } from "../src/index.js";
 
+const BACKGROUND_OUTPUT_NOTICE =
+  "仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -313,4 +317,478 @@ it("keeps directory coordination while creating previously missing parents", asy
   await port.makeDirectory(path.dirname(file));
   await port.writeFile(file, "complete nested file");
   expect(await readFile(file, "utf8")).toBe("complete nested file");
+});
+
+async function inheritedOutputFixture(
+  mode: "quiet" | "tail" | "closed" | "continuous",
+  maxOutputBytes = 4096,
+) {
+  const { root, grant } = await setup();
+  const marker = `B3_PIPE_${path.basename(root)}`;
+  const childFile = path.join(root, "child.cjs");
+  const launcher = path.join(root, "launch.cjs");
+  const pidFile = path.join(root, "child.pid");
+  const readyFile = path.join(root, "child.ready");
+  await writeFile(
+    childFile,
+    `
+const fs = require("node:fs");
+process.stdout.on("error", () => {});
+process.stderr.on("error", () => {});
+process.stdout.write("background-start\\n");
+fs.writeFileSync(${JSON.stringify(readyFile)}, "ready");
+let count = 0;
+const mode = ${JSON.stringify(mode)};
+if (mode !== "quiet") {
+  const timer = setInterval(() => {
+    count++;
+    (count % 2 ? process.stdout : process.stderr).write("tail-" + count + "\\n");
+    if (mode !== "continuous" && count === 20) {
+      clearInterval(timer);
+      if (mode === "closed") process.exit(0);
+    }
+  }, 20);
+}
+setTimeout(() => process.exit(0), 30000);
+`,
+  );
+  await writeFile(
+    launcher,
+    `
+const fs = require("node:fs");
+const child = require("node:child_process").spawn(process.execPath, [${JSON.stringify(childFile)}, ${JSON.stringify(marker)}], { detached: true, stdio: ["ignore", "inherit", "inherit"] });
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+child.unref();
+const ready = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(readyFile)})) clearInterval(ready);
+}, 5);
+`,
+  );
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const port = await createSandboxedCodingOperations({
+    grant: { ...grant, operations: ["read"] },
+    shell: "/bin/bash",
+    privateDirectory: root,
+    commandPath: "/usr/bin:/bin",
+    maxOutputBytes,
+  });
+  const child = async () => {
+    const pid = Number(await readFile(pidFile, "utf8"));
+    const command = execFileSync("/bin/ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    }).trim();
+    expect(command).toContain(marker);
+    return pid;
+  };
+  return {
+    root,
+    port,
+    command: `${quote(process.execPath)} ${quote(launcher)}; printf 'parent-output\\n'; exit`,
+    child,
+    async cleanup() {
+      const pid = await readFile(pidFile, "utf8").then(Number, () => null);
+      if (pid === null) return;
+      const command = execFileSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" })
+        .split("\n")
+        .find((line) => new RegExp(`^\\s*${pid}\\s`).test(line));
+      if (command?.includes(marker)) process.kill(pid, "SIGKILL");
+    },
+  };
+}
+
+describe("sandboxed Bash inherited output", () => {
+  it("keeps an exact-limit command successful when appending the background notice", async () => {
+    const original = "background-start\nparent-output\n";
+    const fixture = await inheritedOutputFixture("quiet", Buffer.byteLength(original));
+    let output = "";
+    try {
+      await expect(
+        fixture.port.executeCommand({
+          cwd: fixture.root,
+          command: `${fixture.command} 0`,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        }),
+      ).resolves.toEqual({ exitCode: 0 });
+      expect(output).toBe(original + "\n\n" + BACKGROUND_OUTPUT_NOTICE + "\n");
+      expect(await fixture.child()).toBeGreaterThan(1);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([0, 7])(
+    "settles a quiet inherited pipe with exit %s while its detached owner remains alive",
+    async (exitCode) => {
+      const fixture = await inheritedOutputFixture("quiet");
+      let output = "";
+      let result: { exitCode: number | null } | undefined;
+      const running = fixture.port
+        .executeCommand({
+          cwd: fixture.root,
+          command: `${fixture.command} ${exitCode}`,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        })
+        .then((value) => {
+          result = value;
+          return value;
+        });
+      try {
+        await expect.poll(() => result, { timeout: 1500 }).toEqual({ exitCode });
+        expect(output).toContain("parent-output\n");
+        expect(output).toContain("background-start\n");
+        expect(output).toContain(BACKGROUND_OUTPUT_NOTICE);
+        expect(await fixture.child()).toBeGreaterThan(1);
+      } finally {
+        await fixture.cleanup();
+        await running.catch(() => undefined);
+      }
+    },
+  );
+
+  it.each(["tail", "closed"] as const)(
+    "keeps all post-exit stdout and stderr when the pipe is %s",
+    async (mode) => {
+      const fixture = await inheritedOutputFixture(mode);
+      let output = "";
+      let complete = false;
+      const running = fixture.port
+        .executeCommand({
+          cwd: fixture.root,
+          command: `${fixture.command} 0`,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        })
+        .then((value) => {
+          complete = true;
+          return value;
+        });
+      try {
+        await expect.poll(() => complete, { timeout: 2000 }).toBe(true);
+        expect(await running).toEqual({ exitCode: 0 });
+        expect(
+          output.match(/tail-\d+\n/g)?.sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))),
+        ).toEqual(Array.from({ length: 20 }, (_, i) => `tail-${i + 1}\n`));
+        expect(output.includes(BACKGROUND_OUTPUT_NOTICE)).toBe(mode === "tail");
+        if (mode === "tail") await fixture.child();
+      } finally {
+        await fixture.cleanup();
+        await running.catch(() => undefined);
+      }
+    },
+  );
+
+  it.each(["cancel", "deadline", "output-limit", "output-rejected"] as const)(
+    "preserves %s while detached output never becomes idle",
+    async (mode) => {
+      const fixture = await inheritedOutputFixture(
+        "continuous",
+        mode === "output-limit" ? 64 : 4096,
+      );
+      const controller = new AbortController();
+      let failure: unknown;
+      const running = fixture.port
+        .executeCommand({
+          cwd: fixture.root,
+          command: `${fixture.command} 0`,
+          signal: controller.signal,
+          timeoutMs: 1000,
+          onData(bytes) {
+            if (Buffer.from(bytes).toString().includes("tail-3")) {
+              if (mode === "cancel") controller.abort();
+              if (mode === "output-rejected") throw new Error("rejected by caller");
+            }
+          },
+        })
+        .catch((error: unknown) => {
+          failure = error;
+        });
+      try {
+        const expected = {
+          cancel: "PI_COMMAND_ABORTED",
+          deadline: "PI_COMMAND_TIMEOUT",
+          "output-limit": "PI_COMMAND_OUTPUT_LIMIT",
+          "output-rejected": "PI_COMMAND_OUTPUT_REJECTED",
+        }[mode];
+        await expect.poll(() => failure, { timeout: 2000 }).toMatchObject({ message: expected });
+      } finally {
+        await fixture.cleanup();
+        await running;
+      }
+    },
+  );
+});
+
+async function lateOutputFixture(runtime: "node" | "sh", redirected = false) {
+  const { root, grant } = await setup();
+  const marker = `B3_LATE_${runtime}_${path.basename(root)}`;
+  const outputFile = path.join(root, "background.log");
+  const gate = path.join(root, "write-now");
+  const ready = path.join(root, "ready");
+  const attempted = path.join(root, "attempted");
+  const survived = path.join(root, "survived");
+  const identityFile = path.join(root, "identity.json");
+  const exitFile = path.join(root, "exit.json");
+  const childFile = path.join(root, runtime === "node" ? "child.cjs" : "child.sh");
+  const observerFile = path.join(root, "observer.cjs");
+  const launcherFile = path.join(root, "launcher.cjs");
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  await writeFile(
+    childFile,
+    runtime === "node"
+      ? `
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(ready)}, "ready");
+const gate = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(gate)})) return;
+  clearInterval(gate);
+  fs.writeFileSync(${JSON.stringify(attempted)}, "attempted");
+  process.stdout.write("late-node-output\\n");
+  setInterval(() => {
+    process.stdout.write("late-node-output\\n");
+    fs.writeFileSync(${JSON.stringify(survived)}, "alive");
+  }, 20);
+}, 5);
+setTimeout(() => process.exit(99), 10000);
+`
+      : `
+printf ready > ${quote(ready)}
+while [ ! -f ${quote(gate)} ]; do /bin/sleep 0.01; done
+printf attempted > ${quote(attempted)}
+while :; do
+  echo late-sh-output
+  printf alive > ${quote(survived)}
+  /bin/sleep 0.02
+done
+`,
+  );
+  await writeFile(
+    observerFile,
+    `
+const fs = require("node:fs");
+const output = ${redirected ? `fs.openSync(${JSON.stringify(outputFile)}, "a")` : JSON.stringify("inherit")};
+const child = require("node:child_process").spawn(${JSON.stringify(runtime === "node" ? process.execPath : "/bin/sh")}, [${JSON.stringify(childFile)}, ${JSON.stringify(marker)}], { detached: true, stdio: ["ignore", output, output] });
+fs.writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify({ pid: child.pid, observer: process.pid }));
+child.once("exit", (code, signal) => fs.writeFileSync(${JSON.stringify(exitFile)}, JSON.stringify({ code, signal, at: Date.now() })));
+`,
+  );
+  await writeFile(
+    launcherFile,
+    `
+const fs = require("node:fs");
+const observer = require("node:child_process").spawn(process.execPath, [${JSON.stringify(observerFile)}, ${JSON.stringify(marker + "_OBSERVER")}], { detached: true, stdio: ${JSON.stringify(redirected ? ["ignore", "ignore", "ignore"] : ["ignore", "inherit", "inherit"])} });
+observer.unref();
+const ready = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(ready)})) clearInterval(ready);
+}, 5);
+`,
+  );
+  const port = await createSandboxedCodingOperations({
+    grant: { ...grant, operations: ["read"] },
+    shell: "/bin/bash",
+    privateDirectory: root,
+    commandPath: "/usr/bin:/bin",
+    maxOutputBytes: 4096,
+  });
+  const processes = () =>
+    execFileSync("/bin/ps", ["-axo", "pid=,pgid=,command="], { encoding: "utf8" })
+      .split("\n")
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+        return match
+          ? [{ pid: Number(match[1]), pgid: Number(match[2]), command: match[3] ?? "" }]
+          : [];
+      })
+      .filter((row) => row.command.includes(marker));
+  return {
+    root,
+    runtime,
+    marker,
+    gate,
+    attempted,
+    survived,
+    outputFile,
+    exitFile,
+    identityFile,
+    processes,
+    port,
+    command: `${quote(process.execPath)} ${quote(launcherFile)}; exit 0`,
+    async cleanup() {
+      for (const row of processes()) if (row.pid === row.pgid) process.kill(row.pid, "SIGKILL");
+      await expect.poll(() => processes(), { timeout: 2000 }).toEqual([]);
+    },
+  };
+}
+
+describe("Bash background output delivery boundaries", () => {
+  it("counts the ADR 0040 notice toward the whole foreground result limit", async () => {
+    const original = "background-start\nparent-output\n";
+    const publication = {
+      tool: "bash",
+      result: { content: [{ type: "text", text: original }], isError: false },
+      commandExitCode: 0,
+      verifiedWrite: null,
+      privateDirectory: "/tmp",
+      maxOutputBytes: 4096,
+      closing: {},
+      source: {
+        workspace: "/workspace",
+        toolCallId: "call",
+        directoryGrantRef: "grant",
+        directoryGrantRevision: 1,
+        parameters: { command: "background-command" },
+      },
+    };
+    const baseline = await formatForegroundPiResult(publication);
+    const limit = Buffer.byteLength(baseline.output);
+    await expect(
+      formatForegroundPiResult({ ...publication, maxOutputBytes: limit }),
+    ).resolves.toEqual(baseline);
+    const fixture = await inheritedOutputFixture("quiet", limit);
+    let output = "";
+    try {
+      await expect(
+        fixture.port.executeCommand({
+          cwd: fixture.root,
+          command: `${fixture.command} 0`,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        }),
+      ).resolves.toEqual({ exitCode: 0 });
+      console.info(
+        "B3_RESULT_LIMIT",
+        JSON.stringify({
+          commandBytes: Buffer.byteLength(original),
+          limit,
+          bytesWithNotice: Buffer.byteLength(output),
+          originalResultBytes: limit,
+        }),
+      );
+      await expect(
+        formatForegroundPiResult({
+          ...publication,
+          maxOutputBytes: limit,
+          result: { content: [{ type: "text", text: output }], isError: false },
+        }),
+      ).rejects.toThrow("PI_RESULT_OUTPUT_LIMIT");
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(["node", "sh"] as const)(
+    "records the accepted ADR 0040 exit of unredirected %s after a late write",
+    async (runtime) => {
+      const fixture = await lateOutputFixture(runtime);
+      let output = "";
+      try {
+        const result = await fixture.port.executeCommand({
+          cwd: fixture.root,
+          command: fixture.command,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        });
+        expect(result).toEqual({ exitCode: 0 });
+        expect(output).toBe("\n\n" + BACKGROUND_OUTPUT_NOTICE + "\n");
+        const identity = JSON.parse(await readFile(fixture.identityFile, "utf8")) as {
+          pid: number;
+          observer: number;
+        };
+        const before = fixture.processes().find((row) => row.pid === identity.pid);
+        expect(before?.pgid).toBe(identity.pid);
+        const completedAt = Date.now();
+        await writeFile(fixture.gate, "write");
+        await expect
+          .poll(
+            async () =>
+              Boolean(
+                (await readFile(fixture.exitFile, "utf8").catch(() => "")) ||
+                  (await readFile(fixture.survived, "utf8").catch(() => "")),
+              ),
+            { timeout: 2000 },
+          )
+          .toBe(true);
+        expect(await readFile(fixture.attempted, "utf8")).toBe("attempted");
+        const termination = await readFile(fixture.exitFile, "utf8")
+          .then((bytes) => JSON.parse(bytes))
+          .catch(() => null);
+        const after = fixture.processes().find((row) => row.pid === identity.pid) ?? null;
+        console.info(
+          "B3_LATE_OUTPUT",
+          JSON.stringify({
+            runtime,
+            completedAt,
+            before,
+            after,
+            termination,
+            observedAt: Date.now(),
+            productKilledChild: false,
+          }),
+        );
+        expect(after).toBeNull();
+        expect(termination).toMatchObject(
+          runtime === "node" ? { code: 1, signal: null } : { code: null, signal: "SIGPIPE" },
+        );
+        expect(termination.at).toBeGreaterThanOrEqual(completedAt);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+  it.each(["node", "sh"] as const)(
+    "keeps redirected %s writing its log after the call returns",
+    async (runtime) => {
+      const fixture = await lateOutputFixture(runtime, true);
+      let output = "";
+      try {
+        const result = await fixture.port.executeCommand({
+          cwd: fixture.root,
+          command: fixture.command,
+          onData: (bytes) => {
+            output += Buffer.from(bytes).toString();
+          },
+        });
+        expect(result).toEqual({ exitCode: 0 });
+        expect(output).toBe("");
+        const identity = JSON.parse(await readFile(fixture.identityFile, "utf8")) as {
+          pid: number;
+          observer: number;
+        };
+        expect(await readFile(fixture.outputFile, "utf8")).toBe("");
+        const completedAt = Date.now();
+        await writeFile(fixture.gate, "write after result");
+        await expect
+          .poll(
+            async () =>
+              (await readFile(fixture.outputFile, "utf8")).split(`late-${runtime}-output\n`)
+                .length - 1,
+            { timeout: 2000 },
+          )
+          .toBeGreaterThanOrEqual(2);
+        const observedOutput = await readFile(fixture.outputFile, "utf8");
+        const after = fixture.processes().find((row) => row.pid === identity.pid);
+        expect(after?.pgid).toBe(identity.pid);
+        await expect(readFile(fixture.exitFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+        console.info(
+          "B3_REDIRECTED_OUTPUT",
+          JSON.stringify({
+            runtime,
+            completedAt,
+            observedAt: Date.now(),
+            after,
+            observedOutput,
+            outputFile: fixture.outputFile,
+          }),
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 });
