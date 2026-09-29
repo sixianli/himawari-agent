@@ -17,6 +17,7 @@ date: "2026-09-29"
 - [提前退出事实与清理事实](#提前退出事实与清理事实)
 - [前台加密分块保存](#前台加密分块保存)
 - [恢复裁决与事务](#恢复裁决与事务)
+- [期限后的交付授权](#期限后的交付授权)
 - [失败与竞争规则](#失败与竞争规则)
 - [成对重启与离线就绪边界](#成对重启与离线就绪边界)
 - [剩余保证窗口](#剩余保证窗口)
@@ -74,6 +75,14 @@ LOST 要求已接受的释放证明、已认证任务启动并退出、缺少确
 导入是 Agent 内部的受限事实写入，不放宽 Worker Payload Broker。原执行身份用于确定结果归属，当前 Agent 权限用于确认现在是否允许登记事实；两者分别验证。恢复在 Agent 内部从连续分块重组原 stdout，用普通 Payload 表示保存，归属键仍为 `capabilityInvocationOutputOperationKey(invocationId)`。分类来自核验后的冻结调用回执；前台合同沿用正常路径的 `application/octet-stream`，不接受 Worker 或分块自称的分类/类型。原 Worker 已保存 Payload 而尚未写 operation 时，核对摘要、长度、类型和分类后复用。加解密在事务外完成；普通输出 Payload 引用接纳与 operation CAS 必须在同一个 SQLite 事务中完成，并在事务内重查当前权限、原身份、operation revision、resource sequence 和已有结果。冲突后重读，不能换新 revision 强行覆盖赢家。
 
 候选查询有界，筛选本机前台、已释放且缺少确定结果的记录，复用现有 Agent 后台循环。导入不等于允许交付；原 Run、取消、期限、披露权限、预算、冻结 continuation 和唯一交付 intent 继续检查。固定文件效果仍须通过既有 `verifyPiWriteEvidence()` 等核验。
+
+## 期限后的交付授权
+
+[reply-21](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-21.md) 批准新增内部只读方法 `SandboxExecutionPreparationPort.assertResultAuthority`。它复用 SQLite 的原回执、Grant/Handle 和能力生命周期核验，在一个读快照内验证原计划、Run 状态、当前 authority 与执行租约；不消费用量、不写状态、不返回输出。已有的执行前核验受执行期限约束，未启动预约授权只适用于 reserved，历史输出查询也不证明现在允许披露，因此不能代替这个方法。
+
+工具执行期限前仍使用原实时披露检查。期限后每个现有交付检查点重新调用只读方法，包括解密后的最后一次检查；停止信号、Run 活跃性和 authority 摘要检查保留。SQLite 根据持久原回执的 `deadlineAt` 加共享的 `RECOVERY_SETTLE_WAIT_MS = 35000`，再与计划原 Run 期限取小；调用方回复期限只能进一步缩短。当前时间等于上界即拒绝。这里只豁免回执的执行期限，Grant/Handle 自身到期或撤销、Run 终态及权限代次变化仍拒绝普通输出和固定错误说明。
+
+Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等待常量不在这次修改范围。`sandboxRecoveryReceipt` 用明确用途区分普通恢复、期限失败恢复和只读交付，原恢复与导入条件不变。本次不改数据库结构或 Agent–Worker 通信协议。测试边界及先红后绿证据见 [B1 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md)。
 
 ## 失败与竞争规则
 

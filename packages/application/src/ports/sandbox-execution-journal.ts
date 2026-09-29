@@ -273,6 +273,13 @@ export interface SandboxQueuedToolBatch {
   readonly authority: CapabilityInvocationAuthority["product"];
 }
 export interface SandboxExecutionPreparationPort {
+  assertResultAuthority(input: {
+    readonly identity: SandboxJobIdentity;
+    readonly authority: CapabilityInvocationAuthority;
+    readonly executionLease: SandboxExecutionPlanV2["executionLease"];
+    readonly replyDeadlineAt: string;
+    readonly now: string;
+  }): Promise<void>;
   authorizeReservationResult(input: {
     readonly identity: SandboxJobIdentity;
     readonly authority: CapabilityInvocationAuthority;

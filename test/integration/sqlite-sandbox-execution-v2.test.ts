@@ -18,11 +18,14 @@ import {
   createIdempotencyKey,
   createRunExecutionLeaseId,
   createRunId,
+  createThreadId,
 } from "@himawari-agent/domain";
 import {
+  type ExecutionV2Request,
   type SandboxExecutionFacts,
   type SandboxOperationContract,
   sandboxExecutionFactsSchema,
+  sandboxExecutionScopeSchema,
   sandboxExecutionPlanCandidateV2Schema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -4034,6 +4037,438 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           await reopened.close();
         }
       } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "valid",
+    "window-edge",
+    "extended-window",
+    "run-deadline",
+    "shorter-window",
+    "shorter-edge",
+    "grant-revoked",
+    "grant-expired",
+    "handle-revoked",
+    "handle-expired",
+    "run-cancelled",
+    "authority",
+    "lease",
+    "missing",
+    "fingerprint",
+    "capability-disabled",
+  ] as const)("checks result disclosure authority in a read snapshot: %s", async (scenario) => {
+    const f = await openSandboxJournal(false, ["example.com:443"]);
+    const at = (offset: number) => new Date(Date.parse(T1) + offset).toISOString();
+    const original = admission(f);
+    const candidate = {
+      ...original,
+      invocation: { ...original.invocation, deadlineAt: at(10000) },
+      plan: {
+        ...original.plan,
+        effectiveDeadlineAt: at(10000),
+        originalDeadlineAt: scenario === "run-deadline" ? at(30000) : T2,
+      },
+      facts: {
+        ...original.facts,
+        environment: { ...original.facts.environment, deadlineAt: at(10000) },
+      },
+    };
+    const current = start(f, candidate);
+    const now = at(
+      scenario === "window-edge" || scenario === "extended-window"
+        ? 45000
+        : scenario === "run-deadline"
+          ? 30000
+          : scenario === "valid"
+            ? 44999
+            : 11000,
+    );
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => now,
+    });
+    try {
+      const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+      if (scenario === "grant-revoked")
+        await repository
+          .authorizationStore()
+          .revokeGrant(current.plan.authorizationRef ?? "", now, "B1_TEST");
+      if (scenario === "handle-revoked")
+        await repository
+          .capabilityStore(OWNER_ID, AGENT_ID)
+          .revokeExecutionHandle(current.plan.handleRef, now);
+      if (scenario === "grant-expired")
+        f.database
+          .prepare("UPDATE grants SET record_json=json_set(record_json,'$.expiresAt',?) WHERE id=?")
+          .run(now, current.plan.authorizationRef);
+      if (scenario === "handle-expired")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET expires_at=?,record_json=json_set(record_json,'$.expiresAt',?) WHERE id=?",
+          )
+          .run(now, now, current.plan.handleRef);
+      if (scenario === "run-cancelled")
+        f.database
+          .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
+          .run(current.plan.identity.runId);
+      if (scenario === "fingerprint")
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.semanticFingerprint',?) WHERE job_id=?",
+          )
+          .run(`sha256:${"0".repeat(64)}`, current.plan.identity.jobId);
+      if (scenario === "capability-disabled")
+        f.database
+          .prepare("UPDATE capability_declarations SET status='disabled' WHERE id=?")
+          .run(current.plan.capabilityRef);
+      const input = {
+        identity: {
+          ...current.plan.identity,
+          ...(scenario === "missing" ? { jobId: "missing" } : {}),
+        },
+        authority:
+          scenario === "authority"
+            ? { ...SERVICE_AUTHORITY, product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 } }
+            : SERVICE_AUTHORITY,
+        executionLease: {
+          ...current.plan.executionLease,
+          ...(scenario === "lease" ? { expectedLeaseRevision: 2 } : {}),
+        },
+        replyDeadlineAt:
+          scenario === "shorter-window"
+            ? at(12000)
+            : scenario === "shorter-edge" || scenario === "window-edge"
+              ? now
+              : T2,
+        now,
+      };
+      const before = f.database.pragma("data_version", { simple: true });
+      const check = () => preparations.assertResultAuthority(input);
+      if (scenario === "valid" || scenario === "shorter-window") {
+        expect(current.releaseReceipt).toBeUndefined();
+        await expect(check()).resolves.toBeUndefined();
+        await expect(check()).resolves.toBeUndefined();
+      } else
+        await expect(check()).rejects.toMatchObject({
+          code:
+            scenario === "missing"
+              ? "PORT_NOT_FOUND"
+              : expect.stringMatching(/^PORT_(NOT_AUTHORITATIVE|HANDLE_REVOKED)$/),
+        });
+      expect(f.database.pragma("data_version", { simple: true })).toBe(before);
+    } finally {
+      await repository.close();
+      await f.close();
+    }
+  });
+
+  it.each(
+    ["success", "deadline"].flatMap((outcome) =>
+      ["before", "after"].flatMap((timing) =>
+        ["grant", "handle", "none"].flatMap((revocation) =>
+          (revocation === "none"
+            ? ["after-intent"]
+            : ["before-intent", "after-intent", ...(outcome === "success" ? ["after-decrypt"] : [])]
+          ).map((window) => ({ outcome, timing, revocation, window })),
+        ),
+      ),
+    ),
+  )(
+    "keeps foreground result disclosure live across expiry: $outcome/$timing/$revocation/$window",
+    async ({ outcome, timing, revocation, window }) => {
+      const f = await openSandboxJournal(false, ["example.com:443"]);
+      let now = T1;
+      f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(f.plan.identity.runId);
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      try {
+        const authority = SERVICE_AUTHORITY;
+        const peer = { ...authority.product, ...authority };
+        const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
+        const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
+        const callInput: RuntimeToolInvocation = {
+          runId: createRunId(f.plan.identity.runId),
+          toolCallId: "foreground-revocation",
+          capabilityRef: f.plan.capabilityRef,
+          capabilityHandleRef: f.plan.handleRef,
+          arguments: { inputRef: f.plan.inputRef },
+          dataClassification: "private",
+          executionDeadlineAt: T2,
+          context: {
+            threadId: createThreadId(f.scope.threadId),
+            modelRef: f.scope.modelRef,
+            executionLease: f.plan.executionLease as RunExecutionLeaseClaim,
+          },
+        };
+        let record: SandboxExecutionRecord | undefined;
+        let candidate: ReturnType<typeof admission> | undefined;
+        let sent: Extract<ExecutionV2Request, { type: "work.execute" }> | undefined;
+        let dispatched = false;
+        let revoked = false;
+        let recoveryEnabled = false;
+        const fixtureErrors: unknown[] = [];
+        const revoke = async () => {
+          if (revoked || revocation === "none") return;
+          if (revocation === "grant")
+            await repository
+              .authorizationStore()
+              .revokeGrant(f.plan.authorizationRef ?? "", now, "B1_TEST");
+          else await capabilities.revokeExecutionHandle(f.plan.handleRef, now);
+          revoked = true;
+        };
+        const complete = createProductionSandboxToolResult({
+          preparations,
+          journal: {
+            ...journal,
+            dispatchIntent: async (input) => {
+              const result = await journal.dispatchIntent(input);
+              dispatched = true;
+              if (window === "after-intent") await revoke();
+              return result;
+            },
+          },
+          authority: () => authority,
+          now: () => now,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("Missing fixture verification");
+            return { ...proof, checkedAt: now };
+          },
+        });
+        const tools = new ProductionRuntimeTools({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities,
+          invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          artifacts,
+          payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: {
+            protect: (input) => f.protector.protect(input),
+            unprotect: async (input) => {
+              const bytes = await f.protector.unprotect(input);
+              if (window === "after-decrypt" && input.payload.ref === "b1-output") await revoke();
+              return bytes;
+            },
+          },
+          authority: () => authority,
+          peer: () => peer,
+          parents: createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer })
+            .writer,
+          assertRunActive: async () => {
+            const run = await repository
+              .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+              .readRun(callInput.runId);
+            if (run?.run.status !== "running") throw new Error("RUN_NOT_ACTIVE");
+          },
+          ceiling: { ...f.plan.resourceCeiling, maxWallTimeMs: 10_000 },
+          clock: { now: () => now },
+          ids: createReferenceAdapterSet({ clock: { now: () => now } }).ids,
+          fileReadEnabled: false,
+          sandbox: {
+            journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            preparations,
+            scopes: { read: async () => sandboxExecutionScopeSchema.parse(f.scope) },
+            prepare: async (input) => {
+              const original = admission(f);
+              const plan = {
+                ...original.plan,
+                identity: {
+                  ...original.plan.identity,
+                  receiptRef: input.receiptRef,
+                  invocationId: input.invocationId,
+                },
+                requestedAt: input.requestedAt,
+                effectiveDeadlineAt: input.deadlineAt,
+                resourceCeiling: input.resourceCeiling,
+              };
+              candidate = {
+                ...original,
+                plan,
+                facts: {
+                  ...original.facts,
+                  environment: {
+                    ...original.facts.environment,
+                    creator: plan.identity,
+                    deadlineAt: plan.effectiveDeadlineAt,
+                  },
+                  resource: { ...original.facts.resource, creator: plan.identity },
+                },
+              };
+              return {
+                plan,
+                workspaces: original.workspaces,
+                reservation: {
+                  schemaVersion: "sandbox-preparation.v1",
+                  identity: plan.identity,
+                  environmentId: plan.environmentId,
+                  resourceRef: null,
+                  mode: "foreground",
+                  workspaceConflictRefs: original.workspaces.map((item) => item.ref),
+                  sequence: 1,
+                  createdAt: T1,
+                },
+              };
+            },
+          },
+          completeSandboxToolResult: async (input, delivery) => {
+            recoveryEnabled = delivery.resultRecovery !== undefined;
+            return complete(input, delivery);
+          },
+          transport: {
+            request: async (message) => {
+              if (message.type === "work.delegate")
+                return {
+                  ...message,
+                  kind: "response",
+                  type: "work.delegate.accepted",
+                  messageId: "accepted",
+                  causationId: message.messageId,
+                  payload: {
+                    handleRef: message.payload.handle.ref,
+                    workerBootId: authority.workerBootId,
+                    acceptedAt: T1,
+                  },
+                };
+              if (message.type !== "work.execute") return null;
+              try {
+                if (!candidate) throw new Error("Missing prepared candidate");
+                sent = message;
+                record = (
+                  await preparations.bindAndStart({
+                    identity: candidate.plan.identity,
+                    expectedSequence: 1,
+                    facts: {
+                      ...candidate.facts,
+                      resource: { ...candidate.facts.resource, sequence: 2 },
+                    },
+                    authority,
+                    now: T1,
+                  })
+                ).record;
+                const plaintext = Buffer.from(outcome === "success" ? "B1_PRIVATE_RESULT" : "");
+                const payload = await f.protector.protect({
+                  ownerId: OWNER_ID,
+                  agentId: AGENT_ID,
+                  ref: "b1-output",
+                  dataClassification: "private",
+                  contentType: "text/plain",
+                  plaintext,
+                  createdAt: T1,
+                });
+                await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+                  payload,
+                  handleRef: f.plan.handleRef,
+                  invocationId: message.messageId,
+                  authority,
+                  now: T1,
+                  plaintextByteLength: plaintext.byteLength,
+                });
+                record = append(
+                  f,
+                  record,
+                  sandboxExecutionFactsSchema.parse({
+                    ...record.facts,
+                    effect: { kind: "not_applicable" },
+                    result: {
+                      schemaVersion: "sandbox-execution.v2",
+                      identity: record.plan.identity,
+                      environmentId: record.plan.environmentId,
+                      policyDigest: record.facts.environment.policyDigest,
+                      contract: { ref: "fixed-read", version: "1" },
+                      occurredAt: T1,
+                      output: {
+                        ref: payload.ref,
+                        digest: createHash("sha256").update(plaintext).digest("hex"),
+                        byteLength: plaintext.byteLength,
+                      },
+                      ...(outcome === "success"
+                        ? { kind: "result", completion: { type: "value" } }
+                        : {
+                            kind: "error",
+                            reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                            termination: { type: "failure" },
+                          }),
+                    },
+                  }),
+                  true,
+                );
+                record = append(f, record, resource(record, "stopping"));
+                record = append(f, record, resource(record, "released"));
+              } catch (error) {
+                fixtureErrors.push(error);
+                throw error;
+              }
+              return null;
+            },
+            async *events() {
+              if (!sent) throw new Error("No executed request");
+              now = new Date(Date.parse(T1) + (timing === "after" ? 11_000 : 500)).toISOString();
+              if (window === "before-intent") await revoke();
+              yield {
+                ...sent,
+                kind: "event",
+                type: "work.result",
+                messageId: "b1-result",
+                causationId: sent.messageId,
+                payload: {
+                  requestId: sent.messageId,
+                  cursor: "1",
+                  sequence: 1,
+                  completedAt: T1,
+                  outcome: outcome === "success" ? "succeeded" : "failed",
+                  outputRef: outcome === "success" ? "b1-output" : null,
+                  errorCode: outcome === "success" ? null : "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                  externalActionId: null,
+                },
+              };
+            },
+          },
+        });
+        await tools.listAuthorized(callInput.runId, [f.plan.handleRef]);
+        const delivered = await tools.execute(callInput);
+        expect(fixtureErrors).toEqual([]);
+        if (!sent || !record) throw new Error("Missing completed invocation");
+        expect(record.releaseReceipt).toBeDefined();
+        expect(Date.parse(now) >= Date.parse(sent.payload.deadlineAt)).toBe(timing === "after");
+        expect(Date.parse(now)).toBeLessThan(Date.parse(T2));
+        expect(revoked).toBe(revocation !== "none");
+        if (window !== "before-intent") {
+          expect(recoveryEnabled).toBe(true);
+          expect(dispatched).toBe(true);
+          expect(
+            f.database
+              .prepare("SELECT dispatched_at FROM sandbox_execution_intents WHERE job_id=?")
+              .get(record?.plan.identity.jobId),
+          ).toEqual({ dispatched_at: now });
+        }
+        if (revocation !== "none") {
+          expect.soft(delivered.modelContent).not.toContain("B1_PRIVATE_RESULT");
+          expect.soft(delivered.errorCode).not.toBe("SANDBOX_TOOL_DEADLINE_EXCEEDED");
+          expect(delivered).toMatchObject({ outcome: "result_unknown", resultRef: null });
+        } else if (outcome === "success") {
+          expect(delivered).toMatchObject({
+            outcome: "succeeded",
+            modelContent: "B1_PRIVATE_RESULT",
+          });
+        } else {
+          expect(delivered).toMatchObject({
+            outcome: "failed",
+            resultRef: null,
+            errorCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+          });
+        }
+      } finally {
+        await repository.close();
         await f.close();
       }
     },

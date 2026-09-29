@@ -69,6 +69,9 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
   const preparations: SandboxExecutionPreparationPort = {
+    assertResultAuthority: async (value) => {
+      invoke("capabilityInvocation.sandboxV2.assertResultAuthority", value);
+    },
     authorizeReservationResult: async (value) => {
       invoke("capabilityInvocation.sandboxV2.authorizeReservationResult", value);
     },

@@ -16,6 +16,7 @@ import {
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
+  RECOVERY_SETTLE_WAIT_MS,
   type ProductConfiguration,
   type RunPayloadArtifactPort,
   type RuntimeRequest,
@@ -57,7 +58,6 @@ import {
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
 import {
-  RECOVERY_SETTLE_WAIT_MS,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
@@ -258,7 +258,9 @@ function preDispatchFailure(error: unknown): { reasonCode: string; modelContent:
 type SandboxAdmission = NonNullable<WorkerDelegationAdmissionServiceOptions["sandbox"]>;
 export type ProductionRuntimeSandbox = Omit<SandboxAdmission, "prepare"> & {
   readonly preparations?: SandboxAdmission["preparations"] &
-    Partial<Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation">>;
+    Partial<
+      Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation" | "assertResultAuthority">
+    >;
   readonly prepare: (
     admission: ConsumeCapabilityInvocationInput,
     invocation: RuntimeToolInvocation,
@@ -1316,6 +1318,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       if (!resultRecovery || Date.parse(this.#options.clock.now()) < Date.parse(deadlineAt))
         return this.#assertDisclosure(invocation, key, internal);
       await this.#options.assertRunActive(invocation.runId);
+      if (
+        Date.parse(this.#options.clock.now()) >= replyDeadlineAt ||
+        digest(this.#options.authority()) !== digest(authority)
+      )
+        reject();
+      const preparations = this.#options.sandbox?.preparations;
+      if (!preparations?.readAdmissionByInvocation || !preparations.assertResultAuthority) reject();
+      const admission = await preparations.readAdmissionByInvocation({
+        runId: invocation.runId,
+        invocationId: request.messageId,
+      });
+      if (!admission) reject();
+      const plan = admission.phase === "reserved" ? admission.plan : admission.record.plan;
+      if (plan.handleRef !== handle.ref || plan.inputRef !== request.payload.inputRef) reject();
+      await preparations.assertResultAuthority({
+        identity: plan.identity,
+        authority,
+        executionLease: resultRecovery.executionLease,
+        replyDeadlineAt: new Date(replyDeadlineAt).toISOString(),
+        now: this.#options.clock.now(),
+      });
+      signal?.throwIfAborted();
       if (
         Date.parse(this.#options.clock.now()) >= replyDeadlineAt ||
         digest(this.#options.authority()) !== digest(authority)

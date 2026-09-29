@@ -55,6 +55,10 @@ interface Row {
   operationRevision: number;
 }
 interface AuthorityDependencies {
+  disclosure(
+    plan: SandboxExecutionPlanV2,
+    input: Parameters<SandboxExecutionPreparationPort["assertResultAuthority"]>[0],
+  ): void;
   recovery(
     plan: SandboxExecutionPlanV2,
     authority: CapabilityInvocationAuthority,
@@ -232,6 +236,27 @@ export class SqliteSandboxExecutionOperations {
     }
     if (operation === "validatePreparation") {
       this.db.transaction(() => this.authority.validateQueued(raw, owner, agent))();
+      return;
+    }
+    if (operation === "assertResultAuthority") {
+      const identity = sandboxJobIdentitySchema.parse(input["identity"]);
+      for (const field of ["now", "replyDeadlineAt"]) {
+        const value = input[field];
+        if (
+          typeof value !== "string" ||
+          !Number.isFinite(Date.parse(value)) ||
+          new Date(value).toISOString() !== value
+        )
+          return this.fail("PORT_INVALID_OPERATION", "Invalid result disclosure time");
+      }
+      this.db.transaction(() => {
+        const admission = this.readAdmission(identity, owner, agent);
+        if (!admission) return this.fail("PORT_NOT_FOUND", "Result admission missing");
+        this.authority.disclosure(
+          admission.phase === "reserved" ? admission.plan : admission.record.plan,
+          raw as Parameters<SandboxExecutionPreparationPort["assertResultAuthority"]>[0],
+        );
+      })();
       return;
     }
     if (operation === "readQueuedByInvocation") {

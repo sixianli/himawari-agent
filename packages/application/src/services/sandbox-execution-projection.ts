@@ -16,6 +16,8 @@ import type {
   SandboxReservationReleaseVerification,
 } from "../ports/sandbox-execution-journal.js";
 
+export const RECOVERY_SETTLE_WAIT_MS = 35000;
+
 export function isSandboxReservationNeverStarted(
   plan: SandboxExecutionPlanV2,
   verification: SandboxReservationReleaseVerification | undefined,

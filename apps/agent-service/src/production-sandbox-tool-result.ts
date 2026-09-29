@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   type CapabilityInvocationAuthority,
   projectSandboxExecution,
+  RECOVERY_SETTLE_WAIT_MS,
   type SandboxExecutionJournalPort,
   type SandboxExecutionPreparationPort,
   type SandboxExecutionProjectionContext,
@@ -59,7 +60,6 @@ export function sandboxCommandEffectReason(input: {
     : null;
 }
 
-export const RECOVERY_SETTLE_WAIT_MS = 35000;
 export { SANDBOX_TOOL_DEADLINE_EXCEEDED } from "@himawari-agent/execution-contracts";
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";

@@ -297,3 +297,10 @@ F 红测试确认同一生产 Worker 装配首次写输出断连后，第二次�
 E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用链确认并记录 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，本轮不实现；期限恢复本身要求资源释放，不能把该缺口描述成已复现的到期后错误终态。整轮仍待 B1、B2、B3、其余 Backlog 与最终无筛选 Mac 资格。
 
 首轮 F 完整 4,940 项全部通过后，静态复核新增关闭期间清理通道寿命回归；测试确认重握手 catch 过早 disconnect。已改由 close 在 shutdown 完成后统一断开，原关闭错误码保持；该新增场景先失败后通过。最终版本重新构建与全量验证记录见 F 验证记录，不能复用首轮全量作为最终代码证据。
+
+
+### reply-21 B1：期限后交付授权
+
+B1 已确认：真实交付意图提交后撤销 Grant/Handle，工具期限后的普通结果和固定期限错误仍可交付；解密期间撤权同样存在窗口。按 reply-21 批准新增只读 `assertResultAuthority`，在同一 SQLite 读快照复用原回执授权核验，持久回执期限加 35000ms 与原 Run 期限限制上界，调用方不能扩大。期限前路径及解密后检查保留，不改通信协议或数据库结构。合同见 [期限后的交付授权](../specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权) [SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权]。
+
+第 0 层最终 80 项通过、第 1 层 check 通过；第 2 层首次 4471 项通过，两个安装测试文件因缺少构建输入未进入正文；补齐当前版本安装包及锁定 Python 后 7 项全部通过，最终覆盖 unit 2120 项与 integration 2358 项。证据、复跑命令及最终提交状态见 [B1 实施验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md)。按 ADR 0038 和 reply-20，B1、B2、B3 各自第 0–2 层后独立提交，批次末执行第 3 层；B3 另须真实 Mac 定向验证。当前结果不代表本批或整轮验收完成。

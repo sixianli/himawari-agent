@@ -16,6 +16,7 @@ import type {
   SandboxJobAdmissionResult,
   SandboxJobRecord,
 } from "@himawari-agent/application";
+import { RECOVERY_SETTLE_WAIT_MS } from "@himawari-agent/application/sandbox-execution-projection";
 import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/domain";
 import {
   ContractValidationError,
@@ -496,7 +497,9 @@ export class SqliteCapabilityInvocationOperations {
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
       recovery: (plan, value, now, deadlineFailure) => {
-        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now, deadlineFailure);
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now, {
+          kind: deadlineFailure ? "deadline_failure" : "recovery",
+        });
         const output = this.requireRunPayloadArtifacts().execute("runPayloadArtifact.lookup", {
           ownerId: plan.identity.ownerId,
           agentId: plan.identity.agentId,
@@ -513,12 +516,9 @@ export class SqliteCapabilityInvocationOperations {
         return { receipt, output };
       },
       importOutput: (plan, input) => {
-        const receipt = this.sandboxRecoveryReceipt(
-          plan,
-          authority(input.authority),
-          input.now,
-          input.recoveryPurpose === "deadline_failure",
-        );
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(input.authority), input.now, {
+          kind: input.recoveryPurpose === "deadline_failure" ? "deadline_failure" : "recovery",
+        });
         if (
           input.payload.contentType !== "application/octet-stream" ||
           input.payload.dataClassification !== receipt.dataClassification ||
@@ -597,6 +597,18 @@ export class SqliteCapabilityInvocationOperations {
       live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
       result: (plan, value, executionLease, now) =>
         this.assertSandboxResultReadable(plan, authority(value), executionLease, now),
+      disclosure: (plan, input) => {
+        const currentAuthority = authority(input.authority);
+        const bound = sandboxExecutionPlanV2Schema.parse({
+          ...plan,
+          executionLease: input.executionLease,
+        });
+        this.assertSandboxLease(bound, currentAuthority, input.now);
+        this.sandboxRecoveryReceipt(plan, currentAuthority, input.now, {
+          kind: "result_disclosure",
+          replyDeadlineAt: input.replyDeadlineAt,
+        });
+      },
     });
     this.executionEnvironments = new SqliteExecutionEnvironmentOperations(database, fail, {
       authority: (value, owner, agent, now) =>
@@ -730,7 +742,9 @@ export class SqliteCapabilityInvocationOperations {
     plan: SandboxExecutionPlanV2,
     currentAuthority: AuthorityInput,
     now: string,
-    deadlineFailure = false,
+    purpose:
+      | { readonly kind: "recovery" | "deadline_failure" }
+      | { readonly kind: "result_disclosure"; readonly replyDeadlineAt: string },
   ): FrozenReceipt {
     this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
     const row = this.readReceiptByInvocationScope(
@@ -771,12 +785,19 @@ export class SqliteCapabilityInvocationOperations {
       !CAPABILITY_LIFECYCLES_WITH_AUTHORITY.has(handle.capabilityStatus) ||
       !capability.declaration.operations.includes(receipt.operation) ||
       now >= current.expiresAt ||
-      (deadlineFailure
-        ? plan.effectiveDeadlineAt > receipt.effectiveExpiresAt ||
-          plan.effectiveDeadlineAt > receipt.deadlineAt ||
-          now < plan.effectiveDeadlineAt ||
-          now >= plan.originalDeadlineAt
-        : now >= receipt.effectiveExpiresAt || now >= receipt.deadlineAt)
+      (purpose.kind === "result_disclosure"
+        ? Date.parse(now) >=
+          Math.min(
+            Date.parse(receipt.deadlineAt) + RECOVERY_SETTLE_WAIT_MS,
+            Date.parse(plan.originalDeadlineAt),
+            Date.parse(purpose.replyDeadlineAt),
+          )
+        : purpose.kind === "deadline_failure"
+          ? plan.effectiveDeadlineAt > receipt.effectiveExpiresAt ||
+            plan.effectiveDeadlineAt > receipt.deadlineAt ||
+            now < plan.effectiveDeadlineAt ||
+            now >= plan.originalDeadlineAt
+          : now >= receipt.effectiveExpiresAt || now >= receipt.deadlineAt)
     )
       return this.fail(
         "PORT_NOT_AUTHORITATIVE",
