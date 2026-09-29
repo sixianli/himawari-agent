@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/adr/0040-background-output-closed-after-bash-returns.md"
 date: "2026-09-29"
 ---
 
