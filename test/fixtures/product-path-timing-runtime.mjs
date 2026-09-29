@@ -25,6 +25,10 @@ export function failure(error) {
     "ETIMEDOUT",
   ]);
   const reasons = new Map([
+    ["scope expired", "SANDBOX_SCOPE_EXPIRED"],
+    ["invalid scope window or binding", "SANDBOX_SCOPE_WINDOW_OR_BINDING_INVALID"],
+    ["SANDBOX_SCOPE_UNAVAILABLE", "SANDBOX_SCOPE_UNAVAILABLE"],
+    ["directory authority changed", "SANDBOX_DIRECTORY_AUTHORITY_CHANGED"],
     ["resource sequence changed", "SANDBOX_RESOURCE_SEQUENCE_CHANGED"],
     ["receipt unavailable", "SANDBOX_RECEIPT_UNAVAILABLE"],
     ["authority changed", "SANDBOX_AUTHORITY_CHANGED"],

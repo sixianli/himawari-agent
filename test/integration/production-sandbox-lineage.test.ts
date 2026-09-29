@@ -573,6 +573,12 @@ describe("fixed file recovery into the original SQLite invocation", () => {
     "wrong-invocation",
     "production",
     "production-directory",
+    "concurrent-before-output",
+    "concurrent-before-write",
+    "concurrent-different-before-output",
+    "concurrent-different-before-write",
+    "revoked-before-output",
+    "revoked-before-write",
   ])("requires release and bound durable output (%s)", async (scenario) => {
     const moving = scenario === "production-directory";
     const parameters = moving
@@ -759,11 +765,51 @@ describe("fixed file recovery into the original SQLite invocation", () => {
       expect(await readFile(path.join(f.host.workspace, targetPath), "utf8")).toBe("later edit");
       return;
     }
+    let competing: SandboxExecutionRecord | undefined;
+    let competingWrite = false;
+    let competingActive = false;
+    const writeCompetitor = async () => {
+      competingWrite = true;
+      competingActive = true;
+      competing = await recover(record);
+      competingActive = false;
+    };
     const recover = createProductionSandboxFileRecovery({
-      journal,
+      journal: {
+        recordOperation: async (input) => {
+          if (scenario === "revoked-before-write")
+            await f.repository
+              .authorizationStore()
+              .revokeGrant(f.input.authorizationRef ?? "", T1, "test-race");
+          if (
+            scenario.startsWith("concurrent-") &&
+            scenario.endsWith("before-write") &&
+            !competingWrite
+          )
+            await writeCompetitor();
+          return journal.recordOperation(input);
+        },
+      },
       authority: () => f.input.authority,
       now: () => T1,
-      recoverOutput,
+      recoverOutput: async () => {
+        if (scenario === "revoked-before-output")
+          await f.repository
+            .authorizationStore()
+            .revokeGrant(f.input.authorizationRef ?? "", T1, "test-race");
+        if (
+          scenario.startsWith("concurrent-") &&
+          scenario.endsWith("before-output") &&
+          !competingWrite
+        )
+          await writeCompetitor();
+        return {
+          ...(await recoverOutput()),
+          ...(scenario.includes("different") && competingActive
+            ? { outcome: "conflict" as const }
+            : {}),
+        };
+      },
       // OS/process observation is the only synthetic evidence here. File records,
       // publication, encrypted artifacts and journal acceptance are real.
       verifyFresh: async (current) => {
@@ -785,7 +831,21 @@ describe("fixed file recovery into the original SQLite invocation", () => {
       },
     });
     const uses = await handleUses(f);
-    if (["unbound-artifact", "wrong-invocation"].includes(scenario)) {
+    if (scenario.startsWith("concurrent-")) {
+      if (scenario.includes("different"))
+        await expect(recover(record)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      else expect(await recover(record)).toEqual(competing);
+      expect(competing?.facts.result?.kind).toBe(
+        scenario.includes("different") ? "error" : "result",
+      );
+      const durable = await journal.read(record.plan.identity);
+      expect(durable).toEqual(competing);
+      if (!durable) throw new Error("missing durable result");
+      expect(await recover(durable)).toEqual(competing);
+      expect(recoverOutput).toHaveBeenCalledTimes(2);
+      expect(durable.releaseReceipt).toEqual(record.releaseReceipt);
+      expect(durable.workspaceBlocked).toBe(false);
+    } else if (["unbound-artifact", "wrong-invocation"].includes(scenario)) {
       await expect(recover(record)).rejects.toThrow("durably bound");
       expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
     } else {
@@ -802,6 +862,13 @@ describe("fixed file recovery into the original SQLite invocation", () => {
         expect(after?.workspaceBlocked).toBe(false);
         expect(await recover(completed)).toEqual(completed);
         expect(recoverOutput).toHaveBeenCalledTimes(1);
+        if (scenario.startsWith("revoked-")) {
+          const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
+          expect(grants.find((grant) => grant.id === f.input.authorizationRef)?.revokedAt).toBe(T1);
+          expect((await journal.read(record.plan.identity))?.facts.result).toEqual(
+            completed.facts.result,
+          );
+        }
       }
     }
     expect(await handleUses(f)).toBe(uses);

@@ -2824,6 +2824,117 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     },
   );
 
+  it("rejects stale reconcile after concurrent release without changing the accepted result", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      const staleSequence = record.facts.resource.sequence;
+      record = append(f, record, resource(record, "reconciling"));
+      record = append(f, record, resource(record, "released"));
+      const unreachable = vi.fn(async (): Promise<never> => {
+        throw new Error("released execution must not be inspected or stopped");
+      });
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: unreachable,
+          beginRecovery: unreachable,
+          finishRecovery: unreachable,
+        },
+        evidence: { verify: unreachable },
+        backend: reconciliationBackend({ inspect: unreachable, stop: unreachable }),
+        now: () => T1,
+        timeoutMs: 1000,
+      });
+      await expect(
+        service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: staleSequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ).rejects.toThrow("SANDBOX_RECONCILIATION_SEQUENCE_CHANGED");
+      expect(call(f, "read", record.plan.identity)).toEqual(record);
+      expect(
+        await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ).toEqual({ record, applied: false });
+      expect(unreachable).not.toHaveBeenCalled();
+      expect(call(f, "admit", admission(f, "-after-stale-reconcile")).applied).toBe(true);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["before-finish", "after-finish"] as const)(
+    "preserves a file result written around the recovery finish transaction: %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        let completed: SandboxExecutionRecord | undefined;
+        const writeResult = () => {
+          const current = call(f, "read", record.plan.identity);
+          if (!current) throw new Error("missing current record");
+          completed = append(f, current, result(f, current), true);
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => {
+              if (window === "before-finish") writeResult();
+              const finished = call(f, "finishRecovery", input);
+              if (window === "after-finish") writeResult();
+              return finished;
+            },
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async (current) => resource(current, "released").resource,
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(completed).toBeDefined();
+        expect(finished.record.facts.result).toEqual(completed?.facts.result);
+        expect(finished.record.operationRevision).toBe(completed?.operationRevision);
+        expect(finished.record.recovery?.status).toBe("resolved");
+        expect(finished.record.releaseReceipt).toEqual(completed?.releaseReceipt);
+        expect(finished.record.workspaceBlocked).toBe(false);
+        expect(call(f, "read", record.plan.identity)).toEqual(finished.record);
+        expect(call(f, "admit", admission(f, "-after-finish-race")).applied).toBe(true);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
   it.each(["backend-observation", "proof-verification"] as const)(
     "accepts verified cleanup when operation completion races with %s",
     async (window) => {
@@ -4908,6 +5019,84 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         }
       } finally {
         await repository.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["before-read", "during-recovery"] as const)(
+    "delivers the immutable winner when result recovery races with completion: %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const original = record;
+        const known = result(f, record);
+        if (window === "before-read") record = append(f, record, known, true);
+        const journal = Object.fromEntries(
+          [
+            "read",
+            "append",
+            "prepareIntent",
+            "dispatchIntent",
+            "acknowledgeIntent",
+            "observeIntent",
+          ].map((name) => [
+            name,
+            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+          ]),
+        ) as unknown as SandboxExecutionJournalPort;
+        const recoverResult = vi.fn(async (current: SandboxExecutionRecord) => {
+          record = append(f, current, known, true);
+          const stale = sandboxExecutionFactsSchema.parse({
+            ...known,
+            result: { ...known.result, occurredAt: new Date(Date.parse(T1) + 1).toISOString() },
+          });
+          return append(f, current, stale, true);
+        });
+        const complete = createProductionSandboxToolResult({
+          journal,
+          preparations: {
+            readAdmissionByInvocation: async () => ({
+              phase: "bound",
+              record: call(f, "read", record.plan.identity) as SandboxExecutionRecord,
+            }),
+          },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          recoverResult,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("missing fixture proof");
+            return proof;
+          },
+        });
+        const saveReceipt = vi.fn(async () => {});
+        const completed = await complete(
+          { runId: record.plan.identity.runId, invocationId: record.plan.identity.invocationId },
+          {
+            assertDisclosure: async () => {},
+            saveReceipt,
+          },
+        );
+        expect(completed).toMatchObject({ outcome: "succeeded", outputRef: "output" });
+        expect(recoverResult).toHaveBeenCalledTimes(window === "before-read" ? 0 : 1);
+        expect(saveReceipt).toHaveBeenCalledTimes(1);
+        const durable = call(f, "read", record.plan.identity);
+        expect(durable?.facts.result).toEqual(known.result);
+        expect(durable?.operationRevision).toBe(original.operationRevision + 1);
+        expect(durable?.releaseReceipt).toEqual(original.releaseReceipt);
+        expect(durable?.workspaceBlocked).toBe(false);
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS n FROM sandbox_execution_intents WHERE dispatched_at IS NOT NULL AND acknowledged_at IS NOT NULL",
+            )
+            .get(),
+        ).toEqual({ n: 1 });
+      } finally {
         await f.close();
       }
     },

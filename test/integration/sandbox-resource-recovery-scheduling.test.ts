@@ -9,6 +9,7 @@ import {
 } from "@himawari-agent/application";
 import {
   sandboxExecutionReservationSchema,
+  sandboxExecutionFactsSchema,
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -231,6 +232,79 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
       await f.close();
     }
   });
+
+  it.each(["observation-first", "schedule-first"] as const)(
+    "rechecks a discovery candidate around a resource observation: %s",
+    async (order) => {
+      const f = await fixture();
+      try {
+        f.database.prepare("UPDATE runs SET status='completed' WHERE id=?").run(f.identity.runId);
+        const stale = await f.requestFor();
+        const before = await f.journal.read(f.identity);
+        if (!before) throw new Error("missing candidate");
+        const scheduled =
+          order === "schedule-first" ? await f.preparations.scheduleRecovery(stale) : undefined;
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...before.facts,
+          resource: {
+            ...before.facts.resource,
+            sequence: before.facts.resource.sequence + 1,
+            supervision: "lost",
+            cleanup: "unknown",
+            reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+          },
+        });
+        const observed = await f.journal.append({
+          identity: f.identity,
+          expectedSequence: before.facts.resource.sequence,
+          expectedOperationRevision: before.operationRevision,
+          facts,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          context: {
+            now: T1,
+            environment: facts.environment,
+            operationContract: before.plan.operationContract,
+            verification: null,
+            currentResourceSequence: facts.resource.sequence,
+            runState: "terminated",
+            currentAuthority: false,
+            currentFence: false,
+            userDisclosureAllowed: false,
+            modelDisclosureAllowed: false,
+            conflictingWorkspaceRisk: true,
+            pendingApprovalOrReconciliation: true,
+            resultAlreadyDelivered: false,
+          },
+        });
+        if (order === "observation-first")
+          await expect(f.preparations.scheduleRecovery(stale)).rejects.toMatchObject({
+            code: "PORT_CONFLICT",
+          });
+        else {
+          if (!scheduled) throw new Error("missing scheduled request");
+          await expect(
+            f.journal.beginRecovery({
+              ...stale,
+              action: scheduled.action,
+              expectedSequence: before.facts.resource.sequence,
+              expectedRecoveryRevision: scheduled.revision,
+              deadlineAt,
+            }),
+          ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        }
+        const fresh = await f.preparations.scheduleRecovery(await f.requestFor());
+        expect(fresh).toMatchObject({ status: "scheduled", attempts: 0 });
+        expect((await f.journal.read(f.identity))?.facts).toEqual(observed.record.facts);
+        expect((await f.journal.read(f.identity))?.startedAt).toBeNull();
+        expect(
+          f.database.prepare("SELECT count(*) AS n FROM sandbox_release_receipts").get(),
+        ).toEqual({ n: 0 });
+      } finally {
+        await f.close();
+      }
+    },
+  );
 
   it("pauses a failed attempt durably and only schedules a later distinct stop obligation", async () => {
     const f = await fixture();

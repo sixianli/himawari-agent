@@ -91,6 +91,10 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
         },
       ],
       [
+        "application/services/sandbox-scope-service",
+        { resolve: ['"agent.scope.resolve"', "input.identity"] },
+      ],
+      [
         "application/services/sandbox-execution-reconciliation",
         { reconcile: ['"agent.reconcile"', "input.identity"] },
       ],
@@ -135,8 +139,9 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
           ts.getModifiers(node)?.some((item) => item.kind === ts.SyntaxKind.AsyncKeyword);
         let measuredBody = body.getText(tree);
         if (
-          module === "agent-service/production-payload-broker-handler" &&
-          named === "sandboxExecution"
+          (module === "agent-service/production-payload-broker-handler" &&
+            named === "sandboxExecution") ||
+          (module === "application/services/sandbox-scope-service" && named === "resolve")
         ) {
           const caught = body.statements.find(ts.isTryStatement)?.catchClause;
           if (!caught || caught.variableDeclaration)
@@ -147,7 +152,7 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
             measuredBody.slice(0, begin) +
             "catch (__hmaCaught) " +
             measuredBody.slice(end, end + 1) +
-            '__hmaRecord({ kind: "caught_error", stage: "agent.sandbox.rpc." + value.payload.command.kind, jobId: value.payload.identity.jobId, runId: value.payload.identity.runId, failure: __hmaFailure(__hmaCaught) });' +
+            `__hmaRecord({ kind: "caught_error", stage: ${definition[0]}, jobId: (${definition[1]}).jobId, runId: (${definition[1]}).runId, failure: __hmaFailure(__hmaCaught) });` +
             measuredBody.slice(end + 1);
         }
         edits.push({

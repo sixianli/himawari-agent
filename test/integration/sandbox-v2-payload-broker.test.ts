@@ -27,6 +27,8 @@ import {
   OWNER_ID,
   openSandboxJournal,
   operationsForDatabase,
+  outputObservation,
+  outputPayload,
   SERVICE_AUTHORITY,
   T1,
   T2,
@@ -209,6 +211,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   let now = T1;
   let beforeVerify = async () => {};
   let observation: SandboxExecutionVerification | SandboxCleanupPending | undefined;
+  let beforeObservation = async () => {};
   let observationReads = 0;
   let externalVerifications = 0;
   const scopeReader = new SandboxScopeService({
@@ -249,6 +252,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
       journal,
       observeVerifiedControl: async () => {
         observationReads++;
+        await beforeObservation();
         if (!observation) throw new Error("observation unavailable");
         return observation;
       },
@@ -345,6 +349,10 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     registrations: () => registrations,
     outputWrites: () => outputWrites,
     preparations,
+    journal,
+    setBeforeObservation: (hook: () => Promise<void>) => {
+      beforeObservation = hook;
+    },
     observe: (value: SandboxExecutionVerification | SandboxCleanupPending) => {
       observation = value;
     },
@@ -511,6 +519,155 @@ describe("v2 observation over authenticated UDS and SQLite", () => {
       });
     },
   );
+  it.each(["result", "release"] as const)(
+    "rejects an in-flight control observation overtaken by a durable %s",
+    async (writer) => {
+      const f = await fixture(false, false, false, true);
+      await f.request({
+        kind: "start",
+        expectedSequence: 1,
+        policyDigest: f.record.facts.environment.policyDigest,
+      });
+      let entered!: () => void;
+      let resume!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      f.setBeforeObservation(async () => {
+        entered();
+        await gate;
+      });
+      const evidence = {
+        ref: "agent-control-evidence",
+        digest: "a".repeat(64),
+        profileRef: f.record.plan.binding.profileRef,
+        qualificationRef: f.record.plan.binding.qualificationRef,
+        validUntil: T2,
+        subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
+      };
+      const observed = sandboxExecutionFactsSchema.parse({
+        ...f.record.facts,
+        resource: {
+          ...f.record.facts.resource,
+          sequence: 2,
+          supervision: "controlled",
+          cleanup: "pending",
+          evidence,
+        },
+      });
+      f.observe({
+        facts: observed,
+        identity: f.record.plan.identity,
+        environmentId: f.record.plan.environmentId,
+        policyDigest: observed.environment.policyDigest,
+        resourceSequence: 2,
+        checkedAt: T1,
+        validUntil: T2,
+        evidence: [evidence],
+        outputs: [],
+      });
+      const rejection = expect(
+        f.request({ kind: "observe_control", expectedSequence: 1 }),
+      ).rejects.toThrow();
+      await waiting;
+      try {
+        let current = await f.journal.read(f.record.plan.identity);
+        if (!current) throw new Error("missing current execution");
+        const output = { ref: "race-result", digest: "f".repeat(64), byteLength: 0 };
+        if (writer === "result")
+          operationsForDatabase(f.f.database).execute("capabilityInvocationResult.observeOutput", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: outputObservation({
+              payload: outputPayload(output.ref, `sha256:${output.digest}`),
+            }),
+          });
+        for (const stage of writer === "result" ? ["result"] : ["stopping", "released"]) {
+          const resource = { ...current.facts.resource } as Record<string, unknown>;
+          delete resource["reasonCode"];
+          delete resource["evidence"];
+          const facts = sandboxExecutionFactsSchema.parse({
+            ...current.facts,
+            ...(stage === "result"
+              ? {
+                  effect: { kind: "not_applicable" },
+                  result: {
+                    schemaVersion: "sandbox-execution.v2",
+                    identity: current.plan.identity,
+                    environmentId: current.plan.environmentId,
+                    policyDigest: current.facts.environment.policyDigest,
+                    contract: { ref: "fixed-read", version: "1" },
+                    occurredAt: T1,
+                    kind: "result",
+                    output,
+                    completion: { type: "value" },
+                  },
+                }
+              : {
+                  resource: {
+                    ...resource,
+                    sequence: current.facts.resource.sequence + 1,
+                    supervision: stage,
+                    cleanup: stage === "released" ? "confirmed" : "pending",
+                    ...(stage === "released" ? { evidence } : { reasonCode: "TEST_STOP" }),
+                  },
+                }),
+          });
+          const input: Parameters<SandboxExecutionJournalPort["append"]>[0] = {
+            identity: current.plan.identity,
+            expectedSequence: current.facts.resource.sequence,
+            expectedOperationRevision: current.operationRevision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            facts,
+            context: {
+              now: T1,
+              environment: facts.environment,
+              operationContract: current.plan.operationContract,
+              verification: {
+                facts,
+                identity: current.plan.identity,
+                environmentId: current.plan.environmentId,
+                policyDigest: facts.environment.policyDigest,
+                resourceSequence: facts.resource.sequence,
+                checkedAt: T1,
+                validUntil: T2,
+                evidence: [evidence],
+                outputs: stage === "result" ? [output] : [],
+              },
+              currentResourceSequence: facts.resource.sequence,
+              runState: "terminated" as const,
+              currentAuthority: false,
+              currentFence: false,
+              userDisclosureAllowed: false,
+              modelDisclosureAllowed: false,
+              conflictingWorkspaceRisk: false,
+              pendingApprovalOrReconciliation: false,
+              resultAlreadyDelivered: false,
+            },
+          };
+          current = (
+            stage === "result"
+              ? await f.journal.recordOperation(input)
+              : await f.journal.append(input)
+          ).record;
+        }
+        resume();
+        await rejection;
+        expect(await f.journal.read(current.plan.identity)).toEqual(current);
+        expect(current.workspaceBlocked).toBe(writer !== "release");
+        expect(Boolean(current.releaseReceipt)).toBe(writer === "release");
+        expect(current.facts.result?.kind ?? null).toBe(writer === "result" ? "result" : null);
+      } finally {
+        resume();
+        await rejection;
+      }
+    },
+  );
+
   it("reserves before compilation and binds a later digest once over real UDS", async () => {
     const f = await fixture(true);
     expect((await f.request({ kind: "read" })).record.phase).toBe("reserved");
