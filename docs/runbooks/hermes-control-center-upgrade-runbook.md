@@ -2,13 +2,15 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6726ef9f6362058df5b3dfd6bfa9a3470cbba0dccecdda54262534c1f32fa07e"
+contract_sha256: "sha256:26de31916c48f8072759d39c91e5fddc52f475cdcc1151c1ee2d55a057253d62"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
 ---
 
 # Hermes 控制中心升级与真实验收
+
+阅读导航：[适用范围](#scope) · [现场前置核对](#live-state-preflight) · [升级步骤](#procedure) · [验收](#verification) · [并发刷新与回答显示](#concurrent-refresh) · [证据](#evidence) · [回退](#rollback) · [停止条件](#stop-conditions)。本文中的固定日期脚本和预算仅适用于各自原先获批的部署；当前开发测试位置遵循 [ADR 0042](../adr/0042-hermes-test-scratch-on-root-disk.md#storage)。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 
 <!-- runbook-contract:
 - packages/platform-node/src/capabilities/isolation.ts
@@ -351,9 +353,17 @@ v5 已完成后的服务恢复验收可使用 `scripts/operations/hermes-protect
 
 搜索时间标注候选使用 `hermes-search-time-qualify.py --qualify` 和 `hermes-search-time-cutover.py --apply --receipt <本次签署摘要>`，构建及资格目录分别为 `2026-09-13-search-time`、`2026-09-13-search-time-installation`。入口绑定当前 `4c2ffd5d…` 安装、完整源码归档和候选文件摘要。此候选只为检索源中带 `Z` 的发布时间明确标注 UTC，不改模型连接、路由、日期值或引用正文；日期缺少时区时不推断。先以锁定的 npm 11.8.0 和原锁文件执行完整 `npm ci`，保留工作区自己的依赖，核对 `packages/platform-node/node_modules/zod` 为 4.4.3，不能只复制根目录依赖而遗漏 MCP SDK 使用的版本。候选 SQLite 预编译模块与原本本地编译模块字节不同，须通过数据库测试及六组实际安装验证后再签署。复制资格源码时仅忽略根依赖目录并单独复制，保留工作区内依赖；全部符号链接继续接受既有内部路径验证。切换前确认无活动 Run、无未清理作业，创建并验证 schema 32 备份，只切换安装和启动配置；原安装保留在 `2026-09-13-before-search-time`。不重导历史、不覆盖数据库，首次启动前沿用安装恢复，首次启动尝试后保留现场。切换后在已授权合成旧对话中核对本轮搜索、源日期及回答，不能以静态时区标注测试代替实际回答验证。
 
-完整测试使用 `/data/himawari-tests-20260913` 中新建的独立临时目录，根目录必须为部署账号所有、0700、普通规范目录且位于 `/data`。测试 shell 使用 `umask 077` 和正式 `vitest.workspace.ts` 的项目配置，不能用 `/dev/shm` 引入与只读 `/dev` 重叠的测试根，也不能遗漏集成项目的 30 秒超时设置。此目录只供隔离候选测试，不扩大生产工作区范围。
+2026-09-13 的历史完整测试使用 `/data/himawari-tests-20260913` 中的独立临时目录和 `umask 077`。当前开发验证按 [ADR 0042 的存放规则](../adr/0042-hermes-test-scratch-on-root-disk.md#storage)：源码、依赖、产物和证据留在 `/data`；运行时临时数据在根盘的任务自有 0700 短路径，通过 `HIMAWARI_TEST_TEMP_ROOT` 和同根的 `TMPDIR` 指定，运行前和运行中保留至少 10 GiB 根盘余量，记录采样峰值，转存现场后清理。使用正式 `vitest.workspace.ts`，不放宽超时或改变 SQLite 同步设置，不用 `/dev/shm` 替代磁盘。此规则不移动既有部署数据库或改变冻结探针的安装身份；实际部署资格仍按本次具体授权及最终安装路径核对。
 
 中文正文中的自动来源链接修复使用 `hermes-source-links-qualify.py --qualify` 与 `hermes-source-links-cutover.py --apply --receipt <本次签署摘要>`，构建目录为 `2026-09-13-source-links`。候选只更换 `share/control-center` 的 HTML 和主 JavaScript 资源；运行时目录每个文件与已安装搜索时间候选相同，资格入口强制摘要仍为 `a9b48f67…`。自动识别的网址在中文标点前结束，剩余正文继续由 Marked 解析；显式 Markdown 地址和原生 Unicode 路径不截断。停服前沿用页面检查、真实账号保护和六组资格探针，切换入口绑定当前搜索时间安装和本次签署，创建并验证 `before-source-links-2026-09-13` 备份后更换安装与启动入口。旧安装保留在 `2026-09-13-before-source-links`，schema 32 与历史保持不变。浏览器复测直接打开已保存的合成天气回答，核对两个实际链接的 href 不含中文句尾，不增加模型请求。现有恢复与首次启动后保留现场规则继续适用。
+
+<a id="concurrent-refresh"></a>
+
+### 并发刷新与回答显示
+
+U1 修订 `51fe7f6` 处理会话详情与执行状态读取之间发生的并发更新：状态版本比本轮详情新时，页面重新读取详情，不接纳版本不匹配的状态；状态版本更旧或归属不匹配时仍报错。已知消息的正文读取独立进行，执行状态刷新失败不会阻止它；正式回答的正文尚未读回时，页面保留已显示的执行文本，正文到达后显示正式回答。
+
+安装验收须覆盖状态先于详情更新、正文延迟返回、状态读取失败和刷新后的回答保留，并继续核对旧版本与错误归属被拒绝。该修订没有改变服务协议、数据库或部署步骤；组件回归不能替代实际安装后的页面验收。原始失败和修正后的回归证据见[U1 停止记录](../../.ci-output/handoff/2026-09-28-codex-round2-stop-27.md#verification)。
 
 ## Evidence
 
