@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import coveragePolicy from "./ci/coverage-policy.json" with { type: "json" };
 import policy from "./ci/policy.json" with { type: "json" };
+import { testWorkerCount } from "./scripts/ci/test-concurrency.mjs";
 
 // Tooling owns synthetic Git repositories; hosted cases supply their own GitHub identity.
 const toolingEnvironment = {
@@ -26,18 +27,25 @@ export default defineConfig({
       reportOnFailure: true,
     },
     projects: [
-      ...policy.testProjects.map(({ id, include, exclude, fileParallelism }) => ({
+      ...policy.testProjects.map((project) => ({
         test: {
-          name: id,
+          name: project.id,
           environment: "node",
-          include,
-          exclude,
-          fileParallelism,
+          include: project.include,
+          exclude: project.exclude,
+          fileParallelism: project.fileParallelism,
           retry: 0,
           // Durable integration cases start workers and use real filesystem/UDS I/O.
           // Their harness deadline is separate from asserted product deadlines.
-          ...(id === "integration" ? { testTimeout: 30_000 } : {}),
-          ...(id === "tooling" ? { env: toolingEnvironment } : {}),
+          ...(project.id === "integration"
+            ? {
+                testTimeout: 30_000,
+                maxWorkers: testWorkerCount(project),
+                isolate: true,
+                sequence: { groupOrder: 1 },
+              }
+            : {}),
+          ...(project.id === "tooling" ? { env: toolingEnvironment } : {}),
         },
       })),
       ...policy.registeredTests

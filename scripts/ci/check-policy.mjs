@@ -17,6 +17,7 @@ import {
 import { coverageProjects, inCoverageScope } from "./coverage-model.mjs";
 import { validateMainWorkflow } from "./main-workflow.mjs";
 import { validateQualityWorkflow } from "./quality-policy.mjs";
+import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs";
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
@@ -38,7 +39,10 @@ const jobIds = [
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 
-export function validatePolicy(policy, { allowLegacyCoverage = false } = {}) {
+export function validatePolicy(
+  policy,
+  { allowLegacyCoverage = false, allowLegacyIntegration = false } = {},
+) {
   const legacyCoverage =
     allowLegacyCoverage &&
     sameSet(policy.checks?.find((check) => check.id === "coverage")?.projects ?? [], [
@@ -89,8 +93,14 @@ export function validatePolicy(policy, { allowLegacyCoverage = false } = {}) {
     unique(project.include, "project include");
     unique(project.exclude, "project exclude");
     assert(
-      project.id !== "integration" || project.fileParallelism === false,
-      "Integration files must execute serially",
+      project.id !== "integration" ||
+        (project.fileParallelism === true && project.workerLimits) ||
+        (allowLegacyIntegration && project.fileParallelism === false && !project.workerLimits),
+      "Integration files require a bounded parallel worker budget",
+    );
+    assert(
+      project.id === "integration" || !project.workerLimits,
+      "Only integration may change the worker budget",
     );
     for (const excluded of project.exclude)
       assert(
@@ -593,7 +603,15 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(JSON.parse(bytes), { allowLegacyCoverage: true });
+  const policy = validatePolicy(JSON.parse(bytes), {
+    allowLegacyCoverage: true,
+    allowLegacyIntegration: true,
+  });
+  const integration = policy.testProjects.find((project) => project.id === "integration");
+  if (!integration.fileParallelism && !integration.workerLimits) {
+    integration.fileParallelism = true;
+    integration.workerLimits = { ...integrationWorkerLimits };
+  }
   // The approved migration only adds integration collection and its build input.
   // Keep the accepted bytes/hash, thresholds, inventory and every other gate.
   const collection = policy.checks.find((check) => check.id === "coverage");
@@ -694,6 +712,21 @@ export function validateVitestProjects(policy, config) {
       `Vitest file parallelism differs from policy: ${required.id}`,
     );
     assert(actual.environment === "node", `Vitest environment differs from policy: ${required.id}`);
+    assert(
+      (actual.sequence?.groupOrder ?? root.sequence?.groupOrder ?? 0) ===
+        (required.id === "integration" ? 1 : 0),
+      `Vitest scheduling group differs from policy: ${required.id}`,
+    );
+    if (required.id === "integration") {
+      assert(
+        actual.maxWorkers === testWorkerCount(required),
+        "Vitest integration worker count differs from policy",
+      );
+      assert(
+        (actual.isolate ?? root.isolate ?? true) === true,
+        "Vitest integration files must remain isolated",
+      );
+    }
   }
   for (const id of projects.keys())
     assert(

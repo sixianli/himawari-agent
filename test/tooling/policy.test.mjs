@@ -23,6 +23,7 @@ import {
   sha256,
   validateRecord,
 } from "../../scripts/ci/contracts.mjs";
+import { testWorkerCount } from "../../scripts/ci/test-concurrency.mjs";
 
 const policy = readJson(path.join(repositoryRoot, "ci/policy.json"));
 const clone = () => structuredClone(policy);
@@ -176,6 +177,13 @@ function vitestConfig() {
             fileParallelism: project.fileParallelism,
             environment: "node",
             retry: 0,
+            ...(project.id === "integration"
+              ? {
+                  maxWorkers: testWorkerCount(project),
+                  isolate: true,
+                  sequence: { groupOrder: 1 },
+                }
+              : {}),
           },
         })),
         ...policy.registeredTests
@@ -330,9 +338,9 @@ describe("CI policy contract", () => {
       },
     ],
     [
-      "parallel integration",
+      "unbounded parallel integration",
       (value) => {
-        value.testProjects.find((project) => project.id === "integration").fileParallelism = true;
+        delete value.testProjects.find((project) => project.id === "integration").workerLimits;
       },
     ],
     [
@@ -646,6 +654,32 @@ describe("CI policy contract", () => {
     expect(selected.policy.checks.filter((entry) => entry.id !== "coverage")).toEqual(
       old.checks.filter((entry) => entry.id !== "coverage"),
     );
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(old)));
+    expect(selected.coverage).toEqual(reviewedCoverage());
+  });
+  it("仅迁移旧 integration 调度而保留已接受的文件清单和其他门禁", () => {
+    const { root, git } = fixtureRepository();
+    const old = clone();
+    const integration = old.testProjects.find((entry) => entry.id === "integration");
+    integration.fileParallelism = false;
+    delete integration.workerLimits;
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(old));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted serial integration");
+    const proposed = clone();
+    proposed.testProjects.find((entry) => entry.id === "integration").include = ["hidden/**"];
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(proposed));
+    const selected = resolvePolicySource({ root });
+    const expected = structuredClone(old);
+    Object.assign(
+      expected.testProjects.find((entry) => entry.id === "integration"),
+      {
+        fileParallelism: true,
+        workerLimits: { maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 },
+      },
+    );
+    expect(selected.policy).toEqual(expected);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(old)));
     expect(selected.coverage).toEqual(reviewedCoverage());
   });

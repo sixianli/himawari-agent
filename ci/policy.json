@@ -215,7 +215,12 @@
         "test/integration/container-pi-runner-qualification.test.ts",
         "test/integration/product-path-browser.test.ts"
       ],
-      "fileParallelism": false
+      "fileParallelism": true,
+      "workerLimits": {
+        "maximum": 4,
+        "cpusPerWorker": 2,
+        "memoryMiBPerWorker": 2048
+      }
     },
     {
       "id": "e2e",
