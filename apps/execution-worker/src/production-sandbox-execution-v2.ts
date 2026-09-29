@@ -900,7 +900,6 @@ export class ProductionSandboxExecutionV2 {
             systemCode: "UNKNOWN",
           });
         }
-        if (!this.options.payloads.isReady()) await this.options.payloads.connect();
         await this.rpc(entry, { kind: "preparation_diagnostic", diagnostic: parsed });
       } catch {}
       return this.unknown(entry);

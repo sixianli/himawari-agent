@@ -502,7 +502,7 @@ export async function createProductionWorkerComposition(
   });
 
   let stopped = false;
-  let agentServicesReady = false;
+  let agentServicesInitialized = false;
   let connectPromise: Promise<void> | undefined;
   const readiness = (): ProductionWorkerReadiness => {
     if (stopped) {
@@ -512,13 +512,14 @@ export async function createProductionWorkerComposition(
         reasonCodes: Object.freeze([PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN]),
       });
     }
+    const ready = admission.isReady() && payloads.isReady();
+    if (agentServicesInitialized && !ready && !connectPromise)
+      void connectAgentServices().catch(() => undefined);
     return Object.freeze({
       live: true,
-      ready: agentServicesReady,
+      ready,
       reasonCodes: Object.freeze(
-        agentServicesReady
-          ? []
-          : [PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE],
+        ready ? [] : [PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE],
       ),
     });
   };
@@ -570,7 +571,7 @@ export async function createProductionWorkerComposition(
       throw new ProductionWorkerCompositionError(
         PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
       );
-    if (agentServicesReady) return;
+    if (admission.isReady() && payloads.isReady()) return;
     if (connectPromise) return connectPromise;
     connectPromise = (async () => {
       try {
@@ -580,11 +581,14 @@ export async function createProductionWorkerComposition(
           throw new ProductionWorkerCompositionError(
             PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
           );
-        agentServicesReady = true;
+        agentServicesInitialized = true;
       } catch (error) {
+        if (stopped)
+          throw new ProductionWorkerCompositionError(
+            PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
+          );
         admission.disconnect();
         payloads.disconnect();
-        agentServicesReady = false;
         if (error instanceof ProductionWorkerCompositionError) throw error;
         throw new ProductionWorkerCompositionError(
           PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE,
@@ -599,7 +603,7 @@ export async function createProductionWorkerComposition(
   const close = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    agentServicesReady = false;
+    agentServicesInitialized = false;
     try {
       // Keep the broker available while jobs stop and persist their final observations.
       await worker.shutdown();

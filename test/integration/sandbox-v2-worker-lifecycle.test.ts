@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, rmdir } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
+import { PayloadUdsServer } from "@himawari-agent/platform-node";
+import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
+import { udsFaultProxy } from "@himawari-agent/testing";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
@@ -250,15 +252,7 @@ it.each([
   };
   const transportFailure =
     scenario === "resolve-transport-failure" || scenario === "diagnostic-handshake-rejected";
-  let connected = true;
-  const connect = vi.fn(async () => {
-    calls.push("handshake");
-    if (scenario === "diagnostic-handshake-rejected") throw new Error("PEER_REJECTED");
-    connected = true;
-  });
-  const payloads = {
-    isReady: () => connected,
-    connect,
+  let payloads = {
     readInput: async () =>
       piScenario
         ? Buffer.from(
@@ -280,12 +274,7 @@ it.each([
         chunk?: { index: number; end: boolean; bytesBase64: string };
       },
     ) => {
-      if (!connected) throw new Error("PAYLOAD_HANDSHAKE_REQUIRED");
       calls.push(command.kind);
-      if (command.kind === "resolve" && transportFailure) {
-        connected = false;
-        throw Object.assign(new Error("private transport failure"), { code: "ECONNRESET" });
-      }
       if (command.kind === "read" && scenario === "stream-authority-revoked" && streamAttempts)
         throw new Error("authority changed");
       if (command.kind === "append_output" && streamScenario) {
@@ -458,6 +447,77 @@ it.each([
       };
     },
   } as unknown as ProductionPayloadBrokerClient;
+  let proxy: Awaited<ReturnType<typeof udsFaultProxy>> | undefined;
+  if (transportFailure) {
+    const options = {
+      credential: { tokenRef: "credential", tokenValue: "f".repeat(32) },
+      agentServiceInstanceId: "agent",
+      agentServiceBootId: "agent-boot",
+      workerInstanceId: "worker",
+      workerBootId: "worker-boot",
+      authorityEpoch: plan.executionLease.authorityEpoch,
+      fencingToken: plan.executionLease.fencingToken,
+      maximumBodyBytes: 65536,
+      maximumPayloadBytes: 16384,
+      requestTimeoutMs: 1000,
+    };
+    const server = new PayloadUdsServer({
+      ...options,
+      runtimeDirectory: root,
+      allowedWorkerIdentities: [options],
+      handler: {
+        readInput: async () => new Uint8Array(),
+        writeOutput: async () => ({ outputRef: "unused", replayed: false }),
+        sandboxExecution: async ({ payload }) => {
+          expect(["read", "preparation_diagnostic"]).toContain(payload.command.kind);
+          return {
+            record: {
+              phase: "reserved",
+              plan,
+              reservation: {
+                ...reservation,
+                schemaVersion: "sandbox-preparation.v1",
+                identity: plan.identity,
+                environmentId: plan.environmentId,
+                mode: plan.mode,
+                sequence: 1,
+                createdAt: plan.requestedAt,
+              },
+              startedAt: null,
+              operationRevision: 0,
+            },
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
+        },
+      },
+    });
+    await server.start();
+    cleanups.push(() => server.stop());
+    const faultProxy = await udsFaultProxy(`${root}/proxy.sock`, server.socketPath, (url, body) => {
+      calls.push(
+        url.endsWith("/handshake") ? "handshake" : JSON.parse(body.toString()).payload.command.kind,
+      );
+    });
+    proxy = faultProxy;
+    cleanups.push(() => faultProxy.close());
+    let sequence = 0;
+    payloads = new ProductionPayloadBrokerClient({
+      ...options,
+      socketPath: `${root}/proxy.sock`,
+      nextId: () => `message:${++sequence}`,
+    });
+    await payloads.connect();
+    calls.length = 0;
+    proxy.dropNext(
+      "/payload/v1/sandbox/execution",
+      (body) => JSON.parse(body.toString()).payload.command.kind === "resolve",
+    );
+    if (scenario === "diagnostic-handshake-rejected") proxy.blockHandshakes(true);
+    proxy.releaseHandshakes();
+  }
   const worker = new ProductionSandboxExecutionV2({
     configuration: { capabilityDeployment: {} as never },
     peer: { workerInstanceId: "worker" } as never,
@@ -494,10 +554,11 @@ it.each([
   };
   const outcome = await worker.execute(request);
   if (transportFailure) {
+    if (!proxy) throw new Error("Transport fault proxy missing");
     expect(outcome.outcome).toBe("result_unknown");
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.start).not.toHaveBeenCalled();
-    expect(connect).toHaveBeenCalledOnce();
+    expect(proxy.requests.filter((url) => url.endsWith("/handshake"))).toHaveLength(2);
     expect(calls).toEqual([
       "read",
       "resolve",
@@ -505,11 +566,10 @@ it.each([
       ...(scenario === "resolve-transport-failure" ? ["preparation_diagnostic"] : []),
     ]);
     expect(await worker.execute(request)).toEqual(outcome);
-    expect(connect).toHaveBeenCalledOnce();
+    expect(proxy.requests.filter((url) => url.endsWith("/handshake"))).toHaveLength(2);
     await worker.shutdown();
     return;
   }
-  expect(connect).not.toHaveBeenCalled();
   if (scenario === "stream-incomplete-stdio") {
     expect(host.start).toHaveBeenCalledOnce();
     expect

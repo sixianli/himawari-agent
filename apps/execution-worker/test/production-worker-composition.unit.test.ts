@@ -6,10 +6,13 @@ import type { ExecutionWorkerEvent, ProductConfiguration } from "@himawari-agent
 import type { ExecuteWorkRequest, ResourceCeiling } from "@himawari-agent/execution-contracts";
 import {
   CAPABILITY_DEPLOYMENT_ERROR_CODES,
+  ExecutionAdmissionUdsServer,
   type ExecutionUdsCredential,
+  PayloadUdsServer,
 } from "@himawari-agent/platform-node";
 import { createV02Fixture } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { udsFaultProxy } from "@himawari-agent/testing";
 import {
   createProductionWorkerComposition,
   PRODUCTION_WORKER_COMPOSITION_ERROR_CODES,
@@ -233,7 +236,224 @@ function configuration(
   );
 }
 
+function composedInvocation(
+  composition: Awaited<ReturnType<typeof createProductionWorkerComposition>>,
+  id = "composition",
+) {
+  const deadline = "2026-09-05T00:00:10.000Z";
+  composition.delegations.accept({
+    handleVersion: "capability-handle.v2",
+    ref: `handle:${id}`,
+    revision: 1,
+    authorityFence: 3,
+    ownerId: FIXTURE_SCOPE.ownerId,
+    agentId: FIXTURE_SCOPE.agentId,
+    runId: FIXTURE_SCOPE.runId,
+    capabilityRef: "fixture-endpoint",
+    capabilityVersion: "1.0.0",
+    authorizationType: "grant",
+    authorizationRef: "grant:composition",
+    operations: ["invoke"],
+    inputRefs: ["payload:composition-input"],
+    delegatedContextRefs: [],
+    secretRefs: [],
+    maxDataClassification: "public",
+    issuedAt: NOW,
+    expiresAt: deadline,
+    revokedAt: null,
+    operation: "invoke",
+    maxUses: 1,
+    uses: 0,
+    maxTotalCostMicros: 100,
+    spentCostMicros: 0,
+    idempotencyKeys: [],
+    workerEndedAt: null,
+  });
+  const request: ExecuteWorkRequest = {
+    schemaVersion: "execution.v1",
+    kind: "request",
+    type: "work.execute",
+    messageId: `invocation:${id}`,
+    correlationId: `invocation:${id}`,
+    causationId: "delegation:composition",
+    dataClassification: "public",
+    scope: {
+      ownerId: FIXTURE_SCOPE.ownerId,
+      agentId: FIXTURE_SCOPE.agentId,
+      runId: FIXTURE_SCOPE.runId,
+      workerRunId: "worker-run:composition",
+    },
+    idempotencyKey: `invocation:${id}`,
+    payload: {
+      capabilityId: "fixture-endpoint",
+      capabilityVersion: "1.0.0",
+      operation: "invoke",
+      inputRef: "payload:composition-input",
+      capabilityHandleRef: `handle:${id}`,
+      delegatedContextRefs: [],
+      secretRefs: [],
+      requestedAt: NOW,
+      deadlineAt: deadline,
+    },
+  };
+  return request;
+}
+
 describe("production Worker composition", () => {
+  it.each(["next-call", "readiness", "rejected", "closed", "shutdown-cleanup"] as const)(
+    "runs the next invocation in the same Worker after a non-preparation Payload disconnect: %s",
+    async (mode) => {
+      const root = await mkdtemp("/tmp/h-f-worker-");
+      roots.push(root);
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
+      const composition = await createProductionWorkerComposition({
+        configuration: configuration(root, await snapshot(root)),
+        credential: CREDENTIAL,
+        authority: { authorityEpoch: 2, fencingToken: 3 },
+        agentServiceBootId: "agent-service-boot:composition",
+        platform: "linux",
+        clock: { now: () => NOW },
+        fetch,
+        payloadSocketPath: path.join(root, "runtime", "proxy.sock"),
+      });
+      let sequence = 0;
+      const peer = composition.peerBinding;
+      const payloads = new PayloadUdsServer({
+        runtimeDirectory: path.join(root, "runtime"),
+        credential: CREDENTIAL,
+        agentServiceInstanceId: peer.agentServiceInstanceId,
+        agentServiceBootId: peer.agentServiceBootId,
+        allowedWorkerIdentities: [
+          { workerInstanceId: peer.workerInstanceId, workerBootId: peer.workerBootId },
+        ],
+        authorityEpoch: peer.authorityEpoch,
+        fencingToken: peer.fencingToken,
+        maximumBodyBytes: 65536,
+        maximumPayloadBytes: 16384,
+        requestTimeoutMs: 1000,
+        handler: {
+          validateInvocation: async () => {},
+          readInput: async () => Buffer.from("{}"),
+          writeOutput: async (message) => ({
+            outputRef: `output:${message.payload.invocationId}`,
+            replayed: false,
+          }),
+        },
+      });
+      const admission = new ExecutionAdmissionUdsServer({
+        runtimeDirectory: path.join(root, "runtime"),
+        credential: CREDENTIAL,
+        trustedPeerBinding: () => peer,
+        maximumBodyBytes: 65536,
+        requestTimeoutMs: 1000,
+        now: () => NOW,
+        nextId: () => `admission:${++sequence}`,
+        handler: {
+          admit: async () => {
+            throw new Error("Unexpected subtask admission");
+          },
+        },
+      });
+      await payloads.start();
+      await admission.start();
+      const proxy = await udsFaultProxy(
+        path.join(root, "runtime", "proxy.sock"),
+        payloads.socketPath,
+      );
+      try {
+        await composition.connectAgentServices();
+        const boot = composition.peerBinding.workerBootId;
+        proxy.dropNext("/payload/v1/output/write");
+        const run = async (id: string) => {
+          const events: ExecutionWorkerEvent[] = [];
+          for await (const event of composition.service.execute(
+            composedInvocation(composition, id),
+            CEILING,
+          ))
+            events.push(event);
+          return events;
+        };
+        await expect(run("first")).resolves.toMatchObject([
+          { type: "work.result", payload: { outcome: "result_unknown", outputRef: null } },
+        ]);
+        if (mode !== "next-call") proxy.blockHandshakes(mode === "rejected");
+        expect.soft(composition.readiness().ready).toBe(false);
+        if (mode !== "next-call") {
+          await vi.waitFor(() =>
+            expect(proxy.requests.filter((p) => p.endsWith("/handshake"))).toHaveLength(2),
+          );
+          const recovery = composition.connectAgentServices().then(
+            () => "connected",
+            (error: unknown) => error,
+          );
+          expect(composition.readiness().ready).toBe(false);
+          expect(composition.readiness().ready).toBe(false);
+          let closing: Promise<unknown> | undefined;
+          if (mode === "shutdown-cleanup") {
+            const disconnect = vi.spyOn(composition.payloads, "disconnect");
+            const shutdown = composition.worker.shutdown.bind(composition.worker);
+            vi.spyOn(composition.worker, "shutdown").mockImplementationOnce(async () => {
+              expect(composition.readiness()).toMatchObject({ live: false, ready: false });
+              const identity = { handleRef: "handle:first", invocationId: "invocation:first" };
+              await composition.payloads.assertCurrent(identity);
+              expect(disconnect).not.toHaveBeenCalled();
+              await composition.payloads.assertCurrent(identity);
+              await shutdown();
+            });
+            closing = composition.close().then(
+              () => null,
+              (error: unknown) => error,
+            );
+          }
+          if (mode === "closed") await composition.close();
+          proxy.releaseHandshakes();
+          const recovered = await recovery;
+          if (mode === "closed" || mode === "shutdown-cleanup") {
+            if (closing) await expect(closing).resolves.toBeNull();
+            expect(recovered).toMatchObject({
+              code: PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
+            });
+            expect(composition.readiness()).toMatchObject({ live: false, ready: false });
+            expect(composition.payloads.isReady()).toBe(false);
+            expect(composition.admission.isReady()).toBe(false);
+            expect(fetch).toHaveBeenCalledOnce();
+            expect(proxy.requests.filter((p) => p === "/payload/v1/output/write")).toHaveLength(1);
+            return;
+          }
+          if (mode === "rejected") {
+            expect(recovered).toMatchObject({
+              code: PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE,
+            });
+            expect(composition.payloads.isReady()).toBe(false);
+            expect(composition.admission.isReady()).toBe(false);
+            proxy.blockHandshakes();
+            proxy.releaseHandshakes();
+          } else expect(recovered).toBe("connected");
+          await vi.waitFor(() => expect(composition.readiness().ready).toBe(true));
+          expect(proxy.requests.filter((p) => p.endsWith("/handshake"))).toHaveLength(
+            mode === "rejected" ? 3 : 2,
+          );
+        }
+        await expect(run("second")).resolves.toMatchObject([
+          {
+            type: "work.result",
+            payload: { outcome: "succeeded", outputRef: "output:invocation:second" },
+          },
+        ]);
+        expect(composition.peerBinding.workerBootId).toBe(boot);
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(proxy.requests.filter((p) => p === "/payload/v1/output/write")).toHaveLength(2);
+        await composition.connectAgentServices();
+        expect(composition.readiness().ready).toBe(true);
+      } finally {
+        await composition.close();
+        await proxy.close();
+        await admission.stop();
+        await payloads.stop();
+      }
+    },
+  );
+
   it.each(["active", "revoked"])(
     "checks admitted delegated authority through production composition: %s",
     async (mode) => {
@@ -252,62 +472,7 @@ describe("production Worker composition", () => {
       const authority = vi.spyOn(composition.payloads, "assertCurrent").mockResolvedValue();
       vi.spyOn(composition.payloads, "readInput").mockResolvedValue(new TextEncoder().encode("{}"));
       vi.spyOn(composition.payloads, "writeOutput").mockResolvedValue("payload:composition-output");
-      const deadline = "2026-09-05T00:00:10.000Z";
-      composition.delegations.accept({
-        handleVersion: "capability-handle.v2",
-        ref: "handle:composition",
-        revision: 1,
-        authorityFence: 3,
-        ownerId: FIXTURE_SCOPE.ownerId,
-        agentId: FIXTURE_SCOPE.agentId,
-        runId: FIXTURE_SCOPE.runId,
-        capabilityRef: "fixture-endpoint",
-        capabilityVersion: "1.0.0",
-        authorizationType: "grant",
-        authorizationRef: "grant:composition",
-        operations: ["invoke"],
-        inputRefs: ["payload:composition-input"],
-        delegatedContextRefs: [],
-        secretRefs: [],
-        maxDataClassification: "public",
-        issuedAt: NOW,
-        expiresAt: deadline,
-        revokedAt: null,
-        operation: "invoke",
-        maxUses: 1,
-        uses: 0,
-        maxTotalCostMicros: 100,
-        spentCostMicros: 0,
-        idempotencyKeys: [],
-        workerEndedAt: null,
-      });
-      const request: ExecuteWorkRequest = {
-        schemaVersion: "execution.v1",
-        kind: "request",
-        type: "work.execute",
-        messageId: "invocation:composition",
-        correlationId: "invocation:composition",
-        causationId: "delegation:composition",
-        dataClassification: "public",
-        scope: {
-          ownerId: FIXTURE_SCOPE.ownerId,
-          agentId: FIXTURE_SCOPE.agentId,
-          runId: FIXTURE_SCOPE.runId,
-          workerRunId: "worker-run:composition",
-        },
-        idempotencyKey: "invocation:composition",
-        payload: {
-          capabilityId: "fixture-endpoint",
-          capabilityVersion: "1.0.0",
-          operation: "invoke",
-          inputRef: "payload:composition-input",
-          capabilityHandleRef: "handle:composition",
-          delegatedContextRefs: [],
-          secretRefs: [],
-          requestedAt: NOW,
-          deadlineAt: deadline,
-        },
-      };
+      const request = composedInvocation(composition);
       try {
         const events: ExecutionWorkerEvent[] = [];
         const execute = async () => {

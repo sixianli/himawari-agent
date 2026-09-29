@@ -284,3 +284,16 @@ D 提交前完整 check、4,926 项 npm test、两项实际安装回归和四份
 D 已独立提交 `33c1590`。E 的有效红测试先用 TaskEnvironmentCoordinator 产生真实环境释放回执，再由自动预约恢复读取；旧实现错误调用本机控制，独立 SQL 仍读到未释放占用。分流到现有 environments.releaseReservation 后，释放及重复 pump 幂等通过；环境仍运行与伪造回执的拒绝检查保留。定向容器路线与 SRT 封锁矩阵 39 项通过，完整 check 通过；构建与完整项目验证、提交状态见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)。未新增接口、持久形状或重新调度规则，未执行 Docker/Linux 资格。
 
 E 提交前完整 check、构建、4,928 项 npm test 全部通过，零失败/跳过；四份 Runbook 完成 dry-run、确认封存及 check，严格文档校验零错误/警告。被测源码与提交前源码逐文件相同。
+
+
+### reply-18 F：UDS 通用恢复与暂停审核
+
+E `cd276c3` 已获 Claude 独立审核通过；文档提交 `e0bce8e` 修正 A2 状态与停服后的预约统计，四份 Runbook 已在当前目录及 git archive HEAD 干净副本验证。B1 的 +290 行测试已原样保存为 b1-wip-at-stop-16-preparation.patch 并从工作区移除，F 完成后须写 stop-16 等审核，不能直接继续 B1。
+
+F 红测试确认同一生产 Worker 装配首次写输出断连后，第二次正常调用被 HANDSHAKE_REQUIRED 拒绝而 readiness 仍为 true；Admission 同样不能继续。现两个客户端共享内部并发握手机制，保留原身份、认证和握手校验，不重发失败业务。Worker 就绪探测可启动有界共享重握手，关闭仍拒绝迟到成功。D 的显式重连特例已删除，其两项回归使用真实 UDS 与通用生产客户端，诊断成功/握手失败及无原操作重发仍成立。
+
+定向 81 项已通过，包括原认证合同、8 项通道恢复矩阵、12 项 Worker 装配及 27 项生命周期；其中 Worker endpoint 依赖仍为测试 fetch，不是完整 SRT 资格。完整 check、build、npm test 和提交证据见 [F 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/f-verification.md)。实现与限制见 [F 设计说明](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#f通用-uds-断连恢复) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
+
+E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用链确认并记录 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，本轮不实现；期限恢复本身要求资源释放，不能把该缺口描述成已复现的到期后错误终态。整轮仍待 B1、B2、B3、其余 Backlog 与最终无筛选 Mac 资格。
+
+首轮 F 完整 4,940 项全部通过后，静态复核新增关闭期间清理通道寿命回归；测试确认重握手 catch 过早 disconnect。已改由 close 在 shutdown 完成后统一断开，原关闭错误码保持；该新增场景先失败后通过。最终版本重新构建与全量验证记录见 F 验证记录，不能复用首轮全量作为最终代码证据。

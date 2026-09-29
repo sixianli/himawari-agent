@@ -23,6 +23,8 @@ import {
   AuthenticatedUdsTransportError,
 } from "./authenticated-uds-transport.js";
 
+import { UdsHandshakeSession } from "./uds-handshake-session.js";
+
 const SANDBOX_EXECUTION_PATH = "/payload/v1/sandbox/execution";
 const SANDBOX_JOB_PATH = "/payload/v1/sandbox/job";
 const HANDSHAKE_PATH = "/payload/v1/handshake";
@@ -549,7 +551,7 @@ export class PayloadUdsClient {
   readonly schemaVersion = PAYLOAD_BROKER_V1_SCHEMA_VERSION;
   private readonly options: PayloadUdsClientOptions;
   private readonly uds: AuthenticatedUdsClient;
-  private connected = false;
+  private readonly connection: UdsHandshakeSession<PayloadBrokerHandshakeAccepted>;
 
   constructor(options: PayloadUdsClientOptions) {
     if (!Number.isSafeInteger(options.authorityEpoch) || options.authorityEpoch < 1) {
@@ -575,13 +577,21 @@ export class PayloadUdsClient {
       requestTimeoutMs: options.requestTimeoutMs,
       errorCodes: COMMON_UDS_ERROR_CODES,
     });
+    this.connection = new UdsHandshakeSession(
+      () => this.handshake(),
+      () => new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDSHAKE_REQUIRED, 401),
+    );
   }
 
   isReady(): boolean {
-    return this.connected;
+    return this.connection.isReady();
   }
 
-  async connect(): Promise<PayloadBrokerHandshakeAccepted> {
+  connect(): Promise<PayloadBrokerHandshakeAccepted> {
+    return this.connection.connect();
+  }
+
+  private async handshake(): Promise<PayloadBrokerHandshakeAccepted> {
     const message = {
       ...requestEnvelope("payload.handshake", this.options.nextId("payload-handshake")),
       payload: {
@@ -603,12 +613,11 @@ export class PayloadUdsClient {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
     }
     this.assertHandshakeIdentity(accepted);
-    this.connected = true;
     return accepted;
   }
 
   async validateInvocation(identity: PayloadBrokerInvocationIdentity): Promise<void> {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.invocation.validate", this.options.nextId("invocation-validate")),
@@ -624,7 +633,7 @@ export class PayloadUdsClient {
   }
 
   async readInput(identity: PayloadBrokerInvocationIdentity): Promise<Uint8Array> {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.input.read", this.options.nextId("payload-input-read")),
@@ -658,7 +667,7 @@ export class PayloadUdsClient {
       "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   > {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.sandbox.execution", this.options.nextId("sandbox-execution")),
@@ -716,7 +725,7 @@ export class PayloadUdsClient {
   ): Promise<
     Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied" | "resolvedScope">
   > {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.sandbox.job", this.options.nextId("sandbox-job")),
@@ -758,7 +767,7 @@ export class PayloadUdsClient {
     plaintext: Uint8Array,
     contentType: string,
   ): Promise<PayloadBrokerOutputReceipt> {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     if (plaintext.byteLength > this.options.maximumPayloadBytes) {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.PAYLOAD_TOO_LARGE, 413);
@@ -783,7 +792,7 @@ export class PayloadUdsClient {
   }
 
   disconnect(): void {
-    this.connected = false;
+    this.connection.disconnect();
   }
 
   private async send(path: string, message: PayloadBrokerMessage) {
@@ -799,17 +808,11 @@ export class PayloadUdsClient {
         contentType: JSON_CONTENT_TYPE,
       });
     } catch (error) {
-      this.connected = false;
+      this.connection.failed();
       if (error instanceof AuthenticatedUdsTransportError) {
         throw new PayloadUdsError(error.code as PayloadUdsErrorCode, error.statusCode, error);
       }
       throw error;
-    }
-  }
-
-  private assertConnected(): void {
-    if (!this.connected) {
-      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDSHAKE_REQUIRED, 401);
     }
   }
 
