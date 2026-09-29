@@ -270,3 +270,10 @@ reply-17 已撤回 reply-16 的旧 unresolved 额外尝试；前节描述保留�
 真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。登记成功但 ACK 丢失仍无终点；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
 
 A2 提交前完整 `npm run check` 与 `npm test` 均退出 0，4,924 项全部通过、零失败/跳过。四份受影响 Runbook 语义核对后重新封存，严格校验零错误/警告。真实新旧安装的数据库以只读 immutable 方式独立复核，原文件摘要不变。
+
+
+### D 准备失败诊断的断连恢复
+
+A2 已独立提交 `b97aae8`。其后确认 D：Payload UDS 传输异常清除连接状态，Worker catch 未握手就发诊断，诊断再次被拒。新增组件测试先有 2 条失败，复用原 peer 握手后完整生命周期 27 条通过；新旧真实安装的同一断连注入都通过 CLI 读回一条受保护 prepare / SANDBOX_PREPARATION_FAILED，且 A2 的新旧释放边界不变。只重建诊断通道，不重发 resolve 或原工具。握手/权限仍失败时不能保证诊断持久，未增加新接口或备用日志。完整验证与提交状态见 [D 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/d-verification.md)。
+
+D 提交前完整 check、4,926 项 npm test、两项实际安装回归和四份 Runbook 封存均通过；严格文档校验零错误/警告。未增加接口或恢复用途。

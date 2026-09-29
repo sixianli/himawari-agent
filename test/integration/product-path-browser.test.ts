@@ -605,6 +605,17 @@ productDescribe(
                 });
                 expect(readback().rows[0]).toMatchObject({ runStatus: "completed", intents: 0 });
               }
+              const diagnostic = installation.diagnose(job.runId) as {
+                diagnostics: Array<{ content: unknown }>;
+              };
+              expect(diagnostic.diagnostics).toContainEqual(
+                expect.objectContaining({
+                  content: expect.objectContaining({
+                    stage: "prepare",
+                    reasonCode: "SANDBOX_PREPARATION_FAILED",
+                  }),
+                }),
+              );
               await record("before-paired-restart");
               await installation.crash();
               await waitForExpiredServiceLease();

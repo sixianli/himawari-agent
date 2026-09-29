@@ -50,6 +50,8 @@ it.each([
   "preparation-registration-ack-loss",
   "preparation-sealed",
   "preparation-failed",
+  "resolve-transport-failure",
+  "diagnostic-handshake-rejected",
   "revoked-running",
   "finished-during-check",
   "background",
@@ -246,7 +248,17 @@ it.each([
     workspaceConflictRefs:
       scenario === "network" ? [] : admitted.workspaces.map((item) => item.ref),
   };
+  const transportFailure =
+    scenario === "resolve-transport-failure" || scenario === "diagnostic-handshake-rejected";
+  let connected = true;
+  const connect = vi.fn(async () => {
+    calls.push("handshake");
+    if (scenario === "diagnostic-handshake-rejected") throw new Error("PEER_REJECTED");
+    connected = true;
+  });
   const payloads = {
+    isReady: () => connected,
+    connect,
     readInput: async () =>
       piScenario
         ? Buffer.from(
@@ -268,7 +280,12 @@ it.each([
         chunk?: { index: number; end: boolean; bytesBase64: string };
       },
     ) => {
+      if (!connected) throw new Error("PAYLOAD_HANDSHAKE_REQUIRED");
       calls.push(command.kind);
+      if (command.kind === "resolve" && transportFailure) {
+        connected = false;
+        throw Object.assign(new Error("private transport failure"), { code: "ECONNRESET" });
+      }
       if (command.kind === "read" && scenario === "stream-authority-revoked" && streamAttempts)
         throw new Error("authority changed");
       if (command.kind === "append_output" && streamScenario) {
@@ -476,6 +493,23 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (transportFailure) {
+    expect(outcome.outcome).toBe("result_unknown");
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
+    expect(calls).toEqual([
+      "read",
+      "resolve",
+      "handshake",
+      ...(scenario === "resolve-transport-failure" ? ["preparation_diagnostic"] : []),
+    ]);
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(connect).toHaveBeenCalledOnce();
+    await worker.shutdown();
+    return;
+  }
+  expect(connect).not.toHaveBeenCalled();
   if (scenario === "stream-incomplete-stdio") {
     expect(host.start).toHaveBeenCalledOnce();
     expect
