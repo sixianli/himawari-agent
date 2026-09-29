@@ -36,6 +36,7 @@ import {
   openQualifiedDatabase,
   readMigrationLedger,
   SqliteProductStateRepository,
+  SqliteRunDispatchOperations,
   SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
@@ -511,6 +512,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
 
   it.each([
     "released",
+    "standalone",
     "before-deadline",
     "unreleased",
     "missing-receipt",
@@ -531,6 +533,10 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "completed",
     "failed",
     "rollback",
+    "rollback-command",
+    "rollback-event",
+    "rollback-thread",
+    "rollback-gateway",
     "budget-unknown",
   ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
     const f = await openSandboxJournal();
@@ -665,6 +671,16 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         f.database.exec(
           "CREATE TRIGGER fail_expiry BEFORE UPDATE ON run_coordination_checkpoints BEGIN SELECT RAISE(ABORT, 'expiry-checkpoint-failed'); END",
         );
+      const failedNotification = {
+        "rollback-command": "INSERT ON command_results",
+        "rollback-event": "INSERT ON reliable_events",
+        "rollback-thread": "UPDATE ON threads",
+        "rollback-gateway": "INSERT ON thread_gateway_events",
+      };
+      if (scenario in failedNotification)
+        f.database.exec(
+          `CREATE TRIGGER fail_expiry_notification BEFORE ${failedNotification[scenario as keyof typeof failedNotification]} BEGIN SELECT RAISE(ABORT, 'expiry-notification-failed'); END`,
+        );
       if (scenario === "budget-unknown")
         f.database
           .prepare(
@@ -673,6 +689,24 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId);
       const state = () => ({
         run: f.database.prepare("SELECT status,revision FROM runs WHERE id=?").get(runId),
+        thread: f.database
+          .prepare("SELECT id,revision,updated_at AS updatedAt FROM threads WHERE id=?")
+          .get(record.plan.identity.threadId) as {
+          id: string;
+          revision: number;
+          updatedAt: string;
+        },
+        commands: f.database
+          .prepare("SELECT * FROM command_results WHERE state_key=? ORDER BY id")
+          .all(runId),
+        events: f.database
+          .prepare(
+            "SELECT * FROM reliable_events WHERE owner_id=? AND agent_id=? AND topic='run.failed' ORDER BY id",
+          )
+          .all(OWNER_ID, AGENT_ID),
+        gatewayEvents: f.database
+          .prepare("SELECT * FROM thread_gateway_events WHERE thread_id=? ORDER BY cursor_sequence")
+          .all(record.plan.identity.threadId),
         checkpoint: f.database
           .prepare(
             "SELECT phase,terminal_status,revision,diagnostic_code,context_ref FROM run_coordination_checkpoints WHERE run_id=?",
@@ -685,13 +719,28 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           .get(),
       });
       const before = state();
-      const recovery = opened.runReconciliation(
-        OWNER_ID,
-        AGENT_ID,
-        SERVICE_AUTHORITY.product,
-        SERVICE_AUTHORITY.lease,
-        "expiry-consumer",
-      );
+      const recovery =
+        scenario === "standalone"
+          ? new SqliteRunDispatchOperations(
+              f.database,
+              {
+                ownerId: OWNER_ID,
+                agentId: AGENT_ID,
+                authority: SERVICE_AUTHORITY.product,
+                authorityLease: SERVICE_AUTHORITY.lease,
+                consumerId: "expiry-consumer",
+              },
+              (_code, message) => {
+                throw new Error(message);
+              },
+            )
+          : opened.runReconciliation(
+              OWNER_ID,
+              AGENT_ID,
+              SERVICE_AUTHORITY.product,
+              SERVICE_AUTHORITY.lease,
+              "expiry-consumer",
+            );
       const input = {
         runId,
         expectedRunRevision: scenario === "run-revision" ? 9 : 10,
@@ -705,7 +754,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         at: now,
         leaseExpiresAt,
       };
-      if (["released", "budget-unknown"].includes(scenario)) {
+      if (["released", "standalone", "budget-unknown"].includes(scenario)) {
         const dispatch = opened.runDispatch(
           OWNER_ID,
           AGENT_ID,
@@ -734,6 +783,45 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         });
         expect(after.journal).toEqual(before.journal);
         expect(after.intents).toEqual(before.intents);
+        expect.soft(after.thread).toEqual({
+          ...before.thread,
+          revision: before.thread.revision + 1,
+          updatedAt: now,
+        });
+        expect.soft(after.commands).toHaveLength(before.commands.length + 1);
+        expect.soft(after.events).toHaveLength(before.events.length + 1);
+        expect.soft(after.gatewayEvents).toHaveLength(before.gatewayEvents.length + 1);
+        const command = after.commands.find(
+          (entry) =>
+            !before.commands.some((previous) => JSON.stringify(previous) === JSON.stringify(entry)),
+        ) as { id: string; idempotency_key: string } | undefined;
+        expect.soft(command).toMatchObject({
+          id: expect.any(String),
+          idempotency_key: expect.stringMatching(/^.+$/),
+          command_type: "run.transition",
+          state_key: runId,
+          state_revision: 11,
+          committed_at: now,
+        });
+        const event = after.events.find(
+          (entry) =>
+            !before.events.some((previous) => JSON.stringify(previous) === JSON.stringify(entry)),
+        ) as { id: string } | undefined;
+        expect.soft(event).toMatchObject({
+          id: expect.any(String),
+          idempotency_key: command?.idempotency_key,
+          topic: "run.failed",
+          publication_state: "pending",
+          payload_ref: payload.ref,
+          occurred_at: now,
+        });
+        expect.soft(after.gatewayEvents.at(-1)).toMatchObject({
+          event_id: event?.id,
+          event_type: "run.failed",
+          causation_command_id: command?.id,
+          thread_revision: before.thread.revision + 1,
+          occurred_at: now,
+        });
         await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
         expect(state()).toEqual(after);
       } else if (["cancelled", "completed", "failed"].includes(scenario)) {

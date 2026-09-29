@@ -33,7 +33,10 @@ import {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
-import type { SqliteThreadOperations } from "./sqlite-thread-operations.js";
+import {
+  appendThreadGatewayEventInTransaction,
+  type SqliteThreadOperations,
+} from "./sqlite-thread-operations.ts";
 import {
   RUN_COMPLETION_RECOVERY_SQL,
   RUN_RESOURCES_RELEASED_SQL,
@@ -172,24 +175,104 @@ function fingerprint(input: RunMutationInput): string {
     .digest("hex")}`;
 }
 
+export function writeRunReceiptInTransaction(
+  database: Database.Database,
+  input: RunMutationInput,
+  authority: ProductAuthorityFence,
+  now: string,
+  revision: number,
+): RunTransitionReceipt {
+  const identity = createHash("sha256")
+    .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
+    .digest("hex");
+  const stateKey = input["runId"];
+  database
+    .prepare(`INSERT INTO command_results
+      (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
+        deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision, committed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      `run-command:${identity}`,
+      input["ownerId"],
+      input["agentId"],
+      input["idempotencyKey"],
+      commandType(input),
+      fingerprint(input),
+      authority.deploymentId,
+      authority.authorityEpoch,
+      authority.fencingToken,
+      stateKey,
+      stateKey,
+      revision,
+      now,
+    );
+  database
+    .prepare(`INSERT INTO reliable_events
+      (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
+    .run(
+      `run-event:${identity}`,
+      input["ownerId"],
+      input["agentId"],
+      input["idempotencyKey"],
+      `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
+      input["payloadRef"],
+      now,
+    );
+  // A Run status is part of the Thread view. Commit its revision and durable
+  // notification with the Run so a waiting approval is visible without polling.
+  if ("nextStatus" in input) {
+    const changedThread = database
+      .prepare(`UPDATE threads
+      SET revision = revision + 1, updated_at = ?
+      WHERE id = (SELECT thread_id FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?)
+        AND owner_id = ? AND agent_id = ?
+      RETURNING id, revision`)
+      .get(now, input.runId, input.ownerId, input.agentId, input.ownerId, input.agentId);
+    if (changedThread !== undefined) {
+      const row = record(changedThread);
+      appendThreadGatewayEventInTransaction(database, {
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: createThreadId(string(row["id"])),
+        threadRevision: integer(row["revision"]),
+        eventId: `run-event:${identity}`,
+        commandId: `run-command:${identity}`,
+        commandType: `run.${input.nextStatus}`,
+        resultRef: null,
+        committedAt: now,
+        authority,
+      });
+    }
+  }
+  return {
+    replayed: false,
+    commandResult: {
+      ownerId: input["ownerId"],
+      agentId: input["agentId"],
+      idempotencyKey: input["idempotencyKey"],
+      commandType: commandType(input),
+      commandFingerprint: fingerprint(input),
+      stateKey,
+      stateRevision: revision,
+      resultRef: stateKey,
+      committedAt: now,
+    },
+  };
+}
+
 export class SqliteRunLifecycleOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
-  private readonly thread: Pick<
-    SqliteThreadOperations,
-    "commitAssistantMessage" | "appendGatewayEventInTransaction"
-  >;
+  private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
   private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
-    thread: Pick<
-      SqliteThreadOperations,
-      "commitAssistantMessage" | "appendGatewayEventInTransaction"
-    >,
+    thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
     executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
@@ -343,7 +426,7 @@ export class SqliteRunLifecycleOperations {
             input.agentId,
             stored.revision,
           );
-        return this.writeReceipt(input, authority, now, revision);
+        return writeRunReceiptInTransaction(this.database, input, authority, now, revision);
       })
       .immediate();
   }
@@ -480,7 +563,7 @@ export class SqliteRunLifecycleOperations {
             runId: input.runId,
           });
         this.writeCancelledCheckpoint(input, now);
-        return this.writeReceipt(mutation, authority, now, revision);
+        return writeRunReceiptInTransaction(this.database, mutation, authority, now, revision);
       })
       .immediate();
   }
@@ -521,91 +604,6 @@ export class SqliteRunLifecycleOperations {
         input.agentId,
         integer(row["revision"]),
       );
-  }
-
-  private writeReceipt(
-    input: RunMutationInput,
-    authority: ProductAuthorityFence,
-    now: string,
-    revision: number,
-  ): RunTransitionReceipt {
-    const identity = createHash("sha256")
-      .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
-      .digest("hex");
-    const stateKey = input["runId"];
-    this.database
-      .prepare(`INSERT INTO command_results
-        (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
-          deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision, committed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(
-        `run-command:${identity}`,
-        input["ownerId"],
-        input["agentId"],
-        input["idempotencyKey"],
-        commandType(input),
-        fingerprint(input),
-        authority.deploymentId,
-        authority.authorityEpoch,
-        authority.fencingToken,
-        stateKey,
-        stateKey,
-        revision,
-        now,
-      );
-    this.database
-      .prepare(`INSERT INTO reliable_events
-        (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
-      .run(
-        `run-event:${identity}`,
-        input["ownerId"],
-        input["agentId"],
-        input["idempotencyKey"],
-        `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
-        input["payloadRef"],
-        now,
-      );
-    // A Run status is part of the Thread view. Commit its revision and durable
-    // notification with the Run so a waiting approval is visible without polling.
-    if ("nextStatus" in input) {
-      const changedThread = this.database
-        .prepare(`UPDATE threads
-        SET revision = revision + 1, updated_at = ?
-        WHERE id = (SELECT thread_id FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?)
-          AND owner_id = ? AND agent_id = ?
-        RETURNING id, revision`)
-        .get(now, input.runId, input.ownerId, input.agentId, input.ownerId, input.agentId);
-      if (changedThread !== undefined) {
-        const row = record(changedThread);
-        this.thread.appendGatewayEventInTransaction({
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          threadId: createThreadId(string(row["id"])),
-          threadRevision: integer(row["revision"]),
-          eventId: `run-event:${identity}`,
-          commandId: `run-command:${identity}`,
-          commandType: `run.${input.nextStatus}`,
-          resultRef: null,
-          committedAt: now,
-          authority,
-        });
-      }
-    }
-    return {
-      replayed: false,
-      commandResult: {
-        ownerId: input["ownerId"],
-        agentId: input["agentId"],
-        idempotencyKey: input["idempotencyKey"],
-        commandType: commandType(input),
-        commandFingerprint: fingerprint(input),
-        stateKey,
-        stateRevision: revision,
-        resultRef: stateKey,
-        committedAt: now,
-      },
-    };
   }
 
   private complete(
@@ -766,7 +764,13 @@ export class SqliteRunLifecycleOperations {
             .run(now, input.runId);
         }
         this.assertExecutionLease(input, authority, now);
-        return this.writeReceipt(input, authority, now, stored.revision + 1);
+        return writeRunReceiptInTransaction(
+          this.database,
+          input,
+          authority,
+          now,
+          stored.revision + 1,
+        );
       })
       .immediate();
   }

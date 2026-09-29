@@ -59,7 +59,9 @@ Run 表自身没有可信的原执行期限字段。沙箱 plan 保存原期限�
 2. 要求 Run 与 checkpoint 仍为待核查、无最终输出，旧执行租约不再活跃，且 `RUN_RESOURCES_RELEASED_SQL` 的全部条件成立。
 3. 建立属于当前 Agent 的临时收尾租约；在同一事务内检查其归属。
 4. 将 Run 与 checkpoint 写为 failed，checkpoint 原因码为 `RUN_EXECUTION_DEADLINE_EXCEEDED`。
-5. 同一事务释放该租约。任一步失败则全部回滚；不产生可继续调用模型或工具的持久租约。
+5. 同一事务释放该租约，并复用标准 Run 回执写入，保存 `command_results`、待发布的 `run.failed` 可靠事件、线程版本加一及对应网关事件。任一步失败则全部回滚；不产生可继续调用模型或工具的持久租约。
+
+按 [reply-15 B2](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-15.md) 与 [reply-19](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-19.md)，到期路径与普通状态转换共用回执写入函数，不复制 SQL。幂等键绑定 owner、agent、原 Run 和原期限，可靠事件引用已验证的冻结输入；重复调用不再写入通知或增加线程版本。网关事件的命令引用、线程版本与失败状态在同一次提交后可见，页面不依赖定时查询才发现结束。验证见 [B2 记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md)。
 
 已取消、已完成或已失败的 Run 不复活。失效 authority、版本变化、活动租约、未释放的目录占用、缺少认证回执、控制屏障或其他未释放资源都拒绝收尾。收尾不消耗模型预算，不把未知预算或命令效果改成已知。
 

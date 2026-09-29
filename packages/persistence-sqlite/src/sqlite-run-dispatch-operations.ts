@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   RunExecutionLease,
   RunReconciliationPort,
@@ -7,6 +8,7 @@ import {
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
+  createIdempotencyKey,
   createOwnerId,
   createRunExecutionLeaseId,
   createRunId,
@@ -14,6 +16,7 @@ import {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import { QUEUED_TOOL_BATCH_SQL, readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
+import { writeRunReceiptInTransaction } from "./sqlite-run-lifecycle-operations.ts";
 import {
   RUN_COMPLETION_RECOVERY_SQL,
   RUN_EXPIRED_RECONCILIATION_SQL,
@@ -454,6 +457,29 @@ export class SqliteRunDispatchOperations {
             leaseRevision + 1,
             executionLeaseId,
           );
+        const settlementIdentity = createHash("sha256")
+          .update(JSON.stringify([this.scope.ownerId, this.scope.agentId, runId, deadlineAt]))
+          .digest("hex");
+        writeRunReceiptInTransaction(
+          this.database,
+          {
+            ownerId: createOwnerId(this.scope.ownerId),
+            agentId: createAgentId(this.scope.agentId),
+            runId,
+            expectedRevision: runRevision,
+            nextStatus: "failed",
+            idempotencyKey: createIdempotencyKey(`run-expiry:${settlementIdentity}`),
+            commandFingerprint: `run-expiry:v1:${frozenInputDigest}`,
+            payloadRef: frozenInputRef,
+            authority: {
+              leaseId: createAuthorityLeaseId(this.scope.authorityLease.leaseId),
+              fencingToken: this.scope.authorityLease.fencingToken,
+            },
+          },
+          this.scope.authority,
+          at,
+          runRevision + 1,
+        );
         return { settled: true };
       })
       .immediate();

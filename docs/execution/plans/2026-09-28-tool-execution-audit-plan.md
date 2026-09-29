@@ -304,3 +304,10 @@ E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用
 B1 已确认：真实交付意图提交后撤销 Grant/Handle，工具期限后的普通结果和固定期限错误仍可交付；解密期间撤权同样存在窗口。按 reply-21 批准新增只读 `assertResultAuthority`，在同一 SQLite 读快照复用原回执授权核验，持久回执期限加 35000ms 与原 Run 期限限制上界，调用方不能扩大。期限前路径及解密后检查保留，不改通信协议或数据库结构。合同见 [期限后的交付授权](../specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权) [SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#期限后的交付授权]。
 
 第 0 层最终 80 项通过、第 1 层 check 通过；第 2 层首次 4471 项通过，两个安装测试文件因缺少构建输入未进入正文；补齐当前版本安装包及锁定 Python 后 7 项全部通过，最终覆盖 unit 2120 项与 integration 2358 项。证据、复跑命令及最终提交状态见 [B1 实施验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b1-r21-verification.md)。按 ADR 0038 和 reply-20，B1、B2、B3 各自第 0–2 层后独立提交，批次末执行第 3 层；B3 另须真实 Mac 定向验证。当前结果不代表本批或整轮验收完成。
+
+
+### reply-21 B2：Run 到期标准通知
+
+B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉标准终态通知。现在与普通状态转换共用回执和网关事件写入函数，在同一个事务内保存命令回执、待发布 run.failed、线程版本与网关事件；稳定幂等键与原 Run/期限绑定，重复调用不重复写入。独立构造 dispatcher 的既有用法保持。没有表结构、迁移或外部端口变化，合同见 [Run 到期](../specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期) [SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#run-到期]。
+
+第 0 层 54 项、第 1 层 check、第 2 层 unit 2120 项与 integration 2368 项全部通过；真实 SQLite 独立读回证明通知关联、重复调用及四处写入故障的整体回滚。失败记录、自查修正、最终提交与复跑方式见 [B2 验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/b2-r21-verification.md)。当前构建仅用于第 2 层安装测试并供 B3 复用，批次第 3 层及整轮资格未运行；下一项为真实 Mac 脱离进程组输出管道验证。
