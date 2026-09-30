@@ -38,6 +38,8 @@ Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `Run
 
 SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
+Job Host 在动态加载 SRT 及策略编译模块之前，先注册原 IPC 处理器并回应通过会话、序号与年龄校验的准备消息。消息年龄按到达时判断；加载期间继续受原 1.5 秒监督窗口、30 秒准备上限及任务总期限约束，心跳不代表 ready 或启动授权。加载失败走 `host_failure`，阶段为 `dependencies`；未加载或未完成 reset 时不报告清理成功，原签名终态要求不变。合同及验证边界见[依赖加载期间的启动监督](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)。
+
 R8 在 Job Host 内增加每作业认证 HTTP 上游，复用 SRT `parentProxy` 汇集 HTTP/CONNECT/SOCKS。冻结的 hostname:port 同时限定 Grant、主机上界与策略；解析后检查全部地址并按数字 IP 建连。停止先关闭出口和连接，迟到 DNS 不能触发连接；出口拒绝、连接与关闭计数通过原认证 IPC 返回。SRT 继续负责 OS 隔离及客户端代理协议，Pi Operations 不变。该实现不证明系统 DNS 绝对零外联，也不扩大 Mac 清理保证。设计依据见 [SOURCE: docs/adr/0026-job-scoped-network-egress.md]；真实资格范围见配套 Plan。
 
 现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。

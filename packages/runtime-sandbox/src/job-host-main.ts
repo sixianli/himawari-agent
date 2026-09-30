@@ -4,11 +4,6 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
-import {
-  SANDBOX_HOST_FAILURE_CODES,
-  sandboxHostFailureDetailSchema,
-} from "@himawari-agent/execution-contracts";
 import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
@@ -20,7 +15,6 @@ import {
 } from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
 import { openNetworkEgress } from "./network-egress.ts";
-import { compileSandboxPolicy } from "./policy.ts";
 import { stopProcessGroup } from "./process-group.ts";
 import { readProcessStartToken } from "./process-identity.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
@@ -57,6 +51,8 @@ let total = 0;
 let exited = false;
 let closed = false;
 let finishing = false;
+let diagnostics: typeof import("@himawari-agent/execution-contracts") | undefined;
+let sandboxManager: typeof import("@anthropic-ai/sandbox-runtime").SandboxManager | undefined;
 let sdkOperation: Promise<unknown> = Promise.resolve();
 let egress: Awaited<ReturnType<typeof openNetworkEgress>> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -119,9 +115,11 @@ async function finish() {
     // remains armed if the SDK never settles.
     await sdkOperation.catch(() => {});
     await egress?.close();
-    SandboxManager.cleanupAfterCommand();
-    await SandboxManager.reset();
-    reset = true;
+    if (sandboxManager) {
+      sandboxManager.cleanupAfterCommand();
+      await sandboxManager.reset();
+      reset = true;
+    }
   } catch {
     reason = "host_failure";
   }
@@ -181,6 +179,25 @@ async function prepare(value: unknown, controlValue?: unknown) {
   if (phase !== "waiting") throw new Error("JOB_HOST_ALREADY_PREPARED");
   phase = "preparing";
   request = parseJobHostRequest(value);
+  deadline = setTimeout(
+    () => stop("deadline"),
+    Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
+  );
+  failureStage = "dependencies";
+  const loading = import("@himawari-agent/execution-contracts").then(async (module) => {
+    diagnostics = module;
+    if (phase !== "preparing") return;
+    const [runtime, policy] = await Promise.all([
+      import("@anthropic-ai/sandbox-runtime"),
+      import("./policy.ts"),
+    ]);
+    sandboxManager = runtime.SandboxManager;
+    return { manager: runtime.SandboxManager, compileSandboxPolicy: policy.compileSandboxPolicy };
+  });
+  sdkOperation = loading;
+  const preparation = await loading;
+  if (!preparation || phase !== "preparing") return;
+  const { manager, compileSandboxPolicy } = preparation;
   failureStage = "policy";
   const privateDirectory = await realpath(request.policy.privateDirectory);
   if (
@@ -259,18 +276,10 @@ async function prepare(value: unknown, controlValue?: unknown) {
   failureStage = "resource_snapshot";
   if (request.resourceLimits) await readProcessSnapshot();
   failureStage = "dependencies";
-  const dependencies = await SandboxManager.checkDependenciesAsync();
-  if (
-    !SandboxManager.isSupportedPlatform() ||
-    dependencies.errors.length ||
-    dependencies.warnings.length
-  )
+  const dependencies = await manager.checkDependenciesAsync();
+  if (!manager.isSupportedPlatform() || dependencies.errors.length || dependencies.warnings.length)
     throw new Error("JOB_HOST_DEPENDENCIES_UNAVAILABLE");
   if (phase !== "preparing") return;
-  deadline = setTimeout(
-    () => stop("deadline"),
-    Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
-  );
   // The ephemeral upstream is infrastructure-owned, never accepted from a scope.
   // The frozen policy digest binds the allowed targets; runtime digest binds this
   // mandatory routing implementation. Both proxy schemes disable all bypasses.
@@ -299,7 +308,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
     )
       throw new Error("JOB_HOST_JAVA_AGENT_INVALID");
     configuration.javaAgentJarPath = javaAgentJarPath;
-    await SandboxManager.initialize(configuration, undefined, false);
+    await manager.initialize(configuration, undefined, false);
   })();
   await sdkOperation;
   if (phase !== "preparing") {
@@ -316,7 +325,8 @@ async function prepare(value: unknown, controlValue?: unknown) {
   });
 }
 async function start() {
-  if (phase !== "ready" || !request) throw new Error("JOB_HOST_NOT_READY");
+  if (phase !== "ready" || !request || !sandboxManager) throw new Error("JOB_HOST_NOT_READY");
+  const manager = sandboxManager;
   phase = "running";
   // SRT 0.0.75 advertises localhost in proxy URLs. Node's getaddrinfo can
   // fail under the Mac resolver restrictions even with /etc/hosts readable.
@@ -327,7 +337,7 @@ async function start() {
   const command = namespaceGate
     ? `printf '${namespaceToken}:%s:%s\\n' "$$" "$(readlink /proc/self/ns/pid)" >&2; IFS= read -r himawari_start; [ "$himawari_start" = '${namespaceToken}' ] || exit 125; ${jobCommand(request.executable, request.args, true)}`
     : jobCommand(request.executable, request.args, false);
-  const wrapping = SandboxManager.wrapWithSandboxArgv(command, "/bin/bash");
+  const wrapping = manager.wrapWithSandboxArgv(command, "/bin/bash");
   sdkOperation = wrapping;
   const launch = await wrapping;
   if (phase !== "running" || Date.now() >= Date.parse(request.deadlineAt)) {
@@ -369,7 +379,7 @@ async function start() {
         privateDirectory: request.policy.privateDirectory,
         deadlineAt: request.deadlineAt,
         active: () => phase === "running" && !exited,
-        wrap: (command) => SandboxManager.wrapWithSandboxArgv(command, "/bin/bash"),
+        wrap: (command) => manager.wrapWithSandboxArgv(command, "/bin/bash"),
       });
       void readiness.result
         .then((ready) => {
@@ -492,8 +502,8 @@ process.on("message", (message: unknown) => {
       !("observedAt" in message) ||
       typeof message.observedAt !== "string" ||
       !Number.isFinite(Date.parse(message.observedAt)) ||
-      Date.parse(message.observedAt) > Date.now() ||
-      Date.now() - Date.parse(message.observedAt) > 1500
+      Date.parse(message.observedAt) > receivedAt ||
+      receivedAt - Date.parse(message.observedAt) > 1500
     )
       throw new Error("JOB_HOST_WORKER_LEASE_INVALID");
     workerSequence++;
@@ -537,6 +547,8 @@ process.on("message", (message: unknown) => {
         type: "diagnostic",
         stage: failureStage,
         detail: (() => {
+          if (!diagnostics) return undefined;
+          const { SANDBOX_HOST_FAILURE_CODES, sandboxHostFailureDetailSchema } = diagnostics;
           const incoming =
             message && typeof message === "object" ? (message as Record<string, unknown>) : {};
           const age =

@@ -12,13 +12,56 @@ import { createProductionSandboxControl } from "../../apps/agent-service/src/pro
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
-const launch = vi.hoisted(() => ({ hook: "", entry: "" }));
+const launch = vi.hoisted(() => ({
+  hook: "",
+  entry: "",
+  stalePrepare: false,
+  stderr: "",
+  events: [] as Record<string, unknown>[],
+}));
 vi.mock("node:child_process", async (original) => {
   const actual = await original<typeof import("node:child_process")>();
   return {
     ...actual,
-    fork: (_file: string, args: string[], options: import("node:child_process").ForkOptions) =>
-      actual.fork(launch.entry, args, { ...options, execArgv: ["--import", launch.hook] }),
+    fork: (_file: string, args: string[], options: import("node:child_process").ForkOptions) => {
+      const child = actual.fork(launch.entry, args, {
+        ...options,
+        execArgv: ["--import", launch.hook],
+      });
+      launch.events.push({ stage: "fork", at: Date.now() });
+      child.on("message", (message: Record<string, unknown>) => {
+        launch.events.push({
+          stage: "host-message",
+          at: Date.now(),
+          type: message["type"],
+          detail: message["detail"],
+        });
+      });
+      const originalSend = child.send.bind(child);
+      child.send = ((message: Record<string, unknown>, ...args: unknown[]) => {
+        launch.events.push({
+          stage: "worker-message",
+          at: Date.now(),
+          type: message["type"],
+          observedAt: message["observedAt"],
+        });
+        return Reflect.apply(originalSend, child, [message, ...args]);
+      }) as typeof child.send;
+      child.stderr?.on("data", (chunk: Buffer) => {
+        launch.stderr += chunk.toString();
+      });
+      if (launch.stalePrepare) {
+        const send = child.send.bind(child);
+        child.send = ((message: Record<string, unknown>, ...args: unknown[]) =>
+          Reflect.apply(send, child, [
+            message["type"] === "prepare"
+              ? { ...message, observedAt: new Date(Date.now() - 2000).toISOString() }
+              : message,
+            ...args,
+          ])) as typeof child.send;
+      }
+      return child;
+    },
   };
 });
 import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-host.ts";
@@ -29,20 +72,74 @@ import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
+  launch.stalePrepare = false;
+  launch.stderr = "";
+  launch.events.length = 0;
 });
 
-it("recovers authenticated never-started cleanup when SDK preparation fails before ready", async () => {
+async function configureSdkLoad(
+  root: string,
+  options: {
+    delayMs: number;
+    failImport?: boolean;
+    failContractsImport?: boolean;
+    failInitialize?: boolean;
+    blockInitializeMs?: number;
+  },
+) {
+  const runtime = path.resolve("dist/node-runtime/node_modules");
+  launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
+  launch.hook = path.join(root, "preload.mjs");
+  const loader = path.join(root, "loader.mjs");
+  await writeFile(
+    launch.hook,
+    `import { register } from "node:module";
+register(${JSON.stringify(pathToFileURL(loader).href)});
+`,
+  );
+  await writeFile(
+    loader,
+    `export async function load(url, context, nextLoad) {
+  if (${Boolean(options.failContractsImport)} && url.endsWith("/@himawari-agent/execution-contracts/dist/index.js"))
+    throw Object.assign(new Error("JOB_HOST_TEST_CONTRACTS_IMPORT_FAILURE"), { code: "EIO" });
+  const loaded = await nextLoad(url, context);
+  if (!url.endsWith("/sandbox/sandbox-manager.js")) return loaded;
+  return { ...loaded, source: ${JSON.stringify(
+    `const himawariFixtureTrace = (stage) => process.stderr.write(JSON.stringify({ stage, at: Date.now() }) + "\\n");
+himawariFixtureTrace("sdk_module_entered");
+await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}));
+himawariFixtureTrace("sdk_module_delay_finished");
+` +
+      (options.failImport
+        ? 'throw Object.assign(new Error("JOB_HOST_TEST_IMPORT_FAILURE"), { code: "EIO" });\n'
+        : ""),
+  )} + loaded.source.toString() + ${JSON.stringify(
+    options.failInitialize
+      ? '\nSandboxManager.initialize = async () => { throw Object.assign(new Error("JOB_HOST_TEST_PREPARATION_FAILURE"), { code: "EIO" }); };\n'
+      : options.blockInitializeMs
+        ? `\nconst himawariFixtureInitialize = SandboxManager.initialize;
+SandboxManager.initialize = async (...args) => {
+  himawariFixtureTrace("sdk_initialize_entered");
+  const until = performance.now() + ${options.blockInitializeMs};
+  while (performance.now() < until) {}
+  himawariFixtureTrace("sdk_synchronous_delay_finished");
+  const result = await himawariFixtureInitialize(...args);
+  himawariFixtureTrace("sdk_initialize_finished");
+  return result;
+};\n`
+        : "",
+  )} };
+}
+`,
+  );
+}
+
+it("recovers authenticated never-started cleanup when SDK preparation fails before ready", async (context) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  const runtime = path.resolve("dist/node-runtime/node_modules");
-  launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
-  launch.hook = path.join(root, "failure.mjs");
-  await writeFile(
-    launch.hook,
-    `import { SandboxManager } from ${JSON.stringify(pathToFileURL(path.join(runtime, "@anthropic-ai/sandbox-runtime/dist/index.js")).href)};\nSandboxManager.initialize = async () => { throw Object.assign(new Error("JOB_HOST_TEST_PREPARATION_FAILURE"), { code: "EIO" }); };\n`,
-  );
+  await configureSdkLoad(root, { delayMs: 2500, failInitialize: true });
   const directory = path.join(root, "control");
   await mkdir(directory, { mode: 0o700 });
   const plan = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record.plan;
@@ -109,46 +206,34 @@ it("recovers authenticated never-started cleanup when SDK preparation fails befo
   });
   await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
   const observed = await host.result;
-  process.stderr.write(`${JSON.stringify({ event: "sandbox.preparation.cleanup", observed })}\n`);
-  expect(observed).toMatchObject({
+  expect(observed, JSON.stringify({ observed, stderr: launch.stderr })).toMatchObject({
     reason: "host_failure",
+    diagnostic: { stage: "sdk_initialize", systemCode: "EIO" },
     taskStarted: false,
     srtReset: true,
   });
   if (!host.controlBinding) throw new Error("Original control binding missing");
-  expect(await readJobHostFinalEvidence(host.controlBinding)).toMatchObject({
+  const final = await readJobHostFinalEvidence(host.controlBinding);
+  expect(final).toMatchObject({
     phase: "finished",
     taskStarted: false,
     srtReset: true,
   });
   const restarted = createProductionSandboxControl(options);
-  await expect(restarted.verifyReservationRelease(plan, options.now())).resolves.toMatchObject({
+  const release = await restarted.verifyReservationRelease(plan, options.now());
+  expect(release).toMatchObject({
     basis: "host_never_started",
     identity: plan.identity,
     controlSessionId: control.sessionId,
   });
   expect(host.controlBinding).toEqual(control);
+  Object.assign(context.task.meta, { cleanupReadback: { observed, final, release } });
 });
 
 it("survives slow startup followed by bounded synchronous preparation without renewing the lease", async () => {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  const runtime = path.resolve("dist/node-runtime/node_modules");
-  launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
-  launch.hook = path.join(root, "slow-prepare.mjs");
-  await writeFile(
-    launch.hook,
-    `import { SandboxManager } from ${JSON.stringify(pathToFileURL(path.join(runtime, "@anthropic-ai/sandbox-runtime/dist/index.js")).href)};
-const startup = performance.now() + 500;
-while (performance.now() < startup) {}
-const initialize = SandboxManager.initialize;
-SandboxManager.initialize = async (...args) => {
-  const until = performance.now() + 1150;
-  while (performance.now() < until) {}
-  return initialize(...args);
-};
-`,
-  );
+  await configureSdkLoad(root, { delayMs: 500, blockInitializeMs: 1150 });
   const { policy, compiled } = await prepareJobPolicy({
     workspace: null,
     privateRoot: root,
@@ -173,7 +258,14 @@ SandboxManager.initialize = async (...args) => {
     host.cancel();
     await host.result;
   });
-  await expect(host.ready).resolves.toBeUndefined();
+  await expect(
+    host.ready.catch(async (error: unknown) => {
+      const observed = await host.result;
+      throw new Error(JSON.stringify({ observed, stderr: launch.stderr, events: launch.events }), {
+        cause: error,
+      });
+    }),
+  ).resolves.toBeUndefined();
   expect(host.inspect()?.state).toBe("alive");
   host.cancel();
   expect(await host.result).toMatchObject({ taskStarted: false, srtReset: true });
@@ -232,3 +324,80 @@ syncBuiltinESMExports();
   host.cancel();
   expect(await host.result).toMatchObject({ taskStarted: false, srtReset: true });
 });
+
+it.each([
+  { name: "preparation deadline", delayMs: 31000, failImport: false, stalePrepare: false },
+  { name: "import failure", delayMs: 0, failImport: true, stalePrepare: false },
+  {
+    name: "contracts import failure",
+    delayMs: 0,
+    failImport: false,
+    failContractsImport: true,
+    stalePrepare: false,
+  },
+  {
+    name: "task deadline during import",
+    delayMs: 2500,
+    failImport: false,
+    stalePrepare: false,
+    taskDeadlineMs: 1000,
+  },
+  { name: "already stale prepare", delayMs: 0, failImport: false, stalePrepare: true },
+])(
+  "rejects $name without starting the user task",
+  async (scenario) => {
+    const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await configureSdkLoad(root, scenario);
+    launch.stalePrepare = scenario.stalePrepare;
+    const marker = path.join(root, "user-task-started");
+    const { policy, compiled } = await prepareJobPolicy({
+      workspace: null,
+      privateRoot: root,
+      jobId: "load-rejection",
+      writable: false,
+      readOnlyToolchainPaths: [],
+      protectedPaths: [],
+      allowedDomains: [],
+    });
+    const startedAt = performance.now();
+    const host = prepareSandboxJobHost({
+      jobId: "load-rejection",
+      attemptId: "original-attempt",
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: process.execPath,
+      args: ["-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started")`],
+      deadlineAt: new Date(Date.now() + (scenario.taskDeadlineMs ?? 60000)).toISOString(),
+      maxOutputBytes: 4096,
+      cleanupTimeoutMs: 5000,
+    });
+    cleanups.push(async () => {
+      host.cancel();
+      await host.result;
+    });
+    await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+    const observed = await host.result;
+    expect(observed, JSON.stringify({ observed, stderr: launch.stderr })).toMatchObject({
+      reason: scenario.taskDeadlineMs ? "deadline" : "host_failure",
+      taskStarted: false,
+    });
+    expect(() => host.start()).toThrow("JOB_HOST_START_NOT_ALLOWED");
+    await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    if (scenario.delayMs > 30000) {
+      expect(observed.diagnostic?.detail?.code).toBe("JOB_HOST_PREPARATION_TIMEOUT");
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(30000);
+      expect(performance.now() - startedAt).toBeLessThan(36000);
+    } else if (scenario.failImport || scenario.failContractsImport) {
+      expect(observed).toMatchObject({
+        diagnostic: { stage: "dependencies", systemCode: "EIO" },
+        srtReset: false,
+      });
+    } else if (scenario.taskDeadlineMs) {
+      expect(observed.diagnostic?.detail?.code).toBe("JOB_HOST_EXECUTION_DEADLINE");
+    } else {
+      expect(launch.stderr).toContain("JOB_HOST_WORKER_LEASE_INVALID");
+    }
+  },
+  45000,
+);

@@ -93,6 +93,7 @@ const request = (): JobHostRequest => ({
 });
 const result = () => sent.findLast((item) => item["type"] === "result");
 async function settle() {
+  await vi.dynamicImportSettled();
   await vi.advanceTimersByTimeAsync(0);
 }
 async function load() {
