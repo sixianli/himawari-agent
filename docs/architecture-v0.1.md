@@ -552,7 +552,7 @@ Task 20 的真实模型验证由两个显式 opt-in 集成测试组成。`HIMAWA
 
 `build.mjs` 生成当前平台独立 Node runtime、前端资源和归档。清单绑定来源、构建输入、OS/arch/ABI、文件模式和摘要、外部依赖闭包及 migration；安装、五项目测试和浏览器重新核验这份归档。安装测试从临时 prefix 和非源码 cwd 运行，取消内部构建和开发依赖补漏。浏览器仍使用合成 Gateway fixture；三语、键盘、可见焦点与自动无障碍检查不等同于最终 Gateway 组合、Safari 品牌或真实移动设备资格。资格脚本同时输出有界请求、响应、失败与主页面导航时间线，保留请求发起时的页面及主 frame 导航序号。URL 字段只含 origin 和 path，不采集请求头或正文；超限数量显式记录，页面异常另有保留上限。这些诊断不改变门禁错误分类。
 
-开发时各层测试的运行时机和运行位置见 [ADR 0042](adr/0042-hermes-test-scratch-on-root-disk.md)：测试在 Hermes 上运行，源码、依赖、构建产物和证据放在 `/data`，测试运行中的临时数据放在根盘的任务目录（`/data` 是慢速机械硬盘），开发 Mac 不跑测试，Mac 专属验证经用户同意后按需在 Mac 上运行；完整构建和 `npm test` 按交付批次运行，改动涉及数据库结构、进程间协议、构建配置或测试运行方式时提前运行；生产部署到云服务器 `84.247.157.41`，每次都要用户授权；合并 PR 前的必需检查集合仍由 `ci/policy.json` 规定，不因此减少。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
+开发时各层测试的运行时机和运行位置见 [ADR 0043 的测试层级规则](adr/0043-push-every-commit-full-test-before-merge.md#layers)：测试在 Hermes 上运行，源码、依赖、构建产物和证据放在 `/data`，测试运行中的临时数据放在根盘的任务目录（`/data` 是慢速机械硬盘），开发 Mac 不跑测试，用户已无限期推迟 Mac 验证，在用户重新安排前不运行，Mac 行为未验证；每个提交创建后立即推送，第 3 层不作为推送前提；完整构建和 `npm test` 按交付批次运行，改动涉及数据库结构、进程间协议、构建配置或测试运行方式时提前运行；生产部署到云服务器 `84.247.157.41`，每次都要用户授权；合并 PR 前的必需检查集合仍由 `ci/policy.json` 规定，不因此减少。[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]
 
 测试临时根由 `@himawari-agent/testing/temporary-root` 的唯一 JavaScript 实现解析，供应用测试、根目录夹具及 CI 运行器通过包名复用。不设置 `HIMAWARI_TEST_TEMP_ROOT` 时保留 `/tmp` 默认值，产品路径安装前缀仍为 `/tmp/hma-pp-`；设置时要求目录已存在、为规范绝对路径、没有符号链接且当前账号可写入和遍历，否则明确失败。产品路径夹具在创建安装前核算控制、服务和 SRT socket 的 UTF-8 字节长度，不调整生产 socket 名称或上限。Hermes 每次运行由记录器创建短路径 0700 根，并将 `TMPDIR` 指向同一目录；CI 继续向子进程传递临时根。开发依赖中作为只读工具链的目录也须禁止同组和其他账号写入；锁定依赖安装使用 `umask 022`，测试仍在 `umask 0002` 下验证自身创建路径的权限。运行前及运行中检查根盘至少剩余 10 GiB，记录采样峰值与最低余量；需要保留的现场复制到 `/data` 后再删除临时根，同时核对根外的 `/tmp` 新条目。
 

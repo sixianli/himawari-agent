@@ -327,17 +327,19 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 ### 最终批次的测试位置与 Mac 资格（用户 2026-09-29 决定）
 
-用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，当前规则见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#hosts) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格在 Hermes 上对最终版本执行：源码、依赖、工具、构建和证据在 `/data`，运行中的临时数据在根盘的任务目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
+用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，当前规则见 [ADR 0043](../../adr/0043-push-every-commit-full-test-before-merge.md#hosts) [SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格在 Hermes 上对最终版本执行：源码、依赖、工具、构建和证据在 `/data`，运行中的临时数据在根盘的任务目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
 
-第二轮不做 Mac 无筛选产品路径资格（用户决定）。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
+用户于2026-09-30无限期推迟所有 Mac 验证，用户重新安排前不运行、不排期，Mac 行为未验证；这也包括第二轮的 Mac 无筛选产品路径资格。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
 
 ### 第二轮的收尾条件（用户 2026-09-29 决定）
 
 用户决定：第二轮不能带着已发现的缺陷收尾。凡是已经发现、确认属于缺陷的问题，都要先修复，并各有先失败后通过的测试，然后再跑最终完整测试、Linux 无筛选资格和总报告。原本记为“已知限制”或 Backlog 的工具执行缺陷，也在这一轮修复；只有需要用户另做产品或设计决定、或需要在 Mac 上验证的项目，先由 Claude 向用户确认。
 
-同一天用户要求代码和文档不得漂移：每个改变行为的提交都在同一提交中更新受影响的文档，提交前运行严格文档校验，改到 Runbook 覆盖的代码时复核并重新封存。规则写在 `AGENTS.md` 的 “Code and Documentation Consistency” 一节。
+2026-09-30用户决定每个提交创建后立即推送；第0–2层通过即可提交，第3层不作为推送前提，仍在批次交付、开PR、合并前及一轮结束时运行，见 [ADR 0043 的提交规则](../../adr/0043-push-every-commit-full-test-before-merge.md#commits)。
 
-2026-09-30 在 Hermes 上第一次跑整组单元测试，共 67 项失败，其中 64 项超时、3 项被权限检查拒绝：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) [SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]。
+2026-09-29用户要求代码和文档不得漂移：每个改变行为的提交都在同一提交中更新受影响的文档，提交前运行严格文档校验，改到 Runbook 覆盖的代码时复核并重新封存。规则写在 `AGENTS.md` 的 “Code and Documentation Consistency” 一节。
+
+2026-09-30 在 Hermes 上第一次跑整组单元测试，共 67 项失败，其中 64 项超时、3 项被权限检查拒绝：`/data` 是慢速机械硬盘，每次同步写入约 70 毫秒，根盘 NVMe 约 3 毫秒。用户决定测试运行中的临时数据改放根盘的任务目录，并加空间保护，其余内容仍放 `/data`，见 [ADR 0043](../../adr/0043-push-every-commit-full-test-before-merge.md#storage) [SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]。
 
 reply-32 将临时根解析集中到 `@himawari-agent/testing/temporary-root`，应用测试、根夹具和 CI 均通过包名导入。Hermes 使用短路径 `/tmp/h32`，每次运行前确认不存在并以 0700 创建；记录器采样根盘余量和临时目录占用，低于 10 GiB 停止，先保留现场再清理。三项权限失败已在 NVMe、`umask 0002` 下重现，均由测试夹具未指定权限造成；修正配置文件、绑定文件和运行时目录权限，生产检查保持严格。运行命令、报告、临时根核查、包解析检查和完整验证进度见[本次验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r32-verification.md)。
 
@@ -348,7 +350,7 @@ NVMe 上整组 unit 首次复验为 2,143 通过、1 失败，原 67 项均已�
 
 ### reply-33：Job Host 加载期间的启动监督
 
-本批按 [reply-33](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-33.md) 先修 Job Host 启动，再为 MCP 连接与 Agent 子测试接受超时各取 20 次证据；后两项不得先改产品或放宽期限。第 3 层与 Linux 无筛选资格等两项归因及获准修复完成后，在批次最终版本统一运行。本轮不运行 Mac 测试，共享 Job Host 代码的 Mac 定向验证并入 BL-002；用户现已无限期推迟 Mac 验证，不再排期，Mac 行为未验证。
+本批按 [reply-33](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-33.md) 先修 Job Host 启动，再为 MCP 连接与 Agent 子测试接受超时各取 20 次证据；后两项不得先改产品或放宽期限。第 3 层与 Linux 无筛选资格等两项归因及获准修复完成后，在批次最终版本统一运行。本轮不运行 Mac 测试，用户已无限期推迟包括共享 Job Host 代码在内的 Mac 验证，不再排期，Mac 行为未验证。
 
 Job Host 修复保留全部认证、消息类型、签名格式及原期限：先处理 IPC 和发送认证心跳，再动态加载 SRT 与策略模块；消息新鲜度按到达时判断，加载失败记录 dependencies 阶段。固定 2.5 秒加载延迟的集成红测试在 `4eeac7e` 上复现 `JOB_HOST_HEARTBEAT_EXPIRED` 与 `srtReset=false`。设计见[启动监督合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)；实际各层结果、输入补丁和停止边界见[本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r33-verification.md)。
 第 0 层准备监督 6 项与入口 82 项通过；第 1 层 `npm run check` 通过。第 2 层相关 integration 为 19 个文件、437 项通过；unit 整组为 2143 通过、1 失败，失败是本批另一项 MCP active 连接超时，因此暂不能提交 Job Host 修复。已继续执行原授权的测试侧阶段取证，保留失败现场，不为求绿重复整组；准确输入与逐次结果见上述验证记录。
