@@ -1,3 +1,8 @@
+import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
 import type {
   CapabilityInvocationAuthorityPort,
@@ -8,6 +13,7 @@ import type {
   PayloadStorePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
+import { build } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CapabilityEndpointBinding,
@@ -325,9 +331,127 @@ describe("NodeCapabilityRuntimePort", () => {
     expect(new TextDecoder().decode(outputCall.plaintext)).toBe("program output");
   });
 
-  it.each(["active", "revoked_before_tool"])(
+  it.for(["active", "revoked_before_tool", "startup_timeout"])(
     "uses the official MCP v2 SDK with current authority: %s",
-    async (mode) => {
+    async (mode, context) => {
+      const timingRoot = await mkdtemp(path.join(tmpdir(), "hma-mcp-stage-"));
+      const tracePath = path.join(timingRoot, "children.jsonl");
+      const stages: Record<string, unknown>[] = [];
+      const origin = performance.now();
+      const transports = new Set<StdioClientTransport>();
+      const sessions = new WeakSet<StdioClientTransport>();
+      const note = (stage: string, extra: Record<string, unknown> = {}) => {
+        stages.push({ stage, at: Date.now(), elapsedMs: performance.now() - origin, ...extra });
+      };
+      const measure = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
+        const started = performance.now();
+        note(`${stage}.begin`);
+        try {
+          const value = await operation();
+          note(`${stage}.end`, { durationMs: performance.now() - started });
+          return value;
+        } catch (error) {
+          note(`${stage}.error`, {
+            durationMs: performance.now() - started,
+            error:
+              error instanceof Error
+                ? {
+                    name: error.name,
+                    message: error.message,
+                    code: "code" in error ? error.code : null,
+                  }
+                : { name: "non-error" },
+          });
+          throw error;
+        }
+      };
+      const connect = Client.prototype.connect;
+      const listTools = Client.prototype.listTools;
+      const callTool = Client.prototype.callTool;
+      const start = StdioClientTransport.prototype.start;
+      const send = StdioClientTransport.prototype.send;
+      const spies = [
+        vi.spyOn(Client.prototype, "connect").mockImplementation(function (this: Client, ...args) {
+          if (args[0] instanceof StdioClientTransport) sessions.add(args[0]);
+          note("connect.options", {
+            timeout: args[1]?.timeout,
+            maxTotalTimeout: args[1]?.maxTotalTimeout,
+          });
+          return measure("connect", () => Reflect.apply(connect, this, args));
+        }),
+        vi.spyOn(Client.prototype, "listTools").mockImplementation(function (
+          this: Client,
+          ...args
+        ) {
+          return measure("listTools", () => Reflect.apply(listTools, this, args));
+        }),
+        vi.spyOn(Client.prototype, "callTool").mockImplementation(function (this: Client, ...args) {
+          return measure("callTool", () => Reflect.apply(callTool, this, args));
+        }),
+        vi.spyOn(StdioClientTransport.prototype, "start").mockImplementation(async function (
+          this: StdioClientTransport,
+        ) {
+          transports.add(this);
+          const role = sessions.has(this) ? "session" : "probe";
+          await measure(`${role}.spawn`, () => Reflect.apply(start, this, []));
+          note(`${role}.pid`, { pid: this.pid });
+        }),
+        vi.spyOn(StdioClientTransport.prototype, "send").mockImplementation(function (
+          this: StdioClientTransport,
+          message,
+        ) {
+          note("transport.send", {
+            pid: this.pid,
+            method: "method" in message ? message.method : "response",
+          });
+          return Reflect.apply(send, this, [message]);
+        }),
+      ];
+      context.onTestFinished(async () => {
+        for (const spy of spies) spy.mockRestore();
+        for (const transport of transports) await transport.close();
+        const children = await readFile(tracePath, "utf8").catch(() => "");
+        if (
+          context.task.result?.state === "fail" ||
+          process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1"
+        )
+          Object.assign(context.task.meta, {
+            startupTiming: {
+              stages,
+              children: children
+                .trim()
+                .split("\n")
+                .filter(Boolean)
+                .map((line) => JSON.parse(line)),
+            },
+          });
+        const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+        if (context.task.result?.state === "fail" && output)
+          await cp(timingRoot, path.join(output, `mcp-${mode}`), {
+            recursive: true,
+            errorOnExist: true,
+            force: false,
+          });
+        await rm(timingRoot, { recursive: true, force: true });
+      });
+      const bundledFixture = path.join(timingRoot, "mcp-echo.mjs");
+      await build({
+        configFile: false,
+        logLevel: "silent",
+        publicDir: false,
+        ssr: { noExternal: true },
+        build: {
+          ssr: MCP_FIXTURE,
+          outDir: timingRoot,
+          emptyOutDir: false,
+          copyPublicDir: false,
+          minify: false,
+          rolldownOptions: {
+            output: { format: "es", entryFileNames: "mcp-echo.mjs", inlineDynamicImports: true },
+          },
+        },
+      });
+      expect(await readdir(timingRoot)).toEqual(["mcp-echo.mjs"]);
       const capability = manifest(
         {
           kind: "mcp",
@@ -380,9 +504,16 @@ describe("NodeCapabilityRuntimePort", () => {
         }),
         createLaunch: async (_manifest, ceiling) => ({
           command: process.execPath,
-          args: [MCP_FIXTURE],
+          args: [
+            "--import",
+            fileURLToPath(new URL("./fixtures/mcp-startup-preload.mjs", import.meta.url)),
+            bundledFixture,
+          ],
           cwd: "/",
-          environment: {},
+          environment: {
+            HIMAWARI_MCP_TEST_TIMING_PATH: tracePath,
+            HIMAWARI_MCP_TEST_STARTUP_DELAY_MS: mode === "startup_timeout" ? "4000" : "0",
+          },
           ceiling,
         }),
       };
@@ -405,6 +536,25 @@ describe("NodeCapabilityRuntimePort", () => {
       const invocation = request(capability.ref, "echo");
       await fixture.putInput(invocation, { value: "hello from qualified MCP" });
       const events = await collect(fixture.port, invocation);
+      if (mode === "startup_timeout") {
+        expect(events).toMatchObject([
+          { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_MCP_FAILED" },
+        ]);
+        expect(stages).toContainEqual(
+          expect.objectContaining({
+            stage: "connect.options",
+            timeout: 3000,
+            maxTotalTimeout: 3000,
+          }),
+        );
+        const failure = stages.find((item) => item["stage"] === "connect.error");
+        expect(failure).toMatchObject({ error: { code: "ERA_NEGOTIATION_FAILED" } });
+        expect(failure?.["durationMs"]).toBeGreaterThanOrEqual(3000);
+        expect(failure?.["durationMs"]).toBeLessThan(4000);
+        expect(stages.some((item) => item["stage"] === "listTools.begin")).toBe(false);
+        expect(fixture.writeOutputCalls).toHaveLength(0);
+        return;
+      }
       if (mode === "revoked_before_tool") {
         expect(events).toMatchObject([
           { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
