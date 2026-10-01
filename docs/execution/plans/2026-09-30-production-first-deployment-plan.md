@@ -8,7 +8,7 @@ date: "2026-09-30"
 
 # 生产服务器首次部署计划
 
-**依据：** [SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md#hosts]
+**依据：** [SOURCE: docs/adr/0044-tests-on-cloud-server.md#hosts]（2026-10-01 起测试也在这台服务器上运行，测试用户和目录与生产分开）
 
 **目标：** 把 Himawari 部署到生产云服务器 `84.247.157.41`，让用户通过 SSH 隧道（把服务器本机端口转发到用户自己电脑的 SSH 功能）打开控制中心（Himawari 的网页界面）亲自体验。
 

@@ -102,7 +102,7 @@ interface SandboxToolResultResumption {
 
 产品路径验收使用现有隔离安装与脚本模型：同轮多个工具、工具运行及收尾时停止/重启、35 秒等待结束后才取得释放、原执行期限到达、同一动作重复至少 30 次。通过页面行为、独立 SQLite 读回、原工具实际启动次数、每个模型请求内 toolCallId 的唯一性共同断言。初始 Mac 验收使用 `/tmp/hma-pp-*`；当前按 [ADR 0042](../../adr/0042-hermes-test-scratch-on-root-disk.md#storage) 在 Hermes 运行，夹具通过 `@himawari-agent/testing/temporary-root` 解析 `HIMAWARI_TEST_TEMP_ROOT`，将测试安装放在根盘的任务自有 0700 短路径，报告与保留现场在 `/data`。只能停止和启动测试自己创建的服务，不涉及用户服务。Mac 专属验证须另获用户同意，Linux 结果不替代 Mac 结果。[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]
 
-完成后按 [ADR 0043 的层级时机](../../adr/0043-push-every-commit-full-test-before-merge.md#layers) 运行相关回归、`npm run check`、完整 `npm test` 与所需产品 E2E，核对受影响手册并单独提交。未通过所需验收前，不宣称 TE-04 或整个系统排查完成。
+完成后按 [ADR 0044 的层级时机](../../adr/0044-tests-on-cloud-server.md#layers) 运行相关回归、`npm run check`、完整 `npm test` 与所需产品 E2E，核对受影响手册并单独提交。未通过所需验收前，不宣称 TE-04 或整个系统排查完成。
 
 ### 实施前的失败模式与验证边界
 

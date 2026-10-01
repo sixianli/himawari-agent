@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: "docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: "docs/adr/0044-tests-on-cloud-server.md"
 date: "2026-09-30"
 ---
 

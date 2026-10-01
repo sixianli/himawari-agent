@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0043-push-every-commit-full-test-before-merge.md"
+superseded_by: "docs/adr/0044-tests-on-cloud-server.md"
 date: "2026-09-30"
 ---
 
