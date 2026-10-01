@@ -150,6 +150,10 @@ date: "2026-09-03"
 
 正式`npm test`使用的共享runner只在设置了`HIMAWARI_TEST_TIMEOUT_MS`时，将原始值加入隔离环境，并经真实测试调度入口传给Vitest子进程；未设置时不新增变量，合法性仍由`vitest.workspace.ts`检查，不放行其他未声明环境变量。`test/tooling/test-timeout-entry.test.mjs`通过真实`runCheck`、`runTests`与子进程执行，独立读取五个项目的环境；固定工具/归档校验和Vitest本体使用受控传输夹具，环境构造与进程调用不mock。合同覆盖变量缺省、30000和保留前导零的00030，并拒绝传递无关变量；完整测试实际生效仍由第3层正式入口验证。修复与合并第2层安排由[reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md)批准，证据见[reply-39验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
 
+`execution-worker-process.test.ts` 的独立 Agent/Worker 子进程直接执行测试侧 `.mjs`，加载真实构建的 UDS 服务器和执行客户端，继续核对崩溃恢复及独立状态读回。Agent 仅导入 `production-execution-client.js`，避免测试夹具加载无关服务启动依赖；产品入口不变。父测试沿用 prepared 的准备流程：同时提供 `HIMAWARI_TEST_ARTIFACT` 与 `HIMAWARI_TEST_CONTEXT` 时，用现有安装器校验并安装到测试临时目录，子进程从该目录运行；两者都没有时读取 `dist/node-runtime`，只设置一个时报错。安装子进程期限 180000ms、准备 hook 期限 240000ms，安装目录在 `afterAll` 删除；原 Worker 就绪和 Agent 接受期限均保持 15000ms。每次运行的阶段记录保存在 `HIMAWARI_TEST_DIAGNOSTIC_OUTPUT`。
+
+旧 child Vitest 测试、配置及 UDS helper 已停止被父测试使用，但内容暂时保留原样：main 已接受的 CI 政策仍登记旧测试，删除须先完成 [BL-20261001-005](../../backlog/BL-20261001-005-主-分-支-接-受-政-策-后.md)，本批不修改登记政策。
+
 ### 4. 一次构建的产物经过安装验证后再交付
 
 每个平台的构建步骤生成 Node runtime、浏览器静态资源和内容清单。复用现有 build/package 脚本，扩充其遗漏的 Node 文件摘要、模式、外部依赖闭包、迁移资源和平台身份。metadata 的生成时间不进入内容可重复性比较，但保留在执行报告中。

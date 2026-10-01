@@ -1,5 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
+import { cp, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,17 +11,43 @@ import {
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import { EXECUTION_UDS_ERROR_CODES } from "@himawari-agent/platform-node";
-import { afterEach, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-const childFixture = path.join(repositoryRoot, "test/fixtures/execution-uds-child.test.ts");
-const childConfig = path.join(repositoryRoot, "test/fixtures/vitest.execution-uds-child.config.ts");
-const agentChildFixture = path.join(repositoryRoot, "test/fixtures/execution-agent-child.test.ts");
-const agentChildConfig = path.join(
-  repositoryRoot,
-  "test/fixtures/vitest.execution-agent-child.config.ts",
-);
-const vitestPath = path.join(repositoryRoot, "node_modules/vitest/vitest.mjs");
+const childFixture = path.join(repositoryRoot, "test/fixtures/execution-uds-child.mjs");
+const agentChildFixture = path.join(repositoryRoot, "test/fixtures/execution-agent-child.mjs");
+let runtimeRoot = path.join(repositoryRoot, "dist/node-runtime");
+let installation: string | undefined;
+beforeAll(async () => {
+  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
+  if (!artifact && !context) return;
+  if (!artifact || !context) throw new Error("EXECUTION_PROCESS_ARTIFACT_CONTEXT_REQUIRED");
+  installation = await mkdtemp(path.join(testTemporaryRoot(), "execution-process-install-"));
+  const installed = spawnSync(
+    process.execPath,
+    [
+      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
+      "--prefix",
+      installation,
+      "--artifact",
+      artifact,
+      "--context",
+      context,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 180_000,
+      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+    },
+  );
+  if (installed.status !== 0)
+    throw new Error(`EXECUTION_PROCESS_INSTALL_FAILED:${installed.stderr}`);
+  runtimeRoot = path.join(installation, "lib/himawari-agent");
+}, 240_000);
+afterAll(async () => {
+  if (installation) await rm(installation, { recursive: true, force: true });
+});
 const credential = Object.freeze({
   tokenRef: "secret-ref-worker-boot-process",
   tokenValue: "abcdef0123456789abcdef0123456789",
@@ -30,11 +56,125 @@ const agentServiceInstanceId = "agent-service-process-test";
 const deploymentId = "deployment-process-test";
 const cleanupPaths: string[] = [];
 const children = new Set<ChildProcessWithoutNullStreams>();
+const startupStages: Record<string, unknown>[] = [];
+const startupOutput = new Map<number, { stdout: string; stderr: string }>();
+const stageFiles = new Map<number, { role: string; file: string }>();
+let nextStageId = 0;
+async function newStageFile(role: string, runtimeDirectory: string) {
+  const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"] ?? runtimeDirectory;
+  nextStageId += 1;
+  const file = path.join(output, `${role}-stages-${nextStageId}.jsonl`);
+  await writeFile(file, "", { mode: 0o600, flag: "wx" });
+  return file;
+}
+function observeStartup(child: ChildProcessWithoutNullStreams, role: string, startedAt: number) {
+  const output = { stdout: "", stderr: "" };
+  const pending = { stdout: "", stderr: "" };
+  function receive(stream: "stdout" | "stderr", chunk: Buffer) {
+    const receivedAt = Date.now();
+    if (!output[stream].length)
+      startupStages.push({ stage: `${role}.first_${stream}`, at: receivedAt, pid: child.pid });
+    const content = chunk.toString();
+    output[stream] += content;
+    pending[stream] += content;
+    const lines = pending[stream].split("\n");
+    pending[stream] = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("{")) continue;
+      let reported: Record<string, unknown>;
+      try {
+        reported = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (
+        reported["event"] !== `${role}-child.startup` ||
+        typeof reported["stage"] !== "string" ||
+        typeof reported["at"] !== "number"
+      )
+        continue;
+      startupStages.push({
+        stage: `${role}.reported.${reported["stage"]}`,
+        at: receivedAt,
+        childAt: reported["at"],
+        forwardingDelayMs: receivedAt - reported["at"],
+        uptimeMs: reported["uptimeMs"],
+        pid: child.pid,
+        stream,
+      });
+    }
+  }
+  startupOutput.set(child.pid ?? -1, output);
+  startupStages.push({ stage: `${role}.spawn_called`, at: startedAt, pid: child.pid });
+  child.on("spawn", () =>
+    startupStages.push({ stage: `${role}.spawned`, at: Date.now(), pid: child.pid }),
+  );
+  child.stdout.on("data", (chunk: Buffer) => receive("stdout", chunk));
+  child.stderr.on("data", (chunk: Buffer) => receive("stderr", chunk));
+  child.once("exit", (code, signal) =>
+    startupStages.push({ stage: `${role}.exited`, at: Date.now(), pid: child.pid, code, signal }),
+  );
+}
 let nextId = 0;
 
-afterEach(async () => {
-  for (const child of children) child.kill("SIGKILL");
+afterEach(async (context) => {
+  if (
+    context.task.result?.state === "fail" ||
+    process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1"
+  )
+    Object.assign(context.task.meta, {
+      startupTiming: {
+        stages: [...startupStages],
+        children: [...startupOutput].map(([pid, output]) => ({ pid, ...output })),
+      },
+    });
+  await Promise.all(
+    [...children].map(async (child) => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      await new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+        child.kill("SIGKILL");
+      });
+    }),
+  );
+  const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+  if (output) {
+    const timing = {
+      taskId: context.task.id,
+      testName: context.task.name,
+      runtimeRoot,
+      state: context.task.result?.state,
+      stages: [...startupStages],
+      children: [...startupOutput].map(([pid, captured]) => ({ pid, ...captured })),
+      directStages: await Promise.all(
+        [...stageFiles].map(async ([pid, entry]) => ({
+          pid,
+          ...entry,
+          stages: (await readFile(entry.file, "utf8"))
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as Record<string, unknown>),
+        })),
+      ),
+    };
+    Object.assign(context.task.meta, { startupTiming: timing });
+    await writeFile(path.join(output, `startup-${context.task.id}.json`), JSON.stringify(timing), {
+      mode: 0o600,
+      flag: "wx",
+    });
+  }
+  if (context.task.result?.state === "fail" && output)
+    for (const cleanupPath of cleanupPaths)
+      await cp(cleanupPath, path.join(output, path.basename(cleanupPath)), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        filter: async (entry) => !(await lstat(entry)).isSocket(),
+      });
   children.clear();
+  startupStages.length = 0;
+  startupOutput.clear();
+  stageFiles.clear();
   for (const cleanupPath of cleanupPaths.splice(0)) {
     await rm(cleanupPath, { recursive: true, force: true });
   }
@@ -47,23 +187,26 @@ async function newRuntime(): Promise<string> {
 }
 
 async function startWorker(runtimeDirectory: string): Promise<ChildProcessWithoutNullStreams> {
-  const child = spawn(
-    process.execPath,
-    [vitestPath, "run", "--config", childConfig, "--run", childFixture],
-    {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        HIMAWARI_EXECUTION_TEST_RUNTIME: runtimeDirectory,
-        HIMAWARI_EXECUTION_TEST_TOKEN_REF: credential.tokenRef,
-        HIMAWARI_EXECUTION_TEST_TOKEN_VALUE: credential.tokenValue,
-        HIMAWARI_EXECUTION_TEST_AGENT_INSTANCE: agentServiceInstanceId,
-        HIMAWARI_EXECUTION_TEST_DEPLOYMENT: deploymentId,
-        HIMAWARI_EXECUTION_TEST_STOP: path.join(runtimeDirectory, "stop-worker"),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
+  const stageFile = await newStageFile("worker", runtimeDirectory);
+  const startedAt = Date.now();
+  const child = spawn(process.execPath, ["--no-global-search-paths", childFixture], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HIMAWARI_TEST_RUNTIME_ROOT: runtimeRoot,
+      NODE_PATH: "",
+      HIMAWARI_EXECUTION_TEST_STAGE_FILE: stageFile,
+      HIMAWARI_EXECUTION_TEST_RUNTIME: runtimeDirectory,
+      HIMAWARI_EXECUTION_TEST_TOKEN_REF: credential.tokenRef,
+      HIMAWARI_EXECUTION_TEST_TOKEN_VALUE: credential.tokenValue,
+      HIMAWARI_EXECUTION_TEST_AGENT_INSTANCE: agentServiceInstanceId,
+      HIMAWARI_EXECUTION_TEST_DEPLOYMENT: deploymentId,
+      HIMAWARI_EXECUTION_TEST_STOP: path.join(runtimeDirectory, "stop-worker"),
     },
-  );
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  observeStartup(child, "worker", startedAt);
+  stageFiles.set(child.pid ?? -1, { role: "worker", file: stageFile });
   children.add(child);
   await new Promise<void>((resolve, reject) => {
     let stdout = "";
@@ -74,6 +217,7 @@ async function startWorker(runtimeDirectory: string): Promise<ChildProcessWithou
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       if (stdout.includes('"ready":true')) {
+        startupStages.push({ stage: "worker.ready", at: Date.now(), pid: child.pid });
         clearTimeout(timeout);
         resolve();
       }
@@ -90,23 +234,26 @@ async function startWorker(runtimeDirectory: string): Promise<ChildProcessWithou
 }
 
 async function startAgentClient(runtimeDirectory: string): Promise<ChildProcessWithoutNullStreams> {
-  const child = spawn(
-    process.execPath,
-    [vitestPath, "run", "--config", agentChildConfig, "--run", agentChildFixture],
-    {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        HIMAWARI_EXECUTION_TEST_RUNTIME: runtimeDirectory,
-        HIMAWARI_EXECUTION_TEST_TOKEN_REF: credential.tokenRef,
-        HIMAWARI_EXECUTION_TEST_TOKEN_VALUE: credential.tokenValue,
-        HIMAWARI_EXECUTION_TEST_AGENT_INSTANCE: agentServiceInstanceId,
-        HIMAWARI_EXECUTION_TEST_DEPLOYMENT: deploymentId,
-        HIMAWARI_EXECUTION_AGENT_TEST_STOP: path.join(runtimeDirectory, "stop-agent"),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
+  const stageFile = await newStageFile("agent", runtimeDirectory);
+  const startedAt = Date.now();
+  const child = spawn(process.execPath, ["--no-global-search-paths", agentChildFixture], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HIMAWARI_TEST_RUNTIME_ROOT: runtimeRoot,
+      NODE_PATH: "",
+      HIMAWARI_EXECUTION_TEST_STAGE_FILE: stageFile,
+      HIMAWARI_EXECUTION_TEST_RUNTIME: runtimeDirectory,
+      HIMAWARI_EXECUTION_TEST_TOKEN_REF: credential.tokenRef,
+      HIMAWARI_EXECUTION_TEST_TOKEN_VALUE: credential.tokenValue,
+      HIMAWARI_EXECUTION_TEST_AGENT_INSTANCE: agentServiceInstanceId,
+      HIMAWARI_EXECUTION_TEST_DEPLOYMENT: deploymentId,
+      HIMAWARI_EXECUTION_AGENT_TEST_STOP: path.join(runtimeDirectory, "stop-agent"),
     },
-  );
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  observeStartup(child, "agent", startedAt);
+  stageFiles.set(child.pid ?? -1, { role: "agent", file: stageFile });
   children.add(child);
   await new Promise<void>((resolve, reject) => {
     let stdout = "";
@@ -118,6 +265,7 @@ async function startAgentClient(runtimeDirectory: string): Promise<ChildProcessW
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       if (stdout.includes('"accepted":true')) {
+        startupStages.push({ stage: "agent.accepted", at: Date.now(), pid: child.pid });
         clearTimeout(timeout);
         resolve();
       }
