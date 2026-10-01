@@ -136,7 +136,7 @@ export async function openRepository(realMessage = false): Promise<{
   readonly repository: SqliteProductStateRepository;
   readonly stateRoot: string;
 }> {
-  const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-sqlite-capability-invocation-"));
+  const stateRoot = await mkdtemp(path.join(tmpdir(), "h-"));
   const databasePath = path.join(stateRoot, "product.sqlite");
   const database = openQualifiedDatabase(databasePath);
   const migrations = await loadBundledMigrations();

@@ -19,6 +19,7 @@ date: "2026-09-28"
 - [reply-33：Job Host 加载期间的启动监督](#reply-33job-host-加载期间的启动监督)
 - [reply-34：MCP 测试夹具的准备成本](#reply-34mcp-测试夹具的准备成本)
 - [reply-34：Job Host 返工与取证边界](#reply-34job-host-返工与取证边界)
+- [reply-47：D17 夹具前缀与短临时根](#2026-10-02-reply-47d17-夹具前缀与短临时根)
 
 ## 目标与边界
 
@@ -416,3 +417,9 @@ D14 将父测试的子 Vitest 改为直接执行两个测试侧 `.mjs`，继续�
 父测试同时提供 artifact/context 时沿用 prepared 的现有安装器和清理流程，缺少两者时使用开发构建，缺少其中一个时报错。旧五个夹具文件按 HEAD 原样保留，原因与删除条件见 [BL-20261001-005](../../backlog/BL-20261001-005-主-分-支-接-受-政-策-后.md)。这是获准的测试侧修改，没有改产品代码。本轮第 0 层开发模式三次合计 9/0，Worker 最大 2958ms、Agent 最大 1814ms；正式 CI 构建产物的安装模式一次 3/0，Worker 最大 2373ms、Agent 最大 1819ms，三个场景均实际读取本次 scratch 的安装目录。全部样本低于 7500ms，条件均为 `HIMAWARI_TEST_TIMEOUT_MS=30000`、umask 022。第 1 层及后续实际运行结果随本批报告交付；D1、D11、D14 第 2 层按裁定由原 19 个 integration 文件合并运行补齐。之后运行 prepared 原基线冷 5/热 5，并保留 Job Host 同步命令、事件循环间隔和心跳时间线；不改人为阻塞或心跳期限。原 100 项权限失败是否消失、D13 归因和正式第 3 层均以本批实际运行报告为准。
 
 历史完整 unit 的记录保持为：unit 第一次 2152/1 失败（Node 内部断言），同版本复跑 2153/0。Mac 验证仍无限期推迟，Linux 结果不替代 Mac。
+
+## 2026-10-02 reply-47：D17 夹具前缀与短临时根
+
+[reply-47](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-47.md) 接受产品路径夹具的套接字长度检查，测试临时根改为 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)规定的 10 字节 `/tmp/hXXXX`，由普通测试账号运行 `mktemp -d` 创建并核对 UID 1001、0700 和真实路径。D17 仅将 SQLite 夹具的 `himawari-sqlite-capability-invocation-` 改为 `h-`，保留所有断言、产品路径上限和其他前缀。完整控制目录在旧 35 字节根下最多 99 字节，新根下为 74 字节；其他夹具控制路径最多 77 字节，SRT 最长 105 字节，逐行静态核算见[新根路径审计](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r47-socket-path-audit.json)。任意调用方指定的绝对根需要另行计算，这份表不证明任意配置都安全。
+
+D17 改前在旧根下两个生产停止/恢复用例因 `JOB_HOST_CONTROL_PATH_TOO_LONG` 失败，证据保留在[红测试报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r46/r36/r46-D17-red-vitest.json)。改后在旧根 `/srv/himawari-test/scratch/58ee6504` 仅做一次前后对照，[2 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-old-root-green-vitest.json)，另 25 项由定向筛选未运行；新根 `/tmp/hYeze` 下整个文件 [27 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-new-root-file-vitest.json)。这两次及通过的第 1 层 `npm run check` 均使用 `HIMAWARI_TEST_TIMEOUT_MS=30000`；实际根及资源采样保留在对应元数据，不把这些结果视为完整第 3 层验收。生产 `privateRoot` 的 27 字节限制由 Claude 登记为 [D18 后续缺陷](../../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)，本批不修。
