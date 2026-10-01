@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a6453bdab7cc18c9587e3d1ebf2e4036635a45b57b201c8cec447e18275e93aa"
+contract_sha256: "sha256:3ec5fc1c3218cf0f15653aa94b7db2f5e35b53962922eaffa0d9adead305cafd"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -10,7 +10,7 @@ date: "2026-08-27"
 
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
-当前开发测试遵循 [ADR 0044](../adr/0044-tests-on-cloud-server.md#storage)：以 `himawari-test` 在云服务器 `84.247.157.41` 的任务自有目录运行，临时安装和状态放在每次运行独占的 0700 scratch 目录；不使用 Hermes，不在 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0044-tests-on-cloud-server.md]
+当前开发测试遵循 [ADR 0045](../adr/0045-short-test-temp-root.md#storage)：以 `himawari-test` 在云服务器 `84.247.157.41` 的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不使用 Hermes，不在 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0045-short-test-temp-root.md]
 
 <!-- runbook-contract:
 - packages/platform-node/src/capabilities/isolation.ts

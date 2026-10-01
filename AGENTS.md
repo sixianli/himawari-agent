@@ -66,7 +66,7 @@ The user asked on 2026-09-29 that code and documentation never drift apart. Docu
 
 ## Pushing Commits
 
-The user decided on 2026-09-30 that every commit is pushed to the remote as soon as it is created; the rule is kept in [ADR 0044](docs/adr/0044-tests-on-cloud-server.md), which supersedes ADR 0043.
+The user decided on 2026-09-30 that every commit is pushed to the remote as soon as it is created; the rule is kept in [ADR 0045](docs/adr/0045-short-test-temp-root.md), which supersedes ADR 0044 and ADR 0043.
 
 - Push each commit to the same-named branch on `origin` right after creating it, setting the upstream on the first push. This applies to Claude and Codex alike, including commits made during delegated tasks.
 - Never force-push, rewrite pushed history, or bypass hooks. If a push is rejected or fails, stop and report the error.
@@ -75,12 +75,12 @@ The user decided on 2026-09-30 that every commit is pushed to the remote as soon
 
 ## Test and Production Hosts
 
-The user decided on 2026-09-29 where tests run and where production lives. On 2026-10-01 the user reported that Hermes can no longer be used and moved testing to the cloud server `84.247.157.41`; the current rules are in [ADR 0044](docs/adr/0044-tests-on-cloud-server.md), which supersedes ADR 0043 and its predecessors.
+The user decided on 2026-09-29 where tests run and where production lives. On 2026-10-01 the user reported that Hermes can no longer be used and moved testing to the cloud server `84.247.157.41`; the current rules are in [ADR 0045](docs/adr/0045-short-test-temp-root.md), which supersedes ADR 0044 and its predecessors. ADR 0045 keeps every rule of ADR 0044 except the scratch location, which was moved on 2026-10-02 because the old path made product-path socket paths too long.
 
 - Never run Himawari tests on the user's MacBook. This includes builds, `npm run check`, `npm test`, any Vitest project, and product-path qualification. Use the MacBook only for editing, review, and commits. If a test, build, or qualification process is found running on the MacBook, stop it.
 - Do not run tests on Hermes or write new data there. Existing Hermes evidence stays as historical record.
 - Run Layers 0-3 and the Linux product path on the cloud server `84.247.157.41` over SSH as the unprivileged user `himawari-test`, following "Cloud Test Server Connectivity" below. This decision authorizes routine test work there without asking each time.
-- Keep checkouts, dependencies, toolchains, browsers, builds, logs, reports, and retained evidence in a task-owned directory under `/srv/himawari-test/` (for example `/srv/himawari-test/round2/`). Put scratch data created while tests run (SQLite files, sockets, product-path test installs, the test `TMPDIR`) in a per-run 0700 directory under `/srv/himawari-test/scratch/` and pass it as `HIMAWARI_TEST_TEMP_ROOT`. The server has one SSD, so there is no separate slow data disk. Before each run, check the root disk and do not start if less than 10 GiB is free; record the scratch directory's peak size and the lowest root free space; after the run, copy retained failure evidence into the task's evidence directory and delete the scratch directory.
+- Keep checkouts, dependencies, toolchains, browsers, builds, logs, reports, and retained evidence in a task-owned directory under `/srv/himawari-test/` (for example `/srv/himawari-test/round2/`). Put scratch data created while tests run (SQLite files, sockets, product-path test installs, the test `TMPDIR`) in a per-run directory created by `himawari-test` with `mktemp -d /tmp/hXXXX`; check that it is owned by `himawari-test`, has mode 0700, and resolves to itself, then pass it as both `HIMAWARI_TEST_TEMP_ROOT` and `TMPDIR`. Keep this root at 10 bytes: Unix socket paths are limited to 107 bytes on Linux, and the product-path fixture refuses longer roots. Delete only the `/tmp/h*` directories the run created. The server has one SSD, so there is no separate slow data disk. Before each run, check the root disk and do not start if less than 10 GiB is free; record the scratch directory's peak size and the lowest root free space; after the run, copy retained failure evidence into the task's evidence directory and delete the scratch directory.
 - Use root on this server only for system preparation (system packages, the test user, its directories). New downloads need the user's approval first. Changes to system security settings, such as AppArmor, go to the user as an executable script with each step and its undo explained; the user runs it.
 - On the cloud server, Vitest's 5000 ms default test timeout is temporarily raised (user decision, 2026-10-01): set `HIMAWARI_TEST_TIMEOUT_MS=30000` for runs there, because synchronous disk writes take about 11-19 ms and SQLite-heavy tests time out. The variable replaces only the default of projects that set no timeout of their own; explicit test timeouts and product deadlines stay unchanged. Commit messages and reports must say results were obtained with the raised limit. Restore the default when tests return to a fast-sync host, per [BL-20261001-002](docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md).
 - Tests must not read or write production locations (such as `/opt/himawari`, `/etc/himawari`, `/var/lib/himawari`) or use production service accounts on the shared server.
@@ -90,7 +90,7 @@ The user decided on 2026-09-29 where tests run and where production lives. On 20
 
 ## Test Trigger Timing
 
-The user decided on 2026-09-29 how test layers are triggered during development; the current rules are in [ADR 0044](docs/adr/0044-tests-on-cloud-server.md), which keeps the timing rules of ADR 0043 and changes only the host. Run each layer on the host given in "Test and Production Hosts". These rules take precedence over any per-defect full-test requirement in task briefs written before that date.
+The user decided on 2026-09-29 how test layers are triggered during development; the current rules are in [ADR 0045](docs/adr/0045-short-test-temp-root.md), which keeps the timing rules of ADR 0043 and changes only the host and the scratch location. Run each layer on the host given in "Test and Production Hosts". These rules take precedence over any per-defect full-test requirement in task briefs written before that date.
 
 - Layer 0, targeted tests (the reproducing test and directly related test files): run before changing production code to show the failure, then after every change.
 - Layer 1, `npm run check`: before every commit.
@@ -108,7 +108,7 @@ The user decided on 2026-09-29 how test layers are triggered during development;
 - For test work, use `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 himawari-test@84.247.157.41`. Use `root@84.247.157.41` only for the system preparation described in "Test and Production Hosts".
 - Noninteractive SSH has no Node.js on `PATH`. Put the task's locked toolchain first, for example `PATH=/srv/himawari-test/round2/tools/bin:/usr/bin:/bin`, and set `HIMAWARI_CI_TOOLS`, `HIMAWARI_CI_PYTHON`, `PLAYWRIGHT_BROWSERS_PATH`, and `TMPDIR` to the task's directories.
 - Sync code with `git bundle` and patches from the Mac; do not edit code on the server.
-- Ubuntu 24.04 restricts unprivileged user namespaces. On 2026-10-01 the user added an AppArmor profile that allows only `/usr/bin/bwrap` to create them; its text and undo steps are in [ADR 0044](docs/adr/0044-tests-on-cloud-server.md#apparmor). Do not disable the global restriction, use `--privileged`, or run the sandbox as root to work around a sandbox failure.
+- Ubuntu 24.04 restricts unprivileged user namespaces. On 2026-10-01 the user added an AppArmor profile that allows only `/usr/bin/bwrap` to create them; its text and undo steps are in [ADR 0045](docs/adr/0045-short-test-temp-root.md#apparmor). Do not disable the global restriction, use `--privileged`, or run the sandbox as root to work around a sandbox failure.
 - Do not change SSH configuration, credentials, firewall, or host-key verification to bypass a failure; report it to the user.
 
 ## Disk Space Hygiene

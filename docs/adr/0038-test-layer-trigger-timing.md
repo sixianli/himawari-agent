@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0044-tests-on-cloud-server.md"
+superseded_by: "docs/adr/0045-short-test-temp-root.md"
 date: "2026-09-29"
 ---
 

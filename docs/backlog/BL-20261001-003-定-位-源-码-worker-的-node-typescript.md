@@ -23,7 +23,7 @@ superseded_by: ""
 
 ## 来源与证据
 
-按第二轮 Claude 答复 40 的限时定位裁定登记（`.ci-output/handoff/2026-09-28-round2-claude-reply-40.md`，本机交接文件，不在仓库中）。测试入口和固定工具链约束见 [CI 验证设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md)，云服务器规则见 [ADR 0044](../adr/0044-tests-on-cloud-server.md)。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
+按第二轮 Claude 答复 40 的限时定位裁定登记（`.ci-output/handoff/2026-09-28-round2-claude-reply-40.md`，本机交接文件，不在仓库中）。测试入口和固定工具链约束见 [CI 验证设计](../execution/specs/2026-09-03-github-ci-quality-gates-design.md)，云服务器规则见 [ADR 0045](../adr/0045-short-test-temp-root.md)。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
 
 - 原 unit 第一次 2152 项通过、1 项失败：`production HTTP startup rejection contracts rejects identity discovery escape jwksUrl=http://team.cloudflareaccess.com/cdn-cgi/access/certs`，耗时 1311.083ms，错误为 `Error [ERR_INTERNAL_ASSERTION]: memory access out of bounds`。原 JSON 报告和日志保留在本机证据目录 `.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r36/r39-layer2-unit-vitest.json`（不在仓库中）。
 - Node 为 `22.22.3`，可执行文件 SHA-256 为 `e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2`。原运行内存压力累计值 `some` 2322→2323、`full` 2245→2245；运行前后可用内存约 7.3 GiB，没有明显内存不足停顿。

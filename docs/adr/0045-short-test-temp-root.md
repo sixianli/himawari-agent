@@ -1,13 +1,13 @@
 ---
-status: superseded
+status: active
 document_type: adr
-decision_status: superseded
-supersedes: ""
-superseded_by: "docs/adr/0045-short-test-temp-root.md"
-date: "2026-10-01"
+decision_status: accepted
+supersedes: "docs/adr/0044-tests-on-cloud-server.md,docs/adr/0043-push-every-commit-full-test-before-merge.md,docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
+superseded_by: ""
+date: "2026-10-02"
 ---
 
-# ADR 0044：测试改在云服务器 84.247.157.41 上运行，不再使用 Hermes
+# ADR 0045：云服务器测试的临时目录改为 `/tmp` 下的短路径
 
 <a id="contents"></a>
 
@@ -29,27 +29,21 @@ date: "2026-10-01"
 
 ## 背景
 
-[ADR 0043](0043-push-every-commit-full-test-before-merge.md) 规定第 0–3 层测试和 Linux 产品路径在 Hermes（局域网里的 Linux 服务器）上运行，开发 Mac 不跑测试，每个提交立即推送。
+[ADR 0044](0044-tests-on-cloud-server.md) 按用户 2026-10-01 的决定，把测试从 Hermes 移到云服务器 `84.247.157.41`，并规定测试运行中的临时数据放在 `/srv/himawari-test/scratch/` 下每次运行独占的目录里。
 
-2026-10-01 用户告知 **Hermes 已经不能使用**，并决定**改在云服务器 `84.247.157.41` 上运行测试**。这台服务器也是 ADR 0043 定下的生产环境。用户通过 SSH 密钥给了临时 root 权限，没有提供密码。
+2026-10-02 在云服务器上运行产品路径测试时发现，这个目录太长：
 
-同一天对这台服务器做了只读检查，结果如下：
+- 产品路径测试夹具 `test/fixtures/product-path-harness.ts` 在安装产品之前，先核算安装后会出现的每个 Unix 套接字的路径长度，超出上限就拒绝运行。架构文档把这项核算写成正式设计。
+- 用 35 字节的 `/srv/himawari-test/scratch/<8 位十六进制>` 作临时根时，沙箱运行时 SRT 的网络桥套接字路径要 130 字节，超过 Linux 的 107 字节上限，正向用例 `creates the installation directory under the explicit short root` 实际失败。
+- 只缩短测试里的目录前缀解决不了：即使去掉安装目录这一层，下限仍是 115 字节。
 
-| 项目 | 情况 |
-| --- | --- |
-| 系统 | Ubuntu 24.04.5 LTS，x86_64 |
-| 处理器 / 内存 | 4 核，7.8 GiB 内存，没有交换空间 |
-| 磁盘 | 一块 100 GB 固态盘，根目录约 94 GB 可用；不像 Hermes 那样分成机械数据盘和固态根盘 |
-| 已运行的服务 | 只有系统自带服务和 SSH；没有安装过 Himawari |
-| SSH 设置 | 允许 root 登录，允许密码登录 |
-
-检查中还发现：Ubuntu 24.04 默认打开 `kernel.apparmor_restrict_unprivileged_userns`。这项设置让 AppArmor（Ubuntu 自带的安全模块）限制普通程序创建用户命名空间（Linux 让普通用户在隔离环境里运行程序的机制）。bubblewrap（Linux 上的沙箱程序 `bwrap`）因此无法以普通用户身份启动，测试用户运行时报错 `setting up uid map: Permission denied`。Hermes 是 Ubuntu 22.04，没有这项限制，所以之前没有出现这个问题。
+问题出在 ADR 0044 选的目录，而不是产品或测试：定规则时没有核算套接字长度。Hermes 上用的是 `/tmp/h…` 这样的短路径，所以以前没有出现。本 ADR 只改临时目录这一条，ADR 0044 的其余规则原样保留在下面。
 
 <a id="decision"></a>
 
 ## 决定
 
-用户在 2026-10-01 确认：
+ADR 0044 中用户 2026-10-01 确认的规则继续有效，只有[云服务器上的账号和目录](#storage)中测试临时数据的位置由 Claude 在 2026-10-02 改为 `/tmp` 下的短路径。完整规则如下：
 
 <a id="hosts"></a>
 
@@ -70,14 +64,19 @@ date: "2026-10-01"
 | --- | --- |
 | 运行测试的账号 | 普通用户 `himawari-test`，没有 sudo 权限，只能通过 SSH 密钥登录 |
 | 源码检出、npm 依赖、固定工具链、浏览器、构建产物、日志、测试报告和保留的证据 | `/srv/himawari-test/<任务目录>/` 下，例如 `/srv/himawari-test/round2/` |
-| 测试**运行中**产生的临时数据：SQLite 文件、socket、产品路径测试安装、测试进程的 `TMPDIR` | `/srv/himawari-test/scratch/` 下每次运行独占的 0700 目录，通过 `HIMAWARI_TEST_TEMP_ROOT` 指定 |
+| 测试**运行中**产生的临时数据：SQLite 文件、socket、产品路径测试安装、测试进程的 `TMPDIR` | 每次运行由 `himawari-test` 用 `mktemp -d /tmp/hXXXX`（系统命令，按模板新建一个名字末尾随机的目录）新建的独占目录（共 10 字节，例如 `/tmp/hAb3x`），权限 0700；同时设为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR` |
+
+临时目录必须短，原因是 Unix 套接字（同一台机器上进程之间通信用的特殊文件）的完整路径有长度上限：Linux 最多 107 字节，产品自己的控制套接字还限定不超过 100 字节。产品路径测试会在临时目录下装一套产品，沙箱运行时 SRT（Anthropic 的 `@anthropic-ai/sandbox-runtime`，负责隔离网络）在其中的任务目录里建 `claude-socks-<16 位十六进制>.sock`，这条路径比临时根多 95 字节，所以临时根最多 12 字节。ADR 0044 原定的 `/srv/himawari-test/scratch/<8 位十六进制>` 有 35 字节，算下来是 130 字节，测试夹具在安装前就会拒绝运行。`/tmp/hXXXX` 是 10 字节，对应 105 字节。
+
+`/tmp` 在这台机器上和 `/srv` 是同一块固态盘的同一个 ext4 分区（2026-10-02 用 `findmnt -T /tmp` 核对），不是内存盘，所以改到 `/tmp` 不改变磁盘和内存的占用。系统的 `systemd-tmpfiles` 只清理 30 天以上的条目，不影响正在运行的测试。
 
 这台机器只有一块固态盘，所以 ADR 0042 和 ADR 0043 中“证据放机械盘、临时数据放固态根盘”的区分不再需要。下面几条空间规则继续执行：
 
 1. **跑之前查空间。** 每次运行前用 `df` 检查根盘，可用空间低于 10 GiB 就不启动，写停止文件说明。
 2. **记录峰值。** 记录临时目录的最大占用和根盘的最低可用空间，写进这次运行的证据。
 3. **跑完就收走、删掉。** 需要保留的失败现场先复制到任务目录下的证据目录，再删除这次运行的临时目录。删除前按 `AGENTS.md` 的 “Disk Space Hygiene” 核对没有进程还在用它。
-4. **只用测试用户自己的目录。** 不写其他用户或系统服务的目录。
+4. **只用测试用户自己的目录。** 不写其他用户或系统服务的目录。`/tmp` 是公共目录，只能删除本次运行自己创建的 `/tmp/h*` 目录，不碰 `/tmp` 下的其他内容。
+5. **创建后先核对。** 核对临时根的属主是 `himawari-test`、权限是 0700、`realpath`（求出目录真实位置的命令）的结果与原路径相同，即没有经过符号链接（指向别处的快捷方式），并把路径和字节数写进运行记录。
 
 <a id="apparmor"></a>
 
@@ -97,7 +96,7 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 脚本随后用 `apparmor_parser -r /etc/apparmor.d/bwrap` 加载规则。全局开关 `kernel.apparmor_restrict_unprivileged_userns` 仍为 1，其他程序照旧受限制；以 `himawari-test` 身份运行 `bwrap --unshare-all` 成功。撤销方法是 root 执行 `apparmor_parser -R /etc/apparmor.d/bwrap` 后删除该文件。
 
-这只说明 bwrap 能启动了，不等于产品沙箱在这台机器上已经验证通过；后者要靠实际测试。默认的 Ubuntu 24.04 上需要这项前提，也是产品安装时要面对的问题，后续工作记录在[对应的 Backlog](../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。
+之后又按用户同意安装了 bwrap 0.11.2 及其专用 AppArmor 规则，记录在[对应的 Backlog](../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。这只说明 bwrap 能启动了，不等于产品沙箱在这台机器上已经验证通过；后者要靠实际测试。默认的 Ubuntu 24.04 上需要这项前提，也是产品安装时要面对的问题，后续工作记录在[对应的 Backlog](../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。
 
 <a id="layers"></a>
 
@@ -141,19 +140,19 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 ## 比较过的方案
 
-### 方案 A：改在云服务器上跑测试（采用）
+### 方案 A：每次运行在 `/tmp` 下用 `mktemp -d /tmp/hXXXX` 建 10 字节的目录（采用）
 
-- 好处：用户手上现有、能用的 Linux 机器；系统是 Ubuntu 24.04，与将来的生产环境一致，能提前发现产品在新版 Ubuntu 上的问题，例如这次的 bwrap 限制。
-- 代价：处理器和内存比 Hermes 少，没有交换空间，完整测试可能更慢；测试与将来的生产服务共用一台机器，要靠专用用户和目录隔开。
+- 好处：不需要 root，测试用户自己就能创建；路径足够短，SRT 套接字为 105 字节；`/tmp` 与 `/srv` 在同一分区，空间和性能都不变；与 Hermes 时期的做法一致。
+- 代价：`/tmp` 是所有用户共用的目录，要靠 0700 权限、属主核对和“只删本次创建的目录”来隔离；临时数据不再和任务目录放在一起，记录脚本要写明路径。
 
-### 方案 B：等 Hermes 恢复
+### 方案 B：由 root 新建 `/srv/h/` 交给测试用户，每次在下面建 `/srv/h/XXXX`
 
-- 代价：恢复时间不确定，这一轮排查会一直停着；用户已经明确不采用。
+- 好处：临时数据仍在 `/srv` 下。
+- 代价：要用 root 改系统目录；`/srv/h/XXXX` 为 11 字节，与方案 A 相比没有实际好处。
 
-### 方案 C：把云服务器重装成 Ubuntu 22.04 或 Debian 12，避开 bwrap 限制
+### 方案 C：缩短产品的套接字名称或放宽夹具的长度核算
 
-- 好处：不用改 AppArmor 设置。
-- 代价：Ubuntu 22.04 的标准支持到 2027 年 4 月结束，以后升级还会遇到同样的限制；换成 Debian 则没有机器验证产品在 Ubuntu 24.04 上的行为。重装还要重新配置访问。用户 2026-10-01 选择保留 Ubuntu 24.04，执行只针对 bwrap 的 AppArmor 规则。
+- 不采用：会改变产品行为，或者让测试不再能提前发现超长路径，只是为了迁就测试目录。
 
 [↑ 返回阅读导航](#contents)
 
@@ -161,11 +160,11 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 ## 后果
 
-- `AGENTS.md` 中的 “Test and Production Hosts”、“Test Trigger Timing” 和原 “Hermes Connectivity” 按本 ADR 改写。
-- 正在进行的工具执行排查，要把运行记录脚本和路径从 Hermes 改到云服务器。旧的 Hermes 记录脚本不能直接使用。
-- 默认的 Ubuntu 24.04 需要额外的 AppArmor 规则产品沙箱才能工作。生产部署和产品安装说明都要处理这一点，见[对应的 Backlog](../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。
-- 测试和将来的生产服务共用机器。生产部署计划要另行确定生产服务用户和目录，并说明它们与 `himawari-test` 的隔离方式。
-- 临时 root 权限和服务器的 SSH 设置（允许 root 登录、允许密码登录）由用户决定是否收回或收紧，本 ADR 不做改动。
+- `AGENTS.md` 的 “Test and Production Hosts” 改为本 ADR 的临时目录规则，并把引用从 ADR 0044 改为本 ADR。
+- 工具执行排查使用的运行记录脚本改为创建 `/tmp/hXXXX`，并在运行记录里写明临时根和它的字节数。
+- 测试夹具中各临时目录前缀按 10 字节的临时根重新核算；超过上限的另行修正。
+- 同样的长度限制也约束生产安装：产品把每个任务的 `TMPDIR` 设为 `privateRoot/<44 字节的任务编号>`，SRT 在其中建套接字，所以 Linux 生产配置中的 `privateRoot` 不能超过 27 字节，而产品目前不在启动时检查这一点。后续工作见[对应的 Backlog](../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)。
+- ADR 0044 的其他后果（AppArmor 前提、测试与生产共用机器、root 和 SSH 设置由用户决定）继续有效。
 
 [↑ 返回阅读导航](#contents)
 
@@ -173,8 +172,9 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 ## 关联文档
 
-- 被取代的决定：[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]
-- 更早的测试位置和测试时机决定，原先由 ADR 0043 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以四者的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
+- 被取代的决定：[SOURCE: docs/adr/0044-tests-on-cloud-server.md]
+- 更早的测试位置和测试时机决定，原先由 ADR 0044 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以它们的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]、[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
 - Ubuntu 24.04 的 bwrap 限制：[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
+- 生产 `privateRoot` 的长度上限：[SOURCE: docs/backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md]
 - 首次生产部署计划（目前暂缓）：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
 - 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
