@@ -140,6 +140,7 @@ export async function runCheck({
       ...Object.fromEntries(
         [
           "HIMAWARI_TEST_TEMP_ROOT",
+          "HIMAWARI_TEST_TIMEOUT_MS",
           "GITHUB_ACTIONS",
           "GITHUB_EVENT_NAME",
           "GITHUB_EVENT_PATH",

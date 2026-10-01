@@ -148,6 +148,8 @@ date: "2026-09-03"
 
 2026-10-01 用户批准云服务器默认测试时限的临时例外，见 [BL-20261001-002](../../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)。[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md] `vitest.workspace.ts` 在配置加载时读取 `HIMAWARI_TEST_TIMEOUT_MS`：未设置时不新增任何项目时限；设置时要求十进制数字串表示的正安全整数，空串、零、负数、小数、指数/十六进制、空白和不能精确表示的整数均立即报错。合法值仅写入没有自设 `testTimeout` 的项目，包含调试别名和资格项目；integration 原30000ms不变，`hookTimeout`、用例显式时限和产品期限均不改。云端记录器设为30000，报告及提交说明必须注明该条件；回到同步写入快的主机后移除变量，恢复Vitest默认5000ms。工具测试通过真实Node配置加载覆盖未设置、合法值与非法值；该配置改动单独提交并按现行规则提前运行第3层，不改变GitHub必需检查集合。
 
+正式`npm test`使用的共享runner只在设置了`HIMAWARI_TEST_TIMEOUT_MS`时，将原始值加入隔离环境，并经真实测试调度入口传给Vitest子进程；未设置时不新增变量，合法性仍由`vitest.workspace.ts`检查，不放行其他未声明环境变量。`test/tooling/test-timeout-entry.test.mjs`通过真实`runCheck`、`runTests`与子进程执行，独立读取五个项目的环境；固定工具/归档校验和Vitest本体使用受控传输夹具，环境构造与进程调用不mock。合同覆盖变量缺省、30000和保留前导零的00030，并拒绝传递无关变量；完整测试实际生效仍由第3层正式入口验证。修复与合并第2层安排由[reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md)批准，证据见[reply-39验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
+
 ### 4. 一次构建的产物经过安装验证后再交付
 
 每个平台的构建步骤生成 Node runtime、浏览器静态资源和内容清单。复用现有 build/package 脚本，扩充其遗漏的 Node 文件摘要、模式、外部依赖闭包、迁移资源和平台身份。metadata 的生成时间不进入内容可重复性比较，但保留在执行报告中。
