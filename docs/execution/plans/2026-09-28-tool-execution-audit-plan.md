@@ -19,6 +19,7 @@ date: "2026-09-28"
 - [reply-33：Job Host 加载期间的启动监督](#reply-33job-host-加载期间的启动监督)
 - [reply-34：MCP 测试夹具的准备成本](#reply-34mcp-测试夹具的准备成本)
 - [reply-34：Job Host 返工与取证边界](#reply-34job-host-返工与取证边界)
+- [reply-46：准备与心跳计时取证](#2026-10-02-reply-46准备与心跳计时取证)
 - [reply-47：D17 夹具前缀与短临时根](#2026-10-02-reply-47d17-夹具前缀与短临时根)
 
 ## 目标与边界
@@ -385,13 +386,13 @@ Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限�
 [reply-35](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-35.md) 明确批准两个修复，原期限和断言全部保留。当前工作顺序为：
 
 1. 期限分类先确认红测试，再修复；通过第 0–2 层、同步文档并复核封存受影响 Runbook 后独立提交、立即推送。相等边界必须归任务期限，取消/结束后不再分类，见[期限诊断合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#deadline-classification)。
-2. prepared 修复前补原代码单文件冷 5 次、热 5 次对照。无 artifact/context 的开发夹具在测试准备阶段，将完整真实构建运行时复制到 `HIMAWARI_TEST_TEMP_ROOT` 下本测试的 0700 目录，保留布局；包装子进程从副本运行，原 20000ms 包装期限和 10000ms 资源上限不变。复制前检查根盘至少 10GiB 可用，记录整个 scratch 的峰值和根盘最低空间，结束后删除副本。按 [reply-36](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-36.md) 使用 `/srv/himawari-test/round2/evidence/r36/` 保留证据，每次运行在 `/srv/himawari-test/scratch/<名字>/` 创建独占 0700 根；不能直接沿用 Hermes 的路径。新主机只有固态盘，对照只说明固态盘条件，不能证明历史机械盘失败已解决。修复后验收为原 19 文件并发冷 5 次，加单文件冷 5 次、热 5 次；逐次保留失败证据。该修改不能证明产品安装在机械盘上的启动速度合适。
+2. prepared 原失败仅在 Hermes 机械盘上确认；云端原基线冷 5 次、热 5 次合计 110/0，19 文件并发中也是 11/0，未复现这项失败。按 [reply-46 撤回复制候选](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-46.md#4-preparedd2撤回复制候选保留取证)，撤回开发模式的 `statfs` 检查及完整运行时复制，保留失败现场、子进程 `process_started`、`module_imported`、`prepare_started`、`prepare_finished` 阶段记录和产物模式的 `testTemporaryRoot()`。原 20000ms 包装期限与 10000ms 资源上限保留。这不是 D2 已修复的证明；stop-37 曾有一次 19 文件并发导入超时，剩余风险由 Pi 准备线程冷 5 次、热 5 次测量跟进。证据仍保留在 `/srv/himawari-test/round2/evidence/r36/`，每次云端测试的独占根改按 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)通过 `mktemp -d /tmp/hXXXX` 创建，核对 10 字节、UID 1001、0700 和真实路径；失败现场先保留再删除精确运行根。新主机只有固态盘，云端结果不能证明历史机械盘失败已解决，也不能证明产品安装在机械盘上的启动速度合适。
 3. 保存已有失败阶段及工作根取证。按 [reply-37](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-37.md)，MCP 夹具保留 `os.tmpdir()`，由记录器将 `TMPDIR` 指向本次scratch；不新增testing依赖，不改锁文件和边界规则。只读审查产品子进程/线程的时限起点、模块加载和准备预算，明确区分静态时序与真实缺陷；不自动修复审查发现的新问题。
 4. 在批次最终版本完成第 3 层构建与完整 `npm test`，逐条读取报告；如 Agent 15 秒接受期限再次失败，保留阶段和工作根现场。Mac 验证仍无限期推迟。
 
 用户先说明开发 Mac 的 Tailscale 已停止，并明确允许等待期间先在本地编写红测试及修复；随后更新指示：Hermes 不再可用，禁止连接或运行命令；测试改到 `84.247.157.41`，Claude 将在新 reply 文件提供访问方式和测试目录规则。在收到该文件前只做本地编辑和只读审查，不连接云服务器，不在 Mac 上运行测试、构建或 `npm run check`。收到规则后再重放原代码的红测试和 prepared 对照，再运行候选；不得将新测试主机的结果直接替代旧 Hermes 机械盘对照。开始版本为 `86e0f66`，新测试补丁与 prepared 原文件已独立保存，以免候选覆盖修复前输入；恢复之初的准备记录见[本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r35-verification.md)，当时尚未验证或提交；后续实际结果见下文。
 
-reply-36 已提供云端环境和目录规则，当前从 `64b3b8d` 重放红测试并验证候选。普通测试账号、10GiB 空间门槛、失败现场先保留再清理和每次提交立即推送遵循 [ADR 0044](../../adr/0044-tests-on-cloud-server.md#storage)。第 0–2 层之后、第 3 层之前，另用真实构建运行时测量 Pi Worker 从创建到 `started` 的冷 5 次、热 5 次耗时；中位数超过 2000ms 时仅提出复现思路，交 Claude 裁定，不自行修改产品预算。证据写入[云端本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md)。
+reply-36 已提供云端环境和目录规则，当前从 `64b3b8d` 重放红测试并验证候选。普通测试账号、10GiB 空间门槛、失败现场先保留再清理和每次提交立即推送目前遵循 [ADR 0045](../../adr/0045-short-test-temp-root.md#storage)。第 0–2 层之后、第 3 层之前，另用真实构建运行时测量 Pi Worker 从创建到 `started` 的冷 5 次、热 5 次耗时；中位数超过 2000ms 时仅提出复现思路，交 Claude 裁定，不自行修改产品预算。证据写入[云端本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md)。
 
 reply-37 已裁定撤销MCP helper候选，恢复第1–2层验证。系统bwrap0.9.0用于本批SRT/Job Host路径；不升级或下载0.11.2，不放宽program/MCP隔离后端的版本门槛。如果实际测试出现 `BACKEND_VERSION_UNSUPPORTED`，保留现场后交Claude裁定。本次后续结果见[reply-37验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r37-verification.md)。
 
@@ -423,3 +424,7 @@ D14 将父测试的子 Vitest 改为直接执行两个测试侧 `.mjs`，继续�
 [reply-47](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-47.md) 接受产品路径夹具的套接字长度检查，测试临时根改为 [ADR 0045 存放规则](../../adr/0045-short-test-temp-root.md#storage)规定的 10 字节 `/tmp/hXXXX`，由普通测试账号运行 `mktemp -d` 创建并核对 UID 1001、0700 和真实路径。D17 仅将 SQLite 夹具的 `himawari-sqlite-capability-invocation-` 改为 `h-`，保留所有断言、产品路径上限和其他前缀。完整控制目录在旧 35 字节根下最多 99 字节，新根下为 74 字节；其他夹具控制路径最多 77 字节，SRT 最长 105 字节，逐行静态核算见[新根路径审计](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r47-socket-path-audit.json)。任意调用方指定的绝对根需要另行计算，这份表不证明任意配置都安全。
 
 D17 改前在旧根下两个生产停止/恢复用例因 `JOB_HOST_CONTROL_PATH_TOO_LONG` 失败，证据保留在[红测试报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r46/r36/r46-D17-red-vitest.json)。改后在旧根 `/srv/himawari-test/scratch/58ee6504` 仅做一次前后对照，[2 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-old-root-green-vitest.json)，另 25 项由定向筛选未运行；新根 `/tmp/hYeze` 下整个文件 [27 项均通过](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-D17-new-root-file-vitest.json)。这两次及通过的第 1 层 `npm run check` 均使用 `HIMAWARI_TEST_TIMEOUT_MS=30000`；实际根及资源采样保留在对应元数据，不把这些结果视为完整第 3 层验收。生产 `privateRoot` 的 27 字节限制由 Claude 登记为 [D18 后续缺陷](../../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)，本批不修。
+
+## 2026-10-02 reply-46：准备与心跳计时取证
+
+prepared 开发模式恢复直接使用真实构建目录，复制候选撤回；测试失败时仍保存工作根和准备阶段。Job Host 测试保留同步命令耗时、事件循环最长间隔与心跳时间线，原 1150ms 人为阻塞及心跳期限不变。这两部分以一个测试诊断提交交付；在已完成的 [reply-45 原 19 文件运行](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r45/r36/r45-integration-19-vitest.json)中，prepared 11/0、准备控制 8/0，心跳用例通过；该次 437/2 的两项失败均为随后修复的 D17 路径过长。事件循环最长间隔 1185ms 包含人为阻塞，阻塞结束后 34ms 发出心跳，D13 仍为 uncertain。本次撤回复制并保留统一临时根之后，新根下这两个文件合计 19/0，第 1 层 `npm run check` 也通过，严格文档校验 0 错误、0 警告；这些云端结果均在 `HIMAWARI_TEST_TIMEOUT_MS=30000` 下得到。结果见[诊断定向报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-diagnostics-focused-vitest.json)。失败归因以证据为准，不把增加诊断视为产品修复。

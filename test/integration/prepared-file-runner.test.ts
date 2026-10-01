@@ -1,8 +1,18 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { HostDirectoryGrant } from "@himawari-agent/application";
@@ -18,20 +28,50 @@ import {
   verifyPiWriteEvidence,
 } from "@himawari-agent/platform-node";
 import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { prepareProductionFile } from "../../apps/agent-service/src/production-file-preparation.ts";
 
 const roots: string[] = [];
-afterEach(async () => {
+const preparations: Record<string, unknown>[] = [];
+afterEach(async (context) => {
+  if (context.task.result?.state === "fail") {
+    const retainedRoots: string[] = [];
+    const diagnostic = { preparations: [...preparations], retainedRoots };
+    Object.assign(context.task.meta, { runtimePreparation: diagnostic });
+    const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+    if (output) {
+      const directory = path.join(output, `prepared-file-runner-${context.task.id}`);
+      await mkdir(directory, { recursive: true, mode: 0o700 });
+      for (const root of roots) {
+        const destination = path.join(directory, path.basename(root));
+        await cp(root, destination, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          filter: async (entry) => !(await lstat(entry)).isSocket(),
+        });
+        retainedRoots.push(destination);
+      }
+      await writeFile(
+        path.join(directory, "preparation.json"),
+        JSON.stringify(diagnostic, null, 2),
+        {
+          mode: 0o600,
+        },
+      );
+    }
+  }
+  preparations.length = 0;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 let runtimeRoot = fileURLToPath(new URL("../../dist/node-runtime", import.meta.url));
 let installation: string | undefined;
 beforeAll(async () => {
   const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
-  if (!artifact && !context) return; // Narrow development check uses the explicit local build.
+  if (!artifact && !context) return;
   if (!artifact || !context) throw new Error("PREPARED_RUNNER_ARTIFACT_CONTEXT_REQUIRED");
-  installation = await mkdtemp(path.join(tmpdir(), "prepared-runner-install-"));
+  installation = await mkdtemp(path.join(testTemporaryRoot(), "prepared-runner-install-"));
   const installed = spawnSync(
     process.execPath,
     [
@@ -66,15 +106,23 @@ async function prepareFromRuntime(
       "node_modules/@himawari-agent/agent-service/dist/production-file-preparation.js",
     ),
   ).href;
+  const startedAt = Date.now();
+  const started = performance.now();
   const result = spawnSync(
     process.execPath,
     [
       "--input-type=module",
       "--eval",
       `
-    import { readFileSync } from "node:fs";
+    import { readFileSync, writeSync } from "node:fs";
+    const stage = (name) => writeSync(2, JSON.stringify({ event: "prepared-runtime.stage", stage: name, at: Date.now(), uptimeMs: process.uptime() * 1000 }) + "\\n");
+    stage("process_started");
     const { prepareProductionFile } = await import(process.argv[1]);
-    const candidate = await prepareProductionFile(JSON.parse(readFileSync(0, "utf8")));
+    stage("module_imported");
+    const input = JSON.parse(readFileSync(0, "utf8"));
+    stage("prepare_started");
+    const candidate = await prepareProductionFile(input);
+    stage("prepare_finished");
     process.stdout.write(JSON.stringify(candidate));
   `,
       moduleUrl,
@@ -86,12 +134,28 @@ async function prepareFromRuntime(
       env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
     },
   );
+  preparations.push({
+    startedAt,
+    elapsedMs: performance.now() - started,
+    runtimeRoot,
+    tool: input.tool,
+    status: result.status,
+    signal: result.signal,
+    error: result.error
+      ? { message: result.error.message, code: "code" in result.error ? result.error.code : null }
+      : null,
+    stderr: result.stderr,
+    stages: result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith('{"event":"prepared-runtime.stage"'))
+      .map((line) => JSON.parse(line)),
+  });
   if (result.status !== 0)
-    throw new Error(`PREPARED_RUNTIME_FAILED:${result.stderr || result.error?.message}`);
+    throw new Error(`PREPARED_RUNTIME_FAILED:${result.error?.message || result.stderr}`);
   return JSON.parse(result.stdout);
 }
 async function setup(tool: "write" | "edit", relativePath = "file.txt") {
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), "prepared-runner-")));
+  const root = await realpath(await mkdtemp(path.join(testTemporaryRoot(), "prepared-runner-")));
   roots.push(root);
   const workspace = path.join(root, "workspace"),
     privateDirectory = path.join(root, "job");

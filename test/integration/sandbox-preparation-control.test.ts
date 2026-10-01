@@ -70,12 +70,76 @@ import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<unknown>> = [];
-afterEach(async () => {
+afterEach(async (context) => {
   for (const close of cleanups.splice(0).reverse()) await close();
+  const timeline = {
+    testName: context.task.name,
+    state: context.task.result?.state,
+    capturedAt: Date.now(),
+    stderr: launch.stderr,
+    events: [...launch.events],
+  };
+  Object.assign(context.task.meta, { jobHostStartup: timeline });
+  const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+  if (output)
+    await writeFile(
+      path.join(output, `host-startup-${context.task.id}.json`),
+      JSON.stringify(timeline),
+      {
+        mode: 0o600,
+        flag: "wx",
+      },
+    );
   launch.stalePrepare = false;
   launch.stderr = "";
   launch.events.length = 0;
 });
+
+function jobHostDiagnostics() {
+  return `import childProcess from "node:child_process";
+import { syncBuiltinESMExports as synchronizeBuiltins } from "node:module";
+const trace = (stage, details = {}) => process.stderr.write(JSON.stringify({ stage, at: Date.now(), ...details }) + "\\n");
+let nextCallId = 0;
+for (const method of ["spawnSync", "execSync"]) {
+  const execute = childProcess[method];
+  childProcess[method] = function (...args) {
+    const callId = ++nextCallId;
+    const startedAt = Date.now();
+    const started = performance.now();
+    const command = args[0];
+    const commandArguments = Array.isArray(args[1]) ? args[1] : [];
+    trace("sync_command.started", { callId, method, command, commandArguments, startedAt });
+    try {
+      return Reflect.apply(execute, this, args);
+    } finally {
+      trace("sync_command.finished", { callId, method, command, commandArguments, startedAt, finishedAt: Date.now(), elapsedMs: performance.now() - started });
+    }
+  };
+}
+synchronizeBuiltins();
+let previousTick = performance.now();
+let previousTickAt = Date.now();
+let maximumGap = { elapsedMs: 0, startedAt: previousTickAt, finishedAt: previousTickAt };
+setInterval(() => {
+  const tick = performance.now();
+  const at = Date.now();
+  const elapsedMs = tick - previousTick;
+  if (elapsedMs > maximumGap.elapsedMs) {
+    maximumGap = { elapsedMs, startedAt: previousTickAt, finishedAt: at };
+    trace("event_loop.max_gap", maximumGap);
+  }
+  previousTick = tick;
+  previousTickAt = at;
+}, 10).unref();
+process.once("exit", () => trace("event_loop.summary", maximumGap));
+const send = process.send;
+if (send) process.send = function (message, ...args) {
+  if (message && typeof message === "object" && message.type === "heartbeat")
+    trace("host_heartbeat_sent", { sequence: message.sequence, observedAt: message.observedAt });
+  return Reflect.apply(send, this, [message, ...args]);
+};
+`;
+}
 
 async function configureSdkLoad(
   root: string,
@@ -93,7 +157,8 @@ async function configureSdkLoad(
   const loader = path.join(root, "loader.mjs");
   await writeFile(
     launch.hook,
-    `import { register } from "node:module";
+    `${jobHostDiagnostics()}
+import { register } from "node:module";
 register(${JSON.stringify(pathToFileURL(loader).href)});
 `,
   );
@@ -280,7 +345,8 @@ it("prepares with the packaged Java agent when global npm discovery would block 
   const discovery = path.join(root, "discovery.txt");
   await writeFile(
     launch.hook,
-    `import cp from "node:child_process";
+    `${jobHostDiagnostics()}
+import cp from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 const execute = cp.execSync;
