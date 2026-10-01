@@ -146,7 +146,7 @@ date: "2026-09-28"
 - [ ] 多工具、停止、重启、期限和重复运行的本机产品 E2E。
 - [ ] `npm run check`、`npm test`、全套 E2E、构建及文档校验。
 - [ ] Runbook 语义核对、重新封存，按独立缺陷提交。
-- [ ] Hermes 经授权后的对应测试；否则明确记录 Linux 未验证。
+- [ ] 云服务器测试账号下的对应 Linux 测试；否则明确记录 Linux 未验证。
 - [ ] 全部验收完成才归档本计划。
 
 ### 当前证据与停点
@@ -327,7 +327,7 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 ### 最终批次的测试位置与 Mac 资格（用户 2026-09-29 决定）
 
-用户决定以后不在开发 Mac 上跑测试，测试改在 Hermes 上跑，当前规则见 [ADR 0043](../../adr/0043-push-every-commit-full-test-before-merge.md#hosts) [SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格在 Hermes 上对最终版本执行：源码、依赖、工具、构建和证据在 `/data`，运行中的临时数据在根盘的任务目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
+2026-09-29 用户决定不在开发 Mac 上跑测试，当时测试转到 Hermes。现行规则已经改为 [ADR 0044](../../adr/0044-tests-on-cloud-server.md#hosts)：在云服务器 `84.247.157.41` 以 `himawari-test` 运行，不再使用 Hermes。[SOURCE: docs/adr/0044-tests-on-cloud-server.md] 以下 Hermes 目录与下载授权只记录当时安排，不作为云端执行规则。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格在 Hermes 上对最终版本执行：源码、依赖、工具、构建和证据在 `/data`，运行中的临时数据在根盘的任务目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
 
 用户于2026-09-30无限期推迟所有 Mac 验证，用户重新安排前不运行、不排期，Mac 行为未验证；这也包括第二轮的 Mac 无筛选产品路径资格。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
 
@@ -335,7 +335,7 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 用户决定：第二轮不能带着已发现的缺陷收尾。凡是已经发现、确认属于缺陷的问题，都要先修复，并各有先失败后通过的测试，然后再跑最终完整测试、Linux 无筛选资格和总报告。原本记为“已知限制”或 Backlog 的工具执行缺陷，也在这一轮修复；只有需要用户另做产品或设计决定、或需要在 Mac 上验证的项目，先由 Claude 向用户确认。
 
-2026-09-30用户决定每个提交创建后立即推送；第0–2层通过即可提交，第3层不作为推送前提，仍在批次交付、开PR、合并前及一轮结束时运行，见 [ADR 0043 的提交规则](../../adr/0043-push-every-commit-full-test-before-merge.md#commits)。
+2026-09-30用户决定每个提交创建后立即推送；第0–2层通过即可提交，第3层不作为推送前提，仍在批次交付、开PR、合并前及一轮结束时运行，见 [ADR 0044 的现行提交规则](../../adr/0044-tests-on-cloud-server.md#commits)。
 
 2026-09-29用户要求代码和文档不得漂移：每个改变行为的提交都在同一提交中更新受影响的文档，提交前运行严格文档校验，改到 Runbook 覆盖的代码时复核并重新封存。规则写在 `AGENTS.md` 的 “Code and Documentation Consistency” 一节。
 
@@ -379,6 +379,25 @@ Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限�
 
 用户 2026-09-30 11:50 要求全部任务暂停，几天后再继续。暂停时第二轮尚未收尾：Job Host 启动修复（`a3a11ed`）和 MCP 夹具修复（`f1af23f`）已提交；新发现的 Job Host 期限诊断分类缺陷（任务期限与准备期限两个定时器争先，诊断码与结束原因不一致）和 `prepared-file-runner` 20 秒超时的修法等待 Claude 裁定；第 3 层完整测试和 Linux 无筛选资格未跑。恢复时从上面列出的待裁定项继续，不把它们留作已知限制。
 
+## 2026-10-01 恢复：reply-35 期限分类与 prepared 夹具
+
+[reply-35](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-35.md) 明确批准两个修复，原期限和断言全部保留。当前工作顺序为：
+
+1. 期限分类先确认红测试，再修复；通过第 0–2 层、同步文档并复核封存受影响 Runbook 后独立提交、立即推送。相等边界必须归任务期限，取消/结束后不再分类，见[期限诊断合同](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#deadline-classification)。
+2. prepared 修复前补原代码单文件冷 5 次、热 5 次对照。无 artifact/context 的开发夹具在测试准备阶段，将完整真实构建运行时复制到 `HIMAWARI_TEST_TEMP_ROOT` 下本测试的 0700 目录，保留布局；包装子进程从副本运行，原 20000ms 包装期限和 10000ms 资源上限不变。复制前检查根盘至少 10GiB 可用，记录整个 scratch 的峰值和根盘最低空间，结束后删除副本。按 [reply-36](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-36.md) 使用 `/srv/himawari-test/round2/evidence/r36/` 保留证据，每次运行在 `/srv/himawari-test/scratch/<名字>/` 创建独占 0700 根；不能直接沿用 Hermes 的路径。新主机只有固态盘，对照只说明固态盘条件，不能证明历史机械盘失败已解决。修复后验收为原 19 文件并发冷 5 次，加单文件冷 5 次、热 5 次；逐次保留失败证据。该修改不能证明产品安装在机械盘上的启动速度合适。
+3. 保存已有失败阶段及工作根取证。按 [reply-37](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-37.md)，MCP 夹具保留 `os.tmpdir()`，由记录器将 `TMPDIR` 指向本次scratch；不新增testing依赖，不改锁文件和边界规则。只读审查产品子进程/线程的时限起点、模块加载和准备预算，明确区分静态时序与真实缺陷；不自动修复审查发现的新问题。
+4. 在批次最终版本完成第 3 层构建与完整 `npm test`，逐条读取报告；如 Agent 15 秒接受期限再次失败，保留阶段和工作根现场。Mac 验证仍无限期推迟。
+
+用户先说明开发 Mac 的 Tailscale 已停止，并明确允许等待期间先在本地编写红测试及修复；随后更新指示：Hermes 不再可用，禁止连接或运行命令；测试改到 `84.247.157.41`，Claude 将在新 reply 文件提供访问方式和测试目录规则。在收到该文件前只做本地编辑和只读审查，不连接云服务器，不在 Mac 上运行测试、构建或 `npm run check`。收到规则后再重放原代码的红测试和 prepared 对照，再运行候选；不得将新测试主机的结果直接替代旧 Hermes 机械盘对照。开始版本为 `86e0f66`，新测试补丁与 prepared 原文件已独立保存，以免候选覆盖修复前输入；恢复之初的准备记录见[本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r35-verification.md)，当时尚未验证或提交；后续实际结果见下文。
+
+reply-36 已提供云端环境和目录规则，当前从 `64b3b8d` 重放红测试并验证候选。普通测试账号、10GiB 空间门槛、失败现场先保留再清理和每次提交立即推送遵循 [ADR 0044](../../adr/0044-tests-on-cloud-server.md#storage)。第 0–2 层之后、第 3 层之前，另用真实构建运行时测量 Pi Worker 从创建到 `started` 的冷 5 次、热 5 次耗时；中位数超过 2000ms 时仅提出复现思路，交 Claude 裁定，不自行修改产品预算。证据写入[云端本批验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md)。
+
+reply-37 已裁定撤销MCP helper候选，恢复第1–2层验证。系统bwrap0.9.0用于本批SRT/Job Host路径；不升级或下载0.11.2，不放宽program/MCP隔离后端的版本门槛。如果实际测试出现 `BACKEND_VERSION_UNSUPPORTED`，保留现场后交Claude裁定。本次后续结果见[reply-37验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r37-verification.md)。
+
+reply-37 后云端第1层通过；完整unit组2150项中2134通过、16失败，Job Host 30项全部通过。失败位于5个文件，都是原5000ms测试期限；保持配置与断言不变的定向检查仍有4个文件15项失败，另外有超时后的目录清理错误。根因未确认，没有归因于bwrap版本或内存不足。按brief的范围边界写[stop-34](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-34.md)，由Claude裁定这些范围外超时的调查范围；第2层未通过，不提交或推送，不把Runbook封存或后续prepared/Pi/第3层标为完成。失败现场已保留，每次scratch均清理。
+
+reply-38按用户决定批准`HIMAWARI_TEST_TIMEOUT_MS=30000`只替换没有自设时限的项目默认值，integration、hook、用例显式时限和产品期限不变。配置及tooling合同测试已独立提交并推送`cc57e0e`：红测16项中15失败，绿测16/16通过，第1层通过，tooling整组41文件1132项通过；配置提交的严格文档校验0错误/0警告，相关Hermes历史Runbook已复核封存。Job Host完整unit在同一30000ms条件下144文件中143通过/1失败、2150项中2149通过/1失败；Job Host30项与旧16项超时全部通过，16项耗时均低于15000ms。新失败是原MCP/HTTP能力测试的Retry-After发送间隔985.293ms小于原990ms断言，根因uncertain；原19文件integration没有启动。另静态确认正式npm test的隔离env未透传新变量，直接Vitest通过不能代替此入口验证。按brief边界写[stop-35](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-35.md)，不改断言或再放宽；Job Host提交及4份Runbook封存、prepared campaign、Pi测量、提前和最终第3层均未完成。结果见[reply-38验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r38-verification.md)，Mac仍未验证。
+
 ## 2026-10-01 reply-39：D11 与正式测试入口
 
 [reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md) 批准新增 D11：能力 GET 不能早于服务器要求的重试时刻。单次 985.293ms 失败的具体时钟滞后仍 uncertain；确定性回归已确认旧代码缺少等待后的单调时钟复核。修复保持原总期限、取消信号、两次发送上限、250ms 下限及原 990ms 断言，合同见[只读 HTTP 重试时刻](../specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry]。
@@ -386,3 +405,5 @@ Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限�
 正式测试入口的变量透传已提交、推送 `98b3822`：真实入口调用链的合同探针在修复前 3 项中 2 项失败，修复后与相邻配置检查共 21 项通过，第 1 层通过。该探针独立读回 5 个真实子进程的环境，不代表完整产品测试已经通过。
 
 D11 的 3 项确定性回归已先失败再通过；完整能力测试文件 32 项通过。第 2 层按 ruling 延后到包含入口、D11 和 Job Host 三个提交的合并版本，运行完整 unit 与原 19 个 integration 文件；随后通过正式 `npm test` 入口提前执行第 3 层，最后仍在本批最终版本重复第 3 层。prepared 对照、取证提交与 Pi 冷热测量继续按 reply-36 执行，不在 Mac 上运行测试。实际命令、版本、补丁和报告见[reply-39 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
+
+D11已独立提交并推送 `3217e4b`，其第1层通过，4份Runbook针对该提交复核封存，严格检查0错误/0警告。Job Host候选生产代码与已审核红绿输入保持一致，复用同次第1层结果；本次随期限合同、当前云端测试规则及4份Runbook核对封存一起提交。按reply-39，前三项的第2层将在合并版本运行，不能把此前失败的完整unit报告描述为本次已通过。

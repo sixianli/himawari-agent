@@ -195,6 +195,7 @@ export function prepareSandboxJobHost(
       | "JOB_HOST_PREPARATION_TIMEOUT"
       | "JOB_HOST_EXECUTION_DEADLINE",
   ) => {
+    if (cancelled || ended) return;
     const bounded = (value: number) =>
       Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)));
     diagnostic ??= {
@@ -219,20 +220,21 @@ export function prepareSandboxJobHost(
     }
     if (!ended && !cancelled) send({ type: "heartbeat" });
   }, 250);
+  const deadlineRemainingMs = Date.parse(request.deadlineAt) - Date.now();
   const timer = setTimeout(
     () => {
       recordTimeout("JOB_HOST_EXECUTION_DEADLINE");
       cancel("deadline");
     },
-    Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
+    Math.max(1, deadlineRemainingMs),
   );
-  const preparationTimer = setTimeout(
-    () => {
-      recordTimeout("JOB_HOST_PREPARATION_TIMEOUT");
-      cancel("host_failure");
-    },
-    Math.min(30000, Math.max(1, Date.parse(request.deadlineAt) - Date.now())),
-  );
+  const preparationTimer =
+    deadlineRemainingMs > 30000
+      ? setTimeout(() => {
+          recordTimeout("JOB_HOST_PREPARATION_TIMEOUT");
+          cancel("host_failure");
+        }, 30000)
+      : undefined;
   // Job Host diagnostics are never propagated into user tool output.
   child.stderr?.on("data", () => {});
   child.on("message", (value: unknown) => {

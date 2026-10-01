@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2827b1dac2a7dc0aeb6a19ff90e62d60a9e91bcff3cc9568c4e1f3c358615980"
+contract_sha256: "sha256:bcb8e0d5657dfbcf97a1c45f607db44b10afc98404361e7627bb751995e6a2cd"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -467,7 +467,7 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；准备登记已被接受后缺少最终证明时仍待核对；登记前封锁仅适用于带新协议字段的计划。首次准备、登记或 bind 失败通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。握手或当前权威校验失败时仍可能没有持久诊断，不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
-Job Host 启动先建立原私有 IPC 监督，再动态加载 SRT 与策略编译模块；新鲜准备消息不会因后续加载慢而过期。安装验收应覆盖慢加载后完成准备、到达即过期的消息被拒绝、加载失败无用户任务启动，以及超过原 30 秒准备上限仍失败。1.5 秒消息年龄、任务总期限、认证及签名终态格式不变；不能把加载期间的心跳当作 ready 或清理证明。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。详细合同见[依赖加载期间的启动监督](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)。本修订没有部署动作；Hermes 定向测试不能替代最终产品资格；用户已无限期推迟 Mac 验证，Mac 行为未验证。
+Job Host 启动先建立原私有 IPC 监督，再动态加载 SRT 与策略编译模块；新鲜准备消息不会因后续加载慢而过期。安装验收应覆盖慢加载后完成准备、到达即过期的消息被拒绝、加载失败无用户任务启动，以及超过原 30 秒准备上限仍失败。1.5 秒消息年龄、任务总期限、认证及签名终态格式不变；不能把加载期间的心跳当作 ready 或清理证明。准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。详细合同见[依赖加载期间的启动监督](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)。本修订没有部署动作；云端定向测试不能替代最终产品资格；用户已无限期推迟 Mac 验证，Mac 行为未验证。
 
 
 ### Schema 38 纯联网范围

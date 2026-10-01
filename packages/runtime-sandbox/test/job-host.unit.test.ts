@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { sandboxHostFailureDetailSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type JobHostRequest,
@@ -601,4 +602,92 @@ it("retains the parent heartbeat expiry as the first private failure", async () 
       receivedSequence: null,
     },
   });
+});
+
+describe("Job Host deadline classification", () => {
+  it.each([
+    {
+      name: "task deadline before the preparation limit",
+      deadlineMs: 1000,
+      elapsedMs: 1001,
+      code: "JOB_HOST_EXECUTION_DEADLINE",
+      reason: "deadline",
+    },
+    {
+      name: "preparation limit before the task deadline",
+      deadlineMs: 45000,
+      elapsedMs: 30001,
+      code: "JOB_HOST_PREPARATION_TIMEOUT",
+      reason: "host_failure",
+    },
+    {
+      name: "task deadline equal to the preparation limit",
+      deadlineMs: 30000,
+      elapsedMs: 30001,
+      code: "JOB_HOST_EXECUTION_DEADLINE",
+      reason: "deadline",
+    },
+  ])("classifies $name despite clock movement between timer registrations", async (scenario) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T00:00:00.000Z"));
+    const schedule = globalThis.setTimeout;
+    let firstTimeout = true;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+      const timer = schedule(callback, milliseconds, ...args);
+      if (firstTimeout) {
+        firstTimeout = false;
+        vi.setSystemTime(Date.now() + 1);
+      }
+      return timer;
+    });
+    const process = child();
+    const input = {
+      ...request(),
+      deadlineAt: new Date(Date.now() + scenario.deadlineMs).toISOString(),
+    };
+    const host = prepareSandboxJobHost(input);
+    const heartbeat = setInterval(() => process.emitMessage({ type: "heartbeat" }), 100);
+    await vi.advanceTimersByTimeAsync(scenario.elapsedMs);
+    const cancellations = process.send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "cancel");
+    process.emitMessage({ type: "result", reason: cancellations[0]?.reason, taskStarted: false });
+    process.emit("exit");
+    process.emit("close");
+    clearInterval(heartbeat);
+    const result = await host.result;
+    expect(result.diagnostic?.detail?.code).toBe(scenario.code);
+    expect(cancellations.map((message) => message.reason)).toEqual([scenario.reason]);
+    expect(result.reason).toBe(scenario.reason);
+    expect(result.taskStarted).toBe(false);
+    expect(process.send.mock.calls.some(([message]) => message.type === "start")).toBe(false);
+    expect(() => host.start()).toThrow();
+  });
+
+  it.each(["cancelled", "closed"] as const)(
+    "does not classify queued timeout callbacks after the host is %s",
+    async (state) => {
+      vi.useFakeTimers();
+      const callbacks: Array<() => void> = [];
+      const schedule = globalThis.setTimeout;
+      vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+        callbacks.push(() => callback(...args));
+        return schedule(callback, milliseconds, ...args);
+      });
+      const classify = vi.spyOn(sandboxHostFailureDetailSchema, "parse");
+      const process = child();
+      const host = prepareSandboxJobHost(request());
+      const queuedCallbacks = [...callbacks];
+      if (state === "cancelled") host.cancel();
+      else process.emit("close");
+      for (const callback of queuedCallbacks) callback();
+      if (state === "cancelled") process.emit("close");
+      const result = await host.result;
+      expect(classify).not.toHaveBeenCalled();
+      expect(result.diagnostic).toBeUndefined();
+      expect(process.send.mock.calls.filter(([message]) => message.type === "cancel")).toHaveLength(
+        state === "cancelled" ? 1 : 0,
+      );
+    },
+  );
 });

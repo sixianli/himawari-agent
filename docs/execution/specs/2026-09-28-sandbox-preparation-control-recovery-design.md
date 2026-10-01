@@ -24,6 +24,7 @@ date: "2026-09-28"
 - [第二轮 A2：准备登记之前的封锁](#第二轮-a2准备登记之前的封锁)
 - [F：通用 UDS 断连恢复](#f通用-uds-断连恢复)
 - [第二轮：依赖加载期间的启动监督](#startup-supervision)
+- [准备期间的期限诊断分类](#deadline-classification)
 
 ## 目标与来源
 
@@ -192,5 +193,19 @@ Worker 从原 fork 时点开始的 30 秒准备上限、1.5 秒双向监督窗�
 依赖加载失败以 `host_failure` 结束，诊断阶段为 `dependencies`，只保留现有白名单机器码。若最先加载的 `execution-contracts` 本身失败，Job Host 通过原有允许省略 detail 的诊断消息发送阶段和系统码；Worker 仍按既有枚举校验并保存，不依赖基础设施 stderr 推断阶段，也不在错误处理中再次导入模块。SRT 未加载时 `srtReset` 为 false；没有实际复位及签名终态就不能宣称清理完成。加载已开始时，清理等待该操作结束，再对已加载的 SRT 复位；原强制退出上限继续有效。控制绑定、签名终态格式、Agent–Worker 消息和所有认证检查均不变，不新增消息类型。
 
 验证使用真实打包 Job Host 的测试加载钩子，固定延迟 2.5 秒，并覆盖超过 30 秒准备上限、SRT 与 contracts 各自的导入失败、准备期间任务期限到达、到达时已过期的消息；准备失败后的恢复仍须独立读取原签名终态。该边界无法靠普通 UI 操作稳定触发，因此使用已有集成测试入口。命令、版本、补丁及实际结果见[首次验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r33-verification.md)和[reply-34 返工验证](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r34-verification.md)。本修复不改变 Pi Operations：Pi 负责工具语义，Himawari 的 Job Host 负责隔离与监督。Mac 与 Linux 共用此代码；Mac 定向验证并入 BL-002；用户已无限期推迟全部 Mac 验证，因此本批仅报告 Linux 证据，Mac 行为未验证，不安排后续 Mac 运行。
+
+<a id="deadline-classification"></a>
+
+### 准备期间的期限诊断分类
+
+[reply-35](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-35.md) 批准修正 Worker 对期限的分类。旧准备定时器取任务期限与 30 秒的最小值，与任务定时器重复负责同一绝对期限；两次注册之间的时钟变化可能使准备回调先到，留下 `JOB_HOST_PREPARATION_TIMEOUT`，而真实 Job Host 最终以 `deadline` 结束。
+
+Worker 父端只用一个回调判定任务绝对期限。任务期限早于或等于 30 秒准备上限时，只保留任务期限回调，诊断必须是 `JOB_HOST_EXECUTION_DEADLINE`；只有准备上限更早时，才另设独立的 30000ms 准备回调，诊断为 `JOB_HOST_PREPARATION_TIMEOUT`。取消或结束后，迟到回调不能再分类。1500ms 监督窗口、准备上限、绝对期限、清理期限及全部启动/认证检查不变，不增加协议字段或用户可见入口。
+
+验证保留真实子进程的 `task deadline during import` 用例。真实进程无法稳定控制两个回调的先后，因此已有 Job Host 单元测试使用可控时钟，覆盖任务期限更早、准备上限更早、相等时任务期限优先，以及取消/结束后排队回调不再分类；断言只接受各场景唯一正确的诊断码。2026-10-01 按 reply-36 与 [ADR 0044](../../adr/0044-tests-on-cloud-server.md#hosts)，以 `himawari-test` 在云服务器 `84.247.157.41` 运行红测：原代码30项中4项失败，失败为两个期限分类及取消/结束后的重复分类；同一测试在修复后30项全部通过。真实导入期限回归1项通过、7项筛选未执行；按 reply-37 恢复 MCP 的 `os.tmpdir()` 后，第1层 `npm run check` 通过，完整unit组2150项中2134通过、16失败，Job Host 30项全部通过。对5个失败文件定向检查后，86项中71通过、15失败；CLI备份/权威转移与Agent服务组合测试仍超过原5000ms期限，根因未确认，交Claude裁定调查范围。原19文件integration和第3层未执行，修复尚未提交，Mac未验证。独立补丁、命令及实际结果见[红绿验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r36-verification.md)和[reply-37验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r37-verification.md)。
+
+reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测试时限，产品期限和原诊断断言不变。Job Host30项通过，旧16项超时全部通过且逐项耗时不超过15000ms；完整组2150项中2149通过/1失败，新失败为既有Retry-After发送间隔985.293ms未达到990ms断言，根因uncertain。按批次范围停止，原19文件integration和第3层未执行，Job Host修复尚未提交，4份Runbook仍待第0–2层通过后复核封存。当前结果见[reply-38验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r38-verification.md)与[stop-35](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-35.md)。
+
+[reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md) 调整提交顺序：Job Host 第0层红绿与真实导入回归已通过，复用代码未变的云端第1层结果（`r39-retry-layer1`，默认变量30000ms）；先将修复、合同及4份Runbook核对封存一起提交并立即推送。第2层延后到含入口透传、D11及本修复的合并版本，运行完整unit与原19个integration文件；随后执行提前的正式第3层。本次提交不声称合并第2层或完整第3层已经通过。历史失败及其时序继续保留，Mac未验证。实际记录见[reply-39验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
 
 [返回阅读导航](#阅读导航)
