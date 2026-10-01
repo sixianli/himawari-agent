@@ -140,6 +140,7 @@ async function runtimeFixture(
   listActive?: () => Promise<readonly CapabilityManifest[]>,
   payloadBoundaryOverrides?: Partial<CapabilityPayloadBoundary>,
   invocationAuthority?: CapabilityInvocationAuthorityPort,
+  waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>,
 ) {
   const clock = { now: () => NOW };
   const payloadStore = new FixturePayloadStore();
@@ -199,6 +200,7 @@ async function runtimeFixture(
     clock,
     ...(fetch ? { fetch } : {}),
     ...(invocationAuthority ? { invocationAuthority } : {}),
+    ...(waitForRetry ? { waitForRetry } : {}),
   });
   const putInput = async (input: CapabilityInvocationRequest, value: unknown) => {
     await payloadStore.put(
@@ -930,6 +932,7 @@ async function readonlyEndpointFixture(
   method: "GET" | "POST" = "GET",
   withSecret = false,
   costMicros = 0,
+  waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>,
 ) {
   const capability = manifest(
     { kind: "adapter", endpointIdentity: "adapter:retry", protectedReferenceOnly: true },
@@ -968,6 +971,7 @@ async function readonlyEndpointFixture(
     undefined,
     undefined,
     authority,
+    waitForRetry,
   );
   const base = request(capability.ref);
   const secretHandle = withSecret
@@ -1156,6 +1160,91 @@ it("honors a server Retry-After before the second readonly send", async () => {
   ]);
   expect(sends).toHaveLength(2);
   expect((sends[1] ?? 0) - (sends[0] ?? 0)).toBeGreaterThanOrEqual(990);
+});
+
+describe("readonly retry monotonic waiting", () => {
+  it("does not send early when a retry wait returns before its target", async () => {
+    let elapsed = 0;
+    const sends: number[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      sends.push(performance.now());
+      return sends.length === 1
+        ? new Response("busy", { status: 429, headers: { "retry-after": "1" } })
+        : new Response("{}");
+    });
+    const wait = vi.fn(async (milliseconds: number, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      elapsed += Math.min(milliseconds, 985);
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.completed" },
+      ]);
+      expect(sends).toHaveLength(2);
+      expect((sends[1] ?? 0) - (sends[0] ?? 0)).toBeGreaterThanOrEqual(1000);
+      expect(fixture.writeOutputCalls).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("does not supplement a wait after the original wall-time budget runs out", async () => {
+    let waited = false;
+    let readings = 0;
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "1" } }))
+      .mockResolvedValueOnce(new Response("{}"));
+    const wait = vi.fn(async () => {
+      waited = true;
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+      if (!waited) return 0;
+      return ++readings === 1 ? 985 : 3000;
+    });
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_PROCESS_TIMEOUT" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(wait).toHaveBeenCalledOnce();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("uses the original abort signal during a supplementary wait", async () => {
+    let elapsed = 0;
+    const signals: AbortSignal[] = [];
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "1" } }))
+      .mockResolvedValueOnce(new Response("{}"));
+    const wait = vi.fn(async (_milliseconds: number, signal: AbortSignal) => {
+      signals.push(signal);
+      if (signals.length === 1) elapsed = 985;
+      else await fixture.port.cancel(fixture.invocation.invocationId, "owner_cancelled");
+      signal.throwIfAborted();
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.cancelled" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(signals).toHaveLength(2);
+      expect(signals[1]).toBe(signals[0]);
+      expect(signals[1]?.aborted).toBe(true);
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
 });
 
 it("does not add a second provider request to a priced endpoint invocation", async () => {

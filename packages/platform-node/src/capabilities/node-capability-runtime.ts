@@ -67,6 +67,7 @@ export interface NodeCapabilityRuntimeOptions {
   readonly secretSource: CapabilitySecretMaterialSource;
   readonly clock: ClockPort;
   readonly fetch?: typeof globalThis.fetch;
+  readonly waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 }
 
 class InvocationAuthorityRejected extends Error {}
@@ -566,10 +567,23 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
           ? readonlyNetworkRetryDelay(response, failure)
           : null;
       if (backoff === null || combined.aborted || deadline - performance.now() <= backoff) break;
+      const retryAt = performance.now() + backoff;
       await response?.body?.cancel().catch(() => undefined);
       response = undefined;
       try {
-        await delay(backoff, undefined, { signal: combined });
+        for (;;) {
+          const remainingMs = retryAt - performance.now();
+          if (remainingMs <= 0) break;
+          combined.throwIfAborted();
+          if (deadline - performance.now() <= remainingMs) {
+            throw new Error(NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT);
+          }
+          if (this.#options.waitForRetry) {
+            await this.#options.waitForRetry(remainingMs, combined);
+          } else {
+            await delay(remainingMs, undefined, { signal: combined });
+          }
+        }
       } catch {
         signal.throwIfAborted();
         yield failed(

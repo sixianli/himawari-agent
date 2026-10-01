@@ -378,3 +378,11 @@ Hermes 返工回归8/8通过：慢导入、同步准备、原30秒准备上限�
 ## 2026-09-30 用户暂停
 
 用户 2026-09-30 11:50 要求全部任务暂停，几天后再继续。暂停时第二轮尚未收尾：Job Host 启动修复（`a3a11ed`）和 MCP 夹具修复（`f1af23f`）已提交；新发现的 Job Host 期限诊断分类缺陷（任务期限与准备期限两个定时器争先，诊断码与结束原因不一致）和 `prepared-file-runner` 20 秒超时的修法等待 Claude 裁定；第 3 层完整测试和 Linux 无筛选资格未跑。恢复时从上面列出的待裁定项继续，不把它们留作已知限制。
+
+## 2026-10-01 reply-39：D11 与正式测试入口
+
+[reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md) 批准新增 D11：能力 GET 不能早于服务器要求的重试时刻。单次 985.293ms 失败的具体时钟滞后仍 uncertain；确定性回归已确认旧代码缺少等待后的单调时钟复核。修复保持原总期限、取消信号、两次发送上限、250ms 下限及原 990ms 断言，合同见[只读 HTTP 重试时刻](../specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry]。
+
+正式测试入口的变量透传已提交、推送 `98b3822`：真实入口调用链的合同探针在修复前 3 项中 2 项失败，修复后与相邻配置检查共 21 项通过，第 1 层通过。该探针独立读回 5 个真实子进程的环境，不代表完整产品测试已经通过。
+
+D11 的 3 项确定性回归已先失败再通过；完整能力测试文件 32 项通过。第 2 层按 ruling 延后到包含入口、D11 和 Job Host 三个提交的合并版本，运行完整 unit 与原 19 个 integration 文件；随后通过正式 `npm test` 入口提前执行第 3 层，最后仍在本批最终版本重复第 3 层。prepared 对照、取证提交与 Pi 冷热测量继续按 reply-36 执行，不在 Mac 上运行测试。实际命令、版本、补丁和报告见[reply-39 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
