@@ -46,7 +46,7 @@ date: "2026-09-30"
 
 部署前要处理的前提：
 
-1. **AppArmor 与 bwrap。** Ubuntu 24.04 默认限制普通程序创建用户命名空间，产品沙箱用的 bwrap 会被挡住，见 [BL-20261001-001](../../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md] 系统 `/usr/bin/bwrap`（0.9.0，SRT 路径使用）已由用户加了只针对它的规则。program 与 stdio MCP 的隔离后端要求 bubblewrap `>=0.11.2`（ADR 0021），已在测试目录从官方源码编译；用户运行脚本后会安装到 `/usr/local/libexec/bubblewrap-0.11.2/bwrap`（root 所有）并加同样的规则。生产配置要指向这个路径，安装说明要写明这两条规则。
+1. **AppArmor 与 bwrap。** Ubuntu 24.04 默认限制普通程序创建用户命名空间，产品沙箱用的 bwrap 会被挡住，见 [BL-20261001-001](../../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)。[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md] 系统 `/usr/bin/bwrap`（0.9.0，SRT 路径使用）已由用户加了只针对它的规则。program 与 stdio MCP 的隔离后端要求 bubblewrap `>=0.11.2`（ADR 0021），已在测试目录从官方源码编译。用户 2026-10-01 以 root 运行脚本，把它安装到 `/usr/local/libexec/bubblewrap-0.11.2/bwrap`（root 所有，权限 0755，SHA-256 `20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3`），并新增只针对这个路径的规则 `/etc/apparmor.d/bwrap-0.11.2`；以测试用户运行（含 `--unshare-net` 断网隔离）验证成功。生产配置要指向这个路径，安装说明要写明这两条规则。
 2. **磁盘同步写入慢。** 实测每次 4 KiB 同步写入约 11–19ms，比 Hermes 固态盘（约 3ms）慢数倍；同一流程的测试在这台机器上超过 5 秒，见 [BL-20261001-002](../../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)。[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md] 部署前测量一次真实请求（一次对话加一次工具调用）的响应时间，结果告诉用户，由用户决定是否接受或更换存储。
 3. **版本。** 2026-09-30 的决定是“立即部署当前版本”；之后第二轮已修复了 Job Host 启动加载等问题。部署时重新确认版本，并按当时的测试结果更新下面的“已知限制”。
 
