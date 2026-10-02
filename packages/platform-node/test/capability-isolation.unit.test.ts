@@ -528,45 +528,42 @@ describe("frozen sandbox launch boundary", () => {
   });
 });
 
-async function inheritedProgramFixture(mode: "tail" | "continuous") {
+async function inheritedProgramFixture(mode: "tail" | "continuous" | "slow-start") {
   const root = await mkdtemp(path.join(os.tmpdir(), "b6-output-"));
   roots.push(root);
   const marker = `B6_OUTPUT_${path.basename(root)}`;
-  const childFile = path.join(root, "child.cjs");
+  const childFile = path.join(root, "child.sh");
   const readyFile = path.join(root, "ready.json");
-  const parentFile = path.join(root, "parent.cjs");
+  const countFile = path.join(root, "written-lines.txt");
+  const parentFile = path.join(root, "parent.sh");
+  await writeFile(countFile, "");
   await writeFile(
     childFile,
     `
-const fs = require("node:fs");
-const parent = process.ppid;
-fs.writeFileSync(${JSON.stringify(readyFile)}, JSON.stringify({ pid: process.pid, parent }));
-const waitForExit = setInterval(() => {
-  if (process.ppid === parent) return;
-  clearInterval(waitForExit);
-  if (${JSON.stringify(mode)} === "tail") {
-    setTimeout(() => {
-      fs.writeSync(1, "child-tail\\n");
-      fs.writeSync(2, "stderr-tail\\n");
-      process.exit(0);
-    }, 50);
-  } else {
-    setInterval(() => fs.writeSync(1, "more-output\\n"), 20);
-  }
-}, 2);
-setTimeout(() => process.exit(99), 5000);
+parent="$1"
+${mode === "slow-start" ? "sleep 0.8" : ""}
+printf '{"pid":%s,"parent":%s}' "$$" "$parent" > ./ready.json
+while kill -0 "$parent" 2>/dev/null; do sleep 0.002; done
+${
+  mode === "tail"
+    ? `sleep 0.05
+printf 'child-tail\\n'
+printf 'stderr-tail\\n' >&2`
+    : `while :; do
+  printf 'more-output\\n'
+  printf 'parent-exited\\n' >> ./written-lines.txt
+  sleep ${mode === "slow-start" ? "0.06" : "0.02"}
+done`
+}
 `,
   );
   await writeFile(
     parentFile,
     `
-const fs = require("node:fs");
-fs.writeSync(1, "parent-start\\n");
-const child = require("node:child_process").spawn(process.execPath, [${JSON.stringify(childFile)}, ${JSON.stringify(marker)}], { stdio: ["ignore", "inherit", "inherit"] });
-child.unref();
-const ready = setInterval(() => {
-  if (fs.existsSync(${JSON.stringify(readyFile)})) process.exit(7);
-}, 2);
+printf 'parent-start\\n'
+/bin/sh ./child.sh "$$" "$1" &
+while [ ! -f ./ready.json ]; do sleep 0.002; done
+exit 7
 `,
   );
   const processes = () =>
@@ -589,11 +586,20 @@ const ready = setInterval(() => {
     JSON.parse(await readFile(readyFile, "utf8")) as { pid: number; parent: number };
   return {
     launch: {
-      command: process.execPath,
-      args: [parentFile],
+      command: "/bin/sh",
+      args: [parentFile, marker],
       cwd: root,
       environment: {},
       ceiling: { ...CEILING },
+    },
+    async expectCompleteOutput(stdout: Uint8Array) {
+      const confirmed = (await readFile(countFile, "utf8")).split("parent-exited\n").length - 1;
+      const output = new TextDecoder().decode(stdout);
+      const received = output.split("more-output\n").length - 1;
+      expect(confirmed).toBeGreaterThan(0);
+      expect(output).toBe(`parent-start\n${"more-output\n".repeat(received)}`);
+      expect(received).toBeGreaterThanOrEqual(confirmed);
+      expect(received).toBeLessThanOrEqual(confirmed + 1);
     },
     async parentExited() {
       const known = await identity().catch(() => undefined);
@@ -621,6 +627,22 @@ const ready = setInterval(() => {
 }
 
 describe("program output after the parent exits", () => {
+  it("[R2-D20] preserves deadline with delayed child startup after the parent exits", async () => {
+    const fixture = await inheritedProgramFixture("slow-start");
+    try {
+      const result = await runSandboxedProcess(fixture.launch, null);
+      expect(result).toMatchObject({
+        exitCode: 7,
+        timedOut: true,
+        outputLimitExceeded: false,
+      });
+      await fixture.expectCompleteOutput(result.stdout);
+      await expect.poll(() => fixture.childGone(), { timeout: 1000 }).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it("collects delayed stdout and stderr from the original process group", async () => {
     const fixture = await inheritedProgramFixture("tail");
     try {
@@ -663,7 +685,7 @@ describe("program output after the parent exits", () => {
           timedOut: mode === "deadline",
           outputLimitExceeded: mode === "output-limit",
         });
-        if (mode === "deadline") expect(result.stdout.byteLength).toBeGreaterThan(64);
+        if (mode === "deadline") await fixture.expectCompleteOutput(result.stdout);
         if (mode === "output-limit")
           expect(result.stdout.byteLength + result.stderr.byteLength).toBeLessThanOrEqual(64);
         await expect.poll(() => fixture.childGone(), { timeout: 1000 }).toBe(true);
