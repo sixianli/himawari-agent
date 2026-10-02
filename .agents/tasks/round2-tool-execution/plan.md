@@ -62,6 +62,8 @@
 - 2026-10-02 r51（Hermes，1cae2c5，默认时限）：npm test 五项目 5133/5133，测试阶段 25.2 分钟（integration 20.4）；云端 r50 的 sandbox-preparation-control、installable-node-services、prepared-file-runner 三处失败和 D21 两例均未复现。Hermes 只有 bwrap 0.6.1：普通测试无用例需要真实 0.11.2，隔离后端的 0.11.2 门槛只由脚本夹具覆盖，真实 0.11.2 未验证。
 - 2026-10-02 审核 7ce0b57：D18 的 Mac 23 字节依据不成立，SRT 0.0.75 只在 Linux 建 claude-socks 网络桥（sandbox-manager.js:716）；reply-03 要求按平台列出实际套接字后重算。
 - 2026-10-02 stop-02：D16 改用产物运行时后，sandbox-preparation-control 的 import failure 用例 4402ms 失败（Job Host 约 3.75 秒无输出，消息过期 JOB_HOST_WORKER_LEASE_INVALID）；r51 开发构建同一用例 376ms 通过。reply-04 判为 D16 范围，先两种模式各 10 次取证，再定是否属于 D13。
+- 2026-10-03 stop-03：单文件 sandbox-preparation-control 产物、开发各 10 次共 180/180，慢启动未复现；随后四文件第 2 层（产物）71/73，失败换成 production-sandbox-lineage 并发 write 11266ms、edit 15504ms（产品 10000ms Pi 准备计时器）。失败只在四文件一起跑时出现且位置不固定；reply-05 要求四文件组合两种模式各 5 次交替对照，并记录 Pi 准备阶段与整机负载。
+- 2026-10-03 stop-04：诊断提交 6bf27dc（默认关闭）后，四文件组合产物、开发各 5 次交替共 730/730，Pi 创建到启动中位约 1.65 秒、最长 2.79 秒，并发文件峰值 2，1 分钟负载约 4–8；两次早先失败未复现，也没有证据归到 D16。reply-06 裁定：D16 诊断关闭下过第 2、1 层后提交，两次未复现的失败作为 R2-D13、R2-D19 的证据写入对应记录，然后跑本批第 3 层。
 
 ## 决定
 
