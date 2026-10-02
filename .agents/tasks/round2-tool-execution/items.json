@@ -322,7 +322,7 @@
     },
     {
       "id": "R2-D11",
-      "title": "只读网络能力 Retry-After 提前重试；npm test 入口透传测试时限",
+      "title": "只读网络能力 Retry-After 提前重试",
       "goal_ref": ["G3", "G10"],
       "done_when": [
         {
@@ -542,7 +542,7 @@
     },
     {
       "id": "R2-A1",
-      "title": "最终版本上 npm run check 和完整 npm test 在云服务器通过",
+      "title": "最终版本上 npm run check 和完整 npm test 在 Hermes 通过",
       "goal_ref": ["G1", "G8", "G10"],
       "done_when": [
         {
@@ -564,7 +564,7 @@
     },
     {
       "id": "R2-A2",
-      "title": "不筛选的 Linux 产品路径资格在云服务器通过",
+      "title": "不筛选的 Linux 产品路径资格在 Hermes 通过",
       "goal_ref": ["G1", "G8"],
       "done_when": [
         {
@@ -798,5 +798,8 @@
         "why": "G20：放宽方案整个撤掉；BL-20261001-002 的恢复工作"
       }
     }
-  ]
+  ],
+  "fingerprint": {
+    "test_exclude": ["docs/"]
+  }
 }
