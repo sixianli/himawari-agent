@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import type {
   ApprovalRequest,
   CapabilityInvocationAuthority,
@@ -136,7 +136,7 @@ export async function openRepository(realMessage = false): Promise<{
   readonly repository: SqliteProductStateRepository;
   readonly stateRoot: string;
 }> {
-  const stateRoot = await mkdtemp(path.join(tmpdir(), "h-"));
+  const stateRoot = await mkdtemp(path.join(testTemporaryRoot(), "h-"));
   const databasePath = path.join(stateRoot, "product.sqlite");
   const database = openQualifiedDatabase(databasePath);
   const migrations = await loadBundledMigrations();

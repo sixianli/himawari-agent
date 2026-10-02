@@ -1,6 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { cp, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentServiceExecutionClient } from "@himawari-agent/agent-service";
@@ -181,7 +180,7 @@ afterEach(async (context) => {
 });
 
 async function newRuntime(): Promise<string> {
-  const runtime = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-process-"));
+  const runtime = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-process-"));
   cleanupPaths.push(runtime);
   return runtime;
 }

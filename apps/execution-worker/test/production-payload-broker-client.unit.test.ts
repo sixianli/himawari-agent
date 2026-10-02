@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import type { CapabilityInvocationRequest } from "@himawari-agent/application";
 import {
   PAYLOAD_UDS_ERROR_CODES,
@@ -95,7 +95,7 @@ async function withServer<T>(
   handler: PayloadBrokerTrustedHandler,
   run: (server: PayloadUdsServer) => Promise<T>,
 ): Promise<T> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-payload-"));
+  const directory = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-payload-"));
   const server = new PayloadUdsServer(serverOptions(directory, handler));
   await server.start();
   try {

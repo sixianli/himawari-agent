@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import {
   type CapabilityInvocationReceiptPort,
   type CapabilityInvocationResultPort,
@@ -290,7 +290,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
       },
     },
   });
-  const directory = await mkdtemp(path.join(tmpdir(), "r3-broker-"));
+  const directory = await mkdtemp(path.join(testTemporaryRoot(), "r3-broker-"));
   const credential = { tokenRef: "fixture", tokenValue: "0123456789abcdef0123456789abcdef" };
   const shared = {
     credential,

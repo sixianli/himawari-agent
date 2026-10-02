@@ -458,7 +458,7 @@ describe("production Worker composition", () => {
   it.each(["active", "revoked"])(
     "checks admitted delegated authority through production composition: %s",
     async (mode) => {
-      const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-authority-"));
+      const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-authority-"));
       roots.push(root);
       const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
       const composition = await createProductionWorkerComposition({
@@ -516,7 +516,7 @@ describe("production Worker composition", () => {
   );
 
   it("requires a signed deployment and keeps readiness closed until Agent UDS handshakes", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "himawari-worker-composition-"));
+    const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-composition-"));
     roots.push(root);
     const deployment = await snapshot(root);
     const composition = await createProductionWorkerComposition({

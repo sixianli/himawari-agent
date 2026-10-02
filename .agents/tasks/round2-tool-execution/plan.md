@@ -77,3 +77,4 @@
 - 2026-10-02 hook 时限属于“测试自己的时限”，按 G18 一并放宽 4 倍；断言里“多久之内应当发生”的等待（expect.poll、vi.waitFor 等）和产品期限不放宽。
 - 2026-10-02 stop-02 的等待分类规则：反复检查条件直到成立、超时由断言判失败的（含手写轮询）算断言等待，保持原值；等动作或进程做完、超时直接报错或强制处理的算辅助等待，按 G18 放宽；两种用途共用时按辅助等待放宽。之后 Codex 按此规则自己判断并列清单。
 - 2026-10-02 20:10 用户决定测试回到 Hermes（G19）。Claude 停下正在实现 R2-E2 的 Codex 会话 01a0fb4c（当时只在本机写代码，没有远端测试在跑），按 G20 把未提交改动另存为 .ci-output/handoff/discarded/2026-10-02-r2-e2-uncommitted.patch 后从工作区清除。Hermes 核对：Ubuntu 22.04.5、bwrap 0.6.1、根盘可用 14 GiB、/data 机械盘 197 GiB、umask 0002；9-28 的 r32 完整测试在 Hermes 上五项目合计约 26 分钟。产品 Linux 隔离后端要求 bwrap 0.11.2，Hermes 上真实 0.11.2 的路径能否覆盖待第一次运行核对。
+- 2026-10-03 reply-08：不放开 platform-node、runtime-sandbox 对 testing 的依赖，撤回这两个包 8 个测试文件的 testTemporaryRoot() 改动。依据：stop-05 正式第 3 层里这些文件在 21 字节嵌套 TMPDIR 下全部通过，最长套接字路径约 76 字节，离 107 有约 30 字节余量；改 manifest、lockfile 和边界检查器的代价大于收益。reply-07“凡流进套接字路径的都改”写得过宽。
