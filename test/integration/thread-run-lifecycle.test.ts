@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   type AgentRuntimePort,
   ContextFormationService,
@@ -382,7 +383,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     "crash-before-transition",
     "checkpoint-race",
   ] as const)(
-    "recovers original answer delivery after the execution deadline: %s",
+    "[R2-D21] recovers original answer delivery after the execution deadline: %s",
     async (outcome) => {
       const initialTime = clock.now();
       const setup = await executionFixture();
@@ -442,6 +443,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         });
         const stopRun = vi.fn(async () => ({ released: false }));
         let checkpointRaced = false;
+        let firstCheckpointRead = true;
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
         const coordinator = new RunCoordinator({
           clock,
           runs: {
@@ -484,7 +487,13 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
             },
           },
           checkpoints: {
-            read: (id) => setup.checkpoints.read(id),
+            read: async (id) => {
+              if (firstCheckpointRead && outcome.startsWith("crash-")) {
+                firstCheckpointRead = false;
+                await delay(1100);
+              }
+              return setup.checkpoints.read(id);
+            },
             compareAndSet: async (value) => {
               const saved = await setup.checkpoints.compareAndSet(value);
               if (
@@ -507,6 +516,13 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           expect((await coordinator.execute(originalInput)).run.run.status).toBe(
             "reconciling_external_result",
           );
+        vi.useRealTimers();
+        expect(originalInput.executionDeadlineAt).toBe(
+          new Date(Date.parse(initialTime) + 1000).toISOString(),
+        );
+        expect(Date.parse(clock.now())).toBeLessThan(
+          Date.parse(originalInput.executionDeadlineAt ?? ""),
+        );
         await dispatch.release({
           runId: setup.runId,
           expectedLeaseRevision: originalLease.revision,
@@ -518,6 +534,9 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           .listMessages(ownerId, agentId, source.threadId, 0, 20);
         expect(before.filter((message) => message.role === "agent")).toHaveLength(0);
         clock.set(new Date(Date.parse(initialTime) + 2000).toISOString());
+        expect(Date.parse(clock.now())).toBeGreaterThan(
+          Date.parse(originalInput.executionDeadlineAt ?? ""),
+        );
         stopRun.mockResolvedValue({ released: true });
         expect(await dispatch.listClaimable({ now: clock.now(), limit: 10 })).toEqual([
           expect.objectContaining({ runId: setup.runId, action: "deliver_completed" }),
@@ -599,6 +618,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
         });
       } finally {
+        vi.useRealTimers();
         clock.set(initialTime);
       }
     },
