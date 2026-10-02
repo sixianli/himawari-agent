@@ -60,6 +60,8 @@
 - 2026-10-02 r50 测量（3069053）：integration 单独 58.8 分钟，2412 通过、9 失败、15 未执行；e2e 15.6 秒；pi-compat 96.5 秒。sqlite-durable-repositories 连续写 1000 条事件的 4 例超过 30 秒：产品 SQLite 为 WAL 加 synchronous=FULL（migration-engine.ts:730-731），每次提交都等落盘，这块盘每次 11–19ms。生产也在同一块盘，这一点并入 R2-L3 的响应时间测量。
 - 2026-10-02 r50 里 sandbox-preparation-control 的 JOB_HOST_NOT_READY、installable-node-services 的 beforeAll 120 秒超时、prepared-file-runner 的 PREPARED_RUNNER_INSTALL_FAILED（stderr 为空），都发生在没有重新构建、沿用 c5b5968 安装包的直接运行中；先看下一次正式第 3 层（先构建）是否复现，复现再登记条目。
 - 2026-10-02 r51（Hermes，1cae2c5，默认时限）：npm test 五项目 5133/5133，测试阶段 25.2 分钟（integration 20.4）；云端 r50 的 sandbox-preparation-control、installable-node-services、prepared-file-runner 三处失败和 D21 两例均未复现。Hermes 只有 bwrap 0.6.1：普通测试无用例需要真实 0.11.2，隔离后端的 0.11.2 门槛只由脚本夹具覆盖，真实 0.11.2 未验证。
+- 2026-10-02 审核 7ce0b57：D18 的 Mac 23 字节依据不成立，SRT 0.0.75 只在 Linux 建 claude-socks 网络桥（sandbox-manager.js:716）；reply-03 要求按平台列出实际套接字后重算。
+- 2026-10-02 stop-02：D16 改用产物运行时后，sandbox-preparation-control 的 import failure 用例 4402ms 失败（Job Host 约 3.75 秒无输出，消息过期 JOB_HOST_WORKER_LEASE_INVALID）；r51 开发构建同一用例 376ms 通过。reply-04 判为 D16 范围，先两种模式各 10 次取证，再定是否属于 D13。
 
 ## 决定
 
