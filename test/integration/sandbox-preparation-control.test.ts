@@ -16,6 +16,7 @@ const launch = vi.hoisted(() => ({
   hook: "",
   entry: "",
   stalePrepare: false,
+  runtimeFork: 0,
   stderr: "",
   events: [] as Record<string, unknown>[],
 }));
@@ -24,16 +25,27 @@ vi.mock("node:child_process", async (original) => {
   return {
     ...actual,
     fork: (_file: string, args: string[], options: import("node:child_process").ForkOptions) => {
+      const forkAt = Date.now();
       const child = actual.fork(launch.entry, args, {
         ...options,
         execArgv: ["--import", launch.hook],
       });
-      launch.events.push({ stage: "fork", at: Date.now() });
+      launch.events.push({
+        stage: "fork",
+        at: forkAt,
+        returnedAt: Date.now(),
+        processId: child.pid,
+        runtimeFork: ++launch.runtimeFork,
+        entry: launch.entry,
+      });
       child.on("message", (message: Record<string, unknown>) => {
         launch.events.push({
           stage: "host-message",
           at: Date.now(),
+          processId: child.pid,
           type: message["type"],
+          sequence: message["sequence"],
+          observedAt: message["observedAt"],
           detail: message["detail"],
         });
       });
@@ -42,7 +54,9 @@ vi.mock("node:child_process", async (original) => {
         launch.events.push({
           stage: "worker-message",
           at: Date.now(),
+          processId: child.pid,
           type: message["type"],
+          sequence: message["sequence"],
           observedAt: message["observedAt"],
         });
         return Reflect.apply(originalSend, child, [message, ...args]);
@@ -76,12 +90,15 @@ afterEach(async (context) => {
     testName: context.task.name,
     state: context.task.result?.state,
     capturedAt: Date.now(),
+    runtimeRoot: launch.entry ? path.resolve(path.dirname(launch.entry), "../../../..") : null,
+    artifactRequested: Boolean(process.env["HIMAWARI_TEST_ARTIFACT"]),
     stderr: launch.stderr,
     events: [...launch.events],
   };
   Object.assign(context.task.meta, { jobHostStartup: timeline });
   const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
-  if (output)
+  if (output) {
+    await mkdir(output, { recursive: true, mode: 0o700 });
     await writeFile(
       path.join(output, `host-startup-${context.task.id}.json`),
       JSON.stringify(timeline),
@@ -90,15 +107,34 @@ afterEach(async (context) => {
         flag: "wx",
       },
     );
+  }
   launch.stalePrepare = false;
   launch.stderr = "";
   launch.events.length = 0;
 });
 
 function jobHostDiagnostics() {
+  if (!process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"]) return "";
   return `import childProcess from "node:child_process";
 import { syncBuiltinESMExports as synchronizeBuiltins } from "node:module";
-const trace = (stage, details = {}) => process.stderr.write(JSON.stringify({ stage, at: Date.now(), ...details }) + "\\n");
+const trace = (stage, details = {}) => process.stderr.write(JSON.stringify({ stage, at: Date.now(), processId: process.pid, ...details }) + "\\n");
+trace("preload.entered");
+const on = process.on;
+process.on = function (event, listener) {
+  if (event !== "message") return Reflect.apply(on, this, [event, listener]);
+  let firstMessage = true;
+  const result = Reflect.apply(on, this, [event, function (message, ...args) {
+    trace(firstMessage ? "ipc.first_message" : "ipc.message", {
+      type: message?.type,
+      sequence: message?.sequence,
+      observedAt: message?.observedAt,
+    });
+    firstMessage = false;
+    return Reflect.apply(listener, this, [message, ...args]);
+  }]);
+  trace("ipc.handler_registered");
+  return result;
+};
 let nextCallId = 0;
 for (const method of ["spawnSync", "execSync"]) {
   const execute = childProcess[method];
@@ -141,6 +177,20 @@ if (send) process.send = function (message, ...args) {
 `;
 }
 
+function jobHostEntryLoadDiagnostics() {
+  if (!process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"]) return { before: "", after: "" };
+  const entry = JSON.stringify(pathToFileURL(launch.entry).href);
+  const firstStatement = `process.stderr.write(JSON.stringify({ stage: "job_host_main.entered", at: Date.now(), processId: process.pid, entry: ${entry} }) + "\\n");\n`;
+  return {
+    before: `const entryLoadStartedAt = Date.now();
+  if (url === ${entry}) process.stderr.write(JSON.stringify({ stage: "job_host_main.load_started", at: entryLoadStartedAt, processId: process.pid, url }) + "\\n");`,
+    after: `if (url === ${entry}) {
+    process.stderr.write(JSON.stringify({ stage: "job_host_main.load_finished", at: Date.now(), processId: process.pid, url, startedAt: entryLoadStartedAt }) + "\\n");
+    return { ...loaded, source: ${JSON.stringify(firstStatement)} + loaded.source.toString() };
+  }`,
+  };
+}
+
 async function configureSdkLoad(
   root: string,
   options: {
@@ -155,6 +205,13 @@ async function configureSdkLoad(
   launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
   launch.hook = path.join(root, "preload.mjs");
   const loader = path.join(root, "loader.mjs");
+  const entryDiagnostics = jobHostEntryLoadDiagnostics();
+  const injectionDetails = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"]
+    ? {
+        expectedRuntimeRoot: path.resolve(path.dirname(launch.entry), "../../../.."),
+        failImport: Boolean(options.failImport),
+      }
+    : {};
   await writeFile(
     launch.hook,
     `${jobHostDiagnostics()}
@@ -165,18 +222,22 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
   await writeFile(
     loader,
     `export async function load(url, context, nextLoad) {
-  if (${Boolean(options.failContractsImport)} && url.endsWith("/@himawari-agent/execution-contracts/dist/index.js"))
+  ${entryDiagnostics.before}
+  if (${Boolean(options.failContractsImport)} && url.endsWith("/@himawari-agent/execution-contracts/dist/index.js")) {
+    ${process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"] ? 'process.stderr.write(JSON.stringify({ stage: "contracts_import_failure.injected", at: Date.now(), processId: process.pid, url }) + "\\n");' : ""}
     throw Object.assign(new Error("JOB_HOST_TEST_CONTRACTS_IMPORT_FAILURE"), { code: "EIO" });
+  }
   const loaded = await nextLoad(url, context);
+  ${entryDiagnostics.after}
   if (!url.endsWith("/sandbox/sandbox-manager.js")) return loaded;
   return { ...loaded, source: ${JSON.stringify(
-    `const himawariFixtureTrace = (stage) => process.stderr.write(JSON.stringify({ stage, at: Date.now() }) + "\\n");
+    `const himawariFixtureTrace = (stage) => { if (${Boolean(process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"])}) process.stderr.write(JSON.stringify({ stage, at: Date.now(), processId: process.pid, ...${JSON.stringify(injectionDetails)}, moduleUrl: import.meta.url }) + "\\n"); };
 himawariFixtureTrace("sdk_module_entered");
 await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}));
 himawariFixtureTrace("sdk_module_delay_finished");
 ` +
       (options.failImport
-        ? 'throw Object.assign(new Error("JOB_HOST_TEST_IMPORT_FAILURE"), { code: "EIO" });\n'
+        ? 'himawariFixtureTrace("sdk_import_failure.injected");\nthrow Object.assign(new Error("JOB_HOST_TEST_IMPORT_FAILURE"), { code: "EIO" });\n'
         : ""),
   )} + loaded.source.toString() + ${JSON.stringify(
     options.failInitialize
@@ -343,9 +404,22 @@ it("prepares with the packaged Java agent when global npm discovery would block 
   launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
   launch.hook = path.join(root, "slow-global-npm.mjs");
   const discovery = path.join(root, "discovery.txt");
+  const entryDiagnostics = jobHostEntryLoadDiagnostics();
+  const entryLoader = path.join(root, "entry-diagnostics.mjs");
+  if (entryDiagnostics.before)
+    await writeFile(
+      entryLoader,
+      `export async function load(url, context, nextLoad) {
+  ${entryDiagnostics.before}
+  const loaded = await nextLoad(url, context);
+  ${entryDiagnostics.after}
+  return loaded;
+}\n`,
+    );
   await writeFile(
     launch.hook,
     `${jobHostDiagnostics()}
+${entryDiagnostics.before ? `import { register } from "node:module";\nregister(${JSON.stringify(pathToFileURL(entryLoader).href)});` : ""}
 import cp from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";

@@ -31,6 +31,12 @@ import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/run
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { prepareProductionFile } from "../../apps/agent-service/src/production-file-preparation.ts";
+import {
+  piPreparationDiagnosticArguments,
+  trackPiPreparationDiagnostics,
+} from "../fixtures/pi-preparation-diagnostics.ts";
+
+trackPiPreparationDiagnostics(import.meta.url);
 
 const roots: string[] = [];
 const preparations: Record<string, unknown>[] = [];
@@ -111,6 +117,7 @@ async function prepareFromRuntime(
   const result = spawnSync(
     process.execPath,
     [
+      ...piPreparationDiagnosticArguments(),
       "--input-type=module",
       "--eval",
       `

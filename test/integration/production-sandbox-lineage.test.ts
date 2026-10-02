@@ -28,6 +28,16 @@ import messages from "../../packages/execution-contracts/test/fixtures/v2/messag
   type: "json",
 };
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { trackPiPreparationDiagnostics } from "../fixtures/pi-preparation-diagnostics.ts";
+
+vi.mock("node:worker_threads", async (original) => {
+  const actual = await original<typeof import("node:worker_threads")>();
+  const url = new URL("../fixtures/pi-preparation-diagnostics.mjs", import.meta.url).href;
+  const { wrapPiPreparationWorker } = await import(url);
+  return { ...actual, Worker: wrapPiPreparationWorker(actual.Worker) };
+});
+
+trackPiPreparationDiagnostics(import.meta.url);
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
