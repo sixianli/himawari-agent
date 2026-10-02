@@ -107,6 +107,7 @@ The user decided on 2026-09-29 how test layers are triggered during development;
 
 - For test work, use `ssh -o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 himawari-test@84.247.157.41`. Use `root@84.247.157.41` only for the system preparation described in "Test and Production Hosts".
 - Noninteractive SSH has no Node.js on `PATH`. Put the task's locked toolchain first, for example `PATH=/srv/himawari-test/round2/tools/bin:/usr/bin:/bin`, and set `HIMAWARI_CI_TOOLS`, `HIMAWARI_CI_PYTHON`, `PLAYWRIGHT_BROWSERS_PATH`, and `TMPDIR` to the task's directories.
+- Run tests with `umask 022`. The `himawari-test` account's default umask is `0002`, which makes test-created directories group-writable; the sandbox then refuses them as unsafe host paths (`SANDBOX_HOST_PATH_UNSAFE`), which failed about 100 tests on 2026-10-01 without any product defect.
 - Sync code with `git bundle` and patches from the Mac; do not edit code on the server.
 - Ubuntu 24.04 restricts unprivileged user namespaces. On 2026-10-01 the user added an AppArmor profile that allows only `/usr/bin/bwrap` to create them; its text and undo steps are in [ADR 0045](docs/adr/0045-short-test-temp-root.md#apparmor). Do not disable the global restriction, use `--privileged`, or run the sandbox as root to work around a sandbox failure.
 - Do not change SSH configuration, credentials, firewall, or host-key verification to bypass a failure; report it to the user.
