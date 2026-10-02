@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a95243ef8d0f45498f2f8041406ee171ae44fad52d079c4c79003418781ea41b"
+contract_sha256: "sha256:85d64682ab6b5ae36c872f62d4142d40fa79cb3f76703ff733c07395395c6fa5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -13,6 +13,7 @@ date: "2026-08-27"
 当前开发测试遵循 [ADR 0046](../adr/0046-tests-back-on-hermes.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
 
 <!-- runbook-contract:
+- packages/platform-node/src/capabilities/capability-deployment.ts
 - packages/platform-node/src/capabilities/isolation.ts
 - packages/platform-node/src/process-output.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
@@ -217,7 +218,7 @@ R8 增加 Job Host 私有认证上游，初始化时强制 SRT 两种代理协�
 
 安装产物源码新增了 R1 的 v2 合同、类型端口和纯判断函数，以及 R2 的 SQLite 账本，正式组合按安装声明分别使用 v1 与 v2 foreground；声明不能代替目标平台资格。新增 `SandboxExecutionPortV2` 导出不代表 Job Host 取得新监督资格，也不会把旧 unknown 回执转换为已清理。后续接入 v2 正式适配器时，须重新核对本 Runbook 的迁移、恢复和安装验证。
 
-v2 broker 与 Worker foreground 已接入准备、登记、唯一绑定、观察和限定核查，并有真实 Mac UDS/SQLite/Worker 假数据验收；R6 已增加显式 background/service 路径，只有 Worker、安装声明与资格共同支持时才可准入。安装清单/资格中的 `supportedExecutions` 仅表示显式兼容声明，不提供授权、监管证明或 v2 启用开关；缺少声明不能推断支持 v2，显式排除 v1 的声明也不能通过旧路径运行。追加 migration 0029 已修正准备顺序：先保存不含运行摘要的执行预留及目录占用，Worker 准备后首次 CAS 固定真实绑定；旧记录保持 `legacy_bound`。迁移仍须通过现有同机备份和停机入口，不能直接对正在运行的产品库执行 SQL。R3 范围/控制接口验收已完成，Pi 工具 runner 已完成专用假数据验收，安装资格仍待完成，不得用占位摘要或把 v2 数据标为 v1 进行安装验收。Job Host 私有 IPC 增加会话/boot/序号/监督窗口，但 PID、心跳、主进程退出及 reset 仍不构成任务树释放证明；真实长临时路径探针在 SRT 初始化出现过 `EADDRINUSE`，安装资格还须验证所选 privateRoot 的实际可用性。
+v2 broker 与 Worker foreground 已接入准备、登记、唯一绑定、观察和限定核查，并有真实 Mac UDS/SQLite/Worker 假数据验收；R6 已增加显式 background/service 路径，只有 Worker、安装声明与资格共同支持时才可准入。安装清单/资格中的 `supportedExecutions` 仅表示显式兼容声明，不提供授权、监管证明或 v2 启用开关；缺少声明不能推断支持 v2，显式排除 v1 的声明也不能通过旧路径运行。追加 migration 0029 已修正准备顺序：先保存不含运行摘要的执行预留及目录占用，Worker 准备后首次 CAS 固定真实绑定；旧记录保持 `legacy_bound`。迁移仍须通过现有同机备份和停机入口，不能直接对正在运行的产品库执行 SQL。R3 范围/控制接口验收已完成，Pi 工具 runner 已完成专用假数据验收，安装资格仍待完成，不得用占位摘要或把 v2 数据标为 v1 进行安装验收。Job Host 私有 IPC 增加会话/boot/序号/监督窗口，但 PID、心跳、主进程退出及 reset 仍不构成任务树释放证明；真实长临时路径探针在 SRT 初始化出现过 `EADDRINUSE`，安装资格还须验证所选 privateRoot 的实际可用性。能力安装声明加载时会按 SRT 网络桥与 Job Host 控制套接字的最长路径检查 `privateRoot`：Linux 最多 27 个 UTF-8 字节，Mac 的同公式预算最多 23 个；如 `/var/lib/himawari/jobs` 为 22 字节，符合 Linux 预算。超长声明以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝，并报告实际字节数及上限。选择短路径后须重新计算安装声明摘要，不能仅改配置中的摘要或略过资格；未在 Mac 上验证套接字布局与运行行为。
 
 schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭证补建可启动作业，不能自动重放清理未知作业。旧作业读回、清理和重复观察不恢复执行权限。Job Host 接收至多 48 KiB 的私有 IPC 输入，仅送入任务 stdin；正文不进入 argv 或环境变量。stdout 保留原 runner 合同并保存为受保护 Payload；CPU/RSS 观察随作业观察持久保存。固定有界进程采样超限或失败时请求停止，采样不能证明硬配额、所有短命后代都被计入或整个进程树已退出。
 

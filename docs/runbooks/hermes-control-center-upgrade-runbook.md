@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d087f221c35631ca1a5aba130fe9ee828c240e339dfdff08eab056a035f36adc"
+contract_sha256: "sha256:2f4ec52bb353c2e867ee895cea7503118e48237cfdf061919f29945e65479777"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -199,6 +199,8 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 
 ## Safety and Preconditions
+
+升级前复核能力安装声明中的 `privateRoot`：Linux 最多 27 个 UTF-8 字节，Mac 同公式预算最多 23 个字节。当前加载器按最长 SRT 网络桥路径和控制套接字预算拒绝超长声明，错误码 `CAPABILITY_DEPLOYMENT_INVALID_VALUE`，消息包含实际字节数和上限。路径调整须重新计算声明摘要并保留原安装/恢复依据，具体操作边界见[安装 Runbook](install-start-stop-runbook.md#safety-and-preconditions)；未在 Mac 上验证。
 
 Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-qualify.py --qualify`，仅适用于其绑定的 UI-session 版本已经上线的现场。先验证本次源码归档、准备清单和全部安装文件摘要，再复制到独立候选目录；同样使用真实运行账号、最终路径的私有视图和六组安装探针。复制后的 workspace 链接必须指向隔离源码中的同名包，不能沿用构建目录的绝对链接。首次尝试若在链接保护阶段失败、且尚无探针输出或运行授权文件，可使用 `--resume-links`：核验安装文件与源码摘要、保留首次失败记录后，仅重定位身份匹配的 workspace 链接；任意其他外部链接仍然拒绝。此入口不切换线上版本。
 

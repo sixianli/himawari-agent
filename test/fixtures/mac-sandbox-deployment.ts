@@ -19,7 +19,7 @@ export async function macSandboxDeployment(
   const base = await realpath(root);
   const workspace = path.join(base, "live-workspace");
   const runtimeRoot = path.join(base, "live-runtime");
-  const privateRoot = path.join(base, "live-private");
+  const privateRoot = path.join(base, "p");
   await Promise.all(
     [workspace, runtimeRoot, privateRoot].map((directory) => mkdir(directory, { mode: 0o700 })),
   );

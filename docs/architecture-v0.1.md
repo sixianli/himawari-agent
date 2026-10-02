@@ -38,6 +38,8 @@ Pi `0.84.2` 管理模型与工具循环，模型侧工具执行委托现有 `Run
 
 SRT `0.0.75` 已集中在 `packages/runtime-sandbox`。独立 Job Host、原子准入/启动 CAS、scope 解析、主机与运行产物复核、认证 Payload UDS、正式 Worker 组合以及启动恢复核查均有实现。scope 已支持文件 inspect/read 工作流及从现有 Grant targets 取得通用工具范围；Pi 七工具前台 runner 已接入显式合同，后台执行仍待后续阶段，MCP 不在本次交付范围。
 
+能力安装声明的 sandbox binding 在加载时核算 `privateRoot` 的 UTF-8 字节数：最长 SRT 网络套接字为 `privateRoot/<44 字节任务编号>/claude-socks-<16 位>.sock`，比根目录多 80 字节；Job Host 控制套接字为 `privateRoot/control-<20 位>/control.sock`。两者分别受 Linux 107 / Mac 规则 103 字节和控制接口 100 字节的预算约束，因此 Linux 根目录至多 27 字节、Mac 规则至多 23 字节。超长声明在服务组合加载时以 `CAPABILITY_DEPLOYMENT_INVALID_VALUE` 拒绝，错误消息包含实际字节数及上限，不能等首次工具调用才发现。配置格式不变，实际 Mac 套接字布局和运行行为未在 Mac 上验证。细节见[privateRoot 长度缺陷及证据](backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)。
+
 Job Host 在动态加载 SRT 及策略编译模块之前，先注册原 IPC 处理器并回应通过会话、序号与年龄校验的准备消息。消息年龄按到达时判断；加载期间继续受原 1.5 秒监督窗口、30 秒准备上限及任务总期限约束，心跳不代表 ready 或启动授权。Worker 只用任务期限回调判断绝对期限；任务期限早于或等于准备上限时，不再为同一期限安排第二个准备回调，诊断为 `JOB_HOST_EXECUTION_DEADLINE`。独立的 30 秒准备上限更早时才报告 `JOB_HOST_PREPARATION_TIMEOUT`；取消或结束后不再追加超时分类。加载失败走 `host_failure`，阶段为 `dependencies`；未加载或未完成 reset 时不报告清理成功，原签名终态要求不变。合同及验证边界见[依赖加载期间的启动监督](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)及[期限诊断分类](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#deadline-classification)。
 
 R8 在 Job Host 内增加每作业认证 HTTP 上游，复用 SRT `parentProxy` 汇集 HTTP/CONNECT/SOCKS。冻结的 hostname:port 同时限定 Grant、主机上界与策略；解析后检查全部地址并按数字 IP 建连。停止先关闭出口和连接，迟到 DNS 不能触发连接；出口拒绝、连接与关闭计数通过原认证 IPC 返回。SRT 继续负责 OS 隔离及客户端代理协议，Pi Operations 不变。该实现不证明系统 DNS 绝对零外联，也不扩大 Mac 清理保证。设计依据见 [SOURCE: docs/adr/0026-job-scoped-network-egress.md]；真实资格范围见配套 Plan。

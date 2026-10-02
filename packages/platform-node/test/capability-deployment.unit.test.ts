@@ -143,13 +143,13 @@ function processEntry(
   };
 }
 
-function sandboxEntry(): JsonObject {
+function sandboxEntry(platform: "darwin" | "linux" = "darwin"): JsonObject {
   const entry = processEntry();
   return {
     ...entry,
     qualification: {
       ...(entry["qualification"] as JsonObject),
-      platform: "darwin",
+      platform,
       runtimeIdentity: "srt:0.0.75",
       enforcement: {
         filesystem: true,
@@ -157,7 +157,7 @@ function sandboxEntry(): JsonObject {
         processes: true,
         secrets: true,
         resourceCeilings: false,
-        termination: false,
+        termination: platform === "linux",
       },
       sandbox: {
         schemaVersion: "sandbox-runtime-qualification.v1",
@@ -165,14 +165,14 @@ function sandboxEntry(): JsonObject {
         hostId: "host:fixture",
         profileRef: "host-readonly.v1",
         srtVersion: "0.0.75",
-        platform: "darwin",
-        architecture: "arm64",
+        platform,
+        architecture: platform === "darwin" ? "arm64" : "x64",
         osRelease: "27.0.0",
         runtimeDigest: "d".repeat(64),
         runnerDigest: "e".repeat(64),
         evidenceDigest: "f".repeat(64),
         resourceMode: "observe_and_stop",
-        terminationMode: "best_effort",
+        terminationMode: platform === "darwin" ? "best_effort" : "verified_tree",
         guarantees: [
           "filesystem_default_deny",
           "network_allowlist",
@@ -183,9 +183,11 @@ function sandboxEntry(): JsonObject {
           "durable_start_admission",
           "unknown_quarantine",
           "restart_reconciliation",
-          "best_effort_stop",
+          ...(platform === "darwin"
+            ? ["best_effort_stop"]
+            : ["task_tree_termination", "worker_crash_cleanup"]),
         ],
-        limitations: ["detached_descendants_may_survive_stop"],
+        limitations: platform === "darwin" ? ["detached_descendants_may_survive_stop"] : [],
       },
     },
     binding: {
@@ -383,6 +385,48 @@ describe("capability deployment snapshot loader", () => {
     if (!manifest) throw new Error("missing fixture manifest");
     await expect(loaded.bindings.resolveProcess(manifest)).resolves.toBeUndefined();
   });
+
+  it.each([
+    { platform: "linux", privateRoot: `/${"a".repeat(26)}`, bytes: 27 },
+    { platform: "linux", privateRoot: `/${"界".repeat(8)}aa`, bytes: 27 },
+    { platform: "darwin", privateRoot: `/${"a".repeat(22)}`, bytes: 23 },
+    { platform: "darwin", privateRoot: `/${"界".repeat(7)}a`, bytes: 23 },
+  ] as const)(
+    "[R2-D18] accepts $platform privateRoot at the $bytes byte socket boundary: $privateRoot",
+    async ({ platform, privateRoot, bytes }) => {
+      expect(Buffer.byteLength(privateRoot)).toBe(bytes);
+      const entry = sandboxEntry(platform);
+      ((entry["binding"] as JsonObject)["value"] as JsonObject)["privateRoot"] = privateRoot;
+      const value = await writeSnapshot(snapshot([entry]));
+      const loaded = await loader(value.snapshotPath, value.digest, { platform }).load();
+      expect(loaded.snapshot.capabilities[0]?.binding).toMatchObject({
+        kind: "sandbox",
+        value: { privateRoot },
+      });
+    },
+  );
+
+  it.each([
+    { platform: "linux", privateRoot: `/${"a".repeat(27)}`, bytes: 28, maximum: 27 },
+    { platform: "linux", privateRoot: `/${"界".repeat(9)}`, bytes: 28, maximum: 27 },
+    { platform: "darwin", privateRoot: `/${"a".repeat(23)}`, bytes: 24, maximum: 23 },
+    { platform: "darwin", privateRoot: `/${"界".repeat(7)}aa`, bytes: 24, maximum: 23 },
+  ] as const)(
+    "[R2-D18] rejects $platform privateRoot before tool invocation at $bytes bytes: $privateRoot",
+    async ({ platform, privateRoot, bytes, maximum }) => {
+      expect(Buffer.byteLength(privateRoot)).toBe(bytes);
+      const entry = sandboxEntry(platform);
+      ((entry["binding"] as JsonObject)["value"] as JsonObject)["privateRoot"] = privateRoot;
+      const value = await writeSnapshot(snapshot([entry]));
+      await expect(
+        loader(value.snapshotPath, value.digest, { platform }).load(),
+      ).rejects.toMatchObject({
+        code: CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+        message: expect.stringContaining(`privateRoot is ${bytes} UTF-8 bytes; maximum ${maximum}`),
+        details: { field: "capabilities[0].binding.value.privateRoot" },
+      });
+    },
+  );
 
   it.each(["hostId", "profileRef", "runtimeDigest", "runnerDigest"])(
     "rejects qualification with mismatched %s",

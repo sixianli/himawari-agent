@@ -1066,6 +1066,37 @@ function validateEndpointBinding(
   }
 }
 
+function assertSandboxPrivateRoot(
+  privateRoot: string,
+  platform: CapabilityRuntimeQualification["platform"],
+  field: string,
+): void {
+  const privateRootBytes = Buffer.byteLength(privateRoot);
+  const jobDirectoryName = `j${createHash("sha256").digest("base64url")}`;
+  const sockets = [
+    {
+      name: "SRT network socket",
+      path: path.posix.join(privateRoot, jobDirectoryName, `claude-socks-${"0".repeat(16)}.sock`),
+      maximumBytes: platform === "linux" ? 107 : 103,
+    },
+    {
+      name: "Job Host control socket",
+      path: path.posix.join(privateRoot, `control-${"0".repeat(20)}`, "control.sock"),
+      maximumBytes: 100,
+    },
+  ];
+  for (const socket of sockets) {
+    const socketBytes = Buffer.byteLength(socket.path);
+    if (socketBytes <= socket.maximumBytes) continue;
+    const maximumPrivateRootBytes = socket.maximumBytes - (socketBytes - privateRootBytes);
+    throw new CapabilityDeploymentError(
+      CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+      `Sandbox privateRoot is ${privateRootBytes} UTF-8 bytes; maximum ${maximumPrivateRootBytes} (${platform} ${socket.name} is ${socketBytes} bytes; maximum ${socket.maximumBytes})`,
+      { field },
+    );
+  }
+}
+
 function parseEntry(
   value: unknown,
   platform: CapabilityRuntimeQualification["platform"],
@@ -1088,6 +1119,11 @@ function parseEntry(
   const binding = parseBinding(input["binding"], manifest, `${field}.binding`);
   const sandbox = qualification.sandbox;
   if (binding.kind === "sandbox") {
+    assertSandboxPrivateRoot(
+      binding.value.privateRoot,
+      platform,
+      `${field}.binding.value.privateRoot`,
+    );
     if (
       !sandbox ||
       sandbox.hostId !== binding.value.hostId ||
