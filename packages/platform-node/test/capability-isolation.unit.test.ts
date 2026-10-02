@@ -541,7 +541,7 @@ async function inheritedProgramFixture(mode: "tail" | "continuous" | "slow-start
     childFile,
     `
 parent="$1"
-${mode === "slow-start" ? "sleep 0.8" : ""}
+${mode === "slow-start" ? "sleep 0.5" : ""}
 printf '{"pid":%s,"parent":%s}' "$$" "$parent" > ./ready.json
 while kill -0 "$parent" 2>/dev/null; do sleep 0.002; done
 ${
