@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:38126dab17d2ebd066de52c7fbd892692cf4908ed0102c8c9adaecd79f1c26ad"
+contract_sha256: "sha256:056d7c151a92cdefc54df24a4ec049234e58fc612b3923670a5013880e5ee532"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -285,7 +285,7 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 - 安装期间的磁盘采样与错误脱敏：`scripts/ci/resources.mjs`、`scripts/ci/redact-text.mjs`；采样只提供观测峰值下界，出现采样错误时须保留不完整状态和有界诊断，不能从安装成功推导采样完整。协调暂停单独记录原因、耗时和操作结果，不抹去暂停前的失败。
 - 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。 Context 的来源由 `scripts/ci/context.mjs` 核验；周期质量归档还核对已提交的启用状态、默认分支、cron 与同次 SHA，不能通过临时修改工作树取得周期身份。共享 Context 支持周期事件不启用任何安装或周期操作。
 - CI 源码摘要记录实际工作树中的构建输入，包含普通源码的新增、修改、删除和文件模式，不能只记录 Git HEAD。构建器仍引用的模块或显式必需文件缺失时必须失败；构建期间及安装前再次核对摘要，不能用忽略所有缺失文件的方式通过校验。
-- integration 的并发数由[CI 测试资源规则](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)按 CPU、内存和最多 4 个 worker 计算。该测试调度变更不改变安装、归档身份或服务启停合同；旧政策迁移保留原始来源摘要及其他门禁。测试与构建同时运行时使用 CI 的独立构建输出，避免覆盖仍由测试读取的 `dist/node-runtime`。
+- integration 的并发数由[CI 测试资源规则](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)按 CPU、内存和最多 4 个 worker 计算。该测试调度变更不改变安装、归档身份或服务启停合同；旧政策迁移保留原始来源摘要及其他门禁。正式入口同时传入归档和上下文，需要运行时的测试安装校验过的产物；直接开发运行两个变量均缺省时仍可读取 `dist/node-runtime`。测试与构建同时运行时使用 CI 的独立构建输出，避免覆盖开发模式的输入。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。
 

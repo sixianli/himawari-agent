@@ -7,10 +7,11 @@ import type {
   SandboxJobControlBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { openSandboxJournal } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 
 const launch = vi.hoisted(() => ({
   hook: "",
@@ -84,6 +85,17 @@ import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<unknown>> = [];
+let runtimeRoot = path.resolve("dist/node-runtime");
+let installation: Awaited<ReturnType<typeof installTestNodeRuntime>> | undefined;
+beforeAll(async () => {
+  installation = await installTestNodeRuntime();
+  runtimeRoot = installation.runtimeRoot;
+}, 240_000);
+afterAll(async () => {
+  await installation?.close();
+});
+const jobHostEntry = () =>
+  path.join(runtimeRoot, "node_modules/@himawari-agent/runtime-sandbox/dist/job-host-main.js");
 afterEach(async (context) => {
   for (const close of cleanups.splice(0).reverse()) await close();
   const timeline = {
@@ -201,8 +213,7 @@ async function configureSdkLoad(
     blockInitializeMs?: number;
   },
 ) {
-  const runtime = path.resolve("dist/node-runtime/node_modules");
-  launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
+  launch.entry = jobHostEntry();
   launch.hook = path.join(root, "preload.mjs");
   const loader = path.join(root, "loader.mjs");
   const entryDiagnostics = jobHostEntryLoadDiagnostics();
@@ -397,11 +408,17 @@ it("survives slow startup followed by bounded synchronous preparation without re
   expect(await host.result).toMatchObject({ taskStarted: false, srtReset: true });
 });
 
+it("[R2-D16] reads the configured Job Host entry from the selected runtime", async () => {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0 });
+  await expectTestRuntimeFile(launch.entry);
+});
+
 it("prepares with the packaged Java agent when global npm discovery would block heartbeats", async () => {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  const runtime = path.resolve("dist/node-runtime/node_modules");
-  launch.entry = path.join(runtime, "@himawari-agent/runtime-sandbox/dist/job-host-main.js");
+  launch.entry = jobHostEntry();
   launch.hook = path.join(root, "slow-global-npm.mjs");
   const discovery = path.join(root, "discovery.txt");
   const entryDiagnostics = jobHostEntryLoadDiagnostics();

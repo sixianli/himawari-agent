@@ -22,12 +22,13 @@ import {
   createDirectoryMoveJournal,
   createPiFilePublicationJournal,
 } from "@himawari-agent/platform-node";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProductionSandboxFileRecovery } from "../../apps/agent-service/src/production-sandbox-file-recovery.ts";
 import messages from "../../packages/execution-contracts/test/fixtures/v2/messages.json" with {
   type: "json",
 };
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { trackPiPreparationDiagnostics } from "../fixtures/pi-preparation-diagnostics.ts";
 
 vi.mock("node:worker_threads", async (original) => {
@@ -50,6 +51,21 @@ import {
 
 type Fixture = Awaited<ReturnType<typeof productionSandboxScope>>;
 const cleanups: (() => Promise<void>)[] = [];
+let runtimeRoot = fileURLToPath(new URL("../../dist/node-runtime", import.meta.url));
+let installation: Awaited<ReturnType<typeof installTestNodeRuntime>> | undefined;
+beforeAll(async () => {
+  installation = await installTestNodeRuntime();
+  runtimeRoot = installation.runtimeRoot;
+}, 240_000);
+afterAll(async () => {
+  await installation?.close();
+});
+const directoryRenameExecutable = () =>
+  path.join(runtimeRoot, "node_modules/@himawari-agent/platform-node/dist/files/rename-native");
+
+it("[R2-D16] reads the directory rename program from the selected runtime", async () => {
+  await expectTestRuntimeFile(directoryRenameExecutable());
+});
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
@@ -665,12 +681,7 @@ describe("fixed file recovery into the original SQLite invocation", () => {
           scope,
           workspace: f.host.workspace,
           privateDirectory,
-          directoryRenameExecutable: fileURLToPath(
-            new URL(
-              "../../dist/node-runtime/node_modules/@himawari-agent/platform-node/dist/files/rename-native",
-              import.meta.url,
-            ),
-          ),
+          directoryRenameExecutable: directoryRenameExecutable(),
         }).execute();
       } finally {
         vi.useRealTimers();

@@ -20,6 +20,7 @@ date: "2026-09-28"
 - [reply-34：MCP 测试夹具的准备成本](#reply-34mcp-测试夹具的准备成本)
 - [reply-34：Job Host 返工与取证边界](#reply-34job-host-返工与取证边界)
 - [reply-46：准备与心跳计时取证](#2026-10-02-reply-46准备与心跳计时取证)
+- [reply-06：D13 未复现的 Job Host 启动失败](#2026-10-03-reply-06d13-未复现的-job-host-启动失败)
 - [reply-47：D17 夹具前缀与短临时根](#2026-10-02-reply-47d17-夹具前缀与短临时根)
 - [D21：期限后交付测试的受控计时器](#d21-期限后交付测试的受控计时器)
 
@@ -431,6 +432,18 @@ D17 改前在旧根下两个生产停止/恢复用例因 `JOB_HOST_CONTROL_PATH_
 ## 2026-10-02 reply-46：准备与心跳计时取证
 
 prepared 开发模式恢复直接使用真实构建目录，复制候选撤回；测试失败时仍保存工作根和准备阶段。Job Host 测试保留同步命令耗时、事件循环最长间隔与心跳时间线，原 1150ms 人为阻塞及心跳期限不变。这两部分以一个测试诊断提交交付；在已完成的 [reply-45 原 19 文件运行](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r45/r36/r45-integration-19-vitest.json)中，prepared 11/0、准备控制 8/0，心跳用例通过；该次 437/2 的两项失败均为随后修复的 D17 路径过长。事件循环最长间隔 1185ms 包含人为阻塞，阻塞结束后 34ms 发出心跳，D13 仍为 uncertain。本次撤回复制并保留统一临时根之后，新根下这两个文件合计 19/0，第 1 层 `npm run check` 也通过，严格文档校验 0 错误、0 警告；这些云端结果均在 `HIMAWARI_TEST_TIMEOUT_MS=30000` 下得到。结果见[诊断定向报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/cloud-r47/r36/r47-diagnostics-focused-vitest.json)。失败归因以证据为准，不把增加诊断视为产品修复。
+
+### 2026-10-03 reply-06：D13 未复现的 Job Host 启动失败
+
+旧失败发生在 **2026-10-02 22:43:22.999–22:46:25.999 CST** 的四文件第 2 层运行，模式为产物模式（同时设置 `HIMAWARI_TEST_ARTIFACT` 和 `HIMAWARI_TEST_CONTEXT`），基座 `7ce0b57` 加当时的 D16 补丁。运行自然结束，183.001 秒、72 通过／1 失败。`test/integration/sandbox-preparation-control.test.ts` 的准确失败用例为 `rejects 'import failure' without starting the user task`，整个用例耗时 **4402.588572999994ms**；失败在导入错误的诊断分类断言，未达到该用例原有的 45000ms 测试期限。原始报告是 [d16-layer2-vitest.json](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-vitest.json)，时间、环境和退出码见[原始运行记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-layer2-run.json)。
+
+[原失败摘要与消息时间线](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-failure-summary.json)显示 Job Host 启动后约 3.75 秒没有输出，随后出现 `JOB_HOST_SYSTEM_UNKNOWN` 和 `JOB_HOST_WORKER_LEASE_INVALID`；原停止文件保留在 [stop-02-before-d18-rework.md](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/stop-02-before-d18-rework.md)。当时没有每条 IPC 消息的实际接收时间和完整诊断对象，不能证明首条消息过期的具体原因。
+
+二十次单文件运行（产物、开发各 10 次）全部执行 `sandbox-preparation-control.test.ts` 的 9 个用例，合计 **180/180**，原 Job Host 失败未复现，见[停止文件 03 的逐次报告](../../../.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-03.md#复用的20条测试证据)和[单文件原始数据汇总](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/d16-diagnostic-distribution.json)。随后十次四文件对照（产物、开发各 5 次）每次 73/73，合计 **730/730**，原 Job Host 失败和两例 Pi 准备失败均未复现，见[停止文件 04 的十次结果](../../../.ci-output/handoff/2026-10-02-codex-round2-hermes-stop-04.md#十次结果)和[四文件原始数据汇总](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r52/reply05-summary.json)。二十次单文件不包含 `production-sandbox-lineage.test.ts`，因此不提供两个 Pi 并发用例的复跑证据；对应 Pi 失败另记在 [R2-D19 Backlog](../../backlog/BL-20261002-003-pi-准-备-线-程-每-次-都.md#hermes-旧失败与-reply-06-裁定)。
+
+[Claude reply-06](../../../.ci-output/handoff/2026-10-02-round2-claude-reply-06.md)将这次 Job Host 启动失败的现象归入 R2-D13，裁定为负载下偶发启动慢，并指出没有证据归因于 D16 安装方式。此处记录该归属裁定，保留原始失败报告；旧失败缺少可比负载数据，后续未复现不能证明具体根因或问题已修复，D13 的根因仍为 `uncertain`。
+
+[返回阅读导航](#阅读导航)
 
 ## D21：期限后交付测试的受控计时器
 

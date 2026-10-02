@@ -29,8 +29,9 @@ import {
 } from "@himawari-agent/platform-node";
 import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { prepareProductionFile } from "../../apps/agent-service/src/production-file-preparation.ts";
+import { installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 import {
   piPreparationDiagnosticArguments,
   trackPiPreparationDiagnostics,
@@ -40,6 +41,20 @@ trackPiPreparationDiagnostics(import.meta.url);
 
 const roots: string[] = [];
 const preparations: Record<string, unknown>[] = [];
+it.each(["HIMAWARI_TEST_ARTIFACT", "HIMAWARI_TEST_CONTEXT"])(
+  "[R2-D16] rejects incomplete artifact selection with only %s",
+  async (selected) => {
+    try {
+      vi.stubEnv("HIMAWARI_TEST_ARTIFACT", selected === "HIMAWARI_TEST_ARTIFACT" ? "artifact" : "");
+      vi.stubEnv("HIMAWARI_TEST_CONTEXT", selected === "HIMAWARI_TEST_CONTEXT" ? "context" : "");
+      await expect(installTestNodeRuntime("PREPARED_RUNNER")).rejects.toThrow(
+        "PREPARED_RUNNER_ARTIFACT_CONTEXT_REQUIRED",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
 afterEach(async (context) => {
   if (context.task.result?.state === "fail") {
     const retainedRoots: string[] = [];
@@ -72,34 +87,13 @@ afterEach(async (context) => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 let runtimeRoot = fileURLToPath(new URL("../../dist/node-runtime", import.meta.url));
-let installation: string | undefined;
+let installation: Awaited<ReturnType<typeof installTestNodeRuntime>> | undefined;
 beforeAll(async () => {
-  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
-  if (!artifact && !context) return;
-  if (!artifact || !context) throw new Error("PREPARED_RUNNER_ARTIFACT_CONTEXT_REQUIRED");
-  installation = await mkdtemp(path.join(testTemporaryRoot(), "prepared-runner-install-"));
-  const installed = spawnSync(
-    process.execPath,
-    [
-      fileURLToPath(new URL("../../scripts/install-node-runtime.mjs", import.meta.url)),
-      "--prefix",
-      installation,
-      "--artifact",
-      artifact,
-      "--context",
-      context,
-    ],
-    {
-      encoding: "utf8",
-      timeout: 180_000,
-      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
-    },
-  );
-  if (installed.status !== 0) throw new Error(`PREPARED_RUNNER_INSTALL_FAILED:${installed.stderr}`);
-  runtimeRoot = path.join(installation, "lib/himawari-agent");
+  installation = await installTestNodeRuntime("PREPARED_RUNNER");
+  runtimeRoot = installation.runtimeRoot;
 }, 240_000);
 afterAll(async () => {
-  if (installation) await rm(installation, { recursive: true, force: true });
+  await installation?.close();
 });
 const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 /** Exercise the installed preparation module as well as the commit runner. */

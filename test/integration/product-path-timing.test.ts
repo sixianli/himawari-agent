@@ -4,11 +4,34 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { expect, it, vi } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { prepareProductPathTiming } from "../fixtures/product-path-timing.ts";
+import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { openSandboxJournal, T1 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 const execFile = promisify(execFileCallback);
+let runtimeRoot = path.resolve("dist/node-runtime");
+let installation: Awaited<ReturnType<typeof installTestNodeRuntime>> | undefined;
+beforeAll(async () => {
+  installation = await installTestNodeRuntime();
+  runtimeRoot = installation.runtimeRoot;
+}, 240_000);
+afterAll(async () => {
+  await installation?.close();
+});
+
+it("[R2-D16] reads timing targets from the selected runtime", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "hma-timing-origin-"));
+  try {
+    const manifest = path.join(root, "manifest.json");
+    await prepareProductPathTiming(runtimeRoot, manifest);
+    const targets = Object.keys(JSON.parse(await readFile(manifest, "utf8")));
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) await expectTestRuntimeFile(fileURLToPath(target));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 it("classifies scope failures without retaining arbitrary private messages", async () => {
   const moduleUrl = new URL("../fixtures/product-path-timing-runtime.mjs", import.meta.url).href;
   const { stdout } = await execFile(process.execPath, [
@@ -42,7 +65,7 @@ it.each(["during-parent", "before-parent", "private-parent"] as const)(
       vi.stubEnv("HIMAWARI_TEST_TIMING_DIAGNOSTICS", "1");
       const manifest = path.join(root, "manifest.json");
       const output = path.join(root, "timing.jsonl");
-      const runtime = path.resolve("dist/node-runtime");
+      const runtime = runtimeRoot;
       await prepareProductPathTiming(runtime, manifest);
       const payload = path.join(root, "fixture.json");
       const { semanticFingerprint: _fingerprint, ...plan } = f.plan;
