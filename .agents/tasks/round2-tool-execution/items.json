@@ -739,8 +739,8 @@
     },
     {
       "id": "R2-E2",
-      "title": "云服务器上放宽 npm test 总时限和测试里写死的时限（只在云端，GitHub CI 和产品期限不变）",
-      "goal_ref": ["G16", "G17"],
+      "title": "云服务器上放宽 npm test 总时限，测试自己的时限放宽到 4 倍且不少于 30 秒（只在云端，GitHub CI 和产品期限不变）",
+      "goal_ref": ["G16", "G17", "G18"],
       "done_when": [
         {
           "type": "test",
@@ -756,6 +756,27 @@
         "by": "claude",
         "on": "2026-10-02",
         "why": "stop-46：正式第 3 层在 integration 中途耗尽 ci/policy.json 的 30 分钟总时限；account-cli 写死的 15000ms 在负载下超时；用户选择只在云端放宽"
+      }
+    },
+    {
+      "id": "R2-D21",
+      "title": "thread-run-lifecycle 的期限后恢复用例依赖 1 秒真实时间，磁盘慢时先到期走错分支",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D21",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "stop-01（r50 测量）：crash-after-output 和 crash-before-transition 两例失败，实际得到 RUN_EXECUTION_DEADLINE_EXCEEDED；用例设 maximumRunDurationMs 1000，原因待诊断"
       }
     }
   ]
