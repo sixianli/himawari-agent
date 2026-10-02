@@ -796,6 +796,29 @@
         "on": "2026-10-02",
         "why": "每次部署都要用户明确授权"
       }
+    },
+    {
+      "id": "R2-D20",
+      "title": "父进程退出后的期限测试用固定字节数判断，机器忙时误报失败",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D20",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "stop-45：正式第 3 层 unit 里 preserves deadline after the parent exits 收到 49 字节（parent-start 一行加 3 行 more-output），断言要求大于 64；期限分类和父进程退出后的输出收集都正确，判为测试缺陷"
+      }
     }
   ]
 }
