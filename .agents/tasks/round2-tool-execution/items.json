@@ -1,0 +1,775 @@
+{
+  "task": "round2-tool-execution",
+  "prefix": "R2",
+  "items": [
+    {
+      "id": "R2-S1",
+      "title": "工具运行中停止本轮：宿主和进程组退出、Run 取消、不交给模型",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S1",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 1，TE-07 已修；回归测试待加标签"
+      }
+    },
+    {
+      "id": "R2-S2",
+      "title": "运行中、收尾、交付时重启服务后结果不丢、不重复",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/product-path-browser.test.ts",
+          "name": "keeps an offline Worker result pending until paired service restart settles LOST",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 2，TE-08 方案 B，提交 81a9fd2"
+      }
+    },
+    {
+      "id": "R2-S3",
+      "title": "执行期限到达时按原期限终止工具并认证清理",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/product-path-browser.test.ts",
+          "name": "terminates a running tool at its original deadline with authenticated cleanup",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 3，TE-09，提交 ac094b9"
+      }
+    },
+    {
+      "id": "R2-S4",
+      "title": "Job Host finish() 各步崩溃后的结果交付",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S4",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 4，B7 矩阵含 6 个宿主崩溃位置；回归测试待加标签"
+      }
+    },
+    {
+      "id": "R2-S5",
+      "title": "剩余交错组合、F 健康检查缺口、历史样本 13、resolve 报错原因",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S5",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 5，暂停点第 4 批"
+      }
+    },
+    {
+      "id": "R2-D1",
+      "title": "Job Host 期限诊断只按原期限分类一次",
+      "goal_ref": [
+        "G1",
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "packages/runtime-sandbox/test/job-host.unit.test.ts",
+          "name": "does not classify queued timeout callbacks after the host is",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D1，提交 325ef03"
+      }
+    },
+    {
+      "id": "R2-D2",
+      "title": "prepared 测试夹具 20 秒超时（只在 Hermes 机械盘上确认过）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D2",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D2；云端未复现，复制候选已撤回，剩余风险与 R2-D19 有关"
+      }
+    },
+    {
+      "id": "R2-D3",
+      "title": "非沙箱工具结果未知时 Run 没有终止路径（B4）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D3",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D3"
+      }
+    },
+    {
+      "id": "R2-D4",
+      "title": "ACK 丢失（A2 余项）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D4",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D4"
+      }
+    },
+    {
+      "id": "R2-D5",
+      "title": "fixture(25) 偶发失败",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D5",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D5"
+      }
+    },
+    {
+      "id": "R2-D6",
+      "title": "Agent 重启后停止终态 Run 的未绑定容器环境",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D6",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D6，BL-20260929-004"
+      }
+    },
+    {
+      "id": "R2-D7",
+      "title": "Worker 历史事件的内存占用和重复读取（需先设计）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D7",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D7，BL-20260929-005"
+      }
+    },
+    {
+      "id": "R2-D8",
+      "title": "前台 Bash 脱离后后台程序的显示（本轮只改状态行文字）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D8",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D8，BL-20260929-006"
+      }
+    },
+    {
+      "id": "R2-D9",
+      "title": "主机名变化后的旧锁（Linux 部分；Mac 部分按 G5 报告未验证）",
+      "goal_ref": [
+        "G3",
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D9",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D9，BL-20260929-002"
+      }
+    },
+    {
+      "id": "R2-D10",
+      "title": "安装和部署说明写清 Ubuntu 24.04 的 bwrap 前提、AppArmor 规则和撤销方法",
+      "goal_ref": [
+        "G9"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/runbooks/install-start-stop-runbook.md",
+          "heading": "Ubuntu 24.04 的 bwrap 前提"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D10，BL-20261001-001；用户决定第二轮只补文档"
+      }
+    },
+    {
+      "id": "R2-D11",
+      "title": "只读网络能力 Retry-After 提前重试；npm test 入口透传测试时限",
+      "goal_ref": [
+        "G3",
+        "G10"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
+          "name": "does not send early when a retry wait returns before its target",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "test",
+          "file": "test/tooling/test-timeout-entry.test.mjs",
+          "name": "passes the original value",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D11，提交 3217e4b、98b3822"
+      }
+    },
+    {
+      "id": "R2-D13",
+      "title": "准备期 Job Host 心跳过期（事件循环约 2.76 秒无响应）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D13",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D13，原因未定"
+      }
+    },
+    {
+      "id": "R2-D14",
+      "title": "执行 Worker 进程测试的子夹具就绪超时",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "runs work, cancellation, cursor reconnect and unknown-result reconciliation across UDS",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "rejects stale fences and never falls back in-process when the Worker crashes",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "keeps one result when the real Agent client process crashes after dispatch",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D14，提交 0dadfcd"
+      }
+    },
+    {
+      "id": "R2-D15",
+      "title": "安装解压目录继承安装者 umask，umask 0002 时产品拒绝自己的安装",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D15",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D15，BL-20261001-004"
+      }
+    },
+    {
+      "id": "R2-D16",
+      "title": "正式 npm test 下三个 integration 测试仍读本地 dist/node-runtime",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D16",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D16，BL-20261002-001"
+      }
+    },
+    {
+      "id": "R2-D17",
+      "title": "SQLite 夹具临时目录前缀过长，控制套接字超过 100 字节",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/production-sandbox-scope.test.ts",
+          "name": "releases never-started reservations through production",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D17，提交 bdc3250"
+      }
+    },
+    {
+      "id": "R2-D18",
+      "title": "生产 privateRoot 超过 27 字节时沙箱工具必然失败，启动时不检查",
+      "goal_ref": [
+        "G3",
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D18",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D18，BL-20261002-002；首次生产部署前必须完成"
+      }
+    },
+    {
+      "id": "R2-D19",
+      "title": "Pi 准备线程每次重新加载模块，启动占 10 秒预算 36%–61%",
+      "goal_ref": [
+        "G3",
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D19",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D19，BL-20261002-003；改预算或计时起点要先问用户"
+      }
+    },
+    {
+      "id": "R2-E1",
+      "title": "测试用户 umask 0002 造成的 100 项 SANDBOX_HOST_PATH_UNSAFE（测试环境）",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "环境问题 E1，记录器已设 umask 022；以 20 文件复跑结果审核"
+      }
+    },
+    {
+      "id": "R2-A1",
+      "title": "最终版本上 npm run check 和完整 npm test 在云服务器通过",
+      "goal_ref": [
+        "G1",
+        "G8",
+        "G10"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run check",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "command",
+          "run": "npm test",
+          "host": "84.247.157.41"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项；云端默认测试时限 30000ms"
+      }
+    },
+    {
+      "id": "R2-A2",
+      "title": "不筛选的 Linux 产品路径资格在云服务器通过",
+      "goal_ref": [
+        "G1",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "node_modules/.bin/vitest run --config vitest.workspace.ts --project qualification-product-path",
+          "host": "84.247.157.41"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项 Linux 部分"
+      }
+    },
+    {
+      "id": "R2-A3",
+      "title": "不筛选的 Mac 资格",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "什么时候恢复 Mac 验证？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项 Mac 部分"
+      },
+      "withdrawn": {
+        "on": "2026-09-30",
+        "ref": "G5"
+      }
+    },
+    {
+      "id": "R2-A4",
+      "title": "文档严格校验和 Runbook 静态检查通过",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "用户要求代码和文档不漂移"
+      }
+    },
+    {
+      "id": "R2-A5",
+      "title": "中文总报告",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-28-tool-execution-audit-plan.md",
+          "heading": "第二轮总报告"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 7 项"
+      }
+    },
+    {
+      "id": "R2-L1",
+      "title": "首次生产部署计划按同机测试和 Ubuntu 24.04 前提更新",
+      "goal_ref": [
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-30-production-first-deployment-plan.md",
+          "heading": "2026-10-01 更新：同机测试与 Ubuntu 24.04 前提"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "上线准备"
+      }
+    },
+    {
+      "id": "R2-L2",
+      "title": "云服务器上生产要用的 bwrap 0.11.2 和 AppArmor 规则可用",
+      "goal_ref": [
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "/usr/local/libexec/bubblewrap-0.11.2/bwrap --version",
+          "host": "84.247.157.41"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "用户 2026-10-01 运行安装脚本"
+      }
+    },
+    {
+      "id": "R2-L3",
+      "title": "慢同步写入对产品响应时间的影响：测量一次真实对话加一次工具调用",
+      "goal_ref": [
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-30-production-first-deployment-plan.md",
+          "heading": "响应时间测量"
+        },
+        {
+          "type": "user",
+          "ref": null,
+          "question": "测得的响应时间是否可以接受？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "部署计划要求部署前测量并由用户决定"
+      }
+    },
+    {
+      "id": "R2-L4",
+      "title": "首次生产部署",
+      "goal_ref": [
+        "G4",
+        "G8",
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "什么时候部署到生产？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "每次部署都要用户明确授权"
+      }
+    }
+  ]
+}
