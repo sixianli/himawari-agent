@@ -3,17 +3,6 @@ import coveragePolicy from "./ci/coverage-policy.json" with { type: "json" };
 import policy from "./ci/policy.json" with { type: "json" };
 import { testWorkerCount } from "./scripts/ci/test-concurrency.mjs";
 
-const configuredTimeout = process.env["HIMAWARI_TEST_TIMEOUT_MS"];
-const defaultTestTimeout = configuredTimeout === undefined ? undefined : Number(configuredTimeout);
-if (
-  configuredTimeout !== undefined &&
-  (!/^\d+$/u.test(configuredTimeout) ||
-    !Number.isSafeInteger(defaultTestTimeout) ||
-    (defaultTestTimeout ?? 0) <= 0)
-) {
-  throw new Error("HIMAWARI_TEST_TIMEOUT_MS must be a positive safe integer");
-}
-
 // Tooling owns synthetic Git repositories; hosted cases supply their own GitHub identity.
 const toolingEnvironment = {
   ...Object.fromEntries(
@@ -105,14 +94,6 @@ export default defineConfig({
           name: "workspace-scaffolds",
         },
       },
-    ].map((project) => ({
-      ...project,
-      test: {
-        ...project.test,
-        ...(defaultTestTimeout !== undefined && !("testTimeout" in project.test)
-          ? { testTimeout: defaultTestTimeout }
-          : {}),
-      },
-    })),
+    ],
   },
 });

@@ -54,8 +54,8 @@ afterEach(() => {
 });
 
 describe("test runner timeout environment", () => {
-  it.each([undefined, "30000", "00030"])(
-    "passes the original value %j to test children",
+  it.each([undefined, "30000", "00030", "", "0", "invalid"])(
+    "[R2-E3] excludes retired timeout and unrelated variables from test children for %j",
     async (value) => {
       vi.stubEnv("HIMAWARI_TEST_TIMEOUT_MS", value);
       vi.stubEnv("HIMAWARI_TEST_UNRELATED_ENV", "must-not-leak");
@@ -122,7 +122,7 @@ describe("test runner timeout environment", () => {
       for (const id of Object.keys(files)) {
         expect(JSON.parse(readFileSync(path.join(root, `${id}-environment.json`), "utf8"))).toEqual(
           {
-            timeout: value ?? null,
+            timeout: null,
             unrelated: null,
           },
         );

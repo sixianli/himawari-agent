@@ -32,8 +32,8 @@ function projectConfiguration(value) {
   return configuration.projects.map(({ test }) => test);
 }
 
-describe("cloud test timeout configuration", () => {
-  it("keeps the existing defaults when the variable is absent", () => {
+describe("test timeout configuration", () => {
+  it("[R2-E3] keeps the existing defaults when the variable is absent", () => {
     const projects = projectConfiguration(undefined);
     expect(projects.find(({ name }) => name === "integration").testTimeout).toBe(30_000);
     for (const project of projects.filter(({ name }) => name !== "integration")) {
@@ -41,16 +41,11 @@ describe("cloud test timeout configuration", () => {
     }
   });
 
-  it.each(["1", "30000", "45000", "00030"])(
-    "sets only projects without their own timeout for %s",
-    (value) => {
-      for (const project of projectConfiguration(value)) {
-        expect(project.testTimeout).toBe(project.name === "integration" ? 30_000 : Number(value));
-      }
-    },
-  );
-
   it.each([
+    "1",
+    "30000",
+    "45000",
+    "00030",
     "",
     "0",
     "-1",
@@ -62,9 +57,7 @@ describe("cloud test timeout configuration", () => {
     "0x10",
     " 30000 ",
     "9007199254740992",
-  ])("rejects an invalid timeout during configuration loading: %j", (value) => {
-    const result = loadConfiguration(value);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("HIMAWARI_TEST_TIMEOUT_MS");
+  ])("[R2-E3] keeps every project timeout unchanged for the retired variable %j", (value) => {
+    expect(projectConfiguration(value)).toEqual(projectConfiguration(undefined));
   });
 });
