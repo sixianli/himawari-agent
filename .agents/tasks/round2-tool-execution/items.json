@@ -10,7 +10,7 @@
         {
           "type": "test",
           "tag": "R2-S1",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -32,7 +32,7 @@
           "type": "test",
           "file": "test/integration/product-path-browser.test.ts",
           "name": "keeps an offline Worker result pending until paired service restart settles LOST",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -54,7 +54,7 @@
           "type": "test",
           "file": "test/integration/product-path-browser.test.ts",
           "name": "terminates a running tool at its original deadline with authenticated cleanup",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -75,7 +75,7 @@
         {
           "type": "test",
           "tag": "R2-S4",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -96,7 +96,7 @@
         {
           "type": "test",
           "tag": "R2-S5",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -118,7 +118,7 @@
           "type": "test",
           "file": "packages/runtime-sandbox/test/job-host.unit.test.ts",
           "name": "does not classify queued timeout callbacks after the host is",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -139,7 +139,7 @@
         {
           "type": "test",
           "tag": "R2-D2",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -160,7 +160,7 @@
         {
           "type": "test",
           "tag": "R2-D3",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -181,7 +181,7 @@
         {
           "type": "test",
           "tag": "R2-D4",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -202,7 +202,7 @@
         {
           "type": "test",
           "tag": "R2-D5",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -223,7 +223,7 @@
         {
           "type": "test",
           "tag": "R2-D6",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -244,7 +244,7 @@
         {
           "type": "test",
           "tag": "R2-D7",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -265,7 +265,7 @@
         {
           "type": "test",
           "tag": "R2-D8",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -286,7 +286,7 @@
         {
           "type": "test",
           "tag": "R2-D9",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -329,13 +329,7 @@
           "type": "test",
           "file": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
           "name": "does not send early when a retry wait returns before its target",
-          "host": "84.247.157.41"
-        },
-        {
-          "type": "test",
-          "file": "test/tooling/test-timeout-entry.test.mjs",
-          "name": "passes the original value",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -356,7 +350,7 @@
         {
           "type": "test",
           "tag": "R2-D12",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -377,7 +371,7 @@
         {
           "type": "test",
           "tag": "R2-D13",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -399,19 +393,19 @@
           "type": "test",
           "file": "test/integration/execution-worker-process.test.ts",
           "name": "runs work, cancellation, cursor reconnect and unknown-result reconciliation across UDS",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "test",
           "file": "test/integration/execution-worker-process.test.ts",
           "name": "rejects stale fences and never falls back in-process when the Worker crashes",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "test",
           "file": "test/integration/execution-worker-process.test.ts",
           "name": "keeps one result when the real Agent client process crashes after dispatch",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -432,7 +426,7 @@
         {
           "type": "test",
           "tag": "R2-D15",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -453,7 +447,7 @@
         {
           "type": "test",
           "tag": "R2-D16",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -475,7 +469,7 @@
           "type": "test",
           "file": "test/integration/production-sandbox-scope.test.ts",
           "name": "releases never-started reservations through production",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -496,7 +490,7 @@
         {
           "type": "test",
           "tag": "R2-D18",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -517,7 +511,7 @@
         {
           "type": "test",
           "tag": "R2-D19",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -554,12 +548,12 @@
         {
           "type": "command",
           "run": "npm run check",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "command",
-          "run": "npm test -- --tools /srv/himawari-test/round2/tools",
-          "host": "84.247.157.41"
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
         }
       ],
       "added": {
@@ -576,7 +570,7 @@
         {
           "type": "command",
           "run": "node_modules/.bin/vitest run --config vitest.workspace.ts --project qualification-product-path",
-          "host": "84.247.157.41"
+          "host": "hermes"
         }
       ],
       "added": {
@@ -724,7 +718,7 @@
         {
           "type": "test",
           "tag": "R2-D20",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -745,7 +739,7 @@
         {
           "type": "test",
           "tag": "R2-E2",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -756,6 +750,10 @@
         "by": "claude",
         "on": "2026-10-02",
         "why": "stop-46：正式第 3 层在 integration 中途耗尽 ci/policy.json 的 30 分钟总时限；account-cli 写死的 15000ms 在负载下超时；用户选择只在云端放宽"
+      },
+      "withdrawn": {
+        "on": "2026-10-02",
+        "ref": "G20"
       }
     },
     {
@@ -766,7 +764,7 @@
         {
           "type": "test",
           "tag": "R2-D21",
-          "host": "84.247.157.41"
+          "host": "hermes"
         },
         {
           "type": "review",
@@ -777,6 +775,27 @@
         "by": "claude",
         "on": "2026-10-02",
         "why": "stop-01（r50 测量）：crash-after-output 和 crash-before-transition 两例失败，实际得到 RUN_EXECUTION_DEADLINE_EXCEEDED；用例设 maximumRunDurationMs 1000，原因待诊断"
+      }
+    },
+    {
+      "id": "R2-E3",
+      "title": "撤掉 HIMAWARI_TEST_TIMEOUT_MS，测试时限回到项目原值（Hermes 上不放宽）",
+      "goal_ref": ["G19", "G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-E3",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "G20：放宽方案整个撤掉；BL-20261001-002 的恢复工作"
       }
     }
   ]
