@@ -4,7 +4,7 @@ document_type: "backlog"
 record_id: "BL-20261001-003"
 record_state: "open"
 date: "2026-10-01"
-updated: "2026-10-01"
+updated: "2026-10-02"
 priority: "normal"
 item_type: "chore"
 source_idea: ""
@@ -51,3 +51,7 @@ ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:617:12)
 amaro 的越界原因、出错的具体导入文件、是否属于 Node 缺陷均未确认；六次未复现不能排除间歇性问题。
 
 可评审让源码测试使用预编译线程文件，以缩小 Node 去类型解析器参与的范围；这属于测试运行方式改动，须先设计再批准。也可评审其他 Node 版本，但新工具下载须先取得用户批准。当前没有升级、下载、放宽断言或时限。
+
+## 排期
+
+用户 2026-10-02 决定本项算进第二轮（工具执行排查第二轮，长任务条目 R2-D12）。按“已发现缺陷全部修完”处理：先限时复现，复现后再定修法；改测试运行方式要先设计，并提前跑第 3 层完整测试。

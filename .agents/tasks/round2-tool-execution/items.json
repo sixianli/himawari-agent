@@ -310,7 +310,9 @@
       "title": "主机名变化后的旧锁（Linux 部分；Mac 部分按 G5 报告未验证）",
       "goal_ref": [
         "G3",
-        "G5"
+        "G5",
+        "G14",
+        "G15"
       ],
       "done_when": [
         {
@@ -381,6 +383,30 @@
         "by": "claude",
         "on": "2026-10-02",
         "why": "缺陷 D11，提交 3217e4b、98b3822"
+      }
+    },
+    {
+      "id": "R2-D12",
+      "title": "测试直接加载源码线程文件时 Node 22 自带 TypeScript 解析器内部断言（memory access out of bounds）",
+      "goal_ref": [
+        "G3",
+        "G13"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D12",
+          "host": "84.247.157.41"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D12，BL-20261001-003；用户 2026-10-02 决定算进第二轮"
       }
     },
     {
