@@ -1073,11 +1073,18 @@ function assertSandboxPrivateRoot(
 ): void {
   const privateRootBytes = Buffer.byteLength(privateRoot);
   const jobDirectoryName = `j${createHash("sha256").digest("base64url")}`;
+  const maximumProcessId = platform === "linux" ? 4194304 : 99998;
+  const initialMuxSequence = 0;
+  const platformSocketBytes = platform === "linux" ? 107 : 103;
   const sockets = [
     {
-      name: "SRT network socket",
-      path: path.posix.join(privateRoot, jobDirectoryName, `claude-socks-${"0".repeat(16)}.sock`),
-      maximumBytes: platform === "linux" ? 107 : 103,
+      name: "SRT mux socket",
+      path: path.posix.join(
+        privateRoot,
+        jobDirectoryName,
+        `srt-mux-${maximumProcessId}-${initialMuxSequence.toString(36)}.sock`,
+      ),
+      maximumBytes: platformSocketBytes,
     },
     {
       name: "Job Host control socket",
@@ -1085,16 +1092,38 @@ function assertSandboxPrivateRoot(
       maximumBytes: 100,
     },
   ];
-  for (const socket of sockets) {
-    const socketBytes = Buffer.byteLength(socket.path);
-    if (socketBytes <= socket.maximumBytes) continue;
-    const maximumPrivateRootBytes = socket.maximumBytes - (socketBytes - privateRootBytes);
-    throw new CapabilityDeploymentError(
-      CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
-      `Sandbox privateRoot is ${privateRootBytes} UTF-8 bytes; maximum ${maximumPrivateRootBytes} (${platform} ${socket.name} is ${socketBytes} bytes; maximum ${socket.maximumBytes})`,
-      { field },
+  if (platform === "linux") {
+    sockets.push(
+      {
+        name: "SRT HTTP bridge socket",
+        path: path.posix.join(privateRoot, jobDirectoryName, `claude-http-${"0".repeat(16)}.sock`),
+        maximumBytes: platformSocketBytes,
+      },
+      {
+        name: "SRT network socket",
+        path: path.posix.join(privateRoot, jobDirectoryName, `claude-socks-${"0".repeat(16)}.sock`),
+        maximumBytes: platformSocketBytes,
+      },
     );
   }
+  const limitingSocket = sockets
+    .map((socket) => {
+      const socketBytes = Buffer.byteLength(socket.path);
+      return {
+        ...socket,
+        socketBytes,
+        maximumPrivateRootBytes: socket.maximumBytes - (socketBytes - privateRootBytes),
+      };
+    })
+    .reduce((tightest, socket) =>
+      socket.maximumPrivateRootBytes < tightest.maximumPrivateRootBytes ? socket : tightest,
+    );
+  if (privateRootBytes <= limitingSocket.maximumPrivateRootBytes) return;
+  throw new CapabilityDeploymentError(
+    CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+    `Sandbox privateRoot is ${privateRootBytes} UTF-8 bytes; maximum ${limitingSocket.maximumPrivateRootBytes} (${platform} ${limitingSocket.name} is ${limitingSocket.socketBytes} bytes; maximum ${limitingSocket.maximumBytes})`,
+    { field },
+  );
 }
 
 function parseEntry(

@@ -389,8 +389,8 @@ describe("capability deployment snapshot loader", () => {
   it.each([
     { platform: "linux", privateRoot: `/${"a".repeat(26)}`, bytes: 27 },
     { platform: "linux", privateRoot: `/${"界".repeat(8)}aa`, bytes: 27 },
-    { platform: "darwin", privateRoot: `/${"a".repeat(22)}`, bytes: 23 },
-    { platform: "darwin", privateRoot: `/${"界".repeat(7)}a`, bytes: 23 },
+    { platform: "darwin", privateRoot: `/${"a".repeat(36)}`, bytes: 37 },
+    { platform: "darwin", privateRoot: `/${"界".repeat(12)}`, bytes: 37 },
   ] as const)(
     "[R2-D18] accepts $platform privateRoot at the $bytes byte socket boundary: $privateRoot",
     async ({ platform, privateRoot, bytes }) => {
@@ -407,24 +407,68 @@ describe("capability deployment snapshot loader", () => {
   );
 
   it.each([
-    { platform: "linux", privateRoot: `/${"a".repeat(27)}`, bytes: 28, maximum: 27 },
-    { platform: "linux", privateRoot: `/${"界".repeat(9)}`, bytes: 28, maximum: 27 },
-    { platform: "darwin", privateRoot: `/${"a".repeat(23)}`, bytes: 24, maximum: 23 },
-    { platform: "darwin", privateRoot: `/${"界".repeat(7)}aa`, bytes: 24, maximum: 23 },
+    {
+      platform: "linux",
+      privateRoot: `/${"a".repeat(27)}`,
+      bytes: 28,
+      socketName: "SRT network socket",
+    },
+    {
+      platform: "linux",
+      privateRoot: `/${"界".repeat(9)}`,
+      bytes: 28,
+      socketName: "SRT network socket",
+    },
+    {
+      platform: "darwin",
+      privateRoot: `/${"a".repeat(37)}`,
+      bytes: 38,
+      socketName: "SRT mux socket",
+    },
+    {
+      platform: "darwin",
+      privateRoot: `/${"界".repeat(12)}a`,
+      bytes: 38,
+      socketName: "SRT mux socket",
+    },
+    {
+      platform: "linux",
+      privateRoot: `/${"a".repeat(79)}`,
+      bytes: 80,
+      socketName: "SRT network socket",
+    },
+    {
+      platform: "darwin",
+      privateRoot: `/${"a".repeat(79)}`,
+      bytes: 80,
+      socketName: "SRT mux socket",
+    },
   ] as const)(
     "[R2-D18] rejects $platform privateRoot before tool invocation at $bytes bytes: $privateRoot",
-    async ({ platform, privateRoot, bytes, maximum }) => {
+    async ({ platform, privateRoot, bytes, socketName }) => {
+      const maximum = platform === "linux" ? 27 : 37;
       expect(Buffer.byteLength(privateRoot)).toBe(bytes);
       const entry = sandboxEntry(platform);
       ((entry["binding"] as JsonObject)["value"] as JsonObject)["privateRoot"] = privateRoot;
       const value = await writeSnapshot(snapshot([entry]));
-      await expect(
-        loader(value.snapshotPath, value.digest, { platform }).load(),
-      ).rejects.toMatchObject({
+      const failure = await loader(value.snapshotPath, value.digest, { platform })
+        .load()
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      expect(failure).toMatchObject({
         code: CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
-        message: expect.stringContaining(`privateRoot is ${bytes} UTF-8 bytes; maximum ${maximum}`),
         details: { field: "capabilities[0].binding.value.privateRoot" },
       });
+      expect(failure).toHaveProperty(
+        "message",
+        expect.stringContaining(`privateRoot is ${bytes} UTF-8 bytes; maximum ${maximum}`),
+      );
+      expect(failure).toHaveProperty(
+        "message",
+        expect.stringContaining(`(${platform} ${socketName} is `),
+      );
     },
   );
 
