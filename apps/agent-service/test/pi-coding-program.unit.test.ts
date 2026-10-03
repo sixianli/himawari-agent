@@ -34,6 +34,11 @@ vi.mock("../../../packages/platform-node/src/files/pi-output-export.ts", () => (
   exportPiOutputFile: boundary.exportFile,
 }));
 vi.mock("@himawari-agent/runtime-pi", () => ({ executeSandboxedPiCodingTool: boundary.execute }));
+
+await Promise.all([
+  vi.importActual("@himawari-agent/application"),
+  vi.importActual("@himawari-agent/platform-node"),
+]);
 function input(tool: PiRunnerInput["tool"] = "read"): PiRunnerInput {
   return {
     schemaVersion: "pi-runner.v1",
@@ -111,7 +116,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("installed Pi coding program boundary", () => {
-  it("binds its existing Pi executor to the frozen grant and serializes a scoped result", async () => {
+  it("[R2-D22] binds its existing Pi executor to the frozen grant and serializes a scoped result", async () => {
     await run(input());
     expect(boundary.process.exitCode).toBeUndefined();
     expect(boundary.operations).toHaveBeenCalledWith(

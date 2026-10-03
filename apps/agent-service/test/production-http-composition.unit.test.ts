@@ -19,8 +19,9 @@ import {
   initializeStateRoot,
   parseProductConfiguration,
 } from "@himawari-agent/platform-node";
-import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
+import { exportJWK, importJWK, type JSONWebKeySet, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { productionHttpRs256TestKeys } from "./fixtures/production-http-rs256.test-key.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpCompositionSecretSources,
@@ -255,9 +256,12 @@ function envelope(kind: "command" | "query", type: string) {
 }
 
 describe("production HTTP composition", () => {
-  it("authenticates an RS256 assertion, admits a durable Thread run, and replays after restart", async () => {
+  it("[R2-D22] authenticates an RS256 assertion, admits a durable Thread run, and replays after restart", async () => {
     const paths = await fixture();
-    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const keyPair = {
+      privateKey: await importJWK(productionHttpRs256TestKeys.privateKey, "RS256"),
+      publicKey: await importJWK(productionHttpRs256TestKeys.publicKey, "RS256"),
+    };
     const jwks: JSONWebKeySet = {
       keys: [{ ...(await exportJWK(keyPair.publicKey)), kid: "key-production-http", alg: "RS256" }],
     };
