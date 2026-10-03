@@ -25,8 +25,9 @@ it("[R2-D18] loads sandbox configuration with the formal-entry nested TMPDIR", a
     expect(scope.services.runtime).toBeDefined();
   } finally {
     vi.unstubAllEnvs();
-    if (scope) {
-      await scope.close();
+    try {
+      await scope?.close();
+    } finally {
       await rm(nestedTmpdir, { recursive: true, force: true });
     }
   }
