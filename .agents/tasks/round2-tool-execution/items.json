@@ -797,6 +797,27 @@
         "on": "2026-10-02",
         "why": "G20：放宽方案整个撤掉；BL-20261001-002 的恢复工作"
       }
+    },
+    {
+      "id": "R2-D22",
+      "title": "agent-service 两个测试文件的首条用例在 Hermes 上超过 5 秒期限（干净版本也出现，原因待查）",
+      "goal_ref": ["G3", "G29"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D22",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-03",
+        "why": "stop-05：干净 556d4b2 也超时（pi-coding-program 首例 5365ms），r56 模块重跑 pi-coding-program 首例 6410ms、production-http-composition 首例 5066ms（c1b3d62 时 1972ms）；阻塞 R2-A1"
+      }
     }
   ],
   "fingerprint": {
