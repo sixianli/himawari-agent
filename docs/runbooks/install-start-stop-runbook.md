@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:eaa5afd4d1b722888836f7fc7ed84c0a7ac12fc3ef6603ec12fb5536c48b8a2f"
+contract_sha256: "sha256:d0a089301ef9566aca9a1a43b4d9741970442a21a9f3141c502e0312001d454d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -10,7 +10,7 @@ date: "2026-08-27"
 
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
-当前开发测试遵循 [ADR 0046](../adr/0046-tests-back-on-hermes.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
+当前开发测试遵循 [ADR 0047](../adr/0047-test-checkout-on-hermes-nvme.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md]
 
 ## 阅读导航
 
@@ -493,14 +493,14 @@ apparmor_parser -R /etc/apparmor.d/bwrap && rm -- /etc/apparmor.d/bwrap
 apparmor_parser -R /etc/apparmor.d/bwrap-0.11.2 && rm -- /etc/apparmor.d/bwrap-0.11.2
 ~~~
 
-撤销后保存 `aa-status` 和全局开关的只读检查结果。全局开关保持原值；原值为 `1` 时，对应普通用户程序会再次受到限制。撤销规则不删除 0.11.2 程序，也不清理云服务器的旧测试环境。ADR 0046 要求生产需要的 0.11.2 程序及规则继续保留；本节中的撤销命令不授予撤销生产机已有规则的权限。
+撤销后保存 `aa-status` 和全局开关的只读检查结果。全局开关保持原值；原值为 `1` 时，对应普通用户程序会再次受到限制。撤销规则不删除 0.11.2 程序，也不清理云服务器的旧测试环境。ADR 0047 要求生产需要的 0.11.2 程序及规则继续保留；本节中的撤销命令不授予撤销生产机已有规则的权限。
 
 Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArmor 行为。部署前须在实际生产机上，以最终运行账号检查实际程序版本、摘要、权限、匹配规则、全局开关和上述启动结果，并继续完成实际产品路径检查。这属于 R2-L2 的生产前提核对。云服务器不用于开发测试；生产部署或服务变更仍须逐次取得用户明确授权。2026-10-01 的旧结果只作历史记录，不能代替此次检查。本次 D10 只补文档，没有登录生产机或修改系统设置，产品启动时的自动检测仍留待第二轮以后。
 
 [SOURCE: docs/adr/0045-short-test-temp-root.md#apparmor]
 [SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
 [SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
-[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
+[SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md]
 [SOURCE: docs/assets/others/Anthropic_SRT_AI_Agent_Integration_Guide_2026-09-07.md]
 
 [↑ 返回阅读导航](#阅读导航)

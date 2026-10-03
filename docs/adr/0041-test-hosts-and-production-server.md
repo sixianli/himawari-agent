@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0046-tests-back-on-hermes.md"
+superseded_by: "docs/adr/0047-test-checkout-on-hermes-nvme.md"
 date: "2026-09-29"
 ---
 

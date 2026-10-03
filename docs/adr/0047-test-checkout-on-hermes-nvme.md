@@ -1,19 +1,20 @@
 ---
-status: superseded
+status: active
 document_type: adr
-decision_status: superseded
-supersedes: ""
-superseded_by: "docs/adr/0047-test-checkout-on-hermes-nvme.md"
-date: "2026-10-02"
+decision_status: accepted
+supersedes: "docs/adr/0046-tests-back-on-hermes.md,docs/adr/0045-short-test-temp-root.md,docs/adr/0044-tests-on-cloud-server.md,docs/adr/0043-push-every-commit-full-test-before-merge.md,docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
+superseded_by: ""
+date: "2026-10-04"
 ---
 
-# ADR 0046：测试回到 Hermes，云服务器只用于生产
+# ADR 0047：Hermes 上的测试检出和依赖放在固态盘
 
 <a id="contents"></a>
 
 ## 阅读导航
 
 - [背景](#context)
+  - [固态盘与机械盘对照](#nvme-comparison)
 - [决定](#decision)
   - [测试和部署的位置](#hosts)
   - [Hermes 上的连接、账号和目录](#storage)
@@ -28,6 +29,32 @@ date: "2026-10-02"
 <a id="context"></a>
 
 ## 背景
+
+本 ADR 取代 [ADR 0046](0046-tests-back-on-hermes.md)。只改了一处：Hermes 上测试用的**源码检出和 npm 依赖**从机械盘 `/data` 搬到固态根盘（见[Hermes 上的连接、账号和目录](#storage)）。其余规定（测试在 Hermes、云服务器只做生产、时限不放宽、测试层级和触发条件、提交与推送）原样沿用 ADR 0046，为了让现行规定集中在一份文档里，下面全文重写一遍。
+
+<a id="nvme-comparison"></a>
+
+### 2026-10-03 的固态盘与机械盘对照
+
+2026-10-03 第二轮工具执行排查里，几次测试超时都卡在“从磁盘加载模块”这一步：agent-service 两个测试文件的第一条用例超过 5 秒期限（R2-D22），`prepared-file-runner` 的子进程 20 秒内没加载完模块（D2 同类）。当时 Hermes 的 `/data` 是机械盘（`sda`，rotational=1），机器上的其他服务在没有测试时也持续往这块盘写（10 秒约 10 MB、磁盘忙 13.6%），内存已经用到交换空间，文件缓存容易被挤掉。
+
+用户选择先做对照再定（第二轮长任务 `goal.md` 的 G32）：
+
+> 先对照再定（推荐）：把测试代码临时复制到固态盘的 /tmp，和 /data 上的原件各跑 3 次刚才超时的测试，用完就删。如果固态盘上稳定通过、/data 上超时，就把测试代码和依赖长期放到固态盘（构建产物、报告和证据仍放 /data），并修改 AGENTS.md 和 ADR 0046。
+
+对照在提交 `ef56d36` 上进行：机械盘原件和固态盘副本交替各跑 3 次。每次运行前，用 `posix_fadvise(POSIX_FADV_DONTNEED)`（普通用户可用的“把这个文件从缓存里丢掉”的系统调用）把被测检出的文件清出页缓存，保证两边每次都从磁盘冷读。结果（单位毫秒）：
+
+| 用例 | 机械盘 `/data`（3 次） | 固态盘副本（3 次） |
+| --- | --- | --- |
+| agent-service `pi-coding-program` 首例（期限 5000） | 5022、5582、5938，**三次都超时** | 3083、2902、2943，都通过 |
+| agent-service HTTP 组合首例（期限 5000） | 4325、4045、3692 | 2216、2232、1897 |
+| agent-service 整个模块 | 419/1，三次各 1 项超时；45–47 秒 | 420/0；36–38 秒 |
+| `prepared-file-runner` 整个文件 | 13/0；82–83 秒 | 13/0；68 秒 |
+| D15 三条完整归档安装用例（期限 30000） | 26447–28819 | 26423–26903 |
+
+固态盘上三组测试三次全部通过，机械盘上每次都有超时，满足用户定下的条件。对照也说明了搬盘解决不了的部分：固态盘上 `pi-coding-program` 首例仍要约 3 秒；D15 归档用例两边都要 26–29 秒，慢在归档解包、三万多个文件的安装和校验本身，与检出放在哪块盘基本无关；`prepared-file-runner` 两边都在 4.4–4.6 秒内通过，没有复现 20 秒超时。这些问题仍作为缺陷单独修复。原始数据在 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r58/`。
+
+### ADR 0046 的背景
 
 [ADR 0045](0045-short-test-temp-root.md) 规定测试在云服务器 `84.247.157.41` 上以普通用户 `himawari-test` 运行，Hermes（局域网里的 Linux 服务器）不再使用。
 
@@ -68,14 +95,15 @@ date: "2026-10-02"
 | 内容 | 放在哪里 |
 | --- | --- |
 | 运行测试的账号 | SSH 配置里的登录账号；不新建账号，不用 sudo 跑测试 |
-| 源码检出、npm 依赖、固定工具链、浏览器、构建产物、日志、测试报告和保留的证据 | 机械盘上本任务的目录，例如第二轮工具执行排查用 `/data/hermes/himawari/tool-audit-round2/` |
+| 源码检出和它的 npm 依赖（`node_modules`） | 固态根盘上登录账号家目录里本任务的目录，例如 `~/himawari-tests/round2/source`；用 `git bundle` 同步，不在服务器上改代码 |
+| 固定工具链、浏览器、构建产物、日志、测试报告和保留的证据 | 机械盘上本任务的目录，例如第二轮工具执行排查用 `/data/hermes/himawari/tool-audit-round2/`；构建入口用 `--output` 把产物写到这里，不写进固态盘上的检出 |
 | 测试**运行中**产生的临时数据：SQLite 文件、socket、产品路径测试安装、测试进程的 `TMPDIR` | 每次运行用 `mktemp -d /tmp/hXXXX`（按模板新建一个名字末尾随机的目录）新建的 10 字节独占目录，权限 0700；同时设为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR` |
 
-临时目录放在根盘，是因为它在固态盘上：2026-09-30 在机械盘上跑 unit 组，2,144 项里有 67 项因同步写入慢而超时（[ADR 0042](0042-hermes-test-scratch-on-root-disk.md)）。临时目录必须是 10 字节的短路径，原因见 [ADR 0045 的存放规则](0045-short-test-temp-root.md#storage)：产品路径测试里最长的 Unix 套接字路径比临时根多 95 字节，而 Linux 上限是 107 字节。
+源码检出和依赖放在固态盘，是因为测试启动时要读几万个小文件，机械盘在其他服务持续写入时冷读太慢，见[对照结果](#nvme-comparison)。临时目录放在根盘，同样是因为它在固态盘上：2026-09-30 在机械盘上跑 unit 组，2,144 项里有 67 项因同步写入慢而超时（[ADR 0042](0042-hermes-test-scratch-on-root-disk.md)）。临时目录必须是 10 字节的短路径，原因见 [ADR 0045 的存放规则](0045-short-test-temp-root.md#storage)：产品路径测试里最长的 Unix 套接字路径比临时根多 95 字节，而 Linux 上限是 107 字节。
 
 根盘空间小，下面几条规则继续执行：
 
-1. **跑之前查空间。** 每次运行前用 `df` 检查根盘，可用空间低于 10 GiB 就不启动，写停止文件说明。
+1. **跑之前查空间。** 每次运行前用 `df` 检查根盘，可用空间低于 10 GiB 就不启动，写停止文件说明。固态盘上的检出和依赖约 1 GiB，长期占用这部分空间；任务结束、检出不再需要时删除它。
 2. **记录峰值。** 记录临时目录的最大占用和根盘的最低可用空间，写进这次运行的证据。
 3. **跑完就收走、删掉。** 需要保留的失败现场先复制到机械盘上的证据目录，再删除这次运行的临时目录。删除前按 `AGENTS.md` 的 “Disk Space Hygiene” 核对没有进程还在用它。
 4. **只删自己建的目录。** `/tmp` 是公共目录，只能删除本次运行自己创建的 `/tmp/h*` 目录。
@@ -133,12 +161,23 @@ date: "2026-10-02"
 
 ## 比较过的方案
 
-### 方案 A：测试回到 Hermes，云服务器只做生产（采用）
+### 方案 A：检出和依赖放固态盘，其余沿用 ADR 0046（采用）
+
+- 好处：冷启动时读模块不再和其他服务抢机械盘，对照中 agent-service 模块从 45–47 秒降到 36–38 秒，首例超时消失。
+- 代价：根盘长期多占约 1 GiB，离 10 GiB 的开跑下限更近；构建产物要显式写到 `/data`。
+
+### 方案 B：检出留在机械盘，只改测试写法
+
+- 不采用：对照中机械盘上每次都有首例超时；只改测试写法躲开加载时间，不能处理子进程这类无法移出单条用例计时的加载。
+
+### ADR 0046 比较过的方案
+
+#### 测试回到 Hermes，云服务器只做生产（采用）
 
 - 好处：Hermes 的固态根盘同步写入快，完整测试在原有时限内能跑完，不需要放宽时限；测试和生产分在两台机器上，测试不会挤占生产机的资源，也不会误碰生产目录。
 - 代价：Hermes 根盘只剩约 14 GiB，每次运行都要查空间；Hermes 上还有其他服务，测试负载会和它们相互影响；Hermes 是 Ubuntu 22.04，生产机特有的问题（例如 24.04 的 AppArmor 限制）要在部署时另外验证。
 
-### 方案 B：继续在云服务器上测试并放宽时限
+#### 继续在云服务器上测试并放宽时限
 
 - 不采用：用户决定云服务器只用于生产。
 
@@ -147,6 +186,11 @@ date: "2026-10-02"
 <a id="consequences"></a>
 
 ## 后果
+
+- 本 ADR 生效后，`AGENTS.md` 的 “Test and Production Hosts” 等段落改为引用本 ADR，并写明检出和依赖放在固态盘；ADR 0046 标为被取代。
+- 第二轮工具执行排查里，Hermes 上的检出从 `/data/hermes/himawari/tool-audit-round2/r30/source` 迁到固态盘；`r30/` 下的工具链、浏览器和证据不动。
+
+以下为 ADR 0046 的后果，原样保留：
 
 - `AGENTS.md` 的 “Test and Production Hosts”、“Test Trigger Timing”、“Pushing Commits”、“Disk Space Hygiene” 改为引用本 ADR，原 “Cloud Test Server Connectivity” 改为 Hermes 的连接规则。
 - 第二轮工具执行排查的条目 R2-E2（云端放宽时限）按用户决定撤回；各条目完成条件里的测试主机从云服务器改为 Hermes。
@@ -161,7 +205,8 @@ date: "2026-10-02"
 
 ## 关联文档
 
-- 被取代的决定：[SOURCE: docs/adr/0045-short-test-temp-root.md]
+- 被取代的决定：[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
+- ADR 0046 取代的决定，现在一并由本 ADR 取代：[SOURCE: docs/adr/0045-short-test-temp-root.md]
 - 更早的测试位置和测试时机决定，原先由 ADR 0045 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以它们的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0044-tests-on-cloud-server.md]、[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]、[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
 - 测试时限的放宽与撤销：[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md]
 - 生产机的 bwrap 前提：[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
