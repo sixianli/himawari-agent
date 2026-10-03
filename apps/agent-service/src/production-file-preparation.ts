@@ -15,15 +15,18 @@ import { preparePiFileMutation } from "@himawari-agent/runtime-pi";
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 /** Runs before reservation: only a frozen snapshot and private candidate files.
  * Admission still checks live authority and the original target version afterward. */
-export async function prepareProductionFile(input: {
-  readonly grant: HostDirectoryGrant;
-  readonly target: SandboxFileTarget;
-  readonly tool: "write" | "edit";
-  readonly toolCallId: string;
-  readonly parameters: Readonly<Record<string, unknown>>;
-  readonly resourceCeiling: CapabilityResourceCeiling;
-  readonly signal?: AbortSignal;
-}) {
+export async function prepareProductionFile(
+  input: {
+    readonly grant: HostDirectoryGrant;
+    readonly target: SandboxFileTarget;
+    readonly tool: "write" | "edit";
+    readonly toolCallId: string;
+    readonly parameters: Readonly<Record<string, unknown>>;
+    readonly resourceCeiling: CapabilityResourceCeiling;
+    readonly signal?: AbortSignal;
+  },
+  prepare: typeof preparePiFileMutation = preparePiFileMutation,
+) {
   const { signal, ...snapshot } = input;
   input = { ...structuredClone(snapshot), ...(signal ? { signal } : {}) };
   signal?.throwIfAborted();
@@ -52,7 +55,7 @@ export async function prepareProductionFile(input: {
     if (text.includes("\0") || scanMachineSecrets(text).length)
       throw new Error("PI_TEXT_READ_REJECTED");
   }
-  const prepared = await preparePiFileMutation({
+  const prepared = await prepare({
     tool: input.tool,
     toolCallId: input.toolCallId,
     cwd: input.grant.displayPath,

@@ -16,6 +16,12 @@ const slots = {
   loadCount: 6,
   activeLoadStart: 7,
   loadFailureCount: 8,
+  readyHeapUsed: 9,
+  readyHeapTotal: 10,
+  readyExternal: 11,
+  readyArrayBuffers: 12,
+  readyRss: 13,
+  readyLoadCount: 14,
 };
 const records = [];
 let currentCase = {};
@@ -49,13 +55,15 @@ export function wrapPiPreparationWorker(Worker) {
         super(filename, options);
         return;
       }
-      const shared = new BigInt64Array(new SharedArrayBuffer(9 * BigInt64Array.BYTES_PER_ELEMENT));
+      const shared = new BigInt64Array(new SharedArrayBuffer(15 * BigInt64Array.BYTES_PER_ELEMENT));
       const record = {
         ...currentCase,
         id: randomUUID(),
         target,
         processId: process.pid,
         parentThreadId: workerThreads.threadId,
+        mode: options?.workerData?.prewarm === true ? "preheated" : "cold",
+        processRssBefore: process.memoryUsage().rss,
         tool: options?.workerData?.tool,
         toolCallId: options?.workerData?.toolCallId,
         events: [{ stage: "creation", ...timestamp() }],
@@ -73,19 +81,56 @@ export function wrapPiPreparationWorker(Worker) {
       }
       record.workerThreadId = this.threadId;
       record.events.push({ stage: "created", ...timestamp() });
+      record.createdAtMs = Number(BigInt(record.events[0].monotonicNs)) / 1e6;
+      if (record.mode === "cold")
+        record.startBudgetAtMs = Number(BigInt(record.events[1].monotonicNs)) / 1e6;
+      this.piPreparationRecord = record;
       records.push(record);
       this.on("online", () => record.events.push({ stage: "online", ...timestamp() }));
       this.on("message", (message) => {
-        if (message?.kind === "started") {
+        if (message?.kind === "ready") {
+          const observed = timestamp();
+          record.readyAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
+          record.processRssAtReady = process.memoryUsage().rss;
+          record.events.push({ stage: "ready", ...observed });
+        } else if (message?.kind === "started") {
           record.events.push({ stage: "started", ...timestamp() });
         } else if (typeof message?.ok === "boolean") {
-          record.events.push({ stage: "result", ok: message.ok, ...timestamp() });
+          const observed = timestamp();
+          record.resultAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
+          record.events.push({ stage: "result", ok: message.ok, ...observed });
         }
       });
       this.on("error", (error) => {
         record.events.push({ stage: "error", code: error.code ?? null, ...timestamp() });
       });
       this.on("exit", (code) => record.events.push({ stage: "exit", code, ...timestamp() }));
+    }
+
+    postMessage(...arguments_) {
+      const record = this.piPreparationRecord;
+      if (record && arguments_[0]?.kind === "input") {
+        const observed = timestamp();
+        record.tool = arguments_[0].input?.tool;
+        record.toolCallId = arguments_[0].input?.toolCallId;
+        record.handoffAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
+        if (record.mode === "preheated") record.startBudgetAtMs = record.handoffAtMs;
+        record.loadCountAtHandoff = Atomics.load(record.shared, slots.loadCount).toString();
+        record.events.push({ stage: "handoff", ...observed });
+      }
+      return super.postMessage(...arguments_);
+    }
+
+    terminate() {
+      return super.terminate().then((code) => {
+        const record = this.piPreparationRecord;
+        if (record) {
+          const observed = timestamp();
+          record.terminateCompletedAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
+          record.events.push({ stage: "terminate-completed", code, ...observed });
+        }
+        return code;
+      });
     }
   };
 }
@@ -133,6 +178,16 @@ if (enabled && !workerThreads.isMainThread) {
     Atomics.store(shared, slots.preload, process.hrtime.bigint());
     globalThis[Symbol.for("himawari.test.piPreparationBody")] = () => {
       Atomics.store(shared, slots.body, process.hrtime.bigint());
+      const memory = process.memoryUsage();
+      for (const [field, slot] of Object.entries({
+        heapUsed: slots.readyHeapUsed,
+        heapTotal: slots.readyHeapTotal,
+        external: slots.readyExternal,
+        arrayBuffers: slots.readyArrayBuffers,
+        rss: slots.readyRss,
+      }))
+        Atomics.store(shared, slot, BigInt(memory[field]));
+      Atomics.store(shared, slots.readyLoadCount, Atomics.load(shared, slots.loadCount));
     };
     let loadDepth = 0;
     registerHooks({

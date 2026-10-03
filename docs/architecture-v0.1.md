@@ -437,6 +437,32 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 生产 Run 输入将配置中的 `deadlines.runMs` 转为首次执行开始时间和绝对截止时间，随受保护快照保存。恢复可采用更短的当前配置限制，但不能超过首次冻结的截止时间；缺少截止时间的旧快照拒绝执行，不能通过重新生成快照获取新预算。协调器在截止时请求 Pi/Worker 停止，并拒绝迟到的完成事件；运行中断仍进入既有待核实恢复流程。截止时间也传入 Pi 工具调用，Worker 请求取父 Run 截止、Handle 到期和工具资源上限三者中的最早时间。运行正常结束会清除计时器。取消完成仍依赖适配器遵守取消协议及自身 I/O 截止限制，这不是对任意挂死进程的强制终止保证。
 
+<a id="pi-file-preparation"></a>
+
+#### Pi 固定文件准备线程
+
+固定 `write/edit` 的候选计算继续复用 Pi 的参数规范化、编辑匹配和工具结果，Himawari 只提供不可变文件快照、受治理的 Operations 和线程生命周期。Agent Service 在安装声明包含 `pi-coding-tool@3` 时创建 [Pi 准备线程池](../packages/runtime-pi/src/pi-file-preparation-pool.ts)。线程池最多保留一个未消费的预热线程，预热只加载同一套 Pi 模块，不接收调用参数、文件内容或目标路径。所有实际请求均通过 `postMessage({ kind: "input", input })` 交接；每个线程只接收一次输入。
+
+空闲预热线程使用 256 MiB 的请求内存额度，V8 `resourceLimits` 分别为 old generation 192 MiB、young generation 32 MiB、code range 16 MiB 和 stack 16 MiB，`execArgv` 为 `[]`。只有请求的四项 V8 上限完全一致且线程已 `ready` 时，线程池才消费该线程。没有可用线程、预热未完成或上限不匹配时，请求立即走原冷启动路径；线程池不排队，也不等待预热。线程消费后，线程池等待该请求结束与线程退出，再补充一个预热线程。
+
+预热有独立的 8 秒上限。同一预热失败序列最多尝试三次，第二、三次分别等待 1 秒、2 秒；失败线程先终止，再安排重试。线程发出 `ready` 不重置失败计数，消费该线程并完成请求停止后才重置。预热失败记录 `pi.preparation.warmup_failed`，后续请求仍可冷启动。实际请求继续使用 `min(maxWallTimeMs, maxCpuTimeMs)`；冷启动预算覆盖新线程的模块加载，预热请求从实际输入交接开始计时，结果返回和 `terminate()` 完成均须在原预算内。成功、失败、取消和超时均等待线程退出后才结束准备调用。Agent Service 的关闭生命周期调用线程池 `close()`，取消活动请求并等待它拥有的全部线程退出。
+
+<a id="pi-file-preparation-memory"></a>
+
+#### 准备线程实测内存
+
+2026-10-03 在 Hermes 上，对当前 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于本批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加本批 D19 补丁，准确工作区摘要与逐次读回见[五次原始汇总](../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json)。
+
+| 观察项 | 最小（MiB） | 中位数（MiB） | 最大（MiB） |
+| --- | ---: | ---: | ---: |
+| 进程 RSS 增量 | 108.746 | 110.910 | 114.355 |
+| 线程 `heapUsed` | 60.384 | 60.444 | 63.351 |
+| 线程 `heapTotal` | 91.410 | 92.910 | 93.160 |
+| 线程 `external` | 10.705 | 10.705 | 10.714 |
+| 线程 `arrayBuffers` | 0.126 | 0.126 | 0.134 |
+
+RSS 是整个测试进程实际驻留的内存，增量来自创建前和 `ready` 后的独立父端读回，包含同时发生的服务初始化及垃圾回收；它估计单个预热线程带来的进程增量，不是生产服务的精确内存资格。线程堆读回是另一项观察，不能与 RSS 相加或相互替代。上述 256 MiB 与四项 V8 上限不能作为 RSS 硬上限。Mac 与生产主机的内存、时序及沙箱行为仍未验证。
+
 ### Run coordination and scoped worker delegation
 
 `RunCoordinator` 只依赖产品拥有的 `ContextFormationPort`、`WorkerRunPort`、`AgentRuntimePort`、`RunLifecyclePort`、`RunCheckpointStore` 和 Session Trace。它按 `accepted → building_context → running → terminal/reconciliation` 驱动 Run，并把 Owner 取消同时传播给当前 Runtime 与活跃 Worker。Runtime、Worker 和 Pi Session 都不能自行写产品 Run 终态。Pi custom tool 返回未知结果或执行阶段抛错时，适配器复用 Pi `Agent.abort()` 停止当前循环，禁止后续工具和模型请求，并产出 `runtime.result_unknown`。协调器先持久保存待核实 checkpoint，再把 Run 转入 `reconciling_external_result`；即使随后收到最终回答也不能发布成功，恢复也不重跑该执行。执行异常只记录稳定代码，不把原始错误文本传给模型。

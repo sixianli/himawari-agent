@@ -40,3 +40,50 @@ it.each(["timeout", "cancel"] as const)(
     }
   },
 );
+
+it.each(["timeout", "cancel"] as const)(
+  "[R2-D19] keeps the request bound active until termination completes on %s",
+  async (reason) => {
+    const worker = new Worker(
+      `const {parentPort} = require("node:worker_threads");
+       parentPort.postMessage({ok:true,value:{bytes:new Uint8Array([1]),result:{isError:false}}});
+       setInterval(() => {}, 1000);`,
+      { eval: true },
+    );
+    const terminate = worker.terminate.bind(worker);
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    let observeStopping!: () => void;
+    const stopping = new Promise<void>((resolve) => {
+      observeStopping = resolve;
+    });
+    const stop = vi.spyOn(worker, "terminate").mockImplementation(async () => {
+      observeStopping();
+      await stopGate;
+      return terminate();
+    });
+    const controller = new AbortController();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    try {
+      const result = awaitPiPreparationWorker(worker, 1000, controller.signal);
+      const rejection = expect(result).rejects.toThrow(
+        reason === "timeout" ? "PI_PREPARATION_TIME_LIMIT" : "PI_PREPARATION_CANCELLED",
+      );
+      await stopping;
+      expect(worker.threadId).toBeGreaterThan(0);
+      if (reason === "timeout") vi.advanceTimersByTime(1000);
+      else controller.abort();
+      releaseStop();
+      await rejection;
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(worker.threadId).toBe(-1);
+    } finally {
+      releaseStop();
+      vi.useRealTimers();
+      stop.mockRestore();
+      await terminate();
+    }
+  },
+);

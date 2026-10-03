@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:258fbc1e6dfef537e3267258f90c8649aafade7f27bd0a1995dee10b0a680a9b"
+contract_sha256: "sha256:94556b2160c2c4bc9a6f28b8c00f6ad16c3f994b316aa7ce86d4c516c38c6df5"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -57,6 +57,8 @@ date: "2026-09-11"
 - apps/agent-service/src/production-file-preparation.ts
 - packages/runtime-pi/src/prepare-file-mutation.ts
 - packages/runtime-pi/src/prepare-file-mutation-worker.ts
+- packages/runtime-pi/src/pi-file-preparation-pool.ts
+- packages/runtime-pi/src/index.ts
 - packages/persistence-sqlite/src/migrations/0037_fixed_file_recovery_artifacts.sql
 - apps/agent-service/src/production-sandbox-file-recovery.ts
 - apps/agent-service/src/production-sandbox-tool-result.ts
@@ -227,6 +229,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 当前目标是 `hermes-home`，SSH 为 `hermes`，Cloudflare 认证无法及时完成时使用已授权的 `hermes-tailscale-breakglass`。公开入口是 `https://himawari.siyi.win`，保留现有 Cloudflare Access 和 tunnel，只更新本机 127.0.0.1:18082 的产品服务。不得改变其他账号、网络规则或共享磁盘挂载。
 
 ## Live-State Preflight
+
+核对候选完整安装包含[预热准备线程](#pi-preparation-prewarm)的 pool 模块、准备入口、线程入口及 runtime-pi 导出。本次运行时变更须走完整安装资格流程；切换前的正常停止须等待该池拥有的全部线程退出，再按下述步骤检查旧服务进程、socket 和锁。
 
 只读核对主机名、Linux/架构、`findmnt /data` 与磁盘可用空间；核对 `systemctl cat/status himawari.service`（受保护迁移后的系统级服务，运行账号必须为 `himawari`） 的真实单元、PID、安装前缀和工作目录。检查生产配置的 Owner/Agent/deployment 与现有 authority、数据库记录一致，记录活动 Run 和已发生/预留费用，禁止输出配置全文或密钥。确认配置、state、qualifications 均是规范路径且权限安全，旧发布目录保留且可回读。
 
@@ -441,7 +445,15 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 重新绑定只允许原批次关联完整、未准入且当前权限有效的队列，固定文件候选的真实 Worker 恢复联合验收仍待完成。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 
-准备计算的线程入口必须随安装包交付；线程采用请求的时间预算、V8 堆上限和 Stop 信号，V8 堆上限不代表 OS 总内存资格。停止只在线程终止后返回，不能把主调用返回当作线程已停止。
+<a id="pi-preparation-prewarm"></a>
+
+**预热准备线程**
+
+准备入口、线程入口和 [Pi 准备线程池](../../packages/runtime-pi/src/pi-file-preparation-pool.ts)必须随同一安装包交付。Agent Service 在安装声明包含 `pi-coding-tool@3` 时最多保留一个未消费的预热线程，预热只加载 Pi 模块，不接收请求输入。该线程采用 256 MiB 额度，对应 V8 old generation 192 MiB、young generation 32 MiB、code range 16 MiB 和 stack 16 MiB，`execArgv` 为 `[]`。只有已 `ready` 且四项上限与请求完全相同的线程才能接收该请求；其余请求立即冷启动，不排队等待预热。每个线程只接收一次实际输入，消费后的补充发生在该请求与线程停止完成之后。
+
+预热上限为 8 秒。同一预热失败序列最多尝试三次，第二、三次分别等待 1 秒、2 秒；失败线程先终止再重试，消费 ready 线程并完成请求停止后才重置失败计数。`pi.preparation.warmup_failed` 只说明预热失败，请求仍走冷启动。实际准备预算保持 `min(maxWallTimeMs, maxCpuTimeMs)`：冷启动计入模块加载，预热请求从实际输入交接开始计时，结果与线程终止均须在预算内完成。验收须覆盖无输入预热、上限不匹配时冷启动、拒绝第二份输入、取消和超时。服务关闭须等待池拥有的全部线程退出；准备调用返回、空闲槽消失或进程锁释放不能分别代替这一检查。
+
+Hermes r54 五次独立测量的额外进程 RSS 中位数为 110.910 MiB、最大 114.355 MiB，容量安排须计入这一个空闲预热线程；测量条件与边界见[架构文档的实测内存段](../architecture-v0.1.md#pi-file-preparation-memory)。验收分别记录空闲时进程 RSS（实际驻留内存）增量和线程 ready 时的堆读回；V8 上限不是 RSS 硬上限。备份、恢复或权威迁移不搬运进程内预热线程，也不因预热重新授予调用权限。
 
 确定尚未派发的固定写入版本冲突返回 `FILE_VERSION_CONFLICT`，原调用重放只返回已知未执行事实。Pi 现有循环中的新调用携带受保护历史关联，宿主必须用原请求、未派发诊断及结果记录复核；关联不授予权限，新内容仍经原 ActionPolicy，确切单次批准不能扩大。备份需保留 `runtime-file-read:*:conflict-lineage` 与原工具诊断/结果 Payload。循环的受保护进度状态新增冲突计数；同一 Run 连续工作中累计四次版本冲突后停止继续调用工具并进入原有结果说明路径，读取或更换内容不清零。不能用忽略该计数或关联的旧运行时恢复此类 continuation。Worker 已派发后失败、结果未知和跨 boot 自动重绑定仍不得冒充可自动重试。
 

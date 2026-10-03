@@ -67,6 +67,7 @@ import {
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
+import type { preparePiFileMutation } from "@himawari-agent/runtime-pi";
 import {
   importProductionCopySave,
   prepareProductionCopySave,
@@ -113,6 +114,8 @@ export async function createProductionSandboxServices(options: {
   readonly ids: IdGeneratorPort;
   readonly workerSupport?: () => SandboxExecutionSupport | undefined;
   readonly taskEnvironments?: ProductionTaskEnvironments;
+  readonly piFilePreparation?: typeof preparePiFileMutation;
+  readonly createPiFilePreparation?: () => typeof preparePiFileMutation;
 }) {
   const { configuration, repository, protector, clock, ids } = options;
   if (!configuration.capabilityDeployment) return undefined;
@@ -125,6 +128,18 @@ export async function createProductionSandboxServices(options: {
     (entry) => entry.binding.kind === "sandbox",
   );
   if (sandboxEntries.length === 0) return undefined;
+  const hasPreparedFileContract = sandboxEntries.some(
+    (entry) =>
+      entry.binding.kind === "sandbox" &&
+      entry.binding.value.operationBindings?.some(
+        ({ contract }) =>
+          contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+          contract.version === PI_PREPARED_FILE_CONTRACT.version,
+      ),
+  );
+  const piFilePreparation =
+    options.piFilePreparation ??
+    (hasPreparedFileContract ? options.createPiFilePreparation?.() : undefined);
   const modelIdentity = (ref: string) => {
     const model = configuration.modelDescriptors.find(
       (model) => model.ref === ref && model.role !== "embedding",
@@ -986,21 +1001,24 @@ export async function createProductionSandboxServices(options: {
           throw new Error("SANDBOX_PREPARED_FILE_CONTRACT_CHANGED");
         frozenScope = sandboxScopeSchema.parse({
           ...frozenScope,
-          preparedFile: await prepareProductionFile({
-            ...(signal ? { signal } : {}),
-            grant,
-            target: frozenScope.fileTarget,
-            tool: input.operation,
-            toolCallId: scope.toolCallId,
-            parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
-            resourceCeiling: {
-              ...input.resourceCeiling,
-              maxWallTimeMs: Math.min(
-                input.resourceCeiling.maxWallTimeMs,
-                Date.parse(expiresAt) - Date.parse(clock.now()),
-              ),
+          preparedFile: await prepareProductionFile(
+            {
+              ...(signal ? { signal } : {}),
+              grant,
+              target: frozenScope.fileTarget,
+              tool: input.operation,
+              toolCallId: scope.toolCallId,
+              parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
+              resourceCeiling: {
+                ...input.resourceCeiling,
+                maxWallTimeMs: Math.min(
+                  input.resourceCeiling.maxWallTimeMs,
+                  Date.parse(expiresAt) - Date.parse(clock.now()),
+                ),
+              },
             },
-          }),
+            piFilePreparation,
+          ),
         });
       }
     }

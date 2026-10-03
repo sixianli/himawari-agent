@@ -96,39 +96,60 @@ export async function computePiFileMutation(input: PiFilePreparationInput) {
  * published candidates have separate byte limits. A wall bound no greater than
  * the requested CPU allowance conservatively bounds this single JS computation.
  */
-export async function preparePiFileMutation(
-  input: PiFilePreparationInput & {
-    readonly limits: {
-      readonly maxWallTimeMs: number;
-      readonly maxCpuTimeMs: number;
-      readonly maxMemoryBytes: number;
-    };
-  },
-): Promise<Awaited<ReturnType<typeof computePiFileMutation>>> {
-  input.signal?.throwIfAborted();
-  const milliseconds = Math.min(input.limits.maxWallTimeMs, input.limits.maxCpuTimeMs);
-  const memoryMb = Math.floor(input.limits.maxMemoryBytes / 1048576);
-  if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 2147483647)
-    throw new Error("PI_PREPARATION_TIME_LIMIT");
+export type PiFilePreparationRequest = PiFilePreparationInput & {
+  readonly limits: {
+    readonly maxWallTimeMs: number;
+    readonly maxCpuTimeMs: number;
+    readonly maxMemoryBytes: number;
+  };
+};
+
+export function piPreparationResourceLimits(maxMemoryBytes: number) {
+  const memoryMb = Math.floor(maxMemoryBytes / 1048576);
   if (!Number.isSafeInteger(memoryMb) || memoryMb < 32)
     throw new Error("PI_PREPARATION_MEMORY_LIMIT");
+  return {
+    maxOldGenerationSizeMb: Math.floor(memoryMb * 0.75),
+    maxYoungGenerationSizeMb: Math.floor(memoryMb * 0.125),
+    codeRangeSizeMb: Math.floor(memoryMb * 0.0625),
+    stackSizeMb: Math.floor(memoryMb * 0.0625),
+  };
+}
+
+export function piPreparationMilliseconds(input: PiFilePreparationRequest) {
+  input.signal?.throwIfAborted();
+  const milliseconds = Math.min(input.limits.maxWallTimeMs, input.limits.maxCpuTimeMs);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 2147483647)
+    throw new Error("PI_PREPARATION_TIME_LIMIT");
+  return milliseconds;
+}
+
+export function createPiPreparationWorker(maxMemoryBytes: number, prewarm = false) {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+  return new Worker(new URL(`./prepare-file-mutation-worker.${extension}`, import.meta.url), {
+    ...(prewarm ? { workerData: { prewarm: true } } : {}),
+    execArgv: [],
+    resourceLimits: piPreparationResourceLimits(maxMemoryBytes),
+  });
+}
+
+export async function preparePiFileMutation(
+  input: PiFilePreparationRequest,
+): Promise<Awaited<ReturnType<typeof computePiFileMutation>>> {
+  const milliseconds = piPreparationMilliseconds(input);
+  const worker = createPiPreparationWorker(input.limits.maxMemoryBytes);
+  return handoffPiPreparationWorker(worker, input, milliseconds);
+}
+
+export function handoffPiPreparationWorker(
+  worker: Worker,
+  input: PiFilePreparationRequest,
+  milliseconds: number,
+) {
   const { signal, limits: _limits, ...data } = input;
-  const worker = new Worker(
-    new URL(`./prepare-file-mutation-worker.${extension}`, import.meta.url),
-    {
-      workerData: data,
-      // Do not inherit parent heap flags, which override resourceLimits.
-      execArgv: [],
-      resourceLimits: {
-        maxOldGenerationSizeMb: Math.floor(memoryMb * 0.75),
-        maxYoungGenerationSizeMb: Math.floor(memoryMb * 0.125),
-        codeRangeSizeMb: Math.floor(memoryMb * 0.0625),
-        stackSizeMb: Math.floor(memoryMb * 0.0625),
-      },
-    },
-  );
-  return awaitPiPreparationWorker(worker, milliseconds, signal);
+  return awaitPiPreparationWorker(worker, milliseconds, signal, () => {
+    worker.postMessage({ kind: "input", input: data });
+  });
 }
 
 /** Internal lifecycle seam: tests use a real busy worker to observe stop proof. */
@@ -136,31 +157,88 @@ export function awaitPiPreparationWorker(
   worker: Worker,
   milliseconds: number,
   signal?: AbortSignal,
+  handoff?: () => void,
 ): Promise<Awaited<ReturnType<typeof computePiFileMutation>>> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let stopping = false;
+    let outcome: { error: Error } | { result: Awaited<ReturnType<typeof computePiFileMutation>> };
+    const deadline = performance.now() + milliseconds;
     const finish = (error?: Error, result?: Awaited<ReturnType<typeof computePiFileMutation>>) => {
       if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      // Resolve only after the computation can no longer run.
-      void worker.terminate().then(() => {
-        if (error) reject(error);
-        else if (result) resolve(result);
-        else reject(new Error("PI_PREPARATION_INCOMPLETE"));
-      }, reject);
+      if (stopping) {
+        if (error && "result" in outcome) outcome = { error };
+        return;
+      }
+      stopping = true;
+      outcome = error
+        ? { error }
+        : result
+          ? { result }
+          : { error: new Error("PI_PREPARATION_INCOMPLETE") };
+      void stopPiPreparationWorker(worker).then(
+        () => {
+          if ("result" in outcome && performance.now() >= deadline)
+            outcome = { error: new Error("PI_PREPARATION_TIME_LIMIT") };
+          settled = true;
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          if ("error" in outcome) reject(outcome.error);
+          else resolve(outcome.result);
+        },
+        (terminationError) => {
+          settled = true;
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          reject(terminationError);
+        },
+      );
     };
     const abort = () => finish(new Error("PI_PREPARATION_CANCELLED"));
     const timer = setTimeout(() => finish(new Error("PI_PREPARATION_TIME_LIMIT")), milliseconds);
     signal?.addEventListener("abort", abort, { once: true });
     worker.once("error", (error) => finish(error));
-    worker.once("exit", () => finish(new Error("PI_PREPARATION_WORKER_EXITED")));
+    worker.once("exit", () => {
+      if (!stopping) finish(new Error("PI_PREPARATION_WORKER_EXITED"));
+    });
     worker.on("message", (message) => {
-      if (message.kind === "started") return;
+      if (message.kind === "started" || message.kind === "ready") return;
       if (message.ok) finish(undefined, message.value);
       else finish(new Error(message.error));
     });
     if (signal?.aborted) abort();
+    else {
+      try {
+        handoff?.();
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error("PI_PREPARATION_FAILED"));
+      }
+    }
   });
+}
+
+const stoppingWorkers = new WeakMap<Worker, Promise<void>>();
+
+export function stopPiPreparationWorker(worker: Worker): Promise<void> {
+  const existing = stoppingWorkers.get(worker);
+  if (existing) return existing;
+  const stopped = new Promise<void>((resolve, reject) => {
+    let terminationError: unknown;
+    const exited = new Promise<void>((exit) => {
+      if (worker.threadId === -1) exit();
+      else worker.once("exit", () => exit());
+    });
+    void worker
+      .terminate()
+      .catch((error) => {
+        terminationError = error;
+      })
+      .then(async () => {
+        await exited;
+        if (terminationError) reject(terminationError);
+        else resolve();
+      });
+  });
+  stoppingWorkers.set(worker, stopped);
+  return stopped;
 }

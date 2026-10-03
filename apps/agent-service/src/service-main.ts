@@ -53,6 +53,7 @@ import {
 } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
+  createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -376,6 +377,7 @@ export async function runAgentService(
   let modelComposition: ProductionConfiguredModelComposition | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
   let memoryWorker: ProductionMemoryWorker | undefined;
+  let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
   let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
@@ -429,6 +431,10 @@ export async function runAgentService(
     stopAccepting: () => memoryWorker?.stopAccepting(),
     drain: () => memoryWorker?.drain(),
     close: () => memoryWorker?.drain(),
+  });
+  lifecycle.register({
+    name: "pi-file-preparation",
+    close: () => piFilePreparationPool?.close(),
   });
   lifecycle.register({
     name: "worker-channels",
@@ -704,6 +710,19 @@ export async function runAgentService(
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
+      createPiFilePreparation: () => {
+        piFilePreparationPool = createPiFilePreparationPool({
+          maxMemoryBytes: 268435456,
+          onWarmupFailure: (error) => {
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "pi.preparation.warmup_failed",
+              code: stableErrorCode(error),
+            });
+          },
+        });
+        return piFilePreparationPool.prepare;
+      },
       workerSupport: () => workerSandboxSupport,
       ...(taskEnvironmentConfiguration
         ? {

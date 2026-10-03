@@ -945,6 +945,7 @@ describe("prepared file admission", () => {
         },
       );
       cleanups.push(f.close);
+      await f.waitForPiPreparationReady();
       const filename = path.join(f.host.workspace, "file.txt");
       await writeFile(filename, "before");
       const secondCall = { ...f.call, toolCallId: "second-preparation" };

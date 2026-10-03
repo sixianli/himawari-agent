@@ -11,9 +11,10 @@ import {
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import { createThreadId } from "@himawari-agent/domain";
-import type {
-  SandboxExecutionSupport,
-  SandboxOperationBinding,
+import {
+  PI_PREPARED_FILE_CONTRACT,
+  type SandboxExecutionSupport,
+  type SandboxOperationBinding,
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
@@ -23,6 +24,7 @@ import {
   PayloadUdsServer,
   WorkspaceCopyStore,
 } from "@himawari-agent/platform-node";
+import { createPiFilePreparationPool } from "@himawari-agent/runtime-pi";
 import { configuredModelDisclosureIdentity } from "../../apps/agent-service/src/production-model-disclosure.ts";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.ts";
 import {
@@ -476,33 +478,68 @@ export async function productionSandboxScope(
     ...host.capabilityDeployment,
     sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
   };
+  let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
+  let piPreparationReady = Promise.resolve();
+  const preparationWarmupFailures: Error[] = [];
+  const closePiFilePreparationPool = async () => {
+    const pool = piFilePreparationPool;
+    piFilePreparationPool = undefined;
+    await pool?.close();
+  };
   const makeServices = async () => {
-    const result = await createProductionSandboxServices({
-      configuration: {
-        ownerId: OWNER_ID,
-        agentId: AGENT_ID,
-        capabilityDeployment,
-        modelDescriptors: [model],
-      },
-      repository,
-      protector: f.protector,
-      authority: options.authority ?? (() => SERVICE_AUTHORITY),
-      fileRead: {
-        binding: async () => (fileBindingAvailable ? fileBinding : undefined),
-        authorize: async () => {
-          throw new Error("not a file workflow");
+    piPreparationReady = Promise.resolve();
+    if (
+      descriptor.contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+      descriptor.contract.version === PI_PREPARED_FILE_CONTRACT.version
+    ) {
+      let resolveReady!: () => void;
+      let rejectReady!: (error: Error) => void;
+      piPreparationReady = new Promise<void>((resolve, reject) => {
+        resolveReady = resolve;
+        rejectReady = reject;
+      });
+      void piPreparationReady.catch(() => {});
+      piFilePreparationPool = createPiFilePreparationPool({
+        maxMemoryBytes: 268435456,
+        onWarmupReady: resolveReady,
+        onWarmupFailure: (error) => {
+          preparationWarmupFailures.push(error);
+          rejectReady(error);
         },
-        issue: async () => {
-          throw new Error("unused");
+      });
+    }
+    try {
+      const result = await createProductionSandboxServices({
+        configuration: {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilityDeployment,
+          modelDescriptors: [model],
         },
-      },
-      clock,
-      ids: { next: () => `scope-id:${++counter}` },
-      workerSupport: () => workerSupport,
-      ...(options.taskEnvironments ? { taskEnvironments: options.taskEnvironments } : {}),
-    });
-    if (!result) throw new Error("composition absent");
-    return result;
+        repository,
+        protector: f.protector,
+        authority: options.authority ?? (() => SERVICE_AUTHORITY),
+        fileRead: {
+          binding: async () => (fileBindingAvailable ? fileBinding : undefined),
+          authorize: async () => {
+            throw new Error("not a file workflow");
+          },
+          issue: async () => {
+            throw new Error("unused");
+          },
+        },
+        clock,
+        ids: { next: () => `scope-id:${++counter}` },
+        workerSupport: () => workerSupport,
+        ...(piFilePreparationPool ? { piFilePreparation: piFilePreparationPool.prepare } : {}),
+        ...(options.taskEnvironments ? { taskEnvironments: options.taskEnvironments } : {}),
+      });
+      if (!result) throw new Error("composition absent");
+      return result;
+    } catch (error) {
+      await closePiFilePreparationPool();
+      throw error;
+    }
   };
   let services = await makeServices();
   if (!services) throw new Error("composition absent");
@@ -580,6 +617,8 @@ export async function productionSandboxScope(
       );
   };
   return {
+    preparationWarmupFailures,
+    waitForPiPreparationReady: () => piPreparationReady,
     capabilityDeployment,
     workspaceCopy,
     connect,
@@ -600,6 +639,7 @@ export async function productionSandboxScope(
       return services;
     },
     reopen: async () => {
+      await closePiFilePreparationPool();
       await repository.close();
       repository = await SqliteProductStateRepository.open({
         stateRoot: f.resource.stateRoot,
@@ -621,6 +661,7 @@ export async function productionSandboxScope(
       workerSupport = value;
     },
     close: async () => {
+      await closePiFilePreparationPool();
       for (const close of connections.reverse()) await close();
       await repository.close();
       await f.close();
