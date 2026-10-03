@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6839444843249426492025f2f3f7a937165a891dfd1213ab8c25108ec98eb6c2"
+contract_sha256: "sha256:fe5c2e67a7fd592f5cb78e25374e35eeadca05490e03bd09f0701e00eaf99560"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -363,7 +363,7 @@ v5 已完成后的服务恢复验收可使用 `scripts/operations/hermes-protect
 
 搜索时间标注候选使用 `hermes-search-time-qualify.py --qualify` 和 `hermes-search-time-cutover.py --apply --receipt <本次签署摘要>`，构建及资格目录分别为 `2026-09-13-search-time`、`2026-09-13-search-time-installation`。入口绑定当前 `4c2ffd5d…` 安装、完整源码归档和候选文件摘要。此候选只为检索源中带 `Z` 的发布时间明确标注 UTC，不改模型连接、路由、日期值或引用正文；日期缺少时区时不推断。先以锁定的 npm 11.8.0 和原锁文件执行完整 `npm ci`，保留工作区自己的依赖，核对 `packages/platform-node/node_modules/zod` 为 4.4.3，不能只复制根目录依赖而遗漏 MCP SDK 使用的版本。候选 SQLite 预编译模块与原本本地编译模块字节不同，须通过数据库测试及六组实际安装验证后再签署。复制资格源码时仅忽略根依赖目录并单独复制，保留工作区内依赖；全部符号链接继续接受既有内部路径验证。切换前确认无活动 Run、无未清理作业，创建并验证 schema 32 备份，只切换安装和启动配置；原安装保留在 `2026-09-13-before-search-time`。不重导历史、不覆盖数据库，首次启动前沿用安装恢复，首次启动尝试后保留现场。切换后在已授权合成旧对话中核对本轮搜索、源日期及回答，不能以静态时区标注测试代替实际回答验证。
 
-2026-09-13 的历史完整测试使用 `/data/himawari-tests-20260913` 中的独立临时目录和 `umask 077`。当前开发验证按 [ADR 0047 的存放规则](../adr/0047-test-checkout-on-hermes-nvme.md#storage)：在 Hermes 上运行，源码检出和它的 npm 依赖放在固态根盘上登录账号家目录里的任务目录，工具链、构建产物、报告和证据留在机械盘 `/data` 上的任务目录；运行时临时数据在固态根盘上每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限），通过 `HIMAWARI_TEST_TEMP_ROOT` 和同根的 `TMPDIR` 指定，运行前和运行中保留至少 10 GiB 根盘余量，记录采样峰值，转存现场后清理。使用正式 `vitest.workspace.ts` 和项目原有时限，不设置 `HIMAWARI_TEST_TIMEOUT_MS`（该变量的撤销见 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。测试不读写 Hermes 上原有 Himawari 服务的目录和数据，不停止或重启它。不改变 SQLite 同步设置，不用 `/dev/shm` 替代磁盘。测试不读写 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari`，不启动系统服务。此规则不移动历史部署数据库或改变冻结探针的安装身份；实际部署资格仍按本次具体授权及最终安装路径核对。
+2026-09-13 的历史完整测试使用 `/data/himawari-tests-20260913` 中的独立临时目录和 `umask 077`。当前开发验证按 [ADR 0047 的存放规则](../adr/0047-test-checkout-on-hermes-nvme.md#storage)：在 Hermes 上运行，源码检出、它的 npm 依赖以及写进检出 `.ci-output/` 的构建和测试输出放在固态根盘上登录账号家目录里的任务目录，工具链和保留的报告、证据放在机械盘 `/data` 上的任务目录；运行时临时数据在固态根盘上每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限），通过 `HIMAWARI_TEST_TEMP_ROOT` 和同根的 `TMPDIR` 指定，运行前和运行中保留至少 10 GiB 根盘余量，记录采样峰值，转存现场后清理。使用正式 `vitest.workspace.ts` 和项目原有时限，不设置 `HIMAWARI_TEST_TIMEOUT_MS`（该变量的撤销见 [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。测试不读写 Hermes 上原有 Himawari 服务的目录和数据，不停止或重启它。不改变 SQLite 同步设置，不用 `/dev/shm` 替代磁盘。测试不读写 `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari`，不启动系统服务。此规则不移动历史部署数据库或改变冻结探针的安装身份；实际部署资格仍按本次具体授权及最终安装路径核对。
 
 中文正文中的自动来源链接修复使用 `hermes-source-links-qualify.py --qualify` 与 `hermes-source-links-cutover.py --apply --receipt <本次签署摘要>`，构建目录为 `2026-09-13-source-links`。候选只更换 `share/control-center` 的 HTML 和主 JavaScript 资源；运行时目录每个文件与已安装搜索时间候选相同，资格入口强制摘要仍为 `a9b48f67…`。自动识别的网址在中文标点前结束，剩余正文继续由 Marked 解析；显式 Markdown 地址和原生 Unicode 路径不截断。停服前沿用页面检查、真实账号保护和六组资格探针，切换入口绑定当前搜索时间安装和本次签署，创建并验证 `before-source-links-2026-09-13` 备份后更换安装与启动入口。旧安装保留在 `2026-09-13-before-source-links`，schema 32 与历史保持不变。浏览器复测直接打开已保存的合成天气回答，核对两个实际链接的 href 不含中文句尾，不增加模型请求。现有恢复与首次启动后保留现场规则继续适用。
 
