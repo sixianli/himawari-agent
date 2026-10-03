@@ -8,6 +8,7 @@ import {
   type PiFilePreparationInput,
   stopPiPreparationWorker,
 } from "../../packages/runtime-pi/src/prepare-file-mutation.ts";
+import { trackPiPreparationDiagnostics } from "../fixtures/pi-preparation-diagnostics.ts";
 
 type Mode = "actual" | "fail" | "exit" | "never-ready" | "busy";
 type Event = {
@@ -42,12 +43,16 @@ const observations = vi.hoisted(() => ({
   records: [] as WorkerRecord[],
   byWorker: new WeakMap<Worker, WorkerRecord>(),
   listeners: new Set<() => void>(),
+  timers: [] as { readonly sequence: number; readonly milliseconds: number | undefined }[],
   mode: "actual" as Mode,
   sequence: 0,
 }));
 
 vi.mock("node:worker_threads", async (original) => {
   const actual = await original<typeof import("node:worker_threads")>();
+  const url = new URL("../fixtures/pi-preparation-diagnostics.mjs", import.meta.url).href;
+  const { wrapPiPreparationWorker } = await import(url);
+  const DiagnosticWorker: typeof actual.Worker = wrapPiPreparationWorker(actual.Worker);
   const scripts: Record<Exclude<Mode, "actual">, string> = {
     fail: `throw new Error("PI_TEST_WARM_FAILURE");`,
     exit: `process.exit(0);`,
@@ -68,7 +73,7 @@ parentPort.on("message", (message) => {
   };
   return {
     ...actual,
-    Worker: class extends actual.Worker {
+    Worker: class extends DiagnosticWorker {
       constructor(filename: string | URL, options?: WorkerOptions) {
         const target = filename instanceof URL ? filename.href : filename;
         const preparation = /\/prepare-file-mutation-worker\.(?:ts|js)(?:\?|$)/.test(target);
@@ -144,6 +149,7 @@ parentPort.on("message", (message) => {
 const pools: Pool[] = [];
 const roots: string[] = [];
 const memoryBytes = 256 * 1048576;
+const warmupMilliseconds = 60000;
 const limits = { maxWallTimeMs: 10000, maxCpuTimeMs: 10000, maxMemoryBytes: memoryBytes };
 let callSequence = 0;
 
@@ -188,6 +194,43 @@ function inputs(record: WorkerRecord) {
 
 function warmRecords() {
   return observations.records.filter(({ prewarm }) => prewarm);
+}
+
+function observeTimers() {
+  const setTimer = globalThis.setTimeout;
+  vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...arguments_) => {
+    const timer = setTimer(callback, milliseconds, ...arguments_);
+    observations.timers.push({ sequence: ++observations.sequence, milliseconds });
+    notify();
+    return timer;
+  });
+}
+
+async function stoppedWarmWorker(record: WorkerRecord) {
+  await waitFor(() => record.events.some(({ stage }) => stage === "error" || stage === "exit"));
+  await stopPiPreparationWorker(record.worker);
+  expect(record.worker.threadId).toBe(-1);
+  expect(warmRecords().filter(({ worker }) => worker.threadId !== -1).length).toBeLessThanOrEqual(
+    1,
+  );
+}
+
+async function advanceWarmRetry(milliseconds: number) {
+  const previous = warmRecords().at(-1);
+  if (!previous) throw new Error("PI_TEST_RETRY_WORKER_MISSING");
+  const count = warmRecords().length;
+  expect(observations.timers.at(-1)?.milliseconds).toBe(milliseconds);
+  await vi.advanceTimersByTimeAsync(milliseconds - 1);
+  expect(warmRecords()).toHaveLength(count);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(warmRecords()).toHaveLength(count + 1);
+  const next = warmRecords().at(-1);
+  if (!next) throw new Error("PI_TEST_RETRY_NEXT_WORKER_MISSING");
+  const exited = previous.events.find(({ stage }) => stage === "exit");
+  expect(exited).toBeDefined();
+  expect(next.events[0]?.sequence).toBeGreaterThan(exited?.sequence as number);
+  expect(previous.worker.threadId).toBe(-1);
+  return next;
 }
 
 async function readyWorker(excluded: readonly number[] = []) {
@@ -249,6 +292,7 @@ function checkLimits(record: WorkerRecord, expectedMemoryMb = 256) {
 beforeEach(() => {
   observations.records.length = 0;
   observations.listeners.clear();
+  observations.timers.length = 0;
   observations.byWorker = new WeakMap();
   observations.mode = "actual";
   observations.sequence = 0;
@@ -261,8 +305,8 @@ afterEach(async (context) => {
     expect(observations.records.every(({ worker }) => worker.threadId === -1)).toBe(true);
   } finally {
     const threadIdsAfterClose = observations.records.map(({ worker }) => worker.threadId);
-    vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.useRealTimers();
     await Promise.all(observations.records.map(({ worker }) => worker.terminate()));
     const records = observations.records.map(({ worker, progress, ...record }, index) => ({
       ...record,
@@ -270,7 +314,10 @@ afterEach(async (context) => {
       finalThreadId: worker.threadId,
       progress: Array.from(progress),
     }));
-    Object.assign(context.task.meta, { piPreparationPoolWorkers: records });
+    Object.assign(context.task.meta, {
+      piPreparationPoolWorkers: records,
+      piPreparationPoolTimers: [...observations.timers],
+    });
     const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
     if (output) {
       await mkdir(output, { recursive: true, mode: 0o700 });
@@ -284,6 +331,8 @@ afterEach(async (context) => {
     observations.listeners.clear();
   }
 });
+
+trackPiPreparationDiagnostics(import.meta.url);
 
 describe("one-shot Pi file preparation pool", () => {
   it("[R2-D19] hands one input to a ready worker and preserves the frozen original", async () => {
@@ -420,20 +469,28 @@ describe("one-shot Pi file preparation pool", () => {
     },
   );
 
-  it("[R2-D19] gives prewarm its own 8000ms deadline and stops it before cold fallback", async () => {
+  it("[R2-D19] gives prewarm its own 60000ms deadline and stops it before cold fallback", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
     observations.mode = "never-ready";
     const failures: Error[] = [];
     const preparation = pool((error) => {
       failures.push(error);
       notify();
     });
+    expect(observations.timers[0]?.milliseconds).toBe(warmupMilliseconds);
     const source = await fixture();
     await waitFor(() => online(warmRecords()[0]));
-    await vi.advanceTimersByTimeAsync(7999);
+    const warm = warmRecords()[0];
+    if (!warm) throw new Error("PI_TEST_WARMUP_DEADLINE_WORKER_MISSING");
+    const terminate = vi.spyOn(warm.worker, "terminate");
+    await vi.advanceTimersByTimeAsync(warmupMilliseconds - 1);
+    expect(terminate).not.toHaveBeenCalled();
+    expect(warm.worker.threadId).toBeGreaterThan(0);
     expect(failures).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
     await waitFor(() => failures.length === 1 && warmRecords()[0]?.worker.threadId === -1);
+    expect(terminate).toHaveBeenCalledTimes(1);
     expect(failures[0]?.message).toBe("PI_PREPARATION_WARMUP_TIME_LIMIT");
     expect(new TextDecoder().decode((await preparation.prepare(input(source))).bytes)).toBe(
       "candidate\n",
@@ -458,7 +515,7 @@ describe("one-shot Pi file preparation pool", () => {
       },
     });
     pools.push(preparation);
-    now = 8001;
+    now = warmupMilliseconds + 1;
     const warm = await readyWorker();
     Object.assign(context.task.meta, {
       piPreparationLateReady: {
@@ -482,31 +539,216 @@ describe("one-shot Pi file preparation pool", () => {
     expect(cold.worker.threadId).toBe(-1);
   });
 
-  it("[R2-D19] limits consecutive prewarm failures to three attempts with 1s and 2s backoff", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  it("[R2-D19] retries failed warmups with exponential backoff capped at 300000ms", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
     observations.mode = "fail";
-    const failures: Error[] = [];
-    const preparation = pool((error) => {
-      failures.push(error);
-      notify();
+    pool();
+    const delays = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 300000, 300000];
+    for (const milliseconds of delays) {
+      const current = warmRecords().at(-1);
+      if (!current) throw new Error("PI_TEST_BACKOFF_CURRENT_WORKER_MISSING");
+      await stoppedWarmWorker(current);
+      await advanceWarmRetry(milliseconds);
+    }
+    const final = warmRecords().at(-1);
+    if (!final) throw new Error("PI_TEST_BACKOFF_FINAL_WORKER_MISSING");
+    await stoppedWarmWorker(final);
+    expect(observations.timers.at(-1)?.milliseconds).toBe(300000);
+    expect(warmRecords()).toHaveLength(delays.length + 1);
+  });
+
+  it("[R2-D19] retries more than three failures including timeouts and recovers to a real warm hit", async () => {
+    const source = await fixture();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    const preparation = pool();
+    const modes = ["fail", "never-ready", "fail", "never-ready"] as const;
+    const delays = [1000, 2000, 4000, 8000];
+    for (const [index, mode] of modes.entries()) {
+      const current = warmRecords().at(-1);
+      if (!current) throw new Error("PI_TEST_RECOVERY_CURRENT_WORKER_MISSING");
+      expect(current.mode).toBe(mode);
+      if (mode === "never-ready") {
+        await waitFor(() => online(current));
+        await vi.advanceTimersByTimeAsync(warmupMilliseconds);
+      }
+      await stoppedWarmWorker(current);
+      observations.mode = modes[index + 1] ?? "actual";
+      const delay = delays[index];
+      if (delay === undefined) throw new Error("PI_TEST_RECOVERY_DELAY_MISSING");
+      await advanceWarmRetry(delay);
+    }
+    const recovered = await readyWorker(
+      warmRecords()
+        .slice(0, -1)
+        .map(({ threadId }) => threadId),
+    );
+    expect(recovered.mode).toBe("actual");
+    expect(warmRecords()).toHaveLength(5);
+    const result = await preparation.prepare(input(source, "recovered warm candidate\n"));
+    expect(new TextDecoder().decode(result.bytes)).toBe("recovered warm candidate\n");
+    expect(inputs(recovered)).toHaveLength(1);
+    expect(recovered.worker.threadId).toBe(-1);
+    expect(observations.records.filter(({ prewarm }) => !prewarm)).toHaveLength(0);
+    expect(await readFile(source.targetPath, "utf8")).toBe("before\n");
+  });
+
+  it("[R2-D19] retries after terminate rejects following a proven real worker exit", async (context) => {
+    const source = await fixture();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    const preparation = pool();
+    const first = warmRecords()[0];
+    if (!first) throw new Error("PI_TEST_TERMINATION_REJECTION_WORKER_MISSING");
+    const nativeTerminate = first.worker.terminate.bind(first.worker);
+    let nativeTerminateCompletedSequence: number | undefined;
+    const terminate = vi.spyOn(first.worker, "terminate").mockImplementationOnce(async () => {
+      await nativeTerminate();
+      nativeTerminateCompletedSequence = ++observations.sequence;
+      throw new Error("PI_TEST_TERMINATION_REJECTED_AFTER_EXIT");
     });
-    await waitFor(() => failures.length === 1 && warmRecords()[0]?.worker.threadId === -1);
-    await vi.advanceTimersByTimeAsync(999);
-    expect(warmRecords()).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1);
-    await waitFor(() => failures.length === 2 && warmRecords()[1]?.worker.threadId === -1);
-    await vi.advanceTimersByTimeAsync(1999);
+    await waitFor(() => first.events.some(({ stage }) => stage === "error"));
+    await expect(stopPiPreparationWorker(first.worker)).rejects.toThrow(
+      "PI_TEST_TERMINATION_REJECTED_AFTER_EXIT",
+    );
+    expect(terminate).toHaveBeenCalledTimes(1);
+    expect(first.worker.threadId).toBe(-1);
+    const exited = first.events.find(({ stage }) => stage === "exit");
+    expect(exited).toBeDefined();
+    expect(nativeTerminateCompletedSequence).toBeGreaterThan(exited?.sequence as number);
+    Object.assign(context.task.meta, {
+      piPreparationRejectedTermination: {
+        firstThreadId: first.threadId,
+        threadIdAfterRejection: first.worker.threadId,
+        exitSequence: exited?.sequence,
+        nativeTerminateCompletedSequence,
+        rejection: "PI_TEST_TERMINATION_REJECTED_AFTER_EXIT",
+      },
+    });
+    observations.mode = "actual";
+    const next = await advanceWarmRetry(1000);
+    expect(next.mode).toBe("actual");
+    const recovered = await readyWorker([first.threadId]);
+    expect(recovered.threadId).toBe(next.threadId);
     expect(warmRecords()).toHaveLength(2);
-    await vi.advanceTimersByTimeAsync(1);
-    await waitFor(() => failures.length === 3 && warmRecords()[2]?.worker.threadId === -1);
-    await vi.advanceTimersByTimeAsync(30000);
-    expect(warmRecords()).toHaveLength(3);
-    expect(failures.map(({ message }) => message)).toEqual(Array(3).fill("PI_TEST_WARM_FAILURE"));
-    await preparation.close();
-    await preparation.close();
+    const result = await preparation.prepare(input(source, "warm after stopped rejection\n"));
+    expect(new TextDecoder().decode(result.bytes)).toBe("warm after stopped rejection\n");
+    expect(inputs(recovered)).toHaveLength(1);
+    expect(recovered.worker.threadId).toBe(-1);
+    expect(observations.records.filter(({ prewarm }) => !prewarm)).toHaveLength(0);
+    expect(await readFile(source.targetPath, "utf8")).toBe("before\n");
+  });
+
+  it("[R2-D19] retries are cancelled by close before a pending retry creates another worker", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    const preparation = pool();
+    const warm = warmRecords()[0];
+    if (!warm) throw new Error("PI_TEST_CLOSE_RETRY_WORKER_MISSING");
+    await stoppedWarmWorker(warm);
+    expect(observations.timers.at(-1)?.milliseconds).toBe(1000);
+    await vi.advanceTimersByTimeAsync(999);
+    await Promise.all([preparation.close(), preparation.close()]);
+    await vi.advanceTimersByTimeAsync(900000);
+    expect(warmRecords()).toHaveLength(1);
+    expect(warm.worker.threadId).toBe(-1);
     await expect(preparation.prepare(input(await fixture()))).rejects.toThrow(
       "PI_PREPARATION_POOL_CLOSED",
     );
+  });
+
+  it("[R2-D19] retries leave every concurrent request on successful cold Pi during warmup failure", async () => {
+    const source = await fixture();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    const preparation = pool();
+    const warm = warmRecords()[0];
+    if (!warm) throw new Error("PI_TEST_FAILED_COLD_WARM_WORKER_MISSING");
+    await stoppedWarmWorker(warm);
+    expect(observations.timers.at(-1)?.milliseconds).toBe(1000);
+    const pending = ["cold one\n", "cold two\n", "cold three\n"].map((content) =>
+      preparation.prepare(input(source, content)),
+    );
+    const cold = observations.records.filter(({ prewarm }) => !prewarm);
+    expect(cold).toHaveLength(3);
+    expect(cold.every((record) => inputs(record).length === 1)).toBe(true);
+    expect(warmRecords()).toHaveLength(1);
+    const results = await Promise.all(pending);
+    expect(results.map(({ bytes }) => new TextDecoder().decode(bytes))).toEqual([
+      "cold one\n",
+      "cold two\n",
+      "cold three\n",
+    ]);
+    for (const record of cold) {
+      checkLimits(record);
+      expect(record.worker.threadId).toBe(-1);
+    }
+    expect(await readFile(source.targetPath, "utf8")).toBe("before\n");
+  });
+
+  it("[R2-D19] retries notify failure and recovery once per state transition", async (context) => {
+    const source = await fixture();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    const notifications: string[] = [];
+    Object.assign(context.task.meta, { piPreparationWarmupNotifications: notifications });
+    let readyCount = 0;
+    const preparation = createPiFilePreparationPool({
+      maxMemoryBytes: memoryBytes,
+      onWarmupFailure() {
+        notifications.push("warmup_failed");
+      },
+      onWarmupRecovered() {
+        notifications.push("warmup_recovered");
+      },
+      onWarmupReady() {
+        readyCount += 1;
+      },
+    });
+    pools.push(preparation);
+    const first = warmRecords()[0];
+    if (!first) throw new Error("PI_TEST_NOTIFICATION_FIRST_WORKER_MISSING");
+    await stoppedWarmWorker(first);
+    expect(notifications).toEqual(["warmup_failed"]);
+    const second = await advanceWarmRetry(1000);
+    await stoppedWarmWorker(second);
+    expect(notifications).toEqual(["warmup_failed"]);
+    observations.mode = "actual";
+    await advanceWarmRetry(2000);
+    const recovered = await readyWorker([first.threadId, second.threadId]);
+    expect(notifications).toEqual(["warmup_failed", "warmup_recovered"]);
+    expect(readyCount).toBe(1);
+    expect(new TextDecoder().decode((await preparation.prepare(input(source))).bytes)).toBe(
+      "candidate\n",
+    );
+    await readyWorker([first.threadId, second.threadId, recovered.threadId]);
+    expect(readyCount).toBe(2);
+    expect(notifications).toEqual(["warmup_failed", "warmup_recovered"]);
+  });
+
+  it("[R2-D19] retries reset to 1000ms as soon as a failed prewarm becomes ready", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    observeTimers();
+    observations.mode = "fail";
+    pool();
+    const first = warmRecords()[0];
+    if (!first) throw new Error("PI_TEST_RESET_FIRST_WORKER_MISSING");
+    await stoppedWarmWorker(first);
+    const second = await advanceWarmRetry(1000);
+    await stoppedWarmWorker(second);
+    observations.mode = "actual";
+    await advanceWarmRetry(2000);
+    const recovered = await readyWorker([first.threadId, second.threadId]);
+    expect(inputs(recovered)).toHaveLength(0);
+    await recovered.worker.terminate();
+    await stoppedWarmWorker(recovered);
+    expect(observations.timers.at(-1)?.milliseconds).toBe(1000);
   });
 
   it.each(["cancel", "timeout"] as const)(
@@ -739,6 +981,111 @@ describe("one-shot Pi file preparation pool", () => {
     expect((await outcome).error).toBeInstanceOf(Error);
     expect(observations.records.every(({ worker }) => worker.threadId === -1)).toBe(true);
     expect(observations.records).toHaveLength(2);
+  });
+
+  it("[R2-D19] waits for every real worker exit before reporting a close termination error", async (context) => {
+    const source = await fixture();
+    const preparation = pool();
+    const warm = await readyWorker();
+    const request = preparation.prepare(
+      input(source, "cancelled cold candidate\n", {
+        limits: { ...limits, maxMemoryBytes: 512 * 1048576 },
+      }),
+    );
+    const requestOutcome = request.then(
+      (value) => ({ value, error: undefined }),
+      (error: unknown) => ({ value: undefined, error }),
+    );
+    const cold = observations.records.find(({ prewarm }) => !prewarm);
+    if (!cold) throw new Error("PI_TEST_CLOSE_COLD_WORKER_MISSING");
+    checkLimits(warm);
+    checkLimits(cold, 512);
+    expect(inputs(warm)).toHaveLength(0);
+    expect(inputs(cold)).toHaveLength(1);
+    const terminationError = new Error("PI_TEST_CLOSE_TERMINATION_REJECTED_AFTER_EXIT");
+    const terminateWarm = warm.worker.terminate.bind(warm.worker);
+    const terminateCold = cold.worker.terminate.bind(cold.worker);
+    let releaseColdStop!: () => void;
+    const coldStopGate = new Promise<void>((resolve) => {
+      releaseColdStop = resolve;
+    });
+    let coldStopSequence: number | undefined;
+    let warmStopSequence: number | undefined;
+    let closeSequence: number | undefined;
+    let gateReleaseSequence: number | undefined;
+    let closed = false;
+    const warmStop = vi.spyOn(warm.worker, "terminate").mockImplementationOnce(async () => {
+      await terminateWarm();
+      warmStopSequence = ++observations.sequence;
+      notify();
+      throw terminationError;
+    });
+    const coldStop = vi.spyOn(cold.worker, "terminate").mockImplementationOnce(async () => {
+      coldStopSequence = ++observations.sequence;
+      notify();
+      await coldStopGate;
+      return terminateCold();
+    });
+    const closeOutcome = preparation.close().then(
+      () => {
+        closed = true;
+        closeSequence = ++observations.sequence;
+        return { error: undefined };
+      },
+      (error: unknown) => {
+        closed = true;
+        closeSequence = ++observations.sequence;
+        return { error };
+      },
+    );
+    try {
+      await expect(stopPiPreparationWorker(warm.worker)).rejects.toBe(terminationError);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(warmStop).toHaveBeenCalledTimes(1);
+      expect(coldStop).toHaveBeenCalledTimes(1);
+      expect(warm.worker.threadId).toBe(-1);
+      expect(warm.events.some(({ stage }) => stage === "exit")).toBe(true);
+      expect(coldStopSequence).toBeDefined();
+      expect(warmStopSequence).toBeDefined();
+      expect(cold.worker.threadId).toBeGreaterThan(0);
+      expect(cold.events.some(({ stage }) => stage === "exit")).toBe(false);
+      expect(closed).toBe(false);
+      gateReleaseSequence = ++observations.sequence;
+      releaseColdStop();
+      const result = await closeOutcome;
+      expect(result.error).toBe(terminationError);
+      expect((await requestOutcome).error).toBeInstanceOf(Error);
+      expect(warm.worker.threadId).toBe(-1);
+      expect(cold.worker.threadId).toBe(-1);
+      const coldExitSequence = cold.events.find(({ stage }) => stage === "exit")?.sequence;
+      expect(coldExitSequence).toBeGreaterThan(gateReleaseSequence);
+      expect(closeSequence).toBeGreaterThan(coldExitSequence as number);
+      expect(observations.records).toHaveLength(2);
+      expect(await readFile(source.targetPath, "utf8")).toBe("before\n");
+    } finally {
+      releaseColdStop();
+      const [closingResult, preparationResult] = await Promise.all([closeOutcome, requestOutcome]);
+      await stopPiPreparationWorker(cold.worker);
+      Object.assign(context.task.meta, {
+        piPreparationCloseTerminationFailure: {
+          coldStopSequence,
+          warmStopSequence,
+          gateReleaseSequence,
+          closeSequence,
+          closeError: closingResult.error instanceof Error ? closingResult.error.message : null,
+          requestError:
+            preparationResult.error instanceof Error ? preparationResult.error.message : null,
+          workers: [warm, cold].map(({ worker, threadId, events }) => ({
+            threadId,
+            finalThreadId: worker.threadId,
+            exitSequence: events.find(({ stage }) => stage === "exit")?.sequence,
+          })),
+        },
+      });
+      expect([warm, cold].every(({ worker }) => worker.threadId === -1)).toBe(true);
+      const index = pools.indexOf(preparation);
+      if (index !== -1) pools.splice(index, 1);
+    }
   });
 
   it("[R2-D19] keeps real Pi multi-edit BOM, CRLF and Unicode behavior in a fresh preparation", async () => {

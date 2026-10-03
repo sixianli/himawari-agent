@@ -8,8 +8,8 @@ import {
   stopPiPreparationWorker,
 } from "./prepare-file-mutation.ts";
 
-const warmupMilliseconds = 8000;
-const maximumWarmupAttempts = 3;
+const warmupMilliseconds = 60000;
+const maximumRetryMilliseconds = 300000;
 
 type WarmSlot = {
   readonly worker: Worker;
@@ -20,6 +20,7 @@ type WarmSlot = {
 export function createPiFilePreparationPool(options: {
   readonly maxMemoryBytes: number;
   readonly onWarmupFailure?: (error: Error) => void;
+  readonly onWarmupRecovered?: () => void;
   readonly onWarmupReady?: () => void;
 }) {
   const limits = piPreparationResourceLimits(options.maxMemoryBytes);
@@ -27,16 +28,24 @@ export function createPiFilePreparationPool(options: {
   const requests = new Set<Promise<unknown>>();
   const shutdown = new AbortController();
   let slot: WarmSlot | undefined;
-  let failures = 0;
+  let retryMilliseconds = 1000;
+  let degraded = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let closing: Promise<void> | undefined;
 
-  const reportFailure = (error: Error) => {
-    failures += 1;
+  const markFailed = (error: Error) => {
+    if (degraded) return;
+    degraded = true;
     options.onWarmupFailure?.(error);
-    if (!closed && failures < maximumWarmupAttempts)
-      retry = setTimeout(startWarmup, 1000 * failures);
+  };
+
+  const reportFailure = (error: Error) => {
+    markFailed(error);
+    if (!closed) {
+      retry = setTimeout(startWarmup, retryMilliseconds);
+      retryMilliseconds = Math.min(retryMilliseconds * 2, maximumRetryMilliseconds);
+    }
   };
 
   const failWarmup = (entry: WarmSlot, error: Error) => {
@@ -44,15 +53,15 @@ export function createPiFilePreparationPool(options: {
     entry.phase = "stopping";
     clearTimeout(entry.timer);
     entry.timer = undefined;
+    const finishFailure = (failure: Error) => {
+      owned.delete(entry.worker);
+      if (slot === entry) slot = undefined;
+      if (!closed) reportFailure(failure);
+    };
     void stopPiPreparationWorker(entry.worker).then(
-      () => {
-        owned.delete(entry.worker);
-        if (slot === entry) slot = undefined;
-        if (!closed) reportFailure(error);
-      },
+      () => finishFailure(error),
       (terminationError: unknown) => {
-        if (!closed)
-          options.onWarmupFailure?.(terminationError instanceof Error ? terminationError : error);
+        finishFailure(terminationError instanceof Error ? terminationError : error);
       },
     );
   };
@@ -87,6 +96,11 @@ export function createPiFilePreparationPool(options: {
         clearTimeout(entry.timer);
         entry.timer = undefined;
         entry.phase = "ready";
+        if (degraded) {
+          degraded = false;
+          retryMilliseconds = 1000;
+          options.onWarmupRecovered?.();
+        }
         options.onWarmupReady?.();
       } else {
         failWarmup(entry, new Error("PI_PREPARATION_WARMUP_PROTOCOL_INVALID"));
@@ -124,7 +138,6 @@ export function createPiFilePreparationPool(options: {
         owned.delete(worker);
         if (entry && slot === entry) {
           slot = undefined;
-          failures = 0;
           if (!closed) startWarmup();
         }
       }
@@ -141,10 +154,13 @@ export function createPiFilePreparationPool(options: {
       }
       shutdown.abort();
       closing = (async () => {
-        await Promise.all([...owned].map(stopPiPreparationWorker));
+        const stopped = await Promise.allSettled([...owned].map(stopPiPreparationWorker));
         await Promise.allSettled([...requests]);
         owned.clear();
         slot = undefined;
+        for (const result of stopped) {
+          if (result.status === "rejected") throw result.reason;
+        }
       })();
       return closing;
     },

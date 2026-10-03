@@ -105,6 +105,7 @@ const AUTHORITY_RENEWAL_INTERVAL_MS = 10_000;
 const STARTUP_RETRY_DELAY_MS = 50;
 const MAXIMUM_BODY_BYTES = 65_536;
 const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
+const PI_FILE_PREPARATION_MEMORY_BYTES = 256 * 1024 * 1024;
 
 export interface AgentServiceModelCompositionContext {
   readonly configuration: ProductConfiguration;
@@ -712,12 +713,18 @@ export async function runAgentService(
     const sandboxServices = await createProductionSandboxServices({
       createPiFilePreparation: () => {
         piFilePreparationPool = createPiFilePreparationPool({
-          maxMemoryBytes: 268435456,
+          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
           onWarmupFailure: (error) => {
             writeServiceDiagnostic(errorOutput, {
               component: "agent-service",
               event: "pi.preparation.warmup_failed",
               code: stableErrorCode(error),
+            });
+          },
+          onWarmupRecovered: () => {
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "pi.preparation.warmup_recovered",
             });
           },
         });
@@ -996,7 +1003,7 @@ export async function runAgentService(
         ceiling: {
           maxWallTimeMs: configuration.deadlines.workerRequestMs,
           maxCpuTimeMs: configuration.deadlines.workerRequestMs,
-          maxMemoryBytes: 256 * 1024 * 1024,
+          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
           maxOutputBytes: MAXIMUM_PAYLOAD_BYTES,
           maxProgressEvents: 100,
         },

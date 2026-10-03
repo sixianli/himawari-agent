@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Worker, WorkerOptions } from "node:worker_threads";
 import type {
   ExecutionEnvironmentLifecyclePort,
   SandboxExecutionRecord,
@@ -31,11 +32,49 @@ import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts"
 import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { trackPiPreparationDiagnostics } from "../fixtures/pi-preparation-diagnostics.ts";
 
+const preparationWorkers = vi.hoisted(() => ({
+  failWarmConstruction: false,
+  warmConstructionFailures: 0,
+  cold: [] as { worker: Worker; threadId: number; exited: boolean }[],
+  restoreBuiltin: undefined as (() => void) | undefined,
+}));
+
 vi.mock("node:worker_threads", async (original) => {
   const actual = await original<typeof import("node:worker_threads")>();
   const url = new URL("../fixtures/pi-preparation-diagnostics.mjs", import.meta.url).href;
   const { wrapPiPreparationWorker } = await import(url);
-  return { ...actual, Worker: wrapPiPreparationWorker(actual.Worker) };
+  const { createRequire, syncBuiltinESMExports } = await import("node:module");
+  const builtin = createRequire(import.meta.url)("node:worker_threads") as {
+    Worker: typeof actual.Worker;
+  };
+  const originalWorker = builtin.Worker;
+  const DiagnosticWorker: typeof actual.Worker = wrapPiPreparationWorker(originalWorker);
+  class PreparationWorker extends DiagnosticWorker {
+    constructor(filename: string | URL, options?: WorkerOptions) {
+      const target = filename instanceof URL ? filename.href : filename;
+      const preparation = /\/prepare-file-mutation-worker\.(?:ts|js)(?:\?|$)/.test(target);
+      const prewarm = preparation && options?.workerData?.prewarm === true;
+      if (prewarm && preparationWorkers.failWarmConstruction) {
+        preparationWorkers.warmConstructionFailures += 1;
+        throw new Error("PI_TEST_WARM_CONSTRUCTOR_FAILURE");
+      }
+      super(filename, options);
+      if (preparation && !prewarm) {
+        const record = { worker: this, threadId: this.threadId, exited: false };
+        preparationWorkers.cold.push(record);
+        this.once("exit", () => {
+          record.exited = true;
+        });
+      }
+    }
+  }
+  builtin.Worker = PreparationWorker;
+  syncBuiltinESMExports();
+  preparationWorkers.restoreBuiltin = () => {
+    builtin.Worker = originalWorker;
+    syncBuiltinESMExports();
+  };
+  return { ...actual, Worker: PreparationWorker };
 });
 
 trackPiPreparationDiagnostics(import.meta.url);
@@ -58,7 +97,11 @@ beforeAll(async () => {
   runtimeRoot = installation.runtimeRoot;
 }, 240_000);
 afterAll(async () => {
-  await installation?.close();
+  try {
+    await installation?.close();
+  } finally {
+    preparationWorkers.restoreBuiltin?.();
+  }
 });
 const directoryRenameExecutable = () =>
   path.join(runtimeRoot, "node_modules/@himawari-agent/platform-node/dist/files/rename-native");
@@ -66,8 +109,25 @@ const directoryRenameExecutable = () =>
 it("[R2-D16] reads the directory rename program from the selected runtime", async () => {
   await expectTestRuntimeFile(directoryRenameExecutable());
 });
-afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+afterEach(async (context) => {
+  try {
+    for (const close of cleanups.splice(0).reverse()) await close();
+  } finally {
+    Object.assign(context.task.meta, {
+      piPreparationColdFallback: {
+        forcedWarmConstructionFailure: preparationWorkers.failWarmConstruction,
+        warmConstructionFailures: preparationWorkers.warmConstructionFailures,
+        coldWorkers: preparationWorkers.cold.map(({ worker, threadId, exited }) => ({
+          threadId,
+          finalThreadId: worker.threadId,
+          exited,
+        })),
+      },
+    });
+    preparationWorkers.failWarmConstruction = false;
+    preparationWorkers.warmConstructionFailures = 0;
+    preparationWorkers.cold = [];
+  }
 });
 const descriptor: SandboxOperationBinding = {
   operation: "read",
@@ -912,9 +972,22 @@ describe("fixed file recovery into the original SQLite invocation", () => {
 });
 
 describe("prepared file admission", () => {
-  it.each(["write", "edit"] as const)(
-    "stages concurrent %s requests before occupancy and preserves their frozen candidates",
-    async (tool) => {
+  for (const { tool, failWarmConstruction, scenario } of [
+    { tool: "write", failWarmConstruction: false, scenario: "" },
+    { tool: "edit", failWarmConstruction: false, scenario: "" },
+    {
+      tool: "write",
+      failWarmConstruction: true,
+      scenario: " [R2-D19] with failed prewarm construction",
+    },
+    {
+      tool: "edit",
+      failWarmConstruction: true,
+      scenario: " [R2-D19] with failed prewarm construction",
+    },
+  ] as const) {
+    it(`stages concurrent ${tool} requests before occupancy and preserves their frozen candidates${scenario}`, async () => {
+      preparationWorkers.failWarmConstruction = failWarmConstruction;
       const f = await productionSandboxScope(
         {
           ...descriptor,
@@ -945,7 +1018,8 @@ describe("prepared file admission", () => {
         },
       );
       cleanups.push(f.close);
-      await f.waitForPiPreparationReady();
+      if (failWarmConstruction)
+        expect(preparationWorkers.warmConstructionFailures).toBeGreaterThanOrEqual(1);
       const filename = path.join(f.host.workspace, "file.txt");
       await writeFile(filename, "before");
       const secondCall = { ...f.call, toolCallId: "second-preparation" };
@@ -1005,6 +1079,14 @@ describe("prepared file admission", () => {
         expect(await readFile(filename, "utf8")).toBe("before");
         proceed();
         const [first, second] = await pending;
+        if (failWarmConstruction) {
+          expect(preparationWorkers.cold).toHaveLength(2);
+          for (const { worker, threadId, exited } of preparationWorkers.cold) {
+            expect(threadId).toBeGreaterThan(0);
+            expect(worker.threadId).toBe(-1);
+            expect(exited).toBe(true);
+          }
+        }
         interception.mockRestore();
         if (!("reservation" in first) || !("reservation" in second))
           throw new Error("expected reservation candidates");
@@ -1035,8 +1117,8 @@ describe("prepared file admission", () => {
         vi.restoreAllMocks();
         database.close();
       }
-    },
-  );
+    });
+  }
 });
 
 it.each(["cancelled-before", "revoked-before", "stale-authority", "cancelled-during"])(

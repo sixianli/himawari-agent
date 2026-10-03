@@ -445,13 +445,15 @@ Pi compaction summary 只形成 `RuntimeProjectionPort.proposeCompaction()` 请�
 
 空闲预热线程使用 256 MiB 的请求内存额度，V8 `resourceLimits` 分别为 old generation 192 MiB、young generation 32 MiB、code range 16 MiB 和 stack 16 MiB，`execArgv` 为 `[]`。只有请求的四项 V8 上限完全一致且线程已 `ready` 时，线程池才消费该线程。没有可用线程、预热未完成或上限不匹配时，请求立即走原冷启动路径；线程池不排队，也不等待预热。线程消费后，线程池等待该请求结束与线程退出，再补充一个预热线程。
 
-预热有独立的 8 秒上限。同一预热失败序列最多尝试三次，第二、三次分别等待 1 秒、2 秒；失败线程先终止，再安排重试。线程发出 `ready` 不重置失败计数，消费该线程并完成请求停止后才重置。预热失败记录 `pi.preparation.warmup_failed`，后续请求仍可冷启动。实际请求继续使用 `min(maxWallTimeMs, maxCpuTimeMs)`；冷启动预算覆盖新线程的模块加载，预热请求从实际输入交接开始计时，结果返回和 `terminate()` 完成均须在原预算内。成功、失败、取消和超时均等待线程退出后才结束准备调用。Agent Service 的关闭生命周期调用线程池 `close()`，取消活动请求并等待它拥有的全部线程退出。
+预热有独立的 60 秒（60000ms）上限，从线程创建前开始计时，接收 `ready` 时再次检查期限。预热失败后不限重试总次数，退避依次为 1000ms、2000ms、4000ms，之后逐次翻倍，最多等待 300000ms。失败线程确认实际退出后才安排下一次重试；同一时间最多一个未消费的预热线程。线程恢复到 `ready` 时重置退避为 1000ms。服务只在首次进入预热失败状态时记录 `pi.preparation.warmup_failed` 及稳定错误代码，在恢复到 `ready` 时记录一次 `pi.preparation.warmup_recovered`；连续重试不重复写失败日志。预热失败期间，请求仍立即冷启动。
+
+实际请求继续使用 `min(maxWallTimeMs, maxCpuTimeMs)`，常规 10000ms 预算不变。冷启动预算覆盖新线程的模块加载，预热请求从实际输入交接开始计时，结果返回和 `terminate()` 完成均须在原预算内。成功、失败、取消和超时均等待线程退出后才结束准备调用。Agent Service 的关闭生命周期调用线程池 `close()`，取消待定重试和活动请求，不再创建新线程，并等待池拥有的全部线程退出。即使某个线程停止操作失败，关闭也先等待全部线程停止操作和尚未结束的准备请求结束，释放池的线程所有权，再返回停止错误。
 
 <a id="pi-file-preparation-memory"></a>
 
 #### 准备线程实测内存
 
-2026-10-03 在 Hermes 上，对当前 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于本批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加本批 D19 补丁，准确工作区摘要与逐次读回见[五次原始汇总](../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json)。
+2026-10-03 在 Hermes r54 上，对 reply-03 返工前的 D19 源码进行五次独立运行，启用测试侧阶段诊断，每次只创建一个不接收输入且达到 `ready` 的预热线程。进程 RSS 增量中位数为 **110.910 MiB**，最大 **114.355 MiB**，低于当批 300 MiB 停止门槛；创建到 `ready` 中位数 1478.026ms、最大 1579.666ms。源码基座为 `11f1b7f` 加当批 D19 补丁，准确工作区摘要与逐次读回见[五次原始汇总](../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r54/final-idle-summary-v2.json)。该组测量不覆盖当前 60 秒期限和持续重试规则。
 
 | 观察项 | 最小（MiB） | 中位数（MiB） | 最大（MiB） |
 | --- | ---: | ---: | ---: |

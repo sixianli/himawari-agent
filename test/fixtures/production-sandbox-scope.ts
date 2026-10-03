@@ -479,7 +479,6 @@ export async function productionSandboxScope(
     sha256: `sha256:${createHash("sha256").update(snapshotBytes).digest("hex")}`,
   };
   let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
-  let piPreparationReady = Promise.resolve();
   const preparationWarmupFailures: Error[] = [];
   const closePiFilePreparationPool = async () => {
     const pool = piFilePreparationPool;
@@ -487,24 +486,14 @@ export async function productionSandboxScope(
     await pool?.close();
   };
   const makeServices = async () => {
-    piPreparationReady = Promise.resolve();
     if (
       descriptor.contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
       descriptor.contract.version === PI_PREPARED_FILE_CONTRACT.version
     ) {
-      let resolveReady!: () => void;
-      let rejectReady!: (error: Error) => void;
-      piPreparationReady = new Promise<void>((resolve, reject) => {
-        resolveReady = resolve;
-        rejectReady = reject;
-      });
-      void piPreparationReady.catch(() => {});
       piFilePreparationPool = createPiFilePreparationPool({
         maxMemoryBytes: 268435456,
-        onWarmupReady: resolveReady,
         onWarmupFailure: (error) => {
           preparationWarmupFailures.push(error);
-          rejectReady(error);
         },
       });
     }
@@ -618,7 +607,6 @@ export async function productionSandboxScope(
   };
   return {
     preparationWarmupFailures,
-    waitForPiPreparationReady: () => piPreparationReady,
     capabilityDeployment,
     workspaceCopy,
     connect,

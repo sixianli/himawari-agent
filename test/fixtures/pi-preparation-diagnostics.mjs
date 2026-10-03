@@ -22,9 +22,20 @@ const slots = {
   readyArrayBuffers: 12,
   readyRss: 13,
   readyLoadCount: 14,
+  readySend: 15,
+  lastLoadEnd: 16,
+  readySourceMatchCount: 17,
+  lastLoadEndAtBody: 18,
 };
-const records = [];
-let currentCase = {};
+const stateKey = Symbol.for("himawari.test.piPreparationDiagnosticsState");
+const wrappedKey = Symbol.for("himawari.test.piPreparationWorkerWrapped");
+globalThis[stateKey] ??= {
+  records: [],
+  currentCase: {},
+  writeFailures: [],
+};
+const state = globalThis[stateKey];
+const records = state.records;
 const enabled = Boolean(process.env.HIMAWARI_TEST_DIAGNOSTIC_OUTPUT);
 const preloadUrl = new URL(import.meta.url);
 preloadUrl.search = "";
@@ -42,22 +53,32 @@ function sharedSnapshot(shared) {
   );
 }
 
+function flushStageSnapshot() {
+  if (process.env.HIMAWARI_TEST_PI_STAGE_DIAGNOSTICS !== "1") return;
+  try {
+    flushPiPreparationDiagnostics();
+  } catch (error) {
+    state.writeFailures.push({ code: error?.code ?? null, ...timestamp() });
+    process.stderr.write("PI_PREPARATION_DIAGNOSTIC_WRITE_FAILED\n");
+  }
+}
+
 export function beginPiPreparationDiagnostics(context) {
-  currentCase = context;
+  state.currentCase = context;
 }
 
 export function wrapPiPreparationWorker(Worker) {
-  if (!enabled) return Worker;
-  return class extends Worker {
+  if (!enabled || Worker[wrappedKey]) return Worker;
+  class DiagnosticWorker extends Worker {
     constructor(filename, options) {
       const target = filename instanceof URL ? filename.href : String(filename);
       if (!/\/prepare-file-mutation-worker\.(?:ts|js)(?:\?|$)/.test(target)) {
         super(filename, options);
         return;
       }
-      const shared = new BigInt64Array(new SharedArrayBuffer(15 * BigInt64Array.BYTES_PER_ELEMENT));
+      const shared = new BigInt64Array(new SharedArrayBuffer(19 * BigInt64Array.BYTES_PER_ELEMENT));
       const record = {
-        ...currentCase,
+        ...state.currentCase,
         id: randomUUID(),
         target,
         processId: process.pid,
@@ -70,12 +91,23 @@ export function wrapPiPreparationWorker(Worker) {
         shared,
       };
       const previous = workerThreads.getEnvironmentData(environmentKey);
-      workerThreads.setEnvironmentData(environmentKey, { shared: shared.buffer });
+      workerThreads.setEnvironmentData(environmentKey, {
+        shared: shared.buffer,
+      });
       try {
         super(filename, {
           ...options,
           execArgv: [...(options?.execArgv ?? process.execArgv), "--import", preloadUrl.href],
         });
+      } catch (error) {
+        record.events.push({
+          stage: "construction-error",
+          code: error?.code ?? null,
+          ...timestamp(),
+        });
+        records.push(record);
+        flushStageSnapshot();
+        throw error;
       } finally {
         workerThreads.setEnvironmentData(environmentKey, previous);
       }
@@ -86,6 +118,7 @@ export function wrapPiPreparationWorker(Worker) {
         record.startBudgetAtMs = Number(BigInt(record.events[1].monotonicNs)) / 1e6;
       this.piPreparationRecord = record;
       records.push(record);
+      flushStageSnapshot();
       this.on("online", () => record.events.push({ stage: "online", ...timestamp() }));
       this.on("message", (message) => {
         if (message?.kind === "ready") {
@@ -93,6 +126,7 @@ export function wrapPiPreparationWorker(Worker) {
           record.readyAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
           record.processRssAtReady = process.memoryUsage().rss;
           record.events.push({ stage: "ready", ...observed });
+          flushStageSnapshot();
         } else if (message?.kind === "started") {
           record.events.push({ stage: "started", ...timestamp() });
         } else if (typeof message?.ok === "boolean") {
@@ -102,9 +136,16 @@ export function wrapPiPreparationWorker(Worker) {
         }
       });
       this.on("error", (error) => {
-        record.events.push({ stage: "error", code: error.code ?? null, ...timestamp() });
+        record.events.push({
+          stage: "error",
+          code: error.code ?? null,
+          ...timestamp(),
+        });
       });
-      this.on("exit", (code) => record.events.push({ stage: "exit", code, ...timestamp() }));
+      this.on("exit", (code) => {
+        record.events.push({ stage: "exit", code, ...timestamp() });
+        flushStageSnapshot();
+      });
     }
 
     postMessage(...arguments_) {
@@ -127,19 +168,25 @@ export function wrapPiPreparationWorker(Worker) {
         if (record) {
           const observed = timestamp();
           record.terminateCompletedAtMs = Number(BigInt(observed.monotonicNs)) / 1e6;
-          record.events.push({ stage: "terminate-completed", code, ...observed });
+          record.events.push({
+            stage: "terminate-completed",
+            code,
+            ...observed,
+          });
         }
         return code;
       });
     }
-  };
+  }
+  Object.defineProperty(DiagnosticWorker, wrappedKey, { value: true });
+  return DiagnosticWorker;
 }
 
 export function piPreparationDiagnosticArguments() {
   if (!enabled) return [];
   const url = new URL(preloadUrl);
   url.searchParams.set("parent", "1");
-  url.searchParams.set("case", JSON.stringify(currentCase));
+  url.searchParams.set("case", JSON.stringify(state.currentCase));
   return ["--import", url.href];
 }
 
@@ -155,6 +202,7 @@ export function flushPiPreparationDiagnostics() {
       vitestWorkerId: process.env.VITEST_WORKER_ID ?? null,
       vitestPoolId: process.env.VITEST_POOL_ID ?? null,
       recordedAt: Date.now(),
+      writeFailures: state.writeFailures,
       records: selected.map(({ shared, ...record }) => ({
         ...record,
         snapshotStableAfterExit: record.events.some((event) => event.stage === "exit"),
@@ -178,6 +226,7 @@ if (enabled && !workerThreads.isMainThread) {
     Atomics.store(shared, slots.preload, process.hrtime.bigint());
     globalThis[Symbol.for("himawari.test.piPreparationBody")] = () => {
       Atomics.store(shared, slots.body, process.hrtime.bigint());
+      Atomics.store(shared, slots.lastLoadEndAtBody, Atomics.load(shared, slots.lastLoadEnd));
       const memory = process.memoryUsage();
       for (const [field, slot] of Object.entries({
         heapUsed: slots.readyHeapUsed,
@@ -188,6 +237,9 @@ if (enabled && !workerThreads.isMainThread) {
       }))
         Atomics.store(shared, slot, BigInt(memory[field]));
       Atomics.store(shared, slots.readyLoadCount, Atomics.load(shared, slots.loadCount));
+    };
+    globalThis[Symbol.for("himawari.test.piPreparationReadySend")] = () => {
+      Atomics.store(shared, slots.readySend, process.hrtime.bigint());
     };
     let loadDepth = 0;
     registerHooks({
@@ -205,15 +257,29 @@ if (enabled && !workerThreads.isMainThread) {
             typeof loaded.source === "string"
               ? loaded.source
               : Buffer.from(loaded.source).toString("utf8");
+          const readyPattern =
+            /\bport\.postMessage\(\s*\{\s*kind\s*:\s*["']ready["']\s*\}\s*\)\s*;/g;
+          const readyMatches = [...source.matchAll(readyPattern)];
+          Atomics.store(shared, slots.readySourceMatchCount, BigInt(readyMatches.length));
+          const instrumented =
+            readyMatches.length === 1
+              ? source.replace(
+                  readyPattern,
+                  (statement) =>
+                    `globalThis[Symbol.for("himawari.test.piPreparationReadySend")]();\n${statement}`,
+                )
+              : source;
           return {
             ...loaded,
-            source: `globalThis[Symbol.for("himawari.test.piPreparationBody")]();\n${source}`,
+            source: `globalThis[Symbol.for("himawari.test.piPreparationBody")]();\n${instrumented}`,
           };
         } catch (error) {
           Atomics.add(shared, slots.loadFailureCount, 1n);
           throw error;
         } finally {
-          Atomics.add(shared, slots.loadNanoseconds, process.hrtime.bigint() - start);
+          const finished = process.hrtime.bigint();
+          Atomics.store(shared, slots.lastLoadEnd, finished);
+          Atomics.add(shared, slots.loadNanoseconds, finished - start);
           Atomics.add(shared, slots.loadCount, 1n);
           if (--loadDepth === 0) Atomics.store(shared, slots.activeLoadStart, 0n);
         }
@@ -223,7 +289,7 @@ if (enabled && !workerThreads.isMainThread) {
 }
 
 if (enabled && workerThreads.isMainThread && new URL(import.meta.url).searchParams.has("parent")) {
-  currentCase = JSON.parse(new URL(import.meta.url).searchParams.get("case") ?? "{}");
+  state.currentCase = JSON.parse(new URL(import.meta.url).searchParams.get("case") ?? "{}");
   workerThreads.Worker = wrapPiPreparationWorker(workerThreads.Worker);
   syncBuiltinESMExports();
   process.on("exit", flushPiPreparationDiagnostics);
