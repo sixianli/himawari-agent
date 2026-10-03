@@ -1,4 +1,16 @@
-import { chmod, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -8,6 +20,35 @@ import { verifyArtifact } from "./ci/verify-artifact.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+
+async function createInstallationDirectory(directory) {
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      await createInstallationDirectory(path.dirname(directory));
+      return createInstallationDirectory(directory);
+    }
+    if (error.code !== "EEXIST" || !(await stat(directory)).isDirectory()) throw error;
+    return false;
+  }
+  await chmod(directory, 0o755);
+  return true;
+}
+
+async function ensureInstallationDirectory(directory) {
+  const target = path.resolve(directory);
+  if (await createInstallationDirectory(target)) return;
+  const info = await stat(target);
+  await chmod(target, info.mode & 0o7777 & ~0o022);
+}
+
+async function normalizeRuntimeDirectories(directory) {
+  if (!(await lstat(directory)).isDirectory()) throw new Error("ARTIFACT_LINK_FORBIDDEN");
+  await chmod(directory, 0o755);
+  for (const entry of await readdir(directory, { withFileTypes: true }))
+    if (entry.isDirectory()) await normalizeRuntimeDirectories(path.join(directory, entry.name));
+}
 
 export async function installNodeRuntime({
   prefix,
@@ -24,7 +65,8 @@ export async function installNodeRuntime({
   let verifiedFiles;
   const libDirectory = path.join(prefix, "lib/himawari-agent");
   const binDirectory = path.join(prefix, "bin");
-  await mkdir(path.dirname(libDirectory), { recursive: true });
+  await ensureInstallationDirectory(prefix);
+  await ensureInstallationDirectory(path.dirname(libDirectory));
   try {
     if (archive) {
       temporary = await mkdtemp(path.join(path.dirname(libDirectory), ".himawari-install-"));
@@ -41,6 +83,7 @@ export async function installNodeRuntime({
         .map((file) => ({ ...file, path: file.path.slice("runtime/".length) }));
       source = path.join(verified.root, "runtime");
     }
+    if (!(await lstat(source)).isDirectory()) throw new Error("ARTIFACT_LINK_FORBIDDEN");
     const runtime = JSON.parse(await readFile(path.join(source, "runtime-manifest.json"), "utf8"));
     const sourceFiles = verifiedFiles ?? (await collectArtifactFiles(source));
     for (const entry of Object.values(runtime.entrypoints))
@@ -53,7 +96,8 @@ export async function installNodeRuntime({
       if (contentDigest(await collectArtifactFiles(libDirectory)) !== contentDigest(sourceFiles))
         throw new Error("INSTALL_CONTENT_CHANGED");
     }
-    await mkdir(binDirectory, { recursive: true });
+    await normalizeRuntimeDirectories(libDirectory);
+    await ensureInstallationDirectory(binDirectory);
     const entries = {
       himawari: "himawari",
       "himawari-agent-service": "agentService",

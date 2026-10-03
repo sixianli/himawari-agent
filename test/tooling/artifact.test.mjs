@@ -413,17 +413,22 @@ describe("same-artifact verification", () => {
       record.contentSha256,
     );
   });
-  it.each(["../escape", "/absolute", "symbolic", "hardlink", "duplicate", "fifo"])(
+  it.each(["../escape", "/absolute", "symbolic", "hardlink", "duplicate", "fifo", "unsafe-mode"])(
     "preflights and rejects malicious tar %s before writing any member",
     async (fault) => {
       const { temporary } = await fixture();
       const archive = path.join(temporary, "bad.tar.gz");
-      const extraction = path.join(temporary, "extraction");
+      const extraction = path.join(temporary, "new-parent/nested/extraction");
+      const parentMode = (await lstat(temporary)).mode;
       const script =
-        "import io,sys,tarfile\np,f=sys.argv[1:]\nwith tarfile.open(p,'w:gz') as t:\n a=tarfile.TarInfo('good');a.size=1;a.mode=0o644;t.addfile(a,io.BytesIO(b'x'))\n b=tarfile.TarInfo('good' if f=='duplicate' else f);b.mode=0o644\n if f in ('symbolic','hardlink','fifo'):b.type={'symbolic':tarfile.SYMTYPE,'hardlink':tarfile.LNKTYPE,'fifo':tarfile.FIFOTYPE}[f];b.linkname='../escape'\n else:b.size=1\n t.addfile(b,io.BytesIO(b'x') if b.size else None)\n";
+        "import io,sys,tarfile\np,f=sys.argv[1:]\nwith tarfile.open(p,'w:gz') as t:\n a=tarfile.TarInfo('good');a.size=1;a.mode=0o644;t.addfile(a,io.BytesIO(b'x'))\n b=tarfile.TarInfo('good' if f=='duplicate' else f);b.mode=0o775 if f=='unsafe-mode' else 0o644\n if f in ('symbolic','hardlink','fifo'):b.type={'symbolic':tarfile.SYMTYPE,'hardlink':tarfile.LNKTYPE,'fifo':tarfile.FIFOTYPE}[f];b.linkname='../escape'\n else:b.size=1\n t.addfile(b,io.BytesIO(b'x') if b.size else None)\n";
       expect(spawnSync(python, ["-c", script, archive, fault]).status).toBe(0);
-      expect(() => runArchiveTool("extract", archive, extraction, { python })).toThrow();
+      expect(() => runArchiveTool("extract", archive, extraction, { python })).toThrow(
+        fault === "unsafe-mode" ? "ARTIFACT_UNSAFE_MODE" : undefined,
+      );
       expect(existsSync(extraction)).toBe(false);
+      expect(existsSync(path.join(temporary, "new-parent"))).toBe(false);
+      expect((await lstat(temporary)).mode).toBe(parentMode);
       expect(spawnSync(python, ["-B", helper, "stream", archive]).status).not.toBe(0);
     },
   );

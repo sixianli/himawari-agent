@@ -76,16 +76,29 @@ def stream(archive):
         sys.stdout.buffer.flush()
 
 
+def make_directory(directory, exist_ok=False):
+    try:
+        directory.mkdir()
+    except FileNotFoundError:
+        make_directory(directory.parent, exist_ok=True)
+        make_directory(directory, exist_ok=exist_ok)
+    except FileExistsError:
+        if not exist_ok or not directory.is_dir():
+            raise
+    else:
+        os.chmod(directory, 0o755)
+
+
 def extract(archive, destination):
     if destination.exists():
         raise ValueError("ARTIFACT_EXTRACTION_TARGET_EXISTS")
     with tarfile.open(archive, "r:gz") as tar:
         members = preflight(tar)
-        destination.mkdir(parents=True, exist_ok=False)
+        make_directory(destination)
         try:
             for member in members:
                 target = destination.joinpath(*safe_name(member.name))
-                target.parent.mkdir(parents=True, exist_ok=True)
+                make_directory(target.parent, exist_ok=True)
                 with tar.extractfile(member) as content, target.open("xb") as output:
                     shutil.copyfileobj(content, output)
                 os.chmod(target, member.mode)

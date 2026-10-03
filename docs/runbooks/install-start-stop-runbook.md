@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:27f5c7c85d0bdd31c0765f4f6252a2609924d36a3f9910ff816f096728874354"
+contract_sha256: "sha256:93346dc1cd53daef5218e0341f178d67b85f9922c55a1716be51a5467593c1c8"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -322,6 +322,8 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 - 目标必须是本机明确的临时或已批准 state root、runtime 前缀和配置路径；不得使用工作目录推断生产路径，不得把 `/data/hermes` 或其他共享 Hermes Agent state root 当作 Himawari 目标。
 - 安装前记录 Git HEAD/worktree、package-lock digest、Node/npm、目标前缀和 state root、磁盘可用空间及现有进程。目标前缀必须由本次运行创建，或已取得清理其 `lib/himawari-agent` 的明确授权。
+- 归档解压与安装显式将本次新建的解压目的目录及其父目录、安装前缀目录链和新运行时目录设为 `0755`，不依赖安装者的 umask；安装器内部暂存根仍为 `0700`。普通文件保持原始字节和包内模式。已有 prefix、lib、bin 只去掉同组和其他用户的写权限：`0700` 保持不变，`0770` 变成 `0750`；其他已有外层目录不变。安装后用产品检查器核对运行时文件摘要，并独立回读权限。R2-D15 的小型源码样本只证明 `--source` 复制入口的权限规则；三个完整归档安装场景提供完整产品文件集的检查证据，小样本不证明约 33,000 个文件的完整源码安装能在 30 秒内完成。
+- 安装器先规范化安装路径，再逐级创建目录，避免含 `..` 的前缀放宽已有私有父目录。源码复制入口只接受普通目录作为源根；符号链接源根在替换已有运行时之前以 `ARTIFACT_LINK_FORBIDDEN` 拒绝，不修改原始源码目录。
 - 配置必须是 strict production profile，authority.json 的 deployment/Owner/Agent/status/epoch/fence 必须与 SQLite 一致；Worker token 只能从 `0600` 文件读取，secret source 不得进入 argv、日志或证据。
 - 启用真实 Worker 能力时，配置必须引用 Owner 独占、非符号链接、大小有界且 SHA-256 匹配的不可变能力部署快照。快照中的 Manifest、平台资格和 runtime binding 必须与当前 build、平台及 Agent Service 的 active Capability Registry 一致；空、缺失、被改写或不合格的快照必须使 Worker 保持 not ready。
 - Agent Service 必须先有同一 deployment 的 Worker；Agent Service 不会在 Worker 不可用时降级到进程内执行。两个服务必须使用同一 state root 的 runtime 目录和 boot-scoped token。

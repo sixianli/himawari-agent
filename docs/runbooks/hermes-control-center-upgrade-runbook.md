@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f7637b21d7db421e5ef5911ff830175285f9ab9fa363641976ccff6e8a682f19"
+contract_sha256: "sha256:c7bc1909098c3b385cb764c20235b375f5c21e4f0f11ebdb825e0ff069c1fb1c"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -10,7 +10,9 @@ date: "2026-09-11"
 
 # Hermes 控制中心升级与真实验收
 
-阅读导航：[适用范围](#scope) · [现场前置核对](#live-state-preflight) · [升级步骤](#procedure) · [验收](#verification) · [并发刷新与回答显示](#concurrent-refresh) · [证据](#evidence) · [回退](#rollback) · [停止条件](#stop-conditions)。Hermes 已停用，本文绑定 Hermes 的固定日期脚本与目录仅保留为历史参照，不适用于云端测试或部署；当前开发测试位置遵循 [ADR 0045](../adr/0045-short-test-temp-root.md#storage)。[SOURCE: docs/adr/0045-short-test-temp-root.md]
+阅读导航：[适用范围](#scope) · [现场前置核对](#live-state-preflight) · [升级步骤](#procedure) · [验收](#verification) · [并发刷新与回答显示](#concurrent-refresh) · [证据](#evidence) · [回退](#rollback) · [停止条件](#stop-conditions)。
+
+本文绑定 Hermes 的固定日期部署脚本与目录仅保留为历史参照，不适用于云端部署。当前开发测试在 Hermes 的任务自有目录运行，云服务器只用于生产；遵循 [ADR 0046](../adr/0046-tests-back-on-hermes.md#storage)，每次生产部署仍须单独授权。[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
 
 <!-- runbook-contract:
 - packages/platform-node/src/capabilities/isolation.ts
@@ -257,6 +259,8 @@ PYTHON
 这是升级操作提示，不是资源释放证明。新建 SRT v2 计划包含 `preparationProtocol=register-before-host.v1`；旧计划保持缺省，永远不能使用 `preparation_not_authorized` 新依据。旧 Worker 会在读取新计划时因未知字段失败，不能创建宿主。新依据仅在原 preparation 附件键已被不可变封锁占据、且 Agent 与 SQLite 全部核验通过后，释放占用并在原 Run 期限前交付既有“工具未启动”结果；已有宿主证明和容器释放路径保持原检查。详情见[准备封锁与旧版本排除](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除]。
 
 ## Procedure
+
+安装目录权限遵循[安装前提](install-start-stop-runbook.md#safety-and-preconditions)：本次新建的解压目的目录及其父目录、安装前缀目录链和新运行时目录固定为 `0755`，安装器内部暂存根仍为 `0700`；已有 prefix、lib、bin 只清除同组及其他用户写权限，保留原私有访问限制；文件字节和包内模式不变。[SOURCE: docs/runbooks/install-start-stop-runbook.md#safety-and-preconditions] 受保护迁移入口仍设置 umask `077` 并显式规范目录及文件模式，不能用修改产品检查器或放宽写权限替代安装修复。R2-D15 只核对该升级入口源码，不执行受保护升级；Hermes 回归结果不证明 Ubuntu 24.04 生产机的 AppArmor 前提成立。
 
 TE-11 的执行事件传输使用固定分页版本：请求和响应均为 `x-himawari-events-pagination: 1`，响应另带 `x-himawari-events-page`（more/complete）及非空页的 `x-himawari-events-next-cursor`。升级时 Agent 与 Worker 必须取自同一安装产物并成对切换；旧新混用会拒绝事件读取，不能保留旧 Worker 单独更新 Agent。详情见[执行事件有界分页设计](../execution/specs/2026-09-29-execution-event-pagination-design.md#协议) [SOURCE: docs/execution/specs/2026-09-29-execution-event-pagination-design.md#协议]。本变更无数据库迁移；单次正文上限、认证和期限保持原值。缺少分页标记或单事件超限时停止并保留诊断，先核对两端产物身份，不能调高上限或重放工具。
 
