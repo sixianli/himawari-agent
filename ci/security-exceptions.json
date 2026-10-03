@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "proposal": {
     "status": "proposed_owner_review_required",
-    "proposedAt": "2026-09-03T00:00:00Z",
+    "proposedAt": "2026-10-03T00:00:00Z",
     "owner": "sixianli",
-    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。"
+    "reviewEvidence": "本次 GitHub CI Task 8 初始化实现中，主代理逐条核对 28 条 Gitleaks 命中的源码上下文与既有 machine baseline，确认 18 个请求去重 ID、6 个重复十六进制合成启动 token、2 个公开认证标签和 2 个既有 JWT fixture。此为代码审阅后提交给 Owner 的精确例外提案；尚无 Owner 对这些独立例外的合入审阅证据。reviewReference 仅指向原始源码提交，不表示例外已获 Owner 审阅。 同次主代理核验官方 npm 缓存来源闭包，并逐项审阅干净构建中 39 个原样发布文件、48 个合成或非凭据字面量的用途，形成 published-synthetic-fixture 精确提案；公开来源本身不是豁免依据，仍待 Owner 合入审阅。 2026-10-03 Owner sixianli 在 Claude 管理的对话中逐条查看了这 52 条精确例外（13 条本项目测试中的合成字面量及其源码行、39 条锁定 npm 包原样发布文件中的示例或测试字面量及用途），未发现真实凭据，原话“全部续期”，记录于 .agents/tasks/round2-tool-execution/goal.md 的 G25；据此把提案日期改为 2026-10-03、全部到期日改为 2026-11-02，路径、摘要、数量和来源证明不变。"
   },
   "exceptions": [
     {
@@ -16,7 +16,7 @@
       "reason": "现有 machine-secret-scan-baseline 已列出的固定 JWT 测试字面量；精确摘要映射。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/8f3cddb335dfd721bff9c27a9cb303d38fa8dd6e",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "machine-baseline-fixture",
         "current": {
@@ -42,7 +42,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/d3a43c8187f550e2c159e81e43bce33a430fb860",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -68,7 +68,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/9744bd3058a878a04184a445c64043fa020386b7",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -94,7 +94,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/d8c4cc08e4b14e05cc7950c185102bde85b085b6",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -120,7 +120,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/6f18b051f70ed596c86ffc4dd5af9f65aa599d42",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -146,7 +146,7 @@
       "reason": "测试 worker 启动协议的重复十六进制合成 tokenValue；不关联真实凭据。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/e625a091e8eef815059c82056cb3a1e8ecd4da25",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "synthetic-boot-token",
         "current": {
@@ -172,7 +172,7 @@
       "reason": "确定性加密测试的公开 wrapAuthenticationTag，属于认证标签而非私密密钥。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/8f3cddb335dfd721bff9c27a9cb303d38fa8dd6e",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "public-authentication-tag",
         "current": {
@@ -198,7 +198,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/9019c5ddf2b12cadc6ff21c2fa86f5f932aafccd",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -224,7 +224,7 @@
       "reason": "测试 worker 启动协议的重复十六进制合成 tokenValue；不关联真实凭据。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/e625a091e8eef815059c82056cb3a1e8ecd4da25",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "synthetic-boot-token",
         "current": {
@@ -250,7 +250,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/d3a43c8187f550e2c159e81e43bce33a430fb860",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -276,7 +276,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/d3a43c8187f550e2c159e81e43bce33a430fb860",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -302,7 +302,7 @@
       "reason": "测试请求的固定 idempotencyKey，仅用于幂等去重，不承担身份验证。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/d8c4cc08e4b14e05cc7950c185102bde85b085b6",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "idempotency-fixture",
         "current": {
@@ -328,7 +328,7 @@
       "reason": "测试 worker 启动协议的重复十六进制合成 tokenValue；不关联真实凭据。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/e403d89c5cf608cb5e423c010d205dbfef350404",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "provenance": {
         "classification": "synthetic-boot-token",
         "current": {
@@ -366,7 +366,7 @@
       "reason": "README complete 调用演示的 API 密钥占位值。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -391,7 +391,7 @@
       "reason": "STS 类型声明文档中的 AssumeRole/AssumeRoleWithWebIdentity 示例响应，具有 EXAMPLE 标记和固定历史日期。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -416,7 +416,7 @@
       "reason": "STS 类型声明文档中的 AssumeRole/AssumeRoleWithWebIdentity 示例响应，具有 EXAMPLE 标记和固定历史日期。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -441,7 +441,7 @@
       "reason": "变更说明中的 Bearer 认证支持自然语言短语，不是令牌值。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -466,7 +466,7 @@
       "reason": "auth print-api-key CLI 帮助文本模板的静态片段；源映射内保存相同源码。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -491,7 +491,7 @@
       "reason": "auth print-api-key CLI 帮助文本模板的静态片段；源映射内保存相同源码。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -516,7 +516,7 @@
       "reason": "auth print-api-key CLI 帮助文本模板的静态片段；源映射内保存相同源码。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -546,7 +546,7 @@
       "reason": "Pi 扩展或 provider 配置文档：环境变量插值及转义语法示例；未求值的字符串，不是主机环境变量内容。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -576,7 +576,7 @@
       "reason": "Pi 扩展或 provider 配置文档：环境变量插值及转义语法示例；未求值的字符串，不是主机环境变量内容。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -641,7 +641,7 @@
       "reason": "Pi 扩展或 provider 配置文档：环境变量插值及转义语法示例；未求值的字符串，不是主机环境变量内容。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -666,7 +666,7 @@
       "reason": "Pi 扩展或 provider 配置文档：环境变量插值及转义语法示例；未求值的字符串，不是主机环境变量内容。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -691,7 +691,7 @@
       "reason": "Pi 扩展或 provider 配置文档：环境变量插值及转义语法示例；未求值的字符串，不是主机环境变量内容。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -716,7 +716,7 @@
       "reason": "STS 类型声明文档中的 AssumeRole/AssumeRoleWithWebIdentity 示例响应，具有 EXAMPLE 标记和固定历史日期。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -741,7 +741,7 @@
       "reason": "STS 类型声明文档中的 AssumeRole/AssumeRoleWithWebIdentity 示例响应，具有 EXAMPLE 标记和固定历史日期。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -766,7 +766,7 @@
       "reason": "README complete 调用演示的 API 密钥占位值。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -791,7 +791,7 @@
       "reason": "README 初始化示例：全大写 API 密钥占位名称。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -816,7 +816,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -841,7 +841,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -866,7 +866,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -891,7 +891,7 @@
       "reason": "README 初始化示例：全大写 API 密钥占位名称。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -916,7 +916,7 @@
       "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -941,7 +941,7 @@
       "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -976,7 +976,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1006,7 +1006,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1031,7 +1031,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1066,7 +1066,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1101,7 +1101,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1131,7 +1131,7 @@
       "reason": "README 认证 API 调用或响应示例：文档中固定的 client secret、访问/刷新 token。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1176,7 +1176,7 @@
       "reason": "脱敏器测试：嵌套 password 字段与 Bearer 值用作脱敏输入及断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1236,7 +1236,7 @@
       "reason": "脱敏器测试：嵌套 password 字段与 Bearer 值用作脱敏输入及断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1261,7 +1261,7 @@
       "reason": "README Basic auth 示例的演示密码。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1286,7 +1286,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1311,7 +1311,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1336,7 +1336,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1361,7 +1361,7 @@
       "reason": "运行时代码哑值：expiry_date=1 的初始 refresh_token，首次调用前触发真实凭据刷新。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1386,7 +1386,7 @@
       "reason": "CloudWatch 传输文档 auth 示例的 your-* 密码占位值。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1416,7 +1416,7 @@
       "reason": "已发布包自身测试：固定 PKCS#1/PKCS#8 私钥与确定性 JWT，用于签名格式和相等性断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1456,7 +1456,7 @@
       "reason": "已发布包自身测试：固定 PKCS#1/PKCS#8 私钥与确定性 JWT，用于签名格式和相等性断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     },
@@ -1481,7 +1481,7 @@
       "reason": "字符串解析测试：固定 JWT 输入及解析结果断言。",
       "owner": "sixianli",
       "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-10-03T00:00:00Z",
+      "expiresAt": "2026-11-02T00:00:00Z",
       "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
       "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
     }
