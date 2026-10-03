@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:93346dc1cd53daef5218e0341f178d67b85f9922c55a1716be51a5467593c1c8"
+contract_sha256: "sha256:eaa5afd4d1b722888836f7fc7ed84c0a7ac12fc3ef6603ec12fb5536c48b8a2f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -11,6 +11,17 @@ date: "2026-08-27"
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
 当前开发测试遵循 [ADR 0046](../adr/0046-tests-back-on-hermes.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
+
+## 阅读导航
+
+- [安装和启动前提](#safety-and-preconditions)
+- [Ubuntu 24.04 的 bwrap 前提](#ubuntu-2404-bwrap)
+- [目标现场只读检查](#live-state-preflight)
+- [安装与启停步骤](#procedure)
+- [结果验证](#verification)
+- [证据保存](#evidence)
+- [回退](#rollback)
+- [停止条件](#stop-conditions)
 
 <!-- runbook-contract:
 - packages/platform-node/src/capabilities/capability-deployment.ts
@@ -352,6 +363,147 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 自动审查默认关闭：只有同时提供 `runPolicy.automaticReview`（`delegationKey`/`configurationVersion`/`modelRef`/`maximumWaitMs`/`maxOutputBytes`）和匹配的 Owner 委托记录才会外发。缺少该配置段时人工确认路径完全不变；配置存在但模型边界或受保护 Payload 不可用时启动以 `AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE` 失败，不会静默忽略。`modelRef` 必须指向已配置的生成模型；委托只覆盖逐条列出的确切请求摘要，审查输入只含冻结的操作摘要与版本身份，不含文件正文、路径或凭据。启用前须按 [P5 启用建议](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#automatic-review-enablement) 确认模型身份、接收方与费用额度。
 
 通用 HITL 需要 migration 0026、受保护恢复 Payload、审批存储和执行租约一同可用。公开入口使用已有身份与 CSRF 校验提供 `approval.list/detail/respond`，Thread 的等待、恢复和取消状态通过持久事件通知页面。等待审批不占用执行槽位；批准、拒绝、审批过期或原 Run 总期限到达后才重新领取。恢复仍使用原始截止时间，不能重新分配时长。其他治理操作未因审批入口接入而自动启用。
+
+<a id="ubuntu-2404-bwrap"></a>
+
+## Ubuntu 24.04 的 bwrap 前提
+
+Ubuntu 23.10 及以后版本引入了对普通用户程序使用用户命名空间的限制；Ubuntu 24.04 默认启用。用户命名空间是 Linux 让普通用户建立隔离运行环境的机制。安装 Linux 沙箱前，管理员必须读取 `kernel.apparmor_restrict_unprivileged_userns` 的实际值，不能只按系统版本判断。[Ubuntu 23.10 发布说明](https://discourse.ubuntu.com/t/mantic-minotaur-release-notes/35534)记录该版本发布时尚未默认启用；[Ubuntu 24.04 发布说明](https://documentation.ubuntu.com/release-notes/24.04/)说明默认限制及按程序配置的办法。
+
+AppArmor 是 Ubuntu 按程序限制权限的安全模块。该开关为 `1` 时，没有取得匹配 AppArmor 权限的普通用户程序使用用户命名空间会受到限制。bubblewrap（命令名 `bwrap`，产品在 Linux 上使用的沙箱程序）需要其中的权限，否则建立用户或网络隔离时会失败。[固定版本 SRT README](https://github.com/anthropics/sandbox-runtime/blob/v0.0.75/README.md#platform-specific-dependencies)说明了这项前提。
+
+本节记录两个已经批准的程序路径。管理员只检查、配置本次部署实际采用的路径；本节不要求为了安装产品同时安装两份 bwrap。若实际部署同时使用两处路径，则分别检查两处。Linux 的 `program/stdio MCP` 隔离后端（启动独立程序，或通过标准输入和输出与外部工具通信的后端）仍要求 bubblewrap `>=0.11.2`，并拒绝 setuid 程序（执行时借用文件所有者权限的程序）。系统 `/usr/bin/bwrap` 的版本不足时，不能把它代替该后端需要的 0.11.2 程序；给程序增加 AppArmor 规则不会升级版本或取消原有资格检查。
+
+| 实际采用的程序路径 | 对应规则文件 | 核对依据 |
+| --- | --- | --- |
+| `/usr/bin/bwrap` | `/etc/apparmor.d/bwrap` | ADR 0045 记录的系统 bwrap 路径；版本和是否被部署采用须在目标机核对 |
+| `/usr/local/libexec/bubblewrap-0.11.2/bwrap` | `/etc/apparmor.d/bwrap-0.11.2` | BL-20261001-001 记录的 0.11.2 安装路径；供 `program/stdio MCP` 后端使用 |
+
+以下命令由管理员（用户）自己执行。创建、加载或撤销 AppArmor 规则需要 root 权限，并改变系统安全设置；编程代理不执行这些改动。bwrap 的启动检查由管理员切换到产品最终使用的普通用户执行，产品不能以 root 运行。执行前仍须满足本 Runbook 的[目标现场检查](#live-state-preflight)、证据保存和针对实际目标的授权要求。
+
+管理员先以 root 执行只读检查，保存输出：
+
+~~~sh
+test "$(id -u)" -eq 0
+cat /etc/os-release
+sysctl kernel.apparmor_restrict_unprivileged_userns
+aa-status
+~~~
+
+然后只运行实际采用路径的版本与权限检查。
+
+若采用 `/usr/bin/bwrap`：
+
+~~~sh
+/usr/bin/bwrap --version
+stat -c '%U %G %a %n' /usr/bin/bwrap
+~~~
+
+若采用 0.11.2 安装路径：
+
+~~~sh
+/usr/local/libexec/bubblewrap-0.11.2/bwrap --version
+stat -c '%U %G %a %n' /usr/local/libexec/bubblewrap-0.11.2/bwrap
+sha256sum /usr/local/libexec/bubblewrap-0.11.2/bwrap
+~~~
+
+2026-10-01 的历史记录中，0.11.2 程序由 root 所有，权限为 `0755`，SHA-256 为 `20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3`。该记录不证明生产机当前仍有相同文件。管理员须核对本次采用的实际程序和已经批准的安装身份。实际采用的程序缺失、版本不足、身份不符，或读取系统前提失败时停止，不自动下载、重装程序或修改系统开关。
+
+开关为 `1` 时，检查实际采用路径是否已有有效规则。已有规则先核对内容和来源，不覆盖其他管理员维护的规则。需要修改已有规则时，先把原文件保存到本次受保护证据目录，记录原规则是否已加载，再由管理员确认具体改动。需要新建规则时，仅新建实际采用路径对应的文件。下面两个规则保持已经批准的原文，不把程序路径改成通配符。
+
+`/etc/apparmor.d/bwrap` 的内容：
+
+~~~text
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+~~~
+
+`/etc/apparmor.d/bwrap-0.11.2` 的内容：
+
+~~~text
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap-0.11.2 /usr/local/libexec/bubblewrap-0.11.2/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap-0.11.2>
+}
+~~~
+
+`profile` 名称和 `local` 引用分别为 `bwrap`、`bwrap-0.11.2`，防止加载第二条时替换第一条。`userns,` 只在对应程序的规则中授予用户命名空间权限；`flags=(unconfined)` 沿用原批准内容。该规则不代替产品自身的隔离策略。
+
+管理员只加载实际采用路径对应的规则。若采用系统 bwrap：
+
+~~~sh
+apparmor_parser -r /etc/apparmor.d/bwrap
+~~~
+
+若采用 0.11.2 安装路径：
+
+~~~sh
+apparmor_parser -r /etc/apparmor.d/bwrap-0.11.2
+~~~
+
+加载后检查规则状态和全局开关。原值为 `1` 时必须仍为 `1`；加载失败或实际状态不符时停止。[Ubuntu AppArmor 操作说明](https://ubuntu.com/server/docs/how-to/security/apparmor/)解释了 `-r` 加载或替换、`-R` 卸载规则的命令。
+
+~~~sh
+sysctl kernel.apparmor_restrict_unprivileged_userns
+aa-status
+~~~
+
+管理员把下面的 `<实际产品普通用户>` 替换为本次已确认的产品运行账号。先检查该账号的 UID（用户编号）不为 `0`，再执行实际采用路径的 bwrap 启动检查。不要用旧测试环境的账号代替产品最终运行账号。
+
+~~~sh
+D10_PRODUCT_USER='<实际产品普通用户>'
+test "$(id -u "$D10_PRODUCT_USER")" -ne 0
+~~~
+
+若采用系统 bwrap：
+
+~~~sh
+sudo -u "$D10_PRODUCT_USER" -- /usr/bin/bwrap --unshare-all --unshare-net --ro-bind / / --dev /dev --proc /proc /usr/bin/true
+~~~
+
+若采用 0.11.2 安装路径：
+
+~~~sh
+sudo -u "$D10_PRODUCT_USER" -- /usr/local/libexec/bubblewrap-0.11.2/bwrap --unshare-all --unshare-net --ro-bind / / --dev /dev --proc /proc /usr/bin/true
+~~~
+
+实际采用路径的命令必须退出为 `0`。失败时保存标准错误和退出码，停止后续安装或启动。`--unshare-all --unshare-net` 要求建立包含网络隔离的命名空间；`--ro-bind / /` 为这次启动检查提供只读系统文件。该检查只证明所选普通用户能启动 bwrap，不能证明完整产品沙箱、SRT 网络代理或 `program/stdio MCP` 后端已经通过验收。[bubblewrap 0.11.2 命令说明](https://github.com/containers/bubblewrap/blob/v0.11.2/bwrap.xml)给出了这些参数的含义。
+
+按项目的 SRT 集成指南，**不得关闭全局 `kernel.apparmor_restrict_unprivileged_userns` 开关，不得使用 `--privileged`，也不得以 root 运行产品来绕过失败**。系统前提不足时由管理员处理，不自动降低隔离要求。
+
+撤销前确认没有仍依赖对应规则的产品进程。管理员只撤销本次新增的规则，先卸载成功，再删除对应文件；卸载失败时停止，不继续删除。若原来已有规则且本次修改了它，应恢复已保存的原规则并按原加载状态恢复，不能把删除文件当作恢复原状。
+
+撤销本次新增的系统 bwrap 规则：
+
+~~~sh
+apparmor_parser -R /etc/apparmor.d/bwrap && rm -- /etc/apparmor.d/bwrap
+~~~
+
+撤销本次新增的 0.11.2 路径规则：
+
+~~~sh
+apparmor_parser -R /etc/apparmor.d/bwrap-0.11.2 && rm -- /etc/apparmor.d/bwrap-0.11.2
+~~~
+
+撤销后保存 `aa-status` 和全局开关的只读检查结果。全局开关保持原值；原值为 `1` 时，对应普通用户程序会再次受到限制。撤销规则不删除 0.11.2 程序，也不清理云服务器的旧测试环境。ADR 0046 要求生产需要的 0.11.2 程序及规则继续保留；本节中的撤销命令不授予撤销生产机已有规则的权限。
+
+Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArmor 行为。部署前须在实际生产机上，以最终运行账号检查实际程序版本、摘要、权限、匹配规则、全局开关和上述启动结果，并继续完成实际产品路径检查。这属于 R2-L2 的生产前提核对。云服务器不用于开发测试；生产部署或服务变更仍须逐次取得用户明确授权。2026-10-01 的旧结果只作历史记录，不能代替此次检查。本次 D10 只补文档，没有登录生产机或修改系统设置，产品启动时的自动检测仍留待第二轮以后。
+
+[SOURCE: docs/adr/0045-short-test-temp-root.md#apparmor]
+[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
+[SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
+[SOURCE: docs/adr/0046-tests-back-on-hermes.md]
+[SOURCE: docs/assets/others/Anthropic_SRT_AI_Agent_Integration_Guide_2026-09-07.md]
+
+[↑ 返回阅读导航](#阅读导航)
 
 ## Live-State Preflight
 
