@@ -7,7 +7,10 @@ import type {
   SandboxReservationReleaseVerification,
 } from "@himawari-agent/application";
 import type { SandboxExecutionPlanV2 } from "@himawari-agent/execution-contracts";
-import { SANDBOX_PREPARATION_PROTOCOL } from "@himawari-agent/execution-contracts";
+import {
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SANDBOX_PREPARATION_PROTOCOL,
+} from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
@@ -65,9 +68,17 @@ export class SqliteSandboxReservationRelease {
     plan: SandboxExecutionPlanV2,
     proof: SandboxReservationReleaseVerification,
   ): boolean {
-    if (proof.basis === "preparation_not_authorized") {
-      if (plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL)
+    if (
+      proof.basis === "preparation_not_authorized" ||
+      proof.basis === "preparation_launch_blocked"
+    ) {
+      const blocked = proof.basis === "preparation_launch_blocked";
+      if (
+        plan.preparationProtocol !== SANDBOX_PREPARATION_LAUNCH_PROTOCOL &&
+        (blocked || plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL)
+      )
         return this.fail("PORT_INVALID_OPERATION", "SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE");
+      const controlKey = `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}`;
       return (
         plan.backendRef === "srt" &&
         Boolean(
@@ -80,15 +91,22 @@ export class SqliteSandboxReservationRelease {
           AND json_extract(r.plan_json,'$.backendRef')='srt'
           AND json_extract(r.plan_json,'$.preparationProtocol')=?
           AND a.purpose='trace' AND a.operation_key=? AND a.payload_ref=? AND a.content_digest=?
+          AND (?=0 OR NOT EXISTS (
+            SELECT 1 FROM run_payload_artifacts main
+            WHERE main.owner_id=r.owner_id AND main.agent_id=r.agent_id AND main.run_id=r.run_id
+              AND main.purpose='trace' AND main.operation_key=?
+          ))
       `)
             .get(
               plan.identity.jobId,
               plan.identity.ownerId,
               plan.identity.agentId,
-              SANDBOX_PREPARATION_PROTOCOL,
-              `sandbox-control:${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex")}:preparation`,
+              plan.preparationProtocol,
+              `${controlKey}:preparation${blocked ? ":launch-blocked" : ""}`,
               proof.evidence?.ref ?? null,
               `sha256:${proof.evidence?.digest}`,
+              blocked ? 1 : 0,
+              controlKey,
             ),
         )
       );

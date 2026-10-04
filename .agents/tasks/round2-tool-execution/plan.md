@@ -99,6 +99,8 @@
 
 - 2026-10-04 R2-S1/S4/D3 第3层（55564a2）五项目完整运行：5290 条中 5286 通过、4 失败，均为既有精确契约测试未跟进批准的新增字段或只读导出：sandbox-execution-preparation 两条、sqlite-sandbox-request-boundaries 一条缺 sandboxResourcesAbsent=false；workspace-boundaries 白名单缺 readLinuxHostGroup。仅补齐三份测试的预期并加条目标签，保持精确相等、导入拒绝和原时限；生产源码未变。保留失败报告，先跑同四条和整个 integration 项目、第1层，再提交并在最终提交重跑第3层和七个 Linux 产品场景。
 
+- 2026-10-04 R2-D4：Hermes 修复前安装包构建返回 0，确认丢失产品测试启动命令返回 1；后续 ssh hermes 多次在 banner exchange 阶段超时，报告和现场尚未取回。退出码不记作缺陷复现，也不改 SSH/Cloudflare 配置或测试时限。公开路径测试及真实文件/SQLite 竞争测试先写并启动后，基于已确认的生产登记/停止代码缺口继续本地实现草稿；未核对原失败及修后第 0–3 层、产品读回前不提交、不记录完成审核。
+
 ## 决定
 
 - 2026-10-02 D18、D19 不在当前批次修；当前批次只完成 20 文件运行和第 3 层。
@@ -123,3 +125,5 @@
 - 2026-10-04 G39：任务 JSON 仅作排版修正，不把 .agents/tasks 从既有 Biome 检查排除；goal 与 plan 历史只追加。D3 延续已批准方案；S4 僵尸复现将比较等待父进程回收与对仍有准确身份的僵尸 Host 自身组回收，保持未回收前不报告释放的保护。验收以真实 /proc 身份、代理退出、Host 在父进程 wait 前仍为 Z，以及六处原交付断言为准。
 
 - 2026-10-04 G39 / R2-S4：真实 subreaper 父进程保留 Host Z，guardian 在原 5000 毫秒清理期限退出后代理仍为 S，确认旧逻辑把 Z 当活 Host 一直等待。选择对同 PID/启动时间且 PGID=SID=原 Host 的 Z 立即回收自身锚定组；等待父进程 wait 的方案会再次遗留代理。发信号前再次核对身份，仍只发给当前自身组，Agent 继续把 Z 算成员并拒绝提前报告释放。验收是同一实际 Linux 测试先红后绿、身份不符拒绝发送、wait 前只剩 Host Z、wait 后组为空，原七场景断言保持。
+
+- 2026-10-04 R2-D4 内部方案自审（G39）：采用新冻结协议 launch-or-block.v2，Worker 申请启动、Agent 禁止启动争用同一原控制目录内的完整不可覆盖文件；Agent 再保存保护 Artifact，SQLite 同事务核对后释放。比较过重复原登记（持续确认丢失无解、禁止业务重放）和新增许可 RPC（仍有确认丢失窗口）。旧 v1/无字段计划不升级，启动先赢而无 Host 的窗口保留 UNKNOWN。设计见 docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md；验收为真实安装路径确认丢失红绿、迟到启动/原子竞争/重启/回滚与身份反例，第 0–3 层和受影响 Linux 产品路径，不改完成条件。

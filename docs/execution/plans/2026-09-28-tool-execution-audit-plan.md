@@ -285,7 +285,7 @@ TE-11独立提交前，当前源码的73项相邻测试、完整npm run check通
 
 reply-17 已撤回 reply-16 的旧 unresolved 额外尝试；前节描述保留为历史要求，不再实施。新 SRT 计划带固定准备协议字段，旧计划缺省读取不回填，历史 Worker 在建宿主前由严格解析拒绝新字段。设计与静态历史证明见 [A2 准备封锁设计](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#第二轮-a2准备登记之前的封锁) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
-真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。登记成功但 ACK 丢失仍无终点；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
+真实 SQLite 竞争、回滚、权限和旧计划矩阵已经通过。新版真实安装在原 Run 期限前接受 preparation_not_authorized，释放占用，持久结果为 SANDBOX_TOOL_NOT_STARTED，模型只收到一次固定中文说明并继续；成对重启无重复。单独的旧格式安装在重启及原期限后仍未释放、不产生模型工具回复。完整过程、测试夹具缺陷、数据库独立读回、检查及提交状态见 [A2 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-verification.md)。本段记录的历史协议在登记成功但 ACK 丢失时仍无终点；新协议另见下方 R2-D4，历史资格不因此扩大；D、E、B1 至 B3、Backlog 和最终无筛选资格尚待继续，不把 A2 定向通过当作整轮完成。
 
 A2 提交前完整 `npm run check` 与 `npm test` 均退出 0，4,924 项全部通过、零失败/跳过。四份受影响 Runbook 语义核对后重新封存，严格校验零错误/警告。真实新旧安装的数据库以只读 immutable 方式独立复核，原文件摘要不变。
 
@@ -530,3 +530,9 @@ G39 交接要求复核守护进程的成本和长期僵尸条件。真实 Linux 
 按[Linux Host 组清理](../specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)允许准确匹配的原僵尸身份触发自身组回收，并在发信号前再次核对。原准备期限、清理期限和释放门禁保持。父进程尚未收尸时只剩原 Host `Z`，不能据此释放资源占用；父进程 `wait()` 后才有空组证明。资格测试的六处结果交付及 S1 停止断言继续保留。 候选编译 JS 的 20 次成本测量为新增准备中位数 60.7 毫秒、P95 75.4 毫秒、最大 82.9 毫秒，闲置 RSS 中位数 47.4 MiB、最大 47.7 MiB；完整方法与限制见[清理进程启动成本](../specs/2026-09-24-isolated-tool-execution-design.md#linux-host-guardian-cost)。
 
 [返回阅读导航](#阅读导航)
+
+### R2-D4：准备确认丢失后的启动决定
+
+按用户 G39 的独立规划与自审授权，本项采用[准备启动与停止仲裁设计](../specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。新协议为新计划冻结有版本的启动/禁止决定，原协议不补写；实际完成状态只读取长任务证据。先通过真实安装注入登记被接受后的确认丢失，再检查唯一未启动结果、占用释放、没有 Host 或操作重放；真实文件/SQLite 竞争补测先后顺序、重复启动、重建、回滚和身份替换。
+
+修复前真实安装的保留报告已取回并核对：登记确实被接受，Worker 未收到确认且无 Host 创建；40 秒后仍为 `reconciling_external_result`，reserved 预约没有 started_at、没有释放回执、占用未释放。失败断言与 SQLite 独立读回共同确认 D4，证据为 `E20261004T225127-c47bcf`。完成代码检查、第 0–3 层、受影响 Linux 产品路径与自审之前，不提交本项；历史资格只覆盖当时的代码和场景。

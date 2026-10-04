@@ -116,7 +116,7 @@ describe("committed manifest and lock constraints", () => {
   });
 });
 
-it("[R2-S4] limits Agent imports to risk-reducing sandbox control", async () => {
+it("[R2-S4] [R2-D4] limits Agent imports to risk-reducing sandbox control", async () => {
   for (const specifier of [
     "@himawari-agent/runtime-sandbox",
     "@himawari-agent/runtime-sandbox/src/job-host.ts",
@@ -130,10 +130,12 @@ it("[R2-S4] limits Agent imports to risk-reducing sandbox control", async () => 
   ).toBe(true);
   const control = await import("@himawari-agent/runtime-sandbox/control");
   expect(Object.keys(control).sort()).toEqual([
+    "blockJobHostLaunch",
     "containerRunnerDigest",
     "processGroupPresent",
     "queryJobHostControl",
     "readJobHostFinalEvidence",
+    "readJobHostLaunchDecision",
     "readJobHostStartEvidence",
     "readLinuxHostGroup",
     "readLinuxNamespaceState",

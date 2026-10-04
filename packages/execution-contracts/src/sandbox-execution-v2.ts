@@ -84,8 +84,11 @@ const additions = object({
   environmentId: machineString,
 });
 export const SANDBOX_PREPARATION_PROTOCOL = "register-before-host.v1" as const;
+export const SANDBOX_PREPARATION_LAUNCH_PROTOCOL = "launch-or-block.v2" as const;
 type Additions = InferSchema<typeof additions> & {
-  readonly preparationProtocol?: typeof SANDBOX_PREPARATION_PROTOCOL;
+  readonly preparationProtocol?:
+    | typeof SANDBOX_PREPARATION_PROTOCOL
+    | typeof SANDBOX_PREPARATION_LAUNCH_PROTOCOL;
 };
 export type SandboxExecutionPlanV2 = Omit<SandboxExecutionPlan, "schemaVersion"> &
   Additions & {
@@ -127,10 +130,10 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
     schemaVersion: SANDBOX_EXECUTION_V2_SCHEMA_VERSION,
     ...(Object.hasOwn(value, "preparationProtocol")
       ? {
-          preparationProtocol: literal(SANDBOX_PREPARATION_PROTOCOL).parse(
-            preparationProtocol,
-            `${path}.preparationProtocol`,
-          ),
+          preparationProtocol: enumeration([
+            SANDBOX_PREPARATION_PROTOCOL,
+            SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+          ]).parse(preparationProtocol, `${path}.preparationProtocol`),
         }
       : {}),
   });

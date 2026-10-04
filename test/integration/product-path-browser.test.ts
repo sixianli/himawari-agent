@@ -695,7 +695,7 @@ productDescribe(
                   .toBe("unresolved");
                 expect(readback().controlArtifacts).toEqual([]);
               } else {
-                expect(plan.preparationProtocol).toBe("register-before-host.v1");
+                expect(plan.preparationProtocol).toBe("launch-or-block.v2");
                 await uiExpect
                   .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
                   .toBe("completed");
@@ -786,6 +786,138 @@ productDescribe(
         }
       },
     );
+
+    it("[R2-D4] releases an accepted preparation after its ACK is lost without starting or replaying the tool", async () => {
+      await installation.stop();
+      await installation.setRunDeadline(90_000);
+      await installation.start();
+      await page.reload();
+      try {
+        await scenario("33-preparation-ack-loss", async () => {
+          await newThread();
+          const before = new Set(executionReadback().map((record) => record.jobId));
+          const text = "准备登记确认丢失验证：请读取 notes.txt";
+          const baseline = await readFile(path.join(installation.workspace, "notes.txt"), "utf8");
+          await installation.armPreparationAckLoss();
+          await send(text);
+          const allow = page.getByRole("button", { name: "允许这一次" });
+          await uiExpect
+            .poll(
+              async () =>
+                (await allow.count()) > 0 || (await installation.preparationAckLoss()) !== null,
+              { timeout: 60_000 },
+            )
+            .toBe(true);
+          if ((await allow.count()) > 0) await allow.first().click();
+          await uiExpect
+            .poll(() => installation.preparationAckLoss(), { timeout: 40_000 })
+            .not.toBeNull();
+          const fault = await installation.preparationAckLoss();
+          if (!fault) throw new Error("Preparation ACK loss missing");
+          const readback = () => {
+            const database = openQualifiedDatabase(installation.databasePath);
+            try {
+              return {
+                at: new Date().toISOString(),
+                fault,
+                rows: executionReadback().filter((row) => row.jobId === fault.jobId),
+                execution: database
+                  .prepare(
+                    "SELECT preparation_state AS phase,started_at AS startedAt,plan_json AS plan,recovery_json AS recovery FROM sandbox_execution_records WHERE job_id=?",
+                  )
+                  .get(fault.jobId) as {
+                  phase: string;
+                  startedAt: string | null;
+                  plan: string;
+                  recovery: string | null;
+                },
+                reservationReleases: database
+                  .prepare(
+                    "SELECT accepted_at,verification_json FROM sandbox_reservation_release_receipts WHERE job_id=?",
+                  )
+                  .all(fault.jobId) as Array<{ accepted_at: string; verification_json: string }>,
+                occupancy: database
+                  .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+                  .all(fault.jobId),
+                controlArtifacts: database
+                  .prepare(
+                    "SELECT operation_key,payload_ref,content_digest FROM run_payload_artifacts WHERE run_id=(SELECT run_id FROM sandbox_execution_records WHERE job_id=?) AND operation_key LIKE 'sandbox-control:%'",
+                  )
+                  .all(fault.jobId),
+                replies: observedToolReplies(text),
+                modelMessages: observedToolMessages(text),
+                quickCheck: database.pragma("quick_check"),
+              };
+            } finally {
+              database.close();
+            }
+          };
+          const snapshots: unknown[] = [];
+          const record = async (stage: string) => {
+            snapshots.push({
+              stage,
+              ...readback(),
+              currentFault: await installation.preparationAckLoss(),
+            });
+            await writeFile(
+              path.join(outputDirectory, "33-preparation-ack-loss-readback.json"),
+              JSON.stringify({ snapshots }, null, 2),
+            );
+          };
+          try {
+            const accepted = readback();
+            expect(accepted.fault.acceptedBeforeAckLoss).toBe(true);
+            expect(accepted.execution).toMatchObject({ phase: "reserved", startedAt: null });
+            expect(accepted.controlArtifacts).toContainEqual(
+              expect.objectContaining({ operation_key: expect.stringMatching(/:preparation$/) }),
+            );
+            await record("accepted-without-ack");
+            await uiExpect
+              .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
+              .toBe("completed");
+            const done = readback();
+            const plan = JSON.parse(done.execution.plan);
+            expect(plan.preparationProtocol).toBe("launch-or-block.v2");
+            expect(Date.now()).toBeLessThan(Date.parse(plan.originalDeadlineAt));
+            expect(done.rows).toHaveLength(1);
+            expect(executionReadback().filter((row) => !before.has(row.jobId))).toHaveLength(1);
+            expect(done.rows[0]).toMatchObject({ runStatus: "completed", intents: 0 });
+            expect(done.execution.startedAt).toBeNull();
+            expect(done.reservationReleases).toHaveLength(1);
+            expect(
+              JSON.parse(done.reservationReleases[0]?.verification_json ?? "null"),
+            ).toMatchObject({ basis: "preparation_launch_blocked" });
+            expect(done.occupancy).not.toEqual([]);
+            expect(done.occupancy).not.toContainEqual({ released_at: null });
+            expect(done.replies.map((ids) => ids.length)).toEqual([1]);
+            expect(JSON.stringify(done.modelMessages)).toContain(
+              "工具未启动：准备阶段失败，已确认清理完成。",
+            );
+            expect((await installation.preparationAckLoss())?.hostForks).toEqual([]);
+            expect(await readFile(path.join(installation.workspace, "notes.txt"), "utf8")).toBe(
+              baseline,
+            );
+            await record("released-before-deadline");
+            await installation.crash();
+            await waitForExpiredServiceLease();
+            await installation.start();
+            await page.reload();
+            expect(readback().reservationReleases).toEqual(done.reservationReleases);
+            expect(readback().replies.map((ids) => ids.length)).toEqual([1]);
+            expect(readback().execution.startedAt).toBeNull();
+            expect((await installation.preparationAckLoss())?.hostForks).toEqual([]);
+            await record("after-paired-restart");
+          } finally {
+            await record("final-observation");
+          }
+        });
+      } finally {
+        await installation.stop();
+        await installation.setRunDeadline(900_000);
+        await installation.start();
+        await page.reload();
+      }
+    });
 
     it("delivers a verified preparation failure and exposes its private diagnostic through the CLI", async () => {
       await scenario("12-preparation-failure", async () => {

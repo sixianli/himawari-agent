@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, rmdir } from "node:fs/promises";
+import { lstat, mkdtemp, rm, rmdir } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { PayloadUdsServer } from "@himawari-agent/platform-node";
 import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   verify: vi.fn(),
 }));
-vi.mock("@himawari-agent/runtime-sandbox", () => ({
+vi.mock("@himawari-agent/runtime-sandbox", async (original) => ({
+  ...(await original<object>()),
   prepareSandboxJobHost: mocks.prepare,
   prepareJobPolicy: mocks.policy,
 }));
@@ -25,6 +26,11 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
+import { SANDBOX_PREPARATION_LAUNCH_PROTOCOL } from "@himawari-agent/execution-contracts";
+import {
+  blockJobHostLaunch,
+  type JobHostControlBinding,
+} from "@himawari-agent/runtime-sandbox/control";
 import { udsFaultProxy } from "@himawari-agent/testing";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
@@ -51,6 +57,7 @@ it.each([
   "bind-ack-loss",
   "registration-revoked",
   "preparation-registration-ack-loss",
+  "[R2-D4] preparation-ack-blocked",
   "preparation-sealed",
   "preparation-failed",
   "resolve-transport-failure",
@@ -78,6 +85,7 @@ it.each([
   const validPi = piScenario && scenario !== "pi-fixed-without-target";
   const recoveredDuringDelivery = scenario === "pi-recovered-during-delivery";
   const streamScenario = scenario.startsWith("stream-");
+  const launchBlocked = scenario === "[R2-D4] preparation-ack-blocked";
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
   const fixedTarget = {
@@ -95,38 +103,40 @@ it.each([
     expectedStatus: 204,
     timeoutMs: 1000,
   };
-  const plan = background
-    ? {
-        ...admitted.plan,
-        mode: service ? ("service" as const) : ("background" as const),
-        operationContract: service
-          ? {
-              kind: "service_start" as const,
-              ref: "service",
-              version: "1",
-              readinessProbeRef: "ready",
-            }
-          : { kind: "task_start" as const, ref: "task", version: "1" },
-      }
-    : scenario === "command" || scenario === "network"
+  const plan = launchBlocked
+    ? { ...admitted.plan, preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
+    : background
       ? {
           ...admitted.plan,
-          operationContract: {
-            kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
-            ref: "command",
-            version: "1",
-          },
+          mode: service ? ("service" as const) : ("background" as const),
+          operationContract: service
+            ? {
+                kind: "service_start" as const,
+                ref: "service",
+                version: "1",
+                readinessProbeRef: "ready",
+              }
+            : { kind: "task_start" as const, ref: "task", version: "1" },
         }
-      : piScenario
+      : scenario === "command" || scenario === "network"
         ? {
             ...admitted.plan,
             operationContract: {
-              kind: "fixed_read" as const,
-              ref: "pi-coding-tool",
-              version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
+              kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
+              ref: "command",
+              version: "1",
             },
           }
-        : admitted.plan;
+        : piScenario
+          ? {
+              ...admitted.plan,
+              operationContract: {
+                kind: "fixed_read" as const,
+                ref: "pi-coding-tool",
+                version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
+              },
+            }
+          : admitted.plan;
   const calls: string[] = [];
   let reconcilingResource: unknown;
   let releasedResource: unknown;
@@ -273,6 +283,8 @@ it.each([
         facts?: typeof facts;
         expectedSequence?: number;
         chunk?: { index: number; end: boolean; bytesBase64: string };
+        control?: JobHostControlBinding;
+        policyDigest?: string;
       },
     ) => {
       calls.push(command.kind);
@@ -308,6 +320,24 @@ it.each([
       }
       if (command.kind === "register_preparation_control" && scenario === "preparation-sealed")
         throw Object.assign(new Error("Preparation already sealed"), { code: "PORT_CONFLICT" });
+      if (command.kind === "register_preparation_control" && launchBlocked) {
+        if (!command.control || !command.policyDigest)
+          throw new Error("Preparation binding missing");
+        const metadata = await lstat(command.control.directory);
+        expect(
+          await blockJobHostLaunch(
+            {
+              plan,
+              control: command.control,
+              policyDigest: command.policyDigest,
+              directoryDevice: String(metadata.dev),
+              directoryInode: String(metadata.ino),
+            },
+            T1,
+          ),
+        ).toBe(true);
+        calls.push("launch-blocked", "preparation-acknowledged");
+      }
       if (
         command.kind === "register_preparation_control" &&
         scenario === "preparation-registration-ack-loss"
@@ -684,11 +714,21 @@ it.each([
   if (
     scenario === "pi-fixed-without-target" ||
     scenario === "preparation-registration-ack-loss" ||
-    scenario === "preparation-sealed"
+    scenario === "preparation-sealed" ||
+    launchBlocked
   ) {
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.cancel).not.toHaveBeenCalled();
   } else expect(host.cancel).toHaveBeenCalled();
+  if (launchBlocked) {
+    expect(calls.indexOf("launch-blocked")).toBeLessThan(calls.indexOf("preparation-acknowledged"));
+    expect(host.start).not.toHaveBeenCalled();
+    expect(calls).not.toContain("register_control");
+    expect(calls).not.toContain("bind");
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(calls.filter((kind) => kind === "register_preparation_control")).toHaveLength(1);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  }
   if (
     [
       "preparation-registration-ack-loss",

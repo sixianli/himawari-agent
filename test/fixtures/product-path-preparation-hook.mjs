@@ -1,5 +1,5 @@
 import cp from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, renameSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -8,6 +8,12 @@ import { isMainThread } from "node:worker_threads";
 
 const original = cp.fork;
 cp.fork = (file, args, options) => {
+  const ackLoss = process.env.HIMAWARI_TEST_PREPARATION_ACK_LOSS;
+  if (ackLoss && String(file).endsWith("/job-host-main.js") && existsSync(`${ackLoss}.consumed`))
+    appendFileSync(
+      `${ackLoss}.hosts.jsonl`,
+      `${JSON.stringify({ at: new Date().toISOString() })}\n`,
+    );
   const fault = process.env.HIMAWARI_TEST_PREPARATION_FAILURE;
   if (fault && String(file).endsWith("/job-host-main.js") && existsSync(fault)) {
     renameSync(fault, `${fault}.consumed`);
@@ -59,6 +65,24 @@ if (isMainThread && process.argv[1].endsWith("/execution-worker/dist/main.js")) 
   const sandboxExecution = ProductionPayloadBrokerClient.prototype.sandboxExecution;
   ProductionPayloadBrokerClient.prototype.sandboxExecution = async function (...args) {
     const command = args[2];
+    const ackLoss = process.env.HIMAWARI_TEST_PREPARATION_ACK_LOSS;
+    if (ackLoss && command.kind === "register_preparation_control" && existsSync(ackLoss)) {
+      renameSync(ackLoss, `${ackLoss}.consumed`);
+      await sandboxExecution.apply(this, args);
+      writeFileSync(
+        `${ackLoss}.entered`,
+        JSON.stringify({
+          pid: process.pid,
+          at: new Date().toISOString(),
+          jobId: args[1].jobId,
+          attemptId: args[1].attemptId,
+          sessionId: command.control.sessionId,
+          directory: command.control.directory,
+          acceptedBeforeAckLoss: true,
+        }),
+      );
+      throw new Error("PAYLOAD_CHANNEL_DISCONNECTED");
+    }
     const gate = process.env.HIMAWARI_TEST_HOST_FINISH_GATE;
     if (
       !gate ||

@@ -284,6 +284,13 @@ export interface ProductPathInstallation {
   armPreparationFailure(): Promise<void>;
   armPreparationTransportFailure(legacyPlan?: boolean): Promise<void>;
   preparationTransportFailure(): Promise<unknown | null>;
+  armPreparationAckLoss(): Promise<void>;
+  preparationAckLoss(): Promise<{
+    jobId: string;
+    directory: string;
+    acceptedBeforeAckLoss: boolean;
+    hostForks: readonly unknown[];
+  } | null>;
   armFinishGate(
     stage?:
       | "before-end"
@@ -900,6 +907,7 @@ export async function installProductPath(options: {
       testRoot,
       "preparation-transport-failure",
     ),
+    HIMAWARI_TEST_PREPARATION_ACK_LOSS: path.join(testRoot, "preparation-ack-loss"),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
   };
@@ -1063,6 +1071,35 @@ export async function installProductPath(options: {
       current.worker.kill("SIGKILL");
       if (!(await exited(current.worker, 5000)))
         throw new Error("PRODUCT_PATH_WORKER_CRASH_TIMEOUT");
+    },
+    armPreparationAckLoss: async () => {
+      const gate = serviceEnv.HIMAWARI_TEST_PREPARATION_ACK_LOSS;
+      for (const suffix of [".entered", ".consumed", ".hosts.jsonl"])
+        await rm(`${gate}${suffix}`, { force: true });
+      await writeFile(gate, "armed");
+    },
+    preparationAckLoss: async () => {
+      const gate = serviceEnv.HIMAWARI_TEST_PREPARATION_ACK_LOSS;
+      const entered = await readFile(`${gate}.entered`, "utf8").catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      );
+      if (entered === null) return null;
+      const hosts = await readFile(`${gate}.hosts.jsonl`, "utf8").catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return "";
+          throw error;
+        },
+      );
+      return {
+        ...JSON.parse(entered),
+        hostForks: hosts
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line)),
+      };
     },
     armPreparationTransportFailure: async (legacyPlan = false) => {
       await writeFile(

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -22,6 +22,7 @@ import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   piCodingToolNameSchema,
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
@@ -44,6 +45,7 @@ import {
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import {
+  claimJobHostLaunch,
   prepareJobPolicy,
   prepareSandboxJobHost,
   readJobHostFinalEvidence,
@@ -390,6 +392,7 @@ export class ProductionSandboxExecutionV2 {
         jobId: plan.identity.jobId,
         attemptId: plan.identity.attemptId,
       };
+      const controlMetadata = await lstat(controlDirectory);
       stage = "register_preparation_control";
       await this.rpc(entry, {
         kind: "register_preparation_control",
@@ -399,6 +402,19 @@ export class ProductionSandboxExecutionV2 {
       });
       if (entry.cancelled || this.closed) return this.unknown(entry);
       stage = "prepare";
+      if (
+        plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL &&
+        !(await claimJobHostLaunch({
+          plan,
+          control: controlBinding,
+          policyDigest: compiled.policyDigest,
+          directoryDevice: String(controlMetadata.dev),
+          directoryInode: String(controlMetadata.ino),
+        }))
+      )
+        return this.unknown(entry);
+      if (entry.cancelled || this.closed || this.options.clock.now() >= plan.effectiveDeadlineAt)
+        return this.unknown(entry);
       const host = prepareSandboxJobHost(
         {
           jobId: plan.identity.jobId,

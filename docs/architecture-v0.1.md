@@ -62,6 +62,8 @@ Linux 的 Host 和任务属于两个不同的进程组。Host 是自己组和会
 
 Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
 
+新建 SRT 计划冻结 `launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划不升级。准备控制登记后，Worker 在原私有控制目录内竞争唯一的启动决定，只有本次发布成功才可以创建 Host。Agent 的 control 入口只可以写禁止启动或读回决定，不导出申请启动入口；原绑定、目录 inode 和 HMAC 检查仍保护决定。停止先赢时，Agent 用独立读回的受保护 Artifact 生成 `preparation_launch_blocked`，SQLite 在原释放事务内核对其归属、摘要及无 main Host 登记后释放占用，沿用一次“工具未启动”交付。启动先赢而缺少 Host 证明时仍保留 UNKNOWN。机制及验收见[准备启动仲裁设计](execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
+
 R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出由 R6 的连续受保护片段补充。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。
 
 R5 使用安装树中的 `pi-coding-main.js` 执行 Pi 七种前台工具。Worker 只为 `pi-coding-tool` 版本 `1` 的匹配操作构造 `pi-runner.v1` 输入；目录、主机、调用和期限来自既有 scope，模型参数仍是原冻结 Payload。`host-file-read-main.js` 保留文件元数据/正文双阶段。Pi 定义只在 runtime-pi 内提取，模型侧执行仍经过产品端口；新增 runner 不自动注册未授权工具。目标安装目录中的 `pi-tools/bin/{bash,rg,fd}` 是普通可执行文件，纳入原 runtimeDigest，禁止软链接、PATH 回退和 Pi 自动下载。

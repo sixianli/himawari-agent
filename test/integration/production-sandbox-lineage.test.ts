@@ -322,7 +322,7 @@ describe("production sandbox file and delegation lineage", () => {
     );
   });
   it.each([false, true])(
-    "prepares a child with its own protocol and bounded authority (legacy parent=%s)",
+    "[R2-D4] prepares a child with its own protocol and bounded authority (legacy parent=%s)",
     async (legacy) => {
       const f = await fixture();
       const parent = await startParent(f, true, legacy);
@@ -333,7 +333,7 @@ describe("production sandbox file and delegation lineage", () => {
         runId: parent.plan.identity.runId,
         hostId: parent.plan.identity.hostId,
       });
-      expect(child.plan).toMatchObject({ preparationProtocol: "register-before-host.v1" });
+      expect(child.plan).toMatchObject({ preparationProtocol: "launch-or-block.v2" });
       expect(Object.hasOwn(parent.plan, "preparationProtocol")).toBe(!legacy);
       expect(child.plan.identity.jobId).not.toBe(parent.plan.identity.jobId);
       expect(child.plan.executionLease).toEqual(parent.plan.executionLease);

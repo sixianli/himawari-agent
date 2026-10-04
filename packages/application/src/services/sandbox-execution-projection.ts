@@ -1,5 +1,6 @@
 import {
   isSandboxToolResultLost,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_PREPARATION_PROTOCOL,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   type SandboxEnvironment,
@@ -26,7 +27,11 @@ export function isSandboxReservationNeverStarted(
     verification?.basis === "host_never_started" ||
     (verification?.basis === "preparation_not_authorized" &&
       plan.backendRef === "srt" &&
-      plan.preparationProtocol === SANDBOX_PREPARATION_PROTOCOL)
+      (plan.preparationProtocol === SANDBOX_PREPARATION_PROTOCOL ||
+        plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL)) ||
+    (verification?.basis === "preparation_launch_blocked" &&
+      plan.backendRef === "srt" &&
+      plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL)
   );
 }
 

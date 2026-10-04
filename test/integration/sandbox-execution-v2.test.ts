@@ -999,16 +999,19 @@ describe("preparation protocol plan compatibility", () => {
     expect(JSON.stringify(parsed)).toBe(original);
     expect(Object.hasOwn(parsed, "preparationProtocol")).toBe(false);
   });
-  it("accepts the fixed protocol on new plans and candidates without changing their identity", () => {
-    const old = fixture().plan;
-    const input = { ...old, backendRef: "srt", preparationProtocol: "register-before-host.v1" };
-    const parsed = sandboxExecutionPlanV2Schema.parse(input);
-    expect(parsed).toEqual(input);
-    expect(parsed.semanticFingerprint).toBe(old.semanticFingerprint);
-    expect(parsed.binding).toEqual(old.binding);
-    const { semanticFingerprint: _fingerprint, ...candidate } = input;
-    expect(sandboxExecutionPlanCandidateV2Schema.parse(candidate)).toEqual(candidate);
-  });
+  it.each(["register-before-host.v1", "launch-or-block.v2"])(
+    "[R2-D4] accepts protocol %s on plans and candidates without changing their identity",
+    (preparationProtocol) => {
+      const old = fixture().plan;
+      const input = { ...old, backendRef: "srt", preparationProtocol };
+      const parsed = sandboxExecutionPlanV2Schema.parse(input);
+      expect(parsed).toEqual(input);
+      expect(parsed.semanticFingerprint).toBe(old.semanticFingerprint);
+      expect(parsed.binding).toEqual(old.binding);
+      const { semanticFingerprint: _fingerprint, ...candidate } = input;
+      expect(sandboxExecutionPlanCandidateV2Schema.parse(candidate)).toEqual(candidate);
+    },
+  );
   it.each([undefined, null, "", "register-before-host.v2", false])(
     "rejects an explicitly invalid preparation protocol %s",
     (preparationProtocol) => {

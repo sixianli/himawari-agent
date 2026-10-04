@@ -1,5 +1,16 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import {
   ApplicationPortError,
@@ -17,6 +28,7 @@ import {
   sandboxExecutionReservationSchema,
 } from "@himawari-agent/execution-contracts";
 import { SqliteRunPayloadArtifactOperations } from "@himawari-agent/persistence-sqlite";
+import { claimJobHostLaunch, type JobHostLaunchContext } from "@himawari-agent/runtime-sandbox";
 import { afterEach, expect, it } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
@@ -36,7 +48,7 @@ afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-async function fixture(protocol = true, backendRef = "srt") {
+async function fixture(protocol: boolean | "launch-or-block.v2" = true, backendRef = "srt") {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
   const operations = operationsForDatabase(f.database);
@@ -53,7 +65,9 @@ async function fixture(protocol = true, backendRef = "srt") {
   const candidate = {
     ...base.plan,
     backendRef,
-    ...(protocol ? { preparationProtocol: "register-before-host.v1" as const } : {}),
+    ...(protocol
+      ? { preparationProtocol: protocol === true ? ("register-before-host.v1" as const) : protocol }
+      : {}),
   };
   const admission = call("reserve", {
     ...base,
@@ -184,7 +198,27 @@ async function fixture(protocol = true, backendRef = "srt") {
       now: T1,
       verification,
     });
-  return { f, plan, call, options, controller, control, preparationKey, sealed, proof, release };
+  const metadata = await lstat(directory);
+  const launchContext: JobHostLaunchContext = {
+    plan,
+    control,
+    policyDigest: "b".repeat(64),
+    directoryDevice: String(metadata.dev),
+    directoryInode: String(metadata.ino),
+  };
+  return {
+    f,
+    plan,
+    call,
+    options,
+    controller,
+    control,
+    preparationKey,
+    sealed,
+    proof,
+    release,
+    launchContext,
+  };
 }
 
 it("seals before registration, replays identical content and survives a controller restart", async () => {
@@ -214,7 +248,7 @@ it("seals before registration, replays identical content and survives a controll
   ).toBe(0);
 });
 
-it("keeps an accepted registration with lost ACK outside the sealed basis", async () => {
+it("[R2-D4] keeps an old-protocol accepted registration with lost ACK outside the sealed basis", async () => {
   const f = await fixture();
   await f.controller().registerPreparation(f.plan, f.control, "b".repeat(64));
   await expect(f.controller().stopPreparation(f.plan, undefined, T1)).rejects.toThrow();
@@ -226,6 +260,323 @@ it("keeps an accepted registration with lost ACK outside the sealed basis", asyn
     f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
   ).toBe(0);
 });
+
+it("[R2-D4] blocks a late launch after accepted registration and survives controller recreation", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  const decision = await readFile(path.join(f.control.directory, "launch-decision.json"), "utf8");
+  expect(JSON.parse(decision)).toMatchObject({
+    decision: { kind: "blocked", stopRequestedAt: T1 },
+  });
+  expect(decision).not.toContain(f.control.token);
+  expect(await claimJobHostLaunch(f.launchContext)).toBe(false);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  expect(await readFile(path.join(f.control.directory, "launch-decision.json"), "utf8")).toBe(
+    decision,
+  );
+  const first = await f.controller().verifyReservationRelease(f.plan, T1);
+  const again = await f.controller().verifyReservationRelease(f.plan, T1);
+  expect(first).toMatchObject({ basis: "preparation_launch_blocked" });
+  expect(again?.evidence).toEqual(first?.evidence);
+  if (!first) throw new Error("Expected blocked launch proof");
+  expect(f.release(first).applied).toBe(true);
+  expect(f.release(first).applied).toBe(false);
+  expect(
+    f.f.database
+      .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+      .pluck()
+      .get(),
+  ).toBe(0);
+});
+
+it("[R2-D4] preserves the original pre-registration seal for a new-protocol plan", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  await expect(
+    f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest),
+  ).rejects.toThrow();
+  const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+  expect(proof).toMatchObject({ basis: "preparation_not_authorized" });
+  if (!proof) throw new Error("Expected pre-registration seal");
+  expect(f.release(proof).applied).toBe(true);
+});
+
+it.each(["ref", "digest", "stop", "identity"])(
+  "[R2-D4] rejects substituted %s in a blocked release transaction",
+  async (field) => {
+    const f = await fixture("launch-or-block.v2");
+    await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+    await f.controller().stopPreparation(f.plan, undefined, T1);
+    const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+    if (!proof) throw new Error("Expected block proof");
+    const changed =
+      field === "ref"
+        ? { ...proof, evidence: { ...proof.evidence, ref: "other-payload" } }
+        : field === "digest"
+          ? { ...proof, evidence: { ...proof.evidence, digest: "e".repeat(64) } }
+          : field === "stop"
+            ? { ...proof, stopRequestedAt: "2026-09-01T00:00:00.000Z" }
+            : { ...proof, identity: { ...proof.identity, runId: "other-run" } };
+    expect(() => f.release(changed)).toThrow();
+    expect(
+      f.f.database
+        .prepare("SELECT count(*) FROM sandbox_reservation_release_receipts")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(
+      f.f.database
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBeGreaterThan(0);
+  },
+);
+
+it("[R2-D4] refuses the blocked basis for an old plan and never rewrites its accepted registration", async () => {
+  const f = await fixture();
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  const original = await f.options.read(f.plan, f.preparationKey);
+  await expect(f.controller().stopPreparation(f.plan, undefined, T1)).rejects.toThrow();
+  expect(await f.options.read(f.plan, f.preparationKey)).toEqual(original);
+  const evidence = await f.options.write(f.plan, `${f.preparationKey}:launch-blocked`, {
+    falseClaim: true,
+  });
+  expect(() =>
+    f.release({
+      schemaVersion: "sandbox-reservation-release.v1",
+      basis: "preparation_launch_blocked",
+      identity: f.plan.identity,
+      environmentId: f.plan.environmentId,
+      semanticFingerprint: f.plan.semanticFingerprint,
+      stopRequestedAt: T1,
+      checkedAt: T1,
+      validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+      evidence,
+    }),
+  ).toThrow("SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE");
+});
+
+it("[R2-D4] rejects a blocked proof if main Host registration appears before the release transaction", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+  if (!proof) throw new Error("Expected blocked proof");
+  await f.options.write(f.plan, f.preparationKey.replace(/:preparation$/, ""), {
+    conflictingHost: true,
+  });
+  expect(() => f.release(proof)).toThrow();
+  await expect(f.controller().verifyReservationRelease(f.plan, T1)).rejects.toThrow();
+  expect(
+    f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+  ).toBe(0);
+});
+
+it("[R2-D4] rejects a blocked proof after the machine boot changes", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  const restarted = createProductionSandboxControl({
+    ...f.options,
+    machineBootId: async () => "different-machine-boot",
+  });
+  await expect(restarted.verifyReservationRelease(f.plan, T1)).rejects.toThrow(
+    "SANDBOX_PREPARATION_MACHINE_CHANGED",
+  );
+  expect(
+    f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+  ).toBe(0);
+});
+
+it("[R2-D4] never grants a repeated launch or claims release after launch won", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  expect(await claimJobHostLaunch(f.launchContext)).toBe(true);
+  expect(await claimJobHostLaunch(f.launchContext)).toBe(false);
+  await expect(f.controller().stopPreparation(f.plan, undefined, T1)).rejects.toThrow();
+  await expect(f.controller().verifyReservationRelease(f.plan, T1)).rejects.toThrow();
+  expect(
+    f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+  ).toBe(0);
+  expect(
+    f.f.database
+      .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+      .pluck()
+      .get(),
+  ).toBeGreaterThan(0);
+});
+
+it("[R2-D4] gives exactly one winner to concurrent launch and public stop", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  const [launch, stop] = await Promise.allSettled([
+    claimJobHostLaunch(f.launchContext),
+    f.controller().stopPreparation(f.plan, undefined, T1),
+  ]);
+  expect(launch.status).toBe("fulfilled");
+  if (launch.status !== "fulfilled") throw new Error("Launch arbitration failed");
+  const decision = JSON.parse(
+    await readFile(path.join(f.control.directory, "launch-decision.json"), "utf8"),
+  );
+  if (launch.value) {
+    expect(decision.decision.kind).toBe("launch");
+    expect(stop.status).toBe("rejected");
+    await expect(f.controller().verifyReservationRelease(f.plan, T1)).rejects.toThrow();
+  } else {
+    expect(decision.decision).toEqual({ kind: "blocked", stopRequestedAt: T1 });
+    expect(stop.status).toBe("fulfilled");
+    const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+    if (!proof) throw new Error("Expected winning stop proof");
+    expect(f.release(proof).applied).toBe(true);
+  }
+});
+
+it("[R2-D4] retains a block across release rollback and does not reacquire launch authority", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+  if (!proof) throw new Error("Expected blocked proof");
+  f.f.database.exec(
+    "CREATE TEMP TRIGGER fail_launch_release BEFORE UPDATE OF released_at ON sandbox_workspace_occupancy BEGIN SELECT RAISE(ABORT,'injected rollback'); END",
+  );
+  expect(() => f.release(proof)).toThrow("injected rollback");
+  expect(await claimJobHostLaunch(f.launchContext)).toBe(false);
+  expect(
+    f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+  ).toBe(0);
+  expect(
+    f.f.database
+      .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+      .pluck()
+      .get(),
+  ).toBeGreaterThan(0);
+  f.f.database.exec("DROP TRIGGER fail_launch_release");
+  const retry = await f.controller().verifyReservationRelease(f.plan, T1);
+  if (!retry) throw new Error("Expected retained block proof");
+  expect(retry.evidence).toEqual(proof.evidence);
+  expect(f.release(retry).applied).toBe(true);
+});
+
+it("[R2-D4] repairs an interrupted protected block write without permitting late launch", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  const failing = createProductionSandboxControl({
+    ...f.options,
+    write: async (plan, key, value) => {
+      if (key === `${f.preparationKey}:launch-blocked`)
+        throw new Error("block artifact interrupted");
+      return f.options.write(plan, key, value);
+    },
+  });
+  await expect(failing.stopPreparation(f.plan, undefined, T1)).rejects.toThrow(
+    "block artifact interrupted",
+  );
+  expect(await claimJobHostLaunch(f.launchContext)).toBe(false);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  const proof = await f.controller().verifyReservationRelease(f.plan, T1);
+  if (!proof) throw new Error("Expected recovered block proof");
+  expect(f.release(proof).applied).toBe(true);
+});
+
+it.each(["identity", "environment", "fingerprint", "lease", "session", "token", "policy"])(
+  "[R2-D4] rejects a changed %s against the original blocked launch",
+  async (field) => {
+    const f = await fixture("launch-or-block.v2");
+    await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+    await f.controller().stopPreparation(f.plan, undefined, T1);
+    const context = structuredClone(f.launchContext);
+    const changed: JobHostLaunchContext =
+      field === "identity"
+        ? {
+            ...context,
+            plan: { ...context.plan, identity: { ...context.plan.identity, runId: "other-run" } },
+          }
+        : field === "environment"
+          ? { ...context, plan: { ...context.plan, environmentId: "other-environment" } }
+          : field === "fingerprint"
+            ? {
+                ...context,
+                plan: { ...context.plan, semanticFingerprint: `sha256:${"c".repeat(64)}` },
+              }
+            : field === "lease"
+              ? {
+                  ...context,
+                  plan: {
+                    ...context.plan,
+                    executionLease: {
+                      ...context.plan.executionLease,
+                      fencingToken: context.plan.executionLease.fencingToken + 1,
+                    },
+                  },
+                }
+              : field === "session"
+                ? { ...context, control: { ...context.control, sessionId: randomUUID() } }
+                : field === "token"
+                  ? { ...context, control: { ...context.control, token: "d".repeat(64) } }
+                  : { ...context, policyDigest: "e".repeat(64) };
+    await expect(claimJobHostLaunch(changed)).rejects.toThrow();
+    expect(await claimJobHostLaunch(f.launchContext)).toBe(false);
+  },
+);
+
+it("[R2-D4] refuses both late launch and release after the original directory is replaced", async () => {
+  const f = await fixture("launch-or-block.v2");
+  await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+  await f.controller().stopPreparation(f.plan, undefined, T1);
+  await rename(f.control.directory, `${f.control.directory}-original`);
+  await mkdir(f.control.directory, { mode: 0o700 });
+  await expect(claimJobHostLaunch(f.launchContext)).rejects.toThrow(
+    "SANDBOX_CONTROL_DIRECTORY_CHANGED",
+  );
+  await expect(f.controller().verifyReservationRelease(f.plan, T1)).rejects.toThrow(
+    "SANDBOX_CONTROL_DIRECTORY_CHANGED",
+  );
+  expect(
+    f.f.database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+  ).toBe(0);
+});
+
+it.each(["truncated", "signature", "symlink", "fifo"])(
+  "[R2-D4] refuses a %s launch decision and retains reservation occupancy",
+  async (kind) => {
+    const f = await fixture("launch-or-block.v2");
+    await f.controller().registerPreparation(f.plan, f.control, f.launchContext.policyDigest);
+    await f.controller().stopPreparation(f.plan, undefined, T1);
+    const filename = path.join(f.control.directory, "launch-decision.json");
+    const body = await readFile(filename, "utf8");
+    if (kind === "symlink") {
+      await rename(filename, `${filename}-original`);
+      await symlink(`${filename}-original`, filename);
+    } else if (kind === "fifo") {
+      await rename(filename, `${filename}-original`);
+      execFileSync("mkfifo", [filename]);
+    } else {
+      await writeFile(
+        filename,
+        kind === "truncated"
+          ? "{"
+          : JSON.stringify({ ...JSON.parse(body), signature: "f".repeat(64) }),
+      );
+    }
+    await expect(claimJobHostLaunch(f.launchContext)).rejects.toThrow();
+    await expect(f.controller().verifyReservationRelease(f.plan, T1)).rejects.toThrow();
+    expect(
+      f.f.database
+        .prepare("SELECT count(*) FROM sandbox_reservation_release_receipts")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(
+      f.f.database
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBeGreaterThan(0);
+  },
+);
 
 it("retains the seal across a failed release transaction and releases on a later attempt", async () => {
   const f = await fixture();

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:09c99c0f6b554cdbc3c1a8ac0cd335f64be7c276c27bcb0681a36f53d99f5ac3"
+contract_sha256: "sha256:dfae588e55697478cc9755471aa2b893b4bfce492e468343eb1ac3aefbf1d4e0"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -17,6 +17,8 @@ date: "2026-08-27"
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts
 - docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md
+- docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md
+- packages/runtime-sandbox/src/job-host-launch-decision.ts
 - docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md
 - apps/agent-service/src/production-run-expiry.ts
 - scripts/operations/hermes-ui-session-start.mjs
@@ -542,11 +544,11 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 ### 工具执行前检查点与恢复引用
 
-新 SRT v2 计划的 `preparationProtocol=register-before-host.v1` 与同一准备附件键下的 `sandbox-preparation-sealed.v1` 必须原样保留，连同受保护 Payload、摘要和预约释放回执一并备份与恢复。封锁不是宿主控制凭据；只有原计划、原停止时间和附件对应关系通过核验时，`preparation_not_authorized` 才能表示宿主从未获准创建。旧计划不回填标记、不迁移摘要，永远不能使用新依据；已有登记但 ACK 丢失仍待核对。权威转移或数据库恢复本身不证明目标主机上的资源已释放，也不授权原工具重放。详情见[准备封锁与旧版本排除](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#新计划字段与旧-worker-排除]。
+新 SRT v2 计划使用 `preparationProtocol=launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划必须原样保存。备份保留原准备附件、受保护 `:preparation:launch-blocked` Artifact、Payload、摘要和预约释放回执。控制目录中的 `launch-decision.json` 属于原机运行时文件，正式恢复点不包含它；不能从数据库或附件重建原控制目录身份、决定文件或控制 token，token 也不进入公开证据。登记之前的封锁只能使用 `preparation_not_authorized`；新协议的禁止启动决定必须独立核对原计划、目录、机器 boot、原停止时间和 Artifact，才可使用 `preparation_launch_blocked`。跨机器或目录恢复不能继续用旧决定签发新释放证明；原机上已经事务接受的历史释放回执仍作为历史事实保存。旧数据不回填协议、不迁移语义摘要，工具不能重放。Hermes 上的恢复检查不能替代生产现场的身份、备份和释放核验。详见[准备启动与停止仲裁](../execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
 
 生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，页面归为“尚未派发”；旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放。对原 Run 未取消、未过期，已有确定结果与永久释放回执且原批次凭据完整的调用，调度器可领取原 Run 的新租约，仅交付旧结果并继续 Pi；原工具不会再次启动。缺失快照、权限变化、未确认控制或模型费用仍未知时保留待核对状态，不能通过重发清除未知。恢复沿用原模型 stream ordinal，保留原调用回执、交付 intent 与受保护 Payload；没有新增表或迁移。详见[已核验工具结果恢复合同](../execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md#恢复条件与用户行为)。
 
-创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；准备登记已被接受后缺少最终证明时仍待核对。首次准备、登记或 bind 失败通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。握手或当前权威校验失败时仍可能没有持久诊断，不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
+创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；已取得启动权或使用旧协议且缺少最终证明时仍待核对。首次准备、登记或 bind 失败通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。握手或当前权威校验失败时仍可能没有持久诊断，不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
 
 ### Schema 38 纯联网范围

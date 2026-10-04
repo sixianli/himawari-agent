@@ -37,7 +37,7 @@ interface SandboxReservationReleaseBase {
 
 export type SandboxReservationReleaseVerification =
   | (SandboxReservationReleaseBase & {
-      readonly basis: "preparation_not_authorized";
+      readonly basis: "preparation_not_authorized" | "preparation_launch_blocked";
     })
   | (SandboxReservationReleaseBase & {
       readonly basis: "host_never_started";

@@ -14,6 +14,7 @@ import {
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_PREPARATION_PROTOCOL,
   type SandboxExecutionPlanV2,
   type SandboxHostBinding,
@@ -26,10 +27,13 @@ import {
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
 import {
+  blockJobHostLaunch,
+  type JobHostLaunchEvidence,
   type JobHostControlObservation,
   processGroupPresent,
   queryJobHostControl,
   readJobHostFinalEvidence,
+  readJobHostLaunchDecision,
   readJobHostStartEvidence,
   readLinuxNamespaceState,
   readLinuxHostGroup,
@@ -190,7 +194,10 @@ export function createProductionSandboxControl(options: Options) {
   };
   const assertPreparationProtocol = (plan: SandboxExecutionPlanV2) => {
     if (plan.backendRef !== "srt") throw new Error("SANDBOX_PREPARATION_BACKEND_UNSUPPORTED");
-    if (plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL)
+    if (
+      plan.preparationProtocol !== SANDBOX_PREPARATION_PROTOCOL &&
+      plan.preparationProtocol !== SANDBOX_PREPARATION_LAUNCH_PROTOCOL
+    )
       throw new Error("SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE");
   };
   const sealedValue = (plan: SandboxExecutionPlanV2, stopRequestedAt: string) => ({
@@ -310,6 +317,45 @@ export function createProductionSandboxControl(options: Options) {
     if (value.machineBootId !== (await options.machineBootId()))
       throw new Error("SANDBOX_PREPARATION_MACHINE_CHANGED");
     return value;
+  };
+  const launchContext = (plan: SandboxExecutionPlanV2, stored: StoredPreparationControl) => ({
+    plan,
+    control: stored.control,
+    policyDigest: stored.policyDigest,
+    directoryDevice: stored.directoryDevice,
+    directoryInode: stored.directoryInode,
+  });
+  const blockedValue = (
+    plan: SandboxExecutionPlanV2,
+    stored: StoredPreparationControl,
+    decision: JobHostLaunchEvidence,
+    stopRequestedAt: string,
+  ) => ({
+    version: "sandbox-preparation-launch-blocked.v1",
+    identity: plan.identity,
+    fingerprint: plan.semanticFingerprint,
+    environmentId: plan.environmentId,
+    executionLease: plan.executionLease,
+    preparationProtocol: plan.preparationProtocol,
+    preparationDigest: createHash("sha256").update(JSON.stringify(stored)).digest("hex"),
+    decision,
+    stopRequestedAt,
+  });
+  const readBlockedLaunch = async (plan: SandboxExecutionPlanV2, stopRequestedAt: string) => {
+    if (plan.preparationProtocol !== SANDBOX_PREPARATION_LAUNCH_PROTOCOL) return undefined;
+    const artifact = await options.read(plan, `${key(plan)}:preparation:launch-blocked`);
+    if (!artifact) return undefined;
+    const stored = await readPreparationControl(plan);
+    const decision = await readJobHostLaunchDecision(launchContext(plan, stored));
+    if (
+      decision?.decision.kind !== "blocked" ||
+      decision.decision.stopRequestedAt !== stopRequestedAt ||
+      !same(artifact.value, blockedValue(plan, stored, decision, stopRequestedAt)) ||
+      artifact.digest !== createHash("sha256").update(JSON.stringify(artifact.value)).digest("hex")
+    )
+      throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+    if (await options.read(plan, key(plan))) throw new Error("SANDBOX_CONTROL_ALREADY_REGISTERED");
+    return { ref: artifact.ref, digest: artifact.digest };
   };
   const inspectPreparation = async (
     plan: SandboxExecutionPlanV2,
@@ -919,6 +965,30 @@ export function createProductionSandboxControl(options: Options) {
           }
           if (await readSeal(plan, stopRequestedAt)) return;
         }
+        if (
+          plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL &&
+          !(await options.read(plan, key(plan)))
+        ) {
+          const stopRequestedAt = assertStopRequestedAt(stoppedAt);
+          await options.host(plan);
+          const stored = await readPreparationControl(plan);
+          if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+          const context = launchContext(plan, stored);
+          if (await blockJobHostLaunch(context, stopRequestedAt)) {
+            const decision = await readJobHostLaunchDecision(context);
+            if (!decision || decision.decision.kind !== "blocked")
+              throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+            await readPreparationControl(plan);
+            await options.write(
+              plan,
+              `${preparationKey}:launch-blocked`,
+              blockedValue(plan, stored, decision, stopRequestedAt),
+            );
+            if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+            if (await readBlockedLaunch(plan, stopRequestedAt)) return;
+            throw new Error("SANDBOX_CONTROL_BINDING_CHANGED");
+          }
+        }
         const observation = await inspectPreparation(plan, "stop", signal);
         // This is a cleanup request receipt, never an environment release proof.
         // A stopped reservation remains protected until independent verification.
@@ -938,19 +1008,21 @@ export function createProductionSandboxControl(options: Options) {
         assertStopRequestedAt(stopRequestedAt);
         await options.host(plan);
         const sealed = await readSeal(plan, stopRequestedAt);
-        if (sealed) {
+        const blocked = sealed ? undefined : await readBlockedLaunch(plan, stopRequestedAt);
+        const preparationEvidence = sealed ?? blocked;
+        if (preparationEvidence) {
           if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
           const checkedAt = options.now();
           return {
             schemaVersion: "sandbox-reservation-release.v1",
-            basis: "preparation_not_authorized",
+            basis: sealed ? "preparation_not_authorized" : "preparation_launch_blocked",
             identity: plan.identity,
             environmentId: plan.environmentId,
             semanticFingerprint: plan.semanticFingerprint,
             stopRequestedAt,
             checkedAt,
             validUntil: new Date(Date.parse(checkedAt) + 1000).toISOString(),
-            evidence: sealed,
+            evidence: preparationEvidence,
           };
         }
         const raw = await inspectPreparation(plan, "inspect", signal);

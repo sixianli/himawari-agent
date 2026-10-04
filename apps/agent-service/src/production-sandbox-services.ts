@@ -33,7 +33,7 @@ import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   piFileRecoveryOperationKey,
-  SANDBOX_PREPARATION_PROTOCOL,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_RESULT_LOST,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
@@ -1065,7 +1065,7 @@ export async function createProductionSandboxServices(options: {
       operationContract: descriptor.contract,
       backendRef: descriptor.backendRef,
       ...(descriptor.backendRef === "srt"
-        ? { preparationProtocol: SANDBOX_PREPARATION_PROTOCOL }
+        ? { preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
         : {}),
       environmentId: `environment:${hash(input.invocationId)}`,
     });
@@ -1321,7 +1321,7 @@ export async function createProductionSandboxServices(options: {
           operationContract: descriptor.contract,
           backendRef: descriptor.backendRef,
           ...(descriptor.backendRef === "srt"
-            ? { preparationProtocol: SANDBOX_PREPARATION_PROTOCOL }
+            ? { preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
             : {}),
           handleRef: handle.ref,
           inputRef: input.inputRef,
