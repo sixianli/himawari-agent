@@ -307,6 +307,24 @@ export interface ProductPathInstallation {
   close(): Promise<void>;
 }
 
+export function productPathToolchainPaths(input: {
+  readonly platform: NodeJS.Platform;
+  readonly runtimeRoot: string;
+  readonly executable: string;
+}): readonly string[] {
+  return [
+    input.runtimeRoot,
+    input.executable,
+    "/bin",
+    "/usr/bin",
+    "/usr/lib",
+    ...(input.platform === "darwin"
+      ? ["/System"]
+      : ["/lib", "/lib64", "/proc", "/etc/ssl", "/etc/hosts"]),
+    "/dev",
+  ];
+}
+
 export function productPathTemporaryPrefix(): string {
   const parent = testTemporaryRoot();
   if (process.env["HIMAWARI_TEST_TEMP_ROOT"] === undefined) return "/tmp/hma-pp-";
@@ -1209,7 +1227,7 @@ async function writeCodingSnapshot(input: {
     readOnlyToolchainPaths: [
       ...new Set(
         await Promise.all(
-          [runtimeRoot, executable, "/bin", "/usr/bin", "/usr/lib", "/System", "/dev"].map(
+          productPathToolchainPaths({ platform: process.platform, runtimeRoot, executable }).map(
             (entry) => realpath(entry),
           ),
         ),

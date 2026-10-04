@@ -25,6 +25,7 @@ date: "2026-09-28"
 - [D21：期限后交付测试的受控计时器](#d21-期限后交付测试的受控计时器)
 - [D13、D2：2026-10-03 取证未复现与用户决定](#d13d22026-10-03-取证未复现与用户决定)
 - [上线前修复范围与两个 Codex 并行（用户 2026-10-03 决定）](#上线前修复范围与两个-codex-并行用户-2026-10-03-决定)
+- [Linux 产品路径夹具的平台路径](#2026-10-04linux-产品路径夹具的平台路径)
 
 ## 目标与边界
 
@@ -480,3 +481,11 @@ prepared 开发模式恢复直接使用真实构建目录，复制候选撤回�
 **2026-10-03 改回一个会话（用户决定，`goal.md` G31）。** 两个会话并行约 3 小时后，Claude 估算净收益约为单会话的 1.2–1.3 倍，而且两边在 Hermes 上的测试和构建互相干扰：会话 A 的 pi-compat 首轮有 2 项在会话 B 构建期间超时，单独重跑后通过，每次都要停下来排查。用户决定改回一个 Codex 会话串行完成。会话 B 已提交的 D15（`e344766`）和 D10（`5149192`）由 Claude 审核后合到 `claude/isolated-tool-execution`，第二份检出在合并后删除；之后只保留一个会话，Hermes 上同一时间只有一组测试或构建。上线前修复范围（G29）不变。
 
 [返回阅读导航](#阅读导航)
+
+## 2026-10-04：Linux 产品路径夹具的平台路径
+
+本批按 Claude 的 `2026-10-04-round2-s1-s4-d3-claude-reply-01.md` 修正测试夹具的平台假设。`product-path-harness.ts` 的安装和服务重启都调用同一份 `writeCodingSnapshot()`；它现在通过 `productPathToolchainPaths()` 选择平台路径，再对每条路径严格执行 `realpath` 并去重。macOS 列表与原列表相同，仍包含 `/System`。
+
+Linux 列表沿用仓库已有的 Hermes 部署签署来源 `scripts/operations/hermes-three-fixes-seal.mjs` 的系统路径：`/usr/bin`、`/usr/lib`、`/lib`、`/lib64`、`/dev`、`/proc`、`/etc/ssl`、`/etc/hosts`，同时保留夹具自身的安装运行根、Node 可执行文件和 `/bin`。来源流程见[Hermes 升级手册的资格与签署步骤](../../runbooks/hermes-control-center-upgrade-runbook.md) [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。不存在的本平台路径仍使夹具失败，不忽略 `ENOENT`。这项修改只改变测试安装的部署绑定，不改变产品的部署绑定格式、沙箱行为或外部接口。
+
+`test/tooling/product-path-platform.test.ts` 用两条自动测试检查 Linux 列表和原 macOS 列表。原列表在 Hermes 的先修复前运行中为 1 通过、1 失败，失败断言明确显示 Linux 仍包含 `/System`；这与 stop-01 的 `realpath('/System')` 环境错误相互支持。报告保留于 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/`。夹具检查不能替代 S1/S4 的真实安装、停止和崩溃恢复验收；它们仍需通过 `qualification-product-path` 单独执行。
