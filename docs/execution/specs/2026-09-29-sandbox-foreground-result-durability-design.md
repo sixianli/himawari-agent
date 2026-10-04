@@ -50,7 +50,7 @@ Pi 固定版本为 `0.84.2`，继续提供 read、其他工具及原工具批次
 
 按 [reply-7](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-7.md)，已收到最终 IPC 且与提前完成事实矛盾时，保存确定的 `SANDBOX_HOST_COMPLETION_CONTRADICTED` 错误，禁止恢复导入覆盖。交付时不携带原 stdout 引用，而给模型唯一说明：“SANDBOX_HOST_COMPLETION_CONTRADICTED：执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。”原 stdout Payload 与分块保留作诊断，不改写或删除。没有最终 IPC 的真实宿主崩溃不算矛盾，仍可核验并恢复完整结束块。命令与写入的效果披露限制不变，矛盾错误不能证明没有副作用。
 
-已认证终态文件的时间在 `control.finish()` 后固定；只要宿主仍存在，就按 `cleanup_pending` 等待原恢复期限内的退出，不再将该终态时间当作活动心跳的新鲜度。pending 返回的观察时间记录本次核验时间，签名文件内的历史时间保持原值；恢复服务仍检查 pending 的新鲜度、身份和资源序号。运行中观察的心跳要求不变；释放仍需核验宿主和原进程组已消失。
+已认证终态文件的时间在 `control.finish()` 后固定；只要宿主仍存在，就按 `cleanup_pending` 等待原恢复期限内的退出，不再将该终态时间当作活动心跳的新鲜度。pending 返回的观察时间记录本次核验时间，签名文件内的历史时间保持原值；恢复服务仍检查 pending 的新鲜度、身份和资源序号。运行中观察的心跳要求不变；释放仍需核验宿主和原任务进程组已消失。Linux 还须独立确认 Host 自身进程组零成员；原 Host 被杀后的 SRT 代理由同组清理进程回收，可信过渡沿用 pending 和原期限。具体边界见[Linux Host 组清理](2026-09-24-isolated-tool-execution-design.md#linux-host-group)。
 
 ## 前台加密分块保存
 
@@ -124,6 +124,7 @@ Agent 与 SQLite 共用 application 包的余量常量；Worker 自身同名等�
 
 - 真实 Pi read 读取唯一内容，清理挂起后终止 Agent 加 Worker，修改源文件再重启。模型恰好收到一次修改前原内容；独立 SQLite 读回确认一次启动、一条确定 operation、一条交付 intent、释放未撤销、Run 完成。不重启对照也保留原结果。
 - 在结束块保存前后、reset 后、control.finish 前后、result IPC 前后，分别先杀 Worker 并按生产启动器顺序停止 Agent，或同时终止 Agent 加 Worker；然后成对重启。已保存结束块时恢复原结果；未保存时按兜底规则结束，不重复交付、不卡住。额外验证短暂 Worker 离线时业务 HTTP 拒绝服务、Run 不误终结或交付，成对重启后以唯一 LOST 完成。
+- Job Host `finish()` 的 `before-reset`、`after-reset`、`before-final`、`after-final`、`before-result`、`after-result` 六处崩溃均独立读回 Linux Host 组为空，保留 PID/启动时间及原始 stat。资源释放、原结果、恰好一次交付、不重跑和只启动一次 Host 均须通过；取证错误也使测试失败，主体失败时保留原错误。
 - 真实 SQLite 验证 Worker、恢复导入、LOST 任意先后和两个恢复者并发；负向覆盖分块不连续、结束块缺失、摘要或长度不符、跨 job/attempt、取消、过期、撤权。
 - 矛盾 IPC 用例核对模型正文只含一次指定错误说明，不含原文件内容或 `isError:false`；成对重启后错误不被覆盖且工具不重跑。以没有最终 IPC 的真实宿主崩溃恢复原输出作为对照。
 - 沿用 TE-06 交替测量，改前改后各 30 个成功样本，中位耗时增量不超过 100 毫秒。超过门槛写停止文件，不能减少保存或同步来达标。

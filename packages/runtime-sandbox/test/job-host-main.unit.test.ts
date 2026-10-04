@@ -18,6 +18,7 @@ const boundary = vi.hoisted(() => ({
   observe: vi.fn(),
   snapshot: vi.fn(),
   startToken: vi.fn(),
+  guardian: vi.fn(),
   manager: {
     checkDependenciesAsync: vi.fn(),
     isSupportedPlatform: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("../src/linux-namespace.ts", () => ({ captureLinuxNamespace: boundary.na
 vi.mock("../src/network-egress.ts", () => ({ openNetworkEgress: boundary.egress }));
 vi.mock("../src/readiness-probe.ts", () => ({ startReadinessProbe: boundary.readiness }));
 vi.mock("../src/process-identity.ts", () => ({ readProcessStartToken: boundary.startToken }));
+vi.mock("../src/linux-host-guardian.ts", () => ({ startLinuxHostGuardian: boundary.guardian }));
 vi.mock("../src/resource-observer.ts", () => ({
   observeTaskResources: boundary.observe,
   readProcessSnapshot: boundary.snapshot,
@@ -187,6 +189,7 @@ beforeEach(() => {
   boundary.egress.mockResolvedValue(network);
   boundary.snapshot.mockResolvedValue([]);
   boundary.startToken.mockImplementation(async (pid: number) => `start-of-${pid}`);
+  boundary.guardian.mockResolvedValue(undefined);
   boundary.observe.mockReturnValue(resource);
   boundary.readiness.mockReturnValue({ cancel: vi.fn(), result: Promise.resolve(true) });
   boundary.manager.checkDependenciesAsync.mockResolvedValue({ errors: [], warnings: [] });
@@ -207,6 +210,38 @@ afterEach(() => {
 });
 
 describe("Job Host entrypoint protocol and lifecycle", () => {
+  it("waits for its Linux group guardian before SRT can create a bridge", async () => {
+    let ready!: () => void;
+    boundary.guardian.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+    );
+    await prepare();
+    expect(boundary.guardian).toHaveBeenCalledOnce();
+    expect(boundary.manager.initialize).not.toHaveBeenCalled();
+    expect(sent.some((message) => message["type"] === "ready")).toBe(false);
+    ready();
+    await settle();
+    expect(boundary.manager.initialize).toHaveBeenCalledOnce();
+    expect(sent.some((message) => message["type"] === "ready")).toBe(true);
+  });
+  it("refuses bridge initialization if the Linux group guardian cannot start", async () => {
+    boundary.guardian.mockRejectedValue(new Error("JOB_HOST_GUARDIAN_UNAVAILABLE"));
+    await prepare();
+    expect(boundary.manager.initialize).not.toHaveBeenCalled();
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+  });
+  it("stops the task if its Linux group guardian exits while the Host is alive", async () => {
+    await prepare();
+    await startLinux();
+    const failed = boundary.guardian.mock.calls[0]?.[1] as () => void;
+    expect(failed).toBeTypeOf("function");
+    failed();
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+    expect(processBoundary.kill).toHaveBeenCalledWith(-7000, "SIGKILL");
+  });
   it("reports completed stdout before waiting for reset and keeps final cleanup separate", async () => {
     let release!: () => void;
     boundary.manager.reset.mockImplementation(

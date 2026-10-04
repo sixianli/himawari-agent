@@ -64,7 +64,7 @@ type SandboxReconciliationObservation =
 
 | 组件 | 调整后的责任 |
 | --- | --- |
-| Job Host 控制适配 | 核验原宿主的原始观察；输出 verified 或 cleanup_pending。只有确有正常收尾证据时才返回 pending，失联、身份错误和权限失败不能改成 pending |
+| Job Host 控制适配 | 核验原宿主的原始观察；输出 verified 或 cleanup_pending。只有确有正常收尾或可信 Host 退出/同组回收证据时才返回 pending；普通失联、身份错误和权限失败不能改成 pending |
 | 恢复服务 | 一次登记恢复所有权；发送一次 stop；随后仅 inspect。pending 期间保持 reconciling，在原期限内用有界观察间隔等待；每次回调和写入仍验证 owner/revision/期限 |
 | SQLite journal/scheduler | 保留现有状态转换与所有权检查，不因为 pending 放弃占用；resolved/unresolved 仍是持久终点，不把失败无限重试 |
 | Worker 控制循环 | 消费同一套明确的 pending 语义；正常收尾不触发 cancel。真正 lost、撤权和用户取消仍执行停止 |
@@ -78,7 +78,7 @@ TE-01 已做的局部修复继续保留：只有操作版本发生变化且资�
 - 用户停止接管已有 inspect：沿用 recovery revision 优先级；旧等待者中止，不覆盖新 stop。
 - 重复停止：不启动原工具；同一有效恢复的 stop 只发送一次，之后只观察。新恢复仍核验同一宿主。
 - Agent 重启：原 running 由启动恢复接管，按原身份重新观察，不能重放工具；无需保存 JavaScript 计时器。
-- 控制连接错误、身份变化、无资格或权限错误：结束为相应失败，不按“正常收尾”等待。
+- 控制连接错误、身份变化、无资格或权限错误：结束为相应失败，不按“正常收尾”等待。可信原 Host 为僵尸或已消失、同组回收尚在进行时，可使用已有 pending；Host 组零成员前不能报告释放。规则见[Linux Host 组清理](2026-09-24-isolated-tool-execution-design.md#linux-host-group)。
 - `process_group_gone`：继续按 ADR 0033 释放并标明未经严格确认；不把脱离进程组的后代纳入本次新增保证。
 - 结果交付超过 35 秒、文件结果恢复竞争、模型消费跨重启：继续在审计计划中验证，本提案不提前保证已解决。
 

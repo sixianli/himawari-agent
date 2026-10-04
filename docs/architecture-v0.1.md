@@ -46,7 +46,7 @@ R8 在 Job Host 内增加每作业认证 HTTP 上游，复用 SRT `parentProxy` 
 
 零费用 GET 的只读网络重试由 Himawari 能力运行时负责，最多两次发送且共享原调用期限。决定重试时以 `performance.now()` 固定最早发送时刻，等待提前返回则补等；每次等待都检查原总期限并使用同一中止信号，取消、过期、撤权或秘密句柄失效仍阻止再次发送。Pi 的模型提供商重试参数不承担这一能力 endpoint 合同。具体边界见[只读 HTTP 重试时刻](execution/specs/2026-09-24-isolated-tool-execution-design.md#readonly-http-retry)。
 
-现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
+现有 `sandbox-execution.v1` 把正常完成与清理/副作用确认绑定；正式 Job Host 适配对已启动任务仍报告 cleanup/effect unknown。因此受控 Mac 组合能保存输出并隔离未知作业，不能据此声称正式文件总结成功、环境已清理或全部工具可用。v2 `reconcile` 已通过原 Job Host 的认证控制端口和受保护终态证据核查；Mac 已启动任务仍保持清理未知，Linux 只有原 PID namespace 消失、任务外层进程组满足原释放规则、Host 自身进程组为空且退出证据完整时才允许释放。已跑历史验证及具体限制归配套 Plan，不把合成资格当作安装主机资格。
 
 R1 已新增 `sandbox-execution.v2` 严格合同、`SandboxExecutionPortV2` 类型端口以及共享的 `projectSandboxExecution` / `projectSandboxRunCompletion` 纯判断函数。结果、效果和资源观察独立表达；结果已知时可以保留展示，监管丢失仍禁止续接和环境复用。判断需要由可信 Payload/资格/效果读者核验的证据，并检查调用、策略、sequence 与时效。生产组合已接入显式声明的 v2 foreground 固定读取/命令路径及真实证据读者；后台/服务与 UI 消费仍需后续工作。v1 与 v2 按原合同分别处理，不隐式降级。
 
@@ -57,6 +57,8 @@ R2 已在现有产品 SQLite 追加 migration 0028，通过 `SandboxExecutionJou
 本次执行 Spec/Plan 的交付范围已按 Owner 指令移出本地/远程 MCP 接入和 GitHub 已有 commit 推送，相关产品需求与长期架构方向保留。下方目标图不表示两项属于本批验收；当前任务和验收集合以配套 Spec/Plan 为准，R1 的通用 service/remote 合同不回退。
 
 R4 核查使用既有受保护 Run trace 保存控制引用与签名观察。控制端口只接受 inspect/stop，原会话、boot、进程启动标记、目录 inode 和策略摘要必须匹配；当前 Agent 权威可以核查旧 Worker 的原环境，旧 Worker 凭证不能取得新启动权。证据过期、身份变化、停止失败或控制失联保持隔离；核查超时后的迟到结果不能改写账本。Linux 在用户代码启动前捕获固定 SRT PID namespace 的 init 身份，启动握手保留二进制 stdin；Mac 不从主进程退出推导全树释放。
+
+Linux 的 Host 和任务属于两个不同的进程组。Host 是自己组和会话的首进程，SRT 创建的桥接代理继承 Host 的组；任务另开外层组和 PID namespace。Host 在 SRT 初始化前启动一个同组 Node 清理进程，核对双方 PID、启动时间、父子关系、PGID 和 SID 后才允许创建代理。正常收尾继续复用 SRT `cleanupAfterCommand()/reset()`；清理进程保持到原 Host 被系统回收。Host 被杀时，清理进程核对 `/proc` 与自身身份，在原 `cleanupTimeoutMs` 内向自己所在的组发 `SIGKILL`。它自己的组成员身份阻止组编号被系统复用，Agent 不按历史数字发送信号。Agent 每个正向释放分支都在判定候选之后独立读回确认 Host 组零成员，防止 Host 在两次进程探测之间退出而跳过组检查；僵尸仍算成员，身份或权限读错保持未确认。可信退出和组清理的过渡使用已有 `cleanup_pending`，共享原恢复期限。没有新持久字段、迁移、对外状态或 Pi 协议；Mac 路径保持原保证，本轮未验证。设计与范围见[Host 组清理](execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。
 
 Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
 

@@ -32,6 +32,7 @@ import {
   readJobHostFinalEvidence,
   readJobHostStartEvidence,
   readLinuxNamespaceState,
+  readLinuxHostGroup,
   readProcessStartToken,
 } from "@himawari-agent/runtime-sandbox/control";
 
@@ -152,6 +153,13 @@ const resourceState = (state: ControlState) =>
     lost: { supervision: "lost", cleanup: "unknown" },
     exit_cleanup_pending: null,
   })[state];
+async function hostProcessGroupGone(processId: number): Promise<boolean> {
+  if (process.platform !== "linux") return true;
+  const members = await readLinuxHostGroup(processId);
+  if (members.some((member) => member.sessionId !== processId))
+    throw new Error("SANDBOX_CONTROL_IDENTITY_CHANGED");
+  return members.length === 0 && !processGroupPresent(processId);
+}
 function neverStartedReleased(
   raw: JobHostControlObservation,
   namespace: "alive" | "released" | "unknown",
@@ -365,9 +373,16 @@ export function createProductionSandboxControl(options: Options) {
     if (observation instanceof UnreachableHost) throw observation.error;
     return observation;
   };
+  const cleanupPending = (record: SandboxExecutionRecord): SandboxCleanupPending => ({
+    kind: "cleanup_pending",
+    identity: record.plan.identity,
+    environmentId: record.plan.environmentId,
+    resourceSequence: record.facts.resource.sequence,
+    observedAt: options.now(),
+  });
   const crashedWithinBoot = async (
     record: SandboxExecutionRecord,
-  ): Promise<StoredCrash["crash"] | undefined> => {
+  ): Promise<StoredCrash["crash"] | SandboxCleanupPending | undefined> => {
     const stored = await readControl(record.plan);
     let start: Awaited<ReturnType<typeof readJobHostStartEvidence>>;
     try {
@@ -390,7 +405,21 @@ export function createProductionSandboxControl(options: Options) {
     )
       return undefined;
     const hostToken = await readProcessStartToken(start.processId);
-    if (hostToken === start.processStartToken) return undefined;
+    if (hostToken === start.processStartToken) {
+      if (process.platform === "linux") {
+        const members = await readLinuxHostGroup(start.processId);
+        const original = members.find((member) => member.processId === start.processId);
+        if (
+          original?.startToken === start.processStartToken &&
+          original.state === "Z" &&
+          members.every((member) => member.sessionId === start.processId)
+        ) {
+          await options.host(record.plan);
+          return cleanupPending(record);
+        }
+      }
+      return undefined;
+    }
     if (
       start.linuxNamespace &&
       (await readLinuxNamespaceState(start.linuxNamespace)) !== "released"
@@ -402,6 +431,10 @@ export function createProductionSandboxControl(options: Options) {
       const leaderToken = await readProcessStartToken(processGroupId);
       if (leaderToken === null || leaderToken === startToken) return undefined;
       processGroup = "leader_replaced";
+    }
+    if (!(await hostProcessGroupGone(start.processId))) {
+      await options.host(record.plan);
+      return cleanupPending(record);
     }
     return {
       start,
@@ -424,6 +457,8 @@ export function createProductionSandboxControl(options: Options) {
     const namespace = raw.linuxNamespace
       ? await readLinuxNamespaceState(raw.linuxNamespace)
       : "unknown";
+    const release = async (state: "released" | "process_group_gone"): Promise<ControlState> =>
+      (await hostProcessGroupGone(raw.processId)) ? state : "exit_cleanup_pending";
     if (
       qualification.platform === "linux" &&
       qualification.terminationMode === "verified_tree" &&
@@ -435,7 +470,7 @@ export function createProductionSandboxControl(options: Options) {
       namespace === "released" &&
       processAbsent(raw.processId)
     )
-      return "released";
+      return release("released");
     // This qualification concerns a closed program, not arbitrary process-tree
     // termination. Its only shared publisher has returned; its native helper is
     // awaited and cannot fork. Interrupted/unverified programs remain unknown.
@@ -456,10 +491,10 @@ export function createProductionSandboxControl(options: Options) {
       processAbsent(raw.processId) &&
       (await options.fixedFileCompleted?.(record))
     )
-      return "released";
+      return release("released");
     // A finished, never-started environment can be released only after the
     // original host PID is absent. PID reuse/permission errors remain unknown.
-    if (neverStartedReleased(raw, namespace)) return "released";
+    if (neverStartedReleased(raw, namespace)) return release("released");
     if (
       raw.taskStarted &&
       raw.phase === "finished" &&
@@ -468,7 +503,7 @@ export function createProductionSandboxControl(options: Options) {
       raw.taskProcessGroupGone === true &&
       processAbsent(raw.processId)
     )
-      return "process_group_gone";
+      return release("process_group_gone");
     // Mac's accepted profile binds inherited SRT restrictions and sampled
     // supervision, not a promise of arbitrary descendant reclamation. Linux's
     // stronger tree requirement is not inferred from this Mac evidence.
@@ -552,6 +587,7 @@ export function createProductionSandboxControl(options: Options) {
     const afterCrash = async (unreachable: UnreachableHost) => {
       const crash = await crashedWithinBoot(record);
       if (!crash) throw unreachable.error;
+      if ("kind" in crash) return crash;
       return observeGone(record, control, { crash });
     };
     // Stop the authenticated original host promptly, then verify its resulting
@@ -606,7 +642,7 @@ export function createProductionSandboxControl(options: Options) {
       raw.taskProcessGroupGone === false
     ) {
       const crash = await crashedWithinBoot(record);
-      if (crash) return observeGone(record, control, { crash });
+      if (crash) return "kind" in crash ? crash : observeGone(record, control, { crash });
     }
     if (state === "exit_cleanup_pending")
       return {
@@ -921,7 +957,8 @@ export function createProductionSandboxControl(options: Options) {
         const namespace = raw.linuxNamespace
           ? await readLinuxNamespaceState(raw.linuxNamespace)
           : "unknown";
-        if (!neverStartedReleased(raw, namespace)) return undefined;
+        if (!neverStartedReleased(raw, namespace) || !(await hostProcessGroupGone(raw.processId)))
+          return undefined;
         if (signal?.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
         const checkedAt = options.now();
         const validUntil = new Date(Date.parse(checkedAt) + 1000).toISOString();
@@ -1023,6 +1060,7 @@ export function createProductionSandboxControl(options: Options) {
           crashed.resourceSequence !== resource.sequence ||
           crashed.crash.start.bootId !== control.bootId ||
           crashed.crash.start.processIdentityRef !== control.processIdentityRef ||
+          !(await hostProcessGroupGone(crashed.crash.start.processId)) ||
           !same(resourceState("process_group_gone"), {
             supervision: resource.supervision,
             cleanup: resource.cleanup,

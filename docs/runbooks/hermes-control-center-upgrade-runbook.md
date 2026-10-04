@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c76c7c6bdcc8e1288df462cc90f29aee203259d7d3fa2b7c1d960d727cd24fb1"
+contract_sha256: "sha256:87f6d4c9da1e064be8bdfc2300c9d89374f5d6f11ef2a813dc082d916558c632"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -15,6 +15,7 @@ date: "2026-09-11"
 本文绑定 Hermes 的固定日期部署脚本与目录仅保留为历史参照，不适用于云端部署。当前开发测试在 Hermes 的任务自有目录运行，云服务器只用于生产；遵循 [ADR 0047](../adr/0047-test-checkout-on-hermes-nvme.md#storage)，每次生产部署仍须单独授权。[SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md]
 
 <!-- runbook-contract:
+- docs/execution/specs/2026-09-24-isolated-tool-execution-design.md
 - packages/platform-node/src/capabilities/isolation.ts
 - packages/platform-node/src/process-output.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-release.ts
@@ -473,7 +474,13 @@ Hermes r54 五次独立测量的额外进程 RSS 中位数为 110.910 MiB、最�
 
 ### Schema 37 固定文件发布恢复
 
-升级后核查原作业时，已完成清理但终态中的 `taskProcessGroupGone` 为 false，不再阻止按原签名开始记录和当前进程身份补做核验；没有原身份依据或原进程组仍存活时继续保留占用。证明仍仅为 `process_group_gone`，不能推断离组后代已停止；数据格式及本手册的部署授权要求不变。详细边界见[原环境核查约束](install-start-stop-runbook.md#v2-原环境核查约束2026-09-09)。[SOURCE: docs/runbooks/install-start-stop-runbook.md]
+Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js`、`linux-host-guardian.js` 和 `linux-host-group.js`，由既有 runtime digest 核验。Host 在创建 SRT 代理前确认同组清理进程就绪；正常退出继续使用 SRT `cleanupAfterCommand()/reset()`。Host 被杀后，清理进程先核对原 Host 身份已消失、各成员 PGID/SID 与原 Host PID 相同，以及自身仍占据原组，再在原清理期限内结束自己所在的组。Agent 随后独立确认零成员；不能把发信号成功写成 `srtReset=true` 或已释放。
+
+原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
+
+清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制和 Mac 规则保留；本轮 Mac 行为未验证。
+
+升级后核查原作业时，已完成清理但终态中的 `taskProcessGroupGone` 为 false，不再阻止按原签名开始记录和当前进程身份补做核验；没有原身份依据、原任务进程组仍存活或 Linux 的 Host 自身组非空时继续保留占用。证明仍仅为 `process_group_gone`，不能推断离组后代已停止；数据格式及本手册的部署授权要求不变。详细边界见[原环境核查约束](install-start-stop-runbook.md#v2-原环境核查约束2026-09-09)。[SOURCE: docs/runbooks/install-start-stop-runbook.md]
 
 历史占用可先按[只读核查流程](workspace-lifecycle-audit-runbook.md)从对应源码 checkout 读取已验证的数据库副本。该入口不随安装产物自动变成管理命令，也不执行迁移、解锁或重放；现场宿主停止证明与具体修复仍需单独核对。
 
@@ -540,6 +547,6 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
 
-说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按 `process_group_gone` 核验，不证明脱离的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
+说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 
 [SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]

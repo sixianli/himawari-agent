@@ -499,3 +499,11 @@ Linux 列表沿用仓库已有的 Hermes 部署签署来源 `scripts/operations/
 在改动声明之前，最初的回归检查调用真实快照生成函数，并用产品的严格 snapshot loader 独立读回。Hermes 红运行是 2 通过、1 失败，明确报出 `Linux profile requires verified tree cleanup`；修正声明后同一文件 3/3 通过。这个检查同时启动摘要线程并读取完整 Node 可执行文件。在整个 tooling 项目中，它超过默认 5 秒，其余 1172 条通过；带取证入口的下一次整项目运行通过，但步骤探针没有事件，未据此认定具体耗时根因或把偶发通过当作稳定证据。保留失败和取证报告，不调整时限。
 
 最终的声明回归检查直接调用安装、重启共用的 `productPathSandboxCleanup()`，逐项核对 macOS 和 Linux 的原有预期，再调用产品的严格 sandbox qualification schema。它保留终止模式、全部保证、限制数组和 enforcement 预期，把与声明选择无关的线程启动和可执行文件摘要计算留在原产品路径夹具中。真实快照生成、注册和工具终止仍由 S1/S4 产品路径验收。声明检查只证明测试声明符合平台契约；夹具的测试专用资格摘要不能充当宿主资格或真实清理结果的证据。报告保留在同一 `hermes-r64` 证据目录。
+
+## 2026-10-04：Host 崩溃后的代理残留
+
+stop-04 的真实 Linux 读回确认：任务命名空间和任务组已经消失，产品已保存 `released / process_group_gone`，Host 自身组仍有 socat。Claude reply-04 批准修正 Host 组主动清理和释放证明；设计见[Linux Host 组清理](../specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。正常 SRT reset 继续复用，Host 被杀后的基础设施组回收归 Himawari；Pi 工具、SRT 协议、持久格式和 Agent–Worker 通道保持原合同。
+
+新增 S4 六处同组空成员断言后，Hermes `before-reset` 红测试明确因 socat `2967593 / 736011311` 残留失败，Host 原身份为 `2967554`，PGID/SID 均为该编号。报告、数据库、原始 stat、服务日志和 trace 保留在 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/reply04/`。该红结果不能作为交付通过；原六处结果交付断言保留，正式验收使用 `[R2-S1]` 加 `[R2-S4]` 共七场景、无 `--bail` 的现有产品路径命令。每次实际结果以长任务证据和保留报告为准。
+
+提交前复核另发现一个释放竞态：第一次 PID 探测看见 Host，第二次看见它已退出时，原来的先行 Host 组检查会被跳过。三个受控 OS 观测的回归用例在修改前都错误报告 released；实际释放候选现在统一经过 Host 组检查。这类两次探测间的退出无法可靠安排为真实进程测试，因此用既有真实控制套接字和 SQLite 夹具，只替换进程探测与组读回边界；真实六处崩溃测试仍承担平台清理证据。

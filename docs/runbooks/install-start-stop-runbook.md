@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:657b908d7aa7d98341eefdde19a6bb33f761f856853e83eaade08811256fbb1a"
+contract_sha256: "sha256:f73def67ba29a2907dc48a153ac96dcd58152579087a98978d81fb9136672aa5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -26,6 +26,7 @@ date: "2026-08-27"
 - [停止条件](#stop-conditions)
 
 <!-- runbook-contract:
+- docs/execution/specs/2026-09-24-isolated-tool-execution-design.md
 - packages/platform-node/src/capabilities/capability-deployment.ts
 - packages/platform-node/src/capabilities/isolation.ts
 - packages/platform-node/src/process-output.ts
@@ -719,9 +720,15 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 
 ### v2 原环境核查约束（2026-09-09）
 
+Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js`、`linux-host-guardian.js` 和 `linux-host-group.js`，由既有 runtime digest 核验。Host 在创建 SRT 代理前确认同组清理进程就绪；正常退出继续使用 SRT `cleanupAfterCommand()/reset()`。Host 被杀后，清理进程先核对原 Host 身份已消失、各成员 PGID/SID 与原 Host PID 相同，以及自身仍占据原组，再在原清理期限内结束自己所在的组。Agent 随后独立确认零成员；不能把发信号成功写成 `srtReset=true` 或已释放。
+
+原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
+
+清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制和 Mac 规则保留；本轮 Mac 行为未验证。
+
 恢复必须保留既有受保护 Run trace 中的控制引用、终态证据及其 Payload；不得仅备份 SQLite 中的 PID。当前 Agent 权威通过原环境认证控制端口 inspect/stop，或读取原 Job Host 的签名终态；身份、目录 inode、策略或宿主变化时继续隔离，不能在目标主机按旧 PID 停止或重启。Agent 仅加载不含 SRT 启动能力的控制客户端。
 
-Linux 前台清理证据要求原 PID namespace init 已消失及完整终态，释放记录的 cleanup 为 `confirmed`。按 ADR 0033，已启动的 SRT 任务在原 Job Host 已退出、SRT 已复位、任务进程组（主进程及仍留在同一组的子进程）经 Job Host 终态证据确认全部消失时，也释放占用，cleanup 记为 `process_group_gone`，含义是“停止未经严格确认”：用 `setsid` 等方式离开进程组的后代不被跟踪，可能仍在运行。Agent 登记 Job Host 时同时保存本机开机标识（macOS 的 `kern.bootsessionuuid`、Linux 的 `/proc/sys/kernel/random/boot_id`）；之后核查时开机标识已变，说明机器重启过、原进程组必然已不存在，不再联系原 Job Host，直接按 `process_group_gone` 释放。会话页面把这种释放显示为“停止未经严格确认”：工具步骤显示“已完成 · 停止未经严格确认”，被停止的一轮对话还会说明离开进程组的程序可能仍在运行、修改文件或联网。Job Host 在同一次开机里崩溃时，Agent 读取 Job Host 在任务启动后写入控制目录的签名开始记录（`started.json`），用操作系统保存的进程启动时刻（macOS 的 `ps -o lstart`、Linux 的 `/proc/<pid>/stat` 第 22 项）核对 Job Host 和任务进程组组长是不是原来的进程：Job Host 已退出，且原进程组已没有进程或组长编号已被新进程占用时，按 `process_group_gone` 释放；Job Host 仍在、组长仍是原进程、组长已退出但组员还在、没有开始记录或记录核对不通过时继续 unknown。若宿主已写入 `finished` 终态，任务已退出且 SRT 已复位，但当时的 `taskProcessGroupGone` 为 false，Agent 仍使用同一份签名开始记录和当前进程身份核验原进程组；后来确认原宿主及原进程组消失时，沿用已有 `process_group_gone` 证明解除占用，不修改旧终态文件，不把它当作严格进程树清理。终态证据没有进程组字段、进程组仍在或无法核验身份时继续 unknown；没有保存开机标识的旧登记在重启后也继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
+Linux 前台清理证据要求原 PID namespace init 已消失、Host 自身进程组为空及完整终态，释放记录的 cleanup 为 `confirmed`。按 ADR 0033，已启动的 SRT 任务在原 Job Host 已退出、SRT 已复位、任务进程组（主进程及仍留在同一组的子进程）经 Job Host 终态证据确认全部消失，且 Linux 的 Host 自身组为空时，也释放占用，cleanup 记为 `process_group_gone`，含义是“停止未经严格确认”：用 `setsid` 等方式离开进程组的后代不被跟踪，可能仍在运行。Agent 登记 Job Host 时同时保存本机开机标识（macOS 的 `kern.bootsessionuuid`、Linux 的 `/proc/sys/kernel/random/boot_id`）；之后核查时开机标识已变，说明机器重启过、原进程组必然已不存在，不再联系原 Job Host，直接按 `process_group_gone` 释放。会话页面把这种释放显示为“停止未经严格确认”：工具步骤显示“已完成 · 停止未经严格确认”，被停止的一轮对话还会说明离开进程组的程序可能仍在运行、修改文件或联网。Job Host 在同一次开机里崩溃时，Agent 读取 Job Host 在任务启动后写入控制目录的签名开始记录（`started.json`），用操作系统保存的进程启动时刻（macOS 的 `ps -o lstart`、Linux 的 `/proc/<pid>/stat` 第 22 项）核对 Job Host 和任务进程组组长是不是原来的进程：Job Host 已退出，且原任务进程组已没有进程或组长编号已被新进程占用，并且 Linux 的 Host 自身组为空时，按 `process_group_gone` 释放；不属于上述可信清理等待的 Job Host 仍在、任务组长仍是原进程、任务组长已退出但组员还在、没有开始记录或记录核对不通过时继续 unknown。若宿主已写入 `finished` 终态，任务已退出且 SRT 已复位，但当时的 `taskProcessGroupGone` 为 false，Agent 仍使用同一份签名开始记录和当前进程身份核验原进程组；后来确认原宿主及原任务进程组消失，且 Linux 的 Host 自身组为空时，沿用已有 `process_group_gone` 证明解除占用，不修改旧终态文件，不把它当作严格进程树清理。终态证据没有进程组字段、进程组仍在或无法核验身份时继续 unknown；没有保存开机标识的旧登记在重启后也继续 unknown。端口失联、证据不完整和超时均不能解除相交占用。真实假数据探针不签发安装资格；不得把测试临时 bubblewrap/socat 的 PATH 配置用于生产，生产依赖位置须单独验证。实际安装、备份恢复和跨主机迁移的既有步骤及审批边界保持适用。
 
 <a id="purge-unconfirmed-srt-records"></a>
 
@@ -900,6 +907,6 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
 
-说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按 `process_group_gone` 核验，不证明脱离的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
+说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 
 [SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]

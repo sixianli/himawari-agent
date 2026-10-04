@@ -14,6 +14,7 @@ import {
   parseJobHostRequest,
 } from "./job-host-protocol.ts";
 import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
+import { startLinuxHostGuardian } from "./linux-host-guardian.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { stopProcessGroup } from "./process-group.ts";
 import { readProcessStartToken } from "./process-identity.ts";
@@ -284,6 +285,10 @@ async function prepare(value: unknown, controlValue?: unknown) {
   // The frozen policy digest binds the allowed targets; runtime digest binds this
   // mandatory routing implementation. Both proxy schemes disable all bypasses.
   sdkOperation = (async () => {
+    if (process.platform === "linux") {
+      await startLinuxHostGuardian(request.cleanupTimeoutMs ?? 5000, () => stop("host_failure"));
+      if (phase !== "preparing") return;
+    }
     const configuration = JSON.parse(policy.policyJson);
     failureStage = "network";
     egress = await openNetworkEgress(

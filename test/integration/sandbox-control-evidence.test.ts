@@ -4,12 +4,13 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import path from "node:path";
+import * as runtimeControl from "@himawari-agent/runtime-sandbox/control";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
 import type {
   SandboxHostBinding,
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
 import {
   type JobHostControlObservation,
@@ -352,6 +353,68 @@ it("does not release a finished environment while its host is alive", async () =
   expect(resource.supervision).toBe("lost");
   expect(resource.cleanup).toBe("unknown");
 });
+it.each(["never-started", "task-group", "fixed-file"] as const)(
+  "[R2-S4] requires an empty Host group if the Host exits between release checks: %s",
+  async (release) => {
+    const f = await fixture({ qualified: release === "fixed-file", completed: true });
+    const record =
+      release === "fixed-file"
+        ? {
+            ...f.record,
+            plan: {
+              ...f.record.plan,
+              mode: "foreground" as const,
+              operationContract: {
+                ...f.record.plan.operationContract,
+                ref: "pi-coding-tool",
+                version: "3",
+              },
+            },
+          }
+        : f.record;
+    f.set({
+      phase: "finished",
+      taskStarted: release !== "never-started",
+      taskProcessExited: true,
+      stdioClosed: true,
+      srtReset: true,
+      taskProcessGroupGone: true,
+    });
+    await f.finishControl();
+    let hostChecks = 0;
+    const kill = process.kill.bind(process);
+    const probe = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      if (pid === process.pid && signal === 0) {
+        if (++hostChecks === 1) return true;
+        throw Object.assign(new Error("Host exited"), { code: "ESRCH" });
+      }
+      return kill(pid, signal);
+    });
+    const group = vi.spyOn(runtimeControl, "readLinuxHostGroup").mockResolvedValue([
+      {
+        processId: process.pid + 1,
+        parentProcessId: 1,
+        processGroupId: process.pid,
+        sessionId: process.pid,
+        startToken: "12345",
+        state: "S",
+      },
+    ]);
+    try {
+      const observed = await f.control.observe(record);
+      expect(observed).not.toMatchObject({ supervision: "released" });
+      if ("kind" in observed) {
+        expect(observed).toMatchObject({ kind: "cleanup_pending", identity: record.plan.identity });
+        expect(group).toHaveBeenCalledWith(process.pid);
+      } else {
+        expect(observed).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+      }
+    } finally {
+      group.mockRestore();
+      probe.mockRestore();
+    }
+  },
+);
 it.each(["running", "stopping", "finished"] as const)(
   "reports a %s host whose task exited as cleanup pending, not as an unconfirmed control loss",
   async (phase) => {

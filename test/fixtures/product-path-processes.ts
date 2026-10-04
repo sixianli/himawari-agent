@@ -1,0 +1,91 @@
+import { readFile, readdir, readlink } from "node:fs/promises";
+import type { JobHostControlObservation } from "@himawari-agent/runtime-sandbox/control";
+
+export type ProductPathJobHostStart = Pick<
+  JobHostControlObservation,
+  "jobId" | "processId" | "processStartToken" | "linuxNamespace"
+> & { taskProcessGroup: NonNullable<JobHostControlObservation["taskProcessGroup"]> };
+
+async function readLinuxProcessStat(pid: number) {
+  let rawStat: string;
+  try {
+    rawStat = await readFile(`/proc/${pid}/stat`, "utf8");
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+    throw error;
+  }
+  const fields = rawStat
+    .slice(rawStat.lastIndexOf(")") + 2)
+    .trim()
+    .split(/\s+/);
+  if (![fields[1], fields[2], fields[3], fields[19]].every((field) => /^\d+$/.test(field ?? "")))
+    throw new Error("PRODUCT_PATH_PROCESS_STAT_INVALID");
+  return {
+    pid,
+    parentPid: Number(fields[1]),
+    processGroupId: Number(fields[2]),
+    sessionId: Number(fields[3]),
+    state: fields[0],
+    starttime: fields[19] as string,
+    rawStat,
+  };
+}
+
+export async function readLinuxHostProcessGroup(host: ProductPathJobHostStart) {
+  if (process.platform !== "linux" || !host.processStartToken)
+    throw new Error("PRODUCT_PATH_LINUX_HOST_IDENTITY_MISSING");
+  const names = (await readdir("/proc")).filter((name) => /^\d+$/.test(name));
+  if (names.length > 16384) throw new Error("PRODUCT_PATH_PROCESS_SCAN_CAPACITY");
+  const members: Array<NonNullable<Awaited<ReturnType<typeof readLinuxProcess>>>> = [];
+  for (let offset = 0; offset < names.length; offset += 64) {
+    const rows = await Promise.all(
+      names.slice(offset, offset + 64).map(async (name) => {
+        const stat = await readLinuxProcessStat(Number(name));
+        if (stat?.processGroupId !== host.processId) return null;
+        return readLinuxProcess(stat.pid);
+      }),
+    );
+    members.push(...rows.filter((row): row is NonNullable<typeof row> => row !== null));
+  }
+  const hostStat = await readLinuxProcessStat(host.processId);
+  return {
+    observedAt: new Date().toISOString(),
+    recordedHost: host,
+    recordedHostPresent: hostStat?.starttime === host.processStartToken,
+    hostStat,
+    members,
+  };
+}
+
+async function readLinuxProcess(pid: number) {
+  const before = await readLinuxProcessStat(pid);
+  if (!before) return null;
+  let pidNamespace: string | null = null;
+  let namespaceReadError: string | null = null;
+  try {
+    pidNamespace = await readlink(`/proc/${pid}/ns/pid`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+    if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code)) throw error;
+    namespaceReadError = code;
+  }
+  const status = await readFile(`/proc/${pid}/status`, "utf8").catch((error) => {
+    if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+    throw error;
+  });
+  const after = await readLinuxProcessStat(pid);
+  if (!after || status === null) return null;
+  const namespacePids = /^NSpid:\s+([\d\t ]+)$/m.exec(status)?.[1]?.trim().split(/\s+/).map(Number);
+  return {
+    ...before,
+    pidNamespace,
+    namespaceReadError,
+    namespacePids: namespacePids ?? null,
+    stable:
+      before.starttime === after.starttime &&
+      before.parentPid === after.parentPid &&
+      before.processGroupId === after.processGroupId &&
+      before.sessionId === after.sessionId,
+    rawStatAfter: after.rawStat,
+  };
+}

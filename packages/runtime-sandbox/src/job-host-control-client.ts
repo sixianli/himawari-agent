@@ -6,6 +6,7 @@ export {
   readJobHostFinalEvidence,
   readJobHostStartEvidence,
 } from "./job-host-control.ts";
+export { readLinuxHostGroup } from "./linux-host-group.ts";
 export { readLinuxNamespaceState } from "./linux-namespace.ts";
 export { readMachineBootId } from "./machine-boot.ts";
 export { processGroupPresent, readProcessStartToken } from "./process-identity.ts";

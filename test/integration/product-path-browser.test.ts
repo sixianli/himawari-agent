@@ -18,6 +18,11 @@ import {
   repositoryRoot,
 } from "../fixtures/product-path-harness.ts";
 
+import {
+  type ProductPathJobHostStart,
+  readLinuxHostProcessGroup,
+} from "../fixtures/product-path-processes.ts";
+
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
 const productDescribe = enabled ? describe : describe.skip;
 const outputDirectory = path.resolve(
@@ -190,11 +195,7 @@ async function readJobHostStarts() {
           },
         );
         if (encoded === null) return null;
-        return JSON.parse(JSON.parse(encoded).body) as {
-          jobId: string;
-          processId: number;
-          taskProcessGroup: { processGroupId: number };
-        };
+        return JSON.parse(JSON.parse(encoded).body) as ProductPathJobHostStart;
       }),
   );
 }
@@ -1918,7 +1919,7 @@ productDescribe(
       "before-result",
       "after-result",
     ] as const)(
-      "recovers saved output after Job Host crashes during cleanup at %s",
+      "[R2-S4] recovers saved output after Job Host crashes during cleanup at %s",
       async (stage) => {
         const name = `16-finish-crash-${stage}`;
         await scenario(name, async () => {
@@ -1940,16 +1941,28 @@ productDescribe(
           const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
           await uiExpect.poll(() => rows()[0]?.streamEnds).toBe(1);
           expect(rows()[0]?.result).toBeNull();
+          const host = (await readJobHostStarts()).find(
+            (entry) => entry?.processId === entered.pid && entry?.jobId === rows()[0]?.jobId,
+          );
+          if (!host) throw new Error("FINISH_CRASH_HOST_IDENTITY_MISSING");
+          const hostGroupBefore =
+            process.platform === "linux" ? await readLinuxHostProcessGroup(host) : undefined;
+          if (hostGroupBefore) expect(hostGroupBefore.recordedHostPresent).toBe(true);
           await writeFile(
             path.join(outputDirectory, `${name}-before.json`),
-            JSON.stringify({ entered, resultReceivedAt, rows: rows() }, null, 2),
+            JSON.stringify(
+              { entered, resultReceivedAt, rows: rows(), host, hostGroupBefore },
+              null,
+              2,
+            ),
           );
-          await installation.crash();
-          process.kill(entered.pid, "SIGKILL");
-          await waitForExpiredServiceLease();
-          await installation.start();
-          await page.reload();
+          let crashEvidenceFailure: AggregateError | undefined;
           try {
+            await installation.crash();
+            process.kill(entered.pid, "SIGKILL");
+            await waitForExpiredServiceLease();
+            await installation.start();
+            await page.reload();
             await uiExpect
               .poll(() => rows()[0], { timeout: 90_000 })
               .toMatchObject({
@@ -1959,6 +1972,15 @@ productDescribe(
                 definiteOperations: 1,
                 intents: 1,
               });
+            if (process.platform === "linux") {
+              const hostGroup = await readLinuxHostProcessGroup(host);
+              await writeFile(
+                path.join(outputDirectory, `${name}-host-group-after-release.json`),
+                JSON.stringify(hostGroup, null, 2),
+              );
+              expect(hostGroup.recordedHostPresent).toBe(false);
+              expect(hostGroup.members).toEqual([]);
+            }
             await uiExpect(toolAnswers().filter({ hasText: NOTE })).toHaveCount(1);
             expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
             expect(JSON.stringify(observedToolMessages(text))).toContain(NOTE);
@@ -1967,19 +1989,41 @@ productDescribe(
               (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
             ).toHaveLength(1);
           } finally {
-            await writeFile(
-              path.join(outputDirectory, `${name}-after.json`),
-              JSON.stringify(
-                {
-                  rows: rows(),
-                  starts: await readJobHostStarts(),
-                  replies: observedToolReplies(text),
-                },
-                null,
-                2,
-              ),
+            const captures = await Promise.allSettled([
+              (async () => {
+                await writeFile(
+                  path.join(outputDirectory, `${name}-after.json`),
+                  JSON.stringify(
+                    {
+                      rows: rows(),
+                      starts: await readJobHostStarts(),
+                      replies: observedToolReplies(text),
+                    },
+                    null,
+                    2,
+                  ),
+                );
+              })(),
+              (async () => {
+                if (process.platform === "linux")
+                  await writeFile(
+                    path.join(outputDirectory, `${name}-host-group-after.json`),
+                    JSON.stringify(await readLinuxHostProcessGroup(host), null, 2),
+                  );
+              })(),
+            ]);
+            const errors = captures.flatMap((capture) =>
+              capture.status === "rejected" ? [capture.reason] : [],
             );
+            if (errors.length > 0) {
+              crashEvidenceFailure = new AggregateError(
+                errors,
+                "FINISH_CRASH_EVIDENCE_CAPTURE_FAILED",
+              );
+              console.error(crashEvidenceFailure);
+            }
           }
+          if (crashEvidenceFailure) throw crashEvidenceFailure;
         });
       },
     );
