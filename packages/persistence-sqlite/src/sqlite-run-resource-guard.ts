@@ -67,15 +67,35 @@ export const RUN_COMPLETION_RECOVERY_SQL = `
       AND payload.lifecycle_state='active')
   AND (${RUN_RESOURCES_RELEASED_SQL})`;
 
+export const RUN_SANDBOX_RESOURCES_ABSENT_SQL = `
+  NOT EXISTS (SELECT 1 FROM sandbox_execution_records resource
+    WHERE resource.owner_id=r.owner_id AND resource.agent_id=r.agent_id AND resource.run_id=r.id)
+  AND NOT EXISTS (SELECT 1 FROM sandbox_admission_queue admission
+    WHERE admission.owner_id=r.owner_id AND admission.agent_id=r.agent_id AND admission.run_id=r.id)
+  AND NOT EXISTS (SELECT 1 FROM deletion_tombstones deleted
+    WHERE deleted.owner_id=r.owner_id AND deleted.agent_id=r.agent_id AND deleted.object_type='sandbox_execution'
+      AND (json_extract(deleted.record_json,'$.plan.identity.runId')=r.id
+        OR json_type(deleted.record_json,'$.plan.identity.runId') IS NOT 'text'
+        OR instr(json_extract(deleted.record_json,'$.plan.identity.runId'),char(0))>0
+        OR length(json_extract(deleted.record_json,'$.plan.identity.runId')) NOT BETWEEN 1 AND 128
+        OR json_extract(deleted.record_json,'$.plan.identity.runId') NOT GLOB '[A-Za-z0-9]*'
+        OR json_extract(deleted.record_json,'$.plan.identity.runId') GLOB '*[^A-Za-z0-9._:-]*'))
+  AND NOT EXISTS (SELECT 1 FROM sandbox_legacy_occupancy occupancy JOIN sandbox_jobs job USING(job_id)
+    WHERE job.owner_id=r.owner_id AND job.agent_id=r.agent_id AND job.run_id=r.id
+      AND occupancy.released_at IS NULL)`;
+
 export const RUN_EXPIRED_RECONCILIATION_SQL = `
   r.status='reconciling_external_result'
   AND c.phase='reconciling_external_result'
   AND c.terminal_status IS NULL AND c.output_kind IS NULL
-  AND EXISTS (SELECT 1 FROM sandbox_execution_records expired
+  AND (
+    (c.diagnostic_code='RUNTIME_TOOL_RESULT_UNKNOWN' AND (${RUN_SANDBOX_RESOURCES_ABSENT_SQL}))
+    OR (EXISTS (SELECT 1 FROM sandbox_execution_records expired
     WHERE expired.owner_id=r.owner_id AND expired.agent_id=r.agent_id AND expired.run_id=r.id
       AND json_extract(expired.plan_json,'$.originalDeadlineAt')<=@resourceNow)
   AND NOT EXISTS (SELECT 1 FROM sandbox_execution_records pending
     WHERE pending.owner_id=r.owner_id AND pending.agent_id=r.agent_id AND pending.run_id=r.id
       AND (json_extract(pending.plan_json,'$.originalDeadlineAt') IS NULL
-        OR json_extract(pending.plan_json,'$.originalDeadlineAt')>@resourceNow))
+        OR json_extract(pending.plan_json,'$.originalDeadlineAt')>@resourceNow)))
+  )
   AND (${RUN_RESOURCES_RELEASED_SQL})`;

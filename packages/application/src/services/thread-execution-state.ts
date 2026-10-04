@@ -77,7 +77,9 @@ export function projectThreadExecutionState(
   input: readonly ThreadExecutionRecord[],
   canCancelRun: boolean,
   resources?: ThreadExecutionResources,
-  checkpoint?: Pick<RunCheckpoint, "phase" | "terminalStatus" | "diagnosticCode">,
+  checkpoint?: Pick<RunCheckpoint, "phase" | "terminalStatus" | "diagnosticCode"> &
+    Partial<Pick<RunCheckpoint, "output">>,
+  sandboxResourcesAbsent = false,
 ): ThreadExecutionState {
   const records = [...new Map(input.map((record) => [record.id, record])).values()].sort(
     (a, b) => a.sequence - b.sequence,
@@ -255,13 +257,23 @@ export function projectThreadExecutionState(
     checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED" &&
     resources?.allReleased === true &&
     !resources.pendingResources;
-  if (expiredAndReleased) displayPhase = "failed";
+  const expiredWithoutSandboxResources =
+    sandboxResourcesAbsent &&
+    run.status === "failed" &&
+    checkpoint?.phase === "failed" &&
+    checkpoint.terminalStatus === "failed" &&
+    checkpoint.output === null &&
+    checkpoint.diagnosticCode === "RUN_EXECUTION_DEADLINE_EXCEEDED" &&
+    !resources?.pendingResources;
+  const expired = expiredAndReleased || expiredWithoutSandboxResources;
+  if (expired) displayPhase = "failed";
   const availableActions: ThreadExecutionState["availableActions"][number][] = [];
   if (!terminal && canCancelRun) availableActions.push("stop");
   if (
     canCancelRun &&
     ["failed", "cancelled"].includes(run.status) &&
     !resources?.allReleased &&
+    !expiredWithoutSandboxResources &&
     displayPhase !== "not_dispatched" &&
     !["stopping", "verifying"].includes(resources?.phase ?? "")
   )
@@ -276,7 +288,7 @@ export function projectThreadExecutionState(
         : run.updatedAt,
     ),
     displayPhase,
-    reasonCode: expiredAndReleased
+    reasonCode: expired
       ? "RUN_EXECUTION_DEADLINE_EXCEEDED"
       : resources?.phase
         ? displayPhase === "unresolved" &&

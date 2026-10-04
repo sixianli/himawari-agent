@@ -1,6 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import {
@@ -11,6 +11,8 @@ import {
   type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
+  SessionTraceRecorder,
+  ThreadExecutionProjection,
   type SandboxExecutionRecord,
   type SandboxExecutionRunInventory,
 } from "@himawari-agent/application";
@@ -70,6 +72,13 @@ import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
 const execFile = promisify(execFileCallback);
+async function retainD3Readback(execution: string, name: string, value: unknown) {
+  const parent = path.join(process.cwd(), ".ci-output/r2-d3");
+  await mkdir(parent, { recursive: true });
+  const directory = await mkdtemp(path.join(parent, `sqlite-${execution}-`));
+  await writeFile(path.join(directory, `${name}.json`), JSON.stringify(value, null, 2));
+}
+
 function deferred<T>() {
   let resolve: (value: T) => void = () => {
     throw new Error("deferred not initialized");
@@ -743,6 +752,267 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       }
     },
   );
+
+  it.each([
+    "none",
+    "record",
+    "queue-queued",
+    "queue-admitted",
+    "queue-cancelled",
+    "deleted-pending",
+    "deleted-incomplete",
+    "deleted-verified",
+    "deleted-unattributed",
+    "deleted-empty",
+    "deleted-whitespace",
+    "deleted-numeric",
+    "deleted-invalid",
+    "deleted-too-long",
+    "deleted-nul-tail",
+    "deleted-nul-middle",
+    "legacy-pending",
+    "legacy-released",
+  ] as const)(
+    "[R2-D3] proves resource absence from canonical SQLite rows rather than empty display arrays: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        const runId = f.scope.runId;
+        if (scenario === "record") start(f);
+        if (scenario.startsWith("queue-")) {
+          const a = admission(f);
+          operationsForDatabase(f.database).execute("capabilityInvocation.sandboxV2.enqueue", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: {
+              plan: a.plan,
+              invocation: a.invocation,
+              workspaces: a.workspaces,
+              reservation: {
+                schemaVersion: "sandbox-preparation.v1",
+                identity: a.plan.identity,
+                environmentId: a.plan.environmentId,
+                resourceRef: null,
+                mode: a.plan.mode,
+                workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                sequence: 1,
+                createdAt: a.plan.requestedAt,
+              },
+            },
+          });
+          f.database
+            .prepare("UPDATE sandbox_admission_queue SET status=? WHERE run_id=?")
+            .run(scenario.slice(6), runId);
+        }
+        if (scenario.startsWith("deleted-")) {
+          let record = start(f);
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+          f.database
+            .prepare("DELETE FROM sandbox_execution_records WHERE job_id=?")
+            .run(record.plan.identity.jobId);
+          const unattributed = [
+            "deleted-unattributed",
+            "deleted-empty",
+            "deleted-whitespace",
+            "deleted-numeric",
+            "deleted-invalid",
+            "deleted-too-long",
+            "deleted-nul-tail",
+            "deleted-nul-middle",
+          ].includes(scenario);
+          const status = unattributed ? "pending" : scenario.slice(8);
+          const locators = {
+            "deleted-empty": "",
+            "deleted-whitespace": "   ",
+            "deleted-numeric": 42,
+            "deleted-invalid": "invalid/run",
+            "deleted-too-long": "r".repeat(129),
+            "deleted-nul-tail": "valid\u0000",
+            "deleted-nul-middle": "valid\u0000/invalid",
+          };
+          const locator = locators[scenario as keyof typeof locators];
+          const persisted =
+            scenario === "deleted-unattributed"
+              ? {}
+              : unattributed
+                ? {
+                    plan: { ...record.plan, identity: { ...record.plan.identity, runId: locator } },
+                  }
+                : { plan: record.plan };
+          f.database
+            .prepare(
+              "INSERT INTO deletion_tombstones(id,owner_id,agent_id,object_type,object_id,status,requested_at,purge_deadline_at,record_json) VALUES('d3-deleted',?,?,'sandbox_execution',?,?,?,?,?)",
+            )
+            .run(
+              OWNER_ID,
+              AGENT_ID,
+              record.plan.identity.jobId,
+              status,
+              T1,
+              T2,
+              JSON.stringify(persisted),
+            );
+        }
+        if (scenario.startsWith("legacy")) {
+          f.prepare();
+          if (scenario === "legacy-released")
+            f.database.prepare("UPDATE sandbox_legacy_occupancy SET released_at=?").run(T1);
+        }
+        const inventory = readRunInventory(f, runId);
+        await retainD3Readback(execution, scenario, {
+          inventory,
+          canonicalRecords: f.database
+            .prepare("SELECT job_id,run_id FROM sandbox_execution_records WHERE run_id=?")
+            .all(runId),
+          admissions: f.database
+            .prepare("SELECT job_id,run_id,status FROM sandbox_admission_queue WHERE run_id=?")
+            .all(runId),
+          deleted: f.database
+            .prepare(
+              "SELECT object_id,status,record_json FROM deletion_tombstones WHERE object_type='sandbox_execution'",
+            )
+            .all(),
+          legacy: f.database.prepare("SELECT * FROM sandbox_legacy_occupancy").all(),
+        });
+        expect(inventory).toMatchObject({
+          sandboxResourcesAbsent: ["none", "legacy-released"].includes(scenario),
+        });
+        if (scenario === "queue-cancelled")
+          expect(inventory.queue).toMatchObject([{ status: "cancelled" }]);
+        if (
+          scenario === "deleted-pending" ||
+          scenario === "deleted-incomplete" ||
+          scenario === "deleted-unattributed" ||
+          scenario === "deleted-empty" ||
+          scenario === "deleted-whitespace" ||
+          scenario === "deleted-numeric" ||
+          scenario === "deleted-invalid" ||
+          scenario === "deleted-too-long" ||
+          scenario === "deleted-nul-tail" ||
+          scenario === "deleted-nul-middle"
+        ) {
+          expect(inventory.admissions).toEqual([]);
+          expect(inventory.queue).toEqual([]);
+          expect(inventory.deletedPlans).toEqual([]);
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("[R2-D3] keeps a deadline Run unresolved when a real sandbox row is omitted from display inventory", async () => {
+    const f = await openSandboxJournal(false, [], true);
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      const record = start(f);
+      const runId = createRunId(record.plan.identity.runId);
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("D3_THREAD_MISSING");
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+      await payloads.put(
+        await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: "d3-counterexample-tool",
+          dataClassification: "private",
+          contentType: "application/json",
+          createdAt: T1,
+          plaintext: Buffer.from(
+            JSON.stringify({
+              toolCallId: "d3-hidden-call",
+              toolName: "uncertain_tool",
+              arguments: {},
+            }),
+          ),
+        }),
+      );
+      const adapters = createReferenceAdapterSet();
+      const recorder = new SessionTraceRecorder({
+        trace: repository.traceStore(),
+        artifacts: repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+        protector: f.protector,
+        audit: repository.auditLedger(),
+        clock: { now: () => T1 },
+        ids: adapters.ids,
+      });
+      const storedRun = await repository
+        .runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product)
+        .readRun(runId);
+      if (!storedRun) throw new Error("D3_RUN_MISSING");
+      await recorder.record({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId,
+        sessionId: storedRun.run.sessionId,
+        threadId: createThreadId(threadId),
+        turnId: null,
+        parentEventId: null,
+        correlationId: "d3-counterexample",
+        causationId: null,
+        actorId: "d3-test",
+        dataClassification: "private",
+        eventType: "runtime.tool_intent",
+        payload: {
+          type: "runtime.tool_intent",
+          runId,
+          payloadRef: "d3-counterexample-tool",
+          occurredAt: T1,
+        },
+      });
+      f.database
+        .prepare("UPDATE runs SET status='failed',revision=revision+1 WHERE id=?")
+        .run(runId);
+      f.database
+        .prepare(
+          "INSERT INTO run_coordination_checkpoints(run_id,owner_id,agent_id,revision,phase,runtime_event_count,terminal_status,diagnostic_code,updated_at) VALUES(?,?,?,1,'failed',1,'failed','RUN_EXECUTION_DEADLINE_EXCEEDED',?) ON CONFLICT(run_id) DO UPDATE SET phase='failed',terminal_status='failed',output_kind=NULL,diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED',revision=revision+1",
+        )
+        .run(runId, OWNER_ID, AGENT_ID, T2);
+      const projection = new ThreadExecutionProjection({
+        threads: repository.threadRepository(),
+        checkpoints: repository.runCheckpointStore(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product),
+        trace: repository.traceStore(),
+        payloads: () => payloads,
+        protector: f.protector,
+        resources: {
+          readInventory: async () => ({
+            ...readRunInventory(f, runId),
+            admissions: [],
+            queue: [],
+            deletedPlans: [],
+          }),
+          now: () => T2,
+          digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        },
+      });
+      const state = await projection.readState({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId,
+        canCancelRun: true,
+      });
+      await retainD3Readback(execution, "hidden-resource", {
+        inventory: readRunInventory(f, runId),
+        state,
+        storedRun: f.database.prepare("SELECT status,revision FROM runs WHERE id=?").get(runId),
+      });
+      expect(state).toMatchObject({
+        displayPhase: "unresolved",
+        availableActions: ["retry_cleanup"],
+        effectSummary: [{ outcome: "unknown" }],
+      });
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
 
   it.each([
     "released",
@@ -3893,6 +4163,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
 
       const inventory = readRunInventory(f, runId);
       expect(inventory).toEqual({
+        sandboxResourcesAbsent: false,
         admissions: [],
         queue: [],
         legacyResourcesPending: false,

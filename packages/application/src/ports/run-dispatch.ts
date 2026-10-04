@@ -44,6 +44,7 @@ export interface RunDispatchCandidate extends RunDispatchRecord {
 
 export interface RunReconciliationCandidate extends RunDispatchRecord {
   readonly action: "reconcile";
+  readonly scanUpperBoundRunId?: RunId;
 }
 
 export interface RunExecutionLease {
@@ -131,6 +132,8 @@ export interface RunDispatchPort {
   listReconciliationRequired(input: {
     readonly now: string;
     readonly limit: number;
+    readonly afterRunId?: RunId;
+    readonly throughRunId?: RunId;
   }): Promise<readonly RunReconciliationCandidate[]>;
   claim(input: {
     readonly toolResultRecovery?: RunToolResultRecoveryClaim;

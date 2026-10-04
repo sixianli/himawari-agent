@@ -507,6 +507,29 @@ describe("execution state history read boundary", () => {
       "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
     );
   });
+  it("[R2-D3] rejects a change in authoritative absence evidence during the Trace read", async () => {
+    const inventory = {
+      admissions: [],
+      queue: [],
+      legacyResourcesPending: false,
+      deletedPlans: [],
+      sandboxResourcesAbsent: true,
+    };
+    const readInventory = vi
+      .fn()
+      .mockResolvedValueOnce(inventory)
+      .mockResolvedValueOnce({ ...inventory, sandboxResourcesAbsent: false });
+    const projection = new ThreadExecutionProjection({
+      threads: { listRuns: async () => [run] },
+      payloads: () => ({ get: async () => undefined }),
+      protector: {},
+      resources: { readInventory, now: () => at(10), digest: () => "a".repeat(64) },
+    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
+    vi.spyOn(projection, "read").mockResolvedValue({ records: [], nextSequence: null });
+    await expect(projection.readState(input)).rejects.toThrow(
+      "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
+    );
+  });
   it("reads all pages so an earlier unresolved tool cannot be hidden by a later success", async () => {
     const { projection, read } = fixture();
     read.mockResolvedValueOnce({

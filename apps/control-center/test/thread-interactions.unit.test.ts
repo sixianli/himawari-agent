@@ -518,6 +518,91 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
+    runs = [{ runId: "run-ui", revision: 5, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 5,
+      revision: "d3-terminal",
+      lastObservedAt: NOW,
+      displayPhase: "failed",
+      reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      availableActions: [],
+      needsAttention: true,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "d3-call",
+          displayPhase: "unresolved",
+          reasonCode: "TOOL_RESULT_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "d3-call", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "d3-record",
+                      sequence: 1,
+                      itemId: "d3-call",
+                      kind: "tool",
+                      phase: "failed",
+                      name: "uncertain_tool",
+                      text: "",
+                      input: "",
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.reason.runDeadlineExceeded"],
+    );
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      "结果未确认",
+    );
+    expect(container.querySelector(".turn-activity")).toBeNull();
+    expect(container.querySelectorAll(".execution-next-action button")).toHaveLength(0);
+    expect(container.textContent).not.toMatch(/操作已撤销|操作没有发生/);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("rereads an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
     runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
     options = {

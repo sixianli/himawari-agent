@@ -479,6 +479,10 @@ RSS 是整个测试进程实际驻留的内存，增量来自创建前和 `ready
 
 执行方推进 Run、完成助手提交或写协调检查点时，SQLite writer 在自己的同一事务内核对执行租约，不能先由另一条异步请求检查再写入。执行身份不参与原业务命令 fingerprint，因此增加租约不改变已持久化回执的幂等语义。显式 `RunLifecyclePort.cancelRun` 不接受执行租约；它在一次权威校验和 Run revision 检查之后，原子提交取消状态、取消检查点、执行租约失效、命令回执与可靠事件。`RunCoordinator.cancel` 在该事务成功后才取消 Runtime 与 Worker。事件插入失败时整笔事务回滚，既有已生成正文不会被误标为已发布。
 
+非沙箱工具的 UNKNOWN 保存为 `RUNTIME_TOOL_RESULT_UNKNOWN` 后，Run 仍核对到首次冻结的绝对期限。生产 `recover()` 解密并核验原输入；原期限到达后，现有到期事务新增纯非沙箱分支，复用权威、活动租约、三个 revision、输入 ref/摘要和资源释放门禁，写 Run/checkpoint failed 及唯一通知。工具仍 unknown，不重跑、不交给模型或发布回答。沙箱原 EXISTS 与认证释放分支不变。细则见[非沙箱 UNKNOWN 到期](execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#非沙箱-unknown-到期)。
+
+到期事务与界面投影共用 `RUN_SANDBOX_RESOURCES_ABSENT_SQL`，从执行记录、全部状态的 admission/deleted plan 和 legacy pending 记录证明无资源义务。投影在同一 inventory 事务计算内部缺席证据，纳入原有内容 revision 比较，并保持 Run revision 检查；空显示清单的 `allReleased=false` 不变。纯非沙箱的已到期 failed 显示主状态期限失败，工具“结果未确认”，无运行活动行或清理按钮；真实底层资源被显示清单遗漏时保持未解决。恢复使用有固定上界的内存分页游标，未到期 UNKNOWN 和不断新增候选不能持续挡住旧候选；重启重新扫描，不增加持久格式。
+
 执行租约续期失败时，`ProductionRunDispatcher` 按 Run 与执行租约 ID 中断当前执行。协调器在异步等待之后、派发 Runtime 或 Worker 之前检查该执行的停止状态，不把执行权丢失伪装成 Owner 取消。同一协调器内，一个 Run 只能有一个带租约的活跃执行；取消清理结束后才释放位置，旧执行的延迟取消不会与后续执行重叠。每个已启动目标只取消一次，失败诊断随中断结果交给待核对路径，不自动重新执行。
 
 这些持久化端口和协调器路径已有真实 SQLite 回归。延迟取消测试覆盖运行流先结束、取消后结束的交错，并确认移除等待会错误地接纳第二次执行。安装后的服务领取循环、权威续期、HTTP 请求接纳到真实 Runtime 的完整生产组合仍在接线，不能用端口存在或模拟 Runtime 测试替代安装后端到端验收。

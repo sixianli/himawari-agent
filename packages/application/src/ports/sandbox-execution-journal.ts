@@ -257,6 +257,7 @@ export type SandboxExecutionAdmissionRecord =
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
 /** One database read snapshot. Internal identities and claims never go directly to the browser. */
 export interface SandboxExecutionRunInventory {
+  readonly sandboxResourcesAbsent?: boolean;
   /** Old-format obligations remain visible; absence of v2 rows is not release proof. */
   readonly legacyResourcesPending: boolean;
   readonly admissions: readonly SandboxExecutionAdmissionRecord[];

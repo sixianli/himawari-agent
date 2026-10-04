@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9f39fb475efaad71dce7468b11c737de486ba5790f5930a33f4d844e7bf48073"
+contract_sha256: "sha256:41001b809901326138a2ec82c827cc51c539eb5c7292fa3084b37b5283bc9502"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -144,6 +144,7 @@ date: "2026-08-27"
 - apps/execution-worker/src/production-payload-broker-client.ts
 - apps/execution-worker/src/production-worker-composition.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-authority-withdrawal.ts
+- apps/agent-service/src/production-run-dispatcher.ts
 -->
 
 ## Scope
@@ -200,6 +201,8 @@ Schema 41 新增独立的 `sandbox_reservation_release_receipts`。只有原认�
 完整期限结束块、原宿主签名退出事实和认证释放齐全时，正常 Worker 及重启恢复均交付确定错误 `SANDBOX_TOOL_DEADLINE_EXCEEDED`，不把部分 stdout 作为成功结果交付，未知工作区效果仍保留。
 
 若直到原 Run 期限仍待核查，现有 Run 调度读取受保护冻结输入，仅在当前权限、版本、原期限及全部资源释放检查通过后，以单个事务将 Run 和 checkpoint 写为 failed并结束临时收尾租约，原因 `RUN_EXECUTION_DEADLINE_EXCEEDED`。同一事务还写标准回执、待发布的 run.failed 事件、线程版本和网关通知；重复到期检查不重复通知，任一写入失败整体回滚。页面分别显示工具超时已清理和本轮到期已结束；不能把页面终点当成工作区未修改的证明。备份继续共同保留冻结输入、checkpoint、执行记录、结束块和原认证证据；无新表或迁移，同 schema 的旧程序不具备此收尾行为。见[到期收尾设计](../execution/specs/2026-09-29-sandbox-deadline-settlement-design.md)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md]
+
+纯非沙箱工具结果 UNKNOWN 也使用原冻结期限：Run 与 checkpoint 必须同时核对、无输出和终态且原因为 `RUNTIME_TOOL_RESULT_UNKNOWN`。现有到期事务与页面投影共用规范 SQLite 缺席核查，必须没有执行记录、任何状态的 admission/deleted plan 和 legacy pending 资源；显示清单为空不能替代。已结束的 Run 显示期限失败，工具仍显示“结果未确认”，不能据此重跑、撤销或断言操作没发生。恢复扫描的固定上界和游标仅在内存中，重启从头核查，不增加备份字段、迁移或外部接口。升级及恢复继续保留受保护原输入、checkpoint、Run 回执和通知，不能以新配置重新开始期限。见[非沙箱 UNKNOWN 到期](../execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#非沙箱-unknown-到期)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-deadline-settlement-design.md#非沙箱-unknown-到期]
 
 前台 SRT 现沿用受保护 Payload 通道额外保存 stdout 分块，任务正常退出且 stdout/stderr 管道已关闭时先保存带 termination 的结束块，再等待宿主清理。最终报告仍未确认管道关闭时，只保存输出前缀，不能生成结束块或完整成功结果；原未知结果、有限恢复和停止规则继续适用。正常 Worker 的原始 stdout Payload 和结果消费者不变；恢复只在接纳释放后核验完整分块、原身份和当前权限，重组成普通 Payload，并将输出归属和 operation CAS 同事务保存。已有等价原 Payload 时复用，已确定 operation 优先，不能用当前文件内容代替旧 read 输出。备份和迁移须同时保留原 Run 的 `sandbox-stream-chunk:*`、`sandbox-stream-end:*`、对应加密 Payload、原调用回执和输出归属；分块 JSON 不是完整输出引用。每次调用增加分块副本与本机 RPC，结束 artifact 还会保存末块 JSON，容量评估不能只按原 stdout 长度计算。合法的取消、输出或资源超限、宿主失败结束块在完整校验后保留原 UNKNOWN 或已有确定错误，不因不能恢复输出而关闭 Agent；未知原因、矛盾字段和损坏分块仍拒绝。后台游标合同不变；完整性、取消、期限、披露和效果验证不放宽。见[前台结果恢复设计](../execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md#恢复裁决与事务)。[SOURCE: docs/execution/specs/2026-09-29-sandbox-foreground-result-durability-design.md]
 

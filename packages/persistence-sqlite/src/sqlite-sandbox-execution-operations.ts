@@ -39,6 +39,7 @@ import { capabilityInvocationOutputOperationKey } from "./sqlite-run-payload-art
 import { SANDBOX_AUTHORITY_WITHDRAWN_SQL } from "./sqlite-sandbox-authority-withdrawal.ts";
 import { SqliteSandboxRecoveryOperations } from "./sqlite-sandbox-recovery-operations.ts";
 import { SqliteSandboxRecoveryScheduling } from "./sqlite-sandbox-recovery-scheduling.ts";
+import { RUN_SANDBOX_RESOURCES_ABSENT_SQL } from "./sqlite-run-resource-guard.ts";
 import { SqliteSandboxReleaseOperations } from "./sqlite-sandbox-release-operations.ts";
 import { SqliteSandboxReservationRelease } from "./sqlite-sandbox-reservation-release.ts";
 import { SqliteWorkspaceAdmissionQueue } from "./sqlite-workspace-admission-queue.ts";
@@ -226,7 +227,14 @@ export class SqliteSandboxExecutionOperations {
         ).map((row) => sandboxExecutionPlanV2Schema.parse(JSON.parse(row.plan)));
         if (deletedPlans.length > 10000)
           return this.fail("PORT_INVALID_OPERATION", "SANDBOX_RUN_INVENTORY_LIMIT");
+        const sandboxResourcesAbsent =
+          this.db
+            .prepare(`SELECT 1 FROM runs r
+          WHERE r.owner_id=@owner AND r.agent_id=@agent AND r.id=@runId
+            AND (${RUN_SANDBOX_RESOURCES_ABSENT_SQL})`)
+            .get({ owner, agent, runId }) !== undefined;
         return {
+          sandboxResourcesAbsent,
           admissions,
           queue: this.queue.readRun(owner, agent, runId, 10000),
           legacyResourcesPending,

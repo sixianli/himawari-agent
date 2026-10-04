@@ -188,6 +188,9 @@ export class ProductionRunDispatcher {
   #accepting = true;
   #inFlight = new Set<Promise<unknown>>();
   #pumpInFlight: Promise<ProductionRunDispatchPumpResult> | undefined;
+  #recoverInFlight: Promise<number> | undefined;
+  #reconciliationAfterRunId: RunReconciliationCandidate["runId"] | undefined;
+  #reconciliationThroughRunId: RunReconciliationCandidate["runId"] | undefined;
 
   constructor(options: ProductionRunDispatcherOptions) {
     this.#options = Object.freeze({
@@ -241,21 +244,49 @@ export class ProductionRunDispatcher {
     return operation;
   }
 
-  async recover(limit = this.#options.maximumRunsPerPump): Promise<number> {
+  recover(limit = this.#options.maximumRunsPerPump): Promise<number> {
+    if (this.#recoverInFlight) return this.#recoverInFlight;
+    const operation = this.recoverInternal(limit);
+    this.#recoverInFlight = operation;
+    this.#inFlight.add(operation);
+    const clear = () => {
+      if (this.#recoverInFlight === operation) this.#recoverInFlight = undefined;
+      this.#inFlight.delete(operation);
+    };
+    void operation.then(clear, clear);
+    return operation;
+  }
+
+  private async recoverInternal(limit: number): Promise<number> {
     positiveInteger(limit, "limit");
     if (!this.isAccepting()) return 0;
     await this.#options.authority.assertActive();
     let reconciled = 0;
-    const reconciliation = await this.#options.dispatch.listReconciliationRequired({
-      now: this.#options.clock.now(),
-      limit,
-    });
+    const readPage = () =>
+      this.#options.dispatch.listReconciliationRequired({
+        now: this.#options.clock.now(),
+        limit,
+        ...(this.#reconciliationAfterRunId ? { afterRunId: this.#reconciliationAfterRunId } : {}),
+        ...(this.#reconciliationThroughRunId
+          ? { throughRunId: this.#reconciliationThroughRunId }
+          : {}),
+      });
+    let reconciliation = await readPage();
+    if (reconciliation.length === 0 && this.#reconciliationAfterRunId) {
+      this.#reconciliationAfterRunId = undefined;
+      this.#reconciliationThroughRunId = undefined;
+      reconciliation = await readPage();
+    }
     for (const candidate of reconciliation) {
       if (!this.isAccepting()) break;
       await this.#options.reconcile({
         candidate,
         reasonCode: "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
       });
+      if (candidate.scanUpperBoundRunId) {
+        this.#reconciliationThroughRunId ??= candidate.scanUpperBoundRunId;
+        this.#reconciliationAfterRunId = candidate.runId;
+      }
       reconciled += 1;
     }
 

@@ -20,7 +20,7 @@ date: "2026-09-29"
 
 - 工具执行、派发和 Run 的原期限不延长。仅等待工具结果及清理汇报的截止点取 `min(工具期限 + RECOVERY_SETTLE_WAIT_MS, 原 Run 期限)`，复用既有的 35000 毫秒上限。
 - 经认证的期限终止交付 `SANDBOX_TOOL_DEADLINE_EXCEEDED`，不重新执行工具；期限前的部分输出不能被当成成功结果交给模型。
-- 原 Run 期限到达后，只有原输入、权限和版本仍一致、全部资源认证释放，才能在一个事务中将 Run 与 checkpoint 写成既有的 failed 状态。
+- 原 Run 期限到达后，只有原输入、权限和版本仍一致、全部资源认证释放，或权威数据证明纯非沙箱 UNKNOWN 没有资源义务，才能在一个事务中将 Run 与 checkpoint 写成既有的 failed 状态。
 - 不新增表、迁移、持久字段、状态、队列或用户 API；不改变普通 `claim()`、`quarantine()` 的语义。
 
 ## 工具超时
@@ -65,9 +65,21 @@ Run 表自身没有可信的原执行期限字段。沙箱 plan 保存原期限�
 
 已取消、已完成或已失败的 Run 不复活。失效 authority、版本变化、活动租约、未释放的目录占用、缺少认证回执、控制屏障或其他未释放资源都拒绝收尾。收尾不消耗模型预算，不把未知预算或命令效果改成已知。
 
+### 非沙箱 UNKNOWN 到期
+
+UNKNOWN 表示工具的操作效果无法确认。Pi 发出工具意图，Himawari 将其保存为受保护的 `runtime.tool_intent`。UNKNOWN 令 Pi 循环停止后，Himawari 负责冻结输入、持久 Run 和恢复调度；不重新实现 Pi 的工具协议或 Agent Loop。新增分支只接纳 Run 与 checkpoint 均为 `reconciling_external_result`、checkpoint 原因 `RUNTIME_TOOL_RESULT_UNKNOWN`，且 output 与 terminal 均为空的记录。原沙箱分支的 EXISTS、原 plan 期限及全部认证释放条件保持不变。
+
+`RUN_SANDBOX_RESOURCES_ABSENT_SQL` 从规范 Run 关联读取：没有 `sandbox_execution_records`，没有任何状态的 admission queue，没有任何状态的 deleted plan，没有 legacy pending 资源。无法归属到 Run 的沙箱删除记录保守阻止缺席证明；Run 标识必须符合既有机器标识契约，空值、空白、非文本、非法字符或超过 128 字符均不能作为无资源证据。候选查询与到期事务复用该谓词；事务仍核验当前 authority、旧 Run/checkpoint/lease revision、活动 lease、原输入 ref 和摘要、原期限与既有资源释放条件。Agent 继续解密并验证原受保护输入的版本、来源、摘要和时间范围；当前配置或重启不能延长原期限。
+
+投影的 `readRunInventory()` 在读取资源的同一 SQLite 事务内使用同一缺席谓词，返回内部计算的 `sandboxResourcesAbsent`，不新增持久字段或浏览器字段。投影把该证据纳入原有 inventory 内容 revision 比较，并保留读取前后 Run revision 检查。只有 Run 与 checkpoint 均已 failed、checkpoint 原因是 `RUN_EXECUTION_DEADLINE_EXCEEDED`、output 为空、权威缺席证据为真且没有 pending 资源时，新增分支显示本轮期限失败、不提供 `retry_cleanup`。空显示清单仍是 `allReleased=false`；有底层资源而显示清单缺失时不能使用这个分支。
+
+恢复按 `(created_at,id)` 逐页扫描，每轮先固定已有 Run 的上界，处理期限未到的 UNKNOWN 后继续向后扫描。到达本轮尾部后重新从头开始，后续新增候选不延长当前轮。游标只在内存中保存；重启重新开始。并发 `recover()` 共享正在执行的恢复操作，停止服务会等待该操作。没有新的表、迁移、队列或持久游标。
+
+到期只结束 Run，不改变工具效果：工具仍 unknown，不重跑，不把 UNKNOWN 交给模型，不发布助手回答。标准 failed 回执和通知继续由原事务写入，重复恢复不重复通知或增加线程版本。
+
 ## 错误与页面
 
-页面沿用现有原因码文案机制，不改变 v4/v5 布局。工具错误显示“工具执行超时，已终止并完成清理”；Run 期限终点显示“本轮执行期限已到，清理已完成，本轮已结束”。后者通过既有 checkpoint 读取端口确认，同时保留命令效果未知的事实。Host 的 `JOB_HOST_EXECUTION_DEADLINE` 仅作私有诊断。
+页面沿用现有原因码文案机制，不改变 v4/v5 布局。工具错误显示“工具执行超时，已终止并完成清理”；Run 期限终点显示“本轮执行期限已到，清理已完成，本轮已结束”。后者通过既有 checkpoint 和共享权威资源核查确认，同时保留命令效果未知的事实。纯非沙箱 UNKNOWN 的主状态显示期限失败，单个工具显示“结果未确认”；没有仍在运行的活动行或清理按钮，不能推断操作已撤销或没有发生。Host 的 `JOB_HOST_EXECUTION_DEADLINE` 仅作私有诊断。
 
 认证、输入或事务检查失败时保留待核查事实，不编造成功、不取消释放证明。`resolve` RPC 的 UNKNOWN 继续与历史样本 13 一起诊断，不以未经确认的因果解释本项。
 
@@ -76,3 +88,7 @@ Run 表自身没有可信的原执行期限字段。沙箱 plan 保存原期限�
 真实产品场景覆盖默认 300 秒工具期限下的 Worker 交付、结束块保存后重启的恢复交付，以及测试夹具配置 90 秒原 Run 期限后的收尾；生产默认 900 秒不变。验证包括页面中文、进程退出、独立 SQLite 读回、签名释放、唯一模型消费、无重跑及不泄露部分输出。
 
 事务拒绝、版本竞争和回滚难以通过浏览器精确调度，使用既有真实 SQLite 测试同时覆盖直接驱动及 Worker 驱动。保留先失败后通过证据，随后执行受影响产品矩阵、完整 check 和 npm test、Runbook 核对及严格文档校验。各次结果、精确复跑命令和未验证范围以[验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/te09-verification.md)为准；本文不代替运行结果。
+
+删除计划中的 Run 标识还必须排除 NUL 字符。SQLite 的文本 `length` 与 `GLOB` 在 NUL 处停止，单靠长度和字符范围会把坏定位误当成合法的其他 Run；共享资源谓词先检查 NUL，无法归属的删除记录继续阻止资源缺席证明。Worker/direct 两条真实 SQLite 路径各覆盖末尾 NUL 和中间 NUL。
+
+D3 的组件回归使用真实 pinned Pi 本地确定性 provider、受保护工具意图、真实 SQLite 的 Worker/direct 两条路径、冻结原期限、公开 `ProductionRunDispatcher.recover()` 和真实 `ThreadExecutionProjection`。边界包括期限前、活跃 lease、撤销权威、三个 revision 的竞争、输入 ref/摘要/来源变化、输出或终态已存在、多候选公平性、所有状态的资源义务、真实底层资源但显示清单为空，以及缺席证据在 Trace 读取期间变化。界面沿用现有组件框架。该证据不代替安装主机上的 D3 全链路或外部服务商资格；实际报告和结果归[审计计划](../plans/2026-09-28-tool-execution-audit-plan.md#2026-10-04非沙箱未知结果的到期终点)。

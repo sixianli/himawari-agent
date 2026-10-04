@@ -465,6 +465,7 @@ export class ThreadExecutionProjection {
           input.canCancelRun,
           resources,
           checkpoint?.checkpoint,
+          inventory?.sandboxResourcesAbsent === true,
         );
       }
       if (page.nextSequence <= afterSequence)

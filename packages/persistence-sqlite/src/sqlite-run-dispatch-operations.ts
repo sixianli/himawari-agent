@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  RunDispatchPort,
   RunExecutionLease,
   RunReconciliationPort,
   RunToolResultRecoveryClaim,
@@ -184,10 +185,7 @@ export class SqliteRunDispatchOperations {
           return this.listClaimableSync(value as { readonly now: string; readonly limit: number });
         case "runDispatch.listReconciliationRequired":
           return this.listReconciliationRequiredSync(
-            value as {
-              readonly now: string;
-              readonly limit: number;
-            },
+            value as Parameters<RunDispatchPort["listReconciliationRequired"]>[0],
           );
         case "runDispatch.settleExpired":
           return this.settleExpiredSync(
@@ -290,20 +288,30 @@ export class SqliteRunDispatchOperations {
     return rows.map((row) => this.candidate(record(row), false));
   }
 
-  async listReconciliationRequired(input: { readonly now: string; readonly limit: number }) {
+  async listReconciliationRequired(
+    input: Parameters<RunDispatchPort["listReconciliationRequired"]>[0],
+  ) {
     return this.listReconciliationRequiredSync(input);
   }
 
-  private listReconciliationRequiredSync(input: { readonly now: string; readonly limit: number }) {
+  private listReconciliationRequiredSync(
+    input: Parameters<RunDispatchPort["listReconciliationRequired"]>[0],
+  ) {
     const now = instant(input.now, "now");
     const limit = safeInteger(input.limit, "limit", 1);
     this.assertCurrentAuthority(now);
+    const afterRunId = input.afterRunId === undefined ? null : createRunId(input.afterRunId);
+    const throughRunId = input.throughRunId === undefined ? null : createRunId(input.throughRunId);
     const rows = this.database
       .prepare(
-        `SELECT r.id, r.owner_id, r.agent_id, r.session_id, r.trigger_id, r.thread_id,
+        `WITH scan_end AS (
+          SELECT created_at,id FROM runs WHERE owner_id=@ownerId AND agent_id=@agentId
+            AND (@throughRunId IS NULL OR id=@throughRunId)
+          ORDER BY created_at DESC,id DESC LIMIT 1
+        ) SELECT r.id, r.owner_id, r.agent_id, r.session_id, r.trigger_id, r.thread_id,
           r.revision, r.status, c.phase AS checkpoint_phase,
           COALESCE(l.revision, 0) AS lease_revision,
-          current_turn.turn_index
+          current_turn.turn_index, (SELECT id FROM scan_end) AS scan_upper_bound_run_id
          FROM runs r
          LEFT JOIN run_coordination_checkpoints c
            ON c.run_id = r.id AND c.owner_id = r.owner_id AND c.agent_id = r.agent_id
@@ -317,6 +325,10 @@ export class SqliteRunDispatchOperations {
            ON current_turn.run_id = r.id AND current_turn.owner_id = r.owner_id
              AND current_turn.agent_id = r.agent_id
          WHERE r.owner_id = @ownerId AND r.agent_id = @agentId
+           AND (r.created_at,r.id)<=(SELECT created_at,id FROM scan_end)
+           AND (@afterRunId IS NULL OR (r.created_at,r.id)>(
+             SELECT created_at,id FROM runs WHERE owner_id=@ownerId AND agent_id=@agentId AND id=@afterRunId
+           ))
            AND ((
            r.status IN ('accepted', 'building_context', 'running', 'reconciling_external_result')
            AND NOT (r.status = 'reconciling_external_result'
@@ -337,8 +349,23 @@ export class SqliteRunDispatchOperations {
          ORDER BY r.created_at, r.id
          LIMIT @limit`,
       )
-      .all({ ownerId: this.scope.ownerId, agentId: this.scope.agentId, resourceNow: now, limit });
-    return rows.map((row) => this.candidate(record(row), true));
+      .all({
+        ownerId: this.scope.ownerId,
+        agentId: this.scope.agentId,
+        resourceNow: now,
+        limit,
+        afterRunId,
+        throughRunId,
+      });
+    return rows.map((row) => {
+      const value = record(row);
+      return {
+        ...this.candidate(value, true),
+        scanUpperBoundRunId: createRunId(
+          text(value["scan_upper_bound_run_id"], "scanUpperBoundRunId"),
+        ),
+      };
+    });
   }
 
   async settleExpired(input: Parameters<RunReconciliationPort["settleExpired"]>[0]) {
