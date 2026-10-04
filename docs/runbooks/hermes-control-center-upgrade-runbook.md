@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:1b0323e154fd9c6bca2653607a98b6c0b8416d0455045aec1f65d93ca54f400b"
+contract_sha256: "sha256:7ab35df1e3b79b894fbbf9fa9c6c6ba375a70822af41d357edf765ae8ac2409b"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -480,9 +480,9 @@ Hermes r54 五次独立测量的额外进程 RSS 中位数为 110.910 MiB、最�
 
 ### Schema 37 固定文件发布恢复
 
-Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js`、`linux-host-guardian.js` 和 `linux-host-group.js`，由既有 runtime digest 核验。Host 在创建 SRT 代理前确认同组清理进程就绪；正常退出继续使用 SRT `cleanupAfterCommand()/reset()`。Host 被杀后，清理进程先核对原 Host 身份已消失、各成员 PGID/SID 与原 Host PID 相同，以及自身仍占据原组，再在原清理期限内结束自己所在的组。Agent 随后独立确认零成员；不能把发信号成功写成 `srtReset=true` 或已释放。
+Linux 安装必须包含同一候选包编译出的 `linux-host-guardian-main.js`、`linux-host-guardian.js` 和 `linux-host-group.js`，由既有 runtime digest 核验。Host 在创建 SRT 代理前确认同组清理进程就绪；正常退出继续使用 SRT `cleanupAfterCommand()/reset()`。Host 被杀后，清理进程核对原 Host 身份已消失，或准确匹配的原 Host 已为 `Z`（已退出、父进程尚未收尸），以及各成员 PGID/SID 与原 Host PID 相同、自身仍占据原组；发信号前再次核对身份，再在原清理期限内结束当前自身组。Agent 随后独立确认零成员；不能把发信号成功写成 `srtReset=true` 或已释放。
 
-原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
+清理进程回收代理时不等待原 Host 收尸，但原 Host 处于僵尸状态，或原 Host 已消失而自身组仍在可信回收期间时，沿用 `cleanup_pending` 在原恢复期限内观察。僵尸、权限错误、身份变化和无法读取的组不能算空；到期仍未清空时保留占用，不增加宽限。真实恢复验收必须覆盖六处 finish 崩溃，并读回 Host 组为空、原结果恰好一次交付且未重新执行。规则见[Linux Host 组清理](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]
 
 清理进程属于当前安装和运行中的进程，不属于备份或迁移数据。不能按备份的 PID 重建它的活动身份；目标主机不能替源主机按旧数字杀组，目标启动成功也不证明源主机组已清空。新候选改变运行时字节，原冻结候选的资格不能复用。离组后代限制和 Mac 规则保留；本轮 Mac 行为未验证。
 

@@ -66,7 +66,7 @@ describe("Linux Host group identity and reclamation", () => {
       }),
     ]);
   });
-  it.each(["S", "Z"])(
+  it.each(["S", "R", "T", "D"])(
     "never signals while the original Host is still present as %s",
     async (state) => {
       rows.set(6000, stat(6000, 6000, 6000, "100", state));
@@ -76,6 +76,49 @@ describe("Linux Host group identity and reclamation", () => {
       expect(boundary.kill).not.toHaveBeenCalled();
     },
   );
+  it("[R2-S4] reclaims its anchored group while the original Host remains a zombie", async () => {
+    rows.set(6000, stat(6000, 6000, 6000, "100", "Z"));
+    await expect(reclaimLinuxHostGroup(host, guardian, performance.now() + 5000)).resolves.toBe(
+      true,
+    );
+    expect(boundary.kill).toHaveBeenCalledExactlyOnceWith(0, "SIGKILL");
+    expect(await readLinuxHostGroup(6000)).toContainEqual(
+      expect.objectContaining({ processId: 6000, startToken: "100", state: "Z" }),
+    );
+  });
+  it.each(["replaced", "wrong-group", "wrong-session"])(
+    "refuses signaling for a zombie whose ownership changed: %s",
+    async (kind) => {
+      rows.set(
+        6000,
+        stat(
+          6000,
+          kind === "wrong-group" ? 9000 : 6000,
+          kind === "wrong-session" ? 9000 : 6000,
+          kind === "replaced" ? "999" : "100",
+          "Z",
+        ),
+      );
+      await expect(reclaimLinuxHostGroup(host, guardian, performance.now() + 5000)).rejects.toThrow(
+        "JOB_HOST_GROUP_IDENTITY_CHANGED",
+      );
+      expect(boundary.kill).not.toHaveBeenCalled();
+    },
+  );
+  it("refuses a replaced zombie Host at the final identity read", async () => {
+    rows.set(6000, stat(6000, 6000, 6000, "100", "Z"));
+    const read = boundary.readFile.getMockImplementation();
+    let hostReads = 0;
+    boundary.readFile.mockImplementation(async (filename: string) => {
+      if (filename === "/proc/6000/stat" && ++hostReads === 4)
+        return stat(6000, 6000, 6000, "999", "Z");
+      return read?.(filename);
+    });
+    await expect(reclaimLinuxHostGroup(host, guardian, performance.now() + 5000)).rejects.toThrow(
+      "JOB_HOST_GROUP_IDENTITY_CHANGED",
+    );
+    expect(boundary.kill).not.toHaveBeenCalled();
+  });
   it.each([
     "guardian-replaced",
     "guardian-left-group",

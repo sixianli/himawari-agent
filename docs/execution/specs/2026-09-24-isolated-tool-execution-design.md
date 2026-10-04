@@ -14,7 +14,7 @@ date: "2026-09-24"
 
 - [术语说明](#terms)：本文反复用到的词先在这里解释
 - [目标与来源](#goal)
-- [两种执行模式](#modes)：[SRT 模式的停止与释放](#srt-release)、[删除旧的未确认记录](#legacy-purge)、[界面必须说清的状态](#mode-disclosure)、[远端执行的预留](#remote-entry)
+- [两种执行模式](#modes)：[SRT 模式的停止与释放](#srt-release)、[Linux Host 组清理](#linux-host-group)、[清理进程启动成本](#linux-host-guardian-cost)、[删除旧的未确认记录](#legacy-purge)、[界面必须说清的状态](#mode-disclosure)、[远端执行的预留](#remote-entry)
 - [当前代码与目标差距](#baseline)
 - [任务身份与共享边界](#identity)：[环境权限上限与换新环境](#envelope)、[谁可以批准扩权](#expansion-approval)、[Run 边界的用户可见后果](#run-boundary)
 - [组件职责与后端合同](#backend)：[环境内 runner 的可信程度](#runner-trust)
@@ -131,11 +131,33 @@ date: "2026-09-24"
 
 - Host 在 SRT `initialize()` 创建代理之前，使用现有 Node 启动非 detached 的同组清理进程。双方核对原 PID、启动时间、父子关系以及 PGID/SID；未就绪或意外退出就终止准备或任务。内部握手不改变 Agent–Worker 通道，也不增加持久字段。
 - 正常收尾仍由 SRT `cleanupAfterCommand()/reset()` 清理 bridge。Host 在清理进程就绪后解除对子进程和 IPC 的事件循环引用，使 Host 能自然退出；清理进程自己的 IPC 监听保持到原 Host 退出，不能在 reset 或结果发出后提前退出。
-- 原 Host 的 PID 加启动时间仍存在时，包括僵尸状态，清理进程不发组信号。原身份消失后，复读每个成员的 PID、启动时间、PGID/SID，核对自身仍属于原组，并在原 `cleanupTimeoutMs` 到期之前向自己所在的组发送 `SIGKILL`。原始 stat PID 与 `/proc/self` 必须使用当前进程的 PID 空间；读取权限错误、身份变化或期限到达都拒绝发送。
+- 原 Host 身份仍在运行时，清理进程不发组信号。原身份已消失，或同 PID 与启动时间的原 Host 已处于 `Z`（僵尸：已退出、父进程尚未收尸）且 `PGID=SID=原 Host PID` 时，复读每个成员身份并确认自身仍锚定原组。发信号前再次核对 Host 只能保持该原僵尸身份或已消失，自身的 PID、启动时间、PGID/SID 也必须不变，然后在原 `cleanupTimeoutMs` 到期之前向当前自身组发送 `SIGKILL`。原始 stat PID 与 `/proc/self` 必须使用当前进程的 PID 空间；读取权限错误、身份变化或期限到达都拒绝发送。
 - 清理进程自身仍占据原 PGID/SID，所以组编号不能被系统分给新进程。依据是 Linux 固定版本的 [`__change_pid()` 成员保留规则](https://github.com/torvalds/linux/blob/v5.15/kernel/pid.c)和[组信号在任务锁内枚举成员](https://github.com/torvalds/linux/blob/v5.15/kernel/signal.c)。发信号成功不表示已经清空，Agent 必须独立读回。
 - Linux 所有同次开机的释放路径在确认释放候选之后，再核对 Host 组；证据复核也要求 Host 组零成员，并在扫描后再次检查组存在性。僵尸仍算成员；无法读取不能当空。可信原 Host 已进入僵尸等待或 Host 组正在清理时，使用既有 `cleanup_pending`，只在原恢复期限内继续观察。真正机器重启沿用原开机身份规则，不向旧编号发信号。
 
+2026-10-04 的真实 Linux 回归用仅属于测试进程的 child subreaper（接管孤儿子进程的父进程）暂不 `wait()` 原 Host。旧逻辑把 `Z` 当成活 Host：清理进程等满原 5000 毫秒期限退出，代理仍为 `S`（休眠中、仍存活）。修复后同一测试先确认代理和清理进程身份消失；父进程收尸前组里仅剩原 Host `Z`，收尸后组为空。这个过程不能提前当作释放证明；若父进程直到原恢复期限仍未收尸，Agent 继续保留占用。测试报告和三次独立 `/proc` 状态读回保存在 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-s4/`，不需要系统设置、sudo 或新依赖。
+
 本规则不跟踪主动脱离原进程组/会话的后代，不扩大 ADR 0033 的停止保证。Mac 路径不采用 Linux 清理进程，本轮未验证。安装包沿用既有源码编译、runtime digest 和打包流程；不新增依赖或系统设置。
+
+<a id="linux-host-guardian-cost"></a>
+
+### Linux 清理进程的启动和内存成本
+
+2026-10-04 在 Hermes 上，对经过包摘要与文件清单核验的候选编译 JS 连续运行 20 次真实 fork/IPC 就绪握手。每次使用新的 Node `v22.22.3` 进程，没有显式编译缓存；文件页已被包校验预热，因此不是冷盘测量。新增准备耗时为父进程导入清理模块，加上子进程启动、加载和身份握手到 ready 的耗时；它不包含原本已有的 Host 启动、Pi 或 SRT 工作。
+
+| 测量 | 最小 | 中位数 | P95（20 次中第 19 小） | 最大 |
+| --- | ---: | ---: | ---: | ---: |
+| 清理模块导入（毫秒） | 1.6 | 1.7 | 2.1 | 2.1 |
+| 子进程启动到 ready（毫秒） | 52.6 | 58.8 | 73.7 | 80.8 |
+| 新增准备耗时（毫秒） | 54.2 | 60.7 | 75.4 | 82.9 |
+| 占原 10 秒准备预算 | 0.54% | 0.61% | 0.75% | 0.83% |
+| 闲置 RSS（MiB） | 47.1 | 47.4 | 47.7 | 47.7 |
+
+RSS 是 `/proc/<pid>/status` 的 `VmRSS`，表示进程当前驻留的内存，包括共享页；每次就绪及随后约 50、100、250 毫秒读回，表中使用每次的最大采样值，不表示连续峰值或独占内存。在已测条件下，新增准备耗时最大不到预算的 1%，不据此引入新的优化或预算。每个活动 Host 会多一个清理进程；并发负载、冷盘及生产硬件的成本尚未测量，不能直接把 RSS 相加当成机器额外占用。20 次停止后的 Host 组均独立读回为空。
+
+完整样本、候选 SHA-256、编译 JS 摘要、精确运行命令、源码指纹和清理读回见[清理进程成本报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-s4/guardian-benchmark.json)及同目录 `guardian-benchmark-run.json`、`guardian-benchmark-validation.json`；Hermes 副本保留在 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/independent-s4/`。
+
+[返回阅读导航](#contents)
 
 <a id="legacy-purge"></a>
 

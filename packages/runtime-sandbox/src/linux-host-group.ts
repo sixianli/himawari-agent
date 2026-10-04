@@ -84,8 +84,14 @@ export async function reclaimLinuxHostGroup(
   if (performance.now() >= deadline) throw new Error("JOB_HOST_GUARDIAN_UNAVAILABLE");
   await assertLinuxProcessNamespace();
   const original = await readLinuxProcessIdentity(host.processId);
-  if (original?.startToken === host.startToken) return false;
-  if (original || guardian.processId !== process.pid)
+  const isOriginalZombie = (identity: LinuxProcessIdentity | null) =>
+    identity !== null &&
+    identity.startToken === host.startToken &&
+    identity.state === "Z" &&
+    identity.processGroupId === host.processId &&
+    identity.sessionId === host.processId;
+  if (original?.startToken === host.startToken && original.state !== "Z") return false;
+  if ((original && !isOriginalZombie(original)) || guardian.processId !== process.pid)
     throw new Error("JOB_HOST_GROUP_IDENTITY_CHANGED");
   const members = await readLinuxHostGroup(host.processId);
   const own = members.find((member) => member.processId === guardian.processId);
@@ -99,7 +105,7 @@ export async function reclaimLinuxHostGroup(
     readLinuxProcessIdentity(guardian.processId),
   ]);
   if (
-    parent ||
+    (parent && !isOriginalZombie(parent)) ||
     current?.startToken !== guardian.startToken ||
     current.processGroupId !== host.processId ||
     current.sessionId !== host.processId
