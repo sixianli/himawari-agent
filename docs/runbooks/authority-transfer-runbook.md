@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:dfae588e55697478cc9755471aa2b893b4bfce492e468343eb1ac3aefbf1d4e0"
+contract_sha256: "sha256:0911dbed830d61c1b4ba872fdab6233efa7ce0ac54c547fe7189f03bd687a39f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -545,6 +545,8 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 ### 工具执行前检查点与恢复引用
 
 新 SRT v2 计划使用 `preparationProtocol=launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划必须原样保存。备份保留原准备附件、受保护 `:preparation:launch-blocked` Artifact、Payload、摘要和预约释放回执。控制目录中的 `launch-decision.json` 属于原机运行时文件，正式恢复点不包含它；不能从数据库或附件重建原控制目录身份、决定文件或控制 token，token 也不进入公开证据。登记之前的封锁只能使用 `preparation_not_authorized`；新协议的禁止启动决定必须独立核对原计划、目录、机器 boot、原停止时间和 Artifact，才可使用 `preparation_launch_blocked`。跨机器或目录恢复不能继续用旧决定签发新释放证明；原机上已经事务接受的历史释放回执仍作为历史事实保存。旧数据不回填协议、不迁移语义摘要，工具不能重放。Hermes 上的恢复检查不能替代生产现场的身份、备份和释放核验。详见[准备启动与停止仲裁](../execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
+
+严格模式下，Agent 重启后会为 completed/failed/cancelled Run 的未绑定容器预约补调原同 Run 环境停止，再核对环境释放回执和原预约事务。活动及结果待核实 Run 不因进入恢复清单就停止环境。停止接受但证明缺失、身份不符或后端不可用时继续保留占用；原失败的停止请求不会被同义人工请求重发，不可通过删除严格模式记录、重建 locator 或更换停止 intent 来伪造释放。恢复点须保留 SQLite 中原 execution job、环境、停止 intent、lease 和释放回执；迁移后仍须核验配置的后端与原环境身份，不能从历史回执推断当前运行时已停止。该恢复不重放模型或工具，不增加系统设置、停机、迁移或生产操作授权。详见[未绑定容器的终态恢复](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
 生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，页面归为“尚未派发”；旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放。对原 Run 未取消、未过期，已有确定结果与永久释放回执且原批次凭据完整的调用，调度器可领取原 Run 的新租约，仅交付旧结果并继续 Pi；原工具不会再次启动。缺失快照、权限变化、未确认控制或模型费用仍未知时保留待核对状态，不能通过重发清除未知。恢复沿用原模型 stream ordinal，保留原调用回执、交付 intent 与受保护 Payload；没有新增表或迁移。详见[已核验工具结果恢复合同](../execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md#恢复条件与用户行为)。
 

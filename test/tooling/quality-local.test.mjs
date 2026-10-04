@@ -337,7 +337,7 @@ describe("periodic quality policy and evidence", () => {
       readFileSync(path.join(state.root, "docs/execution/evidence/historical.json"), "utf8"),
     ).toBe("immutable historical evidence\n");
   });
-  it("runs the container qualification only against a named runtime and fails closed without one", async () => {
+  it("[R2-D6] runs the container qualification only against a named runtime and fails closed without one", async () => {
     const runtime = {
       HIMAWARI_CONTAINER_DOCKER_CLI: "/fixture/docker",
       HIMAWARI_CONTAINER_DOCKER_HOST: "unix:///fixture/docker.sock",
@@ -367,6 +367,7 @@ describe("periodic quality policy and evidence", () => {
     expect(call.args).toEqual(expect.arrayContaining(["--maxWorkers", "1"]));
     expect(call.env).toMatchObject({
       HIMAWARI_CONTAINER_QUALIFICATION: "1",
+      HIMAWARI_LIVE_SANDBOX_PROBE: "1",
       HIMAWARI_CONTAINER_WORK_ROOT: "/fixture/work",
       HIMAWARI_CONTAINER_EVIDENCE_PATH: path.join(
         state.root,

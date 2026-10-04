@@ -23,6 +23,7 @@ date: "2026-09-28"
 - [验收与审批范围](#验收与审批范围)
 - [第二轮 A2：准备登记之前的封锁](#第二轮-a2准备登记之前的封锁)
 - [D4：登记确认丢失后的启动仲裁](#d4登记确认丢失后的启动仲裁)
+- [D6：未绑定容器的终态恢复](#container-unbound-recovery)
 - [F：通用 UDS 断连恢复](#f通用-uds-断连恢复)
 - [第二轮：依赖加载期间的启动监督](#startup-supervision)
 - [准备期间的期限诊断分类](#deadline-classification)
@@ -173,7 +174,17 @@ reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或�
 
 ### E：container 预约自动恢复分流
 
-自动预约恢复原先无条件调用本机准备控制，container 即使已有自己的环境释放回执，预约仍停在占用状态。现按 backendRef 分流，本机 SRT 保留准备控制封锁与核验；container 使用既有 environments.releaseReservation，并验证配置的后端一致。环境自身的 TaskEnvironmentCoordinator 负责停止并保存认证释放回执；预约恢复只读取该证明，不新增停止整轮环境的动作。环境仍在运行时不释放预约，也不放宽原 unresolved 调度规则。真实 SQLite、生产装配及受控环境生命周期的失败/通过证据见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)；这不是 Docker 或 Linux 现场资格。
+2026-09-29 的 E 修复将自动预约恢复按 backendRef 分流。本机 SRT 保留准备控制封锁与核验；container 使用既有 environments.releaseReservation，并验证配置的后端一致。当时预约恢复只读取环境自身的 TaskEnvironmentCoordinator 已保存的认证释放回执，没有新增停止整轮环境的动作。环境仍在运行时不释放预约，也不放宽原 unresolved 调度规则。该版本的真实 SQLite、生产装配及受控环境生命周期证据见 [E 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/e-verification.md)；这不是 Docker 或 Linux 现场资格。当前终态 Run 的补充停止规则见[未绑定容器的终态恢复](#container-unbound-recovery)。
+
+<a id="container-unbound-recovery"></a>
+
+### D6：未绑定容器的终态恢复
+
+当前 Agent 的 reserved 恢复分支先核对原预约停止标记和配置的后端，再通过原 Owner/Agent 的公开 RunLifecyclePort 读取权威 Run。只有 `completed`、`failed` 或 `cancelled` 才复用现有同 Run 环境 `stopRun`；取消用 `run_cancelled`，其他终态用 `run_finished`。活动 Run 和 `reconciling_external_result` 保持原读取释放证明的路径，不因被列为恢复候选就停止其环境。数据库将一个 Run 的环境限制在原 execution job 与 host；其他 Run 的环境不参与停止。
+
+环境停止仍经原停止 intent、fence、TaskEnvironmentCoordinator 和认证证明。停止返回 accepted 不等于释放；Agent 要独立读回环境释放回执，原预约事务再核对身份、后端、环境、停止时间、恢复 revision 和工作区占用。停止失败、证明缺失或身份不符时，环境与预约继续占用，恢复停在 unresolved，原 30000 毫秒上限不变。Worker 已保存失败的原停止命令不会被同义人工请求重新执行；该请求仍返回未释放。原停止命令已接受、只有后续核验证明失败时，人工清理可以按原 intent 取得新证明；不能改写旧停止身份或以删除记录替代证明。
+
+该组合属于 Himawari 的持久资源恢复职责，复用已有 Pi 工具和 Worker 协议，不改 Pi、模型执行、权限消费、数据库结构或业务请求重放规则。测试覆盖公开取消/失败、Agent 重开与二次重开、其他 Run 隔离、停止失败、证明缺失与错误身份、活动 Run 及已取消的恢复信号。真实 Docker 检查使用现有容器资格入口、实时夹具、独有环境标识和独立 Docker/SQLite 读回；受控安装资格不能当作已安装生产主机资格，实际结果和命令归本批报告。
 
 
 ### F：通用 UDS 断连恢复
@@ -186,7 +197,7 @@ Worker 就绪状态读取两个客户端当前的握手状态。曾经成功连�
 
 D 的 resolve 断连与握手拒绝测试已接入真实 Payload UDS Server、ProductionPayloadBrokerClient 和故障代理，继续验证诊断、原 resolve 不重发、无宿主创建与原请求重放幂等。F 的故障矩阵使用实际 UDS 认证和解析；外部 endpoint 执行仍为既有 fetch 夹具，不能当作 SRT 操作系统隔离或 Linux 资格。命令、红绿证据、夹具修正与完整验证状态见 [F 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/f-verification.md)。Pi 沿用固定版本 0.84.2 的工具入口和 governed host operations；此次协调器只处理 Himawari 自有 Agent/Worker 通道，不另建 Pi 工具协议。
 
-E 的只读补查确认：未绑定 container 预约的环境尚未释放，且没有其他已绑定任务替它停止环境时，重启后没有按终态 Run 自动补调 stopRun 的路径。预约会一直占用工作目录；不会误释放，但需要人工处理。正常完成、人工取消及部分已绑定任务仍有停止路径，不能据此扩大为所有 container 均无清理。期限转 failed 的 SQL 先要求资源全部释放，本场景因此也会阻塞期限收尾。后续仅登记 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，第二轮不实现。
+E 的原只读补查记录了终态 Run 的未绑定容器缺少自动停止路径，并登记 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。用户随后将 R2-D6 纳入上线前修复，当前实现见[未绑定容器的终态恢复](#container-unbound-recovery)。期限转 failed 的事务仍要求资源全部释放；这次修复不使期限回调越过资源门禁，也不把旧静态核查改写成现场复现。
 
 
 <a id="startup-supervision"></a>

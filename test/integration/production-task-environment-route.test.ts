@@ -1,12 +1,22 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type ExecutionEnvironmentLifecyclePort,
   RemoteExecutionBackend,
   TaskEnvironmentCoordinator,
   taskEnvironmentCallEvidence,
+  ThreadCommandService,
 } from "@himawari-agent/application";
+import {
+  createAuthorityLeaseId,
+  createDeploymentId,
+  createIdempotencyKey,
+  createRunExecutionLeaseId,
+  createRunId,
+  createSessionId,
+  createThreadId,
+} from "@himawari-agent/domain";
 import {
   type ExecutionEnvironmentLocator,
   type ExecutionEnvironmentStopProof,
@@ -31,6 +41,7 @@ import {
   SERVICE_AUTHORITY,
   serviceRequest,
   T1,
+  T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 const BACKEND = "container-test";
@@ -562,10 +573,299 @@ it("releases a reserved container call that never started when the Run is cancel
   expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(1);
 });
 
+async function terminalUnboundContainer(status: "cancelled" | "failed" = "cancelled") {
+  let authority = SERVICE_AUTHORITY;
+  const scope = await setup("returned", read, {
+    realRun: true,
+    piParameters: { path: "notes.txt" },
+    directoryOperations: ["read"],
+    authority: () => authority,
+  });
+  const prepared = await scope.prepare();
+  expect(
+    (
+      await scope.f.services.brokerV2.preparations.reserve({
+        ...prepared,
+        invocation: scope.f.input,
+      })
+    ).applied,
+  ).toBe(true);
+  const runs = scope.f.repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product);
+  const current = await runs.readRun(RUN_ID);
+  if (!current) throw new Error("Run missing");
+  const terminal = {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    runId: RUN_ID,
+    authority: authority.lease,
+    expectedRevision: current.revision,
+    idempotencyKey: createIdempotencyKey(`d6-${status}`),
+    commandFingerprint: `d6-${status}`,
+    payloadRef: "restart-prompt",
+  };
+  if (status === "cancelled") await runs.cancelRun(terminal);
+  else
+    await runs.transitionRun({
+      ...terminal,
+      nextStatus: "failed",
+      executionLease: {
+        ...prepared.plan.executionLease,
+        executionLeaseId: createRunExecutionLeaseId(prepared.plan.executionLease.executionLeaseId),
+        authorityLeaseId: createAuthorityLeaseId(prepared.plan.executionLease.authorityLeaseId),
+        deploymentId: createDeploymentId(prepared.plan.executionLease.deploymentId),
+      },
+    });
+  const parent = path.join(process.cwd(), ".ci-output/r2-d6");
+  await mkdir(parent, { recursive: true });
+  const evidenceRoot = await mkdtemp(path.join(parent, "unbound-"));
+  const snapshot = async (stage: string) => {
+    const database = new Database(path.join(scope.f.f.resource.stateRoot, "product.sqlite"), {
+      readonly: true,
+    });
+    try {
+      const result = {
+        authority,
+        run: database.prepare("SELECT id, status, revision FROM runs WHERE id=?").get(RUN_ID),
+        admission: database
+          .prepare(
+            "SELECT job_id, preparation_state, started_at, reservation_stopped_at FROM sandbox_execution_records WHERE job_id=?",
+          )
+          .get(prepared.plan.identity.jobId),
+        occupancy: database
+          .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+          .all(prepared.plan.identity.jobId),
+        reservationReceipts: database
+          .prepare("SELECT * FROM sandbox_reservation_release_receipts WHERE job_id=?")
+          .all(prepared.plan.identity.jobId),
+        environments: database
+          .prepare(
+            "SELECT e.environment_id, e.state, e.stop_fence, e.create_intent_id FROM execution_environments e JOIN execution_jobs j USING(execution_job_id) WHERE j.run_id=?",
+          )
+          .all(RUN_ID),
+        environmentReceipts: database
+          .prepare(
+            "SELECT r.* FROM execution_environment_release_receipts r JOIN execution_environments e USING(environment_id) JOIN execution_jobs j USING(execution_job_id) WHERE j.run_id=?",
+          )
+          .all(RUN_ID),
+        stopIntents: database
+          .prepare(
+            "SELECT i.environment_id, i.stop_fence, i.stop_intent_id, i.reason, i.requested_at, i.authority_json FROM execution_environment_stop_intents i JOIN execution_environments e USING(environment_id) JOIN execution_jobs j USING(execution_job_id) WHERE j.run_id=?",
+          )
+          .all(RUN_ID),
+        otherEnvironments: database
+          .prepare(
+            "SELECT j.run_id, e.environment_id, e.state, e.stop_fence FROM execution_environments e JOIN execution_jobs j USING(execution_job_id) WHERE j.run_id!=?",
+          )
+          .all(RUN_ID),
+        environmentLeases: database
+          .prepare(
+            "SELECT l.released_at FROM execution_environment_leases l JOIN execution_environments e USING(environment_id) JOIN execution_jobs j USING(execution_job_id) WHERE j.run_id=?",
+          )
+          .all(RUN_ID),
+        intents: database
+          .prepare("SELECT kind FROM sandbox_execution_intents WHERE job_id=?")
+          .all(prepared.plan.identity.jobId),
+        lifecycleCalls: [...scope.lifecycle.calls],
+        executed: [...scope.executed],
+        published: [...scope.published],
+        quickCheck: database.prepare("PRAGMA quick_check").all(),
+      };
+      await writeFile(path.join(evidenceRoot, `${stage}.json`), JSON.stringify(result, null, 2));
+      return result;
+    } finally {
+      database.close();
+    }
+  };
+  const restart = async () => {
+    authority = { ...authority, agentServiceBootId: `${authority.agentServiceBootId}:restart` };
+    await scope.f.reopen();
+  };
+  return { ...scope, prepared, snapshot, restart };
+}
+
+it("[R2-D6] stops a cancelled Run's unbound container after Agent restart without replay", async () => {
+  const f = await terminalUnboundContainer();
+  const before = await f.snapshot("cancelled-before-restart");
+  expect(before.run).toMatchObject({ status: "cancelled" });
+  expect(before.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+  expect(before.environments).toEqual([expect.objectContaining({ state: "ready" })]);
+  expect(before.reservationReceipts).toEqual([]);
+  expect(before.environmentReceipts).toEqual([]);
+  await f.restart();
+  await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const after = await f.snapshot("recovered-after-restart");
+  expect(after.environments).toEqual([expect.objectContaining({ state: "released" })]);
+  expect(after.environmentReceipts).toHaveLength(1);
+  expect(after.reservationReceipts).toHaveLength(1);
+  expect(after.occupancy).toEqual([expect.objectContaining({ released_at: T1 })]);
+  expect(after.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+  expect(after.executed).toEqual([]);
+  expect(after.published).toEqual([]);
+  expect(after.intents).toEqual([]);
+  expect(after.lifecycleCalls.filter((call) => call === "stop")).toHaveLength(1);
+  expect(after.lifecycleCalls.filter((call) => call === "verifyStopped")).toHaveLength(1);
+  await f.restart();
+  await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const repeated = await f.snapshot("repeated-after-second-restart");
+  expect({ ...repeated, authority: after.authority }).toEqual(after);
+});
+
+it("[R2-D6] stops a failed Run's unbound container without stopping another Run", async () => {
+  const f = await terminalUnboundContainer("failed");
+  const commands = new ThreadCommandService({
+    repository: f.f.repository.threadRepository(),
+    clock: { now: () => T1 },
+    authority: () => SERVICE_AUTHORITY.product,
+  });
+  const thread = await commands.create({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: createThreadId("d6-other-thread"),
+    idempotencyKey: "d6-other-thread",
+    resultRef: "restart-prompt",
+  });
+  const otherRunId = createRunId("d6-other-run");
+  await commands.admitOwnerMessage({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: thread.thread.id,
+    expectedThreadRevision: thread.thread.revision,
+    sessionId: createSessionId("d6-other-session"),
+    runId: otherRunId,
+    idempotencyKey: "d6-other-message",
+    contentRef: "restart-prompt",
+    sourceProofRef: "fixture-owner",
+    dataClassification: "private",
+    resultRef: "restart-prompt",
+  });
+  let sequence = 0;
+  const store = f.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const coordinator = new TaskEnvironmentCoordinator({
+    store,
+    backend: f.lifecycle,
+    authority: () => SERVICE_AUTHORITY,
+    clock: { now: () => T1 },
+    ids: { next: (scope) => `d6-other:${scope}:${++sequence}` },
+  });
+  const other = await coordinator.acquire({
+    runId: otherRunId,
+    hostId: f.prepared.plan.identity.hostId,
+    envelope: {
+      schemaVersion: "execution-envelope.v1",
+      directories: [],
+      network: [],
+      resources: {
+        cpuMillicores: 1000,
+        memoryBytes: 268435456,
+        maxProcesses: 64,
+        privateStorageBytes: 16777216,
+      },
+    },
+    leases: [],
+    policyDigest: "a".repeat(64),
+    imageDigest: IMAGE_DIGEST,
+    runnerDigest: "c".repeat(64),
+    deadlineAt: T2,
+  });
+  expect(other.state).toBe("ready");
+  await f.restart();
+  await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const after = await f.snapshot("failed-run-recovered");
+  expect(after.run).toMatchObject({ status: "failed" });
+  expect(after.environments).toEqual([expect.objectContaining({ state: "released" })]);
+  expect(after.environmentReceipts).toHaveLength(1);
+  expect(after.reservationReceipts).toHaveLength(1);
+  expect(after.executed).toEqual([]);
+  expect(after.intents).toEqual([]);
+  expect(
+    await f.f.repository
+      .executionEnvironmentStore(OWNER_ID, AGENT_ID)
+      .read(other.identity.environmentId),
+  ).toEqual(other);
+  expect(f.lifecycle.stopped).toEqual(
+    new Set([
+      f.lifecycle.requests.find(({ identity }) => identity.runId === RUN_ID)?.createIntentId,
+    ]),
+  );
+});
+
+it.each(["stop_rejected", "proof_missing", "wrong_run", "wrong_locator"] as const)(
+  "[R2-D6] holds the unbound reservation when %s and preserves the original manual stop protocol",
+  async (fault) => {
+    const f = await terminalUnboundContainer();
+    const originalVerify = f.lifecycle.verifyStopped.bind(f.lifecycle);
+    const failure =
+      fault === "stop_rejected"
+        ? vi.spyOn(f.lifecycle, "stop").mockRejectedValue(new Error("stop rejected"))
+        : vi.spyOn(f.lifecycle, "verifyStopped").mockImplementation(async (input) => {
+            if (fault === "proof_missing") throw new Error("stop proof unavailable");
+            const proof = await originalVerify(input);
+            if (proof.basis !== "verified_stopped") throw new Error("stopped proof missing");
+            return fault === "wrong_run"
+              ? { ...proof, identity: { ...proof.identity, runId: "another-run" } }
+              : {
+                  ...proof,
+                  locator: { ...proof.locator, runtimeEnvironmentId: "another-container" },
+                };
+          });
+    await f.restart();
+    await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+    const failed = await f.snapshot(`${fault}-held`);
+    expect(failed.environments).toEqual([expect.objectContaining({ state: "stop_requested" })]);
+    expect(failed.stopIntents).toHaveLength(1);
+    expect(failed.environmentReceipts).toEqual([]);
+    expect(failed.reservationReceipts).toEqual([]);
+    expect(failed.occupancy).toEqual([expect.objectContaining({ released_at: null })]);
+    expect(failed.environmentLeases).toEqual([expect.objectContaining({ released_at: null })]);
+    expect(failed.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+    expect(failed.executed).toEqual([]);
+    expect(failed.published).toEqual([]);
+    expect(failed.intents).toEqual([]);
+    await f.restart();
+    await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+    const paused = await f.snapshot(`${fault}-paused-after-restart`);
+    expect({ ...paused, authority: failed.authority }).toEqual(failed);
+    expect(failure).toHaveBeenCalledTimes(1);
+    failure.mockRestore();
+    if (fault === "stop_rejected") {
+      expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+        released: false,
+      });
+      expect(await f.snapshot("rejected-stop-manual-request-held")).toEqual(paused);
+      return;
+    }
+    expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+      released: true,
+    });
+    const released = await f.snapshot(`${fault}-manual-release`);
+    expect(released.environments).toEqual([expect.objectContaining({ state: "released" })]);
+    expect(released.environmentReceipts).toHaveLength(1);
+    expect(released.reservationReceipts).toHaveLength(1);
+    expect(released.stopIntents).toEqual(failed.stopIntents);
+    expect(released.occupancy).toEqual([expect.objectContaining({ released_at: T1 })]);
+    expect(released.executed).toEqual([]);
+    expect(released.intents).toEqual([]);
+  },
+);
+
+it("[R2-D6] does not start recovery after its caller has cancelled the pump", async () => {
+  const f = await terminalUnboundContainer();
+  await f.restart();
+  const before = await f.snapshot("before-aborted-pump");
+  const controller = new AbortController();
+  controller.abort();
+  await f.f.services.resources.recoverPending(controller.signal, 10);
+  expect(await f.snapshot("after-aborted-pump")).toEqual(before);
+});
+
 it.each([true, false])(
-  "routes automatic reserved recovery through container release evidence (released=%s)",
+  "[R2-D6] routes automatic reserved recovery through container release evidence (released=%s)",
   async (released) => {
-    const { f, lifecycle, executed, prepare } = await setup();
+    const { f, lifecycle, executed, prepare } = await setup("returned", read, {
+      realRun: true,
+      piParameters: { path: "notes.txt" },
+      directoryOperations: ["read"],
+    });
     const prepared = await prepare();
     const preparations = f.services.brokerV2.preparations;
     await preparations.reserve({ ...prepared, invocation: f.input });

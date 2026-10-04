@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import {
   actionIntentFingerprint,
   type CapabilityInvocationAuthority,
+  type ClockPort,
   type ConsumeCapabilityInvocationInput,
   type GovernedActionIntent,
   type HostFileOperationKind,
@@ -74,6 +75,8 @@ export async function productionSandboxScope(
     readonly authority?: () => CapabilityInvocationAuthority;
     readonly seedRuntimeIntent?: boolean;
     readonly realRun?: boolean;
+    readonly clock?: ClockPort;
+    readonly idPrefix?: string;
     readonly reserveAuthorization?: boolean;
     readonly policyAuthorization?: { readonly key: string; readonly revision: number };
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
@@ -371,7 +374,9 @@ export async function productionSandboxScope(
   let now = T1;
   // A real JobHost timestamps its own observations; a frozen fixture clock
   // would incorrectly reject every later observation as coming from the future.
-  const clock = { now: () => (options.piRuntimeRoot ? new Date().toISOString() : now) };
+  const clock = options.clock ?? {
+    now: () => (options.piRuntimeRoot ? new Date().toISOString() : now),
+  };
   let workerSupport = support;
   const artifacts = () =>
     repository.runPayloadArtifactPort(
@@ -518,7 +523,7 @@ export async function productionSandboxScope(
           },
         },
         clock,
-        ids: { next: () => `scope-id:${++counter}` },
+        ids: { next: () => `${options.idPrefix ?? "scope-id"}:${++counter}` },
         workerSupport: () => workerSupport,
         ...(piFilePreparationPool ? { piFilePreparation: piFilePreparationPool.prepare } : {}),
         ...(options.taskEnvironments ? { taskEnvironments: options.taskEnvironments } : {}),

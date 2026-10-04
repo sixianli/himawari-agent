@@ -17,12 +17,26 @@ import {
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { executionEnvironmentStopProofSchema } from "@himawari-agent/execution-contracts";
+import type { ExecutionEnvironmentLifecyclePort } from "@himawari-agent/application";
+import { createIdempotencyKey } from "@himawari-agent/domain";
+import {
+  executionEnvironmentStopProofSchema,
+  PI_RUNNER_CONTRACT,
+} from "@himawari-agent/execution-contracts";
 import {
   type ContainerExecutionBackendOptions,
   hostFreeBytes,
 } from "@himawari-agent/runtime-sandbox";
+import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import {
+  AGENT_ID,
+  LIVE_SANDBOX,
+  OWNER_ID,
+  RUN_ID,
+  SERVICE_AUTHORITY,
+} from "../fixtures/sqlite-capability-invocation-fixture.ts";
 import {
   ContainerQualification,
   DISK_GUARD,
@@ -36,6 +50,7 @@ import {
   lines,
   RESOURCES,
   runnerImageId,
+  type QualificationBackend,
   stopAndProve,
 } from "./container-qualification-support.ts";
 
@@ -125,6 +140,230 @@ containerDescribe("container execution backend on a real runtime", { timeout: 60
     await expect(unreachable.capabilities()).rejects.toMatchObject({
       code: "CONTAINER_RUNTIME_UNAVAILABLE",
     });
+  });
+
+  it("[R2-D6] recovers an unbound real Docker environment after a cancelled Run and Agent restart", async () => {
+    expect(LIVE_SANDBOX, "HIMAWARI_LIVE_SANDBOX_PROBE=1 is required").toBe(true);
+    const namespace = `d6-${randomUUID()}`;
+    const parent = path.join(process.cwd(), ".ci-output/r2-d6");
+    await mkdir(parent, { recursive: true });
+    const evidence = await mkdtemp(path.join(parent, "docker-"));
+    let authority = SERVICE_AUTHORITY;
+    let subject: QualificationBackend | undefined;
+    const configured = () => {
+      if (!subject) throw new Error("D6_DOCKER_BACKEND_NOT_CONFIGURED");
+      return subject;
+    };
+    const lifecycle: ExecutionEnvironmentLifecyclePort = {
+      capabilities: () => configured().capabilities(),
+      create: (input) => configured().create(input),
+      inspect: (input) => configured().inspect(input),
+      stop: (input) => configured().stop(input),
+      verifyStopped: (input) => configured().verifyStopped(input),
+      destroy: (input) => configured().destroy(input),
+    };
+    const f = await productionSandboxScope(
+      {
+        operation: "read",
+        mode: "foreground",
+        contract: { kind: "fixed_read", ...PI_RUNNER_CONTRACT },
+        backendRef: "container-docker:qualification",
+        scopeSource: "grant_targets",
+        directoryOperations: ["read"],
+        network: "disabled",
+      },
+      undefined,
+      {
+        realRun: true,
+        piParameters: { path: "approved.txt" },
+        directoryOperations: ["read"],
+        profileRef: "authorized-project.v1",
+        authority: () => authority,
+        clock: { now: () => new Date().toISOString() },
+        idPrefix: namespace,
+        taskEnvironments: {
+          backendRef: "container-docker:qualification",
+          imageDigest: IMAGE_DIGEST,
+          lifecycle,
+        },
+      },
+    );
+    const makeBackend = () =>
+      qualification.backend(dockerHost, {
+        runtime: { source: f.host.binding.runtimeRoot, digest: f.host.binding.runtimeDigest },
+      });
+    const snapshot = async (stage: string) => {
+      const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+        readonly: true,
+      });
+      try {
+        const state = {
+          run: database.prepare("SELECT status FROM runs WHERE id=?").get(RUN_ID),
+          admissions: database
+            .prepare(
+              "SELECT job_id, preparation_state, started_at FROM sandbox_execution_records WHERE run_id=?",
+            )
+            .all(RUN_ID),
+          reservationReceipts: database
+            .prepare(
+              "SELECT r.* FROM sandbox_reservation_release_receipts r JOIN sandbox_execution_records e USING(job_id) WHERE e.run_id=?",
+            )
+            .all(RUN_ID),
+          occupancy: database
+            .prepare(
+              "SELECT o.released_at FROM sandbox_workspace_occupancy o JOIN sandbox_execution_records e USING(job_id) WHERE e.run_id=?",
+            )
+            .all(RUN_ID),
+          intents: database
+            .prepare(
+              "SELECT i.kind FROM sandbox_execution_intents i JOIN sandbox_execution_records e USING(job_id) WHERE e.run_id=?",
+            )
+            .all(RUN_ID),
+          environment: await f.repository
+            .executionEnvironmentStore(OWNER_ID, AGENT_ID)
+            .readRun(RUN_ID),
+          quickCheck: database.prepare("PRAGMA quick_check").all(),
+        };
+        await writeFile(path.join(evidence, `${stage}.json`), JSON.stringify(state, null, 2));
+        return state;
+      } finally {
+        database.close();
+      }
+    };
+    try {
+      const root = f.host.binding.roots[0];
+      if (!root) throw new Error("D6_DOCKER_ROOT_MISSING");
+      qualification.approved.set(root.canonicalRootId, {
+        canonicalPath: root.canonicalPath,
+        device: root.device,
+        inode: root.inode,
+      });
+      subject = makeBackend();
+      const prepared = await f.services.runtime.prepare(f.input, f.call);
+      if (!("reservation" in prepared)) throw new Error("D6_RESERVATION_MISSING");
+      expect(
+        (await f.services.brokerV2.preparations.reserve({ ...prepared, invocation: f.input }))
+          .applied,
+      ).toBe(true);
+      const environment = (
+        await f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID).readRun(RUN_ID)
+      )?.environments[0];
+      if (!environment?.locator) throw new Error("D6_DOCKER_ENVIRONMENT_MISSING");
+      expect(environment.identity.environmentId.startsWith(namespace)).toBe(true);
+      expect(environment.calls).toEqual([]);
+      const running = await direct(
+        "container",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        environment.locator.runtimeEnvironmentId,
+      );
+      await writeFile(path.join(evidence, "docker-before.json"), running.stdout);
+      expect(JSON.parse(running.stdout)).toMatchObject({ Running: true });
+      const runs = f.repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product);
+      const current = await runs.readRun(RUN_ID);
+      if (!current) throw new Error("D6_RUN_MISSING");
+      await runs.cancelRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        authority: authority.lease,
+        expectedRevision: current.revision,
+        idempotencyKey: createIdempotencyKey(namespace),
+        commandFingerprint: namespace,
+        payloadRef: "restart-prompt",
+      });
+      const cancelled = await snapshot("cancelled-before-restart");
+      expect(cancelled.environment?.environments[0]?.state).toBe("ready");
+      expect(cancelled.reservationReceipts).toEqual([]);
+      authority = {
+        ...authority,
+        agentServiceBootId: `${authority.agentServiceBootId}:docker-restart`,
+      };
+      subject = makeBackend();
+      await f.reopen();
+      await f.services.resources.recoverPending(new AbortController().signal, 10);
+      const recovered = await snapshot("recovered-after-restart");
+      expect(recovered.run).toMatchObject({ status: "cancelled" });
+      expect(recovered.admissions).toEqual([
+        expect.objectContaining({ preparation_state: "reserved", started_at: null }),
+      ]);
+      expect(recovered.reservationReceipts).toHaveLength(1);
+      expect(recovered.occupancy).toEqual([
+        expect.objectContaining({ released_at: expect.any(String) }),
+      ]);
+      expect(recovered.intents).toEqual([]);
+      const released = recovered.environment?.environments[0];
+      expect(released?.state).toBe("released");
+      expect(released?.calls).toEqual([]);
+      expect(released?.releaseReceipt?.basis).toBe("verified_stopped");
+      if (!released?.releaseReceipt || !("proof" in released.releaseReceipt))
+        throw new Error("D6_STOP_PROOF_MISSING");
+      for (const [index, item] of released.releaseReceipt.proof.evidence.entries()) {
+        await writeFile(
+          path.join(evidence, `docker-stop-evidence-${index}.json`),
+          await configured().readEvidence(item.ref),
+        );
+      }
+      const stopped = await direct(
+        "container",
+        "inspect",
+        "--format",
+        "{{json .State}}",
+        environment.locator.runtimeEnvironmentId,
+      );
+      await writeFile(path.join(evidence, "docker-after.json"), stopped.stdout);
+      expect(JSON.parse(stopped.stdout)).toMatchObject({ Running: false, Pid: 0 });
+      authority = { ...authority, agentServiceBootId: `${authority.agentServiceBootId}:second` };
+      subject = makeBackend();
+      await f.reopen();
+      await f.services.resources.recoverPending(new AbortController().signal, 10);
+      expect(await snapshot("repeated-after-second-restart")).toEqual(recovered);
+      expect(await readFile(path.join(f.host.workspace, "approved.txt"), "utf8")).toBe("allowed");
+      qualification.observations["d6UnboundRecovery"] = {
+        evidence,
+        environmentId: environment.identity.environmentId,
+        runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
+        releaseReceipt: released.releaseReceipt,
+      };
+    } finally {
+      const environments =
+        (await f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID).readRun(RUN_ID))
+          ?.environments ?? [];
+      const removed: string[] = [];
+      const remaining: string[] = [];
+      for (const environment of environments) {
+        expect(
+          environment.identity.environmentId.startsWith(namespace),
+          "D6_CLEANUP_IDENTITY_CHANGED",
+        ).toBe(true);
+        const filter = `label=io.himawari.environment.id=${environment.identity.environmentId}`;
+        const ids = (await direct("container", "ls", "--all", "--quiet", "--filter", filter)).stdout
+          .trim()
+          .split("\n")
+          .filter(Boolean);
+        if (ids.length) {
+          await direct("container", "rm", "--force", ...ids);
+          removed.push(...ids);
+        }
+        remaining.push(
+          ...(await direct("container", "ls", "--all", "--quiet", "--filter", filter)).stdout
+            .trim()
+            .split("\n")
+            .filter(Boolean),
+        );
+      }
+      await writeFile(
+        path.join(evidence, "docker-cleanup.json"),
+        JSON.stringify(
+          { namespace, removedContainers: removed, remainingContainers: remaining },
+          null,
+          2,
+        ),
+      );
+      expect(remaining).toEqual([]);
+      await f.close();
+    }
   });
 
   it("runs tasks without privileges, network or host sockets, inside enforced limits", async () => {

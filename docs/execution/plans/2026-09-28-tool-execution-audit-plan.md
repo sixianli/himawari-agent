@@ -28,6 +28,8 @@ date: "2026-09-28"
 - [Linux 产品路径夹具的平台路径](#2026-10-04linux-产品路径夹具的平台路径)
 - [S4：父进程未收尸时的代理回收](#2026-10-04父进程未收尸时的代理回收)
 - [D3：非沙箱未知结果的到期终点](#2026-10-04非沙箱未知结果的到期终点)
+- [D4：准备登记确认丢失后的启动仲裁](#d4-launch-arbitration)
+- [D6：终态 Run 的未绑定容器恢复](#d6-unbound-container-recovery)
 
 ## 目标与边界
 
@@ -312,7 +314,7 @@ F 红测试确认同一生产 Worker 装配首次写输出断连后，第二次�
 
 定向 81 项已通过，包括原认证合同、8 项通道恢复矩阵、12 项 Worker 装配及 27 项生命周期；其中 Worker endpoint 依赖仍为测试 fetch，不是完整 SRT 资格。完整 check、build、npm test 和提交证据见 [F 验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/f-verification.md)。实现与限制见 [F 设计说明](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#f通用-uds-断连恢复) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
-E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用链确认并记录 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，本轮不实现；期限恢复本身要求资源释放，不能把该缺口描述成已复现的到期后错误终态。整轮仍待 B1、B2、B3、其余 Backlog 与最终无筛选 Mac 资格。
+2026-09-29，E 留下的终态 Run / 未绑定 container 环境停止缺口已按只读调用链确认并记录 [BL-20260929-004](../../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)，本轮不实现；期限恢复本身要求资源释放，不能把该缺口描述成已复现的到期后错误终态。整轮仍待 B1、B2、B3、其余 Backlog 与最终无筛选 Mac 资格。
 
 首轮 F 完整 4,940 项全部通过后，静态复核新增关闭期间清理通道寿命回归；测试确认重握手 catch 过早 disconnect。已改由 close 在 shutdown 完成后统一断开，原关闭错误码保持；该新增场景先失败后通过。最终版本重新构建与全量验证记录见 F 验证记录，不能复用首轮全量作为最终代码证据。
 
@@ -531,8 +533,18 @@ G39 交接要求复核守护进程的成本和长期僵尸条件。真实 Linux 
 
 [返回阅读导航](#阅读导航)
 
+<a id="d4-launch-arbitration"></a>
+
 ### R2-D4：准备确认丢失后的启动决定
 
 按用户 G39 的独立规划与自审授权，本项采用[准备启动与停止仲裁设计](../specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。新协议为新计划冻结有版本的启动/禁止决定，原协议不补写；实际完成状态只读取长任务证据。先通过真实安装注入登记被接受后的确认丢失，再检查唯一未启动结果、占用释放、没有 Host 或操作重放；真实文件/SQLite 竞争补测先后顺序、重复启动、重建、回滚和身份替换。
 
 修复前真实安装的保留报告已取回并核对：登记确实被接受，Worker 未收到确认且无 Host 创建；40 秒后仍为 `reconciling_external_result`，reserved 预约没有 started_at、没有释放回执、占用未释放。失败断言与 SQLite 独立读回共同确认 D4，证据为 `E20261004T225127-c47bcf`。完成代码检查、第 0–3 层、受影响 Linux 产品路径与自审之前，不提交本项；历史资格只覆盖当时的代码和场景。
+
+<a id="d6-unbound-container-recovery"></a>
+
+## R2-D6：终态 Run 的未绑定容器恢复
+
+原公开取消已保存、清理尚未开始的中断点在 Hermes 复现：重新打开 Agent 仓库和服务后，预约停止标记已有，容器仍 ready、占用未释放。当前实现先读取原 Owner/Agent 的权威 Run，只对 completed/failed/cancelled 复用同 Run 环境停止，再由原认证证明与预约事务释放；活动和结果待核实 Run 的路径保持原边界。方案和验收条件见[准备恢复 Spec](../specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery)。
+
+先使用现有真实 Worker 协议和 SQLite 测试取消/失败、其他 Run、停止失败与错误身份、重复恢复及人工停止；再在现有容器资格项目运行真实 Docker 停止和读回。容器资格入口使用现有实时夹具，不向 Docker 发送固定历史期限；不改变普通测试、产品期限或重试。修复前、首次修后以及夹具前提修正的失败报告全部保留。完整交付按第 0–3 层、受影响真实容器与 Linux 安装场景、自审、文档封存和严格检查记录；本节不代替长任务证据计算完成状态。

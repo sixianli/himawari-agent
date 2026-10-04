@@ -250,6 +250,7 @@ function qualificationEnvironment(check, evidence, env) {
       throw new Error("CI_QUALITY_CONTAINER_RUNTIME_REQUIRED");
     return {
       HIMAWARI_CONTAINER_QUALIFICATION: "1",
+      HIMAWARI_LIVE_SANDBOX_PROBE: "1",
       HIMAWARI_CONTAINER_EVIDENCE_PATH: evidence,
       ...runtime,
       ...(env.HIMAWARI_CONTAINER_WORK_ROOT

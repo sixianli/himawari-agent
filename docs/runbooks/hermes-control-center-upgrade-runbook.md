@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:547347475d991b39beecae6e074fa62270f3de25b4034368ee5dd7cd987ff9df"
+contract_sha256: "sha256:3c1fd240e0a6867c86e7314b01d01da400fda85a864f50fc77918d9cc0770257"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -270,6 +270,8 @@ PYTHON
 ~~~
 
 这是升级操作提示，不是资源释放证明。新建 SRT v2 计划使用 `preparationProtocol=launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划保持原值。旧 Worker 严格解析会拒绝不认识的协议，发生在创建 Host 前；Agent 与 Worker 必须同包升级，不能删字段降级。登记前不可变封锁仍使用 `preparation_not_authorized`；登记已接受后，新协议的禁止启动决定及保护 Artifact 经 Agent 与 SQLite 核对，才允许使用 `preparation_launch_blocked`。启动先赢或旧协议确认丢失而无 Host 证明时仍保留占用。已有 Host 和容器的认证释放条件不变。Hermes 上的安装路径检查不能替代生产升级后的现场验收。详见[准备启动与停止仲裁](../execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
+
+严格模式下，Agent 重启后会为 completed/failed/cancelled Run 的未绑定容器预约补调原同 Run 环境停止，再核对环境释放回执和原预约事务。活动及结果待核实 Run 不因进入恢复清单就停止环境。停止接受但证明缺失、身份不符或后端不可用时继续保留占用；原失败的停止请求不会被同义人工请求重发，不可通过删除严格模式记录、重建 locator 或更换停止 intent 来伪造释放。恢复点须保留 SQLite 中原 execution job、环境、停止 intent、lease 和释放回执；迁移后仍须核验配置的后端与原环境身份，不能从历史回执推断当前运行时已停止。该恢复不重放模型或工具，不增加系统设置、停机、迁移或生产操作授权。详见[未绑定容器的终态恢复](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 
 ## Procedure
 

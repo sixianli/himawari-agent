@@ -2066,8 +2066,24 @@ export async function createProductionSandboxServices(options: {
         const admission = await preparations.readAdmission(plan.identity);
         if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
           throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
-        if (plan.backendRef === SRT_BACKEND_REF)
+        if (plan.backendRef === SRT_BACKEND_REF) {
           await control.stopPreparation(plan, signal, admission.stopRequestedAt);
+          return;
+        }
+        if (!environments || plan.backendRef !== environments.backendRef)
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+        const current = await repository
+          .runLifecycle(configuration.ownerId, configuration.agentId, options.authority().product)
+          .readRun(plan.identity.runId as RuntimeToolInvocation["runId"]);
+        if (!current) throw new Error("SANDBOX_RECOVERY_RUN_UNAVAILABLE");
+        if (["completed", "failed", "cancelled"].includes(current.run.status)) {
+          if (signal.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+          const released = await environments.stopRun(
+            plan.identity.runId,
+            current.run.status === "cancelled" ? "run_cancelled" : "run_finished",
+          );
+          if (!released) throw new Error("EXECUTION_STOP_UNCONFIRMED");
+        }
       },
       verify: async (plan, stopRequestedAt, signal) => {
         if (plan.backendRef === SRT_BACKEND_REF)
