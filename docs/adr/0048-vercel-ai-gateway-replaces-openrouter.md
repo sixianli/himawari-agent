@@ -15,6 +15,7 @@ date: "2026-10-04"
 
 - [背景](#context)
 - [决定](#decision)
+  - [2026-10-04 补充决定：模型限制和排期](#decision-models)
 - [已验证的事实](#verified)
 - [比较过的方案](#options)
 - [后果](#consequences)
@@ -40,6 +41,16 @@ date: "2026-10-04"
 - 开发用的网关密钥存放在 Mac 的钥匙串里，服务名 `himawari.ai-gateway.dev`，不写进仓库或任何文件。生产用的密钥另行创建，按生产部署规则，需要用户为那一次部署单独授权。
 - 默认用哪个生成模型、备用模型是什么、嵌入模型是什么，都还没有定，迁移前要由用户决定。
 
+<a id="decision-models"></a>
+
+### 2026-10-04 补充决定：模型限制和排期
+
+同一天用户作出两项决定，补充上面最后一条：
+
+- 禁止使用 OpenAI 的模型。文本模型只能用 `deepseek/deepseek-v4.1-flash`（用户原话：“禁止使用oepnai的模型，文本模型只能使用deepseek/deepseek-v4.1-flash”）。所以产品的主模型是它，备用模型也不能换成别的文本模型；现有配置里作为备用的 GLM 要去掉。如果需要遇故障切换，只能在网关上给同一个模型换服务商，不能换模型。
+- 迁移排在上线前：当前这批第二轮修复完成后，单独开一批做迁移，列入上线清单。
+- 嵌入模型（长期记忆用）沿用现在的 Qwen3 Embedding 8B，在网关上的编号是 `alibaba/qwen3-embedding-8b`，向量维度不变。这是 Claude 按“不改行为”定的默认做法，不是 OpenAI 模型，也不是文本生成模型。
+
 [返回导航](#contents)
 
 <a id="verified"></a>
@@ -51,6 +62,7 @@ date: "2026-10-04"
 - Vercel 实时模型清单（`GET https://ai-gateway.vercel.sh/v1/models`）里有 `openai/gpt-6-astra`：上下文 105 万 token，单次最多输出 12.8 万 token，每百万 token 输入 10 美元、输出 50 美元。清单里也有 `alibaba/qwen3-embedding-8b`，和现有 Memory 用的 Qwen3 Embedding 8B 是同一款模型。
 - 用项目锁定的 `@earendil-works/pi-ai` 0.84.2 的 `streamSimple`，模型写成 `api: "openai-completions"`、`baseUrl: "https://ai-gateway.vercel.sh/v1"`、`id: "openai/gpt-6-astra"`，流式返回 74 段文本，正常结束（`stop`），输入 30 个 token、输出 127 个 token，Pi 按清单单价算出的费用是 0.00665 美元。
 - Pi 0.84.2 自带的 `vercel-ai-gateway` 接入只走 Anthropic 格式接口，自带模型清单里没有 `openai/gpt-6-astra`，所以迁移时不直接用它，而是沿用产品现有的 `openai-completions` 描述符，只换地址和密钥。
+- 同一天用同样的方式试了 `deepseek/deepseek-v4.1-flash`：清单单价为每百万 token 输入 0.3 美元、输出 1.2 美元，单次最多输出 32768 token；流式返回 30 段文本，正常结束，输入 49 个 token、输出 321 个 token，Pi 算出的费用是 0.0004 美元。
 - 还没验证：工具调用、推理参数、用量和实际费用的回读、失败时的错误码、Memory 嵌入，以及 Linux（Hermes）和生产服务器上的行为。
 
 [返回导航](#contents)
@@ -82,7 +94,7 @@ date: "2026-10-04"
 
 - 好处：只换网关就能调用 400 多个模型；密钥、预算和用量集中在 Vercel 管理。
 - 代价：产品代码、配置、测试、Runbook 和架构文档里与 OpenRouter 有关的内容都要迁移；迁移完成前，生产配置仍指向 OpenRouter。
-- 后续：迁移工作记在待办 BL-20261004-002；默认模型、备用模型和嵌入模型的选择，以及迁移排在上线前还是上线后，由用户决定。
+- 后续：迁移工作记在待办 BL-20261004-002，排在上线前（见[补充决定](#decision-models)）。
 
 [返回导航](#contents)
 

@@ -5,7 +5,9 @@
     {
       "id": "R2-S1",
       "title": "工具运行中停止本轮：宿主和进程组退出、Run 取消、不交给模型",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -26,7 +28,9 @@
     {
       "id": "R2-S2",
       "title": "运行中、收尾、交付时重启服务后结果不丢、不重复",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -48,7 +52,9 @@
     {
       "id": "R2-S3",
       "title": "执行期限到达时按原期限终止工具并认证清理",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -70,7 +76,9 @@
     {
       "id": "R2-S4",
       "title": "Job Host finish() 各步崩溃后的结果交付",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -91,7 +99,9 @@
     {
       "id": "R2-S5",
       "title": "剩余交错组合、F 健康检查缺口、历史样本 13、resolve 报错原因",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -112,7 +122,10 @@
     {
       "id": "R2-D1",
       "title": "Job Host 期限诊断只按原期限分类一次",
-      "goal_ref": ["G1", "G3"],
+      "goal_ref": [
+        "G1",
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -134,7 +147,9 @@
     {
       "id": "R2-D2",
       "title": "prepared 测试夹具 20 秒超时（只在 Hermes 机械盘上确认过）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -155,7 +170,9 @@
     {
       "id": "R2-D3",
       "title": "非沙箱工具结果未知时 Run 没有终止路径（B4）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -176,7 +193,9 @@
     {
       "id": "R2-D4",
       "title": "ACK 丢失（A2 余项）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -197,7 +216,9 @@
     {
       "id": "R2-D5",
       "title": "fixture(25) 偶发失败",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -218,7 +239,9 @@
     {
       "id": "R2-D6",
       "title": "Agent 重启后停止终态 Run 的未绑定容器环境",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -239,7 +262,9 @@
     {
       "id": "R2-D7",
       "title": "Worker 历史事件的内存占用和重复读取（需先设计）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -260,7 +285,9 @@
     {
       "id": "R2-D8",
       "title": "前台 Bash 脱离后后台程序的显示（本轮只改状态行文字）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -281,7 +308,12 @@
     {
       "id": "R2-D9",
       "title": "主机名变化后的旧锁（Linux 部分；Mac 部分按 G5 报告未验证）",
-      "goal_ref": ["G3", "G5", "G14", "G15"],
+      "goal_ref": [
+        "G3",
+        "G5",
+        "G14",
+        "G15"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -302,7 +334,9 @@
     {
       "id": "R2-D10",
       "title": "安装和部署说明写清 Ubuntu 24.04 的 bwrap 前提、AppArmor 规则和撤销方法",
-      "goal_ref": ["G9"],
+      "goal_ref": [
+        "G9"
+      ],
       "done_when": [
         {
           "type": "doc",
@@ -323,7 +357,10 @@
     {
       "id": "R2-D11",
       "title": "只读网络能力 Retry-After 提前重试",
-      "goal_ref": ["G3", "G10"],
+      "goal_ref": [
+        "G3",
+        "G10"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -345,7 +382,10 @@
     {
       "id": "R2-D12",
       "title": "测试直接加载源码线程文件时 Node 22 自带 TypeScript 解析器内部断言（memory access out of bounds）",
-      "goal_ref": ["G3", "G13"],
+      "goal_ref": [
+        "G3",
+        "G13"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -366,7 +406,9 @@
     {
       "id": "R2-D13",
       "title": "准备期 Job Host 心跳过期（事件循环约 2.76 秒无响应）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -387,7 +429,9 @@
     {
       "id": "R2-D14",
       "title": "执行 Worker 进程测试的子夹具就绪超时",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -421,7 +465,9 @@
     {
       "id": "R2-D15",
       "title": "安装解压目录继承安装者 umask，umask 0002 时产品拒绝自己的安装",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -442,7 +488,9 @@
     {
       "id": "R2-D16",
       "title": "正式 npm test 下三个 integration 测试仍读本地 dist/node-runtime",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -463,7 +511,9 @@
     {
       "id": "R2-D17",
       "title": "SQLite 夹具临时目录前缀过长，控制套接字超过 100 字节",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -485,7 +535,10 @@
     {
       "id": "R2-D18",
       "title": "生产 privateRoot 超过 27 字节时沙箱工具必然失败，启动时不检查",
-      "goal_ref": ["G3", "G11"],
+      "goal_ref": [
+        "G3",
+        "G11"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -506,7 +559,10 @@
     {
       "id": "R2-D19",
       "title": "Pi 准备线程每次重新加载模块，启动占 10 秒预算 36%–61%",
-      "goal_ref": ["G3", "G11"],
+      "goal_ref": [
+        "G3",
+        "G11"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -527,7 +583,9 @@
     {
       "id": "R2-E1",
       "title": "测试用户 umask 0002 造成的 100 项 SANDBOX_HOST_PATH_UNSAFE（测试环境）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "review",
@@ -543,7 +601,11 @@
     {
       "id": "R2-A1",
       "title": "最终版本上 npm run check 和完整 npm test 在 Hermes 通过",
-      "goal_ref": ["G1", "G8", "G10"],
+      "goal_ref": [
+        "G1",
+        "G8",
+        "G10"
+      ],
       "done_when": [
         {
           "type": "command",
@@ -565,7 +627,10 @@
     {
       "id": "R2-A2",
       "title": "不筛选的 Linux 产品路径资格在 Hermes 通过",
-      "goal_ref": ["G1", "G8"],
+      "goal_ref": [
+        "G1",
+        "G8"
+      ],
       "done_when": [
         {
           "type": "command",
@@ -582,7 +647,9 @@
     {
       "id": "R2-A3",
       "title": "不筛选的 Mac 资格",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "user",
@@ -603,7 +670,9 @@
     {
       "id": "R2-A4",
       "title": "文档严格校验通过（Runbook 的重新封存由改动其依据文件的提交各自完成）",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "command",
@@ -619,7 +688,9 @@
     {
       "id": "R2-A5",
       "title": "中文总报告",
-      "goal_ref": ["G1"],
+      "goal_ref": [
+        "G1"
+      ],
       "done_when": [
         {
           "type": "doc",
@@ -640,7 +711,9 @@
     {
       "id": "R2-L1",
       "title": "首次生产部署计划按同机测试和 Ubuntu 24.04 前提更新",
-      "goal_ref": ["G11"],
+      "goal_ref": [
+        "G11"
+      ],
       "done_when": [
         {
           "type": "doc",
@@ -657,7 +730,9 @@
     {
       "id": "R2-L2",
       "title": "云服务器上生产要用的 bwrap 0.11.2 和 AppArmor 规则可用",
-      "goal_ref": ["G11"],
+      "goal_ref": [
+        "G11"
+      ],
       "done_when": [
         {
           "type": "command",
@@ -674,7 +749,9 @@
     {
       "id": "R2-L3",
       "title": "慢同步写入对产品响应时间的影响：测量一次真实对话加一次工具调用",
-      "goal_ref": ["G11"],
+      "goal_ref": [
+        "G11"
+      ],
       "done_when": [
         {
           "type": "doc",
@@ -696,7 +773,11 @@
     {
       "id": "R2-L4",
       "title": "首次生产部署",
-      "goal_ref": ["G4", "G8", "G11"],
+      "goal_ref": [
+        "G4",
+        "G8",
+        "G11"
+      ],
       "done_when": [
         {
           "type": "user",
@@ -713,7 +794,9 @@
     {
       "id": "R2-D20",
       "title": "父进程退出后的期限测试用固定字节数判断，机器忙时误报失败",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -734,7 +817,11 @@
     {
       "id": "R2-E2",
       "title": "云服务器上放宽 npm test 总时限，测试自己的时限放宽到 4 倍且不少于 30 秒（只在云端，GitHub CI 和产品期限不变）",
-      "goal_ref": ["G16", "G17", "G18"],
+      "goal_ref": [
+        "G16",
+        "G17",
+        "G18"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -759,7 +846,9 @@
     {
       "id": "R2-D21",
       "title": "thread-run-lifecycle 的期限后恢复用例依赖 1 秒真实时间，磁盘慢时先到期走错分支",
-      "goal_ref": ["G3"],
+      "goal_ref": [
+        "G3"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -780,7 +869,10 @@
     {
       "id": "R2-E3",
       "title": "撤掉 HIMAWARI_TEST_TIMEOUT_MS，测试时限回到项目原值（Hermes 上不放宽）",
-      "goal_ref": ["G19", "G20"],
+      "goal_ref": [
+        "G19",
+        "G20"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -801,7 +893,10 @@
     {
       "id": "R2-D22",
       "title": "agent-service 两个测试文件的首条用例在 Hermes 上超过 5 秒期限（干净版本也出现，原因待查）",
-      "goal_ref": ["G3", "G29"],
+      "goal_ref": [
+        "G3",
+        "G29"
+      ],
       "done_when": [
         {
           "type": "test",
@@ -818,9 +913,36 @@
         "on": "2026-10-03",
         "why": "stop-05：干净 556d4b2 也超时（pi-coding-program 首例 5365ms），r56 模块重跑 pi-coding-program 首例 6410ms、production-http-composition 首例 5066ms（c1b3d62 时 1972ms）；阻塞 R2-A1"
       }
+    },
+    {
+      "id": "R2-L5",
+      "title": "模型网关从 OpenRouter 迁到 Vercel AI Gateway，文本模型只用 deepseek/deepseek-v4.1-flash（BL-20261004-002）",
+      "goal_ref": [
+        "G34",
+        "G35",
+        "G36"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L5",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-04",
+        "why": "用户 2026-10-04 决定换网关并排在上线前；ADR 0048"
+      }
     }
   ],
   "fingerprint": {
-    "test_exclude": ["docs/"]
+    "test_exclude": [
+      "docs/"
+    ]
   }
 }
