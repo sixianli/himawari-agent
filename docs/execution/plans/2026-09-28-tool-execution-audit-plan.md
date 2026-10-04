@@ -489,3 +489,13 @@ prepared 开发模式恢复直接使用真实构建目录，复制候选撤回�
 Linux 列表沿用仓库已有的 Hermes 部署签署来源 `scripts/operations/hermes-three-fixes-seal.mjs` 的系统路径：`/usr/bin`、`/usr/lib`、`/lib`、`/lib64`、`/dev`、`/proc`、`/etc/ssl`、`/etc/hosts`，同时保留夹具自身的安装运行根、Node 可执行文件和 `/bin`。来源流程见[Hermes 升级手册的资格与签署步骤](../../runbooks/hermes-control-center-upgrade-runbook.md) [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。不存在的本平台路径仍使夹具失败，不忽略 `ENOENT`。这项修改只改变测试安装的部署绑定，不改变产品的部署绑定格式、沙箱行为或外部接口。
 
 `test/tooling/product-path-platform.test.ts` 用两条自动测试检查 Linux 列表和原 macOS 列表。原列表在 Hermes 的先修复前运行中为 1 通过、1 失败，失败断言明确显示 Linux 仍包含 `/System`；这与 stop-01 的 `realpath('/System')` 环境错误相互支持。报告保留于 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/`。夹具检查不能替代 S1/S4 的真实安装、停止和崩溃恢复验收；它们仍需通过 `qualification-product-path` 单独执行。
+
+## 2026-10-04：Linux 产品路径夹具的终止声明
+
+修正路径之后，S1/S4 定向资格运行在安装准备阶段被 `capabilities register` 拒绝，返回 `CONTRACT_VALIDATION_ERROR`，七个场景尚未执行。保留的部署快照把平台写成 `linux`，却仍使用 macOS 的 `best_effort`、`best_effort_stop`、`detached_descendants_may_survive_stop` 和 `enforcement.termination=false`。当前 Linux 契约要求 `verified_tree`、`task_tree_termination`、`worker_crash_cleanup`、空限制数组，以及 `enforcement.termination=true`。
+
+本次按 Claude reply-01 的同类夹具授权修正这些字段，沿用 `test/fixtures/mac-sandbox-deployment.ts` 已有的双平台生成规则。macOS 仍保留原终止声明和清理限制。安装和重启继续共用 `writeCodingSnapshot()`，产品契约、断言、时限和系统环境不变。
+
+在改动声明之前，最初的回归检查调用真实快照生成函数，并用产品的严格 snapshot loader 独立读回。Hermes 红运行是 2 通过、1 失败，明确报出 `Linux profile requires verified tree cleanup`；修正声明后同一文件 3/3 通过。这个检查同时启动摘要线程并读取完整 Node 可执行文件。在整个 tooling 项目中，它超过默认 5 秒，其余 1172 条通过；带取证入口的下一次整项目运行通过，但步骤探针没有事件，未据此认定具体耗时根因或把偶发通过当作稳定证据。保留失败和取证报告，不调整时限。
+
+最终的声明回归检查直接调用安装、重启共用的 `productPathSandboxCleanup()`，逐项核对 macOS 和 Linux 的原有预期，再调用产品的严格 sandbox qualification schema。它保留终止模式、全部保证、限制数组和 enforcement 预期，把与声明选择无关的线程启动和可执行文件摘要计算留在原产品路径夹具中。真实快照生成、注册和工具终止仍由 S1/S4 产品路径验收。声明检查只证明测试声明符合平台契约；夹具的测试专用资格摘要不能充当宿主资格或真实清理结果的证据。报告保留在同一 `hermes-r64` 证据目录。

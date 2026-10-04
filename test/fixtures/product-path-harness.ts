@@ -325,6 +325,28 @@ export function productPathToolchainPaths(input: {
   ];
 }
 
+export function productPathSandboxCleanup(platform: NodeJS.Platform) {
+  return {
+    terminationMode: platform === "darwin" ? "best_effort" : "verified_tree",
+    terminationEnforced: platform === "linux",
+    guarantees: [
+      "filesystem_default_deny",
+      "network_allowlist",
+      "clean_environment",
+      "bounded_output",
+      "wall_clock_stop",
+      "resource_observation",
+      "durable_start_admission",
+      "unknown_quarantine",
+      "restart_reconciliation",
+      ...(platform === "darwin"
+        ? ["best_effort_stop"]
+        : ["task_tree_termination", "worker_crash_cleanup"]),
+    ],
+    limitations: platform === "darwin" ? ["detached_descendants_may_survive_stop"] : [],
+  };
+}
+
 export function productPathTemporaryPrefix(): string {
   const parent = testTemporaryRoot();
   if (process.env["HIMAWARI_TEST_TEMP_ROOT"] === undefined) return "/tmp/hma-pp-";
@@ -1273,6 +1295,7 @@ async function writeCodingSnapshot(input: {
   const evidenceDigest = createHash("sha256")
     .update("product-path-test-qualification-not-production")
     .digest("hex");
+  const cleanup = productPathSandboxCleanup(process.platform);
   const sandbox = {
     schemaVersion: "sandbox-runtime-qualification.v1",
     qualificationRef: `product-path:${evidenceDigest}`,
@@ -1286,20 +1309,9 @@ async function writeCodingSnapshot(input: {
     runnerDigest,
     evidenceDigest,
     resourceMode: "observe_and_stop",
-    terminationMode: "best_effort",
-    guarantees: [
-      "filesystem_default_deny",
-      "network_allowlist",
-      "clean_environment",
-      "bounded_output",
-      "wall_clock_stop",
-      "resource_observation",
-      "durable_start_admission",
-      "unknown_quarantine",
-      "restart_reconciliation",
-      "best_effort_stop",
-    ],
-    limitations: ["detached_descendants_may_survive_stop"],
+    terminationMode: cleanup.terminationMode,
+    guarantees: cleanup.guarantees,
+    limitations: cleanup.limitations,
     supportedExecutions,
   };
   const manifest = {
@@ -1360,7 +1372,7 @@ async function writeCodingSnapshot(input: {
             processes: true,
             secrets: true,
             resourceCeilings: false,
-            termination: false,
+            termination: cleanup.terminationEnforced,
           },
           reasonCodes: [],
           checkedAt: now,
