@@ -6,10 +6,10 @@
 
 ## 当前批次
 
-一个 Codex 新会话串行（用户 G31），brief 为 `.ci-output/handoff/2026-10-04-round2-s1-s4-d3-brief.md`：
-- R2-S1：找到 TE-07 修复（`f1519e7`）的已有回归测试，标题加 `[R2-S1]`，不改断言；在 Hermes 上跑通；Claude 审核。
-- R2-S4：找到 B7 矩阵里 Job Host finish() 六个崩溃位置的已有回归测试，标题加 `[R2-S4]`，不改断言；在 Hermes 上跑通；Claude 审核。
-- R2-D3：非沙箱工具结果未知时 Run 没有终止路径。先取证、出方案，改产品行为前停下由 Claude 审核；批准后先红后绿，带 `[R2-D3]` 的测试在 Hermes 通过；Claude 审核。
+一个 Codex 会话串行（用户 G31；G39 起 Codex 独立完成并自审，交接见 `.ci-output/handoff/2026-10-04-claude-to-codex-handoff.md`），brief 为 `.ci-output/handoff/2026-10-04-round2-s1-s4-d3-brief.md`：
+- R2-S1：找到 TE-07 修复（`f1519e7`）的已有回归测试，标题加 `[R2-S1]`，不改断言；在 Hermes 上跑通；审核。
+- R2-S4：找到 B7 矩阵里 Job Host finish() 六个崩溃位置的已有回归测试，标题加 `[R2-S4]`，不改断言；在 Hermes 上跑通；审核。
+- R2-D3：非沙箱工具结果未知时 Run 没有终止路径。先取证、出方案，改产品行为前停下由 停下审核；批准后先红后绿，带 `[R2-D3]` 的测试在 Hermes 通过；审核。
 - 同批测试顺带给 R2-D15、R2-E3 在本批提交的版本上补跑 tooling 测试；本批第 3 层在最终 HEAD 上跑一次，随同记录 R2-A1。
 
 ## 之后
@@ -58,6 +58,7 @@
 - 2026-10-04 10:50 stop-13 后重新规划：status 共 39 项，当前版本已验证 11 · 旧版本验证过 5 · 未完成 19 · 等你决定 2 · 不做 2。D19、D22、D15、D10 这批已提交，第 3 层 5196/5196、publicationFailures 为空；Claude 复审 D10、D16、E1（只是文档被 D15 提交改动）。下一批按 G29 上线前顺序取 S1、S4、D3，新开 Codex 会话。
 - 2026-10-04 加入 R2-L5：用户 G34–G36 决定改用 Vercel AI Gateway、排在上线前、文本模型只用 deepseek/deepseek-v4.1-flash。status：共 40 项（新增 1 项未完成）。ADR 0048、BL-20261004-002。
 - 2026-10-04 R2-L5 补充路由决定：用户 G37 选均衡路由、G38 不限制训练数据条款；写入 ADR 0048 和 BL-20261004-002。done_when 不变，status 计数不变（共 40 项）。
+- 2026-10-04 用户 G39：Claude 不再协调，Codex 独立完成剩余条目，兼任规划和审核。以下 32 项完成条件里的 review 检查去掉 by=claude（R2-S1、R2-S2、R2-S3、R2-S4、R2-S5、R2-D1、R2-D2、R2-D3、R2-D4、R2-D5、R2-D6、R2-D7、R2-D8、R2-D9、R2-D10、R2-D11、R2-D12、R2-D13、R2-D14、R2-D15、R2-D16、R2-D17、R2-D18、R2-D19、R2-E1、R2-A5、R2-D20、R2-E2、R2-D21、R2-E3、R2-D22、R2-L5），改为认最近一次审核（Claude 已做的审核继续有效，之后由 Codex 自审，记录 --by codex）。交接文档 .ci-output/handoff/2026-10-04-claude-to-codex-handoff.md。status 计数不变（共 40 项）。
 
 ## 意外和发现
 
