@@ -20,7 +20,7 @@
 - R2-S2、R2-S3、R2-A2：Linux 产品路径资格（product-path-browser 不在普通 npm test 里），单独一批在 Hermes 上跑
 - R2-A1：上线前最终版本完整测试
 - R2-A4：每个提交前运行
-- R2-L5：模型网关迁到 Vercel AI Gateway（G34–G36），当前批次之后单独一批；文本模型只用 deepseek/deepseek-v4.1-flash，不用任何 OpenAI 模型，也不再用 GLM 作备用；嵌入模型照现有 Qwen3 Embedding 8B 在网关上的 alibaba/qwen3-embedding-8b；生产密钥需用户为部署单独授权
+- R2-L5：模型网关迁到 Vercel AI Gateway（G34–G36），当前批次之后单独一批；文本模型只用 deepseek/deepseek-v4.1-flash，不用任何 OpenAI 模型，也不再用 GLM 作备用；嵌入模型照现有 Qwen3 Embedding 8B 在网关上的 alibaba/qwen3-embedding-8b；生产密钥需用户为部署单独授权；路由按 G37/G38：order [runware, deepinfra, morph] 加 sort cost 兜底，不开 disallowPromptTraining，名单放产品配置，经 Pi 的 onPayload 加入请求
 - R2-L2：生产机上的环境检查，需要用户授权在云服务器上执行
 - R2-L3、R2-L4：用户决定；部署要用户授权
 
@@ -57,6 +57,7 @@
 - 2026-10-04 00:20 stop-08 固态盘对照满足用户 G32 的条件（固态盘三组三次全过，/data 每次有首例超时），写 ADR 0047 并改 AGENTS.md：检出和依赖放 Hermes 固态盘。当前批次不变；下一步迁移检出，再修 R2-D15 慢用例和 R2-D22，最后第 3 层。status：已验证 3、旧版本验证过 13、未完成 19、等你决定 2、不做 2。
 - 2026-10-04 10:50 stop-13 后重新规划：status 共 39 项，当前版本已验证 11 · 旧版本验证过 5 · 未完成 19 · 等你决定 2 · 不做 2。D19、D22、D15、D10 这批已提交，第 3 层 5196/5196、publicationFailures 为空；Claude 复审 D10、D16、E1（只是文档被 D15 提交改动）。下一批按 G29 上线前顺序取 S1、S4、D3，新开 Codex 会话。
 - 2026-10-04 加入 R2-L5：用户 G34–G36 决定改用 Vercel AI Gateway、排在上线前、文本模型只用 deepseek/deepseek-v4.1-flash。status：共 40 项（新增 1 项未完成）。ADR 0048、BL-20261004-002。
+- 2026-10-04 R2-L5 补充路由决定：用户 G37 选均衡路由、G38 不限制训练数据条款；写入 ADR 0048 和 BL-20261004-002。done_when 不变，status 计数不变（共 40 项）。
 
 ## 意外和发现
 

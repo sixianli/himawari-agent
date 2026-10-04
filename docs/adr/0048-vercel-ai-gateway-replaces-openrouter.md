@@ -16,6 +16,7 @@ date: "2026-10-04"
 - [背景](#context)
 - [决定](#decision)
   - [2026-10-04 补充决定：模型限制和排期](#decision-models)
+  - [2026-10-04 补充决定：服务商路由](#decision-routing)
 - [已验证的事实](#verified)
 - [比较过的方案](#options)
 - [后果](#consequences)
@@ -50,6 +51,17 @@ date: "2026-10-04"
 - 禁止使用 OpenAI 的模型。文本模型只能用 `deepseek/deepseek-v4.1-flash`（用户原话：“禁止使用oepnai的模型，文本模型只能使用deepseek/deepseek-v4.1-flash”）。所以产品的主模型是它，备用模型也不能换成别的文本模型；现有配置里作为备用的 GLM 要去掉。如果需要遇故障切换，只能在网关上给同一个模型换服务商，不能换模型。
 - 迁移排在上线前：当前这批第二轮修复完成后，单独开一批做迁移，列入上线清单。
 - 嵌入模型（长期记忆用）沿用现在的 Qwen3 Embedding 8B，在网关上的编号是 `alibaba/qwen3-embedding-8b`，向量维度不变。这是 Claude 按“不改行为”定的默认做法，不是 OpenAI 模型，也不是文本生成模型。
+
+<a id="decision-routing"></a>
+
+### 2026-10-04 补充决定：服务商路由
+
+用户要求“我希望vercel能进行合理路由，目的是达到性价比最高”。同一个模型在网关上有多家服务商（实际运行模型的公司），价格和速度差别很大。分析和实测数据见[迁移待办的路由方案分析](../backlog/BL-20261004-002-模-型-网-关-迁-移-到-vercel.md#routing-analysis)。用户在两个选项里作了选择：
+
+- 采用“均衡”路由：每次请求在 `providerOptions.gateway` 里先按 `order: ["runware", "deepinfra", "morph"]` 尝试，其余服务商按 `sort: "cost"`（网关估算的费用从低到高）兜底。按 2026-10-04 的价格，每轮约 0.0014 美元，800 token 约 4 秒生成完。
+- 不限制服务商的训练数据条款：不发送 `disallowPromptTraining`，DeepSeek 官方等服务商也可以作为兜底。
+- 服务商名单放在产品配置里，不写死在代码中；Himawari 通过 Pi 已有的 `onPayload` 钩子把 `order` 和 `sort` 加进请求，不改 Pi、不另写请求协议。预算准入按名单内最高单价估算，结算以响应里的 `usage.cost` 为准。
+- 速度和价格会变化：迁移那一批要用小规模工具调用测试核对首选几家的输出质量，上线后按实际用量复查名单。
 
 [返回导航](#contents)
 
