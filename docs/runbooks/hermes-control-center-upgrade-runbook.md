@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fe5c2e67a7fd592f5cb78e25374e35eeadca05490e03bd09f0701e00eaf99560"
+contract_sha256: "sha256:c76c7c6bdcc8e1288df462cc90f29aee203259d7d3fa2b7c1d960d727cd24fb1"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -107,6 +107,8 @@ date: "2026-09-11"
 - scripts/probe-protected-runtime.mjs
 - scripts/operations
 - scripts/ci/artifact-files.mjs
+- scripts/ci/artifact-archive.py
+- docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md
 - package-lock.json
 - packages/application/src/ports/capabilities.ts
 - packages/application/src/services/execution-worker-service.ts
@@ -236,6 +238,8 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 只读核对主机名、Linux/架构、`findmnt /data` 与磁盘可用空间；核对 `systemctl cat/status himawari.service`（受保护迁移后的系统级服务，运行账号必须为 `himawari`） 的真实单元、PID、安装前缀和工作目录。检查生产配置的 Owner/Agent/deployment 与现有 authority、数据库记录一致，记录活动 Run 和已发生/预留费用，禁止输出配置全文或密钥。确认配置、state、qualifications 均是规范路径且权限安全，旧发布目录保留且可回读。
 
+安装候选归档之前，按[归档解包与临时磁盘](install-start-stop-runbook.md#artifact-extraction-contract)核对匿名 tar 与解压 payload 所在盘的可用空间。r62 完整产物会临时多占 `328202240` 字节，约 `330 MB`，解包结束后自动释放；写出 payload 时两份数据同时存在，不能只按压缩归档大小估算。直接父目录缺失时，匿名暂存使用父链中最近的已有目录，必须核对该目录实际所在盘。[SOURCE: docs/runbooks/install-start-stop-runbook.md#artifact-extraction-contract]
+
 新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、开发依赖、临时探针和数据库放在 `/data`。用户授权 NVMe 迁移时，仅完整安装前缀中的程序、运行依赖和静态页面复制到 `/opt/himawari/releases/<版本>`；先核对根盘确为 NVMe、剩余空间至少 10 GiB 且复制后仍保留该余量。数据库、附件、日志、备份与构建缓存继续位于 `/data`。
 
 升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后数量不为 0 时停止升级并报告用户，不自动释放或删除记录。
@@ -261,6 +265,8 @@ PYTHON
 ## Procedure
 
 安装目录权限遵循[安装前提](install-start-stop-runbook.md#safety-and-preconditions)：本次新建的解压目的目录及其父目录、安装前缀目录链和新运行时目录固定为 `0755`，安装器内部暂存根仍为 `0700`；已有 prefix、lib、bin 只清除同组及其他用户写权限，保留原私有访问限制；文件字节和包内模式不变。[SOURCE: docs/runbooks/install-start-stop-runbook.md#safety-and-preconditions] 受保护迁移入口仍设置 umask `077` 并显式规范目录及文件模式，不能用修改产品检查器或放宽写权限替代安装修复。R2-D15 只核对该升级入口源码，不执行受保护升级；Hermes 回归结果不证明 Ubuntu 24.04 生产机的 AppArmor 前提成立。
+
+归档分支在一次完整 gzip 解压、tar 完整预检及全部 payload 内容检查后移动运行时，复用解包器已经设置的 `0755` 目录模式，省去重复目录规范步骤。源码复制分支继续规范新运行时目录。两个大小上限、混合错误顺序与测试侧独立回读覆盖见[归档解包与临时磁盘](install-start-stop-runbook.md#artifact-extraction-contract)及[安装权限验收证据](install-start-stop-runbook.md#installation-permission-evidence)。本轮 D15 没有执行受保护升级、生产状态迁移或部署；Hermes 结果不能代替 Mac、Ubuntu 24.04 生产机或其 AppArmor 前提的实际检查。[SOURCE: docs/runbooks/install-start-stop-runbook.md#artifact-extraction-contract] [SOURCE: docs/runbooks/install-start-stop-runbook.md#installation-permission-evidence]
 
 TE-11 的执行事件传输使用固定分页版本：请求和响应均为 `x-himawari-events-pagination: 1`，响应另带 `x-himawari-events-page`（more/complete）及非空页的 `x-himawari-events-next-cursor`。升级时 Agent 与 Worker 必须取自同一安装产物并成对切换；旧新混用会拒绝事件读取，不能保留旧 Worker 单独更新 Agent。详情见[执行事件有界分页设计](../execution/specs/2026-09-29-execution-event-pagination-design.md#协议) [SOURCE: docs/execution/specs/2026-09-29-execution-event-pagination-design.md#协议]。本变更无数据库迁移；单次正文上限、认证和期限保持原值。缺少分页标记或单事件超限时停止并保留诊断，先核对两端产物身份，不能调高上限或重放工具。
 

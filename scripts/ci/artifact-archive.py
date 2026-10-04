@@ -8,6 +8,10 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import tarfile
+import tempfile
+
+
+MAX_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024 + 256 * 1024 * 1024
 
 
 def safe_name(name):
@@ -76,35 +80,54 @@ def stream(archive):
         sys.stdout.buffer.flush()
 
 
-def make_directory(directory, exist_ok=False):
+def make_directory(directory, exist_ok=False, cache=None):
+    if exist_ok and cache is not None and directory in cache:
+        return
     try:
         directory.mkdir()
     except FileNotFoundError:
-        make_directory(directory.parent, exist_ok=True)
-        make_directory(directory, exist_ok=exist_ok)
+        make_directory(directory.parent, exist_ok=True, cache=cache)
+        return make_directory(directory, exist_ok=exist_ok, cache=cache)
     except FileExistsError:
         if not exist_ok or not directory.is_dir():
             raise
     else:
         os.chmod(directory, 0o755)
+    if cache is not None:
+        cache.add(directory)
 
 
 def extract(archive, destination):
     if destination.exists():
         raise ValueError("ARTIFACT_EXTRACTION_TARGET_EXISTS")
-    with tarfile.open(archive, "r:gz") as tar:
-        members = preflight(tar)
-        make_directory(destination)
-        try:
-            for member in members:
-                target = destination.joinpath(*safe_name(member.name))
-                make_directory(target.parent, exist_ok=True)
-                with tar.extractfile(member) as content, target.open("xb") as output:
-                    shutil.copyfileobj(content, output)
-                os.chmod(target, member.mode)
-        except BaseException:
-            shutil.rmtree(destination)
-            raise
+    temporary_parent = destination.parent
+    while not temporary_parent.is_dir():
+        parent = temporary_parent.parent
+        if parent == temporary_parent:
+            raise FileNotFoundError(temporary_parent)
+        temporary_parent = parent
+    with gzip.open(archive, "rb") as zipped, tempfile.TemporaryFile(dir=temporary_parent) as unpacked:
+        total = 0
+        while chunk := zipped.read(min(1024 * 1024, MAX_EXTRACT_BYTES - total + 1)):
+            total += len(chunk)
+            if total > MAX_EXTRACT_BYTES:
+                raise ValueError("ARTIFACT_SIZE_LIMIT")
+            unpacked.write(chunk)
+        unpacked.seek(0)
+        with tarfile.open(fileobj=unpacked, mode="r:") as tar:
+            members = preflight(tar)
+            directories = set()
+            make_directory(destination, cache=directories)
+            try:
+                for member in members:
+                    target = destination.joinpath(*safe_name(member.name))
+                    make_directory(target.parent, exist_ok=True, cache=directories)
+                    with tar.extractfile(member) as content, target.open("xb") as output:
+                        shutil.copyfileobj(content, output)
+                    os.chmod(target, member.mode)
+            except BaseException:
+                shutil.rmtree(destination)
+                raise
 
 
 def main():

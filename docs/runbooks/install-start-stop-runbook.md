@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d0a089301ef9566aca9a1a43b4d9741970442a21a9f3141c502e0312001d454d"
+contract_sha256: "sha256:657b908d7aa7d98341eefdde19a6bb33f761f856853e83eaade08811256fbb1a"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -16,10 +16,12 @@ date: "2026-08-27"
 
 - [安装和启动前提](#safety-and-preconditions)
 - [Ubuntu 24.04 的 bwrap 前提](#ubuntu-2404-bwrap)
+- [归档解包与临时磁盘](#artifact-extraction-contract)
 - [目标现场只读检查](#live-state-preflight)
 - [安装与启停步骤](#procedure)
 - [结果验证](#verification)
 - [证据保存](#evidence)
+- [安装权限验收证据](#installation-permission-evidence)
 - [回退](#rollback)
 - [停止条件](#stop-conditions)
 
@@ -171,6 +173,7 @@ date: "2026-08-27"
 - scripts/ci/redact-text.mjs
 - scripts/ci/artifact-files.mjs
 - scripts/ci/artifact-archive.py
+- docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md
 - scripts/ci/contracts.mjs
 - scripts/ci/context.mjs
 - scripts/ci/check-policy.mjs
@@ -333,7 +336,7 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 - 目标必须是本机明确的临时或已批准 state root、runtime 前缀和配置路径；不得使用工作目录推断生产路径，不得把 `/data/hermes` 或其他共享 Hermes Agent state root 当作 Himawari 目标。
 - 安装前记录 Git HEAD/worktree、package-lock digest、Node/npm、目标前缀和 state root、磁盘可用空间及现有进程。目标前缀必须由本次运行创建，或已取得清理其 `lib/himawari-agent` 的明确授权。
-- 归档解压与安装显式将本次新建的解压目的目录及其父目录、安装前缀目录链和新运行时目录设为 `0755`，不依赖安装者的 umask；安装器内部暂存根仍为 `0700`。普通文件保持原始字节和包内模式。已有 prefix、lib、bin 只去掉同组和其他用户的写权限：`0700` 保持不变，`0770` 变成 `0750`；其他已有外层目录不变。安装后用产品检查器核对运行时文件摘要，并独立回读权限。R2-D15 的小型源码样本只证明 `--source` 复制入口的权限规则；三个完整归档安装场景提供完整产品文件集的检查证据，小样本不证明约 33,000 个文件的完整源码安装能在 30 秒内完成。
+- 归档解压与安装显式将本次新建的解压目的目录及其父目录、安装前缀目录链和新运行时目录设为 `0755`，不依赖安装者的 umask；安装器内部暂存根仍为 `0700`。普通文件保持原始字节和包内模式。已有 prefix、lib、bin 只去掉同组和其他用户的写权限：`0700` 保持不变，`0770` 变成 `0750`；其他已有外层目录不变。归档安装 CLI 对全部 payload 文件读取全部字节，核对原始清单的路径、字节数、模式和 SHA-256。安装后另用产品 checker 和独立权限回读核对结果；三条归档测试的独立内容回读范围见[安装权限验收证据](#installation-permission-evidence)。R2-D15 的小型源码样本只证明 `--source` 复制入口的权限规则，不证明约 33,000 个文件的完整源码安装能在默认 30 秒内完成。
 - 安装器先规范化安装路径，再逐级创建目录，避免含 `..` 的前缀放宽已有私有父目录。源码复制入口只接受普通目录作为源根；符号链接源根在替换已有运行时之前以 `ARTIFACT_LINK_FORBIDDEN` 拒绝，不修改原始源码目录。
 - 配置必须是 strict production profile，authority.json 的 deployment/Owner/Agent/status/epoch/fence 必须与 SQLite 一致；Worker token 只能从 `0600` 文件读取，secret source 不得进入 argv、日志或证据。
 - 启用真实 Worker 能力时，配置必须引用 Owner 独占、非符号链接、大小有界且 SHA-256 匹配的不可变能力部署快照。快照中的 Manifest、平台资格和 runtime binding 必须与当前 build、平台及 Agent Service 的 active Capability Registry 一致；空、缺失、被改写或不合格的快照必须使 Worker 保持 not ready。
@@ -505,6 +508,20 @@ Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArm
 
 [↑ 返回阅读导航](#阅读导航)
 
+<a id="artifact-extraction-contract"></a>
+
+## 归档解包与临时磁盘
+
+安装前分别检查压缩归档、解压目的目录和匿名暂存文件所在文件系统的可用空间。解包器在目的目录的父链中只读查找最近的已有目录，再在该目录创建权限为 `0600` 的匿名临时文件。直接父目录缺失时不会为暂存提前创建目录，须按最近已有祖先当前所在盘核对暂存与目标写出的空间，不能只检查压缩归档所在盘。
+
+匿名文件临时保存一份完整的未压缩 tar。r62 完整产品归档实测为 `328202240` 字节，约 `330 MB`；这份空间是安装 payload 之外的额外占用，安装目录的上级目录所在盘必须有相应余量。写出 payload 时匿名 tar 仍存在，容量规划必须同时计入未压缩 tar、解压后的 payload、已有压缩归档和其他安装数据。匿名文件在解包上下文正常返回或异常退出时自动关闭并释放。该样本大小不是所有未来归档的上限。
+
+原始解压 tar 的正式上限为 `2 GiB + 256 MiB`，即 `2415919104` 字节，包括 tar 头、PAX 扩展及填充；普通文件逻辑内容总量仍受原有 `2 GiB` 上限约束。两者不是同一限制，也不是整个安装的磁盘占用上限。Hermes 测试的根盘 `10 GiB` 守卫仍须执行，不能代替真实部署目标的容量检查。
+
+解包器先完整读取 gzip，再对 tar 做完整预检，最后才创建解压目的目录及其缺失父目录。gzip 损坏、截断或原始大小超限先于目标创建失败；输入同时有 gzip 或大小错误与 tar 结构错误时，先报告前者。原有 tar 安全检查不放宽。独立 `extract` 的创建边界不表示安装 CLI 从未创建 prefix 或内部暂存根，CLI 会先准备安装目录。机制与错误选择见[归档解包与文件清单](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory)。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory]
+
+[↑ 返回阅读导航](#阅读导航)
+
 ## Live-State Preflight
 
 核对本次安装包含[预热准备线程](#pi-preparation-prewarm)的 pool 模块、准备入口、线程入口及 runtime-pi 导出。正常停止必须等待该池拥有的线程退出；不能仅以准备调用已返回或 state-root lock 已释放代替服务进程停止检查。
@@ -519,6 +536,8 @@ npm --version
 df -h <target-filesystem>
 ps -axo pid,command
 ~~~
+
+归档安装还须按[归档解包与临时磁盘](#artifact-extraction-contract)确定匿名 tar 实际暂存的最近已有祖先目录。分别记录该目录、解压目标和压缩归档所在盘的可用空间，计入暂存 tar 与 payload 同时存在的峰值。
 
 确认构建输入来自当前 checkout 和 committed `package-lock.json`，目标 prefix/state root 是绝对规范路径，目录 owner/mode 安全，旧的 `execution.sock` 不存在或由同一受控进程持有，目标 deployment 没有其他 active service。启动前再运行：
 
@@ -645,6 +664,20 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 
 只记录稳定错误码、计数、版本和引用；不得记录 secret value、Worker token、环境转储、Cookie、private key、配置全文、Payload plaintext、数据库行或共享 Hermes Agent 数据。
 
+<a id="installation-permission-evidence"></a>
+
+### 安装权限验收证据
+
+D15 的三条完整归档用例使用同一正式构建产物和匹配 Context。每条都真实运行 `--artifact` 安装 CLI；CLI 继续检查全部 payload 文件的全部字节。每条用例独立回读安装后全部目录及文件的路径和模式。`0002/new` 另调用已安装产品的 checker，重算安装后全部文件的内容摘要。`0077/new` 与 `0002/0700` 调用已安装产品的 `fingerprint` 模式，检查类型、权限、属主和文件身份，并按目录深度、顶层分组与文件模式选取代表文件，回读字节数、SHA-256 和模式。
+
+`fingerprint` 是文件元数据身份摘要，不读取每个文件的全部内容。完整 `digest` 模式还逐文件使用 `O_NOFOLLOW` 打开，读取全部内容，并在读完后重新核对文件身份；`O_NOFOLLOW` 用来拒绝打开时已变成符号链接的文件。两条抽样用例只按上述范围陈述独立内容回读覆盖。真实安装 CLI 的全部内容检查不能写成每条用例又独立完成了一次全部内容回读。
+
+原始归档清单读取、期望排序和抽样选择在文件级准备，发生在用例执行之前；记录收集与准备成本，不能把它当作消失的成本。默认关闭的 `HIMAWARI_TEST_INSTALLATION_REPORT` 记录真实 `spawnSync` 前后的 CLI 时间及退出元数据。日志追加发生在 CLI 计时区间之外，仍计入整个用例。CLI 时间只报告，退出码 `0` 不能代替完整用例断言通过。
+
+本轮性能与验收规则见[D15 的前后耗时与后续验收](../backlog/BL-20261001-004-安-装-结-果-继-承-安-装.md#d15-timing-evidence)。正式第 3 层的并发运行结果单独记录；局部文件三次通过不证明完整批次、Mac 或生产主机已经通过。[SOURCE: docs/backlog/BL-20261001-004-安-装-结-果-继-承-安-装.md#d15-timing-evidence]
+
+[↑ 返回阅读导航](#阅读导航)
+
 ## Rollback
 
 - 构建或安装在服务启动前失败时，只移除本次新建 prefix 和 `dist` 产物；不得触碰既有 state root、其他 prefix 或共享主机服务。
@@ -675,6 +708,7 @@ Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最�
 
 | 症状 | 安全诊断 | 停止或有界修复 |
 | --- | --- | --- |
+| 解包报告 `ARTIFACT_SIZE_LIMIT`、gzip 损坏/截断或暂存写入失败 | 核对原始解压 tar 上限、普通文件逻辑内容上限、归档身份与匿名暂存所在盘余量；保留真实 stderr | 停止并保留证据，不提高上限、不跳过完整预检、不改用外部 tar 继续安装 |
 | `ADMIN_ARGUMENT_INVALID` | 只读核对入口参数、绝对 config 路径和命令版本 | 停止并修正参数；不把错误输出当作服务 ready |
 | `STATE_ROOT_PATH_UNSAFE` 或权限错误 | 回读规范绝对路径、owner/mode、authority file 和 runtime 目录 | 停止；人工修复已授权目录权限后重新 preflight，不递归清理未知目录 |
 | `SQLITE_STATE_ROOT_LOCKED` | 只读检查 lock owner、PID、token、socket 和进程存活 | 保留活锁；确认 owner 已死亡且符合回收规则后再从完整 preflight 重试 |

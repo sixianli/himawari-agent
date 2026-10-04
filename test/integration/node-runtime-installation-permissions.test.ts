@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFile,
   chmod,
   lstat,
   mkdir,
@@ -13,17 +14,18 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { digestSandboxRuntime as digestSourceRuntime } from "../../packages/platform-node/src/capabilities/sandbox-host-verifier.js";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-let expectedRuntimeFiles: { path: string; sha256: string; bytes: number; mode: number }[];
+type RuntimeFile = { path: string; sha256: string; bytes: number; mode: number };
 const [{ assertArtifactRecord }, artifactFiles] = await Promise.all([
   import(pathToFileURL(path.join(repositoryRoot, "scripts/ci/verify-artifact.mjs")).href),
   import(pathToFileURL(path.join(repositoryRoot, "scripts/ci/artifact-files.mjs")).href),
 ]);
-const contentDigest: (files: typeof expectedRuntimeFiles) => string = artifactFiles.contentDigest;
+const contentDigest: (files: RuntimeFile[]) => string = artifactFiles.contentDigest;
 
 async function installationModes(root: string) {
   const entries: { path: string; directory: boolean; mode: number }[] = [];
@@ -76,7 +78,7 @@ async function createSourceFixture(source: string) {
   }));
 }
 
-beforeAll(async () => {
+const expectedRuntimeFiles: RuntimeFile[] = await (async () => {
   if (!process.env["HIMAWARI_TEST_ARTIFACT"] || !process.env["HIMAWARI_TEST_CONTEXT"])
     throw new Error("INSTALL_PERMISSIONS_TEST_REQUIRES_PREBUILT_ARTIFACT");
   const startedAt = Date.now();
@@ -95,7 +97,7 @@ beforeAll(async () => {
   expect(manifest.context).toEqual(
     JSON.parse(await readFile(process.env["HIMAWARI_TEST_CONTEXT"], "utf8")),
   );
-  expectedRuntimeFiles = manifest.files
+  const files: RuntimeFile[] = manifest.files
     .filter((file: { path: string }) => file.path.startsWith("runtime/"))
     .map((file: { path: string; sha256: string; bytes: number; mode: number }) => ({
       ...file,
@@ -107,11 +109,77 @@ beforeAll(async () => {
       path.join(diagnostics, "installation-original-artifact.json"),
       JSON.stringify({
         elapsedMs: Date.now() - startedAt,
-        runtimeFiles: expectedRuntimeFiles.length,
+        runtimeFiles: files.length,
       }),
       { mode: 0o600 },
     );
-});
+  return files;
+})();
+
+const expectedRuntimeInstallationFiles = expectedRuntimeFiles
+  .map((file) => ({ ...file, path: `lib/himawari-agent/${file.path}` }))
+  .sort((a, b) => a.path.localeCompare(b.path));
+const expectedArchiveModes = [
+  ...["himawari", "himawari-agent-service", "himawari-execution-worker"].map((command) => ({
+    path: `bin/${command}`,
+    mode: 0o755,
+  })),
+  ...expectedRuntimeInstallationFiles.map(({ path, mode }) => ({ path, mode })),
+].sort((a, b) => a.path.localeCompare(b.path));
+const expectedArchiveSamples = (() => {
+  const layers = new Set<string>();
+  const samples = new Map<string, RuntimeFile>();
+  for (const file of [...expectedRuntimeFiles].sort((a, b) => a.path.localeCompare(b.path))) {
+    const parts = file.path.split("/");
+    for (const layer of [
+      `depth:${parts.length - 1}`,
+      `top:${parts.length > 1 ? parts[0] : "."}`,
+      `mode:${file.mode}`,
+    ]) {
+      if (layers.has(layer)) continue;
+      layers.add(layer);
+      samples.set(file.path, file);
+    }
+  }
+  return [...samples.values()];
+})();
+
+async function fingerprintInstalledRuntime(prefix: string, runtime: string) {
+  const worker = new Worker(
+    pathToFileURL(
+      path.join(
+        runtime,
+        "node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-runtime-digest-worker.js",
+      ),
+    ),
+    { workerData: { root: prefix, mode: "fingerprint" } },
+  );
+  return new Promise<{ fingerprint: string }>((resolve, reject) => {
+    let received: unknown;
+    worker.once("message", (value: unknown) => {
+      received = value;
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (code !== 0) {
+        reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
+        return;
+      }
+      if (
+        received === null ||
+        typeof received !== "object" ||
+        !("fingerprint" in received) ||
+        typeof received.fingerprint !== "string" ||
+        !/^[a-f0-9]{64}$/.test(received.fingerprint) ||
+        Object.keys(received).length !== 1
+      ) {
+        reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
+        return;
+      }
+      resolve(received as { fingerprint: string });
+    });
+  });
+}
 
 describe("runtime permissions through full artifacts and small source fixtures", () => {
   it("[R2-D15] rejects linked source roots without changing source directories or the existing runtime", async () => {
@@ -209,6 +277,8 @@ describe("runtime permissions through full artifacts and small source fixtures",
                 process.env["HIMAWARI_TEST_CONTEXT"] as string,
               ]
             : ["--source", source];
+        const installationReport = process.env["HIMAWARI_TEST_INSTALLATION_REPORT"];
+        const installationStartedAt = installationReport ? performance.now() : undefined;
         const installed = spawnSync(
           "/bin/sh",
           [
@@ -227,6 +297,24 @@ describe("runtime permissions through full artifacts and small source fixtures",
             env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
           },
         );
+        const installationElapsedMs =
+          installationStartedAt === undefined
+            ? undefined
+            : performance.now() - installationStartedAt;
+        if (installationReport)
+          await appendFile(
+            installationReport,
+            `${JSON.stringify({
+              kind,
+              mask,
+              prefixMode,
+              elapsedMs: installationElapsedMs,
+              status: installed.status,
+              signal: installed.signal,
+              error: installed.error?.message,
+            })}\n`,
+            { mode: 0o600 },
+          );
         expect(installed.status, installed.stderr).toBe(0);
         const modes = await installationModes(prefix);
         const diagnostics = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
@@ -250,10 +338,16 @@ describe("runtime permissions through full artifacts and small source fixtures",
             { mode: 0o600 },
           );
         const runtime = path.join(prefix, "lib/himawari-agent");
-        const expectedInstallationFiles = originalFiles.map((file) => ({
-          ...file,
-          path: `lib/himawari-agent/${file.path}`,
-        }));
+        const fullInstallationDigest =
+          kind === "source" || (mask === "0002" && prefixMode === "new");
+        const expectedInstallationFiles = fullInstallationDigest
+          ? kind === "artifact"
+            ? [...expectedRuntimeInstallationFiles]
+            : originalFiles.map((file) => ({
+                ...file,
+                path: `lib/himawari-agent/${file.path}`,
+              }))
+          : [];
         for (const command of ["himawari", "himawari-agent-service", "himawari-execution-worker"]) {
           const relative = `bin/${command}`;
           const bytes = await readFile(path.join(prefix, relative));
@@ -265,23 +359,41 @@ describe("runtime permissions through full artifacts and small source fixtures",
           });
         }
         expectedInstallationFiles.sort((a, b) => a.path.localeCompare(b.path));
-        const digestSandboxRuntime =
-          kind === "source"
-            ? digestSourceRuntime
-            : (
-                await import(
-                  pathToFileURL(
-                    path.join(
-                      runtime,
-                      "node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-host-verifier.js",
-                    ),
-                  ).href
-                )
-              ).digestSandboxRuntime;
-        await expect(
-          digestSandboxRuntime(prefix),
-          JSON.stringify(modes.filter((entry) => (entry.mode & 0o022) !== 0)),
-        ).resolves.toBe(contentDigest(expectedInstallationFiles));
+        if (!fullInstallationDigest) {
+          await expect(fingerprintInstalledRuntime(prefix, runtime)).resolves.toEqual({
+            fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+          });
+          for (const file of expectedArchiveSamples) {
+            const filename = path.join(runtime, file.path);
+            const bytes = await readFile(filename);
+            expect(
+              {
+                sha256: createHash("sha256").update(bytes).digest("hex"),
+                bytes: bytes.length,
+                mode: (await lstat(filename)).mode & 0o777,
+              },
+              file.path,
+            ).toEqual({ sha256: file.sha256, bytes: file.bytes, mode: file.mode });
+          }
+        } else {
+          const digestSandboxRuntime =
+            kind === "source"
+              ? digestSourceRuntime
+              : (
+                  await import(
+                    pathToFileURL(
+                      path.join(
+                        runtime,
+                        "node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-host-verifier.js",
+                      ),
+                    ).href
+                  )
+                ).digestSandboxRuntime;
+          await expect(
+            digestSandboxRuntime(prefix),
+            JSON.stringify(modes.filter((entry) => (entry.mode & 0o022) !== 0)),
+          ).resolves.toBe(contentDigest(expectedInstallationFiles));
+        }
         expect(
           modes
             .filter((entry) => entry.directory)
@@ -315,7 +427,11 @@ describe("runtime permissions through full artifacts and small source fixtures",
             .filter((entry) => !entry.directory)
             .map(({ path, mode }) => ({ path, mode }))
             .sort((a, b) => a.path.localeCompare(b.path)),
-        ).toEqual(expectedInstallationFiles.map(({ path, mode }) => ({ path, mode })));
+        ).toEqual(
+          kind === "artifact"
+            ? expectedArchiveModes
+            : expectedInstallationFiles.map(({ path, mode }) => ({ path, mode })),
+        );
         if (originalSourceModes)
           expect(await installationModes(source)).toEqual(originalSourceModes);
       } finally {

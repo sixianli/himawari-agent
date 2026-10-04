@@ -95,8 +95,8 @@ export async function installNodeRuntime({
       await cp(source, libDirectory, { recursive: true });
       if (contentDigest(await collectArtifactFiles(libDirectory)) !== contentDigest(sourceFiles))
         throw new Error("INSTALL_CONTENT_CHANGED");
+      await normalizeRuntimeDirectories(libDirectory);
     }
-    await normalizeRuntimeDirectories(libDirectory);
     await ensureInstallationDirectory(binDirectory);
     const entries = {
       himawari: "himawari",
