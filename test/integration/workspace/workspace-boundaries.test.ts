@@ -116,7 +116,7 @@ describe("committed manifest and lock constraints", () => {
   });
 });
 
-it("limits Agent imports to risk-reducing sandbox control", async () => {
+it("[R2-S4] limits Agent imports to risk-reducing sandbox control", async () => {
   for (const specifier of [
     "@himawari-agent/runtime-sandbox",
     "@himawari-agent/runtime-sandbox/src/job-host.ts",
@@ -135,6 +135,7 @@ it("limits Agent imports to risk-reducing sandbox control", async () => {
     "queryJobHostControl",
     "readJobHostFinalEvidence",
     "readJobHostStartEvidence",
+    "readLinuxHostGroup",
     "readLinuxNamespaceState",
     "readMachineBootId",
     "readProcessStartToken",

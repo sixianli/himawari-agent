@@ -25,7 +25,7 @@ function replace<T>(input: T, field: string, value: unknown): T {
 }
 
 describe("SQLite sandbox request boundaries", () => {
-  it("keeps bounded reads scoped and rejects malformed locators before touching a journal", async () => {
+  it("[R2-D3] keeps bounded reads scoped and rejects malformed locators before touching a journal", async () => {
     const f = await openSandboxJournal();
     try {
       const execute = (operation: string, input: unknown) =>
@@ -64,6 +64,7 @@ describe("SQLite sandbox request boundaries", () => {
           "Invalid Run inventory locator",
         );
       expect(execute("readRunInventory", { runId: "missing" })).toEqual({
+        sandboxResourcesAbsent: false,
         admissions: [],
         queue: [],
         legacyResourcesPending: false,

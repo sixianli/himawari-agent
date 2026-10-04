@@ -98,6 +98,8 @@
 
 - 2026-10-04 R2-S4：新增真实 Linux 测试最初使用 it.runIf，原 CI 策略明确禁止；该次 check 在 CI 策略失败，其余子检查通过。改为正常注册并断言 Linux 前置条件，保留原 30 秒 integration 时限、5000 毫秒清理期限与所有退出断言；同一回归、check、unit 和相关 integration 后续均按保留报告计数。
 
+- 2026-10-04 R2-S1/S4/D3 第3层（55564a2）五项目完整运行：5290 条中 5286 通过、4 失败，均为既有精确契约测试未跟进批准的新增字段或只读导出：sandbox-execution-preparation 两条、sqlite-sandbox-request-boundaries 一条缺 sandboxResourcesAbsent=false；workspace-boundaries 白名单缺 readLinuxHostGroup。仅补齐三份测试的预期并加条目标签，保持精确相等、导入拒绝和原时限；生产源码未变。保留失败报告，先跑同四条和整个 integration 项目、第1层，再提交并在最终提交重跑第3层和七个 Linux 产品场景。
+
 ## 决定
 
 - 2026-10-02 D18、D19 不在当前批次修；当前批次只完成 20 文件运行和第 3 层。

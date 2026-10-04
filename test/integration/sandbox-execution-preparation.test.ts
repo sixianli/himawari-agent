@@ -660,7 +660,7 @@ describe("atomic execution reservation and runtime binding", () => {
       await f.close();
     }
   });
-  it("reads one owner-scoped Run inventory without consuming queue or admission state", async () => {
+  it("[R2-D3] reads one owner-scoped Run inventory without consuming queue or admission state", async () => {
     const f = await openSandboxJournal();
     try {
       const request = input(f);
@@ -672,6 +672,7 @@ describe("atomic execution reservation and runtime binding", () => {
         );
       const before = read();
       expect(before).toMatchObject({
+        sandboxResourcesAbsent: false,
         admissions: [],
         queue: [{ status: "queued", plan: request.plan }],
       });
@@ -679,11 +680,13 @@ describe("atomic execution reservation and runtime binding", () => {
       expect(call(f, "readAdmission", request.plan.identity)).toBeUndefined();
       call(f, "reserve", request);
       expect(read()).toMatchObject({
+        sandboxResourcesAbsent: false,
         admissions: [{ phase: "reserved" }],
         queue: [{ status: "admitted" }],
       });
       call(f, "bindAndStart", binding(f));
       expect(read()).toMatchObject({
+        sandboxResourcesAbsent: false,
         admissions: [{ phase: "bound" }],
         queue: [{ status: "admitted" }],
       });
@@ -696,7 +699,13 @@ describe("atomic execution reservation and runtime binding", () => {
             input: { runId: request.plan.identity.runId },
           },
         ),
-      ).toEqual({ admissions: [], queue: [], legacyResourcesPending: false, deletedPlans: [] });
+      ).toEqual({
+        sandboxResourcesAbsent: false,
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: false,
+        deletedPlans: [],
+      });
       f.database.close();
       const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
       try {
@@ -704,6 +713,7 @@ describe("atomic execution reservation and runtime binding", () => {
           .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
           .readRunInventory({ runId: request.plan.identity.runId });
         expect(snapshot).toMatchObject({
+          sandboxResourcesAbsent: false,
           admissions: [{ phase: "bound" }],
           queue: [{ status: "admitted" }],
         });
@@ -715,17 +725,19 @@ describe("atomic execution reservation and runtime binding", () => {
     }
   });
 
-  it("does not hide an older sandbox obligation behind an empty v2 inventory", async () => {
+  it("[R2-D3] does not hide an older sandbox obligation behind an empty v2 inventory", async () => {
     const f = await openSandboxJournal();
     try {
       f.prepare();
       expect(call(f, "readRunInventory", { runId: f.plan.identity.runId })).toEqual({
+        sandboxResourcesAbsent: false,
         admissions: [],
         queue: [],
         legacyResourcesPending: true,
         deletedPlans: [],
       });
       expect(call(f, "readRunInventory", { runId: "other-run" })).toEqual({
+        sandboxResourcesAbsent: false,
         admissions: [],
         queue: [],
         legacyResourcesPending: false,
