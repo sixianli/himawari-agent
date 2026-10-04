@@ -31,6 +31,10 @@ async function readLinuxProcessStat(pid: number) {
   };
 }
 
+export async function linuxProcessIdentityPresent(identity: { pid: number; starttime: string }) {
+  return (await readLinuxProcessStat(identity.pid))?.starttime === identity.starttime;
+}
+
 export async function readLinuxHostProcessGroup(host: ProductPathJobHostStart) {
   if (process.platform !== "linux" || !host.processStartToken)
     throw new Error("PRODUCT_PATH_LINUX_HOST_IDENTITY_MISSING");
@@ -87,5 +91,88 @@ async function readLinuxProcess(pid: number) {
       before.processGroupId === after.processGroupId &&
       before.sessionId === after.sessionId,
     rawStatAfter: after.rawStat,
+  };
+}
+
+export async function readLinuxJobProcesses(host: ProductPathJobHostStart) {
+  if (process.platform !== "linux" || !host.linuxNamespace || !host.processStartToken)
+    throw new Error("PRODUCT_PATH_LINUX_HOST_IDENTITY_MISSING");
+  const namespace = host.linuxNamespace;
+  const names = (await readdir("/proc")).filter((name) => /^\d+$/.test(name));
+  if (names.length > 16384) throw new Error("PRODUCT_PATH_PROCESS_SCAN_CAPACITY");
+  const rows: Array<NonNullable<Awaited<ReturnType<typeof readLinuxProcess>>>> = [];
+  for (let offset = 0; offset < names.length; offset += 64) {
+    const batch = await Promise.all(
+      names.slice(offset, offset + 64).map((name) => readLinuxProcess(Number(name))),
+    );
+    rows.push(...batch.filter((row): row is NonNullable<typeof row> => row !== null));
+  }
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const hostRow = byPid.get(host.processId);
+  const recordedHostPresent =
+    hostRow?.stable === true && hostRow.starttime === host.processStartToken;
+  const ancestorChain = (row: (typeof rows)[number]) => {
+    const seen = new Set<number>();
+    const chain: (typeof rows)[number][] = [];
+    let current: (typeof rows)[number] | undefined = row;
+    while (current?.stable && !seen.has(current.pid)) {
+      chain.push(current);
+      if (current.pid === host.processId) return recordedHostPresent ? chain : null;
+      seen.add(current.pid);
+      current = byPid.get(current.parentPid);
+    }
+    return null;
+  };
+  const relevant = rows.filter(
+    (row) => ancestorChain(row) !== null || row.pidNamespace === namespace.namespaceId,
+  );
+  const processes = await Promise.all(
+    relevant.map(async (row) => {
+      const rawArgv = await readFile(`/proc/${row.pid}/cmdline`).catch((error) => {
+        if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null;
+        throw error;
+      });
+      const chain = ancestorChain(row);
+      const chainChecks = await Promise.all(
+        (chain ?? []).map(async (ancestor) => {
+          const current = await readLinuxProcessStat(ancestor.pid);
+          return (
+            current?.starttime === ancestor.starttime && current.parentPid === ancestor.parentPid
+          );
+        }),
+      );
+      const current = await readLinuxProcessStat(row.pid);
+      return {
+        ...row,
+        argv:
+          rawArgv === null
+            ? null
+            : rawArgv
+                .toString()
+                .split("\0")
+                .filter((argument, index, values) => index < values.length - 1 || argument !== ""),
+        stable: row.stable && current?.starttime === row.starttime,
+        descendantOfRecordedHost:
+          chain !== null && chainChecks.every(Boolean) && row.pid !== host.processId,
+        ancestorIdentities: chain?.map(({ pid, starttime }) => ({ pid, starttime })) ?? [],
+      };
+    }),
+  );
+  const namespaceInitStat = await readLinuxProcessStat(namespace.initPid);
+  return {
+    observedAt: new Date().toISOString(),
+    recordedHost: host,
+    recordedHostPresent,
+    processes,
+    unreadableNamespaces: rows
+      .filter((row) => row.namespaceReadError !== null)
+      .map(({ pid, starttime, namespaceReadError }) => ({
+        pid,
+        starttime,
+        error: namespaceReadError,
+      })),
+    namespaceMembers: processes.filter((row) => row.pidNamespace === namespace.namespaceId),
+    namespaceInitStat,
+    namespaceInitIdentityPresent: namespaceInitStat?.starttime === namespace.initStartTicks,
   };
 }

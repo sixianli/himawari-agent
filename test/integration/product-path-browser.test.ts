@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, readdir, readFile, statfs, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
+import { readLinuxNamespaceState } from "@himawari-agent/runtime-sandbox/control";
 import {
   type Browser,
   type BrowserContext,
@@ -17,10 +18,11 @@ import {
   publicHost,
   repositoryRoot,
 } from "../fixtures/product-path-harness.ts";
-
 import {
-  type ProductPathJobHostStart,
+  linuxProcessIdentityPresent,
   readLinuxHostProcessGroup,
+  type ProductPathJobHostStart,
+  readLinuxJobProcesses,
 } from "../fixtures/product-path-processes.ts";
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
@@ -912,7 +914,7 @@ productDescribe(
       });
     }, 1_800_000);
 
-    it("stops a running tool, releases only with proof, and never revives the cancelled run", async () => {
+    it("[R2-S1] stops a running tool, releases only with proof, and never revives the cancelled run", async () => {
       await scenario("13-stop-running", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -945,13 +947,63 @@ productDescribe(
             .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
             .filter((match) => match && Number(match[2]) === host.taskProcessGroup.processGroupId)
             .map((match) => ({ pid: Number(match?.[1]), command: match?.[3] ?? "" }));
+        let linuxTask: { pid: number; starttime: string } | undefined;
+        let linuxBefore: Awaited<ReturnType<typeof readLinuxJobProcesses>> | undefined;
         await uiExpect
-          .poll(() => taskProcesses().some(({ command }) => command === "/bin/sleep 120"), {
-            timeout: 60_000,
-          })
+          .poll(
+            async () => {
+              if (process.platform === "linux") {
+                const snapshot = await readLinuxJobProcesses(host);
+                await appendFile(
+                  path.join(outputDirectory, "13-stop-running-processes.jsonl"),
+                  `${JSON.stringify(snapshot)}\n`,
+                );
+                const tasks = snapshot.processes.filter(
+                  (row) =>
+                    row.stable &&
+                    row.descendantOfRecordedHost &&
+                    row.pidNamespace === host.linuxNamespace?.namespaceId &&
+                    row.argv?.length === 2 &&
+                    row.argv[0] === "/bin/sleep" &&
+                    row.argv[1] === "120",
+                );
+                const task = tasks[0];
+                if (tasks.length !== 1 || !task) return false;
+                linuxTask = { pid: task.pid, starttime: task.starttime };
+                linuxBefore = snapshot;
+                return true;
+              }
+              return taskProcesses().some(({ command }) => command === "/bin/sleep 120");
+            },
+            { timeout: 60_000 },
+          )
           .toBe(true);
-        const shellPid = taskProcesses().find(({ command }) => command === "/bin/sleep 120")?.pid;
+        const shellPid =
+          process.platform === "linux"
+            ? linuxTask?.pid
+            : taskProcesses().find(({ command }) => command === "/bin/sleep 120")?.pid;
         if (!shellPid) throw new Error("STOP_TEST_TASK_MISSING");
+        if (process.platform === "linux") {
+          if (!linuxTask || !linuxBefore || !host.linuxNamespace)
+            throw new Error("STOP_TEST_LINUX_IDENTITY_MISSING");
+          expect(linuxBefore.recordedHostPresent).toBe(true);
+          expect(linuxBefore.namespaceInitIdentityPresent).toBe(true);
+          const init = linuxBefore.namespaceMembers.find(
+            (row) => row.pid === host.linuxNamespace?.initPid,
+          );
+          expect(init).toMatchObject({
+            stable: true,
+            descendantOfRecordedHost: true,
+            starttime: host.linuxNamespace.initStartTicks,
+            pidNamespace: host.linuxNamespace.namespaceId,
+          });
+          expect(init?.namespacePids?.at(-1)).toBe(1);
+          expect(await linuxProcessIdentityPresent(linuxTask)).toBe(true);
+          await writeFile(
+            path.join(outputDirectory, "13-stop-running-processes-before.json"),
+            JSON.stringify({ taskIdentity: linuxTask, snapshot: linuxBefore }, null, 2),
+          );
+        }
         const alive = (pid: number) => {
           try {
             process.kill(pid, 0);
@@ -992,6 +1044,7 @@ productDescribe(
           path.join(outputDirectory, "13-stop-running-before.json"),
           JSON.stringify(readback(), null, 2),
         );
+        let stopEvidenceFailure: AggregateError | undefined;
         try {
           await page.getByRole("button", { name: "停止", exact: true }).click();
           await uiExpect.poll(() => readback().hostAlive, { timeout: 40_000 }).toBe(false);
@@ -1001,8 +1054,30 @@ productDescribe(
               released: 1,
               runStatus: "cancelled",
               intents: 0,
+              result: expect.any(String),
             });
           const stopped = readback();
+          expect(stopped.rows[0]?.result).toBe("unknown");
+          expect(stopped.rows[0]?.reasonCode).toBe("SANDBOX_EXIT_UNKNOWN");
+          await writeFile(
+            path.join(outputDirectory, "13-stop-running-baseline.json"),
+            JSON.stringify(stopped, null, 2),
+          );
+          if (process.platform === "linux") {
+            if (!linuxTask || !host.linuxNamespace)
+              throw new Error("STOP_TEST_LINUX_IDENTITY_MISSING");
+            const snapshot = await readLinuxJobProcesses(host);
+            const taskIdentityPresent = await linuxProcessIdentityPresent(linuxTask);
+            const namespaceState = await readLinuxNamespaceState(host.linuxNamespace);
+            await writeFile(
+              path.join(outputDirectory, "13-stop-running-processes-stopped.json"),
+              JSON.stringify({ taskIdentityPresent, namespaceState, snapshot }, null, 2),
+            );
+            expect(taskIdentityPresent).toBe(false);
+            expect(snapshot.namespaceInitIdentityPresent).toBe(false);
+            expect(snapshot.namespaceMembers).toEqual([]);
+            expect(namespaceState).toBe("released");
+          }
           expect(stopped.groupAlive).toBe(false);
           expect(stopped.shellAlive).toBe(false);
           expect(stopped.receipts).toHaveLength(1);
@@ -1016,11 +1091,30 @@ productDescribe(
           await uiExpect(page.getByText("普通回答已完成").last()).toBeVisible({ timeout: 60_000 });
           expect(readback()).toEqual(stopped);
         } finally {
-          await writeFile(
-            path.join(outputDirectory, "13-stop-running-after.json"),
-            JSON.stringify(readback(), null, 2),
+          const captures = await Promise.allSettled([
+            (async () => {
+              await writeFile(
+                path.join(outputDirectory, "13-stop-running-after.json"),
+                JSON.stringify(readback(), null, 2),
+              );
+            })(),
+            (async () => {
+              if (process.platform === "linux")
+                await writeFile(
+                  path.join(outputDirectory, "13-stop-running-processes-after.json"),
+                  JSON.stringify(await readLinuxJobProcesses(host), null, 2),
+                );
+            })(),
+          ]);
+          const errors = captures.flatMap((capture) =>
+            capture.status === "rejected" ? [capture.reason] : [],
           );
+          if (errors.length > 0) {
+            stopEvidenceFailure = new AggregateError(errors, "STOP_TEST_EVIDENCE_CAPTURE_FAILED");
+            console.error(stopEvidenceFailure);
+          }
         }
+        if (stopEvidenceFailure) throw stopEvidenceFailure;
       });
     });
 

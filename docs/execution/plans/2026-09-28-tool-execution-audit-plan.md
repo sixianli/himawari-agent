@@ -507,3 +507,9 @@ stop-04 的真实 Linux 读回确认：任务命名空间和任务组已经消�
 新增 S4 六处同组空成员断言后，Hermes `before-reset` 红测试明确因 socat `2967593 / 736011311` 残留失败，Host 原身份为 `2967554`，PGID/SID 均为该编号。报告、数据库、原始 stat、服务日志和 trace 保留在 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/reply04/`。该红结果不能作为交付通过；原六处结果交付断言保留，正式验收使用 `[R2-S1]` 加 `[R2-S4]` 共七场景、无 `--bail` 的现有产品路径命令。每次实际结果以长任务证据和保留报告为准。
 
 提交前复核另发现一个释放竞态：第一次 PID 探测看见 Host，第二次看见它已退出时，原来的先行 Host 组检查会被跳过。三个受控 OS 观测的回归用例在修改前都错误报告 released；实际释放候选现在统一经过 Host 组检查。这类两次探测间的退出无法可靠安排为真实进程测试，因此用既有真实控制套接字和 SQLite 夹具，只替换进程探测与组读回边界；真实六处崩溃测试仍承担平台清理证据。
+
+## 2026-10-04：S1 等完成审计后保存停止基准
+
+按 Claude reply-04，S1 在原 40 秒释放等待内继续等待本次操作结果落库，再独立断言 `unknown / SANDBOX_EXIT_UNKNOWN` 并保存完整基准。资源释放后的 operation 补记只属于审计，不恢复已取消的 Run，也不把结果交给模型。原完整相等比较、全部进程与命名空间、回执、取消、无模型回复、刷新后继续发消息检查均保留。
+
+Linux 任务识别使用签名开始记录的 Host 身份、原 PID namespace 及准确 argv，保留 PID 加启动时间和 namespace 读取错误。它替换只匹配 macOS 进程树的测试识别方法，不改产品权限或停止合同。首次定向运行在未修改产品的候选包上通过，完整基准保留于 `.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/reply04/product-s1-focused-output/13-stop-running-baseline.json`；该结果不代替新产品候选的正式七场景验收。
