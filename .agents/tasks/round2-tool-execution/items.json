@@ -544,7 +544,7 @@
       "done_when": [
         {
           "type": "command",
-          "run": "node_modules/.bin/vitest run --config vitest.workspace.ts --project qualification-product-path",
+          "run": "node_modules/.bin/vitest run --config vitest.workspace.ts --project qualification-product-path --reporter=default --reporter=json --outputFile=.ci-output/r64/independent-product-01/product-unfiltered-vitest.json",
           "host": "hermes"
         }
       ],
