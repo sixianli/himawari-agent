@@ -634,7 +634,9 @@
         {
           "type": "command",
           "run": "/usr/local/libexec/bubblewrap-0.11.2/bwrap --version",
-          "host": "84.247.157.41"
+          "host": "84.247.157.41",
+          "scope": "environment",
+          "max_age_days": 7
         }
       ],
       "added": {
