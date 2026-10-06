@@ -29,8 +29,7 @@
       "done_when": [
         {
           "type": "test",
-          "file": "test/integration/product-path-browser.test.ts",
-          "name": "keeps an offline Worker result pending until paired service restart settles LOST",
+          "tag": "R2-S2",
           "host": "hermes"
         },
         {
@@ -50,8 +49,7 @@
       "done_when": [
         {
           "type": "test",
-          "file": "test/integration/product-path-browser.test.ts",
-          "name": "terminates a running tool at its original deadline with authenticated cleanup",
+          "tag": "R2-S3",
           "host": "hermes"
         },
         {

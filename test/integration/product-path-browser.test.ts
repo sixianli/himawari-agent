@@ -202,6 +202,80 @@ async function readJobHostStarts() {
   );
 }
 
+async function waitForRunningLinuxTask(
+  host: ProductPathJobHostStart,
+  sleepSeconds: string,
+  name: string,
+) {
+  let task: { pid: number; starttime: string } | undefined;
+  let snapshot: Awaited<ReturnType<typeof readLinuxJobProcesses>> | undefined;
+  await uiExpect
+    .poll(
+      async () => {
+        const current = await readLinuxJobProcesses(host);
+        await appendFile(
+          path.join(outputDirectory, `${name}-processes.jsonl`),
+          `${JSON.stringify(current)}\n`,
+        );
+        const tasks = current.processes.filter(
+          (row) =>
+            row.stable &&
+            row.descendantOfRecordedHost &&
+            row.pidNamespace === host.linuxNamespace?.namespaceId &&
+            row.argv?.length === 2 &&
+            row.argv[0] === "/bin/sleep" &&
+            row.argv[1] === sleepSeconds,
+        );
+        const running = tasks[0];
+        if (tasks.length !== 1 || !running) return false;
+        task = { pid: running.pid, starttime: running.starttime };
+        snapshot = current;
+        return true;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  if (!task || !snapshot || !host.linuxNamespace)
+    throw new Error("PRODUCT_PATH_LINUX_TASK_IDENTITY_MISSING");
+  expect(snapshot.recordedHostPresent).toBe(true);
+  expect(snapshot.namespaceInitIdentityPresent).toBe(true);
+  const init = snapshot.namespaceMembers.find((row) => row.pid === host.linuxNamespace?.initPid);
+  expect(init).toMatchObject({
+    stable: true,
+    descendantOfRecordedHost: true,
+    starttime: host.linuxNamespace.initStartTicks,
+    pidNamespace: host.linuxNamespace.namespaceId,
+  });
+  expect(init?.namespacePids?.at(-1)).toBe(1);
+  expect(await linuxProcessIdentityPresent(task)).toBe(true);
+  await writeFile(
+    path.join(outputDirectory, `${name}-processes-before.json`),
+    JSON.stringify({ taskIdentity: task, snapshot }, null, 2),
+  );
+  return task;
+}
+
+async function assertLinuxTaskReleased(
+  host: ProductPathJobHostStart,
+  task: Awaited<ReturnType<typeof waitForRunningLinuxTask>>,
+  name: string,
+) {
+  if (!host.linuxNamespace) throw new Error("PRODUCT_PATH_LINUX_NAMESPACE_MISSING");
+  const snapshot = await readLinuxJobProcesses(host);
+  const taskIdentityPresent = await linuxProcessIdentityPresent(task);
+  const namespaceState = await readLinuxNamespaceState(host.linuxNamespace);
+  const hostGroup = await readLinuxHostProcessGroup(host);
+  await writeFile(
+    path.join(outputDirectory, `${name}-processes-after.json`),
+    JSON.stringify({ taskIdentityPresent, namespaceState, snapshot, hostGroup }, null, 2),
+  );
+  expect(taskIdentityPresent).toBe(false);
+  expect(snapshot.namespaceInitIdentityPresent).toBe(false);
+  expect(snapshot.namespaceMembers).toEqual([]);
+  expect(namespaceState).toBe("released");
+  expect(hostGroup.members).toEqual([]);
+}
+
 async function waitForExpiredServiceLease() {
   await uiExpect
     .poll(
@@ -1527,7 +1601,7 @@ productDescribe(
     });
 
     it.each(["worker", "recovery", "run"] as const)(
-      "terminates a running tool at its original deadline with authenticated cleanup: %s",
+      "[R2-S3] terminates a running tool at its original deadline with authenticated cleanup: %s",
       async (mode) => {
         const name = `30-original-deadline-${mode}`;
         const runExpiry = mode === "run";
@@ -1541,7 +1615,7 @@ productDescribe(
           await scenario(name, async () => {
             await newThread();
             const before = new Set(executionReadback().map((record) => record.jobId));
-            const text = "原执行期限验证";
+            const text = `原执行期限验证-${mode}`;
             if (mode === "recovery") await installation.armFinishGate("after-end");
             await beginToolRequest(text);
             await uiExpect
@@ -1601,18 +1675,23 @@ productDescribe(
                 database.close();
               }
             };
-            await uiExpect
-              .poll(
-                () =>
-                  execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
-                    .split("\n")
-                    .some(
-                      (line) =>
-                        line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 600`,
-                    ),
-                { timeout: 60_000 },
-              )
-              .toBe(true);
+            let linuxTask: Awaited<ReturnType<typeof waitForRunningLinuxTask>> | undefined;
+            if (process.platform === "linux") {
+              linuxTask = await waitForRunningLinuxTask(host, "600", name);
+            } else {
+              await uiExpect
+                .poll(
+                  () =>
+                    execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
+                      .split("\n")
+                      .some(
+                        (line) =>
+                          line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 600`,
+                      ),
+                  { timeout: 60_000 },
+                )
+                .toBe(true);
+            }
             const running = readback();
             const plan = JSON.parse(running.execution.plan) as {
               originalDeadlineAt: string;
@@ -1688,6 +1767,10 @@ productDescribe(
                 ).toBeVisible();
               }
               expect(ended.groupAlive).toBe(false);
+              if (process.platform === "linux") {
+                if (!linuxTask) throw new Error("DEADLINE_TEST_LINUX_TASK_MISSING");
+                await assertLinuxTaskReleased(host, linuxTask, name);
+              }
               expect(ended.execution.plan).toBe(running.execution.plan);
               expect(ended.receipts).toHaveLength(1);
               expect(ended.occupancy.length).toBeGreaterThan(0);
@@ -1718,7 +1801,7 @@ productDescribe(
       },
     );
 
-    it("reclaims an interrupted running tool after restarting the test services without replay", async () => {
+    it("[R2-S2] reclaims an interrupted running tool after restarting the test services without replay", async () => {
       await scenario("14-restart-running", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -1739,22 +1822,31 @@ productDescribe(
           .toBeTruthy();
         const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
         if (!host) throw new Error("RESTART_TEST_HOST_MISSING");
-        await uiExpect
-          .poll(
-            () =>
-              execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
-                .split("\n")
-                .some(
-                  (line) =>
-                    line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 120`,
-                ),
-            { timeout: 60_000 },
-          )
-          .toBe(true);
+        let linuxTask: Awaited<ReturnType<typeof waitForRunningLinuxTask>> | undefined;
+        if (process.platform === "linux") {
+          linuxTask = await waitForRunningLinuxTask(host, "120", "14-restart-running");
+        } else {
+          await uiExpect
+            .poll(
+              () =>
+                execFileSync("/bin/ps", ["-axo", "pgid=,command="], { encoding: "utf8" })
+                  .split("\n")
+                  .some(
+                    (line) =>
+                      line.trim() === `${host.taskProcessGroup.processGroupId} /bin/sleep 120`,
+                  ),
+              { timeout: 60_000 },
+            )
+            .toBe(true);
+        }
         await writeFile(
           path.join(outputDirectory, "14-restart-running-before.json"),
           JSON.stringify({ host, rows: executionReadback() }, null, 2),
         );
+        expect(executionReadback().filter((record) => !before.has(record.jobId))).toEqual([
+          expect.objectContaining({ result: null, released: 0, intents: 0 }),
+        ]);
+        expect(observedToolReplies(text)).toEqual([]);
         await installation.crash();
         await waitForExpiredServiceLease();
         await installation.start();
@@ -1766,17 +1858,46 @@ productDescribe(
             .poll(() => rows()[0], { timeout: 60_000 })
             .toMatchObject({ jobId: job.jobId, released: 1 });
           expect(rows()).toHaveLength(1);
+          if (process.platform === "linux") {
+            if (!linuxTask) throw new Error("RESTART_TEST_LINUX_TASK_MISSING");
+            await assertLinuxTaskReleased(host, linuxTask, "14-restart-running");
+          }
           expect(
             (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
           ).toHaveLength(1);
-          expect(observedToolReplies(text)).toEqual([]);
-          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toBeVisible({
-            timeout: 30_000,
-          });
-          await page.getByRole("button", { name: "停止", exact: true }).click();
           await uiExpect
             .poll(() => rows()[0], { timeout: 40_000 })
-            .toMatchObject({ runStatus: "cancelled", released: 1, intents: 0 });
+            .toMatchObject({
+              runStatus: "completed",
+              result: "error",
+              reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+              released: 1,
+              definiteOperations: 1,
+              streamEnds: 0,
+              intents: 1,
+            });
+          const expectedMessage =
+            "SANDBOX_TOOL_RESULT_LOST：工具已运行并结束，但输出和退出结果在服务重启时丢失；没有重新执行。它可能已经产生了效果，是否重做请先确认。";
+          const assertLostReply = () => {
+            const messages = observedToolMessages(text);
+            expect(messages.map((batch) => batch.map((message) => message.content))).toEqual([
+              [expectedMessage],
+            ]);
+            expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
+          };
+          assertLostReply();
+          await uiExpect(toolAnswers().filter({ hasText: expectedMessage })).toHaveCount(1, {
+            timeout: 30_000,
+          });
+          const settled = rows();
+          await installation.stop();
+          await installation.start();
+          await page.reload();
+          expect(rows()).toEqual(settled);
+          assertLostReply();
+          expect(
+            (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
+          ).toHaveLength(1);
         } finally {
           await writeFile(
             path.join(outputDirectory, "14-restart-running-after.json"),
@@ -1957,7 +2078,7 @@ productDescribe(
       });
     });
 
-    it("keeps an offline Worker result pending until paired service restart settles LOST", async () => {
+    it("[R2-S2] keeps an offline Worker result pending until paired service restart settles LOST", async () => {
       const name = "19-worker-offline-recovery";
       await scenario(name, async () => {
         await newThread();

@@ -178,3 +178,9 @@
 ## G40 2026-10-05 用户原话
 
 > 我现在授予你独立规划职责，允许i维护任务的plan.md和items.json并允许你应用你上面提到的计划补丁
+
+## G41 2026-10-05 用户原话
+
+问题：是否同意应用 `.ci-output/handoff/2026-10-05-round2-s2-restart-assertions-proposal.patch`，将 S2 运行中成对重启后的零回复/取消断言，替换为重启前零回复、重启后唯一 LOST 并完成、二次重启不重复交付，保留进程退出、认证释放和原等待时限？详细问询见 `.ci-output/handoff/2026-10-05-codex-round2-user-question-02.md`。
+
+> 同意
