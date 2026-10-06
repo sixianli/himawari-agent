@@ -184,3 +184,15 @@
 问题：是否同意应用 `.ci-output/handoff/2026-10-05-round2-s2-restart-assertions-proposal.patch`，将 S2 运行中成对重启后的零回复/取消断言，替换为重启前零回复、重启后唯一 LOST 并完成、二次重启不重复交付，保留进程退出、认证释放和原等待时限？详细问询见 `.ci-output/handoff/2026-10-05-codex-round2-user-question-02.md`。
 
 > 同意
+
+## G42 2026-10-05 用户原话
+
+问题：是否同意应用 `.ci-output/handoff/2026-10-05-round2-b3-descriptor-assertion-proposal.patch`，只把Linux B3的描述符检查改为精确核对原子进程号、标准输出f1、tsock类型与UNIX-STREAM协议，Mac保留原正则，并保留所有后续B3断言和时限？详细问询见 `.ci-output/handoff/2026-10-05-codex-round2-user-question-03.md`。
+
+> 同意
+
+## G43 2026-10-06 用户原话
+
+问题：是否同意应用 `.ci-output/handoff/2026-10-05-round2-b3-linux-release-assertions-proposal.patch`，只调整原B3三个Linux预期为confirmed释放回执、原后台子进程及命名空间全部退出、没有程序在运行的状态行，并增加放行前进程号加启动时间、准确argv、原Host子孙、原命名空间及init身份检查；Mac、全部结果、输出、说明、一次交付和原时限保持？详细问询见 `.ci-output/handoff/2026-10-05-codex-round2-user-question-04.md`。
+
+> 同意

@@ -1360,9 +1360,8 @@ productDescribe(
               stdoutDescriptor: string;
             }
           | undefined;
-        let hostIdentity:
-          | { processId: number; taskProcessGroup: { processGroupId: number } }
-          | undefined;
+        let hostIdentity: ProductPathJobHostStart | undefined;
+        let linuxChild: Awaited<ReturnType<typeof waitForRunningLinuxTask>> | undefined;
         const processRows = () =>
           execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid=,stat=,command="], {
             encoding: "utf8",
@@ -1476,7 +1475,7 @@ productDescribe(
                     pgid: candidate.pgid,
                     marker,
                     stdoutDescriptor: execFileSync(
-                      "/usr/sbin/lsof",
+                      process.platform === "linux" ? "/usr/bin/lsof" : "/usr/sbin/lsof",
                       ["-a", "-p", String(candidate.pid), "-d", "1", "-F", "pftn"],
                       { encoding: "utf8" },
                     ),
@@ -1488,7 +1487,13 @@ productDescribe(
             .toBe(marker);
           if (!child) throw new Error("B3_CHILD_MISSING");
           expect(child.pgid).toBe(child.pid);
-          expect(child.stdoutDescriptor).toMatch(/(?:^|\n)t(?:PIPE|FIFO|unix)(?:\n|$)/);
+          if (process.platform === "linux") {
+            expect(child.stdoutDescriptor).toBe(
+              `p${child.pid}\nf1\ntsock\nnprotocol: UNIX-STREAM\n`,
+            );
+          } else {
+            expect(child.stdoutDescriptor).toMatch(/(?:^|\n)t(?:PIPE|FIFO|unix)(?:\n|$)/);
+          }
           expect(processRow(child.pid)?.command).toContain(marker);
           await uiExpect
             .poll(async () => (await readJobHostStarts()).some((entry) => entry?.jobId === jobId), {
@@ -1499,6 +1504,44 @@ productDescribe(
           if (!host) throw new Error("B3_HOST_MISSING");
           hostIdentity = host;
           expect(child.pgid).not.toBe(host.taskProcessGroup.processGroupId);
+          if (process.platform === "linux") {
+            if (!host.linuxNamespace) throw new Error("B3_LINUX_NAMESPACE_MISSING");
+            const snapshot = await readLinuxJobProcesses(host);
+            const children = snapshot.processes.filter((row) => row.pid === child?.pid);
+            expect(children).toHaveLength(1);
+            const runningChild = children[0];
+            if (!runningChild) throw new Error("B3_LINUX_CHILD_MISSING");
+            expect(runningChild).toMatchObject({
+              stable: true,
+              descendantOfRecordedHost: true,
+              pidNamespace: host.linuxNamespace.namespaceId,
+            });
+            expect(runningChild.argv).toEqual([
+              "/usr/bin/perl",
+              "-MPOSIX",
+              "-e",
+              detachedProgram,
+              marker,
+            ]);
+            expect(snapshot.recordedHostPresent).toBe(true);
+            expect(snapshot.namespaceInitIdentityPresent).toBe(true);
+            const init = snapshot.namespaceMembers.find(
+              (row) => row.pid === host.linuxNamespace?.initPid,
+            );
+            expect(init).toMatchObject({
+              stable: true,
+              descendantOfRecordedHost: true,
+              starttime: host.linuxNamespace.initStartTicks,
+              pidNamespace: host.linuxNamespace.namespaceId,
+            });
+            expect(init?.namespacePids?.at(-1)).toBe(1);
+            linuxChild = { pid: runningChild.pid, starttime: runningChild.starttime };
+            expect(await linuxProcessIdentityPresent(linuxChild)).toBe(true);
+            await writeFile(
+              path.join(outputDirectory, "33-detached-output-processes-before.json"),
+              JSON.stringify({ taskIdentity: linuxChild, snapshot }, null, 2),
+            );
+          }
           await writeFile(
             path.join(outputDirectory, "33-detached-output-start.json"),
             JSON.stringify({ host, command, ...readback() }, null, 2),
@@ -1519,11 +1562,19 @@ productDescribe(
           if (!released) throw new Error("B3_RELEASE_MISSING");
           await save("release-accepted", released);
           expect(released.receipts).toEqual([
-            expect.objectContaining({ cleanup: "process_group_gone" }),
+            expect.objectContaining({
+              cleanup: process.platform === "linux" ? "confirmed" : "process_group_gone",
+            }),
           ]);
           expect(released.hostProcess).toBeNull();
           expect(released.originalGroupMembers).toEqual([]);
-          expect(released.childProcess?.command).toContain(marker);
+          if (process.platform === "linux") {
+            if (!linuxChild) throw new Error("B3_LINUX_CHILD_IDENTITY_MISSING");
+            expect(released.childProcess).toBeNull();
+            await assertLinuxTaskReleased(host, linuxChild, "33-detached-output");
+          } else {
+            expect(released.childProcess?.command).toContain(marker);
+          }
           expect(released.occupancy).toEqual([
             expect.objectContaining({ releasedAt: expect.any(String) }),
           ]);
@@ -1560,7 +1611,9 @@ productDescribe(
           for (const name of (await readdir(jobsRoot)).filter((name) =>
             name.startsWith("control-"),
           )) {
-            const encoded = await readFile(path.join(jobsRoot, name, "final.json"), "utf8");
+            const controlDirectory = path.join(jobsRoot, name);
+            if (!(await readdir(controlDirectory)).includes("final.json")) continue;
+            const encoded = await readFile(path.join(controlDirectory, "final.json"), "utf8");
             const final = JSON.parse(JSON.parse(encoded).body);
             if (final.jobId === jobId) finalRecords.push(final);
           }
@@ -1570,13 +1623,12 @@ productDescribe(
           );
           expect(finalRecords).toHaveLength(1);
           expect(finalRecords[0]).toMatchObject({ stdioClosed: true });
-          await uiExpect(page.getByText(/停止未经严格确认/).first()).toBeVisible({
-            timeout: 10_000,
-          });
-          await page
-            .getByText(/停止未经严格确认/)
-            .first()
-            .scrollIntoViewIfNeeded();
+          const releasedStatus =
+            process.platform === "linux"
+              ? page.getByRole("button", { name: "默认模式 · 没有程序在运行", exact: true })
+              : page.getByText(/停止未经严格确认/).first();
+          await uiExpect(releasedStatus).toBeVisible({ timeout: 10_000 });
+          await releasedStatus.scrollIntoViewIfNeeded();
           await writeFile(
             path.join(outputDirectory, "33-detached-output-after-release-aria.txt"),
             await page.locator("body").ariaSnapshot(),
