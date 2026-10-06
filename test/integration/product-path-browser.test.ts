@@ -2509,6 +2509,10 @@ productDescribe(
 
     it("shows the connection loss while the service restarts and recovers afterwards", async () => {
       await scenario("07-service-restart", async () => {
+        await newThread();
+        const answer = await sendToolRequest("服务重启前：请读取 notes.txt");
+        await uiExpect(answer).toContainText(NOTE);
+        await capture("07-service-restart-before");
         await installation.stop();
         await uiExpect(page.getByText(/连接中断|离线/).first()).toBeVisible({ timeout: 60_000 });
         await installation.start();
