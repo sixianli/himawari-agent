@@ -217,41 +217,16 @@ function classifications(value: unknown, field: string): readonly DataClassifica
 
 function providerRouting(value: unknown, field: string): ModelProviderRouting {
   const input = record(value, field);
-  rejectUnknown(
-    input,
-    ["order", "allow_fallbacks", "require_parameters", "data_collection", "zdr"],
-    field,
+  rejectUnknown(input, ["order", "sort"], field);
+  if (!Array.isArray(input["order"]) || input["order"].length === 0)
+    throw invalid(`${field}.order`, "must be a non-empty array");
+  const order = input["order"].map((entry, index) =>
+    safeReference(entry, `${field}.order[${index}]`),
   );
-  let order: readonly string[] | undefined;
-  if (input["order"] !== undefined) {
-    if (!Array.isArray(input["order"]) || input["order"].length === 0) {
-      throw invalid(`${field}.order`, "must be a non-empty array");
-    }
-    const values = input["order"].map((entry, index) =>
-      safeReference(entry, `${field}.order[${index}]`),
-    );
-    if (new Set(values).size !== values.length) {
-      throw invalid(`${field}.order`, "must not contain duplicates");
-    }
-    order = Object.freeze(values);
-  }
-  const dataCollection = input["data_collection"];
-  if (dataCollection !== undefined && dataCollection !== "allow" && dataCollection !== "deny") {
-    throw invalid(`${field}.data_collection`, "must be allow or deny");
-  }
-  return Object.freeze({
-    ...(order === undefined ? {} : { order }),
-    ...(input["allow_fallbacks"] === undefined
-      ? {}
-      : { allow_fallbacks: boolean(input["allow_fallbacks"], `${field}.allow_fallbacks`) }),
-    ...(input["require_parameters"] === undefined
-      ? {}
-      : {
-          require_parameters: boolean(input["require_parameters"], `${field}.require_parameters`),
-        }),
-    ...(dataCollection === undefined ? {} : { data_collection: dataCollection }),
-    ...(input["zdr"] === undefined ? {} : { zdr: boolean(input["zdr"], `${field}.zdr`) }),
-  });
+  if (new Set(order).size !== order.length)
+    throw invalid(`${field}.order`, "must not contain duplicates");
+  if (input["sort"] !== "cost") throw invalid(`${field}.sort`, "must be cost");
+  return Object.freeze({ order: Object.freeze(order), sort: "cost" });
 }
 
 function modelCost(value: unknown, field: string): ModelCostDescriptor {
@@ -284,7 +259,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   const field = `modelDescriptors[${index}]`;
   const input = record(value, field);
   const role = string(input["role"], `${field}.role`);
-  if (!(["primary", "fallback", "specialist", "embedding"] as const).includes(role as never)) {
+  if (!(["primary", "specialist", "embedding"] as const).includes(role as never)) {
     throw invalid(`${field}.role`, "is not a supported role");
   }
   const generation = role !== "embedding";
@@ -357,6 +332,13 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       role: "embedding",
       dimensions: integer(input["dimensions"], `${field}.dimensions`, 1, 65_536),
     };
+    if (descriptor.provider === "vercel-ai-gateway") {
+      if (descriptor.model !== "alibaba/qwen3-embedding-8b")
+        throw invalid(`${field}.model`, "must be alibaba/qwen3-embedding-8b");
+      if (descriptor.dimensions !== 4096) throw invalid(`${field}.dimensions`, "must be 4096");
+      if (descriptor.secretRef === null)
+        throw invalid(`${field}.secretRef`, "is required for AI Gateway");
+    }
     return Object.freeze(descriptor);
   }
   const api = string(input["api"], `${field}.api`);
@@ -385,7 +367,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     throw invalid(`${field}.role`, "specialist requires the TypeSafe decision API");
   const descriptor: ConfiguredCompletionsGenerationModelDescriptor = {
     ...base,
-    role: role as "primary" | "fallback",
+    role: "primary",
     priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
     name: string(input["name"], `${field}.name`),
     api: "openai-completions",
@@ -400,7 +382,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       1,
       Number.MAX_SAFE_INTEGER,
     ),
-    maxTokens: integer(input["maxTokens"], `${field}.maxTokens`, 1, Number.MAX_SAFE_INTEGER),
+    maxTokens: integer(input["maxTokens"], `${field}.maxTokens`, 1, 32768),
     ...(input["providerRouting"] === undefined
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
@@ -408,17 +390,15 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   if (descriptor.reasoningRequired && !descriptor.reasoning) {
     throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
   }
-  if (role === "fallback" && !exactlyPrivate(descriptor.allowedDataClassifications)) {
-    throw invalid(
-      `${field}.allowedDataClassifications`,
-      "fallback must allow exactly the private classification",
-    );
+  if (descriptor.provider === "vercel-ai-gateway") {
+    if (descriptor.model !== "deepseek/deepseek-v4.1-flash")
+      throw invalid(`${field}.model`, "must be deepseek/deepseek-v4.1-flash");
+    if (descriptor.secretRef === null)
+      throw invalid(`${field}.secretRef`, "is required for AI Gateway");
+    if (descriptor.providerRouting === undefined)
+      throw invalid(`${field}.providerRouting`, "is required for AI Gateway");
   }
   return Object.freeze(descriptor);
-}
-
-function exactlyPrivate(classifications: readonly DataClassification[]): boolean {
-  return classifications.length === 1 && classifications[0] === "private";
 }
 
 function parseCostMap(value: unknown) {
@@ -1015,7 +995,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   if (new Set(modelDescriptors.map(({ ref }) => ref)).size !== modelDescriptors.length) {
     throw invalid("configuration.modelDescriptors", "must not contain duplicate refs");
   }
-  for (const role of ["primary", "fallback", "embedding"] as const) {
+  for (const role of ["primary", "embedding"] as const) {
     if (modelDescriptors.filter((descriptor) => descriptor.role === role).length !== 1) {
       throw invalid("configuration.modelDescriptors", `must contain exactly one ${role}`);
     }

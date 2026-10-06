@@ -485,10 +485,17 @@ export async function installProductPath(options: {
                 {
                   object: "embedding",
                   index: 0,
-                  embedding: Array(Number(body["dimensions"]) || 16).fill(0.1),
+                  embedding: Array(Number(body["dimensions"])).fill(0.1),
                 },
               ],
               usage: { prompt_tokens: 8, total_tokens: 8 },
+              providerMetadata: {
+                gateway: {
+                  generationId: `embedding-${modelRequests.length}`,
+                  routing: { finalProvider: "deepinfra" },
+                  cost: "0",
+                },
+              },
             }),
           );
           return;
@@ -518,8 +525,12 @@ export async function installProductPath(options: {
           model: body["model"],
         };
         const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0 };
-        const openrouter_metadata = {
-          attempts: [{ provider: "ProductPathProvider", model: body["model"], status: 200 }],
+        const provider_metadata = {
+          gateway: {
+            generationId: `generation-${modelRequests.length}`,
+            routing: { finalProvider: "morph" },
+            cost: "0",
+          },
         };
         if (reply.kind === "drop") {
           request.socket.destroy();
@@ -556,9 +567,8 @@ export async function installProductPath(options: {
             },
             {
               ...base,
-              choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "tool_calls" }],
               usage,
-              openrouter_metadata,
             },
           ]);
           return;
@@ -577,9 +587,8 @@ export async function installProductPath(options: {
             },
             {
               ...base,
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+              choices: [{ index: 0, delta: { provider_metadata }, finish_reason: "stop" }],
               usage,
-              openrouter_metadata,
             },
           ]);
         if (reply.delayMs) setTimeout(finish, reply.delayMs);
@@ -708,7 +717,7 @@ export async function installProductPath(options: {
     ["payload-kek.v1", "22".repeat(32)],
     ["identity-csrf.v1", "11".repeat(32)],
     ["identity-bootstrap.v1", bootstrapToken],
-    ["openrouter-api-key.v1", "local-provider-fixture"],
+    ["vercel-ai-gateway-api-key.v1", "local-provider-fixture"],
   ] as const)
     await writeFile(path.join(secretDirectory, name), value, { mode: 0o600 });
 
@@ -726,12 +735,12 @@ export async function installProductPath(options: {
   const model = (role: string, ref: string, priority: number) => ({
     ref,
     role,
-    provider: "openrouter",
-    model: `product-path-${role}`,
+    provider: "vercel-ai-gateway",
+    model: "deepseek/deepseek-v4.1-flash",
     version: "v1",
-    allowedDataClassifications: role === "fallback" ? ["private"] : ["public", "private"],
+    allowedDataClassifications: ["public", "private"],
     disclosure: "trusted_remote",
-    secretRef: "openrouter-api-key",
+    secretRef: "vercel-ai-gateway-api-key",
     capabilities: ["text", "tools"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     priority,
@@ -741,6 +750,7 @@ export async function installProductPath(options: {
     input: ["text"],
     contextWindow: 32768,
     maxTokens: 2048,
+    providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
   });
   const configuration = {
     schemaVersion: "himawari.configuration.v1",
@@ -781,33 +791,37 @@ export async function installProductPath(options: {
     },
     modelDescriptors: [
       model("primary", "model-primary", 1),
-      model("fallback", "model-fallback", 2),
       {
         ref: "model-embedding",
         role: "embedding",
-        provider: "openrouter",
-        model: "product-path-embedding",
+        provider: "vercel-ai-gateway",
+        model: "alibaba/qwen3-embedding-8b",
         version: "v1",
         allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         disclosure: "trusted_remote",
-        secretRef: "openrouter-api-key",
+        secretRef: "vercel-ai-gateway-api-key",
         capabilities: ["embedding"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        dimensions: 16,
+        dimensions: 4096,
       },
     ],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
-      dimensions: 16,
+      dimensions: 4096,
     },
     repositoryAllowlistRefs: [],
     secretReferences: [
       { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
       { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
       { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
-      { ref: "openrouter-api-key", version: "v1", purpose: "model-provider-auth", scope: "agent" },
+      {
+        ref: "vercel-ai-gateway-api-key",
+        version: "v1",
+        purpose: "model-provider-auth",
+        scope: "agent",
+      },
       {
         ref: "worker-process-token",
         version: "v1",

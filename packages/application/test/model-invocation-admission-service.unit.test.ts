@@ -254,9 +254,18 @@ class IdentityStub implements ModelInvocationIdentityPort {
   }
 }
 
-function serviceFixture() {
+function serviceFixture(descriptor: ModelInvocationAdmissionDescriptor = DESCRIPTOR) {
   const dispatch = new DispatchStub();
   const invocations = new IdentityStub();
+  invocations.beginResult = {
+    disposition: "fresh",
+    identity: identityWith({
+      modelRef: descriptor.ref,
+      provider: descriptor.provider,
+      model: descriptor.model,
+      modelVersion: descriptor.version,
+    }),
+  };
   let currentTime = NOW;
   const service = new ModelInvocationAdmissionService({
     ownerId: OWNER_ID,
@@ -267,7 +276,7 @@ function serviceFixture() {
     invocations,
     clock: { now: () => currentTime },
     limits: LIMITS,
-    registry: [DESCRIPTOR],
+    registry: [descriptor],
   });
   return {
     service,
@@ -305,6 +314,60 @@ function freshPermit(result: ModelInvocationAdmissionResult): ModelInvocationPer
 }
 
 describe("ModelInvocationAdmissionService", () => {
+  const gatewayDescriptor: ModelInvocationAdmissionDescriptor = {
+    ...DESCRIPTOR,
+    provider: "vercel-ai-gateway",
+    model: "deepseek/deepseek-v4.1-flash",
+  };
+  const gatewayInput = input({
+    provider: gatewayDescriptor.provider,
+    model: gatewayDescriptor.model,
+  });
+
+  it.each([0, 1, 77, Number.MAX_SAFE_INTEGER])(
+    "[R2-L5] settles the gateway-reported fee %s instead of the catalogue estimate",
+    async (reportedCostMicros) => {
+      const fixture = serviceFixture(gatewayDescriptor);
+      const permit = freshPermit(await fixture.service.begin(gatewayInput));
+      await permit.markStarted();
+      const usage = {
+        inputTokens: 10,
+        outputTokens: 3,
+        cacheReadTokens: 2,
+        cacheWriteTokens: 1,
+        reportedCostMicros,
+      };
+
+      await permit.settle(usage);
+
+      expect(fixture.invocations.settleCalls).toHaveLength(1);
+      expect(fixture.invocations.settleCalls[0]?.actualCostMicros).toBe(reportedCostMicros);
+      expect(fixture.invocations.unknownCalls).toHaveLength(0);
+    },
+  );
+
+  it.each([undefined, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "[R2-L5] rejects a missing or invalid gateway fee %s without settling the identity",
+    async (reportedCostMicros) => {
+      const fixture = serviceFixture(gatewayDescriptor);
+      const permit = freshPermit(await fixture.service.begin(gatewayInput));
+      await permit.markStarted();
+      const usage = {
+        inputTokens: 10,
+        outputTokens: 3,
+        cacheReadTokens: 2,
+        cacheWriteTokens: 1,
+        ...(reportedCostMicros === undefined ? {} : { reportedCostMicros }),
+      };
+
+      await expect(permit.settle(usage)).rejects.toMatchObject({
+        code: PORT_ERROR_CODES.INVALID_OPERATION,
+      });
+
+      expect(fixture.invocations.settleCalls).toHaveLength(0);
+    },
+  );
+
   it("freezes the gate context and settles cache-aware usage through the identity port", async () => {
     const fixture = serviceFixture();
     const permit = freshPermit(await fixture.service.begin(input()));

@@ -48,6 +48,7 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
@@ -521,6 +522,7 @@ function relayAdmittedPiStream(
   permit: ModelInvocationPermit,
   model: Model<Api>,
   signal: AbortSignal | undefined,
+  gateway: ReturnType<typeof observeGatewayFetch> | undefined,
 ): AssistantMessageEventStream {
   const output = createAssistantMessageEventStream();
   let accounted = false;
@@ -540,7 +542,25 @@ function relayAdmittedPiStream(
     try {
       for await (const event of stream) {
         if (event.type === "done") {
-          const usage = safePiUsage(event.message);
+          let usage = safePiUsage(event.message);
+          if (gateway !== undefined && usage !== undefined) {
+            const observation = await gateway.result();
+            if (signal?.aborted || observation.status !== "verified") {
+              const accountedUnknown = await markUnknown(
+                signal?.aborted ? "cancel_unresolved" : "provider_unresolved",
+              );
+              output.push(
+                piErrorEvent(
+                  model,
+                  accountedUnknown
+                    ? "Model provider billing is unavailable"
+                    : "Model budget accounting is unavailable",
+                ),
+              );
+              return;
+            }
+            usage = { ...usage, reportedCostMicros: observation.billing.costMicros };
+          }
           if (usage === undefined) {
             const accountedUnknown = await markUnknown("provider_unresolved");
             output.push(
@@ -663,6 +683,16 @@ async function admitPiStream(
     if (model !== binding.model) {
       return failedPiStream(model, "Model invocation binding mismatch");
     }
+    const isGateway = binding.descriptor.provider === "vercel-ai-gateway";
+    if (
+      isGateway &&
+      (binding.descriptor.providerRouting === undefined ||
+        (options?.maxTokens !== undefined &&
+          (!Number.isSafeInteger(options.maxTokens) ||
+            options.maxTokens < 1 ||
+            options.maxTokens > Math.min(model.maxTokens, 32768))))
+    )
+      return failedPiStream(model, "Model invocation gateway options are invalid");
     const logicalSlot = logicalSlotFor(request, ordinal);
     if (typeof logicalSlot !== "string" || logicalSlot.trim().length === 0) {
       return failedPiStream(model, "Model invocation logical slot is unavailable");
@@ -698,6 +728,19 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
+    const gateway = isGateway
+      ? observeGatewayFetch(options?.fetch ?? globalThis.fetch, model.id)
+      : undefined;
+    if (gateway !== undefined) {
+      withoutAmbientApiKey.fetch = gateway.fetch;
+      withoutAmbientApiKey.onPayload = async (payload, chosenModel) => {
+        const replacement = await options?.onPayload?.(payload, chosenModel);
+        return gatewayPayload(
+          replacement === undefined ? payload : replacement,
+          binding.descriptor?.providerRouting,
+        );
+      };
+    }
     const secret = binding.resolveSecret ? await binding.resolveSecret() : undefined;
     await permit.assertActive();
     if (options?.signal?.aborted) {
@@ -718,7 +761,7 @@ async function admitPiStream(
       ...(secret === undefined ? {} : { apiKey: secret }),
       maxRetries: 0,
     });
-    return relayAdmittedPiStream(stream, permit, model, options?.signal);
+    return relayAdmittedPiStream(stream, permit, model, options?.signal, gateway);
   } catch {
     if (started && permit !== undefined) {
       await permit.markUnknown("transport_unresolved").catch(() => undefined);

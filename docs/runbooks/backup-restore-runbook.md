@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b22c63ccca82bdd6510c59417e521616d4d1ce122d3cb8d9d0714e7c055787af"
+contract_sha256: "sha256:1fa83d55ea5f5fd034a21682ed26acdce4a771eb443de6b8cbb0444a72bd3f8c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -239,9 +239,13 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 ## Safety and Preconditions
 
+模型配置遵循[网关迁移设计](../execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
+
+Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlite`路径，实体派生索引单独使用同目录的`entities.sqlite`。实体索引由SDK工厂创建，不混入产品记忆主库；产品记忆仍由产品数据库与受保护Payload负责。备份恢复点只包含产品SQLite与受保护Payload文件，不包含Mem0索引；停机权威迁移会打包配置的整个Memory目录，因此也携带entities.sqlite，并检查Memory版本。实体索引本身不能替代产品状态和受保护Payload的验证。Mac对该新版本及网关行为尚未检查；Hermes结果不能证明生产服务器资格。
+
 - 有效恢复点必须通过 manifest HMAC、每文件 AES-256-GCM authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表行数、Payload authentication 和 Outbox continuity 检查。
 - `backup create` 会向活动 SQLite 写入恢复点与操作 marker，并在 state root 的 `recovery-points/` 下新增加密文件；这是第一次目标 mutation。执行前必须报告主机、deployment、state root、backup ID、预计磁盘增量和 30 天保留上限，并取得覆盖该目标与动作的明确授权。
-- 配置必须通过当前 strict schema，包含一个显式 primary、private-only fallback 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
+- 配置必须通过当前 strict schema，包含一个显式 primary、可选独立 specialist 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
 - 若配置声明能力部署快照，restore 前后只核对其引用、SHA-256 与 active Capability Registry 一致性；恢复包不携带、改写或激活该快照。快照或本平台资格不满足时，数据库恢复可以完成，但普通 Worker 必须保持 not ready。
 - `backup restore` 是 critical 恢复 mutation。服务必须已经停止，state-root 管理锁必须可独占取得，目标必须与配置中的 state root 完全相同，且确认词必须精确为 `RESTORE_<backup-id>`。运行前必须再次报告将替换的 `data/`、恢复点 identity、数据回退范围和外部副作用不回滚边界，并取得逐次授权。
 - secret 目录及文件必须由当前服务账号拥有，目录权限为 `0700`、文件权限为 `0600`，且配置中各恰好有一个 `backup-encryption` 和 `payload-encryption` secret reference。

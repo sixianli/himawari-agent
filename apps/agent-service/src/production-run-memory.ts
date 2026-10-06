@@ -17,7 +17,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
-import type { Mem0ProjectionAdapter } from "@himawari-agent/memory-mem0";
+import { gatewayEmbeddingUsage, type Mem0ProjectionAdapter } from "@himawari-agent/memory-mem0";
 
 export function embeddingAdmissionDescriptor(
   configuration: ProductConfiguration,
@@ -140,7 +140,13 @@ export function createProductionRunMemory(options: {
           await options.budget.releaseReserved({ ...identity, releasedAt: options.now() });
         },
         settle: async (usage) => {
-          const actualCostMicros = Math.ceil(usage.inputTokens * descriptor.pricing.input);
+          const actualCostMicros = usage.reportedCostMicros;
+          if (
+            typeof actualCostMicros !== "number" ||
+            !Number.isSafeInteger(actualCostMicros) ||
+            actualCostMicros < 0
+          )
+            throw new Error("EMBEDDING_GATEWAY_COST_MISSING");
           await options.budget.settle({ ...identity, actualCostMicros, settledAt: options.now() });
         },
         markUnknown: async (reasonCode) => {
@@ -186,30 +192,24 @@ export function createProductionRunMemory(options: {
       const timeout = AbortSignal.timeout(timeoutMs);
       const signal = context?.signal ? AbortSignal.any([context.signal, timeout]) : timeout;
       let response: Awaited<ReturnType<typeof send>>;
+      let usage: ReturnType<typeof gatewayEmbeddingUsage>;
       try {
         response = await send({ timeoutMs, signal });
-        if (
-          !Number.isSafeInteger(response.usage?.prompt_tokens) ||
-          response.usage.prompt_tokens < 0
-        )
-          throw new Error("EMBEDDING_USAGE_MISSING");
-        if (
-          response.data.length !== 1 ||
-          response.data[0]?.index !== 0 ||
-          response.data[0].embedding.length !== options.configuration.memory.dimensions ||
-          !response.data[0].embedding.every(Number.isFinite)
-        )
-          throw new Error("EMBEDDING_VECTOR_INVALID");
+        signal.throwIfAborted();
+        if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
+        usage = gatewayEmbeddingUsage(
+          response,
+          descriptor.model,
+          options.configuration.memory.dimensions,
+        );
       } catch (error) {
         if (context && !context.signal?.aborted) providerFailedSearches.add(context);
         throw error;
       }
-      await permit.settle({
-        inputTokens: response.usage.prompt_tokens,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-      });
+      await permit.assertActive();
+      signal.throwIfAborted();
+      if (remaining() <= 0) throw new Error("EMBEDDING_DEADLINE_EXCEEDED");
+      await permit.settle(usage);
       settled = true;
       await permit.assertActive();
       return response;

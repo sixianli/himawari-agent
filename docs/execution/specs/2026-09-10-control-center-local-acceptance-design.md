@@ -8,6 +8,9 @@ date: "2026-09-10"
 
 # 控制中心完整测试与 Hermes 真实服务验收
 
+> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，Mac新版本验证仍延期，具体位置遵守[ADR 0047](../../adr/0047-test-checkout-on-hermes-nvme.md#hosts)。原现场及付费授权不自动适用于当前版本。
+> [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
+
 ## 目标与来源
 
 用户要求将已确认的 Web 设计落实为可日常使用的 AI Agent。天气搜索、文件读写、脚本编写是代表性场景，不能以硬编码示例或受控服务代替真实模型、工具、审批和恢复。用户于 2026-09-11 明确最终运行主机为 Hermes Linux，Mac 仅承担开发与浏览器访问。
@@ -19,7 +22,7 @@ date: "2026-09-10"
 
 ## 当前链路与缺口
 
-正式链路为控制中心、Gateway、RunCoordinator、Pi 0.84.2、OpenRouter、独立 Execution Worker、SQLite 与受保护 Payload。Hermes 已有 Himawari 的活动 Owner/Agent/deployment、两个已完成 Run 和 HTTPS 入口；此前 Capability Registry 未登记声明，未配置目录 Grant，通用工具尚未连到自然语言请求。不能重新初始化或覆盖该真实实例。
+2026-09-10验收基线的链路为控制中心、Gateway、RunCoordinator、Pi 0.84.2、OpenRouter、独立 Execution Worker、SQLite 与受保护 Payload。当时Hermes已有Himawari的活动Owner/Agent/deployment、两个已完成Run和HTTPS入口；此前Capability Registry未登记声明，未配置目录Grant，通用工具尚未连到自然语言请求。该历史记录不授权重新初始化或覆盖真实实例。
 
 Pi 提供模型连接、流式事件、会话、Agent Loop 和 read/write/edit/bash/find/grep/ls 工具定义；`packages/runtime-pi` 内复用既有 governed 工具与 Operations。Himawari 负责动作授权、明确接收方的披露、限定主机和目录、Worker 调度、加密记录、预算与审计。Pi 没有内置公开 Web 搜索，项目已有 `PublicWebAdapterPort`，通过现有 MCP SDK 增加 Exa 只读搜索适配，不另建 MCP 或模型协议。
 

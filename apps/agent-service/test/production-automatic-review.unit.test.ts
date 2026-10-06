@@ -50,7 +50,7 @@ const WALL_NOW = Date.now();
 const NOW = new Date(WALL_NOW + 30_000).toISOString();
 const EXPIRES_AT = new Date(WALL_NOW + 300_000).toISOString();
 const MAXIMUM_WAIT_MS = 10_000;
-const REVIEW_MODEL = "fallback";
+const REVIEW_MODEL = "specialist";
 const AUTHORITY = Object.freeze({
   product: Object.freeze({ deploymentId: DEPLOYMENT_ID, authorityEpoch: 1, fencingToken: 1 }),
   lease: Object.freeze({ leaseId: LEASE_ID, fencingToken: 1 }),
@@ -135,14 +135,14 @@ function reviewDescriptor(): ModelDescriptor {
   };
 }
 
-function generationDescriptor(ref: "primary" | "fallback", priority: number) {
+function generationDescriptor() {
   return {
-    ref,
-    role: ref,
+    ref: "primary",
+    role: "primary" as const,
     provider: "fixture",
-    model: `${ref}-fixture`,
+    model: "primary-fixture",
     version: "1",
-    priority,
+    priority: 1,
     allowedDataClassifications: ["private" as const],
     disclosure: "trusted_remote" as const,
     secretRef: null,
@@ -169,8 +169,22 @@ function configuration(configured: boolean): ProductConfiguration {
     publicOrigin: "https://example.invalid",
     publicMode: true,
     modelDescriptors: [
-      generationDescriptor("primary", 1),
-      generationDescriptor("fallback", 2),
+      generationDescriptor(),
+      {
+        ref: REVIEW_MODEL,
+        role: "specialist",
+        provider: "fixture",
+        model: "review-fixture",
+        version: "1",
+        priority: 1,
+        name: "fixture reviewer",
+        api: "typesafe-systemone",
+        allowedDataClassifications: ["private"],
+        disclosure: "trusted_remote",
+        secretRef: null,
+        capabilities: ["text"],
+        cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+      },
       {
         ref: "embedding",
         role: "embedding",

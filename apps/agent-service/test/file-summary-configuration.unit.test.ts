@@ -63,7 +63,7 @@ describe("file summary qualification configuration", () => {
       for (const descriptor of generation) {
         const binding = await bindings.resolve(descriptor.ref);
         expect(binding.model.id).toBe(descriptor.model);
-        expect(binding.model.baseUrl).toBe("https://openrouter.ai/api/v1");
+        expect(binding.model.baseUrl).toBe("https://ai-gateway.vercel.sh/v1");
         expect(binding.model.maxTokens).toBe(2048);
       }
       expect(resolve).not.toHaveBeenCalled();
@@ -124,6 +124,7 @@ describe("file summary qualification configuration", () => {
         },
         secretSource: { kind: "macos-keychain", productionSuitable: true, resolve },
         load: async () => ({
+          VectorStoreFactory: { create: () => ({ initialize: async () => {} }) },
           Memory: class {
             constructor(input: unknown) {
               constructed(input);
@@ -139,8 +140,8 @@ describe("file summary qualification configuration", () => {
               provider: "openai",
               config: {
                 apiKey: expect.any(String),
-                baseURL: "https://openrouter.ai/api/v1",
-                model: "qwen/qwen3-embedding-8b",
+                baseURL: "https://ai-gateway.vercel.sh/v1",
+                model: "alibaba/qwen3-embedding-8b",
                 embeddingDims: 4096,
               },
             },
@@ -149,7 +150,7 @@ describe("file summary qualification configuration", () => {
             }),
           }),
         );
-        expect(resolve).toHaveBeenCalledExactlyOnceWith("openrouter-api-key", "v1");
+        expect(resolve).toHaveBeenCalledExactlyOnceWith("vercel-ai-gateway-api-key", "v1");
       } finally {
         await memory.close();
       }

@@ -4,7 +4,7 @@ import type {
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
-  createOpenRouterMem0ProjectionAdapter,
+  createAiGatewayMem0ProjectionAdapter,
   type Mem0Loader,
   type Mem0ProjectionAdapter,
 } from "@himawari-agent/memory-mem0";
@@ -75,7 +75,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
   }
 
   const descriptor = resolveConfiguredModelDescriptorSet(options.configuration).embedding;
-  const projection = await createOpenRouterMem0ProjectionAdapter({
+  const projection = await createAiGatewayMem0ProjectionAdapter({
     stateRoot: options.configuration.stateRoot,
     memory: options.configuration.memory,
     llm: primary,

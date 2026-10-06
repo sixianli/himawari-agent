@@ -94,8 +94,6 @@ export interface ProductionModelCompositionOptions {
   readonly maxOutputTokens?: number;
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
-  readonly siteUrl?: string;
-  readonly appName?: string;
   /** Resolves a gate bound to the current Run lease; omitted means fail closed. */
   readonly admission?: ModelInvocationAdmissionResolver;
 }
@@ -168,14 +166,15 @@ function piGenerationDescriptor(
   configuration: ProductConfiguration,
   descriptor: ConfiguredCompletionsGenerationModelDescriptor,
 ): ConfiguredPiModelDescriptor {
-  if (descriptor.provider !== "openrouter") {
+  if (descriptor.provider !== "vercel-ai-gateway") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
   const secretRequirement = resolveConfiguredSecretRequirement(configuration, descriptor.secretRef);
   if (secretRequirement === null) throw new Error("MODEL_PI_SECRET_REQUIRED");
+  if (descriptor.providerRouting === undefined) throw new Error("MODEL_PI_ROUTING_REQUIRED");
   return Object.freeze({
     ref: descriptor.ref,
-    provider: "openrouter",
+    provider: "vercel-ai-gateway",
     model: descriptor.model,
     version: descriptor.version,
     routingClass: descriptor.role,
@@ -184,9 +183,10 @@ function piGenerationDescriptor(
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement,
-    ...(descriptor.providerRouting === undefined
-      ? {}
-      : { providerRouting: Object.freeze({ ...descriptor.providerRouting }) }),
+    providerRouting: Object.freeze({
+      order: Object.freeze([...descriptor.providerRouting.order]),
+      sort: descriptor.providerRouting.sort,
+    }),
     name: descriptor.name,
     api: descriptor.api,
     reasoning: descriptor.reasoning,
@@ -240,22 +240,18 @@ export function resolveConfiguredModelDescriptorSet(
     (descriptor): descriptor is ConfiguredCompletionsGenerationModelDescriptor =>
       descriptor.role === "primary",
   );
-  const fallback = configuration.modelDescriptors.find(
-    (descriptor): descriptor is ConfiguredCompletionsGenerationModelDescriptor =>
-      descriptor.role === "fallback",
-  );
   const embedding = configuration.modelDescriptors.find(
     (descriptor): descriptor is ConfiguredEmbeddingModelDescriptor =>
       descriptor.role === "embedding",
   );
-  if (!primary || !fallback || !embedding) throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
+  if (!primary || !embedding) throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
   if (embedding.role !== "embedding") throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
   if (configuration.memory.dimensions !== embedding.dimensions) {
     throw new Error("MODEL_EMBEDDING_DIMENSIONS_MISMATCH");
   }
   // Only OpenAI-compatible descriptors carry a Pi runtime binding; a decision
   // endpoint such as TypeSafe is reached by its own transport instead.
-  if (primary.api !== "openai-completions" || fallback.api !== "openai-completions") {
+  if (primary.api !== "openai-completions") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
   const specialist = configuration.modelDescriptors.find(
@@ -265,7 +261,6 @@ export function resolveConfiguredModelDescriptorSet(
   return Object.freeze({
     generation: Object.freeze([
       piGenerationDescriptor(configuration, primary),
-      piGenerationDescriptor(configuration, fallback),
       ...(specialist ? [typeSafeGenerationDescriptor(configuration, specialist)] : []),
     ]),
     embedding: embeddingDescriptor(configuration, embedding),
@@ -318,8 +313,6 @@ function modelTransportFor(
       ? {}
       : { requestTimeoutMs: options.requestTimeoutMs }),
     ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
-    ...(options.siteUrl === undefined ? {} : { siteUrl: options.siteUrl }),
-    ...(options.appName === undefined ? {} : { appName: options.appName }),
   });
   const configuredByRef = new Map(
     options.descriptors.map((descriptor) => [descriptor.ref, descriptor]),

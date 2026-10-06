@@ -196,3 +196,19 @@
 问题：是否同意应用 `.ci-output/handoff/2026-10-05-round2-b3-linux-release-assertions-proposal.patch`，只调整原B3三个Linux预期为confirmed释放回执、原后台子进程及命名空间全部退出、没有程序在运行的状态行，并增加放行前进程号加启动时间、准确argv、原Host子孙、原命名空间及init身份检查；Mac、全部结果、输出、说明、一次交付和原时限保持？详细问询见 `.ci-output/handoff/2026-10-05-codex-round2-user-question-04.md`。
 
 > 同意
+
+## G44 2026-10-06 用户原话
+
+问题：是否同意这一次开发密钥传输和最多8次付费探测？具体对象、数据、模型、路由、费用停止条件和安全传输方式见`.ci-output/handoff/2026-10-06-codex-round2-user-question-06.md`：从Mac钥匙串读取`himawari.ai-gateway.dev`，经现有SSH标准输入送入Hermes短时进程内存，执行`l5-probe-02`最多8次真实Vercel请求，以0.20美元为停止后续请求阈值，不改账户或生产环境。
+
+> 同意
+
+## G45 2026-10-06 用户原话
+
+问题：是否同意追加最多1次`alibaba/qwen3-embedding-8b`请求，并从Mac钥匙串经SSH标准输入传入开发密钥？具体范围见`.ci-output/handoff/2026-10-06-codex-round2-user-question-07.md`：执行冻结的`l5-embedding-probe-04`，输入为原两句虚构中文、4096维float；预留0.002美元（不是账户硬限额），HTTP期限120秒、执行期限150秒，零重试，密钥不落盘。Mac重启后的恢复说明`2026-10-06-claude-resume-note-01.md`再次确认该授权有效且尚未发出请求。
+
+> 同意
+
+## G46 2026-10-06 用户原话
+
+> 额外提一点要求，把mem0更新到最新版本然后再使用

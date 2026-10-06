@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:430028cf3c0a864234247906c53451b9e2c132bf95842d5af8dd39440a629ca9"
+contract_sha256: "sha256:c330113037229f82501d5251f2e5c0e363e7ab1b208ac643d344f103cea82799"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -252,7 +252,7 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 
 文件读取工具已复用 Pi `read` 定义，无 Handle 调用表示读取意图。正式组合已提供 inspect/read 两阶段工作流，持久保存调用 context、阶段输入和 Handle，并通过 Worker 派发；读取与模型披露分别检查授权。缺少有效路由或目录授权时拒绝执行，需要审批时保存等待状态。安装及服务启动成功仍不能证明实际 Mac 文件读取可用，须完成目标 Worker 隔离资格及全流程验收。Agent Service 不执行 Pi 默认本机文件 I/O，既有可执行工具仍通过受限 `inputRef` 使用 Worker。
 
-安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。打包器从列入 runtime 的生产 workspace manifests 自动推导全部直接外部依赖根，再递归复制其依赖闭包；因此 `platform-node` 声明的官方 MCP client 也必须出现在安装产物，新增生产依赖不能依赖手工清单。Agent Service 启动时只从 strict configuration 读取一个 primary、一个 private-only fallback 和一个独立 embedding descriptor；支持的 OpenRouter 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建记录提交身份、实际源码与 package-lock 摘要、workspace checksum、Node 平台/架构和外部依赖闭包；已审阅的未提交改动不能被省略为只有提交身份。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
+安装产物包含 Agent Service、Execution Worker、admin CLI 及产品运行时包；它不包含 `packages/testing` 的生产 adapter。打包器从列入 runtime 的生产 workspace manifests 自动推导全部直接外部依赖根，再递归复制其依赖闭包；因此 `platform-node` 声明的官方 MCP client 也必须出现在安装产物，新增生产依赖不能依赖手工清单。Agent Service 启动时只从 strict configuration 读取一个 primary、可选独立 specialist 和一个独立 embedding descriptor；支持的 Vercel AI Gateway 配置创建 production Model/Pi 与 Mem0 composition，Mem0 使用配置声明的 embedding provider/model/version 和 dimensions，deterministic 配置只报告 descriptor，不创建隐藏模型或调用 provider。每个构建记录提交身份、实际源码与 package-lock 摘要、workspace checksum、Node 平台/架构和外部依赖闭包；已审阅的未提交改动不能被省略为只有提交身份。由于 `better-sqlite3` 等 native 依赖，Mac 与 Linux 必须分别构建和验收，不能把一个平台的二进制包当作另一个平台的 immutable artifact。
 
 Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留独立的有限恢复记录。停止或启动恢复遇到这类预约时禁止后续绑定；已注册环境只通过原认证 Job Host 控制通道请求停止。标记不证明私有环境已清理或共享占用可释放，缺少证据时仍保留 claim；不补造运行时身份或永久释放回执。升级必须先备份并迁移唯一 writer，Schema 39 及以前的 writer 不得接管。Worker 线上消息合同没有新增字段，旧 Worker 也不能绕过数据库绑定检查。
 
@@ -339,6 +339,10 @@ SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件�
 
 
 ## Safety and Preconditions
+
+模型配置遵循[网关迁移设计](../execution/specs/2026-10-06-vercel-gateway-migration-design.md)：文本仅`deepseek/deepseek-v4.1-flash`，嵌入仅`alibaba/qwen3-embedding-8b`、4096维，不保留GLM备用。`providerRouting`保存`order: ["runware", "deepinfra", "morph"]`与`sort: "cost"`；文本输出上限不得超过32768，单次请求还取配置与调用选项的较小值。准入使用冻结的保守估价，结算使用网关返回实际费用；缺失或矛盾费用保持待核对，不把失败当免费，也不自动重发。历史调用身份和账单不改写。
+
+Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlite`路径，实体派生索引单独使用同目录的`entities.sqlite`。实体索引由SDK工厂创建，不混入产品记忆主库；产品记忆仍由产品数据库与受保护Payload负责。备份恢复点只包含产品SQLite与受保护Payload文件，不包含Mem0索引；停机权威迁移会打包配置的整个Memory目录，因此也携带entities.sqlite，并检查Memory版本。实体索引本身不能替代产品状态和受保护Payload的验证。Mac对该新版本及网关行为尚未检查；Hermes结果不能证明生产服务器资格。
 
 - 目标必须是本机明确的临时或已批准 state root、runtime 前缀和配置路径；不得使用工作目录推断生产路径，不得把 `/data/hermes` 或其他共享 Hermes Agent state root 当作 Himawari 目标。
 - 安装前记录 Git HEAD/worktree、package-lock digest、Node/npm、目标前缀和 state root、磁盘可用空间及现有进程。目标前缀必须由本次运行创建，或已取得清理其 `lib/himawari-agent` 的明确授权。
@@ -592,7 +596,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 
 5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未启动的 SRT 预约统计](#live-state-preflight)，保存停服后的查询结果，非零时停止升级并报告用户，不启动新版。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service。Worker 先公布本次 `workerInstanceId/workerBootId`；Agent 取得当前 authority lease 后启动反向权限与 Payload 服务，再发布同时绑定双方实例、boot 和当前 authority 的启动文件，最后完成 Worker handshake。记录双方 `service.ready` 的 component、schema、identity 和 recovery counters；只存在 socket 或旧启动文件不算完成握手。
-7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/fallback/embedding reference、version 和 dimensions，不能显示 secret value。
+7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/specialist/embedding reference、version 和 dimensions，不能显示 secret value。
 8. 正常停止时先向 Agent Service 发送 `SIGTERM`。Agent 按已登记资源先停止接纳、等待在途工作，再逆序关闭依赖；Memory 消费者停止领取新任务并等待当前批次完成后，才关闭 Memory、模型、authority 和 SQLite。等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
 9. 重启或 forced stop 后重新取得 state-root lock，确认同一 deployment/Owner/Agent/Run identity、SQLite schema/quick check、pending recovery counters 和 UDS handshake；不得将普通一次重启写成完整 crash matrix。
 10. 完成验证后保存脱敏命令输出、artifact identity、进程退出码、socket/lock 回读和 rollback 状态；临时 prefix、临时 state root 与证据目录按本次授权的保留策略清理。
@@ -655,7 +659,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - `himawari doctor` 返回 ready，`himawari db status` 显示 managed schema、预期 migration sequence 和 `quickCheck: ok`。
 - Worker 与 Agent Service 均从安装 prefix 运行，不依赖 repository cwd、TypeScript source、未声明 `../pi-mono` 或 testing adapter；Worker 先于 Agent Service ready。
 - Worker ready 必须来自非空且完整验证的能力部署快照；`capabilityRef + version + artifact digest + platform qualification + runtime binding` 任一不一致时，真实能力 adapter 不得注册或执行。
-- `service.ready` 的 model path、memory path 与 embedding descriptor 来自 strict configuration；deterministic profile 不初始化 Pi 或 Mem0，production Pi profile 只绑定显式 primary/fallback，embedding 不进入 Pi generation registry，而由 Mem0 projection 使用显式 dimensions（本次配置为 4096）。
+- `service.ready` 的 model path、memory path 与 embedding descriptor 来自 strict configuration；deterministic profile 不初始化 Pi 或 Mem0，production Pi profile 只绑定显式 primary，embedding 不进入 Pi generation registry，而由 Mem0 projection 使用显式 dimensions（本次配置为 4096）。
 - 正常停止后无遗留 UDS socket、活跃 state-root lock 或未记录 child process；forced stop 后下次启动仍通过正式 recovery。
 - Worker 重启产生新 boot identity 后，旧 Agent 启动绑定必须失效；只重启 Worker 不得沿用旧 Agent/Worker 配对。当前 authority 或任一 peer identity 不匹配时，权限与 Payload 请求不得通过。
 - 配置了生产 Memory 时，ready 前已执行消费者启动与当前 authority 检查；每次新任务领取前再次检查权威。只构造 Mem0 对象不算消费者就绪。该消费者证据不代表其他尚未接入的后台任务已经运行。
@@ -884,7 +888,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 自动审查默认未装配。当前委托只接受精确请求摘要，批准不能扩成其他文件、命令或长期授权；写入时使用 writer 当前时间，重新核验请求期限、委托版本和 Run 执行租约。已有人工请求或决定优先，撤销、取消、过期及执行权变化阻止迟到批准。审查等待不创建共享文件占用；自动批准保存 `automaticReview` 来源，不能解释为用户对本次操作点击了确认。
 
-若明确配置 TypeSafe JEV 审查，`modelDescriptors` 必须保留独立的 `specialist` 身份与单价，primary/fallback 仍只供 Pi 对话模型使用。审查调用必须取得当前 Run 启动实例持有的执行租约并通过模型预算准入；缺少租约、额度、有效模型身份、置信度或实际用量时不得自动批准。仅 429/529 明确拒绝可在期限内重试，模糊网络失败和未知用量不得按估算结算或重放。受控本地测试不代表真实 TypeSafe 调用或生产启用。
+若明确配置 TypeSafe JEV 审查，`modelDescriptors` 必须保留独立的 `specialist` 身份与单价，primary 只供 Pi 对话模型使用。审查调用必须取得当前 Run 启动实例持有的执行租约并通过模型预算准入；缺少租约、额度、有效模型身份、置信度或实际用量时不得自动批准。仅 429/529 明确拒绝可在期限内重试，模糊网络失败和未知用量不得按估算结算或重放。受控本地测试不代表真实 TypeSafe 调用或生产启用。
 
 恢复不会自动续跑未完成审查，也不会启用模型。当前真实模型接入、披露和费用配置仍须按实施 Plan 单独完成；受控模型替身与 SQLite 回归不代表真实服务验收。Schema 38 或更旧 writer 不得写入新库，回退不得删表或修改账本以绕过版本屏障，也不得覆盖升级后新增的决定和消息。
 

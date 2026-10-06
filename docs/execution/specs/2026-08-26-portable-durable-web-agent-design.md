@@ -510,22 +510,21 @@ product memory_records 保存 protected content reference、provenance、classif
 
 ### 模型配置与 Pi runtime
 
-生产配置保存三个相互独立 descriptor：
+生产配置必须保存primary与embedding两个独立descriptor，可以另有一个TypeSafe专用审核descriptor。当前文本仅使用Vercel AI Gateway的DeepSeek，嵌入使用Qwen 4096维，Mem0为3.3.1；精确合同见[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)。[SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 
 ~~~text
 primary:  provider + model + exact version/snapshot + capabilities
           + disclosure scope + cost boundary + secret ref
-fallback: provider + model + exact version/snapshot + capabilities
-          + disclosure scope + cost boundary + secret ref
 embedding: provider + model + exact version + dimensions
            + disclosure scope + cost boundary + secret ref
+specialist: optional TypeSafe decision identity + cost boundary + secret ref
 ~~~
 
 本 Spec 不选择精确身份。首次 live call 前，Plan 必须展示 provider、model/version、capabilities、披露范围、费用结构、预计成本和有上限测试预算，取得 Owner 对实际调用与成本边界的批准。产品不要求 Owner 审批 provider 的 retention/training policy，也不能据此承诺删除或“不用于训练”。
 
-Model Router 总是先选 primary。只有配置为 retryable 的 transport/provider failure 才可能路由到 fixed fallback；authorization failure、invalid input、policy rejection 和 data incompatibility 不可通过另一模型重试。不得动态搜索 marketplace 或第三生成模型。
+当前生产配置不接纳备用文本模型。网关按配置的order及sort: cost选择同一个文本模型的服务商，不切换另一文本模型；authorization failure、invalid input、policy rejection和data incompatibility不能通过另一模型重试。产品不得动态搜索marketplace或自动重发已经开始且结果不明的请求。
 
-非 GitHub 自动 fallback 还必须同时满足：fallback 已批准、能力足够、费用在预算内、披露不扩大。GitHub content 每次发送 fallback 都创建独立 ASK。模型变化按 PRD 的 whitelist、provider、披露和费用规则执行。
+应用层保留的通用fallback路由能力用于既有非网关适配器和历史恢复记录，不代表当前生产配置可以增加备用模型。任何新的模型选择仍按PRD的whitelist、provider、披露和费用规则执行。
 
 Thread checkpoint、Mem0 extraction 和 embedding 都只能使用显式 descriptor；没有隐式 model。v0.2 不实现本地生成模型，也不静默安装或下载任何本地模型。`pre_compaction` 例外地直接采用 Pi 已生成且已保护的 compaction summary，后续提炼模型只提取派生候选，不得生成第二份摘要；其他 checkpoint trigger 仍使用显式 distillation descriptor。
 
@@ -774,9 +773,9 @@ himawari identity sessions|devices|break-glass
 
 ### 模型
 
-- paid/live call 前，展示精确 primary、fallback、embedding identity、capabilities、披露范围、费用结构、预计成本与 capped test budget，取得 Owner 对调用和费用的批准。
+- paid/live call前，展示精确primary、embedding及本次实际使用的专用审核identity、capabilities、披露范围、费用结构、预计成本与capped test budget，取得Owner对调用和费用的批准。
 - 不要求 Owner 审批 provider retention/training policy，也不做相应产品保证。
-- 批准后运行有界 live smoke/eval，覆盖 streaming、tool calls、cancellation、primary failure/fallback、GitHub fallback ASK、disclosure rejection、token/cost accounting 与 secret redaction。
+- 批准后运行有界live smoke/eval，覆盖streaming、tool calls、cancellation、费用缺失/未知结果不重发、disclosure rejection、实际费用结算与secret redaction。既有非网关适配器的fallback检查单独记录，不作为当前网关生产配置。
 - deterministic provider tests 与 fault injection 仍是恢复证据；一次 live success 不能替代它们。
 
 ### GitHub
@@ -784,7 +783,7 @@ himawari identity sessions|devices|break-glass
 - 使用 dedicated test GitHub App 与 repositories，验证 exact read-only permission manifest。
 - 验证 short-lived token refresh、public/private read、webhook signature/replay、default event set、全部有效在线事件进入模型、rate limit、revoked installation 与 selected-repository removal。
 - 验证离线期间没有 polling/reconciliation/history scan，Web UI 产生准确 coverage gap。
-- 验证连接时整仓 primary-model disclosure confirmation，以及每次 fallback disclosure 都单独 ASK。
+- 验证连接时整仓primary-model disclosure confirmation。当前网关配置没有备用文本模型；既有非网关适配器若单独获准使用fallback，其GitHub披露仍每次单独ASK。
 - 断言任何初始 capability 都无法访问 write endpoint 或 Git credential。
 
 ### 跨平台迁移

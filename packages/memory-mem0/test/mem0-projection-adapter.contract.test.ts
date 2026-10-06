@@ -18,8 +18,8 @@ import {
 } from "@himawari-agent/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createOpenRouterMem0ProjectionAdapter,
-  MEM0_OPENROUTER_BASE_URL,
+  createAiGatewayMem0ProjectionAdapter,
+  MEM0_AI_GATEWAY_BASE_URL,
   Mem0ProjectionAdapter,
   type Mem0ProjectionConfiguration,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
@@ -182,7 +182,10 @@ function productMemory(providerRecordId: string | null = null): ProductMemoryRec
 async function adapter() {
   return Mem0ProjectionAdapter.create({
     configuration: configuration(),
-    load: async () => ({ Memory: FakeMem0Memory }),
+    load: async () => ({
+      Memory: FakeMem0Memory,
+      VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
+    }),
   });
 }
 
@@ -326,18 +329,21 @@ describe("Mem0 product projection adapter", () => {
             },
           },
         },
-        load: async () => ({ Memory: FakeMem0Memory }),
+        load: async () => ({
+          Memory: FakeMem0Memory,
+          VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
+        }),
       }),
     ).rejects.toThrow("vectorStore.dbPath must remain inside stateRoot");
   });
 
-  it("maps the selected OpenRouter Qwen embedding identity through Mem0's OpenAI provider", async () => {
+  it("[R2-L5] maps the selected AI Gateway Qwen embedding identity through Mem0's OpenAI provider", async () => {
     const stateRoot = path.join(temporaryDirectory, "qwen");
     const primary: ConfiguredGenerationModelDescriptor = {
       ref: "model-primary",
       role: "primary",
-      provider: "openrouter",
-      model: "deepseek/deepseek-v4-flash-0731",
+      provider: "vercel-ai-gateway",
+      model: "deepseek/deepseek-v4.1-flash",
       version: "catalog-2026-08-28",
       priority: 1,
       name: "Primary",
@@ -349,41 +355,43 @@ describe("Mem0 product projection adapter", () => {
       maxTokens: 256,
       allowedDataClassifications: ["public", "private"],
       disclosure: "external_remote",
-      secretRef: "openrouter-api-key",
+      secretRef: "vercel-ai-gateway-api-key",
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     };
     const embedding: ConfiguredEmbeddingModelDescriptor = {
       ref: "model-embedding",
       role: "embedding",
-      provider: "openrouter",
+      provider: "vercel-ai-gateway",
       model: QWEN3_EMBEDDING_8B_MODEL,
       version: "catalog-2026-08-28",
       dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
       capabilities: ["embedding"],
       allowedDataClassifications: ["public", "private"],
       disclosure: "external_remote",
-      secretRef: "openrouter-api-key",
+      secretRef: "vercel-ai-gateway-api-key",
       cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
     };
     const memory: ConfiguredMemoryDescriptor = {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: `${stateRoot}/data/memory`,
       dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
     };
+    expect(QWEN3_EMBEDDING_8B_MODEL).toBe("alibaba/qwen3-embedding-8b");
+    expect(MEM0_AI_GATEWAY_BASE_URL).toBe("https://ai-gateway.vercel.sh/v1");
     const resolutions: string[] = [];
-    const projection = await createOpenRouterMem0ProjectionAdapter({
+    const projection = await createAiGatewayMem0ProjectionAdapter({
       stateRoot,
       memory,
       llm: primary,
       embedding,
       llmSecret: {
-        secretRef: "openrouter-api-key",
+        secretRef: "vercel-ai-gateway-api-key",
         secretVersion: "v1",
         purpose: "model-provider-auth",
       },
       embeddingSecret: {
-        secretRef: "openrouter-api-key",
+        secretRef: "vercel-ai-gateway-api-key",
         secretVersion: "v1",
         purpose: "model-provider-auth",
       },
@@ -394,23 +402,26 @@ describe("Mem0 product projection adapter", () => {
           return "opaque-provider-secret";
         },
       },
-      load: async () => ({ Memory: FakeMem0Memory }),
+      load: async () => ({
+        Memory: FakeMem0Memory,
+        VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
+      }),
     });
     const fake = FakeMem0Memory.latest as FakeMem0Memory;
 
-    expect(resolutions).toEqual(["openrouter-api-key@v1"]);
+    expect(resolutions).toEqual(["vercel-ai-gateway-api-key@v1"]);
     expect(fake.configuration).toMatchObject({
       llm: {
         provider: "openai",
         config: {
-          baseURL: MEM0_OPENROUTER_BASE_URL,
+          baseURL: "https://ai-gateway.vercel.sh/v1",
           model: primary.model,
         },
       },
       embedder: {
         provider: "openai",
         config: {
-          baseURL: MEM0_OPENROUTER_BASE_URL,
+          baseURL: "https://ai-gateway.vercel.sh/v1",
           model: QWEN3_EMBEDDING_8B_MODEL,
           embeddingDims: QWEN3_EMBEDDING_8B_DIMENSIONS,
         },
@@ -426,11 +437,15 @@ describe("Mem0 product projection adapter", () => {
 it("governs the pinned embedding SDK call without hidden retries and preserves provider usage", async () => {
   const adapter = await Mem0ProjectionAdapter.create({
     configuration: configuration(),
-    load: async () => ({ Memory: FakeMem0Memory }),
+    load: async () => ({
+      Memory: FakeMem0Memory,
+      VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
+    }),
   });
   const memory = FakeMem0Memory.latest;
   if (!memory) throw new Error("MEM0_MISSING");
   const response = {
+    model: "exact-embedder-v1",
     data: [{ index: 0, embedding: [0.1] }],
     usage: { prompt_tokens: 7, total_tokens: 7 },
   };

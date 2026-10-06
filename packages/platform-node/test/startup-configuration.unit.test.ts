@@ -43,8 +43,8 @@ function config(stateRoot: string): Record<string, unknown> {
       {
         ref: "model-primary",
         role: "primary",
-        provider: "provider-primary",
-        model: "model-a",
+        provider: "vercel-ai-gateway",
+        model: "deepseek/deepseek-v4.1-flash",
         version: "snapshot-1",
         priority: 1,
         name: "Primary fixture",
@@ -55,44 +55,20 @@ function config(stateRoot: string): Record<string, unknown> {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 8192,
         maxTokens: 1024,
+        providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
         allowedDataClassifications: ["public", "private"],
         disclosure: "trusted_remote",
         secretRef: "provider-primary",
       },
       {
-        ref: "model-fallback",
-        role: "fallback",
-        provider: "provider-fallback",
-        model: "model-b",
-        version: "snapshot-1",
-        priority: 2,
-        name: "Fallback fixture",
-        api: "openai-completions",
-        reasoning: false,
-        input: ["text"],
-        capabilities: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 8192,
-        maxTokens: 1024,
-        allowedDataClassifications: ["private"],
-        disclosure: "external_remote",
-        secretRef: "provider-fallback",
-        providerRouting: {
-          order: ["z-ai"],
-          allow_fallbacks: false,
-          require_parameters: true,
-          data_collection: "deny",
-        },
-      },
-      {
         ref: "model-embedding",
         role: "embedding",
-        provider: "provider-embedding",
-        model: "embed-a",
+        provider: "vercel-ai-gateway",
+        model: "alibaba/qwen3-embedding-8b",
         version: "snapshot-1",
         capabilities: ["embedding"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        dimensions: 1536,
+        dimensions: 4096,
         allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         disclosure: "trusted_remote",
         secretRef: "provider-embedding",
@@ -100,20 +76,14 @@ function config(stateRoot: string): Record<string, unknown> {
     ],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
-      dimensions: 1536,
+      dimensions: 4096,
     },
     repositoryAllowlistRefs: ["sixianli/himawari-agent"],
     secretReferences: [
       { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
       { ref: "provider-primary", version: "v1", purpose: "model-auth", scope: "model-primary" },
-      {
-        ref: "provider-fallback",
-        version: "v1",
-        purpose: "model-auth",
-        scope: "model-fallback",
-      },
       {
         ref: "provider-embedding",
         version: "v1",
@@ -141,6 +111,45 @@ function config(stateRoot: string): Record<string, unknown> {
 }
 
 describe("strict product configuration", () => {
+  it("[R2-L5] accepts one configured primary with the approved gateway routing", () => {
+    const parsed = parseProductConfiguration(
+      config(path.join(tmpdir(), "himawari-gateway-single-primary")),
+      "2026-10-06T00:00:00.000Z",
+    );
+    expect(parsed.modelDescriptors.map(({ role }) => role)).toEqual(["primary", "embedding"]);
+    expect(parsed.modelDescriptors[0]?.providerRouting).toEqual({
+      order: ["runware", "deepinfra", "morph"],
+      sort: "cost",
+    });
+    expect(Object.isFrozen(parsed.modelDescriptors[0]?.providerRouting?.order)).toBe(true);
+  });
+
+  it.each([
+    { name: "unknown sort", change: { providerRouting: { order: ["runware"], sort: "latency" } } },
+    { name: "missing sort", change: { providerRouting: { order: ["runware"] } } },
+    { name: "empty order", change: { providerRouting: { order: [], sort: "cost" } } },
+    {
+      name: "duplicate order",
+      change: { providerRouting: { order: ["runware", "runware"], sort: "cost" } },
+    },
+    {
+      name: "unapproved data policy",
+      change: {
+        providerRouting: { order: ["runware"], sort: "cost", disallowPromptTraining: true },
+      },
+    },
+    { name: "missing routing", change: { providerRouting: undefined } },
+    { name: "extra fallback", change: { role: "fallback" } },
+    { name: "unsupported text model", change: { model: "unsupported-text-model" } },
+    { name: "too many output tokens", change: { maxTokens: 32769 } },
+    { name: "missing gateway credential", change: { secretRef: null } },
+  ])("[R2-L5] refuses $name in a gateway configuration", ({ change }) => {
+    const input = config(path.join(tmpdir(), "himawari-gateway-invalid"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    input["modelDescriptors"] = [{ ...models[0], ...change }, models[1]];
+    expect(() => parseProductConfiguration(input, "2026-10-06T00:00:00.000Z")).toThrow();
+  });
+
   it("loads a versioned configuration without deriving paths from cwd", async () => {
     const stateRoot = path.join(tmpdir(), "himawari-explicit-state-root");
     const parsed = parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z");
@@ -152,11 +161,9 @@ describe("strict product configuration", () => {
       publicMode: true,
       concurrency: { totalRuns: 8, foregroundReserved: 2 },
     });
-    expect(parsed.modelDescriptors[1]?.providerRouting).toEqual({
-      order: ["z-ai"],
-      allow_fallbacks: false,
-      require_parameters: true,
-      data_collection: "deny",
+    expect(parsed.modelDescriptors[0]?.providerRouting).toEqual({
+      order: ["runware", "deepinfra", "morph"],
+      sort: "cost",
     });
     expect(parsed.modelDescriptors[0]).toMatchObject({
       role: "primary",
@@ -165,10 +172,10 @@ describe("strict product configuration", () => {
       contextWindow: 8192,
       maxTokens: 1024,
     });
-    expect(parsed.modelDescriptors[2]).toMatchObject({
+    expect(parsed.modelDescriptors[1]).toMatchObject({
       role: "embedding",
       capabilities: ["embedding"],
-      dimensions: 1536,
+      dimensions: 4096,
     });
     expect(parsed.stateRoot).not.toBe(process.cwd());
     expect(parsed.capabilityDeployment).toBeUndefined();
@@ -298,7 +305,9 @@ describe("strict product configuration", () => {
     const invalidModels = invalidRouting["modelDescriptors"] as Record<string, unknown>[];
     invalidRouting["modelDescriptors"] = [
       ...invalidModels.map((entry, index) =>
-        index === 1 ? { ...entry, providerRouting: { order: ["z-ai", "z-ai"] } } : entry,
+        index === 0
+          ? { ...entry, providerRouting: { order: ["runware", "runware"], sort: "cost" } }
+          : entry,
       ),
     ];
     expect(() => parseProductConfiguration(invalidRouting, new Date().toISOString())).toThrowError(
@@ -319,12 +328,12 @@ describe("strict product configuration", () => {
     const insecure = config(stateRoot);
     insecure["publicOrigin"] = "http://agent.example.test";
     expect(() => parseProductConfiguration(insecure, new Date().toISOString())).toThrowError();
-    const missingFallback = config(stateRoot);
-    missingFallback["modelDescriptors"] = (missingFallback["modelDescriptors"] as unknown[]).filter(
-      (entry) => (entry as { role: string }).role !== "fallback",
+    const missingPrimary = config(stateRoot);
+    missingPrimary["modelDescriptors"] = (missingPrimary["modelDescriptors"] as unknown[]).filter(
+      (entry) => (entry as { role: string }).role !== "primary",
     );
     expect(() =>
-      parseProductConfiguration(missingFallback, new Date().toISOString()),
+      parseProductConfiguration(missingPrimary, new Date().toISOString()),
     ).toThrowError();
     const invalidConcurrency = config(stateRoot);
     invalidConcurrency["concurrency"] = {
@@ -343,21 +352,20 @@ describe("strict product configuration", () => {
     expect(() =>
       parseProductConfiguration(mismatchedEmbedding, new Date().toISOString()),
     ).toThrowError();
-    const publicFallback = config(stateRoot);
-    const publicFallbackModels = publicFallback["modelDescriptors"] as Record<string, unknown>[];
-    publicFallback["modelDescriptors"] = publicFallbackModels.map((entry, index) =>
-      index === 1 ? { ...entry, allowedDataClassifications: ["public"] } : entry,
-    );
-    expect(() =>
-      parseProductConfiguration(publicFallback, new Date().toISOString()),
-    ).toThrowError();
+    const extraPrimary = config(stateRoot);
+    const primaryModels = extraPrimary["modelDescriptors"] as Record<string, unknown>[];
+    extraPrimary["modelDescriptors"] = [
+      ...primaryModels,
+      { ...primaryModels[0], ref: "second-primary" },
+    ];
+    expect(() => parseProductConfiguration(extraPrimary, new Date().toISOString())).toThrowError();
     const generationFieldOnEmbedding = config(stateRoot);
     const embeddingModels = generationFieldOnEmbedding["modelDescriptors"] as Record<
       string,
       unknown
     >[];
     generationFieldOnEmbedding["modelDescriptors"] = embeddingModels.map((entry, index) =>
-      index === 2 ? { ...entry, input: ["text"] } : entry,
+      index === 1 ? { ...entry, input: ["text"] } : entry,
     );
     expect(() =>
       parseProductConfiguration(generationFieldOnEmbedding, new Date().toISOString()),
@@ -377,7 +385,7 @@ describe("strict product configuration", () => {
       "modelDescriptors"
     ] as Record<string, unknown>[];
     missingEmbeddingCapability["modelDescriptors"] = missingEmbeddingCapabilityModels.map(
-      (entry, index) => (index === 2 ? { ...entry, capabilities: ["text"] } : entry),
+      (entry, index) => (index === 1 ? { ...entry, capabilities: ["text"] } : entry),
     );
     expect(() =>
       parseProductConfiguration(missingEmbeddingCapability, new Date().toISOString()),
@@ -871,7 +879,7 @@ it("accepts a dedicated review model and rejects one the router could also selec
   const review = {
     delegationKey: "automatic-review-delegation",
     configurationVersion: "review-config:1",
-    modelRef: "model-fallback",
+    modelRef: "model-primary",
     maximumWaitMs: 30_000,
     maxOutputBytes: 32_768,
   };
@@ -922,7 +930,6 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
     disclosure: "external_remote",
     secretRef: "provider-reviewer",
   };
-  // Keep the conversational fallback; review uses its own model and budget identity.
   const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
   descriptors.push(decisionModel);
   (raw["secretReferences"] as Record<string, unknown>[]).push({

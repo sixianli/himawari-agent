@@ -360,7 +360,9 @@ describe("production file read workflow through the Worker transport", () => {
     expect(f.intents.find(({ operation }) => operation === "disclose")).toMatchObject({
       disclosure: "named_recipients",
       finalRisk: "HIGH",
-      recipients: [expect.stringContaining("model:openrouter:")],
+      recipients: [
+        expect.stringContaining("model:vercel-ai-gateway:deepseek/deepseek-v4.1-flash:"),
+      ],
     });
     expect(f.assertHeld).toHaveBeenCalled();
   });

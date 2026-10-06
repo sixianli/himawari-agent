@@ -328,8 +328,15 @@ function addCost(left: number, right: number, field: string): number {
   return result;
 }
 
-function actualCost(usage: ModelInvocationUsage, pricing: ModelInvocationPricing): number {
+function actualCost(
+  usage: ModelInvocationUsage,
+  pricing: ModelInvocationPricing,
+  provider: string,
+): number {
   assertUsage(usage);
+  if (provider === "vercel-ai-gateway") {
+    return safeNonNegativeInteger(usage.reportedCostMicros, "usage.reportedCostMicros");
+  }
   const regularInputTokens = usage.inputTokens - usage.cacheReadTokens - usage.cacheWriteTokens;
   let total = multiplyCost(regularInputTokens, pricing.input, "input cost");
   total = addCost(
@@ -587,7 +594,7 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
         });
       },
       settle: async (usage: ModelInvocationUsage) => {
-        const actualCostMicros = actualCost(usage, frozenPricing);
+        const actualCostMicros = actualCost(usage, frozenPricing, identity.provider);
         await this.#invocations.settle({
           runId: identity.runId,
           invocationId: identity.invocationId,

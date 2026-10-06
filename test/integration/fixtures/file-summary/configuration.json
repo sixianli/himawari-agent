@@ -12,92 +12,60 @@
     {
       "ref": "model-primary",
       "role": "primary",
-      "provider": "openrouter",
-      "model": "deepseek/deepseek-v4-flash-0731",
-      "version": "catalog-2026-09-07",
+      "provider": "vercel-ai-gateway",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "version": "catalog-2026-10-06",
       "capabilities": ["text", "tool_calling"],
       "cost": {
-        "input": 0.06,
-        "output": 0.18,
-        "cacheRead": 0.015,
-        "cacheWrite": 0
+        "input": 0.3,
+        "output": 2.4,
+        "cacheRead": 0.3,
+        "cacheWrite": 0.3
       },
       "allowedDataClassifications": ["public", "private"],
       "disclosure": "external_remote",
-      "secretRef": "openrouter-api-key",
+      "secretRef": "vercel-ai-gateway-api-key",
       "priority": 1,
-      "name": "DeepSeek: DeepSeek V4 Flash 0731",
+      "name": "DeepSeek V4.1 Flash",
       "api": "openai-completions",
       "reasoning": false,
       "input": ["text"],
       "contextWindow": 1048576,
       "maxTokens": 2048,
       "providerRouting": {
-        "order": ["deepinfra/fp8"],
-        "allow_fallbacks": false,
-        "require_parameters": true,
-        "data_collection": "deny"
-      }
-    },
-    {
-      "ref": "model-fallback",
-      "role": "fallback",
-      "provider": "openrouter",
-      "model": "z-ai/glm-5.3-flash",
-      "version": "catalog-2026-09-07",
-      "capabilities": ["text", "tool_calling"],
-      "cost": {
-        "input": 0.075,
-        "output": 0.25,
-        "cacheRead": 0.015,
-        "cacheWrite": 0
-      },
-      "allowedDataClassifications": ["private"],
-      "disclosure": "external_remote",
-      "secretRef": "openrouter-api-key",
-      "priority": 2,
-      "name": "Z.ai: GLM 5.3 Flash",
-      "api": "openai-completions",
-      "reasoning": false,
-      "input": ["text"],
-      "contextWindow": 1048576,
-      "maxTokens": 2048,
-      "providerRouting": {
-        "order": ["z-ai/fp8"],
-        "allow_fallbacks": false,
-        "require_parameters": true,
-        "data_collection": "deny"
+        "order": ["runware", "deepinfra", "morph"],
+        "sort": "cost"
       }
     },
     {
       "ref": "model-embedding",
       "role": "embedding",
-      "provider": "openrouter",
-      "model": "qwen/qwen3-embedding-8b",
-      "version": "catalog-2026-09-07",
+      "provider": "vercel-ai-gateway",
+      "model": "alibaba/qwen3-embedding-8b",
+      "version": "catalog-2026-10-06",
       "capabilities": ["embedding"],
       "cost": {
-        "input": 0.04,
+        "input": 0.01,
         "output": 0.0,
         "cacheRead": 0.0,
         "cacheWrite": 0
       },
       "allowedDataClassifications": ["public", "private"],
       "disclosure": "external_remote",
-      "secretRef": "openrouter-api-key",
+      "secretRef": "vercel-ai-gateway-api-key",
       "dimensions": 4096
     }
   ],
   "memory": {
     "adapter": "mem0-oss",
-    "version": "3.1.7",
+    "version": "3.3.1",
     "storagePath": "/tmp/hma-file-loop/data/memory",
     "dimensions": 4096
   },
   "repositoryAllowlistRefs": [],
   "secretReferences": [
     {
-      "ref": "openrouter-api-key",
+      "ref": "vercel-ai-gateway-api-key",
       "version": "v1",
       "purpose": "model-provider-auth",
       "scope": "model"

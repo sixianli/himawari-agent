@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import {
@@ -217,4 +217,28 @@ it("qualifies current-task reminders without rewriting history or selecting anot
   expect(candidate.request.messages.at(-1)).toMatchObject({ role: "user" });
   expect(JSON.stringify(candidate.request.messages.at(-1))).toContain("current task");
   expect(JSON.stringify(candidate.request.messages.at(-1))).not.toContain("previous task");
+});
+
+const retiredProviderProbes = [
+  "hermes-three-fixes-input-comparison.mjs",
+  "hermes-three-fixes-provider-comparison.mjs",
+  "hermes-three-fixes-provider-matrix.mjs",
+  "hermes-three-fixes-tool-content-comparison.mjs",
+  "hermes-three-fixes-task-context.mjs",
+  "hermes-harness-finalization-comparison.mjs",
+  "hermes-harness-continuation-gate.mjs",
+];
+
+it.each(retiredProviderProbes)("[R2-L5] retires the paid historical CLI %s", (filename) => {
+  const script = fileURLToPath(new URL(`../../scripts/operations/${filename}`, import.meta.url));
+  const result = spawnSync(process.execPath, [script, "--compare"], {
+    encoding: "utf8",
+    timeout: 5_000,
+    env: { PATH: process.env.PATH },
+  });
+  expect(result.error).toBeUndefined();
+  expect(result.status).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toContain("HISTORICAL_PROVIDER_PROBE_RETIRED");
+  expect(result.stderr).toContain("2026-10-06-vercel-gateway-migration-design.md");
 });

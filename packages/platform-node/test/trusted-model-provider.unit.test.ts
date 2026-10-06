@@ -184,6 +184,7 @@ class RecordingTransport implements TrustedModelTransport {
 
 function provider(options: {
   readonly transport: TrustedModelTransport;
+  readonly descriptor?: ModelDescriptor;
   readonly admission?: TrustedModelProviderAdapterDependencies["admission"];
   readonly events?: string[];
   readonly resolveSecret?: () => Promise<string>;
@@ -192,7 +193,7 @@ function provider(options: {
   return new TrustedModelProviderAdapter({
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
-    descriptors: [DESCRIPTOR],
+    descriptors: [options.descriptor ?? DESCRIPTOR],
     handles: secretPort,
     secretSource: {
       resolve: async () => {
@@ -217,6 +218,99 @@ type TrustedModelProviderAdapterDependencies = ConstructorParameters<
 >[0];
 
 describe("TrustedModelProviderAdapter invocation admission", () => {
+  it.each([0, 77])("[R2-L5] passes the actual gateway fee %s to admission", async (costMicros) => {
+    let settled: ModelInvocationUsage | undefined;
+    const transport = new RecordingTransport(
+      providerEvents({
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      }).map((event) => (event.type === "model.completed" ? { ...event, costMicros } : event)),
+    );
+    const model = provider({
+      descriptor: {
+        ...DESCRIPTOR,
+        provider: "vercel-ai-gateway",
+        model: "deepseek/deepseek-v4.1-flash",
+      },
+      transport,
+      admission: async () => ({
+        context: executionContext(),
+        begin: async () =>
+          freshAdmission({
+            assertActive: async () => undefined,
+            markStarted: async () => undefined,
+            releaseReserved: async () => undefined,
+            settle: async (usage) => {
+              settled = usage;
+            },
+            markUnknown: async () => {
+              throw new Error("Successful fee must settle");
+            },
+          }),
+      }),
+    });
+    const events: ModelInvocationEvent[] = [];
+    for await (const event of model.invoke(invocation())) events.push(event);
+
+    expect(settled).toEqual({
+      inputTokens: 10,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reportedCostMicros: costMicros,
+    });
+    expect(events.at(-1)).toMatchObject({ type: "model.completed", costMicros });
+    expect(transport.calls).toHaveLength(1);
+  });
+
+  it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "[R2-L5] keeps an invalid gateway fee %s unknown before publishing success",
+    async (costMicros) => {
+      const unknown: ModelInvocationUnknownReason[] = [];
+      const model = provider({
+        descriptor: {
+          ...DESCRIPTOR,
+          provider: "vercel-ai-gateway",
+          model: "deepseek/deepseek-v4.1-flash",
+        },
+        transport: new RecordingTransport(
+          providerEvents({
+            inputTokens: 10,
+            outputTokens: 2,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          }).map((event) => (event.type === "model.completed" ? { ...event, costMicros } : event)),
+        ),
+        admission: async () => ({
+          context: executionContext(),
+          begin: async () =>
+            freshAdmission({
+              assertActive: async () => undefined,
+              markStarted: async () => undefined,
+              releaseReserved: async () => undefined,
+              settle: async () => {
+                throw new Error("Invalid fee must not settle");
+              },
+              markUnknown: async (reason) => {
+                unknown.push(reason);
+              },
+            }),
+        }),
+      });
+      const events: ModelInvocationEvent[] = [];
+      for await (const event of model.invoke(invocation())) events.push(event);
+
+      expect(unknown).toEqual(["provider_unresolved"]);
+      expect(events).not.toContainEqual(expect.objectContaining({ type: "model.completed" }));
+      expect(events.at(-1)).toMatchObject({
+        type: "model.failed",
+        errorCode: "MODEL_PROVIDER_USAGE_UNAVAILABLE",
+      });
+    },
+  );
+
   it("admits before resolving a secret and settles from usage, not costMicros", async () => {
     const order: string[] = [];
     let settled: ModelInvocationUsage | undefined;

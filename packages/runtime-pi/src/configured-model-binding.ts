@@ -13,7 +13,7 @@ import type {
 } from "@himawari-agent/application/runtime-port";
 import type { PiModelBinding, PiModelBindingPort } from "./pi-runtime-adapter.js";
 
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
 
 export interface PiModelCost {
   readonly input: number;
@@ -33,9 +33,10 @@ export interface PiModelAdmissionCost {
  * identity so no paired descriptor can drift.
  */
 export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
-  readonly provider: "openrouter";
-  readonly routingClass: "primary" | "fallback";
+  readonly provider: "vercel-ai-gateway";
+  readonly routingClass: "primary";
   readonly secretRequirement: ModelSecretRequirement;
+  readonly providerRouting: ModelProviderRouting;
   readonly name: string;
   readonly api: "openai-completions";
   readonly baseUrl?: string;
@@ -93,45 +94,33 @@ function assertBaseUrl(value: string): void {
   const url = new URL(value);
   if (url.username || url.password || !["https:", "http:"].includes(url.protocol)) {
     throw new TypeError(
-      "Pi OpenRouter base URL must be an absolute HTTP(S) URL without credentials",
+      "Pi AI Gateway base URL must be an absolute HTTP(S) URL without credentials",
     );
   }
   if (url.protocol === "http:" && !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname)) {
-    throw new TypeError("Pi OpenRouter HTTP base URL must be loopback-only");
+    throw new TypeError("Pi AI Gateway HTTP base URL must be loopback-only");
   }
 }
 
-function freezeRouting(
-  routing: ModelProviderRouting | undefined,
-): ModelProviderRouting | undefined {
-  if (routing === undefined) return undefined;
-  if (routing.order !== undefined) {
-    if (
-      routing.order.length === 0 ||
-      routing.order.some(
-        (provider) => typeof provider !== "string" || provider.trim().length === 0,
-      ) ||
-      new Set(routing.order).size !== routing.order.length
-    ) {
-      throw new TypeError("providerRouting.order must contain unique non-empty provider names");
-    }
+function freezeRouting(routing: ModelProviderRouting): ModelProviderRouting {
+  if (
+    routing === undefined ||
+    !Array.isArray(routing.order) ||
+    routing.order.length === 0 ||
+    routing.order.some(
+      (provider) => typeof provider !== "string" || provider.trim().length === 0,
+    ) ||
+    new Set(routing.order).size !== routing.order.length
+  ) {
+    throw new TypeError("providerRouting.order must contain unique non-empty provider names");
   }
   if (
-    routing.data_collection !== undefined &&
-    routing.data_collection !== "allow" &&
-    routing.data_collection !== "deny"
+    routing.sort !== "cost" ||
+    Object.keys(routing).some((key) => key !== "order" && key !== "sort")
   ) {
-    throw new TypeError("providerRouting.data_collection is invalid");
+    throw new TypeError("providerRouting must contain only order and sort: cost");
   }
-  return Object.freeze({
-    ...(routing.order === undefined ? {} : { order: Object.freeze([...routing.order]) }),
-    ...(routing.allow_fallbacks === undefined ? {} : { allow_fallbacks: routing.allow_fallbacks }),
-    ...(routing.require_parameters === undefined
-      ? {}
-      : { require_parameters: routing.require_parameters }),
-    ...(routing.data_collection === undefined ? {} : { data_collection: routing.data_collection }),
-    ...(routing.zdr === undefined ? {} : { zdr: routing.zdr }),
-  });
+  return Object.freeze({ order: Object.freeze([...routing.order]), sort: "cost" });
 }
 
 function freezeDescriptor(descriptor: ConfiguredPiModelDescriptor): ConfiguredPiModelDescriptor {
@@ -143,7 +132,7 @@ function freezeDescriptor(descriptor: ConfiguredPiModelDescriptor): ConfiguredPi
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement: Object.freeze({ ...descriptor.secretRequirement }),
-    ...(providerRouting === undefined ? {} : { providerRouting }),
+    providerRouting,
   });
 }
 
@@ -167,7 +156,12 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   ) {
     throw new TypeError(`${field}.reasoningRequired requires reasoning capability`);
   }
-  if (descriptor.provider !== "openrouter") throw new TypeError(`${field}.provider is unsupported`);
+  if (descriptor.provider !== "vercel-ai-gateway")
+    throw new TypeError(`${field}.provider is unsupported`);
+  if (descriptor.model !== "deepseek/deepseek-v4.1-flash")
+    throw new TypeError(`${field}.model is unsupported`);
+  if (descriptor.routingClass !== "primary")
+    throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
   if (descriptor.api !== "openai-completions") throw new TypeError(`${field}.api is unsupported`);
   if (descriptor.input.length === 0 || !descriptor.input.includes("text")) {
     throw new TypeError(`${field}.input must include text`);
@@ -185,16 +179,10 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   ) {
     throw new TypeError(`${field}.allowedDataClassifications must be non-empty and unique`);
   }
-  if (
-    descriptor.routingClass === "fallback" &&
-    (descriptor.allowedDataClassifications.length !== 1 ||
-      descriptor.allowedDataClassifications[0] !== "private")
-  ) {
-    throw new TypeError(`${field}.allowedDataClassifications must be exactly private`);
-  }
   assertPositiveInteger(descriptor.priority, `${field}.priority`);
   assertPositiveInteger(descriptor.contextWindow, `${field}.contextWindow`);
   assertPositiveInteger(descriptor.maxTokens, `${field}.maxTokens`);
+  if (descriptor.maxTokens > 32768) throw new TypeError(`${field}.maxTokens must not exceed 32768`);
   for (const [name, value] of Object.entries(descriptor.cost)) {
     assertNonNegativeFinite(value, `${field}.cost.${name}`);
   }
@@ -244,9 +232,6 @@ function providerModelConfig(
       supportsUsageInStreaming: true,
       supportsStrictMode: descriptor.capabilities.includes("structured_outputs"),
       ...(descriptor.reasoning ? { thinkingFormat: "openrouter" as const } : {}),
-      ...(descriptor.providerRouting === undefined
-        ? {}
-        : { openRouterRouting: structuredClone(descriptor.providerRouting) }),
     },
   };
 }
@@ -263,45 +248,11 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     if (!options.secretSource.productionSuitable) {
       throw new TypeError("PI_UNSAFE_PROVIDER_SECRET_SOURCE");
     }
-    if (options.descriptors.length !== 2) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_PRIMARY_AND_FALLBACK");
+    if (options.descriptors.length !== 1) {
+      throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
     }
     const descriptors = options.descriptors.map(freezeDescriptor);
     descriptors.forEach(validateDescriptor);
-    if (descriptors.filter(({ routingClass }) => routingClass === "primary").length !== 1) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
-    }
-    if (descriptors.filter(({ routingClass }) => routingClass === "fallback").length !== 1) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_FALLBACK");
-    }
-    if (new Set(descriptors.map(({ ref }) => ref)).size !== descriptors.length) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_UNIQUE_REFS");
-    }
-    const first = descriptors[0];
-    const provider = first?.provider;
-    const baseUrl = first?.baseUrl ?? OPENROUTER_BASE_URL;
-    const firstSecret = first?.secretRequirement;
-    const secretIdentity = firstSecret
-      ? `${firstSecret.secretRef}@${firstSecret.secretVersion}:${firstSecret.purpose}`
-      : "";
-    if (
-      provider === undefined ||
-      descriptors.some((descriptor) => descriptor.provider !== provider)
-    ) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_PROVIDER");
-    }
-    if (descriptors.some((descriptor) => (descriptor.baseUrl ?? OPENROUTER_BASE_URL) !== baseUrl)) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_ONE_BASE_URL");
-    }
-    if (
-      descriptors.some(
-        ({ secretRequirement }) =>
-          `${secretRequirement.secretRef}@${secretRequirement.secretVersion}:${secretRequirement.purpose}` !==
-          secretIdentity,
-      )
-    ) {
-      throw new TypeError("PI_MODEL_BINDING_REQUIRES_SHARED_PROVIDER_SECRET");
-    }
     this.#descriptors = Object.freeze(descriptors);
     this.#byRef = new Map(descriptors.map((descriptor) => [descriptor.ref, descriptor]));
     this.#secretSource = options.secretSource;
@@ -361,7 +312,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
   private async initializeRuntime(): Promise<ModelRuntime> {
     const first = this.#descriptors[0];
     if (first === undefined) throw new Error("PI_MODEL_BINDING_EMPTY");
-    const baseUrl = first.baseUrl ?? OPENROUTER_BASE_URL;
+    const baseUrl = first.baseUrl ?? AI_GATEWAY_BASE_URL;
     const runtime = await this.#runtimeFactory.create({
       credentials: new InMemoryCredentialStore(),
       modelsPath: null,
@@ -370,7 +321,7 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     });
     try {
       runtime.registerProvider(first.provider, {
-        name: "Himawari OpenRouter",
+        name: "Himawari AI Gateway",
         baseUrl,
         api: first.api,
         authHeader: true,

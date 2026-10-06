@@ -2,7 +2,6 @@
 
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
 import {
   createAgentId,
   createMemoryId,
@@ -18,9 +17,14 @@ import {
   type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
 import { expect } from "vitest";
+import { gatewayEmbeddingUsage } from "@himawari-agent/memory-mem0";
+import {
+  gatewayPayload,
+  observeGatewayFetch,
+} from "../../../packages/runtime-pi/src/gateway-observation.js";
 import { createProductionMemoryCompositionFromConfiguration } from "../../../apps/agent-service/src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../../../apps/agent-service/src/production-model-composition.js";
-import { boundedOpenRouterFetch, record } from "./file-summary-network.js";
+import { boundedAiGatewayFetch, record } from "./file-summary-network.js";
 
 const fixture = new URL("./file-summary/", import.meta.url);
 export async function qualifyFileSummary() {
@@ -32,7 +36,7 @@ export async function qualifyFileSummary() {
     process.env["HIMAWARI_FILE_SUMMARY_PRIOR_RESERVATION_MICROS"] ?? 0,
   );
   let embeddingFetch: typeof globalThis.fetch | undefined;
-  const guard = boundedOpenRouterFetch(
+  const guard = boundedAiGatewayFetch(
     configuration,
     (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -77,6 +81,9 @@ export async function qualifyFileSummary() {
       if (!primary.resolveSecret) throw new Error("PROBE_SECRET_RESOLVER_MISSING");
       key = await primary.resolveSecret();
       credentialReads++;
+      const primaryDescriptor = primary.descriptor;
+      if (!primaryDescriptor) throw new Error("PROBE_PRIMARY_DESCRIPTOR_MISSING");
+      const primaryRouting = primaryDescriptor.providerRouting;
       const options = {
         apiKey: key,
         maxTokens: 2048,
@@ -110,24 +117,35 @@ export async function qualifyFileSummary() {
           },
         ],
       };
-      async function observe(
-        message: Awaited<ReturnType<typeof primary.modelRuntime.completeSimple>>,
-      ) {
+      async function complete(context: Context, inspect?: (payload: unknown) => void) {
+        const gateway = observeGatewayFetch(guard.fetch, primary.model.id);
+        const message = await primary.modelRuntime.completeSimple(primary.model, context, {
+          ...options,
+          fetch: gateway.fetch,
+          onPayload: (payload) => {
+            inspect?.(payload);
+            return gatewayPayload(payload, primaryRouting);
+          },
+        });
+        const billing = await gateway.result();
+        if (billing.status !== "verified") throw new Error("PROBE_GATEWAY_BILLING_MISSING");
         const observation: Record<string, unknown> = {
           model: message["model"],
           responseModel: message.responseModel ?? message["model"],
           responseId: message.responseId ?? null,
           stopReason: message.stopReason,
           usage: message.usage,
+          provider: billing.billing.provider,
+          billedCostMicros: billing.billing.costMicros,
         };
         generations.push(observation);
         if (message.stopReason === "error" || message.stopReason === "aborted") {
           throw new Error(`PROBE_GENERATION_FAILED:${message.stopReason}`);
         }
         if (!message.responseId) throw new Error("PROBE_RESPONSE_ID_MISSING");
+        return message;
       }
-      const first = await primary.modelRuntime.completeSimple(primary.model, context, options);
-      await observe(first);
+      const first = await complete(context);
       expect(first.stopReason).toBe("toolUse");
       const calls = first.content.filter((content) => content.type === "toolCall");
       expect(calls).toHaveLength(1);
@@ -154,23 +172,19 @@ export async function qualifyFileSummary() {
           },
         ],
       };
-      const second = await primary.modelRuntime.completeSimple(primary.model, secondContext, {
-        ...options,
-        onPayload: (payload) => {
-          const messages = record(payload)["messages"];
-          toolResultMatched =
-            Array.isArray(messages) &&
-            messages.some((item) => {
-              const message = record(item);
-              return (
-                message["role"] === "tool" &&
-                message["tool_call_id"] === call.id &&
-                message["content"] === content
-              );
-            });
-        },
+      const second = await complete(secondContext, (payload) => {
+        const messages = record(payload)["messages"];
+        toolResultMatched =
+          Array.isArray(messages) &&
+          messages.some((item) => {
+            const message = record(item);
+            return (
+              message["role"] === "tool" &&
+              message["tool_call_id"] === call.id &&
+              message["content"] === content
+            );
+          });
       });
-      await observe(second);
       expect(second.stopReason).toBe("stop");
       const answer = second.content
         .filter((item) => item.type === "text")
@@ -182,26 +196,9 @@ export async function qualifyFileSummary() {
       expect(toolResultMatched).toBe(true);
       expect(summaryFactsMatched).toBe(true);
       summary = answer;
-
-      const fallback = await bindings.resolve("model-fallback");
-      const third = await fallback.modelRuntime.completeSimple(
-        fallback.model,
-        {
-          messages: [
-            { role: "user", content: "Reply with exactly HIMAWARI", timestamp: Date.now() },
-          ],
-        },
-        options,
-      );
-      await observe(third);
-      expect(third.stopReason).toBe("stop");
-      expect(
-        third.content.some((item) => item.type === "text" && item.text.includes("HIMAWARI")),
-      ).toBe(true);
     }
     if (phase !== "generation") {
       if (!content) content = await readFile(new URL("project-brief.txt", fixture), "utf8");
-      // Mem0 3.1.7 uses OpenAI v4 shims; install the same outbound guard before loading it.
       const shims = await import("openai/_shims/registry");
       const nodeRuntime = await import("openai/_shims/node-runtime");
       if (shims.kind !== undefined) throw new Error("PROBE_MEM0_SHIMS_ALREADY_LOADED");
@@ -219,6 +216,9 @@ export async function qualifyFileSummary() {
       let embeddingOperation = "upsert";
       memory.projection.bindEmbeddingBoundary(async (request, send) => {
         const result = await send({ timeoutMs: 120_000, signal });
+        if (request.dimensions !== configuration.memory.dimensions)
+          throw new Error("PROBE_EMBEDDING_DIMENSIONS_MISMATCH");
+        const usage = gatewayEmbeddingUsage(result, request.model, configuration.memory.dimensions);
         const vectors = result["data"].map((item) => item.embedding);
         expect(vectors).toHaveLength(1);
         embeddings.push({
@@ -230,7 +230,7 @@ export async function qualifyFileSummary() {
           usage: {
             prompt_tokens: result.usage.prompt_tokens,
             total_tokens: result.usage.total_tokens,
-            cost: record(result.usage)["cost"] ?? null,
+            costMicros: usage.reportedCostMicros,
           },
         });
         expect(
@@ -275,39 +275,16 @@ export async function qualifyFileSummary() {
       expect(
         guard.requests
           .filter((request) => request.kind === "embedding")
-          .every((request) => request.responseModel?.toLowerCase() === "qwen/qwen3-embedding-8b"),
+          .every(
+            (request) => request.responseModel?.toLowerCase() === "alibaba/qwen3-embedding-8b",
+          ),
       ).toBe(true);
     }
-    // Generation records may become queryable after the stream has completed.
-    // Retry only these read-only lookups; never repeat an inference for missing metadata.
-    for (const observation of generations) {
-      let metadata: Response | undefined;
-      const statuses: number[] = [];
-      for (const waitMs of [0, 1000, 3000, 8000]) {
-        if (waitMs) await delay(waitMs, undefined, { signal });
-        metadata = await guard.fetch(
-          `https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(String(observation["responseId"]))}`,
-          { headers: { Authorization: `Bearer ${key}` } },
-        );
-        statuses.push(metadata.status);
-        if (metadata.status !== 404) break;
-        await metadata.body?.cancel();
-      }
-      observation["metadataStatuses"] = statuses;
-      if (!metadata?.ok) throw new Error(`PROBE_METADATA_HTTP_${metadata?.status}`);
-      const data = record(record(await metadata.json())["data"]);
-      observation["provider"] = data["provider_name"];
-      observation["billedCostUsd"] = data["total_cost"];
-      if (typeof data["total_cost"] !== "number" || data["total_cost"] < 0)
-        throw new Error("PROBE_COST_MISSING");
-    }
-    if (phase !== "embedding") {
-      expect(generations.slice(0, 2).every((item) => item["provider"] === "DeepInfra")).toBe(true);
-      expect(generations[2]?.["provider"]).toBe("Z.AI");
-      const total = generations.reduce((sum, item) => sum + Number(item["billedCostUsd"]), 0);
-      if (total + priorReservationMicros / 1_000_000 > 1)
-        throw new Error("PROBE_ACTUAL_BUDGET_EXCEEDED");
-    }
+    const actualCostMicros =
+      generations.reduce((sum, item) => sum + Number(item["billedCostMicros"]), 0) +
+      embeddings.reduce((sum, item) => sum + Number(record(item["usage"])["costMicros"]), 0);
+    if (actualCostMicros + priorReservationMicros > 1_000_000)
+      throw new Error("PROBE_ACTUAL_BUDGET_EXCEEDED");
     passed = true;
   } finally {
     await memory?.close();

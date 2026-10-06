@@ -36,7 +36,7 @@ interface ConfiguredModelDescriptorBase {
 }
 
 interface ConfiguredGenerationModelDescriptorBase extends ConfiguredModelDescriptorBase {
-  readonly role: "primary" | "fallback";
+  readonly role: "primary";
   readonly priority: number;
   readonly name: string;
 }

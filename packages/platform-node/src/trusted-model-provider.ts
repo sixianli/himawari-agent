@@ -55,6 +55,7 @@ export interface SecretResolutionRecord {
 
 function modelUsage(
   event: Extract<ModelInvocationEvent, { readonly type: "model.completed" }>,
+  provider: string,
 ): ModelInvocationUsage | undefined {
   const inputTokens = event.inputTokens;
   const outputTokens = event.outputTokens;
@@ -75,7 +76,17 @@ function modelUsage(
   ) {
     return undefined;
   }
-  return Object.freeze({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+  const gateway = provider === "vercel-ai-gateway";
+  if (gateway && (!Number.isSafeInteger(event.costMicros) || event.costMicros < 0)) {
+    return undefined;
+  }
+  return Object.freeze({
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    ...(gateway ? { reportedCostMicros: event.costMicros } : {}),
+  });
 }
 
 export class TrustedModelProviderAdapter implements ModelPort {
@@ -215,7 +226,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
           );
         }
         if (event.type === "model.completed") {
-          const usage = modelUsage(event);
+          const usage = modelUsage(event, descriptor.provider);
           if (usage === undefined) {
             await markUnknown("provider_unresolved");
             yield Object.freeze({

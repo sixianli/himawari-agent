@@ -20,24 +20,24 @@ import {
 } from "../src/index.js";
 
 const NOW = "2026-08-27T16:00:00.000Z";
-const MODEL_ID = "deepseek/deepseek-v4-flash-0731";
+const MODEL_ID = "deepseek/deepseek-v4.1-flash";
 const PROVIDER_SECRET = ["provider", "secret"].join("-");
 const model = {
   id: MODEL_ID,
-  name: "DeepSeek V4 Flash 0731",
+  name: "DeepSeek V4.1 Flash",
   api: "openai-completions",
-  provider: "openrouter",
-  baseUrl: "https://openrouter.ai/api/v1",
+  provider: "vercel-ai-gateway",
+  baseUrl: "https://ai-gateway.vercel.sh/v1",
   reasoning: false,
   input: ["text"],
   cost: { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
   contextWindow: 1_310_720,
-  maxTokens: 131_072,
+  maxTokens: 32768,
 } satisfies Model<"openai-completions">;
 
 const descriptor: ModelDescriptor = {
-  ref: "model-openrouter-primary",
-  provider: "openrouter",
+  ref: "model-vercel-ai-gateway-primary",
+  provider: "vercel-ai-gateway",
   model: MODEL_ID,
   version: "catalog-2026-08-28",
   routingClass: "primary",
@@ -45,8 +45,9 @@ const descriptor: ModelDescriptor = {
   disclosure: "external_remote",
   capabilities: ["text"],
   allowedDataClassifications: ["private"],
+  providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
   secretRequirement: {
-    secretRef: "openrouter-api-key",
+    secretRef: "vercel-ai-gateway-api-key",
     secretVersion: "v1",
     purpose: "model-provider-auth",
   },
@@ -104,17 +105,27 @@ function payloadBoundary(prompt = "Say hello"): {
 function observationResponse(): Response {
   const body = [
     {
-      id: "openrouter-generation-01",
+      id: "vercel-ai-gateway-generation-01",
       model: MODEL_ID,
-      choices: [],
-      usage: { cost: 0.000012 },
-      openrouter_metadata: {
-        attempts: [{ provider: "OpenInference", model: MODEL_ID, status: 200 }],
-      },
+      choices: [
+        {
+          index: 0,
+          delta: {
+            provider_metadata: {
+              gateway: {
+                generationId: "vercel-ai-gateway-generation-01",
+                routing: { finalProvider: "deepinfra" },
+                cost: "0.000012",
+              },
+            },
+          },
+        },
+      ],
+      usage: { cost: "0.000012" },
     },
     "[DONE]",
   ]
-    .map((entry) => `data: ${JSON.stringify(entry)}\n\n`)
+    .map((entry) => `data: ${typeof entry === "string" ? entry : JSON.stringify(entry)}\n\n`)
     .join("");
   return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
 }
@@ -135,7 +146,7 @@ function runtimeWithTerminal(
       const events = async function* (): AsyncIterable<AssistantMessageEvent> {
         if (options.fetchProvider !== false) {
           const piFetch = streamOptions?.["fetch"] as typeof globalThis.fetch;
-          await piFetch("https://openrouter.ai/api/v1/chat/completions");
+          await piFetch("https://ai-gateway.vercel.sh/v1/chat/completions");
         }
         const partial = assistant("");
         for (const delta of options.deltas ?? []) {
@@ -162,84 +173,173 @@ async function collect(
 }
 
 describe("PiModelTransport", () => {
-  it("delegates streaming to Pi and only observes OpenRouter metadata", async () => {
-    const payloads = payloadBoundary();
-    const fetch = vi.fn(async () => observationResponse());
-    let observedContext: Context | undefined;
-    let observedOptions: Record<string, unknown> | undefined;
-    const runtime = {
-      stream(_model: Model<Api>, context: Context, options?: Record<string, unknown>) {
-        observedContext = context;
-        observedOptions = options;
-        const events = async function* (): AsyncIterable<AssistantMessageEvent> {
-          const piFetch = options?.["fetch"] as typeof globalThis.fetch;
-          await piFetch("https://openrouter.ai/api/v1/chat/completions");
-          const partial = assistant("");
-          yield { type: "start", partial };
-          yield { type: "text_delta", contentIndex: 0, delta: "hello", partial };
-          yield { type: "text_delta", contentIndex: 0, delta: " world", partial };
-          yield { type: "done", reason: "stop", message: assistant("hello world") };
-        };
-        return events();
-      },
-    };
-    const transport = new PiModelTransport({
-      models: {
-        resolve: async () => ({ model, modelRuntime: runtime }) as unknown as PiModelBinding,
-      },
-      payloads: payloads.boundary,
-      clock: { now: () => NOW } satisfies ClockPort,
-      fetch,
-      maxOutputTokens: 32,
-      temperature: 0,
-      siteUrl: "https://agent.example.test",
-      appName: "Himawari",
-    });
-
-    const events = await collect(
-      transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
-    );
-
-    expect(events.map(({ type }) => type)).toEqual([
-      "model.started",
-      "model.output",
-      "model.output",
-      "model.completed",
-    ]);
-    expect(payloads.writes).toEqual(["hello", " world"]);
-    expect(observedContext?.messages).toEqual([
-      expect.objectContaining({ role: "user", content: "Say hello" }),
-    ]);
-    expect(observedOptions).toMatchObject({
-      ["apiKey"]: PROVIDER_SECRET,
-      maxTokens: 32,
-      maxRetries: 0,
-      temperature: 0,
-      headers: {
-        "X-OpenRouter-Metadata": "enabled",
-        "HTTP-Referer": "https://agent.example.test",
-        "X-OpenRouter-Title": "Himawari",
-      },
-    });
-    expect(events.at(-1)).toMatchObject({
-      type: "model.completed",
-      inputTokens: 8,
-      outputTokens: 2,
-      costMicros: 12,
-      providerObservation: {
-        provider: "OpenInference",
+  it.each([
+    { usageCost: "0.00000019", metadataCost: "0.00000019", expected: 1 },
+    { usageCost: "0", metadataCost: "0", expected: 0 },
+    { usageCost: "0.0000001", metadataCost: "0.0000002", expected: null },
+    { usageCost: "not-a-fee", metadataCost: "0.00000019", expected: null },
+    { usageCost: "0.00000019", metadataCost: "not-a-fee", expected: null },
+    { usageCost: undefined, metadataCost: "0.00000019", expected: null },
+  ])(
+    "[R2-L5] validates terminal gateway fees $usageCost and $metadataCost",
+    async ({ usageCost, metadataCost, expected }) => {
+      const payloads = payloadBoundary();
+      const body = {
+        id: "chatcmpl-gateway-fee",
         model: MODEL_ID,
-        generationId: "openrouter-generation-01",
-      },
-    });
-    expect(transport.observations()).toEqual([
-      expect.objectContaining({
-        requestedModel: MODEL_ID,
-        provider: "OpenInference",
-        costMicros: 12,
-      }),
-    ]);
+        usage: { cost: usageCost },
+        choices: [
+          {
+            index: 0,
+            delta: {
+              provider_metadata: {
+                gateway: {
+                  generationId: "gen-gateway-fee",
+                  routing: { finalProvider: "deepinfra" },
+                  cost: metadataCost,
+                },
+              },
+            },
+          },
+        ],
+      };
+      const transport = new PiModelTransport({
+        models: {
+          resolve: async () =>
+            ({
+              model,
+              modelRuntime: runtimeWithTerminal(assistant("answer")),
+            }) as unknown as PiModelBinding,
+        },
+        payloads: payloads.boundary,
+        clock: { now: () => NOW },
+        fetch: async () =>
+          new Response(`data: ${JSON.stringify(body)}\n\ndata: [DONE]\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      });
+      const events = await collect(
+        transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
+      );
+      if (expected === null) {
+        expect(events.at(-1)).toMatchObject({
+          type: "model.failed",
+          errorCode: "AI_GATEWAY_PROVIDER_METADATA_MISSING",
+        });
+        expect(transport.observations()).toHaveLength(0);
+      } else {
+        expect(events.at(-1)).toMatchObject({
+          type: "model.completed",
+          costMicros: expected,
+          providerObservation: {
+            provider: "deepinfra",
+            generationId: "gen-gateway-fee",
+            model: MODEL_ID,
+          },
+        });
+      }
+    },
+  );
+
+  it("[R2-L5] rejects a transport output limit above 32768 before any request", () => {
+    expect(
+      () =>
+        new PiModelTransport({
+          models: {
+            resolve: async () => {
+              throw new Error("No binding access");
+            },
+          },
+          payloads: payloadBoundary().boundary,
+          clock: { now: () => NOW },
+          maxOutputTokens: 32769,
+        }),
+    ).toThrow("Pi maxOutputTokens must be an integer from 1 to 32768");
   });
+
+  it.each([32, 32768])(
+    "[R2-L5] delegates streaming with limit %s while preserving the configured cap",
+    async (requestedLimit) => {
+      const payloads = payloadBoundary();
+      const fetch = vi.fn(async () => observationResponse());
+      let observedContext: Context | undefined;
+      let observedOptions: Record<string, unknown> | undefined;
+      const runtime = {
+        stream(_model: Model<Api>, context: Context, options?: Record<string, unknown>) {
+          observedContext = context;
+          observedOptions = options;
+          const events = async function* (): AsyncIterable<AssistantMessageEvent> {
+            const piFetch = options?.["fetch"] as typeof globalThis.fetch;
+            await piFetch("https://ai-gateway.vercel.sh/v1/chat/completions");
+            const partial = assistant("");
+            yield { type: "start", partial };
+            yield { type: "text_delta", contentIndex: 0, delta: "hello", partial };
+            yield { type: "text_delta", contentIndex: 0, delta: " world", partial };
+            yield { type: "done", reason: "stop", message: assistant("hello world") };
+          };
+          return events();
+        },
+      };
+      const transport = new PiModelTransport({
+        models: {
+          resolve: async () =>
+            ({
+              model: { ...model, maxTokens: 32 },
+              modelRuntime: runtime,
+            }) as unknown as PiModelBinding,
+        },
+        payloads: payloads.boundary,
+        clock: { now: () => NOW } satisfies ClockPort,
+        fetch,
+        maxOutputTokens: requestedLimit,
+        temperature: 0,
+      });
+
+      const events = await collect(
+        transport.invoke({ descriptor, request, secretValues: [PROVIDER_SECRET] }),
+      );
+
+      expect(events.map(({ type }) => type)).toEqual([
+        "model.started",
+        "model.output",
+        "model.output",
+        "model.completed",
+      ]);
+      expect(payloads.writes).toEqual(["hello", " world"]);
+      expect(observedContext?.messages).toEqual([
+        expect.objectContaining({ role: "user", content: "Say hello" }),
+      ]);
+      expect(observedOptions).toMatchObject({
+        ["apiKey"]: PROVIDER_SECRET,
+        maxTokens: 32,
+        maxRetries: 0,
+        temperature: 0,
+      });
+      const routePayload = observedOptions?.["onPayload"] as (payload: unknown) => unknown;
+      expect(await routePayload({ model: MODEL_ID })).toMatchObject({
+        providerOptions: { gateway: { order: ["runware", "deepinfra", "morph"], sort: "cost" } },
+      });
+      expect(JSON.stringify(observedOptions)).not.toContain("X-OpenRouter");
+      expect(events.at(-1)).toMatchObject({
+        type: "model.completed",
+        inputTokens: 8,
+        outputTokens: 2,
+        costMicros: 12,
+        providerObservation: {
+          provider: "deepinfra",
+          model: MODEL_ID,
+          generationId: "vercel-ai-gateway-generation-01",
+        },
+      });
+      expect(transport.observations()).toEqual([
+        expect.objectContaining({
+          requestedModel: MODEL_ID,
+          provider: "deepinfra",
+          costMicros: 12,
+        }),
+      ]);
+    },
+  );
 
   it("redacts a machine secret split across Pi deltas", async () => {
     const payloads = payloadBoundary();
@@ -295,7 +395,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_RATE_LIMITED",
+      errorCode: "AI_GATEWAY_RATE_LIMITED",
       retryable: true,
     });
     expect(JSON.stringify(events)).not.toContain("unsafe");
@@ -322,7 +422,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_RESPONSE_ERROR",
+      errorCode: "AI_GATEWAY_RESPONSE_ERROR",
       retryable: false,
     });
   });
@@ -343,7 +443,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_INPUT_REJECTED",
+      errorCode: "AI_GATEWAY_INPUT_REJECTED",
       retryable: false,
     });
     expect(resolve).not.toHaveBeenCalled();
@@ -377,7 +477,7 @@ describe("PiModelTransport", () => {
     expect(stream).not.toHaveBeenCalled();
   });
 
-  it("fails closed when OpenRouter omits actual provider or cost metadata", async () => {
+  it("fails closed when AI Gateway omits actual provider or cost metadata", async () => {
     const payloads = payloadBoundary();
     const response = new Response(
       `data: ${JSON.stringify({ id: "generation-without-provider", model: MODEL_ID, choices: [] })}`,
@@ -402,7 +502,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_PROVIDER_METADATA_MISSING",
+      errorCode: "AI_GATEWAY_PROVIDER_METADATA_MISSING",
       retryable: false,
     });
     expect(events.some(({ type }) => type === "model.completed")).toBe(false);
@@ -433,7 +533,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_OUTPUT_PERSIST_FAILED",
+      errorCode: "AI_GATEWAY_OUTPUT_PERSIST_FAILED",
       retryable: false,
     });
     expect(events.some(({ type }) => type === "model.completed")).toBe(false);
@@ -469,7 +569,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_TOOL_CALL_UNSUPPORTED",
+      errorCode: "AI_GATEWAY_TOOL_CALL_UNSUPPORTED",
       retryable: false,
     });
     expect(payloads.writes).toEqual([]);
@@ -497,7 +597,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_OUTPUT_TRUNCATED",
+      errorCode: "AI_GATEWAY_OUTPUT_TRUNCATED",
       retryable: false,
     });
     expect(events.some(({ type }) => type === "model.completed")).toBe(false);
@@ -524,7 +624,7 @@ describe("PiModelTransport", () => {
 
     expect(events.at(-1)).toMatchObject({
       type: "model.failed",
-      errorCode: "OPENROUTER_EMPTY_RESPONSE",
+      errorCode: "AI_GATEWAY_EMPTY_RESPONSE",
       retryable: true,
     });
     expect(payloads.writes).toEqual([]);

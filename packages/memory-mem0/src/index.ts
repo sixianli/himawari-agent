@@ -8,8 +8,11 @@ import {
   type MemoryProviderHit,
   type MemoryProviderProjectionPort,
   type ModelSecretRequirement,
+  type ModelInvocationUsage,
   PORT_ERROR_CODES,
   type ProductMemoryRecord,
+  usdCostToMicros,
+  usdCostsEqual,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import BetterSqlite3 from "better-sqlite3";
@@ -20,10 +23,10 @@ import BetterSqlite3 from "better-sqlite3";
  * these product facts in one adapter-owned place so the production memory
  * composition does not grow a second embedding protocol implementation.
  */
-export const MEM0_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1" as const;
-export const QWEN3_EMBEDDING_8B_MODEL = "qwen/qwen3-embedding-8b" as const;
+export const MEM0_AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1" as const;
+export const QWEN3_EMBEDDING_8B_MODEL = "alibaba/qwen3-embedding-8b" as const;
 export const QWEN3_EMBEDDING_8B_DIMENSIONS = 4096 as const;
-export const QWEN3_EMBEDDING_8B_VERSION = "catalog-2026-08-28" as const;
+export const QWEN3_EMBEDDING_8B_VERSION = "catalog-2026-10-06" as const;
 export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
   input: 0.01,
   output: 0,
@@ -33,7 +36,7 @@ export const QWEN3_EMBEDDING_8B_COST = Object.freeze({
 
 export const memoryMem0Workspace = {
   adapterKind: "memory-projection",
-  provider: "mem0ai/oss@3.1.7",
+  provider: "mem0ai/oss@3.3.1",
   requiresExplicitProviders: true,
 } as const;
 
@@ -87,8 +90,64 @@ export interface Mem0EmbeddingRequest {
   readonly dimensions?: number;
 }
 export interface Mem0EmbeddingResponse {
+  readonly model: string;
   readonly data: readonly { readonly embedding: readonly number[]; readonly index: number }[];
-  readonly usage: { readonly prompt_tokens: number; readonly total_tokens: number };
+  readonly usage: {
+    readonly prompt_tokens: number;
+    readonly total_tokens: number;
+    readonly cost?: unknown;
+  };
+  readonly providerMetadata?: unknown;
+}
+
+function responseRecord(value: unknown): Readonly<Record<string, unknown>> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+export function gatewayEmbeddingUsage(
+  response: Mem0EmbeddingResponse,
+  model: string,
+  dimensions: number,
+): ModelInvocationUsage {
+  if (response.model !== model) throw new Error("EMBEDDING_MODEL_MISMATCH");
+  if (
+    !Number.isSafeInteger(response.usage?.prompt_tokens) ||
+    response.usage.prompt_tokens < 0 ||
+    !Number.isSafeInteger(response.usage.total_tokens) ||
+    response.usage.total_tokens !== response.usage.prompt_tokens
+  )
+    throw new Error("EMBEDDING_USAGE_MISSING");
+  if (
+    !Array.isArray(response.data) ||
+    response.data.length !== 1 ||
+    response.data[0]?.index !== 0 ||
+    !Array.isArray(response.data[0].embedding) ||
+    response.data[0].embedding.length !== dimensions ||
+    !response.data[0].embedding.every(Number.isFinite)
+  )
+    throw new Error("EMBEDDING_VECTOR_INVALID");
+  const gateway = responseRecord(responseRecord(response.providerMetadata)?.["gateway"]);
+  const routing = responseRecord(gateway?.["routing"]);
+  if (
+    typeof gateway?.["generationId"] !== "string" ||
+    gateway["generationId"].trim().length === 0 ||
+    typeof routing?.["finalProvider"] !== "string" ||
+    routing["finalProvider"].trim().length === 0
+  )
+    throw new Error("EMBEDDING_GATEWAY_METADATA_MISSING");
+  const cost = gateway["cost"];
+  const reportedCostMicros = usdCostToMicros(cost);
+  if ("cost" in response.usage && !usdCostsEqual(cost, response.usage.cost))
+    throw new Error("EMBEDDING_GATEWAY_COST_CONFLICT");
+  return Object.freeze({
+    inputTokens: response.usage.prompt_tokens,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    reportedCostMicros,
+  });
 }
 export type Mem0EmbeddingBoundary = (
   request: Mem0EmbeddingRequest,
@@ -120,7 +179,19 @@ interface Mem0MemoryLike {
 }
 
 type Mem0Constructor = new (configuration: Readonly<Record<string, unknown>>) => Mem0MemoryLike;
-export type Mem0Loader = () => Promise<{ readonly Memory: Mem0Constructor }>;
+interface Mem0VectorStoreLike {
+  initialize(): Promise<void>;
+}
+
+export type Mem0Loader = () => Promise<{
+  readonly Memory: Mem0Constructor;
+  readonly VectorStoreFactory: {
+    create(
+      provider: "memory",
+      configuration: Readonly<Record<string, unknown>>,
+    ): Mem0VectorStoreLike;
+  };
+}>;
 
 export interface Mem0ProjectionAdapterOptions {
   readonly configuration: Mem0ProjectionConfiguration;
@@ -137,7 +208,7 @@ export interface Mem0ProviderSecretSource {
   resolve(secretRef: string, secretVersion: string): Promise<string>;
 }
 
-export interface OpenRouterMem0ProjectionOptions {
+export interface AiGatewayMem0ProjectionOptions {
   readonly stateRoot: string;
   readonly memory: ConfiguredMemoryDescriptor;
   readonly llm: ConfiguredCompletionsGenerationModelDescriptor;
@@ -154,15 +225,15 @@ function fail(message: string, details: Readonly<Record<string, string>> = {}): 
   throw new ApplicationPortError(PORT_ERROR_CODES.PROVIDER_FAILURE, message, details);
 }
 
-function assertOpenRouterModel(
+function assertAiGatewayModel(
   descriptor: ConfiguredGenerationModelDescriptor | ConfiguredEmbeddingModelDescriptor,
   field: string,
 ): void {
-  if (descriptor.provider !== "openrouter") {
-    throw new TypeError(`${field}.provider must be openrouter`);
+  if (descriptor.provider !== "vercel-ai-gateway") {
+    throw new TypeError(`${field}.provider must be vercel-ai-gateway`);
   }
   if (descriptor.secretRef === null) {
-    throw new TypeError(`${field}.secretRef is required for an OpenRouter model`);
+    throw new TypeError(`${field}.secretRef is required for an AI Gateway model`);
   }
   requiredText(descriptor.model, `${field}.model`);
   requiredText(descriptor.version, `${field}.version`);
@@ -257,6 +328,23 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
     const moduleSpecifier: string = "mem0ai/oss";
     const module = await (options.load ?? (() => import(moduleSpecifier)))();
     if (typeof module.Memory !== "function") fail("mem0ai/oss does not export Memory");
+    if (typeof module.VectorStoreFactory?.create !== "function")
+      fail("mem0ai/oss does not export VectorStoreFactory");
+    const entityDbPath = path.join(
+      path.dirname(options.configuration.vectorStore.config.dbPath),
+      "entities.sqlite",
+    );
+    if (
+      entityDbPath === options.configuration.vectorStore.config.dbPath ||
+      entityDbPath === options.configuration.historyStore.config.historyDbPath
+    )
+      fail("Mem0 entity storage must be separate from product vectors and history");
+    const entityStore = module.VectorStoreFactory.create("memory", {
+      ...options.configuration.vectorStore.config,
+      collectionName: `${options.configuration.vectorStore.config.collectionName}_entities`,
+      dbPath: entityDbPath,
+    });
+    await entityStore.initialize();
     const configuration = {
       version: options.configuration.version,
       llm: options.configuration.llm,
@@ -267,13 +355,14 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
       disableHistory: false,
       customInstructions: options.configuration.customInstructions,
     };
+    const memory = new module.Memory(configuration);
+    Object.assign(memory, { _entityStore: entityStore });
     return new Mem0ProjectionAdapter(
-      new module.Memory(configuration),
+      memory,
       options.configuration.historyStore.config.historyDbPath,
     );
   }
 
-  /** Thin, pinned Mem0 3.1.7 adaptation: retain its SDK protocol and observe real usage. */
   bindEmbeddingBoundary(boundary: Mem0EmbeddingBoundary, timeoutMs: number): void {
     const memory = this.memory as unknown as {
       embedder?: {
@@ -366,8 +455,6 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
     if ((await this.memory.get(providerRecordId)) !== null) {
       fail("Mem0 provider record remains after delete", { providerRecordId });
     }
-    // Mem0 3.1.7 retains deleted text in its SQLite history. A missing vector
-    // alone is not deletion evidence; retry this cleanup even after a crash.
     const history = new BetterSqlite3(this.historyDbPath, { fileMustExist: true });
     try {
       history.pragma("secure_delete = ON");
@@ -441,14 +528,14 @@ export class Mem0ProjectionAdapter implements MemoryProviderProjectionPort {
  * storage, and history; Himawari owns the selected identity, dimensions,
  * secret reference, and path boundary.
  */
-export async function createOpenRouterMem0ProjectionAdapter(
-  options: OpenRouterMem0ProjectionOptions,
+export async function createAiGatewayMem0ProjectionAdapter(
+  options: AiGatewayMem0ProjectionOptions,
 ): Promise<Mem0ProjectionAdapter> {
   if (!options.secretSource.productionSuitable) {
     throw new TypeError("MEM0_UNSAFE_PROVIDER_SECRET_SOURCE");
   }
-  assertOpenRouterModel(options.llm, "llm");
-  assertOpenRouterModel(options.embedding, "embedding");
+  assertAiGatewayModel(options.llm, "llm");
+  assertAiGatewayModel(options.embedding, "embedding");
   if (!options.embedding.capabilities.includes("embedding")) {
     throw new TypeError("embedding.capabilities must include embedding");
   }
@@ -516,7 +603,7 @@ export async function createOpenRouterMem0ProjectionAdapter(
         provider: "openai",
         config: {
           apiKey: llmKey,
-          baseURL: MEM0_OPENROUTER_BASE_URL,
+          baseURL: MEM0_AI_GATEWAY_BASE_URL,
           model: options.llm.model,
           temperature: 0,
           maxTokens: Math.min(options.llm.maxTokens, 256),
@@ -526,7 +613,7 @@ export async function createOpenRouterMem0ProjectionAdapter(
         provider: "openai",
         config: {
           apiKey: embedKey,
-          baseURL: MEM0_OPENROUTER_BASE_URL,
+          baseURL: MEM0_AI_GATEWAY_BASE_URL,
           model: options.embedding.model,
           embeddingDims: options.embedding.dimensions,
         },

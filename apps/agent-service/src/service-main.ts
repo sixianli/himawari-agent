@@ -221,8 +221,6 @@ async function createDefaultModelComposition(
       clock,
       requestTimeoutMs: configuration.deadlines.providerRequestMs,
       ...(context.admission === undefined ? {} : { admission: context.admission }),
-      siteUrl: configuration.publicOrigin,
-      appName: "himawari-agent",
     });
     return Object.freeze({
       descriptors: created.descriptors,

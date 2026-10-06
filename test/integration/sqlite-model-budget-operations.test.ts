@@ -1563,6 +1563,133 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
   }
 
   describe("SQLite durable model invocation identities", () => {
+    it.each([77, undefined])(
+      "[R2-L5] retains gateway fee %s and its budget allocation across reopen without another admission",
+      async (reportedCostMicros) => {
+        const state = await identityFixture();
+        try {
+          const descriptor: ModelInvocationAdmissionDescriptor = {
+            ref: "gateway-primary",
+            provider: "vercel-ai-gateway",
+            model: "deepseek/deepseek-v4.1-flash",
+            version: "catalog-2026-10-06",
+            routingClass: "primary",
+            priority: 1,
+            disclosure: "trusted_remote",
+            capabilities: ["text"],
+            allowedDataClassifications: ["private"],
+            secretRequirement: null,
+            pricing: INVOCATION_PRICING,
+            estimatedCostMicros: 100,
+          };
+          const request = {
+            modelRef: descriptor.ref,
+            provider: descriptor.provider,
+            model: descriptor.model,
+            modelVersion: descriptor.version,
+            dataClassification: "private" as const,
+            logicalSlot: "gateway-persisted-slot",
+            source: "agent-stream" as const,
+            ordinal: 1,
+            estimatedCostMicros: descriptor.estimatedCostMicros,
+            pricing: descriptor.pricing,
+          };
+          const admission = new ModelInvocationAdmissionService({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId: RUN_ID,
+            executionLease: state.claim,
+            dispatch: state.dispatch,
+            invocations: state.identity,
+            clock: { now: () => NOW },
+            limits: MODEL_LIMITS,
+            registry: [descriptor],
+          });
+          const first = await admission.begin(request);
+          if (first.disposition !== "fresh") throw new Error("Expected fresh gateway admission");
+          await first.permit.markStarted();
+          const usage = {
+            inputTokens: 12,
+            outputTokens: 4,
+            cacheReadTokens: 2,
+            cacheWriteTokens: 3,
+            ...(reportedCostMicros === undefined ? {} : { reportedCostMicros }),
+          };
+          if (reportedCostMicros === undefined) {
+            await expect(first.permit.settle(usage)).rejects.toMatchObject({
+              code: "PORT_INVALID_OPERATION",
+            });
+            await first.permit.markUnknown("provider_unresolved");
+          } else {
+            await first.permit.settle(usage);
+            await first.permit.settle(usage);
+          }
+          await state.resource.repository.close();
+
+          const reopened = await SqliteProductStateRepository.open({
+            stateRoot: path.dirname(state.resource.databasePath),
+            databasePath: state.resource.databasePath,
+            minimumFreeBytes: 0,
+            now: () => NOW,
+          });
+          try {
+            const authorityLease = {
+              leaseId: AUTHORITY_LEASE_ID,
+              fencingToken: AUTHORITY.fencingToken,
+            };
+            const identities = reopened.modelInvocationIdentityPort(
+              OWNER_ID,
+              AGENT_ID,
+              AUTHORITY,
+              authorityLease,
+            );
+            expect(
+              await identities.read({ runId: RUN_ID, invocationId: first.identity.invocationId }),
+            ).toMatchObject({
+              provider: descriptor.provider,
+              model: descriptor.model,
+              sequence: 1,
+              status: reportedCostMicros === undefined ? "unknown" : "settled",
+              actualCostMicros: reportedCostMicros ?? null,
+            });
+            const budget = reopened.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, authorityLease);
+            const snapshot = await budget.read({
+              parent: { kind: "run", runId: RUN_ID },
+              limit: 10,
+            });
+            expect(snapshot?.account.spentCostMicros).toBe(reportedCostMicros ?? 0);
+            expect(snapshot?.allocations).toHaveLength(1);
+            expect(snapshot?.allocations[0]).toMatchObject({
+              status: reportedCostMicros === undefined ? "unknown" : "settled",
+              actualCostMicros: reportedCostMicros ?? null,
+              estimatedCostMicros: 100,
+            });
+            const replay = await identities.begin({
+              ...request,
+              runId: RUN_ID,
+              executionLease: state.claim,
+              authority: AUTHORITY,
+              authorityLease,
+              limits: MODEL_LIMITS,
+              reservedAt: NOW,
+            });
+            expect(replay).toMatchObject({
+              disposition: "replay",
+              identity: { invocationId: first.identity.invocationId, sequence: 1 },
+            });
+            expect(
+              (await budget.read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 }))
+                ?.allocations,
+            ).toHaveLength(1);
+          } finally {
+            await reopened.close();
+          }
+        } finally {
+          await state.resource.repository.close();
+        }
+      },
+    );
+
     it("revalidates current authority before replaying an identity", async () => {
       const fixtureState = await identityFixture();
       try {

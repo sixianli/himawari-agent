@@ -23,7 +23,7 @@ export interface ProbeRequest {
 }
 
 /** Test-only outbound guard. Reservations survive failed requests and cannot fund retries. */
-export function boundedOpenRouterFetch(
+export function boundedAiGatewayFetch(
   configuration: ProductConfiguration,
   send: typeof globalThis.fetch,
   signal: AbortSignal,
@@ -34,12 +34,11 @@ export function boundedOpenRouterFetch(
     throw new Error("PROBE_INVALID_PRIOR_RESERVATION");
   }
   let reserved = priorReservationMicros;
-  let metadataRequests = 0;
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input : input.url,
     );
-    if (url.origin !== "https://openrouter.ai" || url.username || url.password) {
+    if (url.origin !== "https://ai-gateway.vercel.sh" || url.username || url.password) {
       throw new Error("PROBE_ENDPOINT_DENIED");
     }
     signal.throwIfAborted();
@@ -48,14 +47,10 @@ export function boundedOpenRouterFetch(
       redirect: "error" as const,
       signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
     };
-    if (url.pathname === "/api/v1/generation" && (init?.method ?? "GET") === "GET") {
-      if (++metadataRequests > 12) throw new Error("PROBE_METADATA_LIMIT");
-      return send(input, options);
-    }
     const kind =
-      url.pathname === "/api/v1/chat/completions"
+      url.pathname === "/v1/chat/completions"
         ? "generation"
-        : url.pathname === "/api/v1/embeddings"
+        : url.pathname === "/v1/embeddings"
           ? "embedding"
           : null;
     if (!kind || init?.method !== "POST" || typeof init.body !== "string" || url.search) {
@@ -80,7 +75,10 @@ export function boundedOpenRouterFetch(
     } else if (descriptor.api === "openai-completions") {
       const maximum = body["max_tokens"] ?? body["max_completion_tokens"];
       if (maximum !== 2048 || body["stream"] !== true) throw new Error("PROBE_OUTPUT_LIMIT");
-      if (JSON.stringify(body["provider"]) !== JSON.stringify(descriptor.providerRouting)) {
+      if (
+        JSON.stringify(record(body["providerOptions"])["gateway"]) !==
+        JSON.stringify(descriptor.providerRouting)
+      ) {
         throw new Error("PROBE_ROUTING_MISMATCH");
       }
       maxTokens = maximum;
@@ -103,7 +101,7 @@ export function boundedOpenRouterFetch(
       kind,
       status: null,
       maxTokens,
-      providerRouting: body["provider"] ?? null,
+      providerRouting: record(body["providerOptions"])["gateway"] ?? null,
       toolDefinitions: Array.isArray(body["tools"]) ? body["tools"].length : 0,
       toolResults: Array.isArray(body["messages"])
         ? body["messages"].filter((message) => record(message)["role"] === "tool").length

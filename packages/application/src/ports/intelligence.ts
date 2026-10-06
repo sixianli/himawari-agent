@@ -89,11 +89,8 @@ export interface ModelSecretRequirement {
 }
 
 export interface ModelProviderRouting {
-  readonly order?: readonly string[];
-  readonly allow_fallbacks?: boolean;
-  readonly require_parameters?: boolean;
-  readonly data_collection?: "allow" | "deny";
-  readonly zdr?: boolean;
+  readonly order: readonly string[];
+  readonly sort: "cost";
 }
 
 export interface ModelInvocationRequest {

@@ -108,7 +108,7 @@ flowchart TB
     GW --> RC[Run Coordinator / 调度与预算]
     RC <--> DB[(产品持久状态 / 受保护 Payload)]
     RC <--> PI[Pi AgentSession / Agent loop]
-    PI <--> MODEL[受治理模型连接 / OpenRouter]
+    PI <--> MODEL[受治理模型连接 / Vercel AI Gateway]
     PI --> TOOLS[Pi 工具工厂 / Operations 适配]
     TOOLS --> ADMIT[统一动作入口 / 授权与披露检查]
     ADMIT <--> HITL[持久审批 / 暂停与恢复]
@@ -154,7 +154,7 @@ sequenceDiagram
     participant B as ego Lite
     participant A as Agent Service
     participant P as Pi AgentSession
-    participant M as OpenRouter 模型
+    participant M as Vercel AI Gateway 模型
     participant G as 动作授权与持久状态
     participant W as 目标主机 Worker
     participant S as SRT 作业

@@ -4,7 +4,7 @@ import { mkdir, readdir, stat } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 
-const MEM0_VERSION = "3.1.7";
+const MEM0_VERSION = "3.3.1";
 const DIMENSION = 12;
 const CUSTOM_INSTRUCTIONS =
   "只提取输入中 MEMORY_FACT 或 MEMORY_PARTIAL 标记的事实；不得推断、扩写或调用外部资源。";

@@ -16,11 +16,10 @@ import { describe, expect, it } from "vitest";
 import { createProductionModelCompositionFromConfiguration } from "../../apps/agent-service/src/production-model-composition.js";
 import { qualifyFileSummary } from "./fixtures/file-summary-live-probe.js";
 import {
-  createOpenRouterLiveConfiguration,
-  OPENROUTER_FALLBACK_MODEL,
-  OPENROUTER_FALLBACK_ROUTING,
-  OPENROUTER_LIVE_BUDGET_MICROS,
-  OPENROUTER_PRIMARY_MODEL,
+  createAiGatewayLiveConfiguration,
+  AI_GATEWAY_PRIMARY_ROUTING,
+  AI_GATEWAY_LIVE_BUDGET_MICROS,
+  AI_GATEWAY_PRIMARY_MODEL,
 } from "./fixtures/openrouter-live-configuration.js";
 
 interface LiveEnvironment {
@@ -31,7 +30,7 @@ interface LiveEnvironment {
 
 interface GenerationRequestBody {
   readonly model?: unknown;
-  readonly provider?: unknown;
+  readonly providerOptions?: { readonly gateway?: unknown };
 }
 
 interface SafeRequestObservation {
@@ -43,10 +42,10 @@ interface SafeRequestObservation {
 
 const environment = process.env as unknown as LiveEnvironment;
 const LIVE_ENABLED = environment.HIMAWARI_LIVE_GENERATION_SMOKE === "1";
-const OWNER_ID = createOwnerId("owner-openrouter-live-qualification");
-const AGENT_ID = createAgentId("agent-openrouter-live-qualification");
-const SESSION_ID = createSessionId("session-openrouter-live-qualification");
-const THREAD_ID = createThreadId("thread-openrouter-live-qualification");
+const OWNER_ID = createOwnerId("owner-ai-gateway-live-qualification");
+const AGENT_ID = createAgentId("agent-ai-gateway-live-qualification");
+const SESSION_ID = createSessionId("session-ai-gateway-live-qualification");
+const THREAD_ID = createThreadId("thread-ai-gateway-live-qualification");
 const CLOCK = new ManualClock("2026-08-28T02:00:00.000Z");
 const QUALITY_MARKER = "HIMAWARI";
 
@@ -81,7 +80,7 @@ function routeRequest(input: {
     inputRef: input.inputRef,
     dataClassification: input.dataClassification,
     maxDisclosure: "external_remote" as const,
-    allowedDisclosureRef: "task20-owner-approved-openrouter-live-eval",
+    allowedDisclosureRef: "task20-owner-approved-ai-gateway-live-eval",
     forbidFallbackDisclosureExpansion: true,
     correlationId: `correlation-${input.runId}`,
     causationId: `context-${input.runId}`,
@@ -91,8 +90,8 @@ function routeRequest(input: {
   };
 }
 
-describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () => {
-  it("records bounded primary and fixed-fallback identity, quality, usage and cost", async () => {
+describe.skipIf(!LIVE_ENABLED)("AI Gateway generation live qualification", () => {
+  it("records primary identity and billing and refuses a second model after failure", async () => {
     const adapters = createReferenceAdapterSet({ clock: CLOCK });
     const requests: SafeRequestObservation[] = [];
     const nativeFetch = globalThis.fetch;
@@ -100,7 +99,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
     const observedFetch: typeof globalThis.fetch = async (input, init) => {
       const body = requestBody(init);
       const model = typeof body?.model === "string" ? body.model : null;
-      if (injectPrimaryFailure && model === OPENROUTER_PRIMARY_MODEL) {
+      if (injectPrimaryFailure && model === AI_GATEWAY_PRIMARY_MODEL) {
         const response = new Response(
           JSON.stringify({ error: { message: "task20 synthetic retryable failure" } }),
           { status: 503, headers: { "content-type": "application/json" } },
@@ -109,7 +108,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
           model,
           status: response.status,
           syntheticFailure: true,
-          providerRouting: body?.provider ?? null,
+          providerRouting: body?.providerOptions?.gateway ?? null,
         });
         return response;
       }
@@ -118,13 +117,13 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
         model,
         status: response.status,
         syntheticFailure: false,
-        providerRouting: body?.provider ?? null,
+        providerRouting: body?.providerOptions?.gateway ?? null,
       });
       return response;
     };
     const composition = createProductionModelCompositionFromConfiguration({
-      configuration: createOpenRouterLiveConfiguration(
-        "/private/tmp/himawari-openrouter-live-qualification",
+      configuration: createAiGatewayLiveConfiguration(
+        "/private/tmp/himawari-ai-gateway-live-qualification",
       ),
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -203,35 +202,19 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
       const primaryOutput = await readOutput(primary.outputRefs);
 
       injectPrimaryFailure = true;
-      const fallbackRunId = createRunId("run-openrouter-live-fallback");
-      const fallback = await router.route(
+      const failed = await router.route(
         routeRequest({
-          runId: fallbackRunId,
-          inputRef: await prepareInput("payload-openrouter-live-fallback", "private"),
+          runId: createRunId("run-ai-gateway-live-failed"),
+          inputRef: await prepareInput("payload-ai-gateway-live-failed", "private"),
           dataClassification: "private",
         }),
       );
-      if (
-        environment.HIMAWARI_LIVE_GENERATION_PRINT_EVIDENCE === "1" &&
-        fallback.status !== "completed"
-      ) {
-        process.stdout.write(
-          `${JSON.stringify({ phase: "fallback", result: fallback, requests })}\n`,
-        );
-      }
-      expect(fallback).toMatchObject({
-        status: "completed",
-        selectedModelRef: "model-fallback",
-        attempts: 2,
-      });
-      if (fallback.status !== "completed") throw new Error("Fallback live qualification failed");
-      const fallbackOutput = await readOutput(fallback.outputRefs);
+      expect(failed).toMatchObject({ status: "failed", attempts: 1 });
 
       const observations = composition.composition.transport.observations();
-      expect(observations).toHaveLength(2);
+      expect(observations).toHaveLength(1);
       expect(observations.map(({ requestedModel }) => requestedModel)).toEqual([
-        OPENROUTER_PRIMARY_MODEL,
-        OPENROUTER_FALLBACK_MODEL,
+        AI_GATEWAY_PRIMARY_MODEL,
       ]);
       expect(
         observations.every(
@@ -247,23 +230,18 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
       ).toBe(true);
       const totalCostMicros = observations.reduce((sum, { costMicros }) => sum + costMicros, 0);
       expect(totalCostMicros).toBeGreaterThan(0);
-      expect(totalCostMicros).toBeLessThanOrEqual(OPENROUTER_LIVE_BUDGET_MICROS);
+      expect(totalCostMicros).toBeLessThanOrEqual(AI_GATEWAY_LIVE_BUDGET_MICROS);
       expect(requests).toEqual([
         expect.objectContaining({
-          model: OPENROUTER_PRIMARY_MODEL,
+          model: AI_GATEWAY_PRIMARY_MODEL,
           status: 200,
           syntheticFailure: false,
+          providerRouting: AI_GATEWAY_PRIMARY_ROUTING,
         }),
         expect.objectContaining({
-          model: OPENROUTER_PRIMARY_MODEL,
+          model: AI_GATEWAY_PRIMARY_MODEL,
           status: 503,
           syntheticFailure: true,
-        }),
-        expect.objectContaining({
-          model: OPENROUTER_FALLBACK_MODEL,
-          status: 200,
-          syntheticFailure: false,
-          providerRouting: OPENROUTER_FALLBACK_ROUTING,
         }),
       ]);
 
@@ -277,22 +255,15 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
               qualityMarkerPresent: primaryOutput.includes(QUALITY_MARKER),
               outputCharacters: primaryOutput.length,
             },
-            fallback: {
-              selectedModelRef: fallback.selectedModelRef,
-              attempts: fallback.attempts,
-              usage: fallback.usage,
-              qualityMarkerPresent: fallbackOutput.includes(QUALITY_MARKER),
-              outputCharacters: fallbackOutput.length,
-            },
+            failed,
             observations,
             requests,
             totalCostMicros,
-            budgetLimitMicros: OPENROUTER_LIVE_BUDGET_MICROS,
+            budgetLimitMicros: AI_GATEWAY_LIVE_BUDGET_MICROS,
           })}\n`,
         );
       }
       expect(primaryOutput).toContain(QUALITY_MARKER);
-      expect(fallbackOutput).toContain(QUALITY_MARKER);
     } finally {
       await composition.composition.close();
     }
@@ -300,7 +271,7 @@ describe.skipIf(!LIVE_ENABLED)("OpenRouter generation live qualification", () =>
 });
 
 it.skipIf(environment.HIMAWARI_FILE_SUMMARY_LIVE !== "1")(
-  "qualifies real OpenRouter tool exchange and Mem0 embeddings",
+  "qualifies real AI Gateway tool exchange and Mem0 embeddings",
   qualifyFileSummary,
   260_000,
 );

@@ -152,7 +152,7 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
   },
   memoryCompositionFactory: async ({ configuration }) => {
     startupStage("memory_import_started");
-    const { Memory } = await import(
+    const { Memory, VectorStoreFactory } = await import(
       pathToFileURL(path.join(root, "node_modules/mem0ai/dist/oss/index.mjs")).href
     ).catch((error) => {
       if (error.code === "ERR_MODULE_NOT_FOUND") process.stderr.write(`${error.message}\n`);
@@ -163,6 +163,7 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
       configuration,
       secretSource: sources.provider,
       load: async () => ({
+        VectorStoreFactory,
         Memory: class extends Memory {
           constructor(config) {
             super({

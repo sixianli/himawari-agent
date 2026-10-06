@@ -33,6 +33,7 @@ date: "2026-09-28"
 - [期限和运行中重启的 Linux 任务身份检查](#linux-task-identity-qualification)
 - [不筛选 Linux 资格的夹具输入检查](#linux-qualification-fixture-inputs)
 - [2026-10-06 Linux资格批次验收](#linux-qualification-final-20261006)
+- [Vercel迁移与Mem0升级的验收边界](#vercel-mem0-migration-20261006)
 
 ## 目标与边界
 
@@ -622,5 +623,19 @@ node_modules/.bin/vitest run --config vitest.workspace.ts --project qualificatio
 报告、原命令、环境、安装包摘要、SQLite、日志和trace见[资格证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-06/)及[最终完整入口证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/independent-product-final-02/)；Hermes原件位于`/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/`的同名目录。测试结果支持该Linux测试环境和确定性模型夹具，不证明真实付费服务商质量、Mac运行或生产服务器行为。
 
 本节是验证后追加的文档记录。测试源码及其依赖未改变，可以复用68a1716的测试；长任务中的精确命令检查仍按原指纹计算，文档修改后会显示旧版本，不能把它们伪记为本节新指纹上的运行。后续R2-L5迁移完成后须在最终版本重新执行规定命令及所有尚缺当前指纹的独立检查。此批通过不代表第二轮40项全部完成。
+
+[返回阅读导航](#阅读导航)
+
+<a id="vercel-mem0-migration-20261006"></a>
+
+## Vercel迁移与Mem0升级的验收边界
+
+本批依据用户G34–G38、G46及[网关决定](../../adr/0048-vercel-ai-gateway-replaces-openrouter.md)，实施[迁移设计](../specs/2026-10-06-vercel-gateway-migration-design.md)。文本只用DeepSeek V4.1 Flash，嵌入用Qwen3 Embedding 8B、4096维；Mem0从3.1.7升级至核对过的npm正式latest 3.3.1，Pi及其他直接依赖版本不变。SDK实际源码检查与官方包字节核验在Hermes执行，未以版本字串代替安装证据。
+
+实际SDK先复现实体索引混入产品向量库，再以独立实体库修复。安装后HTTP测试经真实服务入口逐条核对物理调用身份、预算账户和费用；标题拥有独立账户，不能仅统计Run主账户。正常场景的三次调用结算为77、77和33微美元，Run账户110、标题账户77；重启前后完整读回相同。连接中断与费用缺失的调用保留unknown及预约，重启不重发，随后新Run可以恢复使用。对应报告及账本读回见[HTTP资格原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r64/l5-migration-01/http-installed-02/http-installed-02-vitest.json)，长任务证据E20261006T210337-4ac707。
+
+相关集成七文件90项通过（E20261006T210956-3c0fe2）；不筛选真实容器后端15项通过，包括R2-D6（E20261006T211022-8016b2）。它们使用任务独有临时目录和既有固定镜像，不改Hermes服务。后续最终报告须列出最终第1–3层、Linux不筛选资格的实际指纹、全部断言和未验证范围；当前的定向结果不能代替这些验收。完成状态只从longtask.py status读取。
+
+G44/G45的真实付费探测在G46升级前执行，只证明当时的模型响应、费用字段与服务商工具参数。3.3.1实际SDK已通过本机HTTP的更新、查询、重开和删除检查；重开不证明所有进程内数据库句柄已关闭，也不证明新版SDK的真实付费服务资格。Mac验证仍延期，Hermes不能代表云端生产环境。
 
 [返回阅读导航](#阅读导航)

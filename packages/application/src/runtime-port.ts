@@ -72,6 +72,7 @@ export type {
   RuntimeHistoryState,
 } from "./ports/runtime-history.js";
 export type { ClockPort } from "./ports/system.js";
+export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   assertMachineSecretFree,
   redactMachineSecrets,

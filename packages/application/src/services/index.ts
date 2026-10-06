@@ -31,6 +31,7 @@ export * from "./host-file-read-service.js";
 export * from "./host-workspace-gateway-adapter.js";
 export * from "./improvement-candidate-service.js";
 export * from "./machine-secret-exclusion.js";
+export { usdCostsEqual, usdCostToMicros } from "./model-cost.js";
 export * from "./model-action-reviewer.js";
 export * from "./model-invocation-admission-service.js";
 export * from "./model-router-service.js";
