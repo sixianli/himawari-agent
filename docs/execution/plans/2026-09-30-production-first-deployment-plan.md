@@ -21,6 +21,7 @@ date: "2026-09-30"
 - [用户决定](#decisions)
 - [2026-10-01 更新：同机测试与 Ubuntu 24.04 前提](#update-2026-10-01)
 - [当前证据与部署前提](#current-prerequisites)
+- [本次只读预检结果与下一项决定](#preflight-2026-10-07)
 - [已知限制](#limits)
 - [步骤](#steps)
 - [响应时间测量](#response-time)
@@ -77,6 +78,28 @@ date: "2026-09-30"
 - **真实工具资格。** 产品要求能力部署快照与实际主机、运行时和安装字节匹配；缺失、过期或不匹配时 Worker 保持未就绪。不能复制 Hermes 的测试资格夹具，也不能虚填 `productionSuitable`。若需要在云端生成新的主机能力资格，先请用户明确决定如何处理云端禁止资格验证的现行规则；在规则和执行范围确定前停止真实工具启动及测量。当前管理员 CLI 没有生成资格的命令，不编造 `sandbox qualify`。
 - **账号与秘密。** 账号创建会生成验证器设置资料和 10 条恢复码。用户自行输入、保存密码、验证器资料和生产网关密钥；Codex 不读取秘密正文。实际受保护目录、文件模式、命令及保留策略在当次方案中说明。开发密钥 G44/G45 的授权已用于历史探测，不能用于这次生产请求。
 - **模型与预算。** 遵循[网关迁移设计](../specs/2026-10-06-vercel-gateway-migration-design.md)：文本只用 `deepseek/deepseek-v4.1-flash`，嵌入只用 `alibaba/qwen3-embedding-8b`、4096 维；路由优先 runware、deepinfra、morph，其余按 cost。真实产品请求还可能触发标题和记忆请求；付费授权应覆盖这些实际路径，并固定数据、预算和停止条件，不能把一次对话等同于一次 HTTP 请求。[SOURCE: docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md]
+
+[返回导航](#reading-navigation)
+
+<a id="preflight-2026-10-07"></a>
+
+## 本次只读预检结果与下一项决定（2026-10-07）
+
+用户 G50 批准问询10后，冻结脚本在 `root@84.247.157.41` 执行一次，耗时 4.184 秒、SSH 退出码 0。主机为 `vmi3618928`，Ubuntu 24.04.5、Linux x86_64、内核 `6.8.0-142-generic`，4 核，检查时负载为 0，可用内存约 7.26 GiB、无交换空间。输出与退出结果见[本次预检原件](../../../.ci-output/production/2026-10-07-preflight-01/execution.json)，[独立读回](../../../.ci-output/production/2026-10-07-preflight-01/independent-readback.json)重新检查了输出摘要和各字段。
+
+| 候选对象 | 本次实际结果 | 对后续准备的影响 |
+| --- | --- | --- |
+| `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` | 三者均不存在；各路径已有父目录所在磁盘可用约 89.34 GiB | 可以据此准备新目录方案，创建前仍须再检查现场，不能据一次读取自动获得写入许可 |
+| `himawari-prod` | 用户不存在 | 需要在具体生产操作清单中说明创建用户及其目录/权限 |
+| `/usr/bin/node`、`/usr/local/bin/node` | 两个路径均不存在 | 需要独立生产 Node 运行时及其身份检查；本次没有查找其他 Node 位置，不读取旧测试环境的工具链 |
+| 8400 TCP/TCP6 监听 | 没有监听记录 | 可以继续准备 loopback 8400 候选配置，启动前重新核对占用 |
+| 五个指定服务 | 均为 `LoadState=not-found`、inactive、MainPID=0 | 本次只排除了这些服务名，不能排除其他名称或手动启动进程；服务注册方案仍需准备与授权 |
+
+本次只执行了已批准的一次云连接，没有创建目录、安装软件、操作服务、运行命名空间或发出模型请求。本次结果始终为 `readyToDeploy: false`，L3 接受决定和 L4 部署决定仍空。
+
+**下一项需要用户决定：首次生产安装所需的主机能力验收能否作为云端禁止资格检查的一次性例外。** 产品配置要求沙箱资格绑定当前 hostId、runtimeDigest、runnerDigest、平台与安装字节。当前 `inspectSrtDependencies()` 明确保留 `productionSuitable: false`，检查依赖不能生成主机资格；管理员 CLI 也没有生成资格的入口。旧 Node26 探测只用于诊断，已有 Hermes 签署/启动流程则绑定旧主机、安装和签署者，不能照搬。
+
+具体例外提案见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)。提案尚未获准，不改变现行云端禁测试/资格规则，不弱化任何产品资格校验。若用户同意例外，先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持。
 
 [返回导航](#reading-navigation)
 
