@@ -543,7 +543,7 @@ G39 交接要求复核守护进程的成本和长期僵尸条件。真实 Linux 
 
 按用户 G39 的独立规划与自审授权，本项采用[准备启动与停止仲裁设计](../specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。新协议为新计划冻结有版本的启动/禁止决定，原协议不补写；实际完成状态只读取长任务证据。先通过真实安装注入登记被接受后的确认丢失，再检查唯一未启动结果、占用释放、没有 Host 或操作重放；真实文件/SQLite 竞争补测先后顺序、重复启动、重建、回滚和身份替换。
 
-修复前真实安装的保留报告已取回并核对：登记确实被接受，Worker 未收到确认且无 Host 创建；40 秒后仍为 `reconciling_external_result`，reserved 预约没有 started_at、没有释放回执、占用未释放。失败断言与 SQLite 独立读回共同确认 D4，证据为 `E20261004T225127-c47bcf`。完成代码检查、第 0–3 层、受影响 Linux 产品路径与自审之前，不提交本项；历史资格只覆盖当时的代码和场景。
+修复前真实安装的保留报告已取回并核对：登记确实被接受，Worker 未收到确认且无 Host 创建；40 秒后仍为 `reconciling_external_result`，reserved 预约没有 started_at、没有释放回执、占用未释放。失败断言与 SQLite 独立读回共同确认 D4，证据为 `E20261004T225127-c47bcf`。本次返工覆盖准备登记确认返回时恰好到期、已经过期、已取消和 Worker 关闭；在申请启动前检查三个条件，申请后原检查保留。新增测试先在 Hermes 证明到期仍发布 `launch` 且 Agent 无法停止，再检查没有 Host、按 `preparation_launch_blocked` 释放和无重放。第 0–2 层、自审、同步文档及 Runbook 封存后单独提交并推送，最终提交运行第 3 层、受影响第 4 层与不筛选 Linux 资格，再重建候选；新候选主机验收只准备、运行另需批准。历史资格只覆盖当时的代码和场景。
 
 <a id="d6-unbound-container-recovery"></a>
 

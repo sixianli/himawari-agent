@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fb1cf1215b3c4d76ff384f72fc9a806f56de70658d46cb08a406fe141fda7a84"
+contract_sha256: "sha256:aa76a2011a9cc31fe16296c67a0e97634d2b34a20ce3b8fb038bdf4566dca9d3"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -549,6 +549,8 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 ### 工具执行前检查点与恢复引用
 
 新 SRT v2 计划使用 `preparationProtocol=launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划必须原样保存。备份保留原准备附件、受保护 `:preparation:launch-blocked` Artifact、Payload、摘要和预约释放回执。控制目录中的 `launch-decision.json` 属于原机运行时文件，正式恢复点不包含它；不能从数据库或附件重建原控制目录身份、决定文件或控制 token，token 也不进入公开证据。登记之前的封锁只能使用 `preparation_not_authorized`；新协议的禁止启动决定必须独立核对原计划、目录、机器 boot、原停止时间和 Artifact，才可使用 `preparation_launch_blocked`。跨机器或目录恢复不能继续用旧决定签发新释放证明；原机上已经事务接受的历史释放回执仍作为历史事实保存。旧数据不回填协议、不迁移语义摘要，工具不能重放。Hermes 上的恢复检查不能替代生产现场的身份、备份和释放核验。详见[准备启动与停止仲裁](../execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
+
+登记确认返回后，Worker 在申请启动前和申请返回后都检查取消、关闭及原期限。申请前期限已到、请求已取消或 Worker 已关闭时，不发布 `launch`，Agent 可以发布 `blocked` 并独立认证 `preparation_launch_blocked` 释放。已发布 `launch` 后失去 Host 证明仍保留 UNKNOWN 和占用，不能将本次修复当作清除历史未知预约的依据。
 
 严格模式下，Agent 重启后会为 completed/failed/cancelled Run 的未绑定容器预约补调原同 Run 环境停止，再核对环境释放回执和原预约事务。活动及结果待核实 Run 不因进入恢复清单就停止环境。停止接受但证明缺失、身份不符或后端不可用时继续保留占用；原失败的停止请求不会被同义人工请求重发，不可通过删除严格模式记录、重建 locator 或更换停止 intent 来伪造释放。恢复点须保留 SQLite 中原 execution job、环境、停止 intent、lease 和释放回执；迁移后仍须核验配置的后端与原环境身份，不能从历史回执推断当前运行时已停止。该恢复不重放模型或工具，不增加系统设置、停机、迁移或生产操作授权。详见[未绑定容器的终态恢复](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]。
 

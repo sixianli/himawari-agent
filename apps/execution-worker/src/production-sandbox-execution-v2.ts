@@ -400,7 +400,8 @@ export class ProductionSandboxExecutionV2 {
         control: controlBinding,
         policyDigest: compiled.policyDigest,
       });
-      if (entry.cancelled || this.closed) return this.unknown(entry);
+      if (entry.cancelled || this.closed || this.options.clock.now() >= plan.effectiveDeadlineAt)
+        return this.unknown(entry);
       stage = "prepare";
       if (
         plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL &&

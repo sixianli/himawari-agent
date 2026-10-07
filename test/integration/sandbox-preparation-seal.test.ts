@@ -23,14 +23,17 @@ import {
 } from "@himawari-agent/application";
 import {
   type SandboxExecutionPlanV2,
+  type SandboxExecutionBrokerCommand,
   type SandboxHostBinding,
   type SandboxRuntimeQualification,
   sandboxExecutionReservationSchema,
 } from "@himawari-agent/execution-contracts";
 import { SqliteRunPayloadArtifactOperations } from "@himawari-agent/persistence-sqlite";
 import { claimJobHostLaunch, type JobHostLaunchContext } from "@himawari-agent/runtime-sandbox";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
+import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import type { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
@@ -39,13 +42,30 @@ import {
   operationsForDatabase,
   RUN_ID,
   SERVICE_AUTHORITY,
+  serviceRequest,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
+const workerMocks = vi.hoisted(() => ({ prepare: vi.fn(), policy: vi.fn(), load: vi.fn() }));
+vi.mock("@himawari-agent/runtime-sandbox", async (original) => ({
+  ...(await original<object>()),
+  prepareSandboxJobHost: workerMocks.prepare,
+  prepareJobPolicy: workerMocks.policy,
+}));
+vi.mock("@himawari-agent/platform-node", async (original) => ({
+  ...(await original<object>()),
+  CapabilityDeploymentSnapshotLoader: class {
+    load = workerMocks.load;
+  },
+  revalidateCapabilityDeploymentSnapshot: async (admitted: unknown) => admitted,
+  verifySandboxHost: async () => undefined,
+}));
+
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
+  vi.resetAllMocks();
 });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 async function fixture(protocol: boolean | "launch-or-block.v2" = true, backendRef = "srt") {
@@ -220,6 +240,155 @@ async function fixture(protocol: boolean | "launch-or-block.v2" = true, backendR
     launchContext,
   };
 }
+
+it.each(["deadline-reached", "deadline-passed", "cancelled", "closed"] as const)(
+  "[R2-D4] releases preparation when %s before registration acknowledgement without launch or replay",
+  async (stop) => {
+    const f = await fixture("launch-or-block.v2");
+    const root = path.dirname(f.control.directory);
+    const { plan } = f;
+    let now = T1;
+    const calls: string[] = [];
+    let registeredControl: JobHostLaunchContext["control"] = f.control;
+    const controller = f.controller();
+    workerMocks.policy.mockResolvedValue({
+      policy: { workspace: root, privateDirectory: root },
+      compiled: { cwd: root, policyDigest: f.launchContext.policyDigest },
+    });
+    workerMocks.load.mockResolvedValue({
+      snapshot: {
+        capabilities: [
+          {
+            manifest: { ref: plan.capabilityRef, version: plan.capabilityVersion },
+            binding: {
+              kind: "sandbox",
+              value: {
+                privateRoot: root,
+                hostId: plan.identity.hostId,
+                runtimeRoot: "/runtime",
+                readOnlyToolchainPaths: [],
+                protectedPaths: [],
+                roots: [
+                  {
+                    canonicalRootId: f.f.scope.directoryGrant.canonicalRootId,
+                    canonicalPath: root,
+                  },
+                ],
+                executable: { path: "/bin/true" },
+                runner: { path: "/runner" },
+              },
+            },
+            qualification: { sandbox: {} },
+          },
+        ],
+      },
+    });
+    const base = serviceRequest();
+    const request = {
+      ...base,
+      messageId: plan.identity.invocationId,
+      authorizationRef: plan.authorizationRef,
+      scope: {
+        ...base.scope,
+        deploymentId: plan.executionLease.deploymentId,
+        authorityEpoch: plan.executionLease.authorityEpoch,
+        fencingToken: plan.executionLease.fencingToken,
+      },
+      payload: {
+        ...base.payload,
+        capabilityId: plan.capabilityRef,
+        capabilityVersion: plan.capabilityVersion,
+        capabilityHandleRef: plan.handleRef,
+        inputRef: plan.inputRef,
+        operation: plan.operation,
+        deadlineAt: plan.effectiveDeadlineAt,
+        resourceCeiling: plan.resourceCeiling,
+        sandboxExecution: {
+          schemaVersion: "sandbox-execution.v2" as const,
+          mode: plan.mode,
+          environmentId: plan.environmentId,
+          identity: plan.identity,
+        },
+      },
+    };
+    const worker = new ProductionSandboxExecutionV2({
+      configuration: { capabilityDeployment: {} as never },
+      peer: { workerInstanceId: "worker" } as never,
+      clock: { now: () => now },
+      payloads: {
+        readInput: async () => new Uint8Array(),
+        sandboxExecution: async (
+          _invocation: unknown,
+          _identity: unknown,
+          command: SandboxExecutionBrokerCommand,
+        ) => {
+          calls.push(command.kind);
+          if (command.kind === "register_preparation_control") {
+            registeredControl = command.control;
+            await controller.registerPreparation(plan, command.control, command.policyDigest);
+            if (stop.startsWith("deadline"))
+              now = new Date(
+                Date.parse(plan.effectiveDeadlineAt) + (stop === "deadline-passed" ? 1 : 0),
+              ).toISOString();
+            else if (stop === "closed") void worker.shutdown();
+            else
+              await worker.cancel({
+                ...base,
+                type: "work.cancel",
+                scope: request.scope,
+                payload: {
+                  targetRequestId: request.messageId,
+                  reasonCode: "RUN_CANCELLED",
+                  requestedAt: T1,
+                },
+              });
+          }
+          return {
+            record: f.call("readAdmission", plan.identity),
+            applied: false,
+            resolvedScope:
+              command.kind === "resolve" ? { scope: f.f.scope, allowedDomains: [] } : null,
+            output: null,
+          };
+        },
+      } as unknown as ProductionPayloadBrokerClient,
+    });
+    cleanups.push(() => worker.shutdown());
+    const outcome = await worker.execute(request);
+    expect(outcome.outcome).toBe("result_unknown");
+    const decisionPath = path.join(registeredControl.directory, "launch-decision.json");
+    const beforeStop = await readFile(decisionPath, "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+        return null;
+      },
+    );
+    expect
+      .soft(beforeStop === null || JSON.parse(beforeStop).decision.kind === "blocked")
+      .toBe(true);
+    expect(workerMocks.prepare).not.toHaveBeenCalled();
+    await controller.stopPreparation(plan, undefined, T1);
+    expect(JSON.parse(await readFile(decisionPath, "utf8"))).toMatchObject({
+      decision: { kind: "blocked", stopRequestedAt: T1 },
+    });
+    const proof = await f.controller().verifyReservationRelease(plan, T1);
+    expect(proof).toMatchObject({ basis: "preparation_launch_blocked" });
+    if (!proof) throw new Error("Expected blocked launch proof");
+    expect(f.release(proof).applied).toBe(true);
+    expect(
+      f.f.database
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    if (stop !== "closed") expect(await worker.execute(request)).toEqual(outcome);
+    else expect(() => worker.execute(request)).toThrow("SANDBOX_V2_UNAVAILABLE");
+    expect(calls.filter((kind) => kind === "register_preparation_control")).toHaveLength(1);
+    expect(calls).not.toContain("bind");
+    expect(calls).not.toContain("operation");
+    expect(workerMocks.prepare).not.toHaveBeenCalled();
+  },
+);
 
 it("seals before registration, replays identical content and survives a controller restart", async () => {
   const f = await fixture();
