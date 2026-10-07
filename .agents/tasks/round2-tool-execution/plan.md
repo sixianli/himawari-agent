@@ -6,11 +6,10 @@
 
 ## 当前批次
 
-按G52由Claude规划和审核，Codex新会话（ultra，G56）实施，简报 .ci-output/handoff/2026-10-07-round2-cloud-packet-brief.md：
-- R2-L5：在Hermes当前HEAD（产品代码同3a65b90）跑整个tooling项目，补带[R2-L5]测试在最终代码上的证据；之后Claude审核。
-- R2-D15：同一次tooling运行补带[R2-D15]测试的证据；之后Claude审核。
-- R2-L4：起草云服务器首次部署操作清单P0–P13（只写不执行，不连接云服务器），Hermes上做静态检查，更新部署计划当前证据；清单交用户逐项授权。
-- 验证：R2-L3的测量方案写进清单P11，测量和接受决定等部署后由用户定。
+按G52由Claude规划和审核，Codex同一会话（ultra，G56）继续，简报 .ci-output/handoff/2026-10-07-round2-cloud-packet-brief.md，范围按 reply-02 调整：
+- R2-L6：先写探针设计交Claude审（stop-03），批准后实现带[R2-L6]的有限探针：真实结束并重启Agent/Worker进程、重开临时数据库，验证清理不确定时工作区保持占用、新请求被拒、旧工具不重放、取得可信释放证据后才解除；在Hermes上验证；之后Claude审核。
+- R2-L4：探针通过后继续起草P0–P13清单（P8纳入新探针），Hermes静态检查，更新部署计划；清单交用户逐项授权。
+- 验证：R2-L5、R2-D15已由tooling运行E20261007T175257-f19b90补齐；R2-L3测量方案写进P11。
 
 ## 之后
 
@@ -104,6 +103,7 @@
 - 2026-10-07 13:12 当前批次由 R2-L3/R2-L4 的 Hermes 适配准备换成 R2-D4 返工 + R2-A1 最终完整测试：G55 验收证明适配可用，但候选 2ea2df2 不含 D4 修复；上线前需在含全部修复的最终版本上重建候选包并重做验收。status：当前版本已验证 3、旧版本验证过 23、未完成 10、等你决定 2、不做 2。
 - 2026-10-07 17:05 当前批次不变：R2-D4 当前版本已验证；R2-A1/A2 证据有效但被纯文档提交标旧，留到本轮最后的完整测试一并重验（上线后还会改代码）；新候选上的 -04 验收等用户批准再由 Codex 运行。status：当前版本已验证 15、旧版本验证过 9、未完成 12、等你决定 2、不做 2。
 - 2026-10-07 17:30 D4/A1 批次结束（第 1、2 步完成）；下一批：Codex 在 Hermes 跑 tooling 项目补 R2-L5、R2-D15 在最终代码上的证据，并起草云服务器首次部署操作清单（只写不执行），供 R2-L4 的用户逐项授权。status：当前版本已验证 15、旧版本验证过 9、未完成 12、等你决定 2、不做 2。
+- 2026-10-07 18:15 新增 R2-L6（G51、G60：用户选择补有限探针）；当前批次改为 R2-L6 + R2-L4，R2-L5、R2-D15 已验证移出。status（新增 R2-L6 后）：共 41 项，当前版本已验证 18、旧版本验证过 8、未完成 11、等你决定 2、不做 2。
 
 ## 意外和发现
 
@@ -195,6 +195,7 @@
 - 2026-10-07 17:05 D4/A1 stop-01：Claude 独立核对 3a65b90 上第 3 层 5469/5469、第 4 层受影响 13 通过（35 条为 -t 排除）、不筛选资格 47 通过 1 可选跳过（需 HIMAWARI_BASELINE_ARTIFACT 的新旧包对比，文件自 2ea2df2 未改）、13 份证据文件 SHA 全对、本机重算 3a65b90 指纹与 Hermes 相同 ffb2ae5a；新候选 6cc0c9d8（66,607,727 字节）、context a2932641 在 Hermes 实测一致；-04 相对 -03 在 Hermes 逐文件 diff 只改候选路径/摘要/目录名，9 个文件逐字节相同。A1/A2 显示“旧版本验证过”只因 Claude 并行文档提交 1d7dc2a（3a65b90..HEAD 只改 goal.md、evidence.jsonl 和部署计划），即 FEEDBACK F22 的命令检查限制，不重跑。冻结入口仍有 10 GiB 开跑检查（G55 沿用、G54 后多余但只会拒绝运行），根盘 11.056 GiB；G54 空间已还回（运行前 11,821,813,760 → 最终 11,871,784,960 字节）。
 - 2026-10-07 17:30 G59 -04 验收（候选 6cc0c9d8，代码 3a65b90）：Claude 在 Hermes 直接读原始报告，Pi 22 场景全部达到预期（前台 19、后台 3，全部 process_group_gone 和 released），网络 10 场景全部通过且 closed，安装前后 runtime digest 都是 adc5cf51，fd/is-number 指纹与批准值相同，productionQualificationIssued 和 cloudOperations 都是 false。根盘比预检少 651,264 字节：无任务进程时 40 秒内又降 110 KiB，属其他服务写入，不追究。ultra 子代理 Volta 只在 Mac 本地读文件和算摘要，没有 ssh、测试或构建。另发现 R2-L5、R2-D15 的带标签测试在 tooling 项目，npm test 五个项目不含它，最终代码上缺证据。
 - 2026-10-07 17:50 cloud-packet stop-01：Codex 在开工前发现简报 P6（pricing 取 runware/deepinfra/morph 最贵价）与已采纳迁移 Spec 第 51 行冲突：路由 order+sort:cost 允许其他服务商兜底，代码没有白名单，三家最贵价可能低估准入预留。Claude 核对原文确认，是自己照搬 ADR 0048 概括句写错。裁定（reply-01）：路由不变，四项单价各取 Vercel 官方 endpoints 接口全部服务商、区域、高峰档的最大值，cacheWrite 未公布时取最大 input（估价公式用 max(input,cacheRead,cacheWrite)，不会低估）；Codex 记 BL-20261007-001。
+- 2026-10-07 18:15 cloud-packet stop-02：tooling 整个项目 1185/1185（Claude 复算报告 SHA 808676af 与计数），R2-L5、R2-D15 当前版本已验证。P8 发现 G51 的“状态不确定时保持工作区占用”和“重启后恢复”没有运行证据：composition 探针 Linux 只断言 released/confirmed 后允许竞争者（sandbox-production-mac-probe.ts:445–505），“重启”是同进程同 repository 新建 Worker（549–558），旧签署脚本仍声明 unknown_quarantine、restart_reconciliation（hermes-protected-start.mjs:85–96）；Claude 读源码确认。P6 价格按裁定取到：input 0.45、output 1.8、cacheRead 0.055、cacheWrite 0.45 美元/百万 token。
 
 ## 决定
 
