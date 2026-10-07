@@ -184,6 +184,7 @@
 
 - 2026-10-07 G51验收适配：候选2ea2df2构建、安装及guard八项通过；旧Pi/Worker脚本按旧/data路径守卫拒绝，Pi适配随后在首场景前因缺pi-tools/bin/bash退出。现有Runbook要求资格前配置Bash/rg/fd，Hermes任务目录无fd。另一个独立阶段验证Worker SIGKILL清理和七项网络拒绝，E20261007T102405-d04776；仅组件证据，不代表保护安装或生产资格。问询12为下载草稿，尚未申请或获得授权。当前批次、完成条件、指纹和时限保持；改动前status原输出见.ci-output/production/2026-10-07-host-acceptance-preparation-01/status-before-followup-records.txt。
 - 2026-10-07 Hermes连接：普通执行报Cloudflare缓存写入拒绝及握手超时；允许缓存写入后重试相同hostname命令仍退出255并明确要求浏览器登录。按交接第五节暂停Hermes操作，以问询13请用户完成登录。PID1357124的安装摘要绑定检查曾启动、结果未取回，恢复后先核对结果、scratch和PID身份，不直接重跑；先前登录为何不再可用未核实。
+- 2026-10-07 11:35 Claude逐行复审D4（67336d0）：Worker在申请launch之前不检查期限和取消，登记RPC返回时期限已过会先发布launch再放弃创建Host，Agent无法blocked，inspect/释放都因没有Host而抛错，预留一直UNKNOWN并占用工作区。审核记为rejected（E20261007T113329-dbb035），R2-D4回到未完成；发现见.ci-output/handoff/2026-10-07-claude-review-d4-67336d0.md。修复会改产品代码，云端候选包须在上线前复审修复全部完成后重建。
 
 ## 决定
 
