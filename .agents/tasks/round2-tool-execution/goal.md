@@ -258,3 +258,9 @@
 问题：Claude报告Hermes根盘只剩约11 GiB，接近ADR 0049“根盘可用空间低于10 GiB就不启动运行”的下限，余量很小。
 
 > 我决定把“跟盘必须大于10GB的限制去掉”，但是我希望你让codex在hermes上跑完测试之后，一定要把空间腾出来，因为hermes不仅仅只是跑着himawari还跑着其他服务
+
+## G55 2026-10-07 用户原话
+
+问题：是否批准在 Hermes 上运行 stop-06 的完整验收脚本包（新目录 `host-acceptance-preparation-03`，唯一外层命令 `run-stage-03.py host-network-preparation-01`：重新下载 G53 批准的 fd 10.5.0 和 is-number 7.0.0、在临时目录安装候选包 2ea2df2、Pi 22 场景和网络 10 场景、结束后按 G54 清理根盘）？详见 `.ci-output/handoff/2026-10-07-codex-round2-production-stop-06.md`。
+
+> 批准
