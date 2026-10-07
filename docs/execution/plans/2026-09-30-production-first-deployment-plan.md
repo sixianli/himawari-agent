@@ -12,7 +12,7 @@ date: "2026-09-30"
 
 **目标：** 把 Himawari 部署到生产云服务器 `84.247.157.41`，让用户通过 SSH 隧道（把服务器本机端口转发到用户自己电脑的 SSH 功能）打开控制中心（Himawari 的网页界面）亲自体验。
 
-**当前安排（2026-10-07）：** Codex 接手规划、实施和自审。G50的云端只读预检已经结束，G51批准的有限主机能力验收例外已保存。当前先在Hermes验证验收适配，补齐工具安装前提，再固定具体云操作清单并申请授权。原暂缓部署决定仍有效，用户的“继续”用于推进准备工作。服务仍只监听服务器本机地址，通过 SSH 隧道访问。生产服务使用普通用户，root SSH 仅用于当次获准的管理步骤。
+**当前安排（2026-10-07）：** 按用户G52，Claude 规划和审核，Codex 实施和自审。G50的云端只读预检已经结束，G51批准的有限主机能力验收例外已保存。当前先在Hermes验证验收适配，补齐工具安装前提，再固定具体云操作清单并申请授权。原暂缓部署决定仍有效，用户的“继续”用于推进准备工作。服务仍只监听服务器本机地址，通过 SSH 隧道访问。生产服务使用普通用户，root SSH 仅用于当次获准的管理步骤。
 
 <a id="reading-navigation"></a>
 
@@ -71,7 +71,7 @@ date: "2026-09-30"
 | 安装包 | Hermes在`2ea2df2`上构建Linux x64候选包通过，66,607,740字节，SHA-256为`77754830ba6eb0bf38a4a1654325ae18e5e874e3a79ade09dab685bc383e647d`。原件见[候选包输入](../../../.ci-output/production/2026-10-07-host-acceptance-preparation-01/hermes-reports/candidate-inputs.json)；包仍在Hermes自有检出目录的`.ci-output/`中供后续适配使用，尚未复制到云端。该次只运行构建，不是完整第3层 |
 | 最终版本检查 | A1/A2 的精确命令条件仍显示旧版本验证；没有改写指纹规则。生产提交固定后按原规则安排检查，不能把文档更新说成已在新指纹运行过完整命令 |
 | Hermes验收适配 | 候选包安装及短路径检查八项通过。Worker被杀后，任务命名空间退出且脱离进程没有写出标记；七个网络边界场景全部观察到拒绝和连接关闭。报告保持`productionSuitable: false`，没有生成生产证明。原件见[有限探测报告](../../../.ci-output/production/2026-10-07-host-acceptance-preparation-01/hermes-reports/worker-boundary-report.json) |
-| 工具安装前提 | 候选包不含`pi-tools`宿主工具目录。Pi验收脚本在首个场景前因缺Bash退出；安装合同要求在资格前配置Bash、rg、fd。Hermes已存在Bash和rg，本任务目录没有fd。后续只提议在Hermes下载固定fd及现有网络探测的`is-number@7.0.0`，具体范围见[问询12](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-12.md)；批准前不执行下载或临时依赖安装 |
+| 工具安装前提 | 候选包不含`pi-tools`宿主工具目录。Pi验收脚本在首个场景前因缺Bash退出；安装合同要求在资格前配置Bash、rg、fd。Hermes已存在Bash和rg，本任务目录没有fd。用户G53批准在Hermes下载固定fd 10.5.0及现有网络探测的`is-number@7.0.0`，范围见[问询12](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-12.md)。2026-10-07两项下载摘要与批准值一致，候选安装通过；Pi验收首个读文件场景退出127，原因是探测脚本没有把实际Node所在目录列入只读工具目录，偏离了主机绑定合同中“可执行文件必须位于运行时根或只读工具目录之下”的要求，不是产品缺陷；其余21个Pi场景和10个网络场景未执行。修正后的探测脚本须经用户同意后才运行 |
 
 安装与启停依照[安装 Runbook](../../runbooks/install-start-stop-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] 每次使用前重新检查其静态合同和目标现场；静态检查通过不授权云操作。
 
