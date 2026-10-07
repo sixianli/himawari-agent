@@ -8,7 +8,7 @@ date: "2026-09-10"
 
 # 控制中心完整测试与 Hermes 真实服务验收
 
-> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，Mac新版本验证仍延期，具体位置遵守[ADR 0049](../../adr/0049-first-production-host-acceptance-exception.md#hosts)。原现场及付费授权不自动适用于当前版本。
+> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，Mac新版本验证仍延期，具体位置遵守[ADR 0050](../../adr/0050-hermes-root-disk-cleanup-without-floor.md#hosts)。原现场及付费授权不自动适用于当前版本。
 > [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
 
 ## 目标与来源

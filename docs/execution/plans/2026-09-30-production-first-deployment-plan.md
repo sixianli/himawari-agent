@@ -8,7 +8,7 @@ date: "2026-09-30"
 
 # 生产服务器首次部署计划
 
-**依据：** [SOURCE: docs/adr/0049-first-production-host-acceptance-exception.md#hosts]（云服务器只用于生产；普通测试、构建与整套资格在 Hermes；本次首次安装仅允许经具体授权的有限主机能力验收，旧云测试环境原样保留）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
+**依据：** [SOURCE: docs/adr/0050-hermes-root-disk-cleanup-without-floor.md#hosts]（云服务器只用于生产；普通测试、构建与整套资格在 Hermes；本次首次安装仅允许经具体授权的有限主机能力验收，旧云测试环境原样保留）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
 
 **目标：** 把 Himawari 部署到生产云服务器 `84.247.157.41`，让用户通过 SSH 隧道（把服务器本机端口转发到用户自己电脑的 SSH 功能）打开控制中心（Himawari 的网页界面）亲自体验。
 
@@ -77,7 +77,7 @@ date: "2026-09-30"
 
 - **目标目录与覆盖。** `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 仅为本次预检候选。安装器会替换前缀中的 `lib/himawari-agent`，初始化命令则拒绝已有 state root。发现已有路径、链接或服务时停止制定覆盖动作，先核对归属和恢复条件；本次不递归读取这些目录。实际安装、配置和 state root 在下一份批准方案中固定。
 - **运行用户、Node 与服务。** `himawari-prod` 与 loopback 端口 `8400` 仅为候选，预检只检查是否存在或被占用。安装器生成的入口从 PATH 调用 Node，因此需要核对目标 Node 及其来源，不能使用旧测试账号或目录的工具链。当前安装 Runbook 不包含 systemd 服务注册；系统服务文件、权限、启动/停止顺序和恢复步骤需另给具体方案，不能猜命令直接注册。
-- **真实工具资格。** 产品要求能力部署快照与实际主机、运行时和安装字节匹配；缺失、过期或不匹配时 Worker 保持未就绪。不能复制 Hermes 的测试资格夹具，也不能虚填 `productionSuitable`。G51允许[本次首次安装限定验收](../../adr/0049-first-production-host-acceptance-exception.md#first-install-acceptance)，先在Hermes验证适配，再取得具体云操作清单授权；验收和签署完成前停止真实工具启动及测量。当前管理员 CLI 没有生成资格的命令，不编造 `sandbox qualify`。
+- **真实工具资格。** 产品要求能力部署快照与实际主机、运行时和安装字节匹配；缺失、过期或不匹配时 Worker 保持未就绪。不能复制 Hermes 的测试资格夹具，也不能虚填 `productionSuitable`。G51允许[本次首次安装限定验收](../../adr/0050-hermes-root-disk-cleanup-without-floor.md#first-install-acceptance)，先在Hermes验证适配，再取得具体云操作清单授权；验收和签署完成前停止真实工具启动及测量。当前管理员 CLI 没有生成资格的命令，不编造 `sandbox qualify`。
 - **账号与秘密。** 账号创建会生成验证器设置资料和 10 条恢复码。用户自行输入、保存密码、验证器资料和生产网关密钥；Codex 不读取秘密正文。实际受保护目录、文件模式、命令及保留策略在当次方案中说明。开发密钥 G44/G45 的授权已用于历史探测，不能用于这次生产请求。
 - **模型与预算。** 遵循[网关迁移设计](../specs/2026-10-06-vercel-gateway-migration-design.md)：文本只用 `deepseek/deepseek-v4.1-flash`，嵌入只用 `alibaba/qwen3-embedding-8b`、4096 维；路由优先 runware、deepinfra、morph，其余按 cost。真实产品请求还可能触发标题和记忆请求；付费授权应覆盖这些实际路径，并固定数据、预算和停止条件，不能把一次对话等同于一次 HTTP 请求。[SOURCE: docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md]
 
@@ -101,7 +101,7 @@ date: "2026-09-30"
 
 **G51已批准首次生产安装必要的有限主机能力验收例外，具体云操作尚未授权。** 产品配置要求沙箱资格绑定当前 hostId、runtimeDigest、runnerDigest、平台与安装字节。当前 `inspectSrtDependencies()` 明确保留 `productionSuitable: false`，检查依赖不能生成主机资格；管理员 CLI 也没有生成资格的入口。旧 Node26 探测只用于诊断，已有 Hermes 签署/启动流程则绑定旧主机、安装和签署者，不能照搬。
 
-原批准范围见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)，现行规则见[ADR0049的限定验收](../../adr/0049-first-production-host-acceptance-exception.md#first-install-acceptance)。先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持，全部产品资格校验保留。
+原批准范围见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)，现行规则见[ADR0050沿用的限定验收](../../adr/0050-hermes-root-disk-cleanup-without-floor.md#first-install-acceptance)。先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持，全部产品资格校验保留。
 
 [返回导航](#reading-navigation)
 

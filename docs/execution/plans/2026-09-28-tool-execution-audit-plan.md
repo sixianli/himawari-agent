@@ -344,7 +344,7 @@ B2 已确认并修复：原 settleExpired 只写 Run/checkpoint/lease，漏掉�
 
 ### 最终批次的测试位置与 Mac 资格（用户 2026-09-29 决定）
 
-2026-09-29 用户决定不在开发 Mac 上跑测试，当时测试转到 Hermes。2026-10-01 起测试曾改到云服务器 `84.247.157.41`；2026-10-02 用户决定测试回到 Hermes，云服务器只用于生产，2026-10-04 起测试检出和依赖改放 Hermes 固态盘，现行规则见 [ADR 0049](../../adr/0049-first-production-host-acceptance-exception.md#hosts)。[SOURCE: docs/adr/0049-first-production-host-acceptance-exception.md] 以下 Hermes 目录与下载授权记录的是 2026-09-29 的安排；新的下载仍要先经用户同意。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格继续在 Hermes 上对最终版本执行；当前源码和依赖在固态根盘的登录账号家目录，构建和测试输出在检出 `.ci-output/`，固定工具和保留的证据在 `/data`，运行中的临时数据在每次新建的 10 字节 `/tmp/hXXXX` 目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
+2026-09-29 用户决定不在开发 Mac 上跑测试，当时测试转到 Hermes。2026-10-01 起测试曾改到云服务器 `84.247.157.41`；2026-10-02 用户决定测试回到 Hermes，云服务器只用于生产，2026-10-04 起测试检出和依赖改放 Hermes 固态盘，现行规则见 [ADR 0050](../../adr/0050-hermes-root-disk-cleanup-without-floor.md#hosts)。[SOURCE: docs/adr/0050-hermes-root-disk-cleanup-without-floor.md] 以下 Hermes 目录与下载授权记录的是 2026-09-29 的安排；新的下载仍要先经用户同意。最终批次在 Mac 上启动的第 3 层因此被中止，没有产生可用结果。第 3 层和 Linux 无筛选产品路径资格继续在 Hermes 上对最终版本执行；当前源码和依赖在固态根盘的登录账号家目录，构建和测试输出在检出 `.ci-output/`，固定工具和保留的证据在 `/data`，运行中的临时数据在每次新建的 10 字节 `/tmp/hXXXX` 目录。用户已批准为此下载 `ci/toolchain-lock.json` 中 linux-x64 的固定工具、锁定的 npm 依赖和与 `@playwright/test` 配套的 Chromium，需要 root 的系统包另行由用户执行脚本。
 
 用户于2026-09-30无限期推迟所有 Mac 验证，用户重新安排前不运行、不排期，Mac 行为未验证；这也包括第二轮的 Mac 无筛选产品路径资格。总报告必须写明这一点，并注明最后一次 Mac 资格的版本和结果；Linux 结果不能当作 Mac 结果。Linux 性能结果为第一次测量，不与 Mac 的 +288ms、−21.5ms 对比。
 

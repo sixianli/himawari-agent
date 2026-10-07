@@ -252,3 +252,9 @@
 问题：是否批准问询12的两项仅在Hermes执行的下载：`fd 10.5.0`（官方GitHub发布`fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz`，SHA-256 `761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7`，放入候选安装的`pi-tools/bin`）和`is-number@7.0.0`（官方npm，完整性值`sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==`，供现有网络验收脚本临时安装，`--ignore-scripts`）？Claude建议的条件：下载内容摘要必须与上述一致；最终脚本摘要与问询12不同时重新报用户。不包括任何云服务器操作。详细问询见`.ci-output/handoff/2026-10-07-codex-round2-user-question-12.md`。
 
 > 两项我都批准
+
+## G54 2026-10-07 用户原话
+
+问题：Claude报告Hermes根盘只剩约11 GiB，接近ADR 0049“根盘可用空间低于10 GiB就不启动运行”的下限，余量很小。
+
+> 我决定把“跟盘必须大于10GB的限制去掉”，但是我希望你让codex在hermes上跑完测试之后，一定要把空间腾出来，因为hermes不仅仅只是跑着himawari还跑着其他服务
