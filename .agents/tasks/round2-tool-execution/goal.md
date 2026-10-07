@@ -268,3 +268,15 @@
 ## G56 2026-10-07 用户原话
 
 > 之后交给codex的任务使用最高推理强度
+
+## G57 2026-10-07 用户选择
+
+问题：云服务器上还没有 Node（Himawari 运行要靠它）。生产环境用哪一份 Node？
+
+> 官方 Node 22.22.3 (Recommended)：从 nodejs.org 下载官方 Linux x64 压缩包，用官方 SHASUMS256 核对文件指纹，放进 Himawari 自己的安装目录、root 所有、普通账号只读。版本和 Hermes 上测试用的完全相同，安装包也是按这个版本（ABI 127）构建的。这是一次新下载，到时会在清单里写明来源、大小和指纹。
+
+## G58 2026-10-07 用户选择
+
+问题：云服务器上旧的测试账号 himawari-test 和 /srv/himawari-test/（10 月 2 日起不再使用）怎么处理？
+
+> 部署前清掉 (Recommended)：我写好脚本，逐条说明删什么，由你自己运行：删除 himawari-test 账号和 /srv/himawari-test/。保留 bubblewrap 0.11.2 和它的 AppArmor 规则（生产要用）。服务器上少一个闲置账号，更干净。
