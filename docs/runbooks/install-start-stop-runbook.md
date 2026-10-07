@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e184108e09ee96bc5492bbc9bf122e7937b176d2be97a7776d985a45320d7718"
+contract_sha256: "sha256:53809fcae50b95b3ae424a07d7b78548c035dbea21f23ea9a176ed0ea693db0a"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -374,6 +374,8 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
 
 在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。运行环境仅使用该目录作为 PATH，PI_OFFLINE=1；缺依赖明确失败。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。其他命令依赖同样须先安装在允许且固定的工具链内，不能以工具运行触发隐式下载。新增二进制会改变 runtimeDigest，须重新取得当前主机资格。
+
+Linux候选包的安装命令不自动准备这些宿主二进制。安装成功后仍须核对`pi-tools/bin`中的实际文件、版本、可执行性和摘要，再计算runtimeDigest；不能把安装器成功当作工具已经可用。工具缺失时先取得相应下载授权，不以外部PATH替代安装目录中的固定文件。
 
 自动审查默认关闭：只有同时提供 `runPolicy.automaticReview`（`delegationKey`/`configurationVersion`/`modelRef`/`maximumWaitMs`/`maxOutputBytes`）和匹配的 Owner 委托记录才会外发。缺少该配置段时人工确认路径完全不变；配置存在但模型边界或受保护 Payload 不可用时启动以 `AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE` 失败，不会静默忽略。`modelRef` 必须指向已配置的生成模型；委托只覆盖逐条列出的确切请求摘要，审查输入只含冻结的操作摘要与版本身份，不含文件正文、路径或凭据。启用前须按 [P5 启用建议](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#automatic-review-enablement) 确认模型身份、接收方与费用额度。
 
