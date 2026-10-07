@@ -280,3 +280,9 @@
 问题：云服务器上旧的测试账号 himawari-test 和 /srv/himawari-test/（10 月 2 日起不再使用）怎么处理？
 
 > 部署前清掉 (Recommended)：我写好脚本，逐条说明删什么，由你自己运行：删除 himawari-test 账号和 /srv/himawari-test/。保留 bubblewrap 0.11.2 和它的 AppArmor 规则（生产要用）。服务器上少一个闲置账号，更干净。
+
+## G59 2026-10-07 用户选择
+
+问题：是否批准在 Hermes 上运行一次新安装包（6cc0c9d8…）的验收命令（host-acceptance-preparation-04，含 fd 10.5.0 与 is-number 7.0.0 两个按指纹核对的小下载）？
+
+> 批准运行 (Recommended)：Codex 用最高推理强度（ultra）只运行上面这一条冻结命令一次，按 G54 清理并还回系统盘空间；我再在 Hermes 上直接核对原始报告。通过后进入第 3 步，准备云服务器操作清单。
