@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0047-test-checkout-on-hermes-nvme.md"
+superseded_by: "docs/adr/0049-first-production-host-acceptance-exception.md"
 date: "2026-10-02"
 ---
 

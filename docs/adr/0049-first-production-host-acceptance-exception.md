@@ -1,13 +1,13 @@
 ---
-status: superseded
+status: active
 document_type: adr
-decision_status: superseded
-supersedes: ""
-superseded_by: "docs/adr/0049-first-production-host-acceptance-exception.md"
-date: "2026-10-02"
+decision_status: accepted
+supersedes: "docs/adr/0047-test-checkout-on-hermes-nvme.md,docs/adr/0046-tests-back-on-hermes.md,docs/adr/0045-short-test-temp-root.md,docs/adr/0044-tests-on-cloud-server.md,docs/adr/0043-push-every-commit-full-test-before-merge.md,docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
+superseded_by: ""
+date: "2026-10-07"
 ---
 
-# ADR 0046：测试回到 Hermes，云服务器只用于生产
+# ADR 0049：首次生产安装限定主机能力验收的一次性例外
 
 <a id="contents"></a>
 
@@ -16,10 +16,11 @@ date: "2026-10-02"
 - [背景](#context)
 - [决定](#decision)
   - [测试和部署的位置](#hosts)
-  - [Hermes 上的连接、账号和目录](#storage)
-  - [测试时限不放宽](#time-limits)
-  - [测试层级和触发条件](#layers)
-  - [提前运行完整测试的情况](#early-full)
+  - [首次生产安装的限定主机能力验收](#first-install-acceptance)
+  - [Hermes连接、账号与目录](#storage)
+  - [时限不放宽](#time-limits)
+  - [测试层级](#layers)
+  - [提前完整测试](#early-full)
   - [提交、推送与结果复用](#commits)
 - [比较过的方案](#options)
 - [后果](#consequences)
@@ -29,20 +30,9 @@ date: "2026-10-02"
 
 ## 背景
 
-[ADR 0045](0045-short-test-temp-root.md) 规定测试在云服务器 `84.247.157.41` 上以普通用户 `himawari-test` 运行，Hermes（局域网里的 Linux 服务器）不再使用。
+ADR 0047规定测试在Hermes、云服务器只做生产，并禁止云端资格检查。产品的真实工具又要求能力证明绑定当前主机、运行时和安装字节；Hermes证明不能覆盖Ubuntu 24.04云主机。仅检查依赖版本不能证明文件隔离、进程停止和恢复。
 
-在云服务器上跑测试遇到的主要问题是慢：这块虚拟磁盘每次同步写入要 11–19 毫秒，产品的 SQLite 每次提交都要等数据落盘，所以完整 `npm test` 的五个测试项目合计约 70.8 分钟，远超 `ci/policy.json` 的 30 分钟总时限。为此用户在 2026-10-01 和 10-02 先后同意只在云端放宽测试时限（[BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)）。作为对照，2026-09-28 在 Hermes 上同样的完整测试（临时数据放在固态根盘）五个项目合计约 26 分钟。
-
-2026-10-02 用户决定：
-
-> 我现在决定，把这个项目的测试放在hermes上做，至于如何ssh hermes，请参考ssh hermes skill。以后不再在我的云服务器上进行测试，云服务器只用于发布生产。
-
-随后用户在两道选择题里又定了两件事（原文见第二轮长任务目录的 `goal.md`，G20、G21）：
-
-- 云端的时限放宽方案整个撤掉：Hermes 一律用默认时限，超时就当缺陷修。
-- 云服务器上已有的测试环境先保留，不登录、不改动、不再写入，等首次生产部署前再一起清理。
-
-同一天核对 Hermes 的现状：`ssh hermes` 连通，主机名 `hermes-home`；Ubuntu 22.04.5，4 核、15 GiB 内存；根盘是 110 GB 的 NVMe 固态盘，可用约 14 GiB；`/data` 是 466 GB 的机械硬盘，可用约 197 GiB；`/tmp` 在根盘上；`/usr/bin/bwrap` 是 0.6.1；登录账号的默认 umask 是 `0002`。
+用户2026-10-07同意问询11的一次性例外，以允许首次生产安装必要的限定主机能力验收。以下除这项例外外，完整沿用ADR 0047的主机、存储、时限、测试触发及提交规则。本ADR取代ADR 0047及其已取代的前序ADR，旧决定的正文保持历史记录，不再作为现行规则执行。
 
 <a id="decision"></a>
 
@@ -54,10 +44,25 @@ date: "2026-10-02"
 
 1. **开发 Mac 不跑测试。** 沿用 ADR 0043：MacBook 只用来编辑代码、审核和提交。
 2. **测试在 Hermes 上跑。** 第 0–3 层和 Linux 产品路径验证都在 Hermes 上运行。按这个决定在 Hermes 上跑测试，不需要每次再问用户。需要 sudo、改动 Hermes 上的系统设置或服务时，先给用户脚本并逐步说明，由用户执行。
-3. **云服务器 `84.247.157.41` 只用于生产。** 不在上面跑任何测试、构建或测试资格验证。部署生产版本、启动或改动生产服务，每次都要用户明确授权。
+3. **云服务器 `84.247.157.41` 只用于生产。** 项目常规测试、构建和整套产品路径资格不在云端运行。仅本次首次生产安装允许[限定主机能力验收](#first-install-acceptance)；具体云操作仍须另行授权。部署生产版本、启动或改动生产服务，每次都要用户明确授权。
 4. **云服务器上原有的测试环境先原样保留。** 测试账号 `himawari-test`、`/srv/himawari-test/` 下的代码、依赖和证据，不登录、不改动、不再写入；首次生产部署之前再按用户的决定一起清理。bubblewrap 0.11.2 和它的 AppArmor 规则生产也要用，一直保留（见 [BL-20261001-001](../backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md)）。
 5. **不碰 Hermes 上与测试无关的东西。** Hermes 上还运行着其他服务，包括 `/data/hermes/himawari/releases/` 下原有的 Himawari 常驻服务。测试不读写这些服务的目录和数据，不停止或重启它们。
 6. **Mac 定向验证仍无限期推迟。** 沿用 ADR 0043：在用户重新安排之前，Mac 上的行为写成“未在 Mac 上验证”。
+
+<a id="first-install-acceptance"></a>
+
+### 首次生产安装的限定主机能力验收
+
+2026-10-07用户同意问询11，原话与范围保留在长任务goal.md的G51。此决定仅允许84.247.157.41本次首次生产安装所必需的有限主机能力验收，不沿用到后续部署。
+
+1. 运行账号必须是本次批准的专用普通用户；只使用本次新建的虚构工作区、临时状态和自有进程。
+2. 验收文件与网络访问范围、环境变量隔离、输出上限、超时停止、资源状态核查、执行前持久记录、状态不确定时保持工作区占用、重启后恢复，以及Linux任务进程树和Worker崩溃后的清理。
+3. 只有实际检查全部满足后才生成与本机及实际安装字节绑定的证明；缺失、过期、不匹配或失败时不启动真实工具。不放宽断言、检查、时限或伪造资格。
+4. 普通项目测试、完整npm test、浏览器产品路径整套资格和构建仍只在Hermes。不得读取或改变旧云测试环境、用户私人文件、既有服务、SSH、AppArmor、内核或防火墙设置。
+5. 先在Hermes验证适配流程，再形成固定版本与摘要的操作清单，列出命令、账号/权限、签署凭据、临时目录、自有进程、资源上限、保留证据、失败处理和清理范围。实际云端安装、验收、签署及新服务启动必须取得该清单的具体授权。
+6. 本次规则决定不授权任何当前云命令、生产密钥读取、付费模型请求或正式部署。原生产部署暂缓决定仍由用户另行改变；R2-L3响应时间接受与R2-L4部署条件不因本次决定而通过。
+
+[↑ 返回阅读导航](#contents)
 
 <a id="storage"></a>
 
@@ -68,14 +73,17 @@ date: "2026-10-02"
 | 内容 | 放在哪里 |
 | --- | --- |
 | 运行测试的账号 | SSH 配置里的登录账号；不新建账号，不用 sudo 跑测试 |
-| 源码检出、npm 依赖、固定工具链、浏览器、构建产物、日志、测试报告和保留的证据 | 机械盘上本任务的目录，例如第二轮工具执行排查用 `/data/hermes/himawari/tool-audit-round2/` |
+| 源码检出和它的 npm 依赖（`node_modules`），以及构建入口和 `npm test` 写进检出 `.ci-output/` 的输出 | 固态根盘上登录账号家目录里本任务的目录，例如 `~/himawari-tests/round2/source`；用 `git bundle` 同步，不在服务器上改代码。`.ci-output/` 里的构建产物和测试输出，在结果记录好之后马上删掉已不需要的旧版本 |
+| 固定工具链、浏览器、日志、测试报告和保留的证据 | 机械盘上本任务的目录，例如第二轮工具执行排查用 `/data/hermes/himawari/tool-audit-round2/`；运行结束后把要保留的报告、日志和失败现场从检出的 `.ci-output/` 复制到这里 |
 | 测试**运行中**产生的临时数据：SQLite 文件、socket、产品路径测试安装、测试进程的 `TMPDIR` | 每次运行用 `mktemp -d /tmp/hXXXX`（按模板新建一个名字末尾随机的目录）新建的 10 字节独占目录，权限 0700；同时设为 `HIMAWARI_TEST_TEMP_ROOT` 和 `TMPDIR` |
 
-临时目录放在根盘，是因为它在固态盘上：2026-09-30 在机械盘上跑 unit 组，2,144 项里有 67 项因同步写入慢而超时（[ADR 0042](0042-hermes-test-scratch-on-root-disk.md)）。临时目录必须是 10 字节的短路径，原因见 [ADR 0045 的存放规则](0045-short-test-temp-root.md#storage)：产品路径测试里最长的 Unix 套接字路径比临时根多 95 字节，而 Linux 上限是 107 字节。
+2026-10-04 补充：ADR 0047 最初写的是“构建入口用 `--output` 把产物写到 `/data`”。实际运行时，构建入口以 `CI_OUTPUT_OUTSIDE_RUN_DIRECTORY` 拒绝了 `/data` 路径：`scripts/ci/context.mjs` 只接受检出内 `.ci-output/` 下的输出目录，并拒绝指向检出外的链接。这是 CI 入口原有的安全检查，不为存放位置放宽，所以改为上表的做法：构建产物和测试输出留在固态盘检出的 `.ci-output/`，保留的证据复制到 `/data`。一次构建约 100–150 MB，一次完整测试的输出约 300 MB。
+
+源码检出和依赖放在固态盘，是因为测试启动时要读几万个小文件，机械盘在其他服务持续写入时冷读太慢，见[ADR0047的对照结果](0047-test-checkout-on-hermes-nvme.md#nvme-comparison)。临时目录放在根盘，同样是因为它在固态盘上：2026-09-30 在机械盘上跑 unit 组，2,144 项里有 67 项因同步写入慢而超时（[ADR 0042](0042-hermes-test-scratch-on-root-disk.md)）。临时目录必须是 10 字节的短路径，原因见 [ADR 0045 的存放规则](0045-short-test-temp-root.md#storage)：产品路径测试里最长的 Unix 套接字路径比临时根多 95 字节，而 Linux 上限是 107 字节。
 
 根盘空间小，下面几条规则继续执行：
 
-1. **跑之前查空间。** 每次运行前用 `df` 检查根盘，可用空间低于 10 GiB 就不启动，写停止文件说明。
+1. **跑之前查空间。** 每次运行前用 `df` 检查根盘，可用空间低于 10 GiB 就不启动，写停止文件说明。固态盘上的检出和依赖约 1 GiB，长期占用这部分空间；任务结束、检出不再需要时删除它。
 2. **记录峰值。** 记录临时目录的最大占用和根盘的最低可用空间，写进这次运行的证据。
 3. **跑完就收走、删掉。** 需要保留的失败现场先复制到机械盘上的证据目录，再删除这次运行的临时目录。删除前按 `AGENTS.md` 的 “Disk Space Hygiene” 核对没有进程还在用它。
 4. **只删自己建的目录。** `/tmp` 是公共目录，只能删除本次运行自己创建的 `/tmp/h*` 目录。
@@ -133,39 +141,33 @@ date: "2026-10-02"
 
 ## 比较过的方案
 
-### 方案 A：测试回到 Hermes，云服务器只做生产（采用）
+### 允许本次有限主机验收（采用）
 
-- 好处：Hermes 的固态根盘同步写入快，完整测试在原有时限内能跑完，不需要放宽时限；测试和生产分在两台机器上，测试不会挤占生产机的资源，也不会误碰生产目录。
-- 代价：Hermes 根盘只剩约 14 GiB，每次运行都要查空间；Hermes 上还有其他服务，测试负载会和它们相互影响；Hermes 是 Ubuntu 22.04，生产机特有的问题（例如 24.04 的 AppArmor 限制）要在部署时另外验证。
+可以在实际云主机证明批准安装的必要行为，保留所有产品门禁。代价是需要先验证适配、提供具体操作清单并取得独立执行授权；任一能力检查失败都会阻止真实工具启动。
 
-### 方案 B：继续在云服务器上测试并放宽时限
+### 复制Hermes证明或关闭资格校验（不采用）
 
-- 不采用：用户决定云服务器只用于生产。
+不能证明当前主机或安装，违反已有主机与安装绑定合同。
 
-[↑ 返回阅读导航](#contents)
+### 继续禁止所有云端主机验收（不采用）
+
+保留隔离门禁时，无法在缺少当前主机证明的情况下启动真实工具，也无法取得R2-L3所要求的真实工具响应时间。用户选择限定的一次性例外。
 
 <a id="consequences"></a>
 
 ## 后果
 
-- `AGENTS.md` 的 “Test and Production Hosts”、“Test Trigger Timing”、“Pushing Commits”、“Disk Space Hygiene” 改为引用本 ADR，原 “Cloud Test Server Connectivity” 改为 Hermes 的连接规则。
-- 第二轮工具执行排查的条目 R2-E2（云端放宽时限）按用户决定撤回；各条目完成条件里的测试主机从云服务器改为 Hermes。
-- [BL-20261001-002](../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md) 的恢复工作开始执行：撤掉 `HIMAWARI_TEST_TIMEOUT_MS`，在 Hermes 上按默认时限跑通第 2、3 层。
-- **待核对**：产品的 Linux 隔离后端要求 bubblewrap 0.11.2 或更新版本，Hermes 只有系统自带的 0.6.1。需要真实 0.11.2 的测试在 Hermes 上会跳过还是失败，第一次运行时核对；如果要在 Hermes 上安装 0.11.2，属于新下载和系统改动，先问用户。
-- 首次生产部署计划要改为：安装包在 Hermes 上构建，带着提交号和 SHA-256 到生产机安装；部署前先按用户决定清理云服务器上的测试环境。
-- 生产 `privateRoot` 不超过 27 字节的长度上限（[BL-20261002-002](../backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md)）不受影响。
-
-[↑ 返回阅读导航](#contents)
+- AGENTS、架构、生产计划与相关Runbook说明限定例外及具体授权边界。
+- 例外不转移普通测试或构建，不改变原时限、云端旧测试环境保留及Mac延期规则。
+- 规则获准不说明验收程序已实现或云端验收已通过；具体流程、安装和响应时间按实际证据报告。
 
 <a id="references"></a>
 
 ## 关联文档
 
-- 被取代的决定：[SOURCE: docs/adr/0045-short-test-temp-root.md]
-- 更早的测试位置和测试时机决定，原先由 ADR 0045 取代，现在一并由本 ADR 取代（文档校验要求取代者必须有效，所以它们的 `superseded_by` 都指向本 ADR）：[SOURCE: docs/adr/0044-tests-on-cloud-server.md]、[SOURCE: docs/adr/0043-push-every-commit-full-test-before-merge.md]、[SOURCE: docs/adr/0042-hermes-test-scratch-on-root-disk.md]、[SOURCE: docs/adr/0041-test-hosts-and-production-server.md]、[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
-- 测试时限的放宽与撤销：[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md]
-- 生产机的 bwrap 前提：[SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
-- 测试账号 umask：[SOURCE: docs/backlog/BL-20261001-004-安-装-结-果-继-承-安-装.md]
-- 生产 `privateRoot` 的长度上限：[SOURCE: docs/backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md]
-- 首次生产部署计划（目前暂缓）：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
-- 进行中的工具执行排查：[SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]
+- 前序历史：[ADR 0047](0047-test-checkout-on-hermes-nvme.md)。
+- 当前架构：[SOURCE: docs/architecture-v0.1.md]
+- 生产准备及真实响应时间：[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md]
+- 安装操作合同：[SOURCE: docs/runbooks/install-start-stop-runbook.md]
+
+[↑ 返回阅读导航](#contents)

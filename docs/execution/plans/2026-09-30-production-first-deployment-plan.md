@@ -8,7 +8,7 @@ date: "2026-09-30"
 
 # 生产服务器首次部署计划
 
-**依据：** [SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md#hosts]（云服务器只用于生产；测试、构建与测试资格在 Hermes；旧云测试环境原样保留）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
+**依据：** [SOURCE: docs/adr/0049-first-production-host-acceptance-exception.md#hosts]（云服务器只用于生产；普通测试、构建与整套资格在 Hermes；本次首次安装仅允许经具体授权的有限主机能力验收，旧云测试环境原样保留）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
 
 **目标：** 把 Himawari 部署到生产云服务器 `84.247.157.41`，让用户通过 SSH 隧道（把服务器本机端口转发到用户自己电脑的 SSH 功能）打开控制中心（Himawari 的网页界面）亲自体验。
 
@@ -75,7 +75,7 @@ date: "2026-09-30"
 
 - **目标目录与覆盖。** `/opt/himawari`、`/etc/himawari`、`/var/lib/himawari` 仅为本次预检候选。安装器会替换前缀中的 `lib/himawari-agent`，初始化命令则拒绝已有 state root。发现已有路径、链接或服务时停止制定覆盖动作，先核对归属和恢复条件；本次不递归读取这些目录。实际安装、配置和 state root 在下一份批准方案中固定。
 - **运行用户、Node 与服务。** `himawari-prod` 与 loopback 端口 `8400` 仅为候选，预检只检查是否存在或被占用。安装器生成的入口从 PATH 调用 Node，因此需要核对目标 Node 及其来源，不能使用旧测试账号或目录的工具链。当前安装 Runbook 不包含 systemd 服务注册；系统服务文件、权限、启动/停止顺序和恢复步骤需另给具体方案，不能猜命令直接注册。
-- **真实工具资格。** 产品要求能力部署快照与实际主机、运行时和安装字节匹配；缺失、过期或不匹配时 Worker 保持未就绪。不能复制 Hermes 的测试资格夹具，也不能虚填 `productionSuitable`。若需要在云端生成新的主机能力资格，先请用户明确决定如何处理云端禁止资格验证的现行规则；在规则和执行范围确定前停止真实工具启动及测量。当前管理员 CLI 没有生成资格的命令，不编造 `sandbox qualify`。
+- **真实工具资格。** 产品要求能力部署快照与实际主机、运行时和安装字节匹配；缺失、过期或不匹配时 Worker 保持未就绪。不能复制 Hermes 的测试资格夹具，也不能虚填 `productionSuitable`。G51允许[本次首次安装限定验收](../../adr/0049-first-production-host-acceptance-exception.md#first-install-acceptance)，先在Hermes验证适配，再取得具体云操作清单授权；验收和签署完成前停止真实工具启动及测量。当前管理员 CLI 没有生成资格的命令，不编造 `sandbox qualify`。
 - **账号与秘密。** 账号创建会生成验证器设置资料和 10 条恢复码。用户自行输入、保存密码、验证器资料和生产网关密钥；Codex 不读取秘密正文。实际受保护目录、文件模式、命令及保留策略在当次方案中说明。开发密钥 G44/G45 的授权已用于历史探测，不能用于这次生产请求。
 - **模型与预算。** 遵循[网关迁移设计](../specs/2026-10-06-vercel-gateway-migration-design.md)：文本只用 `deepseek/deepseek-v4.1-flash`，嵌入只用 `alibaba/qwen3-embedding-8b`、4096 维；路由优先 runware、deepinfra、morph，其余按 cost。真实产品请求还可能触发标题和记忆请求；付费授权应覆盖这些实际路径，并固定数据、预算和停止条件，不能把一次对话等同于一次 HTTP 请求。[SOURCE: docs/execution/specs/2026-10-06-vercel-gateway-migration-design.md]
 
@@ -97,9 +97,9 @@ date: "2026-09-30"
 
 本次只执行了已批准的一次云连接，没有创建目录、安装软件、操作服务、运行命名空间或发出模型请求。本次结果始终为 `readyToDeploy: false`，L3 接受决定和 L4 部署决定仍空。
 
-**下一项需要用户决定：首次生产安装所需的主机能力验收能否作为云端禁止资格检查的一次性例外。** 产品配置要求沙箱资格绑定当前 hostId、runtimeDigest、runnerDigest、平台与安装字节。当前 `inspectSrtDependencies()` 明确保留 `productionSuitable: false`，检查依赖不能生成主机资格；管理员 CLI 也没有生成资格的入口。旧 Node26 探测只用于诊断，已有 Hermes 签署/启动流程则绑定旧主机、安装和签署者，不能照搬。
+**G51已批准首次生产安装必要的有限主机能力验收例外，具体云操作尚未授权。** 产品配置要求沙箱资格绑定当前 hostId、runtimeDigest、runnerDigest、平台与安装字节。当前 `inspectSrtDependencies()` 明确保留 `productionSuitable: false`，检查依赖不能生成主机资格；管理员 CLI 也没有生成资格的入口。旧 Node26 探测只用于诊断，已有 Hermes 签署/启动流程则绑定旧主机、安装和签署者，不能照搬。
 
-具体例外提案见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)。提案尚未获准，不改变现行云端禁测试/资格规则，不弱化任何产品资格校验。若用户同意例外，先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持。
+原批准范围见[问询11](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-11.md)，现行规则见[ADR0049的限定验收](../../adr/0049-first-production-host-acceptance-exception.md#first-install-acceptance)。先在 Hermes 验证适配流程，再提供冻结版本、目标、命令、资源和清理边界的生产操作清单；没有具体云端授权就不执行。普通项目测试和构建继续只在 Hermes，旧云测试环境保持，全部产品资格校验保留。
 
 [返回导航](#reading-navigation)
 
@@ -118,9 +118,9 @@ date: "2026-09-30"
 
 | 顺序 | 准备与执行 | 授权和保留结果 |
 | --- | --- | --- |
-| 1：只读预检 | 用已有 SSH 密钥连接 `root@84.247.157.41`，核对主机身份、系统资源、三个候选目录元数据、候选用户、两个 Node 路径元数据、8400 监听和五个指定服务状态 | 只执行[问询10](../../../.ci-output/handoff/2026-10-07-codex-round2-user-question-10.md)冻结脚本，先等用户批准；预计不足 1 分钟。输出与退出码在 Mac 的 `.ci-output/production/` 独立目录保留 |
+| 1：只读预检 | G50批准后执行一次冻结脚本，实际结果见[本次只读预检](#preflight-2026-10-07) | 本次读取授权已执行完；新的云连接或部署前重新检查包含在后续具体操作清单中授权 |
 | 2：具体部署方案 | 根据新预检固定版本、安装目录、普通运行用户、配置、服务管理方式、能力资格处理及恢复条件；重新核对 Runbook 与原测试证据 | 准备可审阅脚本和配置中的非秘密部分，列出所有覆盖、创建、权限和服务效果；申请本次生产操作。任何目标身份或状态不明就停止 |
-| 3：安装与就绪 | 获准后在 Hermes 构建及核对 Linux 包，复制到云端新前缀；按批准顺序建用户、安装、初始化和注册服务。用户管理秘密与账号设置资料 | 云端不跑测试、构建或测试资格；真实工具资格未满足则不启动该工具。原测试账号及 `/srv/himawari-test/` 原样保留，清理需另给用户脚本和明确授权 |
+| 3：安装与就绪 | 获准后在 Hermes 构建及核对 Linux 包，复制到云端新前缀；按批准顺序建用户、安装、初始化和注册服务。用户管理秘密与账号设置资料 | 云端不跑普通测试、构建或整套产品路径资格；只允许G51限定且本次清单明确授权的主机能力验收。真实工具资格未满足则不启动该工具。原测试账号及 `/srv/himawari-test/` 原样保留，清理需另给用户脚本和明确授权 |
 | 4：成对服务启动 | 按安装 Runbook 先 Worker 后 Agent，使用同包、同 state root、`--profile production`；核对双方 `service.ready`、本次身份和握手，再执行只读 `doctor`、`db status` | 具体启动、服务权限与生产配置属于本次生产授权；只绑定 loopback，不改 SSH、AppArmor、内核或防火墙设置。失败保留脱敏日志并停止，不猜恢复命令 |
 | 5：实际使用与测量 | 用户通过 SSH 隧道登录，用获准的虚构数据完成[响应时间测量](#response-time) | 先取得数据、生产密钥使用及付费额度的具体授权；保留服务端状态读回和用户侧计时，不自动重发失败请求 |
 

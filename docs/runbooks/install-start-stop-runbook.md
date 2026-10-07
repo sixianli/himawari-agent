@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c330113037229f82501d5251f2e5c0e363e7ab1b208ac643d344f103cea82799"
+contract_sha256: "sha256:e184108e09ee96bc5492bbc9bf122e7937b176d2be97a7776d985a45320d7718"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -10,7 +10,9 @@ date: "2026-08-27"
 
 # 本地 Node runtime 安装、启停与诊断 Runbook
 
-当前开发测试遵循 [ADR 0047](../adr/0047-test-checkout-on-hermes-nvme.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md]
+当前开发测试遵循 [ADR 0049](../adr/0049-first-production-host-acceptance-exception.md#storage)：在 Hermes 上的任务自有目录运行，临时安装和状态放在每次运行用 `mktemp -d /tmp/hXXXX` 新建的 10 字节独占 0700 目录（路径必须短，否则产品的 Unix 套接字路径会超出上限）；不在云服务器 `84.247.157.41` 和 Mac 上测试，不操作生产目录或系统服务。[SOURCE: docs/adr/0049-first-production-host-acceptance-exception.md]
+
+G51只允许本次首次生产安装必要的[限定主机能力验收](../adr/0049-first-production-host-acceptance-exception.md#first-install-acceptance)。具体流程先在Hermes验证，再以固定版本、摘要、普通账号、虚构工作区、自有进程、资源上限、证据和失败处理清单取得云执行授权。本文不提供云端资格签发命令；静态检查或规则例外不能代替具体安装、签署、验收和服务启动授权。普通测试和构建仍只在Hermes。
 
 ## 阅读导航
 
@@ -506,14 +508,14 @@ apparmor_parser -R /etc/apparmor.d/bwrap && rm -- /etc/apparmor.d/bwrap
 apparmor_parser -R /etc/apparmor.d/bwrap-0.11.2 && rm -- /etc/apparmor.d/bwrap-0.11.2
 ~~~
 
-撤销后保存 `aa-status` 和全局开关的只读检查结果。全局开关保持原值；原值为 `1` 时，对应普通用户程序会再次受到限制。撤销规则不删除 0.11.2 程序，也不清理云服务器的旧测试环境。ADR 0047 要求生产需要的 0.11.2 程序及规则继续保留；本节中的撤销命令不授予撤销生产机已有规则的权限。
+撤销后保存 `aa-status` 和全局开关的只读检查结果。全局开关保持原值；原值为 `1` 时，对应普通用户程序会再次受到限制。撤销规则不删除 0.11.2 程序，也不清理云服务器的旧测试环境。ADR 0049 要求生产需要的 0.11.2 程序及规则继续保留；本节中的撤销命令不授予撤销生产机已有规则的权限。
 
 Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArmor 行为。部署前须在实际生产机上，以最终运行账号检查实际程序版本、摘要、权限、匹配规则、全局开关和上述启动结果，并继续完成实际产品路径检查。这属于 R2-L2 的生产前提核对。云服务器不用于开发测试；生产部署或服务变更仍须逐次取得用户明确授权。2026-10-01 的旧结果只作历史记录，不能代替此次检查。本次 D10 只补文档，没有登录生产机或修改系统设置，产品启动时的自动检测仍留待第二轮以后。
 
 [SOURCE: docs/adr/0045-short-test-temp-root.md#apparmor]
 [SOURCE: docs/backlog/BL-20261001-001-ubuntu-24-04-默-认-禁-止-bwrap.md]
 [SOURCE: docs/adr/0021-platform-capability-runtime-isolation.md]
-[SOURCE: docs/adr/0047-test-checkout-on-hermes-nvme.md]
+[SOURCE: docs/adr/0049-first-production-host-acceptance-exception.md]
 [SOURCE: docs/assets/others/Anthropic_SRT_AI_Agent_Integration_Guide_2026-09-07.md]
 
 [↑ 返回阅读导航](#阅读导航)
