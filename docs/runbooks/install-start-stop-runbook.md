@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e722171a98fb939e0a0f18cc055e294683f0dfe6bb438cd40394bdb44f92677e"
+contract_sha256: "sha256:329b769993c31262d7a81d60317a224a26251b895ccf2297efbf13e193202c78"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -265,6 +265,10 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 
 2026-10-08 第八组已在 Hermes 自然结束。最终测试文件 `fd09d2a1…`、控制器 `d5051c9a…`、主探针 `3bcc3fae…` 在三轮中保持相同；每轮 2 项 R2-L6 测试通过、48 项因名称筛选跳过、0 失败。三轮独立安装摘要检查、十项恢复断言、原登记进程退出及任务树释放读回全部通过。每轮先保留完整输出，再检查并删除本轮输出副本，重新取得 scratch 删除许可；最终实际读回 `/tmp/hunjt`、`/tmp/hmw40`、`/tmp/hig7h` 和各轮源码输出目录均不存在。关闭 opt-in 的单独检查另有 50 项全部跳过、0 执行、0 失败；它没有安装或运行恢复探针。原件保留在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r72/`，执行与证据范围见[本轮记录](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md)。完整第 1、2 层仍待运行，不能用这三轮定向结果替代。
 
+2026-10-08，最终 Cfa 第十组三次和完整第1层通过；whole产品路径业务文件49通过、0失败、1原比较基线跳过，Vitest退出0。主会话使用固定Playwright1.62.1连续live raw trace，保留screenshots/snapshots/network/stacks/resources，依次保存report、关闭真实installation、停止trace、关闭browser；原四阶段、完整raw及固定reader通过，原120000ms保持。helper/legacy/baseline没有进入主trace修正，旧helpercold超时原因仍uncertain。原whole外层因晚启动同UID不可读进程拒绝清理退出1，scratch/output按reply09保留。之后P5演练清理通过只对新scratch成立，[BL008](../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)仍open；见[最终事实和原EID](../execution/plans/2026-09-28-tool-execution-audit-plan.md#r74-final-validation)。
+
+R2-L6可信释放后的原effect仍unknown、result仍null；只恢复新admission，随后取消新请求，没有第二次Bash执行。Hermes完整七报告和同安装摘要证据不代替正式云现场、Mac或生产资格。2026-10-08，P6第二次候选CLI doctor严格加载在新scratch实际退出0，记录 `E20261008T100042-26d55a`；[原件](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)返回 `configurationSchema=himawari.configuration.v1`、`configurationLoaded=true`、`ready=false`，没有init、服务、模型请求或资格发行。runtime `a796a630978446edc335db42e4eb4b81ce50200b8f56bebffb8756d60866cdd2` 前后相同；26原身份gone、hyzh3 absent、原清理/删除/采样0，225280B根盘短差未知。原run01在doctor前因控制层漏helper/漏runtime环境失败、未产生fresh BEFORE，其原件保留。这只完成清单准备的严格加载检查，不批准生产参数；旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，正式云现场和授权门槛不变。
+
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 
 公开服务主入口已连接 HTTP、持久 Run、Pi、已授权 Worker 工具和 Mem0。缺少 `runPolicy`、HTTP、身份配置或实际模型配置时，仍以 `SERVICE_PUBLIC_MODE_INCOMPLETE` 拒绝启动。启用前必须验证同一安装候选的完整请求、持久结果和重启回读；库导入成功或 `service.ready` 不能替代这些证据，也不能替代实际目标环境资格。
@@ -326,6 +330,11 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 - 安装期间的磁盘采样与错误脱敏：`scripts/ci/resources.mjs`、`scripts/ci/redact-text.mjs`；采样只提供观测峰值下界，出现采样错误时须保留不完整状态和有界诊断，不能从安装成功推导采样完整。协调暂停单独记录原因、耗时和操作结果，不抹去暂停前的失败。
 - 文件模式、内容摘要和归档校验：`scripts/ci/artifact-files.mjs`、`scripts/ci/verify-artifact.mjs`。CI 归档安装还绑定同一次运行的 context；它与下述本机目录安装入口有不同的输入参数。 Context 的来源由 `scripts/ci/context.mjs` 核验；周期质量归档还核对已提交的启用状态、默认分支、cron 与同次 SHA，不能通过临时修改工作树取得周期身份。共享 Context 支持周期事件不启用任何安装或周期操作。
 - CI 源码摘要记录实际工作树中的构建输入，包含普通源码的新增、修改、删除和文件模式，不能只记录 Git HEAD。构建器仍引用的模块或显式必需文件缺失时必须失败；构建期间及安装前再次核对摘要，不能用忽略所有缺失文件的方式通过校验。
+
+**本次首次部署的临时验证源码材料补充。** 为满足上述已有sourceTreeDigest对实际path、字节SHA和完整mode的检查，本次清单另运输实采且与3a65bundle、候选、锁和工具关联的sourceBuildInputProof。Git100644不保存原Source实际0664/0644差别；615项输入为571项0664、44项0644，原字节、稳定身份和aggregate已匹配候选。控制脚本只在本次新建自有validation/source核字节和身份后恢复已记录mode，再调用原产品digest及原`--artifact`完整检查。ownership使用步骤当前实际getuid；Hermes1000是演练身份，不推广到未来获批root的正式P5。正式runtime权限、产品CLI和sourceTreeDigest不变。
+
+该proof只用于本次首次部署的临时验证材料，不新增所有安装或升级的外部输入合同，不提供绕过源校验的参数。临时源码、整份锁定node_modules和Python保留至完整P8及删除前证据capture结束，再按原登记和引用规则清理；正式服务不依赖这些材料。本次composition.installedModules来自原Vite hook的固定10项直接解析，不是全部传递依赖或执行清单；Hermes-only独立控制层仍读固定11项实际安装dist文件，核候选bytes/SHA、只读mode、文件/父链身份，domain只作额外字节证据。原六报告加R2、场景、资源和期限不减，演练不签资格。
+
 - integration 的并发数由[CI 测试资源规则](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)按 CPU、内存和最多 4 个 worker 计算。该测试调度变更不改变安装、归档身份或服务启停合同；旧政策迁移保留原始来源摘要及其他门禁。正式入口同时传入归档和上下文，需要运行时的测试安装校验过的产物；直接开发运行两个变量均缺省时仍可读取 `dist/node-runtime`。测试与构建同时运行时使用 CI 的独立构建输出，避免覆盖开发模式的输入。
 - state root、SQLite migration、Worker recovery 与身份边界：`packages/platform-node/src/state-root-layout.ts`、`packages/persistence-sqlite/src/product-state-repository.ts`。
 - 本 Runbook contract selector 中列出的源文件和 portable durable web-agent Spec。

@@ -59,7 +59,7 @@ date: "2026-09-30"
 
 <a id="current-prerequisites"></a>
 
-## 当前证据与部署前提（2026-10-07）
+## 当前证据与部署前提（2026-10-08）
 
 以下是准备依据，尚未在云端执行安装或启动。
 
@@ -69,11 +69,11 @@ date: "2026-09-30"
 | Hermes 完整检查 | `3a65b90` 上第 1 层、第 3 层构建与五项目完整测试 5469/5469 通过；不筛选 Linux 产品路径 47 通过、0 失败、1 原可选性能对照跳过。原件见[最终代码证据](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-01.md)。本批新增探针后的检查另外记录，不能把历史结果称为新版本全测 |
 | 云端工具环境 | G47 的 bubblewrap 身份、版本和 AppArmor 检查通过，G50 的历史预检见下文。R2-L2 环境证据仍不能替代当次生产预检；本批不连接云服务器 |
 | 安装包 | 同一冻结 Linux x64 ABI127 候选，66607727 字节，SHA-256 `6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3`；context 497 字节，SHA-256 `a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87`。包仍在 Hermes 本任务检出的 `.ci-output/r64-d4-rework-a1-final-01-product-build/`，尚未复制到云端 |
-| 最终版本检查 | 条目状态只取 `longtask.py status`。Claude `ecfea51` 仅修任务 JSON 格式，内容逐对象比较未变；同步后 Hermes 完整 `npm run check` 自然退出 0（`E20261008T005403-e86861`），[BL-006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md)关闭。独立审查另确认探针重复清理重置总预算，见[BL-20261008-001](../../backlog/BL-20261008-001-有-限-恢-复-探-针-的-重.md)；最终修正及第 1、2 层通过后才提交，并执行顺序在后的完整空目录演练 |
+| 最终版本检查 | 条目状态只取 `longtask.py status`。最终 Cfa 第十组三次与完整第1层通过，whole业务49通过/0失败/1原基线跳过、Vitest0；原外层因late opaque清理拒绝退出1，保留现场，[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)保持open。源码提交推送ba2bcf6并获Claude独立approved；预算重置及主trace控制缺陷按实际范围关闭，见[最终证据](2026-09-28-tool-execution-audit-plan.md#r74-final-validation) |
 | Hermes 验收适配 | G59 唯一冻结命令已执行：Pi 22、网络 10 场景通过，实际安装前后摘要相同；报告保持非生产且未签署。原件见[G59 验收与清理报告](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-02.md#evidence)。651264 字节历史空间差额已在该报告保留，不改写为全恢复 |
 | 工具安装前提 | G53/G59 的 fd 10.5.0 与 is-number 7.0.0 固定输入和安装已通过原 32 场景。云端仍须在获准后按 P8 下载、核对并安装工具，使用云端现场 Bash、rg 和正式 Node 工具目录；Hermes 摘要不代表云端工具身份 |
-| 有限真实重启 | R2-L6 新 `--runtime` 只读入口在 Hermes 同代码完整三次通过十项断言，runtime 前后摘要相等，原期限与清理检查保留；见[有限恢复前提与证据](2026-09-28-tool-execution-audit-plan.md#r2-l6-installed-recovery-prerequisites)。未在云端执行或签署 |
-| 当前云操作清单 | [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)列出脚本、配置、签署草稿与授权表。reply-09 已要求整份锁定依赖，并分别签署 SRT 与 program/stdio 实际 bwrap 路径，见[BL-005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)及[BL-007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)。实际从空目录安装和完整 P8 演练仍须完成。当前稿不能用于执行，冻结稿随 stop-10 交审，R2-L3/L4 仍需用户决定 |
+| 有限真实重启 | 已有 `--runtime` 只读入口在最终三次及完整P8中使用同实际安装，十断言、before/after/fresh摘要与原期限通过；未知占用、真实同库重启、不重放、可信释放与新准入有原件。原effect仍unknown/result仍null，新请求随后取消，没有第二次Bash执行；云端未执行或签署，见[最终证据](2026-09-28-tool-execution-audit-plan.md#r74-final-validation) |
+| 当前云操作清单 | [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)仍待具体逐步授权。相同运输材料在Hermes新空目录的原artifact完整安装及七报告P8、11安装文件取证和原清理已通过（E20261008T094449-48ed2b），原三次控制失败保留。P6候选CLI doctor第二次严格加载0（E20261008T100042-26d55a），schema正确、ready=false；[原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)只证明scratch派生配置加载，没有init/服务/模型。26原身份gone、hyzh3 absent、清理0，225280B短差未知；原run01在doctor前控制失败且无fresh BEFORE保留。旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，不视为生产参数批准；正式Node官方SUMS、云端host/tool/UID/workspace、有限验收、签署、服务、秘密和付费均未执行；R2-L3/L4仍需用户决定 |
 
 安装与启停依照[安装 Runbook](../../runbooks/install-start-stop-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] 每次使用前重新检查其静态合同和目标现场；静态检查通过不授权云操作。
 
@@ -173,3 +173,9 @@ date: "2026-09-30"
 SRT 实际 `/usr/bin/bwrap` 与 program/stdio 的 `/usr/local/libexec/bubblewrap-0.11.2/bwrap` 分别绑定真实版本、文件摘要和各自 AppArmor 规则。只有 program/stdio 保留 `>=0.11.2` 门槛，系统 bwrap 不新增相同版本或相同摘要要求。
 
 G64 取消 Hermes 和云端的 systemd 离线检查，不在别处补做；保留 Node/Bash 语法、P9 实际 ready、身份、握手和原重启算式。原失败保留，[BL-009](../../backlog/BL-20261007-009-hermes-systemd249-不-支-持-首-次-部.md)按用户决定关闭。G57 新下载及 G63 每项 root 操作仍须用户对具体步骤批准；Codex 本批不连接云端。全部云输入集中到 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/cloud-transfer/`，实际摘要、完整 P13 及相对 G59 `-04` 的完整 diff 将随 stop-10 交审。
+
+### 2026-10-08 本次临时材料与独立演练结果
+
+本次首次部署另运输615项源码构建输入的已证完整mode，仅在新建自有 validation/source 中核bytes/身份后还原571项0664、44项0644，再通过原sourceTreeDigest与原artifact检查。这个准备补法只服务本次首次部署，不新增所有安装/升级的外部合同，不改产品或正式runtime。实际composition只记录固定10直接解析；Hermes-only控制层在删除前独立取证全部11候选匹配安装文件，domain仅是补充字节证据。
+
+rehearsal01/02/03分别因gzip读取顺序、未运输完整source mode、10解析/11取证集合混用失败，原退出码、完整原件和清理/资源记录不撤销。修正版rehearsal04完整结果、EID及非生产边界见[最终审计记录](2026-09-28-tool-execution-audit-plan.md#r74-final-validation)。本次outer1040384B、inner1269760B是不同阶段的未知根盘差额，不相加、不用后续空间变化抵销历史短差。BL008旧现场保留与新的清理许可独立。
