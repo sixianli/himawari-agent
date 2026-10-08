@@ -211,6 +211,7 @@ async function configureSdkLoad(
     failContractsImport?: boolean;
     failInitialize?: boolean;
     blockInitializeMs?: number;
+    blockDependenciesMs?: number;
   },
 ) {
   launch.entry = jobHostEntry();
@@ -227,6 +228,17 @@ async function configureSdkLoad(
     launch.hook,
     `${jobHostDiagnostics()}
 import { register } from "node:module";
+import threads from "node:worker_threads";
+import { syncBuiltinESMExports } from "node:module";
+const SdkWorker = threads.Worker;
+threads.Worker = class extends SdkWorker {
+  constructor(filename, options) {
+    super(filename, String(filename).endsWith("/sandbox-sdk-worker.js")
+      ? { ...options, execArgv: [...(options?.execArgv ?? []), "--import", import.meta.url] }
+      : options);
+  }
+};
+syncBuiltinESMExports();
 register(${JSON.stringify(pathToFileURL(loader).href)});
 `,
   );
@@ -242,7 +254,8 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
   ${entryDiagnostics.after}
   if (!url.endsWith("/sandbox/sandbox-manager.js")) return loaded;
   return { ...loaded, source: ${JSON.stringify(
-    `const himawariFixtureTrace = (stage) => { if (${Boolean(process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"])}) process.stderr.write(JSON.stringify({ stage, at: Date.now(), processId: process.pid, ...${JSON.stringify(injectionDetails)}, moduleUrl: import.meta.url }) + "\\n"); };
+    `import { threadId as himawariSdkThreadId } from "node:worker_threads";
+const himawariFixtureTrace = (stage) => { if (${Boolean(process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"])}) process.stderr.write(JSON.stringify({ stage, at: Date.now(), processId: process.pid, threadId: himawariSdkThreadId, ...${JSON.stringify(injectionDetails)}, moduleUrl: import.meta.url }) + "\\n"); };
 himawariFixtureTrace("sdk_module_entered");
 await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}));
 himawariFixtureTrace("sdk_module_delay_finished");
@@ -251,20 +264,32 @@ himawariFixtureTrace("sdk_module_delay_finished");
         ? 'himawariFixtureTrace("sdk_import_failure.injected");\nthrow Object.assign(new Error("JOB_HOST_TEST_IMPORT_FAILURE"), { code: "EIO" });\n'
         : ""),
   )} + loaded.source.toString() + ${JSON.stringify(
-    options.failInitialize
-      ? '\nSandboxManager.initialize = async () => { throw Object.assign(new Error("JOB_HOST_TEST_PREPARATION_FAILURE"), { code: "EIO" }); };\n'
-      : options.blockInitializeMs
-        ? `\nconst himawariFixtureInitialize = SandboxManager.initialize;
+    (options.blockDependenciesMs
+      ? `\nconst himawariFixtureDependencies = SandboxManager.checkDependenciesAsync;
+SandboxManager.checkDependenciesAsync = async (...args) => {
+  process.stderr.write(JSON.stringify({ stage: "SDK_SYNCHRONOUS_STALL_STARTED", threadId: himawariSdkThreadId }) + "\\n");
+  const until = performance.now() + ${options.blockDependenciesMs};
+  while (performance.now() < until) {}
+  process.stderr.write(JSON.stringify({ stage: "SDK_SYNCHRONOUS_STALL_FINISHED", threadId: himawariSdkThreadId }) + "\\n");
+  return himawariFixtureDependencies(...args);
+};\n`
+      : "") +
+      (options.failInitialize
+        ? '\nSandboxManager.initialize = async () => { throw Object.assign(new Error("JOB_HOST_TEST_PREPARATION_FAILURE"), { code: "EIO" }); };\n'
+        : options.blockInitializeMs
+          ? `\nconst himawariFixtureInitialize = SandboxManager.initialize;
 SandboxManager.initialize = async (...args) => {
   himawariFixtureTrace("sdk_initialize_entered");
+  process.stderr.write(JSON.stringify({ stage: "SDK_SYNCHRONOUS_STALL_STARTED", threadId: himawariSdkThreadId }) + "\\n");
   const until = performance.now() + ${options.blockInitializeMs};
   while (performance.now() < until) {}
   himawariFixtureTrace("sdk_synchronous_delay_finished");
+  process.stderr.write(JSON.stringify({ stage: "SDK_SYNCHRONOUS_STALL_FINISHED", threadId: himawariSdkThreadId }) + "\\n");
   const result = await himawariFixtureInitialize(...args);
   himawariFixtureTrace("sdk_initialize_finished");
   return result;
 };\n`
-        : "",
+          : ""),
   )} };
 }
 `,
@@ -407,6 +432,67 @@ it("survives slow startup followed by bounded synchronous preparation without re
   host.cancel();
   expect(await host.result).toMatchObject({ taskStarted: false, srtReset: true });
 });
+
+it.each(["dependencies", "initialize"] as const)(
+  "[R2-D13] keeps the original lease during a synchronous SDK %s stall",
+  async (stage) => {
+    const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+    cleanups.push(() => rm(root, { recursive: true, force: true }));
+    await configureSdkLoad(root, {
+      delayMs: 0,
+      ...(stage === "dependencies" ? { blockDependenciesMs: 2200 } : { blockInitializeMs: 2200 }),
+    });
+    const marker = path.join(root, "user-task-started");
+    const { policy, compiled } = await prepareJobPolicy({
+      workspace: null,
+      privateRoot: root,
+      jobId: `synchronous-${stage}`,
+      writable: false,
+      readOnlyToolchainPaths: [],
+      protectedPaths: [],
+      allowedDomains: [],
+    });
+    const host = prepareSandboxJobHost({
+      jobId: `synchronous-${stage}`,
+      attemptId: "original-attempt",
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: process.execPath,
+      args: ["-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started")`],
+      deadlineAt: new Date(Date.now() + 30000).toISOString(),
+      maxOutputBytes: 4096,
+      cleanupTimeoutMs: 5000,
+    });
+    cleanups.push(async () => {
+      host.cancel();
+      await host.result;
+    });
+    let preparationError: unknown;
+    await host.ready.catch((error: unknown) => {
+      preparationError = error;
+    });
+    const preparedState = host.inspect()?.state;
+    host.cancel();
+    const observed = await host.result;
+    launch.events.push({ stage: "preparation-readback", observed });
+    expect(launch.stderr).toContain("SDK_SYNCHRONOUS_STALL_STARTED");
+    expect(launch.stderr).toContain("SDK_SYNCHRONOUS_STALL_FINISHED");
+    const stalls = launch.stderr
+      .split("\n")
+      .filter((line) => line.startsWith("{") && line.includes("SDK_SYNCHRONOUS_STALL_"))
+      .map((line) => JSON.parse(line) as { threadId: number });
+    expect(stalls).toHaveLength(2);
+    expect(stalls.every((entry) => entry.threadId > 0)).toBe(true);
+    await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(observed, JSON.stringify(observed)).toMatchObject({
+      taskStarted: false,
+      srtReset: true,
+    });
+    expect(observed.diagnostic?.detail?.code).not.toBe("JOB_HOST_HEARTBEAT_EXPIRED");
+    expect(preparationError).toBeUndefined();
+    expect(preparedState).toBe("alive");
+  },
+);
 
 it("[R2-D16] reads the configured Job Host entry from the selected runtime", async () => {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));

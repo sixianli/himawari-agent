@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b4a29fcfed99e0cead5f3fb0fefbed82603abfd688b66d46240a61462778987a"
+contract_sha256: "sha256:8a0e373f24c34eddc45fb242ab867ef99a22d10bf03daafd249729f33f9b7a15"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -26,6 +26,7 @@ G51只允许本次首次生产安装必要的[限定主机能力验收](../adr/0
 - [安装权限验收证据](#installation-permission-evidence)
 - [回退](#rollback)
 - [停止条件](#stop-conditions)
+- [Job Host SDK 线程与停止证明](#sdk-thread-supervision)
 
 <!-- runbook-contract:
 - docs/execution/specs/2026-09-24-isolated-tool-execution-design.md
@@ -156,6 +157,9 @@ G51只允许本次首次生产安装必要的[限定主机能力验收](../adr/0
 - packages/platform-node/src/payload-uds-transport.ts
 - apps/execution-worker/src/production-payload-broker-client.ts
 - packages/runtime-sandbox/src
+- packages/runtime-sandbox/test/job-host-main.unit.test.ts
+- packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts
+- test/integration/sandbox-preparation-control.test.ts
 - packages/application/src/services/sandbox-job-lifecycle-service.ts
 - packages/application/src/ports/sandbox-execution.ts
 - apps/execution-worker/src/product-job-host.ts
@@ -932,7 +936,19 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；已取得启动权或使用旧协议且缺少最终证明时仍待核对；登记前封锁仅适用于带新协议字段的计划。首次准备、登记或 bind 失败仍通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留受保护诊断。Agent 在已校验的准备诊断入口，先向服务诊断输出写入 `sandbox.preparation.failed`，再读取或保存 restricted Trace。该日志仅含 `stage`、`reasonCode`、`systemCode`、非 null 的 `hostStage`，以及 hostDetail 非 null 时的 `hostDetailCode`、`hostCommand`、`hostPhase`；另含既有 `timestamp`、固定 `component`/`event` 和原身份摘要 `controlRef`。其他身份、路径、私人正文、秘密、SDK 原始错误及 hostDetail 计时/序号均不输出。读取这些固定字段无需解密 Payload；原诊断全文仍使用 `himawari diagnose run` 按私人数据处理要求查询。日志写入同步抛错时仍尝试执行原 Trace 保存流程，Trace 失败不抹去已输出的固定字段；已有第一份 Trace 不覆盖。重复日志不能证明重复执行，任何日志都不能代替释放回执。字段及校验边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log]Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。准备诊断请求未到达 Agent，或未通过握手、当前权威及原回执检查时，不生成这条安全日志，受保护诊断也可能未保存；不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
-Job Host 启动先建立原私有 IPC 监督，再动态加载 SRT 与策略编译模块；新鲜准备消息不会因后续加载慢而过期。安装验收应覆盖慢加载后完成准备、到达即过期的消息被拒绝、加载失败无用户任务启动，以及超过原 30 秒准备上限仍失败。1.5 秒消息年龄、任务总期限、认证及签名终态格式不变；不能把加载期间的心跳当作 ready 或清理证明。准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。详细合同见[依赖加载期间的启动监督](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)。本修订没有部署动作；云端定向测试不能替代最终产品资格；用户已无限期推迟 Mac 验证，Mac 行为未验证。
+<a id="sdk-thread-supervision"></a>
+
+### Job Host SDK 线程与停止证明
+
+Job Host 启动先建立原私有 IPC 监督。完整安装必须同时包含编译后的 `sandbox-sdk.js` 适配器和 `sandbox-sdk-worker.js` 固定线程入口。SRT 的同一个 `SandboxManager` 在这个私有工作线程中加载；依赖检查、初始化、沙箱启动参数生成、`cleanupAfterCommand()` 和 `reset()` 都在该线程中按顺序执行。线程使用原 Host 的私有环境副本，`execArgv` 为 `[]`，不接收模型指定的线程入口或回调。原 IPC、心跳、控制请求、authority 转发、guardian、任务进程与期限仍由 Host 主线程负责。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
+
+`checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。策略编译模块仍在 Host 主线程加载 SRT 的默认写路径和配置 schema，不能据此声称全部 SRT 模块加载或所有主线程阻塞来源已经消除。SDK 与策略模块开始加载后，Host 等待两项加载都结束，再传播任一加载错误；较晚创建的 SDK 仍须进入原停止流程。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision]
+
+正常停止先启动原清理期限的强制退出计时器，再等待就绪探针和已经开始的 SDK 操作结束，然后等待 `cleanupAfterCommand()` 和 `reset()` 的成功回复。就绪探针、SDK 操作或控制收尾不结束时，Host 仍须在原期限内退出。只有收到 reset 成功回复、且 SDK 线程随后自然以退出码 0 结束，Host 才能记录 `srtReset=true`。线程报错、异常退出、缺少 reset 回复或强制终止均不能代替这个条件。宿主、任务进程组、控制证据及其他释放条件仍按原合同独立核验，SDK 线程退出本身不是资源释放回执。
+
+受影响验收沿用既有慢加载、消息年龄、准备上限、任务期限、取消和安装后真实 read 场景。定向回归在依赖检查和初始化分别注入 2200ms 同步停顿，检查原租约仍有效、任务没有提前启动，以及取消后的认证清理。这些受控测试不能证明最初生产停顿具体发生在哪项同步操作。线程边界回归检查请求顺序、错误回复和 reset 回复加自然退出的条件；加载竞态回归检查策略加载先失败时，Host 仍等待已开始的 SDK 加载及其清理，不提前断开，也不启动任务。[Host 生命周期回归](../../packages/runtime-sandbox/test/job-host-main.unit.test.ts) [SDK 线程回归](../../packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts) [准备控制回归](../../test/integration/sandbox-preparation-control.test.ts)
+
+准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。Hermes 结果不能代替生产主机的安装验收；用户已无限期推迟 Mac 验证，Mac 行为未验证。
 
 
 ### Schema 38 纯联网范围

@@ -19,6 +19,7 @@ const boundary = vi.hoisted(() => ({
   snapshot: vi.fn(),
   startToken: vi.fn(),
   guardian: vi.fn(),
+  sdk: vi.fn(),
   manager: {
     checkDependenciesAsync: vi.fn(),
     isSupportedPlatform: vi.fn(),
@@ -31,7 +32,7 @@ const boundary = vi.hoisted(() => ({
 vi.mock("node:process", () => ({ default: boundary.process }));
 vi.mock("node:child_process", () => ({ spawn: boundary.spawn }));
 vi.mock("node:fs/promises", () => ({ realpath: boundary.realpath, stat: boundary.stat }));
-vi.mock("@anthropic-ai/sandbox-runtime", () => ({ SandboxManager: boundary.manager }));
+vi.mock("../src/sandbox-sdk.ts", () => ({ createSandboxSdk: boundary.sdk }));
 vi.mock("../src/policy.ts", () => ({ compileSandboxPolicy: boundary.compile }));
 vi.mock("../src/job-host-control.ts", () => ({ openJobHostControl: boundary.control }));
 vi.mock("../src/linux-namespace.ts", () => ({ captureLinuxNamespace: boundary.namespace }));
@@ -200,6 +201,7 @@ beforeEach(() => {
     env: { FIXTURE: "1" },
   });
   boundary.manager.reset.mockResolvedValue(undefined);
+  boundary.sdk.mockResolvedValue(boundary.manager);
 });
 afterEach(() => {
   vi.clearAllTimers();
@@ -210,6 +212,50 @@ afterEach(() => {
 });
 
 describe("Job Host entrypoint protocol and lifecycle", () => {
+  it("waits for its already-started SDK load when policy import fails first", async () => {
+    let finishLoading!: () => void;
+    boundary.sdk.mockReturnValue(
+      new Promise<typeof boundary.manager>((resolve) => {
+        finishLoading = () => resolve(boundary.manager);
+      }),
+    );
+    vi.doMock("../src/policy.ts", () => {
+      throw Object.assign(new Error("JOB_HOST_TEST_POLICY_IMPORT_FAILURE"), { code: "EIO" });
+    });
+    try {
+      await prepare();
+      expect(boundary.sdk).toHaveBeenCalledOnce();
+      expect(result()).toBeUndefined();
+      expect(boundary.manager.reset).not.toHaveBeenCalled();
+      expect(processBoundary.disconnect).not.toHaveBeenCalled();
+      expect(boundary.spawn).not.toHaveBeenCalled();
+      expect(sent.some((message) => message["type"] === "ready")).toBe(false);
+      finishLoading();
+      await settle();
+      expect(boundary.manager.cleanupAfterCommand).toHaveBeenCalledOnce();
+      expect(boundary.manager.reset).toHaveBeenCalledOnce();
+      expect(result()).toMatchObject({
+        reason: "host_failure",
+        taskStarted: false,
+        srtReset: true,
+      });
+      expect(processBoundary.disconnect).toHaveBeenCalledOnce();
+      expect(boundary.spawn).not.toHaveBeenCalled();
+    } finally {
+      finishLoading?.();
+      vi.doMock("../src/policy.ts", () => ({ compileSandboxPolicy: boundary.compile }));
+      await settle();
+    }
+  });
+  it("fails without a reset claim if its SDK thread exits while ready", async () => {
+    await prepare();
+    boundary.manager.reset.mockRejectedValue(new Error("JOB_HOST_PREPARATION_FAILED"));
+    const failed = boundary.sdk.mock.calls[0]?.[0] as () => void;
+    failed();
+    await settle();
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false, srtReset: false });
+    expect(boundary.spawn).not.toHaveBeenCalled();
+  });
   it("waits for its Linux group guardian before SRT can create a bridge", async () => {
     let ready!: () => void;
     boundary.guardian.mockReturnValue(
@@ -799,6 +845,49 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await load();
     expect(processBoundary.stderr.write).toHaveBeenCalledWith("JOB_HOST_IPC_REQUIRED\n");
     expect((boundary.process as { exitCode: number }).exitCode).toBe(1);
+  });
+  it("forces exit within the cleanup deadline after disconnect while readiness never settles", async () => {
+    const cancelReadiness = vi.fn();
+    let finishReadiness!: (ready: boolean) => void;
+    boundary.readiness.mockReturnValue({
+      cancel: cancelReadiness,
+      result: new Promise<boolean>((resolve) => {
+        finishReadiness = resolve;
+      }),
+    });
+    const input = {
+      ...request(),
+      policy: { ...request().policy, allowedUnixSockets: ["/private-job/ready.sock"] },
+      readiness: {
+        kind: "unix_http" as const,
+        ref: "ready",
+        socketName: "ready.sock",
+        path: "/health",
+        expectedStatus: 200,
+        timeoutMs: 1000,
+      },
+    };
+    await prepare(input);
+    await startLinux();
+    processBoundary.connected = false;
+    Object.assign(boundary.process, { connected: false });
+    listeners.get("disconnect")?.();
+    try {
+      await closeTask();
+      expect(cancelReadiness).toHaveBeenCalledOnce();
+      expect(processBoundary.kill).toHaveBeenCalledWith(-7000, "SIGKILL");
+      expect(result()).toBeUndefined();
+      expect(boundary.manager.reset).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(input.cleanupTimeoutMs - 1);
+      expect(processBoundary.exit).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(processBoundary.exit).toHaveBeenCalledExactlyOnceWith(1);
+      expect(result()).toBeUndefined();
+      expect(boundary.manager.reset).not.toHaveBeenCalled();
+    } finally {
+      finishReadiness(false);
+      await settle();
+    }
   });
   it.each(["reset", "control-finish"] as const)(
     "keeps the Worker informed during slow cleanup: %s",

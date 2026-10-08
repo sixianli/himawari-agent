@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:241b2b226848a35e60a634fe82af70378bf4040ba7ba9dbe98625005334ec361"
+contract_sha256: "sha256:14d0cdff44a5af86a72d7e1196080201fb8854cc1824d111005298e54ddcc589"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -16,6 +16,13 @@ date: "2026-10-08"
 
 <!-- runbook-contract:
 - docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md
+- packages/runtime-sandbox/src/job-host-main.ts
+- packages/runtime-sandbox/src/sandbox-sdk.ts
+- packages/runtime-sandbox/src/sandbox-sdk-worker.ts
+- packages/runtime-sandbox/src/policy.ts
+- packages/runtime-sandbox/test/job-host-main.unit.test.ts
+- packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts
+- test/integration/sandbox-preparation-control.test.ts
 - packages/application/src/ports/sandbox-execution-journal.ts
 - packages/application/src/services/sandbox-execution-projection.ts
 - packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts
@@ -56,6 +63,8 @@ date: "2026-10-08"
 ## Safety and Preconditions
 
 确认处置使用本次受验证的完整安装、匹配配置与 Schema 50。只读预览接受 Schema 49/50，不自动迁移；Schema 49 旧库须先完成下述独立离线路线，生产还需覆盖完整候选安装、备份、迁移和管理员处置的具体授权。Schema 49 及更旧 writer 不得接管新库；不得直接修改数据库列或补造 Host final。Agent 与 Worker 必须停止，确认命令自行取得原 state-root 独占锁；存活锁取得失败时停止，不删除或绕过它。
+
+新候选完整安装须包含 `sandbox-sdk.js` 与固定的 `sandbox-sdk-worker.js`。Job Host 把同一个 SRT `SandboxManager` 的依赖检查、初始化、启动参数生成、cleanup 和 reset 放入私有 SDK 工作线程；主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限，策略模块仍在主线程加载 SRT。原 1500ms 消息年龄、30 秒准备上限、任务期限和协议不变。正常清理必须取得 cleanup/reset 成功回复与 SDK 线程自然退出码 0，异常退出或强制终止不产生 `srtReset=true`。这不替代下述三项管理员独立现场核查，也不把“SDK 线程已退出”变成 Host 释放证明，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
 执行账号须有目标配置与数据库的合法访问权。命令记录实际本机 UID/account/hostname，并分别保存 `--administrator` 声明引用；声明引用不证明具体自然人身份。准备本次独立现场报告、SHA-256、已经验证的完整恢复点及项目批准的受保护证据目录。
 

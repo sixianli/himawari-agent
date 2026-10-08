@@ -20,6 +20,7 @@ import { stopProcessGroup } from "./process-group.ts";
 import { readProcessStartToken } from "./process-identity.ts";
 import { startReadinessProbe } from "./readiness-probe.ts";
 import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
+import type { SandboxSdk } from "./sandbox-sdk.ts";
 
 // This entry is forked by the trusted Worker with a clean environment before any
 // SDK import. The task gets pipes only; it never inherits this IPC channel.
@@ -53,7 +54,7 @@ let exited = false;
 let closed = false;
 let finishing = false;
 let diagnostics: typeof import("@himawari-agent/execution-contracts") | undefined;
-let sandboxManager: typeof import("@anthropic-ai/sandbox-runtime").SandboxManager | undefined;
+let sandboxManager: SandboxSdk | undefined;
 let sdkOperation: Promise<unknown> = Promise.resolve();
 let egress: Awaited<ReturnType<typeof openNetworkEgress>> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -94,6 +95,8 @@ function killTask() {
 async function finish() {
   if (finishing) return;
   finishing = true;
+  clearTimeout(emergency);
+  emergency = setTimeout(() => process.exit(1), request?.cleanupTimeoutMs ?? 5000);
   observer?.stop();
   phase = "stopping";
   networkAuthority.close();
@@ -109,15 +112,13 @@ async function finish() {
       kill: (pid, signal) => process.kill(pid, signal),
     });
   let reset = false;
-  clearTimeout(emergency);
-  emergency = setTimeout(() => process.exit(1), request?.cleanupTimeoutMs ?? 5000);
   try {
     // Initialization/wrapping must settle before reset. The emergency deadline
     // remains armed if the SDK never settles.
     await sdkOperation.catch(() => {});
     await egress?.close();
     if (sandboxManager) {
-      sandboxManager.cleanupAfterCommand();
+      await sandboxManager.cleanupAfterCommand();
       await sandboxManager.reset();
       reset = true;
     }
@@ -188,12 +189,17 @@ async function prepare(value: unknown, controlValue?: unknown) {
   const loading = import("@himawari-agent/execution-contracts").then(async (module) => {
     diagnostics = module;
     if (phase !== "preparing") return;
-    const [runtime, policy] = await Promise.all([
-      import("@anthropic-ai/sandbox-runtime"),
+    const [manager, policy] = await Promise.allSettled([
+      import("./sandbox-sdk.ts").then(async ({ createSandboxSdk }) => {
+        const manager = await createSandboxSdk(() => stop("host_failure"));
+        sandboxManager = manager;
+        return manager;
+      }),
       import("./policy.ts"),
     ]);
-    sandboxManager = runtime.SandboxManager;
-    return { manager: runtime.SandboxManager, compileSandboxPolicy: policy.compileSandboxPolicy };
+    if (manager.status === "rejected") throw manager.reason;
+    if (policy.status === "rejected") throw policy.reason;
+    return { manager: manager.value, compileSandboxPolicy: policy.value.compileSandboxPolicy };
   });
   sdkOperation = loading;
   const preparation = await loading;
