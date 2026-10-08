@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -282,6 +283,18 @@ export interface ProductPathInstallation {
   crashWorker(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
   armPreparationFailure(): Promise<void>;
+  armPreparationFinalHold(): Promise<void>;
+  preparationFinalHold(): Promise<{
+    pid: number;
+    at: string;
+    jobId: string;
+    attemptId: string;
+    directory: string;
+    sha256: string;
+    byteLength: number;
+    hostForks: readonly unknown[];
+  } | null>;
+  releasePreparationFinalHold(): Promise<void>;
   armPreparationTransportFailure(legacyPlan?: boolean): Promise<void>;
   preparationTransportFailure(): Promise<unknown | null>;
   armPreparationAckLoss(): Promise<void>;
@@ -917,6 +930,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_SECRET_DIRECTORY: secretDirectory,
     HIMAWARI_TEST_DELIVERY_CRASH: path.join(testRoot, "delivery-crash"),
     HIMAWARI_TEST_PREPARATION_FAILURE: path.join(testRoot, "preparation-failure"),
+    HIMAWARI_TEST_PREPARATION_FINAL_GATE: path.join(testRoot, "preparation-final-gate"),
     HIMAWARI_TEST_PREPARATION_TRANSPORT_FAILURE: path.join(
       testRoot,
       "preparation-transport-failure",
@@ -1131,6 +1145,47 @@ export async function installProductPath(options: {
       ),
     armPreparationFailure: async () => {
       await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
+    },
+    armPreparationFinalHold: async () => {
+      const gate = serviceEnv.HIMAWARI_TEST_PREPARATION_FINAL_GATE;
+      for (const suffix of [".entered", ".entered.pending", ".consumed", ".hosts.jsonl"])
+        await rm(`${gate}${suffix}`, { force: true });
+      await writeFile(gate, "armed", { mode: 0o600 });
+      await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
+    },
+    preparationFinalHold: async () => {
+      const gate = serviceEnv.HIMAWARI_TEST_PREPARATION_FINAL_GATE;
+      const entered = await readFile(`${gate}.entered`, "utf8").catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      );
+      if (entered === null) return null;
+      const hosts = await readFile(`${gate}.hosts.jsonl`, "utf8");
+      return {
+        ...JSON.parse(entered),
+        hostForks: hosts
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line)),
+      };
+    },
+    releasePreparationFinalHold: async () => {
+      const entered = JSON.parse(
+        await readFile(`${serviceEnv.HIMAWARI_TEST_PREPARATION_FINAL_GATE}.entered`, "utf8"),
+      ) as { directory: string; sha256: string; byteLength: number };
+      const directory = await realpath(entered.directory);
+      if (path.dirname(directory) !== jobsRoot)
+        throw new Error("PRODUCT_PATH_PREPARATION_FINAL_DIRECTORY_INVALID");
+      const heldPath = path.join(directory, "final-held.json");
+      const bytes = await readFile(heldPath);
+      if (
+        bytes.byteLength !== entered.byteLength ||
+        createHash("sha256").update(bytes).digest("hex") !== entered.sha256
+      )
+        throw new Error("PRODUCT_PATH_PREPARATION_FINAL_BYTES_CHANGED");
+      await rename(heldPath, path.join(directory, "final.json"));
     },
     armFinishGate: async (stage = "after-reset") => {
       const gate = serviceEnv.HIMAWARI_TEST_HOST_FINISH_GATE;

@@ -13,6 +13,15 @@ const initialReasons = new Set([
   "SANDBOX_RELEASE_CONTRADICTED",
   "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
 ]);
+const retryableReservationReasons = new Set([
+  "SANDBOX_SUPERVISOR_UNAVAILABLE",
+  "SANDBOX_HOST_UNAVAILABLE",
+  "SANDBOX_CONTROL_UNCONFIRMED",
+  "SANDBOX_CONTROL_TIMED_OUT",
+  "SANDBOX_RECONCILIATION_TIMED_OUT",
+  "SANDBOX_RECONCILIATION_INTERRUPTED",
+  "SANDBOX_RECONCILIATION_INCONCLUSIVE",
+]);
 
 /** Runs inside the existing authority-checked journal transaction. It grants
  * only a queued inspect/stop and fences unbound starts before scheduling stop. */
@@ -92,20 +101,35 @@ export class SqliteSandboxRecoveryScheduling {
         !["lost", "reconciling", "released"].includes(admission.record.facts.resource.supervision))
     )
       return;
-    // A completed failed attempt is paused. A later stop obligation is a distinct
-    // action, not a retry of inspection; fresh incidents explicitly reset the reason.
+    const retryReservation =
+      admission.phase === "reserved" &&
+      stop &&
+      current?.status === "unresolved" &&
+      current.action === "stop" &&
+      retryableReservationReasons.has(current.reasonCode);
     if (
       current?.status === "unresolved" &&
       !initialReasons.has(current.reasonCode) &&
-      !(stop && current.action !== "stop")
+      !(stop && current.action !== "stop") &&
+      !retryReservation
     )
       return;
-    if (
-      current?.status === "scheduled" &&
-      current.action === action &&
-      current.owner === input.authority.agentServiceBootId
-    )
-      return current;
+    if (current?.status === "scheduled" && current.action === action) {
+      if (current.owner === input.authority.agentServiceBootId) return current;
+      if (admission.phase === "reserved")
+        return this.save(record.plan.identity.jobId, {
+          ...current,
+          revision: current.revision + 1,
+          owner: input.authority.agentServiceBootId,
+        });
+    }
+    const nextAttemptAt =
+      retryReservation && current?.status === "unresolved"
+        ? new Date(
+            Date.parse(current.finishedAt ?? input.now) +
+              Math.min(30_000, 1000 * 2 ** Math.min(5, Math.max(0, current.attempts - 1))),
+          ).toISOString()
+        : input.now;
     const state: SandboxRecoveryState = {
       revision: (current?.revision ?? 0) + 1,
       owner: input.authority.agentServiceBootId,
@@ -113,7 +137,7 @@ export class SqliteSandboxRecoveryScheduling {
       status: "scheduled",
       action,
       scheduledAt: input.now,
-      nextAttemptAt: input.now,
+      nextAttemptAt,
       startedAt: null,
       deadlineAt: null,
       finishedAt: null,

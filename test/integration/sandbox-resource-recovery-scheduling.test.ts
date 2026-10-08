@@ -1,3 +1,7 @@
+import { spawn } from "node:child_process";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { mkdir, readFile, realpath, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   recoverSandboxExecutionsAtStartup,
@@ -8,6 +12,9 @@ import {
   SandboxResourceRecoveryService,
 } from "@himawari-agent/application";
 import {
+  type SandboxExecutionPlanV2,
+  type SandboxHostBinding,
+  type SandboxRuntimeQualification,
   sandboxExecutionReservationSchema,
   sandboxExecutionFactsSchema,
   sandboxResourceObservationSchema,
@@ -22,6 +29,12 @@ import {
   SqliteProductStateRepository,
 } from "@himawari-agent/persistence-sqlite";
 import { describe, expect, it, vi } from "vitest";
+import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
+import {
+  type JobHostControlObservation,
+  openJobHostControl,
+  queryJobHostControl,
+} from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import {
   reconciliationBackend,
   sandboxV2Admission,
@@ -95,6 +108,119 @@ async function fixture(reserved = false, withGrant = false) {
     close: async () => {
       await repository.close();
       await f.close();
+    },
+  };
+}
+
+async function disconnectedPreparation(
+  f: Awaited<ReturnType<typeof fixture>>,
+  proof: "verified" | "started" | "cleanup-unknown",
+  now: () => string,
+) {
+  const admission = await f.preparations.readAdmission(f.identity);
+  if (admission?.phase !== "reserved") throw new Error("missing reservation");
+  const root = await realpath(f.resource.stateRoot);
+  const directory = path.join(root, "d2-control");
+  await mkdir(directory, { mode: 0o700 });
+  const binding = {
+    directory,
+    token: randomBytes(32).toString("hex"),
+    sessionId: randomUUID(),
+    jobId: f.identity.jobId,
+    attemptId: f.identity.attemptId,
+  };
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore", detached: true });
+  const departedPid = child.pid;
+  await once(child, "exit");
+  if (!departedPid) throw new Error("missing original host PID");
+  let sequence = 0;
+  const observation: JobHostControlObservation = {
+    sessionId: binding.sessionId,
+    jobId: binding.jobId,
+    attemptId: binding.attemptId,
+    bootId: randomUUID(),
+    processIdentityRef: `job-host-process:${randomUUID()}`,
+    processId: departedPid,
+    processStartedAt: now(),
+    observedAt: now(),
+    sequence: 1,
+    phase: "finished",
+    policyDigest: f.request.facts.environment.policyDigest,
+    privateDirectoryRef: `sandbox-private:${"a".repeat(64)}`,
+    linuxNamespace: null,
+    taskStarted: proof === "started",
+    taskProcessExited: false,
+    stdioClosed: false,
+    srtReset: proof !== "cleanup-unknown",
+    resources: null,
+  };
+  const server = await openJobHostControl(
+    binding,
+    () => ({ ...observation, observedAt: now(), sequence: ++sequence }),
+    () => {
+      throw new Error("disconnected host cannot receive a stop");
+    },
+  );
+  await server.finish();
+  await expect(queryJobHostControl(binding, "inspect")).rejects.toMatchObject({
+    code: expect.stringMatching(/^(ENOENT|ECONNREFUSED)$/),
+  });
+  const artifacts = new Map<string, { ref: string; digest: string; value: unknown }>();
+  const host = async () => ({
+    binding: {
+      privateRoot: root,
+      runtimeRoot: "/runtime",
+      readOnlyToolchainPaths: [],
+      roots: [],
+    } as unknown as SandboxHostBinding,
+    qualification: { platform: process.platform } as SandboxRuntimeQualification,
+  });
+  const control = createProductionSandboxControl({
+    now,
+    machineBootId: async () => "d2-original-machine",
+    host,
+    admit: host,
+    read: async (_plan, key) => structuredClone(artifacts.get(key)),
+    write: async (_plan, key, value) => {
+      const existing = artifacts.get(key);
+      const digest = createHash("sha256").update(JSON.stringify(value)).digest("hex");
+      if (existing) {
+        if (existing.digest !== digest) throw new Error("changed immutable control artifact");
+        return existing;
+      }
+      const artifact = { ref: key, digest, value: structuredClone(value) };
+      artifacts.set(key, artifact);
+      return artifact;
+    },
+  });
+  await control.registerPreparation(admission.plan, binding, observation.policyDigest);
+  let preparations = f.preparations;
+  const stop = vi.fn(async (plan: SandboxExecutionPlanV2, signal: AbortSignal) => {
+    const current = await preparations.readAdmission(plan.identity);
+    if (current?.phase !== "reserved" || !current.stopRequestedAt)
+      throw new Error("missing reservation stop fence");
+    await control.stopPreparation(plan, signal, current.stopRequestedAt);
+  });
+  const verify = vi.fn(control.verifyReservationRelease);
+  const recover = () =>
+    new SandboxResourceRecoveryService({
+      hostId: f.identity.hostId,
+      preparations,
+      reconciliation: { reconcile: vi.fn() },
+      reservations: { stop, verify },
+      authority: () => SERVICE_AUTHORITY,
+      now,
+      timeoutMs: 1000,
+    });
+  return {
+    directory,
+    finalPath: path.join(directory, "final.json"),
+    withheldPath: path.join(directory, "withheld-final.json"),
+    stop,
+    verify,
+    recover,
+    usePreparations: (reopened: typeof preparations) => {
+      preparations = reopened;
     },
   };
 }
@@ -490,6 +616,446 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
     }
   });
 
+  it("[R2-L4][prod-sandbox-D2] releases a disconnected never-started host from authenticated final evidence", async (context) => {
+    const f = await fixture(true);
+    try {
+      f.database
+        .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+        .run(f.identity.runId);
+      const host = await disconnectedPreparation(f, "verified", () => T1);
+      const finalBefore = await readFile(host.finalPath, "utf8");
+      await host.recover().pump(new AbortController().signal, 1);
+      const admission = await f.preparations.readAdmission(f.identity);
+      expect(admission).toMatchObject({
+        phase: "reserved",
+        recovery: { status: "resolved", attempts: 1 },
+        releaseReceipt: { verification: { basis: "host_never_started" } },
+      });
+      const readback = f.database
+        .prepare(`SELECT r.preparation_state AS phase,r.started_at AS startedAt,
+          (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+          (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+          FROM sandbox_execution_records r WHERE r.job_id=?`)
+        .get(f.identity.jobId);
+      expect(readback).toEqual({
+        phase: "reserved",
+        startedAt: null,
+        receipts: 1,
+        activeClaims: 0,
+      });
+      expect(host.stop).toHaveBeenCalledTimes(1);
+      expect(host.verify).toHaveBeenCalledTimes(1);
+      expect(await readFile(host.finalPath, "utf8")).toBe(finalBefore);
+      Object.assign(context.task.meta, { reservationRecoveryReadback: readback });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("[R2-L4][prod-sandbox-D2] verifies original final evidence even when its stop connection failed", async (context) => {
+    const f = await fixture(true);
+    try {
+      f.database
+        .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+        .run(f.identity.runId);
+      const host = await disconnectedPreparation(f, "verified", () => T1);
+      const stop = host.stop.getMockImplementation();
+      if (!stop) throw new Error("missing original stop implementation");
+      host.stop.mockImplementationOnce(async (plan, signal) => {
+        await rename(host.finalPath, host.withheldPath);
+        try {
+          await stop(plan, signal);
+        } finally {
+          await rename(host.withheldPath, host.finalPath);
+        }
+      });
+      await host.recover().pump(new AbortController().signal, 1);
+      const admission = await f.preparations.readAdmission(f.identity);
+      expect(admission).toMatchObject({
+        phase: "reserved",
+        recovery: { status: "resolved", attempts: 1 },
+        releaseReceipt: { verification: { basis: "host_never_started" } },
+      });
+      const readback = f.database
+        .prepare(`SELECT r.started_at AS startedAt,
+          (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+          (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+          FROM sandbox_execution_records r WHERE r.job_id=?`)
+        .get(f.identity.jobId);
+      expect(readback).toEqual({ startedAt: null, receipts: 1, activeClaims: 0 });
+      expect(host.verify).toHaveBeenCalledTimes(1);
+      Object.assign(context.task.meta, { disconnectedStopIndependentReadback: readback });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("[R2-L4][prod-sandbox-D2] retries disconnected preparation cleanup after its original final becomes readable", async (context) => {
+    const f = await fixture(true);
+    let clock = T1;
+    try {
+      await f.preparations.interruptReservation({
+        identity: f.identity,
+        authority: SERVICE_AUTHORITY,
+        now: clock,
+        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      });
+      const host = await disconnectedPreparation(f, "verified", () => clock);
+      const next = sandboxV2Admission(f, "-d2-after-release");
+      const nextRequest = {
+        plan: next.plan,
+        invocation: next.invocation,
+        workspaces: next.workspaces,
+        reservation: sandboxExecutionReservationSchema.parse({
+          schemaVersion: "sandbox-preparation.v1",
+          identity: next.plan.identity,
+          environmentId: next.plan.environmentId,
+          resourceRef: null,
+          mode: next.plan.mode,
+          workspaceConflictRefs: next.workspaces.map(({ ref }) => ref),
+          sequence: 1,
+          createdAt: next.plan.requestedAt,
+        }),
+      };
+      const finalBefore = await readFile(host.finalPath, "utf8");
+      await rename(host.finalPath, host.withheldPath);
+      await host.recover().pump(new AbortController().signal, 1);
+      const unresolved = await f.preparations.readAdmission(f.identity);
+      if (unresolved?.phase !== "reserved") throw new Error("reservation unexpectedly bound");
+      expect(unresolved).toMatchObject({
+        phase: "reserved",
+        recovery: {
+          status: "unresolved",
+          attempts: 1,
+          action: "stop",
+          reasonCode: "SANDBOX_SUPERVISOR_UNAVAILABLE",
+        },
+      });
+      expect(unresolved?.releaseReceipt).toBeUndefined();
+      const retained = f.database
+        .prepare(`SELECT r.started_at AS startedAt,
+          (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+          (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+          FROM sandbox_execution_records r WHERE r.job_id=?`)
+        .get(f.identity.jobId);
+      expect(retained).toEqual({ startedAt: null, receipts: 0, activeClaims: 1 });
+      await expect(f.preparations.reserve(nextRequest)).rejects.toThrow("pending preparation");
+      Object.assign(context.task.meta, {
+        pendingReservationRetryReadback: { unresolved, retained },
+      });
+      const scheduled = await f.preparations.scheduleRecovery(await f.requestFor());
+      expect(scheduled).toMatchObject({ status: "scheduled", action: "stop", attempts: 1 });
+      if (scheduled?.status !== "scheduled")
+        throw new Error("missing persistent reservation retry");
+      expect(scheduled.nextAttemptAt > clock).toBe(true);
+      expect(Date.parse(scheduled.nextAttemptAt) - Date.parse(clock)).toBeLessThanOrEqual(30000);
+      await f.repository.close();
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+      });
+      try {
+        const preparations = reopened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.readAdmission(f.identity)).toMatchObject({ recovery: scheduled });
+        expect(
+          await preparations.scheduleRecovery({
+            identity: f.identity,
+            now: clock,
+            expectedSequence: null,
+            expectedRecoveryRevision: scheduled.revision,
+            authority: { ...SERVICE_AUTHORITY, agentServiceBootId: "d2-restarted-agent" },
+          }),
+        ).toMatchObject({
+          status: "scheduled",
+          attempts: 1,
+          nextAttemptAt: scheduled.nextAttemptAt,
+        });
+      } finally {
+        await reopened.close();
+      }
+      await rename(host.withheldPath, host.finalPath);
+      const resumedRepository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+      });
+      try {
+        const preparations = resumedRepository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        host.usePreparations(preparations);
+        const current = await preparations.readAdmission(f.identity);
+        if (current?.phase !== "reserved") throw new Error("reservation unexpectedly bound");
+        await preparations.scheduleRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: clock,
+          expectedSequence: null,
+          expectedRecoveryRevision: current.recovery?.revision ?? 0,
+        });
+        const service = new SandboxResourceRecoveryService({
+          hostId: f.identity.hostId,
+          preparations,
+          reconciliation: { reconcile: vi.fn() },
+          reservations: { stop: host.stop, verify: host.verify },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => clock,
+          timeoutMs: 1000,
+        });
+        await service.pump(new AbortController().signal, 1);
+        expect(host.stop).toHaveBeenCalledTimes(1);
+        const waiting = await preparations.readAdmission(f.identity);
+        if (waiting?.phase !== "reserved") throw new Error("reservation unexpectedly bound");
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS activeClaims FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(f.identity.jobId),
+        ).toEqual({ activeClaims: 1 });
+        clock = scheduled.nextAttemptAt;
+        await service.pump(new AbortController().signal, 1);
+        await service.pump(new AbortController().signal, 1);
+        const released = await preparations.readAdmission(f.identity);
+        expect(released).toMatchObject({
+          phase: "reserved",
+          recovery: { status: "resolved", attempts: 2 },
+          releaseReceipt: { verification: { basis: "host_never_started" } },
+        });
+        expect(host.stop).toHaveBeenCalledTimes(2);
+        expect(await readFile(host.finalPath, "utf8")).toBe(finalBefore);
+        const readback = f.database
+          .prepare(`SELECT r.started_at AS startedAt,
+            (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+            (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+            FROM sandbox_execution_records r WHERE r.job_id=?`)
+          .get(f.identity.jobId);
+        expect(readback).toEqual({ startedAt: null, receipts: 1, activeClaims: 0 });
+        expect((await preparations.reserve(nextRequest)).applied).toBe(true);
+        expect(
+          f.database
+            .prepare("SELECT started_at AS startedAt FROM sandbox_execution_records WHERE job_id=?")
+            .get(next.plan.identity.jobId),
+        ).toEqual({ startedAt: null });
+        Object.assign(context.task.meta, {
+          reservationRetryReadback: { unresolved, scheduled, released, readback },
+        });
+      } finally {
+        await resumedRepository.close();
+      }
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("[R2-L4][prod-sandbox-D2] backs off reservation stop retries through 1, 2, 4, 8, 16 and capped 30 seconds", async (context) => {
+    const f = await fixture(true);
+    try {
+      let clock = T1;
+      await f.preparations.interruptReservation({
+        identity: f.identity,
+        authority: SERVICE_AUTHORITY,
+        now: clock,
+        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      });
+      let scheduled = await f.preparations.scheduleRecovery(await f.requestFor());
+      const observations: unknown[] = [];
+      const delays = [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000];
+      for (const [index, delay] of delays.entries()) {
+        if (!scheduled) throw new Error("retry schedule missing");
+        const running = await f.preparations.beginReservationRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: clock,
+          deadlineAt: new Date(Date.parse(clock) + 1000).toISOString(),
+          expectedRecoveryRevision: scheduled.revision,
+        });
+        expect(running.attempts).toBe(index + 1);
+        const failed = await f.preparations.finishReservationRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: clock,
+          expectedRecoveryRevision: running.revision,
+          reasonCode: "SANDBOX_SUPERVISOR_UNAVAILABLE",
+        });
+        expect(failed).toMatchObject({ status: "unresolved", attempts: index + 1 });
+        const retryAt = new Date(Date.parse(clock) + delay).toISOString();
+        const retry = await f.preparations.scheduleRecovery({
+          ...(await f.requestFor()),
+          now: clock,
+        });
+        expect(retry).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: index + 1,
+          nextAttemptAt: retryAt,
+        });
+        if (!retry) throw new Error("retry schedule missing");
+        const tooEarly = new Date(Date.parse(retryAt) - 1).toISOString();
+        await expect(
+          f.preparations.beginReservationRecovery({
+            identity: f.identity,
+            authority: SERVICE_AUTHORITY,
+            now: tooEarly,
+            deadlineAt: new Date(Date.parse(tooEarly) + 1000).toISOString(),
+            expectedRecoveryRevision: retry.revision,
+          }),
+        ).rejects.toThrow("Scheduled recovery changed");
+        expect(await f.status()).toEqual(retry);
+        observations.push({ failed, retry, delay });
+        scheduled = retry;
+        clock = retryAt;
+      }
+      const readback = f.database
+        .prepare(`SELECT r.started_at AS startedAt,
+          (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+          (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+          FROM sandbox_execution_records r WHERE r.job_id=?`)
+        .get(f.identity.jobId);
+      expect(readback).toEqual({ startedAt: null, receipts: 0, activeClaims: 1 });
+      Object.assign(context.task.meta, { reservationBackoffReadback: { observations, readback } });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    ["SANDBOX_SUPERVISOR_UNAVAILABLE", true],
+    ["SANDBOX_HOST_UNAVAILABLE", true],
+    ["SANDBOX_CONTROL_UNCONFIRMED", true],
+    ["SANDBOX_CONTROL_TIMED_OUT", true],
+    ["SANDBOX_RECONCILIATION_TIMED_OUT", true],
+    ["SANDBOX_RECONCILIATION_INTERRUPTED", true],
+    ["SANDBOX_RECONCILIATION_INCONCLUSIVE", true],
+    ["SANDBOX_CONTROL_IDENTITY_CHANGED", false],
+    ["SANDBOX_CONTROL_EVIDENCE_INVALID", false],
+    ["SANDBOX_RECONCILIATION_PERMISSION_DENIED", false],
+    ["SANDBOX_CONTROL_DIRECTORY_CHANGED", false],
+    ["SANDBOX_CONTROL_BINDING_UNAVAILABLE", false],
+    ["SANDBOX_CONTROL_ARTIFACT_CHANGED", false],
+    ["SANDBOX_RECONCILIATION_UNCONFIRMED", false],
+  ] as const)(
+    "[R2-L4][prod-sandbox-D2] applies reserved retry policy to %s (retry=%s)",
+    async (reasonCode, retryable) => {
+      const f = await fixture(true);
+      try {
+        await f.preparations.interruptReservation({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        });
+        const scheduled = await f.preparations.scheduleRecovery(await f.requestFor());
+        if (!scheduled) throw new Error("schedule missing");
+        const running = await f.preparations.beginReservationRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          deadlineAt,
+          expectedRecoveryRevision: scheduled.revision,
+        });
+        const failed = await f.preparations.finishReservationRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          expectedRecoveryRevision: running.revision,
+          reasonCode,
+        });
+        expect(failed).toMatchObject({ status: "unresolved", attempts: 1, reasonCode });
+        const retry = await f.preparations.scheduleRecovery(await f.requestFor());
+        if (retryable)
+          expect(retry).toMatchObject({
+            status: "scheduled",
+            action: "stop",
+            attempts: 1,
+            nextAttemptAt: deadlineAt,
+          });
+        else {
+          expect(retry).toBeUndefined();
+          expect(await f.status()).toEqual(failed);
+        }
+        const readback = f.database
+          .prepare(`SELECT r.started_at AS startedAt,
+            (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+            (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+            FROM sandbox_execution_records r WHERE r.job_id=?`)
+          .get(f.identity.jobId);
+        expect(readback).toEqual({ startedAt: null, receipts: 0, activeClaims: 1 });
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("[R2-L4][prod-sandbox-D2] pauses recovery when the original control directory disappears", async (context) => {
+    const f = await fixture(true);
+    try {
+      f.database
+        .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+        .run(f.identity.runId);
+      const host = await disconnectedPreparation(f, "verified", () => T1);
+      const originalFinal = await readFile(host.finalPath);
+      const movedDirectory = `${host.directory}-moved`;
+      await rename(host.directory, movedDirectory);
+      await expect(readFile(host.finalPath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(path.join(movedDirectory, "final.json"))).toEqual(originalFinal);
+      await host.recover().pump(new AbortController().signal, 1);
+      const admission = await f.preparations.readAdmission(f.identity);
+      expect(admission).toMatchObject({
+        phase: "reserved",
+        recovery: {
+          status: "unresolved",
+          attempts: 1,
+          reasonCode: "SANDBOX_CONTROL_DIRECTORY_CHANGED",
+          nextAttemptAt: null,
+        },
+      });
+      expect(await f.preparations.scheduleRecovery(await f.requestFor())).toBeUndefined();
+      const readback = f.database
+        .prepare(`SELECT r.started_at AS startedAt,
+          (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+          (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+          FROM sandbox_execution_records r WHERE r.job_id=?`)
+        .get(f.identity.jobId);
+      expect(readback).toEqual({ startedAt: null, receipts: 0, activeClaims: 1 });
+      expect(await readFile(path.join(movedDirectory, "final.json"))).toEqual(originalFinal);
+      Object.assign(context.task.meta, { disappearedControlDirectoryReadback: readback });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["started", "cleanup-unknown"] as const)(
+    "[R2-L4][prod-sandbox-D2] retains occupancy when a disconnected final contradicts never-started release: %s",
+    async (proof) => {
+      const f = await fixture(true);
+      try {
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(f.identity.runId);
+        const host = await disconnectedPreparation(f, proof, () => T1);
+        await host.recover().pump(new AbortController().signal, 1);
+        const admission = await f.preparations.readAdmission(f.identity);
+        if (admission?.phase !== "reserved") throw new Error("reservation unexpectedly bound");
+        expect(admission).toMatchObject({
+          phase: "reserved",
+          recovery: {
+            status: "unresolved",
+            attempts: 1,
+            reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+          },
+        });
+        expect(admission?.releaseReceipt).toBeUndefined();
+        const readback = f.database
+          .prepare(`SELECT r.started_at AS startedAt,
+            (SELECT count(*) FROM sandbox_reservation_release_receipts rr WHERE rr.job_id=r.job_id) AS receipts,
+            (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims
+            FROM sandbox_execution_records r WHERE r.job_id=?`)
+          .get(f.identity.jobId);
+        expect(readback).toEqual({ startedAt: null, receipts: 0, activeClaims: 1 });
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
   it.each(["bound", "reserved"])(
     "cancels a %s check and rejects late backend effects",
     async (phase) => {
@@ -798,7 +1364,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
     },
   );
 
-  it("expires an abandoned attempt without granting a second attempt", async () => {
+  it("[R2-L4][prod-sandbox-D2] expires an abandoned reservation attempt and schedules its next stop after backoff", async () => {
     const f = await fixture(true);
     try {
       f.database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(f.identity.runId);
@@ -820,9 +1386,28 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
         reasonCode: "SANDBOX_RECONCILIATION_TIMED_OUT",
         nextAttemptAt: null,
       });
-      expect(
-        await f.preparations.scheduleRecovery({ ...(await f.requestFor()), now: deadlineAt }),
-      ).toBeUndefined();
+      const retry = await f.preparations.scheduleRecovery({
+        ...(await f.requestFor()),
+        now: deadlineAt,
+      });
+      const retryAt = new Date(Date.parse(deadlineAt) + 1000).toISOString();
+      expect(retry).toMatchObject({
+        status: "scheduled",
+        action: "stop",
+        attempts: 1,
+        nextAttemptAt: retryAt,
+      });
+      if (!retry) throw new Error("retry missing");
+      await expect(
+        f.preparations.beginReservationRecovery({
+          identity: f.identity,
+          authority: SERVICE_AUTHORITY,
+          now: deadlineAt,
+          deadlineAt: new Date(Date.parse(deadlineAt) + 30_000).toISOString(),
+          expectedRecoveryRevision: retry.revision,
+        }),
+      ).rejects.toThrow("Scheduled recovery changed");
+      expect(await f.status()).toEqual(retry);
     } finally {
       await f.close();
     }

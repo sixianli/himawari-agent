@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:05ceb0f7480b203c04eaf1b880758bdd7800297842566ff776aa5ecf13f60efa"
+contract_sha256: "sha256:2f57139f871ccdc2dd686f9f2caedb6778bedaa9d27519fb10c2ff04d5c8475d"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -324,7 +324,11 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 
 ### Schema 43 资源恢复调度
 
-升级和恢复须保留原 `recovery_json` 的 owner、revision、次数、动作及时间。`scheduled` 表示已排定原资源核查，`nextAttemptAt` 是最早可检查时间；此时开始和结束时间为空。真正开始后才增加次数，终态 `unresolved` 没有下次自动重试。迁移只为旧记录补空的下次时间，不制造释放证明或恢复工具权限。Schema 42 或更旧 writer 不得写入新库；回退须停止新 writer 并恢复匹配旧版本的完整恢复点，禁止删除 migration ledger 或新字段来降级。
+升级和恢复须保留原 `recovery_json` 的 owner、revision、次数、动作及时间。`scheduled` 表示已排定原资源核查，`nextAttemptAt` 是最早可检查时间；此时开始和结束时间为空。真正开始后才增加次数。已绑定 `bound` 资源的恢复调度与暂停规则不变；新的停止义务或矛盾事件仍按既有合同触发核查，本次修复不增加它的自动重试条件。迁移只为旧记录补空的下次时间，不制造释放证明或恢复工具权限。Schema 42 或更旧 writer 不得写入新库；回退须停止新 writer 并恢复匹配旧版本的完整恢复点，禁止删除 migration ledger 或新字段来降级。
+
+未绑定 `reserved` 预留已有停止义务时，宿主暂时不可达、控制未确认、控制请求或核查超时、中断和无结论的 stop 核查，会在下一次扫描重新排定。退避从上次实际结束时间开始，依次等待 1、2、4、8、16、30 秒，之后每次 30 秒；每次尝试仍最多 30 秒，重启不重置次数或最早尝试时间。身份、目录、签名、受保护证据或权限错误暂停自动尝试。没有充分释放证明时保持工作区占用，不重新授予 start、不重放原工具，也不延长工具或 Run 期限。具体原因码和证明要求见[未启动预留的持续清理核查](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#reserved-retry)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
+
+读取恢复状态时，`unresolved` 与空 `nextAttemptAt` 只表示这次核查已结束；暂时失败的 reserved 记录还会由下一次扫描重新排定。确认后台已排定须读回 `scheduled` 和其 `nextAttemptAt`，确认已释放仍须独立读回原释放回执与占用状态。原套接字已不可连时，恢复仍核验原已保存证明，不能仅以连接失败跳过核验，也不能以连接失败认定释放。
 
 已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。自动预约恢复同样按后端分流：只对 SRT 调用本机准备控制，container 核对自身已持久的 `task_environment_released` 证明；环境尚未释放时继续保留预约占用，不伪造本机准备记录，也不替代环境自身的停止流程。 对未绑定 container 预约，重启后终态 Run 没有自动补调环境停止的保证，可能一直保留占用并需要人工处理；详情及后续工作见 [BL-20260929-004](../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
 
@@ -414,7 +418,7 @@ U1 修订 `51fe7f6` 处理会话详情与执行状态读取之间发生的并发
 
 后台核查与操作结果并发写入时的版本处理，见[安装与诊断手册的核查说明](install-start-stop-runbook.md#troubleshooting)。该处理保留原资源事实、恢复所有权和期限检查，不新增数据格式，不改变本手册的备份、权威迁移或部署操作步骤；它不授权重放原工具。
 
-资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束，不表示后台正在重试。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。`bound` 的原暂停与后续触发规则保持不变；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 

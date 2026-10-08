@@ -304,7 +304,10 @@ export function createProductionSandboxControl(options: Options) {
     )
       throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
     sandboxJobControlBindingSchema.parse(value.control);
-    const directory = await lstat(value.control.directory);
+    const directory = await lstat(value.control.directory).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") throw new Error("SANDBOX_CONTROL_DIRECTORY_CHANGED");
+      throw error;
+    });
     if (
       !directory.isDirectory() ||
       directory.isSymbolicLink() ||

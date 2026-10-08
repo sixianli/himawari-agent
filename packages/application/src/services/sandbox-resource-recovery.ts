@@ -183,7 +183,18 @@ export class SandboxResourceRecoveryService {
           )
             throw new Error("SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED");
           assertActive();
-          await reservations.stop(current.plan, controller.signal);
+          let stopFailure: unknown;
+          try {
+            await reservations.stop(current.plan, controller.signal);
+          } catch (error) {
+            if (
+              !["SANDBOX_SUPERVISOR_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"].includes(
+                sandboxReconciliationFailureReason(error),
+              )
+            )
+              throw error;
+            stopFailure = error;
+          }
           assertActive();
           const verification = await reservations.verify(
             current.plan,
@@ -199,6 +210,7 @@ export class SandboxResourceRecoveryService {
               verification,
               expectedRecoveryRevision: attempt.revision,
             });
+          else if (stopFailure) throw stopFailure;
         })(),
       ]);
     } catch (error) {

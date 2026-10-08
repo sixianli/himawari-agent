@@ -115,11 +115,13 @@ flowchart TB
 
 当前资源恢复沿用 SQLite 中的有期限任务。核验观察的写入与任务的 owner、revision 和运行状态在同一事务内比较；旧任务被接管或结束后不能继续写入释放证明。超时后的后端返回不再触发新校验或写入，仍持有处理权的任务只能记录无结论并保留相交资源保护。恢复结束前重新读取资源与操作事实，保留同期收到的工具结果和永久释放记录。这些约束属于 Himawari 的持久恢复职责，继续复用 Pi 的工具及取消信号，不证明宿主进程与后代已退出。实现进度与本地验证见[工作区授权计划的恢复尝试隔离记录](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p1-recovery-fencing)。
 
-资源恢复只保存固定安全原因码，区分权限拒绝、宿主不可用、身份与证据变化、控制连接超时和整体核查到期；后端无结论不能抹去具体原因。原始错误经既有受保护 Trace 保存，关联原 Job、环境、动作与失败阶段，不进入公共资源事实。并发释放得到充分证明时，恢复终点以最新持久事实为准。此路径仍为单次有期限 inspect/stop，不将未知结果变成工具重试或后台无限核查。
+资源恢复只保存固定安全原因码，区分权限拒绝、宿主不可用、身份与证据变化、控制连接超时和整体核查到期；后端无结论不能抹去具体原因。原始错误经既有受保护 Trace 保存，关联原 Job、环境、动作与失败阶段，不进入公共资源事实。并发释放得到充分证明时，恢复终点以最新持久事实为准。已绑定资源（`bound`）仍沿用原单次有期限 inspect/stop 和暂停规则；未知结果不能变成工具重试。
 
 Schema 43 扩展原 `recovery_json`，记录待核查的 `scheduledAt/nextAttemptAt`；进入检查后才增加次数并保存真实开始、期限和结束时间。现有生产 Run 循环有独立、单次并行的资源扫描，不等待资源核查才继续扫描无关 Run。它按页发现终态或结果待核实 Run、过期执行、lost/reconciling 资源和 released 残留保护，在原权威事务内重新比较资源序号、恢复版本与 Run 状态，再选择原宿主的 inspect/stop。没有宿主身份的预约先持久禁止启动，只有原宿主“从未启动且已退出”的证明才能释放。
 
-严格模式中的未绑定容器预约另沿用环境级停止证明：恢复读取原 Owner/Agent 的权威 Run，只有 completed/failed/cancelled 才补调现有同 Run 环境停止，再独立读回认证环境释放回执并进入原预约释放事务。活动及结果待核实 Run 不因进入候选清单就停止环境。停止失败或证明不匹配继续保留占用，不重放模型或工具，原恢复期限与暂停规则不变。具体边界见[未绑定容器的终态恢复](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
+未绑定预留（`reserved`）需要停止时，原宿主或控制套接字暂时不可达不再阻止独立核验已保存的释放证明。若本次仍无充分证明，预留继续占用工作区。暂时不可用、控制未确认、控制超时、整体核查超时、中断或无结论的 stop 核查会在原事务内重新排定，按上次实际结束时间退避 1、2、4、8、16、30 秒，之后每次等待 30 秒；每次尝试仍受原 30 秒核查期限约束。身份、目录、签名、受保护证据或权限错误暂停自动尝试。重启保留次数、恢复版本和最早尝试时间，不授予新 start，也不重放原工具。只有原释放事务接受充分证明后才解除占用；原结果交付和 Run 结束仍分别受现有权限及期限约束。具体原因码与证明边界见[未启动预留的持续清理核查](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#reserved-retry)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
+
+严格模式中的未绑定容器预约另沿用环境级停止证明：恢复读取原 Owner/Agent 的权威 Run，只有 completed/failed/cancelled 才补调现有同 Run 环境停止，再独立读回认证环境释放回执并进入原预约释放事务。活动及结果待核实 Run 不因进入候选清单就停止环境。停止失败或证明不匹配继续保留占用；暂时失败适用上述 reserved 核查退避，身份、签名及权限错误仍暂停，不重放模型或工具，原每次恢复期限不变。具体边界见[未绑定容器的终态恢复](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#container-unbound-recovery)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
 
 扫描使用现有 Run 并发上限；暂停或其他宿主的记录不会使后续页饥饿。失败有明确终点，不自动重试未知副作用；后续新增停止义务与新的矛盾事件可形成新的有限核查。服务关闭取消核查，恢复 owner、revision 和期限比较拒绝旧回调接纳证明。旧迁移记录仅补 `nextAttemptAt=null`，不重新授权或推断释放。已配置沙箱子系统的服务均接入资源扫描：Web 模式复用生产 Run 循环，无 Web 模式在启动登记和 Worker 就绪之后启动仅处理资源的循环，不创建 Run 或模型执行服务。每次扫描先复核当前权威，关闭或失去权威时立即取消扫描，再使用同一次有限等待结束恢复任务；不会在 close 阶段重新开始等待期限。明确 stop 可接替正在等待的 inspect，恢复 revision 隔离旧检查的迟到写入；正在执行的 stop 不重复派发。未配置沙箱后端或缺少可信宿主身份时，不能宣称后台已完成清理。
 

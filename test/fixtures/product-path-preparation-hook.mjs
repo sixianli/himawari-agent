@@ -8,6 +8,16 @@ import { isMainThread } from "node:worker_threads";
 
 const original = cp.fork;
 cp.fork = (file, args, options) => {
+  const finalGate = process.env.HIMAWARI_TEST_PREPARATION_FINAL_GATE;
+  if (
+    finalGate &&
+    String(file).endsWith("/job-host-main.js") &&
+    existsSync(`${finalGate}.consumed`)
+  )
+    appendFileSync(
+      `${finalGate}.hosts.jsonl`,
+      `${JSON.stringify({ at: new Date().toISOString() })}\n`,
+    );
   const ackLoss = process.env.HIMAWARI_TEST_PREPARATION_ACK_LOSS;
   if (ackLoss && String(file).endsWith("/job-host-main.js") && existsSync(`${ackLoss}.consumed`))
     appendFileSync(
@@ -17,12 +27,23 @@ cp.fork = (file, args, options) => {
   const fault = process.env.HIMAWARI_TEST_PREPARATION_FAILURE;
   if (fault && String(file).endsWith("/job-host-main.js") && existsSync(fault)) {
     renameSync(fault, `${fault}.consumed`);
+    const holdFinal = finalGate && existsSync(finalGate);
+    if (holdFinal) {
+      renameSync(finalGate, `${finalGate}.consumed`);
+      appendFileSync(
+        `${finalGate}.hosts.jsonl`,
+        `${JSON.stringify({ at: new Date().toISOString() })}\n`,
+      );
+    }
     return original(file, args, {
       ...options,
       execArgv: [
         "--import",
         fileURLToPath(new URL("./product-path-sdk-failure.mjs", import.meta.url)),
       ],
+      ...(holdFinal
+        ? { env: { ...options.env, HIMAWARI_TEST_PREPARATION_FINAL_GATE: finalGate } }
+        : {}),
     });
   }
   const gate = process.env.HIMAWARI_TEST_HOST_FINISH_GATE;

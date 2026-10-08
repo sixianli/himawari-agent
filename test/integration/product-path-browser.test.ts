@@ -12,6 +12,7 @@ import {
   statfs,
   writeFile,
 } from "node:fs/promises";
+import { createConnection } from "node:net";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { readLinuxNamespaceState } from "@himawari-agent/runtime-sandbox/control";
@@ -1361,6 +1362,232 @@ productDescribe(
         await installation.start();
         await page.reload();
       }
+    });
+
+    it("[R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async () => {
+      await scenario("34-preparation-final-recovery", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const file = path.join(installation.workspace, "hello.txt");
+        const baseline = "恢复前原工具不得写入";
+        const text = "准备终态延迟验证：请写入 hello.txt";
+        await writeFile(file, baseline);
+        let fault: Awaited<ReturnType<ProductPathInstallation["preparationFinalHold"]>> = null;
+        let restored = false;
+        let originalFinal: Buffer | undefined;
+        let socketError: string | undefined;
+        const hostAlive = () => {
+          if (!fault) return null;
+          try {
+            process.kill(fault.pid, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            throw error;
+          }
+        };
+        const readback = () => {
+          const database = openQualifiedDatabase(installation.databasePath);
+          const jobId = fault?.jobId ?? "";
+          try {
+            return {
+              at: new Date().toISOString(),
+              rows: executionReadback().filter((row) => row.jobId === jobId),
+              execution: database
+                .prepare(
+                  "SELECT preparation_state AS phase,started_at AS startedAt,reservation_stopped_at AS stopRequestedAt,plan_json AS plan,recovery_json AS recovery FROM sandbox_execution_records WHERE job_id=?",
+                )
+                .get(jobId) as
+                | {
+                    phase: string;
+                    startedAt: string | null;
+                    stopRequestedAt: string | null;
+                    plan: string;
+                    recovery: string | null;
+                  }
+                | undefined,
+              reservationReleases: database
+                .prepare(
+                  "SELECT accepted_at,verification_json FROM sandbox_reservation_release_receipts WHERE job_id=?",
+                )
+                .all(jobId) as Array<{ accepted_at: string; verification_json: string }>,
+              occupancy: database
+                .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+                .all(jobId) as Array<{ released_at: string | null }>,
+              replies: observedToolReplies(text),
+              hostAlive: hostAlive(),
+              socketError,
+              quickCheck: database.pragma("quick_check"),
+            };
+          } finally {
+            database.close();
+          }
+        };
+        const snapshots: unknown[] = [];
+        const record = async (stage: string, observation = readback(), extra = {}) => {
+          snapshots.push({
+            stage,
+            ...observation,
+            fault: await installation.preparationFinalHold(),
+            ...extra,
+          });
+          await writeFile(
+            path.join(outputDirectory, "34-preparation-final-recovery-readback.json"),
+            JSON.stringify({ snapshots }, null, 2),
+          );
+        };
+        await installation.armPreparationFinalHold();
+        try {
+          await send(text);
+          const allow = page.getByRole("button", { name: "允许这一次" });
+          await uiExpect
+            .poll(
+              async () =>
+                (await allow.count()) > 0 || (await installation.preparationFinalHold()) !== null,
+              { timeout: 60_000 },
+            )
+            .toBe(true);
+          if ((await allow.count()) > 0) await allow.first().click();
+          await uiExpect
+            .poll(() => installation.preparationFinalHold(), { timeout: 40_000 })
+            .not.toBeNull();
+          fault = await installation.preparationFinalHold();
+          if (!fault) throw new Error("PRODUCT_PATH_PREPARATION_FINAL_HOLD_MISSING");
+          const heldFault = fault;
+          originalFinal = await readFile(path.join(fault.directory, "final-held.json"));
+          await writeFile(
+            path.join(outputDirectory, "34-preparation-final-recovery-original-final.json"),
+            originalFinal,
+            { mode: 0o600 },
+          );
+          expect(createHash("sha256").update(originalFinal).digest("hex")).toBe(fault.sha256);
+          expect(originalFinal.byteLength).toBe(fault.byteLength);
+          expect(JSON.parse(JSON.parse(originalFinal.toString("utf8")).body)).toMatchObject({
+            jobId: fault.jobId,
+            attemptId: fault.attemptId,
+            processId: fault.pid,
+            phase: "finished",
+            taskStarted: false,
+            srtReset: true,
+          });
+          await expect(readFile(path.join(fault.directory, "final.json"))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          await uiExpect.poll(hostAlive, { timeout: 40_000 }).toBe(false);
+          socketError = await new Promise<string>((resolve, reject) => {
+            const socket = createConnection(path.join(heldFault.directory, "control.sock"));
+            socket.once("connect", () => {
+              socket.destroy();
+              resolve("connected");
+            });
+            socket.once("error", (error: NodeJS.ErrnoException) =>
+              resolve(error.code ?? "unknown"),
+            );
+            socket.setTimeout(2000, () => {
+              socket.destroy();
+              reject(new Error("PRODUCT_PATH_PREPARATION_SOCKET_PROBE_TIMED_OUT"));
+            });
+          });
+          expect(["ENOENT", "ECONNREFUSED"]).toContain(socketError);
+          let occupied: ReturnType<typeof readback> | undefined;
+          await uiExpect
+            .poll(
+              () => {
+                const observation = readback();
+                const recovery = JSON.parse(observation.execution?.recovery ?? "null");
+                if (
+                  observation.rows[0]?.runStatus !== "reconciling_external_result" ||
+                  recovery?.status !== "scheduled" ||
+                  recovery.action !== "stop" ||
+                  recovery.attempts < 1
+                )
+                  return false;
+                occupied = observation;
+                return true;
+              },
+              { timeout: 40_000 },
+            )
+            .toBe(true);
+          if (!occupied) throw new Error("PRODUCT_PATH_PREPARATION_RETRY_MISSING");
+          await record("host-exited-final-unavailable-retry-scheduled", occupied);
+          expect(occupied.execution).toMatchObject({ phase: "reserved", startedAt: null });
+          expect(occupied.execution?.stopRequestedAt).toEqual(expect.any(String));
+          const recovery = JSON.parse(occupied.execution?.recovery ?? "null");
+          expect(Number.isFinite(Date.parse(recovery.nextAttemptAt))).toBe(true);
+          expect(occupied.reservationReleases).toEqual([]);
+          expect(occupied.occupancy.length).toBeGreaterThan(0);
+          expect(occupied.occupancy.every((claim) => claim.released_at === null)).toBe(true);
+          expect(occupied.rows).toHaveLength(1);
+          expect(occupied.rows[0]).toMatchObject({ intents: 0, definiteOperations: 0 });
+          expect(occupied.replies).toEqual([]);
+          expect((await installation.preparationFinalHold())?.hostForks).toHaveLength(1);
+          expect(await readFile(file, "utf8")).toBe(baseline);
+          await installation.releasePreparationFinalHold();
+          restored = true;
+          expect(await readFile(path.join(fault.directory, "final.json"))).toEqual(originalFinal);
+          await record("same-signed-final-restored");
+          await uiExpect
+            .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
+            .toBe("completed");
+          const done = readback();
+          await record("verified-release-run-completed", done);
+          expect(done.reservationReleases).toHaveLength(1);
+          const release = done.reservationReleases[0];
+          if (!release) throw new Error("PRODUCT_PATH_PREPARATION_RELEASE_MISSING");
+          expect(JSON.parse(release.verification_json)).toMatchObject({
+            basis: "host_never_started",
+          });
+          expect(done.occupancy.every((claim) => claim.released_at !== null)).toBe(true);
+          expect(done.execution).toMatchObject({ phase: "reserved", startedAt: null });
+          expect(done.rows[0]).toMatchObject({
+            runStatus: "completed",
+            intents: 0,
+            definiteOperations: 0,
+          });
+          expect(done.replies.map((ids) => ids.length)).toEqual([1]);
+          expect((await installation.preparationFinalHold())?.hostForks).toHaveLength(1);
+          expect(executionReadback().filter((row) => !before.has(row.jobId))).toHaveLength(1);
+          expect(await readFile(file, "utf8")).toBe(baseline);
+          await uiExpect(toolAnswers().last()).toContainText("工具未启动");
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+          await newThread();
+          const nextRead = "释放占用后新对话：请读取 notes.txt";
+          await uiExpect(await sendToolRequest(nextRead)).toContainText(NOTE);
+          const nextWrite = "释放占用后新对话：请写入 hello.txt";
+          await sendToolRequest(nextWrite);
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+          expect(await readFile(file, "utf8")).toBe("你好，Himawari");
+          const nextRows = executionReadback().filter(
+            (row) => !before.has(row.jobId) && row.jobId !== heldFault.jobId,
+          );
+          await record("same-workspace-new-read-write-completed", readback(), { nextRows });
+          expect(nextRows).toHaveLength(2);
+          for (const row of nextRows) {
+            expect(row.runId).not.toBe(done.rows[0]?.runId);
+            expect(row).toMatchObject({
+              result: "result",
+              runStatus: "completed",
+              released: 1,
+              intents: 1,
+            });
+          }
+          expect(readback().reservationReleases).toEqual(done.reservationReleases);
+          expect(readback().replies.map((ids) => ids.length)).toEqual([1]);
+          expect(await readFile(path.join(fault.directory, "final.json"))).toEqual(originalFinal);
+        } finally {
+          fault ??= await installation.preparationFinalHold();
+          if (fault && !restored) {
+            const held = await readFile(path.join(fault.directory, "final-held.json"));
+            await writeFile(
+              path.join(outputDirectory, "34-preparation-final-recovery-original-final.json"),
+              held,
+              { mode: 0o600 },
+            );
+            await installation.releasePreparationFinalHold();
+          }
+          await record("final-observation");
+        }
+      });
     });
 
     it("delivers a verified preparation failure and exposes its private diagnostic through the CLI", async () => {

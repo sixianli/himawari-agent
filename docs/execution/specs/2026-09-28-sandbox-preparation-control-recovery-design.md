@@ -19,6 +19,7 @@ date: "2026-09-28"
 - [现有数据为什么不够](#现有数据为什么不够)
 - [建议的数据与执行顺序](#建议的数据与执行顺序)
 - [权限与失败边界](#权限与失败边界)
+- [未启动预留的持续清理核查](#reserved-retry)
 - [替代方案](#替代方案)
 - [验收与审批范围](#验收与审批范围)
 - [第二轮 A2：准备登记之前的封锁](#第二轮-a2准备登记之前的封锁)
@@ -86,6 +87,23 @@ date: "2026-09-28"
 - 旧记录没有准备控制 artifact 时维持原保护；不补造密钥、不自动回填旧数据，不宣称本地已有 TE-06 现场会自动修复。
 - 模型费用或结果未知时继续阻止自动重发。
 - 增加有界机器码诊断，分别保存准备失败、控制登记失败和 bind 失败；不保存任务正文、密钥或 SDK 原始错误文本。
+
+<a id="reserved-retry"></a>
+
+## 未启动预留的持续清理核查
+
+本规则处理 `reserved`、`started_at` 为空且已有停止义务的预留。恢复先沿用原停止标记、当前权威、owner 和 revision 取得单次核查处理权。原控制套接字不可连接，或宿主已不可达时，`SANDBOX_SUPERVISOR_UNAVAILABLE`、`SANDBOX_HOST_UNAVAILABLE` 不阻止后续独立核验原释放证明。只有原预留释放事务接受该证明后才解除工作区占用；不可连接、没有 started 记录或任务未启动本身均不构成释放证明。
+
+本次核查以 `unresolved` 结束，只说明这次没有取得充分释放证明。对 action 为 `stop` 的 reserved 记录，以下原因允许下一次扫描在原权威事务内重新排定 `scheduled`：
+
+- `SANDBOX_SUPERVISOR_UNAVAILABLE`、`SANDBOX_HOST_UNAVAILABLE`：宿主或控制连接暂时不可用。
+- `SANDBOX_CONTROL_UNCONFIRMED`：尚未确认原资源清理。
+- `SANDBOX_CONTROL_TIMED_OUT`、`SANDBOX_RECONCILIATION_TIMED_OUT`：控制请求或本次核查超时。
+- `SANDBOX_RECONCILIATION_INTERRUPTED`、`SANDBOX_RECONCILIATION_INCONCLUSIVE`：本次核查中断或没有结论。
+
+最早尝试时间从上次实际 `finishedAt` 起计算。退避依次为 1、2、4、8、16、30 秒，之后每次为 30 秒；排定阶段不增加 attempts，真正开始核查才增加。持续清理不设总次数上限，但每次尝试仍受原 30 秒核查期限、当前权威和取消信号约束。服务重启保留恢复次数和已排定的 `nextAttemptAt`，按原 owner、revision 与当前权威规则接管，不能重置退避或让旧回调写入证明。未得到充分证明期间，工作区占用保持，后续相交请求不得获准启动。
+
+身份、目录、签名、受保护证据或权限错误，以及上述暂时原因以外的错误，保持暂停，等待管理员核对原绑定和证据；不自动替换身份、控制密钥或目录，也不重新授予执行权限。已绑定 `bound` 资源的原 inspect/stop 调度和暂停合同不变。这些尝试只处理原资源停止与核验，不创建新 start，不重放原工具，不延长工具或 Run 执行期限。充分证明被接受后，确定未启动的结果仍通过既有一次交付路径处理；原 Run 的继续或结束仍服从原取消、权限、披露和期限门禁。
 
 ## 替代方案
 
@@ -182,7 +200,7 @@ reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或�
 
 当前 Agent 的 reserved 恢复分支先核对原预约停止标记和配置的后端，再通过原 Owner/Agent 的公开 RunLifecyclePort 读取权威 Run。只有 `completed`、`failed` 或 `cancelled` 才复用现有同 Run 环境 `stopRun`；取消用 `run_cancelled`，其他终态用 `run_finished`。活动 Run 和 `reconciling_external_result` 保持原读取释放证明的路径，不因被列为恢复候选就停止其环境。数据库将一个 Run 的环境限制在原 execution job 与 host；其他 Run 的环境不参与停止。
 
-环境停止仍经原停止 intent、fence、TaskEnvironmentCoordinator 和认证证明。停止返回 accepted 不等于释放；Agent 要独立读回环境释放回执，原预约事务再核对身份、后端、环境、停止时间、恢复 revision 和工作区占用。停止失败、证明缺失或身份不符时，环境与预约继续占用，恢复停在 unresolved，原 30000 毫秒上限不变。Worker 已保存失败的原停止命令不会被同义人工请求重新执行；该请求仍返回未释放。原停止命令已接受、只有后续核验证明失败时，人工清理可以按原 intent 取得新证明；不能改写旧停止身份或以删除记录替代证明。
+环境停止仍经原停止 intent、fence、TaskEnvironmentCoordinator 和认证证明。停止返回 accepted 不等于释放；Agent 要独立读回环境释放回执，原预约事务再核对身份、后端、环境、停止时间、恢复 revision 和工作区占用。停止失败、证明缺失或身份不符时，环境与预约继续占用，本次核查记录 unresolved；暂时原因按[未启动预留的持续清理核查](#reserved-retry)重新排定，身份、签名及权限错误仍暂停。每次核查的原 30000 毫秒上限不变。Worker 已保存失败的原停止命令不会被同义人工请求重新执行；该请求仍返回未释放。原停止命令已接受、只有后续核验证明失败时，人工清理可以按原 intent 取得新证明；不能改写旧停止身份或以删除记录替代证明。
 
 该组合属于 Himawari 的持久资源恢复职责，复用已有 Pi 工具和 Worker 协议，不改 Pi、模型执行、权限消费、数据库结构或业务请求重放规则。测试覆盖公开取消/失败、Agent 重开与二次重开、其他 Run 隔离、停止失败、证明缺失与错误身份、活动 Run 及已取消的恢复信号。真实 Docker 检查使用现有容器资格入口、实时夹具、独有环境标识和独立 Docker/SQLite 读回；受控安装资格不能当作已安装生产主机资格，实际结果和命令归本批报告。
 
