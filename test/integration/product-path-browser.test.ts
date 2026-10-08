@@ -1,5 +1,17 @@
-import { execFileSync } from "node:child_process";
-import { appendFile, mkdir, readdir, readFile, statfs, writeFile } from "node:fs/promises";
+import { execFile, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  stat,
+  statfs,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { readLinuxNamespaceState } from "@himawari-agent/runtime-sandbox/control";
@@ -27,6 +39,7 @@ import {
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
 const productDescribe = enabled ? describe : describe.skip;
+const recoveryDescribe = enabled && process.platform === "linux" ? describe : describe.skip;
 const outputDirectory = path.resolve(
   repositoryRoot,
   process.env["HIMAWARI_PRODUCT_PATH_OUTPUT"] ?? ".ci-output/product-path",
@@ -79,6 +92,59 @@ let browser: Browser;
 let context: BrowserContext;
 let page: Page;
 const results: Array<{ scenario: string; status: "passed" | "failed"; error?: string }> = [];
+
+async function cleanupWithEvidence(
+  filename: string,
+  actions: ReadonlyArray<readonly [string, () => Promise<unknown>]>,
+) {
+  const failures: unknown[] = [];
+  const stages: Array<{
+    stage: string;
+    status: "passed" | "failed";
+    durationMs: number;
+    error?: string;
+  }> = [];
+  const retain = async (record: unknown) => {
+    try {
+      await appendFile(
+        path.join(outputDirectory, `${filename}.jsonl`),
+        `${JSON.stringify(record)}\n`,
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  };
+  for (const [stage, action] of actions) {
+    const started = process.hrtime.bigint();
+    await retain({ event: "started", stage, atMonotonicNs: String(started) });
+    try {
+      await action();
+      stages.push({
+        stage,
+        status: "passed",
+        durationMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+      });
+    } catch (error) {
+      failures.push(error);
+      stages.push({
+        stage,
+        status: "failed",
+        durationMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+        error: String(error),
+      });
+    }
+    await retain({ event: "finished", ...stages[stages.length - 1] });
+  }
+  try {
+    await writeFile(
+      path.join(outputDirectory, `${filename}.json`),
+      `${JSON.stringify({ stages, passed: failures.length === 0 }, null, 2)}\n`,
+    );
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "PRODUCT_PATH_TEARDOWN_FAILED");
+}
 
 async function capture(name: string) {
   await page.screenshot({ path: path.join(outputDirectory, `${name}.png`), fullPage: true });
@@ -438,6 +504,300 @@ productDescribe("product path tool request helper", () => {
   }, 30_000);
 });
 
+recoveryDescribe("installed recovery probe", { timeout: 600_000 }, () => {
+  it("[R2-L6] shares cleanup deadline across cleanup close and final cleanup", async () => {
+    const controller = path.join(
+      repositoryRoot,
+      "test/qualification/sandbox-install-restart-controller.py",
+    );
+    const sourceSha256 = createHash("sha256")
+      .update(await readFile(controller))
+      .digest("hex");
+    const evidence = path.join(outputDirectory, "r2-l6-cleanup-budget");
+    await mkdir(evidence, { recursive: true, mode: 0o700 });
+    const harness = String.raw`import ast
+import hashlib
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+source_path = Path(sys.argv[1]).resolve(strict=True)
+source_bytes = source_path.read_bytes()
+source = ast.parse(source_bytes, filename=str(source_path))
+definitions = []
+for node in source.body:
+    if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "controller" for target in node.targets):
+        break
+    definitions.append(node)
+namespace = {"__name__": "r2_l6_controller_budget_regression"}
+exec(compile(ast.Module(body=definitions, type_ignores=[]), str(source_path), "exec"), namespace)
+controller = namespace["Controller"]()
+original = namespace["snapshot"](os.getpid())
+fd = os.pidfd_open(os.getpid(), 0)
+controller.handles["originalBash"] = {"fd": fd, "identity": original, "frozen": False}
+report = {
+    "schemaVersion": "r2-l6-controller-cleanup-budget.v1",
+    "nonProduction": True,
+    "sourcePath": str(source_path),
+    "sourceSha256": hashlib.sha256(source_bytes).hexdigest(),
+    "controllerExecutable": sys.executable,
+    "isolated": sys.flags.isolated,
+    "identity": {key: original[key] for key in ("pid", "uid", "startTime", "parentPid")},
+    "firstTimeoutMs": 100,
+    "maximumTotalMs": 1000,
+    "stages": [],
+    "passed": False,
+}
+started = time.monotonic_ns()
+try:
+    for command in ("cleanup", "close", "finalCleanup"):
+        before = time.monotonic_ns()
+        result = controller.cleanup() if command == "finalCleanup" else controller.dispatch({"command": command, "timeoutMs": 100})
+        elapsed_ms = (time.monotonic_ns() - before) / 1000000
+        current = namespace["snapshot"](os.getpid())
+        namespace["same_identity"](original, current)
+        report["stages"].append({
+            "command": command,
+            "elapsedMs": elapsed_ms,
+            "controllerElapsedMs": result["elapsedMs"],
+            "originalProcessPresent": not namespace["exited"](fd),
+            "originalIdentityUnchanged": True,
+            "originalRoleRemaining": any(row["role"] == "originalBash" and row["pid"] == original["pid"] and row["startTime"] == original["startTime"] for row in result["processesRemaining"]),
+            "errors": result["errors"],
+        })
+    report["totalElapsedMs"] = (time.monotonic_ns() - started) / 1000000
+    report["passed"] = (
+        report["totalElapsedMs"] <= report["maximumTotalMs"]
+        and report["stages"][0]["elapsedMs"] >= 90
+        and all(stage["originalProcessPresent"] and stage["originalIdentityUnchanged"] and stage["originalRoleRemaining"] and not stage["errors"] for stage in report["stages"])
+    )
+except BaseException as error:
+    report["error"] = {"type": type(error).__name__, "message": str(error)}
+finally:
+    controller.close_fds()
+print(json.dumps(report, separators=(",", ":")))
+sys.exit(0 if report["passed"] else 1)
+`;
+    await writeFile(path.join(evidence, "regression.py"), harness, { mode: 0o600 });
+    const result = await new Promise<{ code: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        execFile(
+          "/usr/bin/python3",
+          ["-I", "-c", harness, controller],
+          { maxBuffer: 512 * 1024, timeout: 45_000 },
+          (error, stdout, stderr) => {
+            resolve({
+              code: error ? (typeof error.code === "number" ? error.code : 1) : 0,
+              stdout,
+              stderr,
+            });
+          },
+        );
+      },
+    );
+    await writeFile(path.join(evidence, "stdout.json"), result.stdout, { mode: 0o600 });
+    await writeFile(path.join(evidence, "stderr.txt"), result.stderr, { mode: 0o600 });
+    expect(result.code, result.stderr).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.schemaVersion).toBe("r2-l6-controller-cleanup-budget.v1");
+    expect(report.nonProduction).toBe(true);
+    expect(report.sourceSha256).toBe(sourceSha256);
+    expect(report.controllerExecutable).toBe("/usr/bin/python3");
+    expect(report.isolated).toBe(1);
+    expect(report.stages.map((stage: { command: string }) => stage.command)).toEqual([
+      "cleanup",
+      "close",
+      "finalCleanup",
+    ]);
+    expect(
+      report.stages.every(
+        (stage: {
+          originalProcessPresent: boolean;
+          originalIdentityUnchanged: boolean;
+          originalRoleRemaining: boolean;
+          errors: unknown[];
+        }) =>
+          stage.originalProcessPresent &&
+          stage.originalIdentityUnchanged &&
+          stage.originalRoleRemaining &&
+          stage.errors.length === 0,
+      ),
+    ).toBe(true);
+    expect(report.stages[0].elapsedMs).toBeGreaterThanOrEqual(90);
+    expect(report.totalElapsedMs).toBeLessThanOrEqual(1000);
+    expect(report.passed).toBe(true);
+  });
+  it("[R2-L6] retains unknown occupancy across real service restart until trusted release", async () => {
+    const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+    const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+    const scratch = process.env["HIMAWARI_TEST_TEMP_ROOT"];
+    if (!artifact || !contextFile || !scratch)
+      throw new Error("R2_L6_REQUIRES_ARTIFACT_CONTEXT_AND_TEMP_ROOT");
+    expect(Buffer.byteLength(scratch)).toBe(10);
+    expect(await realpath(scratch)).toBe(scratch);
+    const metadata = await stat(scratch);
+    expect(metadata.uid).toBe(process.getuid?.());
+    expect(metadata.mode & 0o777).toBe(0o700);
+    const probe = path.join(repositoryRoot, "test/qualification/sandbox-install-restart-probe.mjs");
+    await readFile(probe);
+    const evidence = path.join(outputDirectory, "r2-l6");
+    await mkdir(evidence, { recursive: true, mode: 0o700 });
+    const prefix = path.join(scratch, "i");
+    const execute = async (label: string, args: string[]) => {
+      const result = await new Promise<{ code: number; stdout: string; stderr: string }>(
+        (resolve) => {
+          execFile(process.execPath, args, { maxBuffer: 512 * 1024 }, (error, stdout, stderr) => {
+            resolve({
+              code: error ? (typeof error.code === "number" ? error.code : 1) : 0,
+              stdout,
+              stderr,
+            });
+          });
+        },
+      );
+      await writeFile(path.join(evidence, `${label}.stdout`), result.stdout, { mode: 0o600 });
+      await writeFile(path.join(evidence, `${label}.stderr`), result.stderr, { mode: 0o600 });
+      expect(result.code, result.stderr).toBe(0);
+    };
+    await execute("install", [
+      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
+      "--prefix",
+      prefix,
+      "--artifact",
+      artifact,
+      "--context",
+      contextFile,
+    ]);
+    const runtime = path.join(prefix, "lib/himawari-agent");
+    const bash = path.join(runtime, "pi-tools/bin/bash");
+    await mkdir(path.dirname(bash), { recursive: true, mode: 0o755 });
+    await copyFile("/bin/bash", bash, constants.COPYFILE_EXCL);
+    expect(await readFile(bash)).toEqual(await readFile("/bin/bash"));
+    execFileSync("/bin/chmod", ["-R", "a-w", runtime]);
+    expect((await stat(runtime)).mode & 0o222).toBe(0);
+    expect((await stat(bash)).mode & 0o222).toBe(0);
+    const fileDigest = async (filename: string) =>
+      createHash("sha256")
+        .update(await readFile(filename))
+        .digest("hex");
+    const expectedDigests = {
+      jobHostDigest: await fileDigest(
+        path.join(runtime, "node_modules/@himawari-agent/runtime-sandbox/dist/job-host-main.js"),
+      ),
+      agentServiceMainDigest: await fileDigest(
+        path.join(runtime, "node_modules/@himawari-agent/agent-service/dist/main.js"),
+      ),
+      bashDigest: await fileDigest(bash),
+    };
+    await writeFile(
+      path.join(evidence, "readonly-runtime-preparation.json"),
+      JSON.stringify({ installedRuntime: await realpath(runtime), ...expectedDigests }),
+      { mode: 0o600 },
+    );
+    await execute("probe", [
+      probe,
+      "--runtime",
+      runtime,
+      "--scratch",
+      scratch,
+      "--output",
+      evidence,
+      "--audit-script",
+      path.join(repositoryRoot, "scripts/operations/workspace-lifecycle-audit.mjs"),
+      "--artifact",
+      artifact,
+      "--context",
+      contextFile,
+    ]);
+    const report = JSON.parse(await readFile(path.join(evidence, "report.json"), "utf8"));
+    expect(report.schemaVersion).toBe("r2-l6-installed-recovery.v1");
+    expect(report.nonProduction).toBe(true);
+    expect(report.productionQualificationIssued).toBe(false);
+    expect(report.installedRuntime).toBe(await realpath(runtime));
+    expect(report.runtimeDigestBefore).toMatch(/^[a-f0-9]{64}$/);
+    expect(report.runtimeDigestAfter).toBe(report.runtimeDigestBefore);
+    expect(report.qualification.runtimeDigest).toBe(report.runtimeDigestBefore);
+    expect(report.jobHostDigest).toBe(expectedDigests.jobHostDigest);
+    expect(report.agentServiceMainDigest).toBe(expectedDigests.agentServiceMainDigest);
+    expect(report.bashDigest).toBe(expectedDigests.bashDigest);
+    expect((await stat(runtime)).mode & 0o222).toBe(0);
+    expect((await stat(bash)).mode & 0o222).toBe(0);
+    expect(report.input.artifactSha256).toBe(
+      "6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3",
+    );
+    expect(report.input.contextSha256).toBe(
+      "a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87",
+    );
+    expect(report.controller.executable).toBe("/usr/bin/python3");
+    expect(report.controller.isolated).toBe(1);
+    expect(report.controller.pidfdOpen).toBe(true);
+    expect(report.controller.pidfdSendSignal).toBe(true);
+    expect(report.fault.freezeDurationMs).toBeLessThanOrEqual(250);
+    expect(Number.isFinite(report.fault.observationAgeMs)).toBe(true);
+    expect(report.fault.observationAgeGate).toBe("disabled-by-reply-06");
+    expect(report.fault.observationAgeMeasurementPoint).toBe("before-first-SIGSTOP");
+    expect(report.fault.remainingDeadlineMs).toBeGreaterThanOrEqual(1500);
+    expect(report.fault.remainingDeadlineMeasurementPoint).toBe("both-processes-state-T");
+    expect(report.fault.preflight.directProcesses.passed).toBe(true);
+    expect(report.fault.preflight.directMarker.passed).toBe(true);
+    expect(report.fault.preflight.frozenProduct.passed).toBe(true);
+    expect(report.fault.preflight.frozenProduct.execution.preparation).toBe("bound");
+    expect(report.fault.preflight.frozenProduct.execution.supervision).toBe("controlled");
+    expect(report.fault.preflight.frozenProduct.execution.activeClaims).toBeGreaterThan(0);
+    expect(report.fault.preflight.frozenProduct.execution.releaseReceiptPresent).toBe(false);
+    expect(report.fault.preflight.frozenProduct.finalPresent).toBe(false);
+    expect(report.fault.preflight.frozenProduct.finalWitness.present).toBe(false);
+    expect(report.fault.preflight.frozenProduct.newNonrunningObservations).toEqual([]);
+    expect(report.oldPair.agent.exited).toBe(true);
+    expect(report.oldPair.worker.exited).toBe(true);
+    expect(report.restartPreflight.method).toBe("fixed-agent-lease-expiry-upper-bound");
+    expect(report.restartPreflight.leaseDurationMs).toBe(30000);
+    expect(report.restartPreflight.elapsedMonotonicMs).toBeGreaterThanOrEqual(30000);
+    expect(report.restartPreflight.elapsedUtcMs).toBeGreaterThanOrEqual(30000);
+    expect(report.restartPreflight.passed).toBe(true);
+    expect(report.newPair.agent.pid).not.toBe(report.oldPair.agent.pid);
+    expect(report.newPair.worker.pid).not.toBe(report.oldPair.worker.pid);
+    expect(report.newPair.agent.bootId).not.toBe(report.oldPair.agent.bootId);
+    expect(report.newPair.worker.bootId).not.toBe(report.oldPair.worker.bootId);
+    expect(report.newPair.database).toEqual(report.oldPair.database);
+    expect(report.afterRestart.original.supervision).toBe("lost");
+    expect(report.afterRestart.original.cleanup).toBe("unknown");
+    expect(report.afterRestart.original.activeClaims).toBeGreaterThan(0);
+    expect(report.afterRestart.original.releaseReceiptPresent).toBe(false);
+    expect(report.afterRestart.conflict.status).toBe("queued");
+    expect(report.afterRestart.conflict.admissionPresent).toBe(false);
+    expect(report.afterRestart.conflict.invocationReceiptPresent).toBe(false);
+    expect(report.cancelledConflict.status).toBe("cancelled");
+    expect(report.markers.afterRestart).toEqual(report.markers.before);
+    expect(report.markers.afterRelease).toEqual(report.markers.before);
+    expect(report.originalHostStartCount).toBe(1);
+    expect(report.afterRelease.original.supervision).toBe("released");
+    expect(report.afterRelease.original.releaseReceiptPresent).toBe(true);
+    expect(report.afterRelease.original.activeClaims).toBe(0);
+    expect(report.afterRelease.original.activeBarriers).toBe(0);
+    expect(report.afterRelease.newRequest.admissionPresent).toBe(true);
+    expect(report.afterRelease.newRequest.invocationReceiptPresent).toBe(true);
+    expect(report.cleanup.ownedProcessesRemaining).toEqual([]);
+    expect(report.cleanup.completed).toBe(true);
+    expect(report.assertions.map((entry: { id: string }) => entry.id)).toEqual([
+      "original_started",
+      "old_pair_exited",
+      "new_pair_same_state",
+      "cleanup_unknown_occupied",
+      "conflict_queued_not_admitted",
+      "conflict_cancelled",
+      "original_not_replayed",
+      "trusted_release",
+      "new_admission",
+      "owned_cleanup",
+    ]);
+    expect(report.assertions.every((entry: { passed: boolean }) => entry.passed)).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+});
+
 productDescribe(
   "product path: real browser, installed service, sandboxed Pi tools",
   { timeout: 600_000 },
@@ -466,10 +826,16 @@ productDescribe(
       await installation.start();
       browser = await chromium.launch({
         channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+        tracesDir: path.join(outputDirectory, "traces", "main"),
         args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
       });
       context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
-      await context.tracing.start({ screenshots: true, snapshots: true });
+      await context.tracing.start({
+        name: "main",
+        live: true,
+        screenshots: true,
+        snapshots: true,
+      });
       page = await context.newPage();
       await scenario("00-sign-in", async () => {
         await page.goto(`${installation.origin}/`);
@@ -479,15 +845,19 @@ productDescribe(
     }, 400_000);
 
     afterAll(async () => {
-      await context?.tracing
-        .stop({ path: path.join(outputDirectory, "trace.zip") })
-        .catch(() => undefined);
-      await browser?.close().catch(() => undefined);
-      await writeFile(
-        path.join(outputDirectory, "report.json"),
-        `${JSON.stringify({ results, modelRequests: installation?.modelRequests.map(({ path: route, model }) => ({ route, model })) }, null, 2)}\n`,
-      );
-      await installation?.close();
+      await cleanupWithEvidence("teardown", [
+        [
+          "report",
+          async () =>
+            writeFile(
+              path.join(outputDirectory, "report.json"),
+              `${JSON.stringify({ results, modelRequests: installation?.modelRequests.map(({ path: route, model }) => ({ route, model })), traceFormat: "playwright-live", tracesDirectory: path.join(outputDirectory, "traces", "main") }, null, 2)}\n`,
+            ),
+        ],
+        ["installation", async () => installation?.close()],
+        ["trace", async () => context?.tracing.stop()],
+        ["browser", async () => browser?.close()],
+      ]);
     }, 120_000);
 
     it("shows the waiting stage, then the answer, for an ordinary turn", async () => {

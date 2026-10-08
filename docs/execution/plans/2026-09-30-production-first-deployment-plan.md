@@ -69,11 +69,11 @@ date: "2026-09-30"
 | Hermes 完整检查 | `3a65b90` 上第 1 层、第 3 层构建与五项目完整测试 5469/5469 通过；不筛选 Linux 产品路径 47 通过、0 失败、1 原可选性能对照跳过。原件见[最终代码证据](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-01.md)。本批新增探针后的检查另外记录，不能把历史结果称为新版本全测 |
 | 云端工具环境 | G47 的 bubblewrap 身份、版本和 AppArmor 检查通过，G50 的历史预检见下文。R2-L2 环境证据仍不能替代当次生产预检；本批不连接云服务器 |
 | 安装包 | 同一冻结 Linux x64 ABI127 候选，66607727 字节，SHA-256 `6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3`；context 497 字节，SHA-256 `a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87`。包仍在 Hermes 本任务检出的 `.ci-output/r64-d4-rework-a1-final-01-product-build/`，尚未复制到云端 |
-| 最终版本检查 | 条目状态只取 `longtask.py status`。本批现存任务 `items.json` 的格式使 `npm run check` 退出 1；探针提交和顺序在后的 P5 完整演练被阻断。原因、约束与待裁定见 [BL-20261007-006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md) |
+| 最终版本检查 | 条目状态只取 `longtask.py status`。Claude `ecfea51` 仅修任务 JSON 格式，内容逐对象比较未变；同步后 Hermes 完整 `npm run check` 自然退出 0（`E20261008T005403-e86861`），[BL-006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md)关闭。独立审查另确认探针重复清理重置总预算，见[BL-20261008-001](../../backlog/BL-20261008-001-有-限-恢-复-探-针-的-重.md)；最终修正及第 1、2 层通过后才提交，并执行顺序在后的完整空目录演练 |
 | Hermes 验收适配 | G59 唯一冻结命令已执行：Pi 22、网络 10 场景通过，实际安装前后摘要相同；报告保持非生产且未签署。原件见[G59 验收与清理报告](../../../.ci-output/handoff/2026-10-07-codex-round2-d4-a1-stop-02.md#evidence)。651264 字节历史空间差额已在该报告保留，不改写为全恢复 |
 | 工具安装前提 | G53/G59 的 fd 10.5.0 与 is-number 7.0.0 固定输入和安装已通过原 32 场景。云端仍须在获准后按 P8 下载、核对并安装工具，使用云端现场 Bash、rg 和正式 Node 工具目录；Hermes 摘要不代表云端工具身份 |
 | 有限真实重启 | R2-L6 新 `--runtime` 只读入口在 Hermes 同代码完整三次通过十项断言，runtime 前后摘要相等，原期限与清理检查保留；见[有限恢复前提与证据](2026-09-28-tool-execution-audit-plan.md#r2-l6-installed-recovery-prerequisites)。未在云端执行或签署 |
-| 当前云操作清单 | [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)列出脚本、配置、签署草稿与授权表。P8 原组合入口还缺独立控制层闭包，见 [BL-20261007-005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)；SRT 与 program 后端 bwrap 路径合同尚需裁定，见 [BL-20261007-007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)。当前稿不能用于执行，R2-L3/L4 仍需用户决定 |
+| 当前云操作清单 | [P0–P13 审阅稿](../../../.ci-output/production/2026-10-07-first-deploy-packet-01/README.md)列出脚本、配置、签署草稿与授权表。reply-09 已要求整份锁定依赖，并分别签署 SRT 与 program/stdio 实际 bwrap 路径，见[BL-005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)及[BL-007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)。实际从空目录安装和完整 P8 演练仍须完成。当前稿不能用于执行，冻结稿随 stop-10 交审，R2-L3/L4 仍需用户决定 |
 
 安装与启停依照[安装 Runbook](../../runbooks/install-start-stop-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] 每次使用前重新检查其静态合同和目标现场；静态检查通过不授权云操作。
 
@@ -165,3 +165,11 @@ date: "2026-09-30"
 - [响应时间测量](#response-time)有实际结果与独立状态读回，用户明确决定是否接受；第二轮的其他条目不因此自动关闭。
 
 [返回导航](#reading-navigation)
+
+### reply-09 的材料与验收裁定
+
+按[reply-09](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md)，临时核对材料改为精确 `3a65b90` bundle、整份锁定 `node_modules`、原锁定 Python 和 Node、候选包及 context。整份依赖在打包前必须证明与锁文件一致，不用原六包子集、不预编译控制层、不在云端补装依赖。Hermes 从空目录按相同 `--artifact` 命令安装，准备工具后对新安装跑原六报告加 R2-L6；临时状态及自有进程只在本任务 scratch，不签发生产资格。
+
+SRT 实际 `/usr/bin/bwrap` 与 program/stdio 的 `/usr/local/libexec/bubblewrap-0.11.2/bwrap` 分别绑定真实版本、文件摘要和各自 AppArmor 规则。只有 program/stdio 保留 `>=0.11.2` 门槛，系统 bwrap 不新增相同版本或相同摘要要求。
+
+G64 取消 Hermes 和云端的 systemd 离线检查，不在别处补做；保留 Node/Bash 语法、P9 实际 ready、身份、握手和原重启算式。原失败保留，[BL-009](../../backlog/BL-20261007-009-hermes-systemd249-不-支-持-首-次-部.md)按用户决定关闭。G57 新下载及 G63 每项 root 操作仍须用户对具体步骤批准；Codex 本批不连接云端。全部云输入集中到 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/cloud-transfer/`，实际摘要、完整 P13 及相对 G59 `-04` 的完整 diff 将随 stop-10 交审。

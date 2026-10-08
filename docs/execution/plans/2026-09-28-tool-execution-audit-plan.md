@@ -34,6 +34,7 @@ date: "2026-09-28"
 - [不筛选 Linux 资格的夹具输入检查](#linux-qualification-fixture-inputs)
 - [2026-10-06 Linux资格批次验收](#linux-qualification-final-20261006)
 - [Vercel迁移与Mem0升级的验收边界](#vercel-mem0-migration-20261006)
+- [R2-L6 的系统 Python 前提与首组三次失败](#r2-l6-installed-recovery-prerequisites)
 
 ## 目标与边界
 
@@ -639,3 +640,76 @@ node_modules/.bin/vitest run --config vitest.workspace.ts --project qualificatio
 G44/G45的真实付费探测在G46升级前执行，只证明当时的模型响应、费用字段与服务商工具参数。3.3.1实际SDK已通过本机HTTP的更新、查询、重开和删除检查；重开不证明所有进程内数据库句柄已关闭，也不证明新版SDK的真实付费服务资格。Mac验证仍延期，Hermes不能代表云端生产环境。
 
 [返回阅读导航](#阅读导航)
+
+<a id="r2-l6-installed-recovery-prerequisites"></a>
+
+## R2-L6 的系统 Python 前提与有限探针验证边界
+
+依据 [reply-03 的实施顺序](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-03.md)和 [reply-04 的 pidfd 裁定](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-04.md)，新增 `[R2-L6]` 测试位于原 `test/integration/product-path-browser.test.ts`，由 `qualification-product-path` 项目驱动独立安装恢复探针。第五组已在 Hermes 上同一代码连续三次通过有限验收；报告仍为非生产证据，不能直接当作正式主机资格或云端签署依据。
+
+这个测试增加一项运行前提：系统自带的 `/usr/bin/python3` 必须为 3.9 或更新，并提供标准库 `os.pidfd_open` 和 `signal.pidfd_send_signal`。pidfd 是绑定原进程身份的内核句柄，控制器用它发信号并等待原进程退出，避免 PID 被重新分配后控制错进程。控制器固定用 `/usr/bin/python3 -I`；启动时核对 `sys.executable`、隔离模式和两个 API，缺失即失败，不改用 ctypes、锁定 CI Python 或裸 PID。其它开发与 CI 步骤仍使用原锁定工具链，Vitest 配置、`ci/policy.json`、`scripts/ci/` 和工具链锁没有改动。
+
+Hermes 上的实际预检为 Python 3.10.12，路径与隔离模式符合要求；自身 pidfd 打开及 0 号信号检查成功。云端 Ubuntu 24.04 预期自带 Python 3.12，尚未实测。未来 P0 必须包含相同的只读检查；缺失就停，不用 apt 安装。
+
+先写测试时，探针文件尚不存在，Hermes 失败报告为 `E20261007T191057-843982`。实现后用同一候选包 `6cc0c9d8…`、相同源码指纹 `c436c550ad94…` 和三个全新临时根连续运行三次，全部命令自然结束后才统计：
+
+| 运行 | 实际结果 | 长任务证据 |
+| --- | --- | --- |
+| probe-01 | 0 通过、1 失败、48 项因名称筛选跳过 | `E20261007T193841-03fb95` |
+| probe-02 | 0 通过、1 失败、48 项因名称筛选跳过 | `E20261007T193841-0fbd1d` |
+| probe-03 | 0 通过、1 失败、48 项因名称筛选跳过 | `E20261007T193841-97f5c3` |
+
+三次均在真实 Agent/Worker 发出 `service.ready` 后，因探针漏传 `StateRootLayout.agentServiceBootBindingFile` 而报 `Agent Service boot binding is missing or unsafe`。这是探针的调用错误；尚未执行 HTTP 登录、根 Run、冻结、真实重启、未知占用或可信释放，不能从这些报告判断产品恢复行为。原始报告、命令、指纹、服务日志、清理与磁盘采样见 [首组 R2-L6 证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r65/l6/)；当时依裁定交 [stop-05](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-05.md)审核。
+
+[reply-05](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-05.md)批准修正完整布局调用及控制器 `exit`/`close` 回复顺序，也允许修本批探针自身错误后跑新的一组完整三次；所有失败组保留，产品、门槛、期限和验收断言不变。探针另补了失败时的门槛实测记录。
+
+| 组 | 每次完整运行的结果 | 失败原因与随后处理 | 长任务证据（按 01、02、03 顺序） |
+| --- | --- | --- | --- |
+| 第 2 组 | 三次均 0 通过、1 失败、48 项名称筛选跳过 | Thread 创建已成功，但探针误把持久化 `commandId` 当成 HTTP 消息 ID；改为读取 `causationId`，并核对 `correlationId`，保留原消息 ID 期望及其余检查 | `E20261007T200508-580872`、`E20261007T200508-a887ed`、`E20261007T200508-a2ef38` |
+| 第 3 组 | 三次均 0 通过、1 失败、48 项名称筛选跳过 | 真实工具已启动，冻结前观察年龄超门槛，按 reply-05 停止，没有第四组 | `E20261007T201256-0ff284`、`E20261007T201256-d8e2d3`、`E20261007T201256-1c5c58` |
+
+第 3 组冻结前观察年龄分别为 976、1043、899 ms（原门槛 ≤250 ms）；剩余期限分别为 279467、284053、283799 ms（原门槛 ≥1500 ms）。失败发生在发送冻结请求前，没有 SIGSTOP/SIGKILL 或真实重启，冻结耗时没有实测值。HTTP 登录、二步验证、cookie/CSRF、受保护文本、真实根 Run、准入/调用回执和原 Job Host/Bash 已取得运行证据；未知占用、同库真实重启恢复、不重放与重启后的可信释放仍未验证。首次安装清单不能使用这些失败报告签署。
+
+两组全部命令自然结束后保留报告、日志、marker 和源码补丁；每轮删除临时安装、scratch、输出与本轮创建的 Vitest 缓存，独立读回自有进程和任务树为空。证据见[后两组 R2-L6 原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r66/l6/)。当时第 1–2 层与 R2-L4 尚未开始，因为裁定要求最后一组三次全部通过后才继续；候选和产品未改，第 3 层沿用原完整证据。[stop-06](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-06.md)保存这次停止和读取耗时证据。
+
+[reply-06](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-06.md)取消设计自定的观察年龄 ≤250 ms 门槛。观察年龄只作实测记录；Worker 每轮等待 250 ms 后还要执行 RPC 和确认，因此该间隔不是产品保证。新检查在第一个 SIGSTOP 前直接核对原 Host 与 Bash 的 pidfd、`/proc` 身份、活存及 marker 内容和 inode；冻结后、SIGKILL 前通过原 audit/diagnose 读回 `bound/controlled`、有效占用、无释放回执、未读到终态和无新增非 `running` 观察。冻结动作到 `T` 确认仍须 ≤250 ms，确认时剩余期限仍须 ≥1500 ms。预加载诊断模块和常驻取证进程未获批准。具体替代要求及证据范围见 [Backlog 的 reply-06 说明](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#claude-reply-06-的直接证据要求)。
+
+第四组三次冻结直接证据和实际动作门槛均通过，但新 Agent 都以 `PORT_CONFLICT` 退出；未知占用、恢复、不重放及可信释放尚未验证。证据分别为 `E20261007T210707-47ec4f`、`E20261007T210707-509229`、`E20261007T210707-176919`，见[第四组完整失败原件](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-04/)。探针漏等旧 Agent 被 SIGKILL 后仍有效的固定 30 秒权限租约；下一组先核对冻结安装包中的原常量，再在原阶段预算内等待双时钟达到上界，只启动一次新服务对。不会直接读取或修改数据库。清理也须刷新进程和任务树的最终读回，保留初次快照和全部错误。推导前提与错误码判断限制见[Backlog 的租约前提](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第四组结果与旧-agent-租约的重启前提)。
+
+第五组三次自然退出 0，同指纹 `917a56ed4111…`，每次 1 通过、0 失败、48 项名称筛选跳过，全部十项恢复断言通过。证据为 `E20261007T212423-52cd4d`、`E20261007T212423-f607ce`、`E20261007T212423-4bd625`。三次冻结耗时 0.602420、0.626730、0.569958 ms，剩余期限 283238.967、282991.122、284230.114 ms；观察年龄 2507.426、2738.247、110.311 ms 不作门槛。已取得同库真实重启、未知占用下冲突排队未准入、原工具不重放、可信释放后新准入与最终任务树为空的运行证据。原件见[第五组证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r67/l6/group-05/)，具体断言与非生产限制见[Backlog 通过记录](../../backlog/BL-20261007-002-首-次-生-产-验-收-缺-少.md#第五组三次有限恢复通过)。
+
+后续 P8 只读核查发现，冻结探针要求 scratch 内新安装并新写 Bash，正式 runtime 的只读安装不能直接使用该入口。reply-03 已允许组合全部原始报告，当前缺少的是临时报告与正式 runtime、privateRoot 和 workspace 身份的充分关联规则，详见 [BL-20261007-003](../../backlog/BL-20261007-003-首-次-部-署-的-有-限-恢.md)。按原简报停止清单扩展；第 1、2 层与提交尚未开始，不声称全部交付检查通过，下一裁定见 [stop-07](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-stop-07.md)。
+
+[返回阅读导航](#阅读导航)
+
+### 第六组只读已有安装模式
+
+reply-07/08 批准唯一 --runtime 入口。测试外层先安装候选、准备 Bash 并 chmod 只读，再运行同一独立探针；探针不写 runtime。Hermes 完整三次每次 1 通过/0 失败/48 名称筛选跳过，指纹 `4315ea9d7820…`，全部十项断言及 before/after 真实 runtime 摘要一致通过。证据 `E20261007T223012-715563`、`E20261007T223012-7cc7f4`、`E20261007T223012-183a50`，见[第六组报告](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/l6/group-06/)。先红实际拒绝 --runtime，原报告不改；最后组结果不能由历史第五组代替。
+
+外层保留报告并确认 ownedProcesses/taskTrees 为空后，仅恢复自有 scratch 安装写权限以清理；正式探针不改 runtime 权限。系统 Python/pidfd/OpenSSL 前提、冻结≤250ms、剩余期限≥1500ms、固定30秒租约上界和600000ms测试期限不变。云端仍未运行或签署。第1/2层与文档封存结果由实际命令及 longtask 证据另行记录，不手写长任务状态。
+
+### reply-08 独立材料准备与清单检查
+
+六份安装核对材料已从 Hermes 现有输入收集并逐份核摘要，运输索引保留在 [P5 证据目录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/p5/preparation-01/)。实际 wrapper 退出 1，仅因清理不能排除同 UID 不可读进程；完整安装器未执行，不能称材料足够。P8 原组合控制层仍需 Vite 与 fixture 闭包，安装器依赖不能替代它。各问题见 [BL005](../../backlog/BL-20261007-005-首-次-云-组-合-验-收-控.md)、[BL006](../../backlog/BL-20261007-006-长-任-务-json-被-格-式-检.md)、[BL007](../../backlog/BL-20261007-007-首-次-部-署-清-单-的-bwrap.md)、[BL008](../../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)。
+
+Hermes 上 87 项脚本/JSON 语法检查和 31 项入口摘要检查通过，但没有执行 P8 外层验收，compositionReady 当时仍为 false。systemd 249 的离线 `--root ... verify` 命令在参数支持阶段退出 1，错误为 `Option --root is only supported for cat-config right now.`；不能将脚本语法通过写成 unit 解析通过，见[BL009](../../backlog/BL-20261007-009-hermes-systemd249-不-支-持-首-次-部.md)。两失败 scratch 保留。stop-09 尚未写出时，Claude 已通过 reply-09 裁定这些问题；用户要求继续并改交 stop-10。本轮未做云端操作或付费请求。
+
+### reply-09 后的交付检查
+
+[reply-09](../../../.ci-output/handoff/2026-10-07-codex-round2-cloud-packet-claude-reply-09.md)取消四小时停止限制，要求完成第 1、2 层、提交推送、Hermes 空目录安装及完整 P8 演练后写 stop-10。第七组三次使用最终 HTTP 文件，每次 1 通过、0 失败、48 项名称筛选跳过，十项恢复断言与完整 runtime before/after 一致均通过。证据为 `E20261008T004832-6fd70a`、`E20261008T004832-e9c079`、`E20261008T004832-70cc50`。
+
+上一轮完整产品路径文件自然结束，48 通过、1 跳过，证据 `E20261008T004832-acd8bd`；它使用改名前的 HTTP 文件，不作为最终 HTTP 文件的完整第 2 层证据。原始失败和完整报告保留。最终版本完整检查与第 2 层报告另列在 stop-10，之后的 Hermes 空目录演练不签发生产资格。
+
+G64 取消 Hermes 和云端的 `systemd-analyze verify`，不在别处补做；Node/Bash 语法、P9 实际 ready、身份、握手及 reply-07 重启算式继续保留，决定及原失败见[BL-009](../../backlog/BL-20261007-009-hermes-systemd249-不-支-持-首-次-部.md)。
+
+新增 `[R2-L6]` 两个测试显式限定 Linux 的 opt-in 产品路径项目；它们需要 Linux pidfd 与 `/proc`，不改变已有 Mac 场景。本轮 Mac 验证未执行。
+
+后续独立审查确认清理预算会在控制器的 cleanup、close 和退出清理之间重置。先运行真实自身 pidfd 的回归，修正前总等待 30203.682581 ms、退出 1，证据 `E20261008T010649-5eda6d`；只修探针后，同一回归总等待 101.633446 ms、退出 0，证据 `E20261008T010654-809415`。两次均读回原测试进程仍存活，不以进程自行退出解释立即返回。隔离回归由实际 controller 文件摘要绑定，长任务项目指纹为 unknown，不作为整个检出或完整 HTTP 场景通过的记录。新增 `[R2-L6]` 测试复用原产品路径项目；新组三次与完整第 1、2 层须在最终源码上重新运行。全部恢复断言和正式期限保持，见[清理预算缺陷](../../backlog/BL-20261008-001-有-限-恢-复-探-针-的-重.md)。
+
+第八组于 2026-10-08 在 Hermes 自然结束，GROUP 总退出码 0。三轮分别 2 通过、48 名称筛选跳过、0 失败；独立已安装 validator 每轮退出 0，十项恢复断言全为真。实际前后源码检查绑定测试文件 `fd09d2a1d192c0f0419286be88e12085df1da1e0b3080eeaef2ad6405e25bb10`、控制器 `d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3`、主探针 `3bcc3faefbc9a43cbd6b59f0440132109495dd9c169a58999e3c26944afac710`。三轮均独立读回原登记进程退出、清理许可通过及 scratch/output 不存在；完整报告和日志保留在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r72/group08-probe-01`、`02`、`03`。另有 gate-only 检查 50 项全部跳过、0 执行，不是恢复运行证明。
+
+GROUP 结束后，Cloudflare Access 曾短时返回 `websocket: bad handshake`。同一连接命令随后恢复，实际主机名仍为 `hermes-home`，没有改变连接配置。主代理带回原报告和运行前指纹，逐项核对 393 项运输文件的大小和 SHA。三轮证据依次为 `E20261008T030437-54176d`、`E20261008T030437-e4a033`、`E20261008T030437-98f9f1`，共同指纹为 `ee6ea56c6635f782396fb143236c4a4b9d8edab4dedbb228f6631e54118436d6`，对应 `dff2174` 加实际冻结补丁。gate-only 仅开关检查为 `E20261008T030437-abfd36`。完整第 1、2 层和空目录安装、完整 P8 演练仍待执行。本轮操作、完整原件与资源采样边界见[本轮记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md)。
+
+2026-10-08，r72完整第1层自然失败于既有CI策略：新增 `skipIf` 不在该文件允许的 `skip` 登记内，证据 `E20261008T035327-ec5178`。原格式、类型、边界和秘密扫描均通过；第2层没有启动。只修探针为条件别名 `recoveryDescribe`，保留 Linux/opt-in 和全部期限，Hermes格式与策略定向检查随后退出0，没有修改CI策略。
+
+最终第九组三次自然通过，每轮2项R2-L6通过、48项名称筛选跳过、十项恢复断言与独立安装摘要validator全成功。证据为 `E20261008T040802-9441b7`、`E20261008T040802-80798e`、`E20261008T040802-23a8a3`，共同指纹 `b8735cf1222342dd50f50b560aeeaf7c6c5aab65f6f96a4456eeb3dcb33f1425`；gate-only证据 `E20261008T040802-a4a8e0` 仅证明50项全部跳过、0执行。393项运输元数据已逐项核字节/SHA，完整原件保留在Hermes `evidence/r73/`。运行脚本前后相同，各轮scratch/output已依原登记、引用和独立不存在读回清理。目录大小采样的短暂失败原件保留，不称连续覆盖或完整峰值。完整最终第1/2层和空目录P5/P8仍待运行，见[第九组记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r73/README.md)。

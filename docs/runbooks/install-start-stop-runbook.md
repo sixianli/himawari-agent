@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:eadbba6814f280ac0de76fc4d945e383ad94d241cef31aa5b06a42520883f5c2"
+contract_sha256: "sha256:e722171a98fb939e0a0f18cc055e294683f0dfe6bb438cd40394bdb44f92677e"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -202,6 +202,11 @@ G51只允许本次首次生产安装必要的[限定主机能力验收](../adr/0
 - packages/platform-node/src/ephemeral-secret-port.ts
 - packages/platform-node/src/strict-configuration.ts
 - packages/platform-node/src/state-root-layout.ts
+- test/integration/product-path-browser.test.ts
+- test/qualification/sandbox-install-restart-controller.py
+- test/qualification/sandbox-install-restart-http.mjs
+- test/qualification/sandbox-install-restart-model.mjs
+- test/qualification/sandbox-install-restart-probe.mjs
 - packages/memory-mem0/src/index.ts
 - packages/persistence-sqlite/src/product-state-repository.ts
 - packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts
@@ -246,7 +251,19 @@ schema 27 的作业账本继续作为持久依据；不能给无账本的旧凭�
 
 Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察，保留已知结果、效果和目录占用；此恢复没有启动能力，不按旧 PID 接管进程。Job Host 双向心跳超时会请求停止，过期 IPC 消息不能续期。任务退出后的异步 SRT reset 和控制终态写入期间，宿主继续发送真实心跳，直到清理结束；正常清理耗时不再因提前停发心跳被误判失联。心跳仅证明连接仍在工作，不证明资源已释放；原清理强制退出期限不变。Worker 卡住、重启记录转为 lost/unknown 的测试通过不表示残留风险已消除；解除占用仍需独立可信清理证据。
 
-真实 Mac 假数据组合探针已验证实际 scope/UDS/SQLite/Worker/Job Host、保护规则、资源记录及隔离后不重放，但使用的是受控测试资格和已准备的测试调用；它不是正式主机资格签发，也没有验证真实模型/HITL 或实际进程崩溃后的安装恢复。正式安装与恢复验收仍待完成。启动时的旧作业核查、清理未知隔离，以及关闭时先保存观察再断开通道的顺序继续适用。安装、备份和权威迁移流程不因组件接入而改变，恢复的旧 Capability 记录不能充当新 SRT profile 的资格。
+历史 Mac 假数据组合探针验证了实际 scope/UDS/SQLite/Worker/Job Host、保护规则、资源记录及隔离后不重放，使用受控测试资格和已准备的测试调用；它没有验证真实模型/HITL 或实际进程崩溃后的安装恢复。2026-10-07 在 Hermes 的冻结候选 `6cc0c9d8…` 上，新增 `[R2-L6]` 有限探针同一代码连续三次通过：真实安装后的 Agent/Worker 被 SIGKILL 并以 pidfd 确认退出；新进程以新 boot 身份重开同一临时数据库；清理未知时保留原工作区占用，相交请求排队且没有准入或调用回执；取消排队请求并通过原认证宿主证据取得释放后，原占用才解除，新请求才能准入。marker 与原 Host 身份读回证明旧工具未重放，结束后自有进程和任务树均为空。报告及前提见[有限恢复证据](../execution/plans/2026-09-28-tool-execution-audit-plan.md#r2-l6-installed-recovery-prerequisites)。
+
+该探针使用临时 state root 内的非生产测试资格、本地测试模型与身份提供方，证据只覆盖 Hermes Linux 上这一有限场景，不是正式主机资格签发、完整崩溃矩阵、真实服务商或云主机证明。系统 `/usr/bin/python3 -I` 必须提供 `os.pidfd_open` 与 `signal.pidfd_send_signal`，缺失就停。冻结动作到 Worker/Host 状态 `T` 读回须 ≤250 ms，冻结确认时剩余期限须 ≥1500 ms；观察年龄仅记录，另以冻结前进程/marker和冻结后产品状态直接检查。旧 Agent 退出后按候选内固定 30 秒租约和双时钟推导等待到期上界，不能把它说成租约行读回。正式安装与云端恢复验收仍待当次批准后完成。启动时的旧作业核查、清理未知隔离，以及关闭时先保存观察再断开通道的顺序继续适用。安装、备份和权威迁移流程不因探针增加而改变，恢复的旧 Capability 记录不能充当新 SRT profile 的资格。
+
+2026-10-07 按 reply-07/08，有限恢复探针改为只接受已有 `--runtime`，不安装或写入 runtime，不再准备 Bash。测试外层先安装和准备 Bash，再把测试自有 runtime 设为只读。Hermes 第六组同一代码完整三次通过，十项恢复断言均为真，实际 runtime 摘要运行前后相同；报告同时保留 JobHost、Agent main 和 Bash 文件摘要，测试资格绑定同一实际摘要。输出目录由外层预先创建；临时 state/jobs/workspace/config、非生产资格、身份服务和模型仍在 scratch。证据见[第六组原件](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r69/l6/group-06/)。清理先保存报告并确认自有进程与任务树为空，再由测试外层恢复自有 scratch 的 owner 写权限并删除；正常探针不得改变正式安装权限。云端未运行此新入口。
+
+新增恢复和清理预算测试只在 Linux 的 opt-in 产品路径项目中执行，因为探针依赖 Linux 的 pidfd 和 `/proc` 进程身份。现有 Mac 场景保持原执行规则；本轮没有运行 Mac 验证。
+
+该 qualification 文件的既有 CI 登记只允许 `describe.skip`；恢复测试使用 `recoveryDescribe` 条件别名，只有 Linux 且显式 opt-in 时执行，不修改策略白名单。r72 完整第1层因初版 `skipIf` 退出1，原件保留；修正后的第九组三次均2项R2-L6通过、十项恢复断言和独立安装摘要检查成功，临时目录及输出实际读回不存在。证据 `E20261008T040802-9441b7`、`E20261008T040802-80798e`、`E20261008T040802-23a8a3` 绑定最终测试文件 `e5ef2b32…`；完整最终第1/2层仍待运行，详见[第九组记录](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r73/README.md)。
+
+2026-10-08 独立审查发现，探针控制器的 `cleanup`、`close` 和退出清理会分别重新获得等待预算。持续清理失败时，三次等待可超过原来的 30 秒清理预算。修正后控制器保存首次清理的单调时钟截止时间，后续调用只接受更早的截止时间；外层把剩余预算传给关闭和最后的进程、任务树读回。真实自身 pidfd 的隔离回归在修正前耗时 30203.682581 ms、退出 1，修正后耗时 101.633446 ms、退出 0；每次读回均确认测试自身仍存活。这只证明重复调用不再重置等待预算，不证明所有 I/O 的绝对耗时或完整恢复流程。原十项恢复断言、540000 ms 业务期限、600000 ms 测试上限和 30000 ms 正式清理预算保持不变。原件与验证边界见[清理预算缺陷](../backlog/BL-20261008-001-有-限-恢-复-探-针-的-重.md)。新组三次和完整第 1、2 层以实际报告为准，旧成功报告不能替代本次修正后的结果。
+
+2026-10-08 第八组已在 Hermes 自然结束。最终测试文件 `fd09d2a1…`、控制器 `d5051c9a…`、主探针 `3bcc3fae…` 在三轮中保持相同；每轮 2 项 R2-L6 测试通过、48 项因名称筛选跳过、0 失败。三轮独立安装摘要检查、十项恢复断言、原登记进程退出及任务树释放读回全部通过。每轮先保留完整输出，再检查并删除本轮输出副本，重新取得 scratch 删除许可；最终实际读回 `/tmp/hunjt`、`/tmp/hmw40`、`/tmp/hig7h` 和各轮源码输出目录均不存在。关闭 opt-in 的单独检查另有 50 项全部跳过、0 执行、0 失败；它没有安装或运行恢复探针。原件保留在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r72/`，执行与证据范围见[本轮记录](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md)。完整第 1、2 层仍待运行，不能用这三轮定向结果替代。
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 
@@ -530,11 +547,13 @@ Hermes 使用 Ubuntu 22.04，其测试结果不能证明 Ubuntu 24.04 的 AppArm
 
 匿名文件临时保存一份完整的未压缩 tar。r62 完整产品归档实测为 `328202240` 字节，约 `330 MB`；这份空间是安装 payload 之外的额外占用，安装目录的上级目录所在盘必须有相应余量。写出 payload 时匿名 tar 仍存在，容量规划必须同时计入未压缩 tar、解压后的 payload、已有压缩归档和其他安装数据。匿名文件在解包上下文正常返回或异常退出时自动关闭并释放。该样本大小不是所有未来归档的上限。
 
-原始解压 tar 的正式上限为 `2 GiB + 256 MiB`，即 `2415919104` 字节，包括 tar 头、PAX 扩展及填充；普通文件逻辑内容总量仍受原有 `2 GiB` 上限约束。两者不是同一限制，也不是整个安装的磁盘占用上限。Hermes 测试的根盘 `10 GiB` 守卫仍须执行，不能代替真实部署目标的容量检查。
+原始解压 tar 的正式上限为 `2 GiB + 256 MiB`，即 `2415919104` 字节，包括 tar 头、PAX 扩展及填充；普通文件逻辑内容总量仍受原有 `2 GiB` 上限约束。两者不是同一限制，也不是整个安装的磁盘占用上限。Hermes 测试按 G54 不设根盘剩余空间下限；每次运行记录运行前后可用空间、采样峰值下界和保留项，运行后归还本次占用。真实部署仍须检查目标容量，不能用 Hermes 的空间记录代替。
 
 解包器先完整读取 gzip，再对 tar 做完整预检，最后才创建解压目的目录及其缺失父目录。gzip 损坏、截断或原始大小超限先于目标创建失败；输入同时有 gzip 或大小错误与 tar 结构错误时，先报告前者。原有 tar 安全检查不放宽。独立 `extract` 的创建边界不表示安装 CLI 从未创建 prefix 或内部暂存根，CLI 会先准备安装目录。机制与错误选择见[归档解包与文件清单](../execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory)。[SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md#artifact-extraction-and-inventory]
 
 [↑ 返回阅读导航](#阅读导航)
+
+异常退出后的成对重启必须考虑旧 Agent 的固定权限租约。`apps/agent-service/src/service-main.ts:103–105` 规定租约 30000 ms、每 10000 ms 续租；SIGKILL 不执行正常释放。UTC 不回退且旧 Agent 已退出、没有其他续租方时，租约最迟在退出后 30 秒到期。旧租约有效时新 Agent 会以 `PORT_CONFLICT` 退出，产品不会为此自动重试；启动监管程序必须持续尝试超过 30 秒，本次 systemd 草稿要求至少覆盖 60 秒且不撞启动次数上限。仅 Worker boot binding/连接的重试不能解决旧权威租约。该要求来自源码和 Hermes 第四组失败/第五、六组等待后恢复证据；实际 systemd 调度和云端受控崩溃重启仍未验证，不能用 Hermes 的 ready 样本承诺云端时限。
 
 ## Live-State Preflight
 
