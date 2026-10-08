@@ -84,7 +84,6 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "sandbox_execution_intents",
     "sandbox_legacy_occupancy",
     "sandbox_release_receipts",
-    "sandbox_reservation_release_receipts",
     "sandbox_workspace_barriers",
   ].map((table) =>
     entry(
@@ -94,6 +93,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
       "payload_reference",
       "retain while resource or reconciliation obligations exist",
     ),
+  ),
+  entry(
+    "sandbox_reservation_release_receipts",
+    "SandboxExecutionPreparationPort / SqliteSandboxReservationAdministration",
+    "immutable host release or administrator cleanup with permanent audit binding",
+    "metadata_only",
+    "retain administrator audit and release proof with the original execution history",
   ),
   ...[
     "execution_jobs",

@@ -247,6 +247,24 @@ describe("runtime permissions through full artifacts and small source fixtures",
   ])(
     "[R2-D15] %s installation is accepted by the product verifier under umask %s with prefix %s",
     async (kind, mask, prefixMode) => {
+      const startedAt = performance.now();
+      const diagnostics = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+      const installationReport = process.env["HIMAWARI_TEST_INSTALLATION_REPORT"];
+      const diagnosticFailures: unknown[] = [];
+      const failures: unknown[] = [];
+      const recordPhase = async (phase: string) => {
+        if (!installationReport) return;
+        try {
+          await appendFile(
+            path.join(path.dirname(installationReport), "installation-phases.jsonl"),
+            `${JSON.stringify({ kind, mask, prefixMode, phase, elapsedMs: performance.now() - startedAt })}\n`,
+            { mode: 0o600 },
+          );
+        } catch (error) {
+          diagnosticFailures.push(error);
+        }
+      };
+      await recordPhase("started");
       const temporary = await mkdtemp(path.join(testTemporaryRoot(), "install-modes-"));
       const requestedPrefix =
         prefixMode === "private-parent"
@@ -277,7 +295,6 @@ describe("runtime permissions through full artifacts and small source fixtures",
                 process.env["HIMAWARI_TEST_CONTEXT"] as string,
               ]
             : ["--source", source];
-        const installationReport = process.env["HIMAWARI_TEST_INSTALLATION_REPORT"];
         const installationStartedAt = installationReport ? performance.now() : undefined;
         const installed = spawnSync(
           "/bin/sh",
@@ -315,9 +332,10 @@ describe("runtime permissions through full artifacts and small source fixtures",
             })}\n`,
             { mode: 0o600 },
           );
+        await recordPhase("installer_returned");
         expect(installed.status, installed.stderr).toBe(0);
         const modes = await installationModes(prefix);
-        const diagnostics = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+        await recordPhase("modes_read");
         if (diagnostics)
           await writeFile(
             path.join(diagnostics, `installation-modes-${kind}-${mask}-${prefixMode}.json`),
@@ -394,6 +412,7 @@ describe("runtime permissions through full artifacts and small source fixtures",
             JSON.stringify(modes.filter((entry) => (entry.mode & 0o022) !== 0)),
           ).resolves.toBe(contentDigest(expectedInstallationFiles));
         }
+        await recordPhase("verifier_complete");
         expect(
           modes
             .filter((entry) => entry.directory)
@@ -434,9 +453,24 @@ describe("runtime permissions through full artifacts and small source fixtures",
         );
         if (originalSourceModes)
           expect(await installationModes(source)).toEqual(originalSourceModes);
+        await recordPhase("assertions_complete");
+      } catch (error) {
+        failures.push(error);
       } finally {
-        await rm(temporary, { recursive: true, force: true });
+        await recordPhase("cleanup_started");
+        try {
+          await rm(temporary, { recursive: true, force: true });
+          await recordPhase("cleanup_complete");
+        } catch (error) {
+          failures.push(error);
+        }
       }
+      failures.push(...diagnosticFailures);
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1)
+        throw new AggregateError(failures, "INSTALLATION_VERIFICATION_AND_EVIDENCE_FAILED", {
+          cause: failures[0],
+        });
     },
   );
 });

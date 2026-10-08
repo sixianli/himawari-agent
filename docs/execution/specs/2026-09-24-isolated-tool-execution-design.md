@@ -474,6 +474,8 @@ Worker 或 Agent 里的计时器会随进程崩溃失效；环境里普通的看
 
 从没真正创建或启动过用户环境时，可以沿用现有“释放预留”的思路证明“从未创建/从未启动”：必须先封住迟到的 create/start，并核查原 intent；创建响应丢失不能当作从未创建。环境停止后，即使外部 API 的结果仍未知，也不能说它没发生；这个结果另行恢复，必要时保留资源级的冲突保护。
 
+单个前台 SRT Run 的已停止、未绑定预约另有离线管理员处置合同。运维独立核对原宿主组不存在、原 final 缺失及相关进程不存在后，通过摘要和精确确认串保存管理员声明、现场报告 SHA-256 与实际运行账号。命令不自动核查这三项，也不把声明认证为 Host proof。Schema 50 的独立管理员回执与占用释放、Run/checkpoint 失败、执行租约结算、Thread 事件和审计同事务提交。工具结果和效果继续未确认；管理员 basis 不进入自动 never-started 判断，不交回模型或重放工具。无法确认或有其他未处置资源时保持占用。详见[管理员处置合同](2026-09-28-sandbox-preparation-control-recovery-design.md#admin-reservation-disposition)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
+
 [↑ 返回阅读导航](#contents)
 
 <a id="recovery"></a>

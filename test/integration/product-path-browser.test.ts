@@ -1590,6 +1590,379 @@ productDescribe(
       });
     });
 
+    it("[R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async () => {
+      await scenario("35-reservation-administrator-cleanup", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const file = path.join(installation.workspace, "hello.txt");
+        const baseline = "管理员处置不得重放原工具";
+        const text = "管理员处置验证：请写入 hello.txt";
+        await writeFile(file, baseline);
+        let cleanupFault: Awaited<ReturnType<ProductPathInstallation["preparationFinalHold"]>> =
+          null;
+        let failureReadback: (() => unknown) | undefined;
+        try {
+          await installation.armPreparationFinalHold();
+          await send(text);
+          const allow = page.getByRole("button", { name: "允许这一次" });
+          await uiExpect
+            .poll(
+              async () =>
+                (await allow.count()) > 0 || (await installation.preparationFinalHold()) !== null,
+              {
+                timeout: 60_000,
+              },
+            )
+            .toBe(true);
+          if ((await allow.count()) > 0) await allow.first().click();
+          await uiExpect
+            .poll(() => installation.preparationFinalHold(), { timeout: 40_000 })
+            .not.toBeNull();
+          const fault = await installation.preparationFinalHold();
+          if (!fault) throw new Error("PRODUCT_PATH_PREPARATION_FINAL_HOLD_MISSING");
+          cleanupFault = fault;
+          const originalFinal = await readFile(path.join(fault.directory, "final-held.json"));
+          await writeFile(
+            path.join(outputDirectory, "35-original-final-held.json"),
+            originalFinal,
+            {
+              mode: 0o600,
+            },
+          );
+          expect(createHash("sha256").update(originalFinal).digest("hex")).toBe(fault.sha256);
+          const hostAlive = () => {
+            try {
+              process.kill(fault.pid, 0);
+              return true;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+              throw error;
+            }
+          };
+          const hostGroupAlive = () => {
+            try {
+              process.kill(-fault.pid, 0);
+              return true;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+              throw error;
+            }
+          };
+          await uiExpect.poll(hostAlive, { timeout: 40_000 }).toBe(false);
+          await uiExpect.poll(hostGroupAlive, { timeout: 40_000 }).toBe(false);
+          const snapshots: unknown[] = [];
+          const readback = () => {
+            const database = openQualifiedDatabase(installation.databasePath);
+            try {
+              return {
+                at: new Date().toISOString(),
+                rows: executionReadback().filter((row) => row.jobId === fault.jobId),
+                execution: database
+                  .prepare(
+                    "SELECT preparation_state,started_at,reservation_stopped_at,recovery_json FROM sandbox_execution_records WHERE job_id=?",
+                  )
+                  .get(fault.jobId) as Record<string, unknown>,
+                releases: database
+                  .prepare("SELECT * FROM sandbox_reservation_release_receipts WHERE job_id=?")
+                  .all(fault.jobId) as Array<{ verification_json: string }>,
+                occupancy: database
+                  .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+                  .all(fault.jobId) as Array<{ released_at: string | null }>,
+                checkpoint: database
+                  .prepare(
+                    "SELECT c.phase,c.terminal_status,c.diagnostic_code FROM run_coordination_checkpoints c JOIN sandbox_execution_records r ON r.run_id=c.run_id WHERE r.job_id=?",
+                  )
+                  .get(fault.jobId),
+                audits: database
+                  .prepare(
+                    "SELECT * FROM audit_records WHERE action='sandbox.reservation_cleanup_confirmed' AND target_ref=?",
+                  )
+                  .all(fault.jobId),
+                observations: database
+                  .prepare(
+                    "SELECT * FROM sandbox_execution_observations WHERE job_id=? ORDER BY sequence",
+                  )
+                  .all(fault.jobId),
+                replies: observedToolReplies(text),
+                hostAlive: hostAlive(),
+                hostGroupAlive: hostGroupAlive(),
+              };
+            } finally {
+              database.close();
+            }
+          };
+          failureReadback = readback;
+          const record = async (stage: string) => {
+            const observation = readback();
+            snapshots.push({ stage, ...observation });
+            await writeFile(
+              path.join(outputDirectory, "35-reservation-administrator-cleanup-readback.json"),
+              JSON.stringify({ snapshots }, null, 2),
+            );
+            return observation;
+          };
+          await uiExpect
+            .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
+            .toBe("reconciling_external_result");
+          await uiExpect
+            .poll(
+              async () =>
+                (
+                  await installation.sandboxReservationAdministration(
+                    "inspect-reservation",
+                    fault.jobId,
+                  )
+                ).code,
+              { timeout: 40_000 },
+            )
+            .toBe(0);
+          const occupied = await record("host-exited-no-final");
+          expect(occupied.execution).toMatchObject({
+            preparation_state: "reserved",
+            started_at: null,
+          });
+          expect(occupied.execution["reservation_stopped_at"]).toEqual(expect.any(String));
+          expect(occupied.releases).toEqual([]);
+          expect(occupied.occupancy.length).toBeGreaterThan(0);
+          expect(occupied.occupancy.every((row) => row.released_at === null)).toBe(true);
+          expect(occupied.replies).toEqual([]);
+          await expect(readFile(path.join(fault.directory, "final.json"))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          const siteReportPath = path.join(outputDirectory, "35-admin-cleanup-site-report.json");
+          await writeFile(
+            siteReportPath,
+            JSON.stringify({
+              pid: fault.pid,
+              processGroupId: fault.pid,
+              hostAlive: false,
+              hostGroupAlive: false,
+              finalAbsent: true,
+              originalFinalSha256: fault.sha256,
+            }),
+          );
+          const evidence = `sha256:${createHash("sha256")
+            .update(await readFile(siteReportPath))
+            .digest("hex")}`;
+          const inspect = async () => {
+            const result = await installation.sandboxReservationAdministration(
+              "inspect-reservation",
+              fault.jobId,
+            );
+            expect(result).toMatchObject({ code: 0, error: "" });
+            return JSON.parse(result.output.trim().split("\n").at(-1) ?? "null") as {
+              digest: string;
+              confirmation: string;
+            };
+          };
+          const parameters = (digest: string, confirmation: string) => [
+            "--digest",
+            digest,
+            "--administrator",
+            "operator-product-path",
+            "--evidence",
+            evidence,
+            "--confirm",
+            confirmation,
+          ];
+          const livePreview = await inspect();
+          const locked = await installation.sandboxReservationAdministration(
+            "confirm-reservation-cleanup",
+            fault.jobId,
+            parameters(livePreview.digest, livePreview.confirmation),
+          );
+          expect(locked.code).toBe(1);
+          expect(locked.error).toContain("ADMIN_TARGET_NOT_STOPPED");
+          expect((await record("running-service-refused")).releases).toEqual([]);
+          await installation.stop();
+          const preview = await inspect();
+          expect(preview.confirmation).toBe(
+            "HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT",
+          );
+          const confirmed = await installation.sandboxReservationAdministration(
+            "confirm-reservation-cleanup",
+            fault.jobId,
+            parameters(preview.digest, preview.confirmation),
+          );
+          expect(confirmed).toMatchObject({ code: 0, error: "" });
+          const failed = await record("administrator-confirmed-offline");
+          expect(failed.rows[0]).toMatchObject({
+            runStatus: "failed",
+            intents: 0,
+            definiteOperations: 0,
+          });
+          expect(failed.checkpoint).toMatchObject({
+            phase: "failed",
+            terminal_status: "failed",
+            diagnostic_code: "SANDBOX_ADMINISTRATOR_CONFIRMED_CLEANUP",
+          });
+          expect(failed.releases).toHaveLength(1);
+          expect(JSON.parse(failed.releases[0]?.verification_json ?? "null")).toMatchObject({
+            schemaVersion: "sandbox-admin-reservation-release.v1",
+            basis: "administrator_confirmed_cleanup",
+            evidenceDigest: evidence,
+          });
+          expect(failed.audits).toHaveLength(1);
+          expect(failed.occupancy.every((row) => row.released_at !== null)).toBe(true);
+          expect(failed.observations).toEqual(occupied.observations);
+          expect(failed.replies).toEqual([]);
+          expect(await readFile(file, "utf8")).toBe(baseline);
+          const repeated = await installation.sandboxReservationAdministration(
+            "confirm-reservation-cleanup",
+            fault.jobId,
+            parameters(preview.digest, preview.confirmation),
+          );
+          expect(repeated).toMatchObject({ code: 0, error: "" });
+          const afterRepeat = await record("same-confirmation-repeated");
+          expect(afterRepeat.releases).toEqual(failed.releases);
+          expect(afterRepeat.audits).toEqual(failed.audits);
+          await installation.start();
+          await page.reload();
+          await uiExpect(
+            page.getByText("本轮执行失败。已保存的消息和过程记录仍可查看。"),
+          ).toBeVisible();
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+          expect(
+            (await record("service-reopened-original-run-still-failed")).rows[0]?.runStatus,
+          ).toBe("failed");
+          expect((await installation.preparationFinalHold())?.hostForks).toHaveLength(1);
+          expect(executionReadback().filter((row) => !before.has(row.jobId))).toHaveLength(1);
+          expect(await readFile(file, "utf8")).toBe(baseline);
+          await newThread();
+          await uiExpect(
+            await sendToolRequest("管理员释放后新对话：请读取 notes.txt"),
+          ).toContainText(NOTE);
+          await sendToolRequest("管理员释放后新对话：请写入 hello.txt");
+          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
+          expect(await readFile(file, "utf8")).toBe("你好，Himawari");
+          const nextRows = executionReadback().filter(
+            (row) => !before.has(row.jobId) && row.jobId !== fault.jobId,
+          );
+          expect(nextRows).toHaveLength(2);
+          for (const row of nextRows)
+            expect(row).toMatchObject({
+              result: "result",
+              runStatus: "completed",
+              released: 1,
+              intents: 1,
+            });
+          const final = await record("same-workspace-new-read-write-completed");
+          expect(final.releases).toHaveLength(1);
+          expect(final.audits).toHaveLength(1);
+          expect(final.replies).toEqual([]);
+          await expect(readFile(path.join(fault.directory, "final.json"))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        } catch (error) {
+          const failures: unknown[] = [error];
+          const failureSnapshots: unknown[] = [];
+          let failureReadbackRetained = false;
+          const readReservation = (jobId: string) => {
+            const database = openQualifiedDatabase(installation.databasePath);
+            try {
+              return {
+                releases: database
+                  .prepare("SELECT * FROM sandbox_reservation_release_receipts WHERE job_id=?")
+                  .all(jobId),
+                occupancy: database
+                  .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+                  .all(jobId) as Array<{ released_at: string | null }>,
+              };
+            } finally {
+              database.close();
+            }
+          };
+          const recordFailure = async (stage: string) => {
+            failureSnapshots.push({
+              stage,
+              at: new Date().toISOString(),
+              running: installation.running(),
+              fault: cleanupFault,
+              observation: failureReadback?.() ?? {
+                rows: executionReadback().filter((row) => !before.has(row.jobId)),
+                reservation: cleanupFault ? readReservation(cleanupFault.jobId) : null,
+              },
+            });
+            await writeFile(
+              path.join(outputDirectory, "35-reservation-administrator-cleanup-failure.json"),
+              JSON.stringify(
+                {
+                  error: String(error),
+                  cleanupErrors: failures.slice(1).map(String),
+                  snapshots: failureSnapshots,
+                },
+                null,
+                2,
+              ),
+            );
+          };
+          try {
+            cleanupFault ??= await installation.preparationFinalHold();
+          } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          try {
+            await recordFailure("failed-before-cleanup");
+            failureReadbackRetained = true;
+          } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          try {
+            if (!failureReadbackRetained)
+              throw new Error("PRODUCT_PATH_ADMIN_FAILURE_EVIDENCE_NOT_RETAINED");
+            const fault = cleanupFault;
+            if (!fault) throw new Error("PRODUCT_PATH_PREPARATION_FINAL_HOLD_MISSING");
+            if (readReservation(fault.jobId).releases.length === 0) {
+              const held = await readFile(path.join(fault.directory, "final-held.json"));
+              expect(held.byteLength).toBe(fault.byteLength);
+              expect(createHash("sha256").update(held).digest("hex")).toBe(fault.sha256);
+              await writeFile(path.join(outputDirectory, "35-original-final-held.json"), held, {
+                mode: 0o600,
+              });
+              for (const pid of [fault.pid, -fault.pid]) {
+                let present = true;
+                try {
+                  process.kill(pid, 0);
+                } catch (processError) {
+                  if ((processError as NodeJS.ErrnoException).code !== "ESRCH") throw processError;
+                  present = false;
+                }
+                expect(present).toBe(false);
+              }
+              if (!installation.running()) await installation.start();
+              expect(readReservation(fault.jobId).releases).toEqual([]);
+              await installation.releasePreparationFinalHold();
+              await uiExpect
+                .poll(
+                  () => {
+                    const state = readReservation(fault.jobId);
+                    return (
+                      state.releases.length === 1 &&
+                      state.occupancy.length > 0 &&
+                      state.occupancy.every((row) => row.released_at !== null)
+                    );
+                  },
+                  { timeout: 40_000 },
+                )
+                .toBe(true);
+            } else if (!installation.running()) await installation.start();
+            await page.reload();
+          } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          try {
+            await recordFailure("failed-after-cleanup");
+          } catch (cleanupError) {
+            failures.push(cleanupError);
+          }
+          if (failures.length === 1) throw error;
+          throw new AggregateError(failures, "PRODUCT_PATH_ADMIN_SCENARIO_AND_CLEANUP_FAILED", {
+            cause: error,
+          });
+        }
+      });
+    });
+
     it("[R2-L4][prod-sandbox-D3] delivers a verified preparation failure with safe service diagnostics", async () => {
       await scenario("12-preparation-failure", async () => {
         await newThread();

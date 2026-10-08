@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:da6f983b0bcebb3abece5894ece4e6f79483b4d28661e6eb28c5bcd5cab1a75a"
+contract_sha256: "sha256:ff2a1088f5107b639b3fe95462f9c5316da57ce5921762ccfc9b10566bc05d66"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -23,13 +23,15 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～49 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～50 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 Schema 39 的自动审查记录不属于这四个工作区分区；空列表不证明没有审查或授权记录。
 
 Schema 48 新增任务级执行环境：一轮对话里多次工具调用共用的隔离环境，它持有环境级占用（`lease`，整个环境持有的工作目录占用登记，释放前会冲突的其他任务不能动这些目录）。这些记录只在 `environments` 分区列出，不出现在按单次调用列出的 `executions` 分区；现有执行路线不会创建这类记录，所以通常为空页。
 
 Schema 49 只重建模型预算相关的三张表，新增对话标题的预算账户；它不改变本流程读取的四个分区，工具照常读取。
+
+Schema 50 新增管理员预约释放合同。新版清单继续只读报告该版本，通过 `reservationReleaseBasis` 区分数据库中保存的预约释放来源。`administrator_confirmed_cleanup` 表示管理员声明已确认清理，不是脚本认证的 Host proof。管理员引用、现场报告 SHA 或 Run failed 都不能把原工具结果与效果改成确定事实，也不生成自动修复资格。精确预约的只读预览与独立处置步骤见[专门处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md] 该入口也不检查 final 或进程，不解密 control。
 
 Schema 46 的目录移动合同复用原执行、占用和队列表；此清单不能替代目录 inode 和发布记录核验。Schema 44 的绑定历史与 Schema 45 的批次关联同原队列一起保留；本清单按原队列身份报告是否已经准入，不把重新绑定解释为已执行或可重放。
 
@@ -82,6 +84,8 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 
 `executions` 分区里，`releaseReceiptPresent` 表示已绑定资源的永久回执；`reservationReleaseReceiptPresent` 表示未绑定预约的独立回执。后者不补造资源 supervision 或工具结果，停止标记仍保留；只有回执存在且没有有效 claim/barrier，才不再列为未确认的资源责任。字段只反映数据库记录，仍不证明当前宿主安全，也不授予重新执行或修改数据库的权限。
 
+`reservationReleaseBasis` 只报告已有预约回执的来源。管理员 basis 为 `administrator_confirmed_cleanup` 时，原因列表增加 `ADMINISTRATOR_CONFIRMED_CLEANUP`。原结果或效果未知仍分别保留 `RESULT_UNRESOLVED`、`EFFECT_UNRESOLVED`，并要求 `ORIGINAL_OPERATION_EFFECT_PROOF`（原操作实际效果的独立证据）。管理员释放资源不是工具执行或效果证明；不得据此认定 never-started、交付未启动失败或继续原模型回合。`liveHostVerified:false` 和 `repairEligible:false` 保持不变。
+
 首先核对输出 `mode=read_only`、Owner/Agent、Schema 和分区。下表说明主要原因代码；同一条目可以有多个原因。
 
 | 代码 | 能说明什么 | 后续仍需核对什么 |
@@ -95,6 +99,7 @@ node scripts/operations/workspace-lifecycle-audit.mjs \
 | `WORKSPACE_PROTECTION_ACTIVE` / `CONTROL_ACK_PENDING` | 仍有新风险保护或未确认控制消息 | 控制消息是否仍可能引起写入 |
 | `RESULT_DELIVERY_PENDING` | 原结果交接尚未确认 | 当前披露权限；不得因此重新锁定或执行 |
 | `RESULT_UNRESOLVED` / `EFFECT_UNRESOLVED` | 结果或修改效果尚无明确记录 | 原发布记录或其他独立效果证据 |
+| `ADMINISTRATOR_CONFIRMED_CLEANUP` | 数据库保存了管理员确认清理的预约释放来源 | 实际宿主与原操作效果仍须独立核对；不能作为认证 Host proof 或自动修复资格 |
 | `LEGACY_WORKSPACE_PROTECTION_ACTIVE` | 旧版占用尚未释放 | 旧宿主身份及实际清理情况 |
 | `ENVIRONMENT_RELEASE_UNCONFIRMED` | 任务级执行环境没有已接收的释放回执 | 执行后端对原环境身份给出的新停止证明；迟到的创建请求是否已被停止标记挡住 |
 | `ENVIRONMENT_CREATE_UNKNOWN` | 创建请求已发出但结果未知，环境可能已经存在 | 按原创建记录向执行后端核查；不能重新创建一个替代环境 |

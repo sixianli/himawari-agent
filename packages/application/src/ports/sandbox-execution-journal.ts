@@ -49,10 +49,35 @@ export type SandboxReservationReleaseVerification =
       readonly taskEnvironmentIds: readonly string[];
     });
 
-export interface SandboxReservationReleaseReceipt {
-  readonly acceptedAt: string;
-  readonly verification: SandboxReservationReleaseVerification;
+export interface SandboxAdministratorReservationReleaseVerification {
+  readonly schemaVersion: "sandbox-admin-reservation-release.v1";
+  readonly basis: "administrator_confirmed_cleanup";
+  readonly identity: SandboxJobIdentity;
+  readonly environmentId: string;
+  readonly semanticFingerprint: string;
+  readonly stopRequestedAt: string;
+  readonly checkedAt: string;
+  readonly inspectionDigest: string;
+  readonly administrator: string;
+  readonly evidenceDigest: string;
+  readonly confirmation: "HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT";
+  readonly actor: {
+    readonly uid: number;
+    readonly account: string;
+    readonly hostname: string;
+  };
+  readonly auditId: string;
 }
+
+export type SandboxReservationReleaseReceipt =
+  | {
+      readonly acceptedAt: string;
+      readonly verification: SandboxReservationReleaseVerification;
+    }
+  | {
+      readonly acceptedAt: string;
+      readonly verification: SandboxAdministratorReservationReleaseVerification;
+    };
 
 /** Each attempt performs one bounded inspect/stop; unresolved has no scheduled retry. */
 export interface SandboxRecoveryAttemptState {

@@ -34,7 +34,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 49 ||
+        version > 50 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");
@@ -57,6 +57,7 @@ export function auditWorkspaceLifecycle({
           (SELECT count(*) FROM sandbox_workspace_occupancy o WHERE o.job_id=r.job_id AND o.released_at IS NULL) AS activeClaims,
           ${version >= 33 ? "EXISTS(SELECT 1 FROM sandbox_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS releaseReceiptPresent,
           ${version >= 41 ? "EXISTS(SELECT 1 FROM sandbox_reservation_release_receipts x WHERE x.job_id=r.job_id)" : "0"} AS reservationReleaseReceiptPresent,
+          ${version >= 41 ? "(SELECT json_extract(x.verification_json,'$.basis') FROM sandbox_reservation_release_receipts x WHERE x.job_id=r.job_id)" : "NULL"} AS reservationReleaseBasis,
           ${version >= 33 ? "(SELECT count(*) FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL)" : "0"} AS activeBarriers,
           ${version >= 42 ? "(SELECT count(*) FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.kind='resource_contradiction' AND b.resolved_at IS NULL)" : "0"} AS resourceIncidents,
           (SELECT count(*) FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) AS pendingControl,
@@ -69,10 +70,14 @@ export function auditWorkspaceLifecycle({
             const requiredEvidence = [];
             const reservationReleased =
               row.preparation === "reserved" && row.reservationReleaseReceiptPresent;
+            const administratorConfirmed =
+              reservationReleased &&
+              row.reservationReleaseBasis === "administrator_confirmed_cleanup";
             const released = row.supervision === "released" || reservationReleased;
             const receiptPresent = row.releaseReceiptPresent || reservationReleased;
             if (row.preparation === "reserved" && row.stopRequestedAt !== null)
               reasons.push("UNBOUND_RESERVATION_STOPPED");
+            if (administratorConfirmed) reasons.push("ADMINISTRATOR_CONFIRMED_CLEANUP");
             if (!released) reasons.push("RESOURCE_RELEASE_UNCONFIRMED");
             if (released && row.activeClaims) reasons.push("RELEASED_WITH_ACTIVE_CLAIMS");
             if (released && !receiptPresent) reasons.push("RELEASE_RECEIPT_MISSING");
@@ -85,9 +90,13 @@ export function auditWorkspaceLifecycle({
             if (row.resourceIncidents) reasons.push("SANDBOX_RELEASE_CONTRADICTED");
             if (row.pendingControl) reasons.push("CONTROL_ACK_PENDING");
             if (row.pendingDelivery) reasons.push("RESULT_DELIVERY_PENDING");
-            if (!reservationReleased && (row.result === null || row.result === "unknown"))
+            if (
+              (!reservationReleased || administratorConfirmed) &&
+              (row.result === null || row.result === "unknown")
+            )
               reasons.push("RESULT_UNRESOLVED");
-            if (row.effect === "unknown") reasons.push("EFFECT_UNRESOLVED");
+            if (row.effect === "unknown" || administratorConfirmed)
+              reasons.push("EFFECT_UNRESOLVED");
             if (
               !released ||
               row.activeClaims ||
@@ -101,7 +110,7 @@ export function auditWorkspaceLifecycle({
                 "FRESH_HOST_RELEASE_PROOF",
               );
             if (
-              !reservationReleased &&
+              (!reservationReleased || administratorConfirmed) &&
               (row.result === null || row.result === "unknown" || row.effect === "unknown")
             )
               requiredEvidence.push("ORIGINAL_OPERATION_EFFECT_PROOF");

@@ -420,6 +420,13 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0049_thread_title_budget.sql",
   },
+  {
+    sequence: 50,
+    name: "sandbox_reservation_administration",
+    changeSet: "sandbox-reservation-administration",
+    phase: "contract" as const,
+    file: "0050_sandbox_reservation_administration.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

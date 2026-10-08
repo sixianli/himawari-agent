@@ -13,6 +13,7 @@ import {
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { readAdministratorReservationRelease } from "./sqlite-sandbox-reservation-administration.ts";
 
 type Reservation = Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }>;
 const instant = (value: unknown): value is string =>
@@ -151,11 +152,26 @@ export class SqliteSandboxReservationRelease {
   ): SandboxReservationReleaseReceipt | undefined {
     const row = this.db
       .prepare(
-        "SELECT accepted_at AS acceptedAt,verification_json AS verification FROM sandbox_reservation_release_receipts WHERE job_id=?",
+        "SELECT accepted_at AS acceptedAt,verification_json AS verification,authority_json AS authority FROM sandbox_reservation_release_receipts WHERE job_id=?",
       )
-      .get(plan.identity.jobId) as { acceptedAt: string; verification: string } | undefined;
+      .get(plan.identity.jobId) as
+      | { acceptedAt: string; verification: string; authority: string }
+      | undefined;
     if (!row) return undefined;
-    const verification = JSON.parse(row.verification) as SandboxReservationReleaseVerification;
+    const verification = JSON.parse(
+      row.verification,
+    ) as SandboxReservationReleaseReceipt["verification"];
+    if (verification?.schemaVersion === "sandbox-admin-reservation-release.v1")
+      return readAdministratorReservationRelease(
+        this.db,
+        plan,
+        stoppedAt,
+        row.acceptedAt,
+        verification,
+        JSON.parse(row.authority),
+        () =>
+          this.fail("PORT_INVALID_OPERATION", "Invalid administrator reservation release receipt"),
+      );
     // Recheck the original acceptance, never today's clock, when reading history.
     this.validate(plan, stoppedAt, verification, row.acceptedAt);
     return { acceptedAt: row.acceptedAt, verification };
@@ -168,6 +184,11 @@ export class SqliteSandboxReservationRelease {
     now: string,
     expectedRecoveryRevision?: number,
   ): boolean {
+    if (
+      (verification as SandboxReservationReleaseReceipt["verification"])?.schemaVersion ===
+      "sandbox-admin-reservation-release.v1"
+    )
+      return this.fail("PORT_INVALID_OPERATION", "Invalid reservation release verification");
     if (admission.releaseReceipt) return false;
     const attempt = admission.recovery;
     if (

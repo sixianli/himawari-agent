@@ -322,6 +322,11 @@ export interface ProductPathInstallation {
   finishGateResultReceived(): Promise<string | null>;
   sandboxDelivery(runId: string, invocationId: string): Promise<unknown | null>;
   diagnose(runId: string): unknown;
+  sandboxReservationAdministration(
+    command: "inspect-reservation" | "confirm-reservation-cleanup",
+    jobId: string,
+    parameters?: readonly string[],
+  ): Promise<{ code: number | null; output: string; error: string }>;
   deliveryCrashEntered(): Promise<{ jobId: string; runId: string } | null>;
   running(): boolean;
   close(): Promise<void>;
@@ -654,6 +659,10 @@ export async function installProductPath(options: {
     },
   );
   const frontPort = await listen(front);
+  await writeFile(
+    path.join(options.logDirectory, "listener-ports.json"),
+    JSON.stringify({ appPort, providerPort, frontPort }),
+  );
 
   const installEnv = { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" };
   if (options.sourceRoot) {
@@ -1283,6 +1292,30 @@ export async function installProductPath(options: {
           testRoot,
         ),
       ),
+    sandboxReservationAdministration: async (command, jobId, parameters = []) => {
+      const args = [
+        "sandbox",
+        command,
+        "--config",
+        configurationPath,
+        "--job",
+        jobId,
+        ...parameters,
+      ];
+      const result = spawnSync(cli, args, {
+        cwd: testRoot,
+        env: serviceEnv,
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      if (result.error) throw result.error;
+      const record = { code: result.status, output: result.stdout, error: result.stderr };
+      await appendFile(
+        path.join(options.logDirectory, "sandbox-reservation-administration.jsonl"),
+        `${JSON.stringify({ at: new Date().toISOString(), args, ...record })}\n`,
+      );
+      return record;
+    },
     armDeliveryCrash: async () => {
       await rm(`${serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH}.entered`, { force: true });
       await writeFile(serviceEnv.HIMAWARI_TEST_DELIVERY_CRASH, "armed");

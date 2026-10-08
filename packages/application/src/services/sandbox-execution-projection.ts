@@ -14,14 +14,14 @@ import {
 import type { SandboxExecutionVerification } from "../ports/sandbox-execution.js";
 import type {
   SandboxReleaseReceipt,
-  SandboxReservationReleaseVerification,
+  SandboxReservationReleaseReceipt,
 } from "../ports/sandbox-execution-journal.js";
 
 export const RECOVERY_SETTLE_WAIT_MS = 35000;
 
 export function isSandboxReservationNeverStarted(
   plan: SandboxExecutionPlanV2,
-  verification: SandboxReservationReleaseVerification | undefined,
+  verification: SandboxReservationReleaseReceipt["verification"] | undefined,
 ): boolean {
   return (
     verification?.basis === "host_never_started" ||

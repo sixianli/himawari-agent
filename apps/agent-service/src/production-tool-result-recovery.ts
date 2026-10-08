@@ -120,6 +120,12 @@ export function createProductionToolResultRecovery(options: {
     const matches: PreparedToolResultRecovery[] = [];
     for (let admission of inventory.admissions) {
       if (
+        admission.phase === "reserved" &&
+        admission.releaseReceipt?.verification.schemaVersion ===
+          "sandbox-admin-reservation-release.v1"
+      )
+        continue;
+      if (
         admission.phase === "bound" &&
         options.recoverMissingResult &&
         (!admission.record.facts.result || admission.record.facts.result.kind === "unknown")
@@ -229,7 +235,8 @@ export function createProductionToolResultRecovery(options: {
           invocationId: plan.identity.invocationId,
           semanticFingerprint: plan.semanticFingerprint,
           checkpointRevision: saved.revision,
-          ...(admission.phase === "reserved" && admission.releaseReceipt
+          ...(admission.phase === "reserved" &&
+          admission.releaseReceipt?.verification.schemaVersion === "sandbox-reservation-release.v1"
             ? { reservationReleaseDigest: admission.releaseReceipt.verification.evidence.digest }
             : {}),
           operationRevision: admission.phase === "bound" ? admission.record.operationRevision : 0,

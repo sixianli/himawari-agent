@@ -512,6 +512,8 @@ type FailureDisposition =
 
 只对实际需要核验的操作建立 recovery item，复用已有持久恢复存储；保留 owner、错误类型、尝试次数、下一次时间和明确暂停原因。调度查询必须能发现 released 仍残留 occupancy、terminal Run 仍有资源等不一致，不能把所有 reconciling Run 排除。
 
+管理员可以按[未绑定预约的离线处置合同](2026-09-28-sandbox-preparation-control-recovery-design.md#admin-reservation-disposition)终结一个符合范围的前台 SRT Run。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md] 此处 `failed` 是 Run 的行政终态，原工具结果与外部效果仍保持未知，不将未知工具伪装成失败或未执行。管理员确认与报告 SHA 不属于认证 Host proof；自动恢复、never-started 判断、Pi 结果交付和模型继续执行均不得接受这个管理员 basis。
+
 四类时间分别配置：工具最长执行时间、无进展检测、停止宽限、按错误类别的重试期限/次数。没有统一两分钟规则。具体数值来自工具/provider 合同、平台停止能力、历史耗时与故障注入数据；当前单次 inspect 30 秒只作为已有实现上限记录，不证明整体恢复策略已合理。无依据的默认值不得冻结为产品要求。
 
 有充分证据立即结束，无需等到预算。重试耗尽、不可重试、宿主不可达或权限不足时，按实际原因进入 failed/paused/unresolved；只有后台确有运行中的核验才显示“正在核对”。用户“检查状态”仅触发允许的读回，不自动重写文件、发起模型调用或延长权限。

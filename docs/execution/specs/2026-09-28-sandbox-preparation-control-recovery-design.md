@@ -21,6 +21,7 @@ date: "2026-09-28"
 - [权限与失败边界](#权限与失败边界)
 - [准备失败的安全服务日志](#preparation-safe-log)
 - [未启动预留的持续清理核查](#reserved-retry)
+- [未绑定预约的管理员处置](#admin-reservation-disposition)
 - [替代方案](#替代方案)
 - [验收与审批范围](#验收与审批范围)
 - [第二轮 A2：准备登记之前的封锁](#第二轮-a2准备登记之前的封锁)
@@ -127,6 +128,28 @@ date: "2026-09-28"
 最早尝试时间从上次实际 `finishedAt` 起计算。退避依次为 1、2、4、8、16、30 秒，之后每次为 30 秒；排定阶段不增加 attempts，真正开始核查才增加。持续清理不设总次数上限，但每次尝试仍受原 30 秒核查期限、当前权威和取消信号约束。服务重启保留恢复次数和已排定的 `nextAttemptAt`，按原 owner、revision 与当前权威规则接管，不能重置退避或让旧回调写入证明。未得到充分证明期间，工作区占用保持，后续相交请求不得获准启动。
 
 身份、目录、签名、受保护证据或权限错误，以及上述暂时原因以外的错误，保持暂停，等待管理员核对原绑定和证据；不自动替换身份、控制密钥或目录，也不重新授予执行权限。已绑定 `bound` 资源的原 inspect/stop 调度和暂停合同不变。这些尝试只处理原资源停止与核验，不创建新 start，不重放原工具，不延长工具或 Run 执行期限。充分证明被接受后，确定未启动的结果仍通过既有一次交付路径处理；原 Run 的继续或结束仍服从原取消、权限、披露和期限门禁。
+
+<a id="admin-reservation-disposition"></a>
+
+## 未绑定预约的管理员处置
+
+原认证控制没有充分释放证明时，自动恢复保持上述占用和重试规则。管理员另有离线处置入口，仅处理当前配置归属下单个前台 SRT Run 的已停止 `reserved` 预约；不处理 bound、container 或托管后台任务。`started_at` 为空只是数据库记录，不证明用户工具从未启动。
+
+目标还须有仍为 `open` 的所属 Thread、原执行租约和恢复记录；Run 与 checkpoint 都处于 `reconciling_external_result`，checkpoint 尚无终态、output 或最终答案。其他未释放资源、未决保护或未确认意图会使本次处置被拒绝。
+
+`sandbox inspect-reservation --config PATH --job JOB` 只输出 Job/Run/Thread/环境身份、停止标记、Run/checkpoint/lease/Thread 四个 revision、处置摘要和固定 `confirmation`。摘要绑定同 Run 的其他资源与相关数据库快照，不输出资源统计；`confirmation` 列明三项必须由运维独立确认的声明。它不解密控制记录，不读取工具正文或 secret，不检查 final 或进程，不将数据库资格作为现场通过。`sandbox confirm-reservation-cleanup` 要求同一 Job、该摘要、管理员声明引用、独立现场报告的 SHA-256，以及完整确认串 `HOST_GROUP_ABSENT_FINAL_ABSENT_RELATED_PROCESSES_ABSENT`。Agent 和 Worker 必须停止，命令必须取得原 state-root 独占锁，不提供绕过存活锁的选项。
+
+管理员先独立确认原宿主进程组不存在、原控制目录内没有 final、没有相关运行进程。旧预约没有可信 PID/PGID 时，运维必须另行核对原系统现场；无法确认则不执行。CLI 只记录这三项管理员声明和报告摘要，不把它们认证为 Host proof，也不因为 socket 不可连接或 started 为空自动认定清理完成。
+
+Schema 50 保存独立的 `sandbox-admin-reservation-release.v1` 回执，basis 为 `administrator_confirmed_cleanup`。管理员声明引用与实际本机 `{uid, account, hostname}` 分别保存。回执绑定原任务身份、环境语义指纹、停止标记、处置摘要、版本和接受时间；不替代原 `sandbox-reservation-release.v1` Host verification。原计划、facts、observations、受保护控制 Payload、started 与自动释放证据保持原样。
+
+管理员回执是永久历史，不使用 Host `validUntil`。读取历史仍须核对原计划身份、authority 摘要和关联审计的完整关系；缺失、损坏或不匹配拒绝读取为有效释放，不用当前时间续发证明。固定 checkpoint 诊断为 `SANDBOX_ADMINISTRATOR_CONFIRMED_CLEANUP`，审计 action 为 `sandbox.reservation_cleanup_confirmed`，所属 Thread 的持久事件为 `run.failed`。
+
+处置事务重新核对配置归属、Schema、目标资格、版本及摘要，同事务保存管理员回执与审计、释放对应占用、终结核查安排、将 Run 与协调 checkpoint 记为 `failed`、结算原执行租约并推进版本栅栏、保存所属 Thread 的持久事件。事务失败保留原占用；其他未处置资源或状态冲突拒绝本次窄范围处置。相同处置重读同一回执，不重复审计、事件或版本变化；不同声明或报告摘要不能覆盖历史回执。旧 writer 不得写入 Schema 50。
+
+此处 Run 的 `failed` 表示管理员终结该次运行。工具结果及外部效果仍保持未确认，不补造 final、绑定、启动观察、业务失败正文或退款。管理员 basis 永不进入 `isSandboxReservationNeverStarted` 或其 SQLite 白名单，不能交付 `SANDBOX_TOOL_NOT_STARTED`，不能创建结果交付或模型续跑 intent，不调用 Pi 或重放工具。新矛盾证据按原 incident/barrier 规则处理，保留已接受的管理员历史。
+
+具体现场核查、确认命令、独立读回与停止条件见[管理员处置 Runbook](../../runbooks/sandbox-reservation-administrative-disposition-runbook.md)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md] 本合同授权功能实现，不授权任何生产停服、迁移、处置或服务启动。
 
 ## 替代方案
 
