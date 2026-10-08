@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e2882bcd4c88d97da2e95df15a4b4655d24ba57436835e8042e53b5fc8e9ad1d"
+contract_sha256: "sha256:b4a29fcfed99e0cead5f3fb0fefbed82603abfd688b66d46240a61462778987a"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -597,23 +597,37 @@ ps -axo pid,command
 
 若目标已有活动服务、state-root lock、socket、authority 不匹配、schema 不完整或可用空间不足，停止；不得删除活锁、覆盖 state root 或猜测服务管理器命令。
 
-升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后数量不为 0 时停止升级并报告用户，不自动释放或删除记录。
+升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后尚未解决的预约数不为 0 时停止服务切换和新版启动并报告用户，不自动释放或删除记录。已授权的单目标离线维护按[管理员处置流程](sandbox-reservation-administrative-disposition-runbook.md#schema-49-offline-route)处理，完成后重新统计。
 
-该统计保持原保守范围，包含已接受管理员回执但仍保留原 reserved/空 started 的记录。行政处置不会自动通过这个旧升级门禁；统计非零仍停止并核对匹配版本的具体升级合同，不删除处置历史使计数归零，也不将新回执解释为原冻结操作包的授权。
+该统计只计 SRT 的 `reserved`、空 `started_at` 且没有产品已接受永久释放回执的记录。原 Job 的普通释放回执或预约释放回执均可排除该历史预约；预约回执还须匹配原停止标记，管理员回执与自动回执按相同计数规则处理。统计不按当前时间重新判定历史回执的 `validUntil`，不删除处置后仍为 `reserved` 的历史。查询失败、回执表缺失或数据库版本不受支持时停止，不把错误当作零值。
+
+统计以产品通过原身份、证据和接受时有效性检查后写入的不可修改回执为依据，不独立认证回执或核查 OS 进程。执行前仍须完成数据库与回执完整性核查；手写或损坏的回执、缺失或不匹配的管理员审计不能作为释放依据。计数为零只通过这一项升级检查，不提供服务切换、启动或生产操作授权。
 
 ~~~sh
 python3 - /absolute/path/product.sqlite <<'PYTHON'
 import pathlib, sqlite3, sys
 uri = pathlib.Path(sys.argv[1]).resolve(strict=True).as_uri() + "?mode=ro"
 with sqlite3.connect(uri, uri=True) as database:
+    database.execute("PRAGMA query_only = ON")
     count = database.execute("""
-        SELECT count(*) FROM sandbox_execution_records
-        WHERE json_extract(plan_json, '$.backendRef') = 'srt'
-          AND preparation_state = 'reserved' AND started_at IS NULL
+        SELECT count(*) FROM sandbox_execution_records reservation
+        WHERE json_extract(reservation.plan_json, '$.backendRef') = 'srt'
+          AND reservation.preparation_state = 'reserved' AND reservation.started_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_reservation_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+              AND json_extract(released.verification_json, '$.stopRequestedAt') = reservation.reservation_stopped_at
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+          )
     """).fetchone()[0]
 print("尚未启动的 SRT 预约数：", count)
 if count:
-    raise SystemExit("停止升级：旧预约不能凭新版准备封锁自动恢复，须报告用户。")
+    raise SystemExit("停止升级：仍有尚未解决的 SRT 预约，须报告用户并独立核查释放回执。")
 PYTHON
 ~~~
 
@@ -637,7 +651,7 @@ mkdir -p <absolute-prefix>
 npm run install:node-runtime -- --prefix <absolute-prefix>
 ~~~
 
-5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未启动的 SRT 预约统计](#live-state-preflight)，保存停服后的查询结果，非零时停止升级并报告用户，不启动新版。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
+5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service。Worker 先公布本次 `workerInstanceId/workerBootId`；Agent 取得当前 authority lease 后启动反向权限与 Payload 服务，再发布同时绑定双方实例、boot 和当前 authority 的启动文件，最后完成 Worker handshake。记录双方 `service.ready` 的 component、schema、identity 和 recovery counters；只存在 socket 或旧启动文件不算完成握手。
 7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/specialist/embedding reference、version 和 dimensions，不能显示 secret value。
 8. 正常停止时先向 Agent Service 发送 `SIGTERM`。Agent 按已登记资源先停止接纳、等待在途工作，再逆序关闭依赖；Memory 消费者停止领取新任务并等待当前批次完成后，才关闭 Memory、模型、authority 和 SQLite。等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。

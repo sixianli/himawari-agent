@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:586fcefa46b3308c00694205b749892ca6afa9c2a33c706415bc5d7ceb37ba02"
+contract_sha256: "sha256:a4013698a5ac1a9f9fdc44b2b1b23e55aa83e297dfd799318e3c3d6296e41c19"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -143,7 +143,7 @@ Schema 40 为尚未绑定的预约增加不可撤销的停止标记，并保留�
 
 Schema 41 的原自动释放记录保存在独立的 `sandbox_reservation_release_receipts`。只有原认证宿主证明任务从未启动、原进程已退出且清理完成，当前 writer 才能按该自动证明分支同事务保存永久回执并释放该预约的占用。原停止标记保持不可撤销，不伪造运行时绑定、业务结果或退款；重复停止和恢复读回原事实，不因核验凭据过期重新占用。缺少宿主证明、仍有保护或已启动任务的后代状态未知时继续保留未确认状态。备份与权威迁移须同时保留回执、停止标记及受保护宿主证据；Schema 40 及以前的 writer 不得写入新库，回退仍需停机并恢复匹配旧版本的完整恢复点。
 
-原升级的 reserved/空 started 统计保持保守，已行政处置的历史也可被计入。新回执不会自动通过原升级门禁或原冻结操作包；数量非零仍停止核对，不删除历史使计数归零。
+升级门禁只统计尚未取得产品已接受永久释放回执的 SRT `reserved`、空 `started_at` 预约。原 Job 的有效管理员、自动预约释放或普通释放回执使该历史预约不再阻断这一项检查；历史仍保留，尚未解决的其他预约继续阻止服务切换和新版启动。计数为零不提供新操作授权，也不替代回执完整性与现场核查。
 
 Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只适用于当前配置归属下单个前台 SRT Run 的已停止未绑定预约。运维独立确认原宿主组不存在、原控制目录内没有 final、没有相关运行进程后，提交预览摘要、管理员声明引用与现场报告 SHA-256；实际本机 UID/account/hostname 分别保存。CLI 不解密 control、不读取 secret、不自动核查任何进程或 final，声明和报告 SHA 不是认证 Host proof。确认命令要求 Agent/Worker 停止、原 state-root 独占锁与 Schema 50，不自动迁移；只读预览允许 Schema 49/50，旧库只能先核对目标及正式备份迁移前置。回执、审计、占用释放、Run/checkpoint failed、原执行租约结算及 Thread 事件同事务保存。工具结果和效果仍未确认，管理员 basis 不进入 never-started，不交回模型或重放工具。Schema 49 及更旧 writer 不得写入 Schema 50；回退仍须停服并恢复匹配版本的完整恢复点。具体步骤见[离线管理员处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md]
 
@@ -264,21 +264,35 @@ Pi 默认工具提示修复候选使用 `scripts/operations/hermes-three-fixes-q
 
 新建证据运行 ID 后，将白名单源码清单、SHA-256、秘密扫描结果和真实命令结果写入本次证据目录。工具链使用固定 Node 22.22.3/npm 11.8.0，依赖闭包来自精确 lockfile。构建、开发依赖、临时探针和数据库放在 `/data`。用户授权 NVMe 迁移时，仅完整安装前缀中的程序、运行依赖和静态页面复制到 `/opt/himawari/releases/<版本>`；先核对根盘确为 NVMe、剩余空间至少 10 GiB 且复制后仍保留该余量。数据库、附件、日志、备份与构建缓存继续位于 `/data`。
 
-升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后数量不为 0 时停止升级并报告用户，不自动释放或删除记录。
+升级前，先从已核实的配置和 `db status` 确定实际产品数据库路径。停旧服务之前可以执行下面的只读统计作为参考；旧 Agent 和 Worker 完全停止之后、启动新版之前必须再次执行，并以停服后的结果作为升级判断依据。停服过程可能留下新的预约，不能用停服前的零值代替复查。将下面的绝对路径替换为该数据库路径，分别保存查询时机和输出；停服后尚未解决的预约数不为 0 时停止服务切换和新版启动并报告用户，不自动释放或删除记录。已授权的单目标离线维护按[管理员处置流程](sandbox-reservation-administrative-disposition-runbook.md#schema-49-offline-route)处理，完成后重新统计。
+
+该统计使用原 Job 的产品已接受永久释放回执，预约回执还须匹配原停止标记；不按当前时间重新判定历史回执的 `validUntil`，不删除仍为 `reserved` 的处置历史。查询失败、回执表缺失或数据库版本不受支持时停止，不把错误当作零值。统计不独立认证回执或核查 OS 进程，执行前仍须完成数据库与回执完整性核查；手写或损坏的回执、缺失或不匹配的管理员审计不能作为释放依据。计数为零只通过这一项检查，不提供服务切换、启动或生产操作授权。
 
 ~~~sh
 python3 - /absolute/path/product.sqlite <<'PYTHON'
 import pathlib, sqlite3, sys
 uri = pathlib.Path(sys.argv[1]).resolve(strict=True).as_uri() + "?mode=ro"
 with sqlite3.connect(uri, uri=True) as database:
+    database.execute("PRAGMA query_only = ON")
     count = database.execute("""
-        SELECT count(*) FROM sandbox_execution_records
-        WHERE json_extract(plan_json, '$.backendRef') = 'srt'
-          AND preparation_state = 'reserved' AND started_at IS NULL
+        SELECT count(*) FROM sandbox_execution_records reservation
+        WHERE json_extract(reservation.plan_json, '$.backendRef') = 'srt'
+          AND reservation.preparation_state = 'reserved' AND reservation.started_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_reservation_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+              AND json_extract(released.verification_json, '$.stopRequestedAt') = reservation.reservation_stopped_at
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sandbox_release_receipts released
+            WHERE released.job_id = reservation.job_id
+              AND json_extract(released.verification_json, '$.identity.jobId') = reservation.job_id
+          )
     """).fetchone()[0]
 print("尚未启动的 SRT 预约数：", count)
 if count:
-    raise SystemExit("停止升级：旧预约不能凭新版准备封锁自动恢复，须报告用户。")
+    raise SystemExit("停止升级：仍有尚未解决的 SRT 预约，须报告用户并独立核查释放回执。")
 PYTHON
 ~~~
 
@@ -319,7 +333,7 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 1. 检查本 Runbook 静态合同。只传输已审阅且通过秘密扫描的源码白名单；不打包配置、凭据、真实数据或历史浏览器证据。构建安装到本次独立发布目录，保留旧版本。
 2. 打包统一文件和目录权限，禁止 group/other write。安装固定 Pi 工具普通文件后，针对实际安装树执行 Pi、组合、网络允许/拒绝、Worker 崩溃清理及公开搜索探针。固定探针使用合成数据；必须验证真实 namespace 释放、安装字节摘要、实际工具和 provider 返回，不能复用旧资格或伪造结果。任何产物变更后重新执行受影响资格。
 3. 实测通过后，使用该主机既有受保护签名源签署本次安装事实，保存证据摘要、runtime/runner/system tool 字节摘要及精确能力上界。Pi 探针使用与正式 Worker 相同的 5 秒清理期限。Pi write/edit 使用 verified_effect，并要求安装的 Pi 程序在实际回读成功后生成内容摘要、字节数和路径；Worker 将原受保护输出绑定到持久证据，Agent 再核对原调用、Grant 和输入。不能以 exit 0 代替效果校验。bash 本轮只读，退出事实为 not_asserted。搜索为独立 fixed_read 程序，出口仅 `mcp.exa.ai:443`。两者都要求既有目录 Grant 和动作/披露授权。用户明确开启“允许联网搜索”后，固定 Exa 搜索可从服务端设置派生精确的一次性 Grant，记录真实的 policyAuthorization 来源；关闭设置后，旧派生 Grant 在消费和 Sandbox 准入时失效。该设置不授权其他工具、附件或任意网络出口。配置中的搜索路径或模型披露身份改变时，设置失效，须重新确认。
-4. 在切换前复查旧服务无活动 Run。停止已核验的 `himawari.service`，检查旧 Agent/Worker 完全退出与锁释放；再次执行[尚未启动的 SRT 预约统计](#live-state-preflight)，保存停服后的查询结果，非零时停止升级并报告用户，不启动新版；使用正式 backup create/verify 命令保存并核验恢复点：优先旧安装；若已复现旧备份缺陷，可使用经回归与安装资格验证、schema 相同的候选 CLI 完成备份，不改写旧数据或放宽验证，同时私密保留配置、单元和旧签名启动器。不能删除活动锁或清理未知子进程。
+4. 在切换前复查旧服务无活动 Run。停止已核验的 `himawari.service`，检查旧 Agent/Worker 完全退出与锁释放；再次执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。使用正式 backup create/verify 命令保存并核验恢复点：优先旧安装；若已复现旧备份缺陷，可使用经回归与安装资格验证、schema 相同的候选 CLI 完成备份，不改写旧数据或放宽验证，同时私密保留配置、单元和旧签名启动器。不能删除活动锁或清理未知子进程。
 5. 用新安装的 `db migrate --confirm APPLY_MIGRATIONS` 升级同一数据库。该命令在停机独占锁内用 SQLite backup 创建并校验同主机迁移前快照，存于 state/data 下新建的 0700 目录，文件 0600；输出 snapshotPath，重复执行且无待迁移时不再创建快照。此快照不替代步骤 4 的完整恢复点。保留原 Owner、Agent、部署、对话、授权和受保护 Payload。只有没有外部 Owner 绑定时才通过 `account create` 建立内置账号；已有绑定不得自动覆盖。Hermes 当前保留 Cloudflare 产品登录，内置账号迁移须明确确认具体 Owner 与会话撤销影响后另行执行。密码输入和验证器设置只放在 0700 目录中的 0600 文件。
 6. 通过 `workspace grant` 授权已核验的工作目录，并明确确认其规范绝对路径；默认仅 read/create/update，不代替动作审批。通过 `capabilities register` 显式确认合格部署快照摘要并写入现有 Registry；不得手工插入批准或资格记录。
 7. 更新已核验的同一 systemd 用户服务启动路径。启动器每次核对主机、签名、证据和实际 runtime 字节，再生成本次启动快照；随后启动独立 Worker 与 Agent。初次握手使用配置的 Worker 请求期限，须等待实际 service.ready，不能以 systemd active 代替就绪证据。运行中复查快照原字节，不能因启动超过五分钟失去能力，也不能接受被修改的快照。

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ba7aac170aa3f7d3952e3cb4d37f296d542fa82a8f36508237e23cd1c274ff1c"
+contract_sha256: "sha256:241b2b226848a35e60a634fe82af70378bf4040ba7ba9dbe98625005334ec361"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -77,11 +77,11 @@ date: "2026-10-08"
 
 ### Schema 49 的独立离线路线
 
-旧安装/升级 Runbook 的 `reserved` 且 `started_at` 为空计数门禁限制服务升级与切换。非零仍按原门禁停止并报告。这里为已经批准的离线数据库维护提供独立路线；它不通过或放宽旧门禁，也不授权切换或启动服务。
+安装/升级 Runbook 只统计没有产品已接受有效释放回执的 SRT `reserved`、空 `started_at` 预约。非零或查询失败仍停止服务切换和新版启动并报告。这里为已经批准的离线数据库维护提供独立路线；迁移和处置完成后重新执行该统计，已处置历史保留，其他未解决预约继续阻断服务切换。统计为零不授权切换或启动服务。
 
 1. 先核对受支持的 Schema 49 完整旧安装、原配置、完整新候选及独立新前缀。新候选按[安装流程](install-start-stop-runbook.md#procedure)校验并复制到独立前缀，只产生该前缀的 runtime 与三个 wrapper；安装脚本不读产品 state、不迁移数据库、不启动服务，也不改现有服务的安装指向。安装该候选仍须属于本次具体授权。
-2. 按已授权的停服步骤停止 Agent/Worker，确认 state-root 锁释放。在 Schema 49 仍完整时，用匹配 Schema 49 的旧完整安装绝对路径，按[同机备份流程](backup-restore-runbook.md#procedure)执行 `backup create` 与 `backup verify`，保存完整恢复点、核验结果及恢复所需的旧安装。`backup create` 会写恢复点登记和加密文件，必须已获得对应目标与动作授权。新 Schema 50 CLI 的 recovery adapter 要求恢复点 schema 精确为 50，不能用它替代这一旧库备份或核验。
-3. 完整 Schema 49 恢复点核验成功后，使用受验证新候选的绝对路径执行以下接口。公共 `db migrate` 独立取得停服 state-root 锁，使用 SQLite backup API 创建并核验同机迁移前数据库快照，再应用迁移；它不执行旧升级 Runbook 的预约计数门禁。这个数据库快照不替代步骤 2 的完整恢复点。迁移只推进数据库合同，原未确认预约与历史仍须保留。
+2. 按已授权的停服步骤停止 Agent/Worker，确认 state-root 锁释放。在 Schema 49 仍完整时，用匹配 Schema 49 的旧完整安装绝对路径，按[同机备份流程](backup-restore-runbook.md#procedure)执行 `backup create` 与 `backup verify`，保存完整恢复点、核验结果及恢复所需的旧安装。`backup create` 会写恢复点登记和加密文件，`backup verify` 会创建并删除临时明文副本；本次授权须覆盖两者的目标、磁盘增量和清理。新 Schema 50 CLI 的 recovery adapter 要求恢复点 schema 精确为 50，不能用它替代这一旧库备份或核验。
+3. 完整 Schema 49 恢复点核验成功后，使用受验证新候选的绝对路径执行以下接口。公共 `db migrate` 独立取得停服 state-root 锁，使用 SQLite backup API 创建并核验同机迁移前数据库快照，再应用迁移；它不执行服务升级前的预约统计。这个数据库快照不替代步骤 2 的完整恢复点。迁移只推进数据库合同，原未确认预约与历史仍须保留。
 
 ```text
 <absolute-new-prefix>/bin/himawari db migrate --config PATH --confirm APPLY_MIGRATIONS
@@ -89,7 +89,7 @@ date: "2026-10-08"
 ```
 
 4. 独立核对 schema sequence 和 minimum writer 均为 50、迁移账本及数据库检查成功，原目标、未确认预约、计划和观察未被删除或改写。用该完整 Schema 50 新候选按[同机备份流程](backup-restore-runbook.md#procedure)创建并核验 Schema 50 完整恢复点，保留迁移前的 Schema 49 恢复点。任一步失败均停止，不让旧 Schema 49 writer 再写新库。
-5. 仍在停服状态，用新候选执行下述 Schema 50 资格预览、现场确认与单目标管理员处置。此时才能取得确认所需的最新 digest。处置不会把旧升级统计改写为自动通过；旧门禁仍非零时，不切换或启动服务，报告剩余阻断并另行取得后续动作授权。
+5. 仍在停服状态，用新候选执行下述 Schema 50 资格预览、现场确认与单目标管理员处置。此时才能取得确认所需的最新 digest。完成独立回执、审计、占用与 Run/checkpoint 读回后，按[升级前预约统计](install-start-stop-runbook.md#live-state-preflight)重新查询。目标的有效管理员回执使该历史预约不再计入；其他未解决预约仍计入。数量非零、查询失败或完整性不符时不切换或启动服务；数量为零后仍须通过其余检查并具备服务切换与启动授权。
 
 迁移、管理员处置与服务切换是不同动作。源代码存在上述入口不等于 Schema 49 到 50 再处置的安装场景已经通过；执行前还须取得匹配本次候选字节的实际验证证据与目标现场预检。
 

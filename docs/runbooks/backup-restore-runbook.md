@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:617fd312b749c1feece1bbf0b26fb94c06690435b9232522c7f288c1f8311b0e"
+contract_sha256: "sha256:4a37c24d77b5b9a654fa3a303a93b399893ef91e245f73f10e0396fdff196dbd"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -254,6 +254,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 - 有效恢复点必须通过 manifest HMAC、每文件 AES-256-GCM authentication、ciphertext/plaintext digest、schema sequence、SQLite quick/full integrity、foreign key、全表行数、Payload authentication 和 Outbox continuity 检查。
 - `backup create` 会向活动 SQLite 写入恢复点与操作 marker，并在 state root 的 `recovery-points/` 下新增加密文件；这是第一次目标 mutation。执行前必须报告主机、deployment、state root、backup ID、预计磁盘增量和 30 天保留上限，并取得覆盖该目标与动作的明确授权。
+- `backup verify` 不替换活动产品 `data/`，但会在 `recovery-points/.<backup-id>.verify-<pid>-<uuid>/` 新建临时目录，解密备份对象后写入 SQLite 明文与 Payload 密文副本，完成核验后删除该目录。Payload 正文只在内存中解密核验。目录权限为 `0700`、文件为 `0600`；临时明文、额外磁盘空间与清理均须计入本次备份或恢复授权。它属于写入步骤，不是零写入预检；已有授权完整覆盖这些目标与动作时沿用该授权。
 - 配置必须通过当前 strict schema，包含一个显式 primary、可选独立 specialist 和独立 embedding descriptor；embedding dimensions 必须与 Mem0 vector dimension 相等。恢复点流程不改写这些模型身份，也不推断或下载隐式 embedding。
 - 若配置声明能力部署快照，restore 前后只核对其引用、SHA-256 与 active Capability Registry 一致性；恢复包不携带、改写或激活该快照。快照或本平台资格不满足时，数据库恢复可以完成，但普通 Worker 必须保持 not ready。
 - `backup restore` 是 critical 恢复 mutation。服务必须已经停止，state-root 管理锁必须可独占取得，目标必须与配置中的 state root 完全相同，且确认词必须精确为 `RESTORE_<backup-id>`。运行前必须再次报告将替换的 `data/`、恢复点 identity、数据回退范围和外部副作用不回滚边界，并取得逐次授权。
@@ -278,11 +279,7 @@ himawari doctor --config <absolute-config-path>
 
 另外只读回读并记录：当前主机、配置文件与 state root 的 owner/mode、deployment/Owner/Agent identity、authority status/epoch/fence、数据库 schema sequence、quick check、`recovery-points/` 所在文件系统的可用字节，以及 secret reference 的名称/版本/用途。不得读取或打印 secret value。
 
-创建前估算 `data/product.sqlite` 与数据库实际引用的 Payload ciphertext 总字节；剩余空间必须同时容纳 plaintext 临时 SQLite snapshot、加密对象和安全余量。恢复前还必须确认 Agent Service 与 Execution Worker 已由适用的已验证服务管理程序停止、`runtime/execution.sock` 不再接受连接、state-root lock 可独占取得，并先执行：
-
-~~~text
-himawari backup verify --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup <backup-id>
-~~~
+创建前估算 `data/product.sqlite` 与数据库实际引用的 Payload ciphertext 总字节；剩余空间必须同时容纳 plaintext 临时 SQLite snapshot、加密对象和安全余量。恢复前还必须确认 Agent Service 与 Execution Worker 已由适用的已验证服务管理程序停止、`runtime/execution.sock` 不再接受连接、state-root lock 可独占取得。`backup verify` 会写入临时明文副本，应在[正式操作步骤](#procedure)获得覆盖该写入的授权后执行，不属于本节的只读命令。
 
 任一 identity、权限、schema、integrity、空间、锁、恢复点或 secret reference 回读不完整或不一致时停止。
 
@@ -295,14 +292,14 @@ himawari backup verify --config <absolute-config-path> --secret-dir <absolute-se
 himawari backup create --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup-id <backup-id>
 ~~~
 
-3. 创建命令只有在自动临时解密验证全部通过后才返回成功。审批、能力声明与授权使用记录的空元数据占位仍随整库加密、认证和恢复；只有既有 metadata 引用、指定媒体类型、private 分类、空内联字节、匹配摘要且无加密字段的严格形状可免于正文解密。包含正文、未知摘要或加密字段的记录继续拒绝。随后从独立命令再次验证：
+3. 创建命令只有在自动临时解密验证全部通过后才返回成功。审批、能力声明与授权使用记录的空元数据占位仍随整库加密、认证和恢复；只有既有 metadata 引用、指定媒体类型、private 分类、空内联字节、匹配摘要且无加密字段的严格形状可免于正文解密。包含正文、未知摘要或加密字段的记录继续拒绝。确认本次授权覆盖临时明文写入、磁盘增量和清理后，从独立命令再次验证：
 
 ~~~text
 himawari backup verify --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup <backup-id>
 ~~~
 
 4. 恢复时先完成创建阶段以外的恢复专用 preflight，并通过适用的已验证服务管理程序停止 Agent Service 与 Execution Worker。停止后重新确认 socket、进程、管理锁和目标 state root；缺少可验证的停止程序时直接停止本 Runbook。
-5. 展示精确目标、恢复点、风险、预计停机、data partition 替换范围和非回滚边界，取得本次恢复授权后执行：
+5. 展示精确目标、恢复点、风险、预计停机、核验的临时明文写入、data partition 替换范围和非回滚边界，取得覆盖核验与恢复的本次授权。先执行第 3 步的独立 `backup verify`；核验失败时停止并保留报告，不能继续替换。核验与临时清理成功后再执行：
 
 ~~~text
 himawari backup restore --config <absolute-config-path> --secret-dir <absolute-secret-directory> --backup <backup-id> --target <absolute-state-root> --confirm RESTORE_<backup-id>
@@ -381,7 +378,7 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 - 若恢复点含 Capability 调用回执，核对原幂等键、冻结任务语义及 Agent/Worker 执行身份一并恢复。旧回执只证明过去已经接纳调用，不能作为重新派发依据；正文访问仍须验证当前权威、租约、Run、能力与 Grant。未知外部结果保持待核对，不因恢复成功自动重试。
 - 若包含 Run 执行租约，核对其 Run 归属、唯一执行身份、revision、权威关联和释放状态一起恢复。旧 consumer 或旧权威不能继续写 Run 和检查点；已取消 Run 的检查点、失效租约和命令回执必须一致。恢复后先区分安全提交的结果与待核对的中断执行，不手工重置租约或自动重新执行未知动作。
 - 若包含审批暂停点，候选须支持 migration 0026，并共同回读 checkpoint、受保护的 Pi 恢复正文、审批身份与动作摘要、工具执行回执、模型调用序号和原 Run 绝对截止时间。完整等待状态可在当前权限校验后恢复；不完整的运行中状态保持待核查。审批记录不能单独作为重新执行已确认或未知副作用的依据。
-- `runtime/`、`cache/`、secret source、authority file 和 public ingress 未被恢复包覆盖；不存在 `.restore-*` 临时目录或 plaintext SQLite 临时文件。
+- `runtime/`、`cache/`、secret source、authority file 和 public ingress 未被恢复包覆盖；不存在本次 `.restore-*`、`.<backup-id>.verify-*` 临时目录或 plaintext SQLite 临时文件。
 - 对恢复期间已经发生的外部副作用逐项保持原状态或显式进入 reconciliation；不得假定数据库恢复自动撤销外部动作。
 
 ## Evidence

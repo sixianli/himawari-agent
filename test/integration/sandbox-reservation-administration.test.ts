@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readdir, rename, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -131,7 +132,14 @@ function preparationCall<K extends keyof SandboxExecutionPreparationPort>(
   }) as Awaited<ReturnType<SandboxExecutionPreparationPort[K]>>;
 }
 
-async function fixture(options: { stopped?: boolean; bound?: boolean; schemaSequence?: 49 } = {}) {
+async function fixture(
+  options: {
+    stopped?: boolean;
+    bound?: boolean;
+    schemaSequence?: 49;
+    additionalReservation?: boolean;
+  } = {},
+) {
   const seeded = await openSandboxJournal();
   cleanups.push(seeded.close);
   const request = sandboxV2Admission(seeded);
@@ -164,6 +172,20 @@ async function fixture(options: { stopped?: boolean; bound?: boolean; schemaSequ
       authority: SERVICE_AUTHORITY,
       now: T1,
       reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+    });
+  }
+  if (options.additionalReservation) {
+    const additional = sandboxV2Admission(seeded, "-upgrade-unresolved", [
+      { device: "1", inode: "1" },
+      { device: "1", inode: "20" },
+    ]);
+    preparationCall(seeded.database, "reserve", {
+      ...additional,
+      reservation: sandboxExecutionReservationSchema.parse({
+        ...reservation,
+        identity: additional.plan.identity,
+        environmentId: additional.plan.environmentId,
+      }),
     });
   }
   seeded.database
@@ -225,6 +247,57 @@ async function fixture(options: { stopped?: boolean; bound?: boolean; schemaSequ
   const configurationPath = path.join(stateRoot, "configuration.json");
   await writeFile(configurationPath, JSON.stringify(configuration(stateRoot)), { mode: 0o600 });
   return { stateRoot, databasePath, configurationPath, request, admission: reserved.admission };
+}
+
+async function runbookUpgradeGate(f: Fixture, runbook: string) {
+  const source = await readFile(path.resolve(runbook), "utf8");
+  const scripts = [
+    ...source.matchAll(
+      /python3 - \/absolute\/path\/product\.sqlite <<'PYTHON'\n([\s\S]*?)\nPYTHON/g,
+    ),
+  ];
+  expect(scripts).toHaveLength(1);
+  const before = createHash("sha256")
+    .update(await readFile(f.databasePath))
+    .digest("hex");
+  const result = spawnSync("python3", ["-", f.databasePath], {
+    encoding: "utf8",
+    input: scripts[0]?.[1],
+    timeout: 10000,
+  });
+  expect(result.error).toBeUndefined();
+  expect(
+    createHash("sha256")
+      .update(await readFile(f.databasePath))
+      .digest("hex"),
+  ).toBe(before);
+  return result;
+}
+
+function acceptHostReservationRelease(f: Fixture, change: Record<string, unknown> = {}) {
+  return withDatabase(f, (database) => {
+    const admission = preparationCall(database, "readAdmission", f.request.plan.identity);
+    if (admission?.phase !== "reserved") throw new Error("UPGRADE_GATE_RESERVATION_MISSING");
+    return preparationCall(database, "releaseReservation", {
+      identity: f.request.plan.identity,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      verification: {
+        schemaVersion: "sandbox-reservation-release.v1",
+        basis: "host_never_started",
+        identity: admission.plan.identity,
+        environmentId: admission.plan.environmentId,
+        semanticFingerprint: admission.plan.semanticFingerprint,
+        stopRequestedAt: T1,
+        checkedAt: T1,
+        validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+        processIdentityRef: "job-host-process:upgrade-gate",
+        controlSessionId: "00000000-0000-4000-8000-000000000001",
+        evidence: { ref: "protected-upgrade-gate-proof", digest: "a".repeat(64) },
+        ...change,
+      },
+    });
+  });
 }
 
 function withDatabase<T>(f: Fixture, read: (database: Database) => T): T {
@@ -1238,6 +1311,120 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     } finally {
       database.close();
     }
+    expect(snapshot(f)).toEqual(before);
+  });
+});
+
+describe.each([
+  "docs/runbooks/install-start-stop-runbook.md",
+  "docs/runbooks/hermes-control-center-upgrade-runbook.md",
+])("[R2-L4][prod-sandbox-upgrade-gate] %s", (runbook) => {
+  it("allows the original Schema 49 reservation only after migration and administrator disposition", async () => {
+    const f = await fixture({ schemaSequence: 49 });
+    const before = snapshot(f);
+    const original = await runbookUpgradeGate(f, runbook);
+    expect(original.status).toBe(1);
+    expect(original.stdout).toContain("尚未启动的 SRT 预约数： 1");
+    expect(snapshot(f)).toEqual(before);
+    const migration = await cli([
+      "db",
+      "migrate",
+      "--config",
+      f.configurationPath,
+      "--confirm",
+      "APPLY_MIGRATIONS",
+    ]);
+    expect(migration).toMatchObject({ code: 0, error: "" });
+    const migrated = await runbookUpgradeGate(f, runbook);
+    expect(migrated.status).toBe(1);
+    expect(migrated.stdout).toContain("尚未启动的 SRT 预约数： 1");
+    const listed = await inspect(f);
+    expect((await cli(confirmArgs(f, listed.digest))).code).toBe(0);
+    const disposed = snapshot(f);
+    expect(disposed["sandbox_execution_records"]?.[0]).toMatchObject({
+      preparation_state: "reserved",
+      started_at: null,
+      reservation_stopped_at: T1,
+    });
+    expect(disposed["sandbox_reservation_release_receipts"]).toHaveLength(1);
+    const result = await runbookUpgradeGate(f, runbook);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
+    expect(snapshot(f)).toEqual(disposed);
+  });
+
+  it.each([49, 50] as const)(
+    "allows a permanently accepted automatic release in Schema %s without changing history",
+    async (schemaSequence) => {
+      const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
+      expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+      const before = snapshot(f);
+      expect(before["sandbox_execution_records"]?.[0]).toMatchObject({
+        preparation_state: "reserved",
+        started_at: null,
+      });
+      const result = await runbookUpgradeGate(f, runbook);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
+      expect(snapshot(f)).toEqual(before);
+    },
+  );
+
+  it.each([49, 50] as const)(
+    "still blocks a mixed released and unresolved reservation set in Schema %s",
+    async (schemaSequence) => {
+      const f = await fixture({
+        additionalReservation: true,
+        ...(schemaSequence === 49 ? { schemaSequence } : {}),
+      });
+      expect(acceptHostReservationRelease(f)).toMatchObject({ applied: true });
+      const before = snapshot(f);
+      expect(before["sandbox_execution_records"]).toHaveLength(2);
+      expect(before["sandbox_reservation_release_receipts"]).toHaveLength(1);
+      const result = await runbookUpgradeGate(f, runbook);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("尚未启动的 SRT 预约数： 1");
+      expect(snapshot(f)).toEqual(before);
+    },
+  );
+
+  it.each([
+    ["identity", { identity: { jobId: "job-other-upgrade-gate" } }],
+    ["environment", { environmentId: "environment-other-upgrade-gate" }],
+    ["stop marker", { stopRequestedAt: T2 }],
+  ])("keeps a reservation blocked when its %s proof is rejected", async (_name, change) => {
+    const f = await fixture();
+    const before = snapshot(f);
+    expect(() => acceptHostReservationRelease(f, change as Record<string, unknown>)).toThrow(
+      "Invalid reservation release verification",
+    );
+    expect(snapshot(f)).toEqual(before);
+    const result = await runbookUpgradeGate(f, runbook);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 1");
+    expect(snapshot(f)).toEqual(before);
+  });
+
+  it.each(["sandbox_reservation_release_receipts", "sandbox_release_receipts"])(
+    "refuses a Schema 49 database missing %s rather than treating its receipts as absent",
+    async (table) => {
+      const f = await fixture({ schemaSequence: 49 });
+      withDatabase(f, (database) => database.exec(`DROP TABLE ${table}`));
+      const before = snapshot(f);
+      const result = await runbookUpgradeGate(f, runbook);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`no such table: ${table}`);
+      expect(result.stdout).toBe("");
+      expect(snapshot(f)).toEqual(before);
+    },
+  );
+
+  it("preserves the existing count scope for already bound executions", async () => {
+    const f = await fixture({ bound: true });
+    const before = snapshot(f);
+    const result = await runbookUpgradeGate(f, runbook);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("尚未启动的 SRT 预约数： 0");
     expect(snapshot(f)).toEqual(before);
   });
 });
