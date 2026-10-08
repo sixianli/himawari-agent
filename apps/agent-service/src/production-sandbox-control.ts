@@ -26,6 +26,7 @@ import {
   sandboxPreparationDiagnosticSchema,
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
+import { writeServiceDiagnostic } from "@himawari-agent/platform-node";
 import {
   blockJobHostLaunch,
   type JobHostLaunchEvidence,
@@ -90,6 +91,7 @@ interface StoredCrash {
   };
 }
 interface Options {
+  readonly diagnosticOutput?: NodeJS.WritableStream;
   readonly now: () => string;
   readonly machineBootId: () => Promise<string>;
   readonly read: (
@@ -824,15 +826,35 @@ export function createProductionSandboxControl(options: Options) {
       input: SandboxPreparationDiagnostic,
     ) {
       const diagnostic = sandboxPreparationDiagnosticSchema.parse(input);
-      const operationKey = `${key(plan)}:diagnostic:preparation-failure`;
-      if (await options.read(plan, operationKey)) return;
-      await options.write(plan, operationKey, {
-        identity: plan.identity,
-        environmentId: plan.environmentId,
-        observedAt: options.now(),
-        command: "prepare",
-        ...diagnostic,
-      });
+      const controlRef = key(plan);
+      try {
+        writeServiceDiagnostic(options.diagnosticOutput ?? process.stderr, {
+          component: "agent-service",
+          event: "sandbox.preparation.failed",
+          controlRef,
+          stage: diagnostic.stage,
+          reasonCode: diagnostic.reasonCode,
+          systemCode: diagnostic.systemCode,
+          ...(diagnostic.hostStage ? { hostStage: diagnostic.hostStage } : {}),
+          ...(diagnostic.hostDetail
+            ? {
+                hostDetailCode: diagnostic.hostDetail.code,
+                hostCommand: diagnostic.hostDetail.command,
+                hostPhase: diagnostic.hostDetail.phase,
+              }
+            : {}),
+        });
+      } finally {
+        const operationKey = `${controlRef}:diagnostic:preparation-failure`;
+        if (!(await options.read(plan, operationKey)))
+          await options.write(plan, operationKey, {
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            observedAt: options.now(),
+            command: "prepare",
+            ...diagnostic,
+          });
+      }
     },
     async registerPreparation(
       plan: SandboxExecutionPlanV2,

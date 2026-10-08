@@ -26,8 +26,7 @@ const cleanupRoots: string[] = [];
 const children = new Set<ChildProcessWithoutNullStreams>();
 
 afterEach(async () => {
-  for (const child of children) child.kill("SIGKILL");
-  children.clear();
+  await Promise.all([...children].map((child) => kill(child)));
   await Promise.all(
     cleanupRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -54,14 +53,56 @@ function start(stateRoot: string, phase: (typeof PHASES)[number], mode: "seed" |
 
 async function phaseOutput(
   child: ChildProcessWithoutNullStreams,
-  options: { readonly expectExit: boolean },
+  options: {
+    readonly expectExit: boolean;
+    readonly phase: (typeof PHASES)[number];
+    readonly mode: "seed" | "inspect";
+  },
 ) {
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let failure: string | undefined;
+    let readyObserved = false;
+    const startedAt = Date.now();
+    const timeline: Array<{
+      readonly event: string;
+      readonly at: string;
+      readonly elapsedMs: number;
+      readonly code?: number | null;
+      readonly signal?: NodeJS.Signals | null;
+    }> = [];
+    const observe = (
+      event: string,
+      details: { readonly code?: number | null; readonly signal?: NodeJS.Signals | null } = {},
+    ) => {
+      timeline.push({
+        event,
+        at: new Date().toISOString(),
+        elapsedMs: Date.now() - startedAt,
+        ...details,
+      });
+    };
+    const diagnostic = () => ({
+      phase: options.phase,
+      mode: options.mode,
+      pid: child.pid ?? null,
+      failure,
+      stdout,
+      stderr,
+      timeline,
+    });
+    const fail = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      failure = reason;
+      clearTimeout(timeout);
+      reject(new Error(`${reason}\n${JSON.stringify(diagnostic(), null, 2)}`));
+    };
     const timeout = setTimeout(() => {
-      reject(new Error(`Durable phase child timed out: ${stderr}`));
+      observe("timeout");
+      fail("Durable phase child timed out");
     }, 15_000);
     const finish = (record: Record<string, unknown>) => {
       if (settled) return;
@@ -69,33 +110,60 @@ async function phaseOutput(
       clearTimeout(timeout);
       resolve(record);
     };
+    child.once("spawn", () => observe("spawn"));
+    child.once("error", (error) => {
+      observe("error");
+      fail(`Durable phase child error: ${error.message}`);
+    });
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       const line = stdout.split("\n").find((candidate) => candidate.startsWith("HIMAWARI_PHASE "));
+      if (line && !readyObserved) {
+        readyObserved = true;
+        observe("ready_marker");
+      }
       if (line && !options.expectExit) {
-        finish(JSON.parse(line.slice("HIMAWARI_PHASE ".length)) as Record<string, unknown>);
+        try {
+          finish(JSON.parse(line.slice("HIMAWARI_PHASE ".length)) as Record<string, unknown>);
+        } catch (error) {
+          fail(`Durable phase child evidence invalid: ${String(error)}`);
+        }
       }
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
     child.once("exit", (code, signal) => {
+      observe("exit", { code, signal });
       children.delete(child);
       if (!options.expectExit || code !== 0) {
-        if (!settled) reject(new Error(`Durable phase child exited ${code ?? signal}: ${stderr}`));
+        fail(`Durable phase child exited ${code ?? signal}`);
         return;
       }
       const line = stdout.split("\n").find((candidate) => candidate.startsWith("HIMAWARI_PHASE "));
       if (!line) {
-        reject(new Error(`Durable phase child emitted no evidence: ${stderr}`));
+        fail("Durable phase child emitted no evidence");
         return;
       }
-      finish(JSON.parse(line.slice("HIMAWARI_PHASE ".length)) as Record<string, unknown>);
+      try {
+        finish(JSON.parse(line.slice("HIMAWARI_PHASE ".length)) as Record<string, unknown>);
+      } catch (error) {
+        fail(`Durable phase child evidence invalid: ${String(error)}`);
+      }
+    });
+    child.once("close", (code, signal) => {
+      observe("close", { code, signal });
+      if (failure)
+        process.stdout.write(`HIMAWARI_PHASE_CHILD_DIAGNOSTIC ${JSON.stringify(diagnostic())}\n`);
     });
   });
 }
 
 async function kill(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
+    children.delete(child);
+    return;
+  }
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   child.kill("SIGKILL");
   await exited;
@@ -109,12 +177,16 @@ describe("durable business phase real-process recovery", () => {
       const stateRoot = await mkdtemp(path.join(tmpdir(), `himawari-phase-${phase}-`));
       cleanupRoots.push(stateRoot);
       const seed = start(stateRoot, phase, "seed");
-      const beforeKill = await phaseOutput(seed, { expectExit: false });
+      const beforeKill = await phaseOutput(seed, { expectExit: false, phase, mode: "seed" });
       expect(beforeKill).toMatchObject({ ready: true, phase });
       await kill(seed);
 
       const inspector = start(stateRoot, phase, "inspect");
-      const afterRestart = await phaseOutput(inspector, { expectExit: true });
+      const afterRestart = await phaseOutput(inspector, {
+        expectExit: true,
+        phase,
+        mode: "inspect",
+      });
       expect(afterRestart).toMatchObject({
         ready: true,
         phase,

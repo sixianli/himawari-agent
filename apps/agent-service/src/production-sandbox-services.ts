@@ -112,6 +112,7 @@ export async function createProductionSandboxServices(options: {
   readonly fileRead: ProductionFileReadServices;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly diagnosticOutput?: NodeJS.WritableStream;
   readonly workerSupport?: () => SandboxExecutionSupport | undefined;
   readonly taskEnvironments?: ProductionTaskEnvironments;
   readonly piFilePreparation?: typeof preparePiFileMutation;
@@ -1436,6 +1437,7 @@ export async function createProductionSandboxServices(options: {
     },
   };
   const control = createProductionSandboxControl({
+    ...(options.diagnosticOutput ? { diagnosticOutput: options.diagnosticOutput } : {}),
     machineBootId: () => readMachineBootId(),
     fixedFileCompleted: async (record) => {
       const result = record.facts.result;

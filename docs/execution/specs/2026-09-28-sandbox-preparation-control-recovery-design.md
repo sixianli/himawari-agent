@@ -19,6 +19,7 @@ date: "2026-09-28"
 - [现有数据为什么不够](#现有数据为什么不够)
 - [建议的数据与执行顺序](#建议的数据与执行顺序)
 - [权限与失败边界](#权限与失败边界)
+- [准备失败的安全服务日志](#preparation-safe-log)
 - [未启动预留的持续清理核查](#reserved-retry)
 - [替代方案](#替代方案)
 - [验收与审批范围](#验收与审批范围)
@@ -88,6 +89,28 @@ date: "2026-09-28"
 - 模型费用或结果未知时继续阻止自动重发。
 - 增加有界机器码诊断，分别保存准备失败、控制登记失败和 bind 失败；不保存任务正文、密钥或 SDK 原始错误文本。
 
+<a id="preparation-safe-log"></a>
+
+## 准备失败的安全服务日志
+
+2026-10-08 的[生产沙箱 reply-01](../../../.ci-output/handoff/2026-10-08-codex-prod-sandbox-reply-01.md)批准为准备失败增加固定字段的服务诊断，保留原 restricted Trace（加密保存的受保护诊断）合同。Agent 收到准备诊断请求并通过原握手、当前权威、调用身份和原回执检查后，先用 `sandboxPreparationDiagnosticSchema` 校验完整诊断。未知字段和枚举外的值均拒绝，不生成这条日志，也不保存未经校验的诊断。
+
+安全日志写入 Agent Service 原诊断输出，事件名为 `sandbox.preparation.failed`。允许字段如下；日志不增加 `schemaVersion` 或原始诊断正文。
+
+| 字段 | 来源与边界 |
+| --- | --- |
+| `timestamp`、`component`、`event` | 既有服务诊断时间，固定组件 `agent-service` 和固定事件 `sandbox.preparation.failed` |
+| `controlRef` | 原 `sandbox-control:<64 位 SHA-256 摘要>` 关联，按完整计划 identity 计算；不输出 identity 本身，用于关联同一受保护诊断的 operationKey |
+| `stage`、`reasonCode`、`systemCode` | 只取 `sandboxPreparationDiagnosticSchema` 定义的固定枚举 |
+| `hostStage` | 同一 schema 的固定枚举；原值为 null 时省略 |
+| `hostDetailCode`、`hostCommand`、`hostPhase` | 分别取 `hostDetail.code`、`hostDetail.command`、`hostDetail.phase` 的固定枚举；原 hostDetail 为 null 时全部省略 |
+
+枚举范围沿用[准备诊断 schema](../../../packages/execution-contracts/src/sandbox-execution-v2.ts)。hostDetail 中的耗时、消息年龄、期限余量和序号只保留在原受保护诊断，不复制到安全日志。日志不包含原 Owner、Agent、Run、Job、attempt、调用或环境身份，不包含宿主路径、用户正文、秘密、控制密钥或 SDK 原始错误文本。
+
+固定字段日志在读取或写入 `sandbox-control:*:diagnostic:preparation-failure` 之前输出。因此，restricted Trace 读取、加密或保存失败时，只要服务诊断输出仍可写，管理员仍能读取固定错误字段。日志写入同步抛错时仍尝试执行原 Trace 保存流程；Trace 本身失败时不能声称持久诊断已保存。已有第一份 Trace 保持原内容，不因重复请求覆盖；重复有效请求可产生重复安全日志，不以日志条数推断工具执行次数。 本批测试覆盖同步写入抛错，没有覆盖真实诊断流的异步错误；不能据此保证异步输出故障时的进程存活或 Trace 留存。
+
+诊断请求未到达 Agent，或未通过握手、当前权威和回执检查时，不生成这条安全日志。缺少日志不能证明没有发生准备失败，已有日志也不能代替签名终态、独立进程核验或永久释放回执。恢复、解除工作区占用、交付结果和新启动仍服从原证据与权限门禁。管理员读取固定字段无需解密 Payload；`himawari diagnose run` 仍读取受保护诊断全文，须按原密钥和私人数据处理要求执行。
+
 <a id="reserved-retry"></a>
 
 ## 未启动预留的持续清理核查
@@ -121,7 +144,7 @@ Claude 第四份回复已批准上述受保护准备控制记录、fork 前登�
 
 ### 第四份回复的附加验收
 
-首次准备、控制登记与 bind 失败须通过既有 `sandbox-control:*:diagnostic:*` 受保护记录保留有界阶段与机器错误码，可由 `himawari diagnose run` 查询，不进入日志、不包含任务正文或密钥。Mac 同样的 30 次审批写入在改动前后记录从原计划 requestedAt 到 tool_result acknowledgedAt 的耗时，统计中位数和最大值，同时保留各样本和环境；若中位数增加超过 100 毫秒，立即停下向 Claude 报告，不绕过登记。
+2026-09-28 第四份回复当时要求：首次准备、控制登记与 bind 失败须通过既有 `sandbox-control:*:diagnostic:*` 受保护记录保留有界阶段与机器错误码，可由 `himawari diagnose run` 查询，不进入日志、不包含任务正文或密钥。2026-10-08 批准的[安全服务日志合同](#preparation-safe-log)增加固定枚举和关联元数据，受保护诊断及控制密钥仍按原边界保存。Mac 同样的 30 次审批写入在改动前后记录从原计划 requestedAt 到 tool_result acknowledgedAt 的耗时，统计中位数和最大值，同时保留各样本和环境；若中位数增加超过 100 毫秒，立即停下向 Claude 报告，不绕过登记。
 
 ### 第五份回复的分段测量与停止点
 

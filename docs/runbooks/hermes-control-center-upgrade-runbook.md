@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2f57139f871ccdc2dd686f9f2caedb6778bedaa9d27519fb10c2ff04d5c8475d"
+contract_sha256: "sha256:a52c7faaa36b331c4c820e3403133946ab0acd05e7a310249624a935dc8026e1"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -518,7 +518,7 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 生产装配在进入产品工具前，复用现有 Pi 批次格式和加密 Payload 保存检查点。执行 intent 中的 `tool-batch-recovery.v1` 引用绑定原模型工具调用，内部文件阶段共同指向该父调用；备份、恢复及迁移须一同保留这些关联。保存失败的工具没有进入执行，旧记录缺少检查点时不能补造。引用本身不授权跨 boot/fence 重放。对原 Run 未取消、未过期，已有确定结果与永久释放回执且原批次凭据完整的调用，调度器可领取原 Run 的新租约，仅交付旧结果并继续 Pi；原工具不会再次启动。缺失快照、权限变化、未确认控制或模型费用仍未知时保留待核对状态，不能通过重发清除未知。恢复沿用原模型 stream ordinal，保留原调用回执、交付 intent 与受保护 Payload；没有新增表或迁移。详见[已核验工具结果恢复合同](../execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md#恢复条件与用户行为)。
 
-创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；已取得启动权或使用旧协议且缺少最终证明时仍待核对；登记前封锁仅适用于带新协议字段的计划。首次准备、登记或 bind 失败通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留有界阶段及机器码，使用 `himawari diagnose run` 查询，不在普通日志中记录。Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。握手或当前权威校验失败时仍可能没有持久诊断，不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
+创建本机 Job Host 前还需保存 `sandbox-preparation-control.v1` 受保护记录，其中的控制密钥只用于核验原宿主，不授予启动权限。备份与迁移须保留该记录；旧数据不回填。已认证的 `host_never_started` 预留释放可交付确定未启动的失败，不能伪造 bound 记录；已取得启动权或使用旧协议且缺少最终证明时仍待核对；登记前封锁仅适用于带新协议字段的计划。首次准备、登记或 bind 失败仍通过 `sandbox-control:*:diagnostic:preparation-failure` 尝试保留受保护诊断。Agent 在已校验的准备诊断入口，先向服务诊断输出写入 `sandbox.preparation.failed`，再读取或保存 restricted Trace。该日志仅含 `stage`、`reasonCode`、`systemCode`、非 null 的 `hostStage`，以及 hostDetail 非 null 时的 `hostDetailCode`、`hostCommand`、`hostPhase`；另含既有 `timestamp`、固定 `component`/`event` 和原身份摘要 `controlRef`。其他身份、路径、私人正文、秘密、SDK 原始错误及 hostDetail 计时/序号均不输出。读取这些固定字段无需解密 Payload；原诊断全文仍使用 `himawari diagnose run` 按私人数据处理要求查询。日志写入同步抛错时仍尝试执行原 Trace 保存流程，Trace 失败不抹去已输出的固定字段；已有第一份 Trace 不覆盖。重复日志不能证明重复执行，任何日志都不能代替释放回执。字段及校验边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log]Payload 或 Admission 通道在成功握手后发生传输失败，失败操作按原结果结束；后续操作使用原 peer/boot、凭据与现有校验重新握手，并发调用共享一次握手，不重发失败的执行请求。准备诊断也使用同一机制。Worker 就绪状态反映两个通道当前状态；后续就绪探测可触发共享恢复，成功后才恢复 ready。握手失败仍未就绪，关闭期间迟到的回复不能恢复 Worker。 正在停止任务时，保留 broker 到清理观察保存结束，再由 close 统一断开。准备诊断请求未到达 Agent，或未通过握手、当前权威及原回执检查时，不生成这条安全日志，受保护诊断也可能未保存；不能据此声称错误已完整留存。详见[准备控制恢复合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#权限与失败边界)。本批没有新 migration，不改变本 Runbook 的现场操作授权要求。
 
 Job Host 启动先建立原私有 IPC 监督，再动态加载 SRT 与策略编译模块；新鲜准备消息不会因后续加载慢而过期。安装验收应覆盖慢加载后完成准备、到达即过期的消息被拒绝、加载失败无用户任务启动，以及超过原 30 秒准备上限仍失败。1.5 秒消息年龄、任务总期限、认证及签名终态格式不变；不能把加载期间的心跳当作 ready 或清理证明。准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。详细合同见[依赖加载期间的启动监督](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)。本修订没有部署动作；云端定向测试不能替代最终产品资格；用户已无限期推迟 Mac 验证，Mac 行为未验证。
 

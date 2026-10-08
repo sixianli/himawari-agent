@@ -1590,7 +1590,7 @@ productDescribe(
       });
     });
 
-    it("delivers a verified preparation failure and exposes its private diagnostic through the CLI", async () => {
+    it("[R2-L4][prod-sandbox-D3] delivers a verified preparation failure with safe service diagnostics", async () => {
       await scenario("12-preparation-failure", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -1634,11 +1634,67 @@ productDescribe(
           }),
         );
         expect(JSON.stringify(diagnostic)).not.toContain("private fixture preparation input");
+        const preparationDiagnostics = (
+          diagnostic.diagnostics as Array<{ operationKey: string; content: unknown }>
+        ).filter((entry) => entry.operationKey.endsWith(":diagnostic:preparation-failure"));
+        expect(preparationDiagnostics).toHaveLength(1);
+        const controlRef = preparationDiagnostics[0]?.operationKey.slice(
+          0,
+          -":diagnostic:preparation-failure".length,
+        );
+        expect(controlRef).toMatch(/^sandbox-control:[a-f0-9]{64}$/);
+        let safeServiceDiagnostics: Array<Record<string, unknown>> = [];
+        await uiExpect
+          .poll(async () => {
+            const logFiles = (await readdir(installation.logDirectory)).filter((name) =>
+              /^agent-\d+\.log$/.test(name),
+            );
+            const logs = await Promise.all(
+              logFiles.map((name) => readFile(path.join(installation.logDirectory, name), "utf8")),
+            );
+            safeServiceDiagnostics = logs
+              .flatMap((log) => log.split("\n"))
+              .filter((line) => line.includes('"event":"sandbox.preparation.failed"'))
+              .map((line) => JSON.parse(line) as Record<string, unknown>)
+              .filter((event) => event["controlRef"] === controlRef);
+            return safeServiceDiagnostics;
+          })
+          .toHaveLength(1);
+        expect(safeServiceDiagnostics[0]).toEqual({
+          timestamp: expect.any(String),
+          component: "agent-service",
+          event: "sandbox.preparation.failed",
+          controlRef,
+          stage: "prepare",
+          reasonCode: "SANDBOX_PREPARATION_FAILED",
+          hostStage: "sdk_initialize",
+          systemCode: "EIO",
+          hostDetailCode: "UNKNOWN",
+          hostCommand: "prepare",
+          hostPhase: "preparing",
+        });
+        const safeOutput = JSON.stringify(safeServiceDiagnostics);
+        for (const privateValue of [
+          row.jobId,
+          row.runId,
+          installation.workspace,
+          installation.stateRoot,
+          file,
+          text,
+          "private fixture preparation input",
+        ])
+          expect(safeOutput).not.toContain(privateValue);
         expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
         await writeFile(
           path.join(outputDirectory, "12-preparation-failure-readback.json"),
           JSON.stringify(
-            { rows, proof, diagnostic, modelReplies: observedToolReplies(text) },
+            {
+              rows,
+              proof,
+              diagnostic,
+              safeServiceDiagnostics,
+              modelReplies: observedToolReplies(text),
+            },
             null,
             2,
           ),

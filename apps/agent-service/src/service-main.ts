@@ -709,6 +709,7 @@ export async function runAgentService(
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
+      diagnosticOutput: errorOutput,
       createPiFilePreparation: () => {
         piFilePreparationPool = createPiFilePreparationPool({
           maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,

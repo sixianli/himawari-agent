@@ -62,6 +62,8 @@ Linux 的 Host 和任务属于两个不同的进程组。Host 是自己组和会
 
 Agent Service 仅允许导入 `@himawari-agent/runtime-sandbox/control` 的 Node 控制客户端，它不加载 SRT、不编译策略、没有启动 API；依赖检查拒绝根入口和其他深层导入。SRT 初始化与实际工具执行仍属于 Worker/Job Host。
 
+Agent Service 在已通过握手、当前权威和原调用检查的准备诊断入口，校验 `sandboxPreparationDiagnosticSchema` 后向原服务诊断输出写入 `sandbox.preparation.failed`。日志只保存阶段、原因、宿主阶段、系统码与 hostDetail 的固定枚举，以及既有诊断时间、固定组件/事件和原身份摘要形成的 `controlRef`；原身份、路径、用户正文、秘密、SDK 原始错误及细节计时均不复制。固定字段日志先于原 restricted Trace 的读取和保存；日志写入同步抛错时仍尝试执行原 Trace 保存流程，已有第一份 Trace 不覆盖。握手或权威检查未通过时不生成这条日志；重复日志不代表重复执行，也不构成释放证明。完整字段与读取边界见[准备失败的安全服务日志](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log]
+
 新建 SRT 计划冻结 `launch-or-block.v2`；已有 `register-before-host.v1` 或无字段计划不升级。准备控制登记确认返回后，Worker 先检查取消、关闭及原期限；期限已到时不发布启动决定，Agent 仍能禁止启动并认证释放占用。Worker 在原私有控制目录内竞争唯一的启动决定，只有本次发布成功才可以创建 Host；申请返回后再检查相同条件。Agent 的 control 入口只可以写禁止启动或读回决定，不导出申请启动入口；原绑定、目录 inode 和 HMAC 检查仍保护决定。停止先赢时，Agent 用独立读回的受保护 Artifact 生成 `preparation_launch_blocked`，SQLite 在原释放事务内核对其归属、摘要及无 main Host 登记后释放占用，沿用一次“工具未启动”交付。启动先赢而缺少 Host 证明时仍保留 UNKNOWN。机制及验收见[准备启动仲裁设计](execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md) [SOURCE: docs/execution/specs/2026-10-04-sandbox-preparation-launch-arbitration-design.md]。
 
 R3 的通用范围、版本匹配和启动前复核已完成验收。资源输出分页读取账本绑定的受保护快照；页和游标沿用 Run artifact，游标绑定原调用/资源/输出摘要，数据库重开继续读回不会重新执行。尚无已知输出返回 null，真实空输出返回零字节页；流式后台输出由 R6 的连续受保护片段补充。Pi 工具的完整实现继续复用 runtime-pi 内的上游定义和 Operations，R3 不新增模型侧工具协议。

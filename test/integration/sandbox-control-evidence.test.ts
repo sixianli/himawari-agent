@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import path from "node:path";
+import { Writable } from "node:stream";
 import * as runtimeControl from "@himawari-agent/runtime-sandbox/control";
 import type { SandboxExecutionRecord } from "@himawari-agent/application";
 import type {
@@ -38,7 +39,13 @@ afterEach(async () => {
 // A real authenticated socket and durable journal exercise the product verifier.
 // The supervisor and qualification facts here are synthetic, not platform qualification.
 async function fixture(
-  options: { qualified?: boolean; completed?: boolean; preparationOnly?: boolean } = {},
+  options: {
+    qualified?: boolean;
+    completed?: boolean;
+    preparationOnly?: boolean;
+    diagnosticOutput?: NodeJS.WritableStream;
+    traceFailure?: "read" | "write";
+  } = {},
 ) {
   let clockOffset = 0;
   let hostElapsed = 0;
@@ -120,11 +127,16 @@ async function fixture(
   let admissionChecks = 0;
   let machineBootId = "11111111-2222-4333-8444-555555555555";
   const control = createProductionSandboxControl({
+    ...(options.diagnosticOutput ? { diagnosticOutput: options.diagnosticOutput } : {}),
     machineBootId: async () => machineBootId,
     fixedFileCompleted: async () => options.completed === true,
     now,
-    read: async (_plan, key) => structuredClone(stored.get(key)),
+    read: async (_plan, key) => {
+      if (options.traceFailure === "read") throw new Error("PRIVATE-PAYLOAD-STORAGE-FAILURE");
+      return structuredClone(stored.get(key));
+    },
     write: async (_plan, key, value) => {
+      if (options.traceFailure === "write") throw new Error("PRIVATE-PAYLOAD-STORAGE-FAILURE");
       const artifact = {
         ref: `evidence-${stored.size}`,
         digest: createHash("sha256").update(JSON.stringify(value)).digest("hex"),
@@ -1060,6 +1072,176 @@ it("retains the first bounded preparation diagnostic and rejects private text", 
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]?.[1].value).toMatchObject(first);
   expect(JSON.stringify(diagnostics)).not.toContain("private credential");
+});
+
+function preparationDiagnosticOutput() {
+  let value = "";
+  return {
+    stream: new Writable({
+      write(chunk, _encoding, callback) {
+        value += chunk.toString();
+        callback();
+      },
+    }),
+    value: () => value,
+    events: () =>
+      value
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line)),
+  };
+}
+
+const boundedPreparationDiagnostic = {
+  stage: "prepare" as const,
+  reasonCode: "SANDBOX_PREPARATION_FAILED" as const,
+  hostStage: "sdk_initialize" as const,
+  systemCode: "EIO" as const,
+  hostDetail: {
+    code: "JOB_HOST_ENVIRONMENT_INVALID" as const,
+    command: "prepare" as const,
+    phase: "preparing" as const,
+    elapsedMs: 20,
+    messageAgeMs: 10,
+    deadlineRemainingMs: 1000,
+    expectedSequence: 1,
+    receivedSequence: 1,
+  },
+};
+
+it("[R2-L4][prod-sandbox-D3] exposes preparation failure enums without private plan data or raw detail", async () => {
+  const output = preparationDiagnosticOutput();
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  const plan = {
+    ...f.record.plan,
+    inputRef: "private-input-marker",
+    environmentId: "private-environment-marker",
+    identity: {
+      ...f.record.plan.identity,
+      runId: "private-run-marker",
+      threadId: "private-thread-marker",
+      toolCallId: "private-tool-marker",
+    },
+  };
+  await f.control.recordPreparationDiagnostic(plan, boundedPreparationDiagnostic);
+  expect(output.events()).toEqual([
+    {
+      timestamp: expect.any(String),
+      component: "agent-service",
+      event: "sandbox.preparation.failed",
+      controlRef: expect.stringMatching(/^sandbox-control:[a-f0-9]{64}$/),
+      stage: "prepare",
+      reasonCode: "SANDBOX_PREPARATION_FAILED",
+      hostStage: "sdk_initialize",
+      systemCode: "EIO",
+      hostDetailCode: "JOB_HOST_ENVIRONMENT_INVALID",
+      hostCommand: "prepare",
+      hostPhase: "preparing",
+    },
+  ]);
+  expect(output.value()).not.toContain("private-");
+  const diagnostics = [...f.stored.entries()];
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]?.[0]).toBe(
+    `${output.events()[0]?.controlRef}:diagnostic:preparation-failure`,
+  );
+  expect(diagnostics[0]?.[1].value).toMatchObject({
+    ...boundedPreparationDiagnostic,
+    identity: plan.identity,
+    environmentId: plan.environmentId,
+  });
+});
+
+it("[R2-L4][prod-sandbox-D3] keeps unavailable host detail out of the safe diagnostic log", async () => {
+  const output = preparationDiagnosticOutput();
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  await f.control.recordPreparationDiagnostic(f.record.plan, {
+    ...boundedPreparationDiagnostic,
+    hostStage: null,
+    hostDetail: null,
+  });
+  expect(output.events()).toEqual([
+    {
+      timestamp: expect.any(String),
+      component: "agent-service",
+      event: "sandbox.preparation.failed",
+      controlRef: expect.stringMatching(/^sandbox-control:[a-f0-9]{64}$/),
+      stage: "prepare",
+      reasonCode: "SANDBOX_PREPARATION_FAILED",
+      systemCode: "EIO",
+    },
+  ]);
+});
+
+it("[R2-L4][prod-sandbox-D3] rejects private text in every diagnostic enum and unknown fields before logging", async () => {
+  const output = preparationDiagnosticOutput();
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  const privateText = "PRIVATE-USER-MESSAGE-AND-SECRET";
+  const invalidDiagnostics = [
+    { ...boundedPreparationDiagnostic, stage: privateText },
+    { ...boundedPreparationDiagnostic, reasonCode: privateText },
+    { ...boundedPreparationDiagnostic, hostStage: privateText },
+    { ...boundedPreparationDiagnostic, systemCode: privateText },
+    ...["code", "command", "phase"].map((field) => ({
+      ...boundedPreparationDiagnostic,
+      hostDetail: { ...boundedPreparationDiagnostic.hostDetail, [field]: privateText },
+    })),
+    { ...boundedPreparationDiagnostic, message: privateText },
+    {
+      ...boundedPreparationDiagnostic,
+      hostDetail: { ...boundedPreparationDiagnostic.hostDetail, message: privateText },
+    },
+  ];
+  for (const diagnostic of invalidDiagnostics)
+    await expect(
+      f.control.recordPreparationDiagnostic(f.record.plan, diagnostic as never),
+    ).rejects.toThrow();
+  expect(output.value()).toBe("");
+  expect(f.stored.size).toBe(0);
+});
+
+it.each(["read", "write"] as const)(
+  "[R2-L4][prod-sandbox-D3] logs safe preparation codes even when restricted trace %s fails",
+  async (traceFailure) => {
+    const output = preparationDiagnosticOutput();
+    const f = await fixture({
+      preparationOnly: true,
+      diagnosticOutput: output.stream,
+      traceFailure,
+    });
+    await expect(
+      f.control.recordPreparationDiagnostic(f.record.plan, boundedPreparationDiagnostic),
+    ).rejects.toThrow("PRIVATE-PAYLOAD-STORAGE-FAILURE");
+    expect(output.events()).toHaveLength(1);
+    expect(output.events()[0]).toMatchObject({
+      event: "sandbox.preparation.failed",
+      stage: "prepare",
+      reasonCode: "SANDBOX_PREPARATION_FAILED",
+      hostStage: "sdk_initialize",
+      systemCode: "EIO",
+      hostDetailCode: "JOB_HOST_ENVIRONMENT_INVALID",
+    });
+    expect(output.value()).not.toContain("PRIVATE-PAYLOAD-STORAGE-FAILURE");
+    expect(f.stored.size).toBe(0);
+  },
+);
+
+it("[R2-L4][prod-sandbox-D3] preserves the restricted trace when the diagnostic output fails", async () => {
+  const output = preparationDiagnosticOutput();
+  const write = vi.spyOn(output.stream, "write").mockImplementation(() => {
+    throw new Error("DIAGNOSTIC_OUTPUT_FAILED");
+  });
+  cleanups.push(async () => {
+    write.mockRestore();
+  });
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  await expect(
+    f.control.recordPreparationDiagnostic(f.record.plan, boundedPreparationDiagnostic),
+  ).rejects.toThrow("DIAGNOSTIC_OUTPUT_FAILED");
+  expect([...f.stored.values()].map((artifact) => artifact.value)).toEqual([
+    expect.objectContaining(boundedPreparationDiagnostic),
+  ]);
 });
 
 it.each([
