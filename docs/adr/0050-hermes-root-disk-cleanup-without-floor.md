@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: "docs/adr/0049-first-production-host-acceptance-exception.md,docs/adr/0047-test-checkout-on-hermes-nvme.md,docs/adr/0046-tests-back-on-hermes.md,docs/adr/0045-short-test-temp-root.md,docs/adr/0044-tests-on-cloud-server.md,docs/adr/0043-push-every-commit-full-test-before-merge.md,docs/adr/0042-hermes-test-scratch-on-root-disk.md,docs/adr/0041-test-hosts-and-production-server.md,docs/adr/0038-test-layer-trigger-timing.md"
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: "docs/adr/0051-second-production-host-acceptance-exception.md"
 date: "2026-10-07"
 ---
 

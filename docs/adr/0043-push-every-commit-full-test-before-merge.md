@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0050-hermes-root-disk-cleanup-without-floor.md"
+superseded_by: "docs/adr/0051-second-production-host-acceptance-exception.md"
 date: "2026-09-30"
 ---
 
