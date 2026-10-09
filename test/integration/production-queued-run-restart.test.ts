@@ -14,6 +14,7 @@ import {
   createRunExecutionLeaseId,
 } from "@himawari-agent/domain";
 import type { ExecutionV2Event, ExecutionV2Request } from "@himawari-agent/execution-contracts";
+import { CapabilityDeploymentSnapshotLoader } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import Database from "better-sqlite3";
 import { expect, it, vi } from "vitest";
@@ -44,16 +45,25 @@ it.each([
     "changed-tools",
     "boot-only",
     "revoked",
+    "[R2-L4] catalog-binding",
   ].map((scenario) => ({ coding: true, scenario })),
 ])(
   "recovers the original Pi queue safely (coding=$coding, $scenario)",
   async ({ coding, scenario }) => {
-    const live = LIVE_SANDBOX && coding && scenario === "resume";
+    const catalogBinding = scenario === "[R2-L4] catalog-binding";
+    const live = LIVE_SANDBOX && coding && (scenario === "resume" || catalogBinding);
     const fixedCompletion = live && process.env["HIMAWARI_FIXED_FILE_COMPLETION_PROBE"] === "1";
-    const conflicting = live && process.env["HIMAWARI_LIVE_FILE_CONFLICT"] === "1";
+    const conflicting =
+      live && !catalogBinding && process.env["HIMAWARI_LIVE_FILE_CONFLICT"] === "1";
     const expectedFile = conflicting ? "external edit" : "queued";
-    const moving = live && process.env["HIMAWARI_LIVE_DIRECTORY_MOVE"] === "1";
-    const codingName = live ? (moving ? "move_directory" : "write") : "bash";
+    const moving = live && !catalogBinding && process.env["HIMAWARI_LIVE_DIRECTORY_MOVE"] === "1";
+    const codingName = live
+      ? catalogBinding
+        ? "read"
+        : moving
+          ? "move_directory"
+          : "write"
+      : "bash";
     const effectPath = moving ? "archive/queued.txt" : "queued.txt";
     let liveWorker:
       | Awaited<ReturnType<typeof import("../fixtures/queued-live-worker.ts").queuedLiveWorker>>
@@ -75,18 +85,21 @@ it.each([
         operation: codingName,
         mode: "foreground",
         contract: live
-          ? {
-              ref: "pi-coding-tool",
-              version: moving ? "4" : "3",
-              kind: "verified_effect",
-              verifierRef: moving ? "host-directory-move" : "pi-atomic-write",
-              verifierVersion: "1",
-              targetRef: moving ? "pi-input:source-destination" : "pi-input:path",
-            }
+          ? catalogBinding
+            ? { ref: "pi-coding-tool", version: "2", kind: "fixed_read" }
+            : {
+                ref: "pi-coding-tool",
+                version: moving ? "4" : "3",
+                kind: "verified_effect",
+                verifierRef: moving ? "host-directory-move" : "pi-atomic-write",
+                verifierVersion: "1",
+                targetRef: moving ? "pi-input:source-destination" : "pi-input:path",
+              }
           : { ref: "bash", version: "1", kind: "command" },
         backendRef: "srt",
         scopeSource: "grant_targets",
-        directoryOperations: moving ? ["move"] : ["read", "create", "update"],
+        directoryOperations:
+          catalogBinding && live ? ["read"] : moving ? ["move"] : ["read", "create", "update"],
         network: "disabled",
       },
       undefined,
@@ -114,6 +127,58 @@ it.each([
         },
       },
     );
+    const catalogStore = f.repository.capabilityStore(OWNER_ID, AGENT_ID);
+    const readCatalogBytes = () => {
+      const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+        readonly: true,
+      });
+      try {
+        return database
+          .prepare("SELECT record_json FROM capability_declarations WHERE id=?")
+          .pluck()
+          .get(f.input.capabilityRef);
+      } finally {
+        database.close();
+      }
+    };
+    if (catalogBinding) {
+      const prior = await catalogStore.get(f.input.capabilityRef);
+      if (!prior) throw new Error("CATALOG_BINDING_RECORD_REQUIRED");
+      const loaded = await new CapabilityDeploymentSnapshotLoader({
+        ...f.capabilityDeployment,
+        now: () => T1,
+      }).load();
+      const manifest = loaded.manifests.find((entry) => entry.ref === prior.ref);
+      if (!manifest) throw new Error("CATALOG_BINDING_MANIFEST_REQUIRED");
+      expect(prior.declaration).toEqual(manifest);
+      if (manifest.runtime.kind !== "program") throw new Error("CATALOG_BINDING_PROGRAM_REQUIRED");
+      const legacyManifest: CapabilityManifest = {
+        ...manifest,
+        source: { ...manifest.source, locator: "artifact:previous-installed" },
+        runtime: {
+          ...manifest.runtime,
+          argv: manifest.runtime.argv.map((value, index) =>
+            index < 2
+              ? path.join(
+                  f.f.resource.stateRoot,
+                  "previous-runtime-unavailable",
+                  path.basename(value),
+                )
+              : value,
+          ),
+        },
+      };
+      await catalogStore.save(
+        {
+          ...prior,
+          revision: prior.revision + 1,
+          declaration: legacyManifest,
+        },
+        prior.revision,
+      );
+      if (live) await writeFile(path.join(f.host.workspace, effectPath), expectedFile);
+    }
+    const originalCatalogBytes = readCatalogBytes();
     if (moving) {
       await mkdir(path.join(f.host.workspace, "reports"));
       await writeFile(path.join(f.host.workspace, "reports/queued.txt"), "queued");
@@ -133,9 +198,11 @@ it.each([
         id: f.call.toolCallId,
         arguments: coding
           ? live
-            ? moving
-              ? { path: "reports", destination: "archive" }
-              : { path: "queued.txt", content: "queued" }
+            ? catalogBinding
+              ? { path: "queued.txt" }
+              : moving
+                ? { path: "reports", destination: "archive" }
+                : { path: "queued.txt", content: "queued" }
             : { command: "printf queued" }
           : f.call.arguments,
       },
@@ -509,10 +576,19 @@ it.each([
       ).toBe("runtime_running");
       expect(model.observed).toHaveLength(1);
       expect(request.mock.calls.filter(([x]) => x.type === "work.execute")).toHaveLength(0);
-      if (live)
-        await expect(stat(path.join(f.host.workspace, effectPath))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
+      if (live) {
+        if (catalogBinding) {
+          expect((await stat(path.join(f.host.workspace, effectPath))).isFile()).toBe(true);
+          const content = await readFile(path.join(f.host.workspace, effectPath));
+          expect(createHash("sha256").update(content).digest("hex")).toBe(
+            createHash("sha256").update(expectedFile).digest("hex"),
+          );
+        } else {
+          await expect(stat(path.join(f.host.workspace, effectPath))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+        }
+      }
       const inventory = await f.services.brokerV2.preparations.readRunInventory({ runId });
       const original = inventory.queue[0];
       if (!original?.recovery) throw new Error("Missing original Pi queue recovery link");
@@ -747,6 +823,36 @@ it.each([
         expect(await readFile(path.join(f.host.workspace, effectPath), "utf8")).toBe(expectedFile);
         const record = await f.services.brokerV2.journal.read(original.plan.identity);
         if (!record) throw new Error("LIVE_EXECUTION_RECORD_MISSING");
+        if (catalogBinding) {
+          const deployment = JSON.parse(
+            await readFile(f.capabilityDeployment.snapshotPath, "utf8"),
+          );
+          const binding = deployment.capabilities[0].binding.value;
+          expect(binding.runtimeRoot).toBe(
+            path.resolve(process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"] ?? "dist/node-runtime"),
+          );
+          expect(record.plan.binding.runtimeDigest).toBe(binding.runtimeDigest);
+          expect(record.plan.binding.runnerDigest).toBe(binding.runner.sha256);
+          expect(record.facts.result?.kind).toBe("result");
+          expect(toolResult).toMatchObject({ outcome: "succeeded" });
+          const output = JSON.parse((toolResult as { modelContent: string }).modelContent);
+          expect(output).toMatchObject({
+            schemaVersion: "pi-result.v1",
+            tool: "read",
+            isError: false,
+          });
+          const text = output.content
+            .map((part: { type: string; text: string }) => {
+              expect(part.type).toBe("text");
+              return part.text;
+            })
+            .join("\n");
+          const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+          expect(sha256(text)).toBe(sha256(expectedFile));
+          expect(sha256(await readFile(path.join(f.host.workspace, effectPath), "utf8"))).toBe(
+            sha256(expectedFile),
+          );
+        }
         if (conflicting) {
           expect(record.facts.result).toMatchObject({
             kind: "error",
@@ -834,6 +940,7 @@ it.each([
       expect(issueCount).toBe(coding ? 1 : 0);
       expect(completedProbeCalls).toBe(1);
       expect(readOriginal()).toEqual(originalBytes);
+      expect(readCatalogBytes()).toEqual(originalCatalogBytes);
       const used = await f.repository
         .capabilityStore(OWNER_ID, AGENT_ID)
         .getExecutionHandle(original.plan.handleRef);
