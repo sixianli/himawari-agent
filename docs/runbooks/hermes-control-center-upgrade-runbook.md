@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:744dc05c9acfc59191440265e26a3121d61200f021a2c364056e686cb0475c14"
+contract_sha256: "sha256:93cc119bf1fdaeed80a044df349d2d1072f8071f2cbdc742c9cf5adf694d16bb"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -600,3 +600,9 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 
 [SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]
+
+## 第二次生产签署的系统工具路径
+
+第二次生产操作包使用 [cloud-system-tool-bindings.mjs](../../scripts/operations/cloud-system-tool-bindings.mjs) 核对系统工具。`/usr/bin/socat` 等入口允许是符号链接，但入口、完整链接链和最终普通可执行文件必须与本次实际只读观察完全一致。核对包含 device/inode、UID/GID、mode 和内容 SHA；读取期间目标或链接变化也拒绝。签署和每次启动都重新核对，不能只删除首次签署工具中的路径相等断言。
+
+生产观察、签署与新保护材料按 [ADR 0051 的第二次部署范围](../adr/0051-second-production-host-acceptance-exception.md) 执行。Hermes 的回归测试只验证工具合同，不证明云端工具身份或主机资格；实际云端观察仍是签署输入。第一次操作包和已发布安装保持原件，新工具在第二次操作目录独立发布。
