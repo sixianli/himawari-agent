@@ -26,6 +26,7 @@ date: "2026-09-30"
 - [步骤](#steps)
 - [响应时间测量](#response-time)
 - [验收](#verification)
+- [本次第二次部署的授权边界](#second-deployment-authorization)
 
 <a id="decisions"></a>
 
@@ -180,6 +181,23 @@ G64 取消 Hermes 和云端的 systemd 离线检查，不在别处补做；保�
 
 rehearsal01/02/03分别因gzip读取顺序、未运输完整source mode、10解析/11取证集合混用失败，原退出码、完整原件和清理/资源记录不撤销。修正版rehearsal04完整结果、EID及非生产边界见[最终审计记录](2026-09-28-tool-execution-audit-plan.md#r74-final-validation)。本次outer1040384B、inner1269760B是不同阶段的未知根盘差额，不相加、不用后续空间变化抵销历史短差。BL008旧现场保留与新的清理许可独立。
 
+<a id="second-deployment-authorization"></a>
+
 ## 本次第二次部署的授权边界（2026-10-09）
 
 G65 仅批准第二次部署按首次相同限制重做主机能力验收，规则见 [SOURCE: docs/adr/0051-second-production-host-acceptance-exception.md#first-install-acceptance]。G66 选择冻结包经逐步说明、审阅后由 Claude 顺序执行，意外结果停止并保留现场。公开材料位于[第二次部署包](../../../.ci-output/production/2026-10-09-second-deploy-packet-01/README.md)。S0-DB 是用户运行的只读输入步骤，最终付费真实对话为 S10；Codex 不连接生产。此次例外不适用于第三次及以后的部署，普通测试与构建仍只在 Hermes。
+
+G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `directory:himawari-prod-workspace-20261009` 创建 90 天目录授权。原授权 `directory:himawari-prod-qualification` 已到期，保留原记录，不延长原记录或删除重建。这个决定只适用于本次授权替换；新授权不复活旧 Run、工具调用或资源租约，规则见[有效权限合同](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants)。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants] 用户决定及裁定见 [reply-05](../../../.ci-output/handoff/2026-10-08-codex-prod-sandbox-reply-05.md)。
+
+本次冻结包须按以下顺序实现，当前文字记录待生产执行的设计：
+
+1. `S5_ADMIN_CLEANUP` 完成后、S6 前，Agent 和 Worker 保持停止，再执行 `S5_RENEW_WORKSPACE_GRANT`。该步骤使用现有 `workspace grant` CLI；CLI 自行取得 state-root 独占锁，包装器不得预先持有同一把锁。目录和 `--confirm` 均为上述规范路径，`--id` 为上述新编号。`--expires-at` 使用该步骤实际 `startedAt` 加 90 天的规范 UTC ISO 时间，不使用冻结包制作时间。
+2. 新授权写入数据库后，独立读回新编号、当前有效状态、`readAllowed`、目录 device/inode 和原授权记录未变的证据。保留已有 capability catalog、能力版本、操作范围、路径策略及其他已批准政策。S6 签署输入须绑定新授权和本次授权创建回执 SHA；签名 snapshot 中仍绑定原规范目录及其 device/inode。此时原配置和原 snapshot 引用保持不变。数据库写入失败或后续签署失败时停止并保留现场，不删除旧授权或重放原 Job。包内同时提供用户执行的备用包装。
+3. S7 的数据库前检使用原配置在内存中的投影核对新授权，投影仅替换 `runPolicy.coding.grantId`，不提前改写原配置文件或原 snapshot。前检通过后，正式 `ExecStartPre` prepare 完成新签名和 snapshot 检查，再以一次原子配置替换同时发布新 `runPolicy.coding.grantId` 与新 `capabilityDeployment`。其余配置字段保持不变。新 snapshot 单独先发布；snapshot 与配置不是跨文件事务，中断时保留实际现场并停止。数据库授权创建和配置文件替换是两个步骤。
+4. S7/S8 独立读回新授权当前有效、允许 read，且目录 device/inode 与签名 snapshot 一致；读回原授权记录未变，原到期状态属于预期。首次切换检查不能变成长期开机时固定旧授权编号或冻结到期时间的限制；正式产品仍逐次检查真实授权。G65 主机能力验收继续只操作本次新建的虚构目录，不读取原工作目录内容。
+
+Hermes 的已安装产品演练已用公开 CLI 创建新编号，并在新配置和非生产签名 snapshot 下完成真实 HTTP Agent → Worker → JobHost → Pi read，11 项断言通过；旧过期行与 catalog 原字节未变。输入转换和首次切换守卫另覆盖两字段必须共同发布、错误输入拒绝及恢复库缺少新授权行。真实 read 演练没有运行生产固定路径的 prepare 或 systemd，生产 S7/S8 仍须独立读回。原始结果见[授权替换演练](../../../.ci-output/handoff/prod-second-evidence-06/reports/grant-installed03/installed-read/grant-renewal-report.json)。操作检查见[安装 Runbook 的已有目录授权替换](../../runbooks/install-start-stop-runbook.md#workspace-grant-replacement)。
+
+本次49恢复路线恢复旧过期授权选择。50恢复路线的新控制配置可保留新编号，但S4的完整50恢复点早于授权创建，恢复库中没有新授权行。两条路线均不自动补授权，保持停服；账号恢复和再次启动须另获具体批准。恢复成功不表示授权已经可用。
+
+[返回导航](#reading-navigation)

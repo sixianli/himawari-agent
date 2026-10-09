@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:4c3dfe84ba09650a8901f9e35aa75c7dfb709b977190026de452a22b78046de8"
+contract_sha256: "sha256:fc507185dd9f8d77ecd7741d2fdc77cb68dd8c06f23bb391f8564381b355467c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -20,6 +20,7 @@ G51 与 G65 分别只允许首次安装及 2026-10-09 本次第二次部署必�
 - [Ubuntu 24.04 的 bwrap 前提](#ubuntu-2404-bwrap)
 - [归档解包与临时磁盘](#artifact-extraction-contract)
 - [目标现场只读检查](#live-state-preflight)
+- [已有目录授权替换](#workspace-grant-replacement)
 - [安装与启停步骤](#procedure)
 - [结果验证](#verification)
 - [证据保存](#evidence)
@@ -29,6 +30,7 @@ G51 与 G65 分别只允许首次安装及 2026-10-09 本次第二次部署必�
 - [Job Host SDK 线程与停止证明](#sdk-thread-supervision)
 
 <!-- runbook-contract:
+- apps/admin-cli/src/workspace-command.ts
 - docs/execution/specs/2026-09-24-isolated-tool-execution-design.md
 - packages/platform-node/src/capabilities/capability-deployment.ts
 - packages/platform-node/src/capabilities/isolation.ts
@@ -365,6 +367,24 @@ Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Own
 
 每次启动检查新鲜资格；同一次启动内复查不可变快照原字节与实时安装摘要，不以五分钟经过自动撤销正常工具，也不接受修改后的配置。快照不能迁移成另一主机的资格。当前 Hermes 操作由 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md] 单独约束。
 
+<a id="workspace-grant-replacement"></a>
+
+### 已有目录授权替换
+
+用户明确批准沿用原目录并更换目录授权时，使用现有离线 `workspace grant` CLI 创建新的授权编号。该 CLI 拒绝重复编号，不能借它延长或覆盖旧记录。旧授权及 capability catalog 原样保留，能力版本、操作范围、路径策略和其他已批准政策不随编号更换而扩大。新授权只适用于未来的合规操作，不能复活旧 Run、工具调用或租约。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants]
+
+执行前确认 Agent 与 Worker 已停止，state-root 锁已释放，当前 deployment/Owner/Agent 身份有效，目标规范路径及 device/inode 与原批准根一致。CLI 自行取得独占锁；包装器不得先持有同一把锁。独立核对新编号尚不存在、`--confirm` 等于规范路径、期限来自本次明确授权。不得通过直接修改数据库、删除旧记录或变更目录来绕过检查。
+
+本次 G67 的固定编号、原目录和 90 天期限见[第二次部署授权边界](../execution/plans/2026-09-30-production-first-deployment-plan.md#second-deployment-authorization)。`S5_RENEW_WORKSPACE_GRANT` 放在 `S5_ADMIN_CLEANUP` 之后、S6 之前；到期时间为实际 `startedAt` 加 90 天的规范 UTC ISO 时间。该步骤的数据库写入与后续配置发布分别留证。本节约束授权和配置切换，云端服务管理命令仍以另行审阅、获准的冻结包为准。[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md#second-deployment-authorization]
+
+授权创建后，先独立读回新授权当前有效、`readAllowed=true`、目录身份与旧记录未变的结果，再将新授权及创建回执 SHA 绑定到新签名材料；新 snapshot 继续绑定同一目录的 device/inode。原配置在正式发布前保持不变。S7 数据库前检只在内存中将原配置的 `runPolicy.coding.grantId` 投影为已批准的新编号，核对新授权及原根；不得提前写回配置或改动原 snapshot。
+
+正式 `ExecStartPre` prepare 验证签名和 snapshot 后，以一次原子配置替换同时发布新 `runPolicy.coding.grantId` 和新 `capabilityDeployment`，其余配置字段逐项保持不变。原子替换指读者只能看到完整旧配置或完整新配置；新 snapshot 在配置之前单独发布，二者不是跨文件事务。中断时必须停止并保留实际文件，不把先前的数据库写入和配置发布描述为同一个事务。首次切换及切换后读回均检查新授权当前有效、允许 read、目录身份与签名 snapshot 一致，并确认旧授权记录未变。旧授权预期到期不阻断本次替换。
+
+首次切换的授权检查不作为长期每次开机的冻结期限检查。授权之后自然到期，或用户经正式产品流程再次更换授权编号时，产品仍逐次核对真实数据库授权；不得因旧编号或冻结期限拒绝整个服务重启，也不得把未批准的新目录自动加入签名根。本次 G65 资格验收仍只操作新建虚构目录，不读取原授权目录内容。以上 G67 步骤须先完成 Hermes 回归及冻结包审阅；本节不声明生产替换或验收已经执行。
+
+[↑ 返回阅读导航](#阅读导航)
+
 
 P3 文件协议使用 Schema 46 的 writer 边界。升级和恢复必须保留原文件候选、逐文件发布记录、目录移动意图/收据、队列与占用；不得整批回滚已成功文件或覆盖后续人工修改。合同 3 的确定未发布冲突是失败结果，不是成功写入。目录工具合同 4 的 `rename-native` 随目标平台构建并受 runtime 摘要核验，Mac 包不能移作 Linux 包。新增固定文件完成资格仅适用于已验证的固定程序正常结束，旧资格与普通命令的未知清理仍保留保护；实际安装资格和启用不能由测试结果自动生成。详见 [SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md]。
 
@@ -655,7 +675,7 @@ mkdir -p <absolute-prefix>
 npm run install:node-runtime -- --prefix <absolute-prefix>
 ~~~
 
-5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
+5. 若本次是升级，先按[正常停止流程](#procedure)确认旧 Agent 和 Worker 完全退出、锁已释放，再执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。若另获已有目录授权替换许可，按[授权替换顺序](#workspace-grant-replacement)准备新编号和签名材料。配置更新只在该顺序指定的发布步骤执行，不提前改写原配置。随后在启动前运行 `himawari db status` 与 `himawari doctor`，确认 SQLite quick check、schema、authority、Payload、Worker 和 identity 的脱敏状态；若配置声明能力部署快照，还要回读其规范路径、owner/mode、字节数、SHA-256、Manifest/运行绑定数量和本平台资格结论。只读命令失败时不启动普通服务。
 6. 以独立子进程先启动 Worker，再启动 Agent Service。Worker 先公布本次 `workerInstanceId/workerBootId`；Agent 取得当前 authority lease 后启动反向权限与 Payload 服务，再发布同时绑定双方实例、boot 和当前 authority 的启动文件，最后完成 Worker handshake。记录双方 `service.ready` 的 component、schema、identity 和 recovery counters；只存在 socket 或旧启动文件不算完成握手。
 7. 运行只读 doctor、db status 和适用业务查询；确认 Agent Service 通过 UDS handshake、`service.ready` 记录 model path、memory path 与 embedding descriptor identity、没有 testing adapter、没有 repository checkout 路径，也没有秘密或私人正文输出。deterministic profile 必须显示 descriptor-only；支持的 Pi/Mem0 profile 只能显示配置中的 primary/specialist/embedding reference、version 和 dimensions，不能显示 secret value。
 8. 正常停止时先向 Agent Service 发送 `SIGTERM`。Agent 按已登记资源先停止接纳、等待在途工作，再逆序关闭依赖；Memory 消费者停止领取新任务并等待当前批次完成后，才关闭 Memory、模型、authority 和 SQLite。等待 `service.draining` 与 `service.stopped`，再向 Worker 发送 `SIGTERM`，等待其停止并确认 socket 已删除。超出有界等待后才记录 forced stop，并把后续启动视为 recovery drill。
@@ -685,6 +705,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 生产调度只恢复具有原受保护 Pi 批次、单个未准入队列且无消费回执的中断 Run。取得当前 Run 租约后，在读取工具列表前重新验证原 Scope、目标与权限，再加载原批次；原批准、输入、期限及已完成工具结果保持不变。已准入、有回执、已取消、恢复内容缺失或状态不明确的操作仍进入核对，不能重放；工具列表或请求内容改变也不能续接。历史队列若没有批次关联，不会因升级而获得自动恢复资格。实现、替身边界与本地验证见[Plan 的整轮续接记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-queued-run-restart)。
 
 ## Verification
+
+涉及[已有目录授权替换](#workspace-grant-replacement)时，独立读回新授权、旧记录摘要、配置和签名 snapshot，核对新授权当前有效、允许 read、根 device/inode 一致，以及配置差异只含获准的 `runPolicy.coding.grantId` 和 `capabilityDeployment`。Hermes 回归须通过新编号授权和配置切换后的真实 read，覆盖旧授权到期不阻断新请求、失败不产生部分配置；它不代替生产 S7/S8 的现场读回。
 
 ### Schema 33 释放事实与有界恢复
 
@@ -739,6 +761,8 @@ Schema 32 增加受保护原生历史快照、Run 内顺序和 Fork 固定引用
 
 每次执行使用新的 `test/integration/qualification/evidence/operations/install-start-stop/<unique-run-id>/`，记录静态 contract digest、Git HEAD/worktree、Node/npm、平台/架构、artifact/package-lock/workspace checksum、prefix/state-root/authority identity、目录和 socket/lock 权限、磁盘空间、精确命令与 exit status、service ready/draining/stopped 日志摘要、doctor/db status、重启 recovery counters 和清理结论。
 
+授权替换另记录授权创建的实际开始时间与到期时间、新旧编号、规范目录的 device/inode、旧记录未变的摘要、新授权独立读回、创建回执及其 SHA、签名 receipt/snapshot SHA、配置替换前后 SHA 和允许字段差异。原配置等恢复材料按既定受保护恢复路径保留，不放进公开包；云端执行证据沿用获准冻结包的证据根。
+
 只记录稳定错误码、计数、版本和引用；不得记录 secret value、Worker token、环境转储、Cookie、private key、配置全文、Payload plaintext、数据库行或共享 Hermes Agent 数据。
 
 <a id="installation-permission-evidence"></a>
@@ -761,6 +785,7 @@ D15 的三条完整归档用例使用同一正式构建产物和匹配 Context�
 - 服务启动失败时保留脱敏 stderr、authority/lock/socket 现场和 evidence；先停止同一运行创建的 child process，再按正式 doctor/db status 诊断，不能用 `kill -9` 后直接删除活锁。
 - 正常停止后若重启验证失败，保持服务停止，回退到本次安装前已验证的 prefix/state root 或走独立 backup/restore；不得把应用回退与数据库恢复、authority transfer 或公网入口切换混为一个动作。
 - prefix 清理不删除 Owner 数据；state root、Payload、recovery point、迁移包、secret source 和外部副作用各有独立授权与 rollback 边界。
+- 新授权已经创建、但签署或配置发布失败时，保持服务停止，保留新旧授权记录和原配置恢复材料。不得自动删除新记录、回退到已到期授权、只替换一个配置字段或重放原 Job；后续恢复须核对实际已发布状态并取得对应操作授权。本次49恢复路线恢复旧过期授权选择；50恢复路线可保留新控制配置中的新编号，但恢复库来自授权创建前的S4恢复点，没有新授权行。两条路线均保持停服，不自动补授权，仍须独立账号恢复和再次启动批准。
 
 ## Stop Conditions
 
@@ -769,6 +794,7 @@ D15 的三条完整归档用例使用同一正式构建产物和匹配 Context�
 - 发现活跃 Agent/Worker、UDS socket、state-root lock、未知 child process、testing adapter、repository cwd 依赖或旧 authority 未对齐。
 - SQLite 版本、schema/migration digest、quick/full integrity、Payload authentication、Worker handshake、doctor/db status 或 recovery identity 任一失败。
 - 能力部署快照缺失、可被其他账号写入、为符号链接、超出上限、SHA-256 不符、含未知或重复项，或 Manifest、资格、runtime binding 与当前平台/注册表不一致。
+- 已批准的授权替换中，新编号已存在、新授权无效或不允许 read、原目录/device/inode 或旧记录改变、创建回执与签名不匹配，或配置差异超出获准字段；旧授权预期到期本身不属于该停止条件。
 - 需要把 secret 放进 argv/env/log/Trace，扩大安装目录、覆盖既有数据、猜测 systemd/launchd 命令，或对 `/data/hermes` 共享 Hermes Agent state root 做写入。
 - 磁盘不足、安装脚本跨出绝对 prefix、服务未在有界时间内 drain/stop，或 forced stop 后现场无法安全回读。
 - 要求把本地安装通过等同 Mac/Hermes transfer、真实外部账户、public URL、paid model 或 v0.2 production-ready。
