@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0051-second-production-host-acceptance-exception.md"
+superseded_by: "docs/adr/0052-third-production-host-acceptance-exception.md"
 date: "2026-10-01"
 ---
 
