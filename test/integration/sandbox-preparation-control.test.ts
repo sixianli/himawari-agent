@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -82,6 +82,7 @@ vi.mock("node:child_process", async (original) => {
 import { prepareSandboxJobHost } from "../../packages/runtime-sandbox/src/job-host.ts";
 import { prepareJobPolicy } from "../../packages/runtime-sandbox/src/job-policy.ts";
 import { readJobHostFinalEvidence } from "../../packages/runtime-sandbox/src/job-host-control.ts";
+import { claimJobHostLaunch } from "../../packages/runtime-sandbox/src/job-host-launch-decision.ts";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<unknown>> = [];
@@ -214,6 +215,7 @@ async function configureSdkLoad(
     blockDependenciesMs?: number;
     blockModuleMs?: number;
     blockContractsImportMs?: number;
+    changePolicyText?: boolean;
   },
 ) {
   launch.entry = jobHostEntry();
@@ -260,6 +262,12 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
 while (performance.now() < himawariFixtureContractsUntil) {}
 `,
     )} + loaded.source.toString() };
+  if (${Boolean(options.changePolicyText)} && url.endsWith("/runtime-sandbox/dist/policy.js")) {
+    const original = loaded.source.toString();
+    const changed = original.replace("const policyJson = JSON.stringify(policy);", 'const policyJson = JSON.stringify(policy) + " "; process.stderr.write(JSON.stringify({ stage: "POLICY_TEXT_CHANGED" }) + "\\\\n");');
+    if (changed === original) throw new Error("POLICY_TEXT_INJECTION_MISSED");
+    return { ...loaded, source: changed };
+  }
   if (!url.endsWith("/sandbox/sandbox-manager.js")) return loaded;
   return { ...loaded, source: ${JSON.stringify(
     `import { threadId as himawariSdkThreadId } from "node:worker_threads";
@@ -406,6 +414,116 @@ it("recovers authenticated never-started cleanup when SDK preparation fails befo
   });
   expect(host.controlBinding).toEqual(control);
   Object.assign(context.task.meta, { cleanupReadback: { observed, final, release } });
+});
+
+it("[R2-L8] proves release when preparation fails before the control step after launch was claimed", async (context) => {
+  const f = await openSandboxJournal();
+  cleanups.push(f.close);
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0, changePolicyText: true });
+  const directory = path.join(root, "control");
+  await mkdir(directory, { mode: 0o700 });
+  const plan = {
+    ...sandboxV2Call(f, "admit", sandboxV2Admission(f)).record.plan,
+    backendRef: "srt",
+    preparationProtocol: "launch-or-block.v2" as const,
+  };
+  const control: SandboxJobControlBinding = {
+    directory,
+    token: randomBytes(32).toString("hex"),
+    sessionId: randomUUID(),
+    jobId: plan.identity.jobId,
+    attemptId: plan.identity.attemptId,
+  };
+  const { policy, compiled } = await prepareJobPolicy({
+    workspace: null,
+    privateRoot: root,
+    jobId: plan.identity.jobId,
+    writable: false,
+    readOnlyToolchainPaths: [],
+    protectedPaths: [],
+    allowedDomains: [],
+  });
+  const stored = new Map<string, { ref: string; digest: string; value: unknown }>();
+  const hostInfo = async () => ({
+    binding: {
+      privateRoot: root,
+      runtimeRoot: "/runtime",
+      readOnlyToolchainPaths: [],
+      roots: [],
+    } as unknown as SandboxHostBinding,
+    qualification: { platform: process.platform } as SandboxRuntimeQualification,
+  });
+  const options = {
+    now: () => new Date().toISOString(),
+    machineBootId: async () => "machine-boot",
+    host: hostInfo,
+    admit: hostInfo,
+    read: async (_plan: unknown, key: string) => stored.get(key),
+    write: async (_plan: unknown, key: string, value: unknown) => {
+      if (stored.has(key)) throw new Error("duplicate artifact");
+      const artifact = { ref: key, digest: "a".repeat(64), value: structuredClone(value) };
+      stored.set(key, artifact);
+      return artifact;
+    },
+  };
+  const controller = createProductionSandboxControl(options);
+  await controller.registerPreparation(plan, control, compiled.policyDigest);
+  const metadata = await lstat(directory);
+  expect(
+    await claimJobHostLaunch({
+      plan,
+      control,
+      policyDigest: compiled.policyDigest,
+      directoryDevice: String(metadata.dev),
+      directoryInode: String(metadata.ino),
+    }),
+  ).toBe(true);
+  const host = prepareSandboxJobHost(
+    {
+      jobId: plan.identity.jobId,
+      attemptId: plan.identity.attemptId,
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: process.execPath,
+      args: ["-e", "process.exit(99)"],
+      deadlineAt: new Date(Date.now() + 30000).toISOString(),
+      maxOutputBytes: 4096,
+      cleanupTimeoutMs: 5000,
+    },
+    directory,
+    undefined,
+    control,
+  );
+  cleanups.push(async () => {
+    host.cancel();
+    await host.result;
+  });
+  await expect(host.ready).rejects.toThrow();
+  const observed = await host.result;
+  expect(launch.stderr).toContain("POLICY_TEXT_CHANGED");
+  expect(observed, JSON.stringify({ observed, stderr: launch.stderr })).toMatchObject({
+    reason: "host_failure",
+    diagnostic: { stage: "policy", detail: { code: "JOB_HOST_POLICY_CHANGED" } },
+    taskStarted: false,
+    srtReset: true,
+  });
+  const stopRequestedAt = options.now();
+  const restarted = createProductionSandboxControl(options);
+  await restarted.stopPreparation(plan, undefined, stopRequestedAt);
+  const release = await restarted.verifyReservationRelease(plan, stopRequestedAt);
+  expect(release, JSON.stringify([...stored.keys()])).toMatchObject({
+    basis: "host_never_started",
+    identity: plan.identity,
+    controlSessionId: control.sessionId,
+  });
+  expect(await readJobHostFinalEvidence(control)).toMatchObject({
+    phase: "finished",
+    taskStarted: false,
+    srtReset: true,
+  });
+  Object.assign(context.task.meta, { cleanupReadback: { observed, release } });
 });
 
 it("survives slow startup followed by bounded synchronous preparation without renewing the lease", async () => {

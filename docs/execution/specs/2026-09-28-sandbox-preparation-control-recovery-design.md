@@ -31,6 +31,7 @@ date: "2026-09-28"
 - [第二轮：依赖加载期间的启动监督](#startup-supervision)
 - [准备期间的期限诊断分类](#deadline-classification)
 - [第三轮：主线程只管心跳，诊断记录每步耗时](#main-thread-heartbeat-only)
+- [第三轮：控制通道在准备第一步打开](#control-opened-first)
 
 ## 目标与来源
 
@@ -306,11 +307,11 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 
 ## 第三轮：主线程只管心跳，诊断记录每步耗时
 
-### 来源与已确认原因
+### 来源与原因
 
 2026-10-12 生产第二次部署后的第一次读文件工具卡住（S10，Run `run:c1284750-de9d-43dd-aee1-5474dc27539c`）。只读诊断 03 显示 Worker 端记录 `JOB_HOST_HEARTBEAT_EXPIRED`、阶段 `request`、`messageAgeMs` 约 1600、`expectedSequence` 为 2：Job Host（运行每个工具的宿主子进程）在回应准备消息后的第一次心跳之后就沉默了 1.5 秒以上。用户于同日选择“主线程只管心跳”（G73，原文见 `.agents/tasks/round2-tool-execution/goal.md`）：准备阶段的重活全部移到已有的 SDK 工作线程，主线程只收发消息、报心跳，并在诊断里记录每一步的耗时；1.5 秒规则和安全保证都不变。
 
-原因已用复现确认：第二轮修复后，Job Host 主线程在准备时仍通过策略编译模块 `policy.ts` 加载整个 SRT（`@anthropic-ai/sandbox-runtime` 0.0.75）。SRT 及其依赖 node-forge、zod 约 8 MB JavaScript，其中 CommonJS 依赖同步加载；新安装版本后的第一次工具调用读的是冷磁盘缓存，同步加载可以超过 1.5 秒，期间主线程发不出心跳。Hermes 上的复现在 SRT 模块求值时注入 2200 ms 同步停顿，得到与生产完全相同的特征（`JOB_HOST_HEARTBEAT_EXPIRED`、阶段 `request`、`messageAgeMs` 约 1610、`expectedSequence` 2）。生产当时磁盘读取的实际耗时没有记录，不能证明生产停顿全部来自这一次加载；修复后同类停顿会由下面的逐步记录直接指出。
+复现已确认机制，生产上的具体耗时仍是推断：第二轮修复后，Job Host 主线程在准备时仍通过策略编译模块 `policy.ts` 加载整个 SRT（`@anthropic-ai/sandbox-runtime` 0.0.75）。SRT 及其依赖 node-forge、zod 约 8 MB JavaScript，其中 CommonJS 依赖同步加载；只要这次同步加载超过 1.5 秒，主线程就发不出心跳。2026-10-12 生产只读诊断在缓存已热时测得这次加载约 0.3 秒，所以“新安装版本后第一次工具调用读冷磁盘缓存、加载超过 1.5 秒”是最可能的解释，但没有被生产测量直接证实。Hermes 上的复现在 SRT 模块求值时注入 2200 ms 同步停顿，得到与生产完全相同的特征（`JOB_HOST_HEARTBEAT_EXPIRED`、阶段 `request`、`messageAgeMs` 约 1610、`expectedSequence` 2）。生产当时磁盘读取的实际耗时没有记录，不能证明生产停顿全部来自这一次加载；修复后同类停顿会由下面的逐步记录直接指出。
 
 ### 修复后的行为
 
@@ -325,5 +326,34 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 ### 验证
 
 真实安装集成入口 `test/integration/sandbox-preparation-control.test.ts` 新增两项 `[R2-L7]` 测试：一项在 SRT 模块求值时注入 2200 ms 同步停顿，要求停顿只发生在 SDK 工作线程（threadId 大于 0）、不出现心跳过期、准备成功且取消后 `srtReset=true`；另一项在主线程加载 `execution-contracts` 时注入 2200 ms 停顿，要求诊断阶段为 `dependencies`，`steps` 只有一项且该步仍在进行。修复前两项都失败，失败内容与生产特征一致；修复后通过。Job Host 单元测试覆盖主线程不加载策略模块、线程内策略编译失败后的 reset、Worker 对无效 `steps` 的拒绝和心跳过期时的最后一步。Hermes 上的命令、修订和结果记录在 `.agents/tasks/round2-tool-execution/evidence.jsonl` 对应 R2-L7 的条目。生产 Ubuntu 24.04 上的行为须在第三次部署后读回；Mac 行为未验证。
+
+[返回阅读导航](#阅读导航)
+
+<a id="control-opened-first"></a>
+
+## 第三轮：控制通道在准备第一步打开
+
+### 已确认原因
+
+S10 卡住的读取工具之后一直重复“需要停止沙箱资源”的核查（R2-L8）：每次停止和核验都拿不到释放证明，按[未启动预留的持续清理核查](#reserved-retry)不断重新排定。代码证据和生产只读诊断如下：
+
+- 新建计划使用 `launch-or-block.v2`。Worker 在创建 Job Host 之前就在控制目录发布 `launch` 启动决定（[启动仲裁设计](2026-10-04-sandbox-preparation-launch-arbitration-design.md)）。此后 Agent 停止时无法再写 `blocked`，只能依靠原 Job Host 签名的 `final.json` 证明“从未启动任务、SRT 已复位、宿主已退出”。
+- `final.json` 只能由 Job Host 打开控制通道后得到的 `finish()` 写出。旧顺序先加载 SDK、编译并核对策略，之后才打开控制通道。
+- S10 的 Job Host 在加载 SRT 时就失去心跳（见[第三轮：主线程只管心跳](#main-thread-heartbeat-only)），还没走到控制步骤。它停止后没有 `final.json`，控制套接字也不存在，Agent 每次读取都得到 ENOENT，核查结论只能是“未确认”。
+- 2026-10-12 生产只读诊断 05（`.ci-output/production/2026-10-12-read-hang-diagnostic-05/reservation-recovery.20261012T140620Z.json`）读回该 Run 的控制目录 `/var/lib/himawari/jobs/control-bcab8277eea4c6dee76f`：目录里只有 Worker 写的 `launch-decision.json`（00:25:37），没有 `control.sock` 和 `final.json`；从 00:25:42 到 14:05:59 共有 1540 次停止和 1540 次核验，全部是 `SANDBOX_SUPERVISOR_UNAVAILABLE`（`connect ENOENT .../control.sock`）。这与上面的代码推理一致：启动权已被取得，宿主在打开控制通道之前就失败了。
+
+因此，凡是在控制步骤之前失败的准备（SDK 加载慢或失败、环境检查失败、策略摘要不符），在新协议下都无法自动释放，只能等管理员处置。这与本设计[建议的数据与执行顺序](#建议的数据与执行顺序)第 5 步“恢复服务用保存的控制绑定认证原 socket/final 文件”的前提不符。
+
+### 修复后的行为
+
+Job Host 解析并核对准备请求、启动自身期限计时后，立即核对控制绑定（会话、Job、attempt 及目录不与工作区、私有目录、工具链重叠），并打开控制通道；之后才加载诊断结构、SDK 线程和策略。控制观察里的 `policyDigest` 取 Worker 请求中冻结的摘要，也就是 Agent 准备登记时保存的摘要；策略编译结果仍须与它相等才能继续准备，不相等时以 `JOB_HOST_POLICY_CHANGED` 停止并写出签名终态。
+
+此后任何准备失败都走原停止流程：等待已开始的 SDK 操作，执行 `cleanupAfterCommand()` 和 reset，写出签名 `final.json`。Agent 原有的认证、`taskStarted=false`、`srtReset=true`、宿主进程及进程组已消失等条件全部不变，满足时按原 `host_never_started` 依据释放，不再无限重试。
+
+仍不能自动释放、继续保持占用并等待管理员处置的情况：控制通道本身打开失败；SDK 线程从未创建，因而没有实际复位（`srtReset=false`，规则见[第二轮：依赖加载期间的启动监督](#startup-supervision)）；Job Host 在写出终态前被强制结束。这些情况下核查仍按原间隔重试，并且每次失败都保存一条新的加密诊断记录：诊断 05 显示同一 Run 在约 14 小时里积累了 3080 条，没有上限。这一数据增长问题记在 [BL-20261012-001](../../backlog/BL-20261012-001-清-理-核-查-诊-断-无-上.md)。S10 已卡住的 Run `run:c1284750-de9d-43dd-aee1-5474dc27539c` 由旧版本 Job Host 创建，没有终态文件，按 G72 在第三次部署停服窗口用管理员处置解决，修复不追溯产生它的释放证明。
+
+### 验证
+
+`test/integration/sandbox-preparation-control.test.ts` 的 `[R2-L8]` 测试使用真实打包 Job Host、真实控制目录和生产 Agent 控制器：先登记准备控制并发布 `launch` 决定，再让 Job Host 在策略步骤失败（测试加载钩子把子进程里的策略文本改动一个字符，使摘要不符）；随后用重新创建的控制器执行原停止与释放核验，要求得到 `host_never_started` 释放依据，并独立读回签名终态。Hermes 上修复前后的命令与结果记录在 `.agents/tasks/round2-tool-execution/evidence.jsonl` 对应 R2-L8 的条目。生产 Ubuntu 24.04 上的行为须在第三次部署后读回；Mac 行为未验证。
 
 [返回阅读导航](#阅读导航)

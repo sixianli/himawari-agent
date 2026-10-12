@@ -207,6 +207,71 @@ async function prepare(value: unknown, controlValue?: unknown) {
     () => stop("deadline"),
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
   );
+  if (controlValue !== undefined) {
+    const binding = controlValue as JobHostControlBinding;
+    if (
+      !binding ||
+      binding.sessionId !== sessionId ||
+      binding.jobId !== request.jobId ||
+      binding.attemptId !== request.attemptId
+    )
+      throw new Error("JOB_HOST_CONTROL_BINDING_INVALID");
+    const overlaps = (a: string, b: string) => {
+      const relative = path.relative(a, b);
+      return (
+        relative === "" ||
+        (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+      );
+    };
+    for (const allowed of [
+      ...(request.policy.workspace ? [request.policy.workspace] : []),
+      request.policy.privateDirectory,
+      ...request.policy.readOnlyToolchainPaths,
+    ]) {
+      if (overlaps(allowed, binding.directory) || overlaps(binding.directory, allowed))
+        throw new Error("JOB_HOST_CONTROL_SCOPE_OVERLAP");
+    }
+    const policyInput = request.policy;
+    const requestedPolicyDigest = request.policyDigest;
+    enterStage("control");
+    control = await openJobHostControl(
+      binding,
+      () => ({
+        sessionId: binding.sessionId,
+        jobId: binding.jobId,
+        attemptId: binding.attemptId,
+        bootId,
+        processIdentityRef,
+        processId: process.pid,
+        processStartedAt,
+        resources: observer?.current() ?? null,
+        sequence: ++controlSequence,
+        observedAt: new Date().toISOString(),
+        phase,
+        policyDigest: requestedPolicyDigest,
+        linuxNamespace,
+        privateDirectoryRef: `sandbox-private:${createHash("sha256").update(policyInput.privateDirectory).digest("hex")}`,
+        ...(request?.readiness
+          ? {
+              readiness: {
+                ref: request.readiness.ref,
+                digest: createHash("sha256")
+                  .update(JSON.stringify(request.readiness))
+                  .digest("hex"),
+                readyAt,
+              },
+            }
+          : {}),
+        taskStarted: userTaskStarted,
+        taskProcessExited: exited,
+        stdioClosed: closed,
+        srtReset: managerReset,
+        taskProcessGroupGone,
+        ...(processStartToken && taskProcessGroup ? { processStartToken, taskProcessGroup } : {}),
+      }),
+      () => stop("cancelled"),
+    );
+  }
   enterStage("dependencies");
   const loading = import("@himawari-agent/execution-contracts").then(async (module) => {
     diagnostics = module;
@@ -234,70 +299,6 @@ async function prepare(value: unknown, controlValue?: unknown) {
     policyDigest: createHash("sha256").update(policyJson).digest("hex"),
   };
   if (policy.policyDigest !== request.policyDigest) throw new Error("JOB_HOST_POLICY_CHANGED");
-  if (controlValue !== undefined) {
-    const binding = controlValue as JobHostControlBinding;
-    if (
-      !binding ||
-      binding.sessionId !== sessionId ||
-      binding.jobId !== request.jobId ||
-      binding.attemptId !== request.attemptId
-    )
-      throw new Error("JOB_HOST_CONTROL_BINDING_INVALID");
-    const overlaps = (a: string, b: string) => {
-      const relative = path.relative(a, b);
-      return (
-        relative === "" ||
-        (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
-      );
-    };
-    for (const allowed of [
-      ...(request.policy.workspace ? [request.policy.workspace] : []),
-      request.policy.privateDirectory,
-      ...request.policy.readOnlyToolchainPaths,
-    ]) {
-      if (overlaps(allowed, binding.directory) || overlaps(binding.directory, allowed))
-        throw new Error("JOB_HOST_CONTROL_SCOPE_OVERLAP");
-    }
-    const policyInput = request.policy;
-    enterStage("control");
-    control = await openJobHostControl(
-      binding,
-      () => ({
-        sessionId: binding.sessionId,
-        jobId: binding.jobId,
-        attemptId: binding.attemptId,
-        bootId,
-        processIdentityRef,
-        processId: process.pid,
-        processStartedAt,
-        resources: observer?.current() ?? null,
-        sequence: ++controlSequence,
-        observedAt: new Date().toISOString(),
-        phase,
-        policyDigest: policy.policyDigest,
-        linuxNamespace,
-        privateDirectoryRef: `sandbox-private:${createHash("sha256").update(policyInput.privateDirectory).digest("hex")}`,
-        ...(request?.readiness
-          ? {
-              readiness: {
-                ref: request.readiness.ref,
-                digest: createHash("sha256")
-                  .update(JSON.stringify(request.readiness))
-                  .digest("hex"),
-                readyAt,
-              },
-            }
-          : {}),
-        taskStarted: userTaskStarted,
-        taskProcessExited: exited,
-        stdioClosed: closed,
-        srtReset: managerReset,
-        taskProcessGroupGone,
-        ...(processStartToken && taskProcessGroup ? { processStartToken, taskProcessGroup } : {}),
-      }),
-      () => stop("cancelled"),
-    );
-  }
   enterStage("resource_snapshot");
   if (request.resourceLimits) await readProcessSnapshot();
   enterStage("dependencies");
