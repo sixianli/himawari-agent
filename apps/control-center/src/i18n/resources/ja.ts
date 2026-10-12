@@ -187,8 +187,8 @@ export const messages = {
   "chat.environment.title": "実行環境",
   "chat.environment.mode.srt": "デフォルトモード",
   "chat.environment.mode.strict": "厳格モード",
-  "chat.environment.running": "{count} 個のプログラムが実行中",
-  "chat.environment.idle": "実行中のプログラムはありません",
+  "chat.environment.running": "{count} 個のバックグラウンドプログラムが実行中",
+  "chat.environment.idle": "実行中のバックグラウンドプログラムはありません",
   "chat.environment.currentMode": "現在のモード",
   "chat.environment.srtMeaning":
     "ツールはこのコンピューター上のプロセス単位のサンドボックス（SRT）で実行され、アクセスできるファイルとネットワークが制限されます。停止で保証されるのはツールのプロセスグループの終了だけで、グループを離れたプログラムは動き続けている可能性があります。",
@@ -211,7 +211,7 @@ export const messages = {
     "ツールの内部から開始するサブタスクも使用できません。これらのツールを呼び出すと、該当する手順に「厳格モードでは使用できません」と表示され、別の方法では実行されません。",
   "chat.environment.noneUnavailable":
     "デフォルトモードでは、モードが原因で使用できないツールはありません。",
-  "chat.environment.threadRunning": "実行中のプログラムあり",
+  "chat.environment.threadRunning": "実行中のバックグラウンドプログラムあり",
   "chat.environment.readFailed": "実行環境を読み取れません。しばらくしてから開き直してください。",
   "chat.phase.unresolved": "結果未確認",
   "chat.phase.preparing": "準備中",
@@ -224,6 +224,10 @@ export const messages = {
   "chat.phase.unavailable": "記録を利用できません",
   "chat.nextAction.unresolved":
     "結果は未確認です。元のリソースが解放されたと確認できるまで、書き込み操作を再実行しないでください。",
+  "chat.waiting.tool":
+    "このターンはまだ進行中です：ツール {tool} の結果を待っています。ツールは実行環境に渡されましたが、停止したことはまだ確認されていません。",
+  "chat.waiting.afterTurn":
+    "このターンは終了しましたが、ツール {tool} の実行環境が停止したことはまだ確認されていません。",
   "chat.nextAction.stop":
     "結果は未確認です。書き込みを再試行する前に、この実行を停止してリソースを確認してください。",
   "chat.nextAction.retryCleanup":

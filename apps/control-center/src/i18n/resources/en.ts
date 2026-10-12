@@ -183,8 +183,8 @@ export const messages = {
   "chat.environment.title": "Execution environment",
   "chat.environment.mode.srt": "Default mode",
   "chat.environment.mode.strict": "Strict mode",
-  "chat.environment.running": "{count} programs running",
-  "chat.environment.idle": "No programs running",
+  "chat.environment.running": "{count} background programs running",
+  "chat.environment.idle": "No background programs running",
   "chat.environment.currentMode": "Current mode",
   "chat.environment.srtMeaning":
     "Tools run in a process-level sandbox (SRT) on this computer that limits which files and networks they can reach. A stop only guarantees that the tool's process group has ended; programs that left the group may still be running.",
@@ -208,7 +208,7 @@ export const messages = {
     "Sub-tasks started from inside a tool are also unavailable. Calls to these tools show “Unavailable in strict mode” and are never run another way.",
   "chat.environment.noneUnavailable":
     "No tools are unavailable because of the mode in default mode.",
-  "chat.environment.threadRunning": "Programs running",
+  "chat.environment.threadRunning": "Background programs running",
   "chat.environment.readFailed":
     "The execution environment cannot be read right now. Try opening it again later.",
   "chat.phase.unresolved": "Result unconfirmed",
@@ -222,6 +222,10 @@ export const messages = {
   "chat.phase.unavailable": "Record unavailable",
   "chat.nextAction.unresolved":
     "The result is unconfirmed. Do not repeat a write operation until the original resource is verified as released.",
+  "chat.waiting.tool":
+    "This turn is still in progress: waiting for the result of {tool}. The tool was handed to the execution environment, but it is not yet confirmed to have stopped.",
+  "chat.waiting.afterTurn":
+    "This turn has ended, but the execution environment of {tool} is not yet confirmed to have stopped.",
   "chat.nextAction.stop":
     "The result is unconfirmed. Stop this run and verify its resources before retrying a write.",
   "chat.nextAction.retryCleanup":

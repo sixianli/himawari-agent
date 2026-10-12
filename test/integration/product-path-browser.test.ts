@@ -2654,7 +2654,7 @@ productDescribe(
           expect(finalRecords[0]).toMatchObject({ stdioClosed: true });
           const releasedStatus =
             process.platform === "linux"
-              ? page.getByRole("button", { name: "默认模式 · 没有程序在运行", exact: true })
+              ? page.getByRole("button", { name: "默认模式 · 没有后台程序在运行", exact: true })
               : page.getByText(/停止未经严格确认/).first();
           await uiExpect(releasedStatus).toBeVisible({ timeout: 10_000 });
           await releasedStatus.scrollIntoViewIfNeeded();

@@ -170,8 +170,8 @@ export const messages = {
   "chat.environment.title": "执行环境",
   "chat.environment.mode.srt": "默认模式",
   "chat.environment.mode.strict": "严格模式",
-  "chat.environment.running": "{count} 个程序在运行",
-  "chat.environment.idle": "没有程序在运行",
+  "chat.environment.running": "{count} 个后台程序在运行",
+  "chat.environment.idle": "没有后台程序在运行",
   "chat.environment.currentMode": "当前模式",
   "chat.environment.srtMeaning":
     "工具在本机的进程级沙箱（SRT）里运行，限制它能碰到的文件和网络。停止只保证工具的进程组已结束，离开进程组的程序可能仍在运行。",
@@ -191,7 +191,7 @@ export const messages = {
   "chat.environment.strictNote":
     "工具内部再发起的子任务也不可用。调用这些工具时，对应步骤会显示“严格模式下不可用”，不会改用其他方式执行。",
   "chat.environment.noneUnavailable": "默认模式下没有因为模式而不可用的工具。",
-  "chat.environment.threadRunning": "有程序在运行",
+  "chat.environment.threadRunning": "有后台程序在运行",
   "chat.environment.readFailed": "暂时读不到执行环境，请稍后再打开。",
   "chat.phase.unresolved": "结果未确认",
   "chat.phase.preparing": "正在准备",
@@ -203,6 +203,9 @@ export const messages = {
   "chat.phase.stopped": "已停止",
   "chat.phase.unavailable": "记录不可用",
   "chat.nextAction.unresolved": "结果仍未确认。在原资源核验为已释放之前，不要再次发起写操作。",
+  "chat.waiting.tool":
+    "这一轮还在进行：正在等工具 {tool} 的结果。工具已经交给执行环境，但还没确认它已经停下。",
+  "chat.waiting.afterTurn": "这一轮已经结束，但工具 {tool} 的执行环境还没确认已经停下。",
   "chat.nextAction.stop": "结果仍未确认。先停止本轮并核验资源；确认释放前不要重试写操作。",
   "chat.nextAction.retryCleanup":
     "结果仍未确认。请使用“再次停止并检查清理”核验资源；确认释放前不要重试写操作。",

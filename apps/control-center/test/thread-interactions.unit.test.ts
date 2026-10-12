@@ -603,6 +603,131 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it("[R2-U2] explains which tool a stuck turn waits for, whether the turn continues, and that no background program runs", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "reconciling_external_result",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id, values) =>
+        Object.entries(values ?? {}).reduce(
+          (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+          messages[id],
+        ),
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEnvironmentAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 7,
+      revision: "u2-waiting",
+      lastObservedAt: NOW,
+      displayPhase: "unresolved",
+      reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+      availableActions: ["stop"],
+      needsAttention: true,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "u2-read",
+          displayPhase: "unresolved",
+          reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "u2-read", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_environment")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_environment_snapshot",
+          payload: {
+            environment: { mode: "srt", programs: [], unavailableTools: [] },
+            generatedAt: NOW,
+          },
+        };
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "u2-record",
+                      sequence: 1,
+                      itemId: "u2-read",
+                      kind: "tool",
+                      phase: "updated",
+                      name: "read",
+                      text: "",
+                      input: '{"path":"notes.md"}',
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".turn-activity .turn-wait-reason")?.textContent).toBe(
+      "这一轮还在进行：正在等工具 read 的结果。工具已经交给执行环境，但还没确认它已经停下。",
+    );
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll(".environment-line > button")].map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["默认模式 · 没有后台程序在运行⌄"]);
+    expect(container.textContent).not.toContain("没有程序在运行");
+
+    runs = [{ runId: "run-ui", revision: 8, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    state = {
+      ...state,
+      runRevision: 8,
+      revision: "u2-ended",
+      availableActions: ["retry_cleanup"],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".turn-activity .turn-wait-reason")?.textContent).toBe(
+      "这一轮已经结束，但工具 read 的执行环境还没确认已经停下。",
+    );
+    expect(container.querySelector(".execution-next-action")?.textContent).toBe(
+      messages["chat.nextAction.retryCleanup"],
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("rereads an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
     runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
     options = {

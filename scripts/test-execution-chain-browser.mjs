@@ -666,9 +666,9 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
           },
         });
         await page.goto(`${baseUrl}/threads/thread-main`);
-        const line = page.getByRole("button", { name: "严格模式 · 2 个程序在运行" });
+        const line = page.getByRole("button", { name: "严格模式 · 2 个后台程序在运行" });
         await expect(line).toHaveAttribute("aria-expanded", "false");
-        const runningMarkers = page.getByRole("img", { name: "有程序在运行" });
+        const runningMarkers = page.getByRole("img", { name: "有后台程序在运行" });
         if (width >= 1024) await expect(runningMarkers).toHaveCount(2);
         await line.click();
         const panel = page.getByRole("dialog", { name: "执行环境" });
@@ -702,8 +702,8 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await expect(page).toHaveURL(/\/threads\/thread-research/);
         await expect(page.getByRole("dialog", { name: "执行环境" })).toHaveCount(0);
         await send({ environment: { mode: "srt", programs: [], unavailableTools: [] } });
-        await page.getByRole("button", { name: "严格模式 · 2 个程序在运行" }).click();
-        const idleLine = page.getByRole("button", { name: "默认模式 · 没有程序在运行" });
+        await page.getByRole("button", { name: "严格模式 · 2 个后台程序在运行" }).click();
+        const idleLine = page.getByRole("button", { name: "默认模式 · 没有后台程序在运行" });
         await expect(idleLine).toHaveAttribute("aria-expanded", "true");
         const idlePanel = page.getByRole("dialog", { name: "执行环境" });
         for (const text of [
@@ -715,7 +715,9 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
           await expect(idlePanel).toContainText(text);
         if (width >= 1024) await expect(runningMarkers).toHaveCount(0);
         await page.reload();
-        await expect(page.getByRole("button", { name: "默认模式 · 没有程序在运行" })).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "默认模式 · 没有后台程序在运行" }),
+        ).toBeVisible();
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-environment-default.png`),
         });

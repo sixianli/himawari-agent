@@ -13,6 +13,7 @@ import {
   executionStateLabel,
   executionTime,
   executionToolPhase,
+  executionWaitReason,
   isTerminalRun,
   type RunSummary,
   recordedInterval,
@@ -112,6 +113,7 @@ export function ExecutionProcess({
       ? "chat.recordUnavailable"
       : undefined;
   const nextAction = state ? executionNextAction(state) : undefined;
+  const waitReason = state ? executionWaitReason(state, run, items) : undefined;
   return (
     <>
       {!isTerminalRun(run) || state?.displayPhase === "unresolved" ? (
@@ -126,6 +128,9 @@ export function ExecutionProcess({
           <output>
             <strong>{message(stateLabel ?? activity.label, { tool: activity.tool })}</strong>
           </output>
+          {waitReason ? (
+            <p className="turn-wait-reason">{message(waitReason.id, { tool: waitReason.tool })}</p>
+          ) : null}
           {state && connection !== "connected" ? (
             <small>{message("chat.disconnected")}</small>
           ) : null}

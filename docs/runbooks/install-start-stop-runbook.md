@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:30f2c2119b4124af6cc7267bd93491ad9ab240afaaf1a025dd04431955a5234a"
+contract_sha256: "sha256:6d845298ad96cabaa8f71750e5cde07b4ca3e171487fd4758c243ece14632ac6"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -296,6 +296,8 @@ Schema 41 的原自动释放记录保存在独立的 `sandbox_reservation_releas
 Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只适用于当前配置归属下单个前台 SRT Run 的已停止未绑定预约。运维独立确认原宿主组不存在、原控制目录内没有 final、没有相关运行进程后，提交预览摘要、管理员声明引用与现场报告 SHA-256；实际本机 UID/account/hostname 分别保存。CLI 不解密 control、不读取 secret、不自动核查任何进程或 final，声明和报告 SHA 不是认证 Host proof。确认命令要求 Agent/Worker 停止、原 state-root 独占锁与 Schema 50，不自动迁移；只读预览允许 Schema 49/50，旧库只能先核对目标及正式备份迁移前置。回执、审计、占用释放、Run/checkpoint failed、原执行租约结算及 Thread 事件同事务保存。工具结果和效果仍未确认，管理员 basis 不进入 never-started，不交回模型或重放工具。Schema 49 及更旧 writer 不得写入 Schema 50；回退仍须停服并恢复匹配版本的完整恢复点。具体步骤见[离线管理员处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md]
 
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
+
+一轮显示“结果未确认”时，该轮状态行下方另有一行说明卡在哪个工具，以及这一轮是否还在进行；它只来自持久执行状态和 Run 是否已结束，不表示执行环境已停下或资源已释放。执行环境状态条只统计后台或服务程序，文字为“没有后台程序在运行”或“N 个后台程序在运行”，本轮正在执行的单次工具不计入。安装复核时应在一个卡住的工具场景里核对这两处文字。措辞来源见[控制中心 v4 设计的 G74 措辞补充](../execution/specs/2026-09-15-control-center-v4-design.md#v5-g74-wording)。
 
 历史工具结果以已持久保存的产品 outcome 为依据：`failed` 或 `result_unknown` 不因旧 Pi 记录的 `isError=false` 或缺少错误码变为完成。确定未派发的 `FILE_VERSION_CONFLICT` 显示“尚未派发”；若同时存在结果未知证据，或产品成功与未派发标记相互矛盾，优先保留“结果未确认”，不能据此推断没有写入。原输出内容与事件序号保持不变，不补造执行时长，也不重放工具。
 

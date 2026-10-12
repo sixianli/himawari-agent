@@ -389,6 +389,21 @@ export function executionStateLabel(
   );
 }
 
+export function executionWaitReason(
+  state: ThreadExecutionState,
+  run: RunSummary,
+  items: readonly Pick<ThreadExecutionRecord, "itemId" | "kind" | "name">[],
+): { id: MessageId; tool: string } | undefined {
+  if (state.displayPhase !== "unresolved") return undefined;
+  const operation = state.operations.find((operation) => operation.displayPhase === "unresolved");
+  const tool = items.find((item) => item.kind === "tool" && item.itemId === operation?.itemId);
+  if (!tool) return undefined;
+  return {
+    id: isTerminalRun(run) ? "chat.waiting.afterTurn" : "chat.waiting.tool",
+    tool: tool.name,
+  };
+}
+
 /** Give the owner a safe follow-up based only on durable execution facts. */
 export function executionNextAction(state: ThreadExecutionState): MessageId | undefined {
   if (state.displayPhase === "unresolved") {
