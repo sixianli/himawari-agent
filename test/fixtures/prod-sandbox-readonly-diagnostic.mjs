@@ -15,6 +15,7 @@ const detailFields = [
   "deadlineRemainingMs",
   "expectedSequence",
   "receivedSequence",
+  "steps",
 ];
 const failureCodes = new Set([
   "DIAGNOSTIC_ARGUMENT_INVALID",

@@ -212,6 +212,8 @@ async function configureSdkLoad(
     failInitialize?: boolean;
     blockInitializeMs?: number;
     blockDependenciesMs?: number;
+    blockModuleMs?: number;
+    blockContractsImportMs?: number;
   },
 ) {
   launch.entry = jobHostEntry();
@@ -252,12 +254,26 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
   }
   const loaded = await nextLoad(url, context);
   ${entryDiagnostics.after}
+  if (${Boolean(options.blockContractsImportMs)} && url.endsWith("/@himawari-agent/execution-contracts/dist/index.js"))
+    return { ...loaded, source: ${JSON.stringify(
+      `const himawariFixtureContractsUntil = performance.now() + ${options.blockContractsImportMs ?? 0};
+while (performance.now() < himawariFixtureContractsUntil) {}
+`,
+    )} + loaded.source.toString() };
   if (!url.endsWith("/sandbox/sandbox-manager.js")) return loaded;
   return { ...loaded, source: ${JSON.stringify(
     `import { threadId as himawariSdkThreadId } from "node:worker_threads";
 const himawariFixtureTrace = (stage) => { if (${Boolean(process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"])}) process.stderr.write(JSON.stringify({ stage, at: Date.now(), processId: process.pid, threadId: himawariSdkThreadId, ...${JSON.stringify(injectionDetails)}, moduleUrl: import.meta.url }) + "\\n"); };
 himawariFixtureTrace("sdk_module_entered");
-await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}));
+${
+  options.blockModuleMs
+    ? `process.stderr.write(JSON.stringify({ stage: "SDK_MODULE_STALL_STARTED", threadId: himawariSdkThreadId }) + "\\n");
+const himawariFixtureModuleUntil = performance.now() + ${options.blockModuleMs};
+while (performance.now() < himawariFixtureModuleUntil) {}
+process.stderr.write(JSON.stringify({ stage: "SDK_MODULE_STALL_FINISHED", threadId: himawariSdkThreadId }) + "\\n");
+`
+    : ""
+}await new Promise((resolve) => setTimeout(resolve, ${options.delayMs}));
 himawariFixtureTrace("sdk_module_delay_finished");
 ` +
       (options.failImport
@@ -493,6 +509,88 @@ it.each(["dependencies", "initialize"] as const)(
     expect(preparedState).toBe("alive");
   },
 );
+
+async function prepareStalledHost(root: string, jobId: string) {
+  const { policy, compiled } = await prepareJobPolicy({
+    workspace: null,
+    privateRoot: root,
+    jobId,
+    writable: false,
+    readOnlyToolchainPaths: [],
+    protectedPaths: [],
+    allowedDomains: [],
+  });
+  const host = prepareSandboxJobHost({
+    jobId,
+    attemptId: "original-attempt",
+    policy,
+    policyDigest: compiled.policyDigest,
+    executable: process.execPath,
+    args: ["-e", "process.exit(99)"],
+    deadlineAt: new Date(Date.now() + 30000).toISOString(),
+    maxOutputBytes: 4096,
+    cleanupTimeoutMs: 5000,
+  });
+  cleanups.push(async () => {
+    host.cancel();
+    await host.result;
+  });
+  let preparationError: unknown;
+  await host.ready.catch((error: unknown) => {
+    preparationError = error;
+  });
+  const preparedState = host.inspect()?.state;
+  host.cancel();
+  const observed = await host.result;
+  launch.events.push({ stage: "preparation-readback", observed });
+  return { observed, preparationError, preparedState };
+}
+
+it("[R2-L7] keeps the original lease while the sandbox library loads slowly", async () => {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0, blockModuleMs: 2200 });
+  const { observed, preparationError, preparedState } = await prepareStalledHost(
+    root,
+    "slow-library-load",
+  );
+  expect(observed.diagnostic?.detail?.code, JSON.stringify(observed)).not.toBe(
+    "JOB_HOST_HEARTBEAT_EXPIRED",
+  );
+  const stalls = launch.stderr
+    .split("\n")
+    .filter((line) => line.startsWith("{") && line.includes("SDK_MODULE_STALL_"))
+    .map((line) => JSON.parse(line) as { stage: string; threadId: number });
+  expect(stalls.map((entry) => entry.stage)).toEqual([
+    "SDK_MODULE_STALL_STARTED",
+    "SDK_MODULE_STALL_FINISHED",
+  ]);
+  expect(
+    stalls.every((entry) => entry.threadId > 0),
+    JSON.stringify(stalls),
+  ).toBe(true);
+  expect(preparationError).toBeUndefined();
+  expect(preparedState).toBe("alive");
+  expect(observed).toMatchObject({ taskStarted: false, srtReset: true });
+});
+
+it("[R2-L7] records the preparation step that was running when the Job Host went silent", async () => {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0, blockContractsImportMs: 2200 });
+  const { observed, preparationError } = await prepareStalledHost(root, "silent-step");
+  expect(preparationError).toBeInstanceOf(Error);
+  expect(observed.taskStarted).toBe(false);
+  expect(observed.diagnostic, JSON.stringify(observed)).toMatchObject({
+    stage: "dependencies",
+    detail: { code: "JOB_HOST_HEARTBEAT_EXPIRED", phase: "preparing" },
+  });
+  const steps = observed.diagnostic?.detail?.steps;
+  expect(steps, JSON.stringify(observed)).toEqual([
+    { stage: "dependencies", startedMs: expect.any(Number), elapsedMs: null },
+  ]);
+  expect(steps?.[0]?.startedMs).toBeGreaterThanOrEqual(0);
+});
 
 it("[R2-D16] reads the configured Job Host entry from the selected runtime", async () => {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));

@@ -1107,6 +1107,10 @@ const boundedPreparationDiagnostic = {
     deadlineRemainingMs: 1000,
     expectedSequence: 1,
     receivedSequence: 1,
+    steps: [
+      { stage: "dependencies" as const, startedMs: 3, elapsedMs: 9 },
+      { stage: "sdk_initialize" as const, startedMs: 12, elapsedMs: null },
+    ],
   },
 };
 
@@ -1138,6 +1142,7 @@ it("[R2-L4][prod-sandbox-D3] exposes preparation failure enums without private p
       hostDetailCode: "JOB_HOST_ENVIRONMENT_INVALID",
       hostCommand: "prepare",
       hostPhase: "preparing",
+      hostSteps: ["dependencies:3:9", "sdk_initialize:12:running"],
     },
   ]);
   expect(output.value()).not.toContain("private-");
@@ -1187,6 +1192,13 @@ it("[R2-L4][prod-sandbox-D3] rejects private text in every diagnostic enum and u
       ...boundedPreparationDiagnostic,
       hostDetail: { ...boundedPreparationDiagnostic.hostDetail, [field]: privateText },
     })),
+    {
+      ...boundedPreparationDiagnostic,
+      hostDetail: {
+        ...boundedPreparationDiagnostic.hostDetail,
+        steps: [{ stage: privateText, startedMs: 1, elapsedMs: null }],
+      },
+    },
     { ...boundedPreparationDiagnostic, message: privateText },
     {
       ...boundedPreparationDiagnostic,

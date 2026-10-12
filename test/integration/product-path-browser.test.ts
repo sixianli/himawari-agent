@@ -2045,6 +2045,9 @@ productDescribe(
           hostDetailCode: "UNKNOWN",
           hostCommand: "prepare",
           hostPhase: "preparing",
+          hostSteps: expect.arrayContaining([
+            expect.stringMatching(/^sdk_initialize:\d+:running$/),
+          ]),
         });
         const safeOutput = JSON.stringify(safeServiceDiagnostics);
         for (const privateValue of [

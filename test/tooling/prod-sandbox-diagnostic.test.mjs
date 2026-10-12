@@ -74,6 +74,7 @@ const detail = {
   deadlineRemainingMs: 5000,
   expectedSequence: 1,
   receivedSequence: null,
+  steps: [{ stage: "sdk_initialize", startedMs: 7000, elapsedMs: null }],
 };
 const diagnostic = {
   stage: "prepare",
@@ -114,9 +115,10 @@ describe("[R2-L4][prod-sandbox-D1-script] frozen diagnostic output", () => {
         "deadlineRemainingMs",
         "expectedSequence",
         "receivedSequence",
+        "steps",
       ],
     });
-    assert.doesNotMatch(JSON.stringify(output), /PRIVATE|8000|5000/);
+    assert.doesNotMatch(JSON.stringify(output), /PRIVATE|8000|7000|5000/);
   });
 
   it("retains schema-defined nulls without inventing host detail", () => {

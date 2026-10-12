@@ -570,6 +570,10 @@ it("preserves authenticated failure detail and rejects unbounded private fields"
     deadlineRemainingMs: 5000,
     expectedSequence: 3,
     receivedSequence: 3,
+    steps: [
+      { stage: "sdk_initialize", startedMs: 40, elapsedMs: 900 },
+      { stage: "launch", startedMs: 940, elapsedMs: null },
+    ],
   };
   process.emitMessage({ type: "diagnostic", stage: "launch", systemCode: "UNKNOWN", detail });
   process.emitMessage({
@@ -602,6 +606,44 @@ it("retains the parent heartbeat expiry as the first private failure", async () 
       receivedSequence: null,
     },
   });
+});
+
+it("[R2-L7] reports the last step the Job Host announced before it went silent", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  const steps = [
+    { stage: "dependencies", startedMs: 30, elapsedMs: 400 },
+    { stage: "policy", startedMs: 430, elapsedMs: null },
+  ];
+  process.emitMessage({ type: "heartbeat", steps });
+  await vi.advanceTimersByTimeAsync(1750);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "policy",
+    detail: { code: "JOB_HOST_HEARTBEAT_EXPIRED", phase: "preparing", steps },
+  });
+});
+
+it.each([
+  ["missing", undefined],
+  ["unknown stage", [{ stage: "private-stage", startedMs: 1, elapsedMs: null }]],
+  ["extra field", [{ stage: "policy", startedMs: 1, elapsedMs: null, path: "/private" }]],
+  [
+    "too many steps",
+    Array.from({ length: 17 }, () => ({ stage: "policy", startedMs: 1, elapsedMs: 1 })),
+  ],
+])("[R2-L7] stops a Job Host whose heartbeat steps are %s", async (_name, steps) => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps });
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect(JSON.stringify((await host.result).diagnostic ?? null)).not.toContain("private");
 });
 
 describe("Job Host deadline classification", () => {
@@ -646,7 +688,7 @@ describe("Job Host deadline classification", () => {
       deadlineAt: new Date(Date.now() + scenario.deadlineMs).toISOString(),
     };
     const host = prepareSandboxJobHost(input);
-    const heartbeat = setInterval(() => process.emitMessage({ type: "heartbeat" }), 100);
+    const heartbeat = setInterval(() => process.emitMessage({ type: "heartbeat", steps: [] }), 100);
     await vi.advanceTimersByTimeAsync(scenario.elapsedMs);
     const cancellations = process.send.mock.calls
       .map(([message]) => message)

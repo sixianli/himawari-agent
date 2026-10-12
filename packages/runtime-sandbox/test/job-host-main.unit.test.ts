@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,6 @@ const boundary = vi.hoisted(() => ({
   spawn: vi.fn(),
   realpath: vi.fn(),
   stat: vi.fn(),
-  compile: vi.fn(),
   control: vi.fn(),
   namespace: vi.fn(),
   egress: vi.fn(),
@@ -21,6 +21,7 @@ const boundary = vi.hoisted(() => ({
   guardian: vi.fn(),
   sdk: vi.fn(),
   manager: {
+    compileSandboxPolicy: vi.fn(),
     checkDependenciesAsync: vi.fn(),
     isSupportedPlatform: vi.fn(),
     initialize: vi.fn(),
@@ -33,7 +34,6 @@ vi.mock("node:process", () => ({ default: boundary.process }));
 vi.mock("node:child_process", () => ({ spawn: boundary.spawn }));
 vi.mock("node:fs/promises", () => ({ realpath: boundary.realpath, stat: boundary.stat }));
 vi.mock("../src/sandbox-sdk.ts", () => ({ createSandboxSdk: boundary.sdk }));
-vi.mock("../src/policy.ts", () => ({ compileSandboxPolicy: boundary.compile }));
 vi.mock("../src/job-host-control.ts", () => ({ openJobHostControl: boundary.control }));
 vi.mock("../src/linux-namespace.ts", () => ({ captureLinuxNamespace: boundary.namespace }));
 vi.mock("../src/network-egress.ts", () => ({ openNetworkEgress: boundary.egress }));
@@ -46,7 +46,8 @@ vi.mock("../src/resource-observer.ts", () => ({
 }));
 
 const SESSION = "11111111-1111-1111-1111-111111111111";
-const DIGEST = "a".repeat(64);
+const POLICY_JSON = JSON.stringify({ network: { allowedDomains: [] } });
+const DIGEST = createHash("sha256").update(POLICY_JSON).digest("hex");
 let listeners: Map<string, (...args: unknown[]) => void>;
 let sent: Record<string, unknown>[];
 let sequence: number;
@@ -181,10 +182,7 @@ beforeEach(() => {
   boundary.spawn.mockReturnValue(task);
   boundary.realpath.mockImplementation(async (value) => value);
   boundary.stat.mockResolvedValue({ isFile: () => true });
-  boundary.compile.mockResolvedValue({
-    policyDigest: DIGEST,
-    policyJson: JSON.stringify({ network: { allowedDomains: [] } }),
-  });
+  boundary.manager.compileSandboxPolicy.mockResolvedValue({ policyJson: POLICY_JSON });
   boundary.control.mockResolvedValue(control);
   boundary.namespace.mockResolvedValue({ ref: "namespace-owned" });
   boundary.egress.mockResolvedValue(network);
@@ -212,40 +210,32 @@ afterEach(() => {
 });
 
 describe("Job Host entrypoint protocol and lifecycle", () => {
-  it("waits for its already-started SDK load when policy import fails first", async () => {
-    let finishLoading!: () => void;
-    boundary.sdk.mockReturnValue(
-      new Promise<typeof boundary.manager>((resolve) => {
-        finishLoading = () => resolve(boundary.manager);
-      }),
-    );
+  it("[R2-L7] prepares without loading the policy module on the Job Host thread", async () => {
     vi.doMock("../src/policy.ts", () => {
       throw Object.assign(new Error("JOB_HOST_TEST_POLICY_IMPORT_FAILURE"), { code: "EIO" });
     });
     try {
       await prepare();
-      expect(boundary.sdk).toHaveBeenCalledOnce();
+      expect(boundary.manager.compileSandboxPolicy).toHaveBeenCalledWith(request().policy);
+      expect(sent.some((message) => message["type"] === "ready")).toBe(true);
       expect(result()).toBeUndefined();
-      expect(boundary.manager.reset).not.toHaveBeenCalled();
-      expect(processBoundary.disconnect).not.toHaveBeenCalled();
-      expect(boundary.spawn).not.toHaveBeenCalled();
-      expect(sent.some((message) => message["type"] === "ready")).toBe(false);
-      finishLoading();
-      await settle();
-      expect(boundary.manager.cleanupAfterCommand).toHaveBeenCalledOnce();
-      expect(boundary.manager.reset).toHaveBeenCalledOnce();
-      expect(result()).toMatchObject({
-        reason: "host_failure",
-        taskStarted: false,
-        srtReset: true,
-      });
-      expect(processBoundary.disconnect).toHaveBeenCalledOnce();
-      expect(boundary.spawn).not.toHaveBeenCalled();
     } finally {
-      finishLoading?.();
-      vi.doMock("../src/policy.ts", () => ({ compileSandboxPolicy: boundary.compile }));
-      await settle();
+      vi.doUnmock("../src/policy.ts");
     }
+  });
+  it("[R2-L7] resets the SDK thread when policy compilation fails there", async () => {
+    boundary.manager.compileSandboxPolicy.mockRejectedValue(
+      Object.assign(new Error("UNKNOWN"), { code: "EIO" }),
+    );
+    await prepare();
+    expect(boundary.manager.initialize).not.toHaveBeenCalled();
+    expect(boundary.manager.cleanupAfterCommand).toHaveBeenCalledOnce();
+    expect(boundary.manager.reset).toHaveBeenCalledOnce();
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: "diagnostic", stage: "policy", systemCode: "EIO" }),
+    );
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false, srtReset: true });
+    expect(boundary.spawn).not.toHaveBeenCalled();
   });
   it("fails without a reset claim if its SDK thread exits while ready", async () => {
     await prepare();
@@ -399,13 +389,41 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       stdinBase64: Buffer.from("private input").toString("base64"),
       resourceLimits: { maxCpuTimeMs: 1000, maxMemoryBytes: 10000 },
     });
-    expect(sent[0]).toMatchObject({ type: "heartbeat", sessionId: SESSION, sequence: 1 });
-    expect(sent[1]).toMatchObject({
+    expect(sent[0]).toMatchObject({
+      type: "heartbeat",
+      sessionId: SESSION,
+      sequence: 1,
+      steps: [],
+    });
+    const ready = sent.findIndex((item) => item["type"] === "ready");
+    expect(sent[ready]).toMatchObject({
       type: "ready",
       sessionId: SESSION,
       jobId: "job-entry",
-      sequence: 2,
+      sequence: ready + 1,
     });
+    expect(sent.slice(1, ready).every((item) => item["type"] === "heartbeat")).toBe(true);
+    const steps = sent[ready - 1]?.["steps"] as Array<{
+      stage: string;
+      startedMs: number;
+      elapsedMs: number | null;
+    }>;
+    expect(steps.map((step) => step.stage)).toEqual([
+      "dependencies",
+      "policy",
+      "resource_snapshot",
+      "dependencies",
+      "network",
+      "sdk_initialize",
+      "launch",
+    ]);
+    expect(steps.slice(0, -1).every((step) => Number.isSafeInteger(step.elapsedMs))).toBe(true);
+    expect(steps.at(-1)?.elapsedMs).toBeNull();
+    expect(
+      steps.every(
+        (step, index) => index === 0 || step.startedMs >= (steps[index - 1]?.startedMs ?? 0),
+      ),
+    ).toBe(true);
     expect(boundary.spawn).not.toHaveBeenCalled();
     expect(boundary.manager.initialize.mock.calls[0]?.[0].network.parentProxy).toBe(
       network.parentProxy,
@@ -494,7 +512,10 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
   ])("refuses unsafe preparation: %s", async (kind) => {
     const extra: Record<string, unknown> = {};
     if (kind === "environment") processBoundary.env["TMPDIR"] = "/wrong";
-    if (kind === "policy") boundary.compile.mockResolvedValue({ policyDigest: "b".repeat(64) });
+    if (kind === "policy")
+      boundary.manager.compileSandboxPolicy.mockResolvedValue({
+        policyJson: JSON.stringify({ network: { allowedDomains: ["changed.example"] } }),
+      });
     if (kind === "unsupported") boundary.manager.isSupportedPlatform.mockReturnValue(false);
     if (kind === "errors" || kind === "warnings")
       boundary.manager.checkDependenciesAsync.mockResolvedValue({

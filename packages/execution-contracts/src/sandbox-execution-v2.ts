@@ -702,6 +702,25 @@ export const SANDBOX_HOST_FAILURE_CODES = [
   "JOB_HOST_START_ABORTED",
   "JOB_HOST_WORKER_LEASE_INVALID",
 ] as const;
+export const SANDBOX_HOST_STAGES = [
+  "request",
+  "policy",
+  "control",
+  "resource_snapshot",
+  "dependencies",
+  "network",
+  "sdk_initialize",
+  "launch",
+] as const;
+export const sandboxHostStepsSchema = array(
+  object({
+    stage: enumeration(SANDBOX_HOST_STAGES),
+    startedMs: integer(0, 86_400_000),
+    elapsedMs: nullable(integer(0, 86_400_000)),
+  }),
+  16,
+);
+export type SandboxHostSteps = InferSchema<typeof sandboxHostStepsSchema>;
 export const sandboxHostFailureDetailSchema = object({
   code: enumeration(SANDBOX_HOST_FAILURE_CODES),
   command: enumeration(["prepare", "heartbeat", "start", "cancel", "authority_result", "unknown"]),
@@ -711,6 +730,7 @@ export const sandboxHostFailureDetailSchema = object({
   deadlineRemainingMs: nullable(integer(-86_400_000, 86_400_000)),
   expectedSequence: integer(0),
   receivedSequence: nullable(integer(0)),
+  steps: nullable(sandboxHostStepsSchema),
 });
 export type SandboxHostFailureDetail = InferSchema<typeof sandboxHostFailureDetailSchema>;
 export const sandboxPreparationDiagnosticSchema = object({
@@ -728,18 +748,7 @@ export const sandboxPreparationDiagnosticSchema = object({
     "SANDBOX_EXECUTION_FAILED",
   ]),
   hostDetail: nullable(sandboxHostFailureDetailSchema),
-  hostStage: nullable(
-    enumeration([
-      "request",
-      "policy",
-      "control",
-      "resource_snapshot",
-      "dependencies",
-      "network",
-      "sdk_initialize",
-      "launch",
-    ]),
-  ),
+  hostStage: nullable(enumeration(SANDBOX_HOST_STAGES)),
   systemCode: enumeration([
     "UNKNOWN",
     "EACCES",

@@ -841,6 +841,13 @@ export function createProductionSandboxControl(options: Options) {
                 hostDetailCode: diagnostic.hostDetail.code,
                 hostCommand: diagnostic.hostDetail.command,
                 hostPhase: diagnostic.hostDetail.phase,
+                ...(diagnostic.hostDetail.steps
+                  ? {
+                      hostSteps: diagnostic.hostDetail.steps.map(
+                        (step) => `${step.stage}:${step.startedMs}:${step.elapsedMs ?? "running"}`,
+                      ),
+                    }
+                  : {}),
               }
             : {}),
         });

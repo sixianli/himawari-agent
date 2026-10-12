@@ -49,6 +49,11 @@ let linuxNamespace: LinuxNamespaceIdentity | null = null;
 let phase: "waiting" | "preparing" | "ready" | "running" | "stopping" | "finished" = "waiting";
 let reason = "exited";
 let failureStage: JobHostDiagnostic["stage"] = "request";
+const steps: Array<{
+  stage: JobHostDiagnostic["stage"];
+  startedMs: number;
+  elapsedMs: number | null;
+}> = [];
 let total = 0;
 let exited = false;
 let closed = false;
@@ -80,6 +85,23 @@ function send(message: Record<string, unknown>) {
     );
 }
 const networkAuthority = new JobHostNetworkAuthority(send, () => stop("cancelled"));
+function sinceStart() {
+  return Math.max(0, Math.min(86_400_000, Math.round(performance.now() - diagnosticStarted)));
+}
+function stepsSnapshot() {
+  return steps.map((step) => ({ ...step }));
+}
+function sendHeartbeat() {
+  send({ type: "heartbeat", steps: stepsSnapshot() });
+}
+function enterStage(stage: JobHostDiagnostic["stage"]) {
+  failureStage = stage;
+  const now = sinceStart();
+  const open = steps.at(-1);
+  if (open && open.elapsedMs === null) open.elapsedMs = Math.max(0, now - open.startedMs);
+  if (steps.length < 16) steps.push({ stage, startedMs: now, elapsedMs: null });
+  sendHeartbeat();
+}
 
 function killTask() {
   // After wait/exit, the numeric PID can be reused; never turn it into a
@@ -185,27 +207,19 @@ async function prepare(value: unknown, controlValue?: unknown) {
     () => stop("deadline"),
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
   );
-  failureStage = "dependencies";
+  enterStage("dependencies");
   const loading = import("@himawari-agent/execution-contracts").then(async (module) => {
     diagnostics = module;
     if (phase !== "preparing") return;
-    const [manager, policy] = await Promise.allSettled([
-      import("./sandbox-sdk.ts").then(async ({ createSandboxSdk }) => {
-        const manager = await createSandboxSdk(() => stop("host_failure"));
-        sandboxManager = manager;
-        return manager;
-      }),
-      import("./policy.ts"),
-    ]);
-    if (manager.status === "rejected") throw manager.reason;
-    if (policy.status === "rejected") throw policy.reason;
-    return { manager: manager.value, compileSandboxPolicy: policy.value.compileSandboxPolicy };
+    const { createSandboxSdk } = await import("./sandbox-sdk.ts");
+    const manager = await createSandboxSdk(() => stop("host_failure"));
+    sandboxManager = manager;
+    return manager;
   });
   sdkOperation = loading;
-  const preparation = await loading;
-  if (!preparation || phase !== "preparing") return;
-  const { manager, compileSandboxPolicy } = preparation;
-  failureStage = "policy";
+  const manager = await loading;
+  if (!manager || phase !== "preparing") return;
+  enterStage("policy");
   const privateDirectory = await realpath(request.policy.privateDirectory);
   if (
     process.env["HOME"] !== privateDirectory ||
@@ -214,7 +228,11 @@ async function prepare(value: unknown, controlValue?: unknown) {
   )
     throw new Error("JOB_HOST_ENVIRONMENT_INVALID");
   process.chdir(request.policy.workspace ?? privateDirectory);
-  const policy = await compileSandboxPolicy(request.policy);
+  const { policyJson } = await manager.compileSandboxPolicy(request.policy);
+  const policy = {
+    policyJson,
+    policyDigest: createHash("sha256").update(policyJson).digest("hex"),
+  };
   if (policy.policyDigest !== request.policyDigest) throw new Error("JOB_HOST_POLICY_CHANGED");
   if (controlValue !== undefined) {
     const binding = controlValue as JobHostControlBinding;
@@ -241,7 +259,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
         throw new Error("JOB_HOST_CONTROL_SCOPE_OVERLAP");
     }
     const policyInput = request.policy;
-    failureStage = "control";
+    enterStage("control");
     control = await openJobHostControl(
       binding,
       () => ({
@@ -280,9 +298,9 @@ async function prepare(value: unknown, controlValue?: unknown) {
       () => stop("cancelled"),
     );
   }
-  failureStage = "resource_snapshot";
+  enterStage("resource_snapshot");
   if (request.resourceLimits) await readProcessSnapshot();
-  failureStage = "dependencies";
+  enterStage("dependencies");
   const dependencies = await manager.checkDependenciesAsync();
   if (!manager.isSupportedPlatform() || dependencies.errors.length || dependencies.warnings.length)
     throw new Error("JOB_HOST_DEPENDENCIES_UNAVAILABLE");
@@ -296,7 +314,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
       if (phase !== "preparing") return;
     }
     const configuration = JSON.parse(policy.policyJson);
-    failureStage = "network";
+    enterStage("network");
     egress = await openNetworkEgress(
       configuration.network.allowedDomains,
       networkAuthority.assertCurrent,
@@ -306,7 +324,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
       return;
     }
     configuration.network.parentProxy = egress.parentProxy;
-    failureStage = "sdk_initialize";
+    enterStage("sdk_initialize");
     const javaAgentJarPath = fileURLToPath(
       new URL(
         "../vendor/java-proxy-agent/srt-proxy-agent.jar",
@@ -326,7 +344,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
     await finish();
     return;
   }
-  failureStage = "launch";
+  enterStage("launch");
   phase = "ready";
   send({
     type: "ready",
@@ -522,10 +540,10 @@ process.on("message", (message: unknown) => {
     if (message.type === "prepare") {
       if (sessionId !== undefined) throw new Error("JOB_HOST_SESSION_REPLACED");
       sessionId = message.sessionId;
-      send({ type: "heartbeat" });
+      sendHeartbeat();
       heartbeat = setInterval(() => {
         if (performance.now() - lastWorkerTick > 1500) stop("host_failure");
-        else send({ type: "heartbeat" });
+        else sendHeartbeat();
       }, 250);
     } else if (message.sessionId !== sessionId) throw new Error("JOB_HOST_SESSION_REPLACED");
     if (message.type === "heartbeat") return;
@@ -592,6 +610,7 @@ process.on("message", (message: unknown) => {
               Number.isSafeInteger(incoming["sequence"]) && (incoming["sequence"] as number) >= 0
                 ? incoming["sequence"]
                 : null,
+            steps: stepsSnapshot(),
           });
         })(),
         systemCode: JOB_HOST_SYSTEM_CODES.some((code) => code === systemCode)

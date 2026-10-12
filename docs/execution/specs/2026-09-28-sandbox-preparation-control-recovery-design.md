@@ -30,6 +30,7 @@ date: "2026-09-28"
 - [F：通用 UDS 断连恢复](#f通用-uds-断连恢复)
 - [第二轮：依赖加载期间的启动监督](#startup-supervision)
 - [准备期间的期限诊断分类](#deadline-classification)
+- [第三轮：主线程只管心跳，诊断记录每步耗时](#main-thread-heartbeat-only)
 
 ## 目标与来源
 
@@ -105,8 +106,9 @@ date: "2026-09-28"
 | `stage`、`reasonCode`、`systemCode` | 只取 `sandboxPreparationDiagnosticSchema` 定义的固定枚举 |
 | `hostStage` | 同一 schema 的固定枚举；原值为 null 时省略 |
 | `hostDetailCode`、`hostCommand`、`hostPhase` | 分别取 `hostDetail.code`、`hostDetail.command`、`hostDetail.phase` 的固定枚举；原 hostDetail 为 null 时全部省略 |
+| `hostSteps` | 2026-10-12 起增加：`hostDetail.steps` 的逐步记录，每项写成 `阶段:开始毫秒:耗时毫秒` 的字符串，仍在进行的一步耗时写 `running`，例如 `sdk_initialize:812:running`；阶段只取固定枚举，数字只是毫秒整数。原 steps 为 null 时省略，含义见[第三轮：主线程只管心跳](#main-thread-heartbeat-only) |
 
-枚举范围沿用[准备诊断 schema](../../../packages/execution-contracts/src/sandbox-execution-v2.ts)。hostDetail 中的耗时、消息年龄、期限余量和序号只保留在原受保护诊断，不复制到安全日志。日志不包含原 Owner、Agent、Run、Job、attempt、调用或环境身份，不包含宿主路径、用户正文、秘密、控制密钥或 SDK 原始错误文本。
+枚举范围沿用[准备诊断 schema](../../../packages/execution-contracts/src/sandbox-execution-v2.ts)。除 `hostSteps` 外，hostDetail 中的总耗时、消息年龄、期限余量和序号只保留在原受保护诊断，不复制到安全日志。日志不包含原 Owner、Agent、Run、Job、attempt、调用或环境身份，不包含宿主路径、用户正文、秘密、控制密钥或 SDK 原始错误文本。
 
 固定字段日志在读取或写入 `sandbox-control:*:diagnostic:preparation-failure` 之前输出。因此，restricted Trace 读取、加密或保存失败时，只要服务诊断输出仍可写，管理员仍能读取固定错误字段。日志写入同步抛错时仍尝试执行原 Trace 保存流程；Trace 本身失败时不能声称持久诊断已保存。已有第一份 Trace 保持原内容，不因重复请求覆盖；重复有效请求可产生重复安全日志，不以日志条数推断工具执行次数。 本批测试覆盖同步写入抛错，没有覆盖真实诊断流的异步错误；不能据此保证异步输出故障时的进程存活或 Trace 留存。
 
@@ -270,13 +272,13 @@ E 的原只读补查记录了终态 Run 的未绑定容器缺少自动停止路�
 
 [reply-33](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-33.md) 批准修复 Job Host 在注册 IPC 处理器前静态加载 SRT 的顺序。旧实现的首次准备消息可能因加载超过 1.5 秒而过期；Worker 同时会报告 `JOB_HOST_HEARTBEAT_EXPIRED`。这解释了 Hermes 第二轮准备清理回归的失败，不追溯认定更早未保留现场的 TE-06 首次触发原因。
 
-Job Host 先加载 Node 内置模块和轻量宿主辅助模块，注册原私有 IPC 处理器；收到准备消息时立即核对协议、会话、序号及到达时的消息年龄，发送首次心跳并启动原 250 毫秒心跳。随后动态加载固定版本 SRT 和依赖它的策略编译模块。到达时新鲜的消息不会因等待依赖而再次被判为过期；到达时已超过 1.5 秒或来自未来的消息仍被拒绝。诊断结构所需的依赖也在首次心跳后加载；错误处理本身不再等待导入，不能因此延后停止。
+Job Host 先加载 Node 内置模块和轻量宿主辅助模块，注册原私有 IPC 处理器；收到准备消息时立即核对协议、会话、序号及到达时的消息年龄，发送首次心跳并启动原 250 毫秒心跳。随后动态加载固定版本 SRT 和依赖它的策略编译模块；2026-10-12 起这两个模块只在 SDK 工作线程里加载，见[第三轮：主线程只管心跳](#main-thread-heartbeat-only)。到达时新鲜的消息不会因等待依赖而再次被判为过期；到达时已超过 1.5 秒或来自未来的消息仍被拒绝。诊断结构所需的依赖也在首次心跳后加载；错误处理本身不再等待导入，不能因此延后停止。
 
 Worker 从原 fork 时点开始的 30 秒准备上限、1.5 秒双向监督窗口、任务总期限及清理期限均保持；Job Host 自身的任务期限在解析有效请求后立即计时，覆盖依赖加载。加载期间的心跳只证明监督通道仍有响应，不代表准备完成。策略、依赖和初始化检查全部通过后才发出 ready，仍须原唯一启动授权才能启动用户任务。取消或到期后，迟到的加载完成不能恢复准备或启动能力。
 
-SRT 0.0.75 的 Linux `checkDependenciesAsync()` 内部仍同步执行工具发现，`initialize()` 会再次检查依赖。Job Host 在同一进程的独立工作线程内保留唯一 SRT manager，依赖检查、初始化、命令包装、`cleanupAfterCommand()` 和 `reset()` 都交给该线程顺序执行。Host 主线程继续处理原私有 IPC、控制端口、网络授权、Linux 清理进程、工具进程和期限；SDK 同步调用不会占用发送与接收心跳的线程。策略编译仍在主线程加载 SRT 的配置类型与默认路径函数，不能据此宣称全部模块加载已移出主线程。Worker 自身事件循环停顿也不属于此修复的覆盖范围。
+SRT 0.0.75 的 Linux `checkDependenciesAsync()` 内部仍同步执行工具发现，`initialize()` 会再次检查依赖。Job Host 在同一进程的独立工作线程内保留唯一 SRT manager，依赖检查、初始化、命令包装、`cleanupAfterCommand()` 和 `reset()` 都交给该线程顺序执行。Host 主线程继续处理原私有 IPC、控制端口、网络授权、Linux 清理进程、工具进程和期限；SDK 同步调用不会占用发送与接收心跳的线程。（第二轮时策略编译仍在主线程加载 SRT；2026-10-12 第三轮已把它移进同一 SDK 工作线程，见[第三轮：主线程只管心跳](#main-thread-heartbeat-only)。）Worker 自身事件循环停顿也不属于此修复的覆盖范围。
 
-SDK 工作线程复制原 Host 私有环境，清空 `execArgv`，不接受模型提供的线程入口或回调。返回的包装环境先转成普通对象，再通过内部消息传递；SRT 的代理、桥接进程和清理状态始终属于同一个 manager。线程错误、意外退出、回复身份不匹配或无效结果都停止 Host，不能恢复启动权或被当作释放证明。线程刚报告 ready 就失败时，创建函数拒绝返回失效实例。SDK 与策略模块加载都结束后才传播错误，已成功创建的实例仍进入收尾。正常收尾先启动原清理期限的强制退出计时器，再等待就绪探针、当前 SDK 操作和命令清理及 reset；任何一步未结束都不能无限等待。只有 reset 成功回答和线程自然退出代码 0 都已确认，才能报告 `srtReset=true`。没有回答、异常退出或未结束操作仍受原清理期限约束，由原 Host watchdog 与 Linux 清理进程处理。
+SDK 工作线程复制原 Host 私有环境，清空 `execArgv`，不接受模型提供的线程入口或回调。返回的包装环境先转成普通对象，再通过内部消息传递；SRT 的代理、桥接进程和清理状态始终属于同一个 manager。线程错误、意外退出、回复身份不匹配或无效结果都停止 Host，不能恢复启动权或被当作释放证明。线程刚报告 ready 就失败时，创建函数拒绝返回失效实例。SDK 线程加载失败时直接传播错误；已成功创建的实例在策略编译或后续步骤失败时仍进入收尾。正常收尾先启动原清理期限的强制退出计时器，再等待就绪探针、当前 SDK 操作和命令清理及 reset；任何一步未结束都不能无限等待。只有 reset 成功回答和线程自然退出代码 0 都已确认，才能报告 `srtReset=true`。没有回答、异常退出或未结束操作仍受原清理期限约束，由原 Host watchdog 与 Linux 清理进程处理。
 
 同步停顿回归使用同一真实安装集成入口，在依赖检查和初始化中各注入 2200 ms 停顿，检查 ready、原心跳、未启动用户代码和取消后的清理。加载钩子必须确认实际进入 SDK 工作线程，不能以未注入的成功作通过证据。准备及任务期限、SDK 失败和迟到完成的既有回归继续保留。该测试验证可重复的同步阻塞机制，不确定原生产事故具体由哪一项同步操作或哪端调度延迟触发；生产 Ubuntu 24.04/AppArmor 与 Hermes 的差异仍须单独读回。
 
@@ -297,5 +299,31 @@ Worker 父端只用一个回调判定任务绝对期限。任务期限早于或�
 reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测试时限，产品期限和原诊断断言不变。Job Host30项通过，旧16项超时全部通过且逐项耗时不超过15000ms；完整组2150项中2149通过/1失败，新失败为既有Retry-After发送间隔985.293ms未达到990ms断言，根因uncertain。按批次范围停止，原19文件integration和第3层未执行，Job Host修复尚未提交，4份Runbook仍待第0–2层通过后复核封存。当前结果见[reply-38验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r38-verification.md)与[stop-35](../../../.ci-output/handoff/2026-09-28-codex-round2-stop-35.md)。
 
 [reply-39](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-39.md) 调整提交顺序：Job Host 第0层红绿与真实导入回归已通过，复用代码未变的云端第1层结果（`r39-retry-layer1`，默认变量30000ms）；先将修复、合同及4份Runbook核对封存一起提交并立即推送。第2层延后到含入口透传、D11及本修复的合并版本，运行完整unit与原19个integration文件；随后执行提前的正式第3层。本次提交不声称合并第2层或完整第3层已经通过。历史失败及其时序继续保留，Mac未验证。实际记录见[reply-39验证记录](../../../.ci-output/tool-execution-audit/2026-09-28/round2/r39-verification.md)。
+
+[返回阅读导航](#阅读导航)
+
+<a id="main-thread-heartbeat-only"></a>
+
+## 第三轮：主线程只管心跳，诊断记录每步耗时
+
+### 来源与已确认原因
+
+2026-10-12 生产第二次部署后的第一次读文件工具卡住（S10，Run `run:c1284750-de9d-43dd-aee1-5474dc27539c`）。只读诊断 03 显示 Worker 端记录 `JOB_HOST_HEARTBEAT_EXPIRED`、阶段 `request`、`messageAgeMs` 约 1600、`expectedSequence` 为 2：Job Host（运行每个工具的宿主子进程）在回应准备消息后的第一次心跳之后就沉默了 1.5 秒以上。用户于同日选择“主线程只管心跳”（G73，原文见 `.agents/tasks/round2-tool-execution/goal.md`）：准备阶段的重活全部移到已有的 SDK 工作线程，主线程只收发消息、报心跳，并在诊断里记录每一步的耗时；1.5 秒规则和安全保证都不变。
+
+原因已用复现确认：第二轮修复后，Job Host 主线程在准备时仍通过策略编译模块 `policy.ts` 加载整个 SRT（`@anthropic-ai/sandbox-runtime` 0.0.75）。SRT 及其依赖 node-forge、zod 约 8 MB JavaScript，其中 CommonJS 依赖同步加载；新安装版本后的第一次工具调用读的是冷磁盘缓存，同步加载可以超过 1.5 秒，期间主线程发不出心跳。Hermes 上的复现在 SRT 模块求值时注入 2200 ms 同步停顿，得到与生产完全相同的特征（`JOB_HOST_HEARTBEAT_EXPIRED`、阶段 `request`、`messageAgeMs` 约 1610、`expectedSequence` 2）。生产当时磁盘读取的实际耗时没有记录，不能证明生产停顿全部来自这一次加载；修复后同类停顿会由下面的逐步记录直接指出。
+
+### 修复后的行为
+
+- 策略编译也交给 SDK 工作线程：线程内部新增 `compileSandboxPolicy` 操作，只接受一个参数，只返回策略 JSON 文本。主线程自己计算 SHA-256，必须等于 Worker 请求里冻结的 `policyDigest`，否则仍以 `JOB_HOST_POLICY_CHANGED` 停止；不信任线程报告的摘要。策略错误的对外诊断码与系统码和原来相同（白名单外的消息仍为 `UNKNOWN`）。
+- Job Host 主线程不再加载 SRT，也不加载 `policy.ts`；它只加载 Node 内置模块、轻量宿主辅助模块和 184 KB 的 `execution-contracts`（诊断结构需要）。SRT、策略编译、依赖检查、初始化、命令包装、清理和 reset 都在同一个 SDK 工作线程里按顺序执行。策略编译失败时，已创建的 SDK 线程仍按原流程执行 `cleanupAfterCommand()` 和 reset，才可能报告 `srtReset=true`。
+- 逐步记录：Job Host 每进入一个准备步骤（`dependencies` 加载、`policy`、`control`、`resource_snapshot`、`dependencies` 检查、`network`、`sdk_initialize`、`launch`），就把上一步标为结束并立即发一次心跳。每次心跳都带上完整的 `steps` 列表，每项含 `stage`、`startedMs`（从 Job Host 进程启动算起的毫秒）和 `elapsedMs`（已结束的一步的耗时；仍在进行的一步为 null），最多 16 项。
+- Worker 只接受符合 `sandboxHostStepsSchema` 的 `steps`：缺失、阶段不在固定枚举、多出字段或超过 16 项都按 `host_failure` 停止 Job Host，不保存其中内容。Worker 保留最近一次收到的列表；心跳过期、准备超时或任务期限到达时，`hostDetail.steps` 写入这份列表，诊断阶段取列表最后一步，不再一律写 `request`。Job Host 自己报告错误时也带上当时的列表。
+- `sandboxHostFailureDetailSchema` 新增必填字段 `steps`（可为 null，表示从未收到列表）。Worker、Job Host 和 Agent 同版本发布；产品代码不重新解析已保存的旧记录。旧版本保存的受保护诊断没有这个字段，读取旧记录的只读脚本须使用对应版本的 schema。安全服务日志相应增加 `hostSteps` 字段，见[准备失败的安全服务日志](#preparation-safe-log)。
+
+1.5 秒双向监督窗口、30 秒准备上限、任务期限、清理期限、控制绑定、签名终态、唯一启动授权和全部认证检查均不变。逐步记录只说明哪一步在何时开始、用了多久，不代表 ready、释放证明或启动授权。Worker 自身事件循环停顿仍不在这次修复范围内。
+
+### 验证
+
+真实安装集成入口 `test/integration/sandbox-preparation-control.test.ts` 新增两项 `[R2-L7]` 测试：一项在 SRT 模块求值时注入 2200 ms 同步停顿，要求停顿只发生在 SDK 工作线程（threadId 大于 0）、不出现心跳过期、准备成功且取消后 `srtReset=true`；另一项在主线程加载 `execution-contracts` 时注入 2200 ms 停顿，要求诊断阶段为 `dependencies`，`steps` 只有一项且该步仍在进行。修复前两项都失败，失败内容与生产特征一致；修复后通过。Job Host 单元测试覆盖主线程不加载策略模块、线程内策略编译失败后的 reset、Worker 对无效 `steps` 的拒绝和心跳过期时的最后一步。Hermes 上的命令、修订和结果记录在 `.agents/tasks/round2-tool-execution/evidence.jsonl` 对应 R2-L7 的条目。生产 Ubuntu 24.04 上的行为须在第三次部署后读回；Mac 行为未验证。
 
 [返回阅读导航](#阅读导航)

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:b0224c04468f6d7918da1bc7e56ed47665420ae5754ccb3cddc8c9512035c4a5"
+contract_sha256: "sha256:904825dd1fd3c501cf0f1c66101310cdfef5e640d6d372cd1d17639312c96d45"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -871,7 +871,7 @@ Linux 前台清理证据要求原 PID namespace init 已消失、Host 自身进�
 
 ### 查看某一轮执行的诊断记录
 
-工具执行出错或一轮对话卡住时，完整失败细节保存在受保护诊断里（加密保存的 Trace 记录，页面和普通日志不显示全文）。准备失败另有 `sandbox.preparation.failed` 服务日志，管理员可先读取固定枚举及 `controlRef`，无需解密 Payload；这条日志不包含完整身份、路径和错误正文，也不能证明资源已释放。字段与缺失日志的边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。下列 `himawari diagnose run` 命令仍需密钥目录并解密受保护诊断，输出属于私人数据；它没有改成只输出安全字段的管理命令。管理员可以在服务所在的机器上读取某一个 Run（一轮对话的执行）的完整诊断：
+工具执行出错或一轮对话卡住时，完整失败细节保存在受保护诊断里（加密保存的 Trace 记录，页面和普通日志不显示全文）。准备失败另有 `sandbox.preparation.failed` 服务日志，管理员可先读取固定枚举及 `controlRef`，无需解密 Payload；这条日志不包含完整身份、路径和错误正文，也不能证明资源已释放。2026-10-12 起这条日志还带 `hostSteps`，逐项写成 `阶段:开始毫秒:耗时毫秒`，仍在进行的一步写 `running`，例如 `sdk_initialize:812:running` 表示准备停在 SDK 初始化。字段与缺失日志的边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。下列 `himawari diagnose run` 命令仍需密钥目录并解密受保护诊断，输出属于私人数据；它没有改成只输出安全字段的管理命令。管理员可以在服务所在的机器上读取某一个 Run（一轮对话的执行）的完整诊断：
 
 `himawari diagnose run --config <绝对配置路径> --secret-dir <密钥目录的绝对路径> --run <Run 编号>`
 
@@ -984,9 +984,9 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 ### Job Host SDK 线程与停止证明
 
-Job Host 启动先建立原私有 IPC 监督。完整安装必须同时包含编译后的 `sandbox-sdk.js` 适配器和 `sandbox-sdk-worker.js` 固定线程入口。SRT 的同一个 `SandboxManager` 在这个私有工作线程中加载；依赖检查、初始化、沙箱启动参数生成、`cleanupAfterCommand()` 和 `reset()` 都在该线程中按顺序执行。线程使用原 Host 的私有环境副本，`execArgv` 为 `[]`，不接收模型指定的线程入口或回调。原 IPC、心跳、控制请求、authority 转发、guardian、任务进程与期限仍由 Host 主线程负责。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
+Job Host 启动先建立原私有 IPC 监督。完整安装必须同时包含编译后的 `sandbox-sdk.js` 适配器和 `sandbox-sdk-worker.js` 固定线程入口。SRT 的同一个 `SandboxManager` 和策略编译模块都只在这个私有工作线程中加载；策略编译、依赖检查、初始化、沙箱启动参数生成、`cleanupAfterCommand()` 和 `reset()` 都在该线程中按顺序执行。线程使用原 Host 的私有环境副本，`execArgv` 为 `[]`，不接收模型指定的线程入口或回调。原 IPC、心跳、控制请求、authority 转发、guardian、任务进程与期限仍由 Host 主线程负责。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
-`checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。策略编译模块仍在 Host 主线程加载 SRT 的默认写路径和配置 schema，不能据此声称全部 SRT 模块加载或所有主线程阻塞来源已经消除。SDK 与策略模块开始加载后，Host 等待两项加载都结束，再传播任一加载错误；较晚创建的 SDK 仍须进入原停止流程。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision]
+`checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。2026-10-12 起策略编译也在 SDK 线程执行，Host 主线程不再加载 SRT：线程只返回策略 JSON，主线程自行计算 SHA-256 并与冻结的 `policyDigest` 比对；编译失败时已创建的 SDK 仍须进入原停止流程。Host 每进入一个准备步骤就立即发一次带逐步耗时的心跳，Worker 心跳过期时诊断记录最后一步，见[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。Worker 自身事件循环停顿不在此范围。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only]
 
 正常停止先启动原清理期限的强制退出计时器，再等待就绪探针和已经开始的 SDK 操作结束，然后等待 `cleanupAfterCommand()` 和 `reset()` 的成功回复。就绪探针、SDK 操作或控制收尾不结束时，Host 仍须在原期限内退出。只有收到 reset 成功回复、且 SDK 线程随后自然以退出码 0 结束，Host 才能记录 `srtReset=true`。线程报错、异常退出、缺少 reset 回复或强制终止均不能代替这个条件。宿主、任务进程组、控制证据及其他释放条件仍按原合同独立核验，SDK 线程退出本身不是资源释放回执。
 

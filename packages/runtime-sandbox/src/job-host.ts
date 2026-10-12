@@ -2,8 +2,10 @@ import { fork } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
+  type SandboxHostSteps,
   type SandboxTaskTermination,
   sandboxHostFailureDetailSchema,
+  sandboxHostStepsSchema,
 } from "@himawari-agent/execution-contracts";
 import type { JobHostControlBinding } from "./job-host-control.js";
 import {
@@ -79,6 +81,7 @@ export function prepareSandboxJobHost(
   let diagnostic: JobHostDiagnostic | undefined;
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
+  let hostSteps: SandboxHostSteps | null = null;
   let ipcSequence = 0;
   let authorityCheckId = 0;
   let authorityChecksPending = 0;
@@ -199,7 +202,7 @@ export function prepareSandboxJobHost(
     const bounded = (value: number) =>
       Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)));
     diagnostic ??= {
-      stage: prepared ? "launch" : "request",
+      stage: hostSteps?.at(-1)?.stage ?? (prepared ? "launch" : "request"),
       systemCode: "UNKNOWN",
       detail: sandboxHostFailureDetailSchema.parse({
         code,
@@ -210,6 +213,7 @@ export function prepareSandboxJobHost(
         deadlineRemainingMs: bounded(Date.parse(request.deadlineAt) - Date.now()),
         expectedSequence: ipcSequence + 1,
         receivedSequence: null,
+        steps: hostSteps,
       }),
     };
   };
@@ -282,7 +286,14 @@ export function prepareSandboxJobHost(
       task: supervision?.task ?? null,
       taskTreeGuarantee: "unverified",
     };
-    if (message["type"] === "heartbeat") return;
+    if (message["type"] === "heartbeat") {
+      try {
+        hostSteps = sandboxHostStepsSchema.parse(message["steps"]);
+      } catch {
+        cancel("host_failure");
+      }
+      return;
+    }
     if (message["type"] === "authority_check") {
       if (
         !started ||

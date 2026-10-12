@@ -4,13 +4,19 @@ import { sandboxSdkFailure, type SandboxSdkRequest } from "./sandbox-sdk.ts";
 if (!parentPort) throw sandboxSdkFailure(undefined);
 const port = parentPort;
 try {
-  const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
+  const [{ SandboxManager }, { compileSandboxPolicy }] = await Promise.all([
+    import("@anthropic-ai/sandbox-runtime"),
+    import("./policy.ts"),
+  ]);
   let nextId = 1;
   let active = false;
   const execute = async (request: SandboxSdkRequest) => {
     try {
       let value: unknown;
       switch (request.method) {
+        case "compileSandboxPolicy":
+          value = { policyJson: (await compileSandboxPolicy(request.args[0])).policyJson };
+          break;
         case "checkDependenciesAsync":
           value = await SandboxManager.checkDependenciesAsync();
           break;
@@ -48,7 +54,7 @@ try {
       throw sandboxSdkFailure(undefined);
     const request = value as SandboxSdkRequest;
     const argumentCount =
-      request.method === "initialize"
+      request.method === "initialize" || request.method === "compileSandboxPolicy"
         ? 1
         : request.method === "wrapWithSandboxArgv"
           ? 2
