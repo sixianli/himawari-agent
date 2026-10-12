@@ -827,6 +827,107 @@
         "on": "2026-10-07",
         "why": "cloud-packet stop-02 发现 G51 两项保证没有运行证据；用户 G60 选择补探针"
       }
+    },
+    {
+      "id": "R2-L7",
+      "title": "任务宿主进程主线程只做消息和心跳：准备阶段的模块加载、依赖检查等移到已有 SDK 线程，诊断记录每步耗时，1.5 秒心跳规则不变",
+      "goal_ref": ["G1", "G73"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L7",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "S10 生产诊断 03/04：准备阶段主线程停顿超过 1.5 秒，JOB_HOST_HEARTBEAT_EXPIRED"
+      }
+    },
+    {
+      "id": "R2-L8",
+      "title": "准备阶段宿主失联、用户任务未启动时，停止核查不能无限重试让一轮永远卡住：查明每次核查失败原因并按准备恢复设计给出确定结果",
+      "goal_ref": ["G1", "G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L8",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "S10 Run c1284750 停止核查重试 15 次以上仍未成功，停在结果未确认"
+      }
+    },
+    {
+      "id": "R2-U1",
+      "title": "会话已显示后，后台刷新和执行记录附带读取的短暂失败安静重试，不再弹出“无法加载这段对话”挤占聊天区（v4 基线第 7 条）",
+      "goal_ref": ["G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "用户 G74 截图"
+      }
+    },
+    {
+      "id": "R2-U2",
+      "title": "一轮卡住时界面说明卡在哪个工具、原因、是否仍在进行和用户能做什么，不再出现“没有程序在运行”与可停止按钮互相矛盾",
+      "goal_ref": ["G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "用户 G74 第二张截图"
+      }
+    },
+    {
+      "id": "R2-L9",
+      "title": "第三次生产部署：上线 R2-L7、R2-L8、R2-U1、R2-U2，并在同一停服窗口管理员处置 Run c1284750（G72）",
+      "goal_ref": ["G72"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "是否批准第三次生产部署及其操作包？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "G65/G66 只覆盖第二次部署，第三次需要用户另行授权"
+      }
     }
   ],
   "fingerprint": {
