@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:fc507185dd9f8d77ecd7741d2fdc77cb68dd8c06f23bb391f8564381b355467c"
+contract_sha256: "sha256:b0224c04468f6d7918da1bc7e56ed47665420ae5754ccb3cddc8c9512035c4a5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -21,6 +21,7 @@ G51 与 G65 分别只允许首次安装及 2026-10-09 本次第二次部署必�
 - [归档解包与临时磁盘](#artifact-extraction-contract)
 - [目标现场只读检查](#live-state-preflight)
 - [已有目录授权替换](#workspace-grant-replacement)
+- [本次第二次部署的原样恢复点](#second-deployment-raw-recovery)
 - [安装与启停步骤](#procedure)
 - [结果验证](#verification)
 - [证据保存](#evidence)
@@ -382,6 +383,23 @@ Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Own
 正式 `ExecStartPre` prepare 验证签名和 snapshot 后，以一次原子配置替换同时发布新 `runPolicy.coding.grantId` 和新 `capabilityDeployment`，其余配置字段逐项保持不变。原子替换指读者只能看到完整旧配置或完整新配置；新 snapshot 在配置之前单独发布，二者不是跨文件事务。中断时必须停止并保留实际文件，不把先前的数据库写入和配置发布描述为同一个事务。首次切换及切换后读回均检查新授权当前有效、允许 read、目录身份与签名 snapshot 一致，并确认旧授权记录未变。旧授权预期到期不阻断本次替换。
 
 首次切换的授权检查不作为长期每次开机的冻结期限检查。授权之后自然到期，或用户经正式产品流程再次更换授权编号时，产品仍逐次核对真实数据库授权；不得因旧编号或冻结期限拒绝整个服务重启，也不得把未批准的新目录自动加入签名根。本次 G65 资格验收仍只操作新建虚构目录，不读取原授权目录内容。以上 G67 步骤须先完成 Hermes 回归及冻结包审阅；本节不声明生产替换或验收已经执行。
+
+[↑ 返回阅读导航](#阅读导航)
+
+
+<a id="second-deployment-raw-recovery"></a>
+
+### 本次第二次部署的原样恢复点
+
+G68 要求修包期间保持停服，G69 为这次第二次部署选择停服原样复制。生产配置没有 `backup-encryption` 用途，公开 `backup create/verify/restore` 均无法取得必需的备份密钥引用；本次不增加密钥，也不改产品 CLI。后续配置及演练形状缺陷见[生产备份待办](../backlog/BL-20261009-002-生-产-缺-少-备-份-密-钥.md)。本节不推广为其他部署的默认方案。[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md#second-deployment-authorization]
+
+维护助手先检查服务 inactive、MainPID 0、原身份和唯一未解决预约，再自行持有 state-root 独占锁。S3 以 prod 所有的独占 0700 证据目录保存 Schema 49 的 `data/product.sqlite` 和整个 `data/payload-ciphertext/` 树，文件 0600。不得只复制被数据库引用的文件或遗漏空目录。任何 WAL/SHM 存在、符号链接、硬链接、特殊文件、非预期所有者、可被其他账号写入的路径或源树变化均阻止复制；不得忽略 sidecar 文件或在检查过程中擅自修改数据库。
+
+复制后独立重新枚举路径、字节数和 SHA，核对原树与副本完全一致。副本的只读检查须证明 integrity/foreign keys 正常，ledger 1–49 与随包迁移相同；原数据库复制前后 SHA 不变。S4 仅在 S3 成功后以候选 50 CLI 迁移且只应用 50，再同法保存 Schema 50 恢复点，并保留 data 外的 `pre-migration-49-product.sqlite`。新动作及报告采用 `S3_COPY49`、`S4_MIGRATE50_COPY50`，不覆盖生产已存在的四份 S3 失败文件。
+
+S9 的 `S9_RAW_RESTORE49` 和 `S9_RAW_RESTORE50` 仍要求单独的具体恢复批准、当前停服与新的 OS 现场检查。助手持锁，先独立保存当前 Schema 50 的完整原样恢复点，核获批的路线、恢复点 ID 和摘要，再从经过重新检查的 staging 发布数据库和完整 Payload 树。原 live 数据及部分发布现场保留，不自动撤销或启动。配置、秘密、authority mirror、进程目录和工作区不在原样复制范围内，仍按独立控制文件恢复规则保护。
+
+原样恢复会恢复当时的认证行，不自动撤销账号、会话或设备。恢复报告仍标记必须独立处理账号恢复，并禁止启动；不要把旧加密 backup restore 的认证语义套用到此流程。S3/S4 恢复点早于 S5 新授权，恢复库必须没有新授权行，并保留已过期的旧行。若数据库中的 authority/fencing 与保留的 `authority.json` 镜像不相容，保持停止，后续修复须另有具体批准，不能由脚本擅自改镜像或签发授权。
 
 [↑ 返回阅读导航](#阅读导航)
 

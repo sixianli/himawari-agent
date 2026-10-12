@@ -185,7 +185,7 @@ rehearsal01/02/03分别因gzip读取顺序、未运输完整source mode、10解�
 
 ## 本次第二次部署的授权边界（2026-10-09）
 
-G65 仅批准第二次部署按首次相同限制重做主机能力验收，规则见 [SOURCE: docs/adr/0051-second-production-host-acceptance-exception.md#first-install-acceptance]。G66 选择冻结包经逐步说明、审阅后由 Claude 顺序执行，意外结果停止并保留现场。公开材料位于[第二次部署包](../../../.ci-output/production/2026-10-09-second-deploy-packet-01/README.md)。S0-DB 是用户运行的只读输入步骤，最终付费真实对话为 S10；Codex 不连接生产。此次例外不适用于第三次及以后的部署，普通测试与构建仍只在 Hermes。
+G65 仅批准第二次部署按首次相同限制重做主机能力验收，规则见 [SOURCE: docs/adr/0051-second-production-host-acceptance-exception.md#first-install-acceptance]。G66 选择冻结包经逐步说明、审阅后由 Claude 顺序执行，意外结果停止并保留现场。公开材料位于[第二次部署修订包](../../../.ci-output/production/2026-10-09-second-deploy-packet-02/README.md)。S0-DB 是用户运行的只读输入步骤，最终付费真实对话为 S10；Codex 不连接生产。此次例外不适用于第三次及以后的部署，普通测试与构建仍只在 Hermes。
 
 G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `directory:himawari-prod-workspace-20261009` 创建 90 天目录授权。原授权 `directory:himawari-prod-qualification` 已到期，保留原记录，不延长原记录或删除重建。这个决定只适用于本次授权替换；新授权不复活旧 Run、工具调用或资源租约，规则见[有效权限合同](../specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants)。[SOURCE: docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#grants] 用户决定及裁定见 [reply-05](../../../.ci-output/handoff/2026-10-08-codex-prod-sandbox-reply-05.md)。
 
@@ -198,6 +198,10 @@ G67 选择沿用 `/var/lib/himawari/qualification-workspace`，用新编号 `dir
 
 Hermes 的已安装产品演练已用公开 CLI 创建新编号，并在新配置和非生产签名 snapshot 下完成真实 HTTP Agent → Worker → JobHost → Pi read，11 项断言通过；旧过期行与 catalog 原字节未变。输入转换和首次切换守卫另覆盖两字段必须共同发布、错误输入拒绝及恢复库缺少新授权行。真实 read 演练没有运行生产固定路径的 prepare 或 systemd，生产 S7/S8 仍须独立读回。原始结果见[授权替换演练](../../../.ci-output/handoff/prod-second-evidence-06/reports/grant-installed03/installed-read/grant-renewal-report.json)。操作检查见[安装 Runbook 的已有目录授权替换](../../runbooks/install-start-stop-runbook.md#workspace-grant-replacement)。
 
-本次49恢复路线恢复旧过期授权选择。50恢复路线的新控制配置可保留新编号，但S4的完整50恢复点早于授权创建，恢复库中没有新授权行。两条路线均不自动补授权，保持停服；账号恢复和再次启动须另获具体批准。恢复成功不表示授权已经可用。
+G68 要求修包期间保持停服。生产 S1 和 S2 已完成；原 S3 的备份 CLI 因生产没有 `backup-encryption` 用途而失败。G69 仅为这次部署改用停服原样复制：S3 在持有状态锁时复制 `data/product.sqlite` 和整个 `data/payload-ciphertext/` 树，S4 用新 CLI 迁移后再复制 Schema 50。两份副本均独立核对完整路径、字节数、SHA、数据库 integrity/foreign keys 及 migration ledger；任何 WAL/SHM 存在均停止。S4 另保留 data 外迁移前数据库副本。具体文件和恢复语义见[本次原样恢复点要求](../../runbooks/install-start-stop-runbook.md#second-deployment-raw-recovery)。[SOURCE: docs/runbooks/install-start-stop-runbook.md#second-deployment-raw-recovery]
+
+修订包使用新批准引用 `round2/G66/second-20261009/reviewed-02`，先核完整新冻结清单，再由 root 发布器逐文件保留旧字节并记录前后 SHA。原 packet-01、S1/S2 成功证据和四份 S3 失败文件全部保留，不重跑 S1 或 S2 停服。发布后从 `S3_COPY49` 继续；S5 前仍执行 S2 `--inspect-only`。每一步使用相同脚本的用户包装，失败保持停止；Codex 不连接生产。公开 backup 命令仍不可用，后续配置备份密钥和防止演练形状偏差的工作见[生产备份待办](../../backlog/BL-20261009-002-生-产-缺-少-备-份-密-钥.md)。
+
+本次49恢复路线恢复旧过期授权选择。50恢复路线的新控制配置可保留新编号，但S4的原样50恢复点早于授权创建，恢复库中没有新授权行。两条路线均不自动补授权，保持停服；账号恢复和再次启动须另获具体批准。恢复成功不表示授权已经可用。
 
 [返回导航](#reading-navigation)
