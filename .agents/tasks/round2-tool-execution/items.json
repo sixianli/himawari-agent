@@ -931,6 +931,6 @@
     }
   ],
   "fingerprint": {
-    "test_exclude": ["docs/"]
+    "test_exclude": ["docs/", "AGENTS.md"]
   }
 }
