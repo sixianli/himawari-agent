@@ -765,14 +765,167 @@ describe("thread control center interactions", () => {
       });
       await render();
       await refresh();
+      expect(readText).toHaveBeenCalledWith("formal-answer");
+      expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+      expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
       expect(document.body.textContent).toContain(messages["loading.retry"]);
       expect(document.body.textContent).toContain(messages["loading.failedConversation"]);
-      expect(readText).toHaveBeenCalledWith("formal-answer");
       expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
       expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
       expect(mutate).not.toHaveBeenCalled();
     },
   );
+
+  it("[R2-U1] keeps a displayed conversation quiet while a brief state read failure retries", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-3",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    let failuresLeft = 0;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          throw new Error("STATE_READ_FAILED");
+        }
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    const stateReads = () =>
+      query.mock.calls.filter(([request]) => request.type === "thread.execution_state").length;
+    await render();
+    await refresh();
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    failuresLeft = 2;
+    const before = stateReads();
+    await refresh();
+    expect(stateReads()).toBe(before + 1);
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    for (let step = 0; step < 20; step++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+      expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    }
+    expect(failuresLeft).toBe(0);
+    expect(stateReads()).toBeGreaterThanOrEqual(before + 3);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-U1] reports only a persistent conversation refresh failure and keeps the notice steady until recovery", async () => {
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    let mode: "fail" | "hold" | "pass" = "fail";
+    let release: (() => void) | undefined;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.detail" && mode === "fail")
+        throw new Error("DETAIL_READ_FAILED");
+      if (request.type === "thread.detail" && mode === "hold")
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return original?.(request, signal);
+    });
+    const detailReads = () =>
+      query.mock.calls.filter(([request]) => request.type === "thread.detail").length;
+    const failedShown = () =>
+      document.body.textContent?.includes(messages["loading.failedConversation"]) === true;
+    const advanceUntilDetailReads = async (count: number) => {
+      for (let step = 0; step < 200 && detailReads() < count; step++)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+      expect(detailReads()).toBe(count);
+    };
+    const first = detailReads() + 1;
+    await refresh();
+    expect(detailReads()).toBe(first);
+    expect(failedShown()).toBe(false);
+    await advanceUntilDetailReads(first + 1);
+    expect(failedShown()).toBe(false);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    await advanceUntilDetailReads(first + 2);
+    expect(failedShown()).toBe(true);
+    expect(document.body.textContent).toContain(messages["loading.retry"]);
+    expect(document.body.textContent).not.toContain(messages["loading.failedList"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    mode = "hold";
+    await advanceUntilDetailReads(first + 3);
+    expect(failedShown()).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(failedShown()).toBe(true);
+    expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.slowList"]);
+    mode = "pass";
+    await act(async () => {
+      release?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(failedShown()).toBe(false);
+    expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(mutate).not.toHaveBeenCalled();
+  });
 
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
     runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];
@@ -857,6 +1010,11 @@ describe("thread control center interactions", () => {
       await render();
       await refresh();
       expect(query.mock.calls.filter(([r]) => r.type === "thread.execution")).toHaveLength(1);
+      expect(container.querySelectorAll(".tool-record")).toHaveLength(0);
+      expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
       expect(container.querySelectorAll(".tool-record")).toHaveLength(0);
       if (kind === "stalled")
         expect(document.body.textContent).toContain(messages["loading.retry"]);

@@ -179,6 +179,8 @@ export function useThreadControlCenter(
   const [readFailed, setReadFailed] = useState(false);
   const [readScope, setReadScope] = useState<"list" | "conversation" | "search">("list");
   const [readAttempt, setReadAttempt] = useState(0);
+  const [readInBackground, setReadInBackground] = useState(false);
+  const readFailures = useRef(0);
   const readController = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
@@ -191,6 +193,8 @@ export function useThreadControlCenter(
   const selectedThreadId = route.objectId ?? null;
   const selectedIdRef = useRef(selectedThreadId);
   selectedIdRef.current = selectedThreadId;
+  const shownThreadId = useRef<string | null>(null);
+  shownThreadId.current = detail?.payload.thread.threadId ?? null;
   useEffect(() => {
     refreshSequence.current++;
     setDetail(undefined);
@@ -218,7 +222,9 @@ export function useThreadControlCenter(
     void route.status;
     void route.afterCursor;
     void active;
+    readFailures.current = 0;
     setReadFailed(false);
+    setReadInBackground(false);
     return () => {
       readController.current?.abort();
       readController.current = null;
@@ -283,9 +289,20 @@ export function useThreadControlCenter(
       readController.current = controller;
       refreshing.current = true;
       const sequence = ++refreshSequence.current;
+      const background = selectedThreadId !== null && shownThreadId.current === selectedThreadId;
+      let conversationShown = background;
+      let phase: "list" | "conversation" = "list";
+      let retryDelay: number | null = null;
+      const succeeded = () => {
+        readFailures.current = 0;
+        setReadFailed(false);
+      };
       setLoading(true);
-      setReadFailed(false);
-      setReadScope("list");
+      setReadInBackground(background);
+      if (!background) {
+        setReadFailed(false);
+        setReadScope("list");
+      }
       setReadAttempt(sequence);
       try {
         const statuses =
@@ -360,9 +377,11 @@ export function useThreadControlCenter(
         );
         if (!selectedThreadId) {
           setDetail(undefined);
+          succeeded();
           return;
         }
-        setReadScope("conversation");
+        phase = "conversation";
+        if (!background) setReadScope("conversation");
         let current = await client.queryThread(
           threadQueryMessage(configuration, "thread.detail", {
             threadId: selectedThreadId,
@@ -402,6 +421,7 @@ export function useThreadControlCenter(
           },
         };
         setDetail(current);
+        conversationShown = true;
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
           ...current.payload.messages.map(({ contentRef }) => contentRef),
@@ -465,11 +485,13 @@ export function useThreadControlCenter(
           );
           if (sequence !== refreshSequence.current) return;
           if (states.some((state) => state === null)) {
+            succeeded();
             refreshAgain.current = true;
             return;
           }
           setExecutionStates(Object.fromEntries(states.filter((state) => state !== null)));
         }
+        succeeded();
       } catch (caught) {
         if (controller.signal.aborted || sequence !== refreshSequence.current) return;
         const status =
@@ -477,7 +499,15 @@ export function useThreadControlCenter(
             ? (caught as { readonly status?: unknown }).status
             : null;
         if (status === 401) onUnauthorized();
-        setReadFailed(true);
+        readFailures.current++;
+        if (!conversationShown) setReadFailed(true);
+        else {
+          retryDelay = Math.min(8_000, 1_000 * 2 ** (readFailures.current - 1));
+          if (readFailures.current >= 3) {
+            setReadScope(phase);
+            setReadFailed(true);
+          }
+        }
       } finally {
         if (readController.current === controller) {
           readController.current = null;
@@ -489,6 +519,11 @@ export function useThreadControlCenter(
               refreshTimer.current = undefined;
               void refreshLatest.current();
             }, 80);
+          } else if (retryDelay !== null && refreshTimer.current === undefined) {
+            refreshTimer.current = window.setTimeout(() => {
+              refreshTimer.current = undefined;
+              void refreshLatest.current();
+            }, retryDelay);
           }
         }
       }
@@ -968,7 +1003,7 @@ export function useThreadControlCenter(
       feedback={
         readScope !== "conversation" && !feedbackInConversation ? (
           <ThreadLoadFeedback
-            pending={loading}
+            pending={loading && !readInBackground}
             failed={readFailed}
             scope={readScope}
             attempt={readAttempt}
@@ -1040,7 +1075,7 @@ export function useThreadControlCenter(
       ) : null}
       {feedbackInConversation ? (
         <ThreadLoadFeedback
-          pending={loading}
+          pending={loading && !readInBackground}
           failed={readFailed}
           scope="conversation"
           attempt={readAttempt}
