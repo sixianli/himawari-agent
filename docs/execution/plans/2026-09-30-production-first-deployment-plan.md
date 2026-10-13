@@ -27,6 +27,7 @@ date: "2026-09-30"
 - [响应时间测量](#response-time)
 - [验收](#verification)
 - [本次第二次部署的授权边界](#second-deployment-authorization)
+- [第四次生产变更的授权目录布局](#fourth-change-workspace-layout)
 
 <a id="decisions"></a>
 
@@ -203,5 +204,22 @@ G68 要求修包期间保持停服。生产 S1 和 S2 已完成；原 S3 的备�
 修订包使用新批准引用 `round2/G66/second-20261009/reviewed-02`，先核完整新冻结清单，再由 root 发布器逐文件保留旧字节并记录前后 SHA。原 packet-01、S1/S2 成功证据和四份 S3 失败文件全部保留，不重跑 S1 或 S2 停服。发布后从 `S3_COPY49` 继续；S5 前仍执行 S2 `--inspect-only`。每一步使用相同脚本的用户包装，失败保持停止；Codex 不连接生产。公开 backup 命令仍不可用，后续配置备份密钥和防止演练形状偏差的工作见[生产备份待办](../../backlog/BL-20261009-002-生-产-缺-少-备-份-密-钥.md)。
 
 本次49恢复路线恢复旧过期授权选择。50恢复路线的新控制配置可保留新编号，但S4的原样50恢复点早于授权创建，恢复库中没有新授权行。两条路线均不自动补授权，保持停服；账号恢复和再次启动须另获具体批准。恢复成功不表示授权已经可用。
+
+[返回导航](#reading-navigation)
+
+
+<a id="fourth-change-workspace-layout"></a>
+
+## 第四次生产变更的授权目录布局（2026-10-13）
+
+第三次部署后的真实聊天显示，生产授权目录 `/var/lib/himawari/qualification-workspace` 只有首次部署留下的测试文件 `first-response-20261007.txt`，用户没有地方放自己的文件。用户 G90 采用以下布局，G91 决定这次先不接入 GitHub：
+
+| 位置 | 用途 | 文件怎么进来 |
+| --- | --- | --- |
+| `/var/lib/himawari/workspace/` | 新的授权根目录（目录授权交给 Himawari 的目录），整体替换 `qualification-workspace` | — |
+| `/var/lib/himawari/workspace/repos/` | 代码项目 | 这次不接入 GitHub，先留空；以后接入见[GitHub 克隆与推送待办](../../backlog/BL-20261013-002-himawari-从-github-克-隆-项-目-到.md) |
+| `/var/lib/himawari/workspace/files/` | 个人文件 | 先由用户用 `scp` 或 `rsync` 上传；控制中心上传功能见[上传待办](../../backlog/BL-20261013-003-控-制-中-心-上-传-文-件.md) |
+
+按 [ADR 0053](../../adr/0053-workspace-auto-approval-like-codex.md) 授权根目录内的读、写、编辑和不联网命令默认不需要批准，所以 `files/` 里的内容可能被 Himawari 直接修改；重要文件由用户自己另留备份。原 `qualification-workspace` 及其授权在第四次变更中如何退役（保留、移动或撤销），由变更操作包写明并经用户批准。[SOURCE: docs/adr/0053-workspace-auto-approval-like-codex.md#decision]
 
 [返回导航](#reading-navigation)

@@ -973,8 +973,8 @@
     },
     {
       "id": "R2-L10",
-      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-P1、R2-P2（含 enabledTools 和授权配置改动）",
-      "goal_ref": ["G85", "G86", "G88", "G89"],
+      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-P1、R2-P2（含 enabledTools 和授权配置改动），授权根目录改为 /var/lib/himawari/workspace/（repos/、files/，G90），不接入 GitHub（G91）",
+      "goal_ref": ["G85", "G86", "G88", "G89", "G90", "G91"],
       "done_when": [
         {
           "type": "user",
