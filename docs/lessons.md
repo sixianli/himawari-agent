@@ -16,6 +16,7 @@ date: "2026-10-13"
 - [从中途续做的修订版没核对跨步骤的摘要比较](#resume-digest-checks)
 - [在 Hermes 上生成后续要用的文件时没设 umask 022](#hermes-umask)
 - [进入冻结包目录后留下 `.claude` 目录](#claude-dir-in-packet)
+- [在工作目录里封存 Runbook，把本地 `.DS_Store` 算进摘要](#seal-in-working-tree)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -73,5 +74,18 @@ date: "2026-10-13"
 - 为什么要紧：冻结和本地发布核对要求包里没有多余的成员，这类目录还会被复制进下一个修订版的包。
 - 预防规则：不要 `cd` 进 `.ci-output/production/` 下的部署包目录；用仓库根目录出发的路径操作。冻结、复制包和上传前用 `find <包目录> -name .claude` 检查。
 - 再次发生的证据：2026-10-13 先后在 packet-02、packet-03（两次）里发现并删除了这个空目录。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="seal-in-working-tree"></a>
+
+## 在工作目录里封存 Runbook，把本地 `.DS_Store` 算进摘要
+
+- 反复出现的情况：Runbook（运维操作手册）的依据文件里有整个目录（例如 `apps/agent-service/src`）。封存脚本 `runbook.py seal` 计算摘要时会把目录里所有文件都算进去，包括 macOS 访达自动生成、被 git 忽略的 `.DS_Store`。在 Mac 的工作目录里直接封存，记下的摘要就只在这台 Mac 上对得上；干净检出（CI 或另一台机器）上严格校验会报 `contract_sha256 does not match`。
+- 为什么要紧：每次都要重新查一遍是哪些 Runbook 真漂移、哪些只是本地文件造成的，还会把真正的漂移藏在这些假错误里。
+- 预防规则：封存和严格校验都在干净副本上做：`git archive HEAD | tar -x -C <新建的临时目录>`（或只复制 `git ls-files` 列出的文件），在副本里 `runbook.py seal <副本> <Runbook> --confirm-reconciled --apply`，把改好的 Runbook 复制回仓库，再在副本上确认 0 错误。新建临时目录失败时立即停止，不能让复制目标变成空字符串。报告校验结果时说明是在干净副本上得到的。
+- 再次发生的证据：
+  - `12b4f9d` 封存的 `hermes-control-center-upgrade-runbook.md`、`install-start-stop-runbook.md` 在干净检出上从一开始就不通过。
+  - 2026-10-13 opencode 在 `feff37b` 里于工作目录重新封存 4 个 Runbook，自报“降到 2 个错误”，干净检出上却从 2 个变成 4 个；Claude 在 `fae0a0d` 于干净副本上重新封存后为 0 个。
 
 [回到目录](#编码代理反复犯的错误)
