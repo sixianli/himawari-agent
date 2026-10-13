@@ -89,6 +89,14 @@ function operationKey(kind: string, threadId: string, revision: number | string)
   return `op:${kind}:${revision}:${threadId.slice(-32)}`.slice(0, 128);
 }
 
+function isConcurrentSnapshotChange(caught: unknown): boolean {
+  return (
+    !!caught &&
+    typeof caught === "object" &&
+    (caught as { readonly status?: unknown }).status === 403
+  );
+}
+
 function mutationIdentity(
   storage: ControlCenterBrowserStorage,
   input: {
@@ -462,34 +470,32 @@ export function useThreadControlCenter(
           setExecution({ ...executionCache.current });
         }
         if (configuration.executionStateAvailable) {
-          const states = await Promise.all(
-            current.payload.runs.map(async (run) => {
-              const result = await client.queryThread(
-                threadQueryMessage(configuration, "thread.execution_state", {
-                  threadId: selectedThreadId,
-                  runId: run.runId,
-                }),
-                controller.signal,
-              );
-              if (
-                result.type !== "thread.execution_state_snapshot" ||
-                result.payload.threadId !== selectedThreadId ||
-                result.payload.runId !== run.runId
-              )
-                throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
-              if (result.payload.state.runRevision < run.revision)
-                throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
-              if (result.payload.state.runRevision > run.revision) return null;
-              return [run.runId, result.payload.state] as const;
-            }),
-          );
-          if (sequence !== refreshSequence.current) return;
-          if (states.some((state) => state === null)) {
-            succeeded();
-            refreshAgain.current = true;
-            return;
+          try {
+            const states = await Promise.all(
+              current.payload.runs.map(async (run) => {
+                const result = await client.queryThread(
+                  threadQueryMessage(configuration, "thread.execution_state", {
+                    threadId: selectedThreadId,
+                    runId: run.runId,
+                  }),
+                  controller.signal,
+                );
+                if (
+                  result.type !== "thread.execution_state_snapshot" ||
+                  result.payload.threadId !== selectedThreadId ||
+                  result.payload.runId !== run.runId
+                )
+                  throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
+                if (result.payload.state.runRevision < run.revision)
+                  throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
+                return [run.runId, result.payload.state] as const;
+              }),
+            );
+            if (sequence !== refreshSequence.current) return;
+            setExecutionStates(Object.fromEntries(states));
+          } catch (caught) {
+            if (!isConcurrentSnapshotChange(caught)) throw caught;
           }
-          setExecutionStates(Object.fromEntries(states.filter((state) => state !== null)));
         }
         succeeded();
       } catch (caught) {
@@ -953,7 +959,7 @@ export function useThreadControlCenter(
   const currentExecutionStates = Object.fromEntries(
     (detail?.payload.runs ?? []).flatMap((run) => {
       const state = executionStates[run.runId];
-      return state?.runRevision === run.revision ? [[run.runId, state]] : [];
+      return state && state.runRevision >= run.revision ? [[run.runId, state]] : [];
     }),
   );
   const canStop = (run: { runId: string; status: string }) =>
