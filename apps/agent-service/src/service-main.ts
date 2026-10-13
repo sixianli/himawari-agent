@@ -63,6 +63,10 @@ import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
 import {
+  WorkspaceAutoAuthorization,
+  resolveCodingNetworkFacts,
+} from "./workspace-auto-authorization.js";
+import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
   type ProductionHttpCompositionOptions,
@@ -698,6 +702,18 @@ export async function runAgentService(
       authority: invocationAuthority,
       now: () => clock.now(),
     });
+    const workspaceNetwork = await resolveCodingNetworkFacts(configuration, clock);
+    const workspaceAuto =
+      workspaceNetwork && configuration.runPolicy?.coding
+        ? new WorkspaceAutoAuthorization({
+            configuration,
+            repository,
+            clock,
+            ids,
+            network: workspaceNetwork,
+          })
+        : undefined;
+    if (workspaceAuto) await workspaceAuto.sync(invocationAuthority().lease);
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
@@ -705,6 +721,7 @@ export async function runAgentService(
       clock,
       ids,
       ...(automaticReview ? { automaticReview } : {}),
+      ...(workspaceAuto ? { workspaceAuto } : {}),
     });
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
     const taskEnvironmentConfiguration = configuration.taskEnvironments;

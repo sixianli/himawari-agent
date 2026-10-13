@@ -57,6 +57,33 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       name: "read",
       arguments: { path: toolResults.length === 0 ? "notes.txt" : "second.txt" },
     };
+  if (lastUserText.includes("自动批准验证")) {
+    const step = toolResults.length;
+    if (step === 0) return { kind: "tool", name: "ls", arguments: { path: "." } };
+    if (step === 1) return { kind: "tool", name: "read", arguments: { path: "notes.txt" } };
+    if (step === 2)
+      return {
+        kind: "tool",
+        name: "write",
+        arguments: { path: "auto.txt", content: "自动写入内容" },
+      };
+    if (step === 3)
+      return {
+        kind: "tool",
+        name: "edit",
+        arguments: { path: "editable.txt", edits: [{ oldText: EDITABLE, newText: EDITED }] },
+      };
+    if (step === 4)
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: {
+          command:
+            "mapfile -t lines < notes.txt; printf '%s notes.txt\\n' \"" + "$" + '{#lines[@]}"',
+        },
+      };
+    return { kind: "text", text: `自动完成：${toolResults.length} 个操作` };
+  }
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("原执行期限验证"))
     return {
@@ -101,8 +128,7 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       kind: "tool",
       name: "bash",
       arguments: {
-        command:
-          "mapfile -t lines < notes.txt; printf '%s notes.txt\\n' \"${#lines[@]}\"",
+        command: "mapfile -t lines < notes.txt; printf '%s notes.txt\\n' \"" + "$" + '{#lines[@]}"',
       },
     };
   if (lastUserText.includes("读取工作目录"))
@@ -894,6 +920,7 @@ productDescribe(
           ? { sourceRoot: process.env["HIMAWARI_TEST_SOURCE_ROOT"] }
           : {}),
         timing: process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1",
+        approval: "ask",
       });
       installation.setModelScript(script);
       await writeFile(path.join(installation.workspace, "notes.txt"), NOTE, { mode: 0o600 });
@@ -1171,6 +1198,7 @@ productDescribe(
             artifact,
             context: contextFile,
             logDirectory: path.join(outputDirectory, "legacy-service-logs"),
+            approval: "ask",
           });
           installation.setModelScript(script);
           await writeFile(path.join(installation.workspace, "notes.txt"), NOTE);
@@ -3771,6 +3799,7 @@ profileDescribe("alternating installed tool profiling", () => {
         timing: true,
         ...(sourceRoot ? { sourceRoot } : {}),
         logDirectory: path.join(outputDirectory, directory, "service-logs"),
+        approval: "ask",
       });
       created.push(installation);
       installation.setModelScript(script);
@@ -3976,4 +4005,139 @@ profileDescribe("alternating installed tool profiling", () => {
       for (const current of created) if (!closed.has(current)) await current.close();
     }
   }, 1_800_000);
+});
+
+productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
+  let autoInstallation: ProductPathInstallation;
+  let autoBrowser: Browser;
+  let autoContext: BrowserContext;
+  let autoPage: Page;
+
+  const autoComposer = () => autoPage.getByPlaceholder("有什么想交给 Himawari？");
+  async function newAutoThread() {
+    await autoPage
+      .getByRole("link", { name: "新建对话" })
+      .or(autoPage.getByRole("button", { name: "新建对话" }))
+      .first()
+      .click();
+    await uiExpect(autoComposer()).toBeVisible({ timeout: 20_000 });
+  }
+  async function autoSend(text: string) {
+    const button = autoPage.getByRole("button", { name: "发送", exact: true });
+    await uiExpect(autoPage.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+      timeout: 300_000,
+    });
+    await autoComposer().fill(text);
+    await uiExpect(button).toBeEnabled({ timeout: 20_000 });
+    await button.click();
+    await uiExpect(autoPage.getByRole("article").filter({ hasText: text }).last()).toBeVisible({
+      timeout: 20_000,
+    });
+  }
+  function autoTurn(text: string) {
+    return autoPage
+      .locator(".chat-turn")
+      .filter({
+        has: autoPage.locator(".thread-message-owner").filter({
+          has: autoPage.getByText(text, { exact: true }),
+        }),
+      })
+      .last();
+  }
+  function auditCount(action: string): number {
+    const database = openQualifiedDatabase(autoInstallation.databasePath);
+    try {
+      return (
+        database
+          .prepare("SELECT COUNT(*) AS count FROM audit_records WHERE action = ?")
+          .get(action) as { count: number }
+      ).count;
+    } finally {
+      database.close();
+    }
+  }
+
+  beforeAll(async () => {
+    const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+    const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+    if (!artifact || !contextFile)
+      throw new Error(
+        "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+      );
+    autoInstallation = await installProductPath({
+      artifact,
+      context: contextFile,
+      logDirectory: path.join(outputDirectory, "auto-service-logs"),
+      ...(process.env["HIMAWARI_TEST_SOURCE_ROOT"]
+        ? { sourceRoot: process.env["HIMAWARI_TEST_SOURCE_ROOT"] }
+        : {}),
+    });
+    autoInstallation.setModelScript(script);
+    await writeFile(path.join(autoInstallation.workspace, "notes.txt"), `${NOTE}\n`, {
+      mode: 0o600,
+    });
+    await writeFile(path.join(autoInstallation.workspace, "editable.txt"), `${EDITABLE}\n`, {
+      mode: 0o600,
+    });
+    await autoInstallation.start();
+    autoBrowser = await chromium.launch({
+      channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+      tracesDir: path.join(outputDirectory, "traces", "auto"),
+      args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${autoInstallation.frontPort}`],
+    });
+    autoContext = await autoBrowser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+    await autoContext.tracing.start({
+      name: "auto",
+      live: true,
+      screenshots: true,
+      snapshots: true,
+    });
+    autoPage = await autoContext.newPage();
+    await autoPage.goto(`${autoInstallation.origin}/`);
+    await autoPage.getByRole("button", { name: "登录 Himawari" }).click();
+    await uiExpect(autoComposer()).toBeVisible({ timeout: 30_000 });
+  }, 400_000);
+
+  afterAll(async () => {
+    await cleanupWithEvidence("auto-teardown", [
+      ["installation", async () => autoInstallation?.close()],
+      ["trace", async () => autoContext?.tracing.stop()],
+      ["browser", async () => autoBrowser?.close()],
+    ]);
+  }, 120_000);
+
+  it("[R2-T2] runs ls, read, write, edit and an offline bash in one turn without any approval request", async () => {
+    const request = "自动批准验证：列目录 读文件 写文件 编辑文件 统计行数";
+    await newAutoThread();
+    await autoSend(request);
+    const turn = autoTurn(request);
+    await uiExpect(turn.getByText(/自动完成/)).toBeVisible({ timeout: 300_000 });
+    await uiExpect(turn.getByRole("button", { name: "允许这一次" })).toHaveCount(0);
+    await uiExpect(turn).toContainText("1 notes.txt");
+
+    expect(await readFile(path.join(autoInstallation.workspace, "auto.txt"), "utf8")).toBe(
+      "自动写入内容",
+    );
+    expect(await readFile(path.join(autoInstallation.workspace, "editable.txt"), "utf8")).toBe(
+      `${EDITED}\n`,
+    );
+    expect(auditCount("workspace.authorization.policy_applied")).toBe(5);
+    expect(auditCount("workspace.authorization.enabled")).toBe(1);
+
+    await autoInstallation.stop();
+    await autoInstallation.setCodingApproval("ask");
+    await autoInstallation.start();
+    await autoPage.reload();
+    await uiExpect(autoComposer()).toBeVisible({ timeout: 30_000 });
+
+    await newAutoThread();
+    await autoSend("请列出工作目录");
+    const asking = autoTurn("请列出工作目录");
+    await uiExpect(asking.getByRole("button", { name: "允许这一次" })).toBeVisible({
+      timeout: 300_000,
+    });
+    await asking.getByRole("button", { name: "允许这一次" }).click();
+    await uiExpect(asking.getByText(/工具返回：/)).toBeVisible({ timeout: 300_000 });
+    expect(auditCount("workspace.authorization.revoked")).toBe(1);
+  }, 1_500_000);
 });

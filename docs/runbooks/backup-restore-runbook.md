@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f11a16607f930d5381b44e18af39c3b42b39f166cf272eea1a1ceb5aa6b13cd6"
+contract_sha256: "sha256:3dd00027844ee3167241740c46a71fc8f9475db599b6e9908fd5f82c983511c0"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -558,7 +558,7 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 同一 Run 有多个资源时，停止入口会继续枚举后续页并独立请求各资源停止，最后汇总清理结论。一条资源等待或报错不阻止其他资源收到停止；只有每条资源均有永久释放回执且无残留保护时，整体才报告已释放。
 
-长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。具体写入内容仍使用精确单次批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。
+长期 Grant 的现时覆盖检查与创建条件一致：仅允许低风险 READ；新请求风险提高或动作类别变化时重新询问，不能因资源相同就复用。恢复、转移和升级时保留原 intent、审批及额度记录，不把过去拒绝改成批准。写入或修改授权工作目录内的内容，默认由宿主策略派生精确绑定本次 intent 的单次 Grant 而不再逐次点击（配置 `runPolicy.coding.approval: "ask"` 时恢复逐次人工批准，见 [ADR 0053](../adr/0053-workspace-auto-approval-like-codex.md)）；授权目录外的写入和联网命令仍需人工批准；记住搜索选择会为新请求派生独立单次 Grant，不是长期写权限。参见[单次批准与范围授权实施记录](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p2-scope-continuity)。
 
 ## 旧程序执行器的尾部输出（2026-09-29）
 

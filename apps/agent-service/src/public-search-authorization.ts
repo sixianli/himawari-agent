@@ -1,13 +1,9 @@
 import { createHash } from "node:crypto";
 import {
   ApplicationPortError,
-  ApprovalService,
   type AuthorityFence,
-  actionIntentFingerprint,
   type ClockPort,
   type GovernedActionIntent,
-  type GovernedApprovalRequest,
-  GrantService,
   type IdempotentAgentCommand,
   type IdGeneratorPort,
   PORT_ERROR_CODES,
@@ -19,6 +15,7 @@ import type {
   GatewayV2Snapshot,
 } from "@himawari-agent/gateway-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { appendAuditRecord, applyOwnerPolicyAuthorization } from "./owner-policy-authorization.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 
 const recipient = "https://mcp.exa.ai" as const;
@@ -134,20 +131,7 @@ export class PublicSearchAuthorization {
     return { resultRef: result.commandResult.resultRef, replayed: result.replayed };
   }
   private async appendAudit(record: import("@himawari-agent/application").AuditRecord) {
-    try {
-      await this.options.repository.auditLedger().append(record);
-    } catch (error) {
-      if (!(error instanceof ApplicationPortError) || error.code !== PORT_ERROR_CODES.DUPLICATE)
-        throw error;
-      const old = (
-        await this.options.repository.auditLedger().listByAgent(record.agentId, null)
-      ).find((item) => item.id === record.id);
-      if (
-        !old ||
-        !(Object.keys(record) as (keyof typeof record)[]).every((key) => old[key] === record[key])
-      )
-        throw error;
-    }
+    await appendAuditRecord(this.options.repository.auditLedger(), record);
   }
   async authorize(intent: GovernedActionIntent): Promise<void> {
     const { configuration, repository, clock, ids } = this.options;
@@ -191,88 +175,16 @@ export class PublicSearchAuthorization {
     )
       return;
     const store = repository.authorizationStore();
-    let approval = (await store.findApprovalByIntent(intent.id)) as
-      | GovernedApprovalRequest
-      | undefined;
-    if (approval?.policyAuthorization && approval.status === "approved") {
-      await this.appendAudit({
-        id: `search-use:${digest(intent.id)}`,
-        ownerId: intent.ownerId,
-        agentId: intent.agentId,
-        action: "search.authorization.policy_applied",
-        targetRef: approval.id,
-        outcome: "completed",
-        occurredAt: approval.decidedAt ?? clock.now(),
-      });
-      return;
-    }
-    // An explicit rejection or an already requested human decision is never overridden.
-    if (approval && (!approval.policyAuthorization || approval.status !== "pending")) return;
-    const policyAuthorization = { key: this.key, revision: state.revision };
-    if (
-      approval &&
-      (approval.policyAuthorization?.key !== this.key ||
-        approval.policyAuthorization.revision !== state.revision)
-    )
-      return;
-    if (!approval)
-      approval = (await store.createApproval({
-        id: ids.next("policy-authorization"),
-        revision: 1,
-        ownerId: intent.ownerId,
-        agentId: intent.agentId,
-        runId: intent.runId,
-        intentId: intent.id,
-        intentSnapshot: intent,
-        semanticSnapshotHash: actionIntentFingerprint(intent),
-        status: "pending",
-        deliveryState: "queued_no_ui",
-        requestedAt: clock.now(),
-        expiresAt: intent.expiresAt,
-        decidedAt: null,
-        grantId: null,
-        finalRisk: intent.finalRisk,
-        recentAuthenticationRequired: false,
-        recentAuthenticationRef: null,
-        policyAuthorization,
-      } as GovernedApprovalRequest)) as GovernedApprovalRequest;
-    const grant = new GrantService({ store, clock, ids }).create({
-      kind: "one_time",
+    await applyOwnerPolicyAuthorization({
+      store,
+      clock,
+      ids,
       intent,
-      approvalRequestId: approval.id,
-      expiresAt: intent.expiresAt,
-      maxUses: 1,
-      maxTotalCostMicros: 0,
-      scope: {
-        capabilityRef: intent.capabilityRef,
-        capabilityVersion: intent.capabilityVersion,
-        operations: [intent.operation],
-        exactResourceRef: intent.resourceRef,
-        resourceIdentities: [...intent.resourceRefs],
-        resourcePrefixes: [],
-        maxDataClassification: intent.dataClassification,
-        sideEffects: ["none"],
-        maxCostMicrosPerUse: 0,
-        maxFrequency: intent.frequency,
-        disclosure: intent.disclosure,
-        recipients: [...intent.recipients],
-        credentialOrAccessChange: false,
-      },
-    });
-    approval = await new ApprovalService({ store, clock }).respond({
-      approvalRequestId: approval.id,
-      expectedRevision: approval.revision,
-      semanticSnapshotHash: approval.semanticSnapshotHash,
-      response: { decision: "approved", grant, recentAuthenticationRef: null },
-    });
-    await this.appendAudit({
-      id: `search-use:${digest(intent.id)}`,
-      ownerId: intent.ownerId,
-      agentId: intent.agentId,
-      action: "search.authorization.policy_applied",
-      targetRef: approval.id,
-      outcome: "completed",
-      occurredAt: approval.decidedAt ?? clock.now(),
+      key: this.key,
+      revision: state.revision,
+      auditId: `search-use:${digest(intent.id)}`,
+      auditAction: "search.authorization.policy_applied",
+      appendAudit: (record) => this.appendAudit(record),
     });
   }
 }

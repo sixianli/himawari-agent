@@ -204,6 +204,7 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
     | "move_directory"
     | "save_copy"
   )[];
+  readonly approval?: "workspace_auto" | "ask";
 }
 
 export interface RunPolicyConfiguration {

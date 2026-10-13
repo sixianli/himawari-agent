@@ -250,7 +250,12 @@ async function prepareProductPathBash(testRoot: string, runtimeRoot: string, log
     for (const alias of aliases) {
       if (extra) {
         const fromDirectory = path.join(extra, alias);
-        if (await stat(fromDirectory).then((info) => info.isFile(), () => false)) {
+        if (
+          await stat(fromDirectory).then(
+            (info) => info.isFile(),
+            () => false,
+          )
+        ) {
           located = fromDirectory;
           break;
         }
@@ -310,6 +315,7 @@ export interface ProductPathInstallation {
   setModelScript(script: ModelScript): void;
   setEmbeddingAvailable(available: boolean): void;
   setRunDeadline(milliseconds: number): Promise<void>;
+  setCodingApproval(approval: "workspace_auto" | "ask"): Promise<void>;
   start(): Promise<void>;
   stop(): Promise<void>;
   crash(): Promise<void>;
@@ -448,6 +454,7 @@ export async function installProductPath(options: {
   readonly logDirectory: string;
   readonly timing?: boolean;
   readonly sourceRoot?: string;
+  readonly approval?: "workspace_auto" | "ask";
 }): Promise<ProductPathInstallation> {
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
@@ -911,6 +918,7 @@ export async function installProductPath(options: {
         capabilityVersion: "1.0.0",
         maximumBytes: 49152,
         enabledTools: [...codingTools],
+        approval: options.approval ?? "workspace_auto",
       },
       timeZone: "Asia/Tokyo",
     },
@@ -1122,6 +1130,12 @@ export async function installProductPath(options: {
       if (processes || !Number.isSafeInteger(milliseconds) || milliseconds < 1000)
         throw new Error("PRODUCT_PATH_DEADLINE_CONFIGURATION_INVALID");
       configuration.deadlines.runMs = milliseconds;
+      await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
+    },
+    setCodingApproval: async (approval) => {
+      if (processes || (approval !== "workspace_auto" && approval !== "ask"))
+        throw new Error("PRODUCT_PATH_APPROVAL_CONFIGURATION_INVALID");
+      configuration.runPolicy.coding.approval = approval;
       await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
     },
     start,

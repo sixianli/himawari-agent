@@ -16,6 +16,7 @@ import type { ProductionFileReadServices } from "./production-file-read-workflow
 
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
 
 /** Production composition: routing never creates grants or capability qualification. */
 export function createProductionFileReadServices(options: {
@@ -35,6 +36,7 @@ export function createProductionFileReadServices(options: {
   readonly ids: IdGeneratorPort;
   /** Opt-in host coordinator; absent until review configuration and delegation are approved. */
   readonly automaticReview?: AutomaticActionReviewPort;
+  readonly workspaceAuto?: WorkspaceAutoAuthorization;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -210,6 +212,7 @@ export function createProductionFileReadServices(options: {
     authorize: async (intent, signal) => {
       signal?.throwIfAborted();
       await searchAuthorization.authorize(intent);
+      await options.workspaceAuto?.authorize(intent);
       return policy.evaluate(intent, {
         uiAvailable: true,
         approvalExpiresAt: intent.expiresAt,

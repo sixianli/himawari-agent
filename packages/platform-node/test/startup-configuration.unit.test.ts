@@ -1004,3 +1004,47 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
   raw["modelDescriptors"] = [...descriptors.slice(0, -1), { ...decisionModel, role: "fallback" }];
   expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
 });
+
+describe("[R2-T2] coding route approval mode", () => {
+  const AT = "2026-10-13T00:00:00.000Z";
+  function withCoding(approval?: string): Record<string, unknown> {
+    const raw = config(path.join(tmpdir(), "himawari-coding-approval"));
+    raw["runPolicy"] = {
+      version: "policy-v1",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      maxSelectedMemories: 1,
+      maxMemoryClassification: "private",
+      coding: {
+        hostId: "host",
+        workerInstanceId: "worker",
+        grantId: "directory:grant",
+        capabilityRef: "himawari.pi-coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        enabledTools: ["read", "write", "edit", "bash", "find", "grep", "ls"],
+        ...(approval === undefined ? {} : { approval }),
+      },
+    };
+    return raw;
+  }
+
+  it("[R2-T2] accepts workspace_auto and ask, and defaults an omitted value to workspace_auto", () => {
+    expect(
+      parseProductConfiguration(withCoding("workspace_auto"), AT).runPolicy?.coding?.approval,
+    ).toBe("workspace_auto");
+    expect(parseProductConfiguration(withCoding("ask"), AT).runPolicy?.coding?.approval).toBe(
+      "ask",
+    );
+    expect(parseProductConfiguration(withCoding(), AT).runPolicy?.coding?.approval).toBe(
+      "workspace_auto",
+    );
+  });
+
+  it("[R2-T2] rejects an unknown approval value and an undeclared coding field", () => {
+    expect(() => parseProductConfiguration(withCoding("maybe"), AT)).toThrow();
+    const raw = withCoding("ask");
+    (raw["runPolicy"] as { coding: Record<string, unknown> }).coding["approval2"] = "ask";
+    expect(() => parseProductConfiguration(raw, AT)).toThrow();
+  });
+});

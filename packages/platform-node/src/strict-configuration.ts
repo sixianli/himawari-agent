@@ -772,7 +772,7 @@ function parsePublicSearchRoute(
 
 function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
   const input = record(value, "configuration.runPolicy.coding");
-  const { enabledTools, ...route } = input;
+  const { enabledTools, approval, ...route } = input;
   if (
     !Array.isArray(enabledTools) ||
     enabledTools.length === 0 ||
@@ -796,9 +796,12 @@ function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["c
       "configuration.runPolicy.coding.enabledTools",
       "must select distinct installed Pi tools",
     );
+  if (approval !== undefined && approval !== "workspace_auto" && approval !== "ask")
+    throw invalid("configuration.runPolicy.coding.approval", "must be workspace_auto or ask");
   return {
     ...parseFileReadRoute(route),
     enabledTools: enabledTools as NonNullable<RunPolicyConfiguration["coding"]>["enabledTools"],
+    approval: approval === undefined ? "workspace_auto" : approval,
   };
 }
 
