@@ -467,3 +467,9 @@
 > 2 先不接入 GitHub
 
 （第四次生产变更不接入 GitHub 克隆和推送；先只用 `files/`，个人文件先用 scp 或 rsync 上传。）
+
+## G92 2026-10-13 用户原话
+
+> 用系统自带命令（推荐）
+
+（回复的是 Claude 的选择题：沙箱里的 bash 只能找到 bash、rg、fd 三个程序，ls、cat、git、python 都找不到。用户选择像 Codex、Claude Code 一样，先找安装包里的固定程序，再找系统的 /usr/local/bin、/usr/bin、/bin；沙箱的写入和联网限制不变。记入 ADR 0055。）

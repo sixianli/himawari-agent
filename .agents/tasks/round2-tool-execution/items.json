@@ -973,8 +973,8 @@
     },
     {
       "id": "R2-L10",
-      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-P1、R2-P2（含 enabledTools 和授权配置改动），授权根目录改为 /var/lib/himawari/workspace/（repos/、files/，G90），不接入 GitHub（G91）",
-      "goal_ref": ["G85", "G86", "G88", "G89", "G90", "G91"],
+      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-T3、R2-P1、R2-P2（含 enabledTools 和授权配置改动），授权根目录改为 /var/lib/himawari/workspace/（repos/、files/，G90），不接入 GitHub（G91）",
+      "goal_ref": ["G85", "G86", "G88", "G89", "G90", "G91", "G92"],
       "done_when": [
         {
           "type": "user",
@@ -1007,6 +1007,27 @@
         "by": "claude",
         "on": "2026-10-13",
         "why": "用户 G88：按 Codex Auto 做个人全能 Agent"
+      }
+    },
+    {
+      "id": "R2-T3",
+      "title": "沙箱里的 bash 可以使用系统自带命令：子命令 PATH 依次为 pi-tools/bin、/usr/local/bin、/usr/bin、/bin，bash/rg/fd 仍用安装包里核验过的固定程序；ls、cat、git 在 Hermes 产品路径真实执行通过，越界写入和联网仍被拒绝（ADR 0055）",
+      "goal_ref": ["G92"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T3",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第 19 批发现沙箱 PATH 只有 pi-tools/bin，常用命令都不能用；用户 G92 选择使用系统自带命令"
       }
     },
     {
