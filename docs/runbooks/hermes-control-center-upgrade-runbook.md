@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5de00e536a8d51c445840ea4bd1d2129f91b7c397d6211f9f2a4b0825eb48014"
+contract_sha256: "sha256:9d75cf4f2731e9921a11c0194c589d2c051d2324f92360cec54bb5b6d2895ac3"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"

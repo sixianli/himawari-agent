@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
+  type HostDirectoryGrant,
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolSettledResult,
@@ -58,6 +59,22 @@ const failed = (code: string): RuntimeToolExecutionResult => ({
   errorCode: code,
   externalActionId: null,
   modelContent: `工具未执行：${code}`,
+});
+
+function targetsGrantRoot(grant: HostDirectoryGrant, target: string): boolean {
+  const root = grant.displayPath.replace(/\/+$/, "") || "/";
+  const candidate = target.replace(/\/+$/, "");
+  return candidate === "." || (candidate.length > 0 && candidate === root);
+}
+
+const directoryTargetResult = (): RuntimeToolExecutionResult => ({
+  dispatchState: "not_sent",
+  outcome: "failed",
+  resultRef: null,
+  errorCode: "CODING_PATH_IS_DIRECTORY",
+  externalActionId: null,
+  modelContent:
+    "工具未执行：CODING_PATH_IS_DIRECTORY。这个路径是目录（可能是授权工作目录本身），不是文件。查看目录内容请用 ls；请在 ls 的结果里找到具体文件后，再对那个文件路径调用 read。",
 });
 
 export const fileVersionConflictResult = (
@@ -148,6 +165,8 @@ export async function executeProductionCodingRequest(
     const target =
       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
     if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
+    if (["read", "write", "edit"].includes(tool) && targetsGrantRoot(grant, target))
+      return directoryTargetResult();
     try {
       const rootQuery =
         ["ls", "find", "grep"].includes(tool) && (target === "." || target === grant.displayPath);

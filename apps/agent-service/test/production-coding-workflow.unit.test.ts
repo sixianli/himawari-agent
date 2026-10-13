@@ -132,6 +132,78 @@ describe("governed coding requests", () => {
       expect(f.ctx.phase).not.toHaveBeenCalled();
     },
   );
+  it.each([".", "./", "/workspace", "/workspace/", "/workspace//"])(
+    "[R2-T1] reports a directory target as a directory instead of outside scope: %s",
+    async (path) => {
+      const f = fixture();
+      const result = await executeProductionCodingRequest(
+        { ...f.call, capabilityRef: "coding.read", arguments: { path } },
+        "read",
+        f.services,
+        f.ctx,
+      );
+      expect(result).toMatchObject({
+        errorCode: "CODING_PATH_IS_DIRECTORY",
+        dispatchState: "not_sent",
+        outcome: "failed",
+      });
+      expect(result.modelContent).toContain("目录");
+      expect(result.modelContent).toContain("ls");
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["/var/lib/himawari/state", "../outside", "/workspace/../outside", "/outside"])(
+    "[R2-T1] still rejects an out-of-scope read target as outside scope: %s",
+    async (path) => {
+      const f = fixture();
+      expect(
+        await executeProductionCodingRequest(
+          { ...f.call, capabilityRef: "coding.read", arguments: { path } },
+          "read",
+          f.services,
+          f.ctx,
+        ),
+      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE", dispatchState: "not_sent" });
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    },
+  );
+  it("[R2-T1] keeps the granted directory as a valid ls, find and grep query", async () => {
+    for (const tool of ["ls", "find", "grep"] as const) {
+      const f = fixture();
+      await executeProductionCodingRequest(
+        { ...f.call, capabilityRef: `coding.${tool}`, arguments: {} },
+        tool,
+        f.services,
+        f.ctx,
+      );
+      expect(f.authorize).toHaveBeenCalledWith(
+        expect.objectContaining({ operation: tool }),
+        undefined,
+      );
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    }
+  });
+  it("[R2-T1] reports the grant root as a directory for write and edit", async () => {
+    for (const tool of ["write", "edit"] as const) {
+      const f = fixture();
+      expect(
+        await executeProductionCodingRequest(
+          {
+            ...f.call,
+            capabilityRef: `coding.${tool}`,
+            arguments: { path: "/workspace", content: "x" },
+          },
+          tool,
+          f.services,
+          f.ctx,
+        ),
+      ).toMatchObject({ errorCode: "CODING_PATH_IS_DIRECTORY", dispatchState: "not_sent" });
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    }
+  });
   it("accepts the grant root for directory queries but does not execute without approval", async () => {
     const f = fixture();
     await executeProductionCodingRequest(
