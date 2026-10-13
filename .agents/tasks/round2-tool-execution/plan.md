@@ -7,9 +7,9 @@
 ## 当前批次
 
 按 G77/G83 编码和测试交给 opencode（`opencode-go/deepseek-v4.1-flash#high`），Claude 统筹、逐行审核并执行生产步骤；测试只在 Hermes；opencode 不连接云服务器 84.247.157.41：
-- R2-T2：授权工作目录内七个编码工具默认允许（`ActionPolicyService` 新增确定性规则，`runPolicy.coding.approval` 不写时等于 `workspace_auto`），联网的 bash、移动、另存、删除仍询问；opencode 先交方案、Claude 批准后再实现。证据：带 [R2-T2] 的单元和产品路径测试在 Hermes 通过（产品路径全程无审批请求，读回授权轨迹原因 `workspace_auto`），第 3 层在最终提交通过，Claude 审核。简报 `.ci-output/handoff/2026-10-13-r2t2-oc-brief-20.md`。
-- R2-T3：沙箱里 bash 子命令的 PATH 加上 /usr/local/bin、/usr/bin、/bin（固定目录在前），同一提交改 Runbook、架构文档和 SRT 设计里的 PATH 描述（ADR 0055）。证据：带 [R2-T3] 的产品路径测试在 Hermes 通过（ls、cat、git 可用，越界写入和联网仍被拒绝），Claude 审核。R2-T2 提交后再派，避免两批同时改同一工作目录。
-- R2-L10：R2-T2、R2-T3、R2-P1、R2-P2 通过后做第四次生产变更操作包（同时上线 R2-U3、R2-T1），用户具体批准后执行。
+- R2-T3：沙箱里 bash 子命令的 PATH 加上 /usr/local/bin、/usr/bin、/bin（固定目录在前），只改 `pi-coding-main.ts` 执行命令的那一处，不扩大沙箱只读放行列表；同一提交改 Runbook、架构文档和 SRT 设计里的 PATH 描述（ADR 0055）。证据：带 [R2-T3] 的产品路径测试在 Hermes 通过（ls、cat、git、python3 可用，越界写入、读 /etc/passwd 和联网仍被拒绝），Claude 审核。简报 `.ci-output/handoff/2026-10-13-r2t3-oc-brief-21.md`。
+- R2-T4：npm test 在 Hermes 上于 30 分钟总预算内跑完，不放宽时限（G20）。先测量集成测试各文件耗时找出最慢的部分，再缩短测试本身的耗时；改 Vitest 配置或 `scripts/ci/` 时按规定跑第 3 层。证据：`npm test -- --tools …` 在 Hermes 退出码 0，Claude 审核。R2-T3 提交后再派。
+- R2-L10：R2-T3、R2-T4、R2-P1、R2-P2 通过后做第四次生产变更操作包（同时上线 R2-U3、R2-T1、R2-T2），用户具体批准后执行。
 
 ## 之后
 
@@ -113,6 +113,7 @@ R2-T3 之后（G89）：
 - 2026-10-13 新增 R2-T2、R2-P1、R2-P2（G88：授权目录内按 Codex Auto 默认允许；G89：只读工具主进程执行、命令和写入同一轮复用沙箱），记入 ADR 0053、0054；R2-T1 标题扩到 write、edit、bash，R2-L10 范围扩到这五项。当前批次仍为 R2-U3、R2-T1、R2-L10；R2-T2、R2-P1、R2-P2 排在 R2-U3 之后。status（新增前）：共 49 项，当前版本已验证 12 · 旧版本验证过 15 · 未完成 16 · 等你决定 4 · 不做 2。
 - 2026-10-13 R2-L10 范围加入授权根目录 /var/lib/himawari/workspace/（G90）、不接入 GitHub（G91）；GitHub 和控制中心上传记为 BL-20261013-002、003。done_when 不变。
 - 2026-10-13 新增 R2-T3（G92：用户选择沙箱里的 bash 使用系统自带命令），记入 ADR 0055；R2-L10 范围加入 R2-T3。R2-U3、R2-T1 移出当前批次，当前批次改为 R2-T2、R2-T3、R2-L10。R2-T2 起非机械性修复先交方案再实现，停止文件要附期望值来源表（第 18、18a 批返工分析）。status（新增前）：共 52 项，当前版本已验证 6 · 旧版本验证过 23 · 未完成 17 · 等你决定 4 · 不做 2。
+- 2026-10-13 新增 R2-T4（G20：Hermes 一律默认时限，超时当缺陷修）；R2-T2 已审核通过移出当前批次，当前批次改为 R2-T3、R2-T4、R2-L10。status：共 54 项，当前版本已验证 12、旧版本验证过 20、未完成 16、等你决定 4、不做 2（新增 R2-T4 前）。
 
 ## 意外和发现
 
@@ -213,6 +214,7 @@ R2-T3 之后（G89）：
 - 2026-10-07 22:25 cloud-packet stop-08：P5 安装合同缺口（BL-20261007-004）。Claude 核实 install-node-runtime.mjs:65–84 只有 --source/--artifact 两种来源，verify-artifact.mjs:74–87 解压必须用 Python 3.12.10，--artifact 还要 git 源码和 Ajv/TypeScript，没有不需要源码的安装方式。reply-08 批准安装时临时带入核对材料（3a65b90 的 git bundle、按 package-lock 锁定的安装器依赖闭包、锁定 Python 原始包，git 由 P0 检查，缺了就停），正式运行不依赖它们，装完删除；先在 Hermes 用只含这些材料的新目录完整演练，P13 单列授权。要求先跑完不受影响的 R2-L6 三次和提交再处理 P5。
 - 2026-10-08 00:40 stop-09 草稿阶段：Codex 新记 BL-20261007-005 到 009。Claude 核实后预先写 reply-09：BL-006 是 Claude 用 Python 重写 items.json 造成的格式失败，ecfea51 已修；BL-005 改为把 G59 验收用过的整份锁定 node_modules 连同 3a65b90 bundle 临时带入，并在 Hermes 从空目录演练安装和完整 P8 验收；BL-007 两个 bwrap 路径按安装 Runbook 401–406 行分别签署；BL-008 给出清理证据规则；BL-009 按用户 G64 不做 systemd 离线检查；取消 reply-05 的 4 小时预算。group-07 新 HTTP 版探针 3 次 exit 0。用户要更新 Claude Code 并换新会话，Codex 已在 Hermes 无测试进程时暂停，恢复步骤写在 claude-codex-state.md。
 - 2026-10-13 S10 真实聊天（thread:f652065f，run:9a2d2c24）：沙箱读取每次 7–14 秒正常结束并把结果送回模型，读工具不再卡住；结果不理想因为生产 enabledTools 只有 read、工作目录只有 first-response-20261007.txt、授权目录内每次读取都要批准（等待 2 分 28 秒）。读目录被报成 CODING_PATH_OUTSIDE_SCOPE（production-coding-workflow.ts:164）。运行中控制中心停在“Preparing · Time not recorded”并弹出“无法加载这段对话”，说明 R2-U1 的修复没有覆盖运行中连续失败的情况；结束后重开显示正常。证据 .ci-output/production/2026-10-13-third-s10-diagnostic-01/。
+- 2026-10-13 第 20 批：npm test 在 Hermes 两次于 30 分钟被终止（run-05、run-14）。基线 4bf19bd 的第 3 层 test 用时 1779 秒（unit 186、contracts 31、integration 1505），只剩约 21 秒余量；本批 unit 增至 220 秒，integration 在 1521 秒被终止。完整套件直跑 7928/0。另：R2-T1 报告“check 通过”有误，e00e641 的测试文件 biome lint --error-on-warnings 退出码 1（noTemplateCurlyInString），9eed9a6 已修。
 
 ## 决定
 

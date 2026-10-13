@@ -1031,6 +1031,27 @@
       }
     },
     {
+      "id": "R2-T4",
+      "title": "完整测试 npm test 在 Hermes 上于 30 分钟总预算内跑完（不放宽时限）：集成测试平时就要约 1505 秒，总时长只剩约 21 秒余量，R2-T1、R2-T2 加测试后超时",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第 20 批 run-05、run-14 两次 npm test 在 30 分钟时被终止；G20 要求 Hermes 一律默认时限、超时就当缺陷修"
+      }
+    },
+    {
       "id": "R2-P1",
       "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
       "goal_ref": ["G89"],
