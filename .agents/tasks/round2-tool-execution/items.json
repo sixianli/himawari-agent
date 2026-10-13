@@ -928,6 +928,65 @@
         "on": "2026-10-12",
         "why": "G65/G66 只覆盖第二次部署，第三次需要用户另行授权"
       }
+    },
+    {
+      "id": "R2-U3",
+      "title": "一轮运行期间控制中心实时显示跟上实际进度：已结束的工具调用显示结果和耗时，不再一直显示“Preparing · Time not recorded”，运行中不弹出“无法加载这段对话”",
+      "goal_ref": ["G86"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U3",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第三次部署后 S10 真实聊天（thread:f652065f）运行中界面停在 Preparing 并弹出加载失败，结束后重开正常"
+      }
+    },
+    {
+      "id": "R2-T1",
+      "title": "生产开放更多编码工具：先开放只读的 ls、find、grep 并在 Hermes 产品路径验证；读目录时报“这是目录”而不是 CODING_PATH_OUTSIDE_SCOPE",
+      "goal_ref": ["G85"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "生产 enabledTools 只有 read，模型无法列目录只能猜文件名"
+      }
+    },
+    {
+      "id": "R2-L10",
+      "title": "第四次生产变更：上线 R2-U3、R2-T1（含 enabledTools 配置改动）",
+      "goal_ref": ["G85", "G86"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "是否批准第四次生产变更及其操作包？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "G75 只覆盖第三次部署，生产配置和版本变更需要用户另行授权"
+      }
     }
   ],
   "fingerprint": {

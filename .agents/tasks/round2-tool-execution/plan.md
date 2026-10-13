@@ -6,8 +6,10 @@
 
 ## 当前批次
 
-按 G77 编码和测试交给 opencode（deepseek v4.1 flash），Claude 统筹、逐行审核并执行生产步骤；测试只在 Hermes；opencode 不连接云服务器 84.247.157.41：
-- R2-L9：完成第三次部署冻结操作包：补齐候选证据字段、修正残留文档、重算各目录 OWNED-SHA256SUMS、在 Hermes 跑全部包内夹具和安装演练、钉住新运行时摘要后冻结；冻结包经用户具体批准后按 G75 执行。
+按 G77/G83 编码和测试交给 opencode（`opencode-go/deepseek-v4.1-flash#high`），Claude 统筹、逐行审核并执行生产步骤；测试只在 Hermes；opencode 不连接云服务器 84.247.157.41：
+- R2-U3：在 Hermes 用控制中心浏览器测试复现“一轮运行中多次工具调用、每次批准、工具失败”时实时显示停在 Preparing 和弹出加载失败，查明是哪一个查询失败或被跳过（先验证执行状态 runRevision 与详情 revision 竞争的假设），修复后同一测试通过。证据：带 [R2-U3] 的 Playwright/集成测试在 Hermes 通过，Claude 审核。
+- R2-T1：读目录返回明确的“是目录”错误；ls、find、grep 在 Hermes 产品路径真实执行通过；整理生产 enabledTools 改动方式（配置与签名快照、启动证明的关系）。证据：带 [R2-T1] 的测试在 Hermes 通过，Claude 审核。
+- R2-L10：R2-U3、R2-T1 通过后做第四次生产变更操作包，用户具体批准后执行。
 
 ## 之后
 
@@ -103,6 +105,7 @@
 - 2026-10-07 17:30 D4/A1 批次结束（第 1、2 步完成）；下一批：Codex 在 Hermes 跑 tooling 项目补 R2-L5、R2-D15 在最终代码上的证据，并起草云服务器首次部署操作清单（只写不执行），供 R2-L4 的用户逐项授权。status：当前版本已验证 15、旧版本验证过 9、未完成 12、等你决定 2、不做 2。
 - 2026-10-07 18:15 新增 R2-L6（G51、G60：用户选择补有限探针）；当前批次改为 R2-L6 + R2-L4，R2-L5、R2-D15 已验证移出。status（新增 R2-L6 后）：共 41 项，当前版本已验证 18、旧版本验证过 8、未完成 11、等你决定 2、不做 2。
 - 2026-10-12 新增 R2-L7、R2-L8、R2-U1、R2-U2、R2-L9（G72–G74：S10 读工具仍卡住，用户选择主线程只管心跳、第三次部署时处置卡住的 Run）；当前批次改为 R2-L7、R2-L8、R2-U1，原 R2-L6/R2-L4 批次随第二次部署结束移出。
+- 2026-10-13 新增 R2-U3、R2-T1、R2-L10（G85、G86：第三次部署后 S10 真实聊天暴露生产只开放 read、运行中界面停在 Preparing 并弹出加载失败）；当前批次改为 R2-U3、R2-T1、R2-L10，R2-L9 的 S1–S8 已在生产执行通过、S9 清理留在之后。status（新增前）：共 46 项，当前版本已验证 12 · 旧版本验证过 15 · 未完成 14 · 等你决定 3 · 不做 2。
 
 ## 意外和发现
 
@@ -202,6 +205,7 @@
 - 2026-10-07 21:55 cloud-packet stop-07：第 4 组新 Agent 因旧权威租约（30 秒，service-main.ts:103–105）未到期以 PORT_CONFLICT 退出，探针补等待后第 5 组三次通过、十项断言全真（E20261007T212423-52cd4d、-f607ce、-4bd625）。Codex 停在 P8：临时安装上的报告怎样关联正式只读安装（BL-20261007-003）。reply-07 批准正式只读安装模式，照现有签署脚本对组合探针 installedRuntime==runtime 的先例（hermes-search-time-seal.mjs:56–75），探针只保留“对已有安装运行”一条路径，安装和准备工具移到测试或清单步骤。Claude 另发现草稿 P9 的 RestartSec=5s、StartLimitBurst=3 会让崩溃后的三次重启都撞上未到期租约，然后超出启动次数上限，服务停着不再重启；要求重启尝试覆盖崩溃后至少 60 秒并写出算式，Runbook 写明此运行要求，云端受控崩溃重启检查作为 P13 一项请用户决定。
 - 2026-10-07 22:25 cloud-packet stop-08：P5 安装合同缺口（BL-20261007-004）。Claude 核实 install-node-runtime.mjs:65–84 只有 --source/--artifact 两种来源，verify-artifact.mjs:74–87 解压必须用 Python 3.12.10，--artifact 还要 git 源码和 Ajv/TypeScript，没有不需要源码的安装方式。reply-08 批准安装时临时带入核对材料（3a65b90 的 git bundle、按 package-lock 锁定的安装器依赖闭包、锁定 Python 原始包，git 由 P0 检查，缺了就停），正式运行不依赖它们，装完删除；先在 Hermes 用只含这些材料的新目录完整演练，P13 单列授权。要求先跑完不受影响的 R2-L6 三次和提交再处理 P5。
 - 2026-10-08 00:40 stop-09 草稿阶段：Codex 新记 BL-20261007-005 到 009。Claude 核实后预先写 reply-09：BL-006 是 Claude 用 Python 重写 items.json 造成的格式失败，ecfea51 已修；BL-005 改为把 G59 验收用过的整份锁定 node_modules 连同 3a65b90 bundle 临时带入，并在 Hermes 从空目录演练安装和完整 P8 验收；BL-007 两个 bwrap 路径按安装 Runbook 401–406 行分别签署；BL-008 给出清理证据规则；BL-009 按用户 G64 不做 systemd 离线检查；取消 reply-05 的 4 小时预算。group-07 新 HTTP 版探针 3 次 exit 0。用户要更新 Claude Code 并换新会话，Codex 已在 Hermes 无测试进程时暂停，恢复步骤写在 claude-codex-state.md。
+- 2026-10-13 S10 真实聊天（thread:f652065f，run:9a2d2c24）：沙箱读取每次 7–14 秒正常结束并把结果送回模型，读工具不再卡住；结果不理想因为生产 enabledTools 只有 read、工作目录只有 first-response-20261007.txt、授权目录内每次读取都要批准（等待 2 分 28 秒）。读目录被报成 CODING_PATH_OUTSIDE_SCOPE（production-coding-workflow.ts:164）。运行中控制中心停在“Preparing · Time not recorded”并弹出“无法加载这段对话”，说明 R2-U1 的修复没有覆盖运行中连续失败的情况；结束后重开显示正常。证据 .ci-output/production/2026-10-13-third-s10-diagnostic-01/。
 
 ## 决定
 
