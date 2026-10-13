@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0025-pi-tools-and-managed-execution-lifecycles.md, docs/adr/0026-job-scoped-network-egress.md"
-amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md"
+amended_by: "docs/adr/0032-original-directory-disk-and-sensitive-file-limits.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md, docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-09-24"
 ---
 
@@ -28,6 +28,8 @@ date: "2026-09-24"
 
 ## 背景与决定
 
+> 2026-10-13 起，只读文件工具（`read`、`ls`、`find`、`grep`）改在可信主进程执行、命令和写入同一轮复用沙箱，由 [ADR 0054](0054-readonly-tools-in-host-and-reused-task-sandbox.md#amendments) 部分修正。
+>
 > 2026-09-26 起，默认执行方式、容器的地位和 SRT 模式下的释放条件已由 [ADR 0033](0033-process-sandbox-default-and-optional-containers.md#amendments) 部分修正：macOS 和 Linux 默认使用 SRT 模式，容器改为明确打开的严格模式。本文以下内容保留原决定，修正范围以 ADR 0033 为准。
 
 本决定记录用户于 2026-09-24 明确确定的长期架构：**Agent Control Plane 与具有副作用的 Effectful Execution Plane 分离；默认一个 Agent Job / Task / 执行 Session 对应一个独立隔离执行环境。** `accepted` 表示架构决定已经确定，不表示容器后端、迁移或平台资格已经实现。

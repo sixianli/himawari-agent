@@ -5,6 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0030-durable-workspace-release-facts.md"
+amended_by: "docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md"
 date: "2026-09-26"
 ---
 

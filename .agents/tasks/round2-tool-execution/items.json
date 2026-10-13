@@ -952,7 +952,7 @@
     },
     {
       "id": "R2-T1",
-      "title": "生产开放更多编码工具：先开放只读的 ls、find、grep 并在 Hermes 产品路径验证；读目录时报“这是目录”而不是 CODING_PATH_OUTSIDE_SCOPE",
+      "title": "生产开放更多编码工具（G85、G88）：ls、find、grep、write、edit、bash 在 Hermes 产品路径真实执行通过；读目录时报“这是目录”而不是 CODING_PATH_OUTSIDE_SCOPE",
       "goal_ref": ["G85"],
       "done_when": [
         {
@@ -973,8 +973,8 @@
     },
     {
       "id": "R2-L10",
-      "title": "第四次生产变更：上线 R2-U3、R2-T1（含 enabledTools 配置改动）",
-      "goal_ref": ["G85", "G86"],
+      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-P1、R2-P2（含 enabledTools 和授权配置改动）",
+      "goal_ref": ["G85", "G86", "G88", "G89"],
       "done_when": [
         {
           "type": "user",
@@ -986,6 +986,69 @@
         "by": "claude",
         "on": "2026-10-13",
         "why": "G75 只覆盖第三次部署，生产配置和版本变更需要用户另行授权"
+      }
+    },
+    {
+      "id": "R2-T2",
+      "title": "授权工作目录内读、写、编辑、沙箱内不联网命令默认允许，越界写入和联网命令才询问（ADR 0053，参照 Codex Auto）",
+      "goal_ref": ["G88"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G88：按 Codex Auto 做个人全能 Agent"
+      }
+    },
+    {
+      "id": "R2-P1",
+      "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
+      "goal_ref": ["G89"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-P1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G89：读一个文件 7–14 秒，主流做法只读工具不进沙箱"
+      }
+    },
+    {
+      "id": "R2-P2",
+      "title": "同一轮对话的 bash、write、edit 复用一个已启动的任务沙箱，一轮结束或授权变化时停止并释放（ADR 0054）",
+      "goal_ref": ["G89"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-P2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G89"
       }
     }
   ],
