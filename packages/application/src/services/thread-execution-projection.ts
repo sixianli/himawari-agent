@@ -65,6 +65,14 @@ function visibleText(value: unknown): string {
   );
 }
 
+function isExecutionChangedDuringRead(error: unknown): boolean {
+  return (
+    error instanceof ApplicationPortError &&
+    (error.message === "THREAD_EXECUTION_CHANGED_DURING_READ" ||
+      error.message === "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ")
+  );
+}
+
 interface ThreadExecutionResourceReader {
   readonly readInventory: (input: {
     ownerId: string;
@@ -400,6 +408,26 @@ export class ThreadExecutionProjection {
   }
 
   async readState(input: {
+    ownerId: string;
+    agentId: string;
+    threadId: string;
+    runId: string;
+    canCancelRun: boolean;
+  }) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await this.readConsistentState(input);
+      } catch (error) {
+        if (attempt === 3 || !isExecutionChangedDuringRead(error)) throw error;
+      }
+    }
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+      "THREAD_EXECUTION_CHANGED_DURING_READ",
+    );
+  }
+
+  private async readConsistentState(input: {
     ownerId: string;
     agentId: string;
     threadId: string;

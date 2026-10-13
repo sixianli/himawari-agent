@@ -485,17 +485,7 @@ describe("execution state history read boundary", () => {
     const read = vi.spyOn(projection, "read");
     return { projection, read, listRuns };
   }
-  it("rejects resource changes across the Trace read even when the Run revision is unchanged", async () => {
-    const inventory = {
-      admissions: [],
-      queue: [],
-      legacyResourcesPending: false,
-      deletedPlans: [],
-    };
-    const readInventory = vi
-      .fn()
-      .mockResolvedValueOnce(inventory)
-      .mockResolvedValueOnce({ ...inventory, legacyResourcesPending: true });
+  const resourceProjection = (readInventory: ReturnType<typeof vi.fn>) => {
     const projection = new ThreadExecutionProjection({
       threads: { listRuns: async () => [run] },
       payloads: () => ({ get: async () => undefined }),
@@ -503,7 +493,39 @@ describe("execution state history read boundary", () => {
       resources: { readInventory, now: () => at(10), digest: () => "a".repeat(64) },
     } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
     vi.spyOn(projection, "read").mockResolvedValue({ records: [], nextSequence: null });
-    await expect(projection.readState(input)).rejects.toThrow(
+    return projection;
+  };
+  it("[R2-U3] retries a resource inventory change during the read and returns the next consistent snapshot", async () => {
+    const inventory = {
+      admissions: [],
+      queue: [],
+      legacyResourcesPending: false,
+      deletedPlans: [],
+    };
+    let call = 0;
+    const readInventory = vi
+      .fn()
+      .mockImplementation(async () =>
+        call++ === 1 ? { ...inventory, legacyResourcesPending: true } : inventory,
+      );
+    await expect(resourceProjection(readInventory).readState(input)).resolves.toMatchObject({
+      runRevision: run.revision,
+    });
+  });
+  it("[R2-U3] rejects after three resource inventory changes during the read", async () => {
+    const inventory = {
+      admissions: [],
+      queue: [],
+      legacyResourcesPending: false,
+      deletedPlans: [],
+    };
+    let call = 0;
+    const readInventory = vi
+      .fn()
+      .mockImplementation(async () =>
+        call++ % 2 === 0 ? inventory : { ...inventory, legacyResourcesPending: true },
+      );
+    await expect(resourceProjection(readInventory).readState(input)).rejects.toThrow(
       "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
     );
   });
@@ -515,18 +537,13 @@ describe("execution state history read boundary", () => {
       deletedPlans: [],
       sandboxResourcesAbsent: true,
     };
+    let call = 0;
     const readInventory = vi
       .fn()
-      .mockResolvedValueOnce(inventory)
-      .mockResolvedValueOnce({ ...inventory, sandboxResourcesAbsent: false });
-    const projection = new ThreadExecutionProjection({
-      threads: { listRuns: async () => [run] },
-      payloads: () => ({ get: async () => undefined }),
-      protector: {},
-      resources: { readInventory, now: () => at(10), digest: () => "a".repeat(64) },
-    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
-    vi.spyOn(projection, "read").mockResolvedValue({ records: [], nextSequence: null });
-    await expect(projection.readState(input)).rejects.toThrow(
+      .mockImplementation(async () =>
+        call++ % 2 === 0 ? inventory : { ...inventory, sandboxResourcesAbsent: false },
+      );
+    await expect(resourceProjection(readInventory).readState(input)).rejects.toThrow(
       "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ",
     );
   });
@@ -620,15 +637,30 @@ describe("execution state history read boundary", () => {
     ]);
     expect(JSON.stringify(state)).not.toContain("/private/host/token");
   });
-  it("rejects a Run revision change instead of mixing old observations with new controls", async () => {
+  it("[R2-U3] retries a Run revision change during the read and returns the next consistent snapshot", async () => {
     const { projection, read, listRuns } = fixture();
     listRuns
       .mockResolvedValueOnce([run])
-      .mockResolvedValueOnce([{ ...run, revision: 4, status: "completed" }]);
+      .mockResolvedValue([{ ...run, revision: 4, status: "completed" }]);
+    read.mockResolvedValue({ records: [], nextSequence: null });
+    await expect(projection.readState(input)).resolves.toMatchObject({ runRevision: 4 });
+  });
+  it("[R2-U3] rejects only after three Run revision changes during the read", async () => {
+    const { projection, read, listRuns } = fixture();
+    let call = 0;
+    listRuns.mockImplementation(async () => [{ ...run, revision: 3 + call++ }]);
     read.mockResolvedValue({ records: [], nextSequence: null });
     await expect(projection.readState(input)).rejects.toThrow(
       "THREAD_EXECUTION_CHANGED_DURING_READ",
     );
+  });
+  it("[R2-U3] does not retry a stalled execution page", async () => {
+    const { projection, read } = fixture();
+    read.mockResolvedValue({ records: [], nextSequence: 0 });
+    await expect(projection.readState(input)).rejects.toThrow(
+      "THREAD_EXECUTION_PAGE_NOT_ADVANCING",
+    );
+    expect(read).toHaveBeenCalledTimes(1);
   });
   it("rejects a stalled cursor and a history beyond the finite read budget", async () => {
     const { projection, read } = fixture();

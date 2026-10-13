@@ -1156,7 +1156,82 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it("[R2-U3] keeps a displayed conversation when a state read races with the advancing Run", async () => {
+  it("[R2-U3] recovers a briefly failing state read without a load notice", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const running: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-running",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    const finished: ThreadExecutionState = {
+      ...running,
+      revision: "state-completed",
+      displayPhase: "completed",
+      reasonCode: "EXECUTION_COMPLETED",
+      availableActions: [],
+    };
+    let current = running;
+    let failuresLeft = 0;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          throw Object.assign(new Error("PORT_NOT_AUTHORITATIVE"), { status: 403 });
+        }
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state: current, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.preparing"],
+    );
+    current = finished;
+    failuresLeft = 2;
+    await refresh();
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.completed"],
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-U3] reports a persistent scope rejection of the state read after repeated failures", async () => {
     runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
     threadMessages = [
       {
@@ -1188,11 +1263,11 @@ describe("thread control center interactions", () => {
       operations: [],
       effectSummary: [],
     };
-    let racing = false;
+    let failing = false;
     const original = query.getMockImplementation();
     query.mockImplementation(async (request, signal) => {
       if (request.type === "thread.execution_state") {
-        if (racing) throw Object.assign(new Error("PORT_NOT_AUTHORITATIVE"), { status: 403 });
+        if (failing) throw Object.assign(new Error("HTTP_GATEWAY_SCOPE_REJECTED"), { status: 403 });
         return {
           ...request,
           kind: "snapshot",
@@ -1204,13 +1279,13 @@ describe("thread control center interactions", () => {
     });
     await render();
     await refresh();
-    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
-    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
-    racing = true;
-    for (let attempt = 0; attempt < 6; attempt++) await refresh();
     expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
-    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
-    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    failing = true;
+    await refresh();
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    await refresh();
+    expect(document.body.textContent).toContain(messages["loading.failedConversation"]);
     expect(mutate).not.toHaveBeenCalled();
   });
 
