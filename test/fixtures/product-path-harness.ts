@@ -52,7 +52,7 @@ const authority = { deploymentId, authorityEpoch: 1, fencingToken: 1 };
 const audience = "access-audience-product-path";
 const subject = "subject-product-path";
 const bootstrapToken = "bootstrap-token-product-path";
-const codingTools = ["read", "write", "edit", "ls", "bash"] as const;
+const codingTools = ["read", "write", "edit", "ls", "find", "grep", "bash"] as const;
 
 export type ModelRequest = {
   readonly path: string;
@@ -216,6 +216,13 @@ async function prepareProductPathBash(testRoot: string, runtimeRoot: string, log
   const source = "/bin/bash";
   const candidate = path.join(testRoot, "test-bash");
   const installed = path.join(runtimeRoot, "pi-tools/bin/bash");
+  const toolDirectory = path.dirname(installed);
+  const tools: Array<{
+    name: string;
+    source: string;
+    destination: string;
+    sha256: string;
+  }> = [];
   const commands: Array<{
     command: string;
     args: readonly string[];
@@ -237,13 +244,37 @@ async function prepareProductPathBash(testRoot: string, runtimeRoot: string, log
     if (result.status !== 0) throw new Error(`PRODUCT_PATH_BASH_UNAVAILABLE: ${command}`);
     return result.stdout;
   };
+  const installTool = async (name: string, aliases: readonly string[]) => {
+    const extra = process.env["HIMAWARI_TEST_PI_TOOLBIN"];
+    let located: string | undefined;
+    for (const alias of aliases) {
+      if (extra) {
+        const fromDirectory = path.join(extra, alias);
+        if (await stat(fromDirectory).then((info) => info.isFile(), () => false)) {
+          located = fromDirectory;
+          break;
+        }
+      }
+      const found = spawnSync("which", [alias], { encoding: "utf8" });
+      if (found.status === 0 && found.stdout.trim()) {
+        located = found.stdout.trim();
+        break;
+      }
+    }
+    if (!located) return;
+    const resolved = await realpath(located);
+    const destination = path.join(toolDirectory, name);
+    await copyFile(resolved, destination);
+    await chmod(destination, 0o755);
+    tools.push({ name, source: resolved, destination, sha256: await fileHash(destination) });
+  };
   const sourceSha256 = await fileHash(source);
   let installedSha256: string | null = null;
   try {
     await copyFile(source, candidate);
     await chmod(candidate, 0o755);
     if (process.platform === "darwin") checked("/usr/bin/codesign", ["-f", "-s", "-", candidate]);
-    await mkdir(path.dirname(installed), { recursive: true });
+    await mkdir(toolDirectory, { recursive: true });
     await copyFile(candidate, installed);
     await chmod(installed, 0o755);
     installedSha256 = await fileHash(installed);
@@ -254,11 +285,13 @@ async function prepareProductPathBash(testRoot: string, runtimeRoot: string, log
     }
     if (checked(installed, ["-c", "printf product-path-bash-ok"]) !== "product-path-bash-ok")
       throw new Error("PRODUCT_PATH_BASH_OUTPUT_INVALID");
+    await installTool("rg", ["rg"]);
+    await installTool("fd", ["fd", "fdfind"]);
   } finally {
     await writeFile(
       path.join(logDirectory, "bash-toolchain.json"),
       JSON.stringify(
-        { source, sourceSha256, candidate, installed, installedSha256, commands },
+        { source, sourceSha256, candidate, installed, installedSha256, tools, commands },
         null,
         2,
       ),

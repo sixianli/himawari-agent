@@ -46,6 +46,8 @@ const outputDirectory = path.resolve(
   process.env["HIMAWARI_PRODUCT_PATH_OUTPUT"] ?? ".ci-output/product-path",
 );
 const NOTE = "项目代号：向日葵";
+const EDITABLE = "编辑前内容";
+const EDITED = "编辑后内容";
 
 const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
   if (!hasTools) return { kind: "text", text: "工具恢复验证" };
@@ -82,6 +84,31 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       name: "write",
       arguments: { path: "hello.txt", content: "你好，Himawari" },
     };
+  if (lastUserText.includes("列出工作目录"))
+    return { kind: "tool", name: "ls", arguments: { path: "." } };
+  if (lastUserText.includes("按名字找文件"))
+    return { kind: "tool", name: "find", arguments: { pattern: "nested.txt", path: "." } };
+  if (lastUserText.includes("按内容搜索"))
+    return { kind: "tool", name: "grep", arguments: { pattern: "向日葵", path: "." } };
+  if (lastUserText.includes("编辑 editable.txt"))
+    return {
+      kind: "tool",
+      name: "edit",
+      arguments: { path: "editable.txt", edits: [{ oldText: EDITABLE, newText: EDITED }] },
+    };
+  if (lastUserText.includes("统计行数"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command:
+          "mapfile -t lines < notes.txt; printf '%s notes.txt\\n' \"${#lines[@]}\"",
+      },
+    };
+  if (lastUserText.includes("读取工作目录"))
+    return { kind: "tool", name: "read", arguments: { path: "." } };
+  if (lastUserText.includes("读取子目录"))
+    return { kind: "tool", name: "read", arguments: { path: "subdir" } };
   if (lastUserText.includes("模型故障")) return { kind: "http-error", status: 500 };
   if (lastUserText.includes("慢一点"))
     return { kind: "text", text: "慢回答已完成", delayMs: 2_500 };
@@ -217,6 +244,55 @@ async function sendToolRequest(text: string) {
   const answers = await beginToolRequest(text);
   await uiExpect(answers).toHaveCount(1, { timeout: 300_000 });
   return answers;
+}
+
+async function executionEnvironmentReadback() {
+  const configuration = (await page.evaluate(async () => {
+    const response = await fetch("/api/control-center/v1/config", {
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+    });
+    return response.json();
+  })) as {
+    ownerId: string;
+    agentId: string;
+    deploymentId: string;
+    actorId: string;
+    authorityEpoch: number;
+    fencingToken: number;
+  };
+  return (await page.evaluate(async (value) => {
+    const identifier = (prefix: string) => `${prefix}:${crypto.randomUUID()}`;
+    const response = await fetch("/api/gateway/thread/v3/queries", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: "gateway.thread.v3",
+        kind: "query",
+        type: "thread.execution_environment",
+        messageId: identifier("message"),
+        correlationId: identifier("correlation"),
+        causationId: null,
+        scope: { ownerId: value.ownerId, agentId: value.agentId },
+        authority: {
+          deploymentId: value.deploymentId,
+          authorityEpoch: value.authorityEpoch,
+          fencingToken: value.fencingToken,
+        },
+        actor: { actorType: "owner", actorId: value.actorId },
+        payload: {},
+      }),
+    });
+    return { status: response.status, body: await response.json() };
+  }, configuration)) as {
+    status: number;
+    body: {
+      payload?: {
+        environment?: { mode?: string; unavailableTools?: Array<{ toolName: string }> };
+      };
+    };
+  };
 }
 
 function executionReadback() {
@@ -824,6 +900,13 @@ productDescribe(
       await writeFile(path.join(installation.workspace, "second.txt"), "第二份结果", {
         mode: 0o600,
       });
+      await writeFile(path.join(installation.workspace, "editable.txt"), `${EDITABLE}\n`, {
+        mode: 0o600,
+      });
+      await mkdir(path.join(installation.workspace, "subdir"), { recursive: true, mode: 0o700 });
+      await writeFile(path.join(installation.workspace, "subdir", "nested.txt"), "嵌套文件内容\n", {
+        mode: 0o600,
+      });
       await installation.start();
       browser = await chromium.launch({
         channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
@@ -891,6 +974,71 @@ productDescribe(
         expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
           "你好，Himawari",
         );
+      });
+    });
+
+    it("[R2-T1] lists the workspace with ls and shows a real entry", async () => {
+      await scenario("r2t1-ls", async () => {
+        const answer = await sendToolRequest("请列出工作目录");
+        await uiExpect(answer).toContainText("notes.txt");
+      });
+    });
+
+    it("[R2-T1] finds a file by name inside a subdirectory", async () => {
+      await scenario("r2t1-find", async () => {
+        const answer = await sendToolRequest("请按名字找文件");
+        await uiExpect(answer).toContainText("nested.txt");
+      });
+    });
+
+    it("[R2-T1] searches file contents with grep and shows the matching file", async () => {
+      await scenario("r2t1-grep", async () => {
+        const answer = await sendToolRequest("请按内容搜索");
+        await uiExpect(answer).toContainText("notes.txt");
+      });
+    });
+
+    it("[R2-T1] edits an existing file and the file on disk really changes", async () => {
+      await scenario("r2t1-edit", async () => {
+        await sendToolRequest("请编辑 editable.txt");
+        expect(await readFile(path.join(installation.workspace, "editable.txt"), "utf8")).toBe(
+          `${EDITED}\n`,
+        );
+      });
+    });
+
+    it("[R2-T1] runs a sandboxed bash command and shows its real output", async () => {
+      await scenario("r2t1-bash", async () => {
+        const answer = await sendToolRequest("请统计行数");
+        await uiExpect(answer).toContainText("1 notes.txt");
+      });
+    });
+
+    it("[R2-T1] reports reading the workspace itself as a directory, not outside scope", async () => {
+      await scenario("r2t1-read-workdir", async () => {
+        const answer = await sendToolRequest("请读取工作目录");
+        await uiExpect(answer).toContainText("是目录");
+        await uiExpect(answer).not.toContainText("超出授权");
+      });
+    });
+
+    it("[R2-T1] reports reading a subdirectory as a directory, not outside scope", async () => {
+      await scenario("r2t1-read-subdir", async () => {
+        const answer = await sendToolRequest("请读取子目录");
+        await uiExpect(answer).toContainText("是目录");
+        await uiExpect(answer).not.toContainText("超出授权");
+      });
+    });
+
+    it("[R2-T1] lists the seven coding tools as available in the thread environment", async () => {
+      await scenario("r2t1-environment", async () => {
+        const snapshot = await executionEnvironmentReadback();
+        expect(snapshot.status).toBe(200);
+        const environment = snapshot.body.payload?.environment;
+        expect(environment?.mode).toBe("srt");
+        const unavailable = (environment?.unavailableTools ?? []).map((tool) => tool.toolName);
+        for (const tool of ["read", "write", "edit", "ls", "find", "grep", "bash"])
+          expect(unavailable).not.toContain(tool);
       });
     });
 

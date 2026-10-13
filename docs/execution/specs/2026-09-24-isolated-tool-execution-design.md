@@ -526,6 +526,8 @@ Worker 或 Agent 里的计时器会随进程崩溃失效；环境里普通的看
 
 编码工具在进入执行环境之前先由 Agent Service 做纯字符串路径检查，不读取文件系统。`read`、`write`、`edit` 把授权目录本身当作文件目标时（目标为 `.`、`./`，或授权目录路径，含结尾斜杠），调用不派发，返回固定原因码 `CODING_PATH_IS_DIRECTORY`，并提示改用 `ls` 列出目录内容；授权目录以外的绝对路径或含 `..` 的越界路径仍返回 `CODING_PATH_OUTSIDE_SCOPE`。`ls`、`find`、`grep` 仍可把授权目录本身作为查询根，不受此检查影响。
 
+生产配置启用 `read`、`write`、`edit`、`ls`、`find`、`grep`、`bash` 七个操作，与签名安装声明列出的操作一致；这不需要改动安装声明，已在真实产品路径（真实浏览器、已安装的 Agent Service/Worker 与沙箱）逐项验证通过。`read` 指向授权目录下的子目录时，沙箱内 runner 检测到目标是目录后返回明确的目录提示，不执行 Pi 工具。
+
 <a id="acceptance"></a>
 
 ## 验收标准

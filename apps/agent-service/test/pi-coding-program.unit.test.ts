@@ -100,6 +100,7 @@ beforeEach(() => {
   boundary.process.cwd.mockReturnValue("/workspace");
   boundary.metadata.mockResolvedValue({
     isFile: () => true,
+    isDirectory: () => false,
     isSymbolicLink: () => false,
     mode: 0o755,
   });
@@ -151,6 +152,19 @@ describe("installed Pi coding program boundary", () => {
       PATH: "/runtime/pi-tools/bin",
       PI_CODING_AGENT_DIR: "/runtime/pi-tools",
     });
+  });
+  it("[R2-T1] reports a directory read as a directory and never runs the Pi tool", async () => {
+    boundary.metadata.mockResolvedValue({
+      isFile: () => false,
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+      mode: 0o755,
+    });
+    await run(input("read"));
+    expect(boundary.operations).not.toHaveBeenCalled();
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(boundary.process.exitCode).toBe(1);
+    expect(JSON.stringify(output())).toContain("是目录");
   });
   it.each([
     { args: [] },

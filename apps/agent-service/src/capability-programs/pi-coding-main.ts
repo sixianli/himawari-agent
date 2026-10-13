@@ -78,8 +78,40 @@ try {
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
   if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))
     throw new Error("PI_FIXED_FILE_CONTRACT_INVALID");
+  const directoryRead =
+    input.tool === "read" && target
+      ? await lstat(target).then(
+          (info) => info.isDirectory(),
+          () => false,
+        )
+      : false;
   const tool = input.tool;
-  if (isPiHostPublication(input) || tool === "save_copy" || tool === "move_directory") {
+  if (directoryRead) {
+    await writeForegroundPiResult({
+      tool: input.tool,
+      result: {
+        content: [
+          {
+            type: "text",
+            text: "目标路径是目录，不是文件。查看目录内容请用 ls；找到具体文件后，再对那个文件路径调用 read。",
+          },
+        ],
+        isError: true,
+      },
+      commandExitCode: null,
+      verifiedWrite: null,
+      privateDirectory: input.privateDirectory,
+      maxOutputBytes: input.maxOutputBytes,
+      closing: {},
+      source: {
+        workspace: input.workspace,
+        toolCallId: input.scope.toolCallId,
+        directoryGrantRef: input.scope.directoryGrant.ref,
+        directoryGrantRevision: input.scope.directoryGrant.revision,
+        parameters,
+      },
+    });
+  } else if (isPiHostPublication(input) || tool === "save_copy" || tool === "move_directory") {
     const { output, exitCode } = await publishPreparedPiOperation({
       hostId,
       tool: input.tool,
