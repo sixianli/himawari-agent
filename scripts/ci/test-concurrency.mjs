@@ -1,8 +1,8 @@
 import { availableParallelism, totalmem } from "node:os";
 
 export const integrationWorkerLimits = Object.freeze({
-  maximum: 4,
-  cpusPerWorker: 2,
+  maximum: 3,
+  cpusPerWorker: 1,
   memoryMiBPerWorker: 2048,
 });
 

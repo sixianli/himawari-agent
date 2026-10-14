@@ -620,7 +620,7 @@ Job Host 准备控制、产品路径计时、生产沙箱血缘恢复和 prepare
 
 `platform-node` 和 `runtime-sandbox` 是底层基础设施包，依赖边界不允许它们导入 `testing`。这两个包中本轮审计涉及的 8 个测试文件继续使用 `tmpdir()`；正式入口的 21 字节嵌套 `TMPDIR` 下，实际创建的套接字最长为 76 字节，距离 Linux 107 字节上限还有 31 字节。只校验宿主绑定、操作文件或编译策略的用例不启动 SRT，也不经过生产部署配置读取器，不能套用生产 `privateRoot` 的 27 字节预算。逐项用途与保留原因见 [R2-D18 的测试回归记录](backlog/BL-20261002-002-生-产-privateroot-超-过-27-字-节.md#2026-10-03-正式入口回归与-reply-07-返工)。
 
-integration 的文件并行保留独立测试进程和模块状态，worker（同时执行文件的进程）数量由政策中的 CPU、内存和总数上限共同决定：每 2 个可用 CPU 核心、每 2048 MiB 物理内存分配一个，最多 4 个、至少 1 个。Vitest 配置和正式入口共用计算函数，政策检查拒绝数量漂移或关闭隔离；没有新增独占串行文件，重试、测试文件清单、资格排除项和产品期限保持原合同。旧政策仅迁移 integration 的调度字段，原始摘要和其他检查继续使用接受的基线。规则及证据范围见[CI 测试集合约束](execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)。
+integration 的文件并行保留独立测试进程和模块状态，worker（同时执行文件的进程）数量由政策中的 CPU、内存和总数上限共同决定：每 1 个可用 CPU 核心、每 2048 MiB 物理内存分配一个，最多 3 个、至少 1 个。Vitest 配置和正式入口共用计算函数，政策检查拒绝数量漂移或关闭隔离；没有新增独占串行文件，重试、测试文件清单、资格排除项和产品期限保持原合同。旧政策仅迁移 integration 的调度字段，原始摘要和其他检查继续使用接受的基线。规则及证据范围见[CI 测试集合约束](execution/specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)，每次调整的记录见[实施 Plan](execution/plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20261014)。
 
 `run.mjs` 是本地和 Actions 共用执行边界。每个检查只写自己的 `CheckResult`，输出保留退出码、实际计数和内容摘要。`aggregate.mjs` 先核对全部 `needs` 成功，再要求完整 12 份成员报告属于同一 repository、event、tested/head/base SHA、run/attempt、政策与工具链，并交叉核对构建和消费者归档摘要。部分重跑、旧报告、空执行、缺矩阵和篡改都不能得到 `passed`。
 

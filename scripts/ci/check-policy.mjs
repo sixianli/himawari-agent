@@ -611,6 +611,13 @@ export function resolvePolicySource({
   if (!integration.fileParallelism && !integration.workerLimits) {
     integration.fileParallelism = true;
     integration.workerLimits = { ...integrationWorkerLimits };
+  } else if (
+    integration.workerLimits &&
+    integration.workerLimits.maximum === 4 &&
+    integration.workerLimits.cpusPerWorker === 2 &&
+    integration.workerLimits.memoryMiBPerWorker === 2048
+  ) {
+    integration.workerLimits = { ...integrationWorkerLimits };
   }
   // The approved migration only adds integration collection and its build input.
   // Keep the accepted bytes/hash, thresholds, inventory and every other gate.

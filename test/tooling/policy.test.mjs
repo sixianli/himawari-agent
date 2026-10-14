@@ -676,12 +676,52 @@ describe("CI policy contract", () => {
       expected.testProjects.find((entry) => entry.id === "integration"),
       {
         fileParallelism: true,
-        workerLimits: { maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 },
+        workerLimits: { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 },
       },
     );
     expect(selected.policy).toEqual(expected);
     expect(selected.policySha256).toBe(sha256(JSON.stringify(old)));
     expect(selected.coverage).toEqual(reviewedCoverage());
+  });
+  it("把已接受的 2026-10-14 之前 integration 预算换成当前固定预算一次", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = clone();
+    accepted.testProjects.find((entry) => entry.id === "integration").workerLimits = {
+      maximum: 4,
+      cpusPerWorker: 2,
+      memoryMiBPerWorker: 2048,
+    };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted 2026-09-29 integration budget");
+    const selected = resolvePolicySource({ root });
+    expect(
+      selected.policy.testProjects.find((entry) => entry.id === "integration").workerLimits,
+    ).toEqual({ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 });
+    expect(selected.policySha256).toBe(sha256(JSON.stringify(accepted)));
+    expect(selected.coverage).toEqual(reviewedCoverage());
+  });
+  it("保留其他已接受的 integration 预算并让政策检查照常报漂移", async () => {
+    const { root, git } = fixtureRepository();
+    const accepted = clone();
+    accepted.testProjects.find((entry) => entry.id === "integration").workerLimits = {
+      maximum: 3,
+      cpusPerWorker: 2,
+      memoryMiBPerWorker: 2048,
+    };
+    writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
+    writeFileSync(path.join(root, "ci/coverage-policy.json"), JSON.stringify(reviewedCoverage()));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted unrelated integration budget");
+    const selected = resolvePolicySource({ root });
+    expect(
+      selected.policy.testProjects.find((entry) => entry.id === "integration").workerLimits,
+    ).toEqual({ maximum: 3, cpusPerWorker: 2, memoryMiBPerWorker: 2048 });
+    const configuration = await import("../../vitest.workspace.ts");
+    expect(() => validateVitestProjects(selected.policy, configuration.default)).toThrow(
+      "Vitest integration worker count differs from policy",
+    );
   });
   it.each(["missing", "wrong id", "conditional", "wrong path"])(
     "拒绝 coverage 构建下载配置错误：%s",

@@ -217,8 +217,8 @@
       ],
       "fileParallelism": true,
       "workerLimits": {
-        "maximum": 4,
-        "cpusPerWorker": 2,
+        "maximum": 3,
+        "cpusPerWorker": 1,
         "memoryMiBPerWorker": 2048
       }
     },

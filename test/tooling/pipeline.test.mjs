@@ -268,17 +268,13 @@ describe("five-project execution contract", () => {
       value.testProjects.find((project) => project.id === "integration"),
       {
         fileParallelism: true,
-        workerLimits: { maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 },
+        workerLimits: { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 },
       },
     );
     await runTests(options);
     const expected = Math.max(
       1,
-      Math.min(
-        4,
-        Math.floor(os.availableParallelism() / 2),
-        Math.floor(os.totalmem() / (2 * 1024 ** 3)),
-      ),
+      Math.min(3, os.availableParallelism(), Math.floor(os.totalmem() / (2 * 1024 ** 3))),
     );
     for (const [, args] of mocks.execute.mock.calls) {
       const project = args[args.indexOf("--project") + 1];

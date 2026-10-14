@@ -8,7 +8,7 @@ import { validatePolicy, validateVitestProjects } from "../../scripts/ci/check-p
 import configuration from "../../vitest.workspace.ts";
 
 const policy = JSON.parse(readFileSync(new URL("../../ci/policy.json", import.meta.url)));
-const workerLimits = { maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 };
+const workerLimits = { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 };
 const directories = [];
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -112,11 +112,12 @@ describe("bounded integration scheduling", () => {
 
   it.each([
     [1, 8, 1],
-    [2, 8, 1],
-    [4, 16, 2],
-    [8, 8, 4],
-    [32, 64, 4],
+    [2, 8, 2],
+    [4, 16, 3],
+    [8, 8, 3],
+    [32, 64, 3],
     [8, 4, 2],
+    [8, 2, 1],
     [8, 1, 1],
   ])("uses %i CPUs and %i GiB to select %i workers", async (availableCpus, gib, expected) => {
     const { testWorkerCount } = await import("../../scripts/ci/test-concurrency.mjs");

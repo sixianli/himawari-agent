@@ -8,7 +8,7 @@ date: "2026-09-03"
 
 # Himawari Agent GitHub CI 与质量门禁实施 Plan
 
-本次增量：[2026-09-29 集成测试并行规则与验证](#integration-parallel-20260929)。历史实施记录保留其当时的政策与证据边界。
+本次增量：[2026-09-29 集成测试并行规则与验证](#integration-parallel-20260929)、[2026-10-14 集成测试并行预算调整](#integration-parallel-20261014)。历史实施记录保留其当时的政策与证据边界。
 
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
 
@@ -541,3 +541,27 @@ WebKit 首轮卡在网络恢复。最小空页面证明 Linux WebKit 的模拟�
 策略定向测试还暴露了既有数量断言过时：新增产品路径资格 project 后已登记 15 个主/资格项目，测试仍期待 14。修改前结果保留在 `policy-red-02`；修正为当前登记数量，不减少项目或断言。
 
 证据根目录为 `.ci-output/tool-execution-audit/2026-09-29/integration-parallel/`，包含每次独立运行的完整 argv、环境、revision/差异、控制台日志、资源采样、原始 JSON 和逐条断言读回。`README.md` 说明实验命令与限制，`decisions.tsv` 记录决策；`acceptance-summary-final.json` 汇总正式结果，`assertions-audit-final.json` 保留 45 份报告的逐条状态，历史失败不被后续成功覆盖。完整证据保留，可重建归档按磁盘规则清理，重跑先按记录的修订重新构建。
+
+<a id="integration-parallel-20261014"></a>
+
+### 2026-10-14 集成测试并行预算调整
+
+条目 R2-T4 要求完整 `npm test` 在 Hermes 上于 `ci/policy.json` 的 30 分钟（1800 秒）总预算内跑完且不放宽任何时限。基线 `4bf19bd` 的 `test` 检查是 1779 秒，只剩约 21 秒余量；R2-T1、R2-T2 增加测试后，2026-10-13 的第 20、21 批两次在 1800 秒时被终止。本轮先做两项改动：**改动 A**（已迁移模板库，提交 `091142c`）让每个 integration 用例的 SQLite 状态根从同一 worker 模块内共享的已迁移模板拷贝，不再逐用例重放全部 50 个迁移；**改动 B** 把 integration 的 `workerLimits` 由 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 改为 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`。规则仍由 `ci/policy.json`、其 schema、政策检查、Vitest 配置和正式测试入口共同约束；只改测试基础设施与并行预算，不改产品代码、产品期限或任一用例时限。
+
+- [x] 把改动 B 的预算变化作为**一次固定迁移**写入政策检查：`resolvePolicySource` 只在已接受政策的 `workerLimits` 恰好等于 2026-09-29 已接受值 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 时才换成当前值 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`；其他任何已接受值保持原样，由 `validateVitestProjects` 照常报漂移。这样同一次变更不能取消自己的检查。
+- [x] 改动 A 的第 0 层（4 个受影响文件改前/改后，均为 1019 用例通过）：725.03 秒 → 567.15 秒；第 1 层 `npm run check` rc=0；第 2 层 integration 107 文件 / 2733 用例全部通过，1572.0 秒 → 1377.4 秒（−194.7 秒，约 −12.4%）。
+- [x] 改动 B 的第 1 层 `npm run check` rc=0，第 2 层 `tooling` 项目 45 文件 / 1223 用例全部通过。改动 B 与改动 A 一起只影响测试基础设施、政策文件和文档。
+- [x] 第 3 层在 `091142c` 加改动 B 的版本上跑两轮：**4 个进程** `test` 检查 1525.4 秒、integration 1218.2 秒，出现 5 个 30 秒超时（`node-runtime-installation-permissions` 3 条、`production-http-composition-process` 1 条、`sqlite-sandbox-execution-v2` 1 条）；按预先批准的退路把 `maximum` 改为 3，**3 个进程** `test` 检查 1549.7 秒、integration 1241.9 秒，**5687 个用例全部通过、0 失败、0 跳过**。
+
+实测最关键的一点是**总工作量随进程数变大**：全部用例耗时之和（串行工作量 W）在 2、3、4 个进程时分别为 2507.3、3443.2、4310.3 秒，因此 integration 墙钟只从 2 个进程的 1377.4 秒降到 3 个进程的 1241.9 秒和 4 个进程的 1218.2 秒；3 个进程时 `W/3 + 约 131 秒启动` 与实测 1242 秒相当，已贴近该进程数的下限。最慢的单个文件 `test/integration/sqlite-sandbox-execution-v2.test.ts` 是不可再拆的串行单元（2/3/4 个进程分别为 658.7 / 910.5 / 1210.9 秒），是任何进程数下界与竞争的共同来源，因此拆分测试文件不改变下限。本轮**不削减测试工作量**：不减少 worker 变体、不重构最重的用例。
+
+| 运行 | 进程 | `test` 检查 | integration | 用例 | `npm test` 退出码 |
+| --- | --- | --- | --- | --- | --- |
+| 第 3 层第一轮 | 4 | 1525.4 秒 | 1218.2 秒 | 2733 中 2728 通过，5 个超时 | 1 |
+| 第 3 层第二轮 | 3 | 1549.7 秒 | 1241.9 秒 | 5687 全部通过 | 1（仅发布步骤失败，非测试失败） |
+
+资源采样（每 30 秒）：4 个进程时 loadavg 2.8–7.6、内存峰值 6.8 GiB（共 15.8 GiB）；3 个进程时 loadavg 3.4–7.3、内存峰值 6.8 GiB。内存没有吃紧，但 4 核上 3–4 个测试进程再加它们自己启动的子进程、嵌套 Vitest、沙箱和服务长期把 loadavg 推到 5–7，属于过订阅。耗时 ÷ 30000 毫秒的比值表里，4 个进程有多条达到 0.5（最高 2.567，即 `durable-phase-process-recovery`，它自身时限是 120000 毫秒）；3 个进程 0 个失败，最高比值 2.107（同一用例，自身时限下 0.527），该 >0.5 的一条由 R2-T7 处理。两轮里 `npm test` 退出码为 1 都**不是测试失败**：第二轮是 `local.mjs` 的发布步骤读 GitHub 安全审查评论时，仓库改为私有后不带令牌返回 404 所致，与并发度和本批代码无关。
+
+3 个进程下 `test` 检查用 1549.7 秒，仍在 `ci/policy.json` 的 30 分钟硬性预算内（余量约 250 秒），没有放宽任何时限。**GitHub 托管运行器的核数以及这条预算在托管运行器上的表现没有验证**：本轮的时长、资源采样和比值都只在 Hermes 的 4 核上测得，托管运行器是否为 4 核、并发收益如何，需要托管 CI 或另一次实验才能确认。
+
+证据位于 Hermes `/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/r2t4-22/`：改动 A 的 Layer 0/1/2 在 `run-04-before`、`run-05-after`、`run-06-check-a`、`run-10-layer2-a-3`；改动 B 的 Layer 1/2 在 `run-13-check-b`、`run-17-check-b3`；两轮第 3 层在 `run-14-layer3-b4`、`run-16-layer3-b3`（含 `local-summary.json`、`tests/`、`resource-samples.txt`、比值表）。政策检查的两次固定迁移与 schema 同步见 `scripts/ci/check-policy.mjs`、`ci/policy.schema.json` 和规格的[测试集合约束](../specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)；依据文件变化后 `install-start-stop-runbook.md`、`hermes-control-center-upgrade-runbook.md` 已在干净副本上重新封存。

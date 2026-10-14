@@ -136,7 +136,7 @@
             "required": ["maximum", "cpusPerWorker", "memoryMiBPerWorker"],
             "properties": {
               "maximum": { "type": "integer", "minimum": 1, "maximum": 4 },
-              "cpusPerWorker": { "type": "integer", "minimum": 2 },
+              "cpusPerWorker": { "type": "integer", "minimum": 1 },
               "memoryMiBPerWorker": { "type": "integer", "minimum": 2048 }
             }
           }
