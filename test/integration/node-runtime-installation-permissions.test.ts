@@ -29,17 +29,27 @@ const contentDigest: (files: RuntimeFile[]) => string = artifactFiles.contentDig
 
 async function installationModes(root: string) {
   const entries: { path: string; directory: boolean; mode: number }[] = [];
-  const visit = async (filename: string) => {
-    const info = await lstat(filename);
-    entries.push({
-      path: path.relative(root, filename) || ".",
-      directory: info.isDirectory(),
-      mode: info.mode & 0o777,
-    });
-    if (info.isDirectory())
-      for (const name of (await readdir(filename)).sort()) await visit(path.join(filename, name));
-  };
-  await visit(root);
+  let pending = [root];
+  while (pending.length > 0) {
+    const batch = pending;
+    pending = [];
+    const inspected = await Promise.all(
+      batch.map(async (filename) => ({ filename, info: await lstat(filename) })),
+    );
+    for (const { filename, info } of inspected)
+      entries.push({
+        path: path.relative(root, filename) || ".",
+        directory: info.isDirectory(),
+        mode: info.mode & 0o777,
+      });
+    const listings = await Promise.all(
+      inspected
+        .filter(({ info }) => info.isDirectory())
+        .map(async ({ filename }) => ({ filename, names: await readdir(filename) })),
+    );
+    for (const { filename, names } of listings)
+      for (const name of names) pending.push(path.join(filename, name));
+  }
   return entries;
 }
 
