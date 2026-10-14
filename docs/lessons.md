@@ -136,6 +136,14 @@ date: "2026-10-13"
   - `prod-third-evidence-01` 里 6 个 `scratch-failure.tar.gz` 各约 262 MB，每个都是整个临时目录的打包：约 6.08 亿字节是 `node_modules`，约 1.4 亿字节是源码副本，验收用的虚构文件只有几百字节；真正的失败报告本来就单独放在压缩包旁边。
   - 同一目录的 `baselines/packet-02-before-oc-11/materials/` 和 `packet-03-before-oc-13/materials/` 各 352 MB，与 `.ci-output/production/2026-10-12-third-deploy-packet-0*/materials/` 里的同名文件 SHA-256 完全相同。
   - `prod-sandbox-evidence-01a` 里十几个约 14 MB 的 JSON，是同一个安装诊断在每种权限组合下各列一遍 3.3–3.7 万个文件的权限，内容大部分相同。
+  - 2026-10-14 Claude 自己的第 3 层脚本把约 66 MB、能按提交重建的构建产物包复制进了 Hermes 的 `run-44` 证据目录；同日门禁在云服务器测试账号的 `r2e4/run-01-calibration` 里查出同样的产物包，在 Hermes 的 `third-materials-01` 里查出展开的 `node_modules`。
+- 硬约束（G107，2026-10-14）：`opencode-orchestration` skill 的 `scripts/evidence-gate.sh`。`oc-wait.sh`（opencode 批次）和 `grok-wait.sh`（Grok 批次）每次被叫醒都会运行它，检查本轮新增的证据，范围是交接目录，加上 `.ci-output/handoff/evidence-roots.txt` 列出的 Hermes 和云服务器证据目录。出现以下任一情况，等待脚本以退出码 3 结束，这一批不被接受：
+  - 新增 `node_modules` 或 `.git` 目录；
+  - 新增含它们的压缩包；
+  - 新增超过 50 MB 的文件，而同目录 `EVIDENCE-REASONS.txt` 里没有“`文件名: 理由`”；
+  - 列出的证据目录连不上或不存在。
+
+  判断“新增”用 ctime（文件在本机出现的时间），保留原时间的复制也算新增。skill 的 41 条测试覆盖了这些情况，新测试在脚本写出之前全部失败。
 
 [回到目录](#编码代理反复犯的错误)
 
