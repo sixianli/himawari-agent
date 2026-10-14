@@ -80,7 +80,8 @@ The user decided on 2026-10-12 (G77, recorded in `.agents/tasks/round2-tool-exec
 - Claude plans, writes briefs, reviews every opencode change line by line before accepting it, and drives the task. opencode never talks to the user; Claude answers its stop files within the authority described in the `opencode-orchestration` skill.
 - opencode follows every rule in this file, exactly as Codex did: tests only on Hermes, never on the MacBook; no connection to the cloud server `84.247.157.41`; no production commands; no reading of secrets; commit and push rules unchanged.
 - Production steps of a deployment (the frozen packet, user-run scripts, and anything on `84.247.157.41`) stay with Claude and the user and are never delegated.
-- A local, uncommitted `.opencode/opencode.json` denies opencode shell commands that name the production host, the production step wrappers, local `node`/`npm`/`npx`, force pushes, history rewrites, and `sudo`. It is excluded through `.git/info/exclude`. The deny list is a safety net, not a replacement for the rules above.
+- A local, uncommitted `.opencode/opencode.json` denies opencode shell commands that name the production host, the production step wrappers, local `node`/`npm`/`npx`, force pushes, history rewrites, and `sudo`, and disables the unused `opencode` provider through `disabled_providers`. It is excluded through `.git/info/exclude`. The deny list is a safety net, not a replacement for the rules above.
+- Grok models run only through the `xai/` provider, which uses the user's own Grok subscription login. Grok models offered by the opencode Go plan or any other reseller (for example `opencode-go/grok-*` or `opencode/grok-*`) are forbidden (G94, 2026-10-14). Launch and resume Grok batches with `grok-launch.sh` from the `opencode-orchestration` skill, which refuses any other model.
 
 ## Test and Production Hosts
 
