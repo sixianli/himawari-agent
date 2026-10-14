@@ -510,3 +510,9 @@
 > 可以
 
 （回答 Claude 的问题“要不要按原计划拆分 sqlite-sandbox-execution-v2.test.ts”。背景：R2-T4 改成每个集成测试进程 1 个 CPU、最多 3 个进程后，`npm test` 在 Hermes 上全部通过、没有超时，但 test 阶段 1549.7 秒，超过 1500 秒目标约 50 秒（证据 `/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/r2t4-22/run-16-layer3-b3/`）；该文件单独约 845 秒，是最长的一个。用户批准拆分它，让多个进程能并行跑它的用例。）
+
+## G99 2026-10-14 用户选择
+
+> 保持私有，给只读令牌
+
+（回答 Claude 的问题：仓库 `sixianli/himawari-agent` 在 2026-10-14 14:58 JST 左右改为私有后，`npm test` 读取安全审查评论时 GitHub 返回 404，退出码为 1，怎么处理。选项原文：“你在 GitHub 建一个只读（只能读这个仓库的 issue 评论）的细粒度令牌，自己放到 Hermes 上一个只有 andy 能读的文件里；Claude 只在跑 npm test 时把它作为 HIMAWARI_CI_GITHUB_TOKEN 传入，不读出、不记录。”Claude 随后核对到 `scripts/ci/security-owner-review.mjs` 只在 GitHub Actions 里接受这个令牌（本地传入会以 `SECURITY_REVIEW_TOKEN_SCOPE_INVALID` 拒绝），所以还要改这个检查，让本地运行也能用令牌。）
