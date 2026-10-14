@@ -18,6 +18,7 @@ const boundary = vi.hoisted(() => ({
   operations: vi.fn(),
   execute: vi.fn(),
   exportFile: vi.fn(),
+  fitOutput: vi.fn(),
   command: vi.fn(),
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
@@ -33,7 +34,10 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 vi.mock("../../../packages/platform-node/src/files/pi-output-export.ts", () => ({
   exportPiOutputFile: boundary.exportFile,
 }));
-vi.mock("@himawari-agent/runtime-pi", () => ({ executeSandboxedPiCodingTool: boundary.execute }));
+vi.mock("@himawari-agent/runtime-pi", () => ({
+  executeSandboxedPiCodingTool: boundary.execute,
+  fitPiResultOutput: boundary.fitOutput,
+}));
 
 await Promise.all([
   vi.importActual("@himawari-agent/application"),
@@ -113,6 +117,9 @@ beforeEach(() => {
     isError: false,
   });
   boundary.exportFile.mockResolvedValue({ text: "Complete output", byteLength: 15 });
+  boundary.fitOutput.mockImplementation((json: string, maxBytes: number) =>
+    Buffer.byteLength(json, "utf-8") <= maxBytes ? json : null,
+  );
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -285,8 +292,9 @@ describe("installed Pi coding program boundary", () => {
     expect(boundary.exportFile).toHaveBeenCalledWith(
       "/private-runner/output.txt",
       "/private-runner",
-      65536,
+      expect.any(Number),
     );
+    expect(boundary.exportFile.mock.calls[0]?.[2]).toBeLessThanOrEqual(65536);
     expect(output()).toMatchObject({
       details: { other: "kept" },
       fullOutput: { text: "Complete output" },

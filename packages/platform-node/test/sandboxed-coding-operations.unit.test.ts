@@ -23,6 +23,15 @@ import {
 
 const BACKGROUND_OUTPUT_NOTICE =
   "仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。";
+const fitBodyForTest = (json: string, maxBytes: number): string | null => {
+  if (Buffer.byteLength(json, "utf-8") <= maxBytes) return json;
+  const parsed = JSON.parse(json) as { content?: { type?: unknown; text?: unknown }[] };
+  const content = (parsed.content ?? []).map((part) =>
+    part.type === "text" ? { ...part, text: "truncated" } : part,
+  );
+  const shaped = JSON.stringify({ ...parsed, content });
+  return Buffer.byteLength(shaped, "utf-8") <= maxBytes ? shaped : null;
+};
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -634,6 +643,7 @@ describe("Bash background output delivery boundaries", () => {
       verifiedWrite: null,
       privateDirectory: "/tmp",
       maxOutputBytes: 4096,
+      fitOutput: fitBodyForTest,
       closing: {},
       source: {
         workspace: "/workspace",
@@ -669,13 +679,13 @@ describe("Bash background output delivery boundaries", () => {
           originalResultBytes: limit,
         }),
       );
-      await expect(
-        formatForegroundPiResult({
-          ...publication,
-          maxOutputBytes: limit,
-          result: { content: [{ type: "text", text: output }], isError: false },
-        }),
-      ).rejects.toThrow("PI_RESULT_OUTPUT_LIMIT");
+      const truncated = await formatForegroundPiResult({
+        ...publication,
+        maxOutputBytes: limit,
+        result: { content: [{ type: "text", text: output }], isError: false },
+      });
+      expect(Buffer.byteLength(truncated.output, "utf-8")).toBeLessThanOrEqual(limit);
+      expect(JSON.parse(truncated.output).content).toEqual([{ type: "text", text: "truncated" }]);
     } finally {
       await fixture.cleanup();
     }

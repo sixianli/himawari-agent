@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:6411d8ea50ea3d0b8eac81c964e53aeaed35c2800ab4aa06140bc15e28866389"
+contract_sha256: "sha256:13f071cd4bcb1c176f8ef27c4f55800a0660a1827e761142cbd25fe7a2525975"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -574,6 +574,6 @@ Schema 39 新增 `automatic_action_reviews`，在模型调用前保留唯一请�
 
 > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
 
-说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过时沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
+说明不计入命令自身的输出上限，但计入整份工具结果 JSON 的上限；超过上限时不再整次失败，而是复用 Pi 的截断函数把交给模型的正文截断到上限内并加说明（`read` 保留 `Use offset=...` 续读；条目 R2-T9，见 [隔离工具执行设计](../execution/specs/2026-09-24-isolated-tool-execution-design.md#baseline)），只有正文清空仍装不下才沿用 `PI_RESULT_OUTPUT_LIMIT`。不另设额度或放宽任何上限，原期限、取消、资源与输出检查保持。目录释放仍按平台清理证明核验；Linux 同次开机还须 [Host 自身组为空](../execution/specs/2026-09-24-isolated-tool-execution-design.md#linux-host-group)。`process_group_gone` 不证明主动离组的后代全部停止。现有页面后台列表不能列出前台 Bash 自行脱离进程组的后代，这是已知限制，不能用列表为空证明没有后台进程。此改动不增加安装、迁移或恢复步骤，不改变本手册的操作授权要求。
 
 [SOURCE: docs/adr/0040-background-output-closed-after-bash-returns.md]

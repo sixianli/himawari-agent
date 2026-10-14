@@ -69,7 +69,9 @@ try {
     commandPath: CONTAINER_COMMAND_PATH,
     maxOutputBytes: input.maxOutputBytes,
   });
-  const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
+  const { executeSandboxedPiCodingTool, fitPiResultOutput } = await import(
+    "@himawari-agent/runtime-pi"
+  );
   let commandExitCode: number | null = null;
   const result = await executeSandboxedPiCodingTool({
     name: input.tool,
@@ -92,6 +94,7 @@ try {
     verifiedWrite,
     privateDirectory: PRIVATE_DIRECTORY,
     maxOutputBytes: input.maxOutputBytes,
+    fitOutput: fitPiResultOutput,
     closing: {},
     source: {
       workspace: input.workspace,

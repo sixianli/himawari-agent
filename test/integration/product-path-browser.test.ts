@@ -106,6 +106,16 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
     };
   if (lastUserText.includes("读取 notes.txt"))
     return { kind: "tool", name: "read", arguments: { path: "notes.txt" } };
+  if (lastUserText.includes("读取大文件"))
+    return { kind: "tool", name: "read", arguments: { path: "big.txt" } };
+  if (lastUserText.includes("输出大段内容"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command: "for i in {1..6000}; do printf 'line-%d-xxxxxxxxxxxxxxxxxxxx\\n' \"$i\"; done",
+      },
+    };
   if (lastUserText.includes("读取 durability.txt"))
     return { kind: "tool", name: "read", arguments: { path: "durability.txt" } };
   if (lastUserText.includes("读取 missing.txt"))
@@ -975,6 +985,14 @@ productDescribe(
       await writeFile(path.join(installation.workspace, "subdir", "nested.txt"), "嵌套文件内容\n", {
         mode: 0o600,
       });
+      await writeFile(
+        path.join(installation.workspace, "big.txt"),
+        Array.from(
+          { length: 6000 },
+          (_, index) => `第${index + 1}行 内容内容内容内容内容内容内容内容`,
+        ).join("\n"),
+        { mode: 0o600 },
+      );
       escapeTrapPath = path.join(path.dirname(installation.workspace), "r2t3-escape.txt");
       escapeNewPath = path.join(path.dirname(installation.workspace), "r2t3-new.txt");
       await writeFile(escapeTrapPath, "HOST-ORIGINAL", { mode: 0o600 });
@@ -1083,6 +1101,23 @@ productDescribe(
       await scenario("r2t1-bash", async () => {
         const answer = await sendToolRequest("请统计行数");
         await uiExpect(answer).toContainText("1 notes.txt");
+      });
+    });
+
+    it("[R2-T9] reads a large file and shows the truncated body with a continuation hint", async () => {
+      await scenario("r2t9-read-big", async () => {
+        const answer = await sendToolRequest("请读取大文件");
+        await uiExpect(answer).toContainText("Use offset=");
+        await uiExpect(answer).not.toContainText("PI_RESULT_OUTPUT_LIMIT");
+      });
+    });
+
+    it("[R2-T9] keeps the tail of a large bash output instead of failing", async () => {
+      await scenario("r2t9-bash-big", async () => {
+        const answer = await sendToolRequest("请输出大段内容");
+        await uiExpect(answer).toContainText("line-");
+        await uiExpect(answer).not.toContainText("PI_RESULT_OUTPUT_LIMIT");
+        await uiExpect(answer).not.toContainText("PI_RUNNER_EXECUTION_FAILED");
       });
     });
 

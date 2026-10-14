@@ -267,3 +267,50 @@ it("yields the event loop while walking many files with find", async () => {
   expect(flag.ran).toBe(true);
   expect(result.isError).toBe(false);
 });
+
+it("[R2-T9] truncates an over-limit read and keeps Pi's continuation notice", async () => {
+  const port = new FakePort({
+    "big.txt": {
+      kind: "file",
+      content: Array.from({ length: 3000 }, (_, index) => `第${index}行${"字".repeat(30)}`).join(
+        "\n",
+      ),
+    },
+  });
+  const result = await executeHostReadOnlyTool({
+    port,
+    grant,
+    tool: "read",
+    toolCallId: "r2t9-read",
+    parameters: { path: "big.txt" },
+    relativePath: "big.txt",
+    readBytesLimit: 16 * 1024 * 1024,
+    contentBytesLimit: 4096,
+  });
+  expect(result.isError).toBe(false);
+  expect(result.content).toContain("Use offset=");
+  expect(result.content).toContain("limit).");
+  expect(result.details).toMatchObject({ truncation: { truncated: true, maxBytes: 4096 } });
+});
+
+it("[R2-T9] truncates an over-limit grep with Pi's limit notice", async () => {
+  const port = new FakePort({
+    "big.txt": {
+      kind: "file",
+      content: Array.from({ length: 200 }, (_, index) => `needle ${index} ${"x".repeat(600)}`).join(
+        "\n",
+      ),
+    },
+  });
+  const result = await executeHostReadOnlyTool({
+    port,
+    grant,
+    tool: "grep",
+    toolCallId: "r2t9-grep",
+    parameters: { pattern: "needle", path: "." },
+    relativePath: "",
+    readBytesLimit: 1024 * 1024,
+  });
+  expect(result.isError).toBe(false);
+  expect(result.content).toContain("limit reached");
+});

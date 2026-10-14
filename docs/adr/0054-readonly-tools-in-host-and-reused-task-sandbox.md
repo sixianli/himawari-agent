@@ -91,6 +91,24 @@ date: "2026-10-13"
 - **限制不变**：进内存读取上限 16 MiB，模型可见正文沿用 Pi 的 2000 行 / 50 KiB 截断，序列化结果仍受调用自身的 `maxOutputBytes` 与机器秘密扫描约束。
 - **授权与记录**：授权仍在 `ALLOW` 之后才打开文件，使用与授权时相同的 Grant `id`、`revision`、`canonicalRootId`、`hostId`；主进程路径不签发 Worker Handle、不写沙箱准备记录，结果按同一 intent 保存，工具耗时由主进程自己写 `startedAt` 和 `endedAt`。
 
+<a id="model-output-limit"></a>
+
+## 2026-10-15 补充：超过配置上限改为截断并说明
+
+条目 R2-T9 只修正[决定](#decision)第 1 点落地时“序列化结果超过调用自身的 `maxOutputBytes` 就整次失败”的收口方式，不改动上面的决定、上限来源、协议或持久数据形状。
+
+- `read`、`ls`、`find`、`grep` 仍受配置 `runPolicy.coding.maximumBytes` 约束。超过时不再返回 `PI_RESULT_OUTPUT_LIMIT`，而是复用 Pi 的 `truncateHead`/`truncateTail`/`formatSize` 把交给模型的正文截断到上限内并加 Pi 的说明；`read` 保留 Pi 的 `Use offset=... to continue.` 续读提示（`packages/runtime-pi/src/host-read-only-executor.ts`、`packages/runtime-pi/src/model-output-budget.ts`）。只有正文清空仍装不下（信封本身超限）时才沿用 `PI_RESULT_OUTPUT_LIMIT`。
+- `bash` 等沙箱前台结果同理（`packages/platform-node/src/files/pi-host-publication.ts`）；`details.fullOutputPath` 指向的完整输出文件在装不进剩余预算时不再导出，`fullOutput` 置为 `null`，正文改为说明“完整输出超过上限，未保留”。
+- 机器秘密扫描仍在截断之前对整份结果执行；受保护候选结果文件（写/编辑准备结果，`production-file-preparation.ts`）与 `save_copy`/`move_directory` 的校验证据保持“超过即拒绝”。
+- 本补充取代[实现记录](#implementation-record)“限制不变”一句里“序列化结果仍受调用自身的 `maxOutputBytes` 约束”的旧收口含义。前台 Bash 的背景输出说明仍计入整份结果上限（[ADR 0040](0040-background-output-closed-after-bash-returns.md#decision) 不变）。
+
+实现理由（原来写在代码注释里，按“不加代码注释”的规则移到这里）：
+
+- **只给 `read` 传字节预算，`ls`/`find`/`grep` 保持 Pi 默认。** `read` 由 Himawari 自己调用 Pi 的 `truncateHead`，传预算后由 Pi 生成原生 `Use offset=... to continue.` 续读提示；`grep` 的机密扫描目前只在结果交付处做，若把预算压进 `grep` 的结果截断，会让被截掉的部分不再被扫描，因此 `grep` 保持 Pi 的 50 KiB 默认、由信封收紧收口。`ls`/`find` 走 Pi 工具工厂，无法传预算。
+- **正文预算用二分查找，按整份信封的 UTF-8 字节数判断。** 信封的固定部分（`schemaVersion`、`tool`、`source`、截断元数据和说明）会占一部分预算，且 JSON 转义会让换行、引号和控制字符变长，正文字节数不等于信封字节数；因此每次候选都用完整 `JSON.stringify` 的结果测量，二分查找最多 32 步，结果有界且确定。搜索上界取最小正文长度减一，保证搜索区间内每一段正文都被截断，使其大小随预算单调，二分成立。
+- **`details.truncation` 去掉 `content`。** Pi 的 `TruncationResult` 第一个字段就是截断后的正文，而信封的 `content` 已经携带同一段正文；不去重会让正文在信封里出现两次，二分查找只能找到约一半的预算。去重的 `truncationMetadata` 放在 `runtime-pi`，`production-host-read.ts` 复用它；`platform-node` 按 Workspace Contract 不能依赖 `runtime-pi`，那一处保留结构相同的本地写法，类型用结构相同的 `PiHostResultOutputFitter`（`platform-node` 也不得 import `@earendil-works/pi-*`）。
+- **`PI_RESULT_OUTPUT_ENVELOPE_RESERVE`（2048 字节）** 只是给调用方第一次截断用的保守余量；信封最终仍由 `fitPiResultOutput` 精确测量并按需再截一次，所以这个常量只影响第一次截断的松紧，不影响上限是否成立。
+
 <a id="references"></a>
 
 ## 关联文档

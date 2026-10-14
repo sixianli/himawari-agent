@@ -9,6 +9,8 @@ import { exportPiOutputFile } from "./pi-output-export.js";
 import { createSandboxedCodingOperations } from "./sandboxed-coding-operations.js";
 import { createWorkspaceCopyPublication } from "./workspace-copy-publication.js";
 
+export type PiHostResultOutputFitter = (json: string, maxBytes: number) => string | null;
+
 export interface PiHostPublicationInput {
   readonly hostId: string;
   readonly tool: string;
@@ -19,6 +21,7 @@ export interface PiHostPublicationInput {
   readonly commandPath: string;
   readonly maxOutputBytes: number;
   readonly parametersJson: string;
+  readonly fitOutput?: PiHostResultOutputFitter;
 }
 
 export interface PiPublicationOutput {
@@ -37,6 +40,14 @@ export function isPiHostPublication(input: {
   );
 }
 
+const FULL_OUTPUT_ENVELOPE_RESERVE = 512;
+const FULL_OUTPUT_KEPT = "本次受保护结果的 fullOutput 字段";
+const FULL_OUTPUT_DROPPED = "完整输出超过上限，未保留";
+
+function exactFitOutput(json: string, maxBytes: number): string | null {
+  return Buffer.byteLength(json) <= maxBytes ? json : null;
+}
+
 export async function formatForegroundPiResult(input: {
   readonly tool: string;
   readonly result: {
@@ -48,6 +59,7 @@ export async function formatForegroundPiResult(input: {
   readonly verifiedWrite: unknown;
   readonly privateDirectory: string;
   readonly maxOutputBytes: number;
+  readonly fitOutput: PiHostResultOutputFitter;
   readonly closing: Readonly<Record<string, unknown>>;
   readonly source: Readonly<Record<string, unknown>>;
 }): Promise<PiPublicationOutput> {
@@ -57,37 +69,73 @@ export async function formatForegroundPiResult(input: {
       : {};
   const fullPath = details["fullOutputPath"];
   delete details["fullOutputPath"];
-  const fullOutput =
-    typeof fullPath === "string"
-      ? await exportPiOutputFile(fullPath, input.privateDirectory, input.maxOutputBytes)
-      : null;
-  const content = input.result.content.map((part) =>
-    part.type === "text" && typeof fullPath === "string" && typeof part.text === "string"
-      ? { ...part, text: part.text.replaceAll(fullPath, "本次受保护结果的 fullOutput 字段") }
-      : part,
-  );
-  const output = JSON.stringify({
-    schemaVersion: "pi-result.v1",
-    tool: input.tool,
-    content,
-    details,
-    fullOutput,
-    isError: input.result.isError,
-    commandExitCode: input.commandExitCode,
-    verifiedWrite: input.verifiedWrite,
-    ...input.closing,
-    source: input.source,
-  });
-  if (scanMachineSecrets(output).length) throw new Error("PI_RESULT_SECRET_REJECTED");
-  if (Buffer.byteLength(output) > input.maxOutputBytes) throw new Error("PI_RESULT_OUTPUT_LIMIT");
-  return {
-    output,
-    exitCode: !input.result.isError
-      ? 0
-      : input.commandExitCode && input.commandExitCode > 0 && input.commandExitCode < 256
-        ? input.commandExitCode
-        : 1,
+  const truncation = details["truncation"];
+  if (truncation && typeof truncation === "object" && !Array.isArray(truncation)) {
+    const metadata = { ...(truncation as Record<string, unknown>) };
+    delete metadata["content"];
+    details["truncation"] = metadata;
+  }
+  const hasFullOutput = typeof fullPath === "string";
+
+  const content = (placeholder: string) =>
+    input.result.content.map((part) =>
+      hasFullOutput && part.type === "text" && typeof part.text === "string"
+        ? { ...part, text: part.text.replaceAll(fullPath, placeholder) }
+        : part,
+    );
+
+  const serialize = (parts: readonly unknown[], fullOutput: unknown): string =>
+    JSON.stringify({
+      schemaVersion: "pi-result.v1",
+      tool: input.tool,
+      content: parts,
+      details,
+      fullOutput,
+      isError: input.result.isError,
+      commandExitCode: input.commandExitCode,
+      verifiedWrite: input.verifiedWrite,
+      ...input.closing,
+      source: input.source,
+    });
+
+  if (scanMachineSecrets(serialize(content(FULL_OUTPUT_KEPT), null)).length)
+    throw new Error("PI_RESULT_SECRET_REJECTED");
+
+  const fitBody = (parts: readonly unknown[], fullOutput: unknown): string => {
+    const fitted = input.fitOutput(serialize(parts, fullOutput), input.maxOutputBytes);
+    if (fitted === null) throw new Error("PI_RESULT_OUTPUT_LIMIT");
+    return fitted;
   };
+
+  const exitCode = !input.result.isError
+    ? 0
+    : input.commandExitCode && input.commandExitCode > 0 && input.commandExitCode < 256
+      ? input.commandExitCode
+      : 1;
+
+  const bodyOnly = fitBody(content(FULL_OUTPUT_DROPPED), null);
+  if (hasFullOutput) {
+    const remaining =
+      input.maxOutputBytes - Buffer.byteLength(bodyOnly) - FULL_OUTPUT_ENVELOPE_RESERVE;
+    if (remaining > 0) {
+      const fileBudget = Math.max(1, Math.floor((remaining * 3) / 4));
+      let exported: unknown;
+      try {
+        exported = await exportPiOutputFile(fullPath as string, input.privateDirectory, fileBudget);
+      } catch (error) {
+        if (error instanceof Error && error.message === "PI_OUTPUT_FILE_REJECTED") exported = null;
+        else throw error;
+      }
+      if (exported) {
+        const kept = input.fitOutput(
+          serialize(content(FULL_OUTPUT_KEPT), exported),
+          input.maxOutputBytes,
+        );
+        if (kept !== null) return { output: kept, exitCode };
+      }
+    }
+  }
+  return { output: bodyOnly, exitCode };
 }
 
 function bounded(output: string, maxOutputBytes: number) {
@@ -268,6 +316,7 @@ export async function publishPreparedPiOperation(
       verifiedWrite,
       privateDirectory: input.privateDirectory,
       maxOutputBytes: input.maxOutputBytes,
+      fitOutput: input.fitOutput ?? exactFitOutput,
       closing: { fileCommitClosed: true },
       source,
     });

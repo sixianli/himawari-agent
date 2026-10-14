@@ -220,7 +220,7 @@ SRT 模式不额外限制后台任务、服务类任务和无人值守任务，�
 
 > 仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。
 
-说明不计入命令自身上限，但计入整份结果 JSON 上限，超限沿用 `PI_RESULT_OUTPUT_LIMIT`；不另设额度、不放宽上限、不改变协议或持久数据形状。目录释放仍核验 ADR 0033 的 `process_group_gone`。Pi 0.84.2 的 waitForChildProcess 未通过包 exports 或根入口公开，因此 Bash 与旧程序执行器共用 platform-node 内部 waitForProcessOutput，继续复用 Pi Bash 工厂和原输出通道。
+说明不计入命令自身上限，但计入整份结果 JSON 上限（[ADR 0040](../../adr/0040-background-output-closed-after-bash-returns.md#decision) 的通知计入上限这一点不变）；超过上限时不再整次失败，而是复用 Pi 的 `truncateHead`/`truncateTail`/`formatSize` 把交给模型的正文截断到上限内并加 Pi 的说明（`read` 保留 `Use offset=...` 续读提示；见 [ADR 0054 的 2026-10-15 补充](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#model-output-limit)，条目 R2-T9），只有正文清空仍装不下才沿用 `PI_RESULT_OUTPUT_LIMIT`；不另设额度、不放宽上限、不改变协议或持久数据形状。目录释放仍核验 ADR 0033 的 `process_group_gone`。Pi 0.84.2 的 waitForChildProcess 未通过包 exports 或根入口公开，因此 Bash 与旧程序执行器共用 platform-node 内部 waitForProcessOutput，继续复用 Pi Bash 工厂和原输出通道。
 
 这项结果语义与 Job Host 的 stdioClosed 证据属于不同层：Bash 适配器完成后，Pi runner 发布已注明边界的结果并退出，Job Host 仍须满足原输出流关闭检查。界面应列出后台程序的要求仍适用；当前列表仅覆盖已登记的 background/service 作业，前台 Bash 自行脱离的后代尚不能列出，按 ADR 0040 记录为已知限制，不在本批实现。
 

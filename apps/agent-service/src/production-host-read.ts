@@ -3,7 +3,13 @@ import {
   type HostReadOnlyPort,
   scanMachineSecrets,
 } from "@himawari-agent/application";
-import { executeHostReadOnlyTool, type HostReadOnlyToolName } from "@himawari-agent/runtime-pi";
+import {
+  executeHostReadOnlyTool,
+  fitPiResultOutput,
+  type HostReadOnlyToolName,
+  PI_RESULT_OUTPUT_ENVELOPE_RESERVE,
+  truncationMetadata,
+} from "@himawari-agent/runtime-pi";
 
 export interface ProductionHostReadOnlyInput {
   readonly tool: HostReadOnlyToolName;
@@ -26,6 +32,14 @@ export interface ProductionHostReadOnly {
   execute(input: ProductionHostReadOnlyInput): Promise<ProductionHostReadOnlyResult>;
 }
 
+function envelopeDetails(details: unknown): unknown {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return {};
+  const record = { ...(details as Record<string, unknown>) };
+  if (record["truncation"] !== undefined)
+    record["truncation"] = truncationMetadata(record["truncation"]);
+  return record;
+}
+
 export function createProductionHostReadOnly(port: HostReadOnlyPort): ProductionHostReadOnly {
   return {
     async execute(input) {
@@ -37,13 +51,17 @@ export function createProductionHostReadOnly(port: HostReadOnlyPort): Production
         parameters: input.parameters,
         relativePath: input.relativePath,
         readBytesLimit: input.readBytesLimit,
+        contentBytesLimit: Math.max(
+          1,
+          input.maximumOutputBytes - PI_RESULT_OUTPUT_ENVELOPE_RESERVE,
+        ),
         ...(input.signal ? { signal: input.signal } : {}),
       });
       const output = JSON.stringify({
         schemaVersion: "pi-result.v1",
         tool: input.tool,
         content: [{ type: "text", text: executed.content }],
-        details: executed.details ?? {},
+        details: envelopeDetails(executed.details),
         fullOutput: null,
         isError: executed.isError,
         commandExitCode: null,
@@ -62,12 +80,16 @@ export function createProductionHostReadOnly(port: HostReadOnlyPort): Production
           isError: true,
           errorCode: "PI_RESULT_SECRET_REJECTED",
         };
-      if (Buffer.byteLength(output) > input.maximumOutputBytes)
-        return {
-          modelContent: "PI_RESULT_OUTPUT_LIMIT",
-          isError: true,
-          errorCode: "PI_RESULT_OUTPUT_LIMIT",
-        };
+      if (Buffer.byteLength(output) > input.maximumOutputBytes) {
+        const fitted = fitPiResultOutput(output, input.maximumOutputBytes);
+        if (fitted === null)
+          return {
+            modelContent: "PI_RESULT_OUTPUT_LIMIT",
+            isError: true,
+            errorCode: "PI_RESULT_OUTPUT_LIMIT",
+          };
+        return { modelContent: fitted, isError: executed.isError, errorCode: executed.errorCode };
+      }
       return { modelContent: output, isError: executed.isError, errorCode: executed.errorCode };
     },
   };

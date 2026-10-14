@@ -23,6 +23,12 @@ export {
   type HostReadOnlyToolResult,
 } from "./host-read-only-executor.js";
 export { executeGovernedPiRead } from "./governed-read-executor.js";
+export {
+  fitPiResultOutput,
+  PI_RESULT_OUTPUT_ENVELOPE_RESERVE,
+  type PiResultOutputFitter,
+  truncationMetadata,
+} from "./model-output-budget.js";
 export { type LegacyPiRunHistory, qualifyLegacyPiHistory } from "./legacy-pi-history.js";
 export { getPiModelPresentation } from "./model-presentation.js";
 export {

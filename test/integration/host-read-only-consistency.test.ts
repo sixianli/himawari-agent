@@ -231,4 +231,37 @@ describe("R2-P1 host path vs sandboxed path", () => {
     rmSync(directory, { recursive: true, force: true });
     rmSync(privateDirectory, { recursive: true, force: true });
   });
+
+  it("[R2-T9] bounds an over-limit host read with Pi's continuation notice", async () => {
+    const directory = mkdtempSync(path.join(scratchRoot, "consistency-r2t9-"));
+    chmodSync(directory, 0o700);
+    writeFileSync(
+      path.join(directory, "big.txt"),
+      Array.from({ length: 1000 }, (_, index) => `第${index + 1}行 ${"内".repeat(60)}`).join("\n"),
+    );
+    const grant = grantFor(directory);
+    const port = new DescriptorRelativeReadOnly();
+    const limit = 4096;
+    const bounded = await executeHostReadOnlyTool({
+      port,
+      grant,
+      tool: "read",
+      toolCallId: "r2t9-bounded-read",
+      parameters: { path: "big.txt" },
+      relativePath: "big.txt",
+      readBytesLimit: 16 * 1024 * 1024,
+      contentBytesLimit: limit,
+    });
+    expect(bounded.isError).toBe(false);
+    expect(bounded.content).toContain("Use offset=");
+    expect(bounded.details).toMatchObject({ truncation: { truncated: true, maxBytes: limit } });
+
+    const privateDirectory = mkdtempSync(path.join(scratchRoot, "consistency-p-"));
+    const sandbox = await sandboxOutcome(grant, privateDirectory, "read", "big.txt", {
+      path: "big.txt",
+    });
+    expect(sandbox.isError).toBe(false);
+    rmSync(directory, { recursive: true, force: true });
+    rmSync(privateDirectory, { recursive: true, force: true });
+  });
 });

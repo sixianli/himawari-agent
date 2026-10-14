@@ -2,7 +2,6 @@ import path from "node:path";
 import {
   createFindToolDefinition,
   createLsToolDefinition,
-  DEFAULT_MAX_BYTES,
   formatSize,
   truncateHead,
   truncateLine,
@@ -34,6 +33,7 @@ export interface HostReadOnlyToolInput {
   readonly parameters: Readonly<Record<string, unknown>>;
   readonly relativePath: string;
   readonly readBytesLimit: number;
+  readonly contentBytesLimit?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -92,6 +92,10 @@ function optionalPositiveInteger(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) return undefined;
   return value;
+}
+
+function contentBudget(input: HostReadOnlyToolInput): number | undefined {
+  return optionalPositiveInteger(input.contentBytesLimit);
 }
 
 async function readHostFile(input: HostReadOnlyToolInput): Promise<HostReadOnlyToolResult> {
@@ -157,12 +161,16 @@ async function readHostFile(input: HostReadOnlyToolInput): Promise<HostReadOnlyT
   } else {
     selectedContent = allLines.slice(startLine).join("\n");
   }
-  const truncation = truncateHead(selectedContent);
+  const budget = contentBudget(input);
+  const truncation = truncateHead(
+    selectedContent,
+    budget === undefined ? {} : { maxBytes: budget },
+  );
   let outputText: string;
   let details: unknown;
   if (truncation.firstLineExceedsLimit) {
     const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine] ?? "", "utf-8"));
-    outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${rawPath} | head -c ${DEFAULT_MAX_BYTES}]`;
+    outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(truncation.maxBytes)} limit. Use bash: sed -n '${startLineDisplay}p' ${rawPath} | head -c ${truncation.maxBytes}]`;
     details = { truncation };
   } else if (truncation.truncated) {
     const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
@@ -171,7 +179,7 @@ async function readHostFile(input: HostReadOnlyToolInput): Promise<HostReadOnlyT
     if (truncation.truncatedBy === "lines") {
       outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${allLines.length}. Use offset=${nextOffset} to continue.]`;
     } else {
-      outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${allLines.length} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+      outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${allLines.length} (${formatSize(truncation.maxBytes)} limit). Use offset=${nextOffset} to continue.]`;
     }
     details = { truncation };
   } else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
@@ -573,7 +581,7 @@ async function grepHostFiles(input: HostReadOnlyToolInput): Promise<HostReadOnly
     notices.push(
       `${limit} matches limit reached. Use limit=${limit * 2} for more, or refine pattern`,
     );
-  if (truncation.truncated) notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+  if (truncation.truncated) notices.push(`${formatSize(truncation.maxBytes)} limit reached`);
   if (linesTruncated)
     notices.push(
       `Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,

@@ -88,6 +88,7 @@ try {
       : false;
   const tool = input.tool;
   if (directoryRead) {
+    const { fitPiResultOutput } = await import("@himawari-agent/runtime-pi");
     await writeForegroundPiResult({
       tool: input.tool,
       result: {
@@ -103,6 +104,7 @@ try {
       verifiedWrite: null,
       privateDirectory: input.privateDirectory,
       maxOutputBytes: input.maxOutputBytes,
+      fitOutput: fitPiResultOutput,
       closing: {},
       source: {
         workspace: input.workspace,
@@ -113,6 +115,7 @@ try {
       },
     });
   } else if (isPiHostPublication(input) || tool === "save_copy" || tool === "move_directory") {
+    const { fitPiResultOutput } = await import("@himawari-agent/runtime-pi");
     const { output, exitCode } = await publishPreparedPiOperation({
       hostId,
       tool: input.tool,
@@ -122,6 +125,7 @@ try {
       privateDirectory: input.privateDirectory,
       commandPath: binaryDirectory,
       maxOutputBytes: input.maxOutputBytes,
+      fitOutput: fitPiResultOutput,
       parametersJson: input.parametersJson,
     });
     process.stdout.write(output);
@@ -168,7 +172,9 @@ try {
       commandPath: [binaryDirectory, "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
       maxOutputBytes: input.maxOutputBytes,
     });
-    const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");
+    const { executeSandboxedPiCodingTool, fitPiResultOutput } = await import(
+      "@himawari-agent/runtime-pi"
+    );
     let commandExitCode: number | null = null;
     const commandOutput: Buffer[] = [];
     let commandBytes = 0;
@@ -222,6 +228,7 @@ try {
         verifiedWrite,
         privateDirectory: input.privateDirectory,
         maxOutputBytes: input.maxOutputBytes,
+        fitOutput: fitPiResultOutput,
         closing: {},
         source: {
           workspace: input.workspace,
