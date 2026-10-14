@@ -15,7 +15,6 @@ import {
 } from "node:fs/promises";
 import { request as requestHttp } from "node:http";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
-import { createServer as createNetServer } from "node:net";
 import { hostname, release } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,18 +149,6 @@ async function createCertificates(root: string) {
   }
   await chmod(ca.key, 0o600);
   return { ca: ca.cert, provider, front };
-}
-
-async function reservePort(): Promise<number> {
-  const server = createNetServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("PORT_UNAVAILABLE");
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return address.port;
 }
 
 async function listen(server: HttpsServer): Promise<number> {
@@ -511,6 +498,7 @@ export async function installProductPath(options: {
   let embeddingAvailable = true;
   const modelRequests: ModelRequest[] = [];
   let providerPort = 0;
+  let appPort = 0;
   const issuer = () => `https://127.0.0.1:${providerPort}`;
   const provider = createHttpsServer(
     {
@@ -679,7 +667,6 @@ export async function installProductPath(options: {
       .sign(keyPair.privateKey);
   };
 
-  const appPort = await reservePort();
   const front = createHttpsServer(
     { cert: await readFile(certificates.front.cert), key: await readFile(certificates.front.key) },
     (request, response) => {
@@ -710,10 +697,11 @@ export async function installProductPath(options: {
     },
   );
   const frontPort = await listen(front);
-  await writeFile(
-    path.join(options.logDirectory, "listener-ports.json"),
-    JSON.stringify({ appPort, providerPort, frontPort }),
-  );
+  const writeListenerPorts = () =>
+    writeFile(
+      path.join(options.logDirectory, "listener-ports.json"),
+      JSON.stringify({ appPort, providerPort, frontPort }),
+    );
 
   const installEnv = { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" };
   if (options.sourceRoot) {
@@ -837,7 +825,7 @@ export async function installProductPath(options: {
     publicMode: true,
     http: {
       listenHost: "127.0.0.1",
-      listenPort: appPort,
+      listenPort: 0,
       staticRoot,
       sessionCookieName: "himawari_session",
       maximumBodyBytes: 256 * 1024,
@@ -1082,9 +1070,18 @@ export async function installProductPath(options: {
       const timer = setTimeout(() => reject(new Error("PRODUCT_PATH_READY_TIMEOUT")), 60_000);
       main.stdout.on("data", (chunk: Buffer) => {
         output += chunk.toString("utf8");
-        if (output.includes("HIMAWARI_PRODUCTION_HTTP_READY ")) {
+        const line = output
+          .split("\n")
+          .find((candidate) => candidate.startsWith("HIMAWARI_PRODUCTION_HTTP_READY "));
+        if (line) {
           clearTimeout(timer);
-          resolve();
+          const ready = JSON.parse(line.slice("HIMAWARI_PRODUCTION_HTTP_READY ".length));
+          const port = new URL(ready.address).port;
+          if (!port) reject(new Error("PRODUCT_PATH_READY_PORT_MISSING"));
+          else {
+            appPort = Number(port);
+            resolve();
+          }
         }
       });
       main.once("exit", (code, signal) => {
@@ -1092,6 +1089,7 @@ export async function installProductPath(options: {
         reject(new Error(`PRODUCT_PATH_MAIN_EXITED:${code ?? signal}`));
       });
     });
+    await writeListenerPorts();
     if (!bootstrapped) {
       const assertion = await signAssertion();
       const answer = await fetch(`http://127.0.0.1:${appPort}/bootstrap`, {

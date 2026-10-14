@@ -323,6 +323,18 @@ afterEach(async () => {
 });
 
 describe("agent service startup ownership", () => {
+  it("[R2-T6] reports the actual bound listen port in service.ready", async () => {
+    web();
+    start();
+    await settle();
+    const line = stdout
+      .split("\n")
+      .find((candidate) => candidate.includes('"event":"service.ready"'));
+    if (!line) throw new Error("SERVICE_READY_MISSING");
+    const diagnostic = JSON.parse(line);
+    expect(diagnostic.listenPort).toBe(43117);
+    expect(diagnostic.listenPort).toBe(Number(new URL("http://127.0.0.1:43117").port));
+  });
   it("recovers before publishing boot, connects the worker, then drains in dependency order", async () => {
     start();
     await settle();
@@ -681,6 +693,7 @@ function web() {
     assertIdentityReady: vi.fn(),
     listen: vi.fn(async () => {
       boundary.events.push("http.listen");
+      return "http://127.0.0.1:43117";
     }),
     close: vi.fn(async () => {
       boundary.events.push("http.close");

@@ -506,7 +506,7 @@ function parseHttpConfiguration(value: unknown): HttpConfiguration {
   }
   return Object.freeze({
     listenHost,
-    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 1, 65_535),
+    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 0, 65_535),
     staticRoot: absolutePath(input["staticRoot"], "configuration.http.staticRoot"),
     sessionCookieName,
     maximumBodyBytes: integer(

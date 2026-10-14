@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ProductConfiguration, ThreadCreateInput } from "@himawari-agent/application";
@@ -75,112 +76,113 @@ async function fixture() {
   return { stateRoot, staticRoot, databasePath };
 }
 
-function configuration(paths: Awaited<ReturnType<typeof fixture>>): ProductConfiguration {
-  return parseProductConfiguration(
-    {
-      schemaVersion: "himawari.configuration.v1",
-      deploymentId: DEPLOYMENT_ID,
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      stateRoot: paths.stateRoot,
-      runtimeDirectory: path.join(paths.stateRoot, "runtime"),
-      cacheDirectory: path.join(paths.stateRoot, "cache"),
-      publicOrigin: ORIGIN,
-      publicMode: true,
-      http: {
-        listenHost: "127.0.0.1",
-        listenPort: 8787,
-        staticRoot: paths.staticRoot,
-        sessionCookieName: "himawari_session",
-        maximumBodyBytes: 256 * 1024,
-        maximumStaticAssetBytes: 8 * 1024 * 1024,
-        heartbeatMilliseconds: 15_000,
+function rawConfiguration(paths: Awaited<ReturnType<typeof fixture>>): Record<string, unknown> {
+  return {
+    schemaVersion: "himawari.configuration.v1",
+    deploymentId: DEPLOYMENT_ID,
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    stateRoot: paths.stateRoot,
+    runtimeDirectory: path.join(paths.stateRoot, "runtime"),
+    cacheDirectory: path.join(paths.stateRoot, "cache"),
+    publicOrigin: ORIGIN,
+    publicMode: true,
+    http: {
+      listenHost: "127.0.0.1",
+      listenPort: 8787,
+      staticRoot: paths.staticRoot,
+      sessionCookieName: "himawari_session",
+      maximumBodyBytes: 256 * 1024,
+      maximumStaticAssetBytes: 8 * 1024 * 1024,
+      heartbeatMilliseconds: 15_000,
+    },
+    identity: {
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      jwksUrl: JWKS_URL,
+      jwksCacheMilliseconds: 300_000,
+      jwksTimeoutMilliseconds: 2_000,
+      jwksMaximumBodyBytes: 65_536,
+      clockToleranceSeconds: 30,
+      identityLookupTimeoutMilliseconds: 2_000,
+      identityLookupMaximumBodyBytes: 65_536,
+      recentAuthentication: {
+        maximumAgeMilliseconds: 900_000,
+        clockSkewMilliseconds: 30_000,
       },
-      identity: {
-        issuer: ISSUER,
-        audience: AUDIENCE,
-        jwksUrl: JWKS_URL,
-        jwksCacheMilliseconds: 300_000,
-        jwksTimeoutMilliseconds: 2_000,
-        jwksMaximumBodyBytes: 65_536,
-        clockToleranceSeconds: 30,
-        identityLookupTimeoutMilliseconds: 2_000,
-        identityLookupMaximumBodyBytes: 65_536,
-        recentAuthentication: {
-          maximumAgeMilliseconds: 900_000,
-          clockSkewMilliseconds: 30_000,
-        },
-        bootstrap: {
-          enabled: true,
-          expiresAt: "2099-01-01T00:00:00.000Z",
-          tokenSecretRef: "identity-bootstrap",
-        },
-        csrf: {
-          keySecretRef: "identity-csrf",
-          ttlMilliseconds: 1_800_000,
-        },
+      bootstrap: {
+        enabled: true,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        tokenSecretRef: "identity-bootstrap",
       },
-      modelDescriptors: [
-        {
-          ref: "model-primary",
-          role: "primary",
-          provider: "deterministic",
-          model: "deterministic-primary",
-          version: "v1",
-          allowedDataClassifications: ["public", "private"],
-          disclosure: "local_only",
-          secretRef: null,
-          capabilities: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          priority: 1,
-          name: "Production HTTP fixture primary",
-          api: "openai-completions",
-          reasoning: false,
-          input: ["text"],
-          contextWindow: 8192,
-          maxTokens: 1024,
-        },
-        {
-          ref: "model-embedding",
-          role: "embedding",
-          provider: "deterministic",
-          model: "deterministic-embedding",
-          version: "v1",
-          allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
-          disclosure: "local_only",
-          secretRef: null,
-          capabilities: ["embedding"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          dimensions: 1536,
-        },
-      ],
-      memory: {
-        adapter: "mem0-oss",
-        version: "3.3.1",
-        storagePath: path.join(paths.stateRoot, "data", "memory"),
+      csrf: {
+        keySecretRef: "identity-csrf",
+        ttlMilliseconds: 1_800_000,
+      },
+    },
+    modelDescriptors: [
+      {
+        ref: "model-primary",
+        role: "primary",
+        provider: "deterministic",
+        model: "deterministic-primary",
+        version: "v1",
+        allowedDataClassifications: ["public", "private"],
+        disclosure: "local_only",
+        secretRef: null,
+        capabilities: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        priority: 1,
+        name: "Production HTTP fixture primary",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        contextWindow: 8192,
+        maxTokens: 1024,
+      },
+      {
+        ref: "model-embedding",
+        role: "embedding",
+        provider: "deterministic",
+        model: "deterministic-embedding",
+        version: "v1",
+        allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
+        disclosure: "local_only",
+        secretRef: null,
+        capabilities: ["embedding"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         dimensions: 1536,
       },
-      repositoryAllowlistRefs: [],
-      secretReferences: [
-        { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
-        { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
-        { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
-      ],
-      budgets: {
-        globalCostMicros: 1_000_000,
-        perRunCostMicros: 100_000,
-        perClassificationCostMicros: {
-          public: 100_000,
-          private: 100_000,
-          sensitive: 0,
-          restricted: 0,
-        },
-      },
-      concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
-      deadlines: { runMs: 60_000, workerRequestMs: 5_000, providerRequestMs: 5_000 },
+    ],
+    memory: {
+      adapter: "mem0-oss",
+      version: "3.3.1",
+      storagePath: path.join(paths.stateRoot, "data", "memory"),
+      dimensions: 1536,
     },
-    NOW.toISOString(),
-  );
+    repositoryAllowlistRefs: [],
+    secretReferences: [
+      { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
+      { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
+      { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
+    ],
+    budgets: {
+      globalCostMicros: 1_000_000,
+      perRunCostMicros: 100_000,
+      perClassificationCostMicros: {
+        public: 100_000,
+        private: 100_000,
+        sensitive: 0,
+        restricted: 0,
+      },
+    },
+    concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
+    deadlines: { runMs: 60_000, workerRequestMs: 5_000, providerRequestMs: 5_000 },
+  };
+}
+
+function configuration(paths: Awaited<ReturnType<typeof fixture>>): ProductConfiguration {
+  return parseProductConfiguration(rawConfiguration(paths), NOW.toISOString());
 }
 
 function secretSources(): ProductionHttpCompositionSecretSources {
@@ -857,7 +859,6 @@ describe("production HTTP startup rejection contracts", () => {
   }
   it.each([
     ["listenHost", "0.0.0.0"],
-    ["listenPort", 0],
     ["listenPort", 65536],
     ["listenPort", 1.5],
     ["maximumBodyBytes", 0],
@@ -874,6 +875,53 @@ describe("production HTTP startup rejection contracts", () => {
       if (!c.http) throw new Error("Missing fixture HTTP configuration");
       return { ...c, http: { ...c.http, [key as string]: value } };
     }, "PRODUCTION_HTTP_CONFIGURATION_INCOMPLETE");
+  });
+  it("[R2-T6] accepts an ephemeral loopback port, binds it and reports the real port", async () => {
+    const paths = await fixture();
+    const raw = rawConfiguration(paths);
+    raw["http"] = { ...(raw["http"] as object), listenPort: 0 };
+    const ephemeral = parseProductConfiguration(raw, NOW.toISOString());
+    if (!ephemeral.http) throw new Error("Missing fixture HTTP configuration");
+    expect(ephemeral.http.listenPort).toBe(0);
+    for (const listenPort of [65_536, 1.5])
+      expect(() =>
+        parseProductConfiguration(
+          { ...raw, http: { ...(raw["http"] as object), listenPort } },
+          NOW.toISOString(),
+        ),
+      ).toThrow();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: paths.stateRoot,
+      databasePath: paths.databasePath,
+      minimumFreeBytes: 0,
+      now: () => NOW.toISOString(),
+    });
+    const composition = await createProductionHttpComposition({
+      configuration: ephemeral,
+      repository,
+      authority: () => authority(ephemeral),
+      secretSources: secretSources(),
+      now: () => new Date(NOW),
+    });
+    try {
+      const address = await composition.listen();
+      const port = Number(new URL(address).port);
+      expect(Number.isSafeInteger(port)).toBe(true);
+      expect(port).toBeGreaterThan(0);
+      expect(port).toBeLessThanOrEqual(65_535);
+      const reachable = await new Promise<boolean>((resolve) => {
+        const socket = connect({ host: "127.0.0.1", port });
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve(true);
+        });
+        socket.once("error", () => resolve(false));
+      });
+      expect(reachable).toBe(true);
+    } finally {
+      await composition.close();
+      await repository.close();
+    }
   });
   it.each(["http", "identity"])("requires the %s boundary", async (key) => {
     await rejectedConfiguration((c) => {

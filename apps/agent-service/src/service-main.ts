@@ -959,6 +959,7 @@ export async function runAgentService(
       });
       if (!webEnabled) await memoryWorker.start();
     }
+    let boundListenPort: number | undefined;
     if (webEnabled) {
       if (!modelComposition || !memoryComposition || !durableMemory || !protector || !worker)
         throw new Error("PUBLIC_RUNTIME_DEPENDENCY_MISSING");
@@ -1189,7 +1190,8 @@ export async function runAgentService(
       await memoryWorker?.start();
       await runs.loop.start();
       if (authorityLost) throw authorityLossError;
-      await http.listen();
+      const listenAddress = await http.listen();
+      boundListenPort = Number(new URL(listenAddress).port);
       health.setLive(true);
       for (const name of [
         "authority",
@@ -1239,6 +1241,7 @@ export async function runAgentService(
       sqliteVersion: sqlite.sqliteVersion,
       workerSchemaVersion: handshake.payload.selectedSchemaVersion,
       publicMode: configuration.publicMode,
+      ...(boundListenPort === undefined ? {} : { listenPort: boundListenPort }),
       unfinishedRuns: recovery.unfinishedRunKeys.length,
       pendingApprovals: recovery.pendingApprovalRequestIds.length,
       recoverableOccurrences: recovery.retryableJobOccurrenceIds.length,

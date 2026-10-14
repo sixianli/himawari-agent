@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as requestHttp } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,7 +51,6 @@ let secretDirectory = "";
 let configurationPath = "";
 let caCertificatePath = "";
 let providerPort = 0;
-let appPort = 0;
 let provider: ReturnType<typeof createHttpsServer> | undefined;
 let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
 let jwks: JSONWebKeySet;
@@ -146,21 +144,6 @@ async function createLocalCertificate(root: string): Promise<{
   await chmod(caKeyPath, 0o600);
   await chmod(leafKeyPath, 0o600);
   return { certificatePath: leafPath, keyPath: leafKeyPath, caCertificatePath: caPath };
-}
-
-async function reservePort(): Promise<number> {
-  const server = createNetServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Ephemeral listener has no port");
-  const port = address.port;
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-  return port;
 }
 
 async function listenProvider(certificatePath: string, keyPath: string): Promise<void> {
@@ -320,7 +303,7 @@ function rawConfiguration(): Record<string, unknown> {
     publicMode: true,
     http: {
       listenHost: "127.0.0.1",
-      listenPort: appPort,
+      listenPort: 0,
       staticRoot,
       sessionCookieName: cookieName,
       maximumBodyBytes: 256 * 1024,
@@ -736,7 +719,6 @@ beforeAll(async () => {
     ],
   };
   await listenProvider(tls.certificatePath, tls.keyPath);
-  appPort = await reservePort();
   await initializeTestDatabase();
   await writeFile(configurationPath, JSON.stringify(rawConfiguration()), { mode: 0o600 });
   await chmod(configurationPath, 0o600);
@@ -803,7 +785,7 @@ describe("production HTTP composition over a real installed process", { timeout:
     expect(untrustedProvider).toBe(true);
     const token = await signToken();
     let running = await startChild(caCertificatePath);
-    const appAddress = running.address;
+    let appAddress = running.address;
     try {
       expect(new URL(appAddress).hostname).toBe("127.0.0.1");
 
@@ -1036,6 +1018,7 @@ describe("production HTTP composition over a real installed process", { timeout:
 
       await stopChild(running.child);
       running = await startChild(caCertificatePath);
+      appAddress = running.address;
       const replay = await httpRequest(appAddress, "/api/gateway/thread/v3/commands", {
         ...jsonRequestBody(submitCommand),
         headers: requestHeaders(

@@ -53,14 +53,18 @@ const sources = {
 };
 const providerUrl = process.env.HIMAWARI_TEST_MODEL_URL;
 if (!providerUrl?.startsWith("https://127.0.0.1:")) throw new Error("LOCAL_PROVIDER_REQUIRED");
-const raw = JSON.parse(await readFile(process.env.HIMAWARI_TEST_CONFIGURATION, "utf8"));
 const output = {
   write: (data) => {
     process.stdout.write(data);
-    if (String(data).includes('"event":"service.ready"'))
+    const line = String(data)
+      .split("\n")
+      .find((candidate) => candidate.includes('"event":"service.ready"'));
+    if (line) {
+      const diagnostic = JSON.parse(line);
       process.stdout.write(
-        `HIMAWARI_PRODUCTION_HTTP_READY ${JSON.stringify({ address: `http://127.0.0.1:${raw.http.listenPort}` })}\n`,
+        `HIMAWARI_PRODUCTION_HTTP_READY ${JSON.stringify({ address: `http://127.0.0.1:${diagnostic.listenPort}` })}\n`,
       );
+    }
     return true;
   },
 };

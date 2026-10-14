@@ -196,7 +196,7 @@ function assertProductionConfiguration(configuration: ProductConfiguration): voi
   if (
     (http.listenHost !== "127.0.0.1" && http.listenHost !== "::1") ||
     !Number.isSafeInteger(http.listenPort) ||
-    http.listenPort < 1 ||
+    http.listenPort < 0 ||
     http.listenPort > 65_535 ||
     !Number.isSafeInteger(http.maximumBodyBytes) ||
     http.maximumBodyBytes < 1 ||
