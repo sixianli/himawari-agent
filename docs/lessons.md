@@ -81,6 +81,11 @@ date: "2026-10-13"
   - 2026-10-13 先后在 packet-02、packet-03（两次）里发现并删除了这个空目录。
   - 2026-10-14 主工作区严格校验报 6 个 Runbook 的 `contract_sha256` 不匹配，同一提交 `24720138` 在干净检出上是 0 个错误。原因是更早的会话在 `packages/persistence-sqlite/src/migrations/` 等 23 个目录里留下了 `.claude/.cc-writes`，Runbook 遍历依据目录时把它们算了进去。
   - 2026-10-14 清理证据时，Claude 两次在命令开头写 `cd .ci-output/handoff/<证据目录>`，会话工作目录随之切过去，`baselines/` 和 `prod-sandbox-evidence-01a/` 里各多出一个 `.claude/.cc-writes`（当场 `rmdir`）。对证据目录同样只用从仓库根目录出发的路径；确实要换目录时写在子 shell 里，例如 `( cd <目录> && <命令> )`，命令结束后工作目录不变。
+- 根因（2026-10-14 按 G106 第三次以上出现后分析）：Bash 工具会把 `cd` 后的目录保留到下一条命令，Claude Code 把它当成新的工作目录并在那里建 `.claude/.cc-writes`。前面的预防只是“记住不要 `cd`”，而写命令时习惯先 `cd`，所以一再发生。
+- 硬约束（G107）：
+  - 源头：本机项目设置 `.claude/settings.local.json`（不进 git）的 `env` 设 `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`，每条 Bash 命令结束后工作目录回到项目根目录。2026-10-14 实测：`cd docs` 后下一条命令的 `pwd` 是项目根目录，`docs` 下没有出现 `.claude`。
+  - 门禁：本机 `.git/hooks/pre-commit`（主工作区和所有 `git worktree` 共用，Claude、opencode、Grok 的提交都会经过）在仓库根目录以下（不含根目录自己的 `.claude`、`.git`、`.ci-output`、`node_modules`）发现 `.cc-writes` 目录就拒绝提交并列出路径。2026-10-14 实测：干净时返回 0；在 `packages/persistence-sqlite/src/migrations/` 和工作副本 `r2p1/docs/` 里放入后返回 1；删掉后返回 0。
+  - 这两项都只在这台 Mac 上；换电脑或重新克隆仓库时要重新设置。
 
 [回到目录](#编码代理反复犯的错误)
 
