@@ -498,3 +498,9 @@
 > 你可以合理分配任务给 deeppseek v4.1 和 grok 的模型，达到交付速度、质量、性价比最高
 
 （取代 G93“Grok 只试 R2-T5 一批”的限制：Claude 按交付速度、质量和性价比在 `opencode-go/deepseek-v4.1-flash#high` 和 `xai/` 的 Grok 模型之间分配批次；G94 仍然有效，Grok 只能用 `xai/`。分配规则写在 opencode-orchestration skill 的 `references/grok.md`，按每批的实测数据调整。）
+
+## G97 2026-10-14 用户原话
+
+> 我已经在 Claude Code 安装了 Grok Build 的插件，所以你以后分配给 Big Rock 的任务，可以通过这个插件来进行
+
+（“Big Rock”是语音输入对“Grok”的误识别。之后分给 Grok 的批次改走 Claude Code 的 Grok Build 插件（`grok-build` 0.2.1，内部调用本机 `grok` 命令行 1.0.52，登录方式为 grok.com 订阅，满足 G94），不再经 opencode 的 `xai/`。分给 deepseek 的批次仍走 opencode（G83）。插件以“全部自动批准”方式运行 Grok，因此 Claude 在本机建了不提交的 `.grok/config.toml` 禁止清单（与 `.opencode/opencode.json` 同一组规则，已写进 `.git/info/exclude`），并用 `grok --trust` 让 Grok 读取本项目的 AGENTS.md 和这份清单；2026-10-14 经插件实测：`node`、生产 IP、读取 `*.pem` 被拦住，普通命令和 `$(...)` 正常执行。）
