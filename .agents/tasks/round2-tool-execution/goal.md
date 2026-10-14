@@ -473,3 +473,9 @@
 > 用系统自带命令（推荐）
 
 （回复的是 Claude 的选择题：沙箱里的 bash 只能找到 bash、rg、fd 三个程序，ls、cat、git、python 都找不到。用户选择像 Codex、Claude Code 一样，先找安装包里的固定程序，再找系统的 /usr/local/bin、/usr/bin、/bin；沙箱的写入和联网限制不变。记入 ADR 0055。）
+
+## G93 2026-10-14 用户原话
+
+> 试 grok-build-0.1 (推荐)
+
+（回复的是 Claude 的选择题：用户已在本机 opencode 里用 `/connect` 登录自己的 X Subscription（Premium 档，含 Grok API），Claude 实测 `xai/grok-build-0.1` 和 `xai/grok-4.7` 都能调通。用户选择下一批 R2-T5 改用 `xai/grok-build-0.1` 试做；R2-T4 继续用 deepseek 做完；试做结束后比较质量和用量，再由用户决定是否改成默认模型。G83 在此之前仍然有效。）
