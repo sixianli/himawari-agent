@@ -16,10 +16,12 @@ The user asked on 2026-09-29 that code and documentation never drift apart. Docu
 
 ## Repeated Mistakes
 
-The user decided on 2026-10-14 (G104, clarified by G106) that the trigger is repetition: when the same mistake happens for the third time, stop the current work, find its root cause, and record the fix and the lesson where they will prevent a fourth occurrence. A single mistake does not need its own record.
+The user decided on 2026-10-14 (G104, clarified by G106 and G107) that the trigger is repetition: when the same mistake happens for the third time, stop the current work, find its root cause, add a hard constraint that stops Claude and every other agent from repeating it, and record the fix and the lesson where they will prevent a fourth occurrence. A single mistake does not need its own record.
 
 - Count occurrences of the same kind of mistake across sessions and agents, using `docs/lessons.md`, handoff files, stop files, and commit messages as the history. A session handoff names any mistake that has happened twice, so the next session can recognize the third.
-- On the third occurrence, pause the task and diagnose why the earlier prevention failed. A rule that relies on remembering it has already failed twice; prefer a mechanical safeguard (a check, a script, a deny rule, a hook) over another written reminder. Ask the user first when the safeguard needs a configuration or permission change.
+- On the third occurrence, pause the task and diagnose why the earlier prevention failed. A rule that relies on remembering it has already failed twice, so another written reminder is not enough.
+- A hard constraint is mandatory (G107): an automated test, a commit or CI gate, a check that a script runs on every use, a deny rule, or a hook that blocks or fails loudly when the mistake recurs, for Claude, opencode, Grok, and any other agent alike. Prove it works by showing it fail on a reproduction of the mistake and pass once the mistake is removed. When it needs a configuration or permission change only the user can make, prepare it, ask, and keep the task paused on that mistake until it is in place.
+- Each `docs/lessons.md` entry whose mistake reached three occurrences names its hard constraint and where it runs.
 - Record the result where it matches its kind:
   - a mistake coding agents repeat, with the rule or safeguard that prevents it: `docs/lessons.md` (add the new occurrence to an existing entry when one already covers it);
   - a way of briefing, reviewing, or driving opencode and Grok: the `opencode-orchestration` skill;
