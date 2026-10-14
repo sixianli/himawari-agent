@@ -1,9 +1,10 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const PHASES = [
   "context_formation",
@@ -16,12 +17,37 @@ const PHASES = [
   "delivery",
 ] as const;
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
-const fixture = path.join(repositoryRoot, "test/fixtures/durable-phase-child.test.ts");
-const configuration = path.join(
-  repositoryRoot,
-  "test/fixtures/vitest.durable-phase-child.config.ts",
-);
-const vitest = path.join(repositoryRoot, "node_modules/vitest/vitest.mjs");
+const childFixture = path.join(repositoryRoot, "test/fixtures/durable-phase-child.mjs");
+let runtimeRoot = path.join(repositoryRoot, "dist/node-runtime");
+let installation: string | undefined;
+beforeAll(async () => {
+  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
+  if (!artifact && !context) return;
+  if (!artifact || !context) throw new Error("DURABLE_PHASE_ARTIFACT_CONTEXT_REQUIRED");
+  installation = await mkdtemp(path.join(testTemporaryRoot(), "durable-phase-install-"));
+  const installed = spawnSync(
+    process.execPath,
+    [
+      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
+      "--prefix",
+      installation,
+      "--artifact",
+      artifact,
+      "--context",
+      context,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 180_000,
+      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
+    },
+  );
+  if (installed.status !== 0) throw new Error(`DURABLE_PHASE_INSTALL_FAILED:${installed.stderr}`);
+  runtimeRoot = path.join(installation, "lib/himawari-agent");
+}, 240_000);
+afterAll(async () => {
+  if (installation) await rm(installation, { recursive: true, force: true });
+});
 const cleanupRoots: string[] = [];
 const children = new Set<ChildProcessWithoutNullStreams>();
 
@@ -33,20 +59,19 @@ afterEach(async () => {
 });
 
 function start(stateRoot: string, phase: (typeof PHASES)[number], mode: "seed" | "inspect") {
-  const child = spawn(
-    process.execPath,
-    [vitest, "run", "--config", configuration, "--run", fixture],
-    {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        HIMAWARI_PHASE_STATE_ROOT: stateRoot,
-        HIMAWARI_PHASE_NAME: phase,
-        HIMAWARI_PHASE_MODE: mode,
-      },
-      stdio: ["pipe", "pipe", "pipe"],
+  const child = spawn(process.execPath, ["--no-global-search-paths", childFixture], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      HIMAWARI_TEST_RUNTIME_ROOT: runtimeRoot,
+      HIMAWARI_PHASE_STATE_ROOT: stateRoot,
+      HIMAWARI_PHASE_NAME: phase,
+      HIMAWARI_PHASE_MODE: mode,
+      NODE_PATH: "",
+      NODE_OPTIONS: "",
     },
-  );
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   children.add(child);
   return child;
 }
@@ -171,7 +196,7 @@ async function kill(child: ChildProcessWithoutNullStreams): Promise<void> {
 }
 
 describe("durable business phase real-process recovery", () => {
-  it("preserves stable identity through SIGKILL and process restart at all eight phases", async () => {
+  it("[R2-T7] preserves stable identity through SIGKILL and process restart at all eight phases", async () => {
     const recovered: string[] = [];
     for (const phase of PHASES) {
       const stateRoot = await mkdtemp(path.join(tmpdir(), `himawari-phase-${phase}-`));
