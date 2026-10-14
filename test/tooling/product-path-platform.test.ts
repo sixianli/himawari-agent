@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   productPathSandboxCleanup,
   productPathToolchainPaths,
+  requireLocatedCodingTool,
 } from "../fixtures/product-path-harness.ts";
 
 const runtimeRoot = "/test-runtime";
@@ -81,4 +82,14 @@ describe("product path platform toolchain", () => {
       ).toMatchObject({ platform, terminationMode: cleanup.terminationMode });
     },
   );
+
+  it("fails the coding tool installation with a reason when a required binary is missing", () => {
+    expect(() => requireLocatedCodingTool("rg", ["rg"], undefined)).toThrow(
+      /PRODUCT_PATH_CODING_TOOL_UNAVAILABLE: rg/,
+    );
+    expect(() => requireLocatedCodingTool("fd", ["fd", "fdfind"], undefined)).toThrow(
+      /PRODUCT_PATH_CODING_TOOL_UNAVAILABLE: fd/,
+    );
+    expect(requireLocatedCodingTool("fd", ["fd", "fdfind"], "/usr/bin/fd")).toBe("/usr/bin/fd");
+  });
 });

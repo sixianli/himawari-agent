@@ -422,7 +422,7 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，Worker 已保存的 Pi 自身错误输出（例如“文件不存在”）经过与成功结果相同的披露检查后交给模型，让模型能据此换路径或改做法；bash（command）失败仍只交出错误码说明，因为非零退出不能证明工作区没有被改动。
 
-预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 PATH，不从用户 HOME 或系统 PATH 寻找替代搜索器。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
+预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 `process.env.PATH`，Pi 自己的搜索器只从该固定目录取得，不从用户 HOME 或系统 PATH 寻找 `rg`/`fd` 的替代。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`，因此沙箱内可用系统自带命令；系统程序不计入 runtimeDigest，能否实际运行由沙箱只读放行列表决定，详见 [ADR 0055](../../adr/0055-bash-uses-system-commands-in-sandbox.md)。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
 
 写入前固定已有文件身份与内容，复用约束文件平台的独占创建/安全替换和写后读取验证；不因 Pi mutation queue 省略外部修改核对。重要覆盖/删除继续由上游 Grant、HITL 与范围准入决定，只有部分文件写权限的 Shell 请求在执行前拒绝。runner 内的校验不签发或消费 Grant。
 

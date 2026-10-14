@@ -8,11 +8,12 @@ import {
   readdir,
   readFile,
   realpath,
+  rm,
   stat,
   statfs,
   writeFile,
 } from "node:fs/promises";
-import { createConnection } from "node:net";
+import { createConnection, createServer as createTcpServer } from "node:net";
 import path from "node:path";
 import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
 import { readLinuxNamespaceState } from "@himawari-agent/runtime-sandbox/control";
@@ -48,6 +49,10 @@ const outputDirectory = path.resolve(
 const NOTE = "项目代号：向日葵";
 const EDITABLE = "编辑前内容";
 const EDITED = "编辑后内容";
+let escapeTrapPath = "";
+let escapeNewPath = "";
+let networkPort = 0;
+let networkConnections = 0;
 
 const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
   if (!hasTools) return { kind: "text", text: "工具恢复验证" };
@@ -135,6 +140,42 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
     return { kind: "tool", name: "read", arguments: { path: "." } };
   if (lastUserText.includes("读取子目录"))
     return { kind: "tool", name: "read", arguments: { path: "subdir" } };
+  if (lastUserText.includes("请运行系统命令"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command: `echo 'ls:'; ls; echo 'cat:'; cat notes.txt; echo; echo 'wc:'; wc -l editable.txt; echo 'git:'; git --version; echo 'py:'; python3 -c 'print("PYRESULT-" + str(6*7))'; true`,
+      },
+    };
+  if (lastUserText.includes("请确认固定工具"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: "command -v bash; command -v rg; command -v fd" },
+    };
+  if (lastUserText.includes("请尝试越界写入"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command: `printf 'escape' > '${escapeNewPath}'; printf 'escape' > '${escapeTrapPath}'; true`,
+      },
+    };
+  if (lastUserText.includes("请读取系统口令文件"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: "cat /etc/passwd; echo PASSWD-END" },
+    };
+  if (lastUserText.includes("请测试联网"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: {
+        command: `python3 -c "import socket; s=socket.socket(); s.settimeout(4); print('BLOCK' + 'ED' if s.connect_ex(('127.0.0.1',${networkPort}))!=0 else 'O' + 'PEN')"; true`,
+      },
+    };
   if (lastUserText.includes("模型故障")) return { kind: "http-error", status: 500 };
   if (lastUserText.includes("慢一点"))
     return { kind: "text", text: "慢回答已完成", delayMs: 2_500 };
@@ -934,6 +975,10 @@ productDescribe(
       await writeFile(path.join(installation.workspace, "subdir", "nested.txt"), "嵌套文件内容\n", {
         mode: 0o600,
       });
+      escapeTrapPath = path.join(path.dirname(installation.workspace), "r2t3-escape.txt");
+      escapeNewPath = path.join(path.dirname(installation.workspace), "r2t3-new.txt");
+      await writeFile(escapeTrapPath, "HOST-ORIGINAL", { mode: 0o600 });
+      await rm(escapeNewPath, { force: true });
       await installation.start();
       browser = await chromium.launch({
         channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
@@ -1066,6 +1111,84 @@ productDescribe(
         const unavailable = (environment?.unavailableTools ?? []).map((tool) => tool.toolName);
         for (const tool of ["read", "write", "edit", "ls", "find", "grep", "bash"])
           expect(unavailable).not.toContain(tool);
+      });
+    });
+
+    it("[R2-T3] runs system commands inside the sandboxed bash", async () => {
+      await scenario("r2t3-system-commands", async () => {
+        const answer = await sendToolRequest("请运行系统命令");
+        await uiExpect(answer).toContainText("second.txt");
+        await uiExpect(answer).toContainText(NOTE);
+        await uiExpect(answer).toContainText("1 editable.txt");
+        await uiExpect(answer).toContainText(/git version \d+\.\d+/);
+        await uiExpect(answer).toContainText("PYRESULT-42");
+      });
+    });
+
+    it("[R2-T3] keeps the verified tool directory first on the sandbox command path", async () => {
+      await scenario("r2t3-fixed-tools-first", async () => {
+        const answer = await sendToolRequest("请确认固定工具");
+        for (const name of ["bash", "rg", "fd"])
+          await uiExpect(answer).toContainText(`/pi-tools/bin/${name}`);
+      });
+    });
+
+    it("[R2-T3] refuses a sandboxed write outside the authorized workspace", async () => {
+      await scenario("r2t3-escape-write", async () => {
+        await sendToolRequest("请尝试越界写入");
+        const readback = {
+          newPath: escapeNewPath,
+          newPathExists: await stat(escapeNewPath).then(
+            () => true,
+            () => false,
+          ),
+          trapPath: escapeTrapPath,
+          trapContent: await readFile(escapeTrapPath, "utf8"),
+        };
+        await writeFile(
+          path.join(outputDirectory, "r2t3-escape-readback.json"),
+          JSON.stringify(readback, null, 2),
+        );
+        expect(readback.newPathExists).toBe(false);
+        expect(readback.trapContent).toBe("HOST-ORIGINAL");
+      });
+    });
+
+    it("[R2-T3] does not broaden the sandbox read boundary to system files", async () => {
+      await scenario("r2t3-read-boundary", async () => {
+        const answer = await sendToolRequest("请读取系统口令文件");
+        await uiExpect(answer).toContainText(
+          /No such file or directory|Permission denied|Read-only file system/,
+        );
+        await uiExpect(answer).not.toContainText(/root:.*:0:0/);
+      });
+    });
+
+    it("[R2-T3] refuses a sandbox network connection to a local TCP port", async () => {
+      await scenario("r2t3-network", async () => {
+        const server = createTcpServer((connection) => {
+          networkConnections += 1;
+          connection.destroy();
+        });
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
+        });
+        try {
+          const address = server.address();
+          if (!address || typeof address === "string") throw new Error("NETWORK_PORT_UNAVAILABLE");
+          networkPort = address.port;
+          const answer = await sendToolRequest("请测试联网");
+          await uiExpect(answer).toContainText("BLOCKED");
+          await uiExpect(answer).not.toContainText("OPEN");
+          await writeFile(
+            path.join(outputDirectory, "r2t3-network-connections.json"),
+            JSON.stringify({ port: networkPort, connections: networkConnections }, null, 2),
+          );
+          expect(networkConnections).toBe(0);
+        } finally {
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
       });
     });
 

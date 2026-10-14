@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:22bb3f640a6e3397d0e281fa528249dde4d8a580309492e48e9e56be0b04517d"
+contract_sha256: "sha256:5896eff3729c4af75dbba293ba05ef593f4128323394ec985661b674c7869585"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -450,9 +450,9 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
 
-在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。运行环境仅使用该目录作为 PATH，PI_OFFLINE=1；缺依赖明确失败。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。其他命令依赖同样须先安装在允许且固定的工具链内，不能以工具运行触发隐式下载。新增二进制会改变 runtimeDigest，须重新取得当前主机资格。
+在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。Pi 工具自己（`bash` 工具的外壳程序、`grep` 用的 `rg`、`find` 用的 `fd`）只从这个固定目录取得，`PI_OFFLINE=1`，缺依赖明确失败；这些文件计入 runtimeDigest，新增二进制会改变 runtimeDigest，须重新取得当前主机资格。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`（见 [ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），所以 `ls`、`cat`、`git`、`python3` 这类系统程序可用，而固定目录在最前，`bash`、`rg`、`fd` 仍用安装包里核验过的那一份。系统程序随服务器系统升级变化，不计入 runtimeDigest，Himawari 不核验它们的版本和摘要；某个系统程序能否在沙箱里实际运行由只读放行列表决定（当前放行 `/usr/bin`、`/usr/lib`、`/lib`、`/lib64` 等，`/usr/local/bin` 不在放行列表里，放在那里的程序预期运行不了）。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。不能以工具运行触发隐式下载。
 
-Linux候选包的安装命令不自动准备这些宿主二进制。安装成功后仍须核对`pi-tools/bin`中的实际文件、版本、可执行性和摘要，再计算runtimeDigest；不能把安装器成功当作工具已经可用。工具缺失时先取得相应下载授权，不以外部PATH替代安装目录中的固定文件。
+Linux候选包的安装命令不自动准备这些宿主二进制。安装成功后仍须核对`pi-tools/bin`中的实际文件、版本、可执行性和摘要，再计算runtimeDigest；不能把安装器成功当作工具已经可用。固定目录里的`bash`、`rg`、`fd`缺失时先取得相应下载授权，不用系统目录中的同名程序替代它们；系统目录只作为`bash`子命令的查找路径（见上一段与[ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），不进入runtimeDigest，也不改变`find`/`grep`仍使用固定`fd`/`rg`的规则。
 
 自动审查默认关闭：只有同时提供 `runPolicy.automaticReview`（`delegationKey`/`configurationVersion`/`modelRef`/`maximumWaitMs`/`maxOutputBytes`）和匹配的 Owner 委托记录才会外发。缺少该配置段时人工确认路径完全不变；配置存在但模型边界或受保护 Payload 不可用时启动以 `AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE` 失败，不会静默忽略。`modelRef` 必须指向已配置的生成模型；委托只覆盖逐条列出的确切请求摘要，审查输入只含冻结的操作摘要与版本身份，不含文件正文、路径或凭据。启用前须按 [P5 启用建议](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#automatic-review-enablement) 确认模型身份、接收方与费用额度。
 

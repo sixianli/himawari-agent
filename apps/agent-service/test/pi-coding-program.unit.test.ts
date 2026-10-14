@@ -124,7 +124,7 @@ describe("installed Pi coding program boundary", () => {
       expect.objectContaining({
         targetPath: "/workspace/README.md",
         privateDirectory: "/private-runner",
-        commandPath: "/runtime/pi-tools/bin",
+        commandPath: "/runtime/pi-tools/bin:/usr/local/bin:/usr/bin:/bin",
         grant: expect.objectContaining({
           hostId: "host-program",
           id: "directory-program",
@@ -165,6 +165,24 @@ describe("installed Pi coding program boundary", () => {
     expect(boundary.execute).not.toHaveBeenCalled();
     expect(boundary.process.exitCode).toBe(1);
     expect(JSON.stringify(output())).toContain("是目录");
+  });
+  it("[R2-T3] finds sandboxed bash commands in the verified tool directory before the system directories", async () => {
+    boundary.execute.mockImplementation(async ({ operations }) => {
+      await operations.executeCommand({ command: "ls", onData: vi.fn() });
+      return { content: [], isError: false };
+    });
+    await run(input("bash"));
+    expect(boundary.operations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shell: "/runtime/pi-tools/bin/bash",
+        commandPath: "/runtime/pi-tools/bin:/usr/local/bin:/usr/bin:/bin",
+      }),
+    );
+    expect(boundary.process.env).toMatchObject({
+      PI_OFFLINE: "1",
+      PATH: "/runtime/pi-tools/bin",
+      PI_CODING_AGENT_DIR: "/runtime/pi-tools",
+    });
   });
   it.each([
     { args: [] },

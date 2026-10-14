@@ -164,7 +164,7 @@ try {
       ...(input.scope.fileTarget ? { expectedTarget: input.scope.fileTarget } : {}),
       shell: path.join(binaryDirectory, "bash"),
       privateDirectory: input.privateDirectory,
-      commandPath: binaryDirectory,
+      commandPath: [binaryDirectory, "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
       maxOutputBytes: input.maxOutputBytes,
     });
     const { executeSandboxedPiCodingTool } = await import("@himawari-agent/runtime-pi");

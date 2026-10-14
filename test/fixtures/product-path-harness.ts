@@ -266,8 +266,7 @@ async function prepareProductPathBash(testRoot: string, runtimeRoot: string, log
         break;
       }
     }
-    if (!located) return;
-    const resolved = await realpath(located);
+    const resolved = await realpath(requireLocatedCodingTool(name, aliases, located));
     const destination = path.join(toolDirectory, name);
     await copyFile(resolved, destination);
     await chmod(destination, 0o755);
@@ -446,6 +445,18 @@ export function productPathTemporaryPrefix(): string {
       );
   }
   return prefix;
+}
+
+export function requireLocatedCodingTool(
+  name: string,
+  aliases: readonly string[],
+  located: string | undefined,
+): string {
+  if (!located)
+    throw new Error(
+      `PRODUCT_PATH_CODING_TOOL_UNAVAILABLE: ${name} (searched ${aliases.join(", ")})`,
+    );
+  return located;
 }
 
 export async function installProductPath(options: {
