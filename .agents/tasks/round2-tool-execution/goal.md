@@ -492,3 +492,9 @@
 > /tmp 也只读 (推荐)
 
 （回复的是 Claude 的选择题：R2-T5 修复后，沙箱里所有被禁读而挂上临时文件系统的目录都改成只读，包括 `/tmp`；命令里写死 `/tmp` 的写法会明确报“只读文件系统”，遵守 `TMPDIR`（已指向可写的私有目录）的程序不受影响。另一选项“/tmp 保持可写但临时”未选。）
+
+## G96 2026-10-14 用户原话
+
+> 你可以合理分配任务给 deeppseek v4.1 和 grok 的模型，达到交付速度、质量、性价比最高
+
+（取代 G93“Grok 只试 R2-T5 一批”的限制：Claude 按交付速度、质量和性价比在 `opencode-go/deepseek-v4.1-flash#high` 和 `xai/` 的 Grok 模型之间分配批次；G94 仍然有效，Grok 只能用 `xai/`。分配规则写在 opencode-orchestration skill 的 `references/grok.md`，按每批的实测数据调整。）
