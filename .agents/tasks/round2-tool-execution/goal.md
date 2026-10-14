@@ -486,3 +486,9 @@
 > 套餐里面的模型
 
 （Grok 模型只能经 opencode 的 `xai/` 提供方使用，即用户自己登录的 Grok 套餐；`opencode-go/grok-*`、`opencode/grok-*` 等转售的 Grok 一律禁用。Claude 用 opencode-orchestration skill 的 `scripts/grok-launch.sh` 启动 Grok 批次，它拒绝 `xai/` 以外的模型；本机 `.opencode/opencode.json` 停用了项目不用的 `opencode` 提供方。）
+
+## G95 2026-10-14 用户原话
+
+> /tmp 也只读 (推荐)
+
+（回复的是 Claude 的选择题：R2-T5 修复后，沙箱里所有被禁读而挂上临时文件系统的目录都改成只读，包括 `/tmp`；命令里写死 `/tmp` 的写法会明确报“只读文件系统”，遵守 `TMPDIR`（已指向可写的私有目录）的程序不受影响。另一选项“/tmp 保持可写但临时”未选。）
