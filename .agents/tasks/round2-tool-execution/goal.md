@@ -540,3 +540,13 @@
 > 批准 (Recommended)
 
 （针对 Claude 的提问：R2-P1 在云服务器测试账号里加依赖 `ignore@7.0.5` 时，npm 缓存里没有它的版本元数据，是否允许只为这一个包联网取一次元数据。另外同一轮选择：Mac 磁盘清理只删开发工具缓存、VS Code 更新包和 Grok 安装包、Codex 临时文件，不动 Chrome 和其他项目的依赖；hermes-r64 选“先拷到 Hermes 再全删 (Recommended)”。）
+
+## G104 2026-10-14 用户原话
+
+> 失败现场要保留这一点没错，但是不能图省事儿啊！给出你觉得最好的方案！
+>
+> 同意
+>
+> 必须这样做！记住了，任何失败或犯错的经验，你必须都记录到合适的地方。我的这个要求你可以记录到项目的合适位置，时刻记住。
+
+（针对 Claude 的说明：`.ci-output/handoff/` 占 3.7 GiB，主要因为失败现场被整目录打包，连 `node_modules` 和源码副本一起；“同意”批准把 6 个 `scratch-failure.tar.gz` 去掉 `node_modules` 和与提交相同的源码，只留日志、报告、状态和文件清单。“必须这样做”针对 Claude 提出的防再犯规则：保存证据时不打包依赖和源码副本，相同输入只存一份、其他处放哈希引用。规则写进 `AGENTS.md` 的“Recording Failures and Mistakes”和“Disk Space Hygiene”、`docs/lessons.md` 的“保存失败现场时整目录打包、重复复制输入材料”。）
