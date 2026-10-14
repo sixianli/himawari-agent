@@ -1,11 +1,6 @@
 import type { TestProject } from "vitest/node";
 import { prepareSharedNodeRuntime, removeSharedRuntime } from "../fixtures/shared-node-runtime.ts";
 
-/**
- * [R2-T8] Install the Node runtime once for the whole integration run and hand the sealed,
- * read-only tree to every test file. The runtime travels through `provide`/`inject` only.
- * A run without an artifact keeps the previous per-file behaviour.
- */
 export default async function setup(
   project: TestProject,
 ): Promise<(() => Promise<void>) | undefined> {

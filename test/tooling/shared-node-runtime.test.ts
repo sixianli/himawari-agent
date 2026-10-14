@@ -60,7 +60,6 @@ describe("[R2-T8] shared read-only runtime installation", () => {
 
     await expect(assertSharedRuntime(shared)).rejects.toThrow("SHARED_RUNTIME_MISMATCH");
     await expect(verifySharedRuntime(shared)).rejects.toThrow("SHARED_RUNTIME_MODIFIED");
-    // A changed tree must fail; it is never replaced by a private per-file installation.
     await expect(
       selectRuntimeSource({
         shared,
@@ -157,7 +156,6 @@ describe("[R2-T8] shared read-only runtime installation", () => {
     await sealRuntimeTree(changedPrefix);
 
     await expect(verifySharedRuntime(changed)).rejects.toThrow("SHARED_RUNTIME_MODIFIED");
-    // The change is reported and the tree is still removed instead of staying read-only.
     await expect(removeSharedRuntime(changed)).rejects.toThrow("SHARED_RUNTIME_MODIFIED");
     await expect(lstat(changedPrefix)).rejects.toThrow();
   });

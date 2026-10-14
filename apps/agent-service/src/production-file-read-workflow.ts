@@ -45,7 +45,6 @@ export interface ProductionFileReadServices {
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
-  /** Present only when the host implements descriptor-relative read-only open. */
   readonly hostReadOnly?: ProductionHostReadOnly;
 }
 export type WorkflowAuthority = {

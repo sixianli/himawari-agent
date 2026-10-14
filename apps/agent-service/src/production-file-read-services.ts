@@ -39,7 +39,6 @@ export function createProductionFileReadServices(options: {
   /** Opt-in host coordinator; absent until review configuration and delegation are approved. */
   readonly automaticReview?: AutomaticActionReviewPort;
   readonly workspaceAuto?: WorkspaceAutoAuthorization;
-  /** Present only when the host provides descriptor-relative read-only open. */
   readonly hostReadOnlyPort?: HostReadOnlyPort;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;

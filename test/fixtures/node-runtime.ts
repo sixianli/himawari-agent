@@ -9,7 +9,6 @@ import { selectRuntimeSource } from "./shared-node-runtime.ts";
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 export interface TestNodeRuntime {
-  /** installation prefix; `<prefix>/lib/himawari-agent` is the runtime root */
   readonly prefix: string;
   readonly runtimeRoot: string;
   readonly shared: boolean;
@@ -60,10 +59,6 @@ async function recordRuntimeInstallation(
   );
 }
 
-/**
- * [R2-T8] The integration run installs the runtime once and provides it to every file. A file
- * never installs a second copy: an announced runtime that no longer matches fails the file.
- */
 export async function installTestNodeRuntime(
   errorPrefix = "TEST_RUNTIME",
 ): Promise<TestNodeRuntime> {

@@ -42,7 +42,6 @@ export default defineConfig({
                 testTimeout: 30_000,
                 maxWorkers: testWorkerCount(project),
                 isolate: true,
-                // [R2-T8] Install the Node runtime once per run and share it read-only.
                 globalSetup: ["test/integration/global-setup.ts"],
                 sequence: { groupOrder: 1 },
               }

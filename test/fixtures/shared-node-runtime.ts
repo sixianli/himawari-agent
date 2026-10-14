@@ -6,14 +6,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
-/**
- * [R2-T8] One Node runtime installation per integration run, shared read-only by every file.
- *
- * The tree is sealed before any test file starts (directories 0555, files 0444, executables 0555),
- * so a test that tries to write fails instead of corrupting another file's runtime. Before each
- * file uses the tree, `assertSharedRuntime` re-checks a cheap structure digest; when the run ends,
- * `removeSharedRuntime` re-checks every byte, restores write permission and deletes the tree.
- */
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const installerPath = path.join(repositoryRoot, "scripts/install-node-runtime.mjs");
 const RUNTIME_INSTALL_TIMEOUT_MS = 180_000;
@@ -26,14 +18,10 @@ const SEALED_FILE_MODE = 0o444;
 const SEALED_EXECUTABLE_MODE = 0o555;
 
 export interface SharedNodeRuntime {
-  /** installation prefix handed to `scripts/install-node-runtime.mjs` */
   readonly prefix: string;
-  /** `<prefix>/lib/himawari-agent`, the runtime root every file reads */
   readonly runtimeRoot: string;
   readonly fileCount: number;
-  /** digest of path/mode/bytes/mtime of the tree; cheap enough to re-check before each use */
   readonly structureSha256: string;
-  /** digest of path/mode/bytes/sha256 of the tree; re-checked when the run ends */
   readonly manifestSha256: string;
   readonly installElapsedMs: number;
 }
@@ -105,10 +93,6 @@ async function digestFile(filename: string, bytes: number): Promise<string> {
   return digest.digest("hex");
 }
 
-/**
- * Content manifest of the installation, in the same shape `scripts/ci/artifact-files.mjs` uses for
- * the artifact itself: path, mode, bytes and SHA-256 per file, sorted by path.
- */
 async function manifestOf(root: string): Promise<{ entries: ManifestEntry[]; digest: string }> {
   const entries: ManifestEntry[] = [];
   const visit = async (directory: string, prefix: string): Promise<void> => {
@@ -157,7 +141,6 @@ async function setTreeModes(
   await chmod(root, modeFor((await lstat(root)).mode, true));
 }
 
-/** Directories 0555, files 0444, executables 0555: a write by any test fails with EACCES. */
 export async function sealRuntimeTree(root: string): Promise<void> {
   await setTreeModes(root, (mode, directory) =>
     directory
@@ -168,19 +151,16 @@ export async function sealRuntimeTree(root: string): Promise<void> {
   );
 }
 
-/** Restores owner write permission so the sealed tree can be removed again. */
 export async function openRuntimeTree(root: string): Promise<void> {
   await setTreeModes(root, (mode, directory) =>
     directory ? DIRECTORY_MODE : (mode & 0o111) !== 0 ? EXECUTABLE_MODE : FILE_MODE,
   );
 }
 
-/** Seals an installed prefix and records what every later check compares against. */
 export async function describeRuntimeTree(
   prefix: string,
   installElapsedMs = 0,
 ): Promise<SharedNodeRuntime> {
-  // Seal first: the recorded modes and digests describe exactly what the test files will read.
   await sealRuntimeTree(prefix);
   const runtimeRoot = path.join(prefix, "lib/himawari-agent");
   const manifest = await manifestOf(prefix);
@@ -195,7 +175,6 @@ export async function describeRuntimeTree(
   };
 }
 
-/** The single installation of a run, performed before any test file starts. */
 export async function prepareSharedNodeRuntime(options: {
   readonly artifact: string;
   readonly context: string;
@@ -227,7 +206,6 @@ export async function prepareSharedNodeRuntime(options: {
   return describeRuntimeTree(prefix, installElapsedMs);
 }
 
-/** Cheap per-file check. An announced runtime that no longer matches must fail, never fall back. */
 export async function assertSharedRuntime(shared: SharedNodeRuntime): Promise<void> {
   const info = await lstat(shared.runtimeRoot).catch(() => undefined);
   if (info === undefined || !info.isDirectory() || info.isSymbolicLink())
@@ -241,14 +219,12 @@ export async function assertSharedRuntime(shared: SharedNodeRuntime): Promise<vo
     throw new Error(`SHARED_RUNTIME_MISMATCH:${shared.runtimeRoot}:${structure.digest}`);
 }
 
-/** Full content re-check; a difference means something changed the shared runtime. */
 export async function verifySharedRuntime(shared: SharedNodeRuntime): Promise<void> {
   const manifest = await manifestOf(shared.prefix);
   if (manifest.entries.length !== shared.fileCount || manifest.digest !== shared.manifestSha256)
     throw new Error(`SHARED_RUNTIME_MODIFIED:${shared.runtimeRoot}`);
 }
 
-/** Verifies the tree, restores write permission, then removes it; a cleanup failure is reported. */
 export async function removeSharedRuntime(shared: SharedNodeRuntime): Promise<void> {
   let verificationFailure: unknown;
   try {
@@ -265,11 +241,6 @@ export async function removeSharedRuntime(shared: SharedNodeRuntime): Promise<vo
   if (verificationFailure) throw verificationFailure;
 }
 
-/**
- * Decides where a file gets its runtime. An incomplete artifact selection is rejected exactly as
- * before, an announced shared runtime that does not match fails instead of falling back, and only
- * a run without any artifact keeps the development runtime.
- */
 export async function selectRuntimeSource(input: {
   readonly shared: SharedNodeRuntime | undefined;
   readonly artifact: string | undefined;
