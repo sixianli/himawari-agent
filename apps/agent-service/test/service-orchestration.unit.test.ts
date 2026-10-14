@@ -129,6 +129,7 @@ const authority = {
   fencingToken: 1,
 };
 let configuration: ReturnType<typeof config>;
+let mockListenPort = 43117;
 let repository: {
   close: ReturnType<typeof vi.fn>;
   startupRecovery: ReturnType<typeof vi.fn>;
@@ -206,6 +207,7 @@ beforeEach(() => {
   signal = undefined;
   exit = undefined;
   boundary.events = [];
+  mockListenPort = 43117;
   configuration = config();
   boundary.load.mockImplementation(async () => configuration);
   output = new PassThrough();
@@ -331,9 +333,18 @@ describe("agent service startup ownership", () => {
       .split("\n")
       .find((candidate) => candidate.includes('"event":"service.ready"'));
     if (!line) throw new Error("SERVICE_READY_MISSING");
-    const diagnostic = JSON.parse(line);
-    expect(diagnostic.listenPort).toBe(43117);
-    expect(diagnostic.listenPort).toBe(Number(new URL("http://127.0.0.1:43117").port));
+    expect(JSON.parse(line).listenPort).toBe(mockListenPort);
+  });
+  it("[R2-T6] reports port 80 as 80 instead of the URL default", async () => {
+    mockListenPort = 80;
+    web();
+    start();
+    await settle();
+    const line = stdout
+      .split("\n")
+      .find((candidate) => candidate.includes('"event":"service.ready"'));
+    if (!line) throw new Error("SERVICE_READY_MISSING");
+    expect(JSON.parse(line).listenPort).toBe(80);
   });
   it("recovers before publishing boot, connects the worker, then drains in dependency order", async () => {
     start();
@@ -689,11 +700,11 @@ function web() {
   };
   boundary.runs.mockReturnValue(runs);
   const http = {
-    app: { addHook: vi.fn() },
+    app: { addHook: vi.fn(), server: { address: () => ({ port: mockListenPort }) } },
     assertIdentityReady: vi.fn(),
     listen: vi.fn(async () => {
       boundary.events.push("http.listen");
-      return "http://127.0.0.1:43117";
+      return `http://127.0.0.1:${mockListenPort}`;
     }),
     close: vi.fn(async () => {
       boundary.events.push("http.close");

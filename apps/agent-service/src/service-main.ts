@@ -1190,8 +1190,11 @@ export async function runAgentService(
       await memoryWorker?.start();
       await runs.loop.start();
       if (authorityLost) throw authorityLossError;
-      const listenAddress = await http.listen();
-      boundListenPort = Number(new URL(listenAddress).port);
+      await http.listen();
+      const listenAddress = http.app.server.address();
+      if (listenAddress === null || typeof listenAddress === "string")
+        throw new Error("HTTP_LISTENER_ADDRESS_UNAVAILABLE");
+      boundListenPort = listenAddress.port;
       health.setLive(true);
       for (const name of [
         "authority",
