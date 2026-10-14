@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { migratedDatabaseTemplate } from "../fixtures/sqlite-migrated-template.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
@@ -20,7 +20,7 @@ const PHASES = [
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(repositoryRoot, "test/fixtures/durable-phase-child.mjs");
 let runtimeRoot = path.join(repositoryRoot, "dist/node-runtime");
-let installation: string | undefined;
+let installation: TestNodeRuntime | undefined;
 let phaseTemplate = "";
 function warmRuntime(runtime: string): void {
   const packages = ["domain", "persistence-sqlite"].map((name) =>
@@ -43,36 +43,12 @@ function warmRuntime(runtime: string): void {
 }
 beforeAll(async () => {
   phaseTemplate = await migratedDatabaseTemplate();
-  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
-  if (!artifact && !context) {
-    warmRuntime(runtimeRoot);
-    return;
-  }
-  if (!artifact || !context) throw new Error("DURABLE_PHASE_ARTIFACT_CONTEXT_REQUIRED");
-  installation = await mkdtemp(path.join(testTemporaryRoot(), "durable-phase-install-"));
-  const installed = spawnSync(
-    process.execPath,
-    [
-      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
-      "--prefix",
-      installation,
-      "--artifact",
-      artifact,
-      "--context",
-      context,
-    ],
-    {
-      encoding: "utf8",
-      timeout: 180_000,
-      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
-    },
-  );
-  if (installed.status !== 0) throw new Error(`DURABLE_PHASE_INSTALL_FAILED:${installed.stderr}`);
-  runtimeRoot = path.join(installation, "lib/himawari-agent");
+  installation = await installTestNodeRuntime("DURABLE_PHASE");
+  runtimeRoot = installation.runtimeRoot;
   warmRuntime(runtimeRoot);
 }, 240_000);
 afterAll(async () => {
-  if (installation) await rm(installation, { recursive: true, force: true });
+  await installation?.close();
 });
 const cleanupRoots: string[] = [];
 const children = new Set<ChildProcessWithoutNullStreams>();

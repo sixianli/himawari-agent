@@ -16,6 +16,7 @@ import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platfor
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -35,7 +36,6 @@ const csrfSecret = "11".repeat(32);
 const payloadKey = "22".repeat(32);
 const PROCESS_SETUP_TIMEOUT_MS = 240_000;
 const PROCESS_CLEANUP_TIMEOUT_MS = 30_000;
-const NODE_RUNTIME_INSTALL_TIMEOUT_MS = 180_000;
 const CHILD_EXIT_TIMEOUT_MS = 5_000;
 const PROCESS_REQUEST_TIMEOUT_MS = 10_000;
 const PROCESS_RESPONSE_BODY_MAX_BYTES = 1_048_576;
@@ -44,6 +44,7 @@ const children = new Set<ChildProcessWithoutNullStreams>();
 
 let testRoot = "";
 let runtimePrefix = "";
+let installation: TestNodeRuntime | undefined;
 let stateRoot = "";
 let databasePath = "";
 let staticRoot = "";
@@ -692,7 +693,6 @@ beforeAll(async () => {
   }
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-production-http-process-"));
   cleanupRoots.push(testRoot);
-  runtimePrefix = path.join(testRoot, "prefix");
   stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-http-state-`);
   cleanupRoots.push(stateRoot);
   staticRoot = path.join(testRoot, "browser");
@@ -722,40 +722,18 @@ beforeAll(async () => {
   await initializeTestDatabase();
   await writeFile(configurationPath, JSON.stringify(rawConfiguration()), { mode: 0o600 });
   await chmod(configurationPath, 0o600);
-  const installStartedAt = Date.now();
-  const install = spawnSync(
-    process.execPath,
-    [
-      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
-      "--prefix",
-      runtimePrefix,
-      "--artifact",
-      artifact,
-      "--context",
-      contextFile,
-    ],
-    {
-      cwd: testRoot,
-      encoding: "utf8",
-      timeout: NODE_RUNTIME_INSTALL_TIMEOUT_MS,
-      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
-    },
-  );
-  const installElapsedMs = Date.now() - installStartedAt;
+  installation = await installTestNodeRuntime("PROCESS_HTTP");
+  runtimePrefix = installation.prefix;
   process.stderr.write(
-    `[production-http-process] node runtime install elapsed ${installElapsedMs}ms\n`,
+    `[production-http-process] node runtime install elapsed ${installation.installElapsedMs}ms${
+      installation.shared ? " (shared installation reused read-only)" : ""
+    }\n`,
   );
-  if (install.status !== 0) {
-    throw new Error(
-      `Node runtime install failed after ${installElapsedMs}ms${
-        install.signal ? ` (${install.signal})` : ""
-      }: ${install.stderr || install.stdout || install.error?.message || "unknown error"}`,
-    );
-  }
 }, PROCESS_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   const cleanupErrors: unknown[] = [];
+  await installation?.close();
   await Promise.all(
     [...children].map(async (child) => {
       try {

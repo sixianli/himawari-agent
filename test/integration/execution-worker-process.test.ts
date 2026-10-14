@@ -1,4 +1,4 @@
-import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { cp, lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,41 +11,20 @@ import {
 } from "@himawari-agent/execution-contracts";
 import { EXECUTION_UDS_ERROR_CODES } from "@himawari-agent/platform-node";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(repositoryRoot, "test/fixtures/execution-uds-child.mjs");
 const agentChildFixture = path.join(repositoryRoot, "test/fixtures/execution-agent-child.mjs");
 let runtimeRoot = path.join(repositoryRoot, "dist/node-runtime");
-let installation: string | undefined;
+let installation: TestNodeRuntime | undefined;
 beforeAll(async () => {
-  const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: context } = process.env;
-  if (!artifact && !context) return;
-  if (!artifact || !context) throw new Error("EXECUTION_PROCESS_ARTIFACT_CONTEXT_REQUIRED");
-  installation = await mkdtemp(path.join(testTemporaryRoot(), "execution-process-install-"));
-  const installed = spawnSync(
-    process.execPath,
-    [
-      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
-      "--prefix",
-      installation,
-      "--artifact",
-      artifact,
-      "--context",
-      context,
-    ],
-    {
-      encoding: "utf8",
-      timeout: 180_000,
-      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
-    },
-  );
-  if (installed.status !== 0)
-    throw new Error(`EXECUTION_PROCESS_INSTALL_FAILED:${installed.stderr}`);
-  runtimeRoot = path.join(installation, "lib/himawari-agent");
+  installation = await installTestNodeRuntime("EXECUTION_PROCESS");
+  runtimeRoot = installation.runtimeRoot;
 }, 240_000);
 afterAll(async () => {
-  if (installation) await rm(installation, { recursive: true, force: true });
+  await installation?.close();
 });
 const credential = Object.freeze({
   tokenRef: "secret-ref-worker-boot-process",
