@@ -30,8 +30,6 @@ import {
 } from "@himawari-agent/domain";
 import type { StreamEvent } from "@himawari-agent/gateway-contracts";
 import {
-  applyMigrations,
-  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
   type SqliteRecoveryAuthorityScope,
@@ -49,6 +47,7 @@ import {
   traceStorePortConformance,
 } from "@himawari-agent/testing/conformance";
 import { describe, expect, it } from "vitest";
+import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-conformance");
@@ -93,8 +92,8 @@ async function seedRepository(
   databasePath: string,
   runStatus: "accepted" | "running" = "accepted",
 ): Promise<void> {
+  await copyMigratedDatabase(databasePath);
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
   database
     .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")

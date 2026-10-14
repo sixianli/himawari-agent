@@ -46,8 +46,6 @@ import {
 } from "@himawari-agent/domain";
 import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import {
-  applyMigrations,
-  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
@@ -67,6 +65,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
   useSqliteContractExecution(execution);
@@ -95,11 +94,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     roots.push(stateRoot);
     await mkdir(path.join(stateRoot, "data"));
     const databasePath = path.join(stateRoot, "data", "product.sqlite");
+    await copyMigratedDatabase(databasePath);
     const database = openQualifiedDatabase(databasePath);
-    const migrations = await loadBundledMigrations();
-    // Seed a fresh test database in one durable transaction; migration and
-    // recovery tests still exercise the production per-migration boundaries.
-    database.transaction(() => applyMigrations(database, migrations)).immediate();
     database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")

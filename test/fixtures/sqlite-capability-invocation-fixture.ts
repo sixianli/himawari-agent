@@ -38,8 +38,6 @@ import {
   executionV2MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import {
-  applyMigrations,
-  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteCapabilityInvocationOperations,
   SqliteProductStateRepository,
@@ -49,6 +47,7 @@ import {
   EnvelopePayloadProtector,
   InMemoryDevelopmentSecretSource,
 } from "@himawari-agent/platform-node";
+import { copyMigratedDatabase } from "./sqlite-migrated-template.ts";
 
 export const OWNER_ID = createOwnerId("owner-capability-invocation");
 
@@ -138,11 +137,8 @@ export async function openRepository(realMessage = false): Promise<{
 }> {
   const stateRoot = await mkdtemp(path.join(testTemporaryRoot(), "h-"));
   const databasePath = path.join(stateRoot, "product.sqlite");
+  await copyMigratedDatabase(databasePath);
   const database = openQualifiedDatabase(databasePath);
-  const migrations = await loadBundledMigrations();
-  // Seed a fresh test database in one durable transaction; migration and
-  // recovery tests still exercise the production per-migration boundaries.
-  database.transaction(() => applyMigrations(database, migrations)).immediate();
   database
     .prepare("INSERT INTO owners (id, revision) VALUES (?, 0), (?, 0)")
     .run(OWNER_ID, OTHER_OWNER_ID);
