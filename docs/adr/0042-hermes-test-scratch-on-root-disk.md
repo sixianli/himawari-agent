@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0052-third-production-host-acceptance-exception.md"
+superseded_by: "docs/adr/0056-cloud-server-also-test-host.md"
 date: "2026-09-30"
 ---
 

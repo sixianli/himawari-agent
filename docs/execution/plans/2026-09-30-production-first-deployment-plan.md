@@ -8,7 +8,7 @@ date: "2026-09-30"
 
 # 生产服务器首次部署计划
 
-**依据：** [SOURCE: docs/adr/0052-third-production-host-acceptance-exception.md#hosts]（云服务器只用于生产；普通测试、构建与整套资格在 Hermes；本次首次安装仅允许经具体授权的有限主机能力验收，旧云测试环境原样保留）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
+**依据：** [SOURCE: docs/adr/0056-cloud-server-also-test-host.md#hosts]（2026-10-14 起云服务器同时作为受限测试机，测试只以 `himawari-ci` 账号运行，测试结果不能代替部署验收；部署仍只允许经具体授权的有限主机能力验收；首次安装时的规则见 [ADR 0052](../../adr/0052-third-production-host-acceptance-exception.md#hosts)）及 [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]（文本、嵌入及路由）。
 
 **目标：** 把 Himawari 部署到生产云服务器 `84.247.157.41`，让用户通过 SSH 隧道（把服务器本机端口转发到用户自己电脑的 SSH 功能）打开控制中心（Himawari 的网页界面）亲自体验。
 
