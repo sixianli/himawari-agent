@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:dc1ddd90828602a7b8d2cafb1276bd883760c7dc5631ad4985ee637ea8c409ba"
+contract_sha256: "sha256:03414b81113f13638cd06604761dc9706e0d9a757cdca9f080e23f07ca4744b5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -21,6 +21,7 @@ G51、G65 与 G75 分别只允许首次安装、2026-10-09 第二次部署及 20
 - [归档解包与临时磁盘](#artifact-extraction-contract)
 - [目标现场只读检查](#live-state-preflight)
 - [已有目录授权替换](#workspace-grant-replacement)
+- [授权根目录换到新目录](#workspace-root-move)
 - [本次第二次部署的原样恢复点](#second-deployment-raw-recovery)
 - [安装与启停步骤](#procedure)
 - [结果验证](#verification)
@@ -388,6 +389,22 @@ Hermes 的 systemd、Cloudflare 入口、Host 签名与付费模型验收是 Own
 
 [↑ 返回阅读导航](#阅读导航)
 
+<a id="workspace-root-move"></a>
+
+### 授权根目录换到新目录
+
+用户批准把授权根目录（交给 Himawari 读写的目录）换成一个新目录时，按本节执行；第四次生产变更按 G90 把 `/var/lib/himawari/qualification-workspace` 换成 `/var/lib/himawari/workspace`，目录布局见[第四次生产变更的授权目录布局](../execution/plans/2026-09-30-production-first-deployment-plan.md#fourth-change-workspace-layout)。它和[已有目录授权替换](#workspace-grant-replacement)的区别是：目录的 device/inode（文件系统给目录的唯一编号）变了，所以签名快照要绑定新目录，不能沿用旧根。[SOURCE: docs/execution/plans/2026-09-30-production-first-deployment-plan.md#fourth-change-workspace-layout]
+
+1. **停服后新建目录（root）**：先确认 Agent 与 Worker 已停止、state-root 锁已释放、目标路径不存在。用 `install -d -o <服务账号> -g <服务账号组> -m 0700` 依次新建根目录和批准的子目录，再独立读回每个目录的 device/inode、属主和权限。目录不能组可写或其他人可写，否则沙箱以 `SANDBOX_HOST_PATH_UNSAFE` 拒绝。目标已存在就停止，不覆盖、不合并已有内容。
+2. **给新目录授权（服务账号）**：用离线 `workspace grant` CLI，`--directory` 和 `--confirm` 都是新目录的规范路径，新编号必须尚不存在，期限来自本次明确授权。CLI 自己取得独占锁并拒绝状态根内部或包含状态根的目录。独立读回新授权当前有效、允许 read、目录身份等于第 1 步读回；旧授权记录和能力目录字节不变。CLI 会推进部署租约的 fencing token（防止旧进程继续写的递增编号），把这个新值记为后续切换的基线。
+3. **签署**：签名快照的授权根只放新目录；旧目录不再出现在配置里，也就不进快照。限定主机验收只用另建的虚构目录，签署脚本拒绝它与生产授权根相同。
+4. **切换**：切换前，配置仍是原件，只在内存中投影批准的配置改动并读取新授权。正式 `ExecStartPre` 先单独发布新快照，再以一次原子配置替换写入新授权编号、批准的其他配置改动和新 `capabilityDeployment`；其余字段逐项不变。首次切换检查和切换后读回都要求新授权当前有效、允许 read、目录身份与签名快照一致，旧授权记录未变。
+5. **读回**：启动后的租约必须大于第 2 步记录的基线；历史表摘要与切换前相同。
+
+旧目录和旧授权记录不随本节删除或移动；怎样退役由变更操作包写明并经用户批准。新目录里的内容可能被 Himawari 按 [ADR 0053](../adr/0053-workspace-auto-approval-like-codex.md) 直接修改，重要文件由用户另留备份。回退恢复 S3 原样数据库后，新授权随之消失，新目录留在原处；是否删除另行批准。本节不声明生产上已经执行。[SOURCE: docs/adr/0053-workspace-auto-approval-like-codex.md#decision]
+
+[↑ 返回阅读导航](#阅读导航)
+
 
 <a id="second-deployment-raw-recovery"></a>
 
@@ -727,6 +744,8 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 ## Verification
 
 涉及[已有目录授权替换](#workspace-grant-replacement)时，独立读回新授权、旧记录摘要、配置和签名 snapshot，核对新授权当前有效、允许 read、根 device/inode 一致，以及配置差异只含获准的 `runPolicy.coding.grantId` 和 `capabilityDeployment`。Hermes 回归须通过新编号授权和配置切换后的真实 read，覆盖旧授权到期不阻断新请求、失败不产生部分配置；它不代替生产 S7/S8 的现场读回。
+
+涉及[授权根目录换到新目录](#workspace-root-move)时，另外独立读回新目录的 device/inode、属主和 0700 权限，核对签名快照只绑定新目录、新授权的目录身份与之相同、旧授权记录未变，以及配置差异只含批准的字段。
 
 ### Schema 33 释放事实与有界恢复
 
