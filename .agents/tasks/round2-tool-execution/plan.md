@@ -6,10 +6,11 @@
 
 ## 当前批次
 
-按 G77/G96 编码和测试交给 opencode，Claude 按速度、质量、性价比在 `opencode-go/deepseek-v4.1-flash#high` 和 `xai/` Grok 模型之间分配（G94：Grok 只用 `xai/`），统筹、逐行审核并执行生产步骤；测试只在 Hermes；opencode 不连接云服务器 84.247.157.41；同一时间只有一批改文件或跑测试：
-- R2-T4：npm test 在 Hermes 上于 30 分钟总预算内跑完，不放宽时限（G20）。先只读测量：集成测试各文件的实际耗时和并行度（vitest 报告、`testWorkerCount`），交方案停止文件；批准后缩短最慢部分的耗时。改 Vitest 配置或 `scripts/ci/` 时按规定跑第 3 层。证据：`npm test -- --tools …` 在 Hermes 退出码 0，Claude 审核。
-- R2-T6：production-http-composition-process 的 reservePort 先探端口再归还，子服务稍后才绑定，负载下 EADDRINUSE。先交方案（只读）：改成子服务自己绑定端口 0 并报告实际端口，或测试持有监听句柄传给子服务，说明产品是否已支持；批准后先写复现再改。证据：带 [R2-T6] 的测试在 Hermes 通过，Claude 审核。
-- R2-T7：durable-phase-process-recovery 子进程等待写死 15 秒，嵌套 Vitest 冷启动在负载下超过。不放宽时限；先交方案（只读）：去掉子进程里的 Vitest 冷启动或改用就绪信号；批准后实现。证据：带 [R2-T7] 的测试在 Hermes 通过，Claude 审核。
+G108（用户睡前要求继续推进、尽快上线）之后三批并行，同一时间只有一批往分支提交；上线（R2-L10）仍需用户对冻结操作包的具体批准：
+- R2-T9：opencode（deepseek `#high`）在工作副本 `.ci-output/worktrees/r2t9` 修正 Claude 审出的缺陷（兜底截断把正文复制进 `details.truncation`）并删掉新注释，换到 `498624c0` 后在 Hermes 跑第 0–2 层（答复 26d）；Claude 审核后提交，第 3 层与本批其他提交合并跑。证据：带 [R2-T9] 的测试在 Hermes 通过，Claude 审核。
+- R2-T5：Grok 在工作副本 `.ci-output/worktrees/r2t5` 换到 `498624c0`，产品路径夹具保存作业宿主和工人的错误输出，在云测试账号跑第 0–2 层和过滤的第 4 层（答复 23k）。证据：带 [R2-T5] 的测试在 Hermes 通过，Claude 审核。
+- R2-L10：Claude 准备第四次变更的冻结操作包（`.ci-output/production/2026-10-15-fourth-change-packet-01/`），R2-T5、R2-T9 合入后换候选版本，在 Hermes 跑包的全部夹具和生产形状演练；用户批准前不在生产上执行任何步骤。
+- 同一次 Hermes 第 3 层（`npm test -- --tools …`）也作为 R2-T8 的完成证据，Claude 审核后记录。
 
 ## 之后
 
@@ -17,6 +18,7 @@
 - R2-T5：沙箱里 bash 写授权目录和私有临时目录以外的路径时要明确失败。先交方案：找出临时文件系统由谁建（SRT 的 `denyRead:["/"]` 处理、bwrap 参数），选定修改层（优先 Himawari 的策略或参数，避免改上游包），批准后实现。证据：带 [R2-T5] 的产品路径测试在 Hermes 通过（命令非零退出、宿主无文件、工作目录内写入仍成功），Claude 审核。方案已批准（reply-23a），Grok Build 插件执行。 2026-10-14 起在工作副本 `.ci-output/worktrees/r2t5` 并行实现，重测试在云服务器测试账号上跑（答复 23h），第 3 层与第 22 批合并跑。
 - R2-P1：read、ls、find、grep 在可信主进程执行（G89、ADR 0054）。先交方案：读 Pi 的只读工具和可替换文件操作接口、现有 `sandboxed-coding-operations.ts` 和授权检查，列出路径逃逸（..、符号链接、硬链接、检查后替换）的防护点和测试表；方案已批准（reply-24a），实现交 deepseek。证据：带 [R2-P1] 的产品路径测试在 Hermes 通过，Claude 审核。 2026-10-14 起在工作副本 `.ci-output/worktrees/r2p1` 由 deepseek 并行实现，测试在云服务器测试账号上跑（答复 24b）。
 - R2-P2：同一轮复用沙箱（G89）
+- R2-T10：工具调用的沙箱没启动时不要让整轮等满运行期限，并保留启动失败的原始错误。先交方案（只读）：从 `production-sandbox-execution-v2.ts` 的初始事实、对账和到期清扫（`production-run-expiry.ts`）找出“确认未启动”时可以安全结束这次调用的依据，说明与“结果未知”的区别；批准后先写复现再改。证据：带 [R2-T10] 的测试在 Hermes 通过，Claude 审核。
 - R2-E4：84.247.157.41 兼作测试机（G100）。root 一次性建测试账号 himawari-ci 和资源上限（脚本经用户批准后由 Claude 执行），工具链和浏览器从 Hermes 拷贝，不新下载；先跑一次完整 npm test 标定耗时、内存峰值和生产服务健康，再承接各批的重测试。可与上面各批并行准备。 规则见 ADR 0056。
 - R2-T8：测试本身提速（G102），先测量再改，排在 R2-P1 之后。
 
@@ -124,6 +126,7 @@
 
 - 2026-10-14 G96：用户授权 Claude 在 deepseek 和 `xai/` Grok 之间分配批次。R2-P1 进入当前批次（方案阶段只读，与 R2-T4 并行），R2-L10 移到“之后”（要等当前批次和 R2-P2 通过才能开始，内容不变）。
 - 2026-10-14 G104：第三次部署的验收脚本失败时整目录打包，6 个包各约 262 MB，其中只有 1 个文件与提交不同；R2-L10 计划加入按证据规则保存失败现场。已有的 6 个包按 G104 瘦身（各约 2.2 MB）。done_when 不变。
+- 2026-10-15 07:20 四个批次的停止文件到齐后重新规划（status：60 项，当前版本已验证 1、旧版本验证过 36、未完成 17、等你决定 4、不做 2）：新增 R2-T10（23f4 发现的“沙箱未启动后整轮等满期限”）；当前批次改为 R2-T9 返工、R2-T5 收尾、R2-L10 操作包，R2-T8 等第 3 层；R2-P2 的三选项（25c）等用户决定，暂不开实现批次。
 
 ## 意外和发现
 
@@ -226,6 +229,7 @@
 - 2026-10-13 S10 真实聊天（thread:f652065f，run:9a2d2c24）：沙箱读取每次 7–14 秒正常结束并把结果送回模型，读工具不再卡住；结果不理想因为生产 enabledTools 只有 read、工作目录只有 first-response-20261007.txt、授权目录内每次读取都要批准（等待 2 分 28 秒）。读目录被报成 CODING_PATH_OUTSIDE_SCOPE（production-coding-workflow.ts:164）。运行中控制中心停在“Preparing · Time not recorded”并弹出“无法加载这段对话”，说明 R2-U1 的修复没有覆盖运行中连续失败的情况；结束后重开显示正常。证据 .ci-output/production/2026-10-13-third-s10-diagnostic-01/。
 - 2026-10-13 第 20 批：npm test 在 Hermes 两次于 30 分钟被终止（run-05、run-14）。基线 4bf19bd 的第 3 层 test 用时 1779 秒（unit 186、contracts 31、integration 1505），只剩约 21 秒余量；本批 unit 增至 220 秒，integration 在 1521 秒被终止。完整套件直跑 7928/0。另：R2-T1 报告“check 通过”有误，e00e641 的测试文件 biome lint --error-on-warnings 退出码 1（noTemplateCurlyInString），9eed9a6 已修。
 - 2026-10-14 第 21 批：(1) SRT 用临时文件系统重建沙箱根目录，工作目录的父目录在沙箱里可写，bash 写那里会报成功但宿主上没有文件（run-04、run-07 回读）；(2) 产品路径夹具给 bash 的目录授权只有 read，所以 bash 连工作目录也只能读；(3) opencode 会话在同步等待约一小时的第 3 层时被 opencode 以 inactivity 中断，脚本在 Hermes 上照常跑完；(4) 00:49 起 Tailscale 不通（Hermes 端显示 Logged out），改走 Cloudflare 备用线路，用户恢复后已切回。
+- 2026-10-15 第 23 批 23f4：约 860 秒的卡住不是 bash 在跑。第 20、21 次那条 bash 的沙箱约 20 秒以 SANDBOX_NOT_STARTED 释放（第 20 次有 sandbox.preparation.failed、SANDBOX_EXECUTION_FAILED、systemCode UNKNOWN，作业宿主错误输出没留下），之后这一轮停在 reconciling_external_result 直到 900 秒运行期限。第 22、23 次未复现。`[R2-T2]` 另有一次五步走不完 300 秒页面等待。R2-T8 的 `a8fc08a2` 与 R2-T9 工作副本里又出现新增代码注释，这是第三次（R2-T2、R2-P1 之后），按 G107 加提交钩子 `.git/hooks/check-new-comments.py`（提交 498624c0，docs/lessons.md#new-code-comments）；它还查出 R2-P1 的 566a6b6b 漏删 3 处注释。
 
 ## 决定
 

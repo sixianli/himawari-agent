@@ -1157,6 +1157,27 @@
       }
     },
     {
+      "id": "R2-T10",
+      "title": "一次工具调用的沙箱没能启动时，要很快把这次调用以明确原因结束并交还给模型（或明确结束这一轮），不能停在“对账外部结果”阶段等满整轮运行期限（产品路径为 900 秒）；启动失败时 bwrap 或作业宿主的原始错误要留在产品日志里，不能只剩 systemCode UNKNOWN",
+      "goal_ref": ["G1", "G108"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T10",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "第 23 批诊断（停止文件 23f4）：第 20、21 次产品路径里一条 bash 的沙箱约 20 秒就以 SANDBOX_NOT_STARTED 释放，第 20 次日志只有 sandbox.preparation.failed、SANDBOX_EXECUTION_FAILED、systemCode UNKNOWN；之后这一轮停在 reconciling_external_result，到 900 秒运行期限才以 RUN_EXECUTION_DEADLINE_EXCEEDED 失败，用户看到的就是对话卡 15 分钟再报错"
+      }
+    },
+    {
       "id": "R2-E4",
       "title": "84.247.157.41 兼作测试机（G100）：新建无 sudo 的测试账号，测试进程放进有内存和 CPU 权重上限的独立 cgroup，生产服务优先；完整 npm test 在该机跑通，并记录期间生产服务健康",
       "goal_ref": ["G100"],
