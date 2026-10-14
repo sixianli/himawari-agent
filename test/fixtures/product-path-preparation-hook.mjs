@@ -6,6 +6,19 @@ import { setTimeout } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread } from "node:worker_threads";
 
+const observeJobHostStderr = (file, child) => {
+  const destination = process.env.HIMAWARI_TEST_JOB_HOST_STDERR;
+  if (!destination || !String(file).endsWith("/job-host-main.js") || !child?.stderr) return child;
+  child.stderr.on("data", (chunk) => {
+    try {
+      appendFileSync(destination, chunk);
+    } catch {
+      return;
+    }
+  });
+  return child;
+};
+
 const original = cp.fork;
 cp.fork = (file, args, options) => {
   const finalGate = process.env.HIMAWARI_TEST_PREPARATION_FINAL_GATE;
@@ -35,16 +48,19 @@ cp.fork = (file, args, options) => {
         `${JSON.stringify({ at: new Date().toISOString() })}\n`,
       );
     }
-    return original(file, args, {
-      ...options,
-      execArgv: [
-        "--import",
-        fileURLToPath(new URL("./product-path-sdk-failure.mjs", import.meta.url)),
-      ],
-      ...(holdFinal
-        ? { env: { ...options.env, HIMAWARI_TEST_PREPARATION_FINAL_GATE: finalGate } }
-        : {}),
-    });
+    return observeJobHostStderr(
+      file,
+      original(file, args, {
+        ...options,
+        execArgv: [
+          "--import",
+          fileURLToPath(new URL("./product-path-sdk-failure.mjs", import.meta.url)),
+        ],
+        ...(holdFinal
+          ? { env: { ...options.env, HIMAWARI_TEST_PREPARATION_FINAL_GATE: finalGate } }
+          : {}),
+      }),
+    );
   }
   const gate = process.env.HIMAWARI_TEST_HOST_FINISH_GATE;
   if (gate && String(file).endsWith("/job-host-main.js") && existsSync(gate)) {
@@ -72,9 +88,9 @@ cp.fork = (file, args, options) => {
           `${JSON.stringify({ at: new Date().toISOString(), bytes: message.bytes })}\n`,
         );
     });
-    return child;
+    return observeJobHostStderr(file, child);
   }
-  return original(file, args, options);
+  return observeJobHostStderr(file, original(file, args, options));
 };
 syncBuiltinESMExports();
 

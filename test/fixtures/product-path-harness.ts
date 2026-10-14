@@ -6,6 +6,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -444,6 +445,78 @@ export function requireLocatedCodingTool(
       `PRODUCT_PATH_CODING_TOOL_UNAVAILABLE: ${name} (searched ${aliases.join(", ")})`,
     );
   return located;
+}
+
+const STARTUP_FAILURE_LOG_LIMIT = 5 * 1024 * 1024;
+
+async function readFileOrEmpty(file: string): Promise<Buffer> {
+  try {
+    return await readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return Buffer.alloc(0);
+    throw error;
+  }
+}
+
+async function writeBoundedLog(destination: string, bytes: Buffer): Promise<void> {
+  if (bytes.byteLength > STARTUP_FAILURE_LOG_LIMIT) {
+    await writeFile(destination, bytes.subarray(bytes.byteLength - STARTUP_FAILURE_LOG_LIMIT));
+    await writeFile(
+      `${destination}.truncated.txt`,
+      `已截断：原文件 ${bytes.byteLength} 字节，只保留最后 ${STARTUP_FAILURE_LOG_LIMIT} 字节。\n`,
+    );
+    return;
+  }
+  await writeFile(destination, bytes);
+}
+
+async function saveStartupFailureLogs(input: {
+  readonly evidenceDirectory: string;
+  readonly logDirectory: string;
+  readonly label: string;
+}): Promise<void> {
+  await mkdir(input.evidenceDirectory, { recursive: true });
+  const names = await readdir(input.logDirectory);
+  const joinNumbered = async (prefix: string) => {
+    const selected = names
+      .filter((name) => name.startsWith(`${prefix}-`) && name.endsWith(".log"))
+      .sort((left, right) => {
+        const leftGeneration = Number(left.slice(prefix.length + 1, -".log".length));
+        const rightGeneration = Number(right.slice(prefix.length + 1, -".log".length));
+        return leftGeneration - rightGeneration;
+      });
+    const parts: Buffer[] = [];
+    for (const name of selected) {
+      const generation = name.slice(prefix.length + 1, -".log".length);
+      parts.push(Buffer.from(`--- generation ${generation} ---\n`));
+      const body = await readFileOrEmpty(path.join(input.logDirectory, name));
+      parts.push(body);
+      if (body.byteLength > 0 && body[body.byteLength - 1] !== 10) parts.push(Buffer.from("\n"));
+    }
+    return Buffer.concat(parts);
+  };
+  await writeBoundedLog(
+    path.join(input.evidenceDirectory, `${input.label}.job-host-stderr.txt`),
+    await joinNumbered("job-host-stderr"),
+  );
+  await writeBoundedLog(
+    path.join(input.evidenceDirectory, `${input.label}.worker-stderr.txt`),
+    await joinNumbered("worker-stderr"),
+  );
+  const failed: string[] = [];
+  const agentLogs = names
+    .filter((entry) => entry.startsWith("agent-") && entry.endsWith(".log"))
+    .sort();
+  for (const name of agentLogs) {
+    const text = (await readFileOrEmpty(path.join(input.logDirectory, name))).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (line.includes('"event":"sandbox.preparation.failed"')) failed.push(line);
+    }
+  }
+  await writeBoundedLog(
+    path.join(input.evidenceDirectory, `${input.label}.sandbox-preparation-failed.log`),
+    Buffer.from(failed.length === 0 ? "" : `${failed.join("\n")}\n`),
+  );
 }
 
 export async function installProductPath(options: {
@@ -987,6 +1060,7 @@ export async function installProductPath(options: {
     HIMAWARI_TEST_PREPARATION_ACK_LOSS: path.join(testRoot, "preparation-ack-loss"),
     HIMAWARI_TEST_HOST_FINISH_GATE: path.join(testRoot, "host-finish-gate"),
     HIMAWARI_TEST_MODEL_URL: `https://127.0.0.1:${providerPort}/v1`,
+    HIMAWARI_TEST_JOB_HOST_STDERR: path.join(options.logDirectory, "job-host-stderr-0.log"),
   };
   const serviceArgs = [
     "--config",
@@ -1000,6 +1074,32 @@ export async function installProductPath(options: {
     | { main: ChildProcessWithoutNullStreams; worker: ChildProcessWithoutNullStreams }
     | undefined;
   let generation = 0;
+  const { createWriteStream } = await import("node:fs");
+  const streams: Array<ReturnType<typeof createWriteStream>> = [];
+  const waitStreams = async () => {
+    await Promise.all(
+      streams.map(
+        (stream) =>
+          new Promise<void>((resolve) => {
+            if (stream.closed) {
+              resolve();
+              return;
+            }
+            const timer = setTimeout(() => {
+              if (stream.closed) {
+                resolve();
+                return;
+              }
+              stream.end(() => resolve());
+            }, 1000);
+            stream.once("close", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          }),
+      ),
+    );
+  };
   const alive = (child: ChildProcessWithoutNullStreams) =>
     child.exitCode === null && child.signalCode === null;
   const exited = (child: ChildProcessWithoutNullStreams, timeoutMs: number) =>
@@ -1020,12 +1120,21 @@ export async function installProductPath(options: {
       await exited(child, 5_000);
     }
   };
-  const logTo = async (name: string, child: ChildProcessWithoutNullStreams) => {
-    const file = path.join(options.logDirectory, `${name}-${generation}.log`);
-    const { createWriteStream } = await import("node:fs");
-    const stream = createWriteStream(file, { flags: "a" });
+  const logTo = (name: string, child: ChildProcessWithoutNullStreams) => {
+    const stream = createWriteStream(path.join(options.logDirectory, `${name}-${generation}.log`), {
+      flags: "a",
+    });
+    streams.push(stream);
     child.stdout.pipe(stream);
     child.stderr.pipe(stream);
+    if (name === "worker") {
+      const errStream = createWriteStream(
+        path.join(options.logDirectory, `worker-stderr-${generation}.log`),
+        { flags: "a" },
+      );
+      streams.push(errStream);
+      child.stderr.pipe(errStream);
+    }
   };
 
   let bootstrapped = false;
@@ -1036,6 +1145,12 @@ export async function installProductPath(options: {
       await writeFile(configurationPath, JSON.stringify(configuration), { mode: 0o600 });
     }
     generation += 1;
+    const jobHostStderr = path.join(options.logDirectory, `job-host-stderr-${generation}.log`);
+    serviceEnv.HIMAWARI_TEST_JOB_HOST_STDERR = jobHostStderr;
+    await writeFile(jobHostStderr, "", { flag: "a" });
+    await writeFile(path.join(options.logDirectory, `worker-stderr-${generation}.log`), "", {
+      flag: "a",
+    });
     const main = spawn(
       process.execPath,
       [
@@ -1063,8 +1178,8 @@ export async function installProductPath(options: {
       },
     );
     processes = { main, worker };
-    await logTo("agent", main);
-    await logTo("worker", worker);
+    logTo("agent", main);
+    logTo("worker", worker);
     await new Promise<void>((resolve, reject) => {
       let output = "";
       const timer = setTimeout(() => reject(new Error("PRODUCT_PATH_READY_TIMEOUT")), 60_000);
@@ -1384,6 +1499,18 @@ export async function installProductPath(options: {
     running: () => (processes ? alive(processes.main) : false),
     close: async () => {
       await stop();
+      await waitStreams();
+      const evidenceDirectory =
+        process.env["HIMAWARI_PRODUCT_PATH_EVIDENCE"] ?? options.logDirectory;
+      const logLabel = [
+        path.basename(path.dirname(options.logDirectory)),
+        path.basename(options.logDirectory),
+      ].join("-");
+      await saveStartupFailureLogs({
+        evidenceDirectory,
+        logDirectory: options.logDirectory,
+        label: logLabel,
+      });
       for (const suffix of ["", "-wal", "-shm"])
         await copyFile(
           `${databasePath}${suffix}`,

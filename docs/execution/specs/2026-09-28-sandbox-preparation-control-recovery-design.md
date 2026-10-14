@@ -320,6 +320,7 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 - 逐步记录：Job Host 每进入一个准备步骤（`dependencies` 加载、`policy`、`control`、`resource_snapshot`、`dependencies` 检查、`network`、`sdk_initialize`、`launch`），就把上一步标为结束并立即发一次心跳。每次心跳都带上完整的 `steps` 列表，每项含 `stage`、`startedMs`（从 Job Host 进程启动算起的毫秒）和 `elapsedMs`（已结束的一步的耗时；仍在进行的一步为 null），最多 16 项。
 - Worker 只接受符合 `sandboxHostStepsSchema` 的 `steps`：缺失、阶段不在固定枚举、多出字段或超过 16 项都按 `host_failure` 停止 Job Host，不保存其中内容。Worker 保留最近一次收到的列表；心跳过期、准备超时或任务期限到达时，`hostDetail.steps` 写入这份列表，诊断阶段取列表最后一步，不再一律写 `request`。Job Host 自己报告错误时也带上当时的列表。
 - `sandboxHostFailureDetailSchema` 新增必填字段 `steps`（可为 null，表示从未收到列表）。Worker、Job Host 和 Agent 同版本发布；产品代码不重新解析已保存的旧记录。旧版本保存的受保护诊断没有这个字段，读取旧记录的只读脚本须使用对应版本的 schema。安全服务日志相应增加 `hostSteps` 字段，见[准备失败的安全服务日志](#preparation-safe-log)。
+- 2026-10-14 起主机失败码新增 `JOB_HOST_LAUNCH_ARGV_UNEXPECTED`（Linux 启动参数不是预期的 bubblewrap 形状；bubblewrap 是 Linux 上隔离进程的程序，命令名是 bwrap。见 R2-T5），按本条规则同版本发布，旧发布目录的 schema 不认识这个码，读新记录要用新发布目录。
 
 1.5 秒双向监督窗口、30 秒准备上限、任务期限、清理期限、控制绑定、签名终态、唯一启动授权和全部认证检查均不变。逐步记录只说明哪一步在何时开始、用了多久，不代表 ready、释放证明或启动授权。Worker 自身事件循环停顿仍不在这次修复范围内。
 

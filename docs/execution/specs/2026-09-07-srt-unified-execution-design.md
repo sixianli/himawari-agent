@@ -346,7 +346,7 @@ Run 正常结束前停止原 Run 的后台资源；仍有未知清理义务时�
 
 策略编译器保护整个真实用户数据区域、Himawari 控制/秘密目录、其他作业及相关挂载路径，再增加这次动作的最小读取例外。系统工具链仍有必要可读范围；本设计不声称 SRT 默认只看得见一个工作区。保护集必须记录覆盖范围，未知挂载或无法满足隔离要求时拒绝相应 profile。机器秘密不以扫描输出替代访问阻断。
 
-不用 glob 作为跨平台新文件保密的主要机制。授权原项目时明确排除秘密子树，保护 `.env`、Himawari 运行配置及未授予写权限的 Git 元数据；不能因为直接编辑就开放整个 home。Git 操作需要的元数据权限按动作单独授予，普通编辑不自动取得任意修改 `.git` 的能力。规则嵌套冲突必须在两种 OS 验证。显式封住 SRT 默认共享写路径，包括 `/tmp/claude` 及 Mac 对应路径；私有 `HOME`、`TMPDIR`、`CLAUDE_CODE_TMPDIR` 使用可信值。
+不用 glob 作为跨平台新文件保密的主要机制。授权原项目时明确排除秘密子树，保护 `.env`、Himawari 运行配置及未授予写权限的 Git 元数据；不能因为直接编辑就开放整个 home。Git 操作需要的元数据权限按动作单独授予，普通编辑不自动取得任意修改 `.git` 的能力。规则嵌套冲突必须在两种 OS 验证。显式封住 SRT 默认共享写路径，包括 `/tmp/claude` 及 Mac 对应路径；私有 `HOME`、`TMPDIR`、`CLAUDE_CODE_TMPDIR` 使用可信值。Linux 上，禁读目录展开出来的内存文件系统（tmpfs，含 `/tmp`）在交给 bubblewrap 之前改为只读（`--remount-ro`）。目的路径如果是符号链接，并且后面另有挂载盖住它解析后的真实目录，就不再对这条路径加 `--remount-ro`。Ubuntu 上 `/sbin` 指向 `/usr/sbin`，后面的 `/usr` 挂载会盖住它；若仍重挂 `/sbin`，bubblewrap 会去重挂已经被盖住的目标并报 `Invalid argument`，命令在启动前退出。被盖住的那一层不再可写。`/tmp` 这类真实目录仍改为只读。授权工作目录和私有目录以外的写入因此失败，错误是只读文件系统；其后重新绑定的工作目录和私有目录保持可写。实现是 `packages/runtime-sandbox/src/bwrap-read-only-tmpfs.ts`，只由 `packages/runtime-sandbox/src/job-host-main.ts` 的 Linux 任务启动和就绪探测调用。Mac 未改。[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
 
 读取原文件不要求先复制正文到 Agent Service。默认编码直接使用已授权原目录：启动前识别已有修改，写入前检查版本与重叠冲突；同一项目的 Agent 写作业串行，仍须考虑用户或其他程序同时修改，不能用本方锁假定独占文件。已有有效目录授权覆盖的普通编辑不重复询问。删除等命中高风险策略的动作须确认；被批准脚本可能删除文件时必须按其实际副作用授权，不能只拦截工具名中的 delete。无法机械保证只读或不删除的任意命令不能伪装成低风险动作。
 
@@ -422,7 +422,7 @@ Worker 将正文、来源、实际读取范围、截断状态、内容摘要和�
 
 安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，Worker 已保存的 Pi 自身错误输出（例如“文件不存在”）经过与成功结果相同的披露检查后交给模型，让模型能据此换路径或改做法；bash（command）失败仍只交出错误码说明，因为非零退出不能证明工作区没有被改动。
 
-预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 `process.env.PATH`，Pi 自己的搜索器只从该固定目录取得，不从用户 HOME 或系统 PATH 寻找 `rg`/`fd` 的替代。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`，因此沙箱内可用系统自带命令；系统程序不计入 runtimeDigest，能否实际运行由沙箱只读放行列表决定，详见 [ADR 0055](../../adr/0055-bash-uses-system-commands-in-sandbox.md)。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
+预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 `process.env.PATH`，Pi 自己的搜索器只从该固定目录取得，不从用户 HOME 或系统 PATH 寻找 `rg`/`fd` 的替代。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`，因此沙箱内可用系统自带命令；系统程序不计入 runtimeDigest，能否实际运行由沙箱只读放行列表决定，详见 [ADR 0055](../../adr/0055-bash-uses-system-commands-in-sandbox.md)。同一 Linux 路径上，授权工作目录和私有目录以外的写入会因只读挂载失败。bash 失败时模型仍只收到上面的错误码说明，看不到命令的标准错误；只读提示留在命令自己的错误输出里，由主机上的文件回读和命令的非零状态核对。当前产品路径里 bash 的目录授权只有 read，这次调用的工作目录是只读绑定，不能当作错误输出的落点；主机回读的文件写在仍可写的私有目录（环境变量 `TMPDIR` 指向的目录）里。实现见 `packages/runtime-sandbox/src/bwrap-read-only-tmpfs.ts`。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
 
 写入前固定已有文件身份与内容，复用约束文件平台的独占创建/安全替换和写后读取验证；不因 Pi mutation queue 省略外部修改核对。重要覆盖/删除继续由上游 Grant、HITL 与范围准入决定，只有部分文件写权限的 Shell 请求在执行前拒绝。runner 内的校验不签发或消费 Grant。
 

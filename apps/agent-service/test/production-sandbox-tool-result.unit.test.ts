@@ -34,6 +34,20 @@ function commandResult(exitCode: number): SandboxOperationResult {
   };
 }
 
+function storedCommandResult(exitCode: number): SandboxOperationResult {
+  return {
+    schemaVersion: "sandbox-execution.v2",
+    identity,
+    environmentId: "environment",
+    policyDigest: "d".repeat(64),
+    contract: { ref: "shell", version: "1" },
+    occurredAt: "2026-09-23T00:00:00.000Z",
+    kind: "result",
+    output: { ref: "output", digest: "f".repeat(64), byteLength: 0 },
+    completion: { type: "exit", exitCode },
+  };
+}
+
 describe("sandbox command effect reason", () => {
   const operationKind: SandboxOperationContract["kind"] = "command";
   const effectKind: SandboxEffectObservation["kind"] = "not_asserted";
@@ -46,6 +60,23 @@ describe("sandbox command effect reason", () => {
         effectKind,
       }),
     ).toBe("SANDBOX_COMMAND_EFFECT_UNVERIFIED");
+  });
+
+  it("classifies the worker stored nonzero command exit as an unverified effect", () => {
+    expect(
+      sandboxCommandEffectReason({
+        operationKind,
+        result: storedCommandResult(1),
+        effectKind,
+      }),
+    ).toBe("SANDBOX_COMMAND_EFFECT_UNVERIFIED");
+    expect(
+      sandboxCommandEffectReason({
+        operationKind,
+        result: storedCommandResult(0),
+        effectKind,
+      }),
+    ).toBeNull();
   });
 
   it("does not classify a successful exit or a different operation as a failed command", () => {

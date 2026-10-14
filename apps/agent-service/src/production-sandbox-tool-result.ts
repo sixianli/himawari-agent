@@ -51,13 +51,15 @@ export function sandboxCommandEffectReason(input: {
   readonly effectKind: SandboxEffectObservation["kind"];
 }): "SANDBOX_COMMAND_EFFECT_UNVERIFIED" | null {
   const result = input.result;
-  return input.operationKind === "command" &&
-    result?.kind === "error" &&
-    result.termination.type === "exit" &&
-    result.termination.exitCode !== 0 &&
-    input.effectKind === "not_asserted"
-    ? "SANDBOX_COMMAND_EFFECT_UNVERIFIED"
-    : null;
+  const nonzeroCommandExit =
+    input.operationKind === "command" &&
+    input.effectKind === "not_asserted" &&
+    (result?.kind === "error"
+      ? result.termination.type === "exit" && result.termination.exitCode !== 0
+      : result?.kind === "result" &&
+        result.completion.type === "exit" &&
+        result.completion.exitCode !== 0);
+  return nonzeroCommandExit ? "SANDBOX_COMMAND_EFFECT_UNVERIFIED" : null;
 }
 
 export { SANDBOX_TOOL_DEADLINE_EXCEEDED } from "@himawari-agent/execution-contracts";

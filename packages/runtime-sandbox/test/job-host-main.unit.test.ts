@@ -195,7 +195,7 @@ beforeEach(() => {
   boundary.manager.isSupportedPlatform.mockReturnValue(true);
   boundary.manager.initialize.mockResolvedValue(undefined);
   boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
-    argv: ["/bin/bash", "-c", "wrapped"],
+    argv: ["/bin/bash", "-c", "bwrap --new-session --die-with-parent -- /bin/bash -c true"],
     env: { FIXTURE: "1" },
   });
   boundary.manager.reset.mockResolvedValue(undefined);
@@ -993,4 +993,90 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
       }
     },
   );
+
+  const readOnlyTmpfsCommand =
+    "bwrap --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var -- /bin/bash -c true";
+  const readOnlyTmpfsRewritten =
+    "bwrap --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --remount-ro /tmp --remount-ro /var -- /bin/bash -c true";
+
+  it("[R2-T5] rewrites a Linux launch so each tmpfs is remounted read-only before the separator", async () => {
+    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
+      argv: ["/bin/bash", "-c", readOnlyTmpfsCommand],
+      env: { FIXTURE: "1" },
+    });
+    await prepare();
+    await startLinux();
+    expect(boundary.spawn).toHaveBeenCalledWith(
+      "/bin/bash",
+      ["-c", readOnlyTmpfsRewritten],
+      expect.objectContaining({ shell: false, detached: true }),
+    );
+  });
+
+  it("[R2-T5] does not spawn when the Linux launch argv is not the expected bwrap command", async () => {
+    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
+      argv: ["/bin/bash", "-c", "echo hello"],
+      env: { FIXTURE: "1" },
+    });
+    await prepare();
+    await receive("start");
+    expect(boundary.spawn).not.toHaveBeenCalled();
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      detail: { code: "JOB_HOST_LAUNCH_ARGV_UNEXPECTED" },
+    });
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+  });
+
+  it("[R2-T5] returns rewritten argv from the Linux readiness wrap callback", async () => {
+    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
+      argv: ["/bin/bash", "-c", readOnlyTmpfsCommand],
+      env: { FIXTURE: "1" },
+    });
+    const input = request();
+    await prepare(
+      {
+        ...input,
+        policy: { ...input.policy, allowedUnixSockets: ["/private-job/ready.sock"] },
+        readiness: {
+          kind: "unix_http" as const,
+          ref: "ready",
+          socketName: "ready.sock",
+          path: "/health",
+          expectedStatus: 200,
+          timeoutMs: 1000,
+        },
+      },
+      {
+        control: {
+          sessionId: SESSION,
+          jobId: input.jobId,
+          attemptId: input.attemptId,
+          directory: "/control",
+        },
+      },
+    );
+    await startLinux();
+    const probe = boundary.readiness.mock.calls[0]?.[0];
+    await expect(probe.wrap("probe")).resolves.toMatchObject({
+      argv: ["/bin/bash", "-c", readOnlyTmpfsRewritten],
+    });
+  });
+
+  it("[R2-T5] leaves a Darwin launch argv unchanged", async () => {
+    Object.assign(boundary.process, { platform: "darwin" });
+    const argv = ["/bin/bash", "-c", readOnlyTmpfsCommand];
+    boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
+      argv,
+      env: { FIXTURE: "1" },
+    });
+    await prepare();
+    await receive("start");
+    task.emit("spawn");
+    await settle();
+    expect(boundary.spawn).toHaveBeenCalledWith(
+      "/bin/bash",
+      ["-c", readOnlyTmpfsCommand],
+      expect.objectContaining({ shell: false, detached: true }),
+    );
+  });
 });

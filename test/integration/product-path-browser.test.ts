@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   appendFile,
@@ -46,11 +46,52 @@ const outputDirectory = path.resolve(
   repositoryRoot,
   process.env["HIMAWARI_PRODUCT_PATH_OUTPUT"] ?? ".ci-output/product-path",
 );
+function shellSingleQuoted(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function buildR2T5Command(input: {
+  workspace: string;
+  parentPath: string;
+  tmpPath: string;
+  varTmpPath: string;
+  homePath: string;
+  trapPath: string;
+}): string {
+  const ws = shellSingleQuoted(input.workspace);
+  const capture = (script: string, stem: string) =>
+    `bash -c ${shellSingleQuoted(script)} >"$cap/${stem}.out" 2>"$cap/${stem}.err"; printf '%s\\n' "$?" > "$cap/${stem}.rc"`;
+  return [
+    `ws=${ws}`,
+    `cap="$TMPDIR"`,
+    "set +e",
+    capture(`printf x > ${shellSingleQuoted(input.parentPath)}`, "r2t5-parent"),
+    capture(`printf x > ${shellSingleQuoted(input.tmpPath)}`, "r2t5-tmp"),
+    capture(`mkdir -p ${shellSingleQuoted(input.varTmpPath)}`, "r2t5-vartmp"),
+    capture(`mkdir ${shellSingleQuoted(input.homePath)}`, "r2t5-home"),
+    capture(`printf x > ${shellSingleQuoted(input.trapPath)}`, "r2t5-trap"),
+    `printf 'workspace-ok\\n' 2>"$cap/r2t5-workspace.err" > "$ws/r2t5-workspace.txt"; printf '%s\\n' "$?" > "$cap/r2t5-workspace.rc"`,
+    `python3 -c 'import tempfile,os; f=tempfile.mkstemp()[1]; print(f); print(os.environ["TMPDIR"])' > "$cap/r2t5-python.txt" 2>"$cap/r2t5-python.err"; printf '%s\\n' "$?" > "$cap/r2t5-python.rc"`,
+    `git --version > "$cap/r2t5-git.txt" 2>"$cap/r2t5-git.err"; printf '%s\\n' "$?" > "$cap/r2t5-git.rc"`,
+    capture("cat /etc/passwd", "r2t5-passwd"),
+    `tmp_rc=$(cat "$cap/r2t5-tmp.rc")`,
+    `if [ "$tmp_rc" -eq 0 ]; then printf '%s\\n' R2T5-TMP-WRITE-OK; fi`,
+    `exit "$tmp_rc"`,
+  ].join("\n");
+}
+
 const NOTE = "项目代号：向日葵";
 const EDITABLE = "编辑前内容";
 const EDITED = "编辑后内容";
 let escapeTrapPath = "";
 let escapeNewPath = "";
+let r2t5Command = "";
+let r2t5Id = "";
+let r2t5ParentPath = "";
+let r2t5TmpPath = "";
+let r2t5VarTmpPath = "";
+let r2t5HomePath = "";
+let r2t5TrapPath = "";
 let networkPort = 0;
 let networkConnections = 0;
 
@@ -169,8 +210,14 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
       kind: "tool",
       name: "bash",
       arguments: {
-        command: `printf 'escape' > '${escapeNewPath}'; printf 'escape' > '${escapeTrapPath}'; true`,
+        command: `printf 'escape' > '${escapeNewPath}'; printf 'escape' > '${escapeTrapPath}'`,
       },
+    };
+  if (lastUserText.includes("请核对其它路径的写入"))
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: r2t5Command },
     };
   if (lastUserText.includes("请读取系统口令文件"))
     return {
@@ -997,6 +1044,24 @@ productDescribe(
       escapeNewPath = path.join(path.dirname(installation.workspace), "r2t3-new.txt");
       await writeFile(escapeTrapPath, "HOST-ORIGINAL", { mode: 0o600 });
       await rm(escapeNewPath, { force: true });
+      r2t5Id = randomBytes(4).toString("hex");
+      r2t5ParentPath = path.join(path.dirname(installation.workspace), `r2t5-parent-${r2t5Id}`);
+      r2t5TmpPath = `/tmp/r2t5-${r2t5Id}`;
+      r2t5VarTmpPath = `/var/tmp/r2t5-${r2t5Id}`;
+      r2t5HomePath = `/home/r2t5-${r2t5Id}`;
+      r2t5TrapPath = path.join(path.dirname(installation.workspace), `r2t5-trap-${r2t5Id}`);
+      await writeFile(r2t5TrapPath, "HOST-ORIGINAL", { mode: 0o600 });
+      await rm(r2t5ParentPath, { force: true });
+      await rm(r2t5TmpPath, { force: true });
+      await rm(r2t5VarTmpPath, { force: true });
+      r2t5Command = buildR2T5Command({
+        workspace: installation.workspace,
+        parentPath: r2t5ParentPath,
+        tmpPath: r2t5TmpPath,
+        varTmpPath: r2t5VarTmpPath,
+        homePath: r2t5HomePath,
+        trapPath: r2t5TrapPath,
+      });
       await installation.start();
       browser = await chromium.launch({
         channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
@@ -1221,7 +1286,9 @@ productDescribe(
 
     it("[R2-T3] refuses a sandboxed write outside the authorized workspace", async () => {
       await scenario("r2t3-escape-write", async () => {
-        await sendToolRequest("请尝试越界写入");
+        const answer = await sendToolRequest("请尝试越界写入");
+        await uiExpect(answer).toContainText("命令执行失败");
+        await uiExpect(answer).not.toContainText('"commandExitCode":0');
         const readback = {
           newPath: escapeNewPath,
           newPathExists: await stat(escapeNewPath).then(
@@ -1237,6 +1304,105 @@ productDescribe(
         );
         expect(readback.newPathExists).toBe(false);
         expect(readback.trapContent).toBe("HOST-ORIGINAL");
+      });
+    });
+
+    it("[R2-T5] rejects writes outside the authorized workspace and private directory", async () => {
+      await scenario("r2t5-write-boundary", async () => {
+        const answer = await sendToolRequest("请核对其它路径的写入");
+        const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
+        const captureHits: string[] = [];
+        for (const name of await readdir(jobsRoot)) {
+          if (name.startsWith("control-")) continue;
+          const candidate = path.join(jobsRoot, name, "r2t5-tmp.rc");
+          try {
+            await stat(candidate);
+            captureHits.push(path.join(jobsRoot, name));
+          } catch (error) {
+            const code =
+              error && typeof error === "object" && "code" in error ? error.code : undefined;
+            if (code !== "ENOENT") throw error;
+          }
+        }
+        expect(captureHits).toHaveLength(1);
+        const captureDir = captureHits[0];
+        if (captureDir === undefined) throw new Error("R2T5_CAPTURE_MISSING");
+        const readText = (name: string) => readFile(path.join(captureDir, name), "utf8");
+        const exists = (target: string) =>
+          stat(target).then(
+            () => true,
+            () => false,
+          );
+        const workspaceFile = path.join(installation.workspace, "r2t5-workspace.txt");
+        const readback = {
+          answer: await answer.innerText(),
+          captureDir,
+          parentRc: await readText("r2t5-parent.rc"),
+          parentErr: await readText("r2t5-parent.err"),
+          parentExists: await exists(r2t5ParentPath),
+          tmpRc: await readText("r2t5-tmp.rc"),
+          tmpErr: await readText("r2t5-tmp.err"),
+          tmpExists: await exists(r2t5TmpPath),
+          varTmpRc: await readText("r2t5-vartmp.rc"),
+          varTmpErr: await readText("r2t5-vartmp.err"),
+          varTmpExists: await exists(r2t5VarTmpPath),
+          homeRc: await readText("r2t5-home.rc"),
+          homeErr: await readText("r2t5-home.err"),
+          homeExists: await exists(r2t5HomePath),
+          trapRc: await readText("r2t5-trap.rc"),
+          trapErr: await readText("r2t5-trap.err"),
+          trapContent: await readFile(r2t5TrapPath, "utf8"),
+          workspaceRc: await readText("r2t5-workspace.rc"),
+          workspaceErr: await readText("r2t5-workspace.err"),
+          workspaceExists: await exists(workspaceFile),
+          pythonRc: await readText("r2t5-python.rc"),
+          pythonOut: await readText("r2t5-python.txt"),
+          pythonErr: await readText("r2t5-python.err"),
+          gitRc: await readText("r2t5-git.rc"),
+          gitOut: await readText("r2t5-git.txt"),
+          passwdRc: await readText("r2t5-passwd.rc"),
+          passwdOut: await readText("r2t5-passwd.out"),
+          passwdErr: await readText("r2t5-passwd.err"),
+        };
+        await writeFile(
+          path.join(outputDirectory, "r2t5-write-boundary-readback.json"),
+          JSON.stringify(readback, null, 2),
+        );
+        await uiExpect(answer).not.toContainText("R2T5-TMP-WRITE-OK");
+        await uiExpect(answer).toContainText("命令执行失败");
+        expect(readback.tmpRc.trim()).not.toBe("0");
+        expect(readback.tmpErr).toContain("Read-only file system");
+        expect(readback.tmpExists).toBe(false);
+        expect(readback.parentRc.trim()).not.toBe("0");
+        expect(readback.parentErr).toContain("Read-only file system");
+        expect(readback.parentExists).toBe(false);
+        expect(readback.varTmpRc.trim()).not.toBe("0");
+        expect(readback.varTmpErr).toContain("Read-only file system");
+        expect(readback.varTmpExists).toBe(false);
+        expect(readback.homeRc.trim()).not.toBe("0");
+        expect(readback.homeErr).toContain("Read-only file system");
+        expect(readback.homeExists).toBe(false);
+        expect(readback.trapRc.trim()).not.toBe("0");
+        expect(readback.trapErr).toContain("Read-only file system");
+        expect(readback.trapContent).toBe("HOST-ORIGINAL");
+        expect(readback.workspaceRc.trim()).not.toBe("0");
+        expect(readback.workspaceErr).toContain("Read-only file system");
+        expect(readback.workspaceExists).toBe(false);
+        expect(readback.pythonRc.trim()).toBe("0");
+        const [created, privateDir] = readback.pythonOut.trim().split("\n");
+        expect(created && privateDir).toBeTruthy();
+        if (created === undefined || privateDir === undefined) {
+          throw new Error("python output missing created path or private directory");
+        }
+        expect(privateDir).not.toBe("/tmp");
+        expect(readback.captureDir).toBe(privateDir);
+        expect(created.startsWith(`${privateDir}/`)).toBe(true);
+        expect(privateDir === jobsRoot || privateDir.startsWith(`${jobsRoot}/`)).toBe(true);
+        expect(await exists(created)).toBe(true);
+        expect(readback.gitRc.trim()).toBe("0");
+        expect(readback.gitOut).toMatch(/git version \d+\.\d+/);
+        expect(readback.passwdRc.trim()).not.toBe("0");
+        expect(`${readback.passwdOut}\n${readback.passwdErr}`).not.toMatch(/root:.*:0:0/);
       });
     });
 

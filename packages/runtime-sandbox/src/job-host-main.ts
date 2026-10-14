@@ -4,6 +4,10 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  resolveLinuxTmpfsDestination,
+  rewriteLinuxReadOnlyTmpfs,
+} from "./bwrap-read-only-tmpfs.ts";
 import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
@@ -374,9 +378,13 @@ async function start() {
     stop("deadline");
     return;
   }
-  const executable = launch.argv[0];
+  const launchArgv =
+    process.platform === "linux"
+      ? rewriteLinuxReadOnlyTmpfs(launch.argv, "/bin/bash", resolveLinuxTmpfsDestination)
+      : launch.argv;
+  const executable = launchArgv[0];
   if (!executable) throw new Error("JOB_HOST_LAUNCH_INVALID");
-  task = spawn(executable, launch.argv.slice(1), {
+  task = spawn(executable, launchArgv.slice(1), {
     cwd: request.policy.workspace ?? request.policy.privateDirectory,
     env: launch.env,
     shell: false,
@@ -409,7 +417,16 @@ async function start() {
         privateDirectory: request.policy.privateDirectory,
         deadlineAt: request.deadlineAt,
         active: () => phase === "running" && !exited,
-        wrap: (command) => manager.wrapWithSandboxArgv(command, "/bin/bash"),
+        wrap: async (command) => {
+          const wrapped = await manager.wrapWithSandboxArgv(command, "/bin/bash");
+          if (process.platform !== "linux") return wrapped;
+          return {
+            ...wrapped,
+            argv: [
+              ...rewriteLinuxReadOnlyTmpfs(wrapped.argv, "/bin/bash", resolveLinuxTmpfsDestination),
+            ],
+          };
+        },
       });
       void readiness.result
         .then((ready) => {
