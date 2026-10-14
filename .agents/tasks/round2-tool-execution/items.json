@@ -1136,6 +1136,27 @@
       }
     },
     {
+      "id": "R2-T9",
+      "title": "编码工具输出超过配置上限时不再整次失败：Pi 的 read、grep、find、ls、bash 自己会把输出截到 50 KB 并说明已截断，Himawari 的 maximumBytes（生产 4096，配置最多 48 KiB）却在其后把超限结果报成 PI_RESULT_OUTPUT_LIMIT；改为让 Pi 的截断先生效、模型拿到截断后的内容和续读提示",
+      "goal_ref": ["G85", "G88", "G108"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T9",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "起草第四次变更操作包时读生产配置发现：maximumBytes 4096，production-host-read.ts 和 pi-coding-main.ts 超限直接报错，读稍大的文件就失败"
+      }
+    },
+    {
       "id": "R2-E4",
       "title": "84.247.157.41 兼作测试机（G100）：新建无 sudo 的测试账号，测试进程放进有内存和 CPU 权重上限的独立 cgroup，生产服务优先；完整 npm test 在该机跑通，并记录期间生产服务健康",
       "goal_ref": ["G100"],
