@@ -29,6 +29,22 @@ describe("GitHub 审批读取边界", () => {
     expect(options.input).toBe(`header = "Authorization: Bearer ${credential}"\n`);
     expect(options.env.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
   });
+  it("本地运行时也经标准输入发送只读令牌", () => {
+    const credential = "ghp_test_only";
+    vi.stubEnv("GITHUB_ACTIONS", undefined);
+    vi.stubEnv("GITHUB_REPOSITORY", undefined);
+    vi.stubEnv("HIMAWARI_CI_GITHUB_TOKEN", credential);
+    vi.mocked(execFileSync).mockImplementationOnce((_command, args) => {
+      writeFileSync(args[args.indexOf("--output") + 1], JSON.stringify({ id: 123 }));
+      return "200";
+    });
+    expect(readReviewComment(123)).toEqual({ id: 123 });
+    const [, args, options] = vi.mocked(execFileSync).mock.calls.at(-1);
+    expect(args).not.toContain(credential);
+    expect(args).toEqual(expect.arrayContaining(["--config", "-"]));
+    expect(options.input).toBe(`header = "Authorization: Bearer ${credential}"\n`);
+    expect(options.env.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
+  });
   it.each(["outside-ci", "other-repository", "header-injection"])("拒绝令牌越界：%s", (mode) => {
     vi.stubEnv("GITHUB_ACTIONS", mode === "outside-ci" ? "false" : "true");
     vi.stubEnv(

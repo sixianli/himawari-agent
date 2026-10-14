@@ -707,7 +707,7 @@ describe("CI policy contract", () => {
     const accepted = clone();
     accepted.testProjects.find((entry) => entry.id === "integration").workerLimits = {
       maximum: 3,
-      cpusPerWorker: 2,
+      cpusPerWorker: 1024,
       memoryMiBPerWorker: 2048,
     };
     writeFileSync(path.join(root, "ci/policy.json"), JSON.stringify(accepted));
@@ -717,8 +717,12 @@ describe("CI policy contract", () => {
     const selected = resolvePolicySource({ root });
     expect(
       selected.policy.testProjects.find((entry) => entry.id === "integration").workerLimits,
-    ).toEqual({ maximum: 3, cpusPerWorker: 2, memoryMiBPerWorker: 2048 });
+    ).toEqual({ maximum: 3, cpusPerWorker: 1024, memoryMiBPerWorker: 2048 });
     const configuration = await import("../../vitest.workspace.ts");
+    const integration = configuration.default.test.projects.find(
+      (project) => project.test.name === "integration",
+    );
+    expect(integration.test.maxWorkers).toBeGreaterThan(1);
     expect(() => validateVitestProjects(selected.policy, configuration.default)).toThrow(
       "Vitest integration worker count differs from policy",
     );
