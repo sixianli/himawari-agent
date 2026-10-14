@@ -1115,6 +1115,48 @@
       }
     },
     {
+      "id": "R2-T8",
+      "title": "让测试本身变快且不减少测试内容：例如 10 个集成测试文件各自安装一遍约 66 MB 的 Node 运行时，改为每次测试只装一次、大家只读共用；先测量各项耗时，按实测收益排序再改",
+      "goal_ref": ["G102", "G20"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "用户 G102；R2-T4 实测 Hermes 4 核上 CPU 是瓶颈，改动 A 共用迁移模板库已省约 195 秒"
+      }
+    },
+    {
+      "id": "R2-E4",
+      "title": "84.247.157.41 兼作测试机（G100）：新建无 sudo 的测试账号，测试进程放进有内存和 CPU 权重上限的独立 cgroup，生产服务优先；完整 npm test 在该机跑通，并记录期间生产服务健康",
+      "goal_ref": ["G100"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /srv/himawari-ci/tools",
+          "host": "cloud"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "用户 G100；旧测试账号 himawari-test 已按 G58 在首次部署前删除，2026-10-14 登录被拒（Permission denied (publickey)）"
+      }
+    },
+    {
       "id": "R2-P1",
       "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
       "goal_ref": ["G89"],
