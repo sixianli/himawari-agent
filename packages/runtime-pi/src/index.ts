@@ -16,6 +16,12 @@ export {
   type GovernedPiCodingToolsOptions,
 } from "./governed-coding-tools.js";
 export { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
+export {
+  executeHostReadOnlyTool,
+  type HostReadOnlyToolInput,
+  type HostReadOnlyToolName,
+  type HostReadOnlyToolResult,
+} from "./host-read-only-executor.js";
 export { executeGovernedPiRead } from "./governed-read-executor.js";
 export { type LegacyPiRunHistory, qualifyLegacyPiHistory } from "./legacy-pi-history.js";
 export { getPiModelPresentation } from "./model-presentation.js";

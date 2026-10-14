@@ -1114,6 +1114,57 @@ productDescribe(
       });
     });
 
+    it("[R2-P1] reads an existing file in the trusted host process", async () => {
+      await scenario("r2p1-read-existing", async () => {
+        const answer = await sendToolRequest("请读取 notes.txt");
+        await uiExpect(answer).toContainText(NOTE);
+      });
+    });
+
+    it("[R2-P1] reports a missing file in the trusted host process", async () => {
+      await scenario("r2p1-read-missing", async () => {
+        const answer = await sendToolRequest("请读取 missing.txt");
+        await uiExpect(answer).toContainText(/missing\.txt|不存在|ENOENT|not found/i);
+      });
+    });
+
+    it("[R2-P1] lists, finds and greps in the trusted host process", async () => {
+      await scenario("r2p1-search-tools", async () => {
+        const listing = await sendToolRequest("请列出工作目录");
+        await uiExpect(listing).toContainText("notes.txt");
+        const found = await sendToolRequest("请按名字找文件");
+        await uiExpect(found).toContainText("nested.txt");
+        const grepped = await sendToolRequest("请按内容搜索");
+        await uiExpect(grepped).toContainText("notes.txt");
+      });
+    });
+
+    it("[R2-P1] measures host read latency for existing and missing files over five runs", async () => {
+      await scenario("r2p1-read-latency", async () => {
+        const measure = async (text: string) => {
+          const samples: number[] = [];
+          for (let index = 0; index < 5; index++) {
+            await newThread();
+            const started = performance.now();
+            await sendToolRequest(text);
+            samples.push(performance.now() - started);
+          }
+          const sorted = [...samples].sort((left, right) => left - right);
+          return {
+            samples,
+            median: sorted[Math.floor(sorted.length / 2)],
+            max: Math.max(...samples),
+          };
+        };
+        const existing = await measure("请读取 notes.txt");
+        const missing = await measure("请读取 missing.txt");
+        await writeFile(
+          path.join(outputDirectory, "r2p1-read-latency.json"),
+          `${JSON.stringify({ existing, missing }, null, 2)}\n`,
+        );
+      });
+    });
+
     it("[R2-T3] runs system commands inside the sandboxed bash", async () => {
       await scenario("r2t3-system-commands", async () => {
         const answer = await sendToolRequest("请运行系统命令");

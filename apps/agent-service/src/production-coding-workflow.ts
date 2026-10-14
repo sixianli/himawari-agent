@@ -339,6 +339,43 @@ export async function executeProductionCodingRequest(
     return result.outcome === "failed" ? { ...result, dispatchState: "not_sent" } : result;
   }
   await active();
+  if (services.hostReadOnly && grant !== null && ["read", "ls", "find", "grep"].includes(tool)) {
+    const cached = (await ctx.load("host-result")) as RuntimeToolSettledResult | undefined;
+    if (cached) return cached;
+    const target = args["path"] ?? ".";
+    let relativePath: string;
+    try {
+      relativePath =
+        target === "." || target === grant.displayPath
+          ? ""
+          : resolveHostFileReadPath(grant, target as string);
+    } catch {
+      return failed("CODING_PATH_OUTSIDE_SCOPE");
+    }
+    const startedAt = ctx.now();
+    const executed = await services.hostReadOnly.execute({
+      tool: tool as "read" | "ls" | "find" | "grep",
+      toolCallId: call.toolCallId,
+      grant,
+      parameters: args,
+      relativePath,
+      readBytesLimit: 16 * 1024 * 1024,
+      maximumOutputBytes: binding.maximumBytes,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+    await active();
+    const settled: RuntimeToolSettledResult = {
+      dispatchState: "not_sent",
+      executionTiming: { startedAt, endedAt: ctx.now() },
+      outcome: executed.isError ? "failed" : "succeeded",
+      resultRef: null,
+      errorCode: executed.errorCode,
+      externalActionId: null,
+      modelContent: executed.modelContent,
+    };
+    await ctx.save("host-result", settled);
+    return settled;
+  }
   let saved = (await ctx.load("handle")) as
     | { handle: GovernedCapabilityExecutionHandle; inputRef: string }
     | undefined;

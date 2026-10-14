@@ -75,6 +75,22 @@ date: "2026-10-13"
   - 实现同一轮复用沙箱，见长任务条目 R2-P2。
   - 更新沙箱执行相关的架构、规格和 Runbook，写清哪些工具不进沙箱。
 
+<a id="implementation-record"></a>
+
+## 后续实现记录（2026-10-14）
+
+本记录不改动上面的决定，只写下[决定](#decision)第 1 点落地时的具体做法与已知差异。
+
+- **平台**：Linux 上四个工具（`read`、`ls`、`find`、`grep`）在 Agent Service 主进程执行。打开不经 Node 的路径字符串 `open`：每一级目录先以 `open(授权根, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)` 打开并核对设备号与 inode，之后逐级 `open("/proc/self/fd/<父目录描述符>/<名称>", O_RDONLY | O_DIRECTORY | O_NOFOLLOW)` 并 `fstat` 复核设备号；最后一级先 `lstat` 再以 `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` 打开、`fstat` 复核 inode 与 `nlink`，读前读后各核对一次。进程第一次使用前用 `statfs("/proc/self/fd").type === 0x9fa0` 确认是 procfs，否则返回 `HOST_READ_PROC_UNAVAILABLE`，不改走别的路径。
+- **平台差异**：Mac 没有 procfs，`read`、`ls`、`find`、`grep` 在 Mac 上继续进现有沙箱；Mac 行为仍记为未验证。写入和命令在所有平台都仍走沙箱。
+- **敏感名单**：`read` 按同一份名单拒绝（大小写不敏感）：`.env`、`.npmrc`、`.pypirc`、`.netrc`、`.ssh`、`.aws`、`.himawari-trash`、`.himawari-recovery`、前缀 `.env.` / `id_rsa` / `id_ed25519`、后缀 `.pem` / `.key`、路径 `.docker/config.json`。名单和判断只保留一份，放在 `@himawari-agent/execution-contracts`，同时供沙箱挂载遮挡与主进程只读打开使用；`ls`、`find` 照常列出名称但不读内容，`grep` 跳过这些文件与目录。
+- **`grep`、`find` 实现**：不启动 `rg`、`fd`。`find` 复用 Pi 的定义并注入自定义 `glob`；`grep` 因 Pi 的 `execute` 无条件启动 `rg` 而由 Himawari 进程内实现，输出行格式、`truncateHead`/`truncateLine` 截断、`ignoreCase`、`literal`、`glob`、`context`、`limit` 均与 Pi 相同。`rg` 专有的行内标志（如 `(?i)`）与 POSIX 字符类（如 `[[:alpha:]]`）明确拒绝，错误码 `GREP_PATTERN_UNSUPPORTED`。
+- **gitignore 差异**（已知、不作为缺陷）：进程内遍历读取每层的 `.gitignore`、`.ignore`、`.fdignore` 并按所在目录加前缀，始终跳过 `node_modules`、`.git`，包含隐藏文件；但不读 `.git/info/exclude` 和全局排除文件，也不在嵌套仓库边界停止。
+- **`grep` 跳过无法读取文件的差异**（已知）：进程内 `grep` 对超过读取上限或不是 UTF-8 的文件无法搜索，此时在结果末尾用同一 notice 格式说明 `N 个文件因过大或无法读取未搜索`（没有匹配时也写）；`rg` 会搜索这些文件。二进制文件（含 NUL）按 `rg` 默认跳过，不计入该数量。
+- **事件循环让步**：`find` 的遍历和 `grep` 的逐文件搜索在每处理一个条目或文件后 `await` 一次 `setImmediate` 并检查 `signal`。云端对本仓库源码检出（约 800 个 `.ts` 文件、跳过 `node_modules`）实测：让步前一次 `grep` 连续占用主进程约 12.7 秒（`perf_hooks.monitorEventLoopDelay` 期间没有采样，说明事件循环没有让出）；让步后最大事件循环延迟 47 毫秒、p99 28.4 毫秒、p50 10.4 毫秒，`grep` 2.2 秒、`find` 0.9 秒。
+- **限制不变**：进内存读取上限 16 MiB，模型可见正文沿用 Pi 的 2000 行 / 50 KiB 截断，序列化结果仍受调用自身的 `maxOutputBytes` 与机器秘密扫描约束。
+- **授权与记录**：授权仍在 `ALLOW` 之后才打开文件，使用与授权时相同的 Grant `id`、`revision`、`canonicalRootId`、`hostId`；主进程路径不签发 Worker Handle、不写沙箱准备记录，结果按同一 intent 保存，工具耗时由主进程自己写 `startedAt` 和 `endedAt`。
+
 <a id="references"></a>
 
 ## 关联文档

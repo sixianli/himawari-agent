@@ -6,6 +6,7 @@ import {
   type CapabilityManifest,
   type ClockPort,
   type HostDirectoryGrant,
+  type HostReadOnlyPort,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
   type ProductConfiguration,
@@ -15,6 +16,7 @@ import type { SqliteProductStateRepository } from "@himawari-agent/persistence-s
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { createProductionHostReadOnly } from "./production-host-read.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
 
@@ -37,6 +39,8 @@ export function createProductionFileReadServices(options: {
   /** Opt-in host coordinator; absent until review configuration and delegation are approved. */
   readonly automaticReview?: AutomaticActionReviewPort;
   readonly workspaceAuto?: WorkspaceAutoAuthorization;
+  /** Present only when the host provides descriptor-relative read-only open. */
+  readonly hostReadOnlyPort?: HostReadOnlyPort;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -63,7 +67,10 @@ export function createProductionFileReadServices(options: {
     ids,
   });
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
+  const hostPort = options.hostReadOnlyPort;
+  const hostReadOnly = hostPort?.available ? createProductionHostReadOnly(hostPort) : undefined;
   return {
+    ...(hostReadOnly ? { hostReadOnly } : {}),
     binding: async (call) => {
       const coding = configuration.runPolicy?.coding;
       const route = coding?.enabledTools.some(

@@ -574,6 +574,32 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       !this.#options.completeSandboxToolResult
     )
       reject();
+    const hostKey = digest([invocation.runId, invocation.toolCallId]);
+    const hostArtifact = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey: `runtime-file-read:${hostKey}:host-result`,
+    });
+    if (hostArtifact) {
+      const hostTool = this.#codingTool(invocation);
+      let savedHost: RuntimeToolSettledResult | undefined;
+      try {
+        savedHost = (await this.#readJson(hostArtifact.payloadRef)) as
+          | RuntimeToolSettledResult
+          | undefined;
+      } catch {
+        savedHost = undefined;
+      }
+      if (
+        savedHost &&
+        savedHost.outcome !== "result_unknown" &&
+        hostTool !== undefined &&
+        ["read", "ls", "find", "grep"].includes(hostTool)
+      ) {
+        await this.#options.assertRunActive(invocation.runId);
+        return savedHost;
+      }
+    }
     const artifact = await this.#options.artifacts.lookup({
       runId: invocation.runId,
       purpose: "trace",

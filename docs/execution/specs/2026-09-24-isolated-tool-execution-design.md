@@ -214,7 +214,7 @@ SRT 模式不额外限制后台任务、服务类任务和无人值守任务，�
 | [sandbox-execution-reconciliation.ts](../../../packages/application/src/services/sandbox-execution-reconciliation.ts)、[sandbox-startup-recovery.ts](../../../packages/application/src/services/sandbox-startup-recovery.ts) | 按当前控制权、序号和 CAS 核对；有次数上限的检查/停止；恢复未知占用；不授予重新启动的能力 | 用持久保存的后端/环境绑定，在 Worker、Agent、运行时重启之后继续核对 |
 | [sandboxed-coding-executor.ts](../../../packages/runtime-pi/src/sandboxed-coding-executor.ts) | 固定 Pi 0.84.2，复用工具工厂和受控 Operations；find/grep/ls 的整段实现放在 runner 里 | 复用完整执行器，路径和临时目录都在环境内；不复制 Pi 的工具实现 |
 
-已核对指定的只读 `pi-mono/packages/coding-agent` 0.84.2 源码和已安装的 Bash 类型：`BashOperations.exec` 提供命令、工作目录、取消信号、超时和输出回调；`grep.ts` 自己启动 `rg`，所以只代理 Bash 不能覆盖全部文件读写。继续使用 `createGovernedPiCodingTools()` / `createPiOperationsFromGovernedHostPort()` 和现有受限 runner。Pi 不提供产品的授权记录、工作目录 `lease` 或持久的环境终止证明，这些由 Himawari 自己的薄适配层和数据库记录承担，不另建第二套 Agent 循环、工具协议或权限数据库。
+已核对指定的只读 `pi-mono/packages/coding-agent` 0.84.2 源码和已安装的 Bash 类型：`BashOperations.exec` 提供命令、工作目录、取消信号、超时和输出回调；`grep.ts` 自己启动 `rg`，所以只代理 Bash 不能覆盖全部文件读写。继续使用 `createGovernedPiCodingTools()` / `createPiOperationsFromGovernedHostPort()` 和现有受限 runner。2026-10-14 起这一句只适用于 `write`、`edit`、`bash`：`read`、`ls`、`find`、`grep` 已改在可信主进程执行，做法与平台差异见 [ADR 0054 后续实现记录](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#implementation-record)。Pi 不提供产品的授权记录、工作目录 `lease` 或持久的环境终止证明，这些由 Himawari 自己的薄适配层和数据库记录承担，不另建第二套 Agent 循环、工具协议或权限数据库。
 
 2026-09-29，按 [ADR 0040](../../adr/0040-background-output-closed-after-bash-returns.md#decision)，受限 Bash 主进程退出后继续读取输出，每段新输出重置 100ms 等待；输出连续安静后返回原退出码和已收集输出，自然 close 先到时保持原结果。持续输出仍受原工具/Grant 期限、取消、输出和资源上限约束，不重放。调用结束时关闭读端，不主动结束脱离的后台程序；晚写原输出通道导致退出是已接受的行为，长期运行程序应把输出重定向到文件。模型说明原文：
 

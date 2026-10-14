@@ -10,6 +10,7 @@ import type {
 } from "@himawari-agent/application";
 import { scanMachineSecrets } from "@himawari-agent/application";
 import {
+  firstRejectedPathComponent,
   type SandboxFileTarget,
   type SandboxPreparedFile,
   sandboxFileTargetSchema,
@@ -70,11 +71,7 @@ export async function createSandboxedCodingOperations(input: {
     const value = path.relative(grant.displayPath, absolute);
     if (!value || value === ".." || value.startsWith(`..${path.sep}`) || path.isAbsolute(value))
       throw new Error("PI_PATH_OUTSIDE_GRANT");
-    if (
-      value
-        .split(path.sep)
-        .some((part) => part === ".git" || part === ".env" || part.startsWith(".himawari-"))
-    )
+    if (firstRejectedPathComponent(value.split(path.sep)) !== undefined)
       throw new Error("PI_PROTECTED_PATH");
     return value;
   };

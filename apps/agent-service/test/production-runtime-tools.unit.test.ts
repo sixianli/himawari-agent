@@ -1,6 +1,14 @@
-import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  type PayloadRef,
+  type RuntimeToolInvocation,
+} from "@himawari-agent/application";
 import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
+import type {
+  ProductionHostReadOnlyInput,
+  ProductionHostReadOnlyResult,
+} from "../src/production-host-read.js";
 import {
   type ProductionRuntimeSandbox,
   ProductionRuntimeTools,
@@ -1044,3 +1052,129 @@ it.each([true, false])(
     ).toHaveLength(1);
   },
 );
+
+const hostGrant: import("@himawari-agent/application").HostDirectoryGrant = {
+  id: "directory:test",
+  revision: 1,
+  hostId: "host:test",
+  canonicalRootId: "1:2",
+  displayPath: "/workspace",
+  operations: ["read"] as const,
+  dataClassification: "private" as const,
+  disclosure: "model" as const,
+  pathPolicy: "same_filesystem_no_links" as const,
+  mountPolicy: "fixed_device" as const,
+  authorizationRef: "owner:test",
+  revokedAt: null,
+  expiresAt: "2026-09-06T01:00:00.000Z",
+};
+
+function hostCodingCall(): RuntimeToolInvocation {
+  return {
+    ...invocation,
+    capabilityHandleRef: null,
+    capabilityRef: "coding.read",
+    arguments: { path: "notes.txt" },
+    executionDeadlineAt: "2026-09-06T00:01:00.000Z",
+    context: {
+      threadId: "thread:test" as NonNullable<RuntimeToolInvocation["context"]>["threadId"],
+      modelRef: "model:test",
+      continuationRef: "payload:continuation" as PayloadRef,
+      executionLease: {
+        deploymentId: "deployment:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["deploymentId"],
+        authorityEpoch: 1,
+        fencingToken: 1,
+        authorityLeaseId: "authority-lease:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["authorityLeaseId"],
+        authorityFencingToken: 1,
+        executionLeaseId: "execution:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["executionLeaseId"],
+        expectedLeaseRevision: 1,
+        consumerId: "consumer:test",
+      },
+    },
+  };
+}
+
+type HostExecute = (input: ProductionHostReadOnlyInput) => Promise<ProductionHostReadOnlyResult>;
+
+function hostOptions(f: ReturnType<typeof fixture>, execute: HostExecute) {
+  return {
+    ...f.options,
+    coding: {
+      capabilityRef: "coding",
+      capabilityVersion: "1.0.0",
+      enabledTools: ["read"] as const,
+      hostId: "host:test",
+      workerInstanceId: "worker-instance",
+      grantId: "directory:test",
+      maximumBytes: 4096,
+    },
+    fileRead: {
+      binding: async () => ({
+        workerInstanceId: "worker-instance",
+        revision: 1,
+        hostId: "host:test",
+        capabilityRef: "coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        threadId: "thread:test",
+        modelRef: "model:test",
+        modelIdentity: "model:openrouter:test",
+        grant: hostGrant,
+      }),
+      authorize: vi.fn(async () => ({
+        decision: "ALLOW" as const,
+        basis: { type: "grant" as const, ref: "grant:test" },
+        executionScope: {
+          capabilityRef: "coding",
+          operations: ["read"],
+          exactResourceRef: null,
+          resourcePrefixes: [],
+          maxDataClassification: "private" as const,
+          sideEffects: ["none" as const],
+          maxCostMicrosPerUse: 0,
+          maxFrequency: { count: 1, intervalMs: null },
+        },
+      })),
+      issue: vi.fn(async () => {
+        throw new Error("must not issue");
+      }),
+      hostReadOnly: { execute },
+    },
+    completeSandboxToolResult: vi.fn(async () => null),
+  };
+}
+
+it("[R2-P1] recovers a saved host read result instead of rejecting it", async () => {
+  const f = fixture();
+  const execute = vi.fn(
+    async (_input: ProductionHostReadOnlyInput): Promise<ProductionHostReadOnlyResult> => ({
+      modelContent: "pi-result.v1",
+      isError: false,
+      errorCode: null,
+    }),
+  );
+  const call = hostCodingCall();
+  const tool = new ProductionRuntimeTools(hostOptions(f, execute));
+  await tool.listAuthorized(call.runId, []);
+  const first = await tool.execute(call);
+  expect(first).toMatchObject({ outcome: "succeeded", dispatchState: "not_sent" });
+  expect(execute).toHaveBeenCalledTimes(1);
+  const recovered = await tool.recoverResult(call, {
+    toolCallId: call.toolCallId,
+    capabilityRef: call.capabilityRef,
+    invocationId: "runtime-tool:test",
+    jobId: "job:test",
+    continuationRef: call.context?.continuationRef ?? ("payload:continuation" as PayloadRef),
+  });
+  expect(recovered).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "pi-result.v1",
+    dispatchState: "not_sent",
+  });
+});

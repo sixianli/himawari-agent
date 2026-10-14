@@ -2,22 +2,10 @@ import type { Dirent, Stats } from "node:fs";
 import { lstat, readdir, readFile, realpath, statfs } from "node:fs/promises";
 import path from "node:path";
 import type { ExecutionEnvelope } from "@himawari-agent/execution-contracts";
+import { isProtectedDirectoryEntry } from "@himawari-agent/execution-contracts";
 import { ContainerBackendError } from "./container-backend-error.ts";
 
 export const WORKSPACE_MOUNT_ROOT = "/workspaces";
-const PROTECTED_NAMES = new Set([
-  ".env",
-  ".npmrc",
-  ".pypirc",
-  ".netrc",
-  ".ssh",
-  ".aws",
-  ".himawari-trash",
-  ".himawari-recovery",
-]);
-const PROTECTED_PREFIXES = [".env.", "id_rsa", "id_ed25519"];
-const PROTECTED_SUFFIXES = [".pem", ".key"];
-const PROTECTED_PATH = ".docker/config.json";
 const UNSAFE_MOUNT_CHARACTERS = /[,"\n\r\0]/;
 const GIT_FILE_BYTES = 4096;
 
@@ -158,7 +146,7 @@ async function scanDirectory(root: string, budget: ScanBudget) {
       const child = relative === "" ? entry.name : `${relative}/${entry.name}`;
       const absolute = path.join(root, child);
       if (entry.name === ".git") await verifyGitMetadata(root, absolute, entry);
-      if (isProtected(child, entry.name)) {
+      if (isProtectedDirectoryEntry(child, entry.name)) {
         if (entry.isSymbolicLink())
           throw new ContainerBackendError("CONTAINER_PROTECTED_FILE_UNMASKABLE");
         if (entry.isDirectory()) await requireSingleLinks(absolute, budget);
@@ -229,18 +217,6 @@ async function verifyGitMetadata(root: string, absolute: string, entry: Dirent) 
     throw refuse();
   }
   if (!(await inside(path.resolve(gitdir, commondir)))) throw refuse();
-}
-
-function isProtected(relative: string, name: string) {
-  const lower = name.toLowerCase();
-  const lowerPath = relative.toLowerCase();
-  return (
-    PROTECTED_NAMES.has(lower) ||
-    PROTECTED_PREFIXES.some((prefix) => lower.startsWith(prefix)) ||
-    PROTECTED_SUFFIXES.some((suffix) => lower.endsWith(suffix)) ||
-    lowerPath === PROTECTED_PATH ||
-    lowerPath.endsWith(`/${PROTECTED_PATH}`)
-  );
 }
 
 function count(budget: ScanBudget) {

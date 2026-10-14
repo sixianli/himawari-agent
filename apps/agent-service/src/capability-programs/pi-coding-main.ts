@@ -2,7 +2,10 @@ import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { scanMachineSecrets } from "@himawari-agent/application";
-import { piRunnerInputSchema } from "@himawari-agent/execution-contracts";
+import {
+  firstRejectedPathComponent,
+  piRunnerInputSchema,
+} from "@himawari-agent/execution-contracts";
 import {
   createPiFilePublicationJournal,
   createSandboxedCodingOperations,
@@ -71,9 +74,7 @@ try {
     target &&
     target !== input.workspace &&
     (!target.startsWith(`${input.workspace}/`) ||
-      target
-        .split("/")
-        .some((part) => part === ".git" || part === ".env" || part.startsWith(".himawari-")))
+      firstRejectedPathComponent(target.split("/")) !== undefined)
   )
     throw new Error("PI_PATH_OUTSIDE_SCOPE");
   if (input.scope.fileTarget && !["read", "write", "edit"].includes(input.tool))

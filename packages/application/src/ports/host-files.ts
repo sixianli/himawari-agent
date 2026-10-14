@@ -261,3 +261,49 @@ export interface GovernedCodingOperationsPort {
     readonly onData: (data: Uint8Array) => void;
   }): Promise<{ readonly exitCode: number | null }>;
 }
+
+export const HOST_READ_ONLY_ERROR_CODES = Object.freeze({
+  PROC_UNAVAILABLE: "HOST_READ_PROC_UNAVAILABLE",
+  PATH_UNSAFE: "HOST_READ_PATH_UNSAFE",
+  ROOT_IDENTITY_CHANGED: "HOST_READ_ROOT_IDENTITY_CHANGED",
+  LINK_ESCAPE: "HOST_READ_LINK_ESCAPE",
+  HARDLINK: "HOST_READ_HARDLINK",
+  NOT_REGULAR: "HOST_READ_NOT_REGULAR",
+  TARGET_MISSING: "HOST_READ_TARGET_MISSING",
+  LENGTH_EXCEEDED: "HOST_READ_LENGTH_EXCEEDED",
+  CONTENT_CHANGED: "HOST_READ_CONTENT_CHANGED",
+  PROTECTED: "HOST_READ_PROTECTED",
+} as const);
+
+export type HostReadOnlyEntryKind = "file" | "directory" | "other";
+
+export interface HostReadOnlyDirectoryEntry {
+  readonly name: string;
+  readonly kind: HostReadOnlyEntryKind;
+}
+
+export class HostReadOnlyError extends Error {
+  readonly code: string;
+  constructor(code: string, message?: string) {
+    super(message ?? code);
+    this.name = "HostReadOnlyError";
+    this.code = code;
+  }
+}
+
+export interface HostReadOnlyPort {
+  readonly available: boolean;
+  listDirectory(input: {
+    readonly grant: HostDirectoryGrant;
+    readonly relativePath: string;
+  }): Promise<readonly HostReadOnlyDirectoryEntry[]>;
+  inspectEntry(input: {
+    readonly grant: HostDirectoryGrant;
+    readonly relativePath: string;
+  }): Promise<HostReadOnlyEntryKind | null>;
+  readFile(input: {
+    readonly grant: HostDirectoryGrant;
+    readonly relativePath: string;
+    readonly maximumBytes: number;
+  }): Promise<Uint8Array>;
+}

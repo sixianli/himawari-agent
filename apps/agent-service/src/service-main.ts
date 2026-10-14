@@ -38,6 +38,7 @@ import {
   MacOsKeychainSecretSource,
   PayloadUdsServer,
   parseServiceArguments,
+  DescriptorRelativeReadOnly,
   RuntimeHealthModel,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
@@ -720,6 +721,7 @@ export async function runAgentService(
       authority: invocationAuthority,
       clock,
       ids,
+      hostReadOnlyPort: new DescriptorRelativeReadOnly(),
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),
     });

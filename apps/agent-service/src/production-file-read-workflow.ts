@@ -16,6 +16,7 @@ import {
 } from "@himawari-agent/application";
 
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
+import type { ProductionHostReadOnly } from "./production-host-read.js";
 
 export interface FileReadBinding {
   readonly workspaceCopy?: SandboxWorkspaceCopy;
@@ -44,6 +45,8 @@ export interface ProductionFileReadServices {
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
+  /** Present only when the host implements descriptor-relative read-only open. */
+  readonly hostReadOnly?: ProductionHostReadOnly;
 }
 export type WorkflowAuthority = {
   readonly deploymentId: string;

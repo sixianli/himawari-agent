@@ -1409,7 +1409,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         description:
           descriptor.definition === "builtin-read"
             ? `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向当前模型披露分别经产品授权；目录、授权或执行条件不满足时明确返回未完成原因。`
-            : `${builtin.description}\n目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；通过受限 Worker 执行。`,
+            : ["read", "ls", "find", "grep"].includes(descriptor.name)
+              ? `${builtin.description}\n目标主机、目录和执行权限由 Himawari 授权绑定；只读工具在可信主进程内经严格路径检查执行，不新建沙箱。`
+              : `${builtin.description}\n目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；写入和命令通过受限 Worker 执行。`,
         parameters: builtin.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(builtin.promptGuidelines === undefined

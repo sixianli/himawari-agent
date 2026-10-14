@@ -522,3 +522,42 @@ it.each(["create", "update", "move", "trash"] as const)(
     expect(f.authorize).not.toHaveBeenCalled();
   },
 );
+
+it("[R2-P1] executes read-only tools in the host process and reuses the saved result", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "pi-result.v1",
+    isError: false,
+    errorCode: null,
+  }));
+  const authorize = vi.fn<ProductionFileReadServices["authorize"]>(async () => ({
+    decision: "ALLOW",
+    basis: { type: "grant", ref: "grant:test" },
+    executionScope: {
+      capabilityRef: "coding",
+      operations: ["read"],
+      exactResourceRef: null,
+      resourcePrefixes: [],
+      maxDataClassification: "private",
+      sideEffects: ["none"],
+      maxCostMicrosPerUse: 0,
+      maxFrequency: { count: 1, intervalMs: null },
+    },
+  }));
+  const services = { ...f.services, authorize, hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "notes.txt" } };
+  const first = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(first).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "not_sent",
+    modelContent: "pi-result.v1",
+    executionTiming: expect.any(Object),
+  });
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+  expect(f.services.issue).not.toHaveBeenCalled();
+  // A replay returns the saved result instead of reading the file again.
+  const second = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(second).toMatchObject({ outcome: "succeeded", modelContent: "pi-result.v1" });
+  expect(execute).toHaveBeenCalledTimes(1);
+});
