@@ -368,6 +368,15 @@ async function setComparisonDirectoryModes(root) {
     if (entry.isDirectory()) await setComparisonDirectoryModes(path.join(root, entry.name));
 }
 
+function systemSha256(filename) {
+  const command = spawnSync("sha256sum", [filename], { encoding: "utf8" });
+  const result = command.error
+    ? spawnSync("shasum", ["-a", "256", filename], { encoding: "utf8" })
+    : command;
+  if (result.status !== 0) throw new Error(`SHA256SUM_FAILED:${result.stderr}`);
+  return result.stdout.trim().split(/\s+/)[0];
+}
+
 describe("same-artifact verification", () => {
   it.each([
     ["0002", false],
@@ -732,6 +741,18 @@ describe("same-artifact verification", () => {
     expect(existsSync(path.join(extracted, ".DS_Store"))).toBe(false);
     expect(existsSync(path.join(extracted, "runtime/node_modules/.DS_Store"))).toBe(false);
     expect(record.files.some((file) => file.path.endsWith(".DS_Store"))).toBe(false);
+  });
+  it("[R2-D15] digests files on both sides of the small-file boundary exactly like sha256sum", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "himawari-digest-boundary-"));
+    try {
+      for (const size of [1024 * 1024 - 1, 1024 * 1024, 1024 * 1024 + 1]) {
+        const filename = path.join(directory, `bytes-${size}.bin`);
+        await writeFile(filename, Buffer.alloc(size, 7));
+        expect(await digestFile(filename)).toBe(systemSha256(filename));
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   it("creates a deterministic archive, verifies it, and streams prevalidated members", async () => {
     const { temporary, payload, record } = await fixture();

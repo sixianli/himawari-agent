@@ -4,7 +4,14 @@ import { chmod, lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { safeRelativePath, sha256 } from "./contracts.mjs";
 
-export async function digestFile(filename) {
+const SMALL_FILE_BYTES = 1024 * 1024;
+
+export async function digestFile(filename, size) {
+  const bytes = size ?? (await lstat(filename)).size;
+  if (bytes < SMALL_FILE_BYTES)
+    return createHash("sha256")
+      .update(await readFile(filename))
+      .digest("hex");
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(filename)) digest.update(chunk);
   return digest.digest("hex");
@@ -18,7 +25,7 @@ export async function collectArtifactFiles(root, { normalizeModes = false } = {}
     const info = await lstat(filename);
     const mode = normalizeModes ? (info.mode & 0o111 ? 0o755 : 0o644) : info.mode & 0o777;
     if (normalizeModes) await chmod(filename, mode);
-    return { path: name, sha256: await digestFile(filename), bytes: info.size, mode };
+    return { path: name, sha256: await digestFile(filename, info.size), bytes: info.size, mode };
   };
   const finishFirst = async () => {
     const outcome = await pending.shift();
