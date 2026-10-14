@@ -14,6 +14,19 @@ The user asked on 2026-09-29 that code and documentation never drift apart. Docu
 - When fixing a defect, also correct documentation that describes the old behavior. When a document records a decision, keep its status fields and links current.
 - Commit messages and delivery reports list the documents updated and the result of strict validation.
 
+## Recording Failures and Mistakes
+
+The user decided on 2026-10-14 (G104) that every lesson from a failure or a mistake is recorded at once in the place where it will prevent the next occurrence; it must never live only in a chat reply or a stop file.
+
+- Record it in the same work session, before moving on, in the place that matches its kind:
+  - a mistake coding agents made twice or more, with the rule that prevents it: `docs/lessons.md` (add the new occurrence to an existing entry when one already covers it);
+  - a way of briefing, reviewing, or driving opencode and Grok: the `opencode-orchestration` skill;
+  - a product defect or unfinished work: fix it in the current task, or create a Backlog item;
+  - a change to how a test, deployment, or operation is run: the Runbook, plan, or spec that describes it;
+  - a user preference about how Claude works: Claude's memory.
+- One-off incidents still get recorded where they teach something: the task plan's log, the stop file, or the commit message, with the cause and the fix.
+- Delivery reports name the places a lesson was recorded.
+
 ## Project Instruction Commits
 
 - Changes to this project-level `AGENTS.md` may be committed separately after review and applicable checks, without asking the user for confirmation. Stage only this file in such a commit and preserve unrelated work. Push it like every other commit (see "Pushing Commits" below).
@@ -135,5 +148,6 @@ Disk space is scarce on the development Mac and on the Hermes root disk (about 1
 - Before deleting anything, confirm that no running process, pending command, or unfinished task still uses it, and search the repository and `.ci-output/` recursively for the path or directory name. Keep it when a document, handoff file, evidence README, or test report says it is retained evidence, is needed to inspect an open failure, or is the only copy of recorded results. A report that merely records a rebuildable package's path and SHA-256 as the tested input does not make the package itself evidence; the recorded commit and digest are enough to rebuild and verify it. Delete only artifacts that the current task or an earlier test run created; do not delete user-owned files.
 - Always keep: test reports, console and service logs, database or state readbacks, traces, screenshots, and any other verification evidence; everything referenced as evidence by documents or handoff files; backups and recovery points; any production release on the cloud server and at least the release immediately before it for rollback.
 - Prefer deleting artifacts that can be rebuilt from a commit over deleting evidence. When evidence itself must be reduced, ask first.
+- Capture failure evidence deliberately, never by packing whole directories (user decision G104, 2026-10-14; see [the lesson on bulky evidence](docs/lessons.md#bulky-evidence)). Save reports, logs, state readbacks, and traces as separate files. Never pack `node_modules`, `.git`, or source files identical to a commit; record the commit, the lockfile digest, and a manifest of path, size, and SHA-256 instead. Store an input shared by several runs once and give the other runs a reference file with its path and SHA-256. For near-identical diagnostics keep one full copy plus the differences. Before keeping a single evidence file over 50 MB or more than 100 MB for one run, check what is inside and why it is needed. Task briefs for coding agents repeat this rule.
 - On the cloud server, deleting root-owned paths (for example production paths under `/opt/himawari/` or `/etc/himawari/`) follows the user-run script process: give the user an executable script, explain exactly what each command deletes and why, and wait for the user to run it.
 - When the task ends, report which paths were deleted, how much space was freed, and which large artifacts were intentionally kept and why.
