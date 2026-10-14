@@ -80,6 +80,7 @@ date: "2026-10-13"
 - 再次发生的证据：
   - 2026-10-13 先后在 packet-02、packet-03（两次）里发现并删除了这个空目录。
   - 2026-10-14 主工作区严格校验报 6 个 Runbook 的 `contract_sha256` 不匹配，同一提交 `24720138` 在干净检出上是 0 个错误。原因是更早的会话在 `packages/persistence-sqlite/src/migrations/` 等 23 个目录里留下了 `.claude/.cc-writes`，Runbook 遍历依据目录时把它们算了进去。
+  - 2026-10-14 清理证据时，Claude 两次在命令开头写 `cd .ci-output/handoff/<证据目录>`，会话工作目录随之切过去，`baselines/` 和 `prod-sandbox-evidence-01a/` 里各多出一个 `.claude/.cc-writes`（当场 `rmdir`）。对证据目录同样只用从仓库根目录出发的路径；确实要换目录时写在子 shell 里，例如 `( cd <目录> && <命令> )`，命令结束后工作目录不变。
 
 [回到目录](#编码代理反复犯的错误)
 
