@@ -479,3 +479,10 @@
 > 试 grok-build-0.1 (推荐)
 
 （回复的是 Claude 的选择题：用户已在本机 opencode 里用 `/connect` 登录自己的 X Subscription（Premium 档，含 Grok API），Claude 实测 `xai/grok-build-0.1` 和 `xai/grok-4.7` 都能调通。用户选择下一批 R2-T5 改用 `xai/grok-build-0.1` 试做；R2-T4 继续用 deepseek 做完；试做结束后比较质量和用量，再由用户决定是否改成默认模型。G83 在此之前仍然有效。）
+
+## G94 2026-10-14 用户原话
+
+> 额外的我提醒你一句，我的 opencode go 套餐里的 grok 或者 xai 相关的模型禁止使用，只能使用我刚登录 grok
+> 套餐里面的模型
+
+（Grok 模型只能经 opencode 的 `xai/` 提供方使用，即用户自己登录的 Grok 套餐；`opencode-go/grok-*`、`opencode/grok-*` 等转售的 Grok 一律禁用。Claude 用 opencode-orchestration skill 的 `scripts/grok-launch.sh` 启动 Grok 批次，它拒绝 `xai/` 以外的模型；本机 `.opencode/opencode.json` 停用了项目不用的 `opencode` 提供方。）
