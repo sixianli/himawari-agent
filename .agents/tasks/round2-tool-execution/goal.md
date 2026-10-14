@@ -504,3 +504,9 @@
 > 我已经在 Claude Code 安装了 Grok Build 的插件，所以你以后分配给 Big Rock 的任务，可以通过这个插件来进行
 
 （“Big Rock”是语音输入对“Grok”的误识别。之后分给 Grok 的批次改走 Claude Code 的 Grok Build 插件（`grok-build` 0.2.1，内部调用本机 `grok` 命令行 1.0.52，登录方式为 grok.com 订阅，满足 G94），不再经 opencode 的 `xai/`。分给 deepseek 的批次仍走 opencode（G83）。插件以“全部自动批准”方式运行 Grok，因此 Claude 在本机建了不提交的 `.grok/config.toml` 禁止清单（与 `.opencode/opencode.json` 同一组规则，已写进 `.git/info/exclude`），并用 `grok --trust` 让 Grok 读取本项目的 AGENTS.md 和这份清单；2026-10-14 经插件实测：`node`、生产 IP、读取 `*.pem` 被拦住，普通命令和 `$(...)` 正常执行。）
+
+## G98 2026-10-14 用户原话
+
+> 可以
+
+（回答 Claude 的问题“要不要按原计划拆分 sqlite-sandbox-execution-v2.test.ts”。背景：R2-T4 改成每个集成测试进程 1 个 CPU、最多 3 个进程后，`npm test` 在 Hermes 上全部通过、没有超时，但 test 阶段 1549.7 秒，超过 1500 秒目标约 50 秒（证据 `/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/r2t4-22/run-16-layer3-b3/`）；该文件单独约 845 秒，是最长的一个。用户批准拆分它，让多个进程能并行跑它的用例。）

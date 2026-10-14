@@ -1073,6 +1073,48 @@
       }
     },
     {
+      "id": "R2-T6",
+      "title": "production-http-composition-process 的 [R2-L5] 测试先用 listen(端口 0) 探一个空闲端口再关掉、之后子服务才绑定（reservePort），两步之间端口可能被别的进程占用，负载下出现 EADDRINUSE 和就绪等待超时",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T6",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 22 批 run-09（2 个进程）三条 [R2-L5] 失败：EADDRINUSE 与 HTTP child readiness timed out；test/integration/production-http-composition-process.test.ts 第 151–164 行"
+      }
+    },
+    {
+      "id": "R2-T7",
+      "title": "durable-phase-process-recovery 的子进程等待写死 15 秒，子进程里冷启动嵌套 Vitest 在负载下超过 15 秒就判失败（不放宽时限，消除冷启动开销或改用就绪信号）",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T7",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 22 批 run-07（2 个进程）Durable phase child timed out：子进程 15.001 秒只打印 RUN v4.1.9；test/integration/durable-phase-process-recovery.test.ts 第 105–106 行；3 个进程时耗时 ÷ 自身时限 0.527"
+      }
+    },
+    {
       "id": "R2-P1",
       "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
       "goal_ref": ["G89"],
