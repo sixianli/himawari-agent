@@ -14,18 +14,19 @@ The user asked on 2026-09-29 that code and documentation never drift apart. Docu
 - When fixing a defect, also correct documentation that describes the old behavior. When a document records a decision, keep its status fields and links current.
 - Commit messages and delivery reports list the documents updated and the result of strict validation.
 
-## Recording Failures and Mistakes
+## Repeated Mistakes
 
-The user decided on 2026-10-14 (G104) that every lesson from a failure or a mistake is recorded at once in the place where it will prevent the next occurrence; it must never live only in a chat reply or a stop file.
+The user decided on 2026-10-14 (G104, clarified by G106) that the trigger is repetition: when the same mistake happens for the third time, stop the current work, find its root cause, and record the fix and the lesson where they will prevent a fourth occurrence. A single mistake does not need its own record.
 
-- Record it in the same work session, before moving on, in the place that matches its kind:
-  - a mistake coding agents made twice or more, with the rule that prevents it: `docs/lessons.md` (add the new occurrence to an existing entry when one already covers it);
+- Count occurrences of the same kind of mistake across sessions and agents, using `docs/lessons.md`, handoff files, stop files, and commit messages as the history. A session handoff names any mistake that has happened twice, so the next session can recognize the third.
+- On the third occurrence, pause the task and diagnose why the earlier prevention failed. A rule that relies on remembering it has already failed twice; prefer a mechanical safeguard (a check, a script, a deny rule, a hook) over another written reminder. Ask the user first when the safeguard needs a configuration or permission change.
+- Record the result where it matches its kind:
+  - a mistake coding agents repeat, with the rule or safeguard that prevents it: `docs/lessons.md` (add the new occurrence to an existing entry when one already covers it);
   - a way of briefing, reviewing, or driving opencode and Grok: the `opencode-orchestration` skill;
-  - a product defect or unfinished work: fix it in the current task, or create a Backlog item;
+  - a product defect: fix it in the current task, or create a Backlog item;
   - a change to how a test, deployment, or operation is run: the Runbook, plan, or spec that describes it;
   - a user preference about how Claude works: Claude's memory.
-- One-off incidents still get recorded where they teach something: the task plan's log, the stop file, or the commit message, with the cause and the fix.
-- Delivery reports name the places a lesson was recorded.
+- Then resume the paused work. Delivery reports name the root cause found and where it was recorded.
 
 ## Project Instruction Commits
 
