@@ -1052,6 +1052,27 @@
       }
     },
     {
+      "id": "R2-T5",
+      "title": "沙箱里的 bash 写授权工作目录和私有临时目录以外的路径时，命令要明确失败；现在写进沙箱自建的临时文件系统并报成功，沙箱结束后内容消失，模型会以为已经保存",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T5",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 21 批 run-04 实测：printf 写工作目录的父目录成功，宿主上没有文件（r2t3-escape-readback.json）"
+      }
+    },
+    {
       "id": "R2-P1",
       "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
       "goal_ref": ["G89"],

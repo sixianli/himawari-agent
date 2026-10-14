@@ -7,9 +7,9 @@
 ## 当前批次
 
 按 G77/G83 编码和测试交给 opencode（`opencode-go/deepseek-v4.1-flash#high`），Claude 统筹、逐行审核并执行生产步骤；测试只在 Hermes；opencode 不连接云服务器 84.247.157.41：
-- R2-T3：沙箱里 bash 子命令的 PATH 加上 /usr/local/bin、/usr/bin、/bin（固定目录在前），只改 `pi-coding-main.ts` 执行命令的那一处，不扩大沙箱只读放行列表；同一提交改 Runbook、架构文档和 SRT 设计里的 PATH 描述（ADR 0055）。证据：带 [R2-T3] 的产品路径测试在 Hermes 通过（ls、cat、git、python3 可用，越界写入、读 /etc/passwd 和联网仍被拒绝），Claude 审核。简报 `.ci-output/handoff/2026-10-13-r2t3-oc-brief-21.md`。
-- R2-T4：npm test 在 Hermes 上于 30 分钟总预算内跑完，不放宽时限（G20）。先测量集成测试各文件耗时找出最慢的部分，再缩短测试本身的耗时；改 Vitest 配置或 `scripts/ci/` 时按规定跑第 3 层。证据：`npm test -- --tools …` 在 Hermes 退出码 0，Claude 审核。R2-T3 提交后再派。
-- R2-L10：R2-T3、R2-T4、R2-P1、R2-P2 通过后做第四次生产变更操作包（同时上线 R2-U3、R2-T1、R2-T2），用户具体批准后执行。
+- R2-T4：npm test 在 Hermes 上于 30 分钟总预算内跑完，不放宽时限（G20）。先只读测量：集成测试各文件的实际耗时和并行度（vitest 报告、`testWorkerCount`），交方案停止文件；批准后缩短最慢部分的耗时。改 Vitest 配置或 `scripts/ci/` 时按规定跑第 3 层。证据：`npm test -- --tools …` 在 Hermes 退出码 0，Claude 审核。
+- R2-T5：沙箱里 bash 写授权目录和私有临时目录以外的路径时要明确失败。先交方案：找出临时文件系统由谁建（SRT 的 `denyRead:["/"]` 处理、bwrap 参数），选定修改层（优先 Himawari 的策略或参数，避免改上游包），批准后实现。证据：带 [R2-T5] 的产品路径测试在 Hermes 通过（命令非零退出、宿主无文件、工作目录内写入仍成功），Claude 审核。R2-T4 之后派，或与它分开工作目录并行。
+- R2-L10：R2-T4、R2-T5、R2-P1、R2-P2 通过后做第四次生产变更操作包（上线 R2-U3、R2-T1、R2-T2、R2-T3 及之后各项），用户具体批准后执行。生产目录授权必须包含 bash 需要的完整写操作（read、create、update、move、trash、restore、permanent_delete），否则沙箱里的 bash 只能只读（`sandboxed-coding-operations.ts` 的 `PI_SHELL_EFFECT_SCOPE_INCOMPLETE` 规则）。
 
 ## 之后
 
@@ -114,6 +114,7 @@ R2-T3 之后（G89）：
 - 2026-10-13 R2-L10 范围加入授权根目录 /var/lib/himawari/workspace/（G90）、不接入 GitHub（G91）；GitHub 和控制中心上传记为 BL-20261013-002、003。done_when 不变。
 - 2026-10-13 新增 R2-T3（G92：用户选择沙箱里的 bash 使用系统自带命令），记入 ADR 0055；R2-L10 范围加入 R2-T3。R2-U3、R2-T1 移出当前批次，当前批次改为 R2-T2、R2-T3、R2-L10。R2-T2 起非机械性修复先交方案再实现，停止文件要附期望值来源表（第 18、18a 批返工分析）。status（新增前）：共 52 项，当前版本已验证 6 · 旧版本验证过 23 · 未完成 17 · 等你决定 4 · 不做 2。
 - 2026-10-13 新增 R2-T4（G20：Hermes 一律默认时限，超时当缺陷修）；R2-T2 已审核通过移出当前批次，当前批次改为 R2-T3、R2-T4、R2-L10。status：共 54 项，当前版本已验证 12、旧版本验证过 20、未完成 16、等你决定 4、不做 2（新增 R2-T4 前）。
+- 2026-10-14 R2-T3 审核通过移出当前批次；新增 R2-T5（G1：第 21 批发现沙箱里写工作目录外的路径会写进临时文件系统并报成功）；R2-L10 计划加入生产目录授权须含 bash 的完整写操作。当前批次 R2-T4、R2-T5、R2-L10。status：共 54 项，当前版本已验证 10、旧版本验证过 21、未完成 17、等你决定 4、不做 2（记录 R2-T3 审核、新增 R2-T5 前）。
 
 ## 意外和发现
 
@@ -215,6 +216,7 @@ R2-T3 之后（G89）：
 - 2026-10-08 00:40 stop-09 草稿阶段：Codex 新记 BL-20261007-005 到 009。Claude 核实后预先写 reply-09：BL-006 是 Claude 用 Python 重写 items.json 造成的格式失败，ecfea51 已修；BL-005 改为把 G59 验收用过的整份锁定 node_modules 连同 3a65b90 bundle 临时带入，并在 Hermes 从空目录演练安装和完整 P8 验收；BL-007 两个 bwrap 路径按安装 Runbook 401–406 行分别签署；BL-008 给出清理证据规则；BL-009 按用户 G64 不做 systemd 离线检查；取消 reply-05 的 4 小时预算。group-07 新 HTTP 版探针 3 次 exit 0。用户要更新 Claude Code 并换新会话，Codex 已在 Hermes 无测试进程时暂停，恢复步骤写在 claude-codex-state.md。
 - 2026-10-13 S10 真实聊天（thread:f652065f，run:9a2d2c24）：沙箱读取每次 7–14 秒正常结束并把结果送回模型，读工具不再卡住；结果不理想因为生产 enabledTools 只有 read、工作目录只有 first-response-20261007.txt、授权目录内每次读取都要批准（等待 2 分 28 秒）。读目录被报成 CODING_PATH_OUTSIDE_SCOPE（production-coding-workflow.ts:164）。运行中控制中心停在“Preparing · Time not recorded”并弹出“无法加载这段对话”，说明 R2-U1 的修复没有覆盖运行中连续失败的情况；结束后重开显示正常。证据 .ci-output/production/2026-10-13-third-s10-diagnostic-01/。
 - 2026-10-13 第 20 批：npm test 在 Hermes 两次于 30 分钟被终止（run-05、run-14）。基线 4bf19bd 的第 3 层 test 用时 1779 秒（unit 186、contracts 31、integration 1505），只剩约 21 秒余量；本批 unit 增至 220 秒，integration 在 1521 秒被终止。完整套件直跑 7928/0。另：R2-T1 报告“check 通过”有误，e00e641 的测试文件 biome lint --error-on-warnings 退出码 1（noTemplateCurlyInString），9eed9a6 已修。
+- 2026-10-14 第 21 批：(1) SRT 用临时文件系统重建沙箱根目录，工作目录的父目录在沙箱里可写，bash 写那里会报成功但宿主上没有文件（run-04、run-07 回读）；(2) 产品路径夹具给 bash 的目录授权只有 read，所以 bash 连工作目录也只能读；(3) opencode 会话在同步等待约一小时的第 3 层时被 opencode 以 inactivity 中断，脚本在 Hermes 上照常跑完；(4) 00:49 起 Tailscale 不通（Hermes 端显示 Logged out），改走 Cloudflare 备用线路，用户恢复后已切回。
 
 ## 决定
 
