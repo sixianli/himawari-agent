@@ -7,8 +7,9 @@
 ## 当前批次
 
 G108（用户睡前要求继续推进、尽快上线）之后三批并行，同一时间只有一批往分支提交；上线（R2-L10）仍需用户对冻结操作包的具体批准：
-- R2-T10：opencode（deepseek `#high`，新会话）在工作副本 `.ci-output/worktrees/r2t10` 只读交方案（简报 27）：确认“沙箱未启动”可以安全结束这次调用的依据、与“结果未知”的区别、保留原始启动错误的位置；批准后先写复现再改。证据：带 [R2-T10] 的测试在 Hermes 通过，Claude 审核。
-- R2-T5：Grok 在工作副本 `.ci-output/worktrees/r2t5` 换到 `498624c0`，产品路径夹具保存作业宿主和工人的错误输出，在云测试账号跑第 0–2 层和过滤的第 4 层（答复 23k）。证据：带 [R2-T5] 的测试在 Hermes 通过，Claude 审核。
+- R2-T10：opencode（deepseek `#high`，会话 ses_ec387ab24ffeGSMTC1DTisku8D）在工作副本 `.ci-output/worktrees/r2t10` 实现（答复 27b）：沿用现有“超时有界失败”路径，Worker 凭签名终态证实“命令未启动”后写 `SANDBOX_TOOL_NOT_STARTED` 失败结果，作业宿主的启动错误进受保护诊断；先在 Hermes 用真实 bwrap 复现第 20、21 次再改。证据：带 [R2-T10] 的测试在 Hermes 通过，Claude 审核。
+- R2-T9 回归：Hermes 第 3 层（`beaad7f4`）5758 条中 5 条失败，全在 `prepared-file-runner`：R2-T9 给 `publishPreparedPiOperation` 加的 `fitOutput` 函数被发布日志 `structuredClone`，预备写入和编辑整次失败（根因已用加载钩子取到堆栈）。opencode 第 28 批（简报 28，工作副本 `.ci-output/worktrees/r2t9fix`，Hermes 检出 `r2-u1`）按指定修法修复，之后 Claude 重跑第 3 层，再跑过滤的第 4 层（R2-T1/T2/T3/T5/T9）。
+- R2-T5：已合入 `beaad7f4`（Claude 审核通过）；完成证据等上面修复后的第 4 层。
 - R2-L10：Claude 准备第四次变更的冻结操作包（`.ci-output/production/2026-10-15-fourth-change-packet-01/`），R2-T5 合入后换候选版本，在 Hermes 跑包的全部夹具和生产形状演练；用户批准前不在生产上执行任何步骤。
 - R2-T5 合入后的那次 Hermes 第 3 层（`npm test -- --tools …`）同时作为 R2-T8 的完成证据。
 
