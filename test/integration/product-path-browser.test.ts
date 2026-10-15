@@ -23,6 +23,8 @@ import {
   chromium,
   type Locator,
   type Page,
+  type Request,
+  type Route,
   expect as uiExpect,
 } from "@playwright/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -352,6 +354,9 @@ async function send(text: string) {
   });
   await composer().fill(text);
   await uiExpect(button).toBeEnabled({ timeout: 20_000 });
+  await uiExpect(page.locator('.thread-loading-skeleton[data-scope="conversation"]')).toHaveCount(
+    0,
+  );
   const before = await page.locator(".chat-turn").count();
   await button.click();
   const turn = page.locator(".chat-turn").nth(before);
@@ -2731,7 +2736,7 @@ productDescribe(
       });
     }, 1_800_000);
 
-    it("[R2-S1] stops a running tool, releases only with proof, and never revives the cancelled run", async () => {
+    it("[R2-S1][R2-U4] stops a running tool, releases only with proof, never revives the cancelled run, and keeps sending closed until the reloaded conversation has loaded", async () => {
       await scenario("13-stop-running", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -2902,8 +2907,58 @@ productDescribe(
           for (const entry of stopped.occupancy)
             expect(entry).toMatchObject({ releasedAt: expect.any(String) });
           expect(stopped.replies).toEqual([]);
-          await page.reload();
-          await uiExpect(composer()).toBeVisible();
+          let releaseDetail = () => {};
+          const detailReleased = new Promise<void>((resolve) => {
+            releaseDetail = resolve;
+          });
+          let heldDetailQueries = 0;
+          const holdDetail = async (route: Route) => {
+            if (route.request().postDataJSON()?.type === "thread.detail") {
+              heldDetailQueries++;
+              await detailReleased;
+            }
+            await route.continue();
+          };
+          let sendRequestsWhileLoading = 0;
+          const countSendRequest = (request: Request) => {
+            const { pathname } = new URL(request.url());
+            if (
+              pathname === "/api/payload/v1/text" ||
+              pathname === "/api/gateway/thread/v3/commands"
+            )
+              sendRequestsWhileLoading++;
+          };
+          await page.route("**/api/gateway/thread/v3/queries", holdDetail);
+          page.on("request", countSendRequest);
+          try {
+            try {
+              await page.reload();
+              await uiExpect(composer()).toBeVisible();
+              await uiExpect.poll(() => heldDetailQueries, { timeout: 20_000 }).toBeGreaterThan(0);
+              await uiExpect(
+                page.locator('.thread-loading-skeleton[data-scope="conversation"]'),
+              ).toBeVisible();
+              await composer().fill("停止后继续");
+              await uiExpect(
+                page.getByRole("button", { name: "发送", exact: true }),
+              ).toBeDisabled();
+              await composer().press("Enter");
+            } finally {
+              releaseDetail();
+              await page.unroute("**/api/gateway/thread/v3/queries", holdDetail);
+            }
+            await uiExpect(
+              page.locator('.thread-loading-skeleton[data-scope="conversation"]'),
+            ).toHaveCount(0, { timeout: 20_000 });
+            await uiExpect(page.getByRole("button", { name: "发送", exact: true })).toBeEnabled({
+              timeout: 20_000,
+            });
+          } finally {
+            page.off("request", countSendRequest);
+          }
+          expect(sendRequestsWhileLoading).toBe(0);
+          await uiExpect(composer()).toHaveValue("停止后继续");
+          await uiExpect(page.getByText("正在提交，尚未接纳")).toHaveCount(0);
           await send("停止后继续");
           await uiExpect(page.getByText("普通回答已完成").last()).toBeVisible({ timeout: 60_000 });
           expect(readback()).toEqual(stopped);

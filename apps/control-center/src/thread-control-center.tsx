@@ -836,10 +836,11 @@ export function useThreadControlCenter(
       (selectedModel
         ? { modelRef: selectedModel.ref, thinkingLevel: selectedThinking }
         : undefined);
-    setMutationStatus("pending");
     try {
-      let target = detail?.payload.thread;
+      let target =
+        origin && detail?.payload.thread.threadId === origin ? detail.payload.thread : undefined;
       if (!origin) {
+        setMutationStatus("pending");
         const existing = storage.readPendingThreadMutation("new-draft-create");
         const identity = mutationIdentity(storage, {
           operationKey: "new-draft-create",
@@ -1214,11 +1215,12 @@ export function useThreadControlCenter(
             ) : null
           }
           canSend={
-            Boolean(unresolvedSubmission) ||
-            ((!detail || detail.payload.thread.status === "active") &&
-              !(detail?.payload.runs ?? []).some(
-                (run) => !["completed", "failed", "cancelled"].includes(run.status),
-              ))
+            (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
+            (Boolean(unresolvedSubmission) ||
+              ((!detail || detail.payload.thread.status === "active") &&
+                !(detail?.payload.runs ?? []).some(
+                  (run) => !["completed", "failed", "cancelled"].includes(run.status),
+                )))
           }
         />
         {!client || !configuration ? (

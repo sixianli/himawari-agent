@@ -1606,6 +1606,65 @@ describe("thread control center interactions", () => {
     await send();
     expect(mutate).toHaveBeenCalledOnce();
   });
+  it("[R2-U4] keeps a conversation's send closed until its content has loaded, then sends once", async () => {
+    const send = async () => {
+      await act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+    const sendButton = () => container.querySelector<HTMLButtonElement>("button.send-button");
+    await render();
+    await input(container.querySelector("textarea"), "刷新后立即发送");
+    expect(container.querySelector(".thread-loading-skeleton")).not.toBeNull();
+    expect(sendButton()?.disabled).toBe(true);
+    await send();
+    expect(mutate).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("mutation.pending");
+    expect(options.storage.readDraft("thread-ui")).toBe("刷新后立即发送");
+    await refresh();
+    expect(sendButton()?.disabled).toBe(false);
+    await send();
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.message.submit",
+      payload: { threadId: "thread-ui", expectedRevision: 2 },
+    });
+    expect(options.storage.readDraft("thread-ui")).toBe("");
+    expect(container.textContent).toContain("mutation.accepted");
+  });
+  it("[R2-U4] retries an unresolved send only after the conversation's content has loaded", async () => {
+    options.storage.savePendingThreadSubmission({
+      threadId: "thread-ui",
+      revision: 2,
+      content: "上次未确认的消息",
+    });
+    const send = async () => {
+      await act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+    const sendButton = () => container.querySelector<HTMLButtonElement>("button.send-button");
+    await render();
+    expect(sendButton()?.getAttribute("aria-label")).toBe("review.retrySend");
+    expect(sendButton()?.disabled).toBe(true);
+    await send();
+    expect(mutate).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("mutation.pending");
+    await refresh();
+    expect(sendButton()?.disabled).toBe(false);
+    await send();
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.message.submit",
+      payload: { threadId: "thread-ui", expectedRevision: 2 },
+    });
+    expect(protect.mock.calls.some(([text]) => text === "上次未确认的消息")).toBe(true);
+    expect(options.storage.readPendingThreadSubmission("thread-ui")).toBeNull();
+  });
   it.each(["pin", "archive", "restore"] as const)(
     "sends an explicit %s with expected revision",
     async (action) => {
