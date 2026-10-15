@@ -49,6 +49,8 @@ date: "2026-09-28"
 
 2026-10-15 起（R2-T10），前台已接受的释放回执还接纳第三种有界失败：`error / SANDBOX_TOOL_NOT_STARTED / termination failure`（作业宿主在放行用户命令前失败，签名 `final.json` 证明 `taskStarted=false`）。它与结果丢失、已认证工具超时一起由 `isSandboxBoundedToolFailure` 判定；交付固定失败、`outputRef` 为 null、不重跑原工具。`unknown`、`started` 和任何没有已接受释放的记录仍按本文对账，不提前判为失败。
 
+2026-10-15 起（R2-T12），第四种有界失败是 `error / SANDBOX_HOST_COMPLETION_CONTRADICTED / termination failure`：执行宿主最终结果与提前完成的退出事实矛盾。效果记为未知（只读调用保持 `not_applicable`），同样交付固定失败、`outputRef` 为 null、不重跑原工具；规则见[前台结果持久化设计的提前退出事实](2026-09-29-sandbox-foreground-result-durability-design.md#提前退出事实与清理事实)。
+
 ## 数据来源与组件责任
 
 | 组件 | 责任与限制 |

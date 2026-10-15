@@ -193,7 +193,7 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
   }
 });
 
-it("[R2-T10] a result message that contradicts the signed final stays unresolved", async () => {
+it("[R2-T10][R2-T12] a result message that contradicts the early completion is delivered as a contradicted failure, never as not started", async () => {
   const root = await mkdtemp(`${testTemporaryRoot()}/r2t10-contradiction-`);
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   launch.rewriteResult = true;
@@ -230,15 +230,21 @@ if (process.env.HIMAWARI_R2T10_REWRITE_RESULT === "1" && originalSend) {
         ? facts.result.reasonCode
         : null;
     expect(resultReason).not.toBe("SANDBOX_TOOL_NOT_STARTED");
-    expect(["SANDBOX_EXIT_UNKNOWN", "SANDBOX_HOST_COMPLETION_CONTRADICTED"]).toContain(
-      resultReason,
-    );
+    expect(resultReason).toBe("SANDBOX_HOST_COMPLETION_CONTRADICTED");
+    expect(facts.effect).toEqual({
+      kind: "unknown",
+      reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+    });
     const delivery = await f.services.completeToolResult(
       { runId: plan.identity.runId, invocationId: plan.identity.invocationId },
       { assertDisclosure: async () => {}, saveReceipt: async () => {} },
     );
     console.info(JSON.stringify({ event: "r2t10-contradiction-delivery", delivery }));
-    expect(delivery ?? null).toBeNull();
+    expect(delivery).toMatchObject({
+      outcome: "failed",
+      outputRef: null,
+      errorCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+    });
   } catch (error) {
     await writeFile(stderrFile, launch.stderr, { flag: "w" }).catch(() => {});
     console.error(`R2T10_JOB_HOST_STDERR:\n${launch.stderr}`);
