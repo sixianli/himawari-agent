@@ -1281,6 +1281,48 @@
         "on": "2026-10-13",
         "why": "用户 G89"
       }
+    },
+    {
+      "id": "R2-U4",
+      "title": "打开或刷新一段对话后，对话内容还没加载完就点发送，消息没有发出，页面却一直停在“正在提交，尚未接纳”、发送按钮变灰；改为对话内容加载完之前发送和重试都不可用、草稿保留，加载完再发送",
+      "goal_ref": ["G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U4",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "第 4 层 cc-layer4-370d2c2d-full 的 R2-S1 在刷新后发送失败：页面停在 mutation.pending、产品数据库没有第二条 submit、服务日志该段为空；thread-control-center.tsx submitDraft 先设 pending，详情未加载时 if (!target) return 静默返回"
+      }
+    },
+    {
+      "id": "R2-U5",
+      "title": "运维页面执行任务操作或保存反思设置失败后，页面同时显示错误和“正在提交，尚未接纳”；改为失败后状态显示为已拒绝",
+      "goal_ref": ["G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U5",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "DeepSeek 为 R2-U4 出方案时读代码发现、Claude 核实：operations-control-center.tsx executeAction 在非 409/401 失败和 409 冲突时、configureReflection 在非 401 失败时都不改 mutationStatus，状态停在 pending；该页的 pending 只影响状态文字，不禁用按钮"
+      }
     }
   ],
   "fingerprint": {
