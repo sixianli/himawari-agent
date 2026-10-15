@@ -72,12 +72,15 @@ export function ExecutionProcess({
 }) {
   const [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState(true);
+  const stateEnded = ["completed", "failed", "stopped", "not_dispatched"].includes(
+    state?.displayPhase ?? "",
+  );
+  const activityEnded = (isTerminalRun(run) || stateEnded) && state?.displayPhase !== "unresolved";
   useEffect(() => {
-    if ((isTerminalRun(run) && state?.displayPhase !== "unresolved") || connection !== "connected")
-      return;
+    if (activityEnded || connection !== "connected") return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [run, connection, state?.displayPhase]);
+  }, [activityEnded, connection]);
   const items = executionItems(records);
   const thinking = thinkingSteps(records);
   const steps = [
@@ -116,7 +119,7 @@ export function ExecutionProcess({
   const waitReason = state ? executionWaitReason(state, run, items) : undefined;
   return (
     <>
-      {!isTerminalRun(run) || state?.displayPhase === "unresolved" ? (
+      {!activityEnded ? (
         <div className="turn-activity">
           {(
             state

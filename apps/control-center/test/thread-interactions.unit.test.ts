@@ -603,6 +603,88 @@ describe("thread control center interactions", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      displayPhase: "failed",
+      reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      label: "chat.reason.runDeadlineExceeded",
+    },
+    {
+      displayPhase: "stopped",
+      reasonCode: "RUN_CANCELLED_RESOURCES_RELEASED",
+      label: "chat.phase.stopped",
+    },
+    {
+      displayPhase: "stopped",
+      reasonCode: "RUN_STOPPED_NOT_STRICTLY_CONFIRMED",
+      label: "chat.resource.stopNotStrictlyConfirmed",
+    },
+    {
+      displayPhase: "not_dispatched",
+      reasonCode: "RUN_CANCELLED_BEFORE_DISPATCH",
+      label: "chat.phase.notDispatched",
+    },
+  ] as const)(
+    "[R2-S3] shows a $displayPhase Run ($reasonCode) once when its execution state is newer than the turn detail",
+    async ({ displayPhase, reasonCode, label }) => {
+      runs = [{ runId: "run-ui", revision: 4, status: "running", createdAt: NOW, updatedAt: NOW }];
+      options = {
+        ...options,
+        message: (id) => messages[id],
+        configuration: {
+          ...configuration,
+          executionPresentationAvailable: true,
+          executionStateAvailable: true,
+        },
+      };
+      const state: ThreadExecutionState = {
+        runRevision: 5,
+        revision: "s3-terminal",
+        lastObservedAt: NOW,
+        displayPhase,
+        reasonCode,
+        availableActions: [],
+        needsAttention: true,
+        timing: { executionMilliseconds: null, reviewMilliseconds: null },
+        operations: [],
+        effectSummary: [],
+      };
+      const original = query.getMockImplementation();
+      query.mockImplementation(async (request, signal) => {
+        if (request.type === "thread.execution_state")
+          return {
+            ...request,
+            kind: "snapshot",
+            type: "thread.execution_state_snapshot",
+            payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+          };
+        if (request.type === "thread.execution")
+          return {
+            ...request,
+            kind: "snapshot",
+            type: "thread.execution_snapshot",
+            payload: {
+              threadId: "thread-ui",
+              runId: "run-ui",
+              nextSequence: null,
+              generatedAt: NOW,
+              records: [],
+            },
+          };
+        return original?.(request, signal);
+      });
+      await render();
+      await refresh();
+      expect(container.querySelector(".process-result")?.textContent).toBe(messages[label]);
+      expect(container.querySelector(".turn-activity")).toBeNull();
+      expect(
+        [...container.querySelectorAll("*")].filter(
+          (element) => element.children.length === 0 && element.textContent === messages[label],
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
   it("[R2-U2] explains which tool a stuck turn waits for, whether the turn continues, and that no background program runs", async () => {
     runs = [
       {
