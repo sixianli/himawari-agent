@@ -257,6 +257,7 @@ export type SandboxOperationResult = InferSchema<typeof sandboxOperationResultSc
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED = "SANDBOX_TOOL_DEADLINE_EXCEEDED";
 export const SANDBOX_TOOL_RESULT_LOST = "SANDBOX_TOOL_RESULT_LOST";
 export const SANDBOX_TOOL_NOT_STARTED = "SANDBOX_TOOL_NOT_STARTED";
+export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
 export const sandboxLostResultOperationKey = (invocationId: string) =>
   `sandbox-tool-result-lost:${invocationId}`;
 export function isSandboxToolResultLost(result: SandboxOperationResult | null | undefined) {
@@ -272,7 +273,8 @@ export function isSandboxBoundedToolFailure(result: SandboxOperationResult | nul
     (result?.kind === "error" &&
       result.termination.type === "failure" &&
       (result.reasonCode === SANDBOX_TOOL_DEADLINE_EXCEEDED ||
-        result.reasonCode === SANDBOX_TOOL_NOT_STARTED))
+        result.reasonCode === SANDBOX_TOOL_NOT_STARTED ||
+        result.reasonCode === SANDBOX_HOST_COMPLETION_CONTRADICTED))
   );
 }
 export function isSandboxExecutionFenceSuperseded(

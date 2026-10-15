@@ -18,11 +18,11 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   isSandboxToolResultLost,
+  SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_NOT_STARTED,
 } from "@himawari-agent/execution-contracts";
 
-export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE =
   "执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。";
 
@@ -63,7 +63,10 @@ export function sandboxCommandEffectReason(input: {
   return nonzeroCommandExit ? "SANDBOX_COMMAND_EFFECT_UNVERIFIED" : null;
 }
 
-export { SANDBOX_TOOL_DEADLINE_EXCEEDED } from "@himawari-agent/execution-contracts";
+export {
+  SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_TOOL_DEADLINE_EXCEEDED,
+} from "@himawari-agent/execution-contracts";
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
 const RECOVERY_POLL_MS = 250;

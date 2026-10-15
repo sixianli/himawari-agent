@@ -931,6 +931,7 @@ describe.each([
   "SANDBOX_TOOL_RESULT_LOST",
   "SANDBOX_TOOL_DEADLINE_EXCEEDED",
   "SANDBOX_TOOL_NOT_STARTED",
+  "SANDBOX_HOST_COMPLETION_CONTRADICTED",
 ])("bounded failure disclosure %s", (reasonCode) => {
   it.each(["read", "write", "shell"] as const)(
     "delivers a bounded %s failure without inventing its effects",
@@ -991,6 +992,66 @@ describe.each([
       ).toBe(false);
     },
   );
+});
+
+describe("[R2-T12] contradicted host completion keeps its recorded effect", () => {
+  it("delivers a contradicted fixed read without asserting user effects", () => {
+    const f = fixture("read");
+    const original = released(f);
+    const proof = context(f.plan, original);
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...original,
+      effect: { kind: "not_applicable" },
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity,
+        environmentId: original.environment.environmentId,
+        policyDigest: hash,
+        contract: { ref: f.plan.operationContract.ref, version: "1" },
+        occurredAt: at,
+        kind: "error",
+        output,
+        reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+        termination: { type: "failure" },
+      },
+    });
+    const input = {
+      ...context(f.plan, facts),
+      releaseReceipt: { acceptedAt: at, verification: proof.verification },
+    };
+    expect(projectSandboxExecution(f.plan, facts, input)).toMatchObject({
+      conclusion: "failed",
+      deliverToolResult: true,
+      continuePi: false,
+      dispatchNewOperation: false,
+    });
+  });
+  it("rejects a not_asserted effect for a contradicted completion", () => {
+    const f = fixture("shell");
+    const original = released(f);
+    expect(() =>
+      validateSandboxExecutionFacts(
+        f.plan,
+        {
+          ...original,
+          effect: { kind: "not_asserted" },
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity,
+            environmentId: original.environment.environmentId,
+            policyDigest: hash,
+            contract: { ref: f.plan.operationContract.ref, version: "1" },
+            occurredAt: at,
+            kind: "error",
+            output,
+            reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+            termination: { type: "failure" },
+          },
+        } as SandboxExecutionFacts,
+        context(f.plan, original),
+      ),
+    ).toThrow("missing normal result cannot weaken effects");
+  });
 });
 
 describe("preparation protocol plan compatibility", () => {

@@ -22,6 +22,7 @@ import {
   PI_FIXED_FILE_CONTRACT,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
+  SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_NOT_STARTED,
   piCodingToolNameSchema,
@@ -857,22 +858,24 @@ export class ProductionSandboxExecutionV2 {
             authenticatedNotStarted) &&
           plan.operationContract.kind === "fixed_read"
             ? { kind: "not_applicable" }
-            : authenticatedDeadline
-              ? { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" }
-              : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
-                ? { kind: "not_asserted" }
-                : knownExit &&
-                    (result.exitCode === 0 || fileConflict) &&
-                    plan.operationContract.kind === "verified_effect"
-                  ? {
-                      kind: "verified",
-                      verifierRef: plan.operationContract.verifierRef,
-                      verifierVersion: plan.operationContract.verifierVersion,
-                      targetRef: plan.operationContract.targetRef,
-                      evidence: { ref: output.ref, digest: output.digest },
-                      occurredAt: this.options.clock.now(),
-                    }
-                  : latest.facts.effect,
+            : completionContradicted
+              ? { kind: "unknown", reasonCode: SANDBOX_HOST_COMPLETION_CONTRADICTED }
+              : authenticatedDeadline
+                ? { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" }
+                : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
+                  ? { kind: "not_asserted" }
+                  : knownExit &&
+                      (result.exitCode === 0 || fileConflict) &&
+                      plan.operationContract.kind === "verified_effect"
+                    ? {
+                        kind: "verified",
+                        verifierRef: plan.operationContract.verifierRef,
+                        verifierVersion: plan.operationContract.verifierVersion,
+                        targetRef: plan.operationContract.targetRef,
+                        evidence: { ref: output.ref, digest: output.digest },
+                        occurredAt: this.options.clock.now(),
+                      }
+                    : latest.facts.effect,
         result:
           latest.facts.result?.kind === "started"
             ? latest.facts.result

@@ -38,4 +38,18 @@ describe("isSandboxBoundedToolFailure", () => {
       } as never),
     ).toBe(false);
   });
+
+  it("[R2-T12] treats a contradicted host completion as a bounded failure", () => {
+    expect(isSandboxBoundedToolFailure(failure("SANDBOX_HOST_COMPLETION_CONTRADICTED"))).toBe(true);
+  });
+
+  it("[R2-T12] rejects a contradicted completion whose termination is not a failure", () => {
+    expect(
+      isSandboxBoundedToolFailure({
+        kind: "error",
+        reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+        termination: { type: "exit", exitCode: 1 },
+      } as never),
+    ).toBe(false);
+  });
 });

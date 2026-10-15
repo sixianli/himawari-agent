@@ -50,6 +50,8 @@ Pi 固定版本为 `0.84.2`，继续提供 read、其他工具及原工具批次
 
 按 [reply-7](../../../.ci-output/handoff/2026-09-28-round2-claude-reply-7.md)，已收到最终 IPC 且与提前完成事实矛盾时，保存确定的 `SANDBOX_HOST_COMPLETION_CONTRADICTED` 错误，禁止恢复导入覆盖。交付时不携带原 stdout 引用，而给模型唯一说明：“SANDBOX_HOST_COMPLETION_CONTRADICTED：执行宿主报告的退出结果前后不一致，本次结果按失败处理，没有重新执行。工具可能已经运行，是否重做请先确认。”原 stdout Payload 与分块保留作诊断，不改写或删除。没有最终 IPC 的真实宿主崩溃不算矛盾，仍可核验并恢复完整结束块。命令与写入的效果披露限制不变，矛盾错误不能证明没有副作用。
 
+按 R2-T12（2026-10-15）修正：结果矛盾的调用（`fixed_read` 除外，它保持 `not_applicable`）效果记为未知并带原因 `SANDBOX_HOST_COMPLETION_CONTRADICTED`；该失败与到期失败一样属于可交付的有界失败（`isSandboxBoundedToolFailure`），照常作为失败说明交付给模型，原 stdout 仍不交付。
+
 已认证终态文件的时间在 `control.finish()` 后固定；只要宿主仍存在，就按 `cleanup_pending` 等待原恢复期限内的退出，不再将该终态时间当作活动心跳的新鲜度。pending 返回的观察时间记录本次核验时间，签名文件内的历史时间保持原值；恢复服务仍检查 pending 的新鲜度、身份和资源序号。运行中观察的心跳要求不变；释放仍需核验宿主和原任务进程组已消失。Linux 还须独立确认 Host 自身进程组零成员；原 Host 被杀后的 SRT 代理由同组清理进程回收，可信过渡沿用 pending 和原期限。具体边界见[Linux Host 组清理](2026-09-24-isolated-tool-execution-design.md#linux-host-group)。
 
 ## 前台加密分块保存
