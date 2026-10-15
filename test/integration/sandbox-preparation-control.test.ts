@@ -596,7 +596,7 @@ async function r2t10Host(input: { readonly jobId: string; readonly launchCommand
 it("[R2-T10] reproduces a sandbox that never releases the user command", async (context) => {
   const { host, directory, observed } = await r2t10Host({
     jobId: "r2t10-never-started",
-    launchCommand: "/usr/bin/sleep 3600",
+    launchCommand: "printf 'r2t10-gate-marker\\n' >&2; /usr/bin/sleep 3600",
   });
   Object.assign(context.task.meta, {
     r2t10Reproduction: {
@@ -623,7 +623,10 @@ it("[R2-T10] reproduces a sandbox that never releases the user command", async (
     detail: { code: "JOB_HOST_NAMESPACE_GATE_TIMEOUT" },
   });
   expect(observed.diagnostic?.systemCode).toBe("UNKNOWN");
-  expect(observed.diagnostic?.detail?.text ?? "").toContain("Permission denied");
+  const text = observed.diagnostic?.detail?.text ?? "";
+  expect(text).toContain("r2t10-gate-marker");
+  expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(512);
+  expect(text).not.toMatch(/[\p{Cc}\p{Cf}]/u);
   if (!host.controlBinding) throw new Error("Original control binding missing");
   const final = await readJobHostFinalEvidence(host.controlBinding);
   Object.assign(context.task.meta, {
