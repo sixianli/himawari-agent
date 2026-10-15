@@ -23,6 +23,7 @@ date: "2026-10-13"
 - [对照测量或完整测试时机器上还有别的负载或上一次实验的残留](#measurement-not-isolated)
 - [文件还没写好就上传到测试主机](#upload-before-written)
 - [新代码里加了代码注释](#new-code-comments)
+- [操作包里写死的摘要和文件清单没跟着内容更新](#stale-packet-pins)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -218,5 +219,24 @@ date: "2026-10-13"
   - 钩子放在仓库共用的 `.git` 目录里，主目录和 `.ci-output/worktrees/` 下的工作副本提交时都会运行，对 Claude、opencode、Grok 都生效。两个代理的本地拒绝规则禁止 `--no-verify`、`git commit -n`、改 `core.hooksPath` 和直接改 `.git/hooks`，防止绕过。
   - 也可以检查一段已有提交：`python3 .git/hooks/check-new-comments.py --range <起点>..<终点>`。
   - 验证：对 `fc05624b..a8fc08a2` 以退出码 1 拒绝并列出全部 42 行；对 `566a6b6b` 找出漏掉的 3 行；最近 80 个提交里只有这两个被标记，被标记的全是真注释。暂存一个只含 `// probe comment` 的探测文件后执行 `git commit`，钩子以退出码 1 拒绝，HEAD 不变；删掉这些注释后检查通过。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="stale-packet-pins"></a>
+
+## 操作包里写死的摘要和文件清单没跟着内容更新
+
+- 反复出现的情况：生产操作包（一次生产部署要用的全部脚本、清单和材料，冻结后交用户批准）从上一次复制过来，或者新加了文件之后，包里“绑定某个具体候选包或某份文件内容”的值没有跟着更新。这些值包括：探针脚本 `measurement/probe/bootstrap.mjs` 里写死的作业宿主文件摘要；验收输入清单 `acceptance/cloud/cloud-inputs.draft.json` 的 `files`（云端验收前逐个核对摘要的文件表）；以及 `measurement/`、`systemd/`、`acceptance/`、`maintenance/` 四份 `OWNED-SHA256SUMS`（生产步骤运行前核对辅助脚本没被改过的摘要表）。
+- 为什么要紧：安装演练不会走到每一个生产步骤，所以漏掉的值要到生产上那一步才暴露；生产上失败要停服诊断、出包外修复工具、再次审批，每次至少 1.5–2 小时。漏登记的文件更糟：生产脚本会照常载入它，却没有任何摘要核对。
+- 再次发生的证据：
+  - 2026-10-13 第三次部署 S6_READ 在生产上失败：`bootstrap.mjs` 写死的三个作业宿主文件摘要还是第二次候选包的值（见 `.ci-output/handoff/2026-10-12-third-packet-progress.md` 第 88 行）。
+  - 2026-10-15 起草第四次操作包时，又把第三次那份过期的 `bootstrap.mjs` 原样复制了过来，冻结前人工核对时才发现。
+  - 2026-10-15 冻结前核对第四次操作包：新加的 `acceptance/cloud/adapters/failure-scene.py` 会被 `run-stage-03.py` 载入，但不在验收输入清单里；四份 `OWNED-SHA256SUMS` 仍是第三次的值；`maintenance/raw-copy-recovery.mjs` 被已登记的 `run-maintenance.mjs` 载入，却从第三次起就没登记。同一天还发现测试 `test/integration/product-path-browser.test.ts` 的 `[R2-L6]` 用例写死了第一次候选包的摘要 `6cc0c9d8…`，换任何新包都失败；已改为对实际传入的安装包现场计算。
+- 第三次的根因：前两次之后的预防都是“换候选包时记得核对”，由起草的人逐项想起来；操作包从上一次复制而来，旧值看起来和新值一样合理，没有任何东西在冻结或执行前机械地比较“清单写的”和“包里实际的”。
+- 硬约束（2026-10-15）：
+  - 操作包里的 `inputs/check-packet-consistency.py <操作包目录>`：核对验收输入清单和四份 `OWNED-SHA256SUMS` 的每一条摘要；对每个没登记的文件，只要有已登记的文件按路径或文件名引用它，就判为漏登记；从操作包材料里的候选安装包读出 `runtime-sandbox/dist/` 下的三个文件，核对 `bootstrap.mjs` 写死的摘要，并要求每个替换锚点在对应文件里恰好出现一次。任何一项不符就打印问题清单，以退出码 1 结束。
+  - 生产入口 `.ci-output/production/run-fourth-step.sh` 在执行每个生产步骤（包括第一步上传）前先运行它，不通过就打印 `FOURTH_PACKET_INCONSISTENT`，以退出码 3 结束，不连接生产服务器。安装演练脚本 `run-fourth-rehearsal.sh` 的第一阶段也先运行它。下一次起草操作包时，入口脚本和检查脚本随包一起复制，检查跟着生效。
+  - 验证：直接对第三次的操作包 `2026-10-12-third-deploy-packet-03` 运行，检查指出了当年导致 S6 失败的三个过期摘要和三处锚点不符，以及 `raw-copy-recovery.mjs` 漏登记；修正后的第四次操作包通过。夹具 `inputs/verify-packet-consistency.py` 在副本上重现过期探针摘要、漏登记的载入文件、过期的目录摘要、漏登记的被载入模块和改过的已登记脚本五种情况，都以退出码 1 拒绝，未改动的副本通过。在临时副本上弄坏一条摘要后运行入口脚本，以退出码 3 停下，放在 `PATH` 里的假 `ssh` 一次也没被调用。
+  - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。
 
 [回到目录](#编码代理反复犯的错误)
