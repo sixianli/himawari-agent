@@ -7,6 +7,7 @@ import {
   piRunnerInputSchema,
 } from "@himawari-agent/execution-contracts";
 import {
+  COMMAND_OUTPUT_CEILING_MULTIPLIER,
   createPiFilePublicationJournal,
   createSandboxedCodingOperations,
   isPiHostPublication,
@@ -170,7 +171,7 @@ try {
       shell: path.join(binaryDirectory, "bash"),
       privateDirectory: input.privateDirectory,
       commandPath: [binaryDirectory, "/usr/local/bin", "/usr/bin", "/bin"].join(":"),
-      maxOutputBytes: input.maxOutputBytes,
+      maxCommandOutputBytes: input.maxOutputBytes * COMMAND_OUTPUT_CEILING_MULTIPLIER,
     });
     const { executeSandboxedPiCodingTool, fitPiResultOutput } = await import(
       "@himawari-agent/runtime-pi"

@@ -101,6 +101,7 @@ date: "2026-10-13"
 - `read`、`ls`、`find`、`grep` 仍受配置 `runPolicy.coding.maximumBytes` 约束。超过时不再返回 `PI_RESULT_OUTPUT_LIMIT`，而是复用 Pi 的 `truncateHead`/`truncateTail`/`formatSize` 把交给模型的正文截断到上限内并加 Pi 的说明；`read` 保留 Pi 的 `Use offset=... to continue.` 续读提示（`packages/runtime-pi/src/host-read-only-executor.ts`、`packages/runtime-pi/src/model-output-budget.ts`）。只有正文清空仍装不下（信封本身超限）时才沿用 `PI_RESULT_OUTPUT_LIMIT`。
 - `bash` 等沙箱前台结果同理（`packages/platform-node/src/files/pi-host-publication.ts`）；`details.fullOutputPath` 指向的完整输出文件在装不进剩余预算时不再导出，`fullOutput` 置为 `null`，正文改为说明“完整输出超过上限，未保留”。
 - 机器秘密扫描仍在截断之前对整份结果执行；受保护候选结果文件（写/编辑准备结果，`production-file-preparation.ts`）与 `save_copy`/`move_directory` 的校验证据保持“超过即拒绝”。
+- 命令运行中被结束的门槛不是 48 KiB：沙箱对命令标准输出和标准错误的结束门槛是 `maxOutputBytes × 64`（`COMMAND_OUTPUT_CEILING_MULTIPLIER`，生产 49152 × 64 = 3 MiB，`packages/platform-node/src/files/sandboxed-coding-operations.ts`，两个 runner 各自按 `maxOutputBytes` 推导）。低于它的输出不再中途结束命令，由 Pi 自己截到 2000 行 / 50 KiB 后交给模型；结果信封上限仍是 `maxOutputBytes`。超过它的命令仍以 `PI_COMMAND_OUTPUT_LIMIT` 结束，把保留的结尾交给模型属于 [BL-20261015-001](../backlog/BL-20261015-001-bash-非-零-退-出-时-把-输.md) 的范围。
 - 本补充取代[实现记录](#implementation-record)“限制不变”一句里“序列化结果仍受调用自身的 `maxOutputBytes` 约束”的旧收口含义。前台 Bash 的背景输出说明仍计入整份结果上限（[ADR 0040](0040-background-output-closed-after-bash-returns.md#decision) 不变）。
 
 实现理由（原来写在代码注释里，按“不加代码注释”的规则移到这里）：

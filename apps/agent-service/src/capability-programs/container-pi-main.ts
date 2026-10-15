@@ -2,7 +2,10 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { piContainerRunnerInputSchema } from "@himawari-agent/execution-contracts";
-import { createSandboxedCodingOperations } from "@himawari-agent/platform-node";
+import {
+  COMMAND_OUTPUT_CEILING_MULTIPLIER,
+  createSandboxedCodingOperations,
+} from "@himawari-agent/platform-node";
 import { writeForegroundPiResult } from "./pi-foreground-result.js";
 
 const CONTAINER_COMMAND_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
@@ -67,7 +70,7 @@ try {
     shell: "/bin/bash",
     privateDirectory: PRIVATE_DIRECTORY,
     commandPath: CONTAINER_COMMAND_PATH,
-    maxOutputBytes: input.maxOutputBytes,
+    maxCommandOutputBytes: input.maxOutputBytes * COMMAND_OUTPUT_CEILING_MULTIPLIER,
   });
   const { executeSandboxedPiCodingTool, fitPiResultOutput } = await import(
     "@himawari-agent/runtime-pi"

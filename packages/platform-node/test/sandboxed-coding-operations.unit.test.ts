@@ -63,7 +63,7 @@ async function setup(initial?: string) {
     shell: "/bin/bash",
     privateDirectory: root,
     commandPath: "/usr/bin",
-    maxOutputBytes: 4096,
+    maxCommandOutputBytes: 4096,
   });
   return { root, file, grant, port };
 }
@@ -77,7 +77,7 @@ describe("sandboxed coding file operations", () => {
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 4096,
+      maxCommandOutputBytes: 4096,
       async onPreparedWrite() {
         calls++;
         throw new Error("JOURNAL_UNAVAILABLE");
@@ -104,7 +104,7 @@ describe("sandboxed coding file operations", () => {
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 4096,
+      maxCommandOutputBytes: 4096,
       async onVerifiedWrite() {
         reached();
         await stored;
@@ -148,7 +148,7 @@ describe("sandboxed coding file operations", () => {
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 4096,
+      maxCommandOutputBytes: 4096,
     });
     await expect(
       port.executeCommand({ cwd: root, command: "printf bypass > other.txt", onData() {} }),
@@ -195,7 +195,7 @@ describe("sandboxed coding file operations", () => {
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 4096,
+      maxCommandOutputBytes: 4096,
     });
     await expect(port.executeCommand({ cwd: root, command: "true", onData() {} })).rejects.toThrow(
       "PI_SHELL_EFFECT_SCOPE_INCOMPLETE",
@@ -234,7 +234,7 @@ describe("sandboxed shell result boundary", () => {
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 64,
+      maxCommandOutputBytes: 64,
     });
     let output = "";
     const command = {
@@ -253,9 +253,42 @@ describe("sandboxed shell result boundary", () => {
     await expect(
       port.executeCommand({ ...command, command: "while :; do :; done", timeoutMs: 20 }),
     ).rejects.toThrow("PI_COMMAND_TIMEOUT");
-    await expect(port.executeCommand({ ...command, command: "printf '%100s' x" })).rejects.toThrow(
-      "PI_COMMAND_OUTPUT_LIMIT",
-    );
+  });
+
+  it("[R2-T9] lets a command finish when its output stays within the command output ceiling", async () => {
+    const { root, grant } = await setup();
+    const port = await createSandboxedCodingOperations({
+      grant: { ...grant, operations: ["read"] },
+      shell: "/bin/bash",
+      privateDirectory: root,
+      commandPath: "/usr/bin",
+      maxCommandOutputBytes: 4096,
+    });
+    let output = "";
+    await expect(
+      port.executeCommand({
+        cwd: root,
+        command: "printf '%200s' x",
+        onData: (bytes: Uint8Array) => {
+          output += Buffer.from(bytes).toString();
+        },
+      }),
+    ).resolves.toEqual({ exitCode: 0 });
+    expect(Buffer.byteLength(output)).toBe(200);
+  });
+
+  it("[R2-T9] ends a command that exceeds the command output ceiling", async () => {
+    const { root, grant } = await setup();
+    const port = await createSandboxedCodingOperations({
+      grant: { ...grant, operations: ["read"] },
+      shell: "/bin/bash",
+      privateDirectory: root,
+      commandPath: "/usr/bin",
+      maxCommandOutputBytes: 64,
+    });
+    await expect(
+      port.executeCommand({ cwd: root, command: "printf '%100s' x", onData() {} }),
+    ).rejects.toThrow("PI_COMMAND_OUTPUT_LIMIT");
   });
 });
 
@@ -290,7 +323,7 @@ it.each(["unchanged", "create", "content", "inode", "created"] as const)(
       shell: "/bin/bash",
       privateDirectory: root,
       commandPath: "/usr/bin",
-      maxOutputBytes: 4096,
+      maxCommandOutputBytes: 4096,
     });
     if (unchanged) {
       const port = await starting;
@@ -321,7 +354,7 @@ it("keeps directory coordination while creating previously missing parents", asy
     shell: "/bin/bash",
     privateDirectory: root,
     commandPath: "/usr/bin",
-    maxOutputBytes: 4096,
+    maxCommandOutputBytes: 4096,
   });
   await port.makeDirectory(path.dirname(file));
   await port.writeFile(file, "complete nested file");
@@ -330,7 +363,7 @@ it("keeps directory coordination while creating previously missing parents", asy
 
 async function inheritedOutputFixture(
   mode: "quiet" | "tail" | "closed" | "continuous",
-  maxOutputBytes = 4096,
+  maxCommandOutputBytes = 4096,
 ) {
   const { root, grant } = await setup();
   const marker = `B3_PIPE_${path.basename(root)}`;
@@ -379,7 +412,7 @@ const ready = setInterval(() => {
     shell: "/bin/bash",
     privateDirectory: root,
     commandPath: "/usr/bin:/bin",
-    maxOutputBytes,
+    maxCommandOutputBytes,
   });
   const child = async () => {
     const pid = Number(await readFile(pidFile, "utf8"));
@@ -601,7 +634,7 @@ const ready = setInterval(() => {
     shell: "/bin/bash",
     privateDirectory: root,
     commandPath: "/usr/bin:/bin",
-    maxOutputBytes: 4096,
+    maxCommandOutputBytes: 4096,
   });
   const processes = () =>
     execFileSync("/bin/ps", ["-axo", "pid=,pgid=,command="], { encoding: "utf8" })

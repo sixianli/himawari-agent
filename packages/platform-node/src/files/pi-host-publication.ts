@@ -6,7 +6,10 @@ import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 import { createDirectoryMoveJournal } from "./directory-move.js";
 import { createPiFilePublicationJournal } from "./pi-file-publication.js";
 import { exportPiOutputFile } from "./pi-output-export.js";
-import { createSandboxedCodingOperations } from "./sandboxed-coding-operations.js";
+import {
+  COMMAND_OUTPUT_CEILING_MULTIPLIER,
+  createSandboxedCodingOperations,
+} from "./sandboxed-coding-operations.js";
 import { createWorkspaceCopyPublication } from "./workspace-copy-publication.js";
 
 export type PiHostResultOutputFitter = (json: string, maxBytes: number) => string | null;
@@ -283,7 +286,7 @@ export async function publishPreparedPiOperation(
       shell: path.join(input.commandPath, "bash"),
       privateDirectory: input.privateDirectory,
       commandPath: input.commandPath,
-      maxOutputBytes: input.maxOutputBytes,
+      maxCommandOutputBytes: input.maxOutputBytes * COMMAND_OUTPUT_CEILING_MULTIPLIER,
     });
     const platform = new ConstrainedHostFileSystem();
     const bytes = await platform.readPublication(grant, prepared.content);

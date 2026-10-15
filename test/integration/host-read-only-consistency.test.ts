@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { HostDirectoryGrant } from "@himawari-agent/application";
 import {
+  COMMAND_OUTPUT_CEILING_MULTIPLIER,
   createSandboxedCodingOperations,
   DescriptorRelativeReadOnly,
 } from "@himawari-agent/platform-node";
@@ -57,7 +58,7 @@ async function sandboxOutcome(
     shell: "/bin/bash",
     privateDirectory,
     commandPath: "/usr/bin:/bin",
-    maxOutputBytes: 48 * 1024,
+    maxCommandOutputBytes: 48 * 1024 * COMMAND_OUTPUT_CEILING_MULTIPLIER,
   });
   const result = await executeSandboxedPiCodingTool({
     name: tool,

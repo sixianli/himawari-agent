@@ -1193,8 +1193,10 @@ productDescribe(
       await scenario("r2t9-bash-big", async () => {
         const answer = await sendToolRequest("请输出大段内容");
         await uiExpect(answer).toContainText("line-");
+        await uiExpect(answer).toContainText("line-6000");
         await uiExpect(answer).not.toContainText("PI_RESULT_OUTPUT_LIMIT");
         await uiExpect(answer).not.toContainText("PI_RUNNER_EXECUTION_FAILED");
+        await expectToolRowPhase("已完成");
       });
     });
 

@@ -19,6 +19,8 @@ import {
 import { waitForProcessOutput } from "../process-output.js";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
 
+export const COMMAND_OUTPUT_CEILING_MULTIPLIER = 64;
+
 /** A per-invocation adapter inside SRT, not an isolation backend or authority
  * store. The Worker supplies the already resolved directory grant. */
 export async function createSandboxedCodingOperations(input: {
@@ -29,7 +31,7 @@ export async function createSandboxedCodingOperations(input: {
   readonly shell: string;
   readonly privateDirectory: string;
   readonly commandPath: string;
-  readonly maxOutputBytes: number;
+  readonly maxCommandOutputBytes: number;
   readonly signal?: AbortSignal;
   readonly onPreparedWrite?: (proof: {
     readonly relativePath: string;
@@ -276,7 +278,7 @@ export async function createSandboxedCodingOperations(input: {
       );
       const data = (bytes: Buffer) => {
         count += bytes.length;
-        if (count > input.maxOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
+        if (count > input.maxCommandOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
         else if (!failure) {
           try {
             command.onData(bytes);
