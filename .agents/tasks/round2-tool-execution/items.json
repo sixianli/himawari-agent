@@ -1199,6 +1199,27 @@
       }
     },
     {
+      "id": "R2-T12",
+      "title": "前台 bash（command 类）调用的执行宿主前后退出事实矛盾时，产品记下 SANDBOX_HOST_COMPLETION_CONTRADICTED，却把效果留在初始值 unknown/SANDBOX_NOT_STARTED，投影判为需要核对，不交付也不结束，这一轮一直停在“运行中”；改为命令类效果记为未断言，按文档向模型交付明确失败说明",
+      "goal_ref": ["G1", "G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T12",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "第 30 批把矛盾完成用例从 read 改成 bash 后第一次覆盖 command 路径，run-15-contradict 的数据库读回显示 effect 为 unknown/SANDBOX_NOT_STARTED、没有 tool_result intent、Run 停在 running；production-sandbox-execution-v2.ts 只给 fixed_read 设了 not_applicable"
+      }
+    },
+    {
       "id": "R2-E4",
       "title": "84.247.157.41 兼作测试机（G100）：新建无 sudo 的测试账号，测试进程放进有内存和 CPU 权重上限的独立 cgroup，生产服务优先；完整 npm test 在该机跑通，并记录期间生产服务健康",
       "goal_ref": ["G100"],

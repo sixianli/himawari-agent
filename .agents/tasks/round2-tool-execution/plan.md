@@ -7,11 +7,12 @@
 ## 当前批次
 
 G113：不过滤第 4 层发现的缺陷全部修完再上线。两批并行，各用独立工作副本：
-- 第 29 批（opencode deepseek#high，Hermes 检出 `r2-u1/source`，工作副本 `.ci-output/worktrees/r2fix29`）：
-  - R2-P1：主进程执行的 read、ls、find、grep 执行后不再标成“结果未确认”或“尚未派发”（`production-coding-workflow.ts` 把执行过的结果写成 `dispatchState: "not_sent"`）；产品路径测试的发送和等待辅助函数绑定到本次新发出的那一轮，不再因同一对话里重复的提示词误判通过。
-  - R2-T9：沙箱 bash 输出超过配置上限时保留结尾并说明已截断，不再在命令运行中被结束、整次报失败（`sandboxed-coding-operations.ts` 超限即 SIGKILL）。先交方案。
+- 第 29 批（已合入 `12e8849c`、`9678a12c`；opencode deepseek#high，Hermes 检出 `r2-u1/source`，工作副本 `.ci-output/worktrees/r2fix29`）：
+  - 已合入、待第 3、4 层顺带验证：R2-P1，主进程执行的 read、ls、find、grep 执行后不再标成“结果未确认”或“尚未派发”（`production-coding-workflow.ts` 把执行过的结果写成 `dispatchState: "not_sent"`）；产品路径测试的发送和等待辅助函数绑定到本次新发出的那一轮，不再因同一对话里重复的提示词误判通过。
+  - 已合入、待第 3、4 层顺带验证：R2-T9，沙箱 bash 输出超过配置上限时保留结尾并说明已截断，不再在命令运行中被结束、整次报失败（`sandboxed-coding-operations.ts` 超限即 SIGKILL）。先交方案。
 - 第 30 批（opencode deepseek#high，云服务器测试账号独立检出，工作副本 `.ci-output/worktrees/r2t11`）：
   - R2-T11：约 29 个沙箱故障恢复用例改用 bash 触发，并带上 Claude 已写好的 R2-L6 测试补丁。先交逐个用例的改写表。
+  - R2-T12：bash 调用的执行宿主前后退出事实矛盾时，命令类效果记为未断言、向模型交付明确失败，不再停在“运行中”（`production-sandbox-execution-v2.ts`）。
 - 两批合入后：Hermes 第 1、2 层，第 3 层（`run-l3w.sh`），不过滤的第 4 层，安装演练，冻结；冻结包是否适用 G111 由用户确认。
 
 ## 之后
@@ -131,6 +132,7 @@ G113：不过滤第 4 层发现的缺陷全部修完再上线。两批并行，�
 - 2026-10-15 07:12 R2-T9 的第 26 批经 Claude 审核合入分支（status 里 R2-T9 有审核记录，带标签的产品路径测试待本批第 4 层），当前批次换上 R2-T10 的只读方案（简报 27）。第 3 层（`498624c0`）在 Hermes 通过，记录为 R2-T8 的证据；之后的 Runbook 文档提交让这条命令记录显示为旧版本，下一次第 3 层重新记录。第四次操作包加上“未结束 Run 必须为 0”的检查：服务启动会处理未结束的 Run、改写历史表，S8 的历史比较会在新版本已启动后失败。
 - 2026-10-15 12:03 当前批次换成冻结批：R2-A1（最终版本干净的第 3 层和不过滤的第 4 层）、R2-L10（候选材料、替换、演练、冻结）、R2-T4（时长证据）。原因：G109 定了上线范围截至 04660f2b；04660f2b 第一次第 3 层因 Claude 同时在 Hermes 上删旧副本受干扰作废（docs/lessons.md 第四次记录），改用带外来进程监视的包装脚本重跑。
 - 2026-10-15 15:40 G113：用户选择先修复再上线。status：62 项，当前版本已验证 1、旧版本验证过 41、未完成 14、等你决定 4、不做 2。新增 R2-T11（过时的沙箱故障恢复用例）；R2-P1、R2-T9 重新进入当前批次（第 4 层暴露的产品缺陷）；冻结批暂停，R2-A1、R2-L10 等两批合入后再做。
+- 2026-10-15 18:30 第 29 批合入（`12e8849c` R2-P1、`9678a12c` R2-T9，审核已记录）；新增 R2-T12（第 30 批发现的矛盾完成产品缺陷），由第 30 批同一会话修复（答复 30d）。status：63 项，当前版本已验证 1、旧版本验证过 41、未完成 15、等你决定 4、不做 2。
 
 ## 意外和发现
 
@@ -236,6 +238,7 @@ G113：不过滤第 4 层发现的缺陷全部修完再上线。两批并行，�
 - 2026-10-15 第 23 批 23f4：约 860 秒的卡住不是 bash 在跑。第 20、21 次那条 bash 的沙箱约 20 秒以 SANDBOX_NOT_STARTED 释放（第 20 次有 sandbox.preparation.failed、SANDBOX_EXECUTION_FAILED、systemCode UNKNOWN，作业宿主错误输出没留下），之后这一轮停在 reconciling_external_result 直到 900 秒运行期限。第 22、23 次未复现。`[R2-T2]` 另有一次五步走不完 300 秒页面等待。R2-T8 的 `a8fc08a2` 与 R2-T9 工作副本里又出现新增代码注释，这是第三次（R2-T2、R2-P1 之后），按 G107 加提交钩子 `.git/hooks/check-new-comments.py`（提交 498624c0，docs/lessons.md#new-code-comments）；它还查出 R2-P1 的 566a6b6b 漏删 3 处注释。
 - 2026-10-15 13:20 冻结核对：(1) 不过滤第 4 层 `cc-layer4-04660f2b-full` 作废，启动脚本 `run-l4f2.sh` 没设 `HIMAWARI_TEST_PI_TOOLBIN`，找不到 `fd`，70 个用例被跳过；补上后重跑 `-full-r2`。(2) `[R2-L6]` 用例写死第一次候选包摘要 `6cc0c9d8…`，自 10-07 起没人跑过不过滤的第 4 层所以没暴露；改为对传入的安装包现场计算，只改测试，候选包不变。(3) 第四次操作包的验收输入清单 16 条、四份 `OWNED-SHA256SUMS` 大部分仍是第三次的值，`failure-scene.py`、`raw-copy-recovery.mjs` 被载入却没登记；已重算并补登记。同类错误第三次，新增硬约束 `inputs/check-packet-consistency.py`（生产入口每步前运行），见 docs/lessons.md#stale-packet-pins（提交 f154ebfd）。
 - 2026-10-15 15:10 不过滤第 4 层 `cc-layer4-04660f2b-full-r2`（13:07–14:23，`foreign-check=clean`）36 过、36 失败、1 跳过，G111 条件不满足，没有开始生产步骤。失败分三类：(1) 约 29 个故障恢复用例过时，它们用 `read`/`write` 去触发沙箱故障，但 R2-P1、R2-T2 之后这两个工具已不进沙箱，需要改用 `bash`；(2) 产品缺陷：在可信主进程里执行的 `read`/`ls`/`find`/`grep` 每次成功后都显示“结果未确认……在原资源核验为已释放之前，不要再次发起写操作”（快照 `r2p1-search-tools-failed.aria.yml` 里 5 次全是），`write`/`edit`/`bash` 显示“已完成”，这是第四次变更新引入的退步；(3) 产品缺陷：R2-T9 大段 `bash` 输出（6000 行）退出码 1，界面显示“命令执行失败”，不是保留结尾；R2-P1 搜索用例发送按钮 20 秒不可点，当时页面有一轮 `read notes.txt` 停在等待审批，原因未确认。另：`run-l4f2.sh` 结尾的 `rm -rf` 删不掉安装器设为只读的测试安装目录，两次运行在 `/tmp` 留下约 712 MiB，已加写权限删除并修改脚本（Hermes 副本 `7ad13406…`）。
+- 2026-10-15 18:30 第 30 批 30c：约 29 个故障用例改成 bash 后又暴露 6 个测试夹具缺陷（10-12 起 SRT 在 `sandbox-sdk-worker` 线程，夹具仍在主线程补 `SandboxManager.reset`/`initialize`，注入失效），已修，`run-16-full2` 35/0。bash 对工作区只读（`[R2-T5]`），收尾写和交付写保留 `write`。矛盾完成用例改用 bash 后第一次覆盖 command 路径，发现产品缺陷 R2-T12（效果留在 unknown/SANDBOX_NOT_STARTED，不交付、Run 停在 running）。另：opencode 在一条命令里同步等待长运行，第三次被以“无活动”中断，已加硬约束（`ci-ssh.sh`/`hermes-ssh.sh` 每条命令限时 300 秒，禁止直连 Hermes，提交 763720f9、5c2a72c5）。
 
 ## 决定
 
