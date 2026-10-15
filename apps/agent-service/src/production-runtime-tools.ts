@@ -65,6 +65,7 @@ import {
   type SandboxToolCompletion,
   type SandboxToolDelivery,
 } from "./production-sandbox-tool-result.js";
+import { beforeDeadline } from "./production-worker-deadline.js";
 import { ProductionWorkerForwardTransport } from "./production-worker-forward-transport.js";
 import type { ProductionWorkerParentBindingRegistryWriter } from "./production-worker-parent-binding-registry.js";
 
@@ -116,23 +117,6 @@ function executionIdentity(
   };
 }
 
-async function beforeDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
-  if (performance.now() >= deadline) throw new Error("WORKER_DEADLINE_EXCEEDED");
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("WORKER_DEADLINE_EXCEEDED")),
-          Math.max(0, deadline - performance.now()),
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 async function nextWithAuthority<T>(
   next: Promise<T>,
   deadline: number,

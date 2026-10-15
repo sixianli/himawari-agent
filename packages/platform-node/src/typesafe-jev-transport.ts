@@ -470,6 +470,7 @@ export class TypeSafeJevTransport implements TrustedModelTransport {
   }
 
   async #withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+    void operation.catch(() => undefined);
     if (signal.aborted) throw signal.reason;
     let onAbort: (() => void) | undefined;
     const aborted = new Promise<never>((_resolve, reject) => {

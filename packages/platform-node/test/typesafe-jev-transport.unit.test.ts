@@ -605,6 +605,42 @@ describe("TypeSafe JEV transport", () => {
     ]);
   });
 
+  it("[R2-S3] observes a request it abandons because the caller already cancelled", async () => {
+    const controller = new AbortController();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", record);
+    try {
+      const transport = new TypeSafeJevTransport({
+        secrets: { resolve: async () => "unused" },
+        payloads: boundary(envelope()),
+        clock: { now: () => NOW },
+        pricingFor: () => PRICING,
+        fetch: ((_url: string | URL, init: RequestInit) => {
+          controller.abort();
+          return new Promise<Response>((_resolve, reject) => {
+            setImmediate(() => reject(init.signal?.reason));
+          });
+        }) as unknown as typeof globalThis.fetch,
+      });
+      const events = await collect(transport, {
+        descriptor: descriptor(),
+        request: request({ signal: controller.signal }),
+        secretValues: ["key"],
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(events).toEqual([
+        expect.objectContaining({ type: "model.failed", errorCode: "TYPESAFE_REQUEST_CANCELLED" }),
+      ]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
   it("does not retry after the caller cancels", async () => {
     const controller = new AbortController();
     let calls = 0;
