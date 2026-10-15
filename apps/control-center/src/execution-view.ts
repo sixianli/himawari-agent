@@ -363,6 +363,7 @@ export function executionStateLabel(
     WORKER_DEADLINE_EXCEEDED: "chat.reason.deadlineExceeded",
     RUN_EXECUTION_DEADLINE_EXCEEDED: "chat.reason.runDeadlineExceeded",
     SANDBOX_TOOL_DEADLINE_EXCEEDED: "chat.reason.toolDeadlineExceeded",
+    SANDBOX_TOOL_NOT_STARTED: "chat.reason.toolNotStarted",
     WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",
     DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
     FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",

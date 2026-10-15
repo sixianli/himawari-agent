@@ -23,6 +23,7 @@ import {
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SANDBOX_TOOL_NOT_STARTED,
   piCodingToolNameSchema,
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
@@ -787,6 +788,35 @@ export class ProductionSandboxExecutionV2 {
           authenticatedDeadline = released.facts.resource.supervision === "released";
         }
       }
+      let authenticatedNotStarted = false;
+      if (
+        plan.mode === "foreground" &&
+        !completionContradicted &&
+        result.taskStarted === false &&
+        result.exitCode === null &&
+        latest.facts.result === null
+      ) {
+        let final: Awaited<ReturnType<typeof readJobHostFinalEvidence>> | undefined;
+        try {
+          final = await readJobHostFinalEvidence(host.controlBinding);
+        } catch {
+          final = undefined;
+        }
+        if (
+          final &&
+          final.taskStarted === false &&
+          final.srtReset &&
+          final.policyDigest === compiled.policyDigest &&
+          latest.facts.environment.kind === "local" &&
+          final.privateDirectoryRef === latest.facts.environment.privateDirectoryRef
+        ) {
+          await this.reduceRisk(entry, "reconcile");
+          const released = (await this.rpc(entry, { kind: "read" })).record;
+          if (released.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
+          completionRecord = released;
+          authenticatedNotStarted = released.facts.resource.supervision === "released";
+        }
+      }
       const resultFields = {
         schemaVersion: "sandbox-execution.v2",
         identity: plan.identity,
@@ -821,7 +851,10 @@ export class ProductionSandboxExecutionV2 {
         });
       const operation = {
         effect:
-          (knownExit || completionContradicted || authenticatedDeadline) &&
+          (knownExit ||
+            completionContradicted ||
+            authenticatedDeadline ||
+            authenticatedNotStarted) &&
           plan.operationContract.kind === "fixed_read"
             ? { kind: "not_applicable" }
             : authenticatedDeadline
@@ -859,31 +892,40 @@ export class ProductionSandboxExecutionV2 {
                     reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
                     termination: { type: "failure" },
                   }
-                : plan.mode !== "foreground" || !knownExit
-                  ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
-                  : ["command", "network_only"].includes(plan.operationContract.kind) ||
-                      result.exitCode === 0
-                    ? {
-                        ...resultFields,
-                        kind: "result",
-                        output,
-                        completion: ["command", "network_only"].includes(
-                          plan.operationContract.kind,
-                        )
-                          ? { type: "exit", exitCode: result.exitCode }
-                          : { type: "value" },
-                      }
-                    : {
-                        ...resultFields,
-                        kind: "error",
-                        output,
-                        reasonCode: fileConflict
-                          ? "FILE_VERSION_CONFLICT"
-                          : "SANDBOX_OPERATION_FAILED",
-                        termination: { type: "failure" },
-                      },
+                : authenticatedNotStarted
+                  ? {
+                      ...resultFields,
+                      kind: "error",
+                      output,
+                      reasonCode: SANDBOX_TOOL_NOT_STARTED,
+                      termination: { type: "failure" },
+                    }
+                  : plan.mode !== "foreground" || !knownExit
+                    ? { ...resultFields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" }
+                    : ["command", "network_only"].includes(plan.operationContract.kind) ||
+                        result.exitCode === 0
+                      ? {
+                          ...resultFields,
+                          kind: "result",
+                          output,
+                          completion: ["command", "network_only"].includes(
+                            plan.operationContract.kind,
+                          )
+                            ? { type: "exit", exitCode: result.exitCode }
+                            : { type: "value" },
+                        }
+                      : {
+                          ...resultFields,
+                          kind: "error",
+                          output,
+                          reasonCode: fileConflict
+                            ? "FILE_VERSION_CONFLICT"
+                            : "SANDBOX_OPERATION_FAILED",
+                          termination: { type: "failure" },
+                        },
       };
       await this.recordCompletion(entry, completionRecord, operation, result.taskProcessExited);
+      if (authenticatedNotStarted) await this.reportHostLaunchFailure(entry, result);
       await this.reduceRisk(entry, "reconcile");
       return this.unknown(entry);
     } catch (error) {
@@ -1327,6 +1369,21 @@ export class ProductionSandboxExecutionV2 {
       current = latest;
     }
     return current;
+  }
+  private async reportHostLaunchFailure(entry: Entry, result: Awaited<SandboxJobHost["result"]>) {
+    const host = result.diagnostic;
+    try {
+      await this.rpc(entry, {
+        kind: "preparation_diagnostic",
+        diagnostic: sandboxPreparationDiagnosticSchema.parse({
+          stage: "execute",
+          reasonCode: "SANDBOX_EXECUTION_FAILED",
+          hostStage: host?.stage ?? null,
+          hostDetail: host?.detail ?? null,
+          systemCode: host?.systemCode ?? "UNKNOWN",
+        }),
+      });
+    } catch {}
   }
   private async reduceRisk(entry: Entry, kind: "reconcile" | "stop") {
     const record = (await this.rpc(entry, { kind: "read" })).record;

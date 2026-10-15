@@ -2,10 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type {
-  SandboxHostBinding,
-  SandboxJobControlBinding,
-  SandboxRuntimeQualification,
+import {
+  SANDBOX_HOST_FAILURE_CODES,
+  type SandboxHostBinding,
+  type SandboxJobControlBinding,
+  type SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createProductionSandboxControl } from "../../apps/agent-service/src/production-sandbox-control.ts";
@@ -216,6 +217,7 @@ async function configureSdkLoad(
     blockModuleMs?: number;
     blockContractsImportMs?: number;
     changePolicyText?: boolean;
+    launchCommand?: string;
   },
 ) {
   launch.entry = jobHostEntry();
@@ -313,7 +315,15 @@ SandboxManager.initialize = async (...args) => {
   himawariFixtureTrace("sdk_initialize_finished");
   return result;
 };\n`
-          : ""),
+          : "") +
+      (options.launchCommand
+        ? `\nconst himawariFixtureWrapArgv = SandboxManager.wrapWithSandboxArgv.bind(SandboxManager);
+SandboxManager.wrapWithSandboxArgv = async (command, shell) => {
+  const wrapped = await himawariFixtureWrapArgv(${JSON.stringify(options.launchCommand)}, shell);
+  process.stderr.write(JSON.stringify({ stage: "r2t10_launch_argv", argv: wrapped.argv }) + "\\n");
+  return wrapped;
+};\n`
+        : ""),
   )} };
 }
 `,
@@ -524,6 +534,148 @@ it("[R2-L8] proves release when preparation fails before the control step after 
     srtReset: true,
   });
   Object.assign(context.task.meta, { cleanupReadback: { observed, release } });
+});
+
+async function r2t10Host(input: { readonly jobId: string; readonly launchCommand?: string }) {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-r2t10-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, {
+    delayMs: 0,
+    ...(input.launchCommand ? { launchCommand: input.launchCommand } : {}),
+  });
+  const toolchain = [
+    ...new Set(
+      await Promise.all(
+        [
+          "/bin",
+          "/usr/bin",
+          "/usr/lib",
+          "/lib",
+          "/lib64",
+          "/proc",
+          "/dev",
+          path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
+        ].map((filename) => realpath(filename)),
+      ),
+    ),
+  ];
+  const { policy, compiled } = await prepareJobPolicy({
+    workspace: null,
+    privateRoot: root,
+    jobId: input.jobId,
+    writable: false,
+    readOnlyToolchainPaths: toolchain,
+    protectedPaths: [],
+    allowedDomains: [],
+  });
+  const directory = path.join(root, "control");
+  await mkdir(directory, { mode: 0o700 });
+  const host = prepareSandboxJobHost(
+    {
+      jobId: input.jobId,
+      attemptId: "original-attempt",
+      policy,
+      policyDigest: compiled.policyDigest,
+      executable: process.execPath,
+      args: ["-e", "process.exit(99)"],
+      deadlineAt: new Date(Date.now() + 30000).toISOString(),
+      maxOutputBytes: 4096,
+      cleanupTimeoutMs: 5000,
+    },
+    directory,
+  );
+  cleanups.push(async () => {
+    host.cancel();
+    await host.result;
+  });
+  await host.ready;
+  host.start();
+  return { host, directory, observed: await host.result };
+}
+
+it("[R2-T10] reproduces a sandbox that never releases the user command", async (context) => {
+  const { host, directory, observed } = await r2t10Host({
+    jobId: "r2t10-never-started",
+    launchCommand: "/usr/bin/sleep 3600",
+  });
+  Object.assign(context.task.meta, {
+    r2t10Reproduction: {
+      reason: observed.reason,
+      exitCode: observed.exitCode,
+      taskStarted: observed.taskStarted,
+      taskProcessExited: observed.taskProcessExited,
+      stdioClosed: observed.stdioClosed,
+      srtReset: observed.srtReset,
+      taskTreeCleanup: observed.taskTreeCleanup,
+      diagnostic: observed.diagnostic ?? null,
+    },
+  });
+  expect(observed, `${JSON.stringify(observed)}\nSTDERR:\n${launch.stderr}`).toMatchObject({
+    reason: "host_failure",
+    exitCode: null,
+    taskStarted: false,
+  });
+  console.info(
+    JSON.stringify({ event: "r2t10-host-diagnostic", diagnostic: observed.diagnostic ?? null }),
+  );
+  expect(observed.diagnostic, JSON.stringify(observed.diagnostic)).toMatchObject({
+    stage: "launch",
+    detail: { code: "JOB_HOST_NAMESPACE_GATE_TIMEOUT" },
+  });
+  expect(observed.diagnostic?.systemCode).toBe("UNKNOWN");
+  expect(observed.diagnostic?.detail?.text ?? "").toContain("Permission denied");
+  if (!host.controlBinding) throw new Error("Original control binding missing");
+  const final = await readJobHostFinalEvidence(host.controlBinding);
+  Object.assign(context.task.meta, {
+    r2t10FinalEvidence: {
+      phase: final.phase,
+      taskStarted: final.taskStarted,
+      srtReset: final.srtReset,
+    },
+  });
+  expect(final).toMatchObject({ phase: "finished", taskStarted: false, srtReset: true });
+  await expect(readFile(path.join(directory, "started.json"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+it("[R2-T10] classifies an oversized namespace gate as JOB_HOST_NAMESPACE_GATE_INVALID", async () => {
+  const { observed } = await r2t10Host({
+    jobId: "r2t10-gate-invalid",
+    launchCommand: "for i in {1..300}; do echo xxxxxxxxxxxxxxxxxxxx >&2; done; /usr/bin/sleep 3600",
+  });
+  expect(observed, `${JSON.stringify(observed)}\nSTDERR:\n${launch.stderr}`).toMatchObject({
+    reason: "host_failure",
+    exitCode: null,
+    taskStarted: false,
+    diagnostic: { stage: "launch", detail: { code: "JOB_HOST_NAMESPACE_GATE_INVALID" } },
+  });
+});
+
+it("[R2-T10] declares the three launch failure codes", () => {
+  expect([...SANDBOX_HOST_FAILURE_CODES]).toEqual(
+    expect.arrayContaining([
+      "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
+      "JOB_HOST_LAUNCH_SPAWN_FAILED",
+      "JOB_HOST_NAMESPACE_GATE_INVALID",
+    ]),
+  );
+});
+
+it("[R2-T10] records whether a normal launch also prints the .bashrc permission line", async () => {
+  const { observed } = await r2t10Host({ jobId: "r2t10-normal" });
+  console.info(
+    JSON.stringify({
+      event: "r2t10-normal-launch",
+      reason: observed.reason,
+      exitCode: observed.exitCode,
+      taskStarted: observed.taskStarted,
+      hasBashrc: launch.stderr.includes(".bashrc"),
+      jobHostStderr: launch.stderr.slice(0, 800),
+      taskStderr: Buffer.from(observed.stderr).toString("utf8").slice(0, 1500),
+    }),
+  );
+  expect(observed.taskStarted).toBe(true);
 });
 
 it("survives slow startup followed by bounded synchronous preparation without renewing the lease", async () => {

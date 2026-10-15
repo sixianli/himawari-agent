@@ -1107,6 +1107,7 @@ const boundedPreparationDiagnostic = {
     deadlineRemainingMs: 1000,
     expectedSequence: 1,
     receivedSequence: 1,
+    text: null,
     steps: [
       { stage: "dependencies" as const, startedMs: 3, elapsedMs: 9 },
       { stage: "sdk_initialize" as const, startedMs: 12, elapsedMs: null },
@@ -1211,6 +1212,38 @@ it("[R2-L4][prod-sandbox-D3] rejects private text in every diagnostic enum and u
     ).rejects.toThrow();
   expect(output.value()).toBe("");
   expect(f.stored.size).toBe(0);
+});
+
+it("[R2-T10] drops a machine secret from the protected diagnostic text and never logs it", async () => {
+  const output = preparationDiagnosticOutput();
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  const secret = `sk-${"a".repeat(24)}`;
+  await f.control.recordPreparationDiagnostic(f.record.plan, {
+    ...boundedPreparationDiagnostic,
+    hostDetail: { ...boundedPreparationDiagnostic.hostDetail, text: `bwrap: ${secret}` },
+  });
+  const events = output.events();
+  expect(events).toHaveLength(1);
+  expect(JSON.stringify(events)).not.toContain(secret);
+  const diagnostics = [...f.stored.entries()];
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]?.[1].value).toMatchObject({ hostDetail: { text: null } });
+});
+
+it("[R2-T10] keeps bounded non-secret launch text only in the protected diagnostic", async () => {
+  const output = preparationDiagnosticOutput();
+  const f = await fixture({ preparationOnly: true, diagnosticOutput: output.stream });
+  const text = "bwrap: Can't bind mount /missing: No such file or directory";
+  await f.control.recordPreparationDiagnostic(f.record.plan, {
+    ...boundedPreparationDiagnostic,
+    hostDetail: { ...boundedPreparationDiagnostic.hostDetail, text },
+  });
+  const events = output.events();
+  expect(events).toHaveLength(1);
+  expect(JSON.stringify(events)).not.toContain("Can't bind mount");
+  const diagnostics = [...f.stored.entries()];
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]?.[1].value).toMatchObject({ hostDetail: { text } });
 });
 
 it.each(["read", "write"] as const)(

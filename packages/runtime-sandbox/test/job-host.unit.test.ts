@@ -570,6 +570,7 @@ it("preserves authenticated failure detail and rejects unbounded private fields"
     deadlineRemainingMs: 5000,
     expectedSequence: 3,
     receivedSequence: 3,
+    text: null,
     steps: [
       { stage: "sdk_initialize", startedMs: 40, elapsedMs: 900 },
       { stage: "launch", startedMs: 940, elapsedMs: null },

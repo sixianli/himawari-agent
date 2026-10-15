@@ -37,6 +37,8 @@ date: "2026-09-28"
 
 宿主在工具启动之前准备失败，若已有可以验证的“从未启动用户任务、宿主已退出且清理已完成”证据，系统应保留控制关联、释放该次预留并向模型交付确定失败。不能因丢失验证关联而永久停留在结果未知，也不能以恢复为由启动原工具。
 
+2026-10-15 起（R2-T10），这条也覆盖**已经绑定（bound）但用户命令从未被放行**的前台调用。此前只有 `reserved`（尚未 bind）的预约能用 `host_never_started` 等依据交付 `SANDBOX_TOOL_NOT_STARTED`；第 20、21 次的产品证据显示，bind 之后作业宿主在命令放行前失败时，记录只有 `result: unknown / SANDBOX_EXIT_UNKNOWN` 和 `effect: unknown / SANDBOX_NOT_STARTED`，这一轮因此停在 `reconciling_external_result` 直到整轮期限。现在 Worker 沿用已有的“超时有界失败”路径：当前台、没有矛盾终态、宿主结果 `taskStarted===false`、`exitCode===null` 且记录还没有结果时，读签名 `final.json`，要求它 `taskStarted===false`、`srtReset===true`、策略摘要和私有目录引用与记录一致；满足就先降低风险并确认 `released`，再写 `error / SANDBOX_TOOL_NOT_STARTED / termination failure`（`fixed_read` 用 `not_applicable`，其余保留原有的 `unknown / SANDBOX_NOT_STARTED`）。读不到或不满足就保持 `unknown / SANDBOX_EXIT_UNKNOWN` 继续对账，不抛新错误。本条件只覆盖本机 SRT 前台调用；容器路线不变。证明条件与判定见[启动与停止仲裁设计](2026-10-04-sandbox-preparation-launch-arbitration-design.md)。
+
 来源：[工具执行排查计划](../plans/2026-09-28-tool-execution-audit-plan.md#缺陷和待验证项) [SOURCE: docs/execution/plans/2026-09-28-tool-execution-audit-plan.md]、[隔离工具执行设计](2026-09-24-isolated-tool-execution-design.md) [SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md]、[已批准的确定结果恢复合同](2026-09-28-sandbox-tool-result-resumption-design.md) [SOURCE: docs/execution/specs/2026-09-28-sandbox-tool-result-resumption-design.md]。
 
 ## 已经确认的证据
@@ -321,6 +323,8 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 - Worker 只接受符合 `sandboxHostStepsSchema` 的 `steps`：缺失、阶段不在固定枚举、多出字段或超过 16 项都按 `host_failure` 停止 Job Host，不保存其中内容。Worker 保留最近一次收到的列表；心跳过期、准备超时或任务期限到达时，`hostDetail.steps` 写入这份列表，诊断阶段取列表最后一步，不再一律写 `request`。Job Host 自己报告错误时也带上当时的列表。
 - `sandboxHostFailureDetailSchema` 新增必填字段 `steps`（可为 null，表示从未收到列表）。Worker、Job Host 和 Agent 同版本发布；产品代码不重新解析已保存的旧记录。旧版本保存的受保护诊断没有这个字段，读取旧记录的只读脚本须使用对应版本的 schema。安全服务日志相应增加 `hostSteps` 字段，见[准备失败的安全服务日志](#preparation-safe-log)。
 - 2026-10-14 起主机失败码新增 `JOB_HOST_LAUNCH_ARGV_UNEXPECTED`（Linux 启动参数不是预期的 bubblewrap 形状；bubblewrap 是 Linux 上隔离进程的程序，命令名是 bwrap。见 R2-T5），按本条规则同版本发布，旧发布目录的 schema 不认识这个码，读新记录要用新发布目录。
+- 2026-10-15 起（R2-T10）：`sandboxHostFailureDetailSchema` 再新增必填字段 `text`（可为 null）。它保存启动失败的原始说明，写入前去掉控制字符和换行、按 UTF-8 截到 512 字节；只进受保护诊断记录（`<controlRef>:diagnostic:preparation-failure`），**不进** `sandbox.preparation.failed` 安全日志。Agent 在写入受保护记录前用项目的 `scanMachineSecrets` 扫描，命中就把它置为 null。与 `steps` 同样同版本发布，旧版本保存的记录没有这个字段，读取要用对应版本的 schema。
+- 2026-10-15 起（R2-T10）：启动失败诊断新增两个主机失败码 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`（Linux 命名空间门在 1500 毫秒内没有收到令牌）和 `JOB_HOST_LAUNCH_SPAWN_FAILED`（启动隔离程序的 `spawn` 报错）；门输出超过 1024 字节、门那一行格式不对或核验失败仍用已有的 `JOB_HOST_NAMESPACE_GATE_INVALID`。`systemCode` 只从以 `bwrap: ` 开头的标准错误行映射，没有这种行就是 `UNKNOWN`；`spawn` 报错用 `error.code`。安全日志相应新增 `hostDetailCode` 取值，字段本身不变。
 
 1.5 秒双向监督窗口、30 秒准备上限、任务期限、清理期限、控制绑定、签名终态、唯一启动授权和全部认证检查均不变。逐步记录只说明哪一步在何时开始、用了多久，不代表 ready、释放证明或启动授权。Worker 自身事件循环停顿仍不在这次修复范围内。
 

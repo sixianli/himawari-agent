@@ -1,8 +1,7 @@
 import {
-  isSandboxToolResultLost,
+  isSandboxBoundedToolFailure,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_PREPARATION_PROTOCOL,
-  SANDBOX_TOOL_DEADLINE_EXCEEDED,
   type SandboxEnvironment,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
@@ -203,10 +202,7 @@ export function projectSandboxExecution(
     plan.mode === "foreground" &&
     acceptedRelease &&
     outputProtected &&
-    (isSandboxToolResultLost(result) ||
-      (result?.kind === "error" &&
-        result.reasonCode === SANDBOX_TOOL_DEADLINE_EXCEEDED &&
-        result.termination.type === "failure"));
+    isSandboxBoundedToolFailure(result);
   const disclosureAllowed =
     context.runState === "active" &&
     context.currentAuthority &&

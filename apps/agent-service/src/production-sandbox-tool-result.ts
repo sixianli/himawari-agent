@@ -19,6 +19,7 @@ import type {
 import {
   isSandboxToolResultLost,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
+  SANDBOX_TOOL_NOT_STARTED,
 } from "@himawari-agent/execution-contracts";
 
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
@@ -110,7 +111,7 @@ export function createProductionSandboxToolResult(options: {
       const result: SandboxToolCompletion = {
         outcome: "failed",
         outputRef: null,
-        errorCode: "SANDBOX_TOOL_NOT_STARTED",
+        errorCode: SANDBOX_TOOL_NOT_STARTED,
         externalActionId: null,
       };
       await delivery.saveReceipt(result);
@@ -238,6 +239,7 @@ export function createProductionSandboxToolResult(options: {
                 !isSandboxToolResultLost(result) &&
                 result.reasonCode !== SANDBOX_HOST_COMPLETION_CONTRADICTED &&
                 result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
+                result.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
                 (result.reasonCode === "FILE_VERSION_CONFLICT" ||
                   plan.operationContract.kind === "fixed_read")
                   ? result.output.ref

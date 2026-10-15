@@ -1,5 +1,5 @@
 import {
-  isSandboxToolResultLost,
+  isSandboxBoundedToolFailure,
   type SandboxExecutionPlanCandidateV2,
 } from "@himawari-agent/execution-contracts";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
@@ -202,10 +202,7 @@ export async function readThreadExecutionResources(input: {
       !(
         plan.mode === "foreground" &&
         released &&
-        (isSandboxToolResultLost(entry.record.facts.result) ||
-          (entry.record.facts.result?.kind === "error" &&
-            entry.record.facts.result.reasonCode === "SANDBOX_TOOL_DEADLINE_EXCEEDED" &&
-            entry.record.facts.result.termination.type === "failure"))
+        isSandboxBoundedToolFailure(entry.record.facts.result)
       ) &&
       (!entry.record.facts.result ||
         entry.record.facts.result.kind === "unknown" ||

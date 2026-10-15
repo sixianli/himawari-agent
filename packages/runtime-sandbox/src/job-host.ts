@@ -213,6 +213,7 @@ export function prepareSandboxJobHost(
         deadlineRemainingMs: bounded(Date.parse(request.deadlineAt) - Date.now()),
         expectedSequence: ipcSequence + 1,
         receivedSequence: null,
+        text: null,
         steps: hostSteps,
       }),
     };

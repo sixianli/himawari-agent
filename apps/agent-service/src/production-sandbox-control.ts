@@ -8,6 +8,7 @@ import {
   type SandboxExecutionRecord,
   type SandboxReservationReleaseVerification,
   sandboxReconciliationFailureReason,
+  scanMachineSecrets,
 } from "@himawari-agent/application";
 import {
   FIXED_FILE_COMPLETION_GUARANTEE,
@@ -827,6 +828,10 @@ export function createProductionSandboxControl(options: Options) {
     ) {
       const diagnostic = sandboxPreparationDiagnosticSchema.parse(input);
       const controlRef = key(plan);
+      const protectedDiagnostic =
+        diagnostic.hostDetail?.text && scanMachineSecrets(diagnostic.hostDetail.text).length > 0
+          ? { ...diagnostic, hostDetail: { ...diagnostic.hostDetail, text: null } }
+          : diagnostic;
       try {
         writeServiceDiagnostic(options.diagnosticOutput ?? process.stderr, {
           component: "agent-service",
@@ -859,7 +864,7 @@ export function createProductionSandboxControl(options: Options) {
             environmentId: plan.environmentId,
             observedAt: options.now(),
             command: "prepare",
-            ...diagnostic,
+            ...protectedDiagnostic,
           });
       }
     },

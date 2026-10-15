@@ -47,6 +47,8 @@ date: "2026-09-28"
 
 35 秒前台等待、30 秒资源核查和原 Run 总期限均保持不变。过期的 Run 不因恢复得到新的执行时间。没有完整恢复凭据的旧记录不自动升级成可恢复状态。
 
+2026-10-15 起（R2-T10），前台已接受的释放回执还接纳第三种有界失败：`error / SANDBOX_TOOL_NOT_STARTED / termination failure`（作业宿主在放行用户命令前失败，签名 `final.json` 证明 `taskStarted=false`）。它与结果丢失、已认证工具超时一起由 `isSandboxBoundedToolFailure` 判定；交付固定失败、`outputRef` 为 null、不重跑原工具。`unknown`、`started` 和任何没有已接受释放的记录仍按本文对账，不提前判为失败。
+
 ## 数据来源与组件责任
 
 | 组件 | 责任与限制 |

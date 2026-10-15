@@ -256,6 +256,7 @@ export type SandboxOperationResult = InferSchema<typeof sandboxOperationResultSc
 
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED = "SANDBOX_TOOL_DEADLINE_EXCEEDED";
 export const SANDBOX_TOOL_RESULT_LOST = "SANDBOX_TOOL_RESULT_LOST";
+export const SANDBOX_TOOL_NOT_STARTED = "SANDBOX_TOOL_NOT_STARTED";
 export const sandboxLostResultOperationKey = (invocationId: string) =>
   `sandbox-tool-result-lost:${invocationId}`;
 export function isSandboxToolResultLost(result: SandboxOperationResult | null | undefined) {
@@ -263,6 +264,15 @@ export function isSandboxToolResultLost(result: SandboxOperationResult | null | 
     result?.kind === "error" &&
     result.reasonCode === SANDBOX_TOOL_RESULT_LOST &&
     result.termination.type === "failure"
+  );
+}
+export function isSandboxBoundedToolFailure(result: SandboxOperationResult | null | undefined) {
+  return (
+    isSandboxToolResultLost(result) ||
+    (result?.kind === "error" &&
+      result.termination.type === "failure" &&
+      (result.reasonCode === SANDBOX_TOOL_DEADLINE_EXCEEDED ||
+        result.reasonCode === SANDBOX_TOOL_NOT_STARTED))
   );
 }
 export function isSandboxExecutionFenceSuperseded(
@@ -696,6 +706,8 @@ export const SANDBOX_HOST_FAILURE_CODES = [
   "JOB_HOST_JAVA_AGENT_INVALID",
   "JOB_HOST_MESSAGE_INVALID",
   "JOB_HOST_NAMESPACE_GATE_INVALID",
+  "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
+  "JOB_HOST_LAUNCH_SPAWN_FAILED",
   "JOB_HOST_NOT_READY",
   "JOB_HOST_POLICY_CHANGED",
   "JOB_HOST_SESSION_INVALID",
@@ -722,6 +734,26 @@ export const sandboxHostStepsSchema = array(
   16,
 );
 export type SandboxHostSteps = InferSchema<typeof sandboxHostStepsSchema>;
+const HOST_FAILURE_TEXT_MAX_BYTES = 512;
+const hostFailureTextSchema: Schema<string> = {
+  parse(value, path = "$") {
+    if (typeof value !== "string")
+      throw new ContractValidationError(path, "expected host failure text");
+    const cleaned = value
+      .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    let result = "";
+    let bytes = 0;
+    for (const character of cleaned) {
+      const size = new TextEncoder().encode(character).byteLength;
+      if (bytes + size > HOST_FAILURE_TEXT_MAX_BYTES) break;
+      bytes += size;
+      result += character;
+    }
+    return result;
+  },
+};
 export const sandboxHostFailureDetailSchema = object({
   code: enumeration(SANDBOX_HOST_FAILURE_CODES),
   command: enumeration(["prepare", "heartbeat", "start", "cancel", "authority_result", "unknown"]),
@@ -731,6 +763,7 @@ export const sandboxHostFailureDetailSchema = object({
   deadlineRemainingMs: nullable(integer(-86_400_000, 86_400_000)),
   expectedSequence: integer(0),
   receivedSequence: nullable(integer(0)),
+  text: nullable(hostFailureTextSchema),
   steps: nullable(sandboxHostStepsSchema),
 });
 export type SandboxHostFailureDetail = InferSchema<typeof sandboxHostFailureDetailSchema>;

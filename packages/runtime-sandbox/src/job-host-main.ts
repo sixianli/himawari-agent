@@ -107,6 +107,63 @@ function enterStage(stage: JobHostDiagnostic["stage"]) {
   sendHeartbeat();
 }
 
+const LAUNCH_FAILURE_TEXT_CODES: ReadonlyArray<
+  readonly [RegExp, (typeof JOB_HOST_SYSTEM_CODES)[number]]
+> = [
+  [/operation not permitted/i, "EPERM"],
+  [/permission denied/i, "EACCES"],
+  [/no such file or directory/i, "ENOENT"],
+  [/no space left on device/i, "ENOSPC"],
+  [/cannot allocate memory|out of memory/i, "ENOMEM"],
+  [/too many open files/i, "EMFILE"],
+  [/resource temporarily unavailable/i, "EAGAIN"],
+  [/address already in use/i, "EADDRINUSE"],
+  [/connection reset by peer/i, "ECONNRESET"],
+  [/invalid argument/i, "EINVAL"],
+  [/input\/output error/i, "EIO"],
+];
+function bwrapFailureLine(text: string): string | undefined {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("bwrap: "))
+    .at(-1);
+}
+function launchFailureSystemCode(text: string): (typeof JOB_HOST_SYSTEM_CODES)[number] {
+  const line = bwrapFailureLine(text);
+  if (!line) return "UNKNOWN";
+  for (const [pattern, code] of LAUNCH_FAILURE_TEXT_CODES) if (pattern.test(line)) return code;
+  return "UNKNOWN";
+}
+function sendLaunchFailureDiagnostic(
+  code: NonNullable<JobHostDiagnostic["detail"]>["code"],
+  systemCode: (typeof JOB_HOST_SYSTEM_CODES)[number],
+  text: string | null,
+) {
+  if (!request) return;
+  const bounded = (value: number) => Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)));
+  const detail = diagnostics
+    ? diagnostics.sandboxHostFailureDetailSchema.parse({
+        code,
+        command: "start",
+        phase,
+        elapsedMs: Math.max(0, sinceStart()),
+        messageAgeMs: null,
+        deadlineRemainingMs: bounded(Date.parse(request.deadlineAt) - Date.now()),
+        expectedSequence: workerSequence + 1,
+        receivedSequence: null,
+        text,
+        steps: stepsSnapshot(),
+      })
+    : undefined;
+  send({
+    type: "diagnostic",
+    stage: "launch",
+    systemCode,
+    ...(detail ? { detail } : {}),
+  });
+}
+
 function killTask() {
   // After wait/exit, the numeric PID can be reused; never turn it into a
   // recovery handle. Surviving descendants remain explicitly unverified.
@@ -391,7 +448,14 @@ async function start() {
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  task.on("error", () => {
+  task.on("error", (error: NodeJS.ErrnoException) => {
+    sendLaunchFailureDiagnostic(
+      "JOB_HOST_LAUNCH_SPAWN_FAILED",
+      JOB_HOST_SYSTEM_CODES.some((code) => code === error?.code)
+        ? (error.code as (typeof JOB_HOST_SYSTEM_CODES)[number])
+        : "UNKNOWN",
+      error?.message ?? null,
+    );
     reason = "host_failure";
     void finish();
   });
@@ -451,8 +515,22 @@ async function start() {
   let gateBytes = Buffer.alloc(0);
   let gateReceivedBytes = 0;
   const gateDiagnostics: Buffer[] = [];
+  const gateFailureText = () =>
+    Buffer.concat([...gateDiagnostics, gateBytes])
+      .subarray(-4096)
+      .toString("utf8");
   let gatePending = namespaceGate;
-  const gateTimeout = namespaceGate ? setTimeout(() => stop("host_failure"), 1500) : undefined;
+  const gateTimeout = namespaceGate
+    ? setTimeout(() => {
+        const text = gateFailureText();
+        sendLaunchFailureDiagnostic(
+          "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
+          launchFailureSystemCode(text),
+          text || null,
+        );
+        stop("host_failure");
+      }, 1500)
+    : undefined;
   const receiveGate = async (line: string) => {
     const match = new RegExp(`^${namespaceToken}:(\\d+):(pid:\\[\\d+\\])$`).exec(line);
     if (!match || !task?.pid || !match[1] || !match[2])
@@ -499,6 +577,12 @@ async function start() {
         gateReceivedBytes += chunk.byteLength;
         gateBytes = Buffer.concat([gateBytes, chunk]);
         if (gateReceivedBytes > 1024) {
+          const text = gateFailureText();
+          sendLaunchFailureDiagnostic(
+            "JOB_HOST_NAMESPACE_GATE_INVALID",
+            launchFailureSystemCode(text),
+            text || null,
+          );
           stop("host_failure");
           return;
         }
@@ -517,7 +601,15 @@ async function start() {
           }
           gatePending = false;
           chunk = Buffer.concat([...gateDiagnostics, gateBytes]);
-          void receiveGate(line).catch(() => stop("host_failure"));
+          void receiveGate(line).catch(() => {
+            const text = gateFailureText();
+            sendLaunchFailureDiagnostic(
+              "JOB_HOST_NAMESPACE_GATE_INVALID",
+              launchFailureSystemCode(text),
+              text || null,
+            );
+            stop("host_failure");
+          });
         }
       }
       const available = Math.max(0, (request?.maxOutputBytes ?? 0) - total);
@@ -628,6 +720,7 @@ process.on("message", (message: unknown) => {
               Number.isSafeInteger(incoming["sequence"]) && (incoming["sequence"] as number) >= 0
                 ? incoming["sequence"]
                 : null,
+            text: null,
             steps: stepsSnapshot(),
           });
         })(),

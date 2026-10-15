@@ -176,6 +176,7 @@ export const messages = {
   "chat.reason.runDeadlineExceeded":
     "このターンの実行期限に達しました。後処理を完了し、ターンを終了しました",
   "chat.reason.toolDeadlineExceeded": "ツールがタイムアウトしました。停止と後処理は完了しています",
+  "chat.reason.toolNotStarted": "ツールは起動しませんでした。準備に失敗し、後処理は完了しています",
   "chat.reason.deadlineExceeded": "実行期限が切れ、操作は派遣されませんでした",
   "chat.reason.resourceCeilingChanged":
     "許可されたリソース上限が変わり、操作は派遣されませんでした",

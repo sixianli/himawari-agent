@@ -156,6 +156,7 @@ export const MESSAGE_IDS = [
   "chat.reason.deadlineExceeded",
   "chat.reason.runDeadlineExceeded",
   "chat.reason.toolDeadlineExceeded",
+  "chat.reason.toolNotStarted",
   "chat.reason.resourceCeilingChanged",
   "chat.reason.directoryTargetChanged",
   "chat.reason.fileVersionConflict",
