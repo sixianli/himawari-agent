@@ -24,6 +24,7 @@ date: "2026-10-13"
 - [文件还没写好就上传到测试主机](#upload-before-written)
 - [新代码里加了代码注释](#new-code-comments)
 - [操作包里写死的摘要和文件清单没跟着内容更新](#stale-packet-pins)
+- [代理在一条命令里同步等待长时间运行，会话被中断](#long-blocking-wait)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -70,6 +71,9 @@ date: "2026-10-13"
 - 再次发生的证据：
   - 2026-10-01 约 100 个测试因 `SANDBOX_HOST_PATH_UNSAFE` 失败，原因是测试目录同组可写（AGENTS.md 已写入 `umask 022` 规则）。
   - 2026-10-13 第三次部署 S6 以 `PUBLIC_FILE_UNSAFE` 失败：第三次候选包的构建源码记录 619 个文件全是 `664`。
+  - 2026-10-15 第 29 批两次：在 Hermes 检出上用 `git apply` 重写文件后，权限变成 `664`，而源码树摘要包含权限位，安装候选包时以 `ARTIFACT_BUILD_INPUT_MISMATCH` 失败（停止文件 29a 第 5 节、29d 第 5 节；证据 `/data/hermes/himawari/tool-audit-round2/r2fix29/evidence/run-20-layer2-product-path`）。
+- 第三次以后的根因：`umask 022` 只管新建的文件；SSH 会话里改写已有文件、或忘了在交互命令里设 umask，权限照样漂移，靠记住设置拦不住。
+- 硬约束（2026-10-15）：`.ci-output/handoff/scripts/require-git-modes.sh <检出>` 把 git 登记的文件权限恢复成 644/755 并复查，仍不一致就以退出码 3 结束。第 3 层脚本 `run-l3.sh`（完整测试，同时构建候选包）和不过滤第 4 层脚本 `run-l4f2.sh`（安装候选包）开跑前都调用它，失败就不运行（Hermes 上的副本在 `~/himawari-tests/r2-u1/`）。验证：临时仓库里把两个文件改成 `664`/`775`，脚本输出 `GIT_MODES_OK fixed=2`，权限回到 `644`/`755`，再跑一次输出 `fixed=0`；未加约束时的失败见上面的 run-20。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -238,5 +242,21 @@ date: "2026-10-13"
   - 生产入口 `.ci-output/production/run-fourth-step.sh` 在执行每个生产步骤（包括第一步上传）前先运行它，不通过就打印 `FOURTH_PACKET_INCONSISTENT`，以退出码 3 结束，不连接生产服务器。安装演练脚本 `run-fourth-rehearsal.sh` 的第一阶段也先运行它。下一次起草操作包时，入口脚本和检查脚本随包一起复制，检查跟着生效。
   - 验证：直接对第三次的操作包 `2026-10-12-third-deploy-packet-03` 运行，检查指出了当年导致 S6 失败的三个过期摘要和三处锚点不符，以及 `raw-copy-recovery.mjs` 漏登记；修正后的第四次操作包通过。夹具 `inputs/verify-packet-consistency.py` 在副本上重现过期探针摘要、漏登记的载入文件、过期的目录摘要、漏登记的被载入模块和改过的已登记脚本五种情况，都以退出码 1 拒绝，未改动的副本通过。在临时副本上弄坏一条摘要后运行入口脚本，以退出码 3 停下，放在 `PATH` 里的假 `ssh` 一次也没被调用。
   - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="long-blocking-wait"></a>
+
+## 代理在一条命令里同步等待长时间运行，会话被中断
+
+- 反复出现的情况：opencode 把完整测试或产品路径测试交给测试主机后，在同一条 shell 调用里循环等待它结束（例如 `for i in $(seq 1 400); do …; sleep 10; done`）。这条调用在结束前不产生任何事件，opencode 约一小时后以 `Session interrupted: inactivity` 结束会话；测试本身还在跑，但没人收尾、复制证据、写停止文件。
+- 为什么要紧：一批工作卡住一个多小时，Claude 要重新续跑会话、重新交代现场；中断时若测试已结束，临时目录和证据也可能没人处理。
+- 再次发生的证据：2026-10-13 两次（一次等待重试循环，一次连续两轮完整测试，见 `opencode-orchestration` skill）；2026-10-15 第 30 批（R2-T11）后台启动 `run-09-full` 后又用 400 × 10 秒的循环等待，工具超时设为 70 分钟，17:37 被中断。
+- 第三次的根因：前两次之后规则写进了简报模板（“超过 40 分钟的命令后台启动，不要在一次调用里等超过 40 分钟”），第 30 批简报也照写了；代理确实后台启动了测试，却又写了一个长等待循环，文字规则拦不住。
+- 硬约束（2026-10-15）：
+  - 连测试主机的唯一入口都限时：`.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`（云测试账号）和新的 `.ci-output/handoff/scripts/hermes-ssh.sh`（Hermes，经 Tailscale，并核对主机名是 `hermes-home`）把每条远程命令放在 `timeout 300` 里执行，超时以退出码 124 结束并打印 `CI_SSH_TIME_LIMIT` 或 `HERMES_SSH_TIME_LIMIT`，说明改为后台启动、再用短命令查询。上限没有可调的参数。
+  - 往 Hermes 传文件用 `.ci-output/handoff/scripts/hermes-upload.sh <本地文件> <远端路径>`（与 `ci-upload.sh` 相同：本地文件必须存在、两边 SHA-256 一致、只能写到测试目录）。
+  - 本地、不提交的 `.opencode/opencode.json` 和 `.grok/config.toml` 禁止命令里出现 Hermes 的 Tailscale 地址 `100.64.53.104`、`ssh … hermes`、`scp … hermes`、`rsync … hermes`，所以 opencode 和 Grok 只能经过上面的限时入口。
+  - 验证：在 opencode 里直接执行 `ssh … hermes hostname` 被拒（`permission.rejected`），执行 `hermes-ssh.sh 'hostname'` 返回 `hermes-home`；两个入口各执行一个 400 × 10 秒的循环，都在约 300 秒时以 124 结束并打印时限说明；同一入口里用 `setsid nohup` 后台启动 330 秒的任务立即返回，任务照常跑完。
 
 [回到目录](#编码代理反复犯的错误)
