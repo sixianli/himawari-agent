@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { createRequire, syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 
 const gate = process.env.HIMAWARI_TEST_PREPARATION_FINAL_GATE;
 if (gate) {
@@ -44,4 +45,32 @@ const { SandboxManager } = await import(
 );
 SandboxManager.initialize = async () => {
   throw Object.assign(new Error("private fixture preparation input"), { code: "EIO" });
+};
+const postMessage = Worker.prototype.postMessage;
+const emit = Worker.prototype.emit;
+const initializeRequests = new Set();
+Worker.prototype.postMessage = function (message, ...rest) {
+  if (message && typeof message === "object" && message.method === "initialize")
+    initializeRequests.add(message.id);
+  return postMessage.call(this, message, ...rest);
+};
+Worker.prototype.emit = function (event, ...args) {
+  const message = args[0];
+  if (
+    event === "message" &&
+    message &&
+    typeof message === "object" &&
+    message.type === "result" &&
+    initializeRequests.has(message.id)
+  ) {
+    initializeRequests.delete(message.id);
+    if (message.ok === true)
+      return emit.call(
+        this,
+        "message",
+        { type: "result", id: message.id, ok: false, error: { code: "EIO", message: "UNKNOWN" } },
+        ...args.slice(1),
+      );
+  }
+  return emit.call(this, event, ...args);
 };

@@ -98,6 +98,22 @@ let networkConnections = 0;
 
 const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
   if (!hasTools) return { kind: "text", text: "工具恢复验证" };
+  if (lastUserText.includes("用命令连续读取两个文件") && toolResults.length < 2)
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: toolResults.length === 0 ? "cat notes.txt" : "cat second.txt" },
+    };
+  if (lastUserText.includes("用命令读取 notes.txt") && toolResults.length === 0)
+    return { kind: "tool", name: "bash", arguments: { command: "cat notes.txt" } };
+  if (lastUserText.includes("用命令读取 durability.txt") && toolResults.length === 0)
+    return { kind: "tool", name: "bash", arguments: { command: "cat durability.txt" } };
+  if (lastUserText.includes("用命令写入 hello.txt") && toolResults.length === 0)
+    return {
+      kind: "tool",
+      name: "bash",
+      arguments: { command: "printf '%s' '你好，Himawari' > hello.txt" },
+    };
   if (lastUserText.includes("连续读取两个文件") && toolResults.length < 2)
     return {
       kind: "tool",
@@ -937,12 +953,8 @@ sys.exit(0 if report["passed"] else 1)
     expect(report.bashDigest).toBe(expectedDigests.bashDigest);
     expect((await stat(runtime)).mode & 0o222).toBe(0);
     expect((await stat(bash)).mode & 0o222).toBe(0);
-    expect(report.input.artifactSha256).toBe(
-      "6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3",
-    );
-    expect(report.input.contextSha256).toBe(
-      "a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87",
-    );
+    expect(report.input.artifactSha256).toBe(await fileDigest(artifact));
+    expect(report.input.contextSha256).toBe(await fileDigest(contextFile));
     expect(report.controller.executable).toBe("/usr/bin/python3");
     expect(report.controller.isolated).toBe(1);
     expect(report.controller.pidfdOpen).toBe(true);
@@ -1497,11 +1509,11 @@ productDescribe(
       });
     });
 
-    it("delivers both sequential tool results in one turn exactly once", async () => {
+    it("[R2-T11] delivers both sequential tool results in one turn exactly once", async () => {
       await scenario("08-two-tools", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
-        const text = "请连续读取两个文件";
+        const text = "请用命令连续读取两个文件";
         await send(text);
         await uiExpect
           .poll(
@@ -1544,12 +1556,12 @@ productDescribe(
       });
     });
 
-    it("completes thirty repeated reads without stranding a result or replaying a tool", async () => {
+    it("[R2-T11] completes thirty repeated reads without stranding a result or replaying a tool", async () => {
       await scenario("09-thirty-reads", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         for (let index = 1; index <= 30; index++) {
-          const text = `第 ${index} 次读取 notes.txt`;
+          const text = `第 ${index} 次用命令读取 notes.txt`;
           await uiExpect(await sendToolRequest(text)).toContainText(NOTE);
           await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
             timeout: 300_000,
@@ -1579,7 +1591,7 @@ productDescribe(
     }, 1_800_000);
 
     it.each([false, true])(
-      "handles a preparation transport failure across paired restart (legacy=%s)",
+      "[R2-T11] handles a preparation transport failure across paired restart (legacy=%s)",
       async (legacy) => {
         const name = legacy ? "32-legacy-preparation-upgrade" : "31-preparation-transport-recovery";
         const original = { installation, browser, context, page };
@@ -1617,7 +1629,7 @@ productDescribe(
           await scenario(name, async () => {
             await newThread();
             const before = new Set(executionReadback().map((record) => record.jobId));
-            const text = "准备传输失败验证：请读取 notes.txt";
+            const text = "准备传输失败验证：请用命令读取 notes.txt";
             await installation.armPreparationTransportFailure(legacy);
             await send(text);
             const allow = page.getByRole("button", { name: "允许这一次" });
@@ -1802,7 +1814,7 @@ productDescribe(
       },
     );
 
-    it("[R2-D4] releases an accepted preparation after its ACK is lost without starting or replaying the tool", async () => {
+    it("[R2-T11][R2-D4] releases an accepted preparation after its ACK is lost without starting or replaying the tool", async () => {
       await installation.stop();
       await installation.setRunDeadline(90_000);
       await installation.start();
@@ -1811,7 +1823,7 @@ productDescribe(
         await scenario("33-preparation-ack-loss", async () => {
           await newThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
-          const text = "准备登记确认丢失验证：请读取 notes.txt";
+          const text = "准备登记确认丢失验证：请用命令读取 notes.txt";
           const baseline = await readFile(path.join(installation.workspace, "notes.txt"), "utf8");
           await installation.armPreparationAckLoss();
           await send(text);
@@ -1934,13 +1946,13 @@ productDescribe(
       }
     });
 
-    it("[R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async () => {
+    it("[R2-T11][R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async () => {
       await scenario("34-preparation-final-recovery", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         const baseline = "恢复前原工具不得写入";
-        const text = "准备终态延迟验证：请写入 hello.txt";
+        const text = "准备终态延迟验证：请用命令写入 hello.txt";
         await writeFile(file, baseline);
         let fault: Awaited<ReturnType<ProductPathInstallation["preparationFinalHold"]>> = null;
         let restored = false;
@@ -2121,7 +2133,7 @@ productDescribe(
           await uiExpect(toolAnswers().last()).toContainText("工具未启动");
           await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
           await newThread();
-          const nextRead = "释放占用后新对话：请读取 notes.txt";
+          const nextRead = "释放占用后新对话：请用命令读取 notes.txt";
           await uiExpect(await sendToolRequest(nextRead)).toContainText(NOTE);
           const nextWrite = "释放占用后新对话：请写入 hello.txt";
           await sendToolRequest(nextWrite);
@@ -2160,13 +2172,13 @@ productDescribe(
       });
     });
 
-    it("[R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async () => {
+    it("[R2-T11][R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async () => {
       await scenario("35-reservation-administrator-cleanup", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         const baseline = "管理员处置不得重放原工具";
-        const text = "管理员处置验证：请写入 hello.txt";
+        const text = "管理员处置验证：请用命令写入 hello.txt";
         await writeFile(file, baseline);
         let cleanupFault: Awaited<ReturnType<ProductPathInstallation["preparationFinalHold"]>> =
           null;
@@ -2400,7 +2412,7 @@ productDescribe(
           expect(await readFile(file, "utf8")).toBe(baseline);
           await newThread();
           await uiExpect(
-            await sendToolRequest("管理员释放后新对话：请读取 notes.txt"),
+            await sendToolRequest("管理员释放后新对话：请用命令读取 notes.txt"),
           ).toContainText(NOTE);
           await sendToolRequest("管理员释放后新对话：请写入 hello.txt");
           await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0);
@@ -2533,14 +2545,14 @@ productDescribe(
       });
     });
 
-    it("[R2-L4][prod-sandbox-D3] delivers a verified preparation failure with safe service diagnostics", async () => {
+    it("[R2-T11][R2-L4][prod-sandbox-D3] delivers a verified preparation failure with safe service diagnostics", async () => {
       await scenario("12-preparation-failure", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         await writeFile(file, "原文件必须保持不变");
         await installation.armPreparationFailure();
-        const text = "准备失败验证：请写入 hello.txt";
+        const text = "准备失败验证：请用命令写入 hello.txt";
         await uiExpect(await sendToolRequest(text)).toContainText("工具未启动");
         await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
           timeout: 300_000,
@@ -3567,7 +3579,7 @@ productDescribe(
     });
 
     it.each([false, true])(
-      "preserves original foreground output through host cleanup: restart=%s",
+      "[R2-T11] preserves original foreground output through host cleanup: restart=%s",
       async (restart) => {
         const name = `15-restart-cleanup-${restart}`;
         await scenario(name, async () => {
@@ -3578,7 +3590,7 @@ productDescribe(
           const source = path.join(installation.workspace, "durability.txt");
           await writeFile(source, original);
           await installation.armFinishGate();
-          const text = `收尾重启 ${restart}：请读取 durability.txt`;
+          const text = `收尾重启 ${restart}：请用命令读取 durability.txt`;
           await beginToolRequest(text);
           await uiExpect
             .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
@@ -3643,7 +3655,7 @@ productDescribe(
       },
     );
 
-    it("rejects contradictory host completion instead of recovering the earlier success", async () => {
+    it("[R2-T11][R2-T12] rejects contradictory host completion instead of recovering the earlier success", async () => {
       const name = "20-contradictory-completion";
       await scenario(name, async () => {
         await newThread();
@@ -3652,7 +3664,7 @@ productDescribe(
         const original = `矛盾退出验证-${crypto.randomUUID()}`;
         await writeFile(path.join(installation.workspace, "durability.txt"), original);
         await installation.armFinishGate("contradict-result");
-        const text = "矛盾退出事实：请读取 durability.txt";
+        const text = "矛盾退出事实：请用命令读取 durability.txt";
         await beginToolRequest(text);
         await uiExpect
           .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
@@ -3729,7 +3741,7 @@ productDescribe(
       });
     });
 
-    it("[R2-S2] keeps an offline Worker result pending until paired service restart settles LOST", async () => {
+    it("[R2-T11][R2-S2] keeps an offline Worker result pending until paired service restart settles LOST", async () => {
       const name = "19-worker-offline-recovery";
       await scenario(name, async () => {
         await newThread();
@@ -3738,7 +3750,7 @@ productDescribe(
         const original = `离线恢复验证-${crypto.randomUUID()}`;
         await writeFile(path.join(installation.workspace, "durability.txt"), original);
         await installation.armFinishGate("before-end");
-        const text = "Worker 离线后成对恢复：请读取 durability.txt";
+        const text = "Worker 离线后成对恢复：请用命令读取 durability.txt";
         await beginToolRequest(text);
         await uiExpect
           .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
@@ -3831,7 +3843,7 @@ productDescribe(
         ] as const
       ).flatMap((stage) => (["worker", "services"] as const).map((target) => ({ stage, target }))),
     ])(
-      "recovers original foreground bytes after $target exits at $stage",
+      "[R2-T11] recovers original foreground bytes after $target exits at $stage",
       async ({ stage, target }) => {
         const name = `18-stream-${stage}-${target}`;
         await scenario(name, async () => {
@@ -3843,7 +3855,7 @@ productDescribe(
           const source = path.join(installation.workspace, "durability.txt");
           await writeFile(source, original);
           await installation.armFinishGate(stage);
-          const text = `${stage}/${target}：请读取 durability.txt`;
+          const text = `${stage}/${target}：请用命令读取 durability.txt`;
           await beginToolRequest(text);
           await uiExpect
             .poll(() => installation.finishGateEntered(), { timeout: 60_000 })
@@ -3917,13 +3929,13 @@ productDescribe(
       "before-result",
       "after-result",
     ] as const)(
-      "[R2-S4] recovers saved output after Job Host crashes during cleanup at %s",
+      "[R2-T11][R2-S4] recovers saved output after Job Host crashes during cleanup at %s",
       async (stage) => {
         const name = `16-finish-crash-${stage}`;
         await scenario(name, async () => {
           await newThread();
           const before = new Set(executionReadback().map((record) => record.jobId));
-          const text = `${stage} 崩溃：请读取 notes.txt`;
+          const text = `${stage} 崩溃：请用命令读取 notes.txt`;
           await installation.armFinishGate(stage);
           await beginToolRequest(text);
           await uiExpect
@@ -4027,7 +4039,7 @@ productDescribe(
     );
 
     it.each(["read", "write"] as const)(
-      "recovers the original tool result after a process crash during durable delivery: %s",
+      "[R2-T11] recovers the original tool result after a process crash during durable delivery: %s",
       async (tool) => {
         const name = `10-delivery-crash-${tool}`;
         await scenario(name, async () => {
@@ -4035,7 +4047,7 @@ productDescribe(
           const before = new Set(executionReadback().map((record) => record.jobId));
           await installation.armDeliveryCrash();
           const text =
-            tool === "read" ? "交付中重启：请读取 notes.txt" : "交付中重启：请写入 hello.txt";
+            tool === "read" ? "交付中重启：请用命令读取 notes.txt" : "交付中重启：请写入 hello.txt";
           await send(text);
           await uiExpect
             .poll(
