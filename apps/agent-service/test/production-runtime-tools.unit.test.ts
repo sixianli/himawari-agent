@@ -1163,7 +1163,7 @@ it("[R2-P1] recovers a saved host read result instead of rejecting it", async ()
   const tool = new ProductionRuntimeTools(hostOptions(f, execute));
   await tool.listAuthorized(call.runId, []);
   const first = await tool.execute(call);
-  expect(first).toMatchObject({ outcome: "succeeded", dispatchState: "not_sent" });
+  expect(first).toMatchObject({ outcome: "succeeded", dispatchState: "accepted" });
   expect(execute).toHaveBeenCalledTimes(1);
   const recovered = await tool.recoverResult(call, {
     toolCallId: call.toolCallId,
@@ -1175,6 +1175,6 @@ it("[R2-P1] recovers a saved host read result instead of rejecting it", async ()
   expect(recovered).toMatchObject({
     outcome: "succeeded",
     modelContent: "pi-result.v1",
-    dispatchState: "not_sent",
+    dispatchState: "accepted",
   });
 });

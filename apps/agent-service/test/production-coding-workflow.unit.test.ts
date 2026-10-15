@@ -98,6 +98,22 @@ function fixture() {
   };
   return { base, values, call, binding, ctx, services, authorize };
 }
+function allowRead(): ProductionFileReadServices["authorize"] {
+  return vi.fn<ProductionFileReadServices["authorize"]>(async () => ({
+    decision: "ALLOW",
+    basis: { type: "grant", ref: "grant:test" },
+    executionScope: {
+      capabilityRef: "coding",
+      operations: ["read"],
+      exactResourceRef: null,
+      resourcePrefixes: [],
+      maxDataClassification: "private",
+      sideEffects: ["none"],
+      maxCostMicrosPerUse: 0,
+      maxFrequency: { count: 1, intervalMs: null },
+    },
+  }));
+}
 describe("governed coding requests", () => {
   it("binds the exact tool input and recipient to approval before issuing a handle", async () => {
     const f = fixture();
@@ -530,26 +546,12 @@ it("[R2-P1] executes read-only tools in the host process and reuses the saved re
     isError: false,
     errorCode: null,
   }));
-  const authorize = vi.fn<ProductionFileReadServices["authorize"]>(async () => ({
-    decision: "ALLOW",
-    basis: { type: "grant", ref: "grant:test" },
-    executionScope: {
-      capabilityRef: "coding",
-      operations: ["read"],
-      exactResourceRef: null,
-      resourcePrefixes: [],
-      maxDataClassification: "private",
-      sideEffects: ["none"],
-      maxCostMicrosPerUse: 0,
-      maxFrequency: { count: 1, intervalMs: null },
-    },
-  }));
-  const services = { ...f.services, authorize, hostReadOnly: { execute } };
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
   const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "notes.txt" } };
   const first = await executeProductionCodingRequest(call, "read", services, f.ctx);
   expect(first).toMatchObject({
     outcome: "succeeded",
-    dispatchState: "not_sent",
+    dispatchState: "accepted",
     modelContent: "pi-result.v1",
     executionTiming: expect.any(Object),
   });
@@ -557,6 +559,46 @@ it("[R2-P1] executes read-only tools in the host process and reuses the saved re
   expect(f.ctx.phase).not.toHaveBeenCalled();
   expect(f.services.issue).not.toHaveBeenCalled();
   const second = await executeProductionCodingRequest(call, "read", services, f.ctx);
-  expect(second).toMatchObject({ outcome: "succeeded", modelContent: "pi-result.v1" });
+  expect(second).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "accepted",
+    modelContent: "pi-result.v1",
+  });
   expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("[R2-P1] marks a host read that ran and failed as dispatched, not as not sent", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "ENOENT: no such file or directory, open 'missing.txt'",
+    isError: true,
+    errorCode: "ENOENT",
+  }));
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "missing.txt" } };
+  const result = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(result).toMatchObject({
+    outcome: "failed",
+    dispatchState: "accepted",
+    errorCode: "ENOENT",
+    executionTiming: expect.any(Object),
+  });
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("[R2-P1] keeps a read rejected before execution as not sent", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "unreachable",
+    isError: false,
+    errorCode: null,
+  }));
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "../outside" } };
+  expect(await executeProductionCodingRequest(call, "read", services, f.ctx)).toMatchObject({
+    outcome: "failed",
+    dispatchState: "not_sent",
+    errorCode: "CODING_PATH_OUTSIDE_SCOPE",
+  });
+  expect(execute).not.toHaveBeenCalled();
 });

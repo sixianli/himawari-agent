@@ -21,6 +21,7 @@ import {
   type Browser,
   type BrowserContext,
   chromium,
+  type Locator,
   type Page,
   expect as uiExpect,
 } from "@playwright/test";
@@ -326,6 +327,8 @@ function composer() {
   return page.getByPlaceholder("有什么想交给 Himawari？");
 }
 
+let activeTurn: Locator | undefined;
+
 async function send(text: string) {
   const button = page.getByRole("button", { name: "发送", exact: true });
   await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
@@ -333,10 +336,15 @@ async function send(text: string) {
   });
   await composer().fill(text);
   await uiExpect(button).toBeEnabled({ timeout: 20_000 });
+  const before = await page.locator(".chat-turn").count();
   await button.click();
-  await uiExpect(page.getByRole("article").filter({ hasText: text }).last()).toBeVisible({
+  const turn = page.locator(".chat-turn").nth(before);
+  await uiExpect(turn).toHaveCount(1, { timeout: 20_000 });
+  await uiExpect(turn.getByRole("article").filter({ hasText: text }).last()).toBeVisible({
     timeout: 20_000,
   });
+  activeTurn = turn;
+  return turn;
 }
 
 function toolAnswers() {
@@ -344,15 +352,7 @@ function toolAnswers() {
 }
 
 async function beginToolRequest(text: string) {
-  await send(text);
-  const turn = page
-    .locator(".chat-turn")
-    .filter({
-      has: page.locator(".thread-message-owner").filter({
-        has: page.getByText(text, { exact: true }),
-      }),
-    })
-    .last();
+  const turn = await send(text);
   const answers = turn.getByText(/工具返回：/);
   const allow = turn.getByRole("button", { name: "允许这一次" });
   await uiExpect
@@ -368,6 +368,18 @@ async function sendToolRequest(text: string) {
   const answers = await beginToolRequest(text);
   await uiExpect(answers).toHaveCount(1, { timeout: 300_000 });
   return answers;
+}
+
+function currentTurn() {
+  if (!activeTurn) throw new Error("CURRENT_TURN_UNAVAILABLE");
+  return activeTurn;
+}
+
+async function expectToolRowPhase(phase: "已完成" | "失败") {
+  const rows = currentTurn().getByRole("listitem");
+  await uiExpect(rows.filter({ hasText: phase }).first()).toBeVisible({ timeout: 30_000 });
+  await uiExpect(rows.filter({ hasText: "结果未确认" })).toHaveCount(0);
+  await uiExpect(rows.filter({ hasText: "尚未派发" })).toHaveCount(0);
 }
 
 async function executionEnvironmentReadback() {
@@ -1218,6 +1230,7 @@ productDescribe(
       await scenario("r2p1-read-existing", async () => {
         const answer = await sendToolRequest("请读取 notes.txt");
         await uiExpect(answer).toContainText(NOTE);
+        await expectToolRowPhase("已完成");
       });
     });
 
@@ -1225,6 +1238,7 @@ productDescribe(
       await scenario("r2p1-read-missing", async () => {
         const answer = await sendToolRequest("请读取 missing.txt");
         await uiExpect(answer).toContainText(/missing\.txt|不存在|ENOENT|not found/i);
+        await expectToolRowPhase("失败");
       });
     });
 
@@ -1232,10 +1246,13 @@ productDescribe(
       await scenario("r2p1-search-tools", async () => {
         const listing = await sendToolRequest("请列出工作目录");
         await uiExpect(listing).toContainText("notes.txt");
+        await expectToolRowPhase("已完成");
         const found = await sendToolRequest("请按名字找文件");
         await uiExpect(found).toContainText("nested.txt");
+        await expectToolRowPhase("已完成");
         const grepped = await sendToolRequest("请按内容搜索");
         await uiExpect(grepped).toContainText("notes.txt");
+        await expectToolRowPhase("已完成");
       });
     });
 

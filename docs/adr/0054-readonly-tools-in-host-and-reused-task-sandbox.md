@@ -89,6 +89,7 @@ date: "2026-10-13"
 - **`grep` 跳过无法读取文件的差异**（已知）：进程内 `grep` 对超过读取上限或不是 UTF-8 的文件无法搜索，此时在结果末尾用同一 notice 格式说明 `N 个文件因过大或无法读取未搜索`（没有匹配时也写）；`rg` 会搜索这些文件。二进制文件（含 NUL）按 `rg` 默认跳过，不计入该数量。
 - **事件循环让步**：`find` 的遍历和 `grep` 的逐文件搜索在每处理一个条目或文件后 `await` 一次 `setImmediate` 并检查 `signal`。云端对本仓库源码检出（约 800 个 `.ts` 文件、跳过 `node_modules`）实测：让步前一次 `grep` 连续占用主进程约 12.7 秒（`perf_hooks.monitorEventLoopDelay` 期间没有采样，说明事件循环没有让出）；让步后最大事件循环延迟 47 毫秒、p99 28.4 毫秒、p50 10.4 毫秒，`grep` 2.2 秒、`find` 0.9 秒。
 - **限制不变**：进内存读取上限 16 MiB，模型可见正文沿用 Pi 的 2000 行 / 50 KiB 截断，序列化结果仍受调用自身的 `maxOutputBytes` 与机器秘密扫描约束。
+- **结果派发标记（2026-10-15 更正）**：主进程执行完 `read`、`ls`、`find`、`grep` 后保存的结果一律标为 `accepted`（已执行），成功和失败（例如文件不存在）都一样；只有在执行之前就被拒绝的才标 `not_sent`，包括路径越界 `CODING_PATH_OUTSIDE_SCOPE`、目标为目录 `CODING_PATH_IS_DIRECTORY` 和权限拒绝（`apps/agent-service/src/production-coding-workflow.ts`）。页面投影仍保留“成功却标为未派发”这一矛盾组合为“结果未确认”的防线，但主进程不再产生这种组合；已执行的主进程工具行照结果显示“已完成”或“失败”，不再显示“结果未确认”，也不再给出“在原资源核验为已释放之前不要再次写”的提示。缺陷编号 R2-P1。
 - **授权与记录**：授权仍在 `ALLOW` 之后才打开文件，使用与授权时相同的 Grant `id`、`revision`、`canonicalRootId`、`hostId`；主进程路径不签发 Worker Handle、不写沙箱准备记录，结果按同一 intent 保存，工具耗时由主进程自己写 `startedAt` 和 `endedAt`。
 
 <a id="model-output-limit"></a>

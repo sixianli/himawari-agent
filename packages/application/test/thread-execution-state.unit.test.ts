@@ -637,6 +637,127 @@ describe("execution state history read boundary", () => {
     ]);
     expect(JSON.stringify(state)).not.toContain("/private/host/token");
   });
+  async function toolResultState(tool: unknown) {
+    const payloadValues = new Map<string, unknown>([
+      ["outer", { payloadRef: "tool-result" }],
+      ["tool-result", tool],
+    ]);
+    const projection = new ThreadExecutionProjection({
+      threads: {
+        read: async () => ({ status: "active" }),
+        listRuns: async () => [run],
+      },
+      trace: {
+        readRun: async () => [
+          {
+            id: "tool-event",
+            schemaVersion: "trace.v1",
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            sessionId: "session-state",
+            threadId: input.threadId,
+            runId: input.runId,
+            turnId: null,
+            parentEventId: null,
+            causationId: null,
+            correlationId: "run-state",
+            sequence: 1,
+            occurredAt: at(2),
+            recordedAt: at(2),
+            actorId: "runtime",
+            dataClassification: "private",
+            eventType: "runtime.tool_result",
+            payloadRef: "outer",
+          },
+        ],
+      },
+      payloads: () => ({
+        get: async (ref: string) => ({
+          ref,
+          dataClassification: "private",
+          contentType: "application/json",
+          ciphertext: new TextEncoder().encode(JSON.stringify(payloadValues.get(ref))),
+        }),
+      }),
+      protector: {
+        unprotect: async ({ payload }: { payload: { ciphertext: Uint8Array } }) =>
+          payload.ciphertext,
+      },
+    } as unknown as ConstructorParameters<typeof ThreadExecutionProjection>[0]);
+    return projection.readState(input);
+  }
+  it("[R2-P1] shows a host read that ran and succeeded as completed, with no outcome marker", async () => {
+    const state = await toolResultState({
+      toolCallId: "host-read-call",
+      toolName: "read",
+      arguments: {},
+      isError: false,
+      result: {
+        details: {
+          dispatchState: "accepted",
+          productOutcome: "succeeded",
+          errorCode: null,
+          executionTiming: { startedAt: at(2), endedAt: at(3) },
+        },
+        content: [],
+      },
+    });
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: expect.stringMatching(/^tool:/),
+        displayPhase: "completed",
+        reasonCode: "TOOL_SUCCEEDED",
+      }),
+    ]);
+    expect(JSON.stringify(state)).not.toContain("runtime.tool_outcome");
+  });
+  it("[R2-P1] still reports a contradictory succeeded-but-not-sent result as unresolved", async () => {
+    const state = await toolResultState({
+      toolCallId: "host-read-call",
+      toolName: "read",
+      arguments: {},
+      isError: false,
+      result: {
+        details: {
+          dispatchState: "not_sent",
+          productOutcome: "succeeded",
+          errorCode: null,
+        },
+        content: [],
+      },
+    });
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: expect.stringMatching(/^tool:/),
+        displayPhase: "unresolved",
+        reasonCode: "TOOL_RESULT_UNCONFIRMED",
+      }),
+    ]);
+  });
+  it("[R2-P1] shows a host read that ran and failed as failed, not as unresolved", async () => {
+    const state = await toolResultState({
+      toolCallId: "host-read-call",
+      toolName: "read",
+      arguments: {},
+      isError: true,
+      result: {
+        details: {
+          dispatchState: "accepted",
+          productOutcome: "failed",
+          errorCode: "ENOENT",
+          executionTiming: { startedAt: at(2), endedAt: at(3) },
+        },
+        content: [],
+      },
+    });
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: expect.stringMatching(/^tool:/),
+        displayPhase: "failed",
+      }),
+    ]);
+    expect(JSON.stringify(state)).not.toContain("runtime.tool_outcome");
+  });
   it("[R2-U3] retries a Run revision change during the read and returns the next consistent snapshot", async () => {
     const { projection, read, listRuns } = fixture();
     listRuns

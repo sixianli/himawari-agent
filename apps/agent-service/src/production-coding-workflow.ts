@@ -365,7 +365,7 @@ export async function executeProductionCodingRequest(
     });
     await active();
     const settled: RuntimeToolSettledResult = {
-      dispatchState: "not_sent",
+      dispatchState: "accepted",
       executionTiming: { startedAt, endedAt: ctx.now() },
       outcome: executed.isError ? "failed" : "succeeded",
       resultRef: null,
