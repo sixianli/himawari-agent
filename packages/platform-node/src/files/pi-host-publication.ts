@@ -145,8 +145,9 @@ function bounded(output: string, maxOutputBytes: number) {
 }
 
 export async function publishPreparedPiOperation(
-  input: PiHostPublicationInput,
+  request: PiHostPublicationInput,
 ): Promise<PiPublicationOutput> {
+  const { fitOutput = exactFitOutput, ...input } = request;
   if (!isPiHostPublication(input)) throw new Error("PI_HOST_PUBLICATION_UNSUPPORTED");
   const parameters: unknown = JSON.parse(input.parametersJson);
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters))
@@ -316,7 +317,7 @@ export async function publishPreparedPiOperation(
       verifiedWrite,
       privateDirectory: input.privateDirectory,
       maxOutputBytes: input.maxOutputBytes,
-      fitOutput: input.fitOutput ?? exactFitOutput,
+      fitOutput,
       closing: { fileCommitClosed: true },
       source,
     });

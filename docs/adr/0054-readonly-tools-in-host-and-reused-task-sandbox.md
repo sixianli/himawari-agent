@@ -108,6 +108,7 @@ date: "2026-10-13"
 - **正文预算用二分查找，按整份信封的 UTF-8 字节数判断。** 信封的固定部分（`schemaVersion`、`tool`、`source`、截断元数据和说明）会占一部分预算，且 JSON 转义会让换行、引号和控制字符变长，正文字节数不等于信封字节数；因此每次候选都用完整 `JSON.stringify` 的结果测量，二分查找最多 32 步，结果有界且确定。搜索上界取最小正文长度减一，保证搜索区间内每一段正文都被截断，使其大小随预算单调，二分成立。
 - **`details.truncation` 去掉 `content`。** Pi 的 `TruncationResult` 第一个字段就是截断后的正文，而信封的 `content` 已经携带同一段正文；不去重会让正文在信封里出现两次，二分查找只能找到约一半的预算。去重的 `truncationMetadata` 放在 `runtime-pi`，`production-host-read.ts` 复用它；`platform-node` 按 Workspace Contract 不能依赖 `runtime-pi`，那一处保留结构相同的本地写法，类型用结构相同的 `PiHostResultOutputFitter`（`platform-node` 也不得 import `@earendil-works/pi-*`）。
 - **`PI_RESULT_OUTPUT_ENVELOPE_RESERVE`（2048 字节）** 只是给调用方第一次截断用的保守余量；信封最终仍由 `fitPiResultOutput` 精确测量并按需再截一次，所以这个常量只影响第一次截断的松紧，不影响上限是否成立。
+- **预备写入路径把截断函数和可复制的发布输入分开传。** `publishPreparedPiOperation`（`packages/platform-node/src/files/pi-host-publication.ts`）在入口把截断函数 `fitOutput` 从发布输入里拆出来，单独传给 `formatForegroundPiResult`；交给文件发布、目录移动与工作副本三个发布日志（它们各自 `structuredClone` 输入）的仍是不含函数的可复制输入。`write`、`edit` 的准备结果因此不再把函数带进 `structuredClone` 而整次失败，`fitOutput` 的默认值 `exactFitOutput` 保持不变。
 
 <a id="references"></a>
 
