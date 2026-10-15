@@ -2945,7 +2945,7 @@ productDescribe(
               await composer().press("Enter");
             } finally {
               releaseDetail();
-              await page.unroute("**/api/gateway/thread/v3/queries", holdDetail);
+              await page.unrouteAll({ behavior: "wait" });
             }
             await uiExpect(
               page.locator('.thread-loading-skeleton[data-scope="conversation"]'),
