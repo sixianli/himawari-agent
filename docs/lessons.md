@@ -237,13 +237,15 @@ date: "2026-10-13"
   - 2026-10-15 起草第四次操作包时，又把第三次那份过期的 `bootstrap.mjs` 原样复制了过来，冻结前人工核对时才发现。
   - 2026-10-15 冻结前核对第四次操作包：新加的 `acceptance/cloud/adapters/failure-scene.py` 会被 `run-stage-03.py` 载入，但不在验收输入清单里；四份 `OWNED-SHA256SUMS` 仍是第三次的值；`maintenance/raw-copy-recovery.mjs` 被已登记的 `run-maintenance.mjs` 载入，却从第三次起就没登记。同一天还发现测试 `test/integration/product-path-browser.test.ts` 的 `[R2-L6]` 用例写死了第一次候选包的摘要 `6cc0c9d8…`，换任何新包都失败；已改为对实际传入的安装包现场计算。
   - 2026-10-16 第四次的候选从 `04660f2b` 换成 `35d6800f`：生成候选材料的工具 `.ci-output/production/fourth-freeze-tools/run-cand.sh` 已改成把“构建源码输入记录工具”放到 `fourth-source-inputs-<版本前 8 位>` 目录，它使用的模板 `capture-build-source-inputs.template.mjs` 却仍写死 `fourth-source-inputs-01`，并在运行时核对自己是否就在这个位置，于是记录步骤以 `BUILD_CAPTURE_FIXED_HERMES_ENVIRONMENT_REQUIRED` 失败。这次在 Hermes 上生成材料时就暴露了，没有进入操作包。
+  - 2026-10-16 第四次的安装演练第一次真正跑到验收阶段：验收输入清单 `cloud-inputs.draft.json` 的摘要早已重算，`schema`（清单格式名）却还是 `himawari-third-cloud-acceptance-inputs.v1`，`profile`（运行场景名）还是 `cloud-third-deployment`，9 个路径还在第三次的工作目录 `/var/tmp/himawari-third-20261012/` 和发布目录 `2026-10-12-third` 下。第四次的 `finalize-cloud-inputs.py` 等脚本只接受第四次的值，生产 S6 会在这里停下。下面的一致性检查当时只比摘要，所以判为通过。
 - 第三次的根因：前两次之后的预防都是“换候选包时记得核对”，由起草的人逐项想起来；操作包从上一次复制而来，旧值看起来和新值一样合理，没有任何东西在冻结或执行前机械地比较“清单写的”和“包里实际的”。
 - 硬约束（2026-10-15）：
   - 操作包里的 `inputs/check-packet-consistency.py <操作包目录>`：核对验收输入清单和四份 `OWNED-SHA256SUMS` 的每一条摘要；对每个没登记的文件，只要有已登记的文件按路径或文件名引用它，就判为漏登记；从操作包材料里的候选安装包读出 `runtime-sandbox/dist/` 下的三个文件，核对 `bootstrap.mjs` 写死的摘要，并要求每个替换锚点在对应文件里恰好出现一次。任何一项不符就打印问题清单，以退出码 1 结束。
   - 生产入口 `.ci-output/production/run-fourth-step.sh` 在执行每个生产步骤（包括第一步上传）前先运行它，不通过就打印 `FOURTH_PACKET_INCONSISTENT`，以退出码 3 结束，不连接生产服务器。安装演练脚本 `run-fourth-rehearsal.sh` 的第一阶段也先运行它。下一次起草操作包时，入口脚本和检查脚本随包一起复制，检查跟着生效。
   - 验证：直接对第三次的操作包 `2026-10-12-third-deploy-packet-03` 运行，检查指出了当年导致 S6 失败的三个过期摘要和三处锚点不符，以及 `raw-copy-recovery.mjs` 漏登记；修正后的第四次操作包通过。夹具 `inputs/verify-packet-consistency.py` 在副本上重现过期探针摘要、漏登记的载入文件、过期的目录摘要、漏登记的被载入模块和改过的已登记脚本五种情况，都以退出码 1 拒绝，未改动的副本通过。在临时副本上弄坏一条摘要后运行入口脚本，以退出码 3 停下，放在 `PATH` 里的假 `ssh` 一次也没被调用。
   - 补充（2026-10-16）：`run-cand.sh` 生成记录工具后，先确认工具里不再残留 `fourth-source-inputs-01`，并且工具里写死的位置正好是它实际存放的位置，否则打印 `CAPTURE_PATH_LEFT` 或 `CAPTURE_TOOL_PATH_MISMATCH` 并以退出码 2 结束，不再运行记录步骤。验证：按 `run-cand.sh` 的方式只替换版本号、不替换目录名时，检查打印 `CAPTURE_PATH_LEFT` 并以退出码 2 结束；两处都替换后通过。
-  - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。
+  - 补充（2026-10-16，第五次之后）：前面的检查只核对“清单记的摘要”和“文件实际内容”，没核对清单自己的身份字段是不是这一次的。`check-packet-consistency.py` 现在从验收输入清单的真实使用者 `finalize-cloud-inputs.py` 读出这一次的工作目录、发布目录、`schema` 和 `profile`，要求清单的 `schema`、`profile`、`runtime`、`sourceRoot`、`evidenceRoot` 与之相等，并且清单里其余以 `/var/tmp/` 或 `/opt/himawari/releases/` 开头的路径都在这一次的目录下，否则打印 `CLOUD_INPUT_IDENTITY_STALE` 并以退出码 1 结束；读不到这些值时打印 `CLOUD_INPUT_CONSUMER_IDENTITY_NOT_FOUND`。期望值取自使用者脚本，不由检查自己另写一份。验证：夹具 `verify-packet-consistency.py` 新增旧 `schema`、旧 `profile`、旧工作目录下的路径、旧发布目录下的 `runtime` 四种情况，加检查前四种都以退出码 0 漏过，加检查后都以退出码 1 拒绝，10 个夹具全部通过；对修正前的操作包，旧检查判通过，新检查报 11 处。
+  - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。身份字段只检查验收输入清单，期望值只取 `finalize-cloud-inputs.py` 一处，`run-cloud-acceptance.sh`、`run-network-preparation.py` 等其他使用者里写死的同一组值不比对；路径只看 `/var/tmp/` 和 `/opt/himawari/releases/` 两个前缀。其他清单里的格式名（例如 `composition-source-contract.json` 的 `schema`）没有脚本校验，仍可能留着上一次的名字。
 
 [回到目录](#编码代理反复犯的错误)
 
