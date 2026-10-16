@@ -1,4 +1,5 @@
-import { ExaPublicSearchAdapter } from "@himawari-agent/platform-node";
+import process from "node:process";
+import { ExaPublicSearchAdapter, publicSearchFailure } from "@himawari-agent/platform-node";
 
 // Installed fixed-read program; Worker supplies admitted protected input and SRT
 // restricts network access to the declared search provider.
@@ -36,8 +37,9 @@ try {
       results,
     }),
   );
-} catch {
-  // Provider errors can include transport credentials; only this stable code exits.
-  process.stderr.write("WEB_SEARCH_FAILED\n");
+} catch (error) {
+  const failure = publicSearchFailure(error);
+  process.stdout.write(failure.output);
+  process.stderr.write(`${failure.code}\n`);
   process.exitCode = 1;
 }

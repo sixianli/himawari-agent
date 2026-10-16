@@ -6,6 +6,31 @@ import { ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
+const rateLimitNotice = /\brate[- ]limit/i;
+const rateLimitBackoffMs = 1000;
+const minimumRetryCallMs = 5000;
+
+export function publicSearchFailure(error: unknown): {
+  readonly code: "WEB_SEARCH_RATE_LIMITED" | "WEB_SEARCH_FAILED";
+  readonly output: string;
+} {
+  return error instanceof Error && error.message === "WEB_SEARCH_RATE_LIMITED"
+    ? {
+        code: "WEB_SEARCH_RATE_LIMITED",
+        output: JSON.stringify({
+          error: "WEB_SEARCH_RATE_LIMITED",
+          message: "公开搜索服务正在限流，请稍等片刻再搜索。",
+        }),
+      }
+    : {
+        code: "WEB_SEARCH_FAILED",
+        output: JSON.stringify({
+          error: "WEB_SEARCH_FAILED",
+          message: "公开网页搜索失败。",
+        }),
+      };
+}
+
 export function parseExaSearchResults(text: string, limit: number): readonly WebSearchCandidate[] {
   if (Buffer.byteLength(text) > 128 * 1024) throw new Error("WEB_SEARCH_OUTPUT_LIMIT");
   const results: WebSearchCandidate[] = [];
@@ -36,7 +61,12 @@ export function parseExaSearchResults(text: string, limit: number): readonly Web
     });
     if (results.length >= limit) break;
   }
-  if (!results.length && text.trim()) throw new Error("WEB_SEARCH_RESPONSE_UNRECOGNIZED");
+  if (!results.length && text.trim())
+    throw new Error(
+      Buffer.byteLength(text) <= 4096 && rateLimitNotice.test(text)
+        ? "WEB_SEARCH_RATE_LIMITED"
+        : "WEB_SEARCH_RESPONSE_UNRECOGNIZED",
+    );
   return results;
 }
 
@@ -156,8 +186,7 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         );
       },
     });
-    try {
-      await client.connect(transport, { timeout: 15000 });
+    const callSearch = async () => {
       const result = await client.callTool(
         {
           name: "web_search_exa",
@@ -178,6 +207,22 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         .join("\n\n---\n\n");
       if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
       return parseExaSearchResults(text, limit);
+    };
+    try {
+      await client.connect(transport, { timeout: 15000 });
+      try {
+        return await callSearch();
+      } catch (error) {
+        if (
+          publicSearchFailure(error).code !== "WEB_SEARCH_RATE_LIMITED" ||
+          deadline - performance.now() < rateLimitBackoffMs + minimumRetryCallMs
+        )
+          throw error;
+      }
+      await delay(rateLimitBackoffMs, undefined, { signal: lifetime });
+      dispatcher = new ProxyAgent({ uri: proxy.href, token });
+      dispatchers.push(dispatcher);
+      return await callSearch();
     } finally {
       await client.close().catch(() => undefined);
       await Promise.all(dispatchers.map((entry) => entry.close()));

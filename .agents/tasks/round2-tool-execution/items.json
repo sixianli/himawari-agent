@@ -1323,6 +1323,27 @@
         "on": "2026-10-16",
         "why": "DeepSeek 为 R2-U4 出方案时读代码发现、Claude 核实：operations-control-center.tsx executeAction 在非 409/401 失败和 409 冲突时、configureReflection 在非 401 失败时都不改 mutationStatus，状态停在 pending；该页的 pending 只影响状态文字，不禁用按钮"
       }
+    },
+    {
+      "id": "R2-T13",
+      "title": "公开搜索遇到 Exa 免费 MCP 限流时，Exa 返回不带错误标记的限流提示文字，解析器报 WEB_SEARCH_RESPONSE_UNRECOGNIZED，搜索程序只在标准错误写 WEB_SEARCH_FAILED，模型拿到空内容、看不出原因；改为在原期限内有上限地重试，仍限流时把能看出是限流的固定说明交给模型",
+      "goal_ref": ["G1", "G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T13",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "第四次变更安装演练验收 3 次中 2 次在 public-query 3–4 秒失败；Hermes 上直接调用 web_search_exa 60 次有 2 次返回 246 字节的限流提示（isError 未设置），沙箱内 30 次有 1 次 WEB_SEARCH_RESPONSE_UNRECOGNIZED；同一现象 2026-10-09 见 BL-20261009-001"
+      }
     }
   ],
   "fingerprint": {

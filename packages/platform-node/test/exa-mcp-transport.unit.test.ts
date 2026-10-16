@@ -271,3 +271,40 @@ it("propagates cancellation of the original MCP request during retry admission",
   expect(state.closeClient).toHaveBeenCalledOnce();
   expect(state.closeProxy).toHaveBeenCalledOnce();
 });
+
+describe("[R2-T13] free MCP rate-limit notices", () => {
+  const notice = {
+    content: [
+      {
+        type: "text",
+        text: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.",
+      },
+    ],
+  };
+  it("retries the same search once through a fresh authenticated proxy", async () => {
+    state.callTool.mockResolvedValueOnce(notice);
+    expect(await search()).toMatchObject([{ title: "Tokyo weather" }]);
+    expect(state.callTool).toHaveBeenCalledTimes(2);
+    expect(state.callTool.mock.calls[1]).toEqual(state.callTool.mock.calls[0]);
+    expect(state.proxyCreated).toHaveBeenCalledTimes(2);
+    expect(state.closeClient).toHaveBeenCalledOnce();
+    expect(state.closeProxy).toHaveBeenCalledTimes(2);
+  });
+  it("stops after one retry and reports the rate limit", async () => {
+    state.callTool.mockResolvedValue(notice);
+    await expect(search()).rejects.toThrow("WEB_SEARCH_RATE_LIMITED");
+    expect(state.callTool).toHaveBeenCalledTimes(2);
+    expect(state.closeProxy).toHaveBeenCalledTimes(2);
+  });
+  it("does not retry when the original search budget cannot cover the wait", async () => {
+    const start = performance.now();
+    const clock = vi.spyOn(performance, "now");
+    clock.mockReturnValueOnce(start);
+    clock.mockReturnValue(start + 44500);
+    state.callTool.mockResolvedValue(notice);
+    await expect(search()).rejects.toThrow("WEB_SEARCH_RATE_LIMITED");
+    expect(state.callTool).toHaveBeenCalledOnce();
+    expect(state.proxyCreated).toHaveBeenCalledOnce();
+    clock.mockRestore();
+  });
+});

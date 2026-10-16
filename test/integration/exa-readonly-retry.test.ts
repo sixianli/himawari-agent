@@ -31,7 +31,10 @@ describe("fixed readonly search with installed MCP and CONNECT transport", () =>
     { status: 503, withdraw: false },
     { status: 403, withdraw: false },
     { status: 503, withdraw: true },
-  ])("handles HTTP $status with withdrawal=$withdraw", async ({ status, withdraw }) => {
+    { status: 200, withdraw: false },
+    { status: 200, withdraw: true },
+  ])("[R2-T13] handles HTTP $status with withdrawal=$withdraw", async ({ status, withdraw }) => {
+    const recovers = status !== 403 && !withdraw;
     const calls: Array<{ method: string; params?: { name?: string; arguments?: unknown } }> = [];
     const toolConnections: number[] = [];
     const sockets = new Set<Duplex>();
@@ -56,6 +59,23 @@ describe("fixed readonly search with installed MCP and CONNECT transport", () =>
           toolConnections.push(request.socket.remotePort ?? 0);
           if (++searches === 1) {
             revoked = withdraw;
+            if (status === 200) {
+              response.writeHead(200, { "content-type": "application/json" }).end(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY",
+                      },
+                    ],
+                  },
+                }),
+              );
+              return;
+            }
             response.writeHead(status).end("provider unavailable");
             return;
           }
@@ -117,23 +137,24 @@ describe("fixed readonly search with installed MCP and CONNECT transport", () =>
     vi.stubEnv("HTTPS_PROXY", `http://fixture:fixture@127.0.0.1:${proxyAddress.port}`);
     try {
       const result = new ExaPublicSearchAdapter().search({ query: "readonly fixture", limit: 1 });
-      if (status === 503 && !withdraw)
+      if (recovers)
         await expect(result).resolves.toMatchObject([
           { title: "Fixture source", url: "https://example.test/read" },
         ]);
       else await expect(result).rejects.toThrow();
       expect(calls.filter(({ method }) => method === "initialize")).toHaveLength(1);
       const tools = calls.filter(({ method }) => method === "tools/call");
-      expect(tools).toHaveLength(status === 503 && !withdraw ? 2 : 1);
+      expect(tools).toHaveLength(recovers ? 2 : 1);
       expect(tools[0]?.params).toMatchObject({
         name: "web_search_exa",
         arguments: { query: "readonly fixture", numResults: 1 },
       });
-      if (status === 503 && !withdraw) {
-        expect(tools[1]).toEqual(tools[0]);
+      if (recovers) {
+        if (status === 503) expect(tools[1]).toEqual(tools[0]);
+        else expect(tools[1]?.params).toEqual(tools[0]?.params);
         expect(toolConnections[1]).not.toBe(toolConnections[0]);
       }
-      expect(connections).toBe(status === 503 ? 2 : 1);
+      expect(connections).toBe(status === 403 ? 1 : 2);
     } finally {
       for (const socket of sockets) socket.destroy();
       server.closeAllConnections();
