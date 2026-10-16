@@ -721,3 +721,17 @@
 > 我都批准你！我只想明早一早就用上！
 
 （Claude 的理解已回复用户：G111 同样适用于本轮新生成并冻结的操作包，条件不变：一致性检查通过、安装演练全部通过、把冻结清单摘要报给用户后，从 S1 起按顺序执行；任何一步不符合预期就停下、保留现场；S10 付费对话仍由用户做；不扩大到操作包以外的新下载、删减证据、sudo 改动。前提仍是 G113：第 4 层发现的缺陷全部修完。）
+
+## G119 2026-10-16 用户原话
+
+问题：（Claude 15:35 前后问）冻结检查要求 /var/lib/himawari 属于 root，但生产上它一直属于服务账户 himawari-prod（999:988，0700）。是否批准方案 A：冻结检查改为接受 root 或服务账户拥有（仍禁止组/其他人可写），同时给 S5 建目录前加上属主核对，然后重新演练、冻结并执行 S1–S9？
+
+> 批准方案 A (Recommended)
+
+（用户在选择题里选了这一项。Claude 的理解：只改第四次操作包的冻结检查 `inputs/finalize-bindings.py`、它的夹具，以及加强 `maintenance/S5-create-workspace.py` 和结构检查反例；不改生产目录属主；改完重算摘要、一致性检查、重新完整演练，通过后冻结，按 G111/G118 从 S1 执行到 S9，S10 留给用户。）
+
+## G120 2026-10-16 用户原话
+
+> 测一下，可不可以用，然后加入到opencode的模型路由里面去
+
+（16:40 前后收到，随消息附 OpenCode 官方帖子截图“GLM 5.3 Flash is now free in OpenCode”。Claude 16:45 东京时间实测：`opencode models` 列出 `opencode/glm-5.3-flash-free`；一次需要调用读文件工具的小任务 19.6 秒内答对；`#low`、`#high`、`#max` 三个推理档位都能启动，但 `#high` 报告的推理用量为 0、`#low` 反而用了 168 秒，档位实际效果未确认。OpenCode 官方文档 opencode.ai/docs/zen 写明它限时免费、不保留也不用于训练；同名付费版 `opencode/glm-5.3-flash` 按量计费，仍然禁止。Claude 按 G117 自行定的路由：免费 DeepSeek 被限流、下线或不可用时，先换免费 GLM 5.3 Flash，再换 Go 额度的 DeepSeek；同一任务在 DeepSeek 上失败两次后，先试免费 GLM 5.3 Flash，它被限流时才用 Go 额度的 `opencode-go/glm-5.3-flash`。其余 G114 规则不变。）
