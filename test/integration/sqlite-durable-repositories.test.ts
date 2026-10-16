@@ -800,6 +800,178 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       await rm(resource.stateRoot, { recursive: true });
     });
 
+    it("[R2-L11] applies capability upgrades, their integrity column, Handle revocation and audit as one transaction", async () => {
+      const resource = await openRepository(T0, "running");
+      const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const refs = ["capability-upgrade-first", "capability-upgrade-second"] as const;
+      const declaration = (ref: string, digit: string) => ({
+        ref,
+        displayName: `Upgrade ${ref}`,
+        version: "1.0.0",
+        source: { type: "builtin" as const, locator: `builtin:${ref}` },
+        integrity: `sha256:${digit.repeat(64)}`,
+        operations: ["read"],
+        permissionRefs: [],
+        isolation: "worker" as const,
+      });
+      const registered = (ref: string) => ({
+        ref,
+        revision: 1,
+        lifecycle: "active" as const,
+        declaration: declaration(ref, "a"),
+        pendingDeclaration: null,
+        permissionExpansion: false,
+        runtimeQualification: null,
+        pendingUpdateAssessment: null,
+        rollbackDeclaration: null,
+        rollbackQualification: null,
+        lastVersionTransition: null,
+        approvalRefs: [],
+        discoveredAt: T0,
+        updatedAt: T0,
+      });
+      for (const ref of refs) {
+        await capabilities.create(registered(ref));
+        const handle: GovernedCapabilityExecutionHandle = {
+          ref: `handle-${ref}`,
+          handleVersion: "capability-handle.v2",
+          revision: 1,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          authorityFence: 1,
+          capabilityRef: ref,
+          capabilityVersion: "1.0.0",
+          authorization: { type: "grant", ref: `grant-${ref}` },
+          authorizationRef: `grant-${ref}`,
+          operations: ["read"],
+          operation: "read",
+          inputRefs: [],
+          delegatedContextRefs: [],
+          secretRefs: [],
+          maxDataClassification: "private",
+          maxUses: 1,
+          uses: 0,
+          maxTotalCostMicros: 0,
+          spentCostMicros: 0,
+          idempotencyKeys: [],
+          issuedAt: T0,
+          expiresAt: T2,
+          revokedAt: null,
+          workerEndedAt: null,
+        };
+        await capabilities.createExecutionHandle(handle);
+      }
+      const applyUpgrades = capabilities.applyCapabilityUpgrades;
+      if (!applyUpgrades) throw new Error("capability upgrades must be atomic");
+      const upgrade = (ref: string, expectedRevision: number, auditId: string) => ({
+        record: {
+          ...registered(ref),
+          revision: 2,
+          declaration: declaration(ref, "b"),
+          rollbackDeclaration: declaration(ref, "a"),
+          updatedAt: T1,
+        },
+        expectedRevision,
+        audit: {
+          id: auditId,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          action: "owner.capability.upgrade",
+          targetRef: ref,
+          outcome: "completed" as const,
+          occurredAt: T1,
+        },
+      });
+      const [first, second] = refs;
+      const unchanged = async () => {
+        for (const ref of refs) {
+          await expect(capabilities.get(ref)).resolves.toEqual(registered(ref));
+          await expect(capabilities.getExecutionHandle(`handle-${ref}`)).resolves.toMatchObject({
+            revokedAt: null,
+          });
+        }
+      };
+      await expect(
+        applyUpgrades(
+          [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 2, "audit-upgrade-2")],
+          T1,
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+      await unchanged();
+      await expect(
+        applyUpgrades(
+          [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 1, "audit-upgrade-1")],
+          T1,
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
+      await unchanged();
+      for (const audit of [
+        { targetRef: first },
+        { ownerId: createOwnerId("owner-other") },
+        { agentId: createAgentId("agent-other") },
+      ]) {
+        const misplaced = upgrade(second, 1, "audit-upgrade-2");
+        await expect(
+          applyUpgrades(
+            [
+              upgrade(first, 1, "audit-upgrade-1"),
+              { ...misplaced, audit: { ...misplaced.audit, ...audit } },
+            ],
+            T1,
+          ),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+        await unchanged();
+      }
+      const applied = [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 1, "audit-upgrade-2")];
+      await expect(applyUpgrades(applied, T2)).resolves.toEqual(applied.map((item) => item.record));
+      for (const [index, ref] of refs.entries()) {
+        await expect(capabilities.get(ref)).resolves.toEqual(applied[index]?.record);
+        await expect(capabilities.getExecutionHandle(`handle-${ref}`)).resolves.toMatchObject({
+          revokedAt: T2,
+        });
+      }
+      await resource.repository.close();
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      try {
+        expect(
+          database
+            .prepare(
+              "SELECT id, revision, integrity, status FROM capability_declarations WHERE id LIKE 'capability-upgrade-%' ORDER BY id",
+            )
+            .all(),
+        ).toEqual(
+          refs.map((id) => ({
+            id,
+            revision: 2,
+            integrity: `sha256:${"b".repeat(64)}`,
+            status: "active",
+          })),
+        );
+        expect(
+          database
+            .prepare(
+              "SELECT id, target_ref AS targetRef FROM audit_records WHERE action = 'owner.capability.upgrade' ORDER BY id",
+            )
+            .all(),
+        ).toEqual([
+          { id: "audit-upgrade-1", targetRef: first },
+          { id: "audit-upgrade-2", targetRef: second },
+        ]);
+        expect(
+          database
+            .prepare(
+              "SELECT status FROM capability_handles WHERE capability_id LIKE 'capability-upgrade-%'",
+            )
+            .pluck()
+            .all(),
+        ).toEqual(["revoked", "revoked"]);
+      } finally {
+        database.close();
+        await rm(resource.stateRoot, { recursive: true });
+      }
+    });
+
     it("persists deletion state across a repository restart", async () => {
       const resource = await openRepository();
       const record: SessionDeletionRecord = {

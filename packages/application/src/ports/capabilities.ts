@@ -2,6 +2,7 @@ import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
 import type { SandboxRuntimeQualification } from "@himawari-agent/execution-contracts";
 import type { PermissionAllowDecision } from "./authorization.js";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { AuditRecord } from "./observability.js";
 
 export interface CapabilityDescriptor {
   readonly ref: string;
@@ -294,6 +295,16 @@ export interface CapabilityRegistryStorePort {
     expectedRevision: number,
     switchedAt: string,
   ): Promise<CapabilityRegistryRecord>;
+  applyCapabilityUpgrades?(
+    upgrades: readonly CapabilityRegistryUpgrade[],
+    upgradedAt: string,
+  ): Promise<readonly CapabilityRegistryRecord[]>;
+}
+
+export interface CapabilityRegistryUpgrade {
+  readonly record: CapabilityRegistryRecord;
+  readonly expectedRevision: number;
+  readonly audit: AuditRecord;
 }
 
 export interface CapabilitySecretReference {

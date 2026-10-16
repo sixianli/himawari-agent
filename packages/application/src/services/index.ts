@@ -11,6 +11,7 @@ export * from "./autonomy-gateway-adapter.js";
 export * from "./capability-handle-service.js";
 export * from "./capability-lifecycle-service.js";
 export * from "./capability-registry-service.js";
+export * from "./capability-runner-upgrade.js";
 export * from "./command-execution-service.js";
 export * from "./command-profile-service.js";
 export * from "./commit-gate-service.js";

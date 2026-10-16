@@ -1,42 +1,83 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import {
+  type CapabilityRegistryUpgrade,
+  type CapabilityRunnerUpgradePlan,
+  planCapabilityRunnerUpgrade,
+  upgradedCapabilityRecord,
+} from "@himawari-agent/application";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   JsonFileConfigurationPort,
+  type LoadedCapabilityDeployment,
   loadCapabilityDeploymentSnapshot,
 } from "@himawari-agent/platform-node";
+
+type ProductConfiguration = Awaited<ReturnType<JsonFileConfigurationPort["load"]>>;
+
+const invalid = () => new Error("ADMIN_CAPABILITIES_INPUT_INVALID");
 
 /** Register an explicitly confirmed, already-qualified installation. This command
  * neither runs qualification nor elevates an unqualified declaration. */
 export async function runCapabilitiesCommand(args: readonly string[]): Promise<unknown> {
-  const invalid = () => new Error("ADMIN_CAPABILITIES_INPUT_INVALID");
   if (
-    args.length !== 6 ||
-    args[1] !== "register" ||
-    args[2] !== "--config" ||
-    args[4] !== "--confirm" ||
-    !args[3] ||
-    !path.isAbsolute(args[3])
+    args[1] === "register" &&
+    args.length === 6 &&
+    args[2] === "--config" &&
+    args[4] === "--confirm"
   )
-    throw invalid();
-  const config = await new JsonFileConfigurationPort(args[3]).load();
-  if (!config.capabilityDeployment || args[5] !== config.capabilityDeployment.sha256)
+    return register(args[3], args[5]);
+  if (args[1] === "upgrade-plan" && args.length === 4 && args[2] === "--config")
+    return upgrade(args[3], undefined);
+  if (
+    args[1] === "upgrade" &&
+    args.length === 6 &&
+    args[2] === "--config" &&
+    args[4] === "--confirm"
+  )
+    return upgrade(args[3], args[5]);
+  throw invalid();
+}
+
+async function deployment(
+  configPath: string | undefined,
+  confirmedSnapshot: (sha256: string) => boolean,
+): Promise<{ config: ProductConfiguration; loaded: LoadedCapabilityDeployment }> {
+  if (!configPath || !path.isAbsolute(configPath)) throw invalid();
+  const config = await new JsonFileConfigurationPort(configPath).load();
+  if (!config.capabilityDeployment || !confirmedSnapshot(config.capabilityDeployment.sha256))
     throw invalid();
   const loaded = await loadCapabilityDeploymentSnapshot(config.capabilityDeployment);
   if (loaded.manifests.some((manifest) => manifest.reviewedBy !== config.ownerId)) throw invalid();
+  return { config, loaded };
+}
+
+async function withActiveDeployment<T>(
+  config: ProductConfiguration,
+  work: (repo: SqliteProductStateRepository) => Promise<T>,
+): Promise<T> {
   const repo = await SqliteProductStateRepository.open({
     stateRoot: config.stateRoot,
     databasePath: path.join(config.stateRoot, "data", "product.sqlite"),
   });
   try {
-    const deployment = await repo.deploymentAuthorityPort().read(config.deploymentId);
+    const record = await repo.deploymentAuthorityPort().read(config.deploymentId);
     if (
-      !deployment ||
-      deployment.status !== "active" ||
-      deployment.ownerId !== config.ownerId ||
-      deployment.agentId !== config.agentId
+      !record ||
+      record.status !== "active" ||
+      record.ownerId !== config.ownerId ||
+      record.agentId !== config.agentId
     )
       throw invalid();
+    return await work(repo);
+  } finally {
+    await repo.close();
+  }
+}
+
+async function register(configPath: string | undefined, confirmation: string | undefined) {
+  const { config, loaded } = await deployment(configPath, (sha256) => confirmation === sha256);
+  return withActiveDeployment(config, async (repo) => {
     const store = repo.capabilityStore(config.ownerId, config.agentId);
     const existing = await Promise.all(loaded.records.map((record) => store.get(record.ref)));
     for (let i = 0; i < loaded.records.length; i++) {
@@ -71,7 +112,90 @@ export async function runCapabilitiesCommand(args: readonly string[]): Promise<u
       created,
       existing: loaded.records.length - created.length,
     };
-  } finally {
-    await repo.close();
-  }
+  });
+}
+
+async function upgrade(configPath: string | undefined, confirmation: string | undefined) {
+  const { config, loaded } = await deployment(configPath, () => true);
+  return withActiveDeployment(config, async (repo) => {
+    const store = repo.capabilityStore(config.ownerId, config.agentId);
+    const plan = planCapabilityRunnerUpgrade({
+      ownerId: config.ownerId,
+      agentId: config.agentId,
+      deploymentId: config.deploymentId,
+      candidates: await Promise.all(
+        loaded.snapshot.capabilities.map(async (entry) => ({
+          prior: await store.get(entry.manifest.ref),
+          manifest: entry.manifest,
+          qualification: entry.qualification,
+          runtimeRoot: entry.binding.kind === "sandbox" ? entry.binding.value.runtimeRoot : null,
+        })),
+      ),
+    });
+    if (plan.decisions.some((decision) => decision.kind === "not_registered"))
+      throw new Error("ADMIN_CAPABILITY_NOT_REGISTERED");
+    if (plan.decisions.some((decision) => decision.kind === "review_required"))
+      throw new Error("ADMIN_CAPABILITY_REVIEW_REQUIRED");
+    const current = plan.decisions.flatMap((decision) =>
+      decision.kind === "current" ? [decision.ref] : [],
+    );
+    if (confirmation === undefined) return planOutput(loaded.snapshotDigest, plan, current);
+    if (confirmation !== plan.planDigest) throw new Error("ADMIN_CAPABILITY_PLAN_MISMATCH");
+    const upgradedAt = new Date().toISOString();
+    const upgrades: CapabilityRegistryUpgrade[] = plan.decisions.flatMap((decision) =>
+      decision.kind === "upgrade"
+        ? [
+            {
+              record: upgradedCapabilityRecord(decision.upgrade, upgradedAt),
+              expectedRevision: decision.upgrade.prior.revision,
+              audit: {
+                id: `installation-capability:${randomUUID()}`,
+                ownerId: config.ownerId,
+                agentId: config.agentId,
+                action: "owner.capability.upgrade",
+                targetRef: decision.ref,
+                outcome: "completed",
+                occurredAt: upgradedAt,
+              },
+            },
+          ]
+        : [],
+    );
+    if (upgrades.length > 0) {
+      if (!store.applyCapabilityUpgrades) throw new Error("ADMIN_CAPABILITY_UPGRADE_UNAVAILABLE");
+      await store.applyCapabilityUpgrades(upgrades, upgradedAt);
+    }
+    return {
+      snapshotDigest: loaded.snapshotDigest,
+      planDigest: plan.planDigest,
+      upgraded: upgrades.map((entry) => entry.record.ref),
+      current,
+    };
+  });
+}
+
+function planOutput(
+  snapshotDigest: string,
+  plan: CapabilityRunnerUpgradePlan,
+  current: readonly string[],
+) {
+  return {
+    snapshotDigest,
+    planDigest: plan.planDigest,
+    upgrades: plan.decisions.flatMap((decision) =>
+      decision.kind === "upgrade"
+        ? [
+            {
+              ref: decision.ref,
+              version: decision.upgrade.manifest.version,
+              fromIntegrity: decision.upgrade.prior.declaration.integrity,
+              toIntegrity: decision.upgrade.manifest.integrity,
+              fromRuntimeRoot: decision.upgrade.fromRuntimeRoot,
+              toRuntimeRoot: decision.upgrade.toRuntimeRoot,
+            },
+          ]
+        : [],
+    ),
+    current,
+  };
 }

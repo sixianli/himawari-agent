@@ -38,7 +38,7 @@ Pi 提供模型连接、流式事件、会话、Agent Loop 和 read/write/edit/b
 
 工具参数冻结到受保护的 Run artifact。动作 Intent 只包含工具、范围、输入摘要和明确接收方；原始文件内容、命令和凭据不放进公开审批摘要。动作/披露批准后签发单次 Handle，继续走现有 Worker 准入、scope 与隔离；拒绝和暂停不签发可执行 Handle。恢复复查原输入、目录版本、模型身份、执行租约、截止时间和当前授权，不能因刷新改变操作或重新授予期限。
 
-`workspace grant` 离线登记明确确认的规范目录及真实设备/inode，默认 read/create/update、private/model 披露；它不代替逐次动作批准。`capabilities register` 只登记经严格 loader 验证且 Owner 明确确认摘要的安装声明，不生成主机资格。
+`workspace grant` 离线登记明确确认的规范目录及真实设备/inode，默认 read/create/update、private/model 披露；它不代替逐次动作批准。`capabilities register` 只登记经严格 loader 验证且 Owner 明确确认摘要的安装声明，不生成主机资格。已登记能力只换程序字节或安装目录时，用 `capabilities upgrade-plan` 列出差异并给出确认摘要，再用 `capabilities upgrade --confirm <planDigest>` 在一个事务里更新登记、撤销该能力尚未用完的执行 Handle（每次工具调用前签发的一次性执行授权）并写审计；声明的其他任何变化仍须按新能力重新审核，操作步骤见[升级 Runbook 的能力升级一节](../../runbooks/hermes-control-center-upgrade-runbook.md#capability-upgrade)。
 
 Pi write/edit 在真实平台回读校验成功后附带路径、内容摘要和字节数，Worker 将原受保护输出绑定为持久效果证据，Agent 再验证原调用、输入和 Grant；本次安装 bash 仅有只读目录范围，文件修改使用 write/edit。路径穿越、符号链接、跨设备、受保护目录与机器秘密继续拒绝。不能为了让脚本可运行而默认开放删除、安装、凭据或其他目录。
 

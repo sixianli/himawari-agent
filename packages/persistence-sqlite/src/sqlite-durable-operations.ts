@@ -23,6 +23,7 @@ import type {
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
   CapabilityRegistryRecord,
+  CapabilityRegistryUpgrade,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
@@ -635,6 +636,15 @@ export class SqliteDurableOperations {
             record: CapabilityRegistryRecord;
             expectedRevision: number;
             switchedAt: string;
+          },
+        );
+      case "capability.applyUpgrades":
+        return this.applyCapabilityUpgrades(
+          payload as {
+            ownerId: string;
+            agentId: string;
+            upgrades: readonly CapabilityRegistryUpgrade[];
+            upgradedAt: string;
           },
         );
       case "capability.createHandle":
@@ -2494,6 +2504,43 @@ export class SqliteDurableOperations {
       });
       return saved;
     });
+    return transaction.immediate();
+  }
+
+  private applyCapabilityUpgrades(input: {
+    ownerId: string;
+    agentId: string;
+    upgrades: readonly CapabilityRegistryUpgrade[];
+    upgradedAt: string;
+  }): readonly CapabilityRegistryRecord[] {
+    const transaction = this.database.transaction(() =>
+      input.upgrades.map((upgrade) => {
+        if (
+          upgrade.audit.ownerId !== input.ownerId ||
+          upgrade.audit.agentId !== input.agentId ||
+          upgrade.audit.targetRef !== upgrade.record.ref
+        ) {
+          this.fail(
+            "PORT_INVALID_OPERATION",
+            `Capability upgrade audit for ${upgrade.record.ref} is outside its scope`,
+          );
+        }
+        const saved = this.saveCapability({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          record: upgrade.record,
+          expectedRevision: upgrade.expectedRevision,
+        });
+        this.revokeCapabilityHandlesCore({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          capabilityRef: upgrade.record.ref,
+          revokedAt: input.upgradedAt,
+        });
+        this.appendAudit(upgrade.audit);
+        return saved;
+      }),
+    );
     return transaction.immediate();
   }
 

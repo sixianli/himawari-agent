@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5a742948ad16da4378239b4cea0082260307341e1f2302fd6cf09682db5d38e4"
+contract_sha256: "sha256:a8932a6b508c003553ba3d2326ddbaf60027386b99757fd80736f76721a8497e"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -319,7 +319,17 @@ TE-11 的执行事件传输使用固定分页版本：请求和响应均为 `x-h
 
 2026-09-27 将隔离执行分支提交 `c71adbd5f23a88834512ad26112f587d6fa993b9` 部署到 Hermes，数据库从 schema 32 迁移到 48，安装根为 `/opt/himawari/releases/2026-09-27-c71adbd`。所有者说明当时没有用户，因此不在数据库副本上预演，直接执行第 4、5 步；资格验证和签署仍照常进行，因为启动脚本要核对签署回执。跨多个 schema 升级时，停服后按顺序执行：完整备份并验证、`db migrate`、所有者批准的删除（`delete purge`、`sandbox purge-unconfirmed`），再切换。断网构建需要把以往构建的 npm 缓存合并到本次缓存，并在构建源码目录的 `.npmrc` 写 `prefer-offline=true`，否则 npm 会因缓存过期尝试联网而失败。
 
-Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时，第 6 步的 `capabilities register` 会以 `ADMIN_CAPABILITY_REVIEW_REQUIRED` 拒绝，切换脚本中的“已注册能力不变”检查也会失败；目前没有更新“同版本、只换程序”登记的正式命令，也不得手工改表。本次所有者选择先启动、以后补登记：续做脚本只接受 `himawari.pi-coding` 的 `integrity` 与 `artifact.digest` 两个字段的差异，没有写登记表。服务运行时只检查登记的状态、版本和允许的操作，实际程序由签署的部署快照核对。另外，Worker 等待 Agent 发布启动绑定的期限固定为 30 秒，以往启动约需 20–25 秒；本次迁移后首次启动超时，由 systemd 重启后就绪，切换脚本应以两个进程的 `service.ready` 为准并检查重启次数。升级前除核对执行记录的清理标记外，还必须查出 `sandbox_workspace_occupancy` 中 `released_at` 为空的占用，以及 `sandbox_workspace_barriers` 中未解决的保护，并逐条对照所属执行和 Run；本次漏查了占用表，v4 缺陷留下的两条旧占用在上线后挡住了所有写文件请求，处理见证据中的[旧占用修正](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md#occupancy-fix)。执行记录、差异明细与冻结脚本见[本次部署证据](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md)。
+Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时，第 6 步的 `capabilities register` 会以 `ADMIN_CAPABILITY_REVIEW_REQUIRED` 拒绝，切换脚本中的“已注册能力不变”检查也会失败；当时没有更新“同版本、只换程序”登记的正式命令，也不得手工改表（现在改用下面的[能力升级](#capability-upgrade)两步命令）。本次所有者选择先启动、以后补登记：续做脚本只接受 `himawari.pi-coding` 的 `integrity` 与 `artifact.digest` 两个字段的差异，没有写登记表。服务运行时只检查登记的状态、版本和允许的操作，实际程序由签署的部署快照核对。另外，Worker 等待 Agent 发布启动绑定的期限固定为 30 秒，以往启动约需 20–25 秒；本次迁移后首次启动超时，由 systemd 重启后就绪，切换脚本应以两个进程的 `service.ready` 为准并检查重启次数。升级前除核对执行记录的清理标记外，还必须查出 `sandbox_workspace_occupancy` 中 `released_at` 为空的占用，以及 `sandbox_workspace_barriers` 中未解决的保护，并逐条对照所属执行和 Run；本次漏查了占用表，v4 缺陷留下的两条旧占用在上线后挡住了所有写文件请求，处理见证据中的[旧占用修正](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md#occupancy-fix)。执行记录、差异明细与冻结脚本见[本次部署证据](../../test/qualification/evidence/isolated-tool-execution/p3-hermes-deployment-01/README.md)。
+
+<a id="capability-upgrade"></a>
+已登记的能力只换程序字节或只换安装目录时（例如换 Pi runner，即在沙箱里实际执行工具的程序；或安装到新的发布目录），用两步命令更新登记，不再放宽切换脚本的检查，也不手工改表：
+
+1. 停服、完成启动准备后，运行 `capabilities upgrade-plan --config <配置文件绝对路径>`。它只读签名部署快照和数据库，不写任何东西；输出要升级的能力（`upgrades`：能力名、版本、新旧 `integrity`（程序字节的 SHA-256 摘要）、新旧安装目录）、无需改动的能力（`current`），以及确认摘要 `planDigest`。
+2. 所有者核对列表无误后，运行 `capabilities upgrade --config <同一路径> --confirm <planDigest>`。摘要对得上才写入，所有能力在同一个数据库事务里完成：登记记录的 `revision`（修订号）加 1，换成新声明和新资格，旧声明和旧资格存为回滚值；撤销该能力尚未用完的执行 Handle（每次工具调用前签发的一次性执行授权）；每项写一条 `owner.capability.upgrade` 审计。任何一项失败则全部不写。
+
+只允许这些差异：程序摘要（`integrity`、`artifact.digest`）、来源位置 `source.locator`、审核时间 `reviewedAt`、健康检查时间，以及 `runtime.argv` 前两项（解释器和 runner 的路径）里安装目录前缀的变化。新路径必须位于快照绑定的 `runtimeRoot` 之下，旧前缀从旧路径推出，两项推出的前缀必须相同。名称、版本、操作、数据或网络范围、签名者、其余命令参数、环境变量等任何其他变化都报 `ADMIN_CAPABILITY_REVIEW_REQUIRED`，须按新能力重新审核；快照里有从未登记或已停用的能力，分别报 `ADMIN_CAPABILITY_NOT_REGISTERED` 和 `ADMIN_CAPABILITY_REVIEW_REQUIRED`；确认摘要与当前计划不符报 `ADMIN_CAPABILITY_PLAN_MISMATCH`，不写入。
+
+确认摘要绑定部署身份、每项的旧记录（修订号和完整内容的摘要）、新声明和新资格，但不含健康检查时间，所以只是重新做了健康检查不会让所有者看过的摘要失效；声明或资格的其他内容变了，摘要就会变，须重新运行第 1 步再确认。快照资格的 5 分钟有效期不变，两步都要在启动准备后 5 分钟内完成，超时报 `CAPABILITY_DEPLOYMENT_QUALIFICATION_STALE`，重新准备即可。升级完成后再运行第 1 步应得到空的 `upgrades`；第二步重复执行是空操作；`capabilities register` 对同一快照返回已存在。之后切换脚本恢复“runner 等于登记值”的严格检查。判断“无需改动”只比较声明：声明除健康检查时间外完全相同的能力归入 `current`，即使快照里的资格（例如证据摘要）变了，也不会写入新资格，登记里仍是旧资格。
 
 发布文档与源码应在同一份干净的候选源码中核对和生成 `contract_sha256`，并用同一候选执行严格文档检查。主工作区存在未提交修改时，先导出已提交源码，再只叠加本次明确纳入的修改；不能用主工作区的摘要给另一份 Git 归档作保证。提交后重新导出该提交复验，防止未提交的前端或脚本内容影响摘要。
 
@@ -340,7 +350,7 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 3. 实测通过后，使用该主机既有受保护签名源签署本次安装事实，保存证据摘要、runtime/runner/system tool 字节摘要及精确能力上界。Pi 探针使用与正式 Worker 相同的 5 秒清理期限。Pi write/edit 使用 verified_effect，并要求安装的 Pi 程序在实际回读成功后生成内容摘要、字节数和路径；Worker 将原受保护输出绑定到持久证据，Agent 再核对原调用、Grant 和输入。不能以 exit 0 代替效果校验。bash 本轮只读，退出事实为 not_asserted。搜索为独立 fixed_read 程序，出口仅 `mcp.exa.ai:443`。两者都要求既有目录 Grant 和动作/披露授权。用户明确开启“允许联网搜索”后，固定 Exa 搜索可从服务端设置派生精确的一次性 Grant，记录真实的 policyAuthorization 来源；关闭设置后，旧派生 Grant 在消费和 Sandbox 准入时失效。该设置不授权其他工具、附件或任意网络出口。配置中的搜索路径或模型披露身份改变时，设置失效，须重新确认。
 4. 在切换前复查旧服务无活动 Run。停止已核验的 `himawari.service`，检查旧 Agent/Worker 完全退出与锁释放；再次执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。使用正式 backup create/verify 命令保存并核验恢复点：优先旧安装；若已复现旧备份缺陷，可使用经回归与安装资格验证、schema 相同的候选 CLI 完成备份，不改写旧数据或放宽验证，同时私密保留配置、单元和旧签名启动器。不能删除活动锁或清理未知子进程。
 5. 用新安装的 `db migrate --confirm APPLY_MIGRATIONS` 升级同一数据库。该命令在停机独占锁内用 SQLite backup 创建并校验同主机迁移前快照，存于 state/data 下新建的 0700 目录，文件 0600；输出 snapshotPath，重复执行且无待迁移时不再创建快照。此快照不替代步骤 4 的完整恢复点。保留原 Owner、Agent、部署、对话、授权和受保护 Payload。只有没有外部 Owner 绑定时才通过 `account create` 建立内置账号；已有绑定不得自动覆盖。Hermes 当前保留 Cloudflare 产品登录，内置账号迁移须明确确认具体 Owner 与会话撤销影响后另行执行。密码输入和验证器设置只放在 0700 目录中的 0600 文件。
-6. 通过 `workspace grant` 授权已核验的工作目录，并明确确认其规范绝对路径；默认仅 read/create/update，不代替动作审批。通过 `capabilities register` 显式确认合格部署快照摘要并写入现有 Registry；不得手工插入批准或资格记录。
+6. 通过 `workspace grant` 授权已核验的工作目录，并明确确认其规范绝对路径；默认仅 read/create/update，不代替动作审批。通过 `capabilities register` 显式确认合格部署快照摘要并写入现有 Registry；已登记能力只换程序或安装目录时，改用[能力升级](#capability-upgrade)的 `capabilities upgrade-plan` 和 `capabilities upgrade --confirm <planDigest>`。不得手工插入批准或资格记录。
 7. 更新已核验的同一 systemd 用户服务启动路径。启动器每次核对主机、签名、证据和实际 runtime 字节，再生成本次启动快照；随后启动独立 Worker 与 Agent。初次握手使用配置的 Worker 请求期限，须等待实际 service.ready，不能以 systemd active 代替就绪证据。运行中复查快照原字节，不能因启动超过五分钟失去能力，也不能接受被修改的快照。
 8. 使用真实浏览器登录原 HTTPS 入口，完成聊天、多轮上下文、工具审批与文件、公开搜索、停止、刷新和服务恢复。实际调用沿用预算与披露校验；不把通过 HTTP 或受控测试写成真实模型验收。
 
