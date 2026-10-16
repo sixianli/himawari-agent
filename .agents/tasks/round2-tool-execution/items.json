@@ -978,7 +978,7 @@
       "done_when": [
         {
           "type": "user",
-          "ref": null,
+          "ref": "G111",
           "question": "是否批准第四次生产变更及其操作包？"
         }
       ],

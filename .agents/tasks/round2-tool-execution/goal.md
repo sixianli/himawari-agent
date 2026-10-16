@@ -747,3 +747,9 @@
 > 批准 1 和 2
 
 （17:2x 东京时间收到。Claude 的理解：1. 批准在第四次操作包里放宽“runner 必须与数据库已登记能力字节相同”的检查，共四处（S6 签名、S7 启动前准备、S7 启动读回、S8 读回）：允许制品摘要变化，其余声明字段仍须与数据库里批准的登记逐项相同，新 runner 摘要必须等于签名快照所写并由主机签名，数据库登记自 S0 起不得变化；管理界面摘要与实际 runner 不一致的问题记入 Backlog。2. 批准用包外一次性工具在生产上修订包：确认服务停止和原冻结摘要后，把失败签名残留和旧 binding-inputs.json 移入证据目录（不删除），替换传输目录与操作目录里改动的包文件和平铺副本，换新冻结清单，再从 S6_FINALIZE_BINDINGS 起按顺序执行到 S9 运输清理；先在 Hermes 演练签名、S7、S8 检查并经 DeepSeek 逐行审核；任何一步不符合预期就停下。）
+
+## G123 2026-10-16 用户原话
+
+> 批准第二次修订
+
+（19:0x 东京时间收到。背景：第一次修订后 S6_FINALIZE_BINDINGS 到 S8_READBACK 全部通过，服务 09:56Z 起运行；S9_TRANSPORT_PREFLIGHT 失败，原因是 `install/S9-clean-transport.py` 核对第三次的 S8 文件名 `s8-original-target-readback.json`，第四次 S8 写的是 `s8-database-readback.json`，另有错误码正则不认数字。Claude 的理解：批准本地改 S9 脚本这两处、操作包 README 补说明、重算冻结清单；用包外工具 `.ci-output/production/2026-10-16-fourth-revision-02/` 替换生产暂存包和 operations 目录里的 S9 脚本、暂存包 README 和冻结清单，服务保持运行、不碰配置和数据库；工具先经 DeepSeek 审核、由用户运行；之后 Claude 重跑 S9_TRANSPORT_PREFLIGHT 和 S9_TRANSPORT_APPLY。）
