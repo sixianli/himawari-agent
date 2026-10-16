@@ -39,6 +39,14 @@ date: "2026-10-13"
   - 2026-10-13 第三次部署 S5 第一次失败：形状链把新旧两个运行时映射成同一个，没发现同一进程加载两份 `better-sqlite3` 时第二份不认 URI 文件名（见 `.ci-output/handoff/2026-10-12-third-packet-progress.md`）。
   - 同日 S5 第二次失败：形状链里 S3 和 S5 一直用同一份 `bindings.json`，没发现修订版换了 `bindings.json` 后 S5 拒绝 S3 的报告。
   - 同日审核修订版 03 时发现：发布夹具用发布脚本自己的 `FAILED_CONDITION` 造“生产失败报告”，常量多写了 `DEPLOY_` 仍然通过。
+  - 2026-10-16 第四次变更生产 S6_SIGN 以 `NEW_RUNNER_INCOMPATIBLE` 失败：候选 `4c705133` 有意改了 Pi 和搜索两个 runner（沙箱里执行工具的程序），生产上新 runner 与数据库登记的旧 runner 不同；生产形状演练却写死 `const oldRuntime = runtime, newRuntime = runtime`，新旧 runner 一字节不差，签署和 S8 的“runner 必须等于登记值”从没遇到过不同的情况。
+  - 同日修复后的第一次演练里，S7_DB_STATUS 以 `FOURTH_MAINTENANCE_ORIGINAL_AUTHORIZATION_CHANGED` 失败：生产上 S0 读回和 S5 报告由旧包的读取器写出，演练却用新读取器写，两份记录的字段不同。演练这次在上生产前拦住了它。
+- 第四次的根因：前三次之后的预防只是“写演练时先列出生产上不同的实体”这条要靠人想起来的规则，演练脚本里没有任何检查会在两样东西被合成一样时报错，于是新旧 runner、新旧读取器写的记录又被合成了一个。
+- 硬约束（2026-10-16，G107）：
+  - 生产形状演练 `maintenance/verify-production-shape-chain.mjs`（安装演练 `run-fourth-rehearsal.sh` 的 shape 阶段，冻结前必须通过）在 S7_DB_STATUS 之后、生成新快照之前改动演练运行时里 Pi runner 的字节，S8 之后再改回，用时间先后模拟生产上新旧两个运行时；新快照绑定的 runner 摘要等于登记摘要时打印 `PRODUCTION_SHAPE_RUNNERS_MERGED` 并失败。
+  - 同一演练写出 S0 读回后，要求它的授权、能力、目录授权三层字段名与操作包里真实的生产 S0 读回 `inputs/s0-db-readback.json` 完全相同，否则打印 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 并失败。期望值取自真实生产记录，不由演练自己另写。
+  - 验证（Hermes `rehearsal-4c705133/hard-constraint-01/`，运行脚本 `.ci-output/production/2026-10-16-fourth-revision-01/run-shape-variant.sh`）：去掉改动 runner 的那一行重现第一种错误，以 `PRODUCTION_SHAPE_RUNNERS_MERGED` 失败；按新读取器的形状写 S0 重现第二种错误，以 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 失败；正式版本通过，报告记下登记摘要 `b5f2d140…` 与新摘要 `39bb15a0…` 不同，S8 第一次在 runner 不同的情况下通过。
+  - 限制：只覆盖 Pi runner 和 S0 读回这两样；搜索 runner、签署链（`cloud-seal.mjs`）、S7_SWITCH_START 仍不在形状演练里，签署链的新旧 runner 不同由夹具 `signing/verify-capability-manifest.mjs` 覆盖。下一次起草操作包时这两个检查随演练脚本复制过去；如果以后有别的“生产上不同、演练里相同”的实体，按同样方式加一个在合并时失败的检查。
 
 [回到目录](#编码代理反复犯的错误)
 
