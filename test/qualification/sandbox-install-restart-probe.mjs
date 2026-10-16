@@ -932,8 +932,12 @@ async function runProbe(input) {
     const taskTree = await ownedProcessReadback([hostIdentity]);
     const bashIdentities = [];
     for (const process of taskTree) {
-      const identity = await processIdentity(process.pid);
+      const identity = await processIdentity(process.pid).catch((error) => {
+        if (error?.code === "ENOENT" || error?.code === "ESRCH") return null;
+        throw error;
+      });
       if (
+        identity?.startTime === process.startTime &&
         path.basename(identity.executable) === "bash" &&
         identity.args.some((argument) => argument.includes(markerContent))
       )
