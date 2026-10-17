@@ -124,6 +124,8 @@ const cleanups: Array<() => Promise<unknown>> = [];
 
 const linux = process.platform === "linux";
 
+const installedRuntime = process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"] !== undefined;
+
 const runtimeRoot = path.resolve(
   process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"] ?? "dist/node-runtime",
 );
@@ -433,9 +435,9 @@ function processesWith(needle: string): Promise<string[]> {
 }
 
 describe("[R2-P2] SRT resident task environment through the real Agent entry", () => {
-  if (!linux) {
-    it("[R2-P2] reports that the resident SRT environment requires Linux", () => {
-      expect(process.platform).not.toBe("linux");
+  if (!linux || !installedRuntime) {
+    it("[R2-P2] reports that the resident SRT environment requires Linux and an installed runtime", () => {
+      expect(linux && installedRuntime).toBe(false);
     });
     return;
   }
