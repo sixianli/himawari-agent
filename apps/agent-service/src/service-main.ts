@@ -15,9 +15,11 @@ import {
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
-import type {
-  ExecutionAdmissionPeerBinding,
-  SandboxExecutionSupport,
+import {
+  type ExecutionAdmissionPeerBinding,
+  type SandboxExecutionSupport,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
 import {
   inspectDeploymentAuthorityReadOnly,
@@ -755,6 +757,7 @@ export async function runAgentService(
               backendRef: taskEnvironmentConfiguration.backendRef,
               imageDigest: taskEnvironmentConfiguration.image.digest,
               lifecycle: new RemoteExecutionBackend({
+                backendRef: taskEnvironmentConfiguration.backendRef,
                 transport: {
                   request: (message) => {
                     if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
@@ -776,7 +779,35 @@ export async function runAgentService(
               }),
             },
           }
-        : {}),
+        : {
+            srtTaskEnvironments: {
+              backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+              session: "srt",
+              guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
+              inspectBeforeReuse: true,
+              lifecycle: new RemoteExecutionBackend({
+                backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+                transport: {
+                  request: (message) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.request(message);
+                  },
+                  events: (afterCursor) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.events(afterCursor);
+                  },
+                },
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                authority: () => invocationAuthority().product,
+                nextId: (scope) => `${scope}:${randomUUID()}`,
+                now: () => clock.now(),
+                requestTimeoutMs: configuration.deadlines.workerRequestMs,
+                resultTimeoutMs: configuration.deadlines.runMs,
+                pollIntervalMs: 100,
+              }),
+            },
+          }),
       configuration,
       repository,
       protector,

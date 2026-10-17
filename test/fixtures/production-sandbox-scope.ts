@@ -6,6 +6,7 @@ import {
   type ClockPort,
   type ConsumeCapabilityInvocationInput,
   type GovernedActionIntent,
+  type GovernedCapabilityExecutionHandle,
   type HostFileOperationKind,
   hostDirectoryGrantStateKey,
   type ProductConfiguration,
@@ -81,6 +82,10 @@ export async function productionSandboxScope(
     readonly policyAuthorization?: { readonly key: string; readonly revision: number };
     readonly runtimeFingerprint?: (call: RuntimeToolInvocation) => string;
     readonly taskEnvironments?: ProductionTaskEnvironments;
+    readonly srtTaskEnvironments?: ProductionTaskEnvironments;
+    readonly additionalBindings?: readonly SandboxOperationBinding[];
+    readonly callParameters?: readonly Readonly<Record<string, unknown>>[];
+    readonly handleUses?: number;
     readonly profileRef?: string;
   } = {},
 ) {
@@ -89,24 +94,65 @@ export async function productionSandboxScope(
     [],
     options.realRun || options.seedRuntimeIntent === false,
   );
+  const bindings = [descriptor, ...(options.additionalBindings ?? [])].filter(
+    (binding, index, all) =>
+      all.findIndex((item) => item.operation === binding.operation) === index,
+  );
+  const operations = [...new Set(bindings.map((binding) => binding.operation))];
   const h = {
     ...grantHandle(),
-    ...(options.piParameters ? { inputRefs: ["payload-pi-parameters"] } : {}),
+    ...(options.piParameters || options.callParameters?.length
+      ? {
+          inputRefs: [
+            ...(options.piParameters ? ["payload-pi-parameters"] : []),
+            ...(options.callParameters ?? []).map(
+              (_, index) => `payload-pi-parameters-${index + 1}`,
+            ),
+          ],
+        }
+      : {}),
     operation: descriptor.operation,
-    operations: [descriptor.operation],
+    operations,
+    ...(options.handleUses ? { maxUses: options.handleUses } : {}),
     ...(options.reserveAuthorization ? { maxUses: 1, maxTotalCostMicros: 0 } : {}),
   };
   const c = capability();
   f.database.prepare("UPDATE capability_declarations SET record_json=? WHERE id=?").run(
     JSON.stringify({
       ...c,
-      declaration: { ...c.declaration, operations: [descriptor.operation] },
+      declaration: { ...c.declaration, operations },
     }),
     c.ref,
   );
   f.database
     .prepare("UPDATE capability_handles SET id=?, authorization_ref=?, record_json=? WHERE id=?")
     .run(h.ref, h.authorizationRef, JSON.stringify(h), f.plan.handleRef);
+  const additionalHandles = new Map<string, GovernedCapabilityExecutionHandle>();
+  for (const binding of bindings.slice(1)) {
+    const handle: GovernedCapabilityExecutionHandle = {
+      ...h,
+      ref: `${h.ref}:${binding.operation}`,
+      authorizationRef: `${h.authorizationRef}:${binding.operation}`,
+      operation: binding.operation,
+      operations: [binding.operation],
+      uses: 0,
+    };
+    f.database
+      .prepare(
+        "INSERT INTO capability_handles (id, capability_id, run_id, authorization_ref, status, expires_at, revoked_at, record_json) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        handle.ref,
+        h.capabilityRef,
+        RUN_ID,
+        handle.authorizationRef,
+        "active",
+        h.expiresAt,
+        null,
+        JSON.stringify(handle),
+      );
+    additionalHandles.set(binding.operation, handle);
+  }
   // Real JobHost control sockets must fit the platform's Unix socket path limit.
   const liveHostRoot = options.piRuntimeRoot
     ? await mkdtemp(
@@ -120,23 +166,23 @@ export async function productionSandboxScope(
       operation: descriptor.operation,
       ...(options.resourceCeiling ? { resourceCeiling: options.resourceCeiling } : {}),
     },
-    T1,
+    options.piRuntimeRoot ? new Date().toISOString() : T1,
     true,
     process.platform === "darwin" ? "darwin" : "linux",
   );
   const snapshot = JSON.parse(await readFile(host.capabilityDeployment.snapshotPath, "utf8"));
   const entry = snapshot.capabilities[0];
   if (options.legacyFileRead) delete entry.binding.value.operationBindings;
-  else entry.binding.value.operationBindings = [descriptor];
+  else entry.binding.value.operationBindings = [...bindings];
   entry.binding.value.allowedDomains = ["example.com:443"];
-  const support: SandboxExecutionSupport = [
-    {
-      schemaVersion: options.legacyFileRead ? "sandbox-execution.v1" : "sandbox-execution.v2",
-      mode: descriptor.mode,
-    },
-  ];
+  const executionModes = [...new Set(bindings.map((binding) => binding.mode))];
+  const support: SandboxExecutionSupport = executionModes.map((mode) => ({
+    schemaVersion: options.legacyFileRead ? "sandbox-execution.v1" : "sandbox-execution.v2",
+    mode,
+  }));
   entry.binding.value.supportedExecutions = support;
   entry.qualification.sandbox.supportedExecutions = support;
+  entry.manifest.operations = [...operations];
   if (options.piRuntimeRoot) {
     const runtimeRoot = await realpath(options.piRuntimeRoot);
     const executable = await realpath(process.execPath);
@@ -322,7 +368,7 @@ export async function productionSandboxScope(
       intentFingerprint: fingerprint,
       scope: {
         ...g.scope,
-        operations: [descriptor.operation],
+        operations,
         ...(options.reserveAuthorization
           ? {
               exactResourceRef: intent.resourceRef,
@@ -341,6 +387,39 @@ export async function productionSandboxScope(
     const reserved = await authorization.reserveAuthorization({ grantId: g.id, intent, now: T1 });
     await repository.capabilityStore(OWNER_ID, AGENT_ID).createExecutionHandle(h, {
       authorizationReservationId: reserved.id,
+    });
+  }
+  for (const binding of bindings.slice(1)) {
+    const operation = binding.operation;
+    const approvalId = `${approval.id}:${operation}`;
+    const grantId = `${h.authorizationRef}:${operation}`;
+    const extraIntent: GovernedActionIntent = changeIntent({
+      ...intent,
+      id: `${intent.id}:${operation}`,
+      operation,
+    });
+    const extraFingerprint = actionIntentFingerprint(extraIntent);
+    await authorization.createApproval({
+      ...approval,
+      id: approvalId,
+      intentId: extraIntent.id,
+      intentSnapshot: extraIntent,
+      semanticSnapshotHash: extraFingerprint,
+    });
+    await authorization.resolveApproval({
+      approvalRequestId: approvalId,
+      expectedRevision: 1,
+      semanticSnapshotHash: extraFingerprint,
+      resolution: "approved",
+      decidedAt: T0,
+      grant: {
+        ...g,
+        id: grantId,
+        sourceApprovalRequestId: approvalId,
+        uses: 1,
+        intentFingerprint: extraFingerprint,
+        scope: { ...g.scope, operations: [operation] },
+      },
     });
   }
   const call: RuntimeToolInvocation = {
@@ -467,15 +546,22 @@ export async function productionSandboxScope(
         },
       })
     : options.piParameters;
-  if (piParameters)
+  const parametersToWrite = [
+    ...(piParameters ? [{ ref: "payload-pi-parameters", value: piParameters }] : []),
+    ...(options.callParameters ?? []).map((value, index) => ({
+      ref: `payload-pi-parameters-${index + 1}`,
+      value,
+    })),
+  ];
+  for (const parameters of parametersToWrite)
     await repository.payloadStore(OWNER_ID, AGENT_ID).put(
       await f.protector.protect({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
-        ref: "payload-pi-parameters",
+        ref: parameters.ref,
         dataClassification: "private",
         contentType: "application/json",
-        plaintext: Buffer.from(JSON.stringify(piParameters)),
+        plaintext: Buffer.from(JSON.stringify(parameters.value)),
         createdAt: T1,
       }),
     );
@@ -527,6 +613,9 @@ export async function productionSandboxScope(
         workerSupport: () => workerSupport,
         ...(piFilePreparationPool ? { piFilePreparation: piFilePreparationPool.prepare } : {}),
         ...(options.taskEnvironments ? { taskEnvironments: options.taskEnvironments } : {}),
+        ...(options.srtTaskEnvironments
+          ? { srtTaskEnvironments: options.srtTaskEnvironments }
+          : {}),
       });
       if (!result) throw new Error("composition absent");
       return result;
@@ -614,6 +703,7 @@ export async function productionSandboxScope(
     preparationWarmupFailures,
     capabilityDeployment,
     workspaceCopy,
+    additionalHandles,
     connect,
     model,
     setAfterResolve: (hook: () => Promise<void>) => {

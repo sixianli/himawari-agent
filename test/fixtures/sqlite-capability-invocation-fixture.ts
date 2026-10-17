@@ -70,7 +70,9 @@ export const T0 = LIVE_SANDBOX
 export const T1 = LIVE_SANDBOX ? new Date(probeTime).toISOString() : "2026-09-04T00:00:01.000Z";
 
 export const T2 = LIVE_SANDBOX
-  ? new Date(probeTime + 300000).toISOString()
+  ? new Date(
+      probeTime + (Number(process.env["HIMAWARI_LIVE_SANDBOX_WINDOW_MS"]) || 300000),
+    ).toISOString()
   : "2026-09-04T00:05:00.000Z";
 
 export const SERVICE_AUTHORITY: CapabilityInvocationAuthority = {

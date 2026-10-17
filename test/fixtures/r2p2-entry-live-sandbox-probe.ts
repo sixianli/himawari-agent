@@ -1,0 +1,2 @@
+process.env["HIMAWARI_LIVE_SANDBOX_PROBE"] = "1";
+process.env["HIMAWARI_LIVE_SANDBOX_WINDOW_MS"] = "1800000";

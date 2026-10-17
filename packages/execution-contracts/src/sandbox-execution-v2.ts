@@ -715,7 +715,10 @@ export const SANDBOX_HOST_FAILURE_CODES = [
   "JOB_HOST_LAUNCH_SPAWN_FAILED",
   "JOB_HOST_NOT_READY",
   "JOB_HOST_POLICY_CHANGED",
+  "JOB_HOST_RUN_INVALID",
+  "JOB_HOST_RUN_NOT_ALLOWED",
   "JOB_HOST_SESSION_INVALID",
+  "JOB_HOST_SESSION_MODE_INVALID",
   "JOB_HOST_SESSION_REPLACED",
   "JOB_HOST_START_ABORTED",
   "JOB_HOST_WORKER_LEASE_INVALID",
@@ -761,7 +764,16 @@ const hostFailureTextSchema: Schema<string> = {
 };
 export const sandboxHostFailureDetailSchema = object({
   code: enumeration(SANDBOX_HOST_FAILURE_CODES),
-  command: enumeration(["prepare", "heartbeat", "start", "cancel", "authority_result", "unknown"]),
+  command: enumeration([
+    "prepare",
+    "heartbeat",
+    "start",
+    "run",
+    "run_cancel",
+    "cancel",
+    "authority_result",
+    "unknown",
+  ]),
   phase: enumeration(["waiting", "preparing", "ready", "running", "stopping", "finished"]),
   elapsedMs: integer(0, 86_400_000),
   messageAgeMs: nullable(integer(-86_400_000, 86_400_000)),

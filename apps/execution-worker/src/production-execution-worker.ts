@@ -75,7 +75,7 @@ export interface ProductionExecutionWorkerOptions {
   readonly adapters: readonly RegisteredWorkerAdapter[];
   readonly hostOperations?: RegisteredHostOperationAdapter;
   readonly subtasks?: RegisteredWorkerSubtaskAdapter;
-  readonly environments?: ExecutionEnvironmentLifecyclePort;
+  readonly environments?: ReadonlyMap<string, ExecutionEnvironmentLifecyclePort>;
   readonly delegations?: {
     accept(handle: DelegatedCapabilityHandleV2): unknown;
     getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
@@ -250,12 +250,13 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     if (parsed.type === "environment.operation.execute") {
       if (this.isReplay(parsed, false)) return null;
       this.assertDeadline(parsed.payload.deadlineAt);
-      if (!this.options.environments)
+      const environments = this.options.environments?.get(parsed.payload.backendRef);
+      if (!environments)
         throw new ProductionExecutionWorkerError(
           PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
         );
       if (this.isReplay(parsed)) return null;
-      this.track(this.executeEnvironmentOperation(parsed, this.options.environments));
+      this.track(this.executeEnvironmentOperation(parsed, environments));
       return null;
     }
     if (parsed.type === "worker.subtask.execute") {

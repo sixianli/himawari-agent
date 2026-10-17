@@ -15,18 +15,35 @@ import {
   taskEnvironmentCallEvidence,
 } from "@himawari-agent/application";
 import {
+  type ExecutionBackendCapabilities,
   type SandboxExecutionFacts,
+  type SandboxExecutionPlanCandidateV2,
   type SandboxExecutionPlanV2,
   type SandboxHostBinding,
   type SandboxTaskEnvironmentBinding,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxResourceObservationSchema,
 } from "@himawari-agent/execution-contracts";
 import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox/control";
 
 export interface ProductionTaskEnvironments {
   readonly backendRef: string;
-  readonly imageDigest: string;
   readonly lifecycle: ExecutionEnvironmentLifecyclePort;
+  readonly imageDigest?: string;
+  readonly session?: "container" | "srt";
+  readonly guarantees?: ExecutionBackendCapabilities["guarantees"];
+  readonly inspectBeforeReuse?: boolean;
+}
+
+export interface ProductionSrtTaskEnvironmentAcquireInput {
+  readonly runId: string;
+  readonly hostId: string;
+  readonly grant: HostDirectoryGrant;
+  readonly claims: readonly SandboxWorkspaceClaim[];
+  readonly binding: SandboxHostBinding;
+  readonly allowedDomains: readonly string[];
+  readonly plan: SandboxExecutionPlanCandidateV2;
+  readonly deadlineAt: string;
 }
 
 const ENVIRONMENT_RESOURCES = {
@@ -37,6 +54,7 @@ const ENVIRONMENT_RESOURCES = {
 const PROOF_VALIDITY_MS = 1000;
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const hexDigest = (value: string) => (value.startsWith("sha256:") ? value.slice(7) : value);
 
 export function createProductionTaskEnvironments(options: {
   readonly configuration: ProductionTaskEnvironments;
@@ -46,12 +64,20 @@ export function createProductionTaskEnvironments(options: {
   readonly ids: IdGeneratorPort;
 }) {
   const { configuration, store, clock } = options;
+  const srt =
+    configuration.session === "srt" ||
+    configuration.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF;
+
   const coordinator = new TaskEnvironmentCoordinator({
     store,
     backend: configuration.lifecycle,
     ids: { next: (prefix) => options.ids.next(prefix) },
     clock,
     authority: options.authority,
+    ...(configuration.guarantees ? { requiredGuarantees: configuration.guarantees } : {}),
+    ...(configuration.inspectBeforeReuse === undefined
+      ? {}
+      : { inspectBeforeReuse: configuration.inspectBeforeReuse }),
   });
   const authorized = () => ({ authority: options.authority(), now: clock.now() });
 
@@ -67,6 +93,66 @@ export function createProductionTaskEnvironments(options: {
     (await store.readRun(plan.identity.runId))?.environments
       .filter((record) => belongsTo(record, plan))
       .at(-1);
+
+  const primaryForRun = async (runId: string) =>
+    (await store.readRun(runId))?.environments
+      .filter(
+        (record) =>
+          record.identity.role === "primary" && record.backendRef === configuration.backendRef,
+      )
+      .at(-1);
+
+  const environmentScope = (input: {
+    readonly hostId: string;
+    readonly grant: HostDirectoryGrant;
+    readonly claims: readonly SandboxWorkspaceClaim[];
+    readonly binding: SandboxHostBinding;
+  }) => {
+    const [claim, ...extra] = input.claims;
+    if (
+      !claim ||
+      extra.length > 0 ||
+      claim.file !== undefined ||
+      claim.hostId !== input.hostId ||
+      claim.canonicalRootId !== input.grant.canonicalRootId
+    )
+      throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
+    const access = input.grant.operations.some((operation) => operation !== "read")
+      ? ("write" as const)
+      : ("read" as const);
+    const envelope = {
+      schemaVersion: "execution-envelope.v1" as const,
+      directories: [
+        {
+          hostId: input.hostId,
+          grantRef: input.grant.id,
+          canonicalRootId: input.grant.canonicalRootId,
+          access,
+          source: {
+            authorizationRef: input.grant.authorizationRef,
+            decidedBy: "user" as const,
+            delegationListRef: null,
+            expiresAt: input.grant.expiresAt,
+          },
+        },
+      ],
+      network: [],
+      resources: {
+        ...ENVIRONMENT_RESOURCES,
+        memoryBytes: input.binding.maximumResourceCeiling.maxMemoryBytes,
+      },
+    };
+    const leases = [
+      {
+        ref: `environment-lease:${claim.ref}`,
+        hostId: claim.hostId,
+        canonicalRootId: claim.canonicalRootId,
+        access,
+        lineage: claim.lineage,
+      },
+    ];
+    return { envelope, leases };
+  };
 
   const bound = async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
     const environment = facts.environment;
@@ -125,58 +211,65 @@ export function createProductionTaskEnvironments(options: {
       readonly binding: SandboxHostBinding;
       readonly deadlineAt: string;
     }): Promise<ExecutionEnvironmentRecord> {
-      const [claim, ...extra] = input.claims;
-      if (
-        !claim ||
-        extra.length > 0 ||
-        claim.file !== undefined ||
-        claim.hostId !== input.hostId ||
-        claim.canonicalRootId !== input.grant.canonicalRootId
-      )
-        throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
-      const access = input.grant.operations.some((operation) => operation !== "read")
-        ? ("write" as const)
-        : ("read" as const);
-      const envelope = {
-        schemaVersion: "execution-envelope.v1" as const,
-        directories: [
-          {
-            hostId: input.hostId,
-            grantRef: input.grant.id,
-            canonicalRootId: input.grant.canonicalRootId,
-            access,
-            source: {
-              authorizationRef: input.grant.authorizationRef,
-              decidedBy: "user" as const,
-              delegationListRef: null,
-              expiresAt: input.grant.expiresAt,
-            },
-          },
-        ],
-        network: [],
-        resources: {
-          ...ENVIRONMENT_RESOURCES,
-          memoryBytes: input.binding.maximumResourceCeiling.maxMemoryBytes,
-        },
-      };
+      const { envelope, leases } = environmentScope(input);
+      if (!configuration.imageDigest) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNSUPPORTED");
       return coordinator.acquire({
         runId: input.runId,
         hostId: input.hostId,
         envelope,
-        leases: [
-          {
-            ref: `environment-lease:${claim.ref}`,
-            hostId: claim.hostId,
-            canonicalRootId: claim.canonicalRootId,
-            access,
-            lineage: claim.lineage,
-          },
-        ],
+        leases,
         policyDigest: digest({ profileRef: input.binding.profileRef, envelope }),
         imageDigest: configuration.imageDigest,
         runnerDigest: containerRunnerDigest(input.binding.runtimeDigest),
         deadlineAt: input.deadlineAt,
       });
+    },
+
+    async acquireSrt(
+      input: ProductionSrtTaskEnvironmentAcquireInput,
+    ): Promise<ExecutionEnvironmentRecord> {
+      const { envelope, leases } = environmentScope(input);
+      const policyDigest = digest({
+        profileRef: input.binding.profileRef,
+        envelope,
+        grant: {
+          id: input.grant.id,
+          revision: input.grant.revision,
+          operations: input.grant.operations,
+          canonicalRootId: input.grant.canonicalRootId,
+          authorizationRef: input.grant.authorizationRef,
+          expiresAt: input.grant.expiresAt,
+        },
+        allowedDomains: [...input.allowedDomains].sort(),
+        executionLease: input.plan.executionLease,
+        threadId: input.plan.identity.threadId,
+        modelRef: input.plan.modelRef,
+        runtimeDigest: input.binding.runtimeDigest,
+        runnerDigest: input.binding.runner.sha256,
+        qualificationRef: input.plan.binding.qualificationRef,
+      });
+      const next = {
+        runId: input.runId,
+        hostId: input.hostId,
+        envelope,
+        leases,
+        policyDigest,
+        imageDigest: hexDigest(input.binding.runtimeDigest),
+        runnerDigest: hexDigest(input.binding.runner.sha256),
+        deadlineAt: input.deadlineAt,
+      };
+      const existing = await primaryForRun(input.runId);
+      if (existing && (existing.state === "ready" || existing.state === "running")) {
+        const expired = Date.parse(existing.deadlineAt) <= Date.parse(clock.now());
+        if (expired || existing.locator?.effectivePolicyDigest !== policyDigest)
+          return coordinator.rotate({
+            environmentId: existing.identity.environmentId,
+            reason: expired ? "expiry" : "revocation",
+            stoppedResourceRefs: [],
+            ...next,
+          });
+      }
+      return coordinator.acquire(next);
     },
 
     async binding(plan: SandboxExecutionPlanV2): Promise<SandboxTaskEnvironmentBinding | null> {
@@ -253,7 +346,7 @@ export function createProductionTaskEnvironments(options: {
         status: previous.status,
         metrics: previous.metrics,
         supervision: "released",
-        cleanup: "confirmed",
+        cleanup: srt ? "process_group_gone" : "confirmed",
         evidence: {
           ...expected,
           qualificationRef: plan.binding.qualificationRef,
@@ -302,7 +395,11 @@ export function createProductionTaskEnvironments(options: {
       const environments = (await store.readRun(runId))?.environments ?? [];
       const results = await Promise.all(
         environments
-          .filter((environment) => environment.state !== "released")
+          .filter(
+            (environment) =>
+              environment.state !== "released" &&
+              environment.backendRef === configuration.backendRef,
+          )
           .map((environment) =>
             coordinator
               .stop({

@@ -54,6 +54,23 @@ export function sandboxFileOperationFailureReason(
     ? SANDBOX_WRITE_EFFECT_UNVERIFIED
     : "SANDBOX_OPERATION_FAILED";
 }
+export function srtTaskEnvironmentSession(
+  plan: Pick<SandboxExecutionPlanV2, "mode" | "operation" | "operationContract">,
+): "command" | "file_write" | null {
+  const contract = plan.operationContract;
+  if (
+    plan.mode !== "foreground" ||
+    contract.ref !== PI_RUNNER_CONTRACT.ref ||
+    contract.version !== PI_RUNNER_CONTRACT.version
+  )
+    return null;
+  if (plan.operation === "bash" && contract.kind === "command") return "command";
+  return ["write", "edit"].includes(plan.operation) &&
+    contract.kind === "verified_effect" &&
+    contract.verifierRef === PI_WRITE_VERIFIER.ref
+    ? "file_write"
+    : null;
+}
 export const piCodingToolNameSchema = enumeration([
   "read",
   "write",

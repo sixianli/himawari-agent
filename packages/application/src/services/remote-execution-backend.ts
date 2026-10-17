@@ -21,6 +21,7 @@ export class RemoteExecutionBackendError extends Error {
 
 export interface RemoteExecutionBackendOptions {
   readonly transport: ExecutionTransportPort;
+  readonly backendRef: string;
   readonly ownerId: string;
   readonly agentId: string;
   readonly authority: () => {
@@ -38,7 +39,7 @@ export interface RemoteExecutionBackendOptions {
 type EnvironmentRequest = Extract<ExecutionV2Request, { type: "environment.operation.execute" }>;
 type PayloadOf<TOperation extends EnvironmentOperation> = Omit<
   Extract<EnvironmentOperationRequestPayload, { readonly operation: TOperation }>,
-  "operation" | "requestedAt" | "deadlineAt"
+  "operation" | "backendRef" | "requestedAt" | "deadlineAt"
 >;
 
 export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort {
@@ -67,12 +68,7 @@ export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort
   }
 
   stop(input: Parameters<ExecutionEnvironmentLifecyclePort["stop"]>[0]) {
-    return this.send(
-      "stop",
-      input,
-      input.identity,
-      `environment-stop:${input.identity.environmentId}:${input.stopIntentId}`,
-    );
+    return this.send("stop", input, input.identity, null);
   }
 
   verifyStopped(input: Parameters<ExecutionEnvironmentLifecyclePort["verifyStopped"]>[0]) {
@@ -117,6 +113,7 @@ export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort
       payload: {
         operation,
         ...fields,
+        backendRef: this.options.backendRef,
         requestedAt,
         deadlineAt: new Date(Date.parse(requestedAt) + this.options.requestTimeoutMs).toISOString(),
       },

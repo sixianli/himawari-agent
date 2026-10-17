@@ -3,14 +3,16 @@ import path from "node:path";
 import type {
   CapabilityRuntimeQualification,
   ClockPort,
+  ExecutionEnvironmentLifecyclePort,
   ExecutionWorkerService,
   IdGeneratorPort,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import { ExecutionWorkerService as ExecutionWorkerServiceImplementation } from "@himawari-agent/application";
-import type {
-  ExecutionAdmissionPeerBinding,
-  ResourceCeiling,
+import {
+  type ExecutionAdmissionPeerBinding,
+  type ResourceCeiling,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 import {
   assertProductionSecretSource,
@@ -33,6 +35,7 @@ import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 import { createProductionSandboxWorker } from "./production-sandbox-worker.js";
+import { SrtTaskEnvironmentBackend } from "./production-srt-task-environment-backend.js";
 import { createWorkerTaskEnvironments } from "./production-task-environment-backend.js";
 import { WorkerDelegationStore } from "./worker-delegation-store.js";
 
@@ -533,9 +536,25 @@ export async function createProductionWorkerComposition(
         now: () => new Date(clock.now()),
       })
     : undefined;
+  const sandboxDeployed = deployment.snapshot.capabilities.some(
+    (entry) => entry.binding.kind === "sandbox",
+  );
+  const srtEnvironments =
+    sandboxDeployed && platform === "linux"
+      ? new SrtTaskEnvironmentBackend({
+          stateDirectory: path.join(configuration.runtimeDirectory, "srt-environments"),
+          runtimeInstanceId: workerBootId,
+          proofValidityMs: 60_000,
+          now: () => new Date(clock.now()),
+        })
+      : undefined;
+  const environments = new Map<string, ExecutionEnvironmentLifecyclePort>();
+  if (configuration.taskEnvironments && taskEnvironments)
+    environments.set(configuration.taskEnvironments.backendRef, taskEnvironments.environments);
+  if (srtEnvironments) environments.set(SRT_TASK_ENVIRONMENT_BACKEND_REF, srtEnvironments);
   const worker = new ProductionExecutionWorker({
-    ...(taskEnvironments ? { environments: taskEnvironments.environments } : {}),
-    ...(deployment.snapshot.capabilities.some((entry) => entry.binding.kind === "sandbox")
+    ...(environments.size > 0 ? { environments } : {}),
+    ...(sandboxDeployed
       ? {
           sandboxV2: new ProductionSandboxExecutionV2({
             configuration,
@@ -543,6 +562,7 @@ export async function createProductionWorkerComposition(
             payloads,
             clock,
             ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
+            ...(srtEnvironments ? { srtEnvironments } : {}),
           }),
           sandbox: createProductionSandboxWorker({
             configuration,
@@ -607,6 +627,7 @@ export async function createProductionWorkerComposition(
     try {
       // Keep the broker available while jobs stop and persist their final observations.
       await worker.shutdown();
+      await srtEnvironments?.close();
     } finally {
       admission.disconnect();
       payloads.disconnect();

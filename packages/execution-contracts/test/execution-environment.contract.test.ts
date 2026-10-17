@@ -9,6 +9,8 @@ import {
   executionEnvironmentIdentitySchema,
   executionEnvironmentLocatorSchema,
   executionEnvironmentStopProofSchema,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_GUARANTEES,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "../src/index.ts";
 
@@ -149,6 +151,60 @@ describe("execution environment contract v1", () => {
       { ...verifiedProof, stopFence: 0 },
       { ...verifiedProof, basis: "exit_code_zero" },
       { ...neverCreated, locator },
+    ])
+      expect(() => executionEnvironmentStopProofSchema.parse(value)).toThrow(
+        ContractValidationError,
+      );
+  });
+
+  it("[R2-P2] accepts the SRT task-environment guarantee set alongside the container set", () => {
+    expect(SRT_TASK_ENVIRONMENT_GUARANTEES).toEqual([
+      "immutable-environment-identity.v1",
+      "no-automatic-restart.v1",
+      "process-group-stop.v1",
+      "srt-egress-policy.v1",
+    ]);
+    const base = {
+      protocolVersion: EXECUTION_BACKEND_PROTOCOL_V1,
+      backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      runtimeInstanceId: "worker-instance-1",
+      guarantees: [...SRT_TASK_ENVIRONMENT_GUARANTEES],
+      checkedAt: "2026-09-25T01:00:00.000Z",
+    };
+    expect(executionBackendCapabilitiesSchema.parse(base).guarantees).toEqual(
+      SRT_TASK_ENVIRONMENT_GUARANTEES,
+    );
+    expect(
+      executionBackendCapabilitiesSchema.parse({
+        ...base,
+        guarantees: [...TASK_ENVIRONMENT_GUARANTEES, "process-group-stop.v1"],
+      }).guarantees,
+    ).toHaveLength(TASK_ENVIRONMENT_GUARANTEES.length + 1);
+    for (const guarantees of [
+      [...SRT_TASK_ENVIRONMENT_GUARANTEES, "srt-egress-policy.v1"],
+      [...SRT_TASK_ENVIRONMENT_GUARANTEES, "process-group-stop.v2"],
+    ])
+      expect(() => executionBackendCapabilitiesSchema.parse({ ...base, guarantees })).toThrow(
+        ContractValidationError,
+      );
+  });
+
+  it("[R2-P2] accepts a process_group_gone stop proof only with its locator inside a valid window", () => {
+    const { coverage: _coverage, ...withoutCoverage } = verifiedProof;
+    const processGroupGone = {
+      ...withoutCoverage,
+      basis: "process_group_gone",
+      locator: { ...locator, backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF },
+    };
+    expect(executionEnvironmentStopProofSchema.parse(processGroupGone)).toEqual(processGroupGone);
+    const { locator: _locator, ...withoutLocator } = processGroupGone;
+    for (const value of [
+      withoutLocator,
+      { ...processGroupGone, coverage: verifiedProof.coverage },
+      { ...processGroupGone, evidence: [] },
+      { ...processGroupGone, validUntil: processGroupGone.checkedAt },
+      { ...processGroupGone, stopFence: 0 },
+      { ...processGroupGone, cleanup: "confirmed" },
     ])
       expect(() => executionEnvironmentStopProofSchema.parse(value)).toThrow(
         ContractValidationError,

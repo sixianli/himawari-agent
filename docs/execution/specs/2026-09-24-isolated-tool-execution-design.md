@@ -16,7 +16,7 @@ date: "2026-09-24"
 - [目标与来源](#goal)
 - [两种执行模式](#modes)：[SRT 模式的停止与释放](#srt-release)、[Linux Host 组清理](#linux-host-group)、[清理进程启动成本](#linux-host-guardian-cost)、[删除旧的未确认记录](#legacy-purge)、[界面必须说清的状态](#mode-disclosure)、[远端执行的预留](#remote-entry)
 - [当前代码与目标差距](#baseline)
-- [任务身份与共享边界](#identity)：[环境权限上限与换新环境](#envelope)、[谁可以批准扩权](#expansion-approval)、[Run 边界的用户可见后果](#run-boundary)
+- [任务身份与共享边界](#identity)：[SRT 常驻任务宿主的现状](#srt-resident-job-host)、[环境权限上限与换新环境](#envelope)、[谁可以批准扩权](#expansion-approval)、[Run 边界的用户可见后果](#run-boundary)
 - [组件职责与后端合同](#backend)：[环境内 runner 的可信程度](#runner-trust)
 - [授权与安全策略](#policy)：[只读 HTTP 重试时刻](#readonly-http-retry)、[凭据的使用方式](#credentials)、[原目录模式的平台门禁](#host-mount-gate)
 - [状态、停止与停止证明](#lifecycle)：[停止顺序](#stop-order)、[不依赖控制进程存活的硬期限](#deadline)
@@ -247,6 +247,25 @@ SRT 模式不额外限制后台任务、服务类任务和无人值守任务，�
 同一轮任务共享当前工作目录、Git 工作树、任务私有的 HOME/tmp/cache、依赖和构建产物。后台程序属于整个环境；某个前台工具返回不会清理这些状态，也不代表任务结束。同一环境里的前台修改默认一个接一个执行；同一轮内的并发仍要满足资源冲突规则，不能用“同一个 Run”绕过文件发布时的版本检查。
 
 环境里的任何程序都能用到整个权限上限内的能力，所以一条命令实际能做的事，可能比它这次获批的范围大。本设计接受这一点，但要求每次审批都把“当前环境已有哪些能力”展示给审核者（见下一节）。每个工具仍要通过现有的 ActionPolicy、授权记录、输入指纹、期限、预算和取消检查；这些检查不能代替操作系统和后端的权限限制。
+
+<a id="srt-resident-job-host"></a>
+
+#### SRT 常驻任务宿主的现状（2026-10-18）
+
+默认的 SRT 模式（进程级沙箱）在 Linux 上开始按 [ADR 0054 的 2026-10-18 补充](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-job-host)复用任务宿主（Job Host，Worker 在沙箱外启动的看管进程）。和上面的目标相比，第一步有下面几处不同：
+
+- **后台程序不跨命令共享**：每条命令仍新起一个 `bwrap`（建立隔离命名空间的程序），命令结束时它的命名空间连同里面的后台程序一起结束；需要跨命令保留的后台程序仍按原来的后台模式每次新建沙箱。
+- **一个主环境、两个常驻会话**：数据库里一轮仍只有一条主环境记录。环境内部最多两个常驻会话：命令会话服务 `bash`，文件写入会话服务 `write`、`edit`，因为两者的沙箱策略不同（只有 `bash` 不能写 `.himawari-recovery`）。两个会话都能写授权目录，但整轮的调用一条接一条执行，每条命令结束时它的进程已全部结束，所以不会出现两个会话同时改同一范围；停止、核对和释放证明覆盖两个会话。
+- **共享的是会话级私有目录**：同一会话的命令共用一个环境级私有目录 `privateRoot/env-<hash(环境号, 会话种类)>`，作为任务私有的 HOME 和 tmp；工作目录照旧是授权的原目录。
+- **复用键**：Agent 用下列内容的 SHA-256 判断能否复用：沙箱配置名（`profileRef`）、环境权限上限、授权的编号、版本、操作、根目录、授权记录和期限、排好序的允许域名、本轮执行租约、线程、模型、运行时摘要、runner 摘要和资格记录。任何一项变了，或环境期限已到，都先停旧环境再建新环境；授权撤销按“revocation”、到期按“expiry”记录。权限上限里的网络目标仍为空，SRT 的允许域名放在复用键里。
+
+停止证明用“进程组已消失”（`process_group_gone`）：Worker 在私有状态目录里先记下每个会话的进程号和启动时间，停止时确认这些进程和每条命令的进程组都已消失才签发。进程号被系统复用给别的进程时（读到的启动时间与记录不同），按原进程已消失处理。
+
+同一停止意图可能要发不止一次，例如第一次核查时命令的进程组还没消失，之后的结果核查再停一次。Agent 每次停止都用新的消息编号，停止意图编号放在消息内容里，后端只接受同一个停止意图，所以重发只是对同一目标再关一次；容器环境走的是同一段代码。原来停止的消息编号由环境号和停止意图编号拼成、每次相同，而消息里的请求时间每次不同，同一个 Worker 会把重发当成“同一编号、内容不同”的冲突拒绝（`WORKER_DUPLICATE_CONFLICT`），环境就一直停在“停止未确认”。2026-10-18 的集成测试 `[R2-P2] retries one stop intent as a new request and releases after the first refusal`（第一次核查失败、第二次释放）复现了这一点，修复后它断言原因链里没有这个错误码。
+
+常驻环境里的工具调用也写沙箱预约，但计划后端是 `srt-task-environment`，没有准备控制目录。离线的管理员预约处置工具只处置计划后端为 `srt` 的预约，对这类预约以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝（`packages/persistence-sqlite/src/sqlite-sandbox-reservation-administration.ts`），它们只能靠任务执行环境的释放回执结束占用。
+
+Worker 不主动断开和 Job Host 之间的通信通道（不对它调用 `disconnect()`），会话结束只靠 Job Host 自己断开或被强制结束。原因是 Node 的一个行为：父进程先调用 `disconnect()` 之后，这个子进程即使已经退出、`stderr` 也已关闭，也永远不会发出 `close` 事件；而会话客户端要等 `close` 才交出会话结果，环境就一直算作“会话还在”，停不下来。2026-10-18 在 Hermes 的 Node 22.22.3 上用最小程序复现：父进程先断开时 6 次都没有 `close`，子进程自己结束时 2 次都在退出后立刻收到（程序在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r2-p2/close-probe.mjs`，SHA-256 `2f3bc7bbde6c035c910665e364b4dd1f2dd0ac49ddaade306f1025437658cf4b`）。Job Host 卡住不回应时，Worker 在心跳中断约 1.5 秒后判定会话失效，清理时限到了就杀掉整个进程组，`close` 照常到达。
 
 <a id="envelope"></a>
 

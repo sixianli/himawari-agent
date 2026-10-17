@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  PI_COPY_SAVE_CONTRACT,
+  PI_DIRECTORY_MOVE_CONTRACT,
+  PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
+  PI_RUNNER_CONTRACT,
+  PI_WRITE_VERIFIER,
   piRunnerInputSchema,
   sandboxExecutionScopeSchema,
   sandboxOperationBindingsSchema,
   sandboxScopeSchema,
+  srtTaskEnvironmentSession,
 } from "../src/index.ts";
 
 const input = {
@@ -145,4 +152,52 @@ it("keeps optional copy authority separate from source writes and fixed-file tar
     }),
   ).toThrow();
   expect(() => sandboxScopeSchema.parse({ ...scope, fileTarget: {} })).toThrow();
+});
+
+describe("[R2-P2] SRT task-environment session kind", () => {
+  const command = { ...PI_RUNNER_CONTRACT, kind: "command" } as const;
+  const write = {
+    ...PI_RUNNER_CONTRACT,
+    kind: "verified_effect",
+    verifierRef: PI_WRITE_VERIFIER.ref,
+    verifierVersion: PI_WRITE_VERIFIER.version,
+    targetRef: PI_WRITE_VERIFIER.targetRef,
+  } as const;
+  const plan = (
+    operation: string,
+    operationContract: Parameters<typeof srtTaskEnvironmentSession>[0]["operationContract"],
+    mode: "foreground" | "background" | "service" = "foreground",
+  ) => ({ operation, operationContract, mode });
+
+  it("[R2-P2] places foreground version-1 bash in the command session", () => {
+    expect(srtTaskEnvironmentSession(plan("bash", command))).toBe("command");
+  });
+
+  it("[R2-P2] places foreground version-1 write and edit in the file-write session", () => {
+    expect(srtTaskEnvironmentSession(plan("write", write))).toBe("file_write");
+    expect(srtTaskEnvironmentSession(plan("edit", write))).toBe("file_write");
+  });
+
+  it.each([
+    ["background bash", plan("bash", { ...PI_RUNNER_CONTRACT, kind: "task_start" }, "background")],
+    [
+      "a bash service",
+      plan(
+        "bash",
+        { ...PI_RUNNER_CONTRACT, kind: "service_start", readinessProbeRef: "probe" },
+        "service",
+      ),
+    ],
+    ["a version-1 read", plan("read", { ...PI_RUNNER_CONTRACT, kind: "fixed_read" })],
+    ["a fixed-file write", plan("write", { ...write, ...PI_FIXED_FILE_CONTRACT })],
+    ["a prepared-file edit", plan("edit", { ...write, ...PI_PREPARED_FILE_CONTRACT })],
+    ["a directory move", plan("move_directory", { ...write, ...PI_DIRECTORY_MOVE_CONTRACT })],
+    ["a copy save", plan("save_copy", { ...write, ...PI_COPY_SAVE_CONTRACT })],
+    ["bash under another contract", plan("bash", { ...command, ref: "other-tool" })],
+    ["a write declared as a command", plan("write", command)],
+    ["bash declared as a verified effect", plan("bash", write)],
+    ["a write with another verifier", plan("write", { ...write, verifierRef: "host-copy-save" })],
+  ])("[R2-P2] keeps %s out of task-environment sessions", (_case, input) => {
+    expect(srtTaskEnvironmentSession(input)).toBeNull();
+  });
 });

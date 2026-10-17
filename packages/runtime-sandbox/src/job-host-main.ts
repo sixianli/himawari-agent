@@ -13,11 +13,21 @@ import { type JobHostControlBinding, openJobHostControl } from "./job-host-contr
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import {
   JOB_HOST_SYSTEM_CODES,
+  type JobHostCommandReport,
   type JobHostDiagnostic,
+  type JobHostNamespaceState,
   type JobHostRequest,
+  type JobHostRun,
+  jobHostCommandSettled,
   parseJobHostRequest,
+  parseJobHostRun,
+  parseJobHostSessionRequest,
 } from "./job-host-protocol.ts";
-import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
+import {
+  captureLinuxNamespace,
+  type LinuxNamespaceIdentity,
+  readLinuxNamespaceState,
+} from "./linux-namespace.ts";
 import { startLinuxHostGuardian } from "./linux-host-guardian.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { stopProcessGroup } from "./process-group.ts";
@@ -58,7 +68,6 @@ const steps: Array<{
   startedMs: number;
   elapsedMs: number | null;
 }> = [];
-let total = 0;
 let exited = false;
 let closed = false;
 let finishing = false;
@@ -68,6 +77,30 @@ let sdkOperation: Promise<unknown> = Promise.resolve();
 let egress: Awaited<ReturnType<typeof openNetworkEgress>> | undefined;
 let deadline: ReturnType<typeof setTimeout> | undefined;
 let emergency: ReturnType<typeof setTimeout> | undefined;
+
+type CommandCause = "cancelled" | "deadline" | "output_limit" | "resource_limit";
+interface SessionCommand {
+  readonly run: JobHostRun;
+  task?: ChildProcess;
+  spawned: boolean;
+  started: boolean;
+  exited: boolean;
+  closed: boolean;
+  cause?: CommandCause;
+  namespace: LinuxNamespaceIdentity | null;
+  observer?: ReturnType<typeof observeTaskResources>;
+  readonly timers: Array<ReturnType<typeof setTimeout>>;
+  settlement?: Promise<void>;
+}
+let sessionMode = false;
+let runSequence = 0;
+let active: SessionCommand | undefined;
+let reportedAttemptId: string | undefined;
+let sessionTaskStarted = false;
+let spawnedCommands = 0;
+let commandsExited = true;
+let commandsClosed = true;
+let commandGroupsGone = true;
 
 function send(message: Record<string, unknown>) {
   if (process.connected)
@@ -135,17 +168,21 @@ function launchFailureSystemCode(text: string): (typeof JOB_HOST_SYSTEM_CODES)[n
   for (const [pattern, code] of LAUNCH_FAILURE_TEXT_CODES) if (pattern.test(line)) return code;
   return "UNKNOWN";
 }
+interface LaunchFailure {
+  readonly code: NonNullable<JobHostDiagnostic["detail"]>["code"];
+  readonly systemCode: (typeof JOB_HOST_SYSTEM_CODES)[number];
+  readonly text: string | null;
+}
 function sendLaunchFailureDiagnostic(
-  code: NonNullable<JobHostDiagnostic["detail"]>["code"],
-  systemCode: (typeof JOB_HOST_SYSTEM_CODES)[number],
-  text: string | null,
+  { code, systemCode, text }: LaunchFailure,
+  command: "start" | "run",
 ) {
   if (!request) return;
   const bounded = (value: number) => Math.max(-86_400_000, Math.min(86_400_000, Math.round(value)));
   const detail = diagnostics
     ? diagnostics.sandboxHostFailureDetailSchema.parse({
         code,
-        command: "start",
+        command,
         phase,
         elapsedMs: Math.max(0, sinceStart()),
         messageAgeMs: null,
@@ -185,6 +222,10 @@ async function finish() {
   networkAuthority.close();
   void egress?.close();
   clearTimeout(deadline);
+  if (active) {
+    killCommand(active);
+    await settleCommand(active);
+  }
   killTask();
   readiness?.cancel();
   await readiness?.result.catch(() => false);
@@ -201,7 +242,7 @@ async function finish() {
     await sdkOperation.catch(() => {});
     await egress?.close();
     if (sandboxManager) {
-      await sandboxManager.cleanupAfterCommand();
+      if (!sessionMode) await sandboxManager.cleanupAfterCommand();
       await sandboxManager.reset();
       reset = true;
     }
@@ -222,11 +263,11 @@ async function finish() {
     reason,
     resources: observer?.current() ?? null,
     exitCode: task?.exitCode ?? null,
-    taskStarted: userTaskStarted,
-    taskProcessExited: exited,
-    stdioClosed: closed,
+    taskStarted: sessionMode ? sessionTaskStarted : userTaskStarted,
+    taskProcessExited: sessionMode ? spawnedCommands > 0 && commandsExited : exited,
+    stdioClosed: sessionMode ? spawnedCommands > 0 && commandsClosed : closed,
     srtReset: reset,
-    taskProcessGroupGone,
+    taskProcessGroupGone: sessionMode ? commandGroupsGone : taskProcessGroupGone,
   });
   // IPC drains before disconnect; final close remains bounded by emergency.
   if (process.connected) process.disconnect();
@@ -255,19 +296,22 @@ function stop(cause: string) {
   networkAuthority.close();
   void egress?.close();
   killTask();
+  if (active) killCommand(active);
   emergency ??= setTimeout(() => {
     void finish();
   }, request?.cleanupTimeoutMs ?? 5000);
-  if (!task) void finish();
+  if (sessionMode ? !active?.task : !task) void finish();
 }
-async function prepare(value: unknown, controlValue?: unknown) {
+async function prepare(value: unknown, controlValue: unknown, session: boolean) {
   if (phase !== "waiting") throw new Error("JOB_HOST_ALREADY_PREPARED");
   phase = "preparing";
-  request = parseJobHostRequest(value);
+  request = session ? parseJobHostSessionRequest(value) : parseJobHostRequest(value);
+  sessionMode = session;
   deadline = setTimeout(
     () => stop("deadline"),
     Math.max(1, Date.parse(request.deadlineAt) - Date.now()),
   );
+  if (session && controlValue !== undefined) throw new Error("JOB_HOST_SESSION_MODE_INVALID");
   if (controlValue !== undefined) {
     const binding = controlValue as JobHostControlBinding;
     if (
@@ -361,7 +405,7 @@ async function prepare(value: unknown, controlValue?: unknown) {
   };
   if (policy.policyDigest !== request.policyDigest) throw new Error("JOB_HOST_POLICY_CHANGED");
   enterStage("resource_snapshot");
-  if (request.resourceLimits) await readProcessSnapshot();
+  if (request.resourceLimits || sessionMode) await readProcessSnapshot();
   enterStage("dependencies");
   const dependencies = await manager.checkDependenciesAsync();
   if (!manager.isSupportedPlatform() || dependencies.errors.length || dependencies.warnings.length)
@@ -415,10 +459,27 @@ async function prepare(value: unknown, controlValue?: unknown) {
     policyDigest: policy.policyDigest,
   });
 }
-async function start() {
-  if (phase !== "ready" || !request || !sandboxManager) throw new Error("JOB_HOST_NOT_READY");
-  const manager = sandboxManager;
-  phase = "running";
+interface TaskLaunch {
+  readonly manager: SandboxSdk;
+  readonly request: JobHostRequest;
+  readonly deadlineAt: string;
+  readonly input: Buffer;
+  readonly maxOutputBytes: number;
+  running(): boolean;
+  notLaunched(): void;
+  spawned(child: ChildProcess): void;
+  exposed(): void;
+  namespace(identity: LinuxNamespaceIdentity): void;
+  started(pid: number): void;
+  output(channel: "stdout" | "stderr", bytes: Buffer): void;
+  outputLimit(): void;
+  failed(failure?: LaunchFailure): void;
+  spawnFailed(failure: LaunchFailure): void;
+  exited(): void;
+  closed(): void;
+}
+async function launchTask(launch: TaskLaunch) {
+  const current = launch.request;
   // SRT 0.0.75 advertises localhost in proxy URLs. Node's getaddrinfo can
   // fail under the Mac resolver restrictions even with /etc/hosts readable.
   // Normalize only SRT-owned proxy variables inside its wrapper; retain its
@@ -426,150 +487,92 @@ async function start() {
   const namespaceToken = randomUUID();
   const namespaceGate = process.platform === "linux";
   const command = namespaceGate
-    ? `printf '${namespaceToken}:%s:%s\\n' "$$" "$(readlink /proc/self/ns/pid)" >&2; IFS= read -r himawari_start; [ "$himawari_start" = '${namespaceToken}' ] || exit 125; ${jobCommand(request.executable, request.args, true)}`
-    : jobCommand(request.executable, request.args, false);
-  const wrapping = manager.wrapWithSandboxArgv(command, "/bin/bash");
+    ? `printf '${namespaceToken}:%s:%s\\n' "$$" "$(readlink /proc/self/ns/pid)" >&2; IFS= read -r himawari_start; [ "$himawari_start" = '${namespaceToken}' ] || exit 125; ${jobCommand(current.executable, current.args, true)}`
+    : jobCommand(current.executable, current.args, false);
+  const wrapping = launch.manager.wrapWithSandboxArgv(command, "/bin/bash");
   sdkOperation = wrapping;
-  const launch = await wrapping;
-  if (phase !== "running" || Date.now() >= Date.parse(request.deadlineAt)) {
-    stop("deadline");
+  const wrapped = await wrapping;
+  if (!launch.running() || Date.now() >= Date.parse(launch.deadlineAt)) {
+    launch.notLaunched();
     return;
   }
   const launchArgv =
     process.platform === "linux"
-      ? rewriteLinuxReadOnlyTmpfs(launch.argv, "/bin/bash", resolveLinuxTmpfsDestination)
-      : launch.argv;
+      ? rewriteLinuxReadOnlyTmpfs(wrapped.argv, "/bin/bash", resolveLinuxTmpfsDestination)
+      : wrapped.argv;
   const executable = launchArgv[0];
   if (!executable) throw new Error("JOB_HOST_LAUNCH_INVALID");
-  task = spawn(executable, launchArgv.slice(1), {
-    cwd: request.policy.workspace ?? request.policy.privateDirectory,
-    env: launch.env,
+  const child = spawn(executable, launchArgv.slice(1), {
+    cwd: current.policy.workspace ?? current.policy.privateDirectory,
+    env: wrapped.env,
     shell: false,
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  task.on("error", (error: NodeJS.ErrnoException) => {
-    sendLaunchFailureDiagnostic(
-      "JOB_HOST_LAUNCH_SPAWN_FAILED",
-      JOB_HOST_SYSTEM_CODES.some((code) => code === error?.code)
+  launch.spawned(child);
+  child.on("error", (error: NodeJS.ErrnoException) => {
+    launch.spawnFailed({
+      code: "JOB_HOST_LAUNCH_SPAWN_FAILED",
+      systemCode: JOB_HOST_SYSTEM_CODES.some((code) => code === error?.code)
         ? (error.code as (typeof JOB_HOST_SYSTEM_CODES)[number])
         : "UNKNOWN",
-      error?.message ?? null,
-    );
-    reason = "host_failure";
-    void finish();
+      text: error?.message ?? null,
+    });
   });
-  task.stdin?.on("error", () => stop("host_failure"));
+  child.stdin?.on("error", () => launch.failed());
   let startAcknowledged = false;
   // On Mac, spawn already permits user code before its asynchronous event.
-  if (!namespaceGate && task.pid !== undefined) userTaskStarted = true;
+  if (!namespaceGate && child.pid !== undefined) launch.exposed();
   const acknowledgeStart = () => {
-    if (phase !== "running" || !task?.pid || startAcknowledged)
+    if (!launch.running() || !child.pid || startAcknowledged)
       throw new Error("JOB_HOST_START_ABORTED");
-    userTaskStarted = true;
     startAcknowledged = true;
-    send({
-      type: "started",
-      pid: task.pid,
-      taskIdentityRef: `sandbox-process:${randomUUID()}`,
-      taskStartedAt: new Date().toISOString(),
-    });
-    void recordStart(task.pid);
-    if (request?.readiness) {
-      readiness = startReadinessProbe({
-        probe: request.readiness,
-        privateDirectory: request.policy.privateDirectory,
-        deadlineAt: request.deadlineAt,
-        active: () => phase === "running" && !exited,
-        wrap: async (command) => {
-          const wrapped = await manager.wrapWithSandboxArgv(command, "/bin/bash");
-          if (process.platform !== "linux") return wrapped;
-          return {
-            ...wrapped,
-            argv: [
-              ...rewriteLinuxReadOnlyTmpfs(wrapped.argv, "/bin/bash", resolveLinuxTmpfsDestination),
-            ],
-          };
-        },
-      });
-      void readiness.result
-        .then((ready) => {
-          if (ready) readyAt = new Date().toISOString();
-          else if (phase === "running") stop("host_failure");
-        })
-        .catch(() => stop("host_failure"));
-    }
-    if (request?.resourceLimits)
-      observer = observeTaskResources(task.pid, request.resourceLimits, stop);
+    launch.started(child.pid);
   };
   if (!namespaceGate) {
-    task.stdin?.end(Buffer.from(request.stdinBase64 ?? "", "base64"));
-    task.on("spawn", () => {
+    child.stdin?.end(launch.input);
+    child.on("spawn", () => {
       try {
         acknowledgeStart();
       } catch {
-        stop("host_failure");
+        launch.failed();
       }
     });
   }
   let gateBytes = Buffer.alloc(0);
   let gateReceivedBytes = 0;
   const gateDiagnostics: Buffer[] = [];
-  const gateFailureText = () =>
-    Buffer.concat([...gateDiagnostics, gateBytes])
+  const gateFailure = (
+    code: "JOB_HOST_NAMESPACE_GATE_INVALID" | "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
+  ): LaunchFailure => {
+    const text = Buffer.concat([...gateDiagnostics, gateBytes])
       .subarray(-4096)
       .toString("utf8");
+    return { code, systemCode: launchFailureSystemCode(text), text: text || null };
+  };
   let gatePending = namespaceGate;
   const gateTimeout = namespaceGate
-    ? setTimeout(() => {
-        const text = gateFailureText();
-        sendLaunchFailureDiagnostic(
-          "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
-          launchFailureSystemCode(text),
-          text || null,
-        );
-        stop("host_failure");
-      }, 1500)
+    ? setTimeout(() => launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_TIMEOUT")), 1500)
     : undefined;
   const receiveGate = async (line: string) => {
     const match = new RegExp(`^${namespaceToken}:(\\d+):(pid:\\[\\d+\\])$`).exec(line);
-    if (!match || !task?.pid || !match[1] || !match[2])
+    if (!match || !child.pid || !match[1] || !match[2])
       throw new Error("JOB_HOST_NAMESPACE_GATE_INVALID");
-    linuxNamespace = await captureLinuxNamespace(task.pid, Number(match[1]), match[2]);
-    if (phase !== "running" || !request) throw new Error("JOB_HOST_START_ABORTED");
+    launch.namespace(await captureLinuxNamespace(child.pid, Number(match[1]), match[2]));
+    if (!launch.running()) throw new Error("JOB_HOST_START_ABORTED");
     acknowledgeStart();
     clearTimeout(gateTimeout);
-    task.stdin?.end(
-      Buffer.concat([
-        Buffer.from(`${namespaceToken}\n`),
-        Buffer.from(request.stdinBase64 ?? "", "base64"),
-      ]),
-    );
+    child.stdin?.end(Buffer.concat([Buffer.from(`${namespaceToken}\n`), launch.input]));
   };
-  task.on("exit", () => {
-    exited = true;
-    observer?.stop();
-    killTask();
-    emergency ??= setTimeout(() => {
-      void finish();
-    }, request?.cleanupTimeoutMs ?? 5000);
-  });
-  task.on("close", () => {
+  child.on("exit", () => launch.exited());
+  child.on("close", () => {
     clearTimeout(gateTimeout);
-    closed = true;
-    if (userTaskStarted && exited && reason === "exited" && task?.exitCode !== null)
-      send({
-        type: "completed",
-        exitCode: task?.exitCode,
-        reason,
-        taskProcessExited: true,
-        stdioClosed: true,
-      });
-    void finish();
+    launch.closed();
   });
+  let total = 0;
   for (const [stream, channel] of [
-    [task.stdout, "stdout"],
-    [task.stderr, "stderr"],
+    [child.stdout, "stdout"],
+    [child.stderr, "stderr"],
   ] as const) {
     stream?.on("data", (received: Buffer) => {
       let chunk = received;
@@ -577,13 +580,7 @@ async function start() {
         gateReceivedBytes += chunk.byteLength;
         gateBytes = Buffer.concat([gateBytes, chunk]);
         if (gateReceivedBytes > 1024) {
-          const text = gateFailureText();
-          sendLaunchFailureDiagnostic(
-            "JOB_HOST_NAMESPACE_GATE_INVALID",
-            launchFailureSystemCode(text),
-            text || null,
-          );
-          stop("host_failure");
+          launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID"));
           return;
         }
         // stderr is also used by the wrapping shell for startup diagnostics.
@@ -601,25 +598,290 @@ async function start() {
           }
           gatePending = false;
           chunk = Buffer.concat([...gateDiagnostics, gateBytes]);
-          void receiveGate(line).catch(() => {
-            const text = gateFailureText();
-            sendLaunchFailureDiagnostic(
-              "JOB_HOST_NAMESPACE_GATE_INVALID",
-              launchFailureSystemCode(text),
-              text || null,
-            );
-            stop("host_failure");
-          });
+          void receiveGate(line).catch(() =>
+            launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID")),
+          );
         }
       }
-      const available = Math.max(0, (request?.maxOutputBytes ?? 0) - total);
+      const available = Math.max(0, launch.maxOutputBytes - total);
       const accepted = chunk.subarray(0, available);
       total += accepted.byteLength;
-      if (accepted.byteLength)
-        send({ type: "output", channel, bytes: accepted.toString("base64") });
-      if (chunk.byteLength > available) stop("output_limit");
+      if (accepted.byteLength) launch.output(channel, accepted);
+      if (chunk.byteLength > available) launch.outputLimit();
     });
   }
+}
+async function start() {
+  if (phase !== "ready" || !request || !sandboxManager || sessionMode)
+    throw new Error("JOB_HOST_NOT_READY");
+  const manager = sandboxManager;
+  const current = request;
+  phase = "running";
+  await launchTask({
+    manager,
+    request: current,
+    deadlineAt: current.deadlineAt,
+    input: Buffer.from(current.stdinBase64 ?? "", "base64"),
+    maxOutputBytes: current.maxOutputBytes,
+    running: () => phase === "running",
+    notLaunched: () => stop("deadline"),
+    spawned: (child) => {
+      task = child;
+    },
+    exposed: () => {
+      userTaskStarted = true;
+    },
+    namespace: (identity) => {
+      linuxNamespace = identity;
+    },
+    started: (pid) => {
+      userTaskStarted = true;
+      send({
+        type: "started",
+        pid,
+        taskIdentityRef: `sandbox-process:${randomUUID()}`,
+        taskStartedAt: new Date().toISOString(),
+      });
+      void recordStart(pid);
+      if (current.readiness) {
+        readiness = startReadinessProbe({
+          probe: current.readiness,
+          privateDirectory: current.policy.privateDirectory,
+          deadlineAt: current.deadlineAt,
+          active: () => phase === "running" && !exited,
+          wrap: async (command) => {
+            const wrapped = await manager.wrapWithSandboxArgv(command, "/bin/bash");
+            if (process.platform !== "linux") return wrapped;
+            return {
+              ...wrapped,
+              argv: [
+                ...rewriteLinuxReadOnlyTmpfs(
+                  wrapped.argv,
+                  "/bin/bash",
+                  resolveLinuxTmpfsDestination,
+                ),
+              ],
+            };
+          },
+        });
+        void readiness.result
+          .then((ready) => {
+            if (ready) readyAt = new Date().toISOString();
+            else if (phase === "running") stop("host_failure");
+          })
+          .catch(() => stop("host_failure"));
+      }
+      if (current.resourceLimits)
+        observer = observeTaskResources(pid, current.resourceLimits, stop);
+    },
+    output: (channel, bytes) => send({ type: "output", channel, bytes: bytes.toString("base64") }),
+    outputLimit: () => stop("output_limit"),
+    failed: (failure) => {
+      if (failure) sendLaunchFailureDiagnostic(failure, "start");
+      stop("host_failure");
+    },
+    spawnFailed: (failure) => {
+      sendLaunchFailureDiagnostic(failure, "start");
+      reason = "host_failure";
+      void finish();
+    },
+    exited: () => {
+      exited = true;
+      observer?.stop();
+      killTask();
+      emergency ??= setTimeout(() => {
+        void finish();
+      }, current.cleanupTimeoutMs ?? 5000);
+    },
+    closed: () => {
+      closed = true;
+      if (userTaskStarted && exited && reason === "exited" && task?.exitCode !== null)
+        send({
+          type: "completed",
+          exitCode: task?.exitCode,
+          reason,
+          taskProcessExited: true,
+          stdioClosed: true,
+        });
+      void finish();
+    },
+  });
+}
+function killCommand(command: SessionCommand) {
+  const child = command.task;
+  if (child?.pid && child.exitCode === null && child.signalCode === null) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {}
+  }
+}
+function endCommand(command: SessionCommand, cause: CommandCause) {
+  if (active !== command || command.cause !== undefined || phase !== "running") return;
+  command.cause = cause;
+  killCommand(command);
+}
+async function commandNamespace(command: SessionCommand): Promise<JobHostNamespaceState> {
+  if (!command.spawned || command.task?.pid === undefined) return "not_applicable";
+  if (!command.namespace) return "unknown";
+  const until = Date.now() + 1000;
+  for (;;) {
+    const state = await readLinuxNamespaceState(command.namespace);
+    if (state === "released" || Date.now() >= until) return state;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+function settleCommand(command: SessionCommand): Promise<void> {
+  command.settlement ??= (async () => {
+    for (const timer of command.timers) clearTimeout(timer);
+    command.observer?.stop();
+    const pid = command.task?.pid;
+    const processGroupGone =
+      pid === undefined
+        ? true
+        : await stopProcessGroup(pid, {
+            timeoutMs: Math.min(1000, request?.cleanupTimeoutMs ?? 1000),
+            intervalMs: 10,
+            kill: (id, signal) => process.kill(id, signal),
+          });
+    const namespace = await commandNamespace(command);
+    let cleanedUp = false;
+    try {
+      await sdkOperation.catch(() => {});
+      if (!sandboxManager) throw new Error("JOB_HOST_NOT_READY");
+      const manager = sandboxManager;
+      const cleaning = (async () => {
+        await manager.cleanupAfterCommand();
+      })();
+      sdkOperation = cleaning;
+      await cleaning;
+      cleanedUp = true;
+    } catch {
+      cleanedUp = false;
+    }
+    const report: JobHostCommandReport = {
+      attemptId: command.run.attemptId,
+      sequence: command.run.sequence,
+      reason:
+        command.cause ??
+        (phase === "stopping" ? (reason as JobHostCommandReport["reason"]) : "exited"),
+      exitCode: command.task?.exitCode ?? null,
+      resources: command.observer?.current() ?? null,
+      taskStarted: command.started,
+      taskProcessExited: command.exited,
+      stdioClosed: command.closed,
+      processGroupGone,
+      namespace,
+      cleanedUp,
+    };
+    const { sequence: runSequence, ...fields } = report;
+    send({ type: "command_result", ...fields, runSequence });
+    reportedAttemptId = command.run.attemptId;
+    if (active === command) active = undefined;
+    commandGroupsGone &&= processGroupGone;
+    if (command.spawned) {
+      commandsExited &&= command.exited;
+      commandsClosed &&= command.closed;
+    }
+    if (phase === "running") {
+      if (jobHostCommandSettled(report)) phase = "ready";
+      else stop("host_failure");
+    } else if (phase === "stopping") void finish();
+  })();
+  return command.settlement;
+}
+async function runCommand(value: unknown) {
+  if (!sessionMode || phase !== "ready" || active || !request || !sandboxManager)
+    throw new Error("JOB_HOST_RUN_NOT_ALLOWED");
+  const run = parseJobHostRun(value, request, runSequence);
+  runSequence = run.sequence;
+  const command: SessionCommand = {
+    run,
+    spawned: false,
+    started: false,
+    exited: false,
+    closed: false,
+    namespace: null,
+    timers: [],
+  };
+  active = command;
+  phase = "running";
+  command.timers.push(
+    setTimeout(
+      () => endCommand(command, "deadline"),
+      Math.max(1, Date.parse(run.deadlineAt) - Date.now()),
+    ),
+  );
+  const current = request;
+  await launchTask({
+    manager: sandboxManager,
+    request: current,
+    deadlineAt: run.deadlineAt,
+    input: Buffer.from(run.inputBase64, "base64"),
+    maxOutputBytes: run.maxOutputBytes,
+    running: () => phase === "running" && active === command && command.cause === undefined,
+    notLaunched: () => {
+      if (active !== command || phase !== "running") return;
+      command.cause ??= "deadline";
+      void settleCommand(command);
+    },
+    spawned: (child) => {
+      command.task = child;
+      command.spawned = true;
+      spawnedCommands++;
+    },
+    exposed: () => {
+      command.started = true;
+      sessionTaskStarted = true;
+    },
+    namespace: (identity) => {
+      command.namespace = identity;
+    },
+    started: (pid) => {
+      command.started = true;
+      sessionTaskStarted = true;
+      send({
+        type: "started",
+        attemptId: run.attemptId,
+        pid,
+        taskIdentityRef: `sandbox-process:${randomUUID()}`,
+        taskStartedAt: new Date().toISOString(),
+      });
+      command.observer = observeTaskResources(pid, run.resourceLimits, (cause) => {
+        if (cause === "resource_limit") endCommand(command, cause);
+        else stop("host_failure");
+      });
+    },
+    output: (channel, bytes) =>
+      send({ type: "output", attemptId: run.attemptId, channel, bytes: bytes.toString("base64") }),
+    outputLimit: () => endCommand(command, "output_limit"),
+    failed: (failure) => {
+      if (active !== command || command.cause !== undefined) return;
+      if (failure) sendLaunchFailureDiagnostic(failure, "run");
+      stop("host_failure");
+    },
+    spawnFailed: (failure) => {
+      sendLaunchFailureDiagnostic(failure, "run");
+      stop("host_failure");
+      void finish();
+    },
+    exited: () => {
+      command.exited = true;
+      command.observer?.stop();
+      killCommand(command);
+      command.timers.push(setTimeout(() => stop("host_failure"), current.cleanupTimeoutMs));
+    },
+    closed: () => {
+      command.closed = true;
+      void settleCommand(command);
+    },
+  });
+}
+function cancelCommand(attemptId: unknown, cause: unknown) {
+  if (!sessionMode) throw new Error("JOB_HOST_RUN_NOT_ALLOWED");
+  if (cause !== "cancelled" && cause !== "deadline") throw new Error("JOB_HOST_RUN_INVALID");
+  if (active && attemptId === active.run.attemptId) endCommand(active, cause);
+  else if (attemptId === undefined || attemptId !== reportedAttemptId)
+    throw new Error("JOB_HOST_RUN_INVALID");
 }
 process.on("message", (message: unknown) => {
   const receivedAt = Date.now();
@@ -664,9 +926,17 @@ process.on("message", (message: unknown) => {
       );
       return;
     }
-    if (message.type === "prepare" && "request" in message)
-      await prepare(message.request, "control" in message ? message.control : undefined);
-    else if (message.type === "start") await start();
+    if (message.type === "prepare" && "request" in message) {
+      const session = "session" in message ? message.session : false;
+      if (typeof session !== "boolean") throw new Error("JOB_HOST_SESSION_MODE_INVALID");
+      await prepare(message.request, "control" in message ? message.control : undefined, session);
+    } else if (message.type === "start") await start();
+    else if (message.type === "run") await runCommand("run" in message ? message.run : undefined);
+    else if (message.type === "run_cancel")
+      cancelCommand(
+        "attemptId" in message ? message.attemptId : undefined,
+        "reason" in message ? message.reason : undefined,
+      );
     else if (message.type === "cancel") {
       const cause = "reason" in message ? message.reason : "cancelled";
       stop(cause === "deadline" || cause === "host_failure" ? cause : "cancelled");
@@ -704,9 +974,15 @@ process.on("message", (message: unknown) => {
               SANDBOX_HOST_FAILURE_CODES.some((code) => code === error.message)
                 ? error.message
                 : "UNKNOWN",
-            command: ["prepare", "heartbeat", "start", "cancel", "authority_result"].includes(
-              incoming["type"] as string,
-            )
+            command: [
+              "prepare",
+              "heartbeat",
+              "start",
+              "run",
+              "run_cancel",
+              "cancel",
+              "authority_result",
+            ].includes(incoming["type"] as string)
               ? incoming["type"]
               : "unknown",
             phase,

@@ -24,6 +24,18 @@ export const TASK_ENVIRONMENT_GUARANTEES = [
   "enforced-resource-limits.v1",
   "task-egress-policy.v1",
 ] as const;
+export const SRT_TASK_ENVIRONMENT_BACKEND_REF = "srt-task-environment" as const;
+export const SRT_TASK_ENVIRONMENT_GUARANTEES = [
+  "immutable-environment-identity.v1",
+  "no-automatic-restart.v1",
+  "process-group-stop.v1",
+  "srt-egress-policy.v1",
+] as const;
+const EXECUTION_BACKEND_GUARANTEES = [
+  ...TASK_ENVIRONMENT_GUARANTEES,
+  "process-group-stop.v1",
+  "srt-egress-policy.v1",
+] as const;
 export const STOP_PROOF_COVERAGE = [
   "environment_terminated",
   "no_restart",
@@ -161,7 +173,7 @@ export const executionBackendCapabilitiesSchema = object({
   protocolVersion: literal(EXECUTION_BACKEND_PROTOCOL_V1),
   backendRef: machineString,
   runtimeInstanceId: machineString,
-  guarantees: unique(array(enumeration(TASK_ENVIRONMENT_GUARANTEES)), (item) => item),
+  guarantees: unique(array(enumeration(EXECUTION_BACKEND_GUARANTEES)), (item) => item),
   checkedAt: timestamp,
 });
 export type ExecutionBackendCapabilities = InferSchema<typeof executionBackendCapabilitiesSchema>;
@@ -193,9 +205,15 @@ const verifiedStopped = object({
   coverage: unique(array(enumeration(STOP_PROOF_COVERAGE)), (item) => item),
 });
 const neverCreated = object({ basis: literal("never_created"), ...proofFields });
+const processGroupGone = object({
+  basis: literal("process_group_gone"),
+  ...proofFields,
+  locator: executionEnvironmentLocatorSchema,
+});
 export type ExecutionEnvironmentStopProof =
   | InferSchema<typeof verifiedStopped>
-  | InferSchema<typeof neverCreated>;
+  | InferSchema<typeof neverCreated>
+  | InferSchema<typeof processGroupGone>;
 export const executionEnvironmentStopProofSchema: Schema<ExecutionEnvironmentStopProof> = {
   parse(value, path = "$") {
     const basis =
@@ -207,9 +225,11 @@ export const executionEnvironmentStopProofSchema: Schema<ExecutionEnvironmentSto
         ? verifiedStopped.parse(value, path)
         : basis === "never_created"
           ? neverCreated.parse(value, path)
-          : (() => {
-              throw new ContractValidationError(`${path}.basis`, "unknown branch");
-            })();
+          : basis === "process_group_gone"
+            ? processGroupGone.parse(value, path)
+            : (() => {
+                throw new ContractValidationError(`${path}.basis`, "unknown branch");
+              })();
     if (proof.basis === "verified_stopped" && proof.coverage.length !== STOP_PROOF_COVERAGE.length)
       throw new ContractValidationError(`${path}.coverage`, "expected complete stop coverage");
     if (Date.parse(proof.validUntil) <= Date.parse(proof.checkedAt))

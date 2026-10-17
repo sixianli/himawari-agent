@@ -20,6 +20,7 @@ const environmentRequest = fixture("environment.operation.execute");
 const environmentResult = fixture("environment.operation.result");
 const environmentPayload = environmentRequest.payload as Record<string, unknown>;
 const environmentTarget = {
+  backendRef: environmentPayload["backendRef"],
   identity: environmentPayload["identity"],
   createIntentId: environmentPayload["createIntentId"],
   locator: (environmentResult.payload as Record<string, unknown>)["result"],
@@ -127,7 +128,7 @@ describe("Execution v2 compatibility fixtures", () => {
 describe("Execution v2 environment operations", () => {
   it("carries every backend operation with its own fields and typed result", () => {
     const requests = [
-      { operation: "capabilities" },
+      { operation: "capabilities", backendRef: environmentTarget.backendRef },
       { operation: "inspect", ...environmentTarget },
       {
         operation: "stop",
@@ -170,7 +171,7 @@ describe("Execution v2 environment operations", () => {
       expect(executionV2MessageSchema.parse(message)).toEqual(message);
     }
     const runless = environmentOperation(
-      { operation: "capabilities" },
+      { operation: "capabilities", backendRef: environmentTarget.backendRef },
       { scope: { ...environmentRequest.scope, runId: null, workerRunId: null } },
     );
     expect(executionV2MessageSchema.parse(runless)).toEqual(runless);
@@ -196,11 +197,37 @@ describe("Execution v2 environment operations", () => {
     [
       "a capabilities query without an owner",
       environmentOperation(
-        { operation: "capabilities" },
+        { operation: "capabilities", backendRef: environmentTarget.backendRef },
         { scope: { ...environmentRequest.scope, ownerId: null, runId: null, workerRunId: null } },
       ),
     ],
     ["an unknown operation", environmentOperation({ operation: "exec_shell" })],
+    [
+      "[R2-P2] a create without its backend",
+      environmentOperation({ ...environmentPayload, backendRef: undefined }),
+    ],
+    [
+      "[R2-P2] a capabilities query without its backend",
+      environmentOperation({ operation: "capabilities" }),
+    ],
+    [
+      "[R2-P2] a stop without its backend",
+      environmentOperation({
+        operation: "stop",
+        ...environmentTarget,
+        backendRef: undefined,
+        stopIntentId: "environment-stop-01",
+        stopFence: 1,
+      }),
+    ],
+    [
+      "[R2-P2] a locator from another backend",
+      environmentOperation({
+        operation: "inspect",
+        ...environmentTarget,
+        backendRef: "srt-task-environment",
+      }),
+    ],
     [
       "a create without its envelope",
       environmentOperation({ ...environmentPayload, envelope: undefined }),

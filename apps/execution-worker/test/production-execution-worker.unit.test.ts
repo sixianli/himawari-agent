@@ -1338,6 +1338,7 @@ describe("production execution Worker", () => {
         idempotencyKey: messageId,
         ...extra,
         payload: {
+          backendRef: locator.backendRef,
           requestedAt: fixture.times.start,
           deadlineAt: fixture.times.deadline,
           ...payload,
@@ -1412,7 +1413,9 @@ describe("production execution Worker", () => {
       },
       destroy: async () => {},
     };
-    const registered = await workerFixture({ environments: backend });
+    const registered = await workerFixture({
+      environments: new Map([[locator.backendRef, backend]]),
+    });
     await registered.worker.request(handshake());
     for (const request of [create, create, inspect]) await registered.worker.request(request);
     await registered.worker.waitForIdle();
@@ -1448,19 +1451,116 @@ describe("production execution Worker", () => {
     let expiredCalls = 0;
     const expired = await workerFixture({
       now: () => fixture.times.deadline,
-      environments: {
-        ...backend,
-        create: async () => {
-          expiredCalls += 1;
-          return locator;
-        },
-      },
+      environments: new Map([
+        [
+          locator.backendRef,
+          {
+            ...backend,
+            create: async () => {
+              expiredCalls += 1;
+              return locator;
+            },
+          },
+        ],
+      ]),
     });
     await expired.worker.request(handshake());
     await expect(expired.worker.request(create)).rejects.toMatchObject({
       code: "WORKER_DEADLINE_EXPIRED",
     });
     expect(expiredCalls).toBe(0);
+  });
+
+  it("[R2-P2] runs two stops of one stop intent as separate requests without a duplicate conflict", async () => {
+    const identity = {
+      schemaVersion: "execution-environment.v1",
+      ownerId: fixture.owner.id,
+      agentId: fixture.agent.id,
+      runId: fixture.runs.monitoring.id,
+      hostId: "host-unit",
+      executionJobId: "execution-job-unit",
+      environmentId: "environment-unit",
+      environmentGeneration: 1,
+      role: "primary",
+    } as const;
+    const locator = {
+      backendRef: "container-docker:unit",
+      runtimeInstanceId: "daemon-unit",
+      runtimeEnvironmentId: "d".repeat(64),
+      createIntentId: "environment-create-unit",
+      effectivePolicyDigest: "e".repeat(64),
+    };
+    const stop = (messageId: string, requestedAt: string) => {
+      const request = executionV2MessageSchema.parse({
+        ...requestEnvelope("environment.operation.execute"),
+        messageId,
+        idempotencyKey: `${messageId}-key`,
+        payload: {
+          backendRef: locator.backendRef,
+          requestedAt,
+          deadlineAt: fixture.times.deadline,
+          operation: "stop",
+          identity,
+          createIntentId: "environment-create-unit",
+          locator,
+          stopIntentId: "stop-unit",
+          stopFence: 1,
+        },
+      });
+      if (request.kind !== "request" || request.type !== "environment.operation.execute")
+        throw new TypeError("environment request fixture is invalid");
+      return request;
+    };
+    let stops = 0;
+    const backend = {
+      capabilities: async () => {
+        throw new Error("unused");
+      },
+      create: async () => locator,
+      inspect: async () => {
+        throw new Error("unused");
+      },
+      stop: async () => {
+        stops += 1;
+        return { accepted: true as const };
+      },
+      verifyStopped: async () => {
+        throw new Error("unused");
+      },
+      destroy: async () => {},
+    };
+    const registered = await workerFixture({
+      now: () => fixture.times.providerCompleted,
+      environments: new Map([[locator.backendRef, backend]]),
+    });
+    await registered.worker.request(handshake());
+    const first = stop("environment-stop-unit-a", fixture.times.start);
+    const second = stop("environment-stop-unit-b", fixture.times.providerCompleted);
+    await registered.worker.request(first);
+    await registered.worker.request(second);
+    await registered.worker.waitForIdle();
+    expect(stops).toBe(2);
+    const results = (await readEvents(registered.worker)).filter(
+      (event) => event.type === "environment.operation.result",
+    );
+    expect(
+      results.map((event) => ({
+        requestId: event.payload.requestId,
+        causationId: event.causationId,
+        outcome: event.payload.outcome,
+      })),
+    ).toEqual([
+      {
+        requestId: "environment-stop-unit-a",
+        causationId: "environment-stop-unit-a",
+        outcome: "succeeded",
+      },
+      {
+        requestId: "environment-stop-unit-b",
+        causationId: "environment-stop-unit-b",
+        outcome: "succeeded",
+      },
+    ]);
   });
 
   it("runs a frozen Worker subtask with only delegated Handles and rejects model expansion", async () => {

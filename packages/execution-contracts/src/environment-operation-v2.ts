@@ -42,7 +42,11 @@ const accepted: Schema<true> = {
     return true;
   },
 };
-const bounds = { requestedAt: timestamp, deadlineAt: timestamp } as const;
+const requestFields = {
+  backendRef: machineString,
+  requestedAt: timestamp,
+  deadlineAt: timestamp,
+} as const;
 const target = {
   identity: executionEnvironmentIdentitySchema,
   createIntentId: machineString,
@@ -51,7 +55,7 @@ const target = {
 const stopTarget = { ...target, stopIntentId: machineString, stopFence: integer(1) } as const;
 
 const requestBranches = {
-  capabilities: object({ operation: literal("capabilities"), ...bounds }),
+  capabilities: object({ operation: literal("capabilities"), ...requestFields }),
   create: object({
     operation: literal("create"),
     identity: executionEnvironmentIdentitySchema,
@@ -61,12 +65,12 @@ const requestBranches = {
     imageDigest: digest,
     runnerDigest: digest,
     environmentDeadlineAt: timestamp,
-    ...bounds,
+    ...requestFields,
   }),
-  inspect: object({ operation: literal("inspect"), ...target, ...bounds }),
-  stop: object({ operation: literal("stop"), ...stopTarget, ...bounds }),
-  verifyStopped: object({ operation: literal("verifyStopped"), ...stopTarget, ...bounds }),
-  destroy: object({ operation: literal("destroy"), ...target, ...bounds }),
+  inspect: object({ operation: literal("inspect"), ...target, ...requestFields }),
+  stop: object({ operation: literal("stop"), ...stopTarget, ...requestFields }),
+  verifyStopped: object({ operation: literal("verifyStopped"), ...stopTarget, ...requestFields }),
+  destroy: object({ operation: literal("destroy"), ...target, ...requestFields }),
 } as const;
 
 const resultSchemas = {
@@ -107,6 +111,15 @@ export const environmentOperationRequestPayloadSchema: Schema<EnvironmentOperati
       ) as EnvironmentOperationRequestPayload;
       if (payload.deadlineAt <= payload.requestedAt)
         throw new ContractValidationError(`${path}.deadlineAt`, "must be later than requestedAt");
+      if (
+        "locator" in payload &&
+        payload.locator &&
+        payload.locator.backendRef !== payload.backendRef
+      )
+        throw new ContractValidationError(
+          `${path}.locator.backendRef`,
+          "must name the requested backend",
+        );
       return payload;
     },
   };

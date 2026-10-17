@@ -719,8 +719,8 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       error: "",
       result: {
         command: "db.migrate",
-        currentSequence: 50,
-        appliedSequences: [50],
+        currentSequence: 51,
+        appliedSequences: [50, 51],
         snapshotPath: expect.any(String),
       },
     });
@@ -752,10 +752,10 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     withDatabase(f, (database) => {
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
-      ).toBe(50);
+      ).toBe(51);
       expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
-        { key: "current_sequence", value: "50" },
-        { key: "minimum_writer_sequence", value: "50" },
+        { key: "current_sequence", value: "51" },
+        { key: "minimum_writer_sequence", value: "51" },
       ]);
     });
     const listed = await inspect(f);
@@ -841,7 +841,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const f = await fixture();
     const listed = await inspect(f);
     withDatabase(f, (database) =>
-      database.exec(`UPDATE schema_metadata SET value='51'
+      database.exec(`UPDATE schema_metadata SET value='52'
       WHERE key IN ('current_sequence','minimum_writer_sequence')`),
     );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED");
@@ -893,6 +893,16 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
   ])("rejects %s state instead of inferring cleanup from null start", async (_name, sql) => {
     const f = await fixture();
     withDatabase(f, (database) => database.exec(sql));
+    await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE");
+  });
+
+  it("[R2-P2] refuses administrator preview for a resident SRT task environment reservation", async () => {
+    const f = await fixture();
+    withDatabase(f, (database) =>
+      database.exec(
+        "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.backendRef','srt-task-environment')",
+      ),
+    );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE");
   });
 
@@ -1143,7 +1153,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
             .pluck()
             .get(),
         ),
-      ).toBe(50);
+      ).toBe(51);
       expect(
         database
           .prepare(`SELECT 1 FROM runs r WHERE id=@runId AND (${RUN_RESOURCES_RELEASED_SQL})`)
@@ -1154,7 +1164,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const audit = auditWorkspaceLifecycle(f);
     expect(audit).toMatchObject({
       mode: "read_only",
-      schemaSequence: 50,
+      schemaSequence: 51,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -1353,7 +1363,7 @@ describe.each([
     expect(snapshot(f)).toEqual(disposed);
   });
 
-  it.each([49, 50] as const)(
+  it.each([49, 51] as const)(
     "allows a permanently accepted automatic release in Schema %s without changing history",
     async (schemaSequence) => {
       const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
@@ -1370,7 +1380,7 @@ describe.each([
     },
   );
 
-  it.each([49, 50] as const)(
+  it.each([49, 51] as const)(
     "still blocks a mixed released and unresolved reservation set in Schema %s",
     async (schemaSequence) => {
       const f = await fixture({

@@ -1464,8 +1464,8 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
       path.join(f.resource.stateRoot, "schema42-snapshot.sqlite"),
     );
     expect(applyMigrations(old, migrations, { snapshot })).toEqual({
-      appliedSequences: [43, 44, 45, 46, 47, 48, 49, 50],
-      currentSequence: 50,
+      appliedSequences: [43, 44, 45, 46, 47, 48, 49, 50, 51],
+      currentSequence: 51,
     });
     expect(readMigrationLedger(old).slice(0, 42)).toEqual(ledger);
     const json = old
@@ -1481,7 +1481,8 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
     const migrated = old;
     expect(() => assertWritableSchema(migrated, 42)).toThrow();
     expect(() => assertWritableSchema(migrated, 49)).toThrow();
-    expect(() => assertWritableSchema(migrated, 50)).not.toThrow();
+    expect(() => assertWritableSchema(migrated, 50)).toThrow();
+    expect(() => assertWritableSchema(migrated, 51)).not.toThrow();
     expect(old.pragma("foreign_key_check")).toEqual([]);
   } finally {
     old?.close();

@@ -758,6 +758,19 @@ describe("creating a container environment", () => {
     });
     expect(docker.calls.filter((call) => call[1] === "create")).toHaveLength(1);
   });
+
+  it("[R2-P2] accepts the same stop intent twice and keeps the first stop record", async () => {
+    const subject = backend();
+    const locator = await subject.create(createInput());
+    const request = stopRequest(locator);
+    await expect(subject.stop(request)).resolves.toEqual({ accepted: true });
+    await expect(subject.stop(request)).resolves.toEqual({ accepted: true });
+    const proof = executionEnvironmentStopProofSchema.parse(await subject.verifyStopped(request));
+    expect(proof.stopIntentId).toBe(request.stopIntentId);
+    expect(proof.stopFence).toBe(request.stopFence);
+    expect(proof.basis).toBe("verified_stopped");
+    expect(docker.only().State.Running).toBe(false);
+  });
 });
 
 describe("mounting approved host directories", () => {

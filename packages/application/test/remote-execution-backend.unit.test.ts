@@ -112,6 +112,7 @@ class FakeWorker {
 function subject(worker: FakeWorker, resultTimeoutMs = 200) {
   let id = 0;
   return new RemoteExecutionBackend({
+    backendRef: "container-docker:host-1",
     transport: worker.transport,
     ownerId: "owner-1",
     agentId: "agent-1",
@@ -217,6 +218,7 @@ describe("remote execution backend over execution.v2", () => {
       },
       payload: {
         operation: "create",
+        backendRef: "container-docker:host-1",
         environmentDeadlineAt: "2026-09-26T11:00:00.000Z",
         requestedAt: "2026-09-26T10:00:00.000Z",
         deadlineAt: "2026-09-26T10:01:00.000Z",
@@ -224,18 +226,28 @@ describe("remote execution backend over execution.v2", () => {
     });
   });
 
-  it("recovers a replayed state change from the earlier event instead of repeating it", async () => {
+  it("[R2-P2] sends each retry of one stop intent as a new request the Worker runs again", async () => {
     const worker = new FakeWorker();
-    worker.reply = () => ({ outcome: "succeeded", result: { accepted: true } });
+    const replies: Reply[] = [
+      { outcome: "failed", errorCode: "SRT_ENVIRONMENT_NOT_STOPPED" },
+      { outcome: "succeeded", result: { accepted: true } },
+    ];
+    worker.reply = () => replies.shift() ?? { outcome: "silent" };
     const backend = subject(worker);
     const stop = { ...target, stopIntentId: "stop-1", stopFence: 1 };
-    await backend.stop(stop);
-    await backend.stop(stop);
-    expect(worker.requests.map((request) => request.idempotencyKey)).toEqual([
-      "environment-stop:environment-1:stop-1",
-      "environment-stop:environment-1:stop-1",
-    ]);
-    expect(worker.events).toHaveLength(1);
+    await expect(backend.stop(stop)).rejects.toMatchObject({
+      code: "SRT_ENVIRONMENT_NOT_STOPPED",
+    });
+    await expect(backend.stop(stop)).resolves.toEqual({ accepted: true });
+    const ids = worker.requests.map((request) => request.messageId);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    for (const request of worker.requests) {
+      expect(request.messageId.startsWith("environment-stop-")).toBe(true);
+      expect(request.idempotencyKey).toBe(request.messageId);
+      expect(request.payload).toMatchObject({ operation: "stop", stopIntentId: "stop-1" });
+    }
+    expect(worker.events).toHaveLength(2);
   });
 
   it("asks fresh for capabilities, observations and stop verification", async () => {

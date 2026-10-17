@@ -25,6 +25,7 @@ import {
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_NOT_STARTED,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   piCodingToolNameSchema,
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
@@ -37,6 +38,7 @@ import {
   sandboxFileOperationFailureReason,
   sandboxPreparationDiagnosticSchema,
   sandboxScopeSchema,
+  srtTaskEnvironmentSession,
 } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
@@ -60,6 +62,11 @@ import {
   type SandboxWorkerResult,
   sandboxExternalActionId,
 } from "./production-sandbox-execution.js";
+import {
+  type SrtTaskEnvironmentBackend,
+  type SrtTaskEnvironmentSession,
+  srtTaskEnvironmentJobId,
+} from "./production-srt-task-environment-backend.js";
 
 type Execute = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type Control = Extract<ExecutionV2Request, { type: "work.cancel" | "work.reconcile" }>;
@@ -108,6 +115,7 @@ interface Options {
   payloads: ProductionPayloadBrokerClient;
   clock: ClockPort;
   containers?: SandboxContainerRoute;
+  srtEnvironments?: Pick<SrtTaskEnvironmentBackend, "session">;
 }
 const COMPLETION_RECORD_ATTEMPTS = 5;
 const RECOVERY_SETTLE_WAIT_MS = 35000;
@@ -250,6 +258,10 @@ export class ProductionSandboxExecutionV2 {
       const plan = initial.plan;
       if (this.options.containers && plan.backendRef === this.options.containers.backendRef)
         return await this.runInEnvironment(entry, initial, this.options.containers);
+      if (plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF) {
+        if (!this.options.srtEnvironments) throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
+        return await this.runInSrtEnvironment(entry, initial, this.options.srtEnvironments);
+      }
       stage = "prepare";
       const piRunner = plan.operationContract.ref === PI_RUNNER_CONTRACT.ref;
       if (piRunner) {
@@ -544,62 +556,9 @@ export class ProductionSandboxExecutionV2 {
         return this.unknown(entry);
       }
       host.start();
-      let streamIndex = 0;
-      let streamOffset = 0;
-      let streamEnded = false;
-      const flush = async (final: boolean, termination?: SandboxTaskTermination) => {
-        if (streamEnded) return;
-        for (;;) {
-          const page = host.readOutput(
-            streamOffset,
-            32768,
-            plan.mode === "foreground" ? "stdout" : undefined,
-          );
-          if (page.bytes.length === 0 && !final) return;
-          let record = entry.record;
-          if (
-            !record ||
-            record.phase !== "bound" ||
-            (plan.mode !== "foreground" && !record.facts.environment.resourceRef)
-          )
-            throw new Error("SANDBOX_STREAM_BINDING_LOST");
-          const chunk = {
-            index: streamIndex,
-            offset: streamOffset,
-            bytesBase64: Buffer.from(page.bytes).toString("base64"),
-            end: final && page.end,
-            ...(final && page.end && termination ? { termination } : {}),
-          };
-          for (let attempt = 1; ; attempt++) {
-            try {
-              await this.rpc(entry, {
-                kind: "append_output",
-                resourceRef:
-                  plan.mode === "foreground" ? null : record.facts.environment.resourceRef,
-                expectedSequence: record.facts.resource.sequence,
-                chunk,
-              });
-              break;
-            } catch (error) {
-              const latest = (await this.rpc(entry, { kind: "read" })).record;
-              if (
-                attempt >= COMPLETION_RECORD_ATTEMPTS ||
-                latest.phase !== "bound" ||
-                latest.plan.semanticFingerprint !== record.plan.semanticFingerprint ||
-                JSON.stringify(latest.facts.environment) !==
-                  JSON.stringify(record.facts.environment) ||
-                latest.facts.resource.sequence <= record.facts.resource.sequence
-              )
-                throw error;
-              record = latest;
-            }
-          }
-          streamIndex++;
-          streamOffset = page.nextOffset;
-          streamEnded = final && page.end;
-          if (page.end || page.bytes.length === 0) return;
-        }
-      };
+      const flush = this.outputStream(entry, plan, (offset, limit, channel) =>
+        host.readOutput(offset, limit, channel),
+      );
       let acknowledged = false;
       const acknowledge = async () => {
         const record = entry.record;
@@ -1247,6 +1206,413 @@ export class ProductionSandboxExecutionV2 {
       }),
     });
     return this.unknown(entry);
+  }
+  private async runInSrtEnvironment(
+    entry: Entry,
+    initial: Extract<Record, { phase: "reserved" }>,
+    environments: Pick<SrtTaskEnvironmentBackend, "session">,
+  ): Promise<SandboxWorkerResult> {
+    const plan = initial.plan;
+    const kind = srtTaskEnvironmentSession(plan);
+    if (!kind) throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
+    const binding = await this.hostBinding(plan);
+    const resolved = await this.rpc(entry, { kind: "resolve" });
+    const resolvedScope = resolved.resolvedScope;
+    const scope = resolvedScope?.scope;
+    const environment = resolved.environment;
+    if (
+      !resolvedScope ||
+      !scope ||
+      scope.authorizationRef !== plan.authorizationRef ||
+      scope.operation !== plan.operation ||
+      scope.schemaVersion !== "sandbox-scope.v1" ||
+      scope.profileRef !== "authorized-project.v1" ||
+      scope.workspaceCopy ||
+      scope.fileTarget ||
+      scope.preparedFile ||
+      scope.directoryMove ||
+      scope.copySave ||
+      !scope.directoryGrant
+    )
+      throw new Error("SANDBOX_SCOPE_CHANGED");
+    if (
+      !environment ||
+      environment.identity.runId !== plan.identity.runId ||
+      environment.locator.backendRef !== plan.backendRef
+    )
+      throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
+    const root = await resolveSandboxWorkspaceRoot({ binding, scope });
+    if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
+    const { policy, compiled } = await prepareJobPolicy({
+      workspace: root.canonicalPath,
+      privateRoot: binding.privateRoot,
+      jobId: srtTaskEnvironmentJobId(environment.identity.environmentId, kind),
+      writable: scope.directoryGrant.operations.some((operation) => operation !== "read"),
+      readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
+      protectedPaths: [
+        ...binding.protectedPaths,
+        ...[
+          ".env",
+          ".git",
+          ".himawari-trash",
+          ...(kind === "file_write" ? [] : [".himawari-recovery"]),
+        ].map((name) => path.join(root.canonicalPath, name)),
+      ],
+      allowedDomains: resolvedScope.allowedDomains,
+    });
+    const input = await this.options.payloads.readInput(entry.invocation);
+    if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+    const parametersJson = new TextDecoder("utf-8", { fatal: true }).decode(input);
+    const runnerInput = Buffer.from(
+      JSON.stringify(
+        piRunnerInputSchema.parse({
+          schemaVersion: "pi-runner.v1",
+          workerInstanceId: this.options.peer.workerInstanceId,
+          tool: piCodingToolNameSchema.parse(plan.operation),
+          executionMode: plan.mode,
+          scope,
+          workspace: compiled.cwd,
+          runtimeRoot: binding.runtimeRoot,
+          privateDirectory: policy.privateDirectory,
+          maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+          parametersJson,
+        }),
+      ),
+    );
+    if (entry.cancelled || this.closed) return this.unknown(entry);
+    const session = await environments.session({
+      target: {
+        identity: environment.identity,
+        createIntentId: environment.createIntentId,
+        locator: environment.locator,
+      },
+      kind,
+      request: {
+        jobId: srtTaskEnvironmentJobId(environment.identity.environmentId, kind),
+        attemptId: `${kind}-${environment.locator.runtimeEnvironmentId.slice(0, 24)}`,
+        policy,
+        policyDigest: compiled.policyDigest,
+        executable: binding.executable.path,
+        args: [binding.runner.path, binding.hostId, this.options.peer.workerInstanceId],
+        maxOutputBytes: binding.maximumResourceCeiling.maxOutputBytes,
+        cleanupTimeoutMs: 5000,
+      },
+    });
+    const facts = sandboxExecutionFactsSchema.parse(
+      this.environmentFacts(plan, initial, environment),
+    );
+    if (entry.cancelled || this.closed) return this.unknown(entry);
+    const bound = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
+    if (!bound.applied || entry.cancelled || this.closed) return this.unknown(entry);
+    const current = await this.rpc(entry, { kind: "resolve" });
+    if (
+      entry.cancelled ||
+      this.closed ||
+      JSON.stringify(current.resolvedScope) !== JSON.stringify(resolvedScope) ||
+      JSON.stringify(current.environment) !== JSON.stringify(environment)
+    )
+      return this.unknown(entry);
+    const resultFields = () => ({
+      schemaVersion: "sandbox-execution.v2",
+      identity: plan.identity,
+      environmentId: plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+      occurredAt: this.options.clock.now(),
+    });
+    const lost = async (reasonCode: string) => {
+      const latest = (await this.rpc(entry, { kind: "read" })).record;
+      if (latest.phase !== "bound" || latest.facts.resource.supervision !== "initializing") return;
+      await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: latest.facts.resource.sequence,
+        expectedOperationRevision: latest.operationRevision,
+        facts: sandboxExecutionFactsSchema.parse({
+          ...latest.facts,
+          result: { ...resultFields(), kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+          resource: {
+            ...latest.facts.resource,
+            sequence: latest.facts.resource.sequence + 1,
+            occurredAt: this.options.clock.now(),
+            supervision: "lost",
+            cleanup: "unknown",
+            reasonCode,
+          },
+        }),
+      });
+    };
+    let run: ReturnType<SrtTaskEnvironmentSession["run"]> | undefined;
+    try {
+      run = session.run(
+        {
+          attemptId: plan.identity.attemptId,
+          policyDigest: compiled.policyDigest,
+          deadlineAt: plan.effectiveDeadlineAt,
+          maxOutputBytes: plan.resourceCeiling.maxOutputBytes,
+          inputBase64: runnerInput.toString("base64"),
+          resourceLimits: {
+            maxCpuTimeMs: plan.resourceCeiling.maxCpuTimeMs,
+            maxMemoryBytes: plan.resourceCeiling.maxMemoryBytes,
+          },
+        },
+        async () => {
+          if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
+          const latest = (
+            await this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
+              kind: "resolve",
+            })
+          ).resolvedScope;
+          if (
+            entry.cancelled ||
+            this.closed ||
+            JSON.stringify(latest) !== JSON.stringify(resolvedScope)
+          )
+            throw new Error("SANDBOX_SCOPE_CHANGED");
+        },
+      );
+      const active = run;
+      const flush = this.outputStream(entry, plan, (offset, limit, channel) =>
+        active.readOutput(offset, limit, channel),
+      );
+      let finished = false;
+      const completion = active.result.finally(() => {
+        finished = true;
+      });
+      while (!finished) {
+        await Promise.race([completion, delay(250)]);
+        if (finished) break;
+        if (entry.cancelled || this.closed) {
+          active.cancel("cancelled");
+          continue;
+        }
+        try {
+          await this.rpc(entry, { kind: "resolve" });
+          if (finished) break;
+          await flush(false);
+        } catch {
+          active.cancel("cancelled");
+        }
+      }
+      const outcome = await completion;
+      await flush(outcome.stdioClosed, {
+        exitCode: outcome.taskProcessExited ? outcome.exitCode : null,
+        reasonCode: outcome.reason,
+        taskProcessExited: outcome.taskProcessExited,
+      });
+      if (!outcome.settled) {
+        await lost("SRT_COMMAND_UNSETTLED");
+        return this.unknown(entry);
+      }
+      const ref = await this.options.payloads.writeOutput(
+        entry.invocation,
+        outcome.stdout,
+        "application/octet-stream",
+      );
+      const output = {
+        ref,
+        digest: createHash("sha256").update(outcome.stdout).digest("hex"),
+        byteLength: outcome.stdout.byteLength,
+      };
+      const knownExit =
+        outcome.taskStarted &&
+        outcome.taskProcessExited &&
+        outcome.stdioClosed &&
+        outcome.exitCode !== null;
+      const command = plan.operationContract.kind === "command";
+      const evidence = () => ({
+        bytes: outcome.stdout,
+        parameters: JSON.parse(parametersJson),
+        plan,
+        scope: sandboxScopeSchema.parse(scope),
+        workspace: compiled.cwd,
+      });
+      const fileFailure =
+        knownExit && outcome.exitCode === 1 && !command ? verifiedPiWriteFailure(evidence()) : null;
+      if (
+        knownExit &&
+        outcome.exitCode === 0 &&
+        !command &&
+        verifyPiWriteEvidence(evidence()) !== "published"
+      )
+        throw new Error("PI_WRITE_EVIDENCE_INVALID");
+      const fields = resultFields();
+      const failure = (reasonCode: string) => ({
+        ...fields,
+        kind: "error",
+        output,
+        reasonCode,
+        termination: { type: "failure" },
+      });
+      const operation =
+        knownExit && outcome.exitCode !== null
+          ? {
+              result:
+                command || outcome.exitCode === 0
+                  ? {
+                      ...fields,
+                      kind: "result",
+                      output,
+                      completion: command
+                        ? { type: "exit", exitCode: outcome.exitCode }
+                        : { type: "value" },
+                    }
+                  : failure(sandboxFileOperationFailureReason(plan, fileFailure)),
+              effect:
+                plan.operationContract.kind !== "verified_effect"
+                  ? { kind: "not_asserted" }
+                  : outcome.exitCode === 0 || fileFailure !== null
+                    ? {
+                        kind: "verified",
+                        verifierRef: plan.operationContract.verifierRef,
+                        verifierVersion: plan.operationContract.verifierVersion,
+                        targetRef: plan.operationContract.targetRef,
+                        evidence: { ref: output.ref, digest: output.digest },
+                        occurredAt: this.options.clock.now(),
+                      }
+                    : { kind: "unknown", reasonCode: "SANDBOX_OPERATION_FAILED" },
+            }
+          : outcome.reason === "deadline"
+            ? {
+                result: failure("SANDBOX_TOOL_DEADLINE_EXCEEDED"),
+                effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED" },
+              }
+            : outcome.reason === "output_limit"
+              ? {
+                  result: failure("SANDBOX_OUTPUT_LIMIT"),
+                  effect: { kind: "unknown", reasonCode: "SANDBOX_OUTPUT_LIMIT" },
+                }
+              : {
+                  result: { ...fields, kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+                  effect: { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+                };
+      const latest = (await this.rpc(entry, { kind: "read" })).record;
+      if (latest.phase !== "bound" || latest.facts.resource.supervision !== "initializing")
+        throw new Error("SANDBOX_BINDING_LOST");
+      const stoppingFacts = sandboxExecutionFactsSchema.parse({
+        ...latest.facts,
+        ...operation,
+        resource: {
+          ...latest.facts.resource,
+          sequence: latest.facts.resource.sequence + 1,
+          occurredAt: this.options.clock.now(),
+          supervision: "stopping",
+          cleanup: "pending",
+          reasonCode: "SRT_COMMAND_SETTLED",
+        },
+      });
+      const stopping = await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: latest.facts.resource.sequence,
+        expectedOperationRevision: latest.operationRevision,
+        facts: stoppingFacts,
+      });
+      const { reasonCode: _reason, ...resourceFields } =
+        stoppingFacts.resource as typeof stoppingFacts.resource & { reasonCode?: string };
+      await this.rpc(entry, {
+        kind: "append",
+        expectedSequence: stoppingFacts.resource.sequence,
+        expectedOperationRevision: stopping.record.operationRevision,
+        facts: sandboxExecutionFactsSchema.parse({
+          ...stoppingFacts,
+          resource: {
+            ...resourceFields,
+            sequence: stoppingFacts.resource.sequence + 1,
+            occurredAt: this.options.clock.now(),
+            supervision: "released",
+            cleanup: "process_group_gone",
+            evidence: {
+              ...taskEnvironmentCallEvidence({
+                environmentId: environment.identity.environmentId,
+                invocationId: plan.identity.invocationId,
+                createIntentId: environment.createIntentId,
+                runtimeInstanceId: environment.locator.runtimeInstanceId,
+                runtimeEnvironmentId: environment.locator.runtimeEnvironmentId,
+              }),
+              qualificationRef: plan.binding.qualificationRef,
+              profileRef: plan.binding.profileRef,
+              validUntil: plan.effectiveDeadlineAt,
+              subject: {
+                kind: "task_environment",
+                environmentId: environment.identity.environmentId,
+              },
+            },
+          },
+        }),
+      });
+      return this.unknown(entry);
+    } catch (error) {
+      run?.cancel("cancelled");
+      if (run) await run.result.catch(() => undefined);
+      try {
+        await lost(
+          error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)
+            ? error.message
+            : "SRT_EXECUTION_FAILED",
+        );
+      } catch {}
+      return this.unknown(entry);
+    }
+  }
+  private outputStream(
+    entry: Entry,
+    plan: SandboxExecutionPlanV2,
+    read: (
+      offset: number,
+      limit: number,
+      channel?: "stdout",
+    ) => { readonly bytes: Uint8Array; readonly nextOffset: number; readonly end: boolean },
+  ) {
+    let streamIndex = 0;
+    let streamOffset = 0;
+    let streamEnded = false;
+    return async (final: boolean, termination?: SandboxTaskTermination) => {
+      if (streamEnded) return;
+      for (;;) {
+        const page = read(streamOffset, 32768, plan.mode === "foreground" ? "stdout" : undefined);
+        if (page.bytes.length === 0 && !final) return;
+        let record = entry.record;
+        if (
+          !record ||
+          record.phase !== "bound" ||
+          (plan.mode !== "foreground" && !record.facts.environment.resourceRef)
+        )
+          throw new Error("SANDBOX_STREAM_BINDING_LOST");
+        const chunk = {
+          index: streamIndex,
+          offset: streamOffset,
+          bytesBase64: Buffer.from(page.bytes).toString("base64"),
+          end: final && page.end,
+          ...(final && page.end && termination ? { termination } : {}),
+        };
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await this.rpc(entry, {
+              kind: "append_output",
+              resourceRef: plan.mode === "foreground" ? null : record.facts.environment.resourceRef,
+              expectedSequence: record.facts.resource.sequence,
+              chunk,
+            });
+            break;
+          } catch (error) {
+            const latest = (await this.rpc(entry, { kind: "read" })).record;
+            if (
+              attempt >= COMPLETION_RECORD_ATTEMPTS ||
+              latest.phase !== "bound" ||
+              latest.plan.semanticFingerprint !== record.plan.semanticFingerprint ||
+              JSON.stringify(latest.facts.environment) !==
+                JSON.stringify(record.facts.environment) ||
+              latest.facts.resource.sequence <= record.facts.resource.sequence
+            )
+              throw error;
+            record = latest;
+          }
+        }
+        streamIndex++;
+        streamOffset = page.nextOffset;
+        streamEnded = final && page.end;
+        if (page.end || page.bytes.length === 0) return;
+      }
+    };
   }
   private environmentFacts(
     plan: SandboxExecutionPlanV2,

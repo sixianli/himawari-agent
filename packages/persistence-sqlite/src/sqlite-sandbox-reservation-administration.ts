@@ -300,12 +300,12 @@ export class SqliteSandboxReservationAdministration {
     const declared = Number(metadata.find((row) => row.key === "current_sequence")?.value);
     const minimum = Number(metadata.find((row) => row.key === "minimum_writer_sequence")?.value);
     if (
-      ![49, 50].includes(current) ||
+      ![49, 50, 51].includes(current) ||
       ledger.length !== current ||
       ledger.some((row, index) => row.sequence !== index + 1) ||
       declared !== current ||
       minimum !== current ||
-      (writing && current !== 50)
+      (writing && current !== 51)
     )
       fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.SCHEMA_UNSUPPORTED);
     return current;
@@ -560,7 +560,7 @@ export class SqliteSandboxReservationAdministration {
       confirmation: string;
     },
   ): SandboxReservationAdministrationConfirmation {
-    this.#assertSchema(database, true);
+    const schema = this.#assertSchema(database, true);
     const target = this.#target(database, input.jobId);
     const { row, plan } = target;
     const existing = database
@@ -588,7 +588,7 @@ export class SqliteSandboxReservationAdministration {
         return fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.DIGEST_MISMATCH);
       return { jobId: input.jobId, runId: plan.identity.runId, alreadyConfirmed: true, receipt };
     }
-    const inspection = this.#inspection(database, target, 50);
+    const inspection = this.#inspection(database, target, schema);
     if (inspection.digest !== input.digest)
       return fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.DIGEST_MISMATCH);
     const now = new Date().toISOString();

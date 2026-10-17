@@ -586,6 +586,7 @@
     "idempotencyKey": "environment-create-01:idempotency",
     "payload": {
       "operation": "create",
+      "backendRef": "container-docker:host-01",
       "identity": {
         "schemaVersion": "execution-environment.v1",
         "ownerId": "owner-01",

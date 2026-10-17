@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: standard
-contract_sha256: "sha256:ff2a1088f5107b639b3fe95462f9c5316da57ce5921762ccfc9b10566bc05d66"
+contract_sha256: "sha256:ea1c1b7ded7a957b60ea8ca4c6c56c1d5b1bdd85f0deefbb858fe638467a2c6b"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-19"
@@ -23,7 +23,7 @@ date: "2026-09-19"
 
 ## Scope
 
-本流程读取 Schema 28～50 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
+本流程读取 Schema 28～51 的工作区占用、执行、排队和任务级执行环境元数据，供后续恢复方案使用。工具通过 SQLite 只读连接和 `query_only` 执行，一页最多读取 1,000 条记录，不创建数据库、不迁移、不更新释放记录、不派发任务、不消费授权，也不解密文件正文或工具结果。
 
 Schema 39 的自动审查记录不属于这四个工作区分区；空列表不证明没有审查或授权记录。
 
@@ -32,6 +32,8 @@ Schema 48 新增任务级执行环境：一轮对话里多次工具调用共用�
 Schema 49 只重建模型预算相关的三张表，新增对话标题的预算账户；它不改变本流程读取的四个分区，工具照常读取。
 
 Schema 50 新增管理员预约释放合同。新版清单继续只读报告该版本，通过 `reservationReleaseBasis` 区分数据库中保存的预约释放来源。`administrator_confirmed_cleanup` 表示管理员声明已确认清理，不是脚本认证的 Host proof。管理员引用、现场报告 SHA 或 Run failed 都不能把原工具结果与效果改成确定事实，也不生成自动修复资格。精确预约的只读预览与独立处置步骤见[专门处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md#live-state-preflight)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md] 该入口也不检查 final 或进程，不解密 control。
+
+Schema 51 只重建任务执行环境的释放回执表，给释放依据多加一种“进程组已消失”（`process_group_gone`，同一轮复用的本机沙箱停止后的证明）；本流程只读取回执是否存在，照常读取。
 
 Schema 46 的目录移动合同复用原执行、占用和队列表；此清单不能替代目录 inode 和发布记录核验。Schema 44 的绑定历史与 Schema 45 的批次关联同原队列一起保留；本清单按原队列身份报告是否已经准入，不把重新绑定解释为已执行或可重放。
 

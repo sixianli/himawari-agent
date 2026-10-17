@@ -7,6 +7,7 @@ import {
 import {
   type ExecutionV2Request,
   executionV2MessageSchema,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 import { PayloadUdsServer } from "@himawari-agent/platform-node";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
@@ -18,6 +19,7 @@ import {
   type SandboxContainerRoute,
 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { WorkerDelegationStore } from "../../apps/execution-worker/src/worker-delegation-store.ts";
+import type { SrtTaskEnvironmentBackend } from "../../apps/execution-worker/src/production-srt-task-environment-backend.ts";
 import type { productionSandboxScope } from "./production-sandbox-scope.ts";
 import { AGENT_ID, OWNER_ID } from "./sqlite-capability-invocation-fixture.ts";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
@@ -31,9 +33,11 @@ export async function queuedLiveWorker(
   beforeResolvedReply?: () => Promise<void>,
   taskEnvironments?: {
     readonly containers: SandboxContainerRoute;
+    readonly backendRef: string;
     readonly environments: ExecutionEnvironmentLifecyclePort;
     readonly clock: { now(): string };
   },
+  srtEnvironments?: SrtTaskEnvironmentBackend,
 ) {
   const directory = await mkdtemp(`${testTemporaryRoot()}/h-qr-`);
   const clock = taskEnvironments?.clock ?? { now: () => new Date().toISOString() };
@@ -98,6 +102,7 @@ export async function queuedLiveWorker(
     payloads,
     clock,
     ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
+    ...(srtEnvironments ? { srtEnvironments } : {}),
   });
   const adapters = [
     {
@@ -127,7 +132,18 @@ export async function queuedLiveWorker(
   const worker = new ProductionExecutionWorker({
     service,
     sandboxV2: sandbox,
-    ...(taskEnvironments ? { environments: taskEnvironments.environments } : {}),
+    ...(taskEnvironments || srtEnvironments
+      ? {
+          environments: new Map<string, ExecutionEnvironmentLifecyclePort>([
+            ...(taskEnvironments
+              ? ([[taskEnvironments.backendRef, taskEnvironments.environments]] as const)
+              : []),
+            ...(srtEnvironments
+              ? ([[SRT_TASK_ENVIRONMENT_BACKEND_REF, srtEnvironments]] as const)
+              : []),
+          ]),
+        }
+      : {}),
     ...identity,
     bootTokenRef: common.credential.tokenRef,
     ...authority.product,

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:375bfee947ae1710abcefdd3462bdabd73da236866ddf3b516645641eed3a212"
+contract_sha256: "sha256:d8bbe1f66144745f72a00a37292bb709d846d16f035593dfb94ee69342b57f77"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -52,6 +52,8 @@ date: "2026-10-08"
 
 目标还须有仍为 `open` 的所属 Thread、原执行租约和恢复记录；Run 与 checkpoint 都处于 `reconciling_external_result`，checkpoint 尚无终态、output 或最终答案。其他未释放资源、未决保护或未确认意图会使本次处置被拒绝。
 
+同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明），不能用本 Runbook 的管理员声明代替。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host]
+
 ## Authoritative Sources
 
 - [管理员处置合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#admin-reservation-disposition)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
@@ -62,7 +64,7 @@ date: "2026-10-08"
 
 ## Safety and Preconditions
 
-确认处置使用本次受验证的完整安装、匹配配置与 Schema 50。只读预览接受 Schema 49/50，不自动迁移；Schema 49 旧库须先完成下述独立离线路线，生产还需覆盖完整候选安装、备份、迁移和管理员处置的具体授权。Schema 49 及更旧 writer 不得接管新库；不得直接修改数据库列或补造 Host final。Agent 与 Worker 必须停止，确认命令自行取得原 state-root 独占锁；存活锁取得失败时停止，不删除或绕过它。
+确认处置使用本次受验证的完整安装、匹配配置与当前 Schema 51（2026-10-18 起；此前为 Schema 50。Schema 51 由迁移 `0051_srt_task_environment_release.sql` 只给任务执行环境释放回执加了 `process_group_gone` 一种证明，管理员回执的结构和规则不变）。只读预览接受 Schema 49–51，不自动迁移；Schema 49 旧库须先完成下述独立离线路线，生产还需覆盖完整候选安装、备份、迁移和管理员处置的具体授权。Schema 49 及更旧 writer 不得接管新库；不得直接修改数据库列或补造 Host final。Agent 与 Worker 必须停止，确认命令自行取得原 state-root 独占锁；存活锁取得失败时停止，不删除或绕过它。
 
 新候选完整安装须包含 `sandbox-sdk.js` 与固定的 `sandbox-sdk-worker.js`。Job Host 把同一个 SRT `SandboxManager` 的策略编译、依赖检查、初始化、启动参数生成、cleanup 和 reset 放入私有 SDK 工作线程；主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限，2026-10-12 起不再加载 SRT（[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)）。同日起 Job Host 在准备第一步就打开控制通道，控制步骤之后的准备失败会写出签名终态并按原 `host_never_started` 依据自动释放；只有控制通道打开失败、SDK 线程从未创建（`srtReset=false`）或终态写出前被强制结束的预约，以及此前旧版本留下的预约（例如 S10 的 `run:c1284750-de9d-43dd-aee1-5474dc27539c`），仍需本 Runbook 的管理员处置，见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。原 1500ms 消息年龄、30 秒准备上限、任务期限和协议不变。正常清理必须取得 cleanup/reset 成功回复与 SDK 线程自然退出码 0，异常退出或强制终止不产生 `srtReset=true`。这不替代下述三项管理员独立现场核查，也不把“SDK 线程已退出”变成 Host 释放证明，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
@@ -72,7 +74,7 @@ date: "2026-10-08"
 
 ## Live-State Preflight
 
-1. 运行本 Runbook 静态检查，核对当前 Git/worktree、安装摘要、运行账号、配置归属、真实数据库位置和 Schema。只读预览只接受 Schema 49/50；未知版本或不匹配安装停止，Schema 49 不得执行确认处置。
+1. 运行本 Runbook 静态检查，核对当前 Git/worktree、安装摘要、运行账号、配置归属、真实数据库位置和 Schema。只读预览只接受 Schema 49–51；未知版本或不匹配安装停止，Schema 49 不得执行确认处置。
 2. 以只读 `sandbox inspect-reservation` 核对 Job/Run/Thread/环境身份、停止标记与四个 revision，保存摘要和固定 `confirmation`。摘要绑定其他相关资源的数据库快照，但预览不输出资源统计；confirmation 列明三项必须由运维独立确认的声明。该命令不解密 control、不读取 secret 或工具正文，不检查任何进程或 final。
 3. 运维独立确认原宿主进程组已不存在、原控制目录内没有 final、没有相关运行进程。将原任务身份、检查时间、依据、权限可见范围及结论保存在本次受保护现场报告；独立计算其 SHA-256。
 4. 旧记录缺少可信 PID/PGID 时，运维必须另行核对系统现场，不能从数据库空值、目录名、不可连接 socket 或普通进程列表为空推导结论。不能确认三项中的任何一项，停止。
@@ -88,6 +90,8 @@ date: "2026-10-08"
 
 安装/升级 Runbook 只统计没有产品已接受有效释放回执的 SRT `reserved`、空 `started_at` 预约。非零或查询失败仍停止服务切换和新版启动并报告。这里为已经批准的离线数据库维护提供独立路线；迁移和处置完成后重新执行该统计，已处置历史保留，其他未解决预约继续阻断服务切换。统计为零不授权切换或启动服务。
 
+2026-10-18 起新候选的数据库版本是 Schema 51。下面的路线写于 Schema 50 时期，照做时把“新候选迁移后的版本”按 51 读：从 Schema 49 起步时 `db migrate` 连续应用 50 和 51；从 Schema 50 起步时只应用 51；第 4 步核对的 schema sequence 和 minimum writer 都应为 51，新建并核验的是 Schema 51 完整恢复点；新 CLI 的 recovery adapter 要求恢复点版本精确为 51。旧版本的完整恢复点照旧要用匹配旧版本的安装创建和核验。
+
 1. 先核对受支持的 Schema 49 完整旧安装、原配置、完整新候选及独立新前缀。新候选按[安装流程](install-start-stop-runbook.md#procedure)校验并复制到独立前缀，只产生该前缀的 runtime 与三个 wrapper；安装脚本不读产品 state、不迁移数据库、不启动服务，也不改现有服务的安装指向。安装该候选仍须属于本次具体授权。
 2. 按已授权的停服步骤停止 Agent/Worker，确认 state-root 锁释放。在 Schema 49 仍完整时，用匹配 Schema 49 的旧完整安装绝对路径，按[同机备份流程](backup-restore-runbook.md#procedure)执行 `backup create` 与 `backup verify`，保存完整恢复点、核验结果及恢复所需的旧安装。`backup create` 会写恢复点登记和加密文件，`backup verify` 会创建并删除临时明文副本；本次授权须覆盖两者的目标、磁盘增量和清理。新 Schema 50 CLI 的 recovery adapter 要求恢复点 schema 精确为 50，不能用它替代这一旧库备份或核验。
 3. 完整 Schema 49 恢复点核验成功后，使用受验证新候选的绝对路径执行以下接口。公共 `db migrate` 独立取得停服 state-root 锁，使用 SQLite backup API 创建并核验同机迁移前数据库快照，再应用迁移；它不执行服务升级前的预约统计。这个数据库快照不替代步骤 2 的完整恢复点。迁移只推进数据库合同，原未确认预约与历史仍须保留。
@@ -98,11 +102,11 @@ date: "2026-10-08"
 ```
 
 4. 独立核对 schema sequence 和 minimum writer 均为 50、迁移账本及数据库检查成功，原目标、未确认预约、计划和观察未被删除或改写。用该完整 Schema 50 新候选按[同机备份流程](backup-restore-runbook.md#procedure)创建并核验 Schema 50 完整恢复点，保留迁移前的 Schema 49 恢复点。任一步失败均停止，不让旧 Schema 49 writer 再写新库。
-5. 仍在停服状态，用新候选执行下述 Schema 50 资格预览、现场确认与单目标管理员处置。此时才能取得确认所需的最新 digest。完成独立回执、审计、占用与 Run/checkpoint 读回后，按[升级前预约统计](install-start-stop-runbook.md#live-state-preflight)重新查询。目标的有效管理员回执使该历史预约不再计入；其他未解决预约仍计入。数量非零、查询失败或完整性不符时不切换或启动服务；数量为零后仍须通过其余检查并具备服务切换与启动授权。
+5. 仍在停服状态，用新候选执行下述 Schema 51 资格预览、现场确认与单目标管理员处置。此时才能取得确认所需的最新 digest。完成独立回执、审计、占用与 Run/checkpoint 读回后，按[升级前预约统计](install-start-stop-runbook.md#live-state-preflight)重新查询。目标的有效管理员回执使该历史预约不再计入；其他未解决预约仍计入。数量非零、查询失败或完整性不符时不切换或启动服务；数量为零后仍须通过其余检查并具备服务切换与启动授权。
 
 迁移、管理员处置与服务切换是不同动作。源代码存在上述入口不等于 Schema 49 到 50 再处置的安装场景已经通过；执行前还须取得匹配本次候选字节的实际验证证据与目标现场预检。
 
-### Schema 50 的单目标处置
+### Schema 51 的单目标处置
 
 以下为接口示例，所有占位值必须来自已经核对的目标。它们不是可直接运行的生产操作包。
 
@@ -111,7 +115,7 @@ date: "2026-10-08"
 ```
 
 1. 完成静态检查、现场只读核查及有效风险判断。在首次目标变更前取得所需授权；Schema 49 目标先完成[独立离线路线](#schema-49-offline-route)，停服或安装分别遵循相应 Runbook，不由处置命令自动完成。
-2. Agent/Worker 停止且 Schema 50 就绪后，再读一次预览；停服前的摘要不能替代这次读回。
+2. Agent/Worker 停止且 Schema 51 就绪后，再读一次预览；停服前的摘要不能替代这次读回。
 3. 仅在三项现场条件已由运维确认、报告已保留且摘要已独立计算时执行一次确认命令：
 
 ```text

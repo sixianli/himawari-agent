@@ -1,4 +1,5 @@
 import {
+  type ExecutionBackendCapabilities,
   type ExecutionEnvelope,
   executionBackendCapabilitiesSchema,
   TASK_ENVIRONMENT_GUARANTEES,
@@ -73,6 +74,8 @@ export class TaskEnvironmentCoordinator {
   private readonly ids: { next(prefix: string): string };
   private readonly clock: { now(): string };
   private readonly authority: () => CapabilityInvocationAuthority;
+  private readonly requiredGuarantees: ExecutionBackendCapabilities["guarantees"];
+  private readonly inspectBeforeReuse: boolean;
   private readonly runs = new Map<string, Promise<unknown>>();
 
   constructor(options: {
@@ -81,12 +84,16 @@ export class TaskEnvironmentCoordinator {
     readonly ids: { next(prefix: string): string };
     readonly clock: { now(): string };
     readonly authority: () => CapabilityInvocationAuthority;
+    readonly requiredGuarantees?: ExecutionBackendCapabilities["guarantees"];
+    readonly inspectBeforeReuse?: boolean;
   }) {
     this.store = options.store;
     this.backend = options.backend;
     this.ids = options.ids;
     this.clock = options.clock;
     this.authority = options.authority;
+    this.requiredGuarantees = options.requiredGuarantees ?? TASK_ENVIRONMENT_GUARANTEES;
+    this.inspectBeforeReuse = options.inspectBeforeReuse ?? false;
   }
 
   acquire(input: {
@@ -230,7 +237,7 @@ export class TaskEnvironmentCoordinator {
       .catch((cause: unknown) => {
         throw new ExecutionEnvironmentError("EXECUTION_STOP_UNCONFIRMED", { cause });
       });
-    if (proof.basis === "verified_stopped" && record.locator === null)
+    if (proof.basis !== "never_created" && record.locator === null)
       await this.store.recordCreated({
         ...this.authorized(),
         environmentId: input.environmentId,
@@ -277,8 +284,21 @@ export class TaskEnvironmentCoordinator {
         createIntentId: this.ids.next("environment-create"),
       },
     });
+    if (record.backendRef !== capabilities.backendRef)
+      throw new ExecutionEnvironmentError("EXECUTION_BINDING_CHANGED");
     if (applied || record.state === "reserved") return this.create(record);
     if (record.state === "ready" || record.state === "running") {
+      if (
+        (record.locator && record.locator.runtimeInstanceId !== capabilities.runtimeInstanceId) ||
+        (this.inspectBeforeReuse && !(await this.reusable(record)))
+      ) {
+        await this.stop({
+          environmentId: record.identity.environmentId,
+          reason: "failure",
+          stoppedResourceRefs: [],
+        });
+        return this.acquireInOrder(input);
+      }
       if (!executionEnvelopeCovers(record.envelope, input.envelope))
         throw new ExecutionEnvironmentError("EXECUTION_ENVELOPE_EXCEEDED");
       return record;
@@ -330,6 +350,20 @@ export class TaskEnvironmentCoordinator {
     return created.record;
   }
 
+  private async reusable(record: ExecutionEnvironmentRecord) {
+    const observation = await this.backend
+      .inspect({
+        identity: record.identity,
+        createIntentId: record.createIntentId,
+        locator: record.locator,
+      })
+      .catch(() => null);
+    return (
+      observation?.state === "running" &&
+      JSON.stringify(observation.locator) === JSON.stringify(record.locator)
+    );
+  }
+
   private async qualifiedBackend() {
     const declared = await this.backend.capabilities().catch((cause: unknown) => {
       throw new ExecutionEnvironmentError("EXECUTION_BACKEND_UNAVAILABLE", { cause });
@@ -340,7 +374,7 @@ export class TaskEnvironmentCoordinator {
     } catch (cause) {
       throw new ExecutionEnvironmentError("EXECUTION_POLICY_UNSUPPORTED", { cause });
     }
-    if (!TASK_ENVIRONMENT_GUARANTEES.every((item) => capabilities.guarantees.includes(item)))
+    if (!this.requiredGuarantees.every((item) => capabilities.guarantees.includes(item)))
       throw new ExecutionEnvironmentError("EXECUTION_POLICY_UNSUPPORTED");
     return capabilities;
   }

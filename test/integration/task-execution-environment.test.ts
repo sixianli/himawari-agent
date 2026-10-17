@@ -20,6 +20,7 @@ import {
   type ExecutionEnvironmentLocator,
   type ExecutionEnvironmentStopProof,
   executionV2MessageSchema,
+  SRT_TASK_ENVIRONMENT_GUARANTEES,
   STOP_PROOF_COVERAGE,
   TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
@@ -101,8 +102,10 @@ class FakeBackend implements ExecutionBackendPort {
   readonly created = new Map<string, ExecutionEnvironmentLocator>();
   readonly stopped = new Set<string>();
   createMode: "created" | "response_lost" | "rejected" = "created";
-  verifyMode: "proof" | "unconfirmed" = "proof";
+  verifyMode: "proof" | "unconfirmed" | "srt_gone" = "proof";
   guarantees: readonly string[] = TASK_ENVIRONMENT_GUARANTEES;
+  backendRef = "fake-container";
+  runtimeInstanceId = "fake-runtime";
   unavailable = false;
   inspectUnavailable = false;
   now = T1;
@@ -111,8 +114,8 @@ class FakeBackend implements ExecutionBackendPort {
     if (this.unavailable) throw new Error("daemon unavailable");
     return {
       protocolVersion: "execution-backend.v1" as const,
-      backendRef: "fake-container",
-      runtimeInstanceId: "fake-runtime",
+      backendRef: this.backendRef,
+      runtimeInstanceId: this.runtimeInstanceId,
       guarantees: this.guarantees as typeof TASK_ENVIRONMENT_GUARANTEES,
       checkedAt: this.now,
     };
@@ -121,8 +124,8 @@ class FakeBackend implements ExecutionBackendPort {
     this.calls.push(`create:${input.createIntentId}`);
     if (this.createMode === "rejected") throw new Error("image missing");
     const locator = {
-      backendRef: "fake-container",
-      runtimeInstanceId: "fake-runtime",
+      backendRef: this.backendRef,
+      runtimeInstanceId: this.runtimeInstanceId,
       runtimeEnvironmentId: `runtime-${input.identity.environmentId}`,
       createIntentId: input.createIntentId,
       effectivePolicyDigest: input.policyDigest,
@@ -171,6 +174,7 @@ class FakeBackend implements ExecutionBackendPort {
     };
     if (!locator) return { basis: "never_created", ...common };
     if (!this.stopped.has(input.createIntentId)) throw new Error("still running");
+    if (this.verifyMode === "srt_gone") return { basis: "process_group_gone", ...common, locator };
     return { basis: "verified_stopped", ...common, locator, coverage: [...STOP_PROOF_COVERAGE] };
   }
   async destroy() {}
@@ -201,7 +205,7 @@ async function throughWorker(backend: FakeBackend, now: () => string) {
       maxProgressEvents: 100,
     },
     adapters: [],
-    environments: backend,
+    environments: new Map([["fake-container", backend]]),
     now,
     nextId: (() => {
       let id = 0;
@@ -239,6 +243,7 @@ async function throughWorker(backend: FakeBackend, now: () => string) {
   return {
     worker,
     backend: new RemoteExecutionBackend({
+      backendRef: "fake-container",
       transport: worker,
       ownerId: OWNER_ID,
       agentId: AGENT_ID,
@@ -252,7 +257,13 @@ async function throughWorker(backend: FakeBackend, now: () => string) {
   };
 }
 
-async function openFixture(options: { readonly throughWorker?: boolean } = {}) {
+async function openFixture(
+  options: {
+    readonly throughWorker?: boolean;
+    readonly requiredGuarantees?: readonly (typeof SRT_TASK_ENVIRONMENT_GUARANTEES)[number][];
+    readonly inspectBeforeReuse?: boolean;
+  } = {},
+) {
   const journal = await openSandboxJournal(true);
   const database = journal.database;
   database
@@ -297,6 +308,8 @@ async function openFixture(options: { readonly throughWorker?: boolean } = {}) {
       ids: { next: (prefix) => `${prefix}-${++counter}` },
       clock: { now: () => now },
       authority: () => SERVICE_AUTHORITY,
+      ...(options.requiredGuarantees ? { requiredGuarantees: options.requiredGuarantees } : {}),
+      ...(options.inspectBeforeReuse ? { inspectBeforeReuse: true } : {}),
     });
   let store = repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
   let coordinator = coordinatorFor(store);
@@ -811,6 +824,23 @@ describe("task execution environment protocol on real SQLite", () => {
     expect(f.backend.calls.some((call) => call.startsWith("create:"))).toBe(false);
   });
 
+  it("[R2-P2] qualifies a backend against the guarantee set its coordinator requires", async () => {
+    const f = await fixture({ requiredGuarantees: SRT_TASK_ENVIRONMENT_GUARANTEES });
+    await expect(acquire(f, RUN_ID, root("root-a", 10, "write"))).rejects.toEqual(
+      failure("EXECUTION_POLICY_UNSUPPORTED"),
+    );
+    expect(await f.store.readRun(RUN_ID)).toBeUndefined();
+    f.backend.guarantees = SRT_TASK_ENVIRONMENT_GUARANTEES.slice(1);
+    await expect(acquire(f, RUN_ID, root("root-a", 10, "write"))).rejects.toEqual(
+      failure("EXECUTION_POLICY_UNSUPPORTED"),
+    );
+    expect(f.backend.calls.some((call) => call.startsWith("create:"))).toBe(false);
+    f.backend.guarantees = SRT_TASK_ENVIRONMENT_GUARANTEES;
+    const created = await acquire(f, RUN_ID, root("root-a", 10, "write"));
+    expect(created.state).toBe("ready");
+    expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(1);
+  });
+
   it("prevents writers that do not know the environment contract from releasing its lease", async () => {
     const f = await fixture();
     const env = await acquire(f, RUN_ID, root("root-a", 10, "write"));
@@ -1091,5 +1121,92 @@ describe("task environments behind the authenticated Worker channel", () => {
     expect(record.locator?.createIntentId).toBe(record.createIntentId);
     expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(1);
     expect(f.backend.calls).toContain(`inspect:${record.createIntentId}`);
+  });
+});
+
+describe("[R2-P2] reusing a task environment across calls of one Run", () => {
+  it("rotates the environment when the backend runtime instance changed", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    expect(first.locator?.runtimeInstanceId).toBe("fake-runtime");
+    f.backend.runtimeInstanceId = "fake-runtime-2";
+    const second = await acquire(f, RUN_ID, lease);
+    expect(second.identity.environmentId).not.toBe(first.identity.environmentId);
+    expect(second.locator?.runtimeInstanceId).toBe("fake-runtime-2");
+    expect(
+      (await f.store.readRun(RUN_ID))?.environments.find(
+        (environment) => environment.identity.environmentId === first.identity.environmentId,
+      ),
+    ).toMatchObject({ state: "released", stopIntent: { reason: "failure" } });
+    expect(f.backend.calls).toEqual(
+      expect.arrayContaining([
+        `create:${first.createIntentId}`,
+        `stop:${first.createIntentId}`,
+        `verify:${first.createIntentId}`,
+        `create:${second.createIntentId}`,
+      ]),
+    );
+  });
+
+  it("rotates when inspection before reuse no longer reports a running environment", async () => {
+    const f = await fixture({ inspectBeforeReuse: true });
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    const reused = await acquire(f, RUN_ID, lease);
+    expect(reused.identity.environmentId).toBe(first.identity.environmentId);
+    expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(1);
+    f.backend.inspectUnavailable = true;
+    const second = await acquire(f, RUN_ID, lease);
+    expect(second.identity.environmentId).not.toBe(first.identity.environmentId);
+    expect(f.backend.calls).toContain(`inspect:${first.createIntentId}`);
+    expect(
+      (await f.store.readRun(RUN_ID))?.environments.find(
+        (environment) => environment.identity.environmentId === first.identity.environmentId,
+      ),
+    ).toMatchObject({ state: "released" });
+  });
+
+  it("refuses an environment reserved for another backend", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    expect(first.backendRef).toBe("fake-container");
+    f.backend.backendRef = "srt-task-environment";
+    await expect(acquire(f, RUN_ID, lease)).rejects.toEqual(failure("EXECUTION_BINDING_CHANGED"));
+    expect(f.backend.calls.filter((call) => call.startsWith("create:"))).toHaveLength(1);
+    expect(f.backend.calls.some((call) => call.startsWith("stop:"))).toBe(false);
+  });
+});
+
+describe("[R2-P2] the SRT process-group stop proof at the storage layer", () => {
+  it("accepts process_group_gone for an SRT task environment", async () => {
+    const f = await fixture({ requiredGuarantees: SRT_TASK_ENVIRONMENT_GUARANTEES });
+    f.backend.guarantees = SRT_TASK_ENVIRONMENT_GUARANTEES;
+    f.backend.backendRef = "srt-task-environment";
+    f.backend.verifyMode = "srt_gone";
+    const environment = await acquire(f, RUN_ID, root("root-a", 10, "write"));
+    const released = await f.coordinator.stop({
+      environmentId: environment.identity.environmentId,
+      reason: "run_finished",
+      stoppedResourceRefs: [],
+    });
+    expect(released.state).toBe("released");
+    expect(released.releaseReceipt).toMatchObject({ basis: "process_group_gone" });
+  });
+
+  it("refuses process_group_gone for another backend", async () => {
+    const f = await fixture();
+    f.backend.verifyMode = "srt_gone";
+    const environment = await acquire(f, RUN_ID, root("root-a", 10, "write"));
+    await expect(
+      f.coordinator.stop({
+        environmentId: environment.identity.environmentId,
+        reason: "run_finished",
+        stoppedResourceRefs: [],
+      }),
+    ).rejects.toEqual(reason("EXECUTION_BINDING_CHANGED"));
+    expect((await f.store.read(environment.identity.environmentId))?.state).toBe("stop_requested");
+    expect((await f.store.read(environment.identity.environmentId))?.releaseReceipt).toBeNull();
   });
 });

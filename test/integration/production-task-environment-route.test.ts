@@ -176,6 +176,7 @@ async function setup(
   };
   let sequence = 0;
   const environments = new RemoteExecutionBackend({
+    backendRef: BACKEND,
     transport: {
       request: (message) => {
         if (!remote.worker) throw new Error("worker not connected");
@@ -230,6 +231,7 @@ async function setup(
   };
   const live = await queuedLiveWorker(f, SERVICE_AUTHORITY, undefined, {
     containers,
+    backendRef: BACKEND,
     environments: lifecycle,
     clock: { now: () => T1 },
   });
@@ -790,7 +792,7 @@ it("[R2-D6] stops a failed Run's unbound container without stopping another Run"
 });
 
 it.each(["stop_rejected", "proof_missing", "wrong_run", "wrong_locator"] as const)(
-  "[R2-D6] holds the unbound reservation when %s and preserves the original manual stop protocol",
+  "[R2-D6] holds the unbound reservation when %s and releases it on a manual stop retry",
   async (fault) => {
     const f = await terminalUnboundContainer();
     const originalVerify = f.lifecycle.verifyStopped.bind(f.lifecycle);
@@ -827,13 +829,6 @@ it.each(["stop_rejected", "proof_missing", "wrong_run", "wrong_locator"] as cons
     expect({ ...paused, authority: failed.authority }).toEqual(failed);
     expect(failure).toHaveBeenCalledTimes(1);
     failure.mockRestore();
-    if (fault === "stop_rejected") {
-      expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
-        released: false,
-      });
-      expect(await f.snapshot("rejected-stop-manual-request-held")).toEqual(paused);
-      return;
-    }
     expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
       released: true,
     });

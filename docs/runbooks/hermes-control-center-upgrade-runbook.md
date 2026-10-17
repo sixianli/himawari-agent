@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7132427c8969a60fbf24a8c8a094284b07c9e7f18fb8e3ff64be285aa5ee15cf"
+contract_sha256: "sha256:774767e590ddccda08cd09183c3f944a31d2c6aa52b41de8948155934f7071fc"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -148,7 +148,7 @@ Schema 41 的原自动释放记录保存在独立的 `sandbox_reservation_releas
 
 升级门禁只统计尚未取得产品已接受永久释放回执的 SRT `reserved`、空 `started_at` 预约。原 Job 的有效管理员、自动预约释放或普通释放回执使该历史预约不再阻断这一项检查；历史仍保留，尚未解决的其他预约继续阻止服务切换和新版启动。计数为零不提供新操作授权，也不替代回执完整性与现场核查。
 
-Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只适用于当前配置归属下单个前台 SRT Run 的已停止未绑定预约。运维独立确认原宿主组不存在、原控制目录内没有 final、没有相关运行进程后，提交预览摘要、管理员声明引用与现场报告 SHA-256；实际本机 UID/account/hostname 分别保存。CLI 不解密 control、不读取 secret、不自动核查任何进程或 final，声明和报告 SHA 不是认证 Host proof。确认命令要求 Agent/Worker 停止、原 state-root 独占锁与 Schema 50，不自动迁移；只读预览允许 Schema 49/50，旧库只能先核对目标及正式备份迁移前置。回执、审计、占用释放、Run/checkpoint failed、原执行租约结算及 Thread 事件同事务保存。工具结果和效果仍未确认，管理员 basis 不进入 never-started，不交回模型或重放工具。Schema 49 及更旧 writer 不得写入 Schema 50；回退仍须停服并恢复匹配版本的完整恢复点。具体步骤见[离线管理员处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md]
+Schema 50 另保存独立 schema/basis 的管理员预约释放回执。它只适用于当前配置归属下单个前台 SRT Run 的已停止未绑定预约。运维独立确认原宿主组不存在、原控制目录内没有 final、没有相关运行进程后，提交预览摘要、管理员声明引用与现场报告 SHA-256；实际本机 UID/account/hostname 分别保存。CLI 不解密 control、不读取 secret、不自动核查任何进程或 final，声明和报告 SHA 不是认证 Host proof。确认命令要求 Agent/Worker 停止、原 state-root 独占锁与当前 Schema 51（2026-10-18 起；Schema 51 只给任务执行环境释放回执加了 `process_group_gone` 一种证明，管理员回执结构不变），不自动迁移；只读预览允许 Schema 49–51，旧库只能先核对目标及正式备份迁移前置。回执、审计、占用释放、Run/checkpoint failed、原执行租约结算及 Thread 事件同事务保存。工具结果和效果仍未确认，管理员 basis 不进入 never-started，不交回模型或重放工具。Schema 49 及更旧 writer 不得写入 Schema 50，Schema 50 及更旧 writer 同样不得写入 Schema 51；回退仍须停服并恢复匹配版本的完整恢复点。具体步骤见[离线管理员处置 Runbook](sandbox-reservation-administrative-disposition-runbook.md)。[SOURCE: docs/runbooks/sandbox-reservation-administrative-disposition-runbook.md]
 
 轮次已取消、失败或完成后，如果某个工具只有准备事件而没有结束结果，页面显示“结果未确认”，不持续显示准备中；明确未派发的原证据仍显示“尚未派发”。缺少真实起止边界时不生成时长，刷新后沿用相同规则。
 
@@ -224,7 +224,7 @@ P4 工作副本保存合同将当前 writer 边界推进至 Schema 47，保留�
 
 任务级执行环境记录将当前 writer 边界推进至 Schema 48，保留已有行和历史迁移。新表保存每轮对话一个的执行作业、按“第几个环境”编号的环境记录、环境级占用（`lease`，整个环境持有的工作目录占用登记，释放前会冲突的其他任务不能动这些目录）、每次调用与环境的关联、停止记录和不可修改的释放回执；原来单次调用的执行记录含义不变。Schema 47 或更旧的程序必须拒绝写入新库，否则它看不到环境级占用，可能让冲突的任务提前运行。Run 结束前现在还要求本轮没有未释放的环境。现有执行路线不会创建这类记录，所以升级后这些表为空；本迁移也不启用新的执行后端。备份和恢复点须随数据库一起保留这些表；回退须停止新 writer 并恢复匹配旧程序的完整恢复点，不能删除新表或修改迁移账本来降级。只读核查使用[工作区历史占用只读核查](workspace-lifecycle-audit-runbook.md#procedure)的 `environments` 分区。本批没有执行实际实例迁移。
 
-Schema 49 的对话标题预算账户迁移保留已有行和历史迁移；当前 writer 边界已由管理员处置迁移推进至 Schema 50。本迁移重建模型预算账户表 `model_budget_accounts`（记录每个花费主体已预留和已花费的模型费用），新增一类账户：自动生成对话标题的那次模型调用改记在本轮对话专属的标题账户（账户号 `thread-title:<Run ID>`），不再记在本轮对话（Run）自己的账户里。这样标题调用结果不明时，只有标题账户进入待核对状态，不会挡住本轮对话的派发、恢复或结束。依赖该表的预算分配表 `model_budget_allocations` 和模型调用身份表 `model_invocation_identities` 随之重建，原有行逐行保留；旧行都属于原有几类账户，所以升级后不会凭空出现标题账户。全局费用上限和按数据级别的费用上限仍计入标题账户，单轮费用上限对标题账户单独计算。Schema 48 或更旧的程序必须拒绝写入新库，否则它读不懂标题账户。备份和恢复点须随数据库一起保留这三张表；回退须停止新 writer 并恢复匹配旧程序的完整恢复点，不能修改迁移账本来降级。本批没有执行实际实例迁移。
+Schema 49 的对话标题预算账户迁移保留已有行和历史迁移；当前 writer 边界已由管理员处置迁移推进至 Schema 50，2026-10-18 起由任务执行环境释放迁移推进至 Schema 51。本迁移重建模型预算账户表 `model_budget_accounts`（记录每个花费主体已预留和已花费的模型费用），新增一类账户：自动生成对话标题的那次模型调用改记在本轮对话专属的标题账户（账户号 `thread-title:<Run ID>`），不再记在本轮对话（Run）自己的账户里。这样标题调用结果不明时，只有标题账户进入待核对状态，不会挡住本轮对话的派发、恢复或结束。依赖该表的预算分配表 `model_budget_allocations` 和模型调用身份表 `model_invocation_identities` 随之重建，原有行逐行保留；旧行都属于原有几类账户，所以升级后不会凭空出现标题账户。全局费用上限和按数据级别的费用上限仍计入标题账户，单轮费用上限对标题账户单独计算。Schema 48 或更旧的程序必须拒绝写入新库，否则它读不懂标题账户。备份和恢复点须随数据库一起保留这三张表；回退须停止新 writer 并恢复匹配旧程序的完整恢复点，不能修改迁移账本来降级。本批没有执行实际实例迁移。
 
 SRT 可选工作副本使用 `privateRoot/workspace-copies` 保存当前文件基线和候选内容，生产 Owner 入口按既有 Bash 配置装配创建、选择和准备操作。`prepare` 不表示已保存回原目录；保存须配置 `save_copy` 工具和 `pi-coding-tool@5` 前台 `verified_effect` 描述，经原 Run/Worker 准入队列逐文件执行，不能启用绕过该队列的旧 `host.file.execute`。描述的 `directoryOperations` 是上限，实际 scope 仅含 read 与当前操作；移入回收区仍须 trash 授权。 备份须同时保留任务私有目录中的 `copy-save-state-*.json`、原目录 `.himawari-recovery` 中的已暂存内容/快照以及 SQLite 操作记录；最终结果写回中断后，只能在原资源已确认释放后核验并导入历史效果，不能重新派发保存。旧严格 Scope 读者会拒绝合同 5，禁止混用不支持该合同的 Agent/Worker 或复用旧安装摘要。备份或权威迁移必须保留唯一副本和受保护的选择/操作记录；换主机或路径后重新验证目录身份、来源授权与执行资格，不能沿用旧 inode 或进程证明。具体已验证范围见[P4 完成验收](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p4-completed)。
 
@@ -510,7 +510,7 @@ Schema 36 不重写旧记录；它为新增 JSON 字段建立 writer 版本屏�
 
 ### 固定文件合同 3：先准备候选，再取得提交占用
 
-`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构；对话标题预算账户属于历史 Schema 49 迁移，当前整体数据库已由管理员处置迁移推进至 Schema 50。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
+`pi-coding-tool@3` 仅用于固定 `write/edit`；该合同沿用 Schema 41 的保存结构；对话标题预算账户属于历史 Schema 49 迁移，当前整体数据库已由管理员处置迁移推进至 Schema 50，2026-10-18 起由任务执行环境释放迁移推进至 Schema 51。准入前以 Pi Operations 的不可变快照准备完整候选，受控暂存区保存候选内容及工具结果；其 inode、摘要与原文件版本绑定到已有受保护 Scope artifact。此阶段没有调用消费回执或工作区占用，正式目标及缺失父目录保持不变。提交仍复用原持久队列、Worker、发布记录和原宿主释放证明；不能因候选已准备就提前派发或宣布保存成功。细节见[本批实施与验证范围](../archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#implementation-record)。
 
 备份、迁移与恢复须一起保留 Scope Payload、排队身份及工作区 `.himawari-recovery/` 中的候选与结果；数据库备份不包含这些暂存文件。候选本身可能是唯一结果，不自动清理、不按当前文件重建旧基线、不覆盖后续编辑。准备后取消或版本冲突不授权重放；跨 boot/fence 重新绑定只允许原批次关联完整、未准入且当前权限有效的队列，固定文件候选的真实 Worker 恢复联合验收仍待完成。旧程序不理解合同 3 或新增 Scope 字段时必须停止对应执行，不删字段降级，也不能仅凭 Schema 相同认定回退兼容。
 

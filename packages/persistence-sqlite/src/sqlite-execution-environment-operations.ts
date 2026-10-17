@@ -16,6 +16,7 @@ import {
   executionEnvelopeSchema,
   executionEnvironmentLocatorSchema,
   executionEnvironmentStopProofSchema,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
@@ -444,8 +445,11 @@ export class SqliteExecutionEnvironmentOperations {
         proof.createIntentId !== row.createIntentId ||
         proof.stopIntentId !== intent.stopIntentId ||
         proof.stopFence !== row.stopFence ||
-        (proof.basis === "verified_stopped"
-          ? row.locator === null || !same(JSON.parse(row.locator), proof.locator)
+        (proof.basis === "verified_stopped" || proof.basis === "process_group_gone"
+          ? row.locator === null ||
+            !same(JSON.parse(row.locator), proof.locator) ||
+            (proof.basis === "process_group_gone" &&
+              row.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF)
           : row.locator !== null || row.createDispatchedAt === null)
       )
         return this.changed("Stop proof belongs to another environment or stop");

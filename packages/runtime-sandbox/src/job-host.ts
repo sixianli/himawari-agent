@@ -1,6 +1,4 @@
-import { fork } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import {
   type SandboxHostSteps,
   type SandboxTaskTermination,
@@ -9,8 +7,17 @@ import {
 } from "@himawari-agent/execution-contracts";
 import type { JobHostControlBinding } from "./job-host-control.js";
 import {
-  JOB_HOST_FAILURE_STAGES,
-  JOB_HOST_SYSTEM_CODES,
+  authenticateJobHostEnvelope,
+  decodeJobHostOutput,
+  forkJobHost,
+  JOB_HOST_RESULT_REASONS,
+  jobHostResultNetwork,
+  jobHostResultResources,
+  parseJobHostDiagnosticMessage,
+  parseJobHostStartedTask,
+  readJobHostOutputWindow,
+} from "./job-host-messages.ts";
+import {
   type JobHostDiagnostic,
   type JobHostRequest,
   type JobHostResult,
@@ -86,19 +93,7 @@ export function prepareSandboxJobHost(
   let authorityCheckId = 0;
   let authorityChecksPending = 0;
   let workerSequence = 0;
-  const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-  const child = fork(fileURLToPath(new URL(`./job-host-main.${extension}`, import.meta.url)), [], {
-    cwd: request.policy.workspace ?? request.policy.privateDirectory,
-    execArgv: [],
-    detached: true,
-    env: {
-      PATH: "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
-      HOME: request.policy.privateDirectory,
-      TMPDIR: request.policy.privateDirectory,
-      CLAUDE_CODE_TMPDIR: request.policy.privateDirectory,
-    },
-    stdio: ["ignore", "ignore", "pipe", "ipc"],
-  });
+  const child = forkJobHost(request);
   let resolveReady!: () => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<void>((resolve, reject) => {
@@ -248,45 +243,19 @@ export function prepareSandboxJobHost(
       return;
     }
     const message = value as Record<string, unknown>;
-    if (
-      message["protocolVersion"] !== "job-host.v2" ||
-      message["sessionId"] !== sessionId ||
-      message["processId"] !== child.pid ||
-      typeof message["bootId"] !== "string" ||
-      !/^[0-9a-f-]{36}$/.test(message["bootId"]) ||
-      typeof message["processIdentityRef"] !== "string" ||
-      !/^job-host-process:[0-9a-f-]{36}$/.test(message["processIdentityRef"]) ||
-      typeof message["processStartedAt"] !== "string" ||
-      !Number.isFinite(Date.parse(message["processStartedAt"])) ||
-      typeof message["observedAt"] !== "string" ||
-      !Number.isFinite(Date.parse(message["observedAt"])) ||
-      Date.parse(message["observedAt"]) > Date.now() ||
-      Date.now() - Date.parse(message["observedAt"]) > 1500 ||
-      message["sequence"] !== ipcSequence + 1 ||
-      (supervision &&
-        (message["bootId"] !== supervision.bootId ||
-          message["processIdentityRef"] !== supervision.processIdentityRef ||
-          message["processStartedAt"] !== supervision.processStartedAt))
-    ) {
+    const authenticated = authenticateJobHostEnvelope(message, {
+      sessionId,
+      processId: child.pid,
+      sequence: ipcSequence + 1,
+      previous: supervision,
+    });
+    if (!authenticated) {
       cancel("host_failure");
       return;
     }
     ipcSequence++;
     lastMessageTick = performance.now();
-    supervision = {
-      protocolVersion: "job-host.v2",
-      sessionId,
-      bootId: message["bootId"],
-      processId: child.pid as number,
-      processIdentityRef: message["processIdentityRef"],
-      processStartedAt: message["processStartedAt"],
-      sequence: ipcSequence,
-      observedAt: message["observedAt"],
-      validUntil: new Date(Date.parse(message["observedAt"]) + 1500).toISOString(),
-      state: "alive",
-      task: supervision?.task ?? null,
-      taskTreeGuarantee: "unverified",
-    };
+    supervision = authenticated;
     if (message["type"] === "heartbeat") {
       try {
         hostSteps = sandboxHostStepsSchema.parse(message["steps"]);
@@ -326,26 +295,12 @@ export function prepareSandboxJobHost(
       return;
     }
     if (message["type"] === "diagnostic") {
-      if (
-        !JOB_HOST_FAILURE_STAGES.some((stage) => stage === message["stage"]) ||
-        !JOB_HOST_SYSTEM_CODES.some((code) => code === message["systemCode"])
-      ) {
+      const parsed = parseJobHostDiagnosticMessage(message);
+      if (!parsed) {
         cancel("host_failure");
         return;
       }
-      let detail: JobHostDiagnostic["detail"];
-      try {
-        if (message["detail"] !== undefined)
-          detail = sandboxHostFailureDetailSchema.parse(message["detail"]);
-      } catch {
-        cancel("host_failure");
-        return;
-      }
-      diagnostic ??= {
-        ...(detail ? { detail } : {}),
-        stage: message["stage"] as JobHostDiagnostic["stage"],
-        systemCode: message["systemCode"] as JobHostDiagnostic["systemCode"],
-      };
+      diagnostic ??= parsed;
       return;
     }
     if (message["type"] === "ready") {
@@ -362,58 +317,28 @@ export function prepareSandboxJobHost(
       clearTimeout(preparationTimer);
       if (!cancelled) resolveReady();
     } else if (message["type"] === "started") {
-      if (
-        !started ||
-        taskPid !== undefined ||
-        !Number.isSafeInteger(message["pid"]) ||
-        (message["pid"] as number) <= 1
-      ) {
+      const task = parseJobHostStartedTask(message);
+      if (!started || taskPid !== undefined || !task) {
         cancel("host_failure");
         return;
       }
-      if (
-        typeof message["taskIdentityRef"] !== "string" ||
-        !/^sandbox-process:[0-9a-f-]{36}$/.test(message["taskIdentityRef"]) ||
-        typeof message["taskStartedAt"] !== "string" ||
-        !Number.isFinite(Date.parse(message["taskStartedAt"]))
-      ) {
-        cancel("host_failure");
-        return;
-      }
-      taskPid = message["pid"] as number;
-      supervision = {
-        ...supervision,
-        task: {
-          processId: taskPid,
-          processIdentityRef: message["taskIdentityRef"],
-          startedAt: message["taskStartedAt"],
-        },
-      };
-      if (!cancelled && supervision.task) resolveStarted({ ...supervision.task });
+      taskPid = task.processId;
+      supervision = { ...supervision, task };
+      if (!cancelled) resolveStarted({ ...task });
     } else if (message["type"] === "output") {
-      if (
-        !started ||
-        taskCompletion !== null ||
-        completion !== undefined ||
-        typeof message["bytes"] !== "string" ||
-        message["bytes"].length > 131072 ||
-        !["stdout", "stderr"].includes(message["channel"] as string)
-      ) {
+      if (!started || taskCompletion !== null || completion !== undefined) {
         if (taskCompletion) completionContradicted = true;
         cancel("host_failure");
         return;
       }
-      const bytes = Buffer.from(message["bytes"], "base64");
-      if (
-        bytes.toString("base64") !== message["bytes"] ||
-        received + bytes.byteLength > request.maxOutputBytes
-      ) {
+      const decoded = decodeJobHostOutput(message);
+      if (!decoded || received + decoded.bytes.byteLength > request.maxOutputBytes) {
         cancel("host_failure");
         return;
       }
-      received += bytes.byteLength;
-      output.push(bytes);
-      (message["channel"] === "stdout" ? stdout : stderr).push(bytes);
+      received += decoded.bytes.byteLength;
+      output.push(decoded.bytes);
+      (decoded.channel === "stdout" ? stdout : stderr).push(decoded.bytes);
     } else if (message["type"] === "completed") {
       if (
         !started ||
@@ -469,24 +394,8 @@ export function prepareSandboxJobHost(
     rejectReady(new Error("JOB_HOST_NOT_READY"));
     rejectStarted(new Error("JOB_HOST_START_UNCONFIRMED"));
     const reason = completionContradicted ? "host_failure" : completion?.["reason"];
-    const validReason = [
-      "exited",
-      "cancelled",
-      "deadline",
-      "output_limit",
-      "resource_limit",
-      "host_failure",
-    ].includes(reason as string);
-    const resourceValue = completion?.["resources"];
-    const resources =
-      resourceValue &&
-      typeof resourceValue === "object" &&
-      ["samples", "observedCpuTimeMs", "peakObservedMemoryBytes"].every((key) => {
-        const value = (resourceValue as Record<string, unknown>)[key];
-        return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-      })
-        ? (resourceValue as NonNullable<JobHostResult["resources"]>)
-        : null;
+    const validReason = JOB_HOST_RESULT_REASONS.some((item) => item === reason);
+    const resources = jobHostResultResources(completion?.["resources"]);
     const taskStarted =
       taskPid !== undefined || completion?.["taskStarted"] === true
         ? true
@@ -495,22 +404,7 @@ export function prepareSandboxJobHost(
           : null;
     resolveResult({
       ...(diagnostic ? { diagnostic } : {}),
-      network: (() => {
-        const value = completion?.["network"];
-        if (!value || typeof value !== "object") return null;
-        const record = value as Record<string, unknown>;
-        if (
-          typeof record["closed"] !== "boolean" ||
-          !["deniedTargets", "deniedAddresses", "connected"].every(
-            (key) =>
-              typeof record[key] === "number" &&
-              Number.isSafeInteger(record[key]) &&
-              (record[key] as number) >= 0,
-          )
-        )
-          return null;
-        return record as NonNullable<JobHostResult["network"]>;
-      })(),
+      network: jobHostResultNetwork(completion?.["network"]),
       jobId: request.jobId,
       attemptId: request.attemptId,
       supervision: inspect(),
@@ -545,25 +439,7 @@ export function prepareSandboxJobHost(
       const chunks = channel === "stdout" ? stdout : output;
       const length =
         channel === "stdout" ? stdout.reduce((total, chunk) => total + chunk.length, 0) : received;
-      if (
-        !Number.isSafeInteger(offset) ||
-        offset < 0 ||
-        offset > length ||
-        !Number.isSafeInteger(limit) ||
-        limit < 1 ||
-        limit > 1_048_576
-      )
-        throw new Error("JOB_HOST_OUTPUT_CURSOR_INVALID");
-      const bytes = Buffer.alloc(Math.min(limit, length - offset));
-      let position = 0;
-      let copied = 0;
-      for (const chunk of chunks) {
-        const from = Math.max(0, offset - position);
-        if (from < chunk.length && copied < bytes.length)
-          copied += chunk.copy(bytes, copied, from, from + bytes.length - copied);
-        position += chunk.length;
-        if (copied === bytes.length) break;
-      }
+      const bytes = readJobHostOutputWindow(chunks, length, offset, limit);
       return {
         bytes,
         nextOffset: offset + bytes.length,
