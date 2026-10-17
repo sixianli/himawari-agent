@@ -16,7 +16,7 @@ date: "2026-10-13"
 - [从中途续做的修订版没核对跨步骤的摘要比较](#resume-digest-checks)
 - [在 Hermes 上生成后续要用的文件时没设 umask 022](#hermes-umask)
 - [进入冻结包目录后留下 `.claude` 目录](#claude-dir-in-packet)
-- [在工作目录里封存 Runbook，把本地 `.DS_Store` 算进摘要](#seal-in-working-tree)
+- [在工作目录里封存 Runbook，把被 git 忽略的本地内容算进摘要](#seal-in-working-tree)
 - [审核时直接采信代理自报的检查结果](#trust-reported-checks)
 - [保存失败现场时整目录打包、重复复制输入材料](#bulky-evidence)
 - [用补丁搭出来的树和要验证的提交不一致](#patch-tree-mismatch)
@@ -114,20 +114,24 @@ date: "2026-10-13"
 - 硬约束（G107）：
   - 源头：本机项目设置 `.claude/settings.local.json`（不进 git）的 `env` 设 `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`，每条 Bash 命令结束后工作目录回到项目根目录。2026-10-14 实测：`cd docs` 后下一条命令的 `pwd` 是项目根目录，`docs` 下没有出现 `.claude`。
   - 门禁：本机 `.git/hooks/pre-commit`（主工作区和所有 `git worktree` 共用，Claude、opencode、Grok 的提交都会经过）在仓库根目录以下（不含根目录自己的 `.claude`、`.git`、`.ci-output`、`node_modules`）发现 `.cc-writes` 目录就拒绝提交并列出路径。2026-10-14 实测：干净时返回 0；在 `packages/persistence-sqlite/src/migrations/` 和工作副本 `r2p1/docs/` 里放入后返回 1；删掉后返回 0。
-  - 这两项都只在这台 Mac 上；换电脑或重新克隆仓库时要重新设置。
+  - 门禁 2026-10-17 的修改：原钩子把另一个 `git worktree`（例如 `.claude/worktrees/<名字>/`）根目录下属于它自己的 `.claude/.cc-writes` 也当成违规，另一个会话正在用那个工作副本时，主工作区就无法提交。现在每个已登记的工作副本只由它自己提交时检查：主工作区不再检查其他工作副本里面的内容，在工作副本里提交时检查它自己的源码目录。`git`、`find` 出错时钩子拒绝提交，不再放行。测试脚本 `.ci-output/handoff/scripts/test-pre-commit-hook.sh <钩子> <check-new-comments.py>` 在临时仓库里建三个工作副本、跑 9 个场景：新钩子 0 个失败，旧钩子 3 个，一个出错就放行的写法 2 个。
+  - 这两项都只在这台 Mac 上（钩子的测试脚本也在不进 git 的 `.ci-output/` 里）；换电脑或重新克隆仓库时要重新设置。
+  - 2026-10-17 起，装了新封存脚本的地方不再把被 git 忽略的 `.cc-writes` 算进 Runbook 摘要（见[在工作目录里封存 Runbook](#seal-in-working-tree)），但部署包和证据目录不是 git 跟踪的内容，上面的 `find` 检查和门禁照旧需要。
 
 [回到目录](#编码代理反复犯的错误)
 
 <a id="seal-in-working-tree"></a>
 
-## 在工作目录里封存 Runbook，把本地 `.DS_Store` 算进摘要
+## 在工作目录里封存 Runbook，把被 git 忽略的本地内容算进摘要
 
-- 反复出现的情况：Runbook（运维操作手册）的依据文件里有整个目录（例如 `apps/agent-service/src`）。封存脚本 `runbook.py seal` 计算摘要时会把目录里所有文件都算进去，包括 macOS 访达自动生成、被 git 忽略的 `.DS_Store`。在 Mac 的工作目录里直接封存，记下的摘要就只在这台 Mac 上对得上；干净检出（CI 或另一台机器）上严格校验会报 `contract_sha256 does not match`。
+- 反复出现的情况：Runbook（运维操作手册）的依据文件里有整个目录（例如 `apps/agent-service/src`）。2026-10-17 之前，封存脚本 `runbook.py seal` 计算摘要（把依据文件内容算成的一个 SHA-256 指纹）时，会把目录里磁盘上的所有内容都算进去，包括被 git 忽略的本地文件和空目录，例如 Claude Code 自动建的 `.claude/.cc-writes`。在 Mac 的工作目录里直接封存，记下的摘要就只在这台 Mac 上对得上；干净检出（CI 或另一台机器）上严格校验会报 `contract_sha256 does not match`。这条记录原来把原因写成 macOS 访达生成的 `.DS_Store`，这是错的：脚本从 2026-08-23 的 agent-skills 提交 `1c513e4` 起就跳过 `.DS_Store`，比下面每一次都早。
 - 为什么要紧：每次都要重新查一遍是哪些 Runbook 真漂移、哪些只是本地文件造成的，还会把真正的漂移藏在这些假错误里。
-- 预防规则：封存和严格校验都在干净副本上做：`git archive HEAD | tar -x -C <新建的临时目录>`（或只复制 `git ls-files` 列出的文件），在副本里 `runbook.py seal <副本> <Runbook> --confirm-reconciled --apply`，把改好的 Runbook 复制回仓库，再在副本上确认 0 错误。新建临时目录失败时立即停止，不能让复制目标变成空字符串。报告校验结果时说明是在干净副本上得到的。
+- 预防规则：封存前在仓库根目录运行 `git status --short -- <依据目录>`，确认依据目录里只有要和 Runbook 一起提交的改动；未提交的修改和未被忽略的新文件都会算进摘要。复核时仍可用干净副本：`git archive HEAD | tar -x -C <新建的临时目录>`，在副本上确认 0 错误。新建临时目录失败时立即停止，不能让复制目标变成空字符串。报告校验结果时说明是在哪份代码上得到的。
 - 再次发生的证据：
   - `12b4f9d` 封存的 `hermes-control-center-upgrade-runbook.md`、`install-start-stop-runbook.md` 在干净检出上从一开始就不通过。
   - 2026-10-13 opencode 在 `feff37b` 里于工作目录重新封存 4 个 Runbook，自报“降到 2 个错误”，干净检出上却从 2 个变成 4 个；Claude 在 `fae0a0d` 于干净副本上重新封存后为 0 个。
+  - 2026-10-14 主工作区报 6 个 Runbook 不匹配，查明是 23 个依据目录里的 `.claude/.cc-writes` 空目录（见[进入冻结包目录后留下 `.claude` 目录](#claude-dir-in-packet)）。前两次当时没有逐个查明是哪种本地内容。
+- 硬约束（2026-10-17）：agent-skills 提交 `96465ce` 让 `runbook.py` 在 git 工作目录里只算 `git ls-files --cached --others --exclude-standard` 列出的文件（已跟踪的文件，加上未跟踪且没被忽略的文件）和它们上面的目录；被忽略的文件、被忽略的目录和空目录都不算，所以工作目录和干净副本得到同一个摘要。依据路径本身被 git 忽略，或依据目录里一个列出的文件都没有，脚本直接报错。被跳过的文件仍按文件名检查，被忽略的密钥文件照样让校验失败，但不读取内容。这个脚本的 8 个新测试在临时 git 仓库里放入被忽略的文件、目录和 `.cc-writes`，确认摘要不变；改坏新代码的 6 种方式各至少被一个测试发现。2026-10-17 在本仓库主工作区实测：旧脚本在放入 `.cc-writes` 后报 6 个 Runbook 不匹配（重现了 2026-10-14 的现象），新脚本在主工作区、干净副本和放入 `.cc-writes` 的工作区上都是 0 个。这个约束只在装了新脚本的地方生效：`~/.claude/skills/document-governance/` 是复制来的文件，不是指向 agent-skills 的链接，要手动同步；`~/.codex/skills/document-governance/` 还是旧脚本。
 
 [回到目录](#编码代理反复犯的错误)
 
