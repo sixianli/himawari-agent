@@ -827,3 +827,11 @@
 > 修好继续 (Recommended)：统计口径改成“状态仍为 active 的句柄”，和产品自己撤销句柄的口径一致。S7_CATALOG_UPGRADE 加一个续做分支：上一次的准备和升级记录与现在的状态一致时，跳过这两步，只按新口径重新核对，并写出通过记录。Hermes 上先放入已结束对话的句柄，重现这次失败，证明旧代码失败、新代码通过，并接着走完 S7_SWITCH_START、S8_READBACK。DeepSeek 独立方案对比并逐行审核。之后用第二个包外修订工具，把这次失败的证据文件移进 attempt-02 子目录（不删），替换操作包文件和冻结清单，再从 S7_CATALOG_UPGRADE 继续到 S8_READBACK，任何一步不符就停。修订工具只移动证据、替换包内文件，不改数据库和配置；如果审核后发现必须改它们，会先回来问你。修订工具由 Claude 运行，请在 .claude/settings.local.json 的 allow 里加 Bash(bash .ci-output/production/2026-10-17-fifth-revision-02/run-fifth-revision.sh)，演练和审核都通过才会运行。预计 3 到 3.5 小时，约凌晨 0 点到 1 点上线。
 
 （20:4x 东京时间收到。证据：升级前留存的 `s7-catalog-before.json` 记下 `himawari.pi-coding` 有 24 个 `revoked_at` 为空的句柄；产品 `revokeCapabilityHandlesCore` 只撤销 `status='active'` 的句柄，`endRunCapabilityHandles` 把状态改成 `revoked` 但不填 `revoked_at`，用完的句柄状态是 `consumed`。）
+
+## G135 2026-10-17 用户选择
+
+问题：第五次上线的修好方案（G134）已演练和审核通过，需要在 .claude/settings.local.json 的 allow 里加 Bash(bash .ci-output/production/2026-10-17-fifth-revision-02/run-fifth-revision.sh)。最终版本完整重跑通过后，Claude 依次运行修订工具 → S7_CATALOG_UPGRADE（续做）→ S7_SWITCH_START（启动服务）→ S8_READBACK，任何一步不符合预期就停下、保留现场；S10 真实对话仍由用户做。
+
+> 我加好了 (Recommended)：规则已加。Claude 等完整重跑通过后，按顺序运行到 S8_READBACK，任何一步不对就停下。
+
+（22:0x 东京时间收到；规则已在文件里核对到。最终版本完整重跑 21:58 通过。）
