@@ -117,6 +117,7 @@ date: "2026-10-13"
   - 源头：本机项目设置 `.claude/settings.local.json`（不进 git）的 `env` 设 `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`，每条 Bash 命令结束后工作目录回到项目根目录。2026-10-14 实测：`cd docs` 后下一条命令的 `pwd` 是项目根目录，`docs` 下没有出现 `.claude`。
   - 门禁：本机 `.git/hooks/pre-commit`（主工作区和所有 `git worktree` 共用，Claude、opencode、Grok 的提交都会经过）在仓库根目录以下（不含根目录自己的 `.claude`、`.git`、`.ci-output`、`node_modules`）发现 `.cc-writes` 目录就拒绝提交并列出路径。2026-10-14 实测：干净时返回 0；在 `packages/persistence-sqlite/src/migrations/` 和工作副本 `r2p1/docs/` 里放入后返回 1；删掉后返回 0。
   - 门禁 2026-10-17 的修改：原钩子把另一个 `git worktree`（例如 `.claude/worktrees/<名字>/`）根目录下属于它自己的 `.claude/.cc-writes` 也当成违规，另一个会话正在用那个工作副本时，主工作区就无法提交。现在每个已登记的工作副本只由它自己提交时检查：主工作区不再检查其他工作副本里面的内容，在工作副本里提交时检查它自己的源码目录。`git`、`find` 出错时钩子拒绝提交，不再放行。测试脚本 `.ci-output/handoff/scripts/test-pre-commit-hook.sh <钩子> <check-new-comments.py>` 在临时仓库里建三个工作副本、跑 9 个场景：新钩子 0 个失败，旧钩子 3 个，一个出错就放行的写法 2 个。
+  - 门禁 2026-10-18 的修改（opencode 审核后）：钩子在任何层级都跳过名为 `.git`、`.ci-output`、`node_modules` 的目录，不只是根目录下的这几个；仓库路径里有 `[`、`]` 这类字符时，原来按路径跳过的写法会失效，现在按名字跳过就不受影响。`git worktree list` 出错时也拒绝提交。测试脚本扩充到 25 个场景，在 `sh` 和 `dash` 下都跑过：新钩子 0 个失败，10-17 的钩子 6 个。审核记录和这些输出在 `.ci-output/handoff/2026-10-17-dg-hook-review/`。
   - 这两项都只在这台 Mac 上（钩子的测试脚本也在不进 git 的 `.ci-output/` 里）；换电脑或重新克隆仓库时要重新设置。
   - 2026-10-17 起，装了新封存脚本的地方不再把被 git 忽略的 `.cc-writes` 算进 Runbook 摘要（见[在工作目录里封存 Runbook](#seal-in-working-tree)），但部署包和证据目录不是 git 跟踪的内容，上面的 `find` 检查和门禁照旧需要。
 
@@ -134,6 +135,7 @@ date: "2026-10-13"
   - 2026-10-13 opencode 在 `feff37b` 里于工作目录重新封存 4 个 Runbook，自报“降到 2 个错误”，干净检出上却从 2 个变成 4 个；Claude 在 `fae0a0d` 于干净副本上重新封存后为 0 个。
   - 2026-10-14 主工作区报 6 个 Runbook 不匹配，查明是 23 个依据目录里的 `.claude/.cc-writes` 空目录（见[进入冻结包目录后留下 `.claude` 目录](#claude-dir-in-packet)）。前两次当时没有逐个查明是哪种本地内容。
 - 硬约束（2026-10-17）：agent-skills 提交 `96465ce` 让 `runbook.py` 在 git 工作目录里只算 `git ls-files --cached --others --exclude-standard` 列出的文件（已跟踪的文件，加上未跟踪且没被忽略的文件）和它们上面的目录；被忽略的文件、被忽略的目录和空目录都不算，所以工作目录和干净副本得到同一个摘要。依据路径本身被 git 忽略，或依据目录里一个列出的文件都没有，脚本直接报错。被跳过的文件仍按文件名检查，被忽略的密钥文件照样让校验失败，但不读取内容。这个脚本的 8 个新测试在临时 git 仓库里放入被忽略的文件、目录和 `.cc-writes`，确认摘要不变；改坏新代码的 6 种方式各至少被一个测试发现。2026-10-17 在本仓库主工作区实测：旧脚本在放入 `.cc-writes` 后报 6 个 Runbook 不匹配（重现了 2026-10-14 的现象），新脚本在主工作区、干净副本和放入 `.cc-writes` 的工作区上都是 0 个。这个约束只在装了新脚本的地方生效：`~/.claude/skills/document-governance/` 是复制来的文件，不是指向 agent-skills 的链接，要手动同步；`~/.codex/skills/document-governance/` 还是旧脚本。
+- 硬约束的补充修复（2026-10-18）：opencode 三轮逐行审核 `96465ce`，找到几处工作目录和干净副本仍会悄悄算出不同摘要的情况，agent-skills 提交 `62b5426` 把它们都改成直接报错并说明原因：依据目录里有子模块或嵌套的 git 仓库、已跟踪的文件被换成了目录、磁盘上的文件名和 git 记录的只差大小写或 Unicode 写法、项目根目录或上层有 `.git` 但 git 无法工作。外部继承来的、会改变 git 查找仓库方式、临时配置或路径匹配方式的环境变量都不再使用。`96465ce` 还有一个回退问题：放在被外层仓库忽略的目录里的项目副本（例如 `.ci-output/` 下的干净副本）会被判成“被 git 忽略”，严格校验因此对每个 Runbook 都报错；现在这种副本按“不在 git 里”处理。指纹格式版本仍是 v1。这个技能的 64 个测试通过，故意改坏新检查的 10 种方式都被发现。2026-10-18 在当前提交的干净副本上严格校验是 0 个错误；`~/.claude/skills/document-governance/` 已同步到这个版本。
 
 [回到目录](#编码代理反复犯的错误)
 
