@@ -805,3 +805,25 @@
 问题：批准对生产服务器做一次 S0 只读读取吗？读取用 run-fifth-s0.sh：以服务账号只读打开数据库，读出能力登记、工作目录授权和部署编号；另外读系统工具的版本和 npm 的情况。不读密钥，不改任何东西，服务照常运行。会在 DeepSeek 审核改完、读取脚本定稿之后再读，因为读取结果要原样写进冻结操作包。
 
 > 批准，读一次 (Recommended)：读取脚本定稿后，由 Claude（或按上一题的选择由你）运行一次。如果之后读取脚本又要改，会先问你再重新读。
+
+## G132 2026-10-17 用户选择
+
+问题：第五次上线停在 S7_CATALOG_UPGRADE，服务停着。要查清失败原因，必须在生产服务器上运行一次只读诊断，这个操作被自动权限拦下了。你想怎么处理？（诊断脚本 `.ci-output/production/run-fifth-diagnostic-01.sh`：只读这一步的结果、输出、失败报告，列相关目录的文件名、大小、时间，算配置文件的 SHA-256，查服务状态；不写文件，不读 `secrets`。）
+
+> 我加允许规则 (Recommended)：你在 .claude/settings.local.json 的 allow 里加 Bash(bash .ci-output/production/run-fifth-diagnostic-01.sh)，加好后回一句“好了”。我运行诊断查清失败停在哪一步，再带着原因和方案（修好继续，或回滚到第四次）来找你。这一步只读，不改生产上的任何东西。
+
+## G133 2026-10-17 用户选择
+
+问题：失败原因已查清：S7_CATALOG_UPGRADE 用 runuser 跑真实准备脚本，进程的 NoNewPrivs 是 0，产品的运行保护核对要求 1（protected-runtime.ts:70）；演练用的是替身脚本所以没发现。失败发生在任何改动之前，配置、服务单元、数据库都没变，服务停着。怎么处理？
+
+> 修好继续 (Recommended)：只改维护程序一处：用 /usr/bin/setpriv --no-new-privs 运行准备脚本。Hermes 上让替身脚本也检查 NoNewPrivs=1，先证明旧代码失败、新代码通过；DeepSeek 独立方案对比并逐行审核。再用包外一次性修订工具（照第四次做法）在生产上把失败那次的 4 个证据文件移进子目录（不删），替换暂存包和操作目录里的这个文件和冻结清单，然后从 S7_CATALOG_UPGRADE 继续到 S8_READBACK，任何一步不符就停。修订工具由我运行（到时请你加一条允许规则）。预计 1 到 1.5 小时，期间服务继续停着。
+
+（19:5x 东京时间收到。Claude 的理解：服务保持停止，不回滚；修订只改 `maintenance/maintenance-common.mjs` 的 `runPrepare`，以及随之变化的摘要清单、冻结清单和说明文档；演练脚本的替身加 `NoNewPrivs` 检查作为能复现这次失败的检查；修订工具由 Claude 运行，需要用户为它加允许规则；S10 仍归用户。）
+
+## G134 2026-10-17 用户选择
+
+问题：第五次上线第二次停在 S7_CATALOG_UPGRADE：维护脚本把“已结束对话留下的 24 个句柄”误算成未撤销，产品升级本身已正确完成，服务停着。接下来怎么做？
+
+> 修好继续 (Recommended)：统计口径改成“状态仍为 active 的句柄”，和产品自己撤销句柄的口径一致。S7_CATALOG_UPGRADE 加一个续做分支：上一次的准备和升级记录与现在的状态一致时，跳过这两步，只按新口径重新核对，并写出通过记录。Hermes 上先放入已结束对话的句柄，重现这次失败，证明旧代码失败、新代码通过，并接着走完 S7_SWITCH_START、S8_READBACK。DeepSeek 独立方案对比并逐行审核。之后用第二个包外修订工具，把这次失败的证据文件移进 attempt-02 子目录（不删），替换操作包文件和冻结清单，再从 S7_CATALOG_UPGRADE 继续到 S8_READBACK，任何一步不符就停。修订工具只移动证据、替换包内文件，不改数据库和配置；如果审核后发现必须改它们，会先回来问你。修订工具由 Claude 运行，请在 .claude/settings.local.json 的 allow 里加 Bash(bash .ci-output/production/2026-10-17-fifth-revision-02/run-fifth-revision.sh)，演练和审核都通过才会运行。预计 3 到 3.5 小时，约凌晨 0 点到 1 点上线。
+
+（20:4x 东京时间收到。证据：升级前留存的 `s7-catalog-before.json` 记下 `himawari.pi-coding` 有 24 个 `revoked_at` 为空的句柄；产品 `revokeCapabilityHandlesCore` 只撤销 `status='active'` 的句柄，`endRunCapabilityHandles` 把状态改成 `revoked` 但不填 `revoked_at`，用完的句柄状态是 `consumed`。）

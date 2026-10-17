@@ -29,6 +29,7 @@ date: "2026-10-13"
 - [在 Mac 上的 Bash 工具里写了 zsh 会展开的词](#zsh-word-expansion)
 - [记录里写了还没到的时间](#future-timestamp)
 - [等待后台任务时手写的“结束”或“存活”条件写错](#hand-written-wait)
+- [演练脚本在每个读取位置手选数据库读法，和附属文件的实际情况对不上](#sidecar-reader-choice)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -51,6 +52,15 @@ date: "2026-10-13"
   - 同一演练写出 S0 读回后，要求它的授权、能力、目录授权三层字段名与操作包里真实的生产 S0 读回 `inputs/s0-db-readback.json` 完全相同，否则打印 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 并失败。期望值取自真实生产记录，不由演练自己另写。
   - 验证（Hermes `rehearsal-4c705133/hard-constraint-01/`，运行脚本 `.ci-output/production/2026-10-16-fourth-revision-01/run-shape-variant.sh`）：去掉改动 runner 的那一行重现第一种错误，以 `PRODUCTION_SHAPE_RUNNERS_MERGED` 失败；按新读取器的形状写 S0 重现第二种错误，以 `PRODUCTION_SHAPE_S0_SHAPE_NOT_PRODUCTION` 失败；正式版本通过，报告记下登记摘要 `b5f2d140…` 与新摘要 `39bb15a0…` 不同，S8 第一次在 runner 不同的情况下通过。
   - 限制：只覆盖 Pi runner 和 S0 读回这两样；搜索 runner、签署链（`cloud-seal.mjs`）、S7_SWITCH_START 仍不在形状演练里，签署链的新旧 runner 不同由夹具 `signing/verify-capability-manifest.mjs` 覆盖。下一次起草操作包时这两个检查随演练脚本复制过去；如果以后有别的“生产上不同、演练里相同”的实体，按同样方式加一个在合并时失败的检查。
+- 第五次变更又发生两次（2026-10-17），都在生产 S7_CATALOG_UPGRADE：
+  - 第一次停在准备脚本：生产用 `runuser` 启动真实的 `cloud-protected-prepare.mjs`，进程的 NoNewPrivs（禁止再提权的进程标志）为 0，产品的运行时保护拒绝；演练用的准备脚本替身不检查这个标志，生产和演练的进程状态被合成了一样。
+  - 第二次停在升级后的核对：生产数据库里有 24 个已结束对话留下的 Pi 句柄（`status` 为 `revoked` 或 `consumed`，`revoked_at` 为空），演练数据库里一个这样的句柄也没有，维护脚本按 `revoked_at IS NULL` 计数的错误测不出来。设计修法时还发现第三样：演练几十秒跑完，生产步骤之间隔几十分钟，`capabilities` 命令“资格检查须在 5 分钟内”的限制在演练里从没触发过。
+- 这两次的根因：第四次加的硬约束只检查当时列出的两样实体（Pi runner、S0 读回的字段），列清单这一步仍要靠人想到；进程标志、数据库里的历史数据和步骤间隔都不在清单上。
+- 新增硬约束（同在 `maintenance/verify-production-shape-chain.mjs`，冻结前必须通过）：
+  - 准备脚本替身开头要求 `/proc/self/status` 的四项能力集为 0、`NoNewPrivs: 1`，否则以 `PREPARE_STAND_IN_NO_NEW_PRIVS_REQUIRED` 失败。验证：用修订一之前的 `maintenance-common.mjs` 跑形状演练以这个错误码失败，换新文件后通过（`.ci-output/handoff/prod-fifth-evidence-c53bca70/revision-01-nnp/before/`、`after/`）。
+  - 升级前数据库里必须同时有可用的、对话已结束的、已用完的 Pi 句柄，且后两种的 `revoked_at` 为空，否则以 `PRODUCTION_SHAPE_HANDLES_NOT_PRODUCTION` 失败；报告里记下生产的参照数（Pi 24、搜索 0）。验证：只放一个可用句柄（相当于之前的演练）时在升级前以这个错误码失败，正式版本通过（Hermes `rehearsal-c53bca70/revision-02-code/handles-variant/` 与 `shape-full/`）。
+  - 续做模式在 S7_CATALOG_UPGRADE 失败后等到准备的资格检查超过 5 分钟，要求 `capabilities upgrade-plan` 报 `CAPABILITY_DEPLOYMENT_QUALIFICATION_STALE`，把“生产上步骤之间时间更长”变成演练里的一步（Hermes `revision-02-code/shape-resume/`）。
+  - 限制：仍是逐项列出的检查，只覆盖这三样；生产里还可能有别的历史数据或进程状态与演练不同。下一次起草操作包时，先把生产只读诊断里看到的每类历史数据（句柄、对话、审计记录的状态分布）写进形状演练的种子数据。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -402,5 +412,33 @@ date: "2026-10-13"
   - 启动时没有记下进程号的任务，只能靠它的日志和结果文件判断是否结束。
   - 多次运行一直往里追加的日志（例如演练的 `rehearsal.log`），可能已经有上一次留下的同样结束行。这时等待脚本按设计退出 2，不会把旧行当成这次结束（2026-10-17 19:14 实际遇到一次，`wait-e-shared-log.out`）。改为等这次启动时新建的输出文件，例如演练的 `run-shape.out`。
   - 任务没写结束行就退出、而它的进程号又被系统分给了别的进程时，等待脚本会一直认为任务还在。这种情况只能靠人工查看日志发现（DeepSeek 审核时指出，没有实际遇到）。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="sidecar-reader-choice"></a>
+
+## 演练脚本在每个读取位置手选数据库读法，和附属文件的实际情况对不上
+
+- 反复出现的情况：第五次变更的形状演练脚本 `maintenance/verify-production-shape-chain.mjs`（在 Hermes 上照生产步骤顺序跑一遍维护程序的演练）要多次只读查看 SQLite 数据库。它有两种只读打开方式：
+  - 严格读法 `openRecoveryReadonly`：带 `immutable=1`，不建任何文件；数据库旁已有 `-wal`、`-shm` 两个附属文件（SQLite 写前日志模式下的日志和共享内存文件）时直接以 `FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT` 拒绝。
+  - 宽松读法 `s0Reader.openReadonly`：普通只读连接，附属文件已在时照常读；附属文件不在时会自己建出来，关闭时因为只读、不能做检查点（把日志写回数据库），也删不掉它们。
+  - 每个读取位置由写代码的人凭当时的理解挑一种。挑严格读法而附属文件已在，这次读取失败；挑宽松读法而附属文件不在，读取本身成功，却留下附属文件，让后面的严格读取失败。
+- 为什么要紧：生产维护程序在服务停止期间全部用严格读法，演练要证明它们在生产现场能通过；演练自己留下或误判附属文件，会让演练在与生产无关的地方失败，几分钟的运行白跑，上线一再推迟；反过来也可能掩盖生产上真的会遇到的附属文件。
+- 三次经过（都在 2026-10-17，东京时间）：
+  - 18:50 那次演练：`doctor` 在 S7_DB_STATUS 和 S7_CATALOG_UPGRADE 之间运行、留下附属文件，S7_CATALOG_UPGRADE 之后的回读又用了严格读法。修法写在提交 80dd13c9 的说明里，其中已经写明“宽松读法也会留下附属文件”。
+  - 21:14 第二次运行：新加的“升级后句柄回读”放在了换成宽松读法之前，用了严格读法，完整模式和续做模式都在这里失败。
+  - 21:24 第三次运行：修第二次时把续做模式里“失败后句柄回读”也换成了宽松读法，它在数据库旁建出附属文件，随后续做的 S7_CATALOG_UPGRADE 在严格读法处以 `FIFTH_RAW_COPY_DATABASE_SIDECAR_PRESENT` 失败。第二次运行同一位置用严格读法时续做是通过的，两次之间这一段只改了这一行，据此认定原因。生产不受影响：20:36 的只读诊断显示生产数据库目录只有 `product.sqlite`，之后服务一直停着，没有程序再打开数据库。
+- 第三次的根因：
+  - 选哪种读法取决于数据库此刻有没有附属文件，而这个状态会被别的步骤（`doctor`、`db status`、宽松读取本身）悄悄改变；脚本却让每个读取位置自己挑。
+  - 前两次的预防只是提交说明里的文字，没有任何检查在读错的那一刻报错，错误要等到后面另一个步骤才暴露。
+- 硬约束（2026-10-17，在 `verify-production-shape-chain.mjs` 里，每次运行都执行）：
+  - 删掉可以随时改写的读法变量和按调用点切换读法的辅助函数。所有读取只经过 `readDatabase`，它在读之前查看附属文件：没有就用严格读法，已经有了才用宽松读法；读完再核对附属文件名单和读之前完全相同，不同就以 `PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS` 当场失败。
+  - 脚本启动时检查自己的源码：直接调用只读打开函数的地方只许出现在定义两种读法的那一行，否则以 `PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS` 失败，防止以后又绕过统一入口自己挑读法。这一条由 DeepSeek 在独立方案里提出（它答题前读到了 Claude 先写的方案文件，所以这次的方案不算完全独立）。
+  - 生产维护代码不改：它每一步的读法是固定的，服务停止期间都用严格读法，遇到附属文件直接报错，正是生产要的保证。
+- 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l12/rehearsal-c53bca70/revision-02-code/`，变体脚本 `.ci-output/handoff/scripts/fifth-revision-02-readers-variant.sh`；已结束运行的日志和报告复制在 `.ci-output/handoff/prod-fifth-evidence-c53bca70/revision-02-handles/hermes/`）：
+  - `runtime`：把选择强制成宽松读法，重现第三次的错误。第一次读数据库（S0 回读，此时没有附属文件）就以 `PRODUCTION_SHAPE_READBACK_CHANGED_SIDECARS` 失败，报错显示读前没有附属文件、读后多了 `-wal`、`-shm`，在运行中证实了“宽松只读连接会自己建附属文件”（`readers-variant-runtime/`；加静态检查前的版本上同样结果，`readers-variant-runtime-before-static-check/`）。
+  - `static`：照第三次出错时的写法，在“失败后句柄回读”处直接调用 `s0Reader.openReadonly`。脚本一加载就以 `PRODUCTION_SHAPE_DATABASE_READER_OUTSIDE_READBACK_READERS` 失败（`readers-variant-static/`）。
+  - 不改的版本：完整模式和续做模式都走到 S8_READBACK 和 S9 回滚并通过（加静态检查前的版本 `attempt-04-before-static-check/`：完整 16 条、续做 19 条检查）。
+- 限制：静态检查只认点号调用 `.openReadonly(`、`.openRecoveryReadonly(`；用别名、解构或下标调用，以及经产品函数 `common.readMaintenanceState(..., true)` 用宽松读法，它都看不出来，只能靠读后核对附属文件名单兜底（DeepSeek 审核指出）。生产维护程序本身的读法不在这两道检查内，仍靠每一步固定的严格读法。
 
 [回到目录](#编码代理反复犯的错误)
