@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:aeb658a0effb2544b4e7339e8c300797fe4edbda7327d48d075b9087393b4486"
+contract_sha256: "sha256:301cb8947e75189ea1fd9da08d8f666c4077317abdfe62d368160abfcb3141f5"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -1011,9 +1011,11 @@ Job Host 启动先建立原私有 IPC 监督。完整安装必须同时包含编
 
 `checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。2026-10-12 起策略编译也在 SDK 线程执行，Host 主线程不再加载 SRT：线程只返回策略 JSON，主线程自行计算 SHA-256 并与冻结的 `policyDigest` 比对；编译失败时已创建的 SDK 仍须进入原停止流程。Host 每进入一个准备步骤就立即发一次带逐步耗时的心跳，Worker 心跳过期时诊断记录最后一步，见[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。Worker 自身事件循环停顿不在此范围。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only]
 
+2026-10-12 起，Job Host 解析准备请求、启动自身期限计时后，先核对控制绑定（会话、Job、attempt 一致，控制目录不与工作区、私有目录和工具链目录重叠）并打开控制通道（Agent 用来停止和核验这个 Host 的私有连接），然后才加载诊断结构、SDK 线程和策略。控制观察里的 `policyDigest` 取请求中冻结的摘要；策略编译结果与它不一致时，准备以 `JOB_HOST_POLICY_CHANGED`（策略已变化）停止。因此控制通道打开之后的任何准备失败，例如 SRT 加载失败或环境检查失败，都会走原停止流程，并写出签名终态文件 `final.json`（Host 签名的最终状态，记录任务是否启动、SRT 是否已复位）；满足原认证、`taskStarted=false`、`srtReset=true` 及宿主和任务进程组已消失等条件时，按 `host_never_started` 释放，不再无限重试停止和核验。以下情况仍不能自动释放，继续占用并等待管理员处置：控制通道本身打开失败；SDK 线程从未创建，因而 `srtReset=false`；Host 写出终态前被强制结束。这些情况每次核查失败都会新增一条加密诊断记录，数量没有上限，见 [BL-20261012-001 清理核查诊断无上限](../backlog/BL-20261012-001-清-理-核-查-诊-断-无-上.md)。详见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first]
+
 正常停止先启动原清理期限的强制退出计时器，再等待就绪探针和已经开始的 SDK 操作结束，然后等待 `cleanupAfterCommand()` 和 `reset()` 的成功回复。就绪探针、SDK 操作或控制收尾不结束时，Host 仍须在原期限内退出。只有收到 reset 成功回复、且 SDK 线程随后自然以退出码 0 结束，Host 才能记录 `srtReset=true`。线程报错、异常退出、缺少 reset 回复或强制终止均不能代替这个条件。宿主、任务进程组、控制证据及其他释放条件仍按原合同独立核验，SDK 线程退出本身不是资源释放回执。
 
-受影响验收沿用既有慢加载、消息年龄、准备上限、任务期限、取消和安装后真实 read 场景。定向回归在依赖检查和初始化分别注入 2200ms 同步停顿，检查原租约仍有效、任务没有提前启动，以及取消后的认证清理。这些受控测试不能证明最初生产停顿具体发生在哪项同步操作。线程边界回归检查请求顺序、错误回复和 reset 回复加自然退出的条件；加载竞态回归检查策略加载先失败时，Host 仍等待已开始的 SDK 加载及其清理，不提前断开，也不启动任务。[Host 生命周期回归](../../packages/runtime-sandbox/test/job-host-main.unit.test.ts) [SDK 线程回归](../../packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts) [准备控制回归](../../test/integration/sandbox-preparation-control.test.ts)
+受影响验收沿用既有慢加载、消息年龄、准备上限、任务期限、取消和安装后真实 read 场景。定向回归在依赖检查和初始化分别注入 2200ms 同步停顿，检查原租约仍有效、任务没有提前启动，以及取消后的认证清理。这些受控测试不能证明最初生产停顿具体发生在哪项同步操作。线程边界回归检查请求顺序、错误回复和 reset 回复加自然退出的条件。`[R2-L7]` 回归检查 Host 主线程准备时不加载策略模块，策略编译在 SDK 线程失败后仍完成 cleanup 和 reset、记录 `srtReset=true` 且不启动任务；SRT 加载慢时原租约仍有效，Host 失去心跳时诊断记下当时正在进行的准备步骤。`[R2-L8]` 回归在启动决定已发布后让策略摘要不一致，检查仍得到签名终态和 `host_never_started` 释放依据。[Host 生命周期回归](../../packages/runtime-sandbox/test/job-host-main.unit.test.ts) [SDK 线程回归](../../packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts) [准备控制回归](../../test/integration/sandbox-preparation-control.test.ts)
 
 准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。Hermes 结果不能代替生产主机的安装验收；用户已无限期推迟 Mac 验证，Mac 行为未验证。
 

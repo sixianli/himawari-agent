@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:ad1f7ce2d226b033769d1f7336f46f18a9fb74141d8ce623336daae553d3330d"
+contract_sha256: "sha256:7132427c8969a60fbf24a8c8a094284b07c9e7f18fb8e3ff64be285aa5ee15cf"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -560,7 +560,9 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 候选完整安装须包含 `sandbox-sdk.js` 和固定的 `sandbox-sdk-worker.js` 线程入口。同一个 SRT `SandboxManager` 的策略编译、依赖检查、初始化、启动参数生成、cleanup 和 reset 都在私有 SDK 工作线程执行，2026-10-12 起 Host 主线程不再加载 SRT；主线程继续承担原 IPC、心跳、控制、authority 转发、guardian、任务进程与期限，并在心跳里带上逐步耗时。编译失败时不能遗漏已创建 SDK 的停止流程。原 1500ms 消息年龄、30 秒准备上限、任务期限、认证与签名终态格式保持不变。详细安装和停止条件见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)、[启动监督合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision)及[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。[SOURCE: docs/runbooks/install-start-stop-runbook.md] [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision]
 
-正常停止须等到已经开始的 SDK 操作结束、cleanup/reset 成功回复、且 SDK 线程自然以退出码 0 结束，才可记录 `srtReset=true`。异常退出或强制终止不证明清理完成；宿主、任务进程组和原控制证据仍须独立检查。受影响验收沿用既有慢加载、消息年龄、取消、期限及安装后真实 read 场景，并核对依赖检查和初始化的同步停顿回归。策略加载先失败的回归还检查较晚完成的 SDK 加载及清理，禁止提前断开或启动任务。[Host 生命周期回归](../../packages/runtime-sandbox/test/job-host-main.unit.test.ts) [SDK 线程回归](../../packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts) [准备控制回归](../../test/integration/sandbox-preparation-control.test.ts)
+2026-10-12 起，Job Host 解析准备请求、启动期限计时后，先核对控制绑定（会话、Job、attempt 一致，控制目录不与工作区、私有目录和工具链目录重叠）并打开控制通道（Agent 用来停止和核验这个 Host 的私有连接），然后才加载 SDK 线程和策略；策略编译结果与请求中冻结的摘要不一致时以 `JOB_HOST_POLICY_CHANGED`（策略已变化）停止。因此控制通道打开之后的准备失败都会写出签名终态文件 `final.json`（Host 签名的最终状态），满足原释放条件时按 `host_never_started` 释放，不再无限重试。控制通道本身打开失败、SDK 线程从未创建（`srtReset=false`）或 Host 写出终态前被强制结束时，仍需管理员处置，每次核查失败新增的加密诊断记录没有上限，见 [BL-20261012-001 清理核查诊断无上限](../backlog/BL-20261012-001-清-理-核-查-诊-断-无-上.md)。详细条件见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first]
+
+正常停止须等到已经开始的 SDK 操作结束、cleanup/reset 成功回复、且 SDK 线程自然以退出码 0 结束，才可记录 `srtReset=true`。异常退出或强制终止不证明清理完成；宿主、任务进程组和原控制证据仍须独立检查。受影响验收沿用既有慢加载、消息年龄、取消、期限及安装后真实 read 场景，并核对依赖检查和初始化的同步停顿回归。`[R2-L7]` 回归检查 Host 主线程不加载策略模块，策略编译在 SDK 线程失败后仍完成 cleanup 和 reset 且不启动任务；`[R2-L8]` 回归检查启动决定已发布后准备失败时，仍得到签名终态和 `host_never_started` 释放依据。[Host 生命周期回归](../../packages/runtime-sandbox/test/job-host-main.unit.test.ts) [SDK 线程回归](../../packages/runtime-sandbox/test/sandbox-sdk.unit.test.ts) [准备控制回归](../../test/integration/sandbox-preparation-control.test.ts)
 
 准备期间，任务期限早于或等于 30 秒准备上限时，受保护诊断必须为 `JOB_HOST_EXECUTION_DEADLINE`，结束原因为 `deadline`；只有准备上限更早时才是 `JOB_HOST_PREPARATION_TIMEOUT`。安装验收须检查两个先后边界及相等边界，取消或结束后不再追加超时分类，不能把两种诊断码都接受为正确结果。`dependencies` 阶段失败且 `srtReset=false` 时仍须保留未确认状态，不能凭“任务未启动”直接释放。本修订没有部署动作；Hermes 定向测试不能替代生产主机的安装验收；Mac 行为仍未验证。
 
