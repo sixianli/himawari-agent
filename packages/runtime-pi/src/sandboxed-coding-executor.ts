@@ -54,6 +54,7 @@ export async function executeSandboxedPiCodingTool(input: {
     arguments: input.parameters as Record<string, unknown>,
   });
   let lastDetails: unknown;
+  let lastOutput = "";
   try {
     const result = await tool.execute(
       input.toolCallId,
@@ -61,6 +62,8 @@ export async function executeSandboxedPiCodingTool(input: {
       input.signal,
       (update) => {
         lastDetails = update.details;
+        const [part] = update.content;
+        lastOutput = part?.type === "text" ? part.text : "";
       },
       {} as never,
     );
@@ -83,12 +86,23 @@ export async function executeSandboxedPiCodingTool(input: {
     // Pi reports a nonzero shell exit by throwing after shaping its output.
     // Preserve that protected result (including the last truncation metadata),
     // rather than silently discarding stderr or claiming empty success.
+    const message = error instanceof Error ? error.message : "PI_TOOL_FAILED";
     return {
       content: [
-        { type: "text" as const, text: error instanceof Error ? error.message : "PI_TOOL_FAILED" },
+        {
+          type: "text" as const,
+          text:
+            message === "PI_COMMAND_OUTPUT_LIMIT" ? commandOutputLimitText(lastOutput) : message,
+        },
       ],
       details: lastDetails,
       isError: true,
     };
   }
+}
+
+function commandOutputLimitText(outputTail: string): string {
+  return outputTail
+    ? `${outputTail}\n\n输出超过命令输出上限，命令已被结束；上面只保留了输出结尾。`
+    : "输出超过命令输出上限，命令已被结束。";
 }

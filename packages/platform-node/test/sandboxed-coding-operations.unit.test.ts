@@ -255,6 +255,28 @@ describe("sandboxed shell result boundary", () => {
     ).rejects.toThrow("PI_COMMAND_TIMEOUT");
   });
 
+  it("[R2-T14] tells a command timeout apart from the directory grant expiring first", async () => {
+    const { root, grant } = await setup();
+    const port = await createSandboxedCodingOperations({
+      grant: {
+        ...grant,
+        operations: ["read"],
+        expiresAt: new Date(Date.now() + 1500).toISOString(),
+      },
+      shell: "/bin/bash",
+      privateDirectory: root,
+      commandPath: "/usr/bin",
+      maxCommandOutputBytes: 64,
+    });
+    const command = { cwd: root, command: "while :; do :; done", onData() {} };
+    await expect(port.executeCommand({ ...command, timeoutMs: 20 })).rejects.toThrow(
+      /^PI_COMMAND_TIMEOUT$/,
+    );
+    await expect(port.executeCommand({ ...command, timeoutMs: 60_000 })).rejects.toThrow(
+      /^PI_COMMAND_GRANT_EXPIRED$/,
+    );
+  });
+
   it("[R2-T9] lets a command finish when its output stays within the command output ceiling", async () => {
     const { root, grant } = await setup();
     const port = await createSandboxedCodingOperations({

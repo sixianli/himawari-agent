@@ -330,6 +330,39 @@ describe("installed Pi coding program boundary", () => {
     failed();
     expect(boundary.process.stdout.write).not.toHaveBeenCalled();
   });
+  it.each([
+    ["edit", false, true],
+    ["write", false, true],
+    ["edit", true, false],
+    ["bash", false, false],
+  ] as const)(
+    "[R2-T14] marks a %s failure as not written only when no commit started (commit %s)",
+    async (tool, commitStarted, marked) => {
+      let commitStarting: (() => Promise<void>) | undefined;
+      boundary.operations.mockImplementation(async (options) => {
+        commitStarting = options.onCommitStarting;
+        return { executeCommand: boundary.command };
+      });
+      boundary.execute.mockImplementation(async () => {
+        if (commitStarted) await commitStarting?.();
+        return {
+          content: [{ type: "text", text: "Could not find the exact text in README.md." }],
+          details: {},
+          isError: true,
+        };
+      });
+      await run(input(tool));
+      expect(boundary.process.exitCode).toBe(1);
+      expect(output()).toMatchObject({ tool, isError: true, verifiedWrite: null });
+      if (marked) expect(output().writeNotStarted).toBe(true);
+      else expect(output()).not.toHaveProperty("writeNotStarted");
+    },
+  );
+  it("[R2-T14] does not mark a successful edit as not written", async () => {
+    await run(input("edit"));
+    expect(boundary.process.exitCode).toBeUndefined();
+    expect(output()).not.toHaveProperty("writeNotStarted");
+  });
   it.each([0, 7, 300])("maps tool failure to a valid process exit code (%s)", async (exitCode) => {
     boundary.command.mockResolvedValue({ exitCode });
     boundary.execute.mockImplementation(async ({ operations }) => {
@@ -362,21 +395,28 @@ describe("installed Pi coding program boundary", () => {
     ]);
     expect(boundary.process.exitCode).toBe(7);
   });
-  it.each(["too-large", "secret"])("blocks unsafe background output (%s)", async (kind) => {
-    boundary.command.mockImplementation(async ({ onData }) => {
-      onData(
-        Buffer.from(
-          kind === "too-large" ? "x".repeat(65537) : ["-----BEGIN", "PRIVATE KEY-----\n"].join(" "),
-        ),
-      );
-      return { exitCode: 0 };
-    });
-    boundary.execute.mockImplementation(async ({ operations }) => {
-      await operations.executeCommand({ command: "fixture", onData: vi.fn() });
-      return { content: [], isError: false };
-    });
-    await run({ ...input("bash"), executionMode: "background" });
-    failed();
-    expect(boundary.process.stdout.write).not.toHaveBeenCalled();
-  });
+  it.each(["too-large", "secret", "[R2-T14] key tail"])(
+    "blocks unsafe background output (%s)",
+    async (kind) => {
+      boundary.command.mockImplementation(async ({ onData }) => {
+        onData(
+          Buffer.from(
+            kind === "too-large"
+              ? "x".repeat(65537)
+              : kind === "secret"
+                ? ["-----BEGIN", "PRIVATE KEY-----\n"].join(" ")
+                : `MIIEvR2T14TAILBODY\n${["-----END", "PRIVATE KEY-----\n"].join(" ")}`,
+          ),
+        );
+        return { exitCode: 0 };
+      });
+      boundary.execute.mockImplementation(async ({ operations }) => {
+        await operations.executeCommand({ command: "fixture", onData: vi.fn() });
+        return { content: [], isError: false };
+      });
+      await run({ ...input("bash"), executionMode: "background" });
+      failed();
+      expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+    },
+  );
 });

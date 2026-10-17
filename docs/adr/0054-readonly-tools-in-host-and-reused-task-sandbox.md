@@ -19,6 +19,9 @@ date: "2026-10-13"
 - [与 ADR 0031、0033 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [后续实现记录（2026-10-14）](#implementation-record)
+- [2026-10-15 补充：超过配置上限改为截断并说明](#model-output-limit)
+- [2026-10-16 补充：命令失败时把输出结尾交给模型](#failed-command-output)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -111,6 +114,20 @@ date: "2026-10-13"
 - **`details.truncation` 去掉 `content`。** Pi 的 `TruncationResult` 第一个字段就是截断后的正文，而信封的 `content` 已经携带同一段正文；不去重会让正文在信封里出现两次，二分查找只能找到约一半的预算。去重的 `truncationMetadata` 放在 `runtime-pi`，`production-host-read.ts` 复用它；`platform-node` 按 Workspace Contract 不能依赖 `runtime-pi`，那一处保留结构相同的本地写法，类型用结构相同的 `PiHostResultOutputFitter`（`platform-node` 也不得 import `@earendil-works/pi-*`）。
 - **`PI_RESULT_OUTPUT_ENVELOPE_RESERVE`（2048 字节）** 只是给调用方第一次截断用的保守余量；信封最终仍由 `fitPiResultOutput` 精确测量并按需再截一次，所以这个常量只影响第一次截断的松紧，不影响上限是否成立。
 - **预备写入路径把截断函数和可复制的发布输入分开传。** `publishPreparedPiOperation`（`packages/platform-node/src/files/pi-host-publication.ts`）在入口把截断函数 `fitOutput` 从发布输入里拆出来，单独传给 `formatForegroundPiResult`；交给文件发布、目录移动与工作副本三个发布日志（它们各自 `structuredClone` 输入）的仍是不含函数的可复制输入。`write`、`edit` 的准备结果因此不再把函数带进 `structuredClone` 而整次失败，`fitOutput` 的默认值 `exactFitOutput` 保持不变。
+
+<a id="failed-command-output"></a>
+
+## 2026-10-16 补充：命令失败时把输出结尾交给模型
+
+条目 R2-T14（用户 G109 第 6 项）落实了[上一段补充](#model-output-limit)留给 [BL-20261015-001](../backlog/BL-20261015-001-bash-非-零-退-出-时-把-输.md) 的部分，不改动上面的决定、上限或结束命令的门槛。完整规则写在 [SRT 统一执行设计的“输出、资源与可观察性”一节](../execution/specs/2026-09-07-srt-unified-execution-design.md#8-输出资源与可观察性)，实现位置见同一文档的 [R5 实现说明](../execution/specs/2026-09-07-srt-unified-execution-design.md#r5-实现说明2026-09-09)。
+
+- 前台 `bash` 以非零状态结束、超时，或输出超过命令输出上限（`maxOutputBytes × 64`）被结束时，模型看到 Pi 保留的输出结尾和一句结束说明。超时在 `packages/runtime-pi/src/governed-host-operations.ts` 换成 Pi 认识的 `timeout:<秒>`，由 Pi 自己写“Command timed out after N seconds”；同一处也把取消换成 Pi 认识的 `aborted`，但前台 runner 目前不把取消信号传给 Pi，产品路径上走不到这一步；授权到期改用单独的 `PI_COMMAND_GRANT_EXPIRED`，不再被说成超时。超过命令输出上限时 Pi 原样抛出错误、不写说明，`packages/runtime-pi/src/sandboxed-coding-executor.ts` 取 Pi 抛错前最后一次 `onUpdate` 给出的结尾，后面由产品加一句说明命令因输出过多被结束。
+- 这些结果照常经过机器秘密扫描和 `maxOutputBytes` 截断。前台 `bash` 的结果命中机器秘密时不再整次失败，而是交出一份不含正文、不含命令参数的结果，只说明输出因含疑似密钥未交出，并保留命令真实的退出码；`write`/`edit` 见下面关于合同版本 1 的一条；其他工具命中仍整次失败。
+- 私钥片段也算命中（2026-10-17，用户 G127）。共用规则 `scanMachineSecrets` 只认从开头行（`-----BEGIN … PRIVATE KEY-----`）到结尾行完整的一段私钥；Pi 只保留输出结尾时会丢掉开头行，命令本身也可能只打印一部分（例如 `head -5`），剩下的结尾行或开头行加正文就看不出来。把工具输出交给模型的五处改用 `containsToolOutputSecret`（`packages/application/src/services/machine-secret-exclusion.ts`）检查工具产生的那部分输出：原规则命中，或者出现任何一行私钥开头行或结尾行，都算命中。五处是前台结果的 `content` 和 `details`（`pi-host-publication.ts`）、完整输出文件（`pi-output-export.ts`）、后台输出流（`pi-coding-main.ts`）、主机 `read`/`ls`/`find`/`grep` 结果的 `content` 和 `details`（`production-host-read.ts`；主机 `grep` 读文件时不整份扫描，带上下文行就能只露出开头行加几行正文），以及 `write`/`edit` 准备阶段生成的预备结果（`production-file-preparation.ts`；`edit` 的差异片段带上下文行，同样可能只露出开头行加几行正文）。整个结果信封，包括模型自己给的参数（命令原文、搜索词、写入内容），仍只用原规则检查：参数是模型写出来的，原样回给它不会多泄露什么，按新规则查参数反而会让“搜一搜仓库里有没有私钥”这类命令被拦。合同版本 3 在准备阶段先查，是因为它的发布阶段先把文件写进去才整理结果，到发布阶段才拦就会出现“文件已改、模型却收到失败”。生产用的合同版本 1 没有准备阶段，见下面关于合同版本 1 的一条。完整输出文件命中时，`bash` 同样交出上面的提醒，不再让 runner 以 `PI_RUNNER_EXECUTION_FAILED` 整次失败。
+- 合同版本 1（`pi-coding-tool/1`，生产绑定的版本）的 `write`/`edit`（2026-10-17，G127 范围内）：Pi 在沙箱里直接改文件，改完才整理结果。结果命中私钥片段或机器秘密时不再整次失败，而是交出一份不含正文和 `details`、保留调用参数和写入证明的结果，只放一句固定说明：文件已修改并通过核实、文件没有被修改，或文件可能已被修改。调用参数要保留，因为主机按参数核对写入证明；参数本身含机器秘密（例如写入内容里有一段完整私钥）时仍整次失败，参数里的秘密留在对话中这一半仍记在 [BL-20261017-001](../backlog/BL-20261017-001-写-入-内-容-含-完-整-私.md)。同一次还查明：版本 1 的 `write`/`edit` 只要失败（包括最常见的 `edit` 原文找不到），效果就停在“未知”，结果不交给模型，恢复流程拿同一条模型输出反复重放到运行截止时间；第四次上线的版本也是这样。现在 runner 用约束文件平台的 `onCommitStarting` 回调记下有没有开始改目标文件，还没开始就在结果里写 `writeNotStarted: true`（它只说明目标文件没被改，新建文件时缺失的父目录在回调前已建好，失败后可能留下空目录）；Worker 和 Agent 核对它属于本次调用后记原因码 `FILE_WRITE_NOT_STARTED`，把 Pi 的原始错误交给模型。不能证明没改的失败记 `SANDBOX_WRITE_EFFECT_UNVERIFIED`，和工具超过期限一样按有界失败处理（[ADR 0035](0035-tool-deadline-continues-run.md)）：效果仍是未知，模型收到一次固定说明，不重放。比较过三种做法：写入前拒绝含私钥标记的内容（会让已批准的“写一份讲解 PEM 格式的文档”场景失败，没有采用）；主机重新读目标文件、和执行前的版本比较（版本 1 的执行范围里没有执行前的文件版本，做不到）；由 runner 报告“还没开始改”（采用；和现有的写入证明一样，是 runner 给证据、主机核对它属于本次调用）。细节见 [SRT 统一执行设计的 R5 实现说明](../execution/specs/2026-09-07-srt-unified-execution-design.md#r5-实现说明2026-09-09)。
+- 共用规则本身不变：读整份文件的路径看到的是完整私钥，原规则已能拦住；记忆、检查点、线程标题、配置和模型请求处理的是对话文字，提到标记行不等于泄露，放宽会误拦整轮对话；脱敏函数只换掉一行标记会把正文留在原处。代价是工具输出里单独出现的标记行也会被拦，例如 `grep` 或 `read` 到一份讲解 PEM 格式的文档，或者在这样的文档里改动标记行附近几行（`edit` 的差异片段会带上那一行；生产上文件照常修改，模型只收到“文件已修改并通过核实”的固定说明，看不到差异）；写入这样的文档本身不受影响。仍识别不了的情形：只有正文、没有任何标记行的片段（例如 `sed -n 2,20p` 取中段）；标记行自己被截成半行（Pi 只在最后一行单独超过 50KB 时保留这一行的结尾部分，截断点正好落在标记里、后面还跟着将近 50KB 内容才会发生；普通私钥只有一两 KB，实际很难遇到）；私钥类型仍只认无类型、`RSA`、`EC`、`OPENSSH` 四种，`DSA`、`ENCRYPTED PRIVATE KEY` 和 PGP 私钥块不在规则内。
+- 工具结论仍是失败，错误码仍是 `SANDBOX_COMMAND_EFFECT_UNVERIFIED`。Agent 交给模型之前先核对 runner 写出的结果，再在最前面加 `effectNotice` 提醒命令可能已改动工作区；核对不通过时仍只给原来的固定说明。
+- 后台和服务模式没有改，记在 [BL-20261016-003](../backlog/BL-20261016-003-后-台-和-服-务-模-式-的.md)。
 
 <a id="references"></a>
 

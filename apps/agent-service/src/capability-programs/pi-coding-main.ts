@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { scanMachineSecrets } from "@himawari-agent/application";
+import { containsToolOutputSecret } from "@himawari-agent/application";
 import {
   firstRejectedPathComponent,
   piRunnerInputSchema,
@@ -134,12 +134,14 @@ try {
   } else {
     let verifiedWrite: { path: string; contentDigest: string; byteLength: number } | null = null;
     let verificationStarted = false;
+    let commitStarted = false;
     const publication =
       input.scope.fileTarget && ["write", "edit"].includes(input.tool)
         ? createPiFilePublicationJournal(input)
         : undefined;
     const operations = await createSandboxedCodingOperations({
       onCommitStarting: async () => {
+        commitStarted = true;
         await publication?.commitStarting();
       },
       ...(publication ? { onPreparedWrite: publication.prepared } : {}),
@@ -184,11 +186,7 @@ try {
       if (input.executionMode === "foreground") return;
       const all = Buffer.concat(commandOutput);
       const text = all.toString("utf8");
-      if (
-        scanMachineSecrets(text).length ||
-        /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(text)
-      )
-        throw new Error("PI_RESULT_SECRET_REJECTED");
+      if (containsToolOutputSecret(text)) throw new Error("PI_RESULT_SECRET_REJECTED");
       const end = final ? all.length : all.lastIndexOf(10) + 1;
       if (end > emittedBytes) process.stdout.write(all.subarray(emittedBytes, end));
       emittedBytes = Math.max(emittedBytes, end);
@@ -230,7 +228,10 @@ try {
         privateDirectory: input.privateDirectory,
         maxOutputBytes: input.maxOutputBytes,
         fitOutput: fitPiResultOutput,
-        closing: {},
+        closing:
+          ["write", "edit"].includes(input.tool) && result.isError && !commitStarted
+            ? { writeNotStarted: true }
+            : {},
         source: {
           workspace: input.workspace,
           toolCallId: input.scope.toolCallId,

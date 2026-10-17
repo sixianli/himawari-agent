@@ -6302,7 +6302,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     suffix: string,
     operationContract: SandboxOperationContract,
     effect: SandboxExecutionFacts["effect"],
-    failure: { readonly reasonCode: string; readonly termination: unknown },
+    failure: Readonly<Record<string, unknown>>,
   ) {
     const record = start(f, admission(f, suffix, undefined, "write", operationContract));
     const output = { ref: `output${suffix}`, digest: "f".repeat(64), byteLength: 0 };
@@ -6394,19 +6394,46 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       expect(command).toMatchObject({ code: 7 });
       expect(await readFile(changedFile, "utf8")).toBe("partial");
 
-      const { completion, receipt } = await completeFailedExecution(
+      const { completion, receipt, output } = await completeFailedExecution(
         f,
         "-failed-command",
         { ref: "shell", version: "1", kind: "command" },
         { kind: "not_asserted" },
         { reasonCode: "exit_failed", termination: { type: "exit", exitCode: 7 } },
       );
-      expect(completion).toMatchObject({
+      const expected = {
         outcome: "failed",
-        outputRef: null,
+        outputRef: output.ref,
         errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
-      });
-      expect(receipt).toHaveBeenCalledTimes(1);
+        externalActionId: null,
+        processExitCode: 7,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("[R2-T14] hands the Worker's stored nonzero command exit and its output to the model", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const { completion, receipt, output } = await completeFailedExecution(
+        f,
+        "-failed-command-result",
+        { ref: "shell", version: "1", kind: "command" },
+        { kind: "not_asserted" },
+        { kind: "result", completion: { type: "exit", exitCode: 3 } },
+      );
+      const expected = {
+        outcome: "failed",
+        outputRef: output.ref,
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+        processExitCode: 3,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
     } finally {
       await f.close();
     }

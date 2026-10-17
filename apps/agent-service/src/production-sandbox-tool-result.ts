@@ -17,6 +17,7 @@ import type {
   SandboxOperationResult,
 } from "@himawari-agent/execution-contracts";
 import {
+  FILE_WRITE_NOT_STARTED,
   isSandboxToolResultLost,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
@@ -31,6 +32,7 @@ export interface SandboxToolCompletion {
   readonly outputRef: string | null;
   readonly errorCode: string | null;
   readonly externalActionId: null;
+  readonly processExitCode?: number;
 }
 export interface SandboxToolDelivery {
   readonly resultRecovery?: {
@@ -63,12 +65,63 @@ export function sandboxCommandEffectReason(input: {
   return nonzeroCommandExit ? "SANDBOX_COMMAND_EFFECT_UNVERIFIED" : null;
 }
 
+function commandProcessExitCode(result: SandboxOperationResult): number | undefined {
+  const ending =
+    result.kind === "result"
+      ? result.completion
+      : result.kind === "error"
+        ? result.termination
+        : undefined;
+  return ending?.type === "exit" ? ending.exitCode : undefined;
+}
+
+export function failedCommandModelContent(
+  text: string,
+  expected: { readonly operation: string; readonly processExitCode: number },
+): string | null {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) return null;
+  const fields = envelope as Record<string, unknown>;
+  const commandExitCode = fields["commandExitCode"];
+  const envelopeExitCode =
+    commandExitCode === null
+      ? 1
+      : typeof commandExitCode === "number" &&
+          Number.isInteger(commandExitCode) &&
+          commandExitCode >= 1 &&
+          commandExitCode <= 255
+        ? commandExitCode
+        : undefined;
+  if (
+    "effectNotice" in fields ||
+    fields["schemaVersion"] !== "pi-result.v1" ||
+    fields["tool"] !== expected.operation ||
+    fields["isError"] !== true ||
+    envelopeExitCode !== expected.processExitCode
+  )
+    return null;
+  const status =
+    commandExitCode === null ? "命令没有正常结束" : `命令以退出码 ${envelopeExitCode} 结束`;
+  return JSON.stringify({
+    effectNotice: `命令执行失败：${status}。这不代表工作区没有变化，命令可能已修改工作区文件，具体效果尚未核验；请先检查工作区再决定下一步。`,
+    ...fields,
+  });
+}
+
 export {
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
+  SANDBOX_WRITE_EFFECT_UNVERIFIED,
 } from "@himawari-agent/execution-contracts";
 export const SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE =
   "工具运行超过期限，已被终止并完成清理，没有重新执行。它在终止前可能已经修改了工作区，部分输出不可用；请先检查当前状态再决定下一步。";
+export const SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE =
+  "文件操作失败，但没能核实文件有没有被改：文件可能已被修改，也可能没有。请先读取目标文件确认当前内容，再决定下一步。";
 const RECOVERY_POLL_MS = 250;
 
 function awaitingRecovery(record: SandboxExecutionRecord) {
@@ -227,6 +280,18 @@ export function createProductionSandboxToolResult(options: {
     await options.journal.dispatchIntent(intent());
     try {
       await delivery.assertDisclosure();
+      const hostResultRejected =
+        result.kind === "error" &&
+        (isSandboxToolResultLost(result) ||
+          result.reasonCode === SANDBOX_HOST_COMPLETION_CONTRADICTED);
+      const commandEffectReason = hostResultRejected
+        ? null
+        : sandboxCommandEffectReason({
+            operationKind: record.plan.operationContract.kind,
+            result: record.facts.result,
+            effectKind: record.facts.effect.kind,
+          });
+      const processExitCode = commandEffectReason ? commandProcessExitCode(result) : undefined;
       const completion: SandboxToolCompletion =
         projection.conclusion === "succeeded"
           ? {
@@ -238,26 +303,21 @@ export function createProductionSandboxToolResult(options: {
           : {
               outcome: "failed",
               outputRef:
-                result.kind === "error" &&
-                !isSandboxToolResultLost(result) &&
-                result.reasonCode !== SANDBOX_HOST_COMPLETION_CONTRADICTED &&
-                result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
-                result.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
-                (result.reasonCode === "FILE_VERSION_CONFLICT" ||
-                  plan.operationContract.kind === "fixed_read")
+                processExitCode !== undefined ||
+                (result.kind === "error" &&
+                  !hostResultRejected &&
+                  result.reasonCode !== SANDBOX_TOOL_DEADLINE_EXCEEDED &&
+                  result.reasonCode !== SANDBOX_TOOL_NOT_STARTED &&
+                  (result.reasonCode === "FILE_VERSION_CONFLICT" ||
+                    result.reasonCode === FILE_WRITE_NOT_STARTED ||
+                    plan.operationContract.kind === "fixed_read"))
                   ? result.output.ref
                   : null,
               errorCode:
-                (result.kind === "error" &&
-                (isSandboxToolResultLost(result) ||
-                  result.reasonCode === SANDBOX_HOST_COMPLETION_CONTRADICTED)
-                  ? result.reasonCode
-                  : sandboxCommandEffectReason({
-                      operationKind: record.plan.operationContract.kind,
-                      result: record.facts.result,
-                      effectKind: record.facts.effect.kind,
-                    })) ?? (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
+                (hostResultRejected ? result.reasonCode : commandEffectReason) ??
+                (result.kind === "error" ? result.reasonCode : "SANDBOX_COMMAND_FAILED"),
               externalActionId: null,
+              ...(processExitCode === undefined ? {} : { processExitCode }),
             };
       await delivery.saveReceipt(completion);
       await options.journal.acknowledgeIntent({

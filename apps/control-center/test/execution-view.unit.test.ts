@@ -163,6 +163,12 @@ describe("durable execution presentation", () => {
     expect(executionStateLabel("failed", "SANDBOX_COMMAND_EFFECT_UNVERIFIED")).toBe(
       "chat.reason.commandEffectUnverified",
     );
+    expect(executionStateLabel("failed", "FILE_WRITE_NOT_STARTED")).toBe(
+      "chat.reason.fileWriteNotStarted",
+    );
+    expect(executionStateLabel("failed", "SANDBOX_WRITE_EFFECT_UNVERIFIED")).toBe(
+      "chat.reason.writeEffectUnverified",
+    );
     expect(executionStateLabel("not_dispatched", "SANDBOX_STRICT_MODE_UNAVAILABLE")).toBe(
       "chat.reason.strictModeUnavailable",
     );

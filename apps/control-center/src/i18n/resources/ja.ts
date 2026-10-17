@@ -182,8 +182,11 @@ export const messages = {
     "許可されたリソース上限が変わり、操作は派遣されませんでした",
   "chat.reason.directoryTargetChanged": "ディレクトリの場所または対象が変わりました",
   "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
+  "chat.reason.fileWriteNotStarted": "ファイル操作は失敗しました。ファイルは変更されていません",
   "chat.reason.commandEffectUnverified":
     "コマンドは失敗しました。ワークスペースのファイルが変更された可能性がありますが、影響は未確認です",
+  "chat.reason.writeEffectUnverified":
+    "ファイル操作は失敗しました。ファイルが変更された可能性がありますが、影響は未確認です",
   "chat.reason.strictModeUnavailable": "厳格モードでは使用できません",
   "chat.environment.title": "実行環境",
   "chat.environment.mode.srt": "デフォルトモード",

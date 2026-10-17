@@ -58,10 +58,13 @@ import {
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
 import {
+  failedCommandModelContent,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED_MESSAGE,
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE,
+  SANDBOX_WRITE_EFFECT_UNVERIFIED,
+  SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE,
   type SandboxToolCompletion,
   type SandboxToolDelivery,
 } from "./production-sandbox-tool-result.js";
@@ -73,7 +76,7 @@ type ExecuteRequest = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type WorkerToolCompletion = Pick<
   Extract<ExecutionV2Event, { type: "work.result" }>["payload"],
   "outcome" | "outputRef" | "errorCode" | "externalActionId"
->;
+> & { readonly processExitCode?: number };
 // Reuse the existing event polling cadence while an individual event read is pending.
 const EVENT_POLL_MS = 50;
 // Same bounded cleanup wait as RunCoordinator; expiry never cancels the duty to stop.
@@ -655,7 +658,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       const outcome = await this.#completionOutcome(
         child,
         key,
-        plan.handleRef,
+        { ref: plan.handleRef, operation: plan.operation },
         completion,
         plan.resourceCeiling.maxOutputBytes,
         true,
@@ -1194,7 +1197,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           replay = await this.#completionOutcome(
             invocation,
             key,
-            handle.ref,
+            handle,
             completion,
             ceiling.maxOutputBytes,
             internal,
@@ -1511,7 +1514,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
               outcome = await this.#completionOutcome(
                 invocation,
                 key,
-                handle.ref,
+                handle,
                 completion,
                 ceiling.maxOutputBytes,
                 internal,
@@ -1656,7 +1659,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
   async #completionOutcome(
     invocation: RuntimeToolInvocation,
     key: string,
-    handleRef: string,
+    handle: { readonly ref: string; readonly operation: string },
     completion: WorkerToolCompletion | undefined,
     maxOutputBytes: number,
     internal: boolean,
@@ -1700,18 +1703,13 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       }
       return unknownResult();
     }
+    const readOutput = (outputRef: string) =>
+      recovered
+        ? recovered.readOutput(outputRef)
+        : this.#observedOutput(invocation, key, handle.ref, outputRef, maxOutputBytes, internal);
     if (completion?.outcome === "succeeded") {
       if (!completion.outputRef) throw new Error("WORKER_OUTPUT_MISSING");
-      const output = recovered
-        ? await recovered.readOutput(completion.outputRef)
-        : await this.#observedOutput(
-            invocation,
-            key,
-            handleRef,
-            completion.outputRef,
-            maxOutputBytes,
-            internal,
-          );
+      const output = await readOutput(completion.outputRef);
       return {
         dispatchState: "accepted",
         outcome: "succeeded",
@@ -1729,17 +1727,28 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       };
     } else {
       const commandEffectUnverified = completion.errorCode === "SANDBOX_COMMAND_EFFECT_UNVERIFIED";
+      if (
+        commandEffectUnverified &&
+        completion.outputRef &&
+        completion.processExitCode !== undefined
+      ) {
+        const output = await readOutput(completion.outputRef);
+        const modelContent = failedCommandModelContent(output.text, {
+          operation: handle.operation,
+          processExitCode: completion.processExitCode,
+        });
+        if (modelContent !== null)
+          return {
+            dispatchState: "accepted",
+            outcome: completion.outcome,
+            resultRef: output.ref,
+            errorCode: completion.errorCode,
+            externalActionId: completion.externalActionId,
+            modelContent,
+          };
+      }
       if (completion.outputRef && !commandEffectUnverified) {
-        const output = recovered
-          ? await recovered.readOutput(completion.outputRef)
-          : await this.#observedOutput(
-              invocation,
-              key,
-              handleRef,
-              completion.outputRef,
-              maxOutputBytes,
-              internal,
-            );
+        const output = await readOutput(completion.outputRef);
         return {
           dispatchState: "accepted",
           outcome: completion.outcome,
@@ -1764,9 +1773,11 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                 ? `${SANDBOX_HOST_COMPLETION_CONTRADICTED}：${SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE}`
                 : completion.errorCode === "SANDBOX_TOOL_NOT_STARTED"
                   ? "工具未启动：准备阶段失败，已确认清理完成。"
-                  : commandEffectUnverified
-                    ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
-                    : "操作未确认成功。",
+                  : completion.errorCode === SANDBOX_WRITE_EFFECT_UNVERIFIED
+                    ? `${SANDBOX_WRITE_EFFECT_UNVERIFIED}：${SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE}`
+                    : commandEffectUnverified
+                      ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+                      : "操作未确认成功。",
       };
     }
   }

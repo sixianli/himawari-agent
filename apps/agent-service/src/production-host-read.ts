@@ -1,4 +1,5 @@
 import {
+  containsToolOutputSecret,
   type HostDirectoryGrant,
   type HostReadOnlyPort,
   scanMachineSecrets,
@@ -57,11 +58,13 @@ export function createProductionHostReadOnly(port: HostReadOnlyPort): Production
         ),
         ...(input.signal ? { signal: input.signal } : {}),
       });
+      const content = [{ type: "text", text: executed.content }];
+      const details = envelopeDetails(executed.details);
       const output = JSON.stringify({
         schemaVersion: "pi-result.v1",
         tool: input.tool,
-        content: [{ type: "text", text: executed.content }],
-        details: envelopeDetails(executed.details),
+        content,
+        details,
         fullOutput: null,
         isError: executed.isError,
         commandExitCode: null,
@@ -74,7 +77,10 @@ export function createProductionHostReadOnly(port: HostReadOnlyPort): Production
           parameters: input.parameters,
         },
       });
-      if (scanMachineSecrets(output).length)
+      if (
+        scanMachineSecrets(output).length ||
+        containsToolOutputSecret(JSON.stringify({ content, details }))
+      )
         return {
           modelContent: "PI_RESULT_SECRET_REJECTED",
           isError: true,

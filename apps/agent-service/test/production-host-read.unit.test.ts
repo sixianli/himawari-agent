@@ -125,6 +125,37 @@ describe("[R2-T9] production host read output limit", () => {
     expect(result.errorCode).toBe("PI_RESULT_SECRET_REJECTED");
   });
 
+  it("[R2-T14] rejects grep context that shows the first lines of a private key", async () => {
+    const marker = (edge: string) => [`-----${edge}`, "PRIVATE KEY-----"].join(" ");
+    const body = Array.from(
+      { length: 26 },
+      (_, index) => `MIIEvR2T14GREPBODY${index}${"Qk".repeat(28)}`,
+    );
+    const port = new FakePort({
+      "deploy-notes.txt": {
+        kind: "file",
+        content: ["deploy key:", marker("BEGIN"), ...body, marker("END"), ""].join("\n"),
+      },
+    });
+    const result = await execute(port, "grep", "", { pattern: "BEGIN", context: 4 }, 48 * 1024);
+    expect(result.modelContent).not.toContain("R2T14GREPBODY");
+    expect(result.isError).toBe(true);
+    expect(result.errorCode).toBe("PI_RESULT_SECRET_REJECTED");
+  });
+
+  it("[R2-T14] keeps the result of a grep whose own pattern is a key's first line", async () => {
+    const pattern = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+    const port = new FakePort({ "notes.txt": { kind: "file", content: "no keys here\n" } });
+    const result = await execute(port, "grep", "", { pattern, path: "." }, 48 * 1024);
+    expect(result.isError).toBe(false);
+    expect(result.errorCode).toBeNull();
+    expect(JSON.parse(result.modelContent)).toMatchObject({
+      tool: "grep",
+      content: [{ type: "text", text: "No matches found" }],
+      source: { parameters: { pattern } },
+    });
+  });
+
   it("[R2-T9] keeps the hard limit only when the envelope itself cannot fit", async () => {
     const port = new FakePort({ "small.txt": { kind: "file", content: "short\n" } });
     const result = await execute(port, "read", "small.txt", { path: "small.txt" }, 1);

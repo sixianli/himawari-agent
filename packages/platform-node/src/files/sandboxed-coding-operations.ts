@@ -266,15 +266,12 @@ export async function createSandboxedCodingOperations(input: {
         interruption.abort();
       };
       const abort = () => stop(new Error("PI_COMMAND_ABORTED"));
+      const grantRemainingMs = Date.parse(grant.expiresAt) - Date.now();
+      const commandLimited =
+        command.timeoutMs !== undefined && command.timeoutMs <= grantRemainingMs;
       const timer = setTimeout(
-        () => stop(new Error("PI_COMMAND_TIMEOUT")),
-        Math.max(
-          1,
-          Math.min(
-            command.timeoutMs ?? Number.MAX_SAFE_INTEGER,
-            Date.parse(grant.expiresAt) - Date.now(),
-          ),
-        ),
+        () => stop(new Error(commandLimited ? "PI_COMMAND_TIMEOUT" : "PI_COMMAND_GRANT_EXPIRED")),
+        Math.max(1, commandLimited ? (command.timeoutMs ?? 1) : grantRemainingMs),
       );
       const data = (bytes: Buffer) => {
         count += bytes.length;

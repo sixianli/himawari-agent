@@ -24,7 +24,7 @@ import {
 import {
   ConstrainedHostFileSystem,
   createPiFilePublicationJournal,
-  hasVerifiedPiFileConflict,
+  verifiedPiWriteFailure,
   verifyPiWriteEvidence,
 } from "@himawari-agent/platform-node";
 import { compileSandboxPolicy, prepareSandboxJobHost } from "@himawari-agent/runtime-sandbox";
@@ -488,7 +488,7 @@ describe("prepared files through the installed runner", () => {
           isError: true,
           fileConflict: { phase: "before_publish", reasonCode: "FILE_VERSION_CONFLICT" },
         });
-        const verified = hasVerifiedPiFileConflict({
+        const verified = verifiedPiWriteFailure({
           bytes: Buffer.from(result.out),
           parameters: JSON.parse(input.parametersJson),
           scope: input.scope,
@@ -506,7 +506,7 @@ describe("prepared files through the installed runner", () => {
           },
           workspace: input.workspace,
         });
-        expect(verified).toBe(true);
+        expect(verified).toBe("conflict");
         expect(await createPiFilePublicationJournal(input).recoverConflict()).toEqual(
           proof.fileConflict,
         );

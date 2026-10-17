@@ -78,7 +78,7 @@ function buildR2T5Command(input: {
     `git --version > "$cap/r2t5-git.txt" 2>"$cap/r2t5-git.err"; printf '%s\\n' "$?" > "$cap/r2t5-git.rc"`,
     capture("cat /etc/passwd", "r2t5-passwd"),
     `tmp_rc=$(cat "$cap/r2t5-tmp.rc")`,
-    `if [ "$tmp_rc" -eq 0 ]; then printf '%s\\n' R2T5-TMP-WRITE-OK; fi`,
+    `if [ "$tmp_rc" -eq 0 ]; then printf '%s-%s\\n' R2T5-TMP WRITE-OK; fi`,
     `exit "$tmp_rc"`,
   ].join("\n");
 }
@@ -86,6 +86,31 @@ function buildR2T5Command(input: {
 const NOTE = "项目代号：向日葵";
 const EDITABLE = "编辑前内容";
 const EDITED = "编辑后内容";
+const KEY_FIRST_LINE = ["-----BEGIN", "PRIVATE KEY-----"].join(" ");
+const PEM_FORMAT_NOTE = [
+  "# PEM 私钥格式",
+  "",
+  "文件第一行是：",
+  KEY_FIRST_LINE,
+  "后面是 Base64 正文。",
+  "",
+].join("\n");
+const keyNotes = (secondLine: string) =>
+  [
+    "deploy key:",
+    secondLine,
+    ...Array.from({ length: 4 }, (_, index) => `MIIEvR2T14EDITBODY${index}${"Qk".repeat(28)}`),
+    "",
+  ].join("\n");
+const KEY_NOTES = keyNotes(KEY_FIRST_LINE);
+const PLAIN_NOTES = keyNotes("(key kept elsewhere)");
+const FULL_KEY = [
+  KEY_FIRST_LINE,
+  ...Array.from({ length: 4 }, (_, index) => `MIIEvR2T14FULLBODY${index}${"Qk".repeat(28)}`),
+  "-----END PRIVATE KEY-----",
+  "",
+].join("\n");
+const MISSING_TEXT_NOTE = "R2T14 原文：保持不变\n";
 let escapeTrapPath = "";
 let escapeNewPath = "";
 let r2t5Command = "";
@@ -148,6 +173,86 @@ const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
         },
       };
     return { kind: "text", text: `自动完成：${toolResults.length} 个操作` };
+  }
+  if (lastUserText.includes("R2T14 重复失败"))
+    return toolResults.length < 16
+      ? { kind: "tool", name: "bash", arguments: { command: "printf 'R2T14-SAME\\n'; exit 5" } }
+      : { kind: "text", text: "R2T14 重复失败没有被拦下" };
+  if (lastUserText.includes("R2T14") && toolResults.length === 0) {
+    if (lastUserText.includes("非零退出"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: { command: "printf 'R2T14-OUT\\n'; printf 'R2T14-ERR\\n' >&2; exit 7" },
+      };
+    if (lastUserText.includes("写后失败"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: { command: `printf 'R2T14-WRITTEN' > "$TMPDIR/r2t14-written.txt"; exit 1` },
+      };
+    if (lastUserText.includes("输出超限"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: { command: "seq -f 'R2T14-LINE-%g' 1 400000" },
+      };
+    if (lastUserText.includes("命令超时"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: {
+          command: "printf 'R2T14-BEFORE-TIMEOUT\\n'; /bin/sleep 30; printf 'R2T14-AFTER'",
+          timeout: 2,
+        },
+      };
+    if (lastUserText.includes("截断私钥"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: {
+          command:
+            "printf -- '-----%s PRIVATE KEY-----\\n' BEGIN; for i in $(seq 1 2100); do printf 'MIIEvR2T14E2E%s%04d%s\\n' KEYBODY \"$i\" QkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQkQk; done; printf -- '-----%s PRIVATE KEY-----\\n' END; exit 3",
+        },
+      };
+    if (lastUserText.includes("讲解私钥格式"))
+      return {
+        kind: "tool",
+        name: "write",
+        arguments: { path: "pem-format.md", content: PEM_FORMAT_NOTE },
+      };
+    if (lastUserText.includes("编辑私钥旁边"))
+      return {
+        kind: "tool",
+        name: "edit",
+        arguments: {
+          path: "key-notes.txt",
+          edits: [{ oldText: "deploy key:", newText: "old deploy key:" }],
+        },
+      };
+    if (lastUserText.includes("编辑找不到原文"))
+      return {
+        kind: "tool",
+        name: "edit",
+        arguments: {
+          path: "r2t14-missing-text.txt",
+          edits: [{ oldText: "R2T14-NOT-IN-FILE", newText: "R2T14-REPLACED" }],
+        },
+      };
+    if (lastUserText.includes("写入完整私钥"))
+      return {
+        kind: "tool",
+        name: "write",
+        arguments: { path: "r2t14-full-key.pem", content: FULL_KEY },
+      };
+    if (lastUserText.includes("秘密输出"))
+      return {
+        kind: "tool",
+        name: "bash",
+        arguments: {
+          command: `printf 'api_%s=%s\\n' key R2T14SECRETVALUE0001; exit ${lastUserText.includes("退出 2") ? 2 : 0}`,
+        },
+      };
   }
   if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
   if (lastUserText.includes("原执行期限验证"))
@@ -403,6 +508,15 @@ async function expectToolRowPhase(phase: "已完成" | "失败") {
   await uiExpect(rows.filter({ hasText: "尚未派发" })).toHaveCount(0);
 }
 
+async function expectToolReason(label: string) {
+  const process = page.locator(".turn-process").last();
+  if ((await process.getAttribute("open")) === null)
+    await process.locator(":scope > summary").click();
+  await uiExpect(process.locator(".step-status").filter({ hasText: label })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 async function executionEnvironmentReadback() {
   const configuration = (await page.evaluate(async () => {
     const response = await fetch("/api/control-center/v1/config", {
@@ -615,6 +729,61 @@ function observedToolReplies(userText: string) {
   return observedToolMessages(userText).map((messages) =>
     messages.map((message) => message.tool_call_id),
   );
+}
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) =>
+      part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string"
+        ? (part as { text: string }).text
+        : "",
+    )
+    .join("");
+}
+
+function parsedToolResult(raw: string) {
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resultContentText(result: Record<string, unknown> | null): string {
+  return Array.isArray(result?.["content"]) ? messageText(result["content"]) : "";
+}
+
+function lastToolResult(userText: string) {
+  const raw = messageText(observedToolMessages(userText).at(-1)?.at(-1)?.content);
+  const result = parsedToolResult(raw);
+  return { raw, result, content: resultContentText(result) };
+}
+
+async function toolDeliveryAfter(before: ReadonlySet<string>) {
+  const rows = executionReadback().filter((record) => !before.has(record.jobId));
+  const [row] = rows;
+  if (rows.length !== 1 || !row) throw new Error(`EXPECTED_ONE_NEW_TOOL_JOB:${rows.length}`);
+  const database = openQualifiedDatabase(installation.databasePath);
+  let plan: string;
+  try {
+    plan = (
+      database
+        .prepare("SELECT plan_json AS plan FROM sandbox_execution_records WHERE job_id=?")
+        .get(row.jobId) as { plan: string }
+    ).plan;
+  } finally {
+    database.close();
+  }
+  const delivery = (await installation.sandboxDelivery(
+    row.runId,
+    JSON.parse(plan).identity.invocationId,
+  )) as { content?: Record<string, unknown> } | null;
+  return { row, delivery: delivery?.content ?? null };
 }
 
 async function newThread() {
@@ -1324,6 +1493,7 @@ productDescribe(
       await scenario("r2t3-escape-write", async () => {
         const answer = await sendToolRequest("请尝试越界写入");
         await uiExpect(answer).toContainText("命令执行失败");
+        await uiExpect(answer).toContainText("Read-only file system");
         await uiExpect(answer).not.toContainText('"commandExitCode":0');
         const readback = {
           newPath: escapeNewPath,
@@ -1406,6 +1576,7 @@ productDescribe(
         );
         await uiExpect(answer).not.toContainText("R2T5-TMP-WRITE-OK");
         await uiExpect(answer).toContainText("命令执行失败");
+        await uiExpect(answer).toContainText(`命令以退出码 ${readback.tmpRc.trim()} 结束`);
         expect(readback.tmpRc.trim()).not.toBe("0");
         expect(readback.tmpErr).toContain("Read-only file system");
         expect(readback.tmpExists).toBe(false);
@@ -1477,6 +1648,436 @@ productDescribe(
         } finally {
           await new Promise<void>((resolve) => server.close(() => resolve()));
         }
+      });
+    });
+
+    it("[R2-T14] shows the model the output tail and exit code of a failed command", async () => {
+      await scenario("r2t14-nonzero-exit", async () => {
+        const text = "请运行 R2T14 非零退出命令";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const answer = await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const { delivery } = await toolDeliveryAfter(before);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-nonzero-exit-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
+        );
+        expect(observed.content).toContain("R2T14-OUT");
+        expect(observed.content).toContain("R2T14-ERR");
+        expect(observed.content).toContain("Command exited with code 7");
+        expect(Object.keys(observed.result ?? {})[0]).toBe("effectNotice");
+        expect(observed.result?.["effectNotice"]).toContain("命令以退出码 7 结束");
+        expect(observed.result?.["effectNotice"]).toContain("可能已修改工作区");
+        expect(observed.result).toMatchObject({
+          schemaVersion: "pi-result.v1",
+          tool: "bash",
+          isError: true,
+          commandExitCode: 7,
+        });
+        await uiExpect(answer).toContainText("命令以退出码 7 结束");
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+          outputRef: expect.any(String),
+          processExitCode: 7,
+        });
+      });
+    });
+
+    it("[R2-T14] keeps the effect warning when a failed command already wrote a file", async () => {
+      await scenario("r2t14-write-then-fail", async () => {
+        const text = "请运行 R2T14 写后失败命令";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const { delivery } = await toolDeliveryAfter(before);
+        const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
+        const written: Array<{ path: string; content: string }> = [];
+        for (const name of await readdir(jobsRoot)) {
+          if (name.startsWith("control-")) continue;
+          const candidate = path.join(jobsRoot, name, "r2t14-written.txt");
+          const content = await readFile(candidate, "utf8").catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return null;
+              throw error;
+            },
+          );
+          if (content !== null) written.push({ path: candidate, content });
+        }
+        await writeFile(
+          path.join(outputDirectory, "r2t14-write-then-fail-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, delivery, written }, null, 2),
+        );
+        expect(written).toEqual([{ path: expect.any(String), content: "R2T14-WRITTEN" }]);
+        expect(observed.content).toContain("Command exited with code 1");
+        expect(observed.result?.["effectNotice"]).toContain("命令以退出码 1 结束");
+        expect(observed.result).toMatchObject({ tool: "bash", isError: true, commandExitCode: 1 });
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+          processExitCode: 1,
+        });
+      });
+    });
+
+    it("[R2-T14] shows the output tail when a command is stopped for exceeding the output limit", async () => {
+      await scenario("r2t14-output-limit", async () => {
+        const text = "请运行 R2T14 输出超限命令";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const { delivery } = await toolDeliveryAfter(before);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-output-limit-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
+        );
+        expect(observed.content).toMatch(/R2T14-LINE-\d+/);
+        expect(observed.content).toContain("命令输出上限");
+        expect(observed.raw).not.toContain("PI_RUNNER_EXECUTION_FAILED");
+        expect(observed.result?.["effectNotice"]).toContain("命令没有正常结束");
+        expect(observed.result).toMatchObject({
+          tool: "bash",
+          isError: true,
+          commandExitCode: null,
+        });
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+          processExitCode: 1,
+        });
+      });
+    });
+
+    it("[R2-T14] reports a command timeout in Pi's words with the output before it", async () => {
+      await scenario("r2t14-command-timeout", async () => {
+        const text = "请运行 R2T14 命令超时验证";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const { delivery } = await toolDeliveryAfter(before);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-command-timeout-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
+        );
+        expect(observed.content).toContain("R2T14-BEFORE-TIMEOUT");
+        expect(observed.content).toContain("Command timed out after 2 seconds");
+        expect(observed.content).not.toContain("R2T14-AFTER");
+        expect(observed.result?.["effectNotice"]).toContain("命令没有正常结束");
+        expect(observed.result).toMatchObject({
+          tool: "bash",
+          isError: true,
+          commandExitCode: null,
+        });
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+          processExitCode: 1,
+        });
+      });
+    });
+
+    it("[R2-T14] withholds machine secrets but keeps the real command exit status", async () => {
+      await scenario("r2t14-secret-output", async () => {
+        const cases = [
+          { text: "请运行 R2T14 秘密输出命令，退出 0", exitCode: 0, phase: "已完成" },
+          { text: "请运行 R2T14 秘密输出命令，退出 2", exitCode: 2, phase: "失败" },
+        ] as const;
+        for (const entry of cases) {
+          const before = new Set(executionReadback().map((record) => record.jobId));
+          await sendToolRequest(entry.text);
+          await expectToolRowPhase(entry.phase);
+          const observed = lastToolResult(entry.text);
+          const { delivery } = await toolDeliveryAfter(before);
+          await writeFile(
+            path.join(outputDirectory, `r2t14-secret-output-exit-${entry.exitCode}-readback.json`),
+            JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
+          );
+          expect(observed.raw).not.toContain("R2T14SECRETVALUE0001");
+          expect(observed.raw).not.toContain("api_key=");
+          expect(observed.content).toContain("疑似密钥");
+          expect(observed.result).toMatchObject({
+            schemaVersion: "pi-result.v1",
+            tool: "bash",
+            isError: entry.exitCode !== 0,
+            commandExitCode: entry.exitCode,
+          });
+          expect(observed.result?.["source"]).not.toHaveProperty("parameters");
+          if (entry.exitCode === 0) {
+            expect(observed.result).not.toHaveProperty("effectNotice");
+            expect(delivery).toMatchObject({ outcome: "succeeded" });
+          } else {
+            expect(observed.result?.["effectNotice"]).toContain("命令以退出码 2 结束");
+            expect(delivery).toMatchObject({
+              outcome: "failed",
+              errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+              processExitCode: 2,
+            });
+          }
+        }
+      });
+    });
+
+    it("[R2-T14] withholds a private key whose first line truncation cut off", async () => {
+      await scenario("r2t14-truncated-key", async () => {
+        const text = "请运行 R2T14 截断私钥命令";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const answer = await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const { delivery } = await toolDeliveryAfter(before);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-truncated-key-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, delivery }, null, 2),
+        );
+        expect(observed.raw).not.toContain("R2T14E2EKEYBODY");
+        expect(observed.raw).not.toContain("PRIVATE KEY");
+        expect(observed.content).toContain("疑似密钥");
+        expect(observed.result).toMatchObject({
+          schemaVersion: "pi-result.v1",
+          tool: "bash",
+          details: {},
+          fullOutput: null,
+          isError: true,
+          commandExitCode: 3,
+        });
+        expect(observed.result?.["source"]).not.toHaveProperty("parameters");
+        expect(observed.result?.["effectNotice"]).toContain("命令以退出码 3 结束");
+        await uiExpect(answer).not.toContainText("R2T14E2EKEYBODY");
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+          processExitCode: 3,
+        });
+      });
+    });
+
+    it("[R2-T14] writes a document that shows a private key's first line and reports success", async () => {
+      await scenario("r2t14-pem-note-write", async () => {
+        await newThread();
+        const file = path.join(installation.workspace, "pem-format.md");
+        await rm(file, { force: true });
+        const text = "请运行 R2T14 讲解私钥格式写入";
+        await sendToolRequest(text);
+        const observed = lastToolResult(text);
+        const written = await readFile(file, "utf8").catch(() => null);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-pem-note-write-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, written }, null, 2),
+        );
+        expect(written).toBe(PEM_FORMAT_NOTE);
+        expect(observed.raw).not.toContain("PI_RESULT_SECRET_REJECTED");
+        expect(observed.result).toMatchObject({
+          schemaVersion: "pi-result.v1",
+          tool: "write",
+          isError: false,
+        });
+        await expectToolRowPhase("已完成");
+      });
+    });
+
+    it("[R2-T14] applies an edit beside a private key and withholds the diff that would show part of it", async () => {
+      await scenario("r2t14-key-notes-edit", async () => {
+        await newThread();
+        const file = path.join(installation.workspace, "key-notes.txt");
+        const text = "请运行 R2T14 编辑私钥旁边";
+        await writeFile(file, PLAIN_NOTES);
+        await sendToolRequest(text);
+        const control = lastToolResult(text);
+        const controlAfter = await readFile(file, "utf8");
+        await writeFile(file, KEY_NOTES);
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const answer = await sendToolRequest(text);
+        await expectToolRowPhase("已完成");
+        const observed = lastToolResult(text);
+        const after = await readFile(file, "utf8");
+        const { delivery } = await toolDeliveryAfter(before);
+        await writeFile(
+          path.join(outputDirectory, "r2t14-key-notes-edit-readback.json"),
+          JSON.stringify(
+            {
+              controlToolMessage: control.raw,
+              controlAfter,
+              toolMessage: observed.raw,
+              after,
+              delivery,
+            },
+            null,
+            2,
+          ),
+        );
+        expect(controlAfter).toBe(PLAIN_NOTES.replace("deploy key:", "old deploy key:"));
+        expect(control.result).toMatchObject({ tool: "edit", isError: false });
+        expect(control.content).not.toContain("疑似密钥");
+        expect(after).toBe(KEY_NOTES.replace("deploy key:", "old deploy key:"));
+        expect(observed.raw).not.toContain("R2T14EDITBODY");
+        expect(observed.raw).not.toContain("PRIVATE KEY");
+        expect(observed.content).toMatch(/已修改.*疑似密钥/);
+        expect(observed.result).toMatchObject({
+          schemaVersion: "pi-result.v1",
+          tool: "edit",
+          isError: false,
+          details: {},
+          verifiedWrite: expect.any(Object),
+        });
+        await uiExpect(answer).not.toContainText("R2T14EDITBODY");
+        expect(delivery).toMatchObject({ outcome: "succeeded" });
+      });
+    });
+
+    it("[R2-T14] gives the model Pi's error when an edit's old text is missing and keeps the file", async () => {
+      await scenario("r2t14-edit-missing-text", async () => {
+        await newThread();
+        const file = path.join(installation.workspace, "r2t14-missing-text.txt");
+        await writeFile(file, MISSING_TEXT_NOTE);
+        const text = "请运行 R2T14 编辑找不到原文";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const answer = await sendToolRequest(text);
+        await expectToolRowPhase("失败");
+        const observed = lastToolResult(text);
+        const after = await readFile(file, "utf8");
+        const { delivery } = await toolDeliveryAfter(before);
+        const job = () => executionReadback().find((record) => !before.has(record.jobId));
+        await uiExpect.poll(() => job()?.runStatus, { timeout: 60_000 }).toBe("completed");
+        await writeFile(
+          path.join(outputDirectory, "r2t14-edit-missing-text-readback.json"),
+          JSON.stringify({ toolMessage: observed.raw, after, job: job(), delivery }, null, 2),
+        );
+        expect(after).toBe(MISSING_TEXT_NOTE);
+        expect(observed.content).toContain("Could not find the exact text");
+        expect(observed.result).toMatchObject({
+          schemaVersion: "pi-result.v1",
+          tool: "edit",
+          isError: true,
+          writeNotStarted: true,
+        });
+        expect(observed.result?.["verifiedWrite"] ?? null).toBeNull();
+        await uiExpect(answer).toContainText("Could not find the exact text");
+        await expectToolReason("文件操作没有成功，文件没有被修改");
+        expect(job()).toMatchObject({
+          result: "error",
+          reasonCode: "FILE_WRITE_NOT_STARTED",
+          released: 1,
+          intents: 1,
+        });
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "FILE_WRITE_NOT_STARTED",
+          outputRef: expect.any(String),
+        });
+      });
+    });
+
+    it("[R2-T14] warns the model once when a written file's result is refused", async () => {
+      await scenario("r2t14-full-key-write", async () => {
+        await newThread();
+        const file = path.join(installation.workspace, "r2t14-full-key.pem");
+        await rm(file, { force: true });
+        const text = "请运行 R2T14 写入完整私钥";
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        await beginToolRequest(text);
+        const jobs = () => executionReadback().filter((record) => !before.has(record.jobId));
+        try {
+          await uiExpect
+            .poll(() => ["completed", "failed", "cancelled"].includes(jobs()[0]?.runStatus ?? ""), {
+              timeout: 300_000,
+            })
+            .toBe(true);
+        } finally {
+          await writeFile(
+            path.join(outputDirectory, "r2t14-full-key-write-readback.json"),
+            JSON.stringify(
+              {
+                jobs: jobs(),
+                written: await readFile(file, "utf8").catch(() => null),
+                modelMessages: observedToolMessages(text),
+              },
+              null,
+              2,
+            ),
+          );
+        }
+        const { delivery } = await toolDeliveryAfter(before);
+        expect(jobs()).toHaveLength(1);
+        expect(jobs()[0]).toMatchObject({
+          result: "error",
+          reasonCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+          released: 1,
+          intents: 1,
+        });
+        expect(delivery).toMatchObject({
+          outcome: "failed",
+          errorCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+          outputRef: null,
+        });
+        const messages = JSON.stringify(observedToolMessages(text));
+        expect(messages).toContain("文件可能已被修改");
+        expect(messages).not.toContain("R2T14FULLBODY");
+        await uiExpect(page.getByText("R2T14FULLBODY")).toHaveCount(0);
+        await uiExpect(page.getByText(/结果未确认|结果仍未确认/)).toHaveCount(0);
+        await expectToolReason("文件操作失败；文件可能已被修改，具体效果尚未核验");
+      });
+    });
+
+    it("[R2-T14] still stops a repeated failing command that makes no progress", async () => {
+      await scenario("r2t14-repeated-failure", async () => {
+        await newThread();
+        const before = new Set(executionReadback().map((record) => record.jobId));
+        const text = "请运行 R2T14 重复失败命令";
+        const requests = () =>
+          installation.modelRequests.flatMap(({ body }) => {
+            if (!Array.isArray(body["messages"])) return [];
+            const messages = body["messages"] as Array<{ role?: string; content?: unknown }>;
+            const index = messages.findLastIndex((message) => message.role === "user");
+            if (!JSON.stringify(messages[index]?.content).includes(text)) return [];
+            return [
+              {
+                toolCount: Array.isArray(body["tools"]) ? body["tools"].length : -1,
+                results: messages
+                  .slice(index + 1)
+                  .filter((message) => message.role === "tool")
+                  .map((message) => messageText(message.content)),
+              },
+            ];
+          });
+        await send(text);
+        await uiExpect
+          .poll(
+            async () => {
+              if (requests().at(-1)?.toolCount === 0) return true;
+              const allow = page.getByRole("button", { name: "允许这一次" }).first();
+              if (await allow.isVisible()) await allow.click();
+              return false;
+            },
+            { timeout: 300_000 },
+          )
+          .toBe(true);
+        await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+          timeout: 300_000,
+        });
+        const observed = requests();
+        const jobs = executionReadback().filter((record) => !before.has(record.jobId));
+        await writeFile(
+          path.join(outputDirectory, "r2t14-repeated-failure-readback.json"),
+          JSON.stringify(
+            {
+              note: "This scenario guards the loop detector against the R2-T14 result change; it passes before and after that change.",
+              requests: observed,
+              jobs,
+            },
+            null,
+            2,
+          ),
+        );
+        const final = observed.at(-1);
+        expect(final?.toolCount).toBe(0);
+        expect(final?.results).toHaveLength(4);
+        expect(observed.filter((request) => request.toolCount > 0)).toHaveLength(4);
+        expect(jobs).toHaveLength(4);
+        expect(new Set(jobs.map((record) => record.runId)).size).toBe(1);
       });
     });
 

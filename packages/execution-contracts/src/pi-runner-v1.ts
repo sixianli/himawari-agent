@@ -1,3 +1,8 @@
+import {
+  FILE_WRITE_NOT_STARTED,
+  SANDBOX_WRITE_EFFECT_UNVERIFIED,
+  type SandboxExecutionPlanV2,
+} from "./sandbox-execution-v2.ts";
 import { sandboxScopeSchema } from "./sandbox-scope-v1.ts";
 import {
   ContractValidationError,
@@ -37,6 +42,18 @@ export const PI_WRITE_VERIFIER = Object.freeze({
   version: "1",
   targetRef: "pi-input:path",
 });
+export function sandboxFileOperationFailureReason(
+  plan: Pick<SandboxExecutionPlanV2, "operation" | "operationContract">,
+  verified: "conflict" | "not_written" | null,
+) {
+  if (verified === "conflict") return "FILE_VERSION_CONFLICT";
+  if (verified === "not_written") return FILE_WRITE_NOT_STARTED;
+  return plan.operationContract.kind === "verified_effect" &&
+    plan.operationContract.verifierRef === PI_WRITE_VERIFIER.ref &&
+    ["write", "edit"].includes(plan.operation)
+    ? SANDBOX_WRITE_EFFECT_UNVERIFIED
+    : "SANDBOX_OPERATION_FAILED";
+}
 export const piCodingToolNameSchema = enumeration([
   "read",
   "write",

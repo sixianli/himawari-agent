@@ -179,8 +179,11 @@ export const messages = {
     "Allowed resource limits changed; the operation was not dispatched",
   "chat.reason.directoryTargetChanged": "The directory location or target changed",
   "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
+  "chat.reason.fileWriteNotStarted": "The file operation failed; the file was not changed",
   "chat.reason.commandEffectUnverified":
     "The command failed; it may have changed workspace files, and those effects are unverified",
+  "chat.reason.writeEffectUnverified":
+    "The file operation failed; the file may have changed, and the effect is unverified",
   "chat.reason.strictModeUnavailable": "Unavailable in strict mode",
   "chat.environment.title": "Execution environment",
   "chat.environment.mode.srt": "Default mode",

@@ -43,7 +43,7 @@ export function verifyPiWriteEvidence(input: {
     readonly fileTarget?: SandboxFileTarget;
   };
   readonly workspace?: string;
-}): "published" | "conflict" {
+}): "published" | "conflict" | "not_written" {
   const reject = () => {
     throw new Error("PI_WRITE_EVIDENCE_INVALID");
   };
@@ -187,6 +187,16 @@ export function verifyPiWriteEvidence(input: {
       reject();
     return "conflict";
   }
+  if (result.writeNotStarted !== undefined) {
+    if (
+      result.writeNotStarted !== true ||
+      contract.version !== PI_RUNNER_CONTRACT.version ||
+      result.isError !== true ||
+      result.verifiedWrite != null
+    )
+      reject();
+    return "not_written";
+  }
   if (!proof || (result.isError !== undefined && result.isError !== false)) reject();
   const parameters = input.parameters as Record<string, unknown>;
   if (
@@ -214,12 +224,13 @@ export function verifyPiWriteEvidence(input: {
   return "published";
 }
 
-export function hasVerifiedPiFileConflict(
+export function verifiedPiWriteFailure(
   input: Parameters<typeof verifyPiWriteEvidence>[0],
-): boolean {
+): "conflict" | "not_written" | null {
   try {
-    return verifyPiWriteEvidence(input) === "conflict";
+    const outcome = verifyPiWriteEvidence(input);
+    return outcome === "published" ? null : outcome;
   } catch {
-    return false;
+    return null;
   }
 }

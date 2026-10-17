@@ -367,7 +367,9 @@ export function executionStateLabel(
     WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",
     DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
     FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",
+    FILE_WRITE_NOT_STARTED: "chat.reason.fileWriteNotStarted",
     SANDBOX_COMMAND_EFFECT_UNVERIFIED: "chat.reason.commandEffectUnverified",
+    SANDBOX_WRITE_EFFECT_UNVERIFIED: "chat.reason.writeEffectUnverified",
     SANDBOX_STRICT_MODE_UNAVAILABLE: "chat.reason.strictModeUnavailable",
   };
   return (

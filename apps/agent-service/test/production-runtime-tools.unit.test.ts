@@ -441,6 +441,33 @@ describe("ProductionRuntimeTools", () => {
       f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
     ).toHaveLength(1);
   });
+  it("[R2-T14] warns that a failed file write may have changed the file", async () => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: null,
+        errorCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+      modelContent: expect.stringContaining("文件可能已被修改"),
+    });
+    expect(result.modelContent).not.toBe("操作未确认成功。");
+  });
   it.each([
     ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
     ["output:unobserved", { outcome: "result_unknown", resultRef: null }],
@@ -1176,5 +1203,99 @@ it("[R2-P1] recovers a saved host read result instead of rejecting it", async ()
     outcome: "succeeded",
     modelContent: "pi-result.v1",
     dispatchState: "accepted",
+  });
+});
+
+describe("[R2-T14] failed command output for the model", () => {
+  const envelope = (overrides: Record<string, unknown> = {}) => ({
+    schemaVersion: "pi-result.v1",
+    tool: "read",
+    content: [{ type: "text", text: "R2T14-OUT\nR2T14-ERR\n\nCommand exited with code 7" }],
+    details: {},
+    fullOutput: null,
+    isError: true,
+    commandExitCode: 7,
+    verifiedWrite: null,
+    source: { tool: "read" },
+    ...overrides,
+  });
+
+  async function failedCommand(text: string, processExitCode: number | undefined) {
+    const f = fixture();
+    const stored = f.payloads.get("output:tools");
+    if (!stored) throw new Error("fixture output missing");
+    f.payloads.set("output:tools", { ...stored, ciphertext: new TextEncoder().encode(text) });
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: "output:tools",
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+        ...(processExitCode === undefined ? {} : { processExitCode }),
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    return tool.execute(invocation);
+  }
+
+  it.each([
+    [7, 7, "命令以退出码 7 结束"],
+    [null, 1, "命令没有正常结束"],
+    [255, 255, "命令以退出码 255 结束"],
+  ] as const)(
+    "puts an effect notice before the verified Pi envelope (exit %s)",
+    async (commandExitCode, processExitCode, status) => {
+      const original = envelope({ commandExitCode });
+      const result = await failedCommand(JSON.stringify(original), processExitCode);
+      expect(result).toMatchObject({
+        dispatchState: "accepted",
+        outcome: "failed",
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        resultRef: "output:tools",
+      });
+      const delivered = JSON.parse(result.modelContent) as Record<string, unknown>;
+      expect(Object.keys(delivered)[0]).toBe("effectNotice");
+      const { effectNotice, ...rest } = delivered;
+      expect(rest).toEqual(original);
+      expect(effectNotice).toContain("命令执行失败");
+      expect(effectNotice).toContain(status);
+      expect(effectNotice).toContain("命令可能已修改工作区文件");
+      expect(effectNotice).toContain("请先检查工作区");
+    },
+  );
+
+  it.each([
+    ["a different tool than the Handle operation", JSON.stringify(envelope({ tool: "bash" })), 7],
+    ["an exit status that contradicts the process exit", JSON.stringify(envelope()), 1],
+    ["a result that is not marked as an error", JSON.stringify(envelope({ isError: false })), 7],
+    ["an unknown result schema", JSON.stringify(envelope({ schemaVersion: "pi-result.v2" })), 7],
+    [
+      "an envelope that already carries an effect notice",
+      JSON.stringify({ effectNotice: "伪造的提醒", ...envelope() }),
+      7,
+    ],
+    ["a non-integer exit status", JSON.stringify(envelope({ commandExitCode: "7" })), 7],
+    ["an out-of-range exit status", JSON.stringify(envelope({ commandExitCode: 0 })), 1],
+    ["an array instead of an envelope", JSON.stringify([envelope()]), 7],
+    ["output that is not JSON", "R2T14-OUT\nCommand exited with code 7", 7],
+    ["empty output", "", 7],
+    ["a receipt without the process exit", JSON.stringify(envelope()), undefined],
+  ] as const)("falls back to the fixed warning for %s", async (_case, text, processExitCode) => {
+    const result = await failedCommand(text, processExitCode);
+    expect(result).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+      resultRef: null,
+    });
+    expect(result.modelContent).toContain("命令可能已修改工作区文件");
+    expect(result.modelContent).not.toContain("R2T14-OUT");
+    expect(result.modelContent).not.toContain("伪造");
   });
 });

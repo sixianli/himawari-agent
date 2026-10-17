@@ -34,15 +34,16 @@ import {
   type SandboxTaskEnvironmentBinding,
   type SandboxTaskTermination,
   sandboxExecutionFactsSchema,
+  sandboxFileOperationFailureReason,
   sandboxPreparationDiagnosticSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
 import {
   CapabilityDeploymentSnapshotLoader,
-  hasVerifiedPiFileConflict,
   publishPreparedPiOperation,
   resolveSandboxWorkspaceRoot,
   revalidateCapabilityDeploymentSnapshot,
+  verifiedPiWriteFailure,
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
@@ -831,25 +832,24 @@ export class ProductionSandboxExecutionV2 {
         digest: createHash("sha256").update(result.stdout).digest("hex"),
         byteLength: result.stdout.byteLength,
       };
-      const fileConflict =
+      const evidence = () => ({
+        bytes: result.stdout,
+        parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
+        plan,
+        scope: sandboxScopeSchema.parse(resolved.scope),
+        workspace: compiled.cwd,
+      });
+      const fileFailure =
+        knownExit && result.exitCode === 1 && plan.operationContract.kind === "verified_effect"
+          ? verifiedPiWriteFailure(evidence())
+          : null;
+      if (
         knownExit &&
-        result.exitCode === 1 &&
+        result.exitCode === 0 &&
         plan.operationContract.kind === "verified_effect" &&
-        hasVerifiedPiFileConflict({
-          bytes: result.stdout,
-          parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
-          plan,
-          scope: sandboxScopeSchema.parse(resolved.scope),
-          workspace: compiled.cwd,
-        });
-      if (knownExit && result.exitCode === 0 && plan.operationContract.kind === "verified_effect")
-        verifyPiWriteEvidence({
-          bytes: result.stdout,
-          parameters: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
-          plan,
-          scope: sandboxScopeSchema.parse(resolved.scope),
-          workspace: compiled.cwd,
-        });
+        verifyPiWriteEvidence(evidence()) !== "published"
+      )
+        throw new Error("PI_WRITE_EVIDENCE_INVALID");
       const operation = {
         effect:
           (knownExit ||
@@ -865,7 +865,7 @@ export class ProductionSandboxExecutionV2 {
                 : knownExit && ["command", "network_only"].includes(plan.operationContract.kind)
                   ? { kind: "not_asserted" }
                   : knownExit &&
-                      (result.exitCode === 0 || fileConflict) &&
+                      (result.exitCode === 0 || fileFailure !== null) &&
                       plan.operationContract.kind === "verified_effect"
                     ? {
                         kind: "verified",
@@ -921,9 +921,7 @@ export class ProductionSandboxExecutionV2 {
                           ...resultFields,
                           kind: "error",
                           output,
-                          reasonCode: fileConflict
-                            ? "FILE_VERSION_CONFLICT"
-                            : "SANDBOX_OPERATION_FAILED",
+                          reasonCode: sandboxFileOperationFailureReason(plan, fileFailure),
                           termination: { type: "failure" },
                         },
       };
@@ -1084,15 +1082,20 @@ export class ProductionSandboxExecutionV2 {
             return { exitCode: result.exitCode, stdout: new TextEncoder().encode(result.output) };
           },
         });
-        published = verifyPiWriteEvidence({
+        const outcome = verifyPiWriteEvidence({
           bytes: committed.stdout,
           parameters: JSON.parse(parametersJson),
           plan,
           scope: sandboxScopeSchema.parse(scope),
           workspace: root.canonicalPath,
         });
-        if ((published === "conflict") !== (committed.exitCode === 1) || committed.exitCode > 1)
+        if (
+          outcome === "not_written" ||
+          (outcome === "conflict") !== (committed.exitCode === 1) ||
+          committed.exitCode > 1
+        )
           throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        published = outcome;
         completed = { ...committed, truncated: false };
       } else
         completed = await containers.execute({

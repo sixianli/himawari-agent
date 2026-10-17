@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import {
+  containsToolOutputSecret,
   scanMachineSecrets,
   type CapabilityResourceCeiling,
   type HostDirectoryGrant,
@@ -68,7 +69,7 @@ export async function prepareProductionFile(
   const result = Buffer.from(JSON.stringify(prepared.result));
   if (result.length > input.resourceCeiling.maxOutputBytes || result.length > 16 * 1024 * 1024)
     throw new Error("PI_RESULT_OUTPUT_LIMIT");
-  if (scanMachineSecrets(result.toString("utf8")).length)
+  if (containsToolOutputSecret(result.toString("utf8")))
     throw new Error("PI_RESULT_SECRET_REJECTED");
   if (
     (await platform.storageObservation(input.grant)).availableBytes <

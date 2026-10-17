@@ -27,6 +27,7 @@ import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/acti
 import {
   assertSandboxExecutionSupport,
   executionV2MessageSchema,
+  FILE_WRITE_NOT_STARTED,
   isSandboxToolResultLost,
   PI_COPY_SAVE_CONTRACT,
   PI_DIRECTORY_MOVE_CONTRACT,
@@ -50,6 +51,7 @@ import {
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
   sandboxExecutionScopeSchema,
+  sandboxFileOperationFailureReason,
   sandboxLostResultOperationKey,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
@@ -58,11 +60,11 @@ import {
   CapabilityDeploymentSnapshotLoader,
   createDirectoryMoveJournal,
   createPiFilePublicationJournal,
-  hasVerifiedPiFileConflict,
   resolveSandboxDirectoryMoveScope,
   resolveSandboxFileScope,
   resolveSandboxWorkspaceClaim,
   revalidateCapabilityDeploymentSnapshot,
+  verifiedPiWriteFailure,
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
@@ -1568,11 +1570,16 @@ export async function createProductionSandboxServices(options: {
       )
         throw new Error("SANDBOX_OUTPUT_CHANGED");
       if (facts.effect.kind === "verified") {
+        const expectedOutcome =
+          facts.result.kind === "result"
+            ? "published"
+            : facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT"
+              ? "conflict"
+              : facts.result.kind === "error" && facts.result.reasonCode === FILE_WRITE_NOT_STARTED
+                ? "not_written"
+                : null;
         if (
-          (facts.result.kind !== "result" &&
-            !(
-              facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT"
-            )) ||
+          expectedOutcome === null ||
           facts.effect.evidence.ref !== facts.result.output.ref ||
           facts.effect.evidence.digest !== facts.result.output.digest
         )
@@ -1583,11 +1590,7 @@ export async function createProductionSandboxServices(options: {
           plan,
           scope: sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef)),
         });
-        if (
-          (verifiedOutcome === "conflict") !==
-          (facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT")
-        )
-          throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        if (verifiedOutcome !== expectedOutcome) throw new Error("PI_WRITE_EVIDENCE_INVALID");
         if (plan.operation === "save_copy") {
           const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
           const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
@@ -1929,18 +1932,21 @@ export async function createProductionSandboxServices(options: {
       const plan = record.plan;
       const contract = plan.operationContract;
       let effect = record.facts.effect;
-      let fileConflict = false;
+      let fileFailure: "conflict" | "not_written" | null = null;
       if (contract.kind === "fixed_read") effect = { kind: "not_applicable" };
       else if (contract.kind === "command" || contract.kind === "network_only")
         effect = { kind: "not_asserted" };
       else if (contract.kind === "verified_effect") {
         const parameters = await readJson(plan.inputRef);
         const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
-        fileConflict =
-          termination.exitCode === 1 &&
-          hasVerifiedPiFileConflict({ bytes, parameters, plan, scope });
-        if (termination.exitCode === 0 || fileConflict) {
+        fileFailure =
+          termination.exitCode === 1
+            ? verifiedPiWriteFailure({ bytes, parameters, plan, scope })
+            : null;
+        if (termination.exitCode === 0 || fileFailure !== null) {
           const outcome = verifyPiWriteEvidence({ bytes, parameters, plan, scope });
+          if (termination.exitCode === 0 && outcome !== "published")
+            throw new Error("PI_WRITE_EVIDENCE_INVALID");
           if (plan.operation === "save_copy") {
             const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
             const root = binding.roots.find(
@@ -2000,7 +2006,7 @@ export async function createProductionSandboxServices(options: {
             : {
                 ...fields,
                 kind: "error",
-                reasonCode: fileConflict ? "FILE_VERSION_CONFLICT" : "SANDBOX_OPERATION_FAILED",
+                reasonCode: sandboxFileOperationFailureReason(plan, fileFailure),
                 termination: { type: "failure" },
               },
       });
