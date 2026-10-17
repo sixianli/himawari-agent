@@ -478,22 +478,27 @@ describe("[R2-T2] workspace auto authorization", () => {
     expect(await store.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(0);
   });
 
-  it("[R2-T2] stays silent when the directory grant is revoked, expired, or too narrow", async () => {
-    for (const grant of [
-      directoryGrant({ revokedAt: NOW }),
-      directoryGrant({ expiresAt: new Date(WALL_NOW - 1000).toISOString() }),
-      directoryGrant({ operations: ["read"] }),
-      directoryGrant({ dataClassification: "sensitive" }),
+  const unusableGrants: ReadonlyArray<readonly [string, HostDirectoryGrant]> = [
+    ["revoked", directoryGrant({ revokedAt: NOW })],
+    ["expired", directoryGrant({ expiresAt: new Date(WALL_NOW - 1000).toISOString() })],
+    ["read only", directoryGrant({ operations: ["read"] })],
+    ["sensitive", directoryGrant({ dataClassification: "sensitive" })],
+    [
+      "an unknown path policy",
       directoryGrant({
         pathPolicy: "same_filesystem" as unknown as HostDirectoryGrant["pathPolicy"],
       }),
-    ]) {
+    ],
+  ];
+  it.each(unusableGrants)(
+    "[R2-T2] stays silent when the directory grant is %s",
+    async (_label, grant) => {
       const { workspaceAuto, store } = await fixture({ grant });
       await workspaceAuto.sync(AUTHORITY);
       await workspaceAuto.authorize(intent({ operation: "write" }));
       expect(await policyApprovals(store)).toHaveLength(0);
-    }
-  });
+    },
+  );
 
   it("[R2-T2] asks for a network-capable bash and approves only an offline one", async () => {
     const online = await fixture({
