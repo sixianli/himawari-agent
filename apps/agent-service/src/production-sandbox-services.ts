@@ -2152,7 +2152,14 @@ export async function createProductionSandboxServices(options: {
           plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? srtEnvironments : environments;
         if (!taskEnvironment || plan.backendRef !== taskEnvironment.backendRef)
           throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
-        return taskEnvironment.releaseReservation(plan, stopRequestedAt);
+        const released = await taskEnvironment.releaseReservation(plan, stopRequestedAt);
+        if (released) return released;
+        const current = await repository
+          .runLifecycle(configuration.ownerId, configuration.agentId, options.authority().product)
+          .readRun(plan.identity.runId as RuntimeToolInvocation["runId"]);
+        if (!current) throw new Error("SANDBOX_RECOVERY_RUN_UNAVAILABLE");
+        if (["completed", "failed", "cancelled"].includes(current.run.status)) return undefined;
+        return taskEnvironment.fenceReservation(plan, stopRequestedAt);
       },
     },
     authority: options.authority,

@@ -47,6 +47,9 @@ export type SandboxReservationReleaseVerification =
   | (SandboxReservationReleaseBase & {
       readonly basis: "task_environment_released";
       readonly taskEnvironmentIds: readonly string[];
+    })
+  | (SandboxReservationReleaseBase & {
+      readonly basis: "task_environment_bind_fenced";
     });
 
 export interface SandboxAdministratorReservationReleaseVerification {

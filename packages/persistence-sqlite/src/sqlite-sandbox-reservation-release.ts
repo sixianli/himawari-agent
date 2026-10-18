@@ -119,6 +119,26 @@ export class SqliteSandboxReservationRelease {
         typeof proof.controlSessionId === "string" &&
         /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(proof.controlSessionId)
       );
+    if (proof.basis === "task_environment_bind_fenced")
+      return (
+        plan.backendRef !== "srt" &&
+        Boolean(
+          this.db
+            .prepare(`
+        SELECT 1 FROM sandbox_execution_records r
+        WHERE r.job_id=? AND r.owner_id=? AND r.agent_id=? AND r.preparation_state='reserved'
+          AND r.started_at IS NULL AND r.reservation_stopped_at=?
+          AND json_extract(r.plan_json,'$.backendRef')=?
+      `)
+            .get(
+              plan.identity.jobId,
+              plan.identity.ownerId,
+              plan.identity.agentId,
+              proof.stopRequestedAt,
+              plan.backendRef,
+            ),
+        )
+      );
     if (proof.basis !== "task_environment_released" || !Array.isArray(proof.taskEnvironmentIds))
       return false;
     const rows = this.db
@@ -144,6 +164,15 @@ export class SqliteSandboxReservationRelease {
       claimed.length === rows.length &&
       rows.every((row, index) => row.environmentId === claimed[index])
     );
+  }
+
+  private runFinished(plan: SandboxExecutionPlanV2): boolean {
+    const run = this.db
+      .prepare("SELECT status FROM runs WHERE id=? AND owner_id=? AND agent_id=?")
+      .get(plan.identity.runId, plan.identity.ownerId, plan.identity.agentId) as
+      | { status: string }
+      | undefined;
+    return !run || ["completed", "failed", "cancelled"].includes(run.status);
   }
 
   read(
@@ -200,6 +229,8 @@ export class SqliteSandboxReservationRelease {
     )
       return this.fail("PORT_CONFLICT", "Reservation recovery ownership changed");
     this.validate(admission.plan, admission.stopRequestedAt, verification, now);
+    if (verification.basis === "task_environment_bind_fenced" && this.runFinished(admission.plan))
+      return this.fail("PORT_INVALID_OPERATION", "Invalid reservation release verification");
     const jobId = admission.plan.identity.jobId;
     this.db
       .prepare(

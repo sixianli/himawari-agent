@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:84b1d6243db8709b3b1d5e29fa8990a61f828cc1e6ca8651b1cc8933b01a2db9"
+contract_sha256: "sha256:8979af7d04b23b49568d9ddc2477def3c116f197e8c373218d3c12f76d937f43"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -52,7 +52,7 @@ date: "2026-10-08"
 
 目标还须有仍为 `open` 的所属 Thread、原执行租约和恢复记录；Run 与 checkpoint 都处于 `reconciling_external_result`，checkpoint 尚无终态、output 或最终答案。其他未释放资源、未决保护或未确认意图会使本次处置被拒绝。
 
-同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明），不能用本 Runbook 的管理员声明代替。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host]
+同一轮复用本机沙箱（SRT 常驻环境，见[安装启停 Runbook](install-start-stop-runbook.md)）的工具调用也会写预约，但计划后端是 `srt-task-environment`，没有准备控制目录和 Host final；本工具只处置计划后端为 `srt` 的预约，对它们以 `SANDBOX_RESERVATION_ADMIN_NOT_ELIGIBLE` 拒绝。这些环境的释放走任务执行环境的释放回执（`process_group_gone` 等证明）；其中未绑定的预约由自动恢复按环境释放证明，或在 Run 没有结束时按“绑定已被停止标记挡住”的证明（`task_environment_bind_fenced`，见 [ADR 0054 第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)）释放，都不能用本 Runbook 的管理员声明代替。[SOURCE: docs/execution/specs/2026-09-24-isolated-tool-execution-design.md#srt-resident-job-host]
 
 ## Authoritative Sources
 

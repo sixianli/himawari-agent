@@ -842,6 +842,58 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     });
   });
 
+  it("[R2-P2] ends a fenced resident call as not started once and runs the next call in the same resident runner", async () => {
+    const ctx = await srtHarness({
+      bindings: [
+        { binding: bashBinding, parameters: { command: "echo one" } },
+        { binding: bashBinding, parameters: { command: "echo never" } },
+        { binding: bashBinding, parameters: { command: "echo three" } },
+      ],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const runner = await residentIdentity(residentSession(ctx));
+    const fenced = await call();
+    const preparations = ctx.f.services.brokerV2.preparations;
+    await preparations.interruptReservation({
+      identity: fenced.prepared.plan.identity,
+      authority: SERVICE_AUTHORITY,
+      now: new Date().toISOString(),
+      reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+    });
+    await ctx.f.services.resources.recoverPending(new AbortController().signal, 10);
+    expect(await preparations.readAdmission(fenced.prepared.plan.identity)).toMatchObject({
+      phase: "reserved",
+      recovery: { status: "resolved", reasonCode: "SANDBOX_RESERVATION_RELEASE_CONFIRMED" },
+      workspaceBlocked: false,
+      releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+    });
+    const environments = await primaryEnvironment(ctx);
+    expect(environments.map((environment) => environment.state)).toEqual(["running"]);
+    expect(environments[0]?.calls.map((entry) => entry.invocationId)).toEqual([
+      first.prepared.plan.identity.invocationId,
+    ]);
+    const invocation = { runId: RUN_ID, invocationId: fenced.prepared.plan.identity.invocationId };
+    const delivery = { assertDisclosure: async () => {}, saveReceipt: async () => {} };
+    const notStarted = {
+      outcome: "failed",
+      outputRef: null,
+      errorCode: "SANDBOX_TOOL_NOT_STARTED",
+    };
+    expect(await ctx.f.services.completeToolResult(invocation, delivery)).toMatchObject(notStarted);
+    expect(await ctx.f.services.completeToolResult(invocation, delivery)).toMatchObject(notStarted);
+
+    const third = await call();
+    await dispatch(ctx, third);
+    expect((await readPiResult(ctx, third))?.text).toContain("three");
+    expect(await residentIdentity(residentSession(ctx))).toEqual(runner);
+    expect(ctx.runs()).toBe(2);
+    expect((await primaryEnvironment(ctx)).map((environment) => environment.state)).toEqual([
+      "running",
+    ]);
+  });
+
   it("[R2-P2] ends the call as unknown and stops the environment when the Job Host stops responding", async () => {
     const ctx = await srtHarness({
       bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" } }],

@@ -30,7 +30,10 @@ export function isSandboxReservationNeverStarted(
         plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL)) ||
     (verification?.basis === "preparation_launch_blocked" &&
       plan.backendRef === "srt" &&
-      plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL)
+      plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL) ||
+    ((verification?.basis === "task_environment_released" ||
+      verification?.basis === "task_environment_bind_fenced") &&
+      plan.backendRef !== "srt")
   );
 }
 

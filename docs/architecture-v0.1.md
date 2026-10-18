@@ -125,7 +125,7 @@ flowchart TB
 
 资源恢复只保存固定安全原因码，区分权限拒绝、宿主不可用、身份与证据变化、控制连接超时和整体核查到期；后端无结论不能抹去具体原因。原始错误经既有受保护 Trace 保存，关联原 Job、环境、动作与失败阶段，不进入公共资源事实。并发释放得到充分证明时，恢复终点以最新持久事实为准。已绑定资源（`bound`）仍沿用原单次有期限 inspect/stop 和暂停规则；未知结果不能变成工具重试。
 
-Schema 43 扩展原 `recovery_json`，记录待核查的 `scheduledAt/nextAttemptAt`；进入检查后才增加次数并保存真实开始、期限和结束时间。现有生产 Run 循环有独立、单次并行的资源扫描，不等待资源核查才继续扫描无关 Run。它按页发现终态或结果待核实 Run、过期执行、lost/reconciling 资源和 released 残留保护，在原权威事务内重新比较资源序号、恢复版本与 Run 状态，再选择原宿主的 inspect/stop。没有宿主身份的预约先持久禁止启动，只有原宿主“从未启动且已退出”的证明才能释放。
+Schema 43 扩展原 `recovery_json`，记录待核查的 `scheduledAt/nextAttemptAt`；进入检查后才增加次数并保存真实开始、期限和结束时间。现有生产 Run 循环有独立、单次并行的资源扫描，不等待资源核查才继续扫描无关 Run。它按页发现终态或结果待核实 Run、过期执行、lost/reconciling 资源和 released 残留保护，在原权威事务内重新比较资源序号、恢复版本与 Run 状态，再选择原宿主的 inspect/stop。没有宿主身份的预约先持久禁止启动，只有原宿主“从未启动且已退出”的证明才能释放。常驻 SRT 环境和容器环境的预约按环境已释放的证明释放，Run 没有结束时也可以按“绑定已被停止标记挡住”的证明释放，见 [ADR 0054 第 4 层发现的缺口](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。
 
 未绑定预留（`reserved`）需要停止时，原宿主或控制套接字暂时不可达不再阻止独立核验已保存的释放证明。若本次仍无充分证明，预留继续占用工作区。暂时不可用、控制未确认、控制超时、整体核查超时、中断或无结论的 stop 核查会在原事务内重新排定，按上次实际结束时间退避 1、2、4、8、16、30 秒，之后每次等待 30 秒；每次尝试仍受原 30 秒核查期限约束。身份、目录、签名、受保护证据或权限错误暂停自动尝试。重启保留次数、恢复版本和最早尝试时间，不授予新 start，也不重放原工具。只有原释放事务接受充分证明后才解除占用；原结果交付和 Run 结束仍分别受现有权限及期限约束。具体原因码与证明边界见[未启动预留的持续清理核查](execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#reserved-retry)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md]
 

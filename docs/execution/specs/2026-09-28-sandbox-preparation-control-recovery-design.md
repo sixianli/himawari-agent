@@ -197,7 +197,7 @@ Claude 已于 2026-09-28 21:00 批准继续定位新增耗时与未注入准备�
 
 封锁先赢时，后续登记读到封锁版本或写入冲突，不能成功登记，Worker 不得 fork。登记先赢或遇到不同摘要的 PORT_CONFLICT 时，回到原宿主认证核验或 UNKNOWN，不使用新依据。封锁存在但释放事务失败时保留封锁，下一次可用原内容继续验证释放。
 
-Agent 与 SQLite 都必须限定 `backendRef=srt`。SQLite 在接受回执同一事务中检查 reserved、started_at 为空、reservation_stopped_at 已存在，并验证 evidence.ref/digest 对应同 Run、purpose=trace、准确 preparation key 的 payload_ref/content_digest。SQLite 不解密、不验签；Agent 解释核对封锁内容。container 只能使用既有 task_environment_released 路径。
+Agent 与 SQLite 都必须限定 `backendRef=srt`。SQLite 在接受回执同一事务中检查 reserved、started_at 为空、reservation_stopped_at 已存在，并验证 evidence.ref/digest 对应同 Run、purpose=trace、准确 preparation key 的 payload_ref/content_digest。SQLite 不解密、不验签；Agent 解释核对封锁内容。任务环境（常驻 SRT 环境和容器环境）不用这个依据：环境已释放时用 `task_environment_released`；环境未释放而 Run 没有结束时用 `task_environment_bind_fenced`（2026-10-18 起，见 [ADR 0054 第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)）。
 
 释放并清除占用后，新依据与 host_never_started 同样给模型既有固定错误 SANDBOX_TOOL_NOT_STARTED：“工具未启动：准备阶段失败，已确认清理完成。”在原 Run 期限前交付，这一轮继续，不重放原调用。TypeScript 与 SQL 各用一个共享判断，统一用于恢复发现、派发再核验、重启恢复、前台交付和 authorizeReservationResult 五处；披露、撤权、租约与期限检查不放宽。
 
@@ -209,7 +209,7 @@ Agent 与 SQLite 都必须限定 `backendRef=srt`。SQLite 在接受回执同一
 
 历史源码审查覆盖从 v2 Worker 引入提交 5d069ab 到 a2f51ba 父提交的全部 21 个相关源码变更点，并显式检查 fc2b318 与 a2f51ba 父提交，共 23 个修订快照、39 个不同源码摘要。路径为生产 composition → ProductionPayloadBrokerClient → PayloadUdsClient → parseJsonResponse → payloadBrokerV1MessageSchema → reserved/bound 计划 schema → v1 planShape/object。所有版本在 run 的首次 read 返回后才到 prepareSandboxJobHost；没有从执行请求取得未解析计划的生产入口。旧 parsePlan 将未知字段继续传给 v1 的 object，后者自 e996c50 起拒绝 unknown field，因此旧 Worker 收到新字段会在创建宿主前失败。源码节选、摘要及祖先关系见 [reply-17 历史兼容性证据](../../../.ci-output/tool-execution-audit/2026-09-28/round2/a2-r17-compatibility-sources.json)。这是固定历史源码证明，不是旧服务运行实验，不涉及 Hermes。
 
-新依据的 Agent 判断与 SQLite basisHolds 都要求本机 SRT 和该固定字段；SQLite 同时直接检查持久 plan_json 的 json_extract 值。缺字段使用可区分的 `SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE` 原因。已有 host_never_started 与 task_environment_released 依据不依赖新字段，行为保持。
+新依据的 Agent 判断与 SQLite basisHolds 都要求本机 SRT 和该固定字段；SQLite 同时直接检查持久 plan_json 的 json_extract 值。缺字段使用可区分的 `SANDBOX_PREPARATION_PROTOCOL_UNAVAILABLE` 原因。已有 host_never_started 与 task_environment_released 依据不依赖新字段。
 
 reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或机会。升级前的 reserved 记录（包括 TE-06 之后的中间版本）没有字段，永远不能使用新依据；无既有宿主证明时仍保留占用和 reconciling_external_result。新版 Agent 配旧 Worker 时，读取新计划失败，不能创建宿主；不会把旧记录标成新版。
 
@@ -219,7 +219,7 @@ reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或�
 
 停止流程使用已经持久的原 stopRequestedAt，不生成新停止时间。自动恢复与 stopRun 均已读取带停止时间的 admission；向本地控制器传入该值后竞争同一 preparation key。没有新持久表、列、迁移或握手，也不改变准备登记命令。封锁之前检查现有控制记录；真实登记赢或写入冲突后重新读取现有记录，进入原核验路径。已有封锁内容必须逐项符合当前计划和原停止时间，不能据 version 字符串单独认定封锁成立。
 
-共享的 TypeScript 判断描述预约是否确定从未启动；共享 SQL 判断用于恢复发现与派发再核验。它们只识别已经被接受的释放依据，不替代权限、证据、披露或期限检查。Pi 继续复用固定版本 0.84.2 的工具结果交付与 Agent Loop；Himawari 负责持久封锁、资源证明和产品权限，没有新建模型工具协议。
+共享的 TypeScript 判断描述预约是否确定从未启动；共享 SQL 判断用于恢复发现与派发再核验。2026-10-18 起两者对非 `srt` 后端也接受 `task_environment_released` 和 `task_environment_bind_fenced`，理由见 [ADR 0054 第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。它们只识别已经被接受的释放依据，不替代权限、证据、披露或期限检查。Pi 继续复用固定版本 0.84.2 的工具结果交付与 Agent Loop；Himawari 负责持久封锁、资源证明和产品权限，没有新建模型工具协议。
 
 ### 实施验证与明确限制
 

@@ -73,7 +73,7 @@ async function fixture() {
   const lease = claimFromRunExecutionLease(
     await dispatcher.claim({
       runId: RUN_ID,
-      expectedRunRevision: 0,
+      expectedRunRevision: 1,
       expectedLeaseRevision: 0,
       executionLeaseId: createRunExecutionLeaseId("review-lease"),
       claimedAt: now,

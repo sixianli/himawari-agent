@@ -32,6 +32,7 @@ import { containerRunnerDigest } from "@himawari-agent/runtime-sandbox";
 import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SandboxContainerRoute } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
+import { SqliteExecutionContext } from "../../packages/persistence-sqlite/src/sqlite-execution-context.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
 import { queuedLiveWorker } from "../fixtures/queued-live-worker.ts";
 import {
@@ -399,6 +400,10 @@ function readReservationRecovery(f: Awaited<ReturnType<typeof setup>>["f"], jobI
     database.close();
   }
 }
+const RESERVATION_RELEASE_CONFIRMED = {
+  status: "resolved",
+  reasonCode: "SANDBOX_RESERVATION_RELEASE_CONFIRMED",
+} as const;
 const settleRunCheckpoint = (f: Awaited<ReturnType<typeof setup>>["f"]) =>
   writeProductState(
     f,
@@ -857,42 +862,44 @@ it("[R2-D6] stops a cancelled Run's unbound container after Agent restart withou
   expect({ ...repeated, authority: after.authority }).toEqual(after);
 });
 
-it("[R2-P2] stops a reconciling Run's unbound container after Agent restart so its reservation can be released", async () => {
+it("[R2-P2] releases a reconciling Run's fenced container reservation after Agent restart and stops the environment once its lease expires", async () => {
   const f = await unboundContainer("reconciling_external_result");
   const before = await f.snapshot("reconciling-before-restart");
   expect(before.run).toMatchObject({ status: "reconciling_external_result" });
   expect(before.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
   expect(before.environments).toEqual([expect.objectContaining({ state: "ready" })]);
   await f.restart();
+  await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const fenced = await f.snapshot("reconciling-reservation-released");
+  expect(readReservationRecovery(f.f, f.prepared.plan.identity.jobId)).toMatchObject(
+    RESERVATION_RELEASE_CONFIRMED,
+  );
+  expect(fenced.admission).toMatchObject({
+    preparation_state: "reserved",
+    started_at: null,
+    reservation_stopped_at: expect.any(String),
+  });
+  expect(fenced.reservationReceipts).toHaveLength(1);
+  expect(
+    JSON.parse((fenced.reservationReceipts[0] as { verification_json: string }).verification_json),
+  ).toMatchObject({ basis: "task_environment_bind_fenced" });
+  expect(fenced.occupancy).toEqual([expect.objectContaining({ released_at: T1 })]);
+  expect(fenced.environments).toEqual([expect.objectContaining({ state: "ready" })]);
+  expect(fenced.environmentLeases).toEqual([expect.objectContaining({ released_at: null })]);
+  expect(fenced.lifecycleCalls.filter((call) => call === "stop")).toHaveLength(0);
+
   expireRunExecutionLease(f.f);
   await f.f.services.resources.recoverPending(new AbortController().signal, 10);
   const stopped = await f.snapshot("reconciling-environment-stopped");
   expect(stopped.environments).toEqual([expect.objectContaining({ state: "released" })]);
   expect(stopped.stopIntents).toEqual([expect.objectContaining({ reason: "supervision_lost" })]);
   expect(stopped.environmentReceipts).toHaveLength(1);
-  expect(stopped.reservationReceipts).toEqual([]);
-  expect(readReservationRecovery(f.f, f.prepared.plan.identity.jobId)).toMatchObject({
-    status: "unresolved",
-    action: "stop",
-    reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
-  });
-  writeProductState(
-    f.f,
-    "UPDATE sandbox_execution_records SET recovery_json=json_set(recovery_json,'$.finishedAt',?) WHERE job_id=?",
-    new Date(Date.parse(T1) - 60_000).toISOString(),
-    f.prepared.plan.identity.jobId,
-  );
-  const roundsToWrapCursorAndRetry = 2;
-  for (let round = 0; round < roundsToWrapCursorAndRetry; round++)
-    await f.f.services.resources.recoverPending(new AbortController().signal, 10);
-  const released = await f.snapshot("reconciling-reservation-released");
-  expect(released.reservationReceipts).toHaveLength(1);
-  expect(released.occupancy).toEqual([expect.objectContaining({ released_at: T1 })]);
-  expect(released.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
-  expect(released.executed).toEqual([]);
-  expect(released.published).toEqual([]);
-  expect(released.intents).toEqual([]);
-  expect(released.lifecycleCalls.filter((call) => call === "stop")).toHaveLength(1);
+  expect(stopped.reservationReceipts).toEqual(fenced.reservationReceipts);
+  expect(stopped.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+  expect(stopped.executed).toEqual([]);
+  expect(stopped.published).toEqual([]);
+  expect(stopped.intents).toEqual([]);
+  expect(stopped.lifecycleCalls.filter((call) => call === "stop")).toHaveLength(1);
 });
 
 it("[R2-D6] stops a failed Run's unbound container without stopping another Run", async () => {
@@ -1037,7 +1044,7 @@ it("[R2-D6] does not start recovery after its caller has cancelled the pump", as
 });
 
 it.each([true, false])(
-  "[R2-D6] routes automatic reserved recovery through container release evidence (released=%s)",
+  "[R2-D6] releases a running Run's fenced container reservation from environment release or the bind fence (environment released=%s)",
   async (released) => {
     const { f, lifecycle, executed, prepare } = await setup("returned", read, {
       realRun: true,
@@ -1084,8 +1091,7 @@ it.each([true, false])(
       const occupancy = database
         .prepare("SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?")
         .all(prepared.plan.identity.jobId);
-      expect(occupancy).not.toEqual([]);
-      expect(occupancy).toEqual([expect.objectContaining({ releasedAt: released ? T1 : null })]);
+      expect(occupancy).toEqual([expect.objectContaining({ releasedAt: T1 })]);
     } finally {
       database.close();
     }
@@ -1100,7 +1106,11 @@ it.each([true, false])(
         },
       });
     } else {
-      expect(admission).not.toHaveProperty("releaseReceipt");
+      expect(admission).toMatchObject({
+        workspaceBlocked: false,
+        releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+      });
+      expect(admission).not.toHaveProperty("releaseReceipt.verification.taskEnvironmentIds");
       expect((await store.read(environment.identity.environmentId))?.state).toBe("ready");
     }
     await f.services.resources.recoverPending(signal, 10);
@@ -1109,6 +1119,126 @@ it.each([true, false])(
     expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(released ? 1 : 0);
   },
 );
+
+const NOT_STARTED = {
+  outcome: "failed",
+  outputRef: null,
+  errorCode: "SANDBOX_TOOL_NOT_STARTED",
+} as const;
+const silentDelivery = { assertDisclosure: async () => {}, saveReceipt: async () => {} };
+
+it("[R2-P2] ends a running Run's fenced container call as not started once and runs the next call in the same environment", async () => {
+  const { f, lifecycle, executed, prepare, dispatch } = await setup("returned", read, {
+    realRun: true,
+    piParameters: { path: "notes.txt" },
+    directoryOperations: ["read"],
+  });
+  const prepared = await prepare();
+  const preparations = f.services.brokerV2.preparations;
+  await preparations.reserve({ ...prepared, invocation: f.input });
+  const store = f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environment = (await store.readRun(RUN_ID))?.environments[0];
+  if (!environment) throw new Error("Task environment missing");
+  await preparations.interruptReservation({
+    identity: prepared.plan.identity,
+    authority: SERVICE_AUTHORITY,
+    now: T1,
+    reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+  });
+  await f.services.resources.recoverPending(new AbortController().signal, 10);
+  expect(await preparations.readAdmission(prepared.plan.identity)).toMatchObject({
+    phase: "reserved",
+    recovery: RESERVATION_RELEASE_CONFIRMED,
+    workspaceBlocked: false,
+    releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+  });
+  expect(await store.read(environment.identity.environmentId)).toMatchObject({ state: "ready" });
+  expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(0);
+  const invocation = { runId: RUN_ID, invocationId: prepared.plan.identity.invocationId };
+  expect(await f.services.completeToolResult(invocation, silentDelivery)).toMatchObject(
+    NOT_STARTED,
+  );
+  expect(await f.services.completeToolResult(invocation, silentDelivery)).toMatchObject(
+    NOT_STARTED,
+  );
+  expect(executed).toEqual([]);
+
+  const next = await secondCall(f);
+  const second = await f.services.runtime.prepare(next.input, next.call);
+  if (!("reservation" in second)) throw new Error("expected a sandbox-execution.v2 admission");
+  expect((await preparations.reserve({ ...second, invocation: next.input })).applied).toBe(true);
+  await dispatch(second.plan);
+  expect(executed.map((item) => item.invocationId)).toEqual([second.plan.identity.invocationId]);
+  expect(executed[0]?.identity.environmentId).toBe(environment.identity.environmentId);
+  expect((await store.readRun(RUN_ID))?.environments).toHaveLength(1);
+  expect(lifecycle.calls.filter((call) => call === "create")).toHaveLength(1);
+  expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(0);
+});
+
+it("[R2-P2] ends a container call as not started when its reservation is stopped after the call registered with the environment", async () => {
+  const { f, lifecycle, executed, prepare, dispatch } = await setup("returned", read, {
+    realRun: true,
+    piParameters: { path: "notes.txt" },
+    directoryOperations: ["read"],
+  });
+  const prepared = await prepare();
+  const preparations = f.services.brokerV2.preparations;
+  await preparations.reserve({ ...prepared, invocation: f.input });
+  const request = SqliteExecutionContext.prototype.request;
+  let fencedAfterLink = 0;
+  const linkCall = vi
+    .spyOn(SqliteExecutionContext.prototype, "request")
+    .mockImplementation(async function <TResult>(
+      this: SqliteExecutionContext,
+      operation: string,
+      payload: unknown,
+    ): Promise<TResult> {
+      const result = (await request.call(this, operation, payload)) as TResult;
+      if (operation === "capabilityInvocation.executionEnvironment.linkCall") {
+        linkCall.mockRestore();
+        await preparations.interruptReservation({
+          identity: prepared.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+        });
+        fencedAfterLink += 1;
+      }
+      return result;
+    });
+  try {
+    await dispatch(prepared.plan).catch(() => undefined);
+  } finally {
+    linkCall.mockRestore();
+  }
+  expect(fencedAfterLink).toBe(1);
+  const store = f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const [environment] = (await store.readRun(RUN_ID))?.environments ?? [];
+  expect(environment?.calls.map((call) => call.invocationId)).toEqual([
+    prepared.plan.identity.invocationId,
+  ]);
+  expect(await preparations.readAdmission(prepared.plan.identity)).toMatchObject({
+    phase: "reserved",
+    stopRequestedAt: T1,
+  });
+  expect(executed).toEqual([]);
+
+  await f.services.resources.recoverPending(new AbortController().signal, 10);
+  expect(await preparations.readAdmission(prepared.plan.identity)).toMatchObject({
+    phase: "reserved",
+    recovery: RESERVATION_RELEASE_CONFIRMED,
+    workspaceBlocked: false,
+    releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+  });
+  expect(
+    await f.services.completeToolResult(
+      { runId: RUN_ID, invocationId: prepared.plan.identity.invocationId },
+      silentDelivery,
+    ),
+  ).toMatchObject(NOT_STARTED);
+  expect(executed).toEqual([]);
+  expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(0);
+});
 
 it("rejects a reserved container release while its task environment is still running", async () => {
   const { f, prepare } = await setup();

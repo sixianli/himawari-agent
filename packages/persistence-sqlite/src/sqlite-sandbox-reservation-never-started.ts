@@ -11,4 +11,6 @@ export const SANDBOX_RESERVATION_NEVER_STARTED_SQL = `(
   OR (json_extract(reservation.verification_json,'$.basis')='preparation_launch_blocked'
     AND json_extract(result.plan_json,'$.backendRef')='srt'
     AND json_extract(result.plan_json,'$.preparationProtocol')='${SANDBOX_PREPARATION_LAUNCH_PROTOCOL}')
+  OR (json_extract(reservation.verification_json,'$.basis') IN ('task_environment_released','task_environment_bind_fenced')
+    AND json_extract(result.plan_json,'$.backendRef')<>'srt')
 )`;

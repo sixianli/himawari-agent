@@ -66,7 +66,7 @@ Agent 在预留已被原停止时间中断后，验证原准备登记、安装 H
 
 禁止启动只属于当前 Run 的原控制目录，不能跨环境或跨 Run。恢复不能使用过期 Grant 来执行工具；安装 Host 身份检查沿用现有独立清理权限。Himawari 负责准备授权、持久证据和一次交付；Pi 的工具调用与 Agent Loop 保持原职责，无新 Pi 实现或依赖。
 
-2026-10-15 起（R2-T10），本文的“确定未启动”多一条并行路径：**已经 bind、但作业宿主在放行用户命令前失败**的前台调用。它不经过本文的禁止启动文件，而是由 Worker 在作业宿主报告 `taskStarted===false`、`exitCode===null` 且记录尚无结果时，读签名 `final.json` 核对 `taskStarted===false`、`srtReset===true`、策略摘要与私有目录引用；核对通过并确认资源 `released` 后写 `error / SANDBOX_TOOL_NOT_STARTED / termination failure` 交回模型。`reserved` 路径的 `preparation_not_authorized`、`preparation_launch_blocked`、`host_never_started` 依据和 `SANDBOX_RESERVATION_NEVER_STARTED_SQL` 不变，只服务 `reserved` 语义。两条路径都只覆盖本机 SRT 前台调用；证明与实现见[准备控制恢复](2026-09-28-sandbox-preparation-control-recovery-design.md#目标与来源)。
+2026-10-15 起（R2-T10），本文的“确定未启动”多一条并行路径：**已经 bind、但作业宿主在放行用户命令前失败**的前台调用。它不经过本文的禁止启动文件，而是由 Worker 在作业宿主报告 `taskStarted===false`、`exitCode===null` 且记录尚无结果时，读签名 `final.json` 核对 `taskStarted===false`、`srtReset===true`、策略摘要与私有目录引用；核对通过并确认资源 `released` 后写 `error / SANDBOX_TOOL_NOT_STARTED / termination failure` 交回模型。`reserved` 路径的 `preparation_not_authorized`、`preparation_launch_blocked`、`host_never_started` 依据和 `SANDBOX_RESERVATION_NEVER_STARTED_SQL` 不变，只服务 `reserved` 语义。两条路径都只覆盖本机 SRT 前台调用；证明与实现见[准备控制恢复](2026-09-28-sandbox-preparation-control-recovery-design.md#目标与来源)。2026-10-18 起，`reserved` 路径的共享判断另外接受常驻 SRT 环境和容器环境的 `task_environment_released`、`task_environment_bind_fenced` 依据，见 [ADR 0054 第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。
 
 ## 验收
 

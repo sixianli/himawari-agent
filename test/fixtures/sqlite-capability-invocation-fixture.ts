@@ -196,7 +196,7 @@ export async function openRepository(realMessage = false): Promise<{
         id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
         status, created_at, updated_at
       ) VALUES (?, ?, ?, 'thread-capability-invocation', 'session-capability-invocation',
-        'trigger-capability-invocation', 0, 'running', ?, ?)`,
+        'trigger-capability-invocation', 1, 'running', ?, ?)`,
     )
     .run(RUN_ID, OWNER_ID, AGENT_ID, T0, T0);
   if (realMessage) {

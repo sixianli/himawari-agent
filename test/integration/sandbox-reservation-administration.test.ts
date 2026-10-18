@@ -907,6 +907,248 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
   });
 
   it.each([
+    ["srt", false],
+    ["srt-task-environment", true],
+    ["container", true],
+  ] as const)(
+    "[R2-P2] accepts a bind-fence reservation release and counts it as never started only on a task environment backend (%s)",
+    async (backendRef, taskEnvironment) => {
+      const f = await fixture();
+      withDatabase(f, (database) => {
+        const identity = f.request.plan.identity;
+        database
+          .prepare(
+            "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.backendRef',?) WHERE job_id=?",
+          )
+          .run(backendRef, identity.jobId);
+        const admission = preparationCall(database, "readAdmission", identity);
+        if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
+          throw new Error("FENCED_RESERVATION_MISSING");
+        const base = {
+          schemaVersion: "sandbox-reservation-release.v1",
+          identity: admission.plan.identity,
+          environmentId: admission.plan.environmentId,
+          semanticFingerprint: admission.plan.semanticFingerprint,
+          stopRequestedAt: admission.stopRequestedAt,
+          checkedAt: T1,
+          validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+        } as const;
+        const fence = {
+          ...base,
+          basis: "task_environment_bind_fenced",
+          evidence: { ref: "reservation-fence:fixture", digest: "e".repeat(64) },
+        } as const;
+        const environmentRelease = {
+          ...base,
+          basis: "task_environment_released",
+          taskEnvironmentIds: ["environment-fixture"],
+          evidence: { ref: "environment-release:fixture", digest: "f".repeat(64) },
+        } as const;
+        const sqlNeverStarted = (verification: object) =>
+          (
+            database
+              .prepare(
+                `SELECT ${SANDBOX_RESERVATION_NEVER_STARTED_SQL} AS matched
+                 FROM (SELECT ? AS verification_json) reservation, (SELECT ? AS plan_json) result`,
+              )
+              .get(JSON.stringify(verification), JSON.stringify(admission.plan)) as {
+              matched: number | null;
+            }
+          ).matched === 1;
+        for (const verification of [fence, environmentRelease]) {
+          expect(isSandboxReservationNeverStarted(admission.plan, verification)).toBe(
+            taskEnvironment,
+          );
+          expect(sqlNeverStarted(verification)).toBe(taskEnvironment);
+        }
+        const release = () =>
+          preparationCall(database, "releaseReservation", {
+            identity,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            verification: fence,
+          });
+        if (!taskEnvironment) {
+          expect(release).toThrow("Invalid reservation release verification");
+          expect(preparationCall(database, "readAdmission", identity)).not.toHaveProperty(
+            "releaseReceipt",
+          );
+          return;
+        }
+        release();
+        expect(preparationCall(database, "readAdmission", identity)).toMatchObject({
+          phase: "reserved",
+          workspaceBlocked: false,
+          releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+        });
+        expect(
+          database
+            .prepare(`SELECT 1 FROM sandbox_execution_records result
+        JOIN sandbox_reservation_release_receipts reservation ON reservation.job_id=result.job_id
+        WHERE result.job_id=? AND ${SANDBOX_RESERVATION_NEVER_STARTED_SQL}`)
+            .get(identity.jobId),
+        ).toBeDefined();
+      });
+    },
+  );
+
+  it("[R2-P2] rejects a bind-fence reservation release for a reservation without a stop fence", async () => {
+    const f = await fixture({ stopped: false });
+    withDatabase(f, (database) => {
+      const identity = f.request.plan.identity;
+      database
+        .prepare(
+          "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.backendRef','srt-task-environment') WHERE job_id=?",
+        )
+        .run(identity.jobId);
+      const admission = preparationCall(database, "readAdmission", identity);
+      if (admission?.phase !== "reserved") throw new Error("RESERVATION_MISSING");
+      expect(admission.stopRequestedAt ?? null).toBeNull();
+      expect(() =>
+        preparationCall(database, "releaseReservation", {
+          identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          verification: {
+            schemaVersion: "sandbox-reservation-release.v1",
+            basis: "task_environment_bind_fenced",
+            identity: admission.plan.identity,
+            environmentId: admission.plan.environmentId,
+            semanticFingerprint: admission.plan.semanticFingerprint,
+            stopRequestedAt: T1,
+            checkedAt: T1,
+            validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+            evidence: { ref: "reservation-fence:forged", digest: "e".repeat(64) },
+          },
+        }),
+      ).toThrow("Invalid reservation release verification");
+      expect(preparationCall(database, "readAdmission", identity)).not.toHaveProperty(
+        "releaseReceipt",
+      );
+    });
+  });
+
+  it("[R2-P2] refuses a bind-fence reservation release once the call was bound and started", async () => {
+    const f = await fixture({ bound: true });
+    withDatabase(f, (database) => {
+      const identity = f.request.plan.identity;
+      database
+        .prepare(
+          "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.backendRef','container') WHERE job_id=?",
+        )
+        .run(identity.jobId);
+      const bound = preparationCall(database, "readAdmission", identity);
+      if (bound?.phase !== "bound") throw new Error("BOUND_EXECUTION_MISSING");
+      const plan = bound.record.plan;
+      expect(
+        preparationCall(database, "interruptReservation", {
+          identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
+        }).applied,
+      ).toBe(false);
+      expect(() =>
+        preparationCall(database, "releaseReservation", {
+          identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          verification: {
+            schemaVersion: "sandbox-reservation-release.v1",
+            basis: "task_environment_bind_fenced",
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            semanticFingerprint: plan.semanticFingerprint,
+            stopRequestedAt: T1,
+            checkedAt: T1,
+            validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+            evidence: { ref: "reservation-fence:forged", digest: "e".repeat(64) },
+          },
+        }),
+      ).toThrow("Sandbox reservation is not unbound");
+      expect(preparationCall(database, "readAdmission", identity)).toMatchObject({
+        phase: "bound",
+      });
+      expect(
+        database
+          .prepare("SELECT 1 FROM sandbox_reservation_release_receipts WHERE job_id=?")
+          .get(identity.jobId),
+      ).toBeUndefined();
+      expect(
+        database
+          .prepare(
+            `SELECT started_at IS NOT NULL AS started,reservation_stopped_at AS stoppedAt
+             FROM sandbox_execution_records WHERE job_id=?`,
+          )
+          .get(identity.jobId),
+      ).toEqual({ started: 1, stoppedAt: null });
+    });
+  });
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "[R2-P2] rejects a bind-fence reservation release once the Run is %s and keeps an earlier one readable after the Run ends",
+    async (status) => {
+      for (const finishedBeforeRelease of [true, false]) {
+        const f = await fixture();
+        withDatabase(f, (database) => {
+          const identity = f.request.plan.identity;
+          database
+            .prepare(
+              "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.backendRef','container') WHERE job_id=?",
+            )
+            .run(identity.jobId);
+          const finish = () =>
+            database.prepare("UPDATE runs SET status=? WHERE id=?").run(status, identity.runId);
+          const admission = preparationCall(database, "readAdmission", identity);
+          if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
+            throw new Error("FENCED_RESERVATION_MISSING");
+          const stopRequestedAt = admission.stopRequestedAt;
+          const release = () =>
+            preparationCall(database, "releaseReservation", {
+              identity,
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              verification: {
+                schemaVersion: "sandbox-reservation-release.v1",
+                basis: "task_environment_bind_fenced",
+                identity: admission.plan.identity,
+                environmentId: admission.plan.environmentId,
+                semanticFingerprint: admission.plan.semanticFingerprint,
+                stopRequestedAt,
+                checkedAt: T1,
+                validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+                evidence: { ref: "reservation-fence:fixture", digest: "e".repeat(64) },
+              },
+            });
+          if (finishedBeforeRelease) {
+            finish();
+            expect(release).toThrow("Invalid reservation release verification");
+            expect(preparationCall(database, "readAdmission", identity)).not.toHaveProperty(
+              "releaseReceipt",
+            );
+            expect(
+              database
+                .prepare(
+                  "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+                )
+                .all(identity.jobId),
+            ).toEqual(admission.workspaces.map(() => ({ releasedAt: null })));
+            expect(admission.workspaces.length).toBeGreaterThan(0);
+            return;
+          }
+          release();
+          finish();
+          expect(preparationCall(database, "readAdmission", identity)).toMatchObject({
+            phase: "reserved",
+            workspaceBlocked: false,
+            releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+          });
+        });
+      }
+    },
+  );
+
+  it.each([
     "barrier",
     "queued",
     "continue pending",

@@ -408,6 +408,27 @@ export function createProductionTaskEnvironments(options: {
       };
     },
 
+    fenceReservation(
+      plan: SandboxExecutionPlanV2,
+      stopRequestedAt: string,
+    ): SandboxReservationReleaseVerification {
+      const checkedAt = clock.now();
+      return {
+        schemaVersion: "sandbox-reservation-release.v1",
+        basis: "task_environment_bind_fenced",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        semanticFingerprint: plan.semanticFingerprint,
+        stopRequestedAt,
+        checkedAt,
+        validUntil: new Date(Date.parse(checkedAt) + PROOF_VALIDITY_MS).toISOString(),
+        evidence: {
+          ref: `reservation-fence:${digest(plan.identity.jobId).slice(0, 32)}`,
+          digest: digest([plan.identity.jobId, stopRequestedAt, plan.semanticFingerprint]),
+        },
+      };
+    },
+
     async stopLeftovers(limit: number): Promise<void> {
       const page = await store.listLeftovers({
         backendRef: configuration.backendRef,
