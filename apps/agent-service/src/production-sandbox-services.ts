@@ -1102,21 +1102,7 @@ export async function createProductionSandboxServices(options: {
       environmentId: `environment:${hash(input.invocationId)}`,
     });
     const resolved = await resolve(plan);
-    if (srtFacade) {
-      if (!grant) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
-      await srtFacade.acquireSrt({
-        runId: call.runId,
-        hostId,
-        grant,
-        claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
-        binding,
-        allowedDomains: resolved.allowedDomains,
-        plan,
-        deadlineAt: new Date(
-          Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
-        ).toISOString(),
-      });
-    } else if (descriptor.backendRef !== SRT_BACKEND_REF) {
+    if (!srtFacade && descriptor.backendRef !== SRT_BACKEND_REF) {
       if (descriptor.backendRef !== environments?.backendRef || !grant)
         throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
       await environments.acquire({
@@ -1152,16 +1138,60 @@ export async function createProductionSandboxServices(options: {
             },
           }
         : {}),
+      ...(srtFacade && grant
+        ? {
+            environmentDeadlineAt: new Date(
+              Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
+            ).toISOString(),
+          }
+        : {}),
       plan,
       reservation,
       workspaces: resolved.workspaceClaims,
     };
+  };
+  const acquireResidentEnvironment = async (prepared: {
+    readonly plan: SandboxExecutionPlanCandidateV2;
+    readonly environmentDeadlineAt?: string;
+  }) => {
+    const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
+    if (plan.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF) return;
+    if (!srtEnvironments) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+    const resolved = await resolve(plan);
+    const { intent } = await resolveSandboxActionGrant({
+      plan,
+      authorizations: repository.authorizationStore(),
+      now: () => clock.now(),
+    });
+    const directory = intent.targets.find((item) => item.type === "directory-grant");
+    const grant = directory
+      ? ((
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(directory.ref),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined)
+      : undefined;
+    if (!grant) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    await srtEnvironments.acquireSrt({
+      runId: plan.identity.runId,
+      hostId,
+      grant,
+      claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
+      binding,
+      allowedDomains: resolved.allowedDomains,
+      plan,
+      deadlineAt: prepared.environmentDeadlineAt ?? plan.effectiveDeadlineAt,
+    });
   };
   const runtime: ProductionRuntimeSandbox = {
     journal,
     preparations,
     scopes,
     appliesTo,
+    acquireEnvironment: acquireResidentEnvironment,
     prepare: async (input, call, parentCall, signal) => {
       signal?.throwIfAborted();
       const selected = await entryFor(input.capabilityRef, input.capabilityVersion);

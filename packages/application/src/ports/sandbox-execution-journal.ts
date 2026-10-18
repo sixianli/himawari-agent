@@ -423,6 +423,7 @@ export interface SandboxExecutionPreparationPort {
     readonly plan: SandboxExecutionPlanCandidateV2;
     readonly reservation: SandboxExecutionReservation;
     readonly workspaces: readonly SandboxWorkspaceClaim[];
+    readonly environmentDeadlineAt?: string;
   }): Promise<{
     readonly admission: SandboxExecutionAdmissionRecord;
     readonly applied: boolean;

@@ -7247,7 +7247,165 @@ describe("[R2-P2] sandbox backend parity", () => {
     expect(Object.keys(PARITY_CASES).sort()).toEqual([...SANDBOX_EXECUTION_BACKEND_REFS].sort());
   });
 
-  it.each([SRT_BACKEND_REF, SRT_TASK_ENVIRONMENT_BACKEND_REF])(
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
+    "[R2-P2] queues a %s request behind another Run's unconfirmed workspace occupancy",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const request = admission(f, `-parity-occupancy-${backendRef}`);
+        const claim = request.workspaces[0];
+        if (!claim) throw new Error("workspace claim required");
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...request.plan,
+          backendRef,
+        });
+        const hostId = plan.identity.hostId;
+        const envelope = {
+          schemaVersion: "execution-envelope.v1" as const,
+          directories: [
+            {
+              hostId: claim.hostId,
+              grantRef: "grant-parity-occupancy",
+              canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+              access: claim.access as "read" | "write",
+              source: {
+                authorizationRef: "authorization-parity-occupancy",
+                decidedBy: "user" as const,
+                delegationListRef: null,
+                expiresAt: T2,
+              },
+            },
+          ],
+          network: [],
+          resources: {
+            cpuMillicores: 1000,
+            memoryBytes: 536870912,
+            maxProcesses: 128,
+            privateStorageBytes: 268435456,
+          },
+        };
+        const occupyingRun = "run-parity-occupancy-other";
+        f.database
+          .prepare(`INSERT INTO triggers (
+            id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+            source_id, payload_ref, source_proof_ref, occurred_at
+          ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, 'user_message', 'fixture-source',
+            'payload-capability-invocation-trigger', 'fixture-proof', ?)`)
+          .run(`${occupyingRun}-trigger`, OWNER_ID, AGENT_ID, `${occupyingRun}-message`, T1);
+        f.database
+          .prepare(`INSERT INTO runs (
+            id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, ?, 1, 'running', ?, ?)`)
+          .run(
+            occupyingRun,
+            OWNER_ID,
+            AGENT_ID,
+            `${occupyingRun}-session`,
+            `${occupyingRun}-trigger`,
+            T1,
+            T1,
+          );
+        const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+        const occupied = await store.reserve({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          runId: occupyingRun,
+          hostId,
+          role: "primary",
+          rotationReason: "initial",
+          backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+          envelope,
+          policyDigest: "a".repeat(64),
+          imageDigest: "b".repeat(64),
+          runnerDigest: "c".repeat(64),
+          deadlineAt: T2,
+          leases: [claim],
+          ids: {
+            executionJobId: "execution-job-parity-occupancy-other",
+            environmentId: "environment-parity-occupancy-other",
+            createIntentId: "create-parity-occupancy-other",
+          },
+        });
+        const candidate = {
+          plan,
+          reservation: {
+            schemaVersion: "sandbox-preparation.v1" as const,
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            resourceRef: null,
+            mode: plan.mode,
+            workspaceConflictRefs: request.workspaces.map((item) => item.ref),
+            sequence: 1,
+            createdAt: plan.requestedAt,
+          },
+          workspaces: request.workspaces,
+          invocation: request.invocation,
+        };
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.enqueue(candidate)).toMatchObject({ status: "queued" });
+        const admit = async () => {
+          if (backendRef !== SRT_BACKEND_REF)
+            await store.reserve({
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              runId: plan.identity.runId,
+              hostId,
+              role: "primary",
+              rotationReason: "initial",
+              backendRef,
+              envelope,
+              policyDigest: "a".repeat(64),
+              imageDigest: "b".repeat(64),
+              runnerDigest: "c".repeat(64),
+              deadlineAt: T2,
+              leases: [claim],
+              ids: {
+                executionJobId: `execution-job-parity-occupancy-${backendRef}`,
+                environmentId: `environment-parity-occupancy-${backendRef}`,
+                createIntentId: `create-parity-occupancy-${backendRef}`,
+              },
+              requestJobId: plan.identity.jobId,
+            });
+          return preparations.reserve(candidate);
+        };
+        await expect(admit()).rejects.toMatchObject({
+          code: "PORT_CONFLICT",
+          details: { reasonCode: "WORKSPACE_OCCUPIED" },
+        });
+        const occupiedEnvironmentId = occupied.record.identity.environmentId;
+        await store.requestStop({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          environmentId: occupiedEnvironmentId,
+          stopIntentId: `${occupiedEnvironmentId}-stop`,
+          reason: "run_cancelled",
+          stoppedResourceRefs: [],
+        });
+        await store.acceptRelease({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          environmentId: occupiedEnvironmentId,
+          proof: { basis: "create_not_dispatched" },
+        });
+        const admitted = await admit();
+        expect(admitted.applied).toBe(true);
+        if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+        expect(admitted.admission.plan.identity.jobId).toBe(plan.identity.jobId);
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
     "[R2-P2] authorizes deadline result recovery for %s from its own persisted evidence",
     async (backendRef) => {
       const run =
@@ -7335,4 +7493,234 @@ describe("[R2-P2] sandbox backend parity", () => {
       await f.close();
     }
   });
+});
+
+function residentQueueEnvelope(claim: {
+  readonly hostId: string;
+  readonly canonicalRootId?: string;
+  readonly access: string;
+}) {
+  return {
+    schemaVersion: "execution-envelope.v1" as const,
+    directories: [
+      {
+        hostId: claim.hostId,
+        grantRef: "grant-resident-queue",
+        canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+        access: claim.access as "read" | "write",
+        source: {
+          authorizationRef: "authorization-resident-queue",
+          decidedBy: "user" as const,
+          delegationListRef: null,
+          expiresAt: T2,
+        },
+      },
+    ],
+    network: [],
+    resources: {
+      cpuMillicores: 1000,
+      memoryBytes: 536870912,
+      maxProcesses: 128,
+      privateStorageBytes: 268435456,
+    },
+  };
+}
+
+function seedQueueRun(f: Fixture, runId: string) {
+  f.database
+    .prepare(`INSERT INTO triggers (
+      id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+      source_id, payload_ref, source_proof_ref, occurred_at
+    ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, 'user_message', 'fixture-source',
+      'payload-capability-invocation-trigger', 'fixture-proof', ?)`)
+    .run(`${runId}-trigger`, OWNER_ID, AGENT_ID, `${runId}-message`, T1);
+  f.database
+    .prepare(`INSERT INTO runs (
+      id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+      status, created_at, updated_at
+    ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, ?, 1, 'running', ?, ?)`)
+    .run(runId, OWNER_ID, AGENT_ID, `${runId}-session`, `${runId}-trigger`, T1, T1);
+}
+
+function seedQueuedWorkspaceRequest(
+  f: Fixture,
+  input: {
+    readonly jobId: string;
+    readonly runId: string;
+    readonly hostId: string;
+    readonly handleRef: string;
+    readonly claim: unknown;
+  },
+) {
+  f.database
+    .prepare(`INSERT INTO sandbox_admission_queue
+      (job_id, owner_id, agent_id, run_id, host_id, handle_ref, deadline_at, status,
+       request_json, claims_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', '{}', ?)`)
+    .run(
+      input.jobId,
+      OWNER_ID,
+      AGENT_ID,
+      input.runId,
+      input.hostId,
+      input.handleRef,
+      T2,
+      JSON.stringify([input.claim]),
+    );
+}
+
+it("[R2-P2] keeps a resident environment behind earlier queued workspace requests", async () => {
+  const f = await openSandboxJournal();
+  let opened: SqliteProductStateRepository | undefined;
+  try {
+    opened = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const share = admission(f, "-resident-queue");
+    const claim = share.workspaces[0];
+    if (!claim) throw new Error("workspace claim required");
+    const hostId = share.plan.identity.hostId;
+    const earlier = "run-resident-queue-earlier";
+    const later = "run-resident-queue-later";
+    seedQueueRun(f, earlier);
+    seedQueueRun(f, later);
+    seedQueuedWorkspaceRequest(f, {
+      jobId: "job-resident-queue-earlier",
+      runId: earlier,
+      hostId,
+      handleRef: share.plan.handleRef,
+      claim,
+    });
+    seedQueuedWorkspaceRequest(f, {
+      jobId: "job-resident-queue-later",
+      runId: later,
+      hostId,
+      handleRef: share.plan.handleRef,
+      claim,
+    });
+    const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    let counter = 0;
+    const reserve = (runId: string, requestJobId: string) =>
+      store.reserve({
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        runId,
+        hostId,
+        role: "primary",
+        rotationReason: "initial",
+        backendRef: R2P2_BACKEND,
+        envelope: residentQueueEnvelope(claim),
+        policyDigest: "a".repeat(64),
+        imageDigest: "b".repeat(64),
+        runnerDigest: "c".repeat(64),
+        deadlineAt: T2,
+        leases: [claim],
+        ids: {
+          executionJobId: `execution-job-resident-queue-${++counter}`,
+          environmentId: `environment-resident-queue-${counter}`,
+          createIntentId: `create-resident-queue-${counter}`,
+        },
+        requestJobId,
+      });
+    await expect(reserve(later, "job-resident-queue-later")).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Workspace has an earlier conflicting request",
+    });
+    const earlierOutcome = await reserve(earlier, "job-resident-queue-earlier").then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    if (!earlierOutcome.ok)
+      throw new Error(
+        `the earlier Run was refused while only its own queued row existed: ${String(
+          earlierOutcome.error,
+        )}`,
+      );
+    const first = earlierOutcome.value;
+    expect(first.applied).toBe(true);
+    expect(first.record.identity.runId).toBe(earlier);
+    f.database
+      .prepare("UPDATE sandbox_admission_queue SET status='admitted' WHERE job_id=?")
+      .run("job-resident-queue-earlier");
+    await expect(reserve(later, "job-resident-queue-later")).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      details: { reasonCode: "WORKSPACE_OCCUPIED" },
+    });
+    const earlierEnvironment = first.record.identity.environmentId;
+    await store.requestStop({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: earlierEnvironment,
+      stopIntentId: `${earlierEnvironment}-stop`,
+      reason: "run_cancelled",
+      stoppedResourceRefs: [],
+    });
+    await store.acceptRelease({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: earlierEnvironment,
+      proof: { basis: "create_not_dispatched" },
+    });
+    const second = await reserve(later, "job-resident-queue-later");
+    expect(second.applied).toBe(true);
+    expect(second.record.identity.runId).toBe(later);
+  } finally {
+    await opened?.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] keeps a resident environment with its own Run when its sandbox reservation has not committed", async () => {
+  const f = await openSandboxJournal();
+  let opened: SqliteProductStateRepository | undefined;
+  try {
+    opened = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const share = admission(f, "-resident-keep");
+    const claim = share.workspaces[0];
+    if (!claim) throw new Error("workspace claim required");
+    const runId = createRunId(share.plan.identity.runId);
+    const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    let counter = 0;
+    const reserve = () =>
+      store.reserve({
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        runId,
+        hostId: share.plan.identity.hostId,
+        role: "primary",
+        rotationReason: "initial",
+        backendRef: R2P2_BACKEND,
+        envelope: residentQueueEnvelope(claim),
+        policyDigest: "a".repeat(64),
+        imageDigest: "b".repeat(64),
+        runnerDigest: "c".repeat(64),
+        deadlineAt: T2,
+        leases: [claim],
+        ids: {
+          executionJobId: `execution-job-resident-keep-${++counter}`,
+          environmentId: `environment-resident-keep-${counter}`,
+          createIntentId: `create-resident-keep-${counter}`,
+        },
+        requestJobId: share.plan.identity.jobId,
+      });
+    const first = await reserve();
+    expect(first.applied).toBe(true);
+    const reused = await reserve();
+    expect(reused.applied).toBe(false);
+    expect(reused.record.identity.environmentId).toBe(first.record.identity.environmentId);
+    expect(reused.record.leases.map((lease) => lease.ref)).toEqual([claim.ref]);
+    expect(reused.record.leases[0]?.canonicalRootId).toBe(claim.canonicalRootId);
+    const readRun = await store.readRun(runId);
+    expect(readRun?.environments).toHaveLength(1);
+    expect(readRun?.environments[0]?.state).toBe("reserved");
+  } finally {
+    await opened?.close();
+    await f.close();
+  }
 });

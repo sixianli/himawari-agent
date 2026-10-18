@@ -102,6 +102,7 @@ export interface ExecutionEnvironmentStorePort {
       readonly runnerDigest: string;
       readonly deadlineAt: string;
       readonly leases: readonly SandboxWorkspaceClaim[];
+      readonly requestJobId?: string;
       readonly ids: {
         readonly executionJobId: string;
         readonly environmentId: string;

@@ -880,12 +880,17 @@ export class SqliteSandboxExecutionOperations {
     now: string,
     exceptEnvironment = "",
     owner?: Pick<SandboxExecutionPlanV2, "identity" | "backendRef">,
+    ownRun?: { readonly runId: string },
   ): void {
     this.queue.assertFair(claims, exceptJob, now);
+    const occupancyConflict = (conflictingRunId: string) =>
+      ownRun !== undefined && conflictingRunId === ownRun.runId
+        ? "WORKSPACE_OCCUPIED_BY_RUN"
+        : "WORKSPACE_OCCUPIED";
     for (const claim of claims) {
       const leases = this.db
         .prepare(
-          `SELECT l.claim_json AS claim, e.state AS state FROM execution_environment_leases l
+          `SELECT l.claim_json AS claim, e.state AS state, j.run_id AS runId FROM execution_environment_leases l
           JOIN execution_environments e ON e.environment_id=l.environment_id
           JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
           WHERE l.host_id=? AND l.released_at IS NULL AND l.environment_id != ?
@@ -898,7 +903,7 @@ export class SqliteSandboxExecutionOperations {
           owner?.identity.ownerId ?? "",
           owner?.identity.agentId ?? "",
           owner?.identity.runId ?? "",
-        ) as { claim: string; state: string }[];
+        ) as { claim: string; state: string; runId: string }[];
       for (const lease of leases)
         if (
           conflicts(
@@ -908,7 +913,7 @@ export class SqliteSandboxExecutionOperations {
           )
         )
           this.fail("PORT_CONFLICT", "Workspace remains leased by a task environment", {
-            reasonCode: "WORKSPACE_OCCUPIED",
+            reasonCode: occupancyConflict(lease.runId),
           });
       const legacy = this.db
         .prepare(
@@ -917,9 +922,14 @@ export class SqliteSandboxExecutionOperations {
         .get(claim.hostId, exceptJob);
       if (legacy) this.fail("PORT_CONFLICT", "Legacy execution has unresolved host occupancy");
       const occupied = this.db
-        .prepare(`SELECT o.claim_json AS claim,r.facts_json AS facts, EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL) AS uncertain FROM sandbox_workspace_occupancy o JOIN sandbox_execution_records r ON r.job_id=o.job_id
+        .prepare(`SELECT o.claim_json AS claim,r.facts_json AS facts,r.run_id AS runId, EXISTS(SELECT 1 FROM sandbox_execution_intents i WHERE i.job_id=r.job_id AND i.kind='continue' AND i.dispatched_at IS NOT NULL AND i.acknowledged_at IS NULL) OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=r.job_id AND b.resolved_at IS NULL) AS uncertain FROM sandbox_workspace_occupancy o JOIN sandbox_execution_records r ON r.job_id=o.job_id
         WHERE o.host_id=? AND (o.released_at IS NULL OR EXISTS(SELECT 1 FROM sandbox_workspace_barriers b WHERE b.job_id=o.job_id AND b.resolved_at IS NULL)) AND o.job_id != ?`)
-        .all(claim.hostId, exceptJob) as { claim: string; facts: string; uncertain: number }[];
+        .all(claim.hostId, exceptJob) as {
+        claim: string;
+        facts: string;
+        runId: string;
+        uncertain: number;
+      }[];
       for (const row of occupied) {
         const existing = JSON.parse(row.claim) as SandboxWorkspaceClaim;
         const rawFacts = JSON.parse(row.facts) as { schemaVersion?: unknown };
@@ -927,7 +937,7 @@ export class SqliteSandboxExecutionOperations {
           sandboxExecutionReservationSchema.parse(rawFacts);
           if (conflicts(claim, existing))
             this.fail("PORT_CONFLICT", "Workspace has a pending preparation", {
-              reasonCode: "WORKSPACE_OCCUPIED",
+              reasonCode: occupancyConflict(row.runId),
             });
           continue;
         }
@@ -941,7 +951,7 @@ export class SqliteSandboxExecutionOperations {
           (facts.effect.kind === "unknown" && facts.result !== null);
         if (conflicts(claim, existing, uncertain))
           this.fail("PORT_CONFLICT", "Workspace remains occupied", {
-            reasonCode: "WORKSPACE_OCCUPIED",
+            reasonCode: occupancyConflict(row.runId),
           });
       }
     }

@@ -105,6 +105,7 @@ export class TaskEnvironmentCoordinator {
     readonly imageDigest: string;
     readonly runnerDigest: string;
     readonly deadlineAt: string;
+    readonly requestJobId?: string;
   }): Promise<ExecutionEnvironmentRecord> {
     const previous = this.runs.get(input.runId) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(() => this.acquireInOrder(input));
@@ -278,6 +279,7 @@ export class TaskEnvironmentCoordinator {
       runnerDigest: input.runnerDigest,
       deadlineAt: input.deadlineAt,
       leases: input.leases,
+      ...(input.requestJobId === undefined ? {} : { requestJobId: input.requestJobId }),
       ids: {
         executionJobId: this.ids.next("execution-job"),
         environmentId: this.ids.next("environment"),

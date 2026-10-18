@@ -614,8 +614,15 @@ export class SqliteCapabilityInvocationOperations {
       authority: (value, owner, agent, now) =>
         this.assertAuthority(authority(value), owner, agent, now),
       disk: assertDiskHeadroom,
-      assertAvailable: (claims, exceptEnvironment, now) =>
-        this.sandboxExecutions.assertAvailable(claims, "", now, exceptEnvironment),
+      assertAvailable: (claims, requestJobId, now, ownRunId) =>
+        this.sandboxExecutions.assertAvailable(
+          claims,
+          requestJobId,
+          now,
+          "",
+          undefined,
+          ownRunId === "" ? undefined : { runId: ownRunId },
+        ),
     });
   }
 

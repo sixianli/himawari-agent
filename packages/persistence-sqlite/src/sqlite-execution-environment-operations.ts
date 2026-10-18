@@ -27,8 +27,9 @@ interface Dependencies {
   disk(): void;
   assertAvailable(
     claims: readonly SandboxWorkspaceClaim[],
-    exceptEnvironment: string,
+    requestJobId: string,
     now: string,
+    ownRunId: string,
   ): void;
 }
 interface EnvironmentRow {
@@ -206,7 +207,12 @@ export class SqliteExecutionEnvironmentOperations {
     const generation = (current?.generation ?? 0) + 1;
     if ((generation === 1) !== (rotationReason === "initial"))
       return this.fail("PORT_INVALID_OPERATION", "Rotation reason does not match generation");
-    this.dependencies.assertAvailable(leases, "", now);
+    this.dependencies.assertAvailable(
+      leases,
+      typeof input["requestJobId"] === "string" ? input["requestJobId"] : "",
+      now,
+      backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? runId : "",
+    );
     const envelopeJson = JSON.stringify(envelope);
     this.db
       .prepare(

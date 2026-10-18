@@ -107,6 +107,9 @@ export interface WorkerDelegationAdmissionServiceOptions {
       | Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">
       | Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">
     >;
+    readonly acquireEnvironment?: (
+      prepared: Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">,
+    ) => Promise<void>;
   };
   /** Trusted current Agent/Worker attempt and product lease identity. */
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
@@ -321,6 +324,9 @@ export class WorkerDelegationAdmissionService {
             );
           const candidate = {
             ...(prepared.recovery ? { recovery: prepared.recovery } : {}),
+            ...(prepared.environmentDeadlineAt === undefined
+              ? {}
+              : { environmentDeadlineAt: prepared.environmentDeadlineAt }),
             plan,
             reservation,
             workspaces: prepared.workspaces,
@@ -341,6 +347,7 @@ export class WorkerDelegationAdmissionService {
             queued = position.status === "queued";
           }
           try {
+            await sandbox.acquireEnvironment?.(candidate);
             admitted = await preparations.reserve(candidate);
             break;
           } catch (error) {

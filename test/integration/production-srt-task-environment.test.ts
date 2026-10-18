@@ -3,15 +3,30 @@ import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { type HostFileOperationKind, RemoteExecutionBackend } from "@himawari-agent/application";
 import {
+  type ExecutionEnvironmentLifecyclePort,
+  type ExecutionEnvironmentLocator,
+  type ExecutionEnvironmentStopProof,
+  type HostFileOperationKind,
+  hostDirectoryGrantStateKey,
+  type HostDirectoryGrant,
+  RemoteExecutionBackend,
+  type RuntimeToolInvocation,
+} from "@himawari-agent/application";
+import { createIdempotencyKey } from "@himawari-agent/domain";
+import {
+  type ExecutionV2Event,
+  type ExecutionV2Request,
   PI_PREPARED_FILE_CONTRACT,
   PI_RUNNER_CONTRACT,
   PI_WRITE_VERIFIER,
+  sandboxScopeSchema,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
+  type SandboxHostBinding,
   type SandboxOperationBinding,
 } from "@himawari-agent/execution-contracts";
+import { resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import {
   type JobHostRequest,
   type SandboxJobSession,
@@ -25,6 +40,8 @@ import {
   SrtTaskEnvironmentBackend,
   srtTaskEnvironmentJobId,
 } from "../../apps/execution-worker/src/production-srt-task-environment-backend.ts";
+import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
 import { queuedLiveWorker } from "../fixtures/queued-live-worker.ts";
 import {
@@ -32,6 +49,8 @@ import {
   OWNER_ID,
   RUN_ID,
   SERVICE_AUTHORITY,
+  T1,
+  T2,
   serviceRequest,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -353,6 +372,7 @@ function makeCalls(ctx: Harness) {
     };
     const prepared = await ctx.f.services.runtime.prepare(input, call);
     if (!("reservation" in prepared)) throw new Error("expected sandbox-execution.v2 admission");
+    await ctx.f.services.runtime.acquireEnvironment?.(prepared);
     await ctx.f.services.brokerV2.preparations.reserve({ ...prepared, invocation: input });
     return { prepared, input, call };
   };
@@ -1188,5 +1208,592 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
       kind: "unknown",
       reasonCode: "SANDBOX_EXIT_UNKNOWN",
     });
+  });
+});
+
+function residentQueueFingerprint(call: RuntimeToolInvocation) {
+  if (!call.context) throw new Error("context missing");
+  const { executionLease, continuationRef: _continuation, ...context } = call.context;
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        {
+          ...call,
+          context: {
+            ...context,
+            authority: {
+              deploymentId: executionLease.deploymentId,
+              authorityEpoch: executionLease.authorityEpoch,
+              fencingToken: executionLease.fencingToken,
+            },
+          },
+        },
+        (_key, value) =>
+          value && typeof value === "object" && !Array.isArray(value)
+            ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+            : value,
+      ),
+    )
+    .digest("hex");
+}
+
+class ResidentQueueLifecycle implements ExecutionEnvironmentLifecyclePort {
+  readonly calls: string[] = [];
+  readonly created = new Map<string, ExecutionEnvironmentLocator>();
+  readonly stopped = new Set<string>();
+  runtimeInstanceId = "resident-queue-daemon";
+  async capabilities() {
+    this.calls.push("capabilities");
+    return {
+      protocolVersion: "execution-backend.v1" as const,
+      backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      runtimeInstanceId: this.runtimeInstanceId,
+      guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
+      checkedAt: T1,
+    };
+  }
+  async create(input: Parameters<ExecutionEnvironmentLifecyclePort["create"]>[0]) {
+    this.calls.push("create");
+    const locator: ExecutionEnvironmentLocator = {
+      backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      runtimeInstanceId: this.runtimeInstanceId,
+      runtimeEnvironmentId: `runtime-${createHash("sha256")
+        .update(input.identity.environmentId)
+        .digest("hex")}`,
+      createIntentId: input.createIntentId,
+      effectivePolicyDigest: input.policyDigest,
+    };
+    this.created.set(input.createIntentId, locator);
+    return locator;
+  }
+  async inspect(input: Parameters<ExecutionEnvironmentLifecyclePort["inspect"]>[0]) {
+    this.calls.push("inspect");
+    const locator = this.created.get(input.createIntentId) ?? null;
+    return {
+      state:
+        locator === null
+          ? ("not_found" as const)
+          : this.stopped.has(input.createIntentId)
+            ? ("stopped" as const)
+            : ("running" as const),
+      locator,
+      observedAt: T1,
+    };
+  }
+  async stop(input: Parameters<ExecutionEnvironmentLifecyclePort["stop"]>[0]) {
+    this.calls.push("stop");
+    this.stopped.add(input.createIntentId);
+    return { accepted: true as const };
+  }
+  async verifyStopped(
+    input: Parameters<ExecutionEnvironmentLifecyclePort["verifyStopped"]>[0],
+  ): Promise<ExecutionEnvironmentStopProof> {
+    this.calls.push("verifyStopped");
+    const locator = this.created.get(input.createIntentId);
+    if (!locator || !this.stopped.has(input.createIntentId))
+      throw new Error("resident queue environment is still running");
+    return {
+      basis: "process_group_gone",
+      identity: input.identity,
+      createIntentId: input.createIntentId,
+      stopIntentId: input.stopIntentId,
+      stopFence: input.stopFence,
+      verifierRef: "resident-queue-lifecycle",
+      checkedAt: T1,
+      validUntil: new Date(Date.parse(T1) + 300_000).toISOString(),
+      evidence: [{ ref: `resident-queue-stop-${input.stopIntentId}`, digest: "d".repeat(64) }],
+      locator,
+    };
+  }
+  async destroy() {}
+}
+
+describe("[R2-P2] resident workspace admission queues behind unresolved occupancy", () => {
+  if (!linux) {
+    it("[R2-P2] reports that resident workspace queuing requires Linux", () => {
+      expect(linux).toBe(false);
+    });
+    return;
+  }
+
+  const foreignRun = "run-resident-queue-foreign";
+  const foreignEnvironment = "environment-resident-queue-foreign";
+  const foreignJob = "execution-job-resident-queue-foreign";
+
+  interface QueueFixture {
+    readonly f: Awaited<ReturnType<typeof productionSandboxScope>>;
+    readonly lifecycle: ResidentQueueLifecycle;
+    readonly sent: Extract<ExecutionV2Request, { type: "work.execute" }>[];
+    readonly database: Database.Database;
+    readonly tool: () => ProductionRuntimeTools;
+    readonly setNow: (value: string) => void;
+  }
+
+  async function queueFixture(options: { readonly seedIntent?: boolean } = {}) {
+    const lifecycle = new ResidentQueueLifecycle();
+    const f = await productionSandboxScope(bashBinding, (intent) => intent, {
+      realRun: true,
+      realFileIdentity: true,
+      ...(options.seedIntent
+        ? { runtimeFingerprint: residentQueueFingerprint }
+        : { seedRuntimeIntent: false }),
+      profileRef: "authorized-project.v1",
+      callParameters: [{ command: "echo resident-queue" }],
+      handleUses: 10,
+      srtTaskEnvironments: {
+        backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+        session: "srt",
+        guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
+        inspectBeforeReuse: true,
+        lifecycle,
+      },
+    });
+    cleanups.push(f.close);
+    const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"));
+    cleanups.push(async () => {
+      database.close();
+    });
+    const peer = {
+      ...SERVICE_AUTHORITY.product,
+      agentServiceInstanceId: SERVICE_AUTHORITY.agentServiceInstanceId,
+      agentServiceBootId: SERVICE_AUTHORITY.agentServiceBootId,
+      workerInstanceId: SERVICE_AUTHORITY.workerInstanceId,
+      workerBootId: SERVICE_AUTHORITY.workerBootId,
+    };
+    const registry = createProductionWorkerParentBindingRegistry({
+      trustedPeerBinding: () => peer,
+    });
+    const sent: Extract<ExecutionV2Request, { type: "work.execute" }>[] = [];
+    let counter = 0;
+    let now = T1;
+    const request = vi.fn(async (message: ExecutionV2Request) => {
+      if (message.type === "work.delegate")
+        return {
+          ...message,
+          kind: "response" as const,
+          type: "work.delegate.accepted" as const,
+          messageId: "resident-queue-accepted",
+          causationId: message.messageId,
+          payload: {
+            handleRef: message.payload.handle.ref,
+            workerBootId: peer.workerBootId,
+            acceptedAt: T1,
+          },
+        };
+      if (message.type === "work.execute") sent.push(message);
+      return null;
+    });
+    const tool = () =>
+      new ProductionRuntimeTools({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        capabilities: f.repository.capabilityStore(OWNER_ID, AGENT_ID),
+        invocations: f.repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+        results: { lookupOutput: async () => undefined },
+        artifacts: f.artifacts(),
+        payloads: f.repository.payloadStore(OWNER_ID, AGENT_ID),
+        protector: f.f.protector,
+        sandbox: f.services.runtime,
+        authority: () => SERVICE_AUTHORITY,
+        peer: () => peer,
+        parents: registry.writer,
+        assertRunActive: async (runId) => {
+          const current = await f.repository
+            .runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product)
+            .readRun(runId);
+          if (!current || !["accepted", "building_context", "running"].includes(current.run.status))
+            throw new Error("RUN_NOT_ACTIVE");
+        },
+        ceiling: { ...f.input.resourceCeiling },
+        clock: { now: () => now },
+        ids: { next: (scope) => `${scope}:resident-queue:${++counter}` },
+        transport: {
+          request,
+          async *events() {
+            const first = sent[0];
+            if (!first) return;
+            yield {
+              ...first,
+              kind: "event" as const,
+              type: "work.cancelled" as const,
+              messageId: "resident-queue-cancelled",
+              causationId: first.messageId,
+              payload: {
+                requestId: first.messageId,
+                cursor: "1",
+                sequence: 1,
+                cancelledAt: T1,
+                reasonCode: "TEST_WORKER_CANCELLED",
+              },
+            } satisfies ExecutionV2Event;
+          },
+        },
+      });
+    return {
+      f,
+      lifecycle,
+      sent,
+      database,
+      tool,
+      setNow: (value: string) => {
+        now = value;
+        f.setNow(value);
+      },
+    } satisfies QueueFixture;
+  }
+
+  function queueStatus(fixture: QueueFixture, invocationId: string) {
+    return fixture.database
+      .prepare(
+        "SELECT status FROM sandbox_admission_queue WHERE json_extract(request_json,'$.plan.identity.invocationId')=?",
+      )
+      .get(invocationId) as { status: string } | undefined;
+  }
+
+  function executionCount(fixture: QueueFixture) {
+    return fixture.database
+      .prepare("SELECT count(*) FROM sandbox_execution_records WHERE run_id=?")
+      .pluck()
+      .get(RUN_ID) as number;
+  }
+
+  function environmentCount(fixture: QueueFixture) {
+    return fixture.database
+      .prepare(
+        "SELECT count(*) FROM execution_environments e JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id WHERE j.run_id=? AND e.role='primary'",
+      )
+      .pluck()
+      .get(RUN_ID) as number;
+  }
+
+  async function seedForeignLease(fixture: QueueFixture) {
+    const database = fixture.database;
+    const owner = database
+      .prepare("SELECT thread_id AS threadId FROM runs WHERE id=?")
+      .get(RUN_ID) as { threadId: string };
+    database
+      .prepare(`INSERT INTO triggers (id, owner_id, agent_id, thread_id, idempotency_key,
+        source_type, source_id, payload_ref, source_proof_ref, occurred_at)
+        VALUES (?, ?, ?, ?, ?, 'user_message', 'fixture-source', 'restart-prompt', 'fixture-proof', ?)`)
+      .run(
+        `${foreignRun}-trigger`,
+        OWNER_ID,
+        AGENT_ID,
+        owner.threadId,
+        `${foreignRun}-message`,
+        T1,
+      );
+    database
+      .prepare(`INSERT INTO runs (id, owner_id, agent_id, thread_id, session_id, trigger_id,
+        revision, status, created_at, updated_at)
+        VALUES (?,?,?,?,?,?,1,'running',?,?)`)
+      .run(
+        foreignRun,
+        OWNER_ID,
+        AGENT_ID,
+        owner.threadId,
+        `${foreignRun}-session`,
+        `${foreignRun}-trigger`,
+        T1,
+        T1,
+      );
+    const snapshot = JSON.parse(
+      await readFile(fixture.f.capabilityDeployment.snapshotPath, "utf8"),
+    ) as {
+      capabilities: Array<{
+        manifest: { ref: string; version: string };
+        binding: { value: SandboxHostBinding };
+      }>;
+    };
+    const entry = snapshot.capabilities.find(
+      (item) =>
+        item.manifest.ref === fixture.f.input.capabilityRef &&
+        item.manifest.version === fixture.f.input.capabilityVersion,
+    );
+    if (!entry) throw new Error("capability binding missing");
+    const binding = entry.binding.value;
+    const grant = (
+      await fixture.f.repository.readScopedState(
+        OWNER_ID,
+        AGENT_ID,
+        hostDirectoryGrantStateKey(fixture.f.f.directoryGrant.id),
+      )
+    )?.value as HostDirectoryGrant | undefined;
+    if (!grant) throw new Error("workspace grant missing");
+    const scope = sandboxScopeSchema.parse({
+      schemaVersion: "sandbox-scope.v1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: fixture.f.call.context?.threadId ?? null,
+      runId: RUN_ID,
+      toolCallId: `${fixture.f.call.toolCallId}:occupancy`,
+      parentToolCallId: null,
+      parentRequestId: RUN_ID,
+      hostId: binding.hostId,
+      handleRef: fixture.f.input.handleRef,
+      inputRef: fixture.f.input.inputRef,
+      operation: "bash",
+      authorizationRef: fixture.f.input.authorizationRef,
+      modelRef: fixture.f.call.context?.modelRef ?? "model-fixture",
+      profileRef: binding.profileRef,
+      directoryGrant: {
+        ref: grant.id,
+        revision: grant.revision,
+        canonicalRootId: grant.canonicalRootId,
+        authorizationRef: grant.authorizationRef,
+        operations: ["read"],
+      },
+      networkAuthorizationRef: null,
+      expiresAt: grant.expiresAt,
+    });
+    console.log(
+      `[R2-P2] resident queue claim roots=${binding.roots.some(
+        (root) => root.canonicalRootId === grant.canonicalRootId,
+      )} host=${scope.hostId === binding.hostId} profile=${
+        scope.profileRef === binding.profileRef
+      } operations=${scope.directoryGrant?.operations.length ?? 0}`,
+    );
+    const claim = {
+      ...(await resolveSandboxWorkspaceClaim({ binding, scope })),
+      ref: `workspace:${foreignEnvironment}`,
+    };
+    await fixture.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID).reserve({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      runId: foreignRun,
+      hostId: claim.hostId,
+      role: "primary",
+      rotationReason: "initial",
+      backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      envelope: {
+        schemaVersion: "execution-envelope.v1",
+        directories: [
+          {
+            hostId: claim.hostId,
+            grantRef: claim.ref,
+            canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+            access: claim.access,
+            source: {
+              authorizationRef: `authorization:${foreignRun}`,
+              decidedBy: "user",
+              delegationListRef: null,
+              expiresAt: T2,
+            },
+          },
+        ],
+        network: [],
+        resources: {
+          cpuMillicores: 1000,
+          memoryBytes: 536870912,
+          maxProcesses: 128,
+          privateStorageBytes: 268435456,
+        },
+      },
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      deadlineAt: T2,
+      leases: [claim],
+      requestJobId: "job-resident-queue-foreign",
+      ids: {
+        executionJobId: foreignJob,
+        environmentId: foreignEnvironment,
+        createIntentId: `${foreignEnvironment}-create`,
+      },
+    });
+  }
+
+  async function releaseForeignLease(fixture: QueueFixture) {
+    const store = fixture.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    await store.requestStop({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: foreignEnvironment,
+      stopIntentId: `${foreignEnvironment}-stop`,
+      reason: "run_cancelled",
+      stoppedResourceRefs: [],
+    });
+    await store.acceptRelease({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: foreignEnvironment,
+      proof: { basis: "create_not_dispatched" },
+    });
+  }
+
+  async function settleOrQueue<T>(
+    promise: Promise<T>,
+    queued: () => boolean,
+    timeoutMs = 15000,
+  ): Promise<
+    | { readonly kind: "queued" }
+    | { readonly kind: "rejected"; readonly error: unknown }
+    | { readonly kind: "resolved"; readonly value: T }
+  > {
+    const box: {
+      value?:
+        | { readonly kind: "rejected"; readonly error: unknown }
+        | { readonly kind: "resolved"; readonly value: T };
+    } = {};
+    void promise.then(
+      (value) => {
+        box.value = { kind: "resolved", value };
+      },
+      (error) => {
+        box.value = { kind: "rejected", error };
+      },
+    );
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      if (box.value) return box.value;
+      if (queued()) return { kind: "queued" };
+      if (Date.now() >= deadline) throw new Error("RESIDENT_QUEUE_TIMEOUT");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  beforeEach(() => {
+    forkState.children = [];
+    forkState.stderr = "";
+  });
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  });
+
+  it("[R2-P2] queues a resident call behind another Run's unresolved workspace occupancy", async () => {
+    const fixture = await queueFixture();
+    await seedForeignLease(fixture);
+    const tool = fixture.tool();
+    await tool.listAuthorized(RUN_ID, [fixture.f.input.handleRef]);
+    const invoked = fixture.f.input.invocationId;
+    const running = tool.execute(fixture.f.call);
+    const queued = await settleOrQueue(running, () => queueStatus(fixture, invoked) !== undefined);
+    expect(queued).toMatchObject({ kind: "queued" });
+    expect(queueStatus(fixture, invoked)).toMatchObject({ status: "queued" });
+    expect(fixture.sent).toHaveLength(0);
+    expect(executionCount(fixture)).toBe(0);
+    expect(environmentCount(fixture)).toBe(0);
+
+    await releaseForeignLease(fixture);
+    await expect(running).resolves.toMatchObject({ outcome: "result_unknown" });
+    expect(queueStatus(fixture, invoked)).toMatchObject({ status: "admitted" });
+    expect(fixture.sent).toHaveLength(1);
+    expect(executionCount(fixture)).toBe(1);
+    expect(environmentCount(fixture)).toBe(1);
+  });
+
+  it("[R2-P2] cancels a queued resident call without acquiring its environment", async () => {
+    const fixture = await queueFixture();
+    await seedForeignLease(fixture);
+    const tool = fixture.tool();
+    await tool.listAuthorized(RUN_ID, [fixture.f.input.handleRef]);
+    const invoked = fixture.f.input.invocationId;
+    const running = tool.execute(fixture.f.call);
+    const queued = await settleOrQueue(running, () => queueStatus(fixture, invoked) !== undefined);
+    expect(queued).toMatchObject({ kind: "queued" });
+    const run = await fixture.f.repository
+      .runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product)
+      .readRun(RUN_ID);
+    if (!run) throw new Error("Run missing");
+    await fixture.f.repository
+      .runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product)
+      .cancelRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        authority: SERVICE_AUTHORITY.lease,
+        expectedRevision: run.revision,
+        idempotencyKey: createIdempotencyKey("resident-queue-cancel"),
+        commandFingerprint: "resident-queue-cancel",
+        payloadRef: "restart-prompt",
+      });
+    const cancelled = await running.then(
+      (value) => ({ resolved: value }),
+      (error: unknown) => ({ rejected: error }),
+    );
+    expect(cancelled).toMatchObject({
+      rejected: expect.objectContaining({ message: "RUN_NOT_ACTIVE" }),
+    });
+    expect(queueStatus(fixture, invoked)).toMatchObject({ status: "cancelled" });
+    expect(fixture.sent).toHaveLength(0);
+    expect(executionCount(fixture)).toBe(0);
+    expect(environmentCount(fixture)).toBe(0);
+  });
+
+  it("[R2-P2] refuses a resident call while its own Run still occupies the workspace", async () => {
+    const fixture = await queueFixture();
+    const tool = fixture.tool();
+    await tool.listAuthorized(RUN_ID, [fixture.f.input.handleRef]);
+    const first = { ...fixture.f.call, toolCallId: `${fixture.f.call.toolCallId}:first` };
+    await expect(tool.execute(first)).resolves.toMatchObject({ outcome: "result_unknown" });
+    const environmentsAfterFirst = environmentCount(fixture);
+    const createsAfterFirst = fixture.lifecycle.calls.filter((call) => call === "create").length;
+    expect(executionCount(fixture)).toBe(1);
+    fixture.lifecycle.runtimeInstanceId = "resident-queue-daemon-restarted";
+    const invoked = fixture.f.input.invocationId;
+    const second = { ...fixture.f.call, toolCallId: `${fixture.f.call.toolCallId}:second` };
+    const running = tool.execute(second);
+    const settled = await settleOrQueue(
+      running,
+      () => queueStatus(fixture, invoked) !== undefined,
+      20000,
+    );
+    if (settled.kind === "queued") fixture.setNow(fixture.f.input.deadlineAt);
+    const final =
+      settled.kind === "queued" ? await settleOrQueue(running, () => false, 20000) : settled;
+    expect(final).toMatchObject({
+      kind: "resolved",
+      value: { dispatchState: "not_sent", outcome: "failed" },
+    });
+    const queued = queueStatus(fixture, invoked)?.status;
+    expect(queued === undefined || queued === "cancelled").toBe(true);
+    expect(fixture.sent).toHaveLength(1);
+    expect(environmentCount(fixture)).toBe(environmentsAfterFirst);
+    expect(fixture.lifecycle.calls.filter((call) => call === "create")).toHaveLength(
+      createsAfterFirst,
+    );
+  });
+
+  it("[R2-P2] ends a queued resident call at its deadline without dispatching", async () => {
+    const fixture = await queueFixture();
+    await seedForeignLease(fixture);
+    const tool = fixture.tool();
+    await tool.listAuthorized(RUN_ID, [fixture.f.input.handleRef]);
+    const invoked = fixture.f.input.invocationId;
+    const running = tool.execute(fixture.f.call);
+    const queued = await settleOrQueue(running, () => queueStatus(fixture, invoked) !== undefined);
+    expect(queued).toMatchObject({ kind: "queued" });
+    fixture.setNow(fixture.f.input.deadlineAt);
+    await expect(running).resolves.toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+    });
+    expect(queueStatus(fixture, invoked)).toMatchObject({ status: "cancelled" });
+    expect(fixture.sent).toHaveLength(0);
+    expect(executionCount(fixture)).toBe(0);
+    expect(environmentCount(fixture)).toBe(0);
+  });
+
+  it("[R2-P2] acquires the environment when a restart re-dispatches an already queued resident call", async () => {
+    const fixture = await queueFixture({ seedIntent: true });
+    const prepared = await fixture.f.services.runtime.prepare(fixture.f.input, fixture.f.call);
+    if (!("reservation" in prepared)) throw new Error("expected sandbox-execution.v2 admission");
+    const position = await fixture.f.services.brokerV2.preparations.enqueue({
+      ...prepared,
+      invocation: fixture.f.input,
+    });
+    expect(position.status).toBe("queued");
+    const tool = fixture.tool();
+    await tool.listAuthorized(RUN_ID, [fixture.f.input.handleRef]);
+    const invoked = fixture.f.input.invocationId;
+    const createsBefore = fixture.lifecycle.calls.filter((call) => call === "create").length;
+    const running = tool.execute(fixture.f.call);
+    await expect(running).resolves.toMatchObject({ outcome: "result_unknown" });
+    expect(fixture.lifecycle.calls.filter((call) => call === "create")).toHaveLength(
+      createsBefore + 1,
+    );
+    expect(environmentCount(fixture)).toBe(1);
+    expect(fixture.sent).toHaveLength(1);
+    expect(queueStatus(fixture, invoked)).toMatchObject({ status: "admitted" });
   });
 });

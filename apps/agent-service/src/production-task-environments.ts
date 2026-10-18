@@ -267,6 +267,7 @@ export function createProductionTaskEnvironments(options: {
         imageDigest: hexDigest(input.binding.runtimeDigest),
         runnerDigest: hexDigest(input.binding.runner.sha256),
         deadlineAt: input.deadlineAt,
+        requestJobId: input.plan.identity.jobId,
       };
       const existing = await primaryForRun(input.runId);
       if (existing && (existing.state === "ready" || existing.state === "running")) {
