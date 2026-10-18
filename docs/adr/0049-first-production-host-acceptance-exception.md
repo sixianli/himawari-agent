@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0056-cloud-server-also-test-host.md"
+superseded_by: "docs/adr/0057-batch-layers-one-two-for-small-defects.md"
 date: "2026-10-07"
 ---
 
