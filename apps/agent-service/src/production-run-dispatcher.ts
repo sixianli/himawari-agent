@@ -21,6 +21,7 @@ import {
 } from "@himawari-agent/application";
 import type { PreparedToolResultRecovery } from "./production-tool-result-recovery.js";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
+import { isGlobalServiceFailure } from "./production-record-failure.js";
 
 export const PRODUCTION_RUN_DISPATCH_ERROR_CODES = Object.freeze({
   CONFIGURATION_INVALID: "PRODUCTION_RUN_DISPATCH_CONFIGURATION_INVALID",
@@ -279,10 +280,15 @@ export class ProductionRunDispatcher {
     }
     for (const candidate of reconciliation) {
       if (!this.isAccepting()) break;
-      await this.#options.reconcile({
-        candidate,
-        reasonCode: "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
-      });
+      try {
+        await this.#options.reconcile({
+          candidate,
+          reasonCode: "PERSISTED_EXECUTION_RECONCILIATION_REQUIRED",
+        });
+      } catch (error) {
+        if (isGlobalServiceFailure(error)) throw error;
+        await this.recordRecordFailure(candidate, "RUN_RECONCILIATION_FAILED");
+      }
       if (candidate.scanUpperBoundRunId) {
         this.#reconciliationThroughRunId ??= candidate.scanUpperBoundRunId;
         this.#reconciliationAfterRunId = candidate.runId;
@@ -291,6 +297,29 @@ export class ProductionRunDispatcher {
     }
 
     return reconciled;
+  }
+
+  private async recordRecordFailure(
+    candidate: RunReconciliationCandidate,
+    reasonCode: string,
+  ): Promise<void> {
+    await this.#options.reconcile({ candidate, reasonCode });
+  }
+
+  private async prepareRecovery(
+    candidate: RunDispatchCandidate,
+  ): Promise<PreparedToolResultRecovery | undefined> {
+    if (!this.#options.prepareToolResultRecovery) return undefined;
+    try {
+      return await this.#options.prepareToolResultRecovery(candidate);
+    } catch (error) {
+      if (isGlobalServiceFailure(error)) throw error;
+      await this.recordRecordFailure(
+        { ...candidate, action: "reconcile" },
+        "TOOL_RESULT_RECOVERY_FAILED",
+      );
+      throw error;
+    }
   }
 
   async drain(timeoutMs: number): Promise<ProductionRunDispatchDrainResult> {
@@ -346,10 +375,15 @@ export class ProductionRunDispatcher {
     let conflicts = 0;
     for (const candidate of candidates) {
       if (!this.isAccepting()) break;
-      const recovery =
-        candidate.action === "resume_tool_result"
-          ? await this.#options.prepareToolResultRecovery?.(candidate)
-          : undefined;
+      let recovery: PreparedToolResultRecovery | undefined;
+      if (candidate.action === "resume_tool_result") {
+        try {
+          recovery = await this.prepareRecovery(candidate);
+        } catch (error) {
+          if (isGlobalServiceFailure(error)) throw error;
+          continue;
+        }
+      }
       if (
         candidate.action === "resume_tool_result" &&
         (!recovery || !this.#options.coordinator.resumeToolResult)
@@ -519,7 +553,8 @@ export class ProductionRunDispatcher {
           renewal.currentLease(),
         );
         await this.releaseBestEffort(renewal.currentLease());
-        throw error;
+        if (isGlobalServiceFailure(error)) throw error;
+        unknown += 1;
       }
     }
     return Object.freeze({ checkedAt, reconciled, claimed, settled, unknown, conflicts });

@@ -91,6 +91,7 @@ interface ReconciliationOptions {
   readonly backend?: SandboxReconciliationBackend;
   readonly timeoutMs: number;
   readonly now: () => string;
+  readonly onReleased?: (record: SandboxExecutionRecord) => Promise<void>;
 }
 export class SandboxExecutionReconciliationService {
   private readonly options: ReconciliationOptions;
@@ -123,8 +124,10 @@ export class SandboxExecutionReconciliationService {
       record.facts.resource.supervision === "released" &&
       record.releaseReceipt &&
       !record.workspaceBlocked
-    )
+    ) {
+      await this.settleReleased(record);
       return { record, applied: false };
+    }
     const startedAt = this.options.now();
     const recovery = await this.options.journal.beginRecovery({
       identity,
@@ -374,6 +377,19 @@ export class SandboxExecutionReconciliationService {
     }
     const persisted = await this.options.journal.read(identity);
     if (!persisted) throw new Error("SANDBOX_RECONCILIATION_BINDING_INVALID");
+    await this.settleReleased(persisted);
     return { record: persisted, applied };
+  }
+
+  private async settleReleased(record: SandboxExecutionRecord): Promise<void> {
+    const settle = this.options.onReleased;
+    if (
+      !settle ||
+      record.facts.resource.supervision !== "released" ||
+      !record.releaseReceipt ||
+      record.workspaceBlocked
+    )
+      return;
+    await settle(record);
   }
 }

@@ -26,6 +26,9 @@ import {
   type ExecutionV2Request,
   type SandboxExecutionFacts,
   type SandboxOperationContract,
+  SANDBOX_EXECUTION_BACKEND_REFS,
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxExecutionFactsSchema,
   sandboxExecutionScopeSchema,
   sandboxExecutionPlanCandidateV2Schema,
@@ -478,6 +481,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           protector: f.protector,
           nextRef: () => "agent-recovered-output",
           recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          requiresControlArtifact: () => true,
           verifyExited: async () => {
             if (!signatureValid) throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
             return true;
@@ -704,6 +708,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           protector: f.protector,
           nextRef: () => "must-not-import-output",
           recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          requiresControlArtifact: () => true,
           verifyExited: async () => true,
           facts,
         });
@@ -6846,9 +6851,21 @@ function seedResidentEnvironment(f: Fixture, runId: string, released: boolean) {
     .run(R2P2_ENVIRONMENT, T1, JSON.stringify({}), JSON.stringify(SERVICE_AUTHORITY));
 }
 
-async function strandedResidentRun(environmentReleased: boolean) {
+async function strandedResidentRun(environmentReleased: boolean, effectiveDeadlineAt = T2) {
   const f = await openSandboxJournal();
-  let record = start(f, residentTaskEnvironmentShare(f));
+  const share = residentTaskEnvironmentShare(f);
+  const plan =
+    effectiveDeadlineAt === T2
+      ? share.plan
+      : sandboxExecutionPlanCandidateV2Schema.parse({ ...share.plan, effectiveDeadlineAt });
+  const firstFacts =
+    effectiveDeadlineAt === T2
+      ? share.facts
+      : sandboxExecutionFactsSchema.parse({
+          ...share.facts,
+          environment: { ...share.facts.environment, deadlineAt: effectiveDeadlineAt },
+        });
+  let record = start(f, { ...share, plan, facts: firstFacts });
   record = append(f, record, resource(record, "stopping"));
   record = append(f, record, residentReleased(record));
   const runId = createRunId(record.plan.identity.runId);
@@ -6885,7 +6902,7 @@ async function strandedResidentRun(environmentReleased: boolean) {
     end: true,
     termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
   });
-  return { f, reopened, runId, record };
+  return { f, reopened, runId, record, stream };
 }
 
 function linkResidentEnvironmentCall(f: Fixture, record: SandboxExecutionRecord) {
@@ -7142,4 +7159,180 @@ it("[R2-P2] refuses to claim a resident task environment's tool result while its
     await reopened.close();
     await f.close();
   }
+});
+
+const PARITY_CASES = {
+  [SRT_BACKEND_REF]: "one_shot_srt",
+  [SRT_TASK_ENVIRONMENT_BACKEND_REF]: "task_environment",
+} as const;
+
+async function parityStream(reopened: SqliteProductStateRepository, f: Fixture) {
+  const { createProductionSandboxStream } = await import(
+    "../../apps/agent-service/src/production-sandbox-stream.ts"
+  );
+  let next = 0;
+  return createProductionSandboxStream({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+    protector: f.protector,
+    artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+    clock: { now: () => T1 },
+    ids: { next: () => `parity-stream-${++next}` },
+  });
+}
+
+async function commitParityArtifact(
+  reopened: SqliteProductStateRepository,
+  f: Fixture,
+  record: SandboxExecutionRecord,
+  operationKey: string,
+) {
+  const name = createHash("sha256").update(operationKey).digest("hex").slice(0, 16);
+  const payload = await f.protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: `parity-artifact-${name}`,
+    dataClassification: "restricted",
+    contentType: "application/json",
+    plaintext: new TextEncoder().encode(JSON.stringify({ operationKey })),
+    createdAt: T1,
+  });
+  return reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY).commit({
+    runId: createRunId(record.plan.identity.runId),
+    purpose: "trace",
+    operationKey,
+    payload,
+  });
+}
+
+const PARITY_DEADLINE_AT = new Date(Date.parse(T1) + 250).toISOString();
+const PARITY_RECOVERY_NOW = new Date(Date.parse(T1) + 500).toISOString();
+
+async function strandedOneShotDeadlineRun() {
+  const f = await openSandboxJournal();
+  const base = admission(f);
+  const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+    ...base.plan,
+    effectiveDeadlineAt: PARITY_DEADLINE_AT,
+  });
+  const facts = sandboxExecutionFactsSchema.parse({
+    ...base.facts,
+    environment: { ...base.facts.environment, deadlineAt: PARITY_DEADLINE_AT },
+  });
+  let record = start(f, { ...base, plan, facts });
+  record = append(f, record, resource(record, "stopping"));
+  record = append(f, record, resource(record, "released"));
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  const controlKey = `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`;
+  await commitParityArtifact(reopened, f, record, controlKey);
+  record = call(f, "read", record.plan.identity) as SandboxExecutionRecord;
+  const stream = await parityStream(reopened, f);
+  await stream.append(record, {
+    index: 0,
+    offset: 0,
+    bytesBase64: Buffer.from("parity-deadline-output").toString("base64"),
+    end: true,
+    termination: { exitCode: null, reasonCode: "deadline", taskProcessExited: true },
+  });
+  return { f, reopened, record, stream };
+}
+
+describe("[R2-P2] sandbox backend parity", () => {
+  it("[R2-P2] keeps the parity table aligned with every named product backend", () => {
+    expect(Object.keys(PARITY_CASES).sort()).toEqual([...SANDBOX_EXECUTION_BACKEND_REFS].sort());
+  });
+
+  it.each([SRT_BACKEND_REF, SRT_TASK_ENVIRONMENT_BACKEND_REF])(
+    "[R2-P2] authorizes deadline result recovery for %s from its own persisted evidence",
+    async (backendRef) => {
+      const run =
+        backendRef === SRT_BACKEND_REF
+          ? await strandedOneShotDeadlineRun()
+          : await strandedResidentRun(true, PARITY_DEADLINE_AT);
+      const { f, reopened, record } = run;
+      try {
+        if (backendRef !== SRT_BACKEND_REF) linkResidentEnvironmentCall(f, record);
+        const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        await expect(
+          journal.readResultRecovery({
+            identity: record.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: PARITY_RECOVERY_NOW,
+            recoveryPurpose: "deadline_failure",
+          }),
+        ).resolves.toMatchObject({
+          receipt: { receiptRef: record.plan.identity.receiptRef },
+        });
+      } finally {
+        await reopened.close();
+        await f.close();
+      }
+    },
+  );
+
+  it("[R2-P2] imports a resident task environment's deadline failure from its release evidence", async () => {
+    const { f, reopened, record, stream } = await strandedResidentRun(true, PARITY_DEADLINE_AT);
+    try {
+      linkResidentEnvironmentCall(f, record);
+      const saved = await stream.recover(record);
+      if (!saved) throw new Error("missing resident stream");
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "resident-deadline-output",
+        dataClassification: "private",
+        contentType: "application/octet-stream",
+        plaintext: saved.bytes,
+        createdAt: T1,
+      });
+      const facts = sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect: { kind: "not_applicable" },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: record.facts.environment.policyDigest,
+          contract: {
+            ref: record.plan.operationContract.ref,
+            version: record.plan.operationContract.version,
+          },
+          occurredAt: PARITY_RECOVERY_NOW,
+          kind: "error",
+          reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+          termination: { type: "failure" },
+          output: {
+            ref: payload.ref,
+            digest: saved.source.digest,
+            byteLength: saved.source.byteLength,
+          },
+        },
+      });
+      const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      const imported = await journal.importResult({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        authority: SERVICE_AUTHORITY,
+        now: PARITY_RECOVERY_NOW,
+        recoveryPurpose: "deadline_failure",
+        facts,
+        context: { ...context(record, facts), releaseReceipt: record.releaseReceipt ?? null },
+        payload,
+        source: saved.source,
+      });
+      expect(imported.record.facts.result).toMatchObject({
+        kind: "error",
+        reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+      });
+    } finally {
+      await reopened.close();
+      await f.close();
+    }
+  });
 });

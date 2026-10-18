@@ -30,6 +30,7 @@ import {
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionPlanV2Schema,
   sandboxExecutionReservationSchema,
+  sandboxBackendKind,
   sandboxJobIdentitySchema,
   sandboxLostResultOperationKey,
   validateSandboxExecutionFacts,
@@ -1317,9 +1318,18 @@ export class SqliteSandboxExecutionOperations {
   ) {
     const hash = (value: unknown) =>
       createHash("sha256").update(JSON.stringify(value)).digest("hex");
-    const controlKey = `sandbox-control:${hash(current.plan.identity)}`;
     const terminalKey = `sandbox-stream-end:${hash([current.plan.identity, current.plan.semanticFingerprint, current.facts.environment])}`;
-    for (const operationKey of [controlKey, terminalKey]) {
+    const required =
+      sandboxBackendKind(current.plan.backendRef) === "one_shot_srt"
+        ? [
+            {
+              operationKey: `sandbox-control:${hash(current.plan.identity)}`,
+              expected: source?.controlArtifact,
+            },
+            { operationKey: terminalKey, expected: source?.artifacts.at(-1) },
+          ]
+        : [{ operationKey: terminalKey, expected: source?.artifacts.at(-1) }];
+    for (const { operationKey, expected } of required) {
       const artifact = this.db
         .prepare(`SELECT a.payload_ref AS payloadRef,a.content_digest AS contentDigest
         FROM run_payload_artifacts a JOIN payloads p ON p.ref=a.payload_ref AND p.owner_id=a.owner_id AND p.agent_id=a.agent_id
@@ -1331,8 +1341,6 @@ export class SqliteSandboxExecutionOperations {
           current.plan.identity.runId,
           operationKey,
         ) as { payloadRef: string; contentDigest: string } | undefined;
-      const expected =
-        operationKey === controlKey ? source?.controlArtifact : source?.artifacts.at(-1);
       if (
         !artifact ||
         (source &&
@@ -1343,6 +1351,11 @@ export class SqliteSandboxExecutionOperations {
       )
         return this.fail("PORT_NOT_AUTHORITATIVE", "Deadline recovery evidence binding changed");
     }
+    if (
+      sandboxBackendKind(current.plan.backendRef) === "task_environment" &&
+      !this.recoverableBackend(current)
+    )
+      return this.fail("PORT_NOT_AUTHORITATIVE", "Deadline recovery evidence binding changed");
   }
   private assertResultRecovery(
     current: SandboxExecutionRecord,
@@ -1375,7 +1388,8 @@ export class SqliteSandboxExecutionOperations {
   }
   private recoverableBackend(current: SandboxExecutionRecord) {
     const environment = current.facts.environment;
-    if (current.plan.backendRef === "srt") return environment.kind === "local";
+    if (sandboxBackendKind(current.plan.backendRef) === "one_shot_srt")
+      return environment.kind === "local";
     if (environment.kind !== "container") return false;
     return (
       this.db

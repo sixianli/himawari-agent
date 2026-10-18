@@ -43,7 +43,7 @@ Pi 继续负责工具批次及模型循环。Himawari 负责原期限、权限�
 
 Agent 沿用现有密钥和控制通道，解密并验证完整连续分块、摘要与结束块的 deadline/null/true 语义，再核验原宿主签名 final、原环境身份和已接受释放。只有全部满足、工具期限已到而原 Run 期限未到时，才带用途发出请求；正常结束、其他 null 退出或签名失败不会进入该用途。
 
-SQLite 事务独立核对其持有的持久事实：原 Run 非终态、当前 authority、Handle/Grant 有效且未撤销、原释放回执、无占用和无矛盾、资源序号及 operation revision。原作业结束块与 control artifact 必须 active，作用范围、operationKey、Payload ref 和内容摘要必须与请求来源相同；control 的引用和摘要通过 `source.controlArtifact` 传递，不传 token 或解密内容。分块来源仍逐份核对。时间窗口必须为 `工具期限 <= now < 原 Run 期限`；仅此用途替换原 plan 和冻结 receipt 的三个执行期限门槛。
+SQLite 事务独立核对其持有的持久事实：原 Run 非终态、当前 authority、Handle/Grant 有效且未撤销、原释放回执、无占用和无矛盾、资源序号及 operation revision。原作业结束块必须 active，作用范围、operationKey、Payload ref 和内容摘要必须与请求来源相同；分块来源仍逐份核对。到期证据按后端分派：只有一次性 `srt` 记录还要求 `sandbox-control:` 控制工件 active，其引用和摘要通过 `source.controlArtifact` 传递，不传 token 或解密内容；常驻 SRT 与容器任务环境记录没有这个工件，改用“整个环境的释放回执（依据不是 `create_not_dispatched`）+ 环境记录里的这条调用”代替，存储层按后端核对这份替代证据（与[常驻环境和容器环境的调用结果补救](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)同一套证据）。后端判断只在一处定义。时间窗口必须为 `工具期限 <= now < 原 Run 期限`；仅此用途替换原 plan 和冻结 receipt 的三个执行期限门槛。
 
 事务只允许该用途形成 `error / SANDBOX_TOOL_DEADLINE_EXCEEDED / failure`，效果只能保持未知或固定读取的不适用。持久 operation 继续保留既有必需的受保护 output 证据引用；对模型的交付结果由已有工具结果适配器固定为 `outputRef: null`，只返回中文超时说明，不能交付部分 stdout。已持久的确定结果优先，重复导入不新增 operation；最终消费仍受原唯一 intent 约束。
 

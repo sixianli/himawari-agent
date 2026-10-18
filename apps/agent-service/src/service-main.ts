@@ -403,11 +403,12 @@ export async function runAgentService(
   const authorityLoss = new Promise<void>((resolve) => {
     resolveAuthorityLoss = resolve;
   });
-  const failRuntime = (error: unknown) => {
+  const failRuntime = (error: unknown, phase?: string) => {
     writeServiceDiagnostic(errorOutput, {
       component: "agent-service",
       event: "runtime.failed",
       code: stableErrorCode(error),
+      ...(phase === undefined ? {} : { phase }),
     });
     health?.setAuthorityActive(false);
     authorityLost = true;
@@ -1124,7 +1125,7 @@ export async function runAgentService(
         instanceId: agentServiceBootId,
         cwd: configuration.stateRoot,
         agentDir: path.join(configuration.cacheDirectory, "pi-agent"),
-        onFailure: ({ error }) => failRuntime(error),
+        onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;
       http = await createProductionHttpComposition({
@@ -1263,7 +1264,7 @@ export async function runAgentService(
             configuration.concurrency.totalRuns,
           );
         },
-        onFailure: ({ error }) => failRuntime(error),
+        onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       await resourceOnlyLoop.start();
       if (authorityLost) throw authorityLossError;

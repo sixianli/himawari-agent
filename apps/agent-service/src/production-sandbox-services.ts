@@ -17,6 +17,7 @@ import {
   type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
+  type SandboxExecutionProjectionContext,
   type SandboxExecutionRecord,
   SandboxResourceRecoveryService,
   SandboxScopeService,
@@ -36,7 +37,9 @@ import {
   piFileRecoveryOperationKey,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_RESULT_LOST,
+  SRT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  sandboxBackendKind,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
@@ -85,6 +88,7 @@ import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
 import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
 import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
+import { isGlobalServiceFailure } from "./production-record-failure.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
 import { createProductionSandboxStreamResultRecovery } from "./production-sandbox-stream-result-recovery.js";
@@ -101,7 +105,6 @@ export type { ProductionTaskEnvironments } from "./production-task-environments.
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
-const SRT_BACKEND_REF = "srt";
 
 /** Composition only: existing grants, protected Run artifacts and the existing
  * job journal retain authority. Neither inventory nor this factory issues it. */
@@ -1667,7 +1670,7 @@ export async function createProductionSandboxServices(options: {
   };
   const taskEnvironmentFor = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
     const container = facts.environment.kind === "container";
-    if (container !== (plan.backendRef !== SRT_BACKEND_REF))
+    if (container !== (sandboxBackendKind(plan.backendRef) === "task_environment"))
       throw new Error("SANDBOX_TASK_ENVIRONMENT_BINDING_CHANGED");
     if (!container) return undefined;
     const selected =
@@ -1978,6 +1981,8 @@ export async function createProductionSandboxServices(options: {
     nextRef: () => ids.next("sandbox-stream-recovery"),
     recoverableBackend,
     verifyExited,
+    requiresControlArtifact: (record) =>
+      sandboxBackendKind(record.plan.backendRef) === "one_shot_srt",
     facts: async (record, bytes, termination, output) => {
       const plan = record.plan;
       const contract = plan.operationContract;
@@ -2073,6 +2078,68 @@ export async function createProductionSandboxServices(options: {
     recoverResult: recoverMissingToolResult,
   });
   const readForegroundOutput = createProductionSandboxOutput(outputOptions);
+  const settleUnknownTaskEnvironmentResult = async (record: SandboxExecutionRecord) => {
+    const { plan } = record;
+    if (
+      sandboxBackendKind(plan.backendRef) !== "task_environment" ||
+      plan.mode !== "foreground" ||
+      !record.startedAt ||
+      record.facts.result !== null ||
+      record.facts.resource.supervision !== "released" ||
+      !record.releaseReceipt
+    )
+      return;
+    const now = clock.now();
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      effect:
+        plan.operationContract.kind === "fixed_read"
+          ? { kind: "not_applicable" }
+          : { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+        occurredAt: now,
+        kind: "unknown",
+        reasonCode: "SANDBOX_EXIT_UNKNOWN",
+      },
+    });
+    const context: SandboxExecutionProjectionContext = {
+      now,
+      environment: record.facts.environment,
+      operationContract: plan.operationContract,
+      verification: null,
+      releaseReceipt: record.releaseReceipt,
+      currentResourceSequence: record.facts.resource.sequence,
+      runState: "terminated",
+      currentAuthority: false,
+      currentFence: false,
+      userDisclosureAllowed: false,
+      modelDisclosureAllowed: false,
+      conflictingWorkspaceRisk: false,
+      pendingApprovalOrReconciliation: false,
+      resultAlreadyDelivered: false,
+    };
+    try {
+      await repository
+        .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
+        .recordOperation({
+          identity: plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts,
+          authority: options.authority(),
+          now,
+          context,
+        });
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "PORT_CONFLICT")
+        throw error;
+    }
+  };
   const reconciliation = new SandboxExecutionReconciliationService({
     hostId,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
@@ -2087,6 +2154,7 @@ export async function createProductionSandboxServices(options: {
     // Use the existing bounded maximum so mechanical-disk verification can finish.
     timeoutMs: 30000,
     now: () => clock.now(),
+    onReleased: settleUnknownTaskEnvironmentResult,
   });
   const stopRecord = async (record: Parameters<typeof stream.output>[0]) => {
     let current = record;
@@ -2119,6 +2187,7 @@ export async function createProductionSandboxServices(options: {
     hostId,
     preparations,
     reconciliation,
+    isGlobalFailure: isGlobalServiceFailure,
     reservations: {
       stop: async (plan, signal) => {
         const admission = await preparations.readAdmission(plan.identity);

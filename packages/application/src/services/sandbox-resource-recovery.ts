@@ -33,6 +33,7 @@ interface Options {
   readonly authority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
   readonly timeoutMs: number;
+  readonly isGlobalFailure?: (error: unknown) => boolean;
 }
 
 function expectedRace(error: unknown): boolean {
@@ -115,7 +116,7 @@ export class SandboxResourceRecoveryService {
                 error.message === "SANDBOX_RECONCILIATION_INTERRUPTED")
             )
               return;
-            throw error;
+            if (this.options.isGlobalFailure?.(error) ?? true) throw error;
           }
         });
         if (tasks.length >= Math.min(maximum, 100)) break;

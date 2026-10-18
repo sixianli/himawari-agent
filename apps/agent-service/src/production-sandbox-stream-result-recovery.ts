@@ -25,6 +25,7 @@ export function createProductionSandboxStreamResultRecovery(options: {
   nextRef(): string;
   recoverableBackend(record: SandboxExecutionRecord): Promise<boolean>;
   verifyExited(record: SandboxExecutionRecord): Promise<boolean>;
+  requiresControlArtifact(record: SandboxExecutionRecord): boolean;
   facts(
     record: SandboxExecutionRecord,
     bytes: Uint8Array,
@@ -55,7 +56,9 @@ export function createProductionSandboxStreamResultRecovery(options: {
     const purpose = deadline ? { recoveryPurpose: "deadline_failure" as const } : {};
     const source = {
       ...recovered.source,
-      ...(deadline ? { controlArtifact: await options.stream.controlArtifact(record) } : {}),
+      ...(deadline && options.requiresControlArtifact(record)
+        ? { controlArtifact: await options.stream.controlArtifact(record) }
+        : {}),
     };
     const original = await options.journal.readResultRecovery({
       identity: plan.identity,

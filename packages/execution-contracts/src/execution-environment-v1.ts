@@ -25,6 +25,15 @@ export const TASK_ENVIRONMENT_GUARANTEES = [
   "task-egress-policy.v1",
 ] as const;
 export const SRT_TASK_ENVIRONMENT_BACKEND_REF = "srt-task-environment" as const;
+export const SRT_BACKEND_REF = "srt" as const;
+export const SANDBOX_EXECUTION_BACKEND_REFS = Object.freeze([
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+] as const);
+export type SandboxBackendKind = "one_shot_srt" | "task_environment";
+export function sandboxBackendKind(backendRef: string): SandboxBackendKind {
+  return backendRef === SRT_BACKEND_REF ? "one_shot_srt" : "task_environment";
+}
 export const SRT_TASK_ENVIRONMENT_GUARANTEES = [
   "immutable-environment-identity.v1",
   "no-automatic-restart.v1",

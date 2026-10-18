@@ -396,6 +396,17 @@ async function readRecord(ctx: Harness, prepared: Prepared) {
     .read(prepared.prepared.plan.identity);
 }
 
+async function waitForBoundRecord(ctx: Harness, prepared: Prepared) {
+  return waitFor(async () => {
+    try {
+      const record = await readRecord(ctx, prepared);
+      return record?.startedAt ? record : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+}
+
 async function readPiResult(ctx: Harness, prepared: Prepared) {
   const record = await readRecord(ctx, prepared);
   const result = record?.facts.result;
@@ -1102,5 +1113,80 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
         srtTaskEnvironmentJobId(environmentId, "command"),
       ]),
     );
+  });
+
+  it("[R2-P2] recovers a resident deadline failure once its release evidence is confirmed", async () => {
+    const ctx = await srtHarness({
+      failFirstWriteOutput: true,
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" }, deadlineMs: 20000 }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const failed = await readRecord(ctx, first);
+    expect(failed?.facts.result).toMatchObject({ kind: "unknown" });
+    expect(failed?.facts.resource.supervision).toBe("lost");
+    expect(storedStreamKeys(ctx).some((key) => key.startsWith("sandbox-stream-end:"))).toBe(true);
+
+    expect(await ctx.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+      released: true,
+    });
+    const released = await readRecord(ctx, first);
+    expect(released?.facts.resource.supervision).toBe("released");
+    if (!released) throw new Error("missing released record");
+
+    const recovered = await ctx.f.services.recoverMissingToolResult(released);
+    expect(recovered.facts.result).toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+    });
+  });
+
+  it("[R2-P2] writes an unknown result when the environment is released while a command runs", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" } }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    const running = dispatch(ctx, first).catch(() => undefined);
+    await waitForBoundRecord(ctx, first);
+
+    expect(await ctx.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+      released: true,
+    });
+    await running;
+
+    const released = await readRecord(ctx, first);
+    expect(released?.facts.resource.supervision).toBe("released");
+    expect(released?.facts.result).toMatchObject({
+      kind: "unknown",
+      reasonCode: "SANDBOX_EXIT_UNKNOWN",
+    });
+  });
+
+  it("[R2-P2] writes an unknown result when the recovery scan releases a running environment", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" } }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    const running = dispatch(ctx, first).catch(() => undefined);
+    await waitForBoundRecord(ctx, first);
+    const database = new Database(path.join(ctx.f.f.resource.stateRoot, "product.sqlite"));
+    try {
+      database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(RUN_ID);
+    } finally {
+      database.close();
+    }
+
+    await ctx.f.services.resources.recoverPending(new AbortController().signal, 4);
+    await running;
+
+    const released = await readRecord(ctx, first);
+    expect(released?.facts.resource.supervision).toBe("released");
+    expect(released?.facts.result).toMatchObject({
+      kind: "unknown",
+      reasonCode: "SANDBOX_EXIT_UNKNOWN",
+    });
   });
 });
