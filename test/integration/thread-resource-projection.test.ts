@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
 import { projectThreadExecutionState } from "../../packages/application/src/services/thread-execution-state.js";
 import { createRunId } from "@himawari-agent/domain";
-import { sandboxExecutionFactsSchema } from "@himawari-agent/execution-contracts";
+import {
+  sandboxExecutionFactsSchema,
+  sandboxExecutionReservationSchema,
+} from "@himawari-agent/execution-contracts";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
@@ -15,6 +18,7 @@ import {
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 import {
   ThreadExecutionProjection,
+  type SandboxExecutionRecord,
   type SandboxExecutionRunInventory,
 } from "@himawari-agent/application";
 
@@ -50,6 +54,8 @@ it("keeps a currently observed execution active until its missing result becomes
           queue: [],
           admissions: [{ phase: "bound", record: { ...record, facts } }],
           deletedPlans: [],
+          taskEnvironmentCalls: [],
+          executionLease: null,
         },
         now,
         payloads: { get: async () => f.scopePayload },
@@ -137,6 +143,8 @@ describe("historical resource display", () => {
         queue: [],
         admissions: [{ phase: "bound", record: stored }],
         deletedPlans: [],
+        taskEnvironmentCalls: [],
+        executionLease: null,
       };
       const read = (snapshot = inventory, now = T1) =>
         readThreadExecutionResources({
@@ -332,4 +340,289 @@ it("projects the production queue and reservation from SQLite without renewing a
   } finally {
     await f.close();
   }
+});
+
+const TASK_ENVIRONMENT_ID = "environment-task-projection";
+const EXECUTION_JOB_ID = "execution-job-projection";
+const CONTAINER_BACKEND = "srt-task-environment";
+const CONTAINER_RUNTIME_ENVIRONMENT = "c".repeat(64);
+
+function asContainerRecord(record: SandboxExecutionRecord): SandboxExecutionRecord {
+  const supervisor = {
+    supervisorId: CONTAINER_RUNTIME_ENVIRONMENT,
+    bootId: "runtime-instance",
+    epoch: 1,
+  };
+  const environment = {
+    schemaVersion: "sandbox-execution.v2",
+    kind: "container",
+    environmentId: record.plan.environmentId,
+    resourceRef: null,
+    creator: record.plan.identity,
+    mode: record.plan.mode,
+    backendRef: CONTAINER_BACKEND,
+    authorizationRef: record.plan.authorizationRef,
+    scopeDigest: record.plan.binding.scopeDigest,
+    policyDigest: record.facts.environment.policyDigest,
+    deadlineAt: record.plan.effectiveDeadlineAt,
+    supervisor,
+    workspaceConflictRefs: record.facts.environment.workspaceConflictRefs,
+    taskEnvironmentId: TASK_ENVIRONMENT_ID,
+    executionJobId: EXECUTION_JOB_ID,
+    environmentGeneration: 1,
+    runtimeInstanceId: "runtime-instance",
+    runtimeEnvironmentId: CONTAINER_RUNTIME_ENVIRONMENT,
+    createIntentId: "environment-create-projection",
+    stopFence: 0,
+  };
+  return {
+    ...record,
+    facts: sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      environment,
+      resource: {
+        ...record.facts.resource,
+        environmentId: record.plan.environmentId,
+        policyDigest: environment.policyDigest,
+        supervisor,
+      },
+    }),
+  };
+}
+
+type InventoryOverrides = {
+  readonly admissions?: SandboxExecutionRunInventory["admissions"];
+  readonly taskEnvironmentCalls?: SandboxExecutionRunInventory["taskEnvironmentCalls"];
+  readonly executionLease?: SandboxExecutionRunInventory["executionLease"];
+};
+
+async function taskEnvironmentProjection() {
+  const f = await openSandboxJournal();
+  const { record } = sandboxV2Call(f, "admit", sandboxV2Admission(f));
+  const call: SandboxExecutionRunInventory["taskEnvironmentCalls"][number] = {
+    environmentId: TASK_ENVIRONMENT_ID,
+    executionJobId: EXECUTION_JOB_ID,
+    environmentGeneration: 1,
+    invocationId: record.plan.identity.invocationId,
+    state: "running",
+    stopFence: 0,
+    deadlineAt: T2,
+    linkedAt: T1,
+    completedAt: null,
+  };
+  const read = (overrides: InventoryOverrides = {}, now = T1) =>
+    readThreadExecutionResources({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      threadId: record.plan.identity.threadId ?? "",
+      runId: record.plan.identity.runId,
+      inventory: {
+        legacyResourcesPending: false,
+        queue: [],
+        admissions: [{ phase: "bound", record: asContainerRecord(record) }],
+        deletedPlans: [],
+        taskEnvironmentCalls: [call],
+        executionLease: { expiresAt: T2, releasedAt: null },
+        ...overrides,
+      },
+      now,
+      payloads: { get: async () => f.scopePayload },
+      protector: f.protector,
+      digest,
+      itemId: (id) => id,
+    });
+  return { f, record, call, read };
+}
+
+describe("task environment execution display", () => {
+  it("shows a registered call in a live task environment as executing", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      const read = await t.read();
+      expect(read).toMatchObject({
+        phase: "executing",
+        reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+        allReleased: false,
+        pendingResources: true,
+      });
+      expect(read.operations).toHaveLength(1);
+      expect(read.operations[0]).toMatchObject({
+        phase: "executing",
+        reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+      });
+      expect(
+        projectThreadExecutionState(
+          {
+            runId: createRunId(t.record.plan.identity.runId),
+            revision: 1,
+            status: "running" as const,
+            createdAt: T1,
+            updatedAt: T1,
+          },
+          [],
+          true,
+          read,
+        ),
+      ).toMatchObject({ reasonCode: "RESOURCE_EXECUTION_OBSERVED" });
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("keeps executing while the finished call's result is still being written back", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      const read = await t.read({ taskEnvironmentCalls: [{ ...t.call, completedAt: T1 }] });
+      expect(read.operations[0]).toMatchObject({
+        phase: "executing",
+        reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+      });
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("treats a missing, released or expired execution lease as an expired observation", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      for (const executionLease of [
+        { expiresAt: T1, releasedAt: null },
+        { expiresAt: T2, releasedAt: T1 },
+        null,
+      ] as const) {
+        const read = await t.read({ executionLease });
+        expect(read.operations[0]).toMatchObject({
+          phase: "unresolved",
+          reasonCode: "RESOURCE_OBSERVATION_EXPIRED",
+        });
+      }
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("stops showing executing once the task environment is no longer alive", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      for (const state of ["stop_requested", "released", "unknown"] as const) {
+        const read = await t.read({ taskEnvironmentCalls: [{ ...t.call, state }] });
+        expect(read.operations[0]).toMatchObject({
+          phase: "unresolved",
+          reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+        });
+      }
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("stops showing executing once the task environment deadline has passed", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      const read = await t.read({ taskEnvironmentCalls: [{ ...t.call, deadlineAt: T1 }] }, T1);
+      expect(read.operations[0]).toMatchObject({
+        phase: "unresolved",
+        reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+      });
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("reports unconfirmed state when no call matches the bound environment identity", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      for (const taskEnvironmentCalls of [
+        [],
+        [{ ...t.call, environmentGeneration: 2 }],
+        [{ ...t.call, executionJobId: "other-job" }],
+        [{ ...t.call, stopFence: 1 }],
+        [{ ...t.call, invocationId: "other-invocation" }],
+      ]) {
+        const read = await t.read({ taskEnvironmentCalls });
+        expect(read.operations[0]).toMatchObject({
+          phase: "unresolved",
+          reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+        });
+      }
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("ignores other calls registered against the same task environment", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      const read = await t.read({
+        taskEnvironmentCalls: [
+          t.call,
+          { ...t.call, invocationId: "other-invocation", completedAt: T1 },
+        ],
+      });
+      expect(read.operations[0]).toMatchObject({
+        phase: "executing",
+        reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+      });
+    } finally {
+      await t.f.close();
+    }
+  });
+
+  it("keeps a one-shot SRT preparation as preparing", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const { record } = sandboxV2Call(f, "admit", sandboxV2Admission(f));
+      const read = await readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: record.plan.identity.threadId ?? "",
+        runId: record.plan.identity.runId,
+        inventory: {
+          legacyResourcesPending: false,
+          queue: [],
+          admissions: [{ phase: "bound", record }],
+          deletedPlans: [],
+          taskEnvironmentCalls: [],
+          executionLease: null,
+        },
+        now: T1,
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest,
+        itemId: (id) => id,
+      });
+      expect(read.operations[0]).toMatchObject({
+        phase: "preparing",
+        reasonCode: "RESOURCE_START_UNCONFIRMED",
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("keeps an unbound reservation out of executing", async () => {
+    const t = await taskEnvironmentProjection();
+    try {
+      const plan = t.record.plan;
+      const reservation = sandboxExecutionReservationSchema.parse({
+        schemaVersion: "sandbox-preparation.v1",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        resourceRef: null,
+        mode: plan.mode,
+        workspaceConflictRefs: t.record.facts.environment.workspaceConflictRefs,
+        sequence: 1,
+        createdAt: plan.requestedAt,
+      });
+      const read = await t.read({
+        admissions: [{ phase: "reserved", plan, reservation, workspaces: t.record.workspaces }],
+      });
+      expect(read.operations[0]).toMatchObject({
+        phase: "preparing",
+        reasonCode: "RESOURCE_START_UNCONFIRMED",
+      });
+    } finally {
+      await t.f.close();
+    }
+  });
 });

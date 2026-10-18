@@ -1,4 +1,11 @@
-import { taskEnvironmentCallEvidence } from "@himawari-agent/application";
+import { createHash } from "node:crypto";
+import {
+  taskEnvironmentCallEvidence,
+  type SandboxExecutionFacts,
+  type SandboxExecutionProjectionContext,
+  type SandboxExecutionRecord,
+  type SandboxExecutionRunInventory,
+} from "@himawari-agent/application";
 import {
   PAYLOAD_BROKER_V1_SCHEMA_VERSION,
   payloadBrokerV1MessageSchema,
@@ -7,8 +14,17 @@ import {
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it } from "vitest";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
-import { openSandboxJournal, T1 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import {
+  AGENT_ID,
+  OWNER_ID,
+  openSandboxJournal,
+  operationsForDatabase,
+  SERVICE_AUTHORITY,
+  T1,
+  T2,
+} from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -375,4 +391,212 @@ describe("resolve reply environment binding", () => {
         ),
       ).toThrow("sandbox task environment mismatch");
   });
+});
+
+type JournalFixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+const EXECUTION_JOB = "execution-job-1";
+
+async function boundContainerRun() {
+  const f = await openSandboxJournal();
+  cleanups.push(f.close);
+  const admission = sandboxV2Admission(f);
+  const plan = { ...admission.plan, backendRef: BACKEND };
+  const initial = containerFacts(plan as SandboxExecutionPlanV2);
+  const facts = sandboxExecutionFactsSchema.parse({
+    ...initial,
+    resource: { ...initial.resource, sequence: 1 },
+  });
+  const record = sandboxV2Call(f, "admit", { ...admission, plan, facts }).record;
+  return { f, record };
+}
+
+function seedTaskEnvironment(f: JournalFixture, record: SandboxExecutionRecord) {
+  const identity = record.plan.identity;
+  f.database
+    .prepare(`INSERT INTO execution_jobs (execution_job_id,owner_id,agent_id,run_id,host_id,created_at)
+      VALUES (?,?,?,?,?,?)`)
+    .run(EXECUTION_JOB, OWNER_ID, AGENT_ID, identity.runId, identity.hostId, T1);
+  f.database
+    .prepare(`INSERT INTO execution_environments
+      (environment_id,execution_job_id,role,generation,state,rotation_reason,backend_ref,
+       envelope_json,envelope_digest,policy_digest,image_digest,runner_digest,deadline_at,
+       locator_json,create_intent_id,created_at,updated_at)
+      VALUES (?,?,'primary',1,'running','initial',?,'{}',?,?,?,?,?,?,?,?,?)`)
+    .run(
+      TASK_ENVIRONMENT,
+      EXECUTION_JOB,
+      BACKEND,
+      "a".repeat(64),
+      locator.effectivePolicyDigest,
+      "b".repeat(64),
+      "c".repeat(64),
+      record.plan.effectiveDeadlineAt,
+      "{}",
+      locator.createIntentId,
+      T1,
+      T1,
+    );
+  f.database
+    .prepare(`INSERT INTO execution_environment_calls
+      (environment_id,invocation_id,receipt_ref,claims_json,linked_at) VALUES (?,?,?,?,?)`)
+    .run(TASK_ENVIRONMENT, identity.invocationId, identity.receiptRef, "[]", T1);
+}
+
+function readInventory(f: JournalFixture) {
+  return operationsForDatabase(f.database).execute(
+    "capabilityInvocation.sandboxV2.readRunInventory",
+    { ownerId: OWNER_ID, agentId: AGENT_ID, input: { runId: f.plan.identity.runId } },
+  ) as SandboxExecutionRunInventory;
+}
+
+function projectResources(f: JournalFixture, inventory: SandboxExecutionRunInventory, now = T1) {
+  return readThreadExecutionResources({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    threadId: f.plan.identity.threadId ?? "",
+    runId: f.plan.identity.runId,
+    inventory,
+    now,
+    payloads: { get: async () => f.scopePayload },
+    protector: f.protector,
+    digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+    itemId: (id) => id,
+  });
+}
+
+function projectionContext(
+  record: SandboxExecutionRecord,
+  facts: SandboxExecutionFacts,
+): SandboxExecutionProjectionContext {
+  const resource = facts.resource;
+  const resourceEvidence =
+    resource.supervision === "controlled" || resource.supervision === "released"
+      ? [{ ref: resource.evidence.ref, digest: resource.evidence.digest }]
+      : [];
+  return {
+    now: T1,
+    environment: record.facts.environment,
+    operationContract: record.plan.operationContract,
+    verification: {
+      facts,
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      resourceSequence: facts.resource.sequence,
+      checkedAt: T1,
+      validUntil: T2,
+      evidence: resourceEvidence,
+      outputs: facts.result && facts.result.kind !== "unknown" ? [facts.result.output] : [],
+    },
+    currentResourceSequence: facts.resource.sequence,
+    runState: "active",
+    currentAuthority: true,
+    currentFence: true,
+    userDisclosureAllowed: true,
+    modelDisclosureAllowed: true,
+    conflictingWorkspaceRisk: false,
+    pendingApprovalOrReconciliation: false,
+    resultAlreadyDelivered: false,
+  };
+}
+
+function stoppingFacts(record: SandboxExecutionRecord): SandboxExecutionFacts {
+  const { supervision: _supervision, cleanup: _cleanup, ...resource } = record.facts.resource;
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    resource: {
+      ...resource,
+      sequence: record.facts.resource.sequence + 1,
+      supervision: "stopping",
+      cleanup: "pending",
+      reasonCode: "requested",
+    },
+  });
+}
+
+function containerReleasedFacts(record: SandboxExecutionRecord): SandboxExecutionFacts {
+  const {
+    supervision: _supervision,
+    cleanup: _cleanup,
+    reasonCode: _reasonCode,
+    ...resource
+  } = record.facts.resource as typeof record.facts.resource & { reasonCode?: string };
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    resource: {
+      ...resource,
+      sequence: record.facts.resource.sequence + 1,
+      supervision: "released",
+      cleanup: "confirmed",
+      evidence: {
+        ...taskEnvironmentCallEvidence({
+          environmentId: TASK_ENVIRONMENT,
+          invocationId: record.plan.identity.invocationId,
+          createIntentId: locator.createIntentId,
+          runtimeInstanceId: locator.runtimeInstanceId,
+          runtimeEnvironmentId: locator.runtimeEnvironmentId,
+        }),
+        qualificationRef: record.plan.binding.qualificationRef,
+        profileRef: record.plan.binding.profileRef,
+        validUntil: T2,
+        subject: { kind: "task_environment", environmentId: TASK_ENVIRONMENT },
+      },
+    },
+  });
+}
+
+it("[R2-P2] projects a running task environment call as executing, then released after the result settles", async () => {
+  const { f, record } = await boundContainerRun();
+  try {
+    seedTaskEnvironment(f, record);
+    const inventory = readInventory(f);
+    expect(inventory.taskEnvironmentCalls).toEqual([
+      {
+        environmentId: TASK_ENVIRONMENT,
+        executionJobId: EXECUTION_JOB,
+        environmentGeneration: 1,
+        invocationId: record.plan.identity.invocationId,
+        state: "running",
+        stopFence: 0,
+        deadlineAt: record.plan.effectiveDeadlineAt,
+        linkedAt: T1,
+        completedAt: null,
+      },
+    ]);
+    expect(inventory.executionLease).toEqual({ expiresAt: T2, releasedAt: null });
+    const running = await projectResources(f, inventory);
+    expect(running.operations[0]).toMatchObject({
+      phase: "executing",
+      reasonCode: "RESOURCE_EXECUTION_OBSERVED",
+    });
+
+    const stopping = stoppingFacts(record);
+    const stopped = sandboxV2Call(f, "append", {
+      identity: record.plan.identity,
+      expectedSequence: record.facts.resource.sequence,
+      expectedOperationRevision: record.operationRevision,
+      facts: stopping,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      context: projectionContext(record, stopping),
+    }).record;
+    const releasedFacts = containerReleasedFacts(stopped);
+    sandboxV2Call(f, "append", {
+      identity: stopped.plan.identity,
+      expectedSequence: stopped.facts.resource.sequence,
+      expectedOperationRevision: stopped.operationRevision,
+      facts: releasedFacts,
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      context: projectionContext(stopped, releasedFacts),
+    });
+    f.database
+      .prepare("UPDATE execution_environment_calls SET completed_at=? WHERE environment_id=?")
+      .run(T1, TASK_ENVIRONMENT);
+    const settled = await projectResources(f, readInventory(f));
+    expect(settled).toMatchObject({ allReleased: true, pendingResources: false, phase: null });
+    expect(settled.operations[0]).toMatchObject({ phase: "released" });
+  } finally {
+    await f.close();
+  }
 });

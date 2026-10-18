@@ -705,6 +705,8 @@ describe("atomic execution reservation and runtime binding", () => {
         queue: [],
         legacyResourcesPending: false,
         deletedPlans: [],
+        taskEnvironmentCalls: [],
+        executionLease: null,
       });
       f.database.close();
       const repo = await SqliteProductStateRepository.open({ stateRoot: f.resource.stateRoot });
@@ -735,6 +737,8 @@ describe("atomic execution reservation and runtime binding", () => {
         queue: [],
         legacyResourcesPending: true,
         deletedPlans: [],
+        taskEnvironmentCalls: [],
+        executionLease: { expiresAt: T2, releasedAt: null },
       });
       expect(call(f, "readRunInventory", { runId: "other-run" })).toEqual({
         sandboxResourcesAbsent: false,
@@ -742,6 +746,8 @@ describe("atomic execution reservation and runtime binding", () => {
         queue: [],
         legacyResourcesPending: false,
         deletedPlans: [],
+        taskEnvironmentCalls: [],
+        executionLease: null,
       });
     } finally {
       await f.close();

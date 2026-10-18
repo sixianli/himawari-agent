@@ -503,6 +503,8 @@ describe("execution state history read boundary", () => {
       queue: [],
       legacyResourcesPending: false,
       deletedPlans: [],
+      taskEnvironmentCalls: [],
+      executionLease: null,
     };
     let call = 0;
     const readInventory = vi
@@ -520,6 +522,8 @@ describe("execution state history read boundary", () => {
       queue: [],
       legacyResourcesPending: false,
       deletedPlans: [],
+      taskEnvironmentCalls: [],
+      executionLease: null,
     };
     let call = 0;
     const readInventory = vi
@@ -537,6 +541,8 @@ describe("execution state history read boundary", () => {
       queue: [],
       legacyResourcesPending: false,
       deletedPlans: [],
+      taskEnvironmentCalls: [],
+      executionLease: null,
       sandboxResourcesAbsent: true,
     };
     let call = 0;

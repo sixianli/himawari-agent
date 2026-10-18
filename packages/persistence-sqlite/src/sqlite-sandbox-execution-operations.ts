@@ -7,6 +7,7 @@ import type {
   SandboxExecutionPreparationPort,
   SandboxExecutionRecord,
   SandboxRecoveryState,
+  SandboxTaskEnvironmentCallFacts,
   SandboxWorkspaceClaim,
 } from "@himawari-agent/application";
 import {
@@ -233,12 +234,44 @@ export class SqliteSandboxExecutionOperations {
           WHERE r.owner_id=@owner AND r.agent_id=@agent AND r.id=@runId
             AND (${RUN_SANDBOX_RESOURCES_ABSENT_SQL})`)
             .get({ owner, agent, runId }) !== undefined;
+        const taskEnvironmentCalls = this.db
+          .prepare(
+            `SELECT e.environment_id AS environmentId, e.execution_job_id AS executionJobId,
+                e.generation AS environmentGeneration, e.state AS state, e.stop_fence AS stopFence,
+                e.deadline_at AS deadlineAt, c.invocation_id AS invocationId, c.linked_at AS linkedAt,
+                c.completed_at AS completedAt
+              FROM execution_environments e
+              JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+              JOIN execution_environment_calls c ON c.environment_id=e.environment_id
+              WHERE j.owner_id=? AND j.agent_id=? AND j.run_id=?
+              ORDER BY e.environment_id, c.invocation_id LIMIT 10001`,
+          )
+          .all(owner, agent, runId) as {
+          environmentId: string;
+          executionJobId: string;
+          environmentGeneration: number;
+          state: SandboxTaskEnvironmentCallFacts["state"];
+          stopFence: number;
+          deadlineAt: string;
+          invocationId: string;
+          linkedAt: string;
+          completedAt: string | null;
+        }[];
+        if (taskEnvironmentCalls.length > 10000)
+          return this.fail("PORT_INVALID_OPERATION", "SANDBOX_RUN_INVENTORY_LIMIT");
+        const executionLeaseRow = this.db
+          .prepare(
+            "SELECT expires_at AS expiresAt, released_at AS releasedAt FROM run_execution_leases WHERE owner_id=? AND agent_id=? AND run_id=?",
+          )
+          .get(owner, agent, runId) as { expiresAt: string; releasedAt: string | null } | undefined;
         return {
           sandboxResourcesAbsent,
           admissions,
           queue: this.queue.readRun(owner, agent, runId, 10000),
           legacyResourcesPending,
           deletedPlans,
+          taskEnvironmentCalls,
+          executionLease: executionLeaseRow ?? null,
         };
       })();
     }

@@ -142,6 +142,7 @@ export async function readThreadExecutionResources(input: {
     const resource = entry.phase === "bound" ? entry.record.facts.resource : null;
     let phase: ThreadResourcePhase;
     let reason: string;
+    let taskEnvironmentObservedAt: string | null = null;
     if (released) {
       phase = "released";
       reason =
@@ -174,6 +175,39 @@ export async function readThreadExecutionResources(input: {
     } else if (resource?.supervision === "controlled") {
       phase = "unresolved";
       reason = "RESOURCE_OBSERVATION_EXPIRED";
+    } else if (
+      entry.phase === "bound" &&
+      resource?.supervision === "initializing" &&
+      entry.record.facts.result === null
+    ) {
+      const environment = entry.record.facts.environment;
+      if (environment.kind !== "container") {
+        phase = "preparing";
+        reason = "RESOURCE_START_UNCONFIRMED";
+      } else {
+        const call = inventory.taskEnvironmentCalls.find(
+          (candidate) =>
+            candidate.environmentId === environment.taskEnvironmentId &&
+            candidate.invocationId === plan.identity.invocationId &&
+            candidate.executionJobId === environment.executionJobId &&
+            candidate.environmentGeneration === environment.environmentGeneration &&
+            candidate.stopFence === environment.stopFence,
+        );
+        if (call && (call.state === "ready" || call.state === "running") && call.deadlineAt > now) {
+          const lease = inventory.executionLease;
+          if (lease && lease.releasedAt === null && lease.expiresAt > now) {
+            phase = "executing";
+            reason = "RESOURCE_EXECUTION_OBSERVED";
+            taskEnvironmentObservedAt = call.linkedAt;
+          } else {
+            phase = "unresolved";
+            reason = "RESOURCE_OBSERVATION_EXPIRED";
+          }
+        } else {
+          phase = "unresolved";
+          reason = "RESOURCE_STATE_UNCONFIRMED";
+        }
+      }
     } else {
       phase = "preparing";
       reason = "RESOURCE_START_UNCONFIRMED";
@@ -187,6 +221,7 @@ export async function readThreadExecutionResources(input: {
       recovery?.finishedAt,
       recovery && "scheduledAt" in recovery ? recovery.scheduledAt : null,
       entry.phase === "reserved" ? entry.stopRequestedAt : null,
+      taskEnvironmentObservedAt,
     ].filter((value): value is string => !!value);
     const itemId = await add(plan, phase, reason, dates.sort().at(-1) ?? null);
     // An active operation has no final result yet. That absence becomes an

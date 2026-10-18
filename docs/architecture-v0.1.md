@@ -139,7 +139,7 @@ Schema 42 在原工作区保护表增加资源矛盾事件：永久释放后，�
 
 SRT 继续用于本机授权目录；Gondolin/容器/远端沙箱是有独立资格的可选后端方向，当前未启用且不构成自动 fallback。Git push 继续使用 Pi Bash 意图、产品内部专用动作和标准 Git，冻结仓库/ref/OID，凭据只由专用传输使用；本地兼容实验不等于真实 GitHub 验收。
 
-现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史和旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
+现有 SQLite preparations 端口新增内部 `readRunInventory`：同一只读事务返回一个 Owner/Agent/Run 的 v2 预约/绑定记录、完整队列历史、本 Run 的任务环境调用登记和执行租约及旧格式未释放资源标记；身份异常或任一集合超过 10,000 条会拒绝整个读取。它不推进队列、不消费额度、不刷新旧权限，也不触发宿主核验。当前尚未接入网页状态查询，空记录不能作为资源已停止证明，见[资源快照基础](archive/plans/2026-09-16-workspace-authorization-lifecycle-plan.md#p6-resource-inventory)。
 
 ## 架构总览图
 

@@ -283,6 +283,24 @@ export type SandboxExecutionAdmissionRecord =
       readonly workspaces: readonly SandboxWorkspaceClaim[];
     }
   | { readonly phase: "bound"; readonly record: SandboxExecutionRecord };
+export interface SandboxTaskEnvironmentCallFacts {
+  readonly environmentId: string;
+  readonly executionJobId: string;
+  readonly environmentGeneration: number;
+  readonly invocationId: string;
+  readonly state:
+    | "reserved"
+    | "creating"
+    | "ready"
+    | "running"
+    | "unknown"
+    | "stop_requested"
+    | "released";
+  readonly stopFence: number;
+  readonly deadlineAt: string;
+  readonly linkedAt: string;
+  readonly completedAt: string | null;
+}
 /** One database read snapshot. Internal identities and claims never go directly to the browser. */
 export interface SandboxExecutionRunInventory {
   readonly sandboxResourcesAbsent?: boolean;
@@ -293,6 +311,11 @@ export interface SandboxExecutionRunInventory {
     Awaited<ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>>
   >[];
   readonly deletedPlans: readonly SandboxExecutionPlanV2[];
+  readonly taskEnvironmentCalls: readonly SandboxTaskEnvironmentCallFacts[];
+  readonly executionLease: {
+    readonly expiresAt: string;
+    readonly releasedAt: string | null;
+  } | null;
 }
 /** Product-owned link to the protected Pi batch captured before this queue was created. */
 export interface SandboxQueuedToolBatch {

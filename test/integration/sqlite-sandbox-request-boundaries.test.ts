@@ -69,6 +69,8 @@ describe("SQLite sandbox request boundaries", () => {
         queue: [],
         legacyResourcesPending: false,
         deletedPlans: [],
+        taskEnvironmentCalls: [],
+        executionLease: null,
       });
       const a = admission(f);
       const record = call(f, "admit", a).record;
