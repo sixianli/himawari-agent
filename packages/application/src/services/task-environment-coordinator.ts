@@ -311,6 +311,14 @@ export class TaskEnvironmentCoordinator {
       });
     if (record.state === "creating" || record.state === "unknown")
       throw new ExecutionEnvironmentError("EXECUTION_ENVIRONMENT_UNKNOWN");
+    if (record.state === "stop_requested") {
+      await this.stop({
+        environmentId: record.identity.environmentId,
+        reason: "failure",
+        stoppedResourceRefs: [],
+      });
+      return this.acquireInOrder(input);
+    }
     throw new ExecutionEnvironmentError("EXECUTION_STOP_UNCONFIRMED");
   }
 

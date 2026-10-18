@@ -909,6 +909,90 @@ describe("task execution environment protocol on real SQLite", () => {
       message: "Thread completion requires an assistant answer",
     });
   });
+
+  it("[R2-P2] finishes a stop left unconfirmed before giving the Run a new environment", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    f.backend.verifyMode = "unconfirmed";
+    await expect(
+      f.coordinator.stop({
+        environmentId: first.identity.environmentId,
+        reason: "failure",
+        stoppedResourceRefs: [],
+      }),
+    ).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    expect((await f.store.read(first.identity.environmentId))?.state).toBe("stop_requested");
+    f.backend.verifyMode = "proof";
+    const next = await acquire(f, RUN_ID, lease);
+    expect(next.identity.environmentId).not.toBe(first.identity.environmentId);
+    expect(next.rotationReason).toBe("failure");
+    expect((await f.store.read(first.identity.environmentId))?.state).toBe("released");
+  });
+
+  it("[R2-P2] keeps the original stop intent when the unconfirmed stop is finished later", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    f.backend.verifyMode = "unconfirmed";
+    await expect(
+      f.coordinator.stop({
+        environmentId: first.identity.environmentId,
+        reason: "expansion",
+        stoppedResourceRefs: ["resource-watcher"],
+      }),
+    ).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    const originalStopIntentId = (await f.store.read(first.identity.environmentId))?.stopIntent
+      ?.stopIntentId;
+    expect(typeof originalStopIntentId).toBe("string");
+    f.backend.verifyMode = "proof";
+    const next = await acquire(f, RUN_ID, lease);
+    expect(next.rotationReason).toBe("expansion");
+    expect((await f.store.read(first.identity.environmentId))?.stopIntent).toMatchObject({
+      stopIntentId: originalStopIntentId,
+      reason: "expansion",
+      stoppedResourceRefs: ["resource-watcher"],
+    });
+  });
+
+  it("[R2-P2] reports the stop as unconfirmed again while the backend stays unconfirmed", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    f.backend.verifyMode = "unconfirmed";
+    await expect(
+      f.coordinator.stop({
+        environmentId: first.identity.environmentId,
+        reason: "failure",
+        stoppedResourceRefs: [],
+      }),
+    ).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    await expect(acquire(f, RUN_ID, lease)).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    const environments = present((await f.store.readRun(RUN_ID))?.environments);
+    expect(environments).toHaveLength(1);
+    expect(environments[0]).toMatchObject({
+      identity: first.identity,
+      state: "stop_requested",
+    });
+  });
+
+  it("[R2-P2] finishes the stop but refuses a new environment after the Run finished", async () => {
+    const f = await fixture();
+    const lease = root("root-a", 10, "write");
+    const first = await acquire(f, RUN_ID, lease);
+    f.backend.verifyMode = "unconfirmed";
+    await expect(
+      f.coordinator.stop({
+        environmentId: first.identity.environmentId,
+        reason: "run_finished",
+        stoppedResourceRefs: [],
+      }),
+    ).rejects.toEqual(failure("EXECUTION_STOP_UNCONFIRMED"));
+    f.backend.verifyMode = "proof";
+    await expect(acquire(f, RUN_ID, lease)).rejects.toEqual(failure("EXECUTION_BINDING_CHANGED"));
+    expect((await f.store.read(first.identity.environmentId))?.state).toBe("released");
+    expect(present((await f.store.readRun(RUN_ID))?.environments)).toHaveLength(1);
+  });
 });
 
 describe("changing the environment envelope", () => {

@@ -168,6 +168,7 @@ date: "2026-10-13"
 R2-P2 前两次提交后，第 4 层（Hermes 上的真实产品路径测试）发现了下面的缺口，各自单独提交修复，不改动[决定](#decision)。
 
 - **Agent 重启后遗留的任务环境由巡检收回**：任务环境（常驻 SRT 环境或容器环境）活得比单次调用长。Agent 崩溃或重启时，正在用的环境可能既没停也没有释放回执；而 Run 结束投递和工具结果恢复都要求这个 Run 的每个任务环境都已释放（`RUN_RESOURCES_RELEASED_SQL`），于是这个 Run 永远停在 `running` 或 `reconciling_external_result`。现在资源恢复每轮在原有预约回收之后，再找出这样的环境逐个停掉：环境未释放，所属 Run 没有未过期的执行租约，且 Run 之后不会再被认领去执行，即 Run 处在 `reconciling_external_result`、`completed`、`failed`、`cancelled`，或仍是 `running` 但检查点已经记为完成（只差完成投递）。停止原因按 Run 状态给出：取消为 `run_cancelled`，完成、失败或检查点已算完为 `run_finished`，其余（对账中且检查点未算完）为 `supervision_lost`。其余状态（`accepted`、`building_context`、未算完的 `running`、`awaiting_approval`）的环境不动：这些 Run 之后还会被认领执行，认领时协调器会复用旧环境，或在 Worker 实例变了时先停旧环境再换新环境；巡检去停它们会和认领抢同一个环境。已结束（完成、失败、取消）且还有未释放预约的 Run 也不动：它的环境由预约回收负责停（见 R2-D6），那条路停止失败后有意暂停、等人工重试。对账中或只差完成投递的 Run 即使有未释放预约也照停：预约回收对没结束的 Run 不停环境，只在环境释放后才释放预约，环境没释放时按可重试的原因退避再试，所以巡检停掉环境后，预约随后由预约回收释放。停止已有停止意图的环境时沿用原意图和原因；Worker 暂时连不上（`EXECUTION_STOP_UNCONFIRMED`）或写入冲突时下一轮再试，其他错误在这一页都试过之后报出。
+- **取环境时把未确认的停止接着做完**：环境的停止意图已经写下、但后端停止或停止证明没有确认时，环境停在 `stop_requested`。一个还会继续执行的 Run（例如调用结果未知时观察流程请求停止环境，而停止没有确认）之后每次取环境都直接报 `EXECUTION_STOP_UNCONFIRMED`，即使后端已经恢复也不会再试，直到 Run 结束。现在取环境遇到 `stop_requested` 时，先按原来的停止意图再停一次（意图编号、停止原因和要停掉的资源都不变）：停止确认后，按原意图的原因换新环境；原意图是 Run 已结束或已取消时照旧报 `EXECUTION_BINDING_CHANGED`，不换新环境；后端仍然没有恢复时照旧报 `EXECUTION_STOP_UNCONFIRMED`，也不新建环境。已结束的 Run 在预约这一步就被拒绝，走不到这里，所以不影响 R2-D6 那条“停止失败后暂停、等人工重试”的路线。
 
 <a id="references"></a>
 
