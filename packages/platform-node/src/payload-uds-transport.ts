@@ -14,6 +14,7 @@ import {
   type PayloadBrokerSandboxExecutionResult,
   type PayloadBrokerSandboxJobRequest,
   type PayloadBrokerSandboxJobResult,
+  payloadBrokerV1BodyBytes,
   payloadBrokerV1MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -250,9 +251,11 @@ export class PayloadUdsServer {
     if (
       !Number.isSafeInteger(options.maximumPayloadBytes) ||
       options.maximumPayloadBytes < 1 ||
-      options.maximumPayloadBytes > options.maximumBodyBytes
+      payloadBrokerV1BodyBytes(options.maximumPayloadBytes) > options.maximumBodyBytes
     ) {
-      throw new TypeError("Payload UDS maximum payload bytes must fit inside the body limit");
+      throw new TypeError(
+        "Payload UDS body limit must hold the largest payload as base64 and its envelope",
+      );
     }
     if (options.allowedWorkerIdentities.length === 0) {
       throw new TypeError("Payload UDS requires an allowed Worker identity");
@@ -563,9 +566,11 @@ export class PayloadUdsClient {
     if (
       !Number.isSafeInteger(options.maximumPayloadBytes) ||
       options.maximumPayloadBytes < 1 ||
-      options.maximumPayloadBytes > options.maximumBodyBytes
+      payloadBrokerV1BodyBytes(options.maximumPayloadBytes) > options.maximumBodyBytes
     ) {
-      throw new TypeError("Payload UDS maximum payload bytes must fit inside the body limit");
+      throw new TypeError(
+        "Payload UDS body limit must hold the largest payload as base64 and its envelope",
+      );
     }
     this.options = options;
     this.uds = new AuthenticatedUdsClient({

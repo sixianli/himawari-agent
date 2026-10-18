@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { ExecutionWorkerEvent, ProductConfiguration } from "@himawari-agent/application";
+import type {
+  CapabilityInvocationRequest,
+  ExecutionWorkerEvent,
+  ProductConfiguration,
+} from "@himawari-agent/application";
 import type { ExecuteWorkRequest, ResourceCeiling } from "@himawari-agent/execution-contracts";
 import {
   CAPABILITY_DEPLOYMENT_ERROR_CODES,
@@ -514,6 +518,64 @@ describe("production Worker composition", () => {
       }
     },
   );
+
+  it("[R2-P2] moves a full-size payload both ways with the Worker's default limits", async () => {
+    const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-full-payload-"));
+    roots.push(root);
+    const composition = await createProductionWorkerComposition({
+      configuration: configuration(root, await snapshot(root)),
+      credential: CREDENTIAL,
+      authority: { authorityEpoch: 2, fencingToken: 3 },
+      agentServiceBootId: "agent-service-boot:composition",
+      platform: "linux",
+      clock: { now: () => NOW },
+    });
+    const largest = 48 * 1024;
+    const input = new Uint8Array(largest).fill(0xa5);
+    const output = new Uint8Array(largest).fill(0x5a);
+    const written: Uint8Array[] = [];
+    const peer = composition.peerBinding;
+    const payloads = new PayloadUdsServer({
+      runtimeDirectory: path.join(root, "runtime"),
+      credential: CREDENTIAL,
+      agentServiceInstanceId: peer.agentServiceInstanceId,
+      agentServiceBootId: peer.agentServiceBootId,
+      allowedWorkerIdentities: [
+        { workerInstanceId: peer.workerInstanceId, workerBootId: peer.workerBootId },
+      ],
+      authorityEpoch: peer.authorityEpoch,
+      fencingToken: peer.fencingToken,
+      maximumBodyBytes: 2 * 65_536,
+      maximumPayloadBytes: largest,
+      requestTimeoutMs: 1000,
+      handler: {
+        readInput: async () => input,
+        writeOutput: async (_request, plaintext) => {
+          written.push(plaintext);
+          return { outputRef: "payload:full-size-output", replayed: false };
+        },
+      },
+    });
+    await payloads.start();
+    const request = {
+      capabilityHandleRef: "handle:full-size",
+      invocationId: "invocation:full-size",
+    } as CapabilityInvocationRequest;
+    try {
+      await composition.payloads.connect();
+      expect(
+        Buffer.from(await composition.payloads.readInput(request)).equals(Buffer.from(input)),
+      ).toBe(true);
+      await expect(
+        composition.payloads.writeOutput(request, output, "application/octet-stream"),
+      ).resolves.toBe("payload:full-size-output");
+      expect(written).toHaveLength(1);
+      expect(Buffer.from(written[0] ?? []).equals(Buffer.from(output))).toBe(true);
+    } finally {
+      await composition.close();
+      await payloads.stop();
+    }
+  });
 
   it("requires a signed deployment and keeps readiness closed until Agent UDS handshakes", async () => {
     const root = await mkdtemp(path.join(testTemporaryRoot(), "himawari-worker-composition-"));

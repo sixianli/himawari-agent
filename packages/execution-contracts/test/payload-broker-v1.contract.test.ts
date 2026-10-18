@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { PAYLOAD_BROKER_V1_SCHEMA_VERSION, payloadBrokerV1MessageSchema } from "../src/index.ts";
+import {
+  PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES,
+  PAYLOAD_BROKER_V1_SCHEMA_VERSION,
+  payloadBrokerV1BodyBytes,
+  payloadBrokerV1MessageSchema,
+} from "../src/index.ts";
 
 const identity = {
   handleRef: "handle:one",
@@ -49,6 +54,59 @@ describe("payload-broker.v1 contract", () => {
       { ...request.payload, observation: {} },
     ])
       expect(() => payloadBrokerV1MessageSchema.parse({ ...request, payload })).toThrow();
+  });
+
+  it("[R2-P2] sizes the body limit to hold a payload's base64 form inside the longest envelope", () => {
+    expect(PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES).toBe(2_048);
+    expect([1, 2, 3, 4, 48 * 1024].map(payloadBrokerV1BodyBytes)).toEqual(
+      [4, 4, 4, 8, 65_536].map((encoded) => encoded + PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES),
+    );
+    const longest = (prefix: string) => prefix.padEnd(128, "x");
+    const longestEnvelope = (kind: "request" | "response", type: string) => ({
+      schemaVersion: PAYLOAD_BROKER_V1_SCHEMA_VERSION,
+      kind,
+      type,
+      messageId: longest("message:"),
+      correlationId: longest("correlation:"),
+      causationId: longest("causation:"),
+    });
+    const longestIdentity = {
+      handleRef: longest("handle:"),
+      invocationId: longest("invocation:"),
+      workerInstanceId: longest("worker:"),
+      workerBootId: longest("worker-boot:"),
+      authorityEpoch: Number.MAX_SAFE_INTEGER,
+      fencingToken: Number.MAX_SAFE_INTEGER,
+    };
+    for (const size of [0, 1, 2, 3, 4, 48 * 1024]) {
+      const bytesBase64 = Buffer.alloc(size, 0xff).toString("base64");
+      const messages = [
+        {
+          ...longestEnvelope("request", "payload.output.write"),
+          idempotencyKey: longest("idempotency:"),
+          payload: {
+            ...longestIdentity,
+            bytesBase64,
+            contentType: `application/${"x".repeat(244)}`,
+          },
+        },
+        {
+          ...longestEnvelope("response", "payload.input.read.result"),
+          payload: {
+            ...longestIdentity,
+            agentServiceInstanceId: longest("agent-service:"),
+            agentServiceBootId: longest("agent-boot:"),
+            bytesBase64,
+          },
+        },
+      ];
+      for (const message of messages) {
+        const body = payloadBrokerV1MessageSchema.serialize(
+          payloadBrokerV1MessageSchema.parse(message),
+        );
+        expect(Buffer.byteLength(body)).toBeLessThanOrEqual(payloadBrokerV1BodyBytes(size));
+      }
+    }
   });
 
   it("round-trips the handshake and both bounded byte operations", () => {

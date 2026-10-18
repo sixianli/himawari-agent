@@ -11,6 +11,7 @@ import type {
 import { ExecutionWorkerService as ExecutionWorkerServiceImplementation } from "@himawari-agent/application";
 import {
   type ExecutionAdmissionPeerBinding,
+  payloadBrokerV1BodyBytes,
   type ResourceCeiling,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
@@ -426,8 +427,7 @@ export async function createProductionWorkerComposition(
     !Number.isSafeInteger(maximumBodyBytes) ||
     maximumBodyBytes < 1 ||
     !Number.isSafeInteger(maximumPayloadBytes) ||
-    maximumPayloadBytes < 1 ||
-    maximumPayloadBytes > maximumBodyBytes
+    maximumPayloadBytes < 1
   ) {
     throw new ProductionWorkerCompositionError(
       PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.CREDENTIAL_INVALID,
@@ -466,7 +466,7 @@ export async function createProductionWorkerComposition(
     workerBootId,
     authorityEpoch: options.authority.authorityEpoch,
     fencingToken: options.authority.fencingToken,
-    maximumBodyBytes,
+    maximumBodyBytes: payloadBrokerV1BodyBytes(maximumPayloadBytes),
     maximumPayloadBytes,
     requestTimeoutMs,
     nextId,

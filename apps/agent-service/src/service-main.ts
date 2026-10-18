@@ -17,6 +17,7 @@ import {
 } from "@himawari-agent/application";
 import {
   type ExecutionAdmissionPeerBinding,
+  payloadBrokerV1BodyBytes,
   type SandboxExecutionSupport,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
@@ -884,7 +885,7 @@ export async function runAgentService(
       ],
       authorityEpoch: authority.authorityEpoch,
       fencingToken: authority.fencingToken,
-      maximumBodyBytes: MAXIMUM_BODY_BYTES,
+      maximumBodyBytes: payloadBrokerV1BodyBytes(MAXIMUM_PAYLOAD_BYTES),
       maximumPayloadBytes: MAXIMUM_PAYLOAD_BYTES,
       requestTimeoutMs: configuration.deadlines.workerRequestMs,
       handler: payloadHandler,

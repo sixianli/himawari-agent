@@ -32,6 +32,12 @@ import {
 
 export const PAYLOAD_BROKER_V1_SCHEMA_VERSION = "payload-broker.v1" as const;
 
+export const PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES = 2048;
+
+export function payloadBrokerV1BodyBytes(maximumPayloadBytes: number): number {
+  return 4 * Math.ceil(maximumPayloadBytes / 3) + PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES;
+}
+
 export const PAYLOAD_BROKER_V1_MESSAGE_TYPES = [
   "payload.sandbox.execution",
   "payload.sandbox.execution.result",
