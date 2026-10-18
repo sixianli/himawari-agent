@@ -297,6 +297,13 @@ date: "2026-10-13"
   - 往 Hermes 传文件用 `.ci-output/handoff/scripts/hermes-upload.sh <本地文件> <远端路径>`（与 `ci-upload.sh` 相同：本地文件必须存在、两边 SHA-256 一致、只能写到测试目录）。
   - 本地、不提交的 `.opencode/opencode.json` 和 `.grok/config.toml` 禁止命令里出现 Hermes 的 Tailscale 地址 `100.64.53.104`、`ssh … hermes`、`scp … hermes`、`rsync … hermes`，所以 opencode 和 Grok 只能经过上面的限时入口。
   - 验证：在 opencode 里直接执行 `ssh … hermes hostname` 被拒（`permission.rejected`），执行 `hermes-ssh.sh 'hostname'` 返回 `hermes-home`；两个入口各执行一个 400 × 10 秒的循环，都在约 300 秒时以 124 结束并打印时限说明；同一入口里用 `setsid nohup` 后台启动 330 秒的任务立即返回，任务照常跑完。
+- 同类再次发生（2026-10-18 23:41）：三个 opencode 会话（D-49、D-51、第 4 层 D、E 组）在测试主机上后台启动测试后，在本机一条命令里先 `sleep 100`、`sleep 240`、`sleep 260` 等，再经限时入口查结果，合计七次以上。会话没有被中断，但每次都要等到 opencode 命令时限才被切断，白等约两分钟后重来。
+- 这次约束为什么没拦住：300 秒上限只加在连测试主机的入口里，管不到这些入口前面在本机执行的 `sleep`；简报里“不要在一次调用里长时间等待”仍是文字提醒。
+- 硬约束（2026-10-18 23:41）：
+  - 本地、不提交的 `.opencode/opencode.json`（以及 `.ci-output/worktrees/` 下各工作副本里的同名副本）加四条拒绝规则：`*sleep ???;*`、`*sleep ??? &&*`、`*sleep ???`，以及 `sleep ???` 后紧跟换行的一条。opencode 2.0.32 的规则只支持 `*`（任意多个字符）和 `?`（任意一个字符），写不出“只匹配数字”，所以规则拦的是 `sleep` 后面恰好三个字符、再跟分号、` &&`、换行或命令结尾的写法，也就是 100 到 999 秒的等待；两位数以内的 `sleep` 放行。顺带会误拦 `sleep 0.5;` 这类少见写法，被拒时改用整数秒即可。
+  - `.grok/config.toml` 加了同样写法的三条规则；Grok 现在按 G112 暂停，它的通配规则是否支持 `?` 未经实测，恢复使用前要先实测。
+  - 验证：按 opencode 2.0.32 规则匹配函数的原样逻辑离线检查 16 个例子，应拦的 6 个全被拦、应放行的 10 个（含 `sleep 30; ls`、`sleep 60; echo`、循环里的 `sleep 20;`）全放行。在正在运行的会话里，规则加入前 `sleep 240;`、`sleep 260;`、`sleep 200;`、`sleep 100;` 都照常执行；加入后 D-49 会话执行 `sleep 100; … ci-ssh.sh …` 以 `Permission denied` 被拒，D-51 会话执行 `sleep 28; …` 正常完成（记录在 `.ci-output/handoff/r2p2-d49/impl-01.jsonl`、`.ci-output/handoff/r2p2-d51/impl-01.jsonl`）。
+  - 等长运行的做法：Hermes 用 `.ci-output/handoff/scripts/hermes-wait.sh`；云测试账号每次用一条几秒内结束的命令查结果文件，中间先做不依赖结果的事。
 
 [回到目录](#编码代理反复犯的错误)
 
