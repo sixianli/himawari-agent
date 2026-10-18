@@ -260,7 +260,7 @@ export function parseJobHostRun(
 }
 
 export const JOB_HOST_NAMESPACE_STATES = [
-  "released",
+  "resident_intact",
   "alive",
   "unknown",
   "not_applicable",
@@ -296,7 +296,7 @@ export function jobHostCommandSettled(
     outcome.stdioClosed &&
     outcome.processGroupGone &&
     outcome.cleanedUp &&
-    outcome.namespace === "released"
+    outcome.namespace === "resident_intact"
   );
 }
 

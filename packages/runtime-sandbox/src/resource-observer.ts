@@ -9,7 +9,7 @@ export interface ResourceObservation {
   readonly observedCpuTimeMs: number;
   readonly peakObservedMemoryBytes: number;
 }
-interface ProcessSample {
+export interface ProcessSample {
   readonly pid: number;
   readonly parent: number;
   readonly group: number;
@@ -88,13 +88,35 @@ export class TaskResourceAccumulator {
   readonly #root: number;
   readonly #known = new Map<number, string>();
   readonly #cpu = new Map<string, number>();
+  readonly #baseline = new Map<string, number>();
   #samples = 0;
   #peak = 0;
-  constructor(root: number) {
+  constructor(root: number, baseline?: readonly ProcessSample[]) {
     if (!Number.isSafeInteger(root) || root <= 1) throw new Error("RESOURCE_ROOT_INVALID");
     this.#root = root;
+    if (!baseline) return;
+    const members = this.#members(baseline);
+    for (const process of baseline)
+      if (members.has(process.pid))
+        this.#baseline.set(`${process.pid}:${process.birth}`, process.cpuTimeMs);
   }
   add(snapshot: readonly ProcessSample[]): ResourceObservation {
+    const members = this.#members(snapshot);
+    let memory = 0;
+    for (const process of snapshot) {
+      if (!members.has(process.pid)) continue;
+      this.#known.set(process.pid, process.birth);
+      const key = `${process.pid}:${process.birth}`;
+      this.#cpu.set(key, Math.max(this.#cpu.get(key) ?? 0, process.cpuTimeMs));
+      memory += process.memoryBytes;
+    }
+    if (this.#cpu.size > 16384 || !Number.isSafeInteger(memory))
+      throw new Error("RESOURCE_OBSERVATION_CAPACITY");
+    this.#peak = Math.max(this.#peak, memory);
+    this.#samples++;
+    return this.current();
+  }
+  #members(snapshot: readonly ProcessSample[]): Set<number> {
     const members = new Set<number>();
     for (const process of snapshot) {
       const birth = this.#known.get(process.pid);
@@ -119,22 +141,13 @@ export class TaskResourceAccumulator {
         }
       }
     }
-    let memory = 0;
-    for (const process of snapshot) {
-      if (!members.has(process.pid)) continue;
-      this.#known.set(process.pid, process.birth);
-      const key = `${process.pid}:${process.birth}`;
-      this.#cpu.set(key, Math.max(this.#cpu.get(key) ?? 0, process.cpuTimeMs));
-      memory += process.memoryBytes;
-    }
-    if (this.#cpu.size > 16384 || !Number.isSafeInteger(memory))
-      throw new Error("RESOURCE_OBSERVATION_CAPACITY");
-    this.#peak = Math.max(this.#peak, memory);
-    this.#samples++;
-    return this.current();
+    return members;
   }
   current(): ResourceObservation {
-    const cpu = [...this.#cpu.values()].reduce((sum, value) => sum + value, 0);
+    const cpu = [...this.#cpu].reduce(
+      (sum, [key, value]) => sum + Math.max(0, value - (this.#baseline.get(key) ?? 0)),
+      0,
+    );
     if (!Number.isSafeInteger(cpu)) throw new Error("RESOURCE_OBSERVATION_CAPACITY");
     return { samples: this.#samples, observedCpuTimeMs: cpu, peakObservedMemoryBytes: this.#peak };
   }
@@ -146,8 +159,9 @@ export function observeTaskResources(
   root: number,
   limits: ResourceLimits,
   stopTask: (reason: "resource_limit" | "host_failure") => void,
+  baseline?: readonly ProcessSample[],
 ) {
-  const accumulator = new TaskResourceAccumulator(root);
+  const accumulator = new TaskResourceAccumulator(root, baseline);
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const sample = async () => {

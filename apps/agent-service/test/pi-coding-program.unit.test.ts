@@ -1,5 +1,9 @@
 import { Readable } from "node:stream";
 import type { PiRunnerInput } from "@himawari-agent/execution-contracts";
+import {
+  PI_RESIDENT_FRAME_LIMIT_BYTES,
+  PI_RESIDENT_OUTPUT_CHUNK_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({
@@ -94,6 +98,35 @@ function output() {
   return JSON.parse(
     boundary.process.stdout.write.mock.calls.map(([value]) => String(value)).join(""),
   );
+}
+function frames(): Record<string, unknown>[] {
+  return boundary.process.stdout.write.mock.calls
+    .map(([value]) => String(value))
+    .join("")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+const runFrame = (seq: number, value: unknown) =>
+  `${JSON.stringify({
+    type: "run",
+    seq,
+    inputBase64: Buffer.from(JSON.stringify(value)).toString("base64"),
+  })}\n`;
+async function runResident(lines: readonly string[]) {
+  boundary.process.argv = [
+    "node",
+    "pi-coding-main",
+    "host-program",
+    "worker-program",
+    "--resident",
+    "/runtime",
+  ];
+  boundary.process.stdin = Readable.from(lines.map((line) => Buffer.from(line)));
+  await import("../src/capability-programs/pi-coding-main.ts");
+}
+function outputsFor(seq: number): Record<string, unknown>[] {
+  return frames().filter((frame) => frame["seq"] === seq && frame["type"] === "output");
 }
 beforeEach(() => {
   vi.resetModules();
@@ -419,4 +452,141 @@ describe("installed Pi coding program boundary", () => {
       expect(boundary.process.stdout.write).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("[R2-P2] installed Pi coding program resident mode", () => {
+  it("[R2-P2] enters resident mode and announces ready before reading any request", async () => {
+    await runResident([]);
+    expect(frames()).toEqual([{ type: "ready" }]);
+    expect(boundary.process.env).toMatchObject({
+      PI_OFFLINE: "1",
+      PATH: "/runtime/pi-tools/bin",
+      PI_CODING_AGENT_DIR: "/runtime/pi-tools",
+    });
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it("[R2-P2] serves consecutive requests with matching sequence numbers and chunked output", async () => {
+    const large = "x".repeat(PI_RESIDENT_OUTPUT_CHUNK_BYTES + 10);
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: large }],
+      details: {},
+      isError: false,
+    });
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: "second" }],
+      details: {},
+      isError: false,
+    });
+    await runResident([runFrame(1, input()), runFrame(2, input())]);
+    const all = frames();
+    expect(all[0]).toEqual({ type: "ready" });
+    const firstOutputs = outputsFor(1);
+    expect(firstOutputs.length).toBeGreaterThan(1);
+    expect(firstOutputs.every((frame) => frame["channel"] === "stdout")).toBe(true);
+    expect(
+      firstOutputs.every(
+        (frame) =>
+          Buffer.from(String(frame["bytes"]), "base64").byteLength <=
+          PI_RESIDENT_OUTPUT_CHUNK_BYTES,
+      ),
+    ).toBe(true);
+    const firstBody = Buffer.concat(
+      firstOutputs.map((frame) => Buffer.from(String(frame["bytes"]), "base64")),
+    );
+    expect(JSON.parse(firstBody.toString("utf8"))).toMatchObject({ tool: "read", isError: false });
+    expect(all.filter((frame) => frame["seq"] === 1).at(-1)).toMatchObject({
+      type: "result",
+      seq: 1,
+      exitCode: 0,
+    });
+    const secondOutputs = outputsFor(2);
+    expect(secondOutputs).toHaveLength(1);
+    expect(
+      JSON.parse(Buffer.from(String(secondOutputs[0]?.["bytes"]), "base64").toString("utf8")),
+    ).toMatchObject({ tool: "read" });
+    expect(all.filter((frame) => frame["seq"] === 2).at(-1)).toMatchObject({
+      type: "result",
+      seq: 2,
+      exitCode: 0,
+    });
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it.each([
+    ["a skipped sequence", runFrame(2, input())],
+    ["an extra key", `${JSON.stringify({ type: "run", seq: 1, inputBase64: "", extra: true })}\n`],
+    ["malformed base64", `${JSON.stringify({ type: "run", seq: 1, inputBase64: "!!" })}\n`],
+    ["a line over the frame limit", `${"x".repeat(PI_RESIDENT_FRAME_LIMIT_BYTES + 1)}\n`],
+  ])("[R2-P2] ends the runner on %s without executing the request", async (_kind, line) => {
+    await runResident([line]);
+    failed();
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(frames().some((frame) => frame["type"] === "result")).toBe(false);
+  });
+
+  it("[R2-P2] reports a failed request and keeps serving the next one", async () => {
+    boundary.execute.mockRejectedValueOnce(new Error("boom"));
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: "second" }],
+      details: {},
+      isError: false,
+    });
+    await runResident([runFrame(1, input()), runFrame(2, input())]);
+    const failure = Buffer.from("PI_RUNNER_EXECUTION_FAILED\n").toString("base64");
+    expect(frames().filter((frame) => frame["seq"] === 1)).toEqual([
+      { type: "output", seq: 1, channel: "stderr", bytes: failure },
+      { type: "result", seq: 1, exitCode: 1 },
+    ]);
+    expect(
+      frames()
+        .filter((frame) => frame["seq"] === 2)
+        .at(-1),
+    ).toMatchObject({
+      type: "result",
+      seq: 2,
+      exitCode: 0,
+    });
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it("[R2-P2] refuses a request whose runtime root differs from the launch argument", async () => {
+    await runResident([runFrame(1, { ...input(), runtimeRoot: "/other" })]);
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(frames().filter((frame) => frame["seq"] === 1)).toEqual([
+      {
+        type: "output",
+        seq: 1,
+        channel: "stderr",
+        bytes: Buffer.from("PI_RUNNER_EXECUTION_FAILED\n").toString("base64"),
+      },
+      { type: "result", seq: 1, exitCode: 1 },
+    ]);
+    expect(boundary.process.exitCode).toBeUndefined();
+    const { runPiCodingRequest } = await import("../src/capability-programs/pi-coding-request.ts");
+    await expect(
+      runPiCodingRequest(
+        Buffer.from(JSON.stringify({ ...input(), runtimeRoot: "/other" })),
+        { hostId: "host-program", workerInstanceId: "worker-program", runtimeRoot: "/runtime" },
+        () => {},
+      ),
+    ).rejects.toThrow("PI_RUNNER_SCOPE_INVALID");
+  });
+
+  it.each([
+    ["a relative resident runtime root", ["--resident", "runtime"]],
+    ["an extra trailing argument", ["--resident", "/runtime", "extra"]],
+  ])("[R2-P2] refuses %s before announcing ready", async (_kind, extra) => {
+    boundary.process.argv = [
+      "node",
+      "pi-coding-main",
+      "host-program",
+      "worker-program",
+      ...(extra as string[]),
+    ];
+    boundary.process.stdin = Readable.from([]);
+    await import("../src/capability-programs/pi-coding-main.ts");
+    failed();
+    expect(frames()).toEqual([]);
+  });
 });

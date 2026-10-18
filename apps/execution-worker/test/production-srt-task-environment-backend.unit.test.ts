@@ -6,6 +6,7 @@ import type {
   JobHostRequest,
   JobHostResult,
   SandboxJobSession,
+  SandboxJobSessionReady,
   SandboxJobSessionRun,
 } from "@himawari-agent/runtime-sandbox";
 import type {
@@ -25,6 +26,7 @@ const DEADLINE = new Date(NOW.getTime() + 600_000).toISOString();
 const POLICY = "a".repeat(64);
 const OTHER_POLICY = "b".repeat(64);
 const PID = 4242;
+const RESIDENT_PID = 4243;
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -94,7 +96,7 @@ function outcome(settled = true): JobHostCommandOutcome {
     taskProcessExited: true,
     stdioClosed: true,
     processGroupGone: true,
-    namespace: "released",
+    namespace: "resident_intact",
     cleanedUp: true,
     settled,
     stdout: new Uint8Array(),
@@ -104,11 +106,14 @@ function outcome(settled = true): JobHostCommandOutcome {
 
 class FakeSession implements SandboxJobSession {
   readonly pid: number | undefined = PID;
-  readonly ready: Promise<void> = Promise.resolve();
+  readonly ready: Promise<SandboxJobSessionReady> = Promise.resolve({
+    residentProcessId: RESIDENT_PID,
+  });
   readonly result: Promise<JobHostResult>;
   closeCount = 0;
   runCount = 0;
   outcome: JobHostCommandOutcome = outcome();
+  pendingResult: Promise<JobHostCommandOutcome> | null = null;
   private settle!: (value: JobHostResult) => void;
   constructor() {
     this.result = new Promise((resolve) => {
@@ -123,7 +128,7 @@ class FakeSession implements SandboxJobSession {
         processIdentityRef: `task-${this.runCount}`,
         startedAt: NOW.toISOString(),
       }),
-      result: Promise.resolve(this.outcome),
+      result: this.pendingResult ?? Promise.resolve(this.outcome),
       readOutput: () => ({ bytes: new Uint8Array(), nextOffset: 0, end: true }),
       cancel: () => {},
     };
@@ -629,6 +634,60 @@ describe("[R2-P2] the SRT task environment backend", () => {
     await f.backend.stop(stop);
     await expect(f.backend.verifyStopped(stop)).rejects.toMatchObject({
       code: "SRT_ENVIRONMENT_NOT_STOPPED",
+    });
+  });
+
+  it("[R2-P2] records the resident bwrap identity and keeps the environment stopped only when it and command processes are gone", async () => {
+    const f = await backendFixture();
+    const environment = identity();
+    const locator = await f.backend.create({
+      identity: environment,
+      createIntentId: createIntentId(environment),
+      policyDigest: POLICY,
+      deadlineAt: DEADLINE,
+    });
+    f.tokens.set(PID, "token-1");
+    f.tokens.set(RESIDENT_PID, "resident-1");
+    const { request: hostRequest, kind } = sessionRequest(environment);
+    const session = await f.backend.session({
+      target: target(environment, locator),
+      kind,
+      request: hostRequest,
+    });
+    const statePath = path.join(await environmentDirectory(f.directory), "sessions.json");
+    const readState = async () =>
+      JSON.parse((await readFile(statePath)).toString("utf8")).sessions[kind] as Record<
+        string,
+        unknown
+      >;
+    expect(await readState()).toMatchObject({
+      pid: PID,
+      startToken: "token-1",
+      residentGroup: RESIDENT_PID,
+      residentStartToken: "resident-1",
+    });
+    const fake = f.sessions[0] as FakeSession;
+    fake.pendingResult = new Promise(() => {});
+    await session.run(runInput, async () => {}).started;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (((await readState())["commandGroups"] as number[]).includes(777)) break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect((await readState())["commandGroups"]).toEqual([777]);
+    f.tokens.delete(PID);
+    const stop = stopInput(environment, locator);
+    await f.backend.stop(stop);
+    await expect(f.backend.verifyStopped(stop)).rejects.toMatchObject({
+      code: "SRT_ENVIRONMENT_NOT_STOPPED",
+    });
+    f.tokens.set(RESIDENT_PID, "resident-2");
+    f.groups.add(777);
+    await expect(f.backend.verifyStopped(stop)).rejects.toMatchObject({
+      code: "SRT_ENVIRONMENT_NOT_STOPPED",
+    });
+    f.groups.delete(777);
+    await expect(f.backend.verifyStopped(stop)).resolves.toMatchObject({
+      basis: "process_group_gone",
     });
   });
 });

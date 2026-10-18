@@ -76,6 +76,7 @@ function ready(process: FakeChild) {
     jobId: "job",
     attemptId: "attempt",
     policyDigest: "a".repeat(64),
+    residentProcessId: 4321,
   });
 }
 
@@ -106,7 +107,7 @@ function commandResult(
     taskProcessExited: true,
     stdioClosed: true,
     processGroupGone: true,
-    namespace: "released",
+    namespace: "resident_intact",
     cleanedUp: true,
     ...overrides,
   });
@@ -163,7 +164,7 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
       taskProcessExited: true,
       stdioClosed: true,
       processGroupGone: true,
-      namespace: "released",
+      namespace: "resident_intact",
       cleanedUp: true,
       settled: true,
       stdout: expect.any(Uint8Array),
@@ -174,7 +175,7 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
       attemptId: "two",
       sequence: 2,
     });
-    started(process, "two", 4322);
+    started(process, "two");
     process.emitMessage({
       type: "output",
       attemptId: "two",
@@ -239,6 +240,91 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
     commandResult(process, "one", 1);
     expect(cancelled(process)).toBe(true);
     expect(await run.result).toMatchObject({ settled: false });
+    process.emit("close");
+    await session.result;
+  });
+
+  it.each([
+    ["missing", {}],
+    ["fractional", { residentProcessId: 1.5 }],
+    ["the reserved init pid", { residentProcessId: 1 }],
+  ])(
+    "[R2-P2] closes the session when ready omits a usable resident process id (%s)",
+    async (_kind, override) => {
+      const process = child();
+      const session = prepareSandboxJobSession(request());
+      process.emitMessage({
+        type: "ready",
+        jobId: "job",
+        attemptId: "attempt",
+        policyDigest: "a".repeat(64),
+        ...override,
+      });
+      expect(cancelled(process)).toBe(true);
+      process.emit("close");
+      await expect(session.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+      await session.result;
+    },
+  );
+
+  it("[R2-P2] closes the session when a start names a process other than the resident one", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    const run = session.run(runInput("one"), async () => {});
+    started(process, "one", 4322);
+    expect(cancelled(process)).toBe(true);
+    expect(await run.result).toMatchObject({ settled: false });
+    process.emit("close");
+    await session.result;
+  });
+
+  it("[R2-P2] closes the session when a command reports the retired released namespace", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    const run = session.run(runInput("one"), async () => {});
+    started(process, "one");
+    commandResult(process, "one", 1, { namespace: "released" });
+    expect(cancelled(process)).toBe(true);
+    expect(await run.result).toMatchObject({ settled: false });
+    process.emit("close");
+    await session.result;
+  });
+
+  it.each(["deadline", "output_limit", "resource_limit", "cancelled"] as const)(
+    "[R2-P2] closes the session when a %s command reports an exit code",
+    async (reason) => {
+      const process = child();
+      const session = prepareSandboxJobSession(request());
+      ready(process);
+      await session.ready;
+      const run = session.run(runInput("one"), async () => {});
+      started(process, "one");
+      commandResult(process, "one", 1, { reason, exitCode: 137 });
+      expect(cancelled(process)).toBe(true);
+      expect(await run.result).toMatchObject({ settled: false });
+      process.emit("close");
+      await session.result;
+    },
+  );
+
+  it("[R2-P2] settles a command that reports a non-exit reason without an exit code", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    const run = session.run(runInput("one"), async () => {});
+    started(process, "one");
+    commandResult(process, "one", 1, { reason: "deadline", exitCode: null });
+    expect(await run.result).toMatchObject({
+      settled: true,
+      reason: "deadline",
+      exitCode: null,
+    });
+    expect(cancelled(process)).toBe(false);
     process.emit("close");
     await session.result;
   });

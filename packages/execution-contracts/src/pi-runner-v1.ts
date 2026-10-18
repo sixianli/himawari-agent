@@ -107,6 +107,9 @@ const text: Schema<string> = {
     return value;
   },
 };
+export const PI_RESIDENT_RUNNER_FLAG = "--resident";
+export const PI_RESIDENT_OUTPUT_CHUNK_BYTES = 48 * 1024;
+export const PI_RESIDENT_FRAME_LIMIT_BYTES = 256 * 1024;
 /** Constructed by the Worker from the resolved scope and frozen input. These
  * fields are never accepted as model parameters or a new authority source. */
 const runnerInput = object({

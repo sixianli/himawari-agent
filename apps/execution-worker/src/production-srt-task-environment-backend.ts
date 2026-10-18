@@ -38,6 +38,8 @@ interface SessionRecord {
   readonly policyDigest: string;
   readonly pid: number | null;
   readonly startToken: string | null;
+  readonly residentGroup: number | null;
+  readonly residentStartToken: string | null;
   readonly commandGroups: readonly number[];
 }
 
@@ -328,6 +330,8 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
         policyDigest: input.request.policyDigest,
         pid: null,
         startToken: null,
+        residentGroup: null,
+        residentStartToken: null,
         commandGroups: [],
       };
       const starting = { ...state, sessions: { ...state.sessions, [input.kind]: record } };
@@ -357,13 +361,20 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
       }
       const startToken = await this.options.startToken(pid).catch(() => null);
       await this.updateSession(identity, input.kind, (current) => ({ ...current, startToken }));
+      let residentGroup: number;
       try {
-        await session.ready;
+        ({ residentProcessId: residentGroup } = await session.ready);
       } catch (error) {
         session.close();
         await this.fail(await this.require(identity), "SRT_SESSION_START_FAILED");
         throw error;
       }
+      const residentStartToken = await this.options.startToken(residentGroup).catch(() => null);
+      await this.updateSession(identity, input.kind, (current) => ({
+        ...current,
+        residentGroup,
+        residentStartToken,
+      }));
       return this.wrap(identity, input.kind, session, record.policyDigest, state.deadlineAt);
     });
   }
@@ -426,12 +437,14 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
   private async remaining(state: EnvironmentState): Promise<readonly number[]> {
     const alive: number[] = [];
     for (const session of sessionRecords(state)) {
-      if (session.pid !== null) {
-        const token = await this.options.startToken(session.pid);
-        const reused =
-          token !== null && session.startToken !== null && token !== session.startToken;
-        if (!reused && (token !== null || this.options.groupPresent(session.pid)))
-          alive.push(session.pid);
+      for (const [pid, startToken] of [
+        [session.pid, session.startToken],
+        [session.residentGroup, session.residentStartToken],
+      ] as const) {
+        if (pid === null) continue;
+        const token = await this.options.startToken(pid);
+        const reused = token !== null && startToken !== null && token !== startToken;
+        if (!reused && (token !== null || this.options.groupPresent(pid))) alive.push(pid);
       }
       for (const group of session.commandGroups)
         if (this.options.groupPresent(group)) alive.push(group);

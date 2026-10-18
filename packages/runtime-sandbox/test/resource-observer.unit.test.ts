@@ -60,6 +60,32 @@ describe("sampled task resources", () => {
         .observedCpuTimeMs,
     ).toBe(1200);
   });
+  it("[R2-P2] counts only CPU time observed after the baseline snapshot", () => {
+    const baseline = parseProcessSnapshot(
+      row(10, 1, 10, 10, "00:01.00") +
+        row(11, 10, 10, 20, "00:00.50") +
+        row(99, 1, 99, 9000, "02:00"),
+    );
+    const task = new TaskResourceAccumulator(10, baseline);
+    expect(task.current()).toEqual({
+      samples: 0,
+      observedCpuTimeMs: 0,
+      peakObservedMemoryBytes: 0,
+    });
+    expect(
+      task.add(
+        parseProcessSnapshot(
+          row(10, 1, 10, 10, "00:01.30") +
+            row(11, 10, 10, 20, "00:00.50") +
+            row(12, 10, 10, 5, "00:00.20"),
+        ),
+      ),
+    ).toEqual({
+      samples: 1,
+      observedCpuTimeMs: 500,
+      peakObservedMemoryBytes: 35 * 1024,
+    });
+  });
   it.each([
     ["cpu", 10],
     ["memory", 10],

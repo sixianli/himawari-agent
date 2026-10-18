@@ -38,9 +38,13 @@ export interface SandboxJobSessionRun {
   cancel(reason?: "cancelled" | "deadline"): void;
 }
 
+export interface SandboxJobSessionReady {
+  readonly residentProcessId: number;
+}
+
 export interface SandboxJobSession {
   readonly pid: number | undefined;
-  readonly ready: Promise<void>;
+  readonly ready: Promise<SandboxJobSessionReady>;
   readonly result: Promise<JobHostResult>;
   run(input: JobHostRunInput, authorize: () => Promise<void>): SandboxJobSessionRun;
   inspect(): JobHostSupervision | null;
@@ -86,9 +90,10 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
   let active: ActiveCommand | null = null;
   let completion: Record<string, unknown> | undefined;
   let forceTimer: ReturnType<typeof setTimeout> | undefined;
-  let resolveReady!: () => void;
+  let residentProcessId: number | null = null;
+  let resolveReady!: (value: SandboxJobSessionReady) => void;
   let rejectReady!: (error: Error) => void;
-  const ready = new Promise<void>((resolve, reject) => {
+  const ready = new Promise<SandboxJobSessionReady>((resolve, reject) => {
     resolveReady = resolve;
     rejectReady = reject;
   });
@@ -213,6 +218,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         exitCode === null ||
         (Number.isSafeInteger(exitCode) && (exitCode as number) >= 0 && (exitCode as number) <= 255)
       ) ||
+      (exitCode !== null && message["reason"] !== "exited") ||
       (resources !== null && jobHostResultResources(resources) === null) ||
       !isFlag(message["taskStarted"]) ||
       !isFlag(message["taskProcessExited"]) ||
@@ -310,14 +316,18 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         prepared ||
         message["jobId"] !== request.jobId ||
         message["attemptId"] !== request.attemptId ||
-        message["policyDigest"] !== request.policyDigest
+        message["policyDigest"] !== request.policyDigest ||
+        typeof message["residentProcessId"] !== "number" ||
+        !Number.isSafeInteger(message["residentProcessId"]) ||
+        message["residentProcessId"] <= 1
       ) {
         fail();
         return;
       }
       prepared = true;
+      residentProcessId = message["residentProcessId"];
       clearTimeout(preparationTimer);
-      if (!cancelled) resolveReady();
+      if (!cancelled) resolveReady({ residentProcessId });
     } else if (type === "started") {
       const task = parseJobHostStartedTask(message);
       const command = active;
@@ -326,7 +336,8 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         command.task ||
         command.outcome ||
         message["attemptId"] !== command.run.attemptId ||
-        !task
+        !task ||
+        task.processId !== residentProcessId
       ) {
         fail();
         return;

@@ -183,8 +183,14 @@ describe("[R2-P2] Job Host session protocol", () => {
     ).toThrow("JOB_HOST_DIGEST_INVALID");
   });
 
-  it("[R2-P2] names the four namespace states", () => {
-    expect(JOB_HOST_NAMESPACE_STATES).toEqual(["released", "alive", "unknown", "not_applicable"]);
+  it("[R2-P2] names the four resident namespace states", () => {
+    expect(JOB_HOST_NAMESPACE_STATES).toEqual([
+      "resident_intact",
+      "alive",
+      "unknown",
+      "not_applicable",
+    ]);
+    expect(JOB_HOST_NAMESPACE_STATES).not.toContain("released");
   });
 
   it("[R2-P2] settles a command only when every condition holds", () => {
@@ -196,7 +202,7 @@ describe("[R2-P2] Job Host session protocol", () => {
       stdioClosed: true,
       processGroupGone: true,
       cleanedUp: true,
-      namespace: "released",
+      namespace: "resident_intact",
     };
     expect(jobHostCommandSettled(settled)).toBe(true);
     for (const key of [

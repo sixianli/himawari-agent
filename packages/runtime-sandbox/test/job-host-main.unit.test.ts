@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { PI_RESIDENT_FRAME_LIMIT_BYTES } from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobHostRequest } from "../src/job-host-protocol.ts";
 
@@ -48,6 +49,30 @@ vi.mock("../src/resource-observer.ts", () => ({
   observeTaskResources: boundary.observe,
   readProcessSnapshot: boundary.snapshot,
 }));
+
+const resident = vi.hoisted(() => ({
+  table: [] as Array<{ pid: number; parent: number; start: string }>,
+  identities: new Map<number, { pid: number; parent: number; start: string }>(),
+  identity: vi.fn(),
+}));
+vi.mock("../src/resident-process-tree.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/resident-process-tree.ts")>();
+  return {
+    ...actual,
+    captureResidentInfrastructure: (root: number) =>
+      actual.captureResidentInfrastructure(root, async () => resident.table),
+    sweepResidentCommand: (
+      root: number,
+      infrastructure: ReadonlyMap<number, string>,
+      options: Parameters<typeof actual.sweepResidentCommand>[2],
+    ) =>
+      actual.sweepResidentCommand(root, infrastructure, {
+        ...options,
+        table: async () => resident.table,
+        identity: resident.identity,
+      }),
+  };
+});
 
 const SESSION = "11111111-1111-1111-1111-111111111111";
 const POLICY_JSON = JSON.stringify({ network: { allowedDomains: [] } });
@@ -158,6 +183,8 @@ beforeEach(() => {
     }),
     kill: vi.fn((pid: number, signal: string | number) => {
       if (pid < 0 && signal === 0) throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+      if (signal === "SIGKILL")
+        resident.table = resident.table.filter((process) => process.pid !== pid);
     }),
     exit: vi.fn(),
     stderr: { write: vi.fn() },
@@ -205,6 +232,9 @@ beforeEach(() => {
   });
   boundary.manager.reset.mockResolvedValue(undefined);
   boundary.sdk.mockResolvedValue(boundary.manager);
+  resident.table = [{ pid: 7000, parent: 1, start: "7000" }];
+  resident.identities = new Map();
+  resident.identity.mockImplementation(async (pid: number) => resident.identities.get(pid) ?? null);
 });
 afterEach(() => {
   vi.clearAllTimers();
@@ -1109,28 +1139,63 @@ describe("[R2-P2] Job Host session mode", () => {
   });
   const commandResults = () => sent.filter((item) => item["type"] === "command_result");
   const lastCommand = () => commandResults().at(-1);
-  async function runLinux(
-    attemptId: string,
-    sequence: number,
-    overrides: Record<string, unknown> = {},
-  ) {
-    task = Object.assign(new EventEmitter(), {
-      pid: 7000 + sequence,
-      exitCode: null as number | null,
-      signalCode: null as string | null,
-      stdin: new PassThrough(),
-      stdout: new PassThrough(),
-      stderr: new PassThrough(),
+  const readyMessage = () => sent.find((item) => item["type"] === "ready");
+  const outputMessages = () => sent.filter((item) => item["type"] === "output");
+  let stdinLines: string[];
+  let stdinPending: string;
+  const runFrames = () =>
+    stdinLines.filter((line) => line.startsWith("{")).map((line) => JSON.parse(line));
+  async function flush() {
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(50);
+  }
+  async function drain() {
+    for (let step = 0; step < 4; step++) await flush();
+  }
+  function captureStdin() {
+    stdinLines = [];
+    stdinPending = "";
+    task.stdin.on("data", (chunk: Buffer) => {
+      stdinPending += chunk.toString("utf8");
+      for (let index = stdinPending.indexOf("\n"); index >= 0; index = stdinPending.indexOf("\n")) {
+        stdinLines.push(stdinPending.slice(0, index));
+        stdinPending = stdinPending.slice(index + 1);
+      }
     });
-    boundary.spawn.mockReturnValue(task);
-    await receive("run", { run: runInput(attemptId, sequence, overrides) });
+  }
+  async function openSession(input = sessionRequest()) {
+    captureStdin();
+    await load();
+    await receive("prepare", { request: input, session: true });
+    await flush();
     const command = boundary.manager.wrapWithSandboxArgv.mock.calls.at(-1)?.[0] as
       | string
       | undefined;
     const token = command?.match(/printf '([a-f0-9-]+):/)?.[1];
-    if (!token) throw new Error("Missing namespace handshake in session command");
+    if (!token) throw new Error("Missing namespace handshake in the resident launch");
     task.stderr.write(Buffer.from(`${token}:1:pid:[9001]\n`));
-    await settle();
+    await flush();
+  }
+  async function runnerFrame(frame: unknown) {
+    task.stdout.write(Buffer.from(`${JSON.stringify(frame)}\n`));
+    await flush();
+  }
+  async function readyRunner() {
+    await runnerFrame({ type: "ready" });
+  }
+  async function command(
+    attemptId: string,
+    sequence: number,
+    overrides: Record<string, unknown> = {},
+  ) {
+    await receive("run", { run: runInput(attemptId, sequence, overrides) });
+    await flush();
+  }
+  async function outputFrame(sequence: number, channel: string, bytes: Buffer) {
+    await runnerFrame({ type: "output", seq: sequence, channel, bytes: bytes.toString("base64") });
+  }
+  async function resultFrame(sequence: number, exitCode = 0) {
+    await runnerFrame({ type: "result", seq: sequence, exitCode });
   }
   async function advance(ms: number, step = 250) {
     for (let elapsed = 0; elapsed < ms; elapsed += step) {
@@ -1139,70 +1204,288 @@ describe("[R2-P2] Job Host session mode", () => {
     }
   }
 
-  it("[R2-P2] reuses one prepared host across three sequential commands", async () => {
-    await prepare(sessionRequest(), { session: true });
+  it("[R2-P2] reuses one prepared host and one resident runner across three commands", async () => {
+    await openSession();
+    await readyRunner();
     expect(boundary.sdk).toHaveBeenCalledOnce();
     expect(boundary.manager.initialize).toHaveBeenCalledOnce();
     expect(boundary.guardian).toHaveBeenCalledOnce();
     expect(boundary.egress).toHaveBeenCalledOnce();
-    expect(sent.some((item) => item["type"] === "ready")).toBe(true);
     expect(boundary.control).not.toHaveBeenCalled();
     for (const [index, attemptId] of ["attempt-a", "attempt-b", "attempt-c"].entries()) {
-      await runLinux(attemptId, index + 1);
-      await closeTask(0);
-      expect(lastCommand()).toMatchObject({ attemptId, runSequence: index + 1, exitCode: 0 });
+      await command(attemptId, index + 1);
+      await outputFrame(index + 1, "stdout", Buffer.from("chunk"));
+      await resultFrame(index + 1, 0);
+      expect(lastCommand()).toMatchObject({
+        attemptId,
+        runSequence: index + 1,
+        exitCode: 0,
+        reason: "exited",
+      });
     }
-    expect(boundary.manager.wrapWithSandboxArgv).toHaveBeenCalledTimes(3);
-    expect(boundary.spawn).toHaveBeenCalledTimes(3);
-    expect(boundary.manager.cleanupAfterCommand).toHaveBeenCalledTimes(3);
+    expect(boundary.manager.wrapWithSandboxArgv).toHaveBeenCalledOnce();
+    expect(boundary.spawn).toHaveBeenCalledOnce();
+    expect(boundary.manager.cleanupAfterCommand).not.toHaveBeenCalled();
     expect(boundary.manager.reset).not.toHaveBeenCalled();
+    expect(runFrames().map((frame) => frame["seq"])).toEqual([1, 2, 3]);
+    expect(runFrames().map((frame) => frame["inputBase64"])).toEqual([
+      Buffer.from("input").toString("base64"),
+      Buffer.from("input").toString("base64"),
+      Buffer.from("input").toString("base64"),
+    ]);
     expect(result()).toBeUndefined();
   });
 
-  it("[R2-P2] labels started and output with the running command and never completes it", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    expect(sent.find((item) => item["type"] === "started")).toMatchObject({
-      attemptId: "attempt-a",
+  it("[R2-P2] announces ready only after the runner reports itself ready", async () => {
+    await openSession();
+    expect(readyMessage()).toBeUndefined();
+    await readyRunner();
+    expect(readyMessage()).toMatchObject({
+      jobId: "job-entry",
+      attemptId: "attempt-entry",
+      residentProcessId: 7000,
     });
-    task.stdout.write("answer");
-    await settle();
-    expect(sent.filter((item) => item["type"] === "output").at(-1)).toMatchObject({
-      attemptId: "attempt-a",
-      channel: "stdout",
-    });
-    await closeTask();
-    expect(sent.some((item) => item["type"] === "completed")).toBe(false);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a" });
   });
 
-  it("[R2-P2] stops each command's own process group once", async () => {
-    await prepare(sessionRequest(), { session: true });
-    for (const [index, attemptId] of ["attempt-a", "attempt-b", "attempt-c"].entries()) {
-      await runLinux(attemptId, index + 1);
-      await closeTask(0);
+  it("[R2-P2] fails preparation when the runner exits before announcing ready", async () => {
+    await openSession();
+    task.emit("exit", 1, null);
+    task.emit("close", 1, null);
+    await drain();
+    expect(readyMessage()).toBeUndefined();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] labels every command with the resident process and forwards its output", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    expect(sent.find((item) => item["type"] === "started")).toMatchObject({
+      attemptId: "attempt-a",
+      pid: 7000,
+    });
+    await outputFrame(1, "stdout", Buffer.from("answer"));
+    expect(outputMessages().at(-1)).toMatchObject({ attemptId: "attempt-a", channel: "stdout" });
+    expect(Buffer.from(String(outputMessages().at(-1)?.["bytes"]), "base64").toString()).toBe(
+      "answer",
+    );
+    await resultFrame(1, 0);
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "exited",
+      exitCode: 0,
+      namespace: "resident_intact",
+      processGroupGone: true,
+      cleanedUp: true,
+    });
+    expect(sent.some((item) => item["type"] === "completed")).toBe(false);
+  });
+
+  it("[R2-P2] fails the session when the runner exits between two commands", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    await resultFrame(1, 0);
+    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", exitCode: 0 });
+    task.emit("exit", 0, null);
+    task.emit("close", 0, null);
+    await drain();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+    const before = runFrames().length;
+    await command("attempt-b", 2);
+    expect(runFrames()).toHaveLength(before);
+    expect(
+      sent.some((item) => item["type"] === "started" && item["attemptId"] === "attempt-b"),
+    ).toBe(false);
+  });
+
+  it("[R2-P2] fails the session and leaves the command unsettled when the runner exits mid-command", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    task.emit("exit", 1, null);
+    task.emit("close", 1, null);
+    await drain();
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "host_failure",
+      taskProcessExited: false,
+      stdioClosed: false,
+      namespace: "unknown",
+    });
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it.each([
+    ["a non-JSON line", () => "not json\n"],
+    [
+      "an output frame with an extra key",
+      () =>
+        `${JSON.stringify({
+          type: "output",
+          seq: 1,
+          channel: "stdout",
+          bytes: "",
+          extra: true,
+        })}\n`,
+    ],
+    [
+      "an output frame with a missing key",
+      () => `${JSON.stringify({ type: "output", seq: 1, channel: "stdout" })}\n`,
+    ],
+    [
+      "an output frame with the wrong sequence",
+      () => `${JSON.stringify({ type: "output", seq: 2, channel: "stdout", bytes: "" })}\n`,
+    ],
+    [
+      "an output frame with an unknown channel",
+      () => `${JSON.stringify({ type: "output", seq: 1, channel: "other", bytes: "" })}\n`,
+    ],
+    [
+      "an output frame with malformed base64",
+      () => `${JSON.stringify({ type: "output", seq: 1, channel: "stdout", bytes: "!!" })}\n`,
+    ],
+    ["a frame line over the limit", () => `${"x".repeat(PI_RESIDENT_FRAME_LIMIT_BYTES + 1)}\n`],
+    [
+      "a result with an out-of-range exit code",
+      () => `${JSON.stringify({ type: "result", seq: 1, exitCode: 300 })}\n`,
+    ],
+  ])("[R2-P2] fails the session on %s", async (_kind, line) => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    task.stdout.write(Buffer.from((line as () => string)()));
+    await drain();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] fails the session on an output frame while no command runs", async () => {
+    await openSession();
+    await readyRunner();
+    task.stdout.write(
+      Buffer.from(`${JSON.stringify({ type: "output", seq: 1, channel: "stdout", bytes: "" })}\n`),
+    );
+    await drain();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] fails the session on a second ready frame", async () => {
+    await openSession();
+    await readyRunner();
+    await readyRunner();
+    await drain();
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] ends only the command that exceeds its own output limit", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1, { maxOutputBytes: 4 });
+    await outputFrame(1, "stdout", Buffer.from("0123456789"));
+    expect(Buffer.from(String(outputMessages().at(-1)?.["bytes"]), "base64").toString()).toBe(
+      "0123",
+    );
+    await resultFrame(1, 0);
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "output_limit",
+      exitCode: null,
+    });
+    expect(result()).toBeUndefined();
+    await command("attempt-b", 2);
+    await resultFrame(2, 0);
+    expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0, reason: "exited" });
+  });
+
+  it("[R2-P2] stops the session after a command misses its own deadline", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1, { deadlineAt: new Date(Date.now() + 1000).toISOString() });
+    await advance(1400);
+    await drain();
+    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", reason: "deadline" });
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] ends only the command that reaches its own deadline and keeps the session", async () => {
+    await openSession();
+    await readyRunner();
+    const leftover = { pid: 8000, parent: 7000, start: "8000" };
+    resident.table = [{ pid: 7000, parent: 1, start: "7000" }, leftover];
+    resident.identities.set(leftover.pid, leftover);
+    await command("attempt-a", 1, { deadlineAt: new Date(Date.now() + 300).toISOString() });
+    for (
+      let elapsed = 0;
+      elapsed < 5000 && resident.identity.mock.calls.length === 0;
+      elapsed += 10
+    ) {
+      await receive("heartbeat");
+      await vi.advanceTimersByTimeAsync(10);
     }
-    expect(processBoundary.kill.mock.calls).toEqual([
-      [-7001, 0],
-      [-7002, 0],
-      [-7003, 0],
-    ]);
+    expect(resident.identity).toHaveBeenCalledWith(leftover.pid);
+    expect(processBoundary.kill).toHaveBeenCalledWith(leftover.pid, "SIGKILL");
+    expect(processBoundary.kill).not.toHaveBeenCalledWith(7000, "SIGKILL");
+    await resultFrame(1, 137);
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "deadline",
+      exitCode: null,
+      namespace: "resident_intact",
+      processGroupGone: true,
+      cleanedUp: true,
+    });
+    expect(result()).toBeUndefined();
+    expect(boundary.manager.reset).not.toHaveBeenCalled();
+    await command("attempt-b", 2);
+    await resultFrame(2, 0);
+    expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0, reason: "exited" });
+    expect(boundary.manager.wrapWithSandboxArgv).toHaveBeenCalledOnce();
+    expect(boundary.spawn).toHaveBeenCalledOnce();
+  });
+
+  it("[R2-P2] fails the session when a captured base process is missing", async () => {
+    await openSession();
+    await readyRunner();
+    resident.table = [];
+    await command("attempt-a", 1);
+    await resultFrame(1, 0);
+    await drain();
+    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", namespace: "unknown" });
+    expect(result()).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-P2] kills only the command's leftover after re-reading its identity", async () => {
+    await openSession();
+    await readyRunner();
+    const leftover = { pid: 8000, parent: 7000, start: "8000" };
+    resident.table = [{ pid: 7000, parent: 1, start: "7000" }, leftover];
+    resident.identities.set(leftover.pid, leftover);
+    await command("attempt-a", 1);
+    await resultFrame(1, 0);
+    expect(resident.identity).toHaveBeenCalledWith(leftover.pid);
+    expect(processBoundary.kill).toHaveBeenCalledWith(leftover.pid, "SIGKILL");
+    expect(processBoundary.kill).not.toHaveBeenCalledWith(7000, "SIGKILL");
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      namespace: "resident_intact",
+      processGroupGone: true,
+      cleanedUp: true,
+    });
   });
 
   it("[R2-P2] fails the session when a second command arrives while one runs", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
     expect(
       sent.some((item) => item["type"] === "started" && item["attemptId"] === "attempt-a"),
     ).toBe(true);
-    await receive("run", { run: runInput("attempt-b", 2) });
-    const diagnostic = sent.findIndex((item) => item["type"] === "diagnostic");
-    expect(diagnostic).toBeGreaterThan(-1);
-    expect(boundary.manager.wrapWithSandboxArgv).toHaveBeenCalledOnce();
-    await closeTask();
+    const before = runFrames().length;
+    await command("attempt-b", 2);
+    await drain();
+    expect(runFrames()).toHaveLength(before);
     expect(result()).toMatchObject({ reason: "host_failure" });
-    expect(sent.findIndex((item) => item["type"] === "result")).toBeGreaterThan(diagnostic);
-    expect(boundary.manager.reset).toHaveBeenCalledOnce();
+    expect(boundary.manager.wrapWithSandboxArgv).toHaveBeenCalledOnce();
   });
 
   it.each(["before ready", "without a session"])(
@@ -1216,10 +1499,12 @@ describe("[R2-P2] Job Host session mode", () => {
               release = resolve;
             }),
         );
-        await prepare(sessionRequest(), { session: true });
+        await load();
+        await receive("prepare", { request: sessionRequest(), session: true });
+        await flush();
         await receive("run", { run: runInput("attempt-a", 1) });
         release();
-        await settle();
+        await drain();
       } else {
         await prepare();
         await receive("run", { run: runInput("attempt-a", 1) });
@@ -1233,7 +1518,9 @@ describe("[R2-P2] Job Host session mode", () => {
   );
 
   it("[R2-P2] refuses a session that arrives with a control binding", async () => {
-    await prepare(sessionRequest(), {
+    await load();
+    await receive("prepare", {
+      request: sessionRequest(),
       session: true,
       control: {
         sessionId: SESSION,
@@ -1248,104 +1535,52 @@ describe("[R2-P2] Job Host session mode", () => {
   });
 
   it("[R2-P2] refuses a session whose request carries per-command fields", async () => {
-    await prepare(
-      { ...sessionRequest(), stdinBase64: Buffer.from("input").toString("base64") },
-      { session: true },
-    );
+    await load();
+    await receive("prepare", {
+      request: { ...sessionRequest(), stdinBase64: Buffer.from("input").toString("base64") },
+      session: true,
+    });
     expect(boundary.manager.initialize).not.toHaveBeenCalled();
     expect(boundary.spawn).not.toHaveBeenCalled();
     expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
   });
 
-  it("[R2-P2] ends only the command that exceeds its own output limit", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1, { maxOutputBytes: 4 });
-    task.stdout.write("x".repeat(10));
-    await settle();
-    await closeTask();
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", reason: "output_limit" });
-    expect(boundary.manager.reset).not.toHaveBeenCalled();
-    await runLinux("attempt-b", 2);
-    await closeTask(0);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0 });
-  });
-
-  it("[R2-P2] ends only the command that reaches its own deadline", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1, { deadlineAt: new Date(Date.now() + 1000).toISOString() });
-    await advance(1000);
-    await closeTask();
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", reason: "deadline" });
-    expect(boundary.manager.reset).not.toHaveBeenCalled();
-    await runLinux("attempt-b", 2);
-    await closeTask(0);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0 });
-  });
-
   it("[R2-P2] cancels the running command and ignores a repeat for the reported one", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
     await receive("run_cancel", { attemptId: "attempt-a", reason: "cancelled" });
-    await closeTask();
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", reason: "cancelled" });
+    await flush();
+    await resultFrame(1, 0);
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "cancelled",
+      exitCode: null,
+    });
     await receive("run_cancel", { attemptId: "attempt-a", reason: "cancelled" });
     expect(result()).toBeUndefined();
-    await runLinux("attempt-b", 2);
-    await closeTask(0);
+    await command("attempt-b", 2);
+    await resultFrame(2, 0);
     expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0 });
   });
 
   it("[R2-P2] fails the session when a run_cancel names another command", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    await closeTask(0);
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    await resultFrame(1, 0);
     expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", exitCode: 0 });
     await receive("run_cancel", { attemptId: "attempt-9", reason: "cancelled" });
+    await drain();
     expect(result()).toMatchObject({ reason: "host_failure" });
-  });
-
-  it("[R2-P2] fails the session when a finished command's namespace stays alive", async () => {
-    boundary.namespaceState.mockResolvedValue("alive");
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    await closeTask(0);
-    await vi.advanceTimersByTimeAsync(1100);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", namespace: "alive" });
-    expect(result()).toMatchObject({ reason: "host_failure" });
-    expect(boundary.manager.reset).toHaveBeenCalledOnce();
-  });
-
-  it("[R2-P2] keeps the session when a finished command's namespace releases", async () => {
-    boundary.namespaceState
-      .mockResolvedValueOnce("alive")
-      .mockResolvedValueOnce("alive")
-      .mockResolvedValue("released");
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    await closeTask(0);
-    await vi.advanceTimersByTimeAsync(50);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", namespace: "released" });
-    expect(result()).toBeUndefined();
-    await runLinux("attempt-b", 2);
-    await closeTask(0);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-b", exitCode: 0 });
-  });
-
-  it("[R2-P2] reports a failed command cleanup and stops the session", async () => {
-    boundary.manager.cleanupAfterCommand.mockRejectedValue(new Error("cleanup failed"));
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    await closeTask(0);
-    expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", cleanedUp: false });
-    expect(result()).toMatchObject({ reason: "host_failure" });
-    expect(boundary.manager.reset).toHaveBeenCalledOnce();
   });
 
   it("[R2-P2] settles the running command before a session cancel result", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
     await receive("cancel");
-    await closeTask();
+    await drain();
     const terminal = sent.filter(
       (item) => item["type"] === "command_result" || item["type"] === "result",
     );
@@ -1359,40 +1594,46 @@ describe("[R2-P2] Job Host session mode", () => {
   });
 
   it("[R2-P2] ends an idle session at its own deadline", async () => {
-    await prepare(sessionRequest({ deadlineAt: new Date(Date.now() + 2000).toISOString() }), {
-      session: true,
-    });
-    await runLinux("attempt-a", 1, { deadlineAt: new Date(Date.now() + 1000).toISOString() });
-    await closeTask(0);
+    await openSession(sessionRequest({ deadlineAt: new Date(Date.now() + 2000).toISOString() }));
+    await readyRunner();
+    await command("attempt-a", 1, { deadlineAt: new Date(Date.now() + 1000).toISOString() });
+    await resultFrame(1, 0);
     expect(lastCommand()).toMatchObject({ attemptId: "attempt-a", exitCode: 0 });
     await advance(2300);
+    await flush();
     expect(result()).toMatchObject({ reason: "deadline" });
     expect(boundary.manager.reset).toHaveBeenCalledOnce();
     expect(commandResults()).toHaveLength(1);
   });
 
   it("[R2-P2] fails the session when a command changes the policy digest", async () => {
-    await prepare(sessionRequest(), { session: true });
+    await openSession();
+    await readyRunner();
     await receive("run", { run: runInput("attempt-a", 1, { policyDigest: "b".repeat(64) }) });
-    expect(boundary.manager.wrapWithSandboxArgv).not.toHaveBeenCalled();
-    expect(boundary.spawn).not.toHaveBeenCalled();
+    await drain();
+    expect(runFrames()).toHaveLength(0);
     expect(result()).toMatchObject({ reason: "host_failure" });
     expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
       detail: { code: "JOB_HOST_RUN_INVALID" },
     });
   });
 
-  it("[R2-P2] stops no completed command group again when the session ends", async () => {
-    await prepare(sessionRequest(), { session: true });
-    await runLinux("attempt-a", 1);
-    await closeTask(0);
+  it("[R2-P2] stops the resident runner once when the session ends", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    await resultFrame(1, 0);
     expect(commandResults()).toHaveLength(1);
     await receive("cancel");
-    await vi.advanceTimersByTimeAsync(200);
+    await drain();
     expect(result()).toMatchObject({ reason: "cancelled" });
     const before = processBoundary.kill.mock.calls.length;
     await vi.advanceTimersByTimeAsync(2000);
     expect(processBoundary.kill.mock.calls.length).toBe(before);
-    expect(processBoundary.kill.mock.calls.filter(([pid]) => pid === -7001)).toHaveLength(1);
+    expect(
+      processBoundary.kill.mock.calls.some(
+        ([pid, signal]) => pid === -7000 && signal === "SIGKILL",
+      ),
+    ).toBe(true);
   });
 });

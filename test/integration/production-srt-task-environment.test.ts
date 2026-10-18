@@ -112,6 +112,27 @@ const backgroundBashBinding: SandboxOperationBinding = {
   contract: { ...PI_RUNNER_CONTRACT, kind: "task_start" },
 };
 
+const networkBashBinding: SandboxOperationBinding = {
+  ...bashBinding,
+  network: "grant_targets",
+};
+
+const editBinding: SandboxOperationBinding = {
+  operation: "edit",
+  mode: "foreground",
+  contract: {
+    ...PI_RUNNER_CONTRACT,
+    kind: "verified_effect",
+    verifierRef: PI_WRITE_VERIFIER.ref,
+    verifierVersion: PI_WRITE_VERIFIER.version,
+    targetRef: PI_WRITE_VERIFIER.targetRef,
+  },
+  backendRef: "srt",
+  scopeSource: "grant_targets",
+  directoryOperations: ["read", "create", "update"],
+  network: "disabled",
+};
+
 const resourceCeiling = {
   maxWallTimeMs: 60000,
   maxCpuTimeMs: 10000,
@@ -133,6 +154,7 @@ const runtimeRoot = path.resolve(
 interface BindingSpec {
   readonly binding: SandboxOperationBinding;
   readonly parameters: Readonly<Record<string, unknown>>;
+  readonly deadlineMs?: number;
 }
 
 interface Harness {
@@ -250,6 +272,9 @@ function makeCalls(ctx: Harness) {
     index += 1;
     const spec = ctx.bindings[index - 1];
     if (!spec) throw new Error("call out of range");
+    const deadlineAt = spec.deadlineMs
+      ? new Date(Date.now() + spec.deadlineMs).toISOString()
+      : ctx.f.input.deadlineAt;
     const operation = spec.binding.operation;
     const toolCallId = `srt-entry-call-${index}`;
     const invocationId = `runtime-tool:${hash([RUN_ID, toolCallId])}`;
@@ -290,12 +315,13 @@ function makeCalls(ctx: Harness) {
           secretRefs: ctx.f.input.secretRefs,
           resourceCeiling: ctx.f.input.resourceCeiling,
           requestedAt: ctx.f.input.requestedAt,
-          deadlineAt: ctx.f.input.deadlineAt,
+          deadlineAt,
         },
       },
     });
     const input = {
       ...ctx.f.input,
+      deadlineAt,
       invocationId,
       idempotencyKey: invocationId,
       inputRef,
@@ -434,6 +460,20 @@ function processesWith(needle: string): Promise<string[]> {
   })();
 }
 
+async function residentIdentity(session: SandboxJobSession) {
+  const { residentProcessId } = await session.ready;
+  const stat = await readFile(`/proc/${residentProcessId}/stat`, "utf8");
+  const start = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+  if (!start || !/^\d+$/.test(start)) throw new Error("resident start token unavailable");
+  return { pid: residentProcessId, start };
+}
+
+function residentSession(ctx: Harness): SandboxJobSession {
+  const session = ctx.sessions[0];
+  if (!session) throw new Error("missing session");
+  return session;
+}
+
 describe("[R2-P2] SRT resident task environment through the real Agent entry", () => {
   if (!linux || !installedRuntime) {
     it("[R2-P2] reports that the resident SRT environment requires Linux and an installed runtime", () => {
@@ -465,7 +505,7 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     forkState.children = [];
   });
 
-  it("[R2-P2] reuses one Job Host across three foreground bash calls in one Run", async () => {
+  it("[R2-P2] reuses one resident runner across three foreground bash calls in one Run", async () => {
     const ctx = await srtHarness({
       bindings: [
         { binding: bashBinding, parameters: { command: "echo one" } },
@@ -474,27 +514,62 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
       ],
     });
     const call = makeCalls(ctx);
-    const first = await call();
-    await dispatch(ctx, first);
-    const second = await call();
-    await dispatch(ctx, second);
-    const third = await call();
-    await dispatch(ctx, third);
+    const durations: number[] = [];
+    const identities: string[] = [];
+    const results: Array<Awaited<ReturnType<typeof readPiResult>>> = [];
+    for (let index = 0; index < 3; index++) {
+      const prepared = await call();
+      const began = Date.now();
+      await dispatch(ctx, prepared);
+      durations.push(Date.now() - began);
+      const identity = await residentIdentity(residentSession(ctx));
+      identities.push(`${identity.pid}:${identity.start}`);
+      results.push(await readPiResult(ctx, prepared));
+    }
 
     expect(ctx.prepareCalls).toHaveLength(1);
-    const firstResult = await readPiResult(ctx, first);
-    expect(firstResult?.parsed.isError).not.toBe(true);
-    expect(firstResult?.text).toContain("one");
-    const secondResult = await readPiResult(ctx, second);
-    expect(secondResult?.parsed.commandExitCode).toBe(3);
-    expect(secondResult?.text).toContain("two");
-    const thirdResult = await readPiResult(ctx, third);
-    expect(thirdResult?.parsed.isError).not.toBe(true);
-    expect(thirdResult?.text).toContain("live-workspace");
+    expect(new Set(identities).size).toBe(1);
+    expect(results[0]?.parsed.isError).not.toBe(true);
+    expect(results[0]?.text).toContain("one");
+    expect(results[1]?.parsed.commandExitCode).toBe(3);
+    expect(results[1]?.text).toContain("two");
+    expect(results[2]?.parsed.isError).not.toBe(true);
+    expect(results[2]?.text).toContain("live-workspace");
+    console.log(
+      `[R2-P2] resident runner reuse durations(ms)=${durations.join(",")} identities=${identities.join(",")}`,
+    );
 
     const primaries = await primaryEnvironment(ctx);
     expect(primaries).toHaveLength(1);
     expect(primaries[0]?.backendRef).toBe(SRT_TASK_ENVIRONMENT_BACKEND_REF);
+  });
+
+  it("[R2-P2] reports a bash that reaches its own deadline as deadline exceeded and holds the workspace", async () => {
+    const ctx = await srtHarness({
+      bindings: [
+        { binding: bashBinding, parameters: { command: "sleep 30" }, deadlineMs: 25000 },
+        { binding: bashBinding, parameters: { command: "echo after-deadline" } },
+      ],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const firstRecord = await readRecord(ctx, first);
+    expect(firstRecord?.facts.result).toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+    });
+
+    const secondOutcome = await call().then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    if (secondOutcome.ok)
+      throw new Error(
+        `second call after a deadline result resolved instead of being refused: ${JSON.stringify(secondOutcome.value)}`,
+      );
+    expect(String(secondOutcome.error)).toContain("Workspace remains occupied");
+    expect(ctx.prepareCalls).toHaveLength(1);
   });
 
   it("[R2-P2] keeps the file_write session policy separate from the command session", async () => {
@@ -805,5 +880,105 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     expect(second.prepared.plan.backendRef).toBe("srt");
     expect(second.prepared.plan.preparationProtocol).toBeDefined();
     expect(ctx.prepareCalls).toHaveLength(0);
+  });
+
+  it("[R2-P2] keeps the sandbox base processes when a networked command leaves a background process", async () => {
+    const ctx = await srtHarness({
+      bindings: [
+        {
+          binding: networkBashBinding,
+          parameters: { command: "setsid nohup sleep 600 >/dev/null 2>&1 &" },
+        },
+        { binding: networkBashBinding, parameters: { command: "ps -eo pid,args" } },
+      ],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const second = await call();
+    await dispatch(ctx, second);
+
+    const secondResult = await readPiResult(ctx, second);
+    expect(secondResult?.parsed.isError).not.toBe(true);
+    expect(secondResult?.text).not.toContain("sleep 600");
+    expect(ctx.prepareCalls).toHaveLength(1);
+    const leftovers = await waitFor(async () => {
+      const found = await processesWith("sleep 600");
+      return found.length === 0 ? [] : undefined;
+    }, 10000).catch(async () => processesWith("sleep 600"));
+    expect(leftovers).toEqual([]);
+  });
+
+  it("[R2-P2] ends the call as unknown and stops the environment when the resident runner is killed", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" } }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    const pending = dispatch(ctx, first);
+    await waitFor(() => (ctx.sessions[0]?.inspect()?.task ? true : undefined));
+    const { pid } = await residentIdentity(residentSession(ctx));
+    process.kill(pid, "SIGKILL");
+    const result = await Promise.race([
+      pending,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(`dispatch did not settle within 30s: ${forkState.stderr.slice(0, 2000)}`),
+            ),
+          30000,
+        ),
+      ),
+    ]);
+    expect(result.outcome).toBe("result_unknown");
+    const record = await readRecord(ctx, first);
+    expect(record?.facts.result?.kind).toBe("unknown");
+    if (!record) throw new Error("missing execution record");
+    await releaseEnvironment(ctx, first);
+    const [environment] = await primaryEnvironment(ctx);
+    expect(await environmentRecord(ctx, environment?.identity.environmentId ?? "")).toMatchObject({
+      state: "released",
+      releaseReceipt: { basis: "process_group_gone" },
+    });
+  });
+
+  it("[R2-P2] alternates write, bash, edit, and bash with one session each", async () => {
+    const ctx = await srtHarness({
+      directoryOperations: fullDirectoryOperations,
+      bindings: [
+        { binding: writeBinding, parameters: { path: "alt.txt", content: "one" } },
+        { binding: bashWriteBinding, parameters: { command: "cat alt.txt" } },
+        {
+          binding: editBinding,
+          parameters: { path: "alt.txt", edits: [{ oldText: "one", newText: "two" }] },
+        },
+        { binding: bashWriteBinding, parameters: { command: "cat alt.txt" } },
+      ],
+    });
+    const call = makeCalls(ctx);
+    const results: Array<Awaited<ReturnType<typeof readPiResult>>> = [];
+    for (let index = 0; index < 4; index++) {
+      const prepared = await call();
+      await dispatch(ctx, prepared);
+      results.push(await readPiResult(ctx, prepared));
+    }
+
+    expect(await readFile(path.join(ctx.f.host.workspace, "alt.txt"), "utf8")).toBe("two");
+    expect(results[1]?.parsed.isError).not.toBe(true);
+    expect(results[1]?.text).toContain("one");
+    expect(results[2]?.parsed.isError).not.toBe(true);
+    expect(results[3]?.parsed.isError).not.toBe(true);
+    expect(results[3]?.text).toContain("two");
+
+    expect(ctx.prepareCalls).toHaveLength(2);
+    const [environment] = await primaryEnvironment(ctx);
+    const environmentId = environment?.identity.environmentId ?? "";
+    expect(new Set(ctx.prepareCalls.map((request) => request.jobId))).toEqual(
+      new Set([
+        srtTaskEnvironmentJobId(environmentId, "file_write"),
+        srtTaskEnvironmentJobId(environmentId, "command"),
+      ]),
+    );
   });
 });
