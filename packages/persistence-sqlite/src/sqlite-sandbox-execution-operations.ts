@@ -1318,8 +1318,7 @@ export class SqliteSandboxExecutionOperations {
   ) {
     if (
       current.plan.mode !== "foreground" ||
-      current.plan.backendRef !== "srt" ||
-      current.facts.environment.kind !== "local" ||
+      !this.recoverableBackend(current) ||
       !current.startedAt ||
       !current.releaseReceipt ||
       current.workspaceBlocked ||
@@ -1340,6 +1339,29 @@ export class SqliteSandboxExecutionOperations {
         )
     )
       return this.fail("PORT_NOT_AUTHORITATIVE", "Foreground result recovery is unavailable");
+  }
+  private recoverableBackend(current: SandboxExecutionRecord) {
+    const environment = current.facts.environment;
+    if (current.plan.backendRef === "srt") return environment.kind === "local";
+    if (environment.kind !== "container") return false;
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM execution_environments e
+        JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+        JOIN execution_environment_release_receipts released ON released.environment_id=e.environment_id
+        JOIN execution_environment_calls linked ON linked.environment_id=e.environment_id
+        WHERE e.environment_id=? AND e.execution_job_id=? AND e.state='released'
+          AND j.owner_id=? AND j.agent_id=? AND j.run_id=?
+          AND released.basis<>'create_not_dispatched' AND linked.invocation_id=?`)
+        .get(
+          environment.taskEnvironmentId,
+          environment.executionJobId,
+          current.plan.identity.ownerId,
+          current.plan.identity.agentId,
+          current.plan.identity.runId,
+          current.plan.identity.invocationId,
+        ) !== undefined
+    );
   }
   private append(
     input: Input<"append">,
@@ -1510,7 +1532,7 @@ export class SqliteSandboxExecutionOperations {
           !current.releaseReceipt ||
           current.workspaceBlocked ||
           current.plan.mode !== "foreground" ||
-          current.plan.backendRef !== "srt" ||
+          !this.recoverableBackend(current) ||
           current.facts.resource.supervision !== "released" ||
           !isSandboxExecutionFenceSuperseded(current.plan, input.authority.product) ||
           input.now >= current.plan.originalDeadlineAt)

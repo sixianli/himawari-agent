@@ -76,6 +76,8 @@ Claude 在 reply-4 撤回“只存一份”优化：原前提不成立，后台 
 
 LOST 要求已接受的释放证明、已认证任务启动并退出、缺少确定结果，以及原 Worker 尝试已确定不能再提交。合法 LOST 一旦写入，后来发现原输出也不能覆盖或再次交付，只能保留诊断证据。
 
+2026-10-18 补充：常驻 SRT 环境和容器任务环境里的前台调用没有逐次的原签名结束记录，上面第 2 步和第 4 步里“任务已启动并退出”改由调用所在整个任务环境的释放回执证明：环境已释放、回执依据不是“创建请求尚未发出”、环境记录里有这条调用；其余条件不变。这个证明只能说明命令已经结束、不会再写工作区，说明不了命令开始过：Worker 在绑定之后、发出命令之前中断的调用也会记成 LOST，固定说明里“工具已运行并结束”在这种情况下不准确，后半句“是否重做请先确认”仍然成立。理由和范围见 [ADR 0054 的第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。
+
 导入是 Agent 内部的受限事实写入，不放宽 Worker Payload Broker。原执行身份用于确定结果归属，当前 Agent 权限用于确认现在是否允许登记事实；两者分别验证。恢复在 Agent 内部从连续分块重组原 stdout，用普通 Payload 表示保存，归属键仍为 `capabilityInvocationOutputOperationKey(invocationId)`。分类来自核验后的冻结调用回执；前台合同沿用正常路径的 `application/octet-stream`，不接受 Worker 或分块自称的分类/类型。原 Worker 已保存 Payload 而尚未写 operation 时，核对摘要、长度、类型和分类后复用。加解密在事务外完成；普通输出 Payload 引用接纳与 operation CAS 必须在同一个 SQLite 事务中完成，并在事务内重查当前权限、原身份、operation revision、resource sequence 和已有结果。冲突后重读，不能换新 revision 强行覆盖赢家。
 
 候选查询有界，筛选本机前台、已释放且缺少确定结果的记录，复用现有 Agent 后台循环。导入不等于允许交付；原 Run、取消、期限、披露权限、预算、冻结 continuation 和唯一交付 intent 继续检查。固定文件效果仍须通过既有 `verifyPiWriteEvidence()` 等核验。

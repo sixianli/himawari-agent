@@ -477,6 +477,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
           protector: f.protector,
           nextRef: () => "agent-recovered-output",
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
           verifyExited: async () => {
             if (!signatureValid) throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
             return true;
@@ -702,6 +703,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
           protector: f.protector,
           nextRef: () => "must-not-import-output",
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
           verifyExited: async () => true,
           facts,
         });
@@ -1702,6 +1704,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           journal,
           authority: () => authority,
           now: () => T1,
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
           verifyExited: async () => true,
           saveOutput: async () => {
             const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
@@ -5603,6 +5606,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
                     journal: repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
                     authority: () => authority,
                     now: clock.now,
+                    recoverableBackend: async (value) => value.plan.backendRef === "srt",
                     verifyExited: async () => true,
                     verifyFresh: async (value) => {
                       const proof = context(value, value.facts).verification;
@@ -6590,6 +6594,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           journal,
           authority: () => authority,
           now: () => T1,
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
           verifyExited: async () => {
             if (scenario === "original-first" && !raced) {
               raced = true;
@@ -6701,4 +6706,434 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       }
     },
   );
+});
+
+const R2P2_BACKEND = "srt-task-environment";
+const R2P2_ENVIRONMENT = "environment-r2p2";
+const R2P2_EXECUTION_JOB = "execution-job-r2p2";
+const R2P2_RUNTIME_INSTANCE = "r2p2-daemon";
+const R2P2_RUNTIME_ENVIRONMENT = "c".repeat(64);
+const R2P2_CREATE_INTENT = "r2p2-environment-create";
+const R2P2_POLICY_DIGEST = "e".repeat(64);
+
+function residentTaskEnvironmentShare(f: Fixture) {
+  const base = admission(f);
+  const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+    ...base.plan,
+    backendRef: R2P2_BACKEND,
+  });
+  const supervisor = {
+    supervisorId: R2P2_RUNTIME_ENVIRONMENT,
+    bootId: R2P2_RUNTIME_INSTANCE,
+    epoch: 1,
+  };
+  const facts = sandboxExecutionFactsSchema.parse({
+    schemaVersion: "sandbox-execution.v2",
+    environment: {
+      schemaVersion: "sandbox-execution.v2",
+      kind: "container",
+      environmentId: plan.environmentId,
+      resourceRef: null,
+      creator: plan.identity,
+      mode: plan.mode,
+      backendRef: R2P2_BACKEND,
+      authorizationRef: plan.authorizationRef,
+      scopeDigest: plan.binding.scopeDigest,
+      policyDigest: R2P2_POLICY_DIGEST,
+      deadlineAt: plan.effectiveDeadlineAt,
+      supervisor,
+      workspaceConflictRefs: ["workspace"],
+      taskEnvironmentId: R2P2_ENVIRONMENT,
+      executionJobId: R2P2_EXECUTION_JOB,
+      environmentGeneration: 1,
+      runtimeInstanceId: R2P2_RUNTIME_INSTANCE,
+      runtimeEnvironmentId: R2P2_RUNTIME_ENVIRONMENT,
+      createIntentId: R2P2_CREATE_INTENT,
+      stopFence: 0,
+    },
+    result: null,
+    effect: { kind: "unknown", reasonCode: "SANDBOX_NOT_STARTED" },
+    resource: {
+      schemaVersion: "sandbox-execution.v2",
+      environmentId: plan.environmentId,
+      creator: plan.identity,
+      policyDigest: R2P2_POLICY_DIGEST,
+      scopeDigest: plan.binding.scopeDigest,
+      sequence: 1,
+      occurredAt: T1,
+      supervisor,
+      resourceRef: null,
+      status: { kind: "foreground" },
+      metrics: null,
+      supervision: "initializing",
+      cleanup: "pending",
+    },
+  });
+  return { ...base, plan, facts };
+}
+
+function residentReleased(record: SandboxExecutionRecord): SandboxExecutionFacts {
+  const old = record.facts.resource;
+  const common = old as typeof old & { evidence?: unknown; reasonCode?: string };
+  const {
+    supervision: _supervision,
+    cleanup: _cleanup,
+    evidence: _evidence,
+    reasonCode: _reasonCode,
+    ...rest
+  } = common;
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    resource: {
+      ...rest,
+      sequence: old.sequence + 1,
+      occurredAt: T1,
+      supervision: "released",
+      cleanup: "process_group_gone",
+      evidence: {
+        ...evidence,
+        qualificationRef: record.plan.binding.qualificationRef,
+        profileRef: record.plan.binding.profileRef,
+        validUntil: T2,
+        subject: { kind: "task_environment", environmentId: R2P2_ENVIRONMENT },
+      },
+    },
+  });
+}
+
+function seedResidentEnvironment(f: Fixture, runId: string, released: boolean) {
+  f.database
+    .prepare(`INSERT INTO execution_jobs
+      (execution_job_id,owner_id,agent_id,run_id,host_id,created_at)
+      VALUES (?,?,?,?,?,?)`)
+    .run(R2P2_EXECUTION_JOB, OWNER_ID, AGENT_ID, runId, "sandbox-host", T1);
+  f.database
+    .prepare(`INSERT INTO execution_environments
+      (environment_id,execution_job_id,role,generation,state,rotation_reason,backend_ref,
+       envelope_json,envelope_digest,policy_digest,image_digest,runner_digest,deadline_at,
+       create_intent_id,created_at,updated_at)
+      VALUES (?,?,'primary',1,?,'initial',?,'{}',?,?,?,?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      R2P2_EXECUTION_JOB,
+      released ? "released" : "reserved",
+      R2P2_BACKEND,
+      "a".repeat(64),
+      R2P2_POLICY_DIGEST,
+      "b".repeat(64),
+      "c".repeat(64),
+      T2,
+      R2P2_CREATE_INTENT,
+      T1,
+      T1,
+    );
+  if (!released) return;
+  f.database
+    .prepare(`INSERT INTO execution_environment_stop_intents
+      (environment_id,stop_fence,stop_intent_id,reason,stopped_resource_refs_json,requested_at,acknowledged_at,authority_json)
+      VALUES (?,1,?,'run_cancelled','[]',?,?,?)`)
+    .run(R2P2_ENVIRONMENT, "r2p2-stop-intent", T1, T1, JSON.stringify(SERVICE_AUTHORITY));
+  f.database
+    .prepare(`INSERT INTO execution_environment_release_receipts
+      (environment_id,basis,stop_fence,accepted_at,proof_json,authority_json)
+      VALUES (?,'process_group_gone',1,?,?,?)`)
+    .run(R2P2_ENVIRONMENT, T1, JSON.stringify({}), JSON.stringify(SERVICE_AUTHORITY));
+}
+
+async function strandedResidentRun(environmentReleased: boolean) {
+  const f = await openSandboxJournal();
+  let record = start(f, residentTaskEnvironmentShare(f));
+  record = append(f, record, resource(record, "stopping"));
+  record = append(f, record, residentReleased(record));
+  const runId = createRunId(record.plan.identity.runId);
+  f.database.prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?").run(runId);
+  f.database.prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?").run(T1, runId);
+  f.database
+    .prepare(`INSERT INTO run_coordination_checkpoints
+      (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+      VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+    .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+  seedResidentEnvironment(f, runId, environmentReleased);
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  const { createProductionSandboxStream } = await import(
+    "../../apps/agent-service/src/production-sandbox-stream.ts"
+  );
+  let next = 0;
+  const stream = createProductionSandboxStream({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+    protector: f.protector,
+    artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+    clock: { now: () => T1 },
+    ids: { next: () => `resident-claim-${++next}` },
+  });
+  await stream.append(record, {
+    index: 0,
+    offset: 0,
+    bytesBase64: Buffer.from("resident-stream-output").toString("base64"),
+    end: true,
+    termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+  });
+  return { f, reopened, runId, record };
+}
+
+function linkResidentEnvironmentCall(f: Fixture, record: SandboxExecutionRecord) {
+  f.database
+    .prepare(`INSERT INTO execution_environment_calls
+      (environment_id,invocation_id,receipt_ref,claims_json,linked_at)
+      VALUES (?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      record.plan.identity.invocationId,
+      record.plan.identity.receiptRef,
+      "[]",
+      T1,
+    );
+}
+
+function replaceResidentReleaseBasis(f: Fixture, basis: string) {
+  const receipt = f.database
+    .prepare(
+      "SELECT stop_fence AS stopFence, accepted_at AS acceptedAt, authority_json AS authorityJson FROM execution_environment_release_receipts WHERE environment_id=?",
+    )
+    .get(R2P2_ENVIRONMENT) as
+    | { stopFence: number; acceptedAt: string; authorityJson: string }
+    | undefined;
+  if (!receipt) throw new Error("missing resident environment release receipt");
+  f.database
+    .prepare("DELETE FROM execution_environment_release_receipts WHERE environment_id=?")
+    .run(R2P2_ENVIRONMENT);
+  f.database
+    .prepare(`INSERT INTO execution_environment_release_receipts
+      (environment_id,basis,stop_fence,accepted_at,proof_json,authority_json)
+      VALUES (?,?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      basis,
+      receipt.stopFence,
+      receipt.acceptedAt,
+      basis === "create_not_dispatched" ? null : JSON.stringify({}),
+      receipt.authorityJson,
+    );
+}
+
+function supersedeResidentAuthority(f: Fixture) {
+  f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+  f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+  return {
+    ...SERVICE_AUTHORITY,
+    product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+    lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+  };
+}
+
+function lostResidentResult(record: SandboxExecutionRecord) {
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_RESULT_LOST" },
+    result: {
+      schemaVersion: "sandbox-execution.v2",
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: record.facts.environment.policyDigest,
+      contract: {
+        ref: record.plan.operationContract.ref,
+        version: record.plan.operationContract.version,
+      },
+      occurredAt: T1,
+      kind: "error",
+      reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+      termination: { type: "failure" },
+      output: { ref: "resident-lost-output", digest: "a".repeat(64), byteLength: 11 },
+    },
+  });
+}
+
+it("[R2-P2] refuses to import a resident task environment's foreground result while its environment is unreleased", async () => {
+  const { f, reopened, record } = await strandedResidentRun(false);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.importResult({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        facts: record.facts,
+        context: context(record, record.facts),
+        payload: outputPayload(),
+        source: { binding: "", digest: "a".repeat(64), byteLength: 11, artifacts: [] },
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses to record a resident task environment's lost tool result while its environment is unreleased", async () => {
+  const { f, reopened, record } = await strandedResidentRun(false);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const authority = supersedeResidentAuthority(f);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    const facts = lostResidentResult(record);
+    await expect(
+      journal.recordOperation({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        facts,
+        authority,
+        now: T1,
+        context: context(record, facts),
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Lost result recovery is not authorized",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] passes a released resident environment's lost-result authorization once its release is confirmed and the call is recorded", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const authority = supersedeResidentAuthority(f);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const facts = lostResidentResult(record);
+    await expect(
+      journal.recordOperation({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        facts,
+        authority,
+        now: T1,
+        context: context(record, facts),
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Output is not durably bound to invocation",
+    });
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses a released resident environment's result recovery when its release basis never dispatched the call", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    replaceResidentReleaseBasis(f, "create_not_dispatched");
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses a released resident environment's result recovery while its environment call record is missing", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] permits a released resident environment's result recovery once its release is confirmed and the call is recorded", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).resolves.toMatchObject({ receipt: { receiptRef: record.plan.identity.receiptRef } });
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] claims a resident task environment's stream-recoverable tool result once its environment is released", async () => {
+  const { f, reopened, runId } = await strandedResidentRun(true);
+  try {
+    const dispatch = reopened.runDispatch(
+      OWNER_ID,
+      AGENT_ID,
+      SERVICE_AUTHORITY.product,
+      SERVICE_AUTHORITY.lease,
+      "resident-claim",
+    );
+    const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
+    expect(candidates).toEqual([expect.objectContaining({ runId, action: "resume_tool_result" })]);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses to claim a resident task environment's tool result while its environment is unreleased", async () => {
+  const { f, reopened } = await strandedResidentRun(false);
+  try {
+    const dispatch = reopened.runDispatch(
+      OWNER_ID,
+      AGENT_ID,
+      SERVICE_AUTHORITY.product,
+      SERVICE_AUTHORITY.lease,
+      "resident-claim-blocked",
+    );
+    expect(await dispatch.listClaimable({ now: T1, limit: 10 })).toEqual([]);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
 });

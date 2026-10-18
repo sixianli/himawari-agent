@@ -1277,3 +1277,153 @@ it("refuses a write without a prepared candidate on the container route", async 
   const admission = await f.services.brokerV2.preparations.readAdmission(prepared.plan.identity);
   expect(admission?.phase).toBe("reserved");
 });
+
+async function lostContainerCall() {
+  let authority = SERVICE_AUTHORITY;
+  const scope = await setup("lost", read, {
+    piParameters: { path: "notes.txt" },
+    directoryOperations: ["read"],
+    authority: () => authority,
+  });
+  const prepared = await scope.prepare();
+  await scope.f.services.brokerV2.preparations.reserve({ ...prepared, invocation: scope.f.input });
+  await scope.dispatch(prepared.plan);
+  const journal = () => scope.f.repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+  const record = await journal().read(prepared.plan.identity);
+  if (!record) throw new Error("missing container execution record");
+  const supersede = async () => {
+    authority = {
+      ...SERVICE_AUTHORITY,
+      product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+      lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+    };
+    writeProductState(scope.f, "UPDATE deployments SET fencing_token=2");
+    writeProductState(scope.f, "UPDATE authority_leases SET fencing_token=2");
+    await scope.f.reopen();
+  };
+  return { ...scope, journal, prepared, record, supersede };
+}
+
+it("[R2-P2] keeps a container call's unknown result while its task environment is still running", async () => {
+  const f = await lostContainerCall();
+  expect(f.record.facts.result).toMatchObject({ kind: "unknown" });
+  expect(f.record.facts.resource.supervision).toBe("lost");
+  expect(f.record.releaseReceipt).toBeUndefined();
+  const store = f.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environmentId =
+    (await store.readRun(RUN_ID))?.environments[0]?.identity.environmentId ?? "";
+  expect((await store.read(environmentId))?.state).toBe("running");
+
+  const recovered = await f.f.services.recoverMissingToolResult(f.record);
+  expect(recovered.facts.result).toMatchObject({ kind: "unknown" });
+  expect(await f.journal().read(f.prepared.plan.identity)).toEqual(f.record);
+  expect(f.executed).toHaveLength(1);
+});
+
+it("[R2-P2] records a released container call's result as lost only after its execution authority is superseded", async () => {
+  const f = await lostContainerCall();
+  expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({ released: true });
+  const released = await f.journal().read(f.prepared.plan.identity);
+  expect(released?.facts.resource.supervision).toBe("released");
+  expect(released?.releaseReceipt).toEqual(
+    expect.objectContaining({ acceptedAt: expect.any(String) }),
+  );
+  expect(released?.facts.result).toMatchObject({ kind: "unknown" });
+  if (!released) throw new Error("missing released record");
+
+  const beforeSupersede = await f.f.services.recoverMissingToolResult(released);
+  expect(beforeSupersede.facts.result).toMatchObject({ kind: "unknown" });
+  expect(f.executed).toHaveLength(1);
+
+  await f.supersede();
+  const latest = await f.journal().read(f.prepared.plan.identity);
+  if (!latest) throw new Error("missing record after restart");
+  const recovered = await f.f.services.recoverMissingToolResult(latest);
+  expect(recovered.facts.result).toMatchObject({
+    kind: "error",
+    reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+  });
+  expect(f.executed).toHaveLength(1);
+});
+
+function readProductState(
+  f: Awaited<ReturnType<typeof setup>>["f"],
+  statement: string,
+  ...parameters: string[]
+) {
+  const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    return database.prepare(statement).get(...parameters) as Record<string, unknown> | undefined;
+  } finally {
+    database.close();
+  }
+}
+
+it("[R2-P2] keeps a released container call's unknown result when its environment release basis never dispatched the call", async () => {
+  const f = await lostContainerCall();
+  expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({ released: true });
+  const released = await f.journal().read(f.prepared.plan.identity);
+  expect(released?.facts.resource.supervision).toBe("released");
+  expect(released?.releaseReceipt).toEqual(
+    expect.objectContaining({ acceptedAt: expect.any(String) }),
+  );
+  const store = f.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environmentId =
+    (await store.readRun(RUN_ID))?.environments[0]?.identity.environmentId ?? "";
+  const receipt = readProductState(
+    f.f,
+    "SELECT stop_fence AS stopFence, accepted_at AS acceptedAt, authority_json AS authorityJson FROM execution_environment_release_receipts WHERE environment_id=?",
+    environmentId,
+  );
+  if (!receipt) throw new Error("missing environment release receipt");
+  writeProductState(
+    f.f,
+    "DELETE FROM execution_environment_release_receipts WHERE environment_id=?",
+    environmentId,
+  );
+  writeProductState(
+    f.f,
+    "INSERT INTO execution_environment_release_receipts (environment_id,basis,stop_fence,accepted_at,proof_json,authority_json) VALUES (?,'create_not_dispatched',?,?,NULL,?)",
+    environmentId,
+    String(receipt["stopFence"]),
+    String(receipt["acceptedAt"]),
+    String(receipt["authorityJson"]),
+  );
+
+  await f.supersede();
+  const latest = await f.journal().read(f.prepared.plan.identity);
+  if (!latest) throw new Error("missing record after restart");
+  const recovered = await f.f.services.recoverMissingToolResult(latest);
+  expect(recovered.facts.result).toMatchObject({ kind: "unknown" });
+  expect(recovered).toEqual(latest);
+  expect(f.executed).toHaveLength(1);
+});
+
+it("[R2-P2] keeps a released container call's unknown result when its environment call record is missing", async () => {
+  const f = await lostContainerCall();
+  expect(await f.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({ released: true });
+  const released = await f.journal().read(f.prepared.plan.identity);
+  expect(released?.facts.resource.supervision).toBe("released");
+  expect(released?.releaseReceipt).toEqual(
+    expect.objectContaining({ acceptedAt: expect.any(String) }),
+  );
+  const store = f.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environmentId =
+    (await store.readRun(RUN_ID))?.environments[0]?.identity.environmentId ?? "";
+  writeProductState(
+    f.f,
+    "DELETE FROM execution_environment_calls WHERE environment_id=? AND invocation_id=?",
+    environmentId,
+    f.prepared.plan.identity.invocationId,
+  );
+
+  await f.supersede();
+  const latest = await f.journal().read(f.prepared.plan.identity);
+  if (!latest) throw new Error("missing record after restart");
+  const recovered = await f.f.services.recoverMissingToolResult(latest);
+  expect(recovered.facts.result).toMatchObject({ kind: "unknown" });
+  expect(recovered).toEqual(latest);
+  expect(f.executed).toHaveLength(1);
+});

@@ -20,6 +20,7 @@ export function createProductionSandboxLostResultRecovery(options: {
   journal: Pick<SandboxExecutionJournalPort, "read" | "recordOperation">;
   authority(): CapabilityInvocationAuthority;
   now(): string;
+  recoverableBackend(record: SandboxExecutionRecord): Promise<boolean>;
   verifyExited(record: SandboxExecutionRecord): Promise<boolean>;
   saveOutput(
     record: SandboxExecutionRecord,
@@ -33,13 +34,13 @@ export function createProductionSandboxLostResultRecovery(options: {
     const { plan, facts } = record;
     if (
       plan.mode !== "foreground" ||
-      plan.backendRef !== "srt" ||
       !record.releaseReceipt ||
       record.workspaceBlocked ||
       facts.resource.supervision !== "released" ||
       (facts.result && facts.result.kind !== "unknown") ||
       !isSandboxExecutionFenceSuperseded(plan, options.authority().product) ||
       options.now() >= plan.originalDeadlineAt ||
+      !(await options.recoverableBackend(record)) ||
       !(await options.verifyExited(record))
     )
       return record;

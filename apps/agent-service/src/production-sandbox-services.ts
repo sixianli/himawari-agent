@@ -1678,6 +1678,12 @@ export async function createProductionSandboxServices(options: {
   };
   const supervisionEvidence = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) =>
     taskEnvironmentFor(plan, facts)?.evidence(plan, facts) ?? control.evidence(plan, facts);
+  const taskEnvironmentExit = (record: SandboxExecutionRecord) =>
+    taskEnvironmentFor(record.plan, record.facts)?.confirmsExit(record);
+  const recoverableBackend = async (record: SandboxExecutionRecord) =>
+    (await taskEnvironmentExit(record)) ?? record.plan.backendRef === SRT_BACKEND_REF;
+  const verifyExited = async (record: SandboxExecutionRecord) =>
+    (await taskEnvironmentExit(record)) ?? control.hasExitedTask(record);
   const evidence: SandboxExecutionEvidencePort = {
     verify: async ({ plan, facts, now }) => {
       const { outputs, effectEvidence } = await verifyOutput({ plan, facts, now });
@@ -1929,7 +1935,8 @@ export async function createProductionSandboxServices(options: {
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     authority: options.authority,
     now: () => clock.now(),
-    verifyExited: (record) => control.hasExitedTask(record),
+    recoverableBackend,
+    verifyExited,
     verifyFresh: (record) => refreshVerification(record, true),
     saveOutput: async ({ plan }) => {
       const plaintext = Buffer.from(SANDBOX_TOOL_RESULT_LOST);
@@ -1969,7 +1976,8 @@ export async function createProductionSandboxServices(options: {
     payloads,
     protector,
     nextRef: () => ids.next("sandbox-stream-recovery"),
-    verifyExited: (record) => control.hasExitedTask(record),
+    recoverableBackend,
+    verifyExited,
     facts: async (record, bytes, termination, output) => {
       const plan = record.plan;
       const contract = plan.operationContract;

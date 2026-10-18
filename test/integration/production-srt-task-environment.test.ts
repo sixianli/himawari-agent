@@ -18,7 +18,9 @@ import {
   prepareSandboxJobSession,
 } from "@himawari-agent/runtime-sandbox";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import Database from "better-sqlite3";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 import {
   SrtTaskEnvironmentBackend,
   srtTaskEnvironmentJobId,
@@ -165,11 +167,13 @@ interface Harness {
   readonly sessions: SandboxJobSession[];
   readonly stateDirectory: string;
   readonly bindings: readonly BindingSpec[];
+  readonly runs: () => number;
 }
 
 async function srtHarness(options: {
   readonly bindings: readonly BindingSpec[];
   readonly forceFirstUnsettled?: boolean;
+  readonly failFirstWriteOutput?: boolean;
   readonly runtimeInstanceId?: string;
   readonly directoryOperations?: readonly HostFileOperationKind[];
 }): Promise<Harness> {
@@ -177,6 +181,15 @@ async function srtHarness(options: {
   cleanups.push(() => rm(stateDirectory, { recursive: true, force: true }));
   const prepareCalls: JobHostRequest[] = [];
   const sessions: SandboxJobSession[] = [];
+  if (options.failFirstWriteOutput) {
+    const delivery = vi
+      .spyOn(ProductionPayloadBrokerClient.prototype, "writeOutput")
+      .mockRejectedValueOnce(new Error("SANDBOX_RESULT_DELIVERY_FAILED"));
+    cleanups.push(async () => {
+      delivery.mockRestore();
+    });
+  }
+  let totalRuns = 0;
   let forced = false;
   const srt = new SrtTaskEnvironmentBackend({
     stateDirectory,
@@ -194,6 +207,7 @@ async function srtHarness(options: {
         run: (input, authorize) => {
           const active = run(input, authorize);
           runs += 1;
+          totalRuns += 1;
           if (!options.forceFirstUnsettled || forced || runs !== 1) return active;
           forced = true;
           return {
@@ -263,6 +277,7 @@ async function srtHarness(options: {
     sessions,
     stateDirectory,
     bindings: options.bindings,
+    runs: () => totalRuns,
   };
 }
 
@@ -474,6 +489,22 @@ function residentSession(ctx: Harness): SandboxJobSession {
   return session;
 }
 
+function storedStreamKeys(ctx: Harness): string[] {
+  const database = new Database(path.join(ctx.f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    return database
+      .prepare(
+        "SELECT operation_key AS operationKey FROM run_payload_artifacts WHERE purpose='trace' AND operation_key LIKE 'sandbox-stream-%' ORDER BY operation_key",
+      )
+      .all()
+      .map((row) => (row as { operationKey: string }).operationKey);
+  } finally {
+    database.close();
+  }
+}
+
 describe("[R2-P2] SRT resident task environment through the real Agent entry", () => {
   if (!linux || !installedRuntime) {
     it("[R2-P2] reports that the resident SRT environment requires Linux and an installed runtime", () => {
@@ -676,6 +707,45 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
       );
     expect(String(secondOutcome.error)).toContain("Workspace remains occupied");
     expect(ctx.prepareCalls).toHaveLength(1);
+  });
+
+  it("[R2-P2] reassembles a settled command's output from stored stream fragments after the Worker fails to deliver the result", async () => {
+    const marker = "r2p2-recovered-delivery-marker";
+    const ctx = await srtHarness({
+      failFirstWriteOutput: true,
+      bindings: [{ binding: bashBinding, parameters: { command: `printf '%s' '${marker}'` } }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+
+    const failed = await readRecord(ctx, first);
+    expect(failed?.facts.result).toMatchObject({ kind: "unknown" });
+    expect(ctx.runs()).toBe(1);
+    const stored = storedStreamKeys(ctx);
+    expect(stored.some((key) => key.startsWith("sandbox-stream-end:"))).toBe(true);
+    expect(stored.some((key) => key.startsWith("sandbox-stream-chunk:"))).toBe(true);
+
+    expect(await ctx.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+      released: true,
+    });
+    const released = await readRecord(ctx, first);
+    expect(released?.facts.resource.supervision).toBe("released");
+    expect(released?.releaseReceipt).toEqual(
+      expect.objectContaining({ acceptedAt: expect.any(String) }),
+    );
+    expect(released?.facts.result).toMatchObject({ kind: "unknown" });
+    if (!released) throw new Error("missing released record");
+
+    const recovered = await ctx.f.services.recoverMissingToolResult(released);
+    expect(recovered.facts.result).toMatchObject({
+      kind: "result",
+      completion: { type: "exit", exitCode: 0 },
+    });
+    const delivered = await readPiResult(ctx, first);
+    expect(delivered?.parsed.isError).not.toBe(true);
+    expect(delivered?.text.trim()).toBe(marker);
+    expect(ctx.runs()).toBe(1);
   });
 
   it("[R2-P2] retries one stop intent as a new request and releases after the first refusal", async () => {

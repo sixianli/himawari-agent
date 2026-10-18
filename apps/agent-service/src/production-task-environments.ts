@@ -331,6 +331,16 @@ export function createProductionTaskEnvironments(options: {
       return [expected];
     },
 
+    async confirmsExit(record: SandboxExecutionRecord): Promise<boolean> {
+      const { record: environment } = await bound(record.plan, record.facts);
+      return (
+        environment.state === "released" &&
+        environment.releaseReceipt !== null &&
+        environment.releaseReceipt.basis !== "create_not_dispatched" &&
+        environment.calls.some((call) => call.invocationId === record.plan.identity.invocationId)
+      );
+    },
+
     async observe(record: SandboxExecutionRecord) {
       const { plan, facts } = record;
       const { record: environment } = await bound(plan, facts);

@@ -23,6 +23,7 @@ export function createProductionSandboxStreamResultRecovery(options: {
   payloads: Pick<PayloadStorePort, "get">;
   protector: PayloadProtectorPort;
   nextRef(): string;
+  recoverableBackend(record: SandboxExecutionRecord): Promise<boolean>;
   verifyExited(record: SandboxExecutionRecord): Promise<boolean>;
   facts(
     record: SandboxExecutionRecord,
@@ -38,12 +39,12 @@ export function createProductionSandboxStreamResultRecovery(options: {
     const { plan, facts: current } = record;
     if (
       plan.mode !== "foreground" ||
-      plan.backendRef !== "srt" ||
       !record.releaseReceipt ||
       record.workspaceBlocked ||
       current.resource.supervision !== "released" ||
       (current.result && current.result.kind !== "unknown") ||
-      options.now() >= plan.originalDeadlineAt
+      options.now() >= plan.originalDeadlineAt ||
+      !(await options.recoverableBackend(record))
     )
       return record;
     const recovered = await options.stream.recover(record);

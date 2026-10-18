@@ -13,7 +13,8 @@ export const SANDBOX_TOOL_RESULT_RECOVERY_SQL = `
       AND ((result.preparation_state<>'reserved'
         AND (json_extract(result.facts_json,'$.result.kind') IN ('result','error')
           OR (COALESCE(json_extract(result.facts_json,'$.result.kind'),'unknown')='unknown'
-            AND json_extract(result.plan_json,'$.backendRef')='srt'
+            AND (json_extract(result.plan_json,'$.backendRef')='srt'
+              OR json_extract(result.facts_json,'$.environment.kind')='container')
             AND json_extract(result.plan_json,'$.originalDeadlineAt')>@resourceNow
             AND EXISTS (SELECT 1 FROM sandbox_release_receipts released WHERE released.job_id=result.job_id AND released.accepted_at<=@resourceNow)
             AND (EXISTS (SELECT 1 FROM run_payload_artifacts stream
