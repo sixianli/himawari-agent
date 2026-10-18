@@ -122,6 +122,7 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-17 22:36 R2-L12 的用户决定改为 G137：用户在 G136 报告 S10 四步符合预期，G137 确认第五次变更完成；没有收集 S10 的对话标识、文件指纹和计费记录（要再读生产数据，用户选择不再碰生产）。
 - 2026-10-17 23:14 第五次之后重新规划（G138、G139、G140）。当前批次从已结束的第五次三项（R2-T14、R2-L11、R2-L12）换成 R2-P2 和新增的 R2-L13（第六次生产变更，冻结包里修 BL-20261017-007）。BL-20261017-007 不单独成条目：它的修法只在第六次操作包的 S9 里，证据随冻结包演练和审核，和 R2-L12 的跟踪方式一样。“之后”一节按 G138 同意的顺序重排。status（加 R2-L13 后）：共 70 项，当前版本已验证 14、旧版本验证过 38、未完成 15、等你决定 1、不做 2。
 - 2026-10-18 22:09 D-49、D-50 归入 R2-P2 当前批次（属于常驻任务环境，不新增条目），排在第六次候选之前：第六次要带上常驻路径，带着会让 Agent 服务反复崩溃的缺陷不能上线。先由 opencode 出独立方案（`.ci-output/handoff/2026-10-18-r2p2-f4f2-proposal-brief.md`），Claude 草稿写在看到它之前。status：共 70 项，当前版本已验证 6、旧版本验证过 49、未完成 12、等你决定 1、不做 2。
+- 2026-10-19 06:43 D-43、D-48、D-49/D-50、D-51 四项叠成一批，第 1、2 层在批次顶端跑一次（ADR 0057），再按顺序提交并推送：`761bf595`（D-43）、`cc0970a9`（D-48）、`f79bb58c`（D-49、D-50）、`14cae2a0`（D-51）。第 3 层还没跑，等 D-52 并入后在整批最终修订上跑一次。D-52 归入 R2-P2 当前批次，不新增条目：它和 D-43 同属常驻任务环境里“预约了却从未绑定”的调用，是第六次要带上的路径。status：共 70 项，当前版本已验证 6、旧版本验证过 50、未完成 11、等你决定 1、不做 2。
 
 ## 意外和发现
 
@@ -237,6 +238,11 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-18 22:09 H/I/A 第 4 层过滤运行 `l4-hia-l4-01`（Hermes，`8553a1a3` 加测试补丁第 5 版，`foreign-check=clean`）31 个用例全部失败。诊断（`.ci-output/handoff/2026-10-18-r2p2-l4-hia-stop-5.md`，Claude 已核对日志和代码位置）：D-49，常驻任务环境里的工具到原定期限被终止后，Agent 服务写出 `runtime.failed SANDBOX_CONTROL_BINDING_UNAVAILABLE` 并以 `AUTHORITY_LOST` 退出，重启后每次就绪又崩溃，其余 27 个用例因此卡在发送按钮禁用；D-50，常驻路径取消正在运行的调用后执行记录 `facts.result` 为 null。两个都是 `8553a1a3` 已提交代码的缺陷。另有测试补丁漏改的期望值（常驻 SRT 路径释放回执为 `process_group_gone`，`apps/agent-service/src/production-task-environments.ts:369`）和 A 探针 60 秒内未见批准请求（补丁前同样失败，原因待重捕）。D-49 若确认是“共用代码没按后端区分一次性 SRT”这一类，是同类错误第三次，要加能自动失败的约束。
 - 2026-10-18 22:50 D-51：A 组探针（R2-L6，local 3）修好标记文件路径后（`.ci-output/handoff/2026-10-18-r2p2-l4-hia-stop-7.md`，Hermes `l4-hia-l4-03`），“未知占用跨重启保留”全部通过，新失败在冲突请求排队：常驻前台路径遇工作区占用不明时，`sqlite-sandbox-execution-operations.ts:900-911` 以 `WORKSPACE_OCCUPIED` 拒绝，`apps/agent-service/src/production-runtime-tools.ts:163-167` 把它变成“操作尚未派发”交回模型，Run 直接结束；一次性路径在 `packages/application/src/services/worker-delegation-service.ts:329-354` 入队并等待释放。定为产品缺陷，不改测试期望：工作区授权生命周期规格 `docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md` 第 5.5 节“最小接口与公平排队”规定冲突操作排队、释放后准入。属于“加常驻后端时共用逻辑只接在一次性路径上”同一类，D-49 的后端一致性测试要同时覆盖“工作区冲突时排队”。D-51 先由 opencode 出方案，实现排在 D-49/D-50 之后，同一批叠起来。
   - A 组测试补丁第 7 版（`.ci-output/handoff/r2p2-l4t/l4-hia-07.patch`）接受：探针按任务环境标识算常驻私有目录名，算出的名字和实际不一致时以 `R2_L6_RESIDENT_PRIVATE_DIRECTORY_MISMATCH` 失败；local 51 在 Linux 上断言后端为 `srt-task-environment`。
+- 2026-10-19 06:43 D-52（D-51 的绿色运行 `d51-l0-green-07` 偶发失败时查出，早于 D-51）：常驻和容器任务环境里，调用在绑定之前失败时，Worker 的 `apps/execution-worker/src/production-sandbox-execution-v2.ts` 还没设置 `stage`，`catch`（约 :892-894）直接返回 `unknown()`，没有诊断；预约一直留在 `reserved`，现有恢复调度在没有重启、期限未到时不处理，这一轮卡到期限。触发条件（环境一时不可用还是会话准备失败）还没确定。
+- 2026-10-19 06:43 叠批第 2 层（云测试账号）的 6 条失败都和本批无关，单独记录：官方 MCP v2 SDK 两条用例在这台主机上一直失败（BL-20261019-002，可能影响同一系统上的生产，原因未查），其余 4 条是负载下按时限失败（BL-20261019-003）。另外 Hermes 已安装的运行时（`a4b2f536`）和本分支的 runner（`98c1e9fc`）不一致，真实 SRT 用例在 Hermes 上跑不了，第 2 层改在云测试账号的通道上跑。
+- 2026-10-19 06:43 opencode 在一条命令里同步等待测试主机，2026-10-19 当天纠正后又出现三次（远程命令里 `sleep 100`、`/tmp` 循环脚本、本机 `for … sleep 25` 循环并自设 420000 毫秒时限、远程命令里 `sleep 80`），已有的三位数 `sleep` 拒绝规则管不到。按重复错误规则先做硬约束（opencode 插件压住命令时限并拒绝长 `sleep` 和带 `sleep` 的循环，测试主机入口拒绝远程长 `sleep`，`oc-launch.sh` 检查插件在不在），交给 opencode（`.ci-output/handoff/wait-guard/brief-01.md`）。
+- 2026-10-19 06:43 D-49 的 Hermes 第 0 层脚本只跑了 typecheck，没跑 format 和 lint，叠批时 format 检查才报出 3 个文件；Claude 审 D-49 时没核对第 0 层包含哪些步骤。云测试账号的通道脚本 `ci-lane.sh` 固定包含这些步骤；Hermes 每批手写脚本。同类第一次。本批 opencode 又三次新增代码注释（D-43、D-48、D-51），都被提交钩子 `check-new-comments.py` 拦在提交前，约束有效，只是拦得晚。
+- 2026-10-19 06:43 本机每约 50 秒多出两个父进程为 1 的 `cloudflared access ssh` 进程（03:36 时 25 个），来源是用户自己的 x-auto-post 面板反复建 SSH 端口转发失败后留下的子进程，不是本任务的进程，没有动，在汇报里告诉用户。
 
 ## 决定
 
@@ -435,3 +441,8 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
   - 已排队请求重启后重新获取环境：输入每轮由 `scopes.read` 重新解析得到，不存进计划，不加持久化字段。重试不另设上限，排队等待受计划期限约束。
   - D-51 在自己的工作树 `.ci-output/worktrees/r2p2-d51/` 上和 D-49 并行实现（先跑出失败再修，`.ci-output/handoff/r2p2-d51/reply-01.md`），叠批时再并入 D-49 新建的后端一致性测试。
 - 2026-10-18 23:10 第 4 层 D、E 组 local 44–47 不按平台限定。opencode 检查发现 `plan.md` 2026-10-04 R2-D4 一条要求在受影响 Linux 产品路径上验收，按要求停下（`.ci-output/handoff/2026-10-18-r2p2-l4-hia-stop-8.md`）。Claude 核对代码：常驻会话只接前台 `bash`、`write`、`edit`（`packages/execution-contracts/src/pi-runner-v1.ts:57-73`），`move_directory`、`save_copy` 的合约不同，在 Linux 上仍走一次性 SRT、带准备协议（`apps/agent-service/src/production-sandbox-services.ts:1080-1097`），所以 R2-D4 保护的一次性准备协议在 Linux 生产上仍在使用。决定：local 44–47 改用这类操作触发，原断言不改，并先断言计划为一次性 SRT；local 43 按读回的后端分两套期望（`.ci-output/handoff/r2p2-l4t/reply-12.md`）。
+- 2026-10-19 06:43 D-52 方案定案（`.ci-output/handoff/r2p2-d52/decision.md`，对比 Claude 方案 `.ci-output/handoff/r2p2-d52/claude-proposal.md` 和 opencode 独立方案 `.ci-output/handoff/2026-10-19-r2p2-d52-proposal-stop.md`）：
+  - 两边一致：Worker 的常驻和容器路径在绑定准备前设 `stage = "prepare"`、绑定 RPC 前设 `stage = "bind"`，让失败走现有诊断分支，不新造协议；容器后端一并修。
+  - 取自 opencode 方案（Claude 方案漏掉）：Worker 返回后，若预约仍是 `reserved`、后端是任务环境、Run 还在进行，Agent 立刻中断预约，用 D-43 已有的 `task_environment_bind_fenced` 依据释放，交付 `SANDBOX_TOOL_NOT_STARTED`；不停止环境。
+  - 不采用：opencode 提的新增释放依据（D-43 已实现，复用）、多加“没有序号 2 观测”的条件（绑定在同一事务里同时写状态和观测，已有检查足够）、为不可达的 `cancelled` 分支加代码。
+  - 测试先红后绿，后端一致性表加一行，按产品导出的后端清单遍历。实现交给 opencode，工作树 `.ci-output/worktrees/r2p2-d52/`，基于 D-51 叠批顶端 `e1e0d66a`。
