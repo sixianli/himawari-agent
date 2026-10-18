@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import {
+  ApplicationPortError,
   type CapabilityInvocationAuthority,
   type ClockPort,
+  ExecutionEnvironmentError,
   type ExecutionEnvironmentLifecyclePort,
   type ExecutionEnvironmentRecord,
   type ExecutionEnvironmentStopReason,
@@ -56,6 +58,13 @@ const PROOF_VALIDITY_MS = 1000;
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const hexDigest = (value: string) => (value.startsWith("sha256:") ? value.slice(7) : value);
 
+function retryableStopFailure(error: unknown): boolean {
+  return (
+    (error instanceof ExecutionEnvironmentError && error.code === "EXECUTION_STOP_UNCONFIRMED") ||
+    (error instanceof ApplicationPortError && error.code === "PORT_CONFLICT")
+  );
+}
+
 export function createProductionTaskEnvironments(options: {
   readonly configuration: ProductionTaskEnvironments;
   readonly store: ExecutionEnvironmentStorePort;
@@ -80,6 +89,7 @@ export function createProductionTaskEnvironments(options: {
       : { inspectBeforeReuse: configuration.inspectBeforeReuse }),
   });
   const authorized = () => ({ authority: options.authority(), now: clock.now() });
+  let leftoverCursor: string | null = null;
 
   const belongsTo = (record: ExecutionEnvironmentRecord, plan: SandboxExecutionPlanV2) =>
     record.identity.role === "primary" &&
@@ -386,6 +396,30 @@ export function createProductionTaskEnvironments(options: {
           digest: digest(environments.map((record) => record.releaseReceipt)),
         },
       };
+    },
+
+    async stopLeftovers(limit: number): Promise<void> {
+      const page = await store.listLeftovers({
+        backendRef: configuration.backendRef,
+        now: clock.now(),
+        afterEnvironmentId: leftoverCursor,
+        limit,
+      });
+      leftoverCursor =
+        page.length < limit ? null : (page.at(-1)?.environment.identity.environmentId ?? null);
+      let failure: { readonly cause: unknown } | null = null;
+      for (const { environment, reason } of page) {
+        try {
+          await coordinator.stop({
+            environmentId: environment.identity.environmentId,
+            reason,
+            stoppedResourceRefs: [],
+          });
+        } catch (error) {
+          if (!retryableStopFailure(error)) failure ??= { cause: error };
+        }
+      }
+      if (failure) throw failure.cause;
     },
 
     async stopRun(

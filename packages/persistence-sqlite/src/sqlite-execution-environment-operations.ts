@@ -58,15 +58,16 @@ interface EnvironmentRow {
 }
 type Input = Record<string, unknown>;
 
-const COLUMNS = `e.environment_id AS environmentId, e.execution_job_id AS executionJobId,
+const FIELDS = `e.environment_id AS environmentId, e.execution_job_id AS executionJobId,
   j.owner_id AS ownerId, j.agent_id AS agentId, j.run_id AS runId, j.host_id AS hostId,
   e.role, e.generation, e.state, e.rotation_reason AS rotationReason, e.backend_ref AS backendRef,
   e.envelope_json AS envelope, e.envelope_digest AS envelopeDigest, e.policy_digest AS policyDigest,
   e.image_digest AS imageDigest, e.runner_digest AS runnerDigest, e.deadline_at AS deadlineAt,
   e.create_intent_id AS createIntentId, e.create_dispatched_at AS createDispatchedAt,
   e.locator_json AS locator, e.stop_fence AS stopFence, e.reason_code AS reasonCode,
-  e.created_at AS createdAt
-  FROM execution_environments e JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id`;
+  e.created_at AS createdAt`;
+const ENVIRONMENTS = `execution_environments e JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id`;
+const COLUMNS = `${FIELDS} FROM ${ENVIRONMENTS}`;
 const ROTATION_REASONS = ["initial", "expansion", "revocation", "expiry", "failure"];
 const STOP_REASONS = [
   "run_finished",
@@ -101,7 +102,7 @@ export class SqliteExecutionEnvironmentOperations {
     const input = raw as Input;
     if (operation === "read") return this.read(this.id(input["environmentId"]), owner, agent);
     if (operation === "readRun") return this.readRun(this.id(input["runId"]), owner, agent);
-    if (operation === "listUnreleased") return this.listUnreleased(input, owner, agent);
+    if (operation === "listLeftovers") return this.listLeftovers(input, owner, agent);
     const writes: Record<
       string,
       (input: Input, owner: string, agent: string, now: string) => unknown
@@ -509,10 +510,14 @@ export class SqliteExecutionEnvironmentOperations {
     };
   }
 
-  private listUnreleased(input: Input, owner: string, agent: string) {
+  private listLeftovers(input: Input, owner: string, agent: string) {
+    const backendRef = input["backendRef"];
+    const now = input["now"];
     const after = input["afterEnvironmentId"];
     const limit = input["limit"];
     if (
+      !id(backendRef) ||
+      !instant(now) ||
       (after !== null && !id(after)) ||
       !Number.isSafeInteger(limit) ||
       (limit as number) < 1 ||
@@ -521,10 +526,41 @@ export class SqliteExecutionEnvironmentOperations {
       return this.fail("PORT_INVALID_OPERATION", "Invalid environment page");
     const rows = this.db
       .prepare(
-        `SELECT ${COLUMNS} WHERE e.state != 'released' AND j.owner_id=? AND j.agent_id=? AND e.environment_id > ? ORDER BY e.environment_id LIMIT ?`,
+        `SELECT ${FIELDS}, r.status AS runStatus, c.terminal_status AS settledStatus
+          FROM ${ENVIRONMENTS}
+          JOIN runs r ON r.owner_id=j.owner_id AND r.agent_id=j.agent_id AND r.id=j.run_id
+          LEFT JOIN run_coordination_checkpoints c
+            ON c.owner_id=r.owner_id AND c.agent_id=r.agent_id AND c.run_id=r.id
+          WHERE e.state != 'released' AND j.owner_id=? AND j.agent_id=?
+          AND e.backend_ref=? AND e.environment_id > ?
+          AND (r.status IN ('reconciling_external_result','completed','failed','cancelled')
+            OR (r.status='running' AND c.terminal_status='completed'))
+          AND NOT EXISTS (SELECT 1 FROM run_execution_leases l
+            WHERE l.owner_id=j.owner_id AND l.agent_id=j.agent_id AND l.run_id=j.run_id
+              AND l.released_at IS NULL AND l.expires_at > ?)
+          AND (r.status NOT IN ('completed','failed','cancelled')
+            OR NOT EXISTS (SELECT 1 FROM sandbox_execution_records reservation
+              WHERE reservation.owner_id=j.owner_id AND reservation.agent_id=j.agent_id
+                AND reservation.run_id=j.run_id AND reservation.preparation_state='reserved'
+                AND NOT EXISTS (SELECT 1 FROM sandbox_reservation_release_receipts released
+                  WHERE released.job_id=reservation.job_id)))
+          ORDER BY e.environment_id LIMIT ?`,
       )
-      .all(owner, agent, after ?? "", limit) as EnvironmentRow[];
-    return rows.map((row) => this.record(row));
+      .all(owner, agent, backendRef, after ?? "", now, limit) as (EnvironmentRow & {
+      runStatus: string;
+      settledStatus: string | null;
+    })[];
+    return rows.map((row) => ({
+      environment: this.record(row),
+      reason:
+        row.runStatus === "cancelled"
+          ? "run_cancelled"
+          : row.runStatus === "completed" ||
+              row.runStatus === "failed" ||
+              row.settledStatus === "completed"
+            ? "run_finished"
+            : "supervision_lost",
+    }));
   }
 
   private row(input: Input, owner: string, agent: string): EnvironmentRow {

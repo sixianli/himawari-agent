@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d40e511ed9a05b2353666d72f14535b47dfe3b1316eab188fb01e7b2540f99fb"
+contract_sha256: "sha256:3b8175a1e01659ee95b6afd3c7cfaafea7e35443eeb1de859e9f51fe8dda4462"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -731,7 +731,7 @@ npm run install:node-runtime -- --prefix <absolute-prefix>
 
 读取恢复状态时，`unresolved` 与空 `nextAttemptAt` 只表示这次核查已结束；暂时失败的 reserved 记录还会由下一次扫描重新排定。确认后台已排定须读回 `scheduled` 和其 `nextAttemptAt`，确认已释放仍须独立读回原释放回执与占用状态。原套接字已不可连时，恢复仍核验原已保存证明，不能仅以连接失败跳过核验，也不能以连接失败认定释放。
 
-已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。自动预约恢复同样按后端分流：只对 SRT 调用本机准备控制，container 核对自身已持久的 `task_environment_released` 证明；环境尚未释放时继续保留预约占用，不伪造本机准备记录，也不替代环境自身的停止流程。 对未绑定 container 预约，重启后终态 Run 没有自动补调环境停止的保证，可能一直保留占用并需要人工处理；详情及后续工作见 [BL-20260929-004](../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
+已配置沙箱子系统时，后台独立检查终态 Run 遗留资源、过期执行和已有未知资源，按原资源身份执行有限 inspect/stop。Web 模式复用生产 Run 循环；无 Web 模式在启动登记和 Worker 就绪后启动仅处理资源的循环，每次扫描先复核权威，不创建模型或 Run 执行服务。原授权撤销不阻止核验清理，也不恢复执行、模型或披露权限。未绑定预约须先保存禁止启动标记，核查失败继续保护；本机 SRT 只有原宿主从未启动且已退出的证明，或新协议计划已完成准备登记封锁的证明，才允许释放；容器仍须自身的环境释放回执。自动预约恢复同样按后端分流：只对 SRT 调用本机准备控制，container 核对自身已持久的 `task_environment_released` 证明；环境尚未释放时继续保留预约占用，不伪造本机准备记录，也不替代环境自身的停止流程。任务环境（常驻 SRT 环境或容器环境）由同一循环另行收回：所属 Run 之后不会再执行（结果待核实、已完成、已失败、已取消，或仍在运行但检查点已算完、只差交付），没有有效的执行租约，并且已结束的 Run 没有未释放的预约时，循环停掉整个环境并核对环境释放回执；停止未确认的留到下一轮再试，不重放模型或工具。之后还会执行的 Run 的环境留给下次认领时复用或轮换；已结束且有未释放预约的仍由上面的预约恢复负责；结果待核实的 Run 有未释放预约时，环境停掉后预约恢复随之释放预约。详见[第 4 层发现的缺口](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes) [SOURCE: docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md]。对未绑定 container 预约，重启后已结束的 Run 由预约恢复调用 Run 结束时的同一停止流程停掉整个环境；停止被拒绝或拿不到停止证明时，预约和环境都保持占用，之后重启也不自动重试，要人工重新停止后才释放，见 [BL-20260929-004](../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)。关闭服务或失去权威时立即取消核查，然后有限等待；close 复用同一次等待，不重新计算期限。明确 stop 可接替尚未结束的 inspect，旧检查的迟到写入被恢复 revision 拒绝；已经进行中的 stop 不重复派发。未配置后端、缺少可信宿主身份或只有启动日志均不能证明清理成功；Mac 任意后代停止资格仍须现场证明。
 
 验收应独立读回释放凭据、claim/barrier 和恢复终点。已确认释放但业务结果未知时分别保留，不重发工具，也不以结果交接未完成恢复旧占用。原始预约核查异常沿用受保护 Trace，仅安全原因进入恢复状态。本地 SQLite、认证 socket 和受控宿主退出回归见[调度证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-scheduling-01/README.md)，不替代部署实例的证明或操作授权。无 Web 启动、权威丢失、有限关闭和 stop 优先级的回归见[生命周期证据](../../test/qualification/evidence/workspace-authorization-lifecycle/p1-recovery-startup-01/README.md)。
 

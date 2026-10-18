@@ -2332,8 +2332,16 @@ export async function createProductionSandboxServices(options: {
     child,
     managedTasks,
     resources: {
-      recoverPending: (signal: AbortSignal, maximum: number) =>
-        resourceRecovery.pump(signal, maximum),
+      recoverPending: async (signal: AbortSignal, maximum: number) => {
+        await resourceRecovery.pump(signal, maximum);
+        if (signal.aborted) return;
+        const limit = Math.min(maximum, 100);
+        await Promise.all(
+          [environments, srtEnvironments].map((taskEnvironment) =>
+            taskEnvironment?.stopLeftovers(limit),
+          ),
+        );
+      },
       stopRun: async (
         runId: RuntimeToolInvocation["runId"],
         reason: "run_finished" | "run_cancelled",

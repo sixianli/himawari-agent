@@ -131,8 +131,13 @@ class Lifecycle implements ExecutionEnvironmentLifecyclePort {
       observedAt: T1,
     };
   }
+  unreachableStops = 0;
   async stop(input: Parameters<ExecutionEnvironmentLifecyclePort["stop"]>[0]) {
     this.calls.push("stop");
+    if (this.unreachableStops > 0) {
+      this.unreachableStops -= 1;
+      throw new Error("worker unreachable");
+    }
     this.stopped.add(input.createIntentId);
     return { accepted: true as const };
   }
@@ -369,6 +374,138 @@ it("stops the whole task environment when a container call's result is lost", as
   expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(1);
 });
 
+function writeProductState(
+  f: Awaited<ReturnType<typeof setup>>["f"],
+  statement: string,
+  ...parameters: string[]
+) {
+  const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"));
+  try {
+    database.prepare(statement).run(...parameters);
+  } finally {
+    database.close();
+  }
+}
+function readReservationRecovery(f: Awaited<ReturnType<typeof setup>>["f"], jobId: string) {
+  const database = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    const row = database
+      .prepare("SELECT recovery_json FROM sandbox_execution_records WHERE job_id=?")
+      .get(jobId) as { recovery_json: string | null } | undefined;
+    return row?.recovery_json ? JSON.parse(row.recovery_json) : undefined;
+  } finally {
+    database.close();
+  }
+}
+const settleRunCheckpoint = (f: Awaited<ReturnType<typeof setup>>["f"]) =>
+  writeProductState(
+    f,
+    `INSERT INTO run_coordination_checkpoints
+       (run_id, owner_id, agent_id, revision, phase, runtime_event_count, terminal_status, output_kind, updated_at)
+     VALUES (?, ?, ?, 1, 'runtime_settled', 0, 'completed', 'no-answer', ?)
+     ON CONFLICT(run_id) DO UPDATE SET phase='runtime_settled', terminal_status='completed',
+       output_kind='no-answer', final_answer_ref=NULL`,
+    RUN_ID,
+    OWNER_ID,
+    AGENT_ID,
+    T1,
+  );
+const expireRunExecutionLease = (f: Awaited<ReturnType<typeof setup>>["f"]) =>
+  writeProductState(
+    f,
+    "UPDATE run_execution_leases SET expires_at=? WHERE run_id=? AND released_at IS NULL",
+    T1,
+    RUN_ID,
+  );
+
+async function settledContainerCall() {
+  const scope = await setup();
+  const prepared = await scope.prepare();
+  await scope.f.services.brokerV2.preparations.reserve({ ...prepared, invocation: scope.f.input });
+  await scope.dispatch(prepared.plan);
+  const record = await scope.f.repository
+    .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+    .read(prepared.plan.identity);
+  expect(record?.facts.result).toMatchObject({ kind: "result" });
+  const store = () => scope.f.repository.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+  const environmentId =
+    (await store().readRun(RUN_ID))?.environments[0]?.identity.environmentId ?? "";
+  const stops = () => scope.lifecycle.calls.filter((call) => call === "stop").length;
+  const recover = () => scope.f.services.resources.recoverPending(new AbortController().signal, 10);
+  return { ...scope, store, environmentId, stops, recover };
+}
+
+it("[R2-P2] keeps a running Run's leftover task environment for its next claim after the execution lease expires", async () => {
+  const f = await settledContainerCall();
+  await f.f.reopen();
+  expireRunExecutionLease(f.f);
+  await f.recover();
+  expect((await f.store().read(f.environmentId))?.state).not.toBe("released");
+  expect(f.stops()).toBe(0);
+});
+
+it("[R2-P2] stops a reconciling Run's leftover task environment after Agent restart once its execution lease expires", async () => {
+  const f = await settledContainerCall();
+  writeProductState(f.f, "UPDATE runs SET status='reconciling_external_result' WHERE id=?", RUN_ID);
+  await f.f.reopen();
+  await f.recover();
+  expect((await f.store().read(f.environmentId))?.state).not.toBe("released");
+  expect(f.stops()).toBe(0);
+
+  expireRunExecutionLease(f.f);
+  await f.recover();
+  expect(await f.store().read(f.environmentId)).toMatchObject({
+    state: "released",
+    stopIntent: { reason: "supervision_lost" },
+    releaseReceipt: { basis: "verified_stopped" },
+  });
+  await f.recover();
+  expect(f.stops()).toBe(1);
+  expect(f.executed).toHaveLength(1);
+});
+
+it("[R2-P2] keeps a leftover task environment while its Run waits for approval without a lease", async () => {
+  const f = await settledContainerCall();
+  await f.f.reopen();
+  expireRunExecutionLease(f.f);
+  writeProductState(f.f, "UPDATE runs SET status='awaiting_approval' WHERE id=?", RUN_ID);
+  await f.recover();
+  expect((await f.store().read(f.environmentId))?.state).not.toBe("released");
+  expect(f.stops()).toBe(0);
+});
+
+it("[R2-P2] finishes an environment stop left unacknowledged before Agent restart and retries while the Worker is unreachable", async () => {
+  const f = await settledContainerCall();
+  f.lifecycle.unreachableStops = 2;
+  expect(await f.f.services.resources.stopRun(RUN_ID, "run_finished")).toEqual({
+    released: false,
+  });
+  const requested = await f.store().read(f.environmentId);
+  expect(requested).toMatchObject({
+    state: "stop_requested",
+    stopIntent: { reason: "run_finished", acknowledgedAt: null },
+  });
+  settleRunCheckpoint(f.f);
+
+  await f.f.reopen();
+  expireRunExecutionLease(f.f);
+  await f.recover();
+  expect((await f.store().read(f.environmentId))?.state).toBe("stop_requested");
+  await f.recover();
+  expect(await f.store().read(f.environmentId)).toMatchObject({
+    state: "released",
+    stopIntent: {
+      stopIntentId: requested?.stopIntent?.stopIntentId,
+      reason: "run_finished",
+    },
+    releaseReceipt: { basis: "verified_stopped" },
+  });
+  expect(f.stops()).toBe(3);
+  expect(f.executed).toHaveLength(1);
+});
+
 async function secondCall(f: Awaited<ReturnType<typeof setup>>["f"]) {
   const toolCallId = "tool-read-second";
   const invocationId = `runtime-tool:${hash([RUN_ID, toolCallId])}`;
@@ -575,7 +712,9 @@ it("releases a reserved container call that never started when the Run is cancel
   expect(lifecycle.calls.filter((call) => call === "stop")).toHaveLength(1);
 });
 
-async function terminalUnboundContainer(status: "cancelled" | "failed" = "cancelled") {
+async function unboundContainer(
+  status: "cancelled" | "failed" | "reconciling_external_result" = "cancelled",
+) {
   let authority = SERVICE_AUTHORITY;
   const scope = await setup("returned", read, {
     realRun: true,
@@ -605,7 +744,13 @@ async function terminalUnboundContainer(status: "cancelled" | "failed" = "cancel
     commandFingerprint: `d6-${status}`,
     payloadRef: "restart-prompt",
   };
-  if (status === "cancelled") await runs.cancelRun(terminal);
+  if (status === "reconciling_external_result")
+    writeProductState(
+      scope.f,
+      "UPDATE runs SET status='reconciling_external_result' WHERE id=?",
+      RUN_ID,
+    );
+  else if (status === "cancelled") await runs.cancelRun(terminal);
   else
     await runs.transitionRun({
       ...terminal,
@@ -686,7 +831,7 @@ async function terminalUnboundContainer(status: "cancelled" | "failed" = "cancel
 }
 
 it("[R2-D6] stops a cancelled Run's unbound container after Agent restart without replay", async () => {
-  const f = await terminalUnboundContainer();
+  const f = await unboundContainer();
   const before = await f.snapshot("cancelled-before-restart");
   expect(before.run).toMatchObject({ status: "cancelled" });
   expect(before.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
@@ -712,8 +857,46 @@ it("[R2-D6] stops a cancelled Run's unbound container after Agent restart withou
   expect({ ...repeated, authority: after.authority }).toEqual(after);
 });
 
+it("[R2-P2] stops a reconciling Run's unbound container after Agent restart so its reservation can be released", async () => {
+  const f = await unboundContainer("reconciling_external_result");
+  const before = await f.snapshot("reconciling-before-restart");
+  expect(before.run).toMatchObject({ status: "reconciling_external_result" });
+  expect(before.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+  expect(before.environments).toEqual([expect.objectContaining({ state: "ready" })]);
+  await f.restart();
+  expireRunExecutionLease(f.f);
+  await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const stopped = await f.snapshot("reconciling-environment-stopped");
+  expect(stopped.environments).toEqual([expect.objectContaining({ state: "released" })]);
+  expect(stopped.stopIntents).toEqual([expect.objectContaining({ reason: "supervision_lost" })]);
+  expect(stopped.environmentReceipts).toHaveLength(1);
+  expect(stopped.reservationReceipts).toEqual([]);
+  expect(readReservationRecovery(f.f, f.prepared.plan.identity.jobId)).toMatchObject({
+    status: "unresolved",
+    action: "stop",
+    reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+  });
+  writeProductState(
+    f.f,
+    "UPDATE sandbox_execution_records SET recovery_json=json_set(recovery_json,'$.finishedAt',?) WHERE job_id=?",
+    new Date(Date.parse(T1) - 60_000).toISOString(),
+    f.prepared.plan.identity.jobId,
+  );
+  const roundsToWrapCursorAndRetry = 2;
+  for (let round = 0; round < roundsToWrapCursorAndRetry; round++)
+    await f.f.services.resources.recoverPending(new AbortController().signal, 10);
+  const released = await f.snapshot("reconciling-reservation-released");
+  expect(released.reservationReceipts).toHaveLength(1);
+  expect(released.occupancy).toEqual([expect.objectContaining({ released_at: T1 })]);
+  expect(released.admission).toMatchObject({ preparation_state: "reserved", started_at: null });
+  expect(released.executed).toEqual([]);
+  expect(released.published).toEqual([]);
+  expect(released.intents).toEqual([]);
+  expect(released.lifecycleCalls.filter((call) => call === "stop")).toHaveLength(1);
+});
+
 it("[R2-D6] stops a failed Run's unbound container without stopping another Run", async () => {
-  const f = await terminalUnboundContainer("failed");
+  const f = await unboundContainer("failed");
   const commands = new ThreadCommandService({
     repository: f.f.repository.threadRepository(),
     clock: { now: () => T1 },
@@ -794,7 +977,7 @@ it("[R2-D6] stops a failed Run's unbound container without stopping another Run"
 it.each(["stop_rejected", "proof_missing", "wrong_run", "wrong_locator"] as const)(
   "[R2-D6] holds the unbound reservation when %s and releases it on a manual stop retry",
   async (fault) => {
-    const f = await terminalUnboundContainer();
+    const f = await unboundContainer();
     const originalVerify = f.lifecycle.verifyStopped.bind(f.lifecycle);
     const failure =
       fault === "stop_rejected"
@@ -844,7 +1027,7 @@ it.each(["stop_rejected", "proof_missing", "wrong_run", "wrong_locator"] as cons
 );
 
 it("[R2-D6] does not start recovery after its caller has cancelled the pump", async () => {
-  const f = await terminalUnboundContainer();
+  const f = await unboundContainer();
   await f.restart();
   const before = await f.snapshot("before-aborted-pump");
   const controller = new AbortController();

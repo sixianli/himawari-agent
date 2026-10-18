@@ -158,8 +158,15 @@ export interface ExecutionEnvironmentStorePort {
       }
     | undefined
   >;
-  listUnreleased(input: {
+  listLeftovers(input: {
+    readonly backendRef: string;
+    readonly now: string;
     readonly afterEnvironmentId: string | null;
     readonly limit: number;
-  }): Promise<readonly ExecutionEnvironmentRecord[]>;
+  }): Promise<
+    readonly {
+      readonly environment: ExecutionEnvironmentRecord;
+      readonly reason: ExecutionEnvironmentStopReason;
+    }[]
+  >;
 }

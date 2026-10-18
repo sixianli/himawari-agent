@@ -601,8 +601,8 @@ export class SqliteDurableAdapters {
         this.context.read(operation("read"), { ownerId, agentId, input: { environmentId } }),
       readRun: (runId) =>
         this.context.read(operation("readRun"), { ownerId, agentId, input: { runId } }),
-      listUnreleased: (input) =>
-        this.context.read(operation("listUnreleased"), { ownerId, agentId, input }),
+      listLeftovers: (input) =>
+        this.context.read(operation("listLeftovers"), { ownerId, agentId, input }),
     });
   }
 
