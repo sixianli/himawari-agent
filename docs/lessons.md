@@ -305,6 +305,21 @@ date: "2026-10-13"
   - `.grok/config.toml` 加了同样写法的三条规则；Grok 现在按 G112 暂停，它的通配规则是否支持 `?` 未经实测，恢复使用前要先实测。
   - 验证：按 opencode 2.0.32 规则匹配函数的原样逻辑离线检查 16 个例子，应拦的 6 个全被拦、应放行的 10 个（含 `sleep 30; ls`、`sleep 60; echo`、循环里的 `sleep 20;`）全放行。在正在运行的会话里，规则加入前 `sleep 240;`、`sleep 260;`、`sleep 200;`、`sleep 100;` 都照常执行；加入后 D-49 会话执行 `sleep 100; … ci-ssh.sh …` 以 `Permission denied` 被拒，D-51 会话执行 `sleep 28; …` 正常完成（记录在 `.ci-output/handoff/r2p2-d49/impl-01.jsonl`、`.ci-output/handoff/r2p2-d51/impl-01.jsonl`）。
   - 等长运行的做法：Hermes 用 `.ci-output/handoff/scripts/hermes-wait.sh`；云测试账号每次用一条几秒内结束的命令查结果文件，中间先做不依赖结果的事。
+- 加了三位数 `sleep` 规则之后又出现三次（2026-10-19，都在纠正之后）：
+  - 02:5x：把 `sleep 100` 挪进 `hermes-ssh.sh '…'` 的远程命令里；同一时段另一个会话写了 `/tmp` 下的循环脚本（100 次 `sleep 30`），在一条命令里用 `bash` 同步执行，拒绝规则看不到脚本内容。
+  - 04:4x：一条本机命令 `for i in 1 … 10; do ci-ssh.sh '…'; sleep 25; done`，自设命令时限 420000 毫秒，同步等了约 7 分钟。
+  - 06:1x：把 `sleep 80` 放进 `ci-ssh.sh '…'` 的远程命令里等待。
+  - 另外，代理会自己设 shell 工具的时限参数（见过 1800000 毫秒），所以 opencode 默认的命令时限也靠不住。
+- 这次约束为什么没拦住：拒绝规则只能按命令文字的固定写法匹配（只认 `*` 和 `?`），只能拦“`sleep` 后跟三个字符”这一种写法；同样的等待换成远程命令、脚本文件、循环或两位数 `sleep`，规则就看不到。
+- 硬约束（2026-10-19）：
+  - 本地、不提交的 opencode 插件 `.opencode/plugins/wait-guard/index.ts`（插件：opencode 启动会话时自动加载的一段程序，它在 `tool.execute.before` 钩子里能在工具执行前拒绝这次调用）。拒绝时的信息以 `WAIT_GUARD_REFUSED:` 开头，并写明正确做法。它拒绝：shell 工具时限设为 0 或超过 300000 毫秒；一条命令前台部分里所有 `sleep` 加起来超过 30 秒（包括 `ci-ssh.sh`、`hermes-ssh.sh` 引号里的远程命令，以及 `bash -c`、`python3 -c` 的内容）；`sleep(` 后跟超过 30 的数字（例如 Python 的 `time.sleep(600)`）；含 `sleep` 的 `for`/`while`/`until` 循环；用 `bash`、`sh`、`zsh` 或路径直接运行的本机脚本中含上述写法（只放行仓库里那一份 `hermes-wait.sh`，按真实路径判断，别处的同名脚本照样检查）；以及每一次 `execute` 工具调用（opencode 的代码执行工具，能写忙循环长时间卡住，本项目用不到它）。用 `setsid -f` 或后台方式启动的部分不检查，因为它们不会让这次调用等待。
+  - 两个连测试主机的入口 `ci-ssh.sh`、`hermes-ssh.sh` 在连接之前，按同样的规则检查远程命令（`sleep` 合计超过 30 秒，或含 `sleep` 的循环），命中就以退出码 71 拒绝，打印 `CI_SSH_LONG_WAIT_REFUSED` 或 `HERMES_SSH_LONG_WAIT_REFUSED`。
+  - 本地、不提交的 `.opencode/required-plugins.txt` 记下插件的 SHA-256。主检出目录和 `.ci-output/worktrees/` 下每个有 `.opencode/` 的工作副本都放一份插件和清单。启动脚本 `oc-launch.sh`（agent-skills `03d01a8`）在启动目录有这份清单时逐行核对：缺插件、摘要不符、格式错误或清单为空都以退出码 2 拒绝启动，所以缺了插件的工作副本开不出会话。改插件后要同步更新每一份副本和清单。
+  - 验证（证据在 `.ci-output/handoff/wait-guard/`，汇总见 `.ci-output/handoff/2026-10-19-wait-guard-stop.md`）：
+    - 用嵌套的 opencode 会话逐条实跑：没有插件的目录里 15 条全部照常执行；最终插件拒绝全部应拒绝的写法，放行 `sleep 3`、`grep -n "sleep\|while"`、`while read` 逐行处理、带 `for` 的 `shasum`/`wc`、`setsid -f` 后台启动和白名单脚本；新加的规则对上一版插件逐条对照，上一版放行、新版拒绝。
+    - `test-ssh-wrappers.sh` 的新用例对改动前的入口全部失败，改动后全部通过，原有用例仍通过。
+    - `oc-launch.sh` 的 9 条新单元测试改动前 6 条失败，改动后全部通过。
+  - 插件写出来时就在写它的会话里生效，第一版当场误拦了一条只算摘要的命令：它把 `shasum` 的路径参数当成要运行的脚本去读内容。误拦会逼代理想办法绕开约束，所以“该放行的”和“该拒绝的”两组用例同样要有，每次误拦的原命令都存成证据文件（`false-positive-01.cmd.txt`），加进放行用例。
 
 [回到目录](#编码代理反复犯的错误)
 
