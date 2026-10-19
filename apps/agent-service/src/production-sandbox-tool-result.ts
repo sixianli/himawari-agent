@@ -22,6 +22,7 @@ import {
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_TOOL_DEADLINE_EXCEEDED,
   SANDBOX_TOOL_NOT_STARTED,
+  SRT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 
 export const SANDBOX_HOST_COMPLETION_CONTRADICTED_MESSAGE =
@@ -138,6 +139,7 @@ export function createProductionSandboxToolResult(options: {
   journal: SandboxExecutionJournalPort;
   verifyFresh(record: SandboxExecutionRecord): Promise<SandboxExecutionVerification>;
   recoverResult?(record: SandboxExecutionRecord): Promise<SandboxExecutionRecord>;
+  releaseUnbound?(input: { runId: string; invocationId: string }): Promise<boolean>;
   authority(): CapabilityInvocationAuthority;
   now(): string;
 }) {
@@ -148,21 +150,32 @@ export function createProductionSandboxToolResult(options: {
     const admission = await options.preparations.readAdmissionByInvocation(input);
     if (!admission) return null;
     if (admission.phase === "reserved") {
+      let reserved = admission;
       if (
-        admission.plan.mode !== "foreground" ||
-        !isSandboxReservationNeverStarted(admission.plan, admission.releaseReceipt?.verification) ||
-        admission.workspaceBlocked
+        reserved.plan.mode === "foreground" &&
+        reserved.plan.backendRef !== SRT_BACKEND_REF &&
+        !isSandboxReservationNeverStarted(reserved.plan, reserved.releaseReceipt?.verification) &&
+        options.releaseUnbound &&
+        (await options.releaseUnbound(input))
+      ) {
+        const settled = await options.preparations.readAdmissionByInvocation(input);
+        if (settled?.phase === "reserved") reserved = settled;
+      }
+      if (
+        reserved.plan.mode !== "foreground" ||
+        !isSandboxReservationNeverStarted(reserved.plan, reserved.releaseReceipt?.verification) ||
+        reserved.workspaceBlocked
       )
         return undefined;
       if (!options.preparations.authorizeReservationResult)
         throw new Error("SANDBOX_RESULT_AUTHORITY_UNAVAILABLE");
       await delivery.assertDisclosure();
       await options.preparations.authorizeReservationResult({
-        identity: admission.plan.identity,
+        identity: reserved.plan.identity,
         authority: options.authority(),
         now: options.now(),
-        executionLease: delivery.resultRecovery?.executionLease ?? admission.plan.executionLease,
-        deadlineAt: delivery.resultRecovery?.deadlineAt ?? admission.plan.effectiveDeadlineAt,
+        executionLease: delivery.resultRecovery?.executionLease ?? reserved.plan.executionLease,
+        deadlineAt: delivery.resultRecovery?.deadlineAt ?? reserved.plan.effectiveDeadlineAt,
       });
       const result: SandboxToolCompletion = {
         outcome: "failed",

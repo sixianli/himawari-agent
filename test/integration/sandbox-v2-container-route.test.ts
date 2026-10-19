@@ -28,6 +28,7 @@ import {
   piContainerRunnerInputSchema,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
+  type SandboxPreparationDiagnostic,
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -137,6 +138,7 @@ async function run(scenario: Scenario) {
     stopFence: 0,
   };
   const calls: string[] = [];
+  const diagnostics: SandboxPreparationDiagnostic[] = [];
   const history: SandboxExecutionFacts[] = [];
   let facts: SandboxExecutionFacts | undefined;
   let resolves = 0;
@@ -146,9 +148,15 @@ async function run(scenario: Scenario) {
     sandboxExecution: async (
       _invocation: unknown,
       _identity: unknown,
-      command: { kind: string; facts?: SandboxExecutionFacts },
+      command: {
+        kind: string;
+        facts?: SandboxExecutionFacts;
+        diagnostic?: SandboxPreparationDiagnostic;
+      },
     ) => {
       calls.push(command.kind);
+      if (command.kind === "preparation_diagnostic" && command.diagnostic)
+        diagnostics.push(command.diagnostic);
       if (command.kind === "resolve") {
         resolves++;
         if (scenario === "revoked-after-bind" && facts) throw new Error("revoked");
@@ -274,6 +282,7 @@ async function run(scenario: Scenario) {
     outcome,
     replay,
     calls,
+    diagnostics,
     history,
     facts,
     executed,
@@ -394,11 +403,18 @@ it("does not report truncated output as a completed result", async () => {
 it.each(["no-environment", "write-general", "fixed-file", "workspace-copy"] as const)(
   "refuses %s before binding or executing",
   async (scenario) => {
-    const { outcome, calls, executed } = await run(scenario);
+    const { outcome, calls, diagnostics, executed } = await run(scenario);
     expect(outcome.outcome).toBe("result_unknown");
     expect(calls).toEqual(
-      scenario === "write-general" || scenario === "fixed-file" ? ["read"] : ["read", "resolve"],
+      scenario === "write-general" || scenario === "fixed-file"
+        ? ["read", "preparation_diagnostic"]
+        : ["read", "resolve", "preparation_diagnostic"],
     );
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      stage: "prepare",
+      reasonCode: "SANDBOX_PREPARATION_FAILED",
+    });
     expect(executed).toHaveLength(0);
     expect(mocks.policy).not.toHaveBeenCalled();
     expect(mocks.prepare).not.toHaveBeenCalled();
@@ -408,13 +424,22 @@ it.each(["no-environment", "write-general", "fixed-file", "workspace-copy"] as c
 it.each(["revoked-after-bind", "bind-replayed"] as const)(
   "does not execute when %s",
   async (scenario) => {
-    const { outcome, calls, executed } = await run(scenario);
+    const { outcome, calls, diagnostics, executed } = await run(scenario);
     expect(outcome.outcome).toBe("result_unknown");
     expect(calls).toEqual(
       scenario === "bind-replayed"
         ? ["read", "resolve", "bind"]
-        : ["read", "resolve", "bind", "resolve"],
+        : ["read", "resolve", "bind", "resolve", "preparation_diagnostic"],
     );
+    if (scenario === "bind-replayed") {
+      expect(diagnostics).toEqual([]);
+    } else {
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        stage: "execute",
+        reasonCode: "SANDBOX_EXECUTION_FAILED",
+      });
+    }
     expect(executed).toHaveLength(0);
     expect(mocks.policy).not.toHaveBeenCalled();
   },

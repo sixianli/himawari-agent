@@ -219,7 +219,7 @@ reply-17 撤回 reply-16 的一次额外恢复尝试；不增加重试状态或�
 
 停止流程使用已经持久的原 stopRequestedAt，不生成新停止时间。自动恢复与 stopRun 均已读取带停止时间的 admission；向本地控制器传入该值后竞争同一 preparation key。没有新持久表、列、迁移或握手，也不改变准备登记命令。封锁之前检查现有控制记录；真实登记赢或写入冲突后重新读取现有记录，进入原核验路径。已有封锁内容必须逐项符合当前计划和原停止时间，不能据 version 字符串单独认定封锁成立。
 
-共享的 TypeScript 判断描述预约是否确定从未启动；共享 SQL 判断用于恢复发现与派发再核验。2026-10-18 起两者对非 `srt` 后端也接受 `task_environment_released` 和 `task_environment_bind_fenced`，理由见 [ADR 0054 第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。它们只识别已经被接受的释放依据，不替代权限、证据、披露或期限检查。Pi 继续复用固定版本 0.84.2 的工具结果交付与 Agent Loop；Himawari 负责持久封锁、资源证明和产品权限，没有新建模型工具协议。
+共享的 TypeScript 判断描述预约是否确定从未启动；共享 SQL 判断用于恢复发现与派发再核验。2026-10-18 起两者对非 `srt` 后端也接受 `task_environment_released` 和 `task_environment_bind_fenced`，理由见 [ADR 0054 第 4 层发现的缺口](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-fixes)。它们只识别已经被接受的释放依据，不替代权限、证据、披露或期限检查。Pi 继续复用固定版本 0.84.2 的工具结果交付与 Agent Loop；Himawari 负责持久封锁、资源证明和产品权限，没有新建模型工具协议。2026-10-19 起（D-52）这条判定有了即时分支：任务环境的前台调用在绑定提交之前失败时，Agent 收到 Worker 的失败结果后立即停止该预约并按 `task_environment_bind_fenced` 释放，再交付一次 `SANDBOX_TOOL_NOT_STARTED`，不停止环境；Worker 在两条复用路径上把失败阶段写进既有诊断（`prepare` 或 `bind`），让这次失败可见。只有绑定已提交或失败发生在绑定之后的调用才继续按效果未知占用工作区。
 
 ### 实施验证与明确限制
 

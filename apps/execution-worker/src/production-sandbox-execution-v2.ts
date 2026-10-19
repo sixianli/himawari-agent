@@ -77,6 +77,7 @@ interface Entry {
   request: Execute;
   invocation: CapabilityInvocationRequest;
   cancelled: boolean;
+  stage?: SandboxPreparationDiagnostic["stage"];
   host?: SandboxJobHost;
   record?: Record;
   completion?: Promise<SandboxWorkerResult>;
@@ -891,6 +892,7 @@ export class ProductionSandboxExecutionV2 {
       return this.unknown(entry);
     } catch (error) {
       entry.host?.cancel();
+      stage ??= entry.stage;
       if (!stage) return this.unknown(entry);
       const result = await entry.host?.result;
       const systemCode =
@@ -936,6 +938,7 @@ export class ProductionSandboxExecutionV2 {
     initial: Extract<Record, { phase: "reserved" }>,
     containers: SandboxContainerRoute,
   ): Promise<SandboxWorkerResult> {
+    entry.stage = "prepare";
     const plan = initial.plan;
     const tool = piCodingToolNameSchema.parse(plan.operation);
     const publication = plan.operationContract.kind === "verified_effect";
@@ -1002,8 +1005,10 @@ export class ProductionSandboxExecutionV2 {
       this.environmentFacts(plan, initial, environment),
     );
     if (entry.cancelled || this.closed) return this.unknown(entry);
+    entry.stage = "bind";
     const bound = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
     if (!bound.applied || entry.cancelled || this.closed) return this.unknown(entry);
+    entry.stage = "execute";
     const current = await this.rpc(entry, { kind: "resolve" });
     if (
       entry.cancelled ||
@@ -1213,6 +1218,7 @@ export class ProductionSandboxExecutionV2 {
     initial: Extract<Record, { phase: "reserved" }>,
     environments: Pick<SrtTaskEnvironmentBackend, "session">,
   ): Promise<SandboxWorkerResult> {
+    entry.stage = "prepare";
     const plan = initial.plan;
     const kind = srtTaskEnvironmentSession(plan);
     if (!kind) throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
@@ -1309,8 +1315,10 @@ export class ProductionSandboxExecutionV2 {
       this.environmentFacts(plan, initial, environment),
     );
     if (entry.cancelled || this.closed) return this.unknown(entry);
+    entry.stage = "bind";
     const bound = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
     if (!bound.applied || entry.cancelled || this.closed) return this.unknown(entry);
+    entry.stage = "execute";
     const current = await this.rpc(entry, { kind: "resolve" });
     if (
       entry.cancelled ||

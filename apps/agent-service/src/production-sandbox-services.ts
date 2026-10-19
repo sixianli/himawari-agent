@@ -2099,6 +2099,50 @@ export async function createProductionSandboxServices(options: {
   });
   const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
     recoverLostResult(await recoverFileResult(await recoverStreamResult(record)));
+  const releaseUnboundInvocation = async (input: { runId: string; invocationId: string }) => {
+    const admission = await preparations.readAdmissionByInvocation(input);
+    if (
+      admission?.phase !== "reserved" ||
+      admission.plan.mode !== "foreground" ||
+      admission.plan.backendRef === SRT_BACKEND_REF ||
+      admission.workspaceBlocked ||
+      admission.releaseReceipt
+    )
+      return false;
+    const taskEnvironment =
+      admission.plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF
+        ? srtEnvironments
+        : environments;
+    if (!taskEnvironment || admission.plan.backendRef !== taskEnvironment.backendRef) return false;
+    try {
+      const interrupted = (
+        await preparations.interruptReservation({
+          identity: admission.plan.identity,
+          authority: options.authority(),
+          now: clock.now(),
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        })
+      ).admission;
+      if (interrupted.phase !== "reserved" || !interrupted.stopRequestedAt) return false;
+      const verification =
+        (await taskEnvironment.releaseReservation(interrupted.plan, interrupted.stopRequestedAt)) ??
+        taskEnvironment.fenceReservation(interrupted.plan, interrupted.stopRequestedAt);
+      await preparations.releaseReservation({
+        identity: interrupted.plan.identity,
+        authority: options.authority(),
+        now: clock.now(),
+        verification,
+      });
+    } catch {
+      return false;
+    }
+    const latest = await preparations.readAdmissionByInvocation(input);
+    return (
+      latest?.phase === "reserved" &&
+      latest.releaseReceipt !== undefined &&
+      latest.workspaceBlocked === false
+    );
+  };
   const completeToolResult = createProductionSandboxToolResult({
     preparations,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
@@ -2106,6 +2150,7 @@ export async function createProductionSandboxServices(options: {
     now: () => clock.now(),
     verifyFresh: (record) => refreshVerification(record, true),
     recoverResult: recoverMissingToolResult,
+    releaseUnbound: releaseUnboundInvocation,
   });
   const readForegroundOutput = createProductionSandboxOutput(outputOptions);
   const settleUnknownTaskEnvironmentResult = async (record: SandboxExecutionRecord) => {

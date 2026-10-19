@@ -45,6 +45,7 @@ import {
   SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
 import { describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatchLoop } from "../../apps/agent-service/src/production-run-dispatch-loop.ts";
 import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
@@ -7246,6 +7247,157 @@ describe("[R2-P2] sandbox backend parity", () => {
   it("[R2-P2] keeps the parity table aligned with every named product backend", () => {
     expect(Object.keys(PARITY_CASES).sort()).toEqual([...SANDBOX_EXECUTION_BACKEND_REFS].sort());
   });
+
+  const neverBoundCandidate = (
+    f: Awaited<ReturnType<typeof openSandboxJournal>>,
+    suffix: string,
+    backendRef: string,
+  ) => {
+    const request = admission(f, suffix);
+    const plan = sandboxExecutionPlanCandidateV2Schema.parse({ ...request.plan, backendRef });
+    return {
+      request,
+      plan,
+      candidate: {
+        plan,
+        reservation: {
+          schemaVersion: "sandbox-preparation.v1" as const,
+          identity: plan.identity,
+          environmentId: plan.environmentId,
+          resourceRef: null,
+          mode: plan.mode,
+          workspaceConflictRefs: request.workspaces.map((item) => item.ref),
+          sequence: 1,
+          createdAt: plan.requestedAt,
+        },
+        workspaces: request.workspaces,
+        invocation: request.invocation,
+      },
+    };
+  };
+
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
+    "[R2-P2] releases a %s reservation that never bound and re-admits its workspace",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const first = neverBoundCandidate(f, `-parity-never-bound-${backendRef}`, backendRef);
+        const second = neverBoundCandidate(f, `-parity-never-bound-next-${backendRef}`, backendRef);
+        const claim = first.request.workspaces[0];
+        if (!claim) throw new Error("workspace claim required");
+        const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+        if (backendRef !== SRT_BACKEND_REF)
+          await store.reserve({
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            runId: first.plan.identity.runId,
+            hostId: first.plan.identity.hostId,
+            role: "primary",
+            rotationReason: "initial",
+            backendRef,
+            envelope: {
+              schemaVersion: "execution-envelope.v1" as const,
+              directories: [
+                {
+                  hostId: claim.hostId,
+                  grantRef: "grant-parity-never-bound",
+                  canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+                  access: claim.access as "read" | "write",
+                  source: {
+                    authorizationRef: "authorization-parity-never-bound",
+                    decidedBy: "user" as const,
+                    delegationListRef: null,
+                    expiresAt: T2,
+                  },
+                },
+              ],
+              network: [],
+              resources: {
+                cpuMillicores: 1000,
+                memoryBytes: 536870912,
+                maxProcesses: 128,
+                privateStorageBytes: 268435456,
+              },
+            },
+            policyDigest: "a".repeat(64),
+            imageDigest: "b".repeat(64),
+            runnerDigest: "c".repeat(64),
+            deadlineAt: T2,
+            leases: [claim],
+            ids: {
+              executionJobId: `execution-job-parity-never-bound-${backendRef}`,
+              environmentId: `environment-parity-never-bound-${backendRef}`,
+              createIntentId: `create-parity-never-bound-${backendRef}`,
+            },
+            requestJobId: first.plan.identity.jobId,
+          });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.reserve(first.candidate)).toMatchObject({ applied: true });
+        const interrupted = await preparations.interruptReservation({
+          identity: first.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        });
+        if (interrupted.admission.phase !== "reserved" || !interrupted.admission.stopRequestedAt)
+          throw new Error("fenced reservation missing");
+        const base = {
+          schemaVersion: "sandbox-reservation-release.v1" as const,
+          identity: interrupted.admission.plan.identity,
+          environmentId: interrupted.admission.plan.environmentId,
+          semanticFingerprint: interrupted.admission.plan.semanticFingerprint,
+          stopRequestedAt: interrupted.admission.stopRequestedAt,
+          checkedAt: T1,
+          validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+          evidence: { ref: "reservation-fence:parity-never-bound", digest: "e".repeat(64) },
+        };
+        const verification =
+          backendRef === SRT_BACKEND_REF
+            ? {
+                ...base,
+                basis: "host_never_started" as const,
+                processIdentityRef: "job-host-process:parity-never-bound",
+                controlSessionId: "00000000-0000-4000-8000-000000000000",
+              }
+            : { ...base, basis: "task_environment_bind_fenced" as const };
+        const released = await preparations.releaseReservation({
+          identity: first.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          verification,
+        });
+        expect(released).toMatchObject({
+          applied: true,
+          admission: {
+            phase: "reserved",
+            workspaceBlocked: false,
+            releaseReceipt: { verification: { basis: verification.basis } },
+          },
+        });
+        const matched = (
+          f.database
+            .prepare(
+              `SELECT ${SANDBOX_RESERVATION_NEVER_STARTED_SQL} AS matched
+               FROM (SELECT ? AS verification_json) reservation, (SELECT ? AS plan_json) result`,
+            )
+            .get(JSON.stringify(verification), JSON.stringify(interrupted.admission.plan)) as {
+            matched: number | null;
+          }
+        ).matched;
+        expect(matched).toBe(1);
+        expect(await preparations.reserve(second.candidate)).toMatchObject({ applied: true });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
 
   it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
     "[R2-P2] queues a %s request behind another Run's unconfirmed workspace occupancy",

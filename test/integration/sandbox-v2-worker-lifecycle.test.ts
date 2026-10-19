@@ -26,7 +26,10 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
-import { SANDBOX_PREPARATION_LAUNCH_PROTOCOL } from "@himawari-agent/execution-contracts";
+import {
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+} from "@himawari-agent/execution-contracts";
 import {
   blockJobHostLaunch,
   type JobHostControlBinding,
@@ -58,6 +61,8 @@ it.each([
   "registration-revoked",
   "preparation-registration-ack-loss",
   "[R2-D4] preparation-ack-blocked",
+  "[R2-P2] bind-pre-failure-resident",
+  "[R2-P2] bind-pre-failure-container",
   "preparation-sealed",
   "preparation-failed",
   "resolve-transport-failure",
@@ -86,6 +91,9 @@ it.each([
   const recoveredDuringDelivery = scenario === "pi-recovered-during-delivery";
   const streamScenario = scenario.startsWith("stream-");
   const launchBlocked = scenario === "[R2-D4] preparation-ack-blocked";
+  const preBindResident = scenario === "[R2-P2] bind-pre-failure-resident";
+  const preBindContainer = scenario === "[R2-P2] bind-pre-failure-container";
+  const preBind = preBindResident || preBindContainer;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
   const fixedTarget = {
@@ -105,39 +113,47 @@ it.each([
   };
   const plan = launchBlocked
     ? { ...admitted.plan, preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
-    : background
+    : preBind
       ? {
           ...admitted.plan,
-          mode: service ? ("service" as const) : ("background" as const),
-          operationContract: service
-            ? {
-                kind: "service_start" as const,
-                ref: "service",
-                version: "1",
-                readinessProbeRef: "ready",
-              }
-            : { kind: "task_start" as const, ref: "task", version: "1" },
+          operation: "bash",
+          backendRef: preBindResident ? SRT_TASK_ENVIRONMENT_BACKEND_REF : "container-pre-bind",
+          operationContract: { kind: "command" as const, ref: "pi-coding-tool", version: "1" },
         }
-      : scenario === "command" || scenario === "network"
+      : background
         ? {
             ...admitted.plan,
-            operationContract: {
-              kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
-              ref: "command",
-              version: "1",
-            },
+            mode: service ? ("service" as const) : ("background" as const),
+            operationContract: service
+              ? {
+                  kind: "service_start" as const,
+                  ref: "service",
+                  version: "1",
+                  readinessProbeRef: "ready",
+                }
+              : { kind: "task_start" as const, ref: "task", version: "1" },
           }
-        : piScenario
+        : scenario === "command" || scenario === "network"
           ? {
               ...admitted.plan,
               operationContract: {
-                kind: "fixed_read" as const,
-                ref: "pi-coding-tool",
-                version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
+                kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
+                ref: "command",
+                version: "1",
               },
             }
-          : admitted.plan;
+          : piScenario
+            ? {
+                ...admitted.plan,
+                operationContract: {
+                  kind: "fixed_read" as const,
+                  ref: "pi-coding-tool",
+                  version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
+                },
+              }
+            : admitted.plan;
   const calls: string[] = [];
+  const diagnostics: unknown[] = [];
   let reconcilingResource: unknown;
   let releasedResource: unknown;
   let reconcilingReads = 0;
@@ -280,6 +296,7 @@ it.each([
       _identity: unknown,
       command: {
         kind: string;
+        diagnostic?: unknown;
         facts?: typeof facts;
         expectedSequence?: number;
         chunk?: { index: number; end: boolean; bytesBase64: string };
@@ -288,6 +305,7 @@ it.each([
       },
     ) => {
       calls.push(command.kind);
+      if (command.kind === "preparation_diagnostic") diagnostics.push(command.diagnostic);
       if (command.kind === "read" && scenario === "stream-authority-revoked" && streamAttempts)
         throw new Error("authority changed");
       if (command.kind === "append_output" && streamScenario) {
@@ -554,6 +572,25 @@ it.each([
     peer: { workerInstanceId: "worker" } as never,
     payloads,
     clock: { now: () => T1 },
+    ...(preBindResident
+      ? {
+          srtEnvironments: {
+            session: async () => {
+              throw new Error("SRT_TASK_ENVIRONMENT_SESSION_FAILED");
+            },
+          } as never,
+        }
+      : {}),
+    ...(preBindContainer
+      ? {
+          containers: {
+            backendRef: "container-pre-bind",
+            execute: async () => {
+              throw new Error("CONTAINER_EXECUTION_UNEXPECTED");
+            },
+          } as never,
+        }
+      : {}),
   });
   const base = serviceRequest();
   const request = {
@@ -715,7 +752,8 @@ it.each([
     scenario === "pi-fixed-without-target" ||
     scenario === "preparation-registration-ack-loss" ||
     scenario === "preparation-sealed" ||
-    launchBlocked
+    launchBlocked ||
+    preBind
   ) {
     expect(mocks.prepare).not.toHaveBeenCalled();
     expect(host.cancel).not.toHaveBeenCalled();
@@ -739,6 +777,14 @@ it.each([
   ) {
     expect(calls.filter((kind) => kind === "preparation_diagnostic")).toHaveLength(1);
     expect(host.start).not.toHaveBeenCalled();
+  }
+  if (preBind) {
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+    expect(calls).not.toContain("bind");
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ stage: "prepare", reasonCode: "SANDBOX_PREPARATION_FAILED" }),
+    ]);
   }
   if (scenario === "preparation-sealed") {
     await worker.shutdown();

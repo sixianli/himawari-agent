@@ -25,6 +25,7 @@ date: "2026-10-13"
 - [2026-10-18 补充：同一轮复用沙箱的第一步（常驻任务宿主）](#resident-job-host)
 - [2026-10-18 补充：同一轮复用沙箱的第二步（沙箱内常驻 runner）](#resident-runner)
 - [2026-10-18 补充：第 4 层发现的缺口](#resident-fixes)
+- [2026-10-19 补充：复用路径 bind 前失败不再静默](#resident-bind-prefailure)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -177,6 +178,16 @@ R2-P2 前两次提交后，第 4 层（Hermes 上的真实产品路径测试）�
 - **单条记录的恢复失败不再拖垮整个服务**：运行循环与资源恢复原来把任何一条记录处理中的拒绝都升级为整服务退出。现在只有明确列出、已确认只影响这一条记录的错误码才留在该记录上——沙箱执行记录的流分块、结果恢复、对账、控制与任务环境证据错误（清单见 `apps/agent-service/src/production-record-failure.ts`），执行中的 Run 记 `RUN_EXECUTION_FAILED_WITHOUT_RESULT`，工具结果恢复记 `TOOL_RESULT_RECOVERY_FAILED`，对账记 `RUN_RECONCILIATION_FAILED`，资源恢复写在该记录已有的恢复状态里。其余一律仍让服务退出：控制权丢失 `AGENT_AUTHORITY_LOST`、`PORT_NOT_AUTHORITATIVE`（租约或栅栏已失效）、一般的 `PORT_CONFLICT`（并发修订冲突，下一轮重试）、任何带 `sqliteCode` 的数据库错误（含 `SQLITE_BUSY`/`SQLITE_FULL` 被转成的 `PORT_CONFLICT`，见 `packages/persistence-sqlite/src/sqlite-worker.ts:969-975`），以及未列入清单的未知错误；写隔离本身失败也按全局错误退出，不留“既没隔离也没退出”的状态。调度循环的 `runtime.failed` 诊断补上出错阶段。重试频率由既有机制限制：运行循环经 `quarantine` 把该 Run 移出候选谓词，资源巡检沿用原有保留重试策略（哪些原因码重试、1/2/4/8/16/30 秒退避或不再重排）。用户只会看到那一条 Run 停在“结果未确认”，其余对话照常可用。
 - **常驻环境被释放时补写“未知”工具结果**：用户停止一条正在运行的常驻命令、或巡检/到期释放它时，Agent 先把环境释放；Worker 之后想写结果会被“已释放”挡住，执行记录的 `facts.result` 永远为 `null`，页面一直显示“结果未确认”（第 4 层 D-50）。一次性 SRT 和容器路径在同样情况下会写下 `result.kind` 为 `unknown`、`reasonCode` 为 `SANDBOX_EXIT_UNKNOWN` 的确定结果。现在所有释放路径都经过同一个结算点（`SandboxExecutionReconciliationService` 的 `onReleased` 钩子，用户停止、Run 结束、巡检释放、载荷通道的 Worker 停止都走它）：已绑定（`started_at` 非空）、`foreground`、任务环境后端、结果仍为空的调用，在环境释放确认后补写同一对值；未绑定的调用仍按“从未启动”走 `SANDBOX_TOOL_NOT_STARTED`，已有确定结果的调用不覆盖。写入用“迟到操作证据”通道（`recordOperation`），只写结果与效果、不改资源观察；并发时确定结果优先，重复结算幂等。
 - **其他 Run 的未确认占用排队，同一轮后面的调用仍被拒绝**：常驻前台的 `bash`、`write`、`edit` 与一次性 SRT 共用同一条工作区排队准入（`sandbox_admission_queue`）。原来常驻路径在准备阶段（`prepare`）就获取本 Run 的任务环境，工作区冲突在排队循环之前抛出，于是既不写队列也不等待重试；现在把这一步挪到入队之后、由排队循环驱动（`worker-delegation-service` 的可选 `acquireEnvironment`，只有 `srt-task-environment` 后端会用它），并把请求自己的作业标识交给环境的公平检查，请求不会再被自己刚写的排队记录挡住。冲突来自**其他 Run** 的未确认占用时写队列、等待释放后准入；冲突来自**本 Run** 自己的占用时立刻拒绝（`WORKSPACE_OCCUPIED_BY_RUN`），交给队列等待没有意义，也不新建 Job Host，这与[第一步](#resident-job-host)和[第二步](#resident-runner)写的“同一轮里后面的调用被拒绝”是同一条规则。排队期间不持有任务环境，只有队列记录；到期限、取消或授权变化时按[工作区授权与执行状态协同设计](../execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md#workspace-fair-queue)的第 5.5 节和第 4.2 节处理，不自动延期。
+
+<a id="resident-bind-prefailure"></a>
+
+## 2026-10-19 补充：复用路径 bind 前失败不再静默
+
+D-52：同一轮里的第二次调用，在常驻和容器两条复用路径上如果在外层环境绑定提交之前失败（宿主绑定、范围校验、环境瞬态不可用、会话准备等），Worker 原来的写法既不写绑定也不写诊断，调用方只拿到“结果未知”，而这条预约一直占着工作区，同一轮后面的调用被一直挡住。本段只修正这个静默失败，不改动[决定](#decision)、[常驻任务宿主](#resident-job-host)和[常驻 runner](#resident-runner)的复用规则。
+
+- **让失败可见**：`runInSrtEnvironment` 和 `runInEnvironment` 在宿主绑定准备之前把诊断阶段记为 `prepare`，在 `bind` RPC 之前记为 `bind`，在绑定成功之后记为 `execute`；`run` 的错误分支据此走一次性路径已有的诊断通道（`preparation_diagnostic`），不再静默返回空结果。诊断形状与原因码沿用既有约定，不新增协议。绑定之后的失败因此记为执行阶段（`SANDBOX_EXECUTION_FAILED`），不会被误报成绑定失败。
+- **判为从未启动并立即释放**：Worker 返回后，Agent 读回的 admission 仍是 `reserved`、计划为前台任务环境、Run 仍在进行时，立即按[第 4 层发现的缺口](#resident-fixes)已有的路径停止该预约，并用 `task_environment_bind_fenced` 释放，随后交付一次固定失败 `SANDBOX_TOOL_NOT_STARTED`（“工具未启动：准备阶段失败，已确认清理完成。”）。**不停止环境**：命令从未交给环境，环境保持存活正是常驻环境两次调用之间的常态，别的 Run 仍由环境租约挡住。
+- **只对 bind 之前成立**：绑定已经提交，或失败发生在绑定之后的调用，仍按既有规则记为“效果未知”，保留工作区占用直到核查清楚，环境照旧停掉；不自动恢复、`read()` 对预约事实的拒绝，以及同一 Run 占用时后续调用排队等待的规则都不变。
 
 <a id="references"></a>
 

@@ -195,11 +195,13 @@ async function srtHarness(options: {
   readonly failFirstWriteOutput?: boolean;
   readonly runtimeInstanceId?: string;
   readonly directoryOperations?: readonly HostFileOperationKind[];
+  readonly failCommandSessionPreparation?: boolean;
 }): Promise<Harness> {
   const stateDirectory = await mkdtemp(`${testTemporaryRoot()}/srt-env-`);
   cleanups.push(() => rm(stateDirectory, { recursive: true, force: true }));
   const prepareCalls: JobHostRequest[] = [];
   const sessions: SandboxJobSession[] = [];
+  let failedCommandSessionPreparation = false;
   if (options.failFirstWriteOutput) {
     const delivery = vi
       .spyOn(ProductionPayloadBrokerClient.prototype, "writeOutput")
@@ -217,6 +219,14 @@ async function srtHarness(options: {
     now: () => new Date(),
     prepareSession: (request) => {
       prepareCalls.push(request);
+      if (
+        options.failCommandSessionPreparation &&
+        !failedCommandSessionPreparation &&
+        prepareCalls.length === 2
+      ) {
+        failedCommandSessionPreparation = true;
+        throw new Error("SRT_TASK_ENVIRONMENT_SESSION_PREPARATION_FAILED");
+      }
       const session = prepareSandboxJobSession(request);
       sessions.push(session);
       let runs = 0;
@@ -425,6 +435,41 @@ async function waitForBoundRecord(ctx: Harness, prepared: Prepared) {
       return undefined;
     }
   });
+}
+
+async function preparationDiagnostic(ctx: Harness, prepared: Prepared) {
+  const database = new Database(path.join(ctx.f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  let payloadRefs: string[] = [];
+  try {
+    payloadRefs = (
+      database
+        .prepare(
+          "SELECT payload_ref AS payloadRef FROM run_payload_artifacts WHERE purpose='trace' AND operation_key LIKE '%:diagnostic:preparation-failure' ORDER BY rowid DESC",
+        )
+        .all() as Array<{ payloadRef: string }>
+    ).map((row) => row.payloadRef);
+  } finally {
+    database.close();
+  }
+  for (const payloadRef of payloadRefs) {
+    const payload = await ctx.f.repository.payloadStore(OWNER_ID, AGENT_ID).get(payloadRef);
+    if (!payload) continue;
+    const bytes = await ctx.f.f.protector.unprotect({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      payload,
+    });
+    const diagnostic = JSON.parse(new TextDecoder().decode(bytes)) as {
+      readonly identity?: { readonly jobId?: string };
+      readonly stage?: string;
+      readonly reasonCode?: string;
+      readonly systemCode?: string;
+    };
+    if (diagnostic.identity?.jobId === prepared.prepared.plan.identity.jobId) return diagnostic;
+  }
+  return undefined;
 }
 
 async function readPiResult(ctx: Harness, prepared: Prepared) {
@@ -650,7 +695,11 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     const first = await call();
     await dispatch(ctx, first);
     const second = await call();
-    await dispatch(ctx, second);
+    const secondDispatch = await dispatch(ctx, second);
+    expect(secondDispatch.outcome).toBe("result_unknown");
+    expect(secondDispatch.errorCode).toBeNull();
+    expect(typeof secondDispatch.externalActionId).toBe("string");
+    expect((await readRecord(ctx, second))?.startedAt).toBeTruthy();
 
     expect(await readFile(path.join(ctx.f.host.workspace, "notes.txt"), "utf8")).toBe(
       "resident-write",
@@ -679,6 +728,47 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     );
     expect(writeCall?.claims.length).toBeGreaterThan(0);
     expect(writeCall?.claims.every((claim) => claim.file === undefined)).toBe(true);
+  });
+
+  it("[R2-P2] releases a resident reservation that failed before bind and runs the next call", async () => {
+    const ctx = await srtHarness({
+      bindings: [
+        { binding: writeBinding, parameters: { path: "notes.txt", content: "resident-write" } },
+        { binding: bashBinding, parameters: { command: "echo two" } },
+        { binding: bashBinding, parameters: { command: "echo three" } },
+      ],
+      failCommandSessionPreparation: true,
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const second = await call();
+    const failed = await dispatch(ctx, second);
+    expect(failed.outcome).toBe("result_unknown");
+
+    const invocation = { runId: RUN_ID, invocationId: second.prepared.plan.identity.invocationId };
+    const delivery = { assertDisclosure: async () => {}, saveReceipt: async () => {} };
+    expect(await ctx.f.services.completeToolResult(invocation, delivery)).toMatchObject({
+      outcome: "failed",
+      outputRef: null,
+      errorCode: "SANDBOX_TOOL_NOT_STARTED",
+    });
+
+    const preparations = ctx.f.services.brokerV2.preparations;
+    expect(await preparations.readAdmission(second.prepared.plan.identity)).toMatchObject({
+      phase: "reserved",
+      workspaceBlocked: false,
+      recovery: { status: "resolved", reasonCode: "SANDBOX_RESERVATION_RELEASE_CONFIRMED" },
+      releaseReceipt: { verification: { basis: "task_environment_bind_fenced" } },
+    });
+
+    const [environment] = await primaryEnvironment(ctx);
+    const environmentId = environment?.identity.environmentId ?? "";
+    expect(await environmentRecord(ctx, environmentId)).toMatchObject({ state: "running" });
+
+    const third = await call();
+    await dispatch(ctx, third);
+    expect((await readPiResult(ctx, third))?.text).toContain("three");
   });
 
   it("[R2-P2] leaves no background process behind after its command namespace releases", async () => {
@@ -1159,6 +1249,32 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     expect(recovered.facts.result).toMatchObject({
       kind: "error",
       reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+    });
+  });
+
+  it("[R2-P2] does not report a resident call stopped after binding as a bind failure or as never started", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 30" } }],
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    const running = dispatch(ctx, first).catch(() => undefined);
+    await waitForBoundRecord(ctx, first);
+    const bound = await readRecord(ctx, first);
+    expect(bound?.startedAt).toBeDefined();
+    expect(bound?.facts.result).toBeNull();
+
+    expect(await ctx.f.services.resources.stopRun(RUN_ID, "run_cancelled")).toEqual({
+      released: true,
+    });
+    await running;
+
+    const diagnostic = await preparationDiagnostic(ctx, first);
+    expect(["bind", "prepare"]).not.toContain(diagnostic?.stage);
+    const settled = await readRecord(ctx, first);
+    expect(settled?.facts.result).not.toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_TOOL_NOT_STARTED",
     });
   });
 
