@@ -11,6 +11,7 @@
 #   context   上下文上限（token，约数）；超过它的任务要换模型
 #   status    active | paused | withdrawn；只有 active 的模型会导出到白名单
 #   skip_for_context  true 表示因上下文不够而换模型时跳过它
+#   min_variant  新会话允许的最低推理档位；空字符串表示没有下限（模型没有档位，或用户没有要求）
 #   note      一句事实说明
 #   updated   最后核实日期
 
@@ -22,6 +23,7 @@ variants = ["low", "high"]
 context = 200000
 status = "active"
 skip_for_context = false
+min_variant = "high"
 note = "免费限时；可能被限流（HTTP 429、FreeUsageLimitError）；可能用请求内容训练，用户已同意（G115）"
 updated = "2026-10-21"
 
@@ -33,6 +35,7 @@ variants = ["low", "high", "max"]
 context = 200000
 status = "active"
 skip_for_context = true
+min_variant = "high"
 note = "免费限时；按 opencode 说明不保留、不用于训练（G120）；档位效果 2026-10-16 探测未见差别"
 updated = "2026-10-21"
 
@@ -44,6 +47,7 @@ variants = []
 context = 1000000
 status = "active"
 skip_for_context = false
+min_variant = ""
 note = "免费限时备选（G152）；没有推理档位，启动时不带 #；按 opencode 说明免费期间请求可能用于改进模型；2026-10-21 调研：短任务基准高、长链命令行任务弱，还没有本项目的使用记录"
 updated = "2026-10-21"
 
@@ -55,6 +59,7 @@ variants = ["low", "high", "max"]
 context = 0
 status = "active"
 skip_for_context = false
+min_variant = ""
 note = "Go 池里每次请求最省额度；工作日东京时间 10:00-12:59、15:00-18:59 费用翻倍"
 updated = "2026-10-21"
 
@@ -66,6 +71,7 @@ variants = ["low", "high", "max"]
 context = 0
 status = "active"
 skip_for_context = false
+min_variant = ""
 note = "只在同一任务于 DeepSeek 失败两次、且免费 GLM 不可用时试一次"
 updated = "2026-10-21"
 
@@ -77,5 +83,6 @@ variants = ["low", "high", "max"]
 context = 0
 status = "active"
 skip_for_context = false
+min_variant = ""
 note = "每次请求约为 GLM 5.3 Flash 的 30 倍；只给仍失败的任务或复杂设计、架构工作，用完回默认"
 updated = "2026-10-21"

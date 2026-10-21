@@ -12,6 +12,7 @@ REQUIRED_FIELDS = (
     "context",
     "status",
     "skip_for_context",
+    "min_variant",
     "note",
     "updated",
 )
@@ -78,6 +79,13 @@ def load_table(root):
             raise TableInvalid(f"context for '{model_id}' must be a non-negative integer")
         if not isinstance(model["skip_for_context"], bool):
             raise TableInvalid(f"skip_for_context for '{model_id}' must be true or false")
+        min_variant = model["min_variant"]
+        if not isinstance(min_variant, str):
+            raise TableInvalid(f"min_variant for '{model_id}' must be a string")
+        if min_variant and min_variant not in variants:
+            raise TableInvalid(
+                f"min_variant '{min_variant}' for '{model_id}' is not one of its variants"
+            )
         if not isinstance(model["note"], str):
             raise TableInvalid(f"note for '{model_id}' must be a string")
         if not isinstance(model["updated"], str):
@@ -186,7 +194,8 @@ def command_order(root):
         skip = "true" if model["skip_for_context"] else "false"
         print(
             f"{model['order']} {model['id']} pool={model['pool']} "
-            f"variants={variants} context={model['context']} skip_for_context={skip}"
+            f"variants={variants} min_variant={model['min_variant']} "
+            f"context={model['context']} skip_for_context={skip}"
         )
     return 0
 

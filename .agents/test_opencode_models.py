@@ -23,6 +23,7 @@ def model_block(
     skip_for_context=False,
     note="a fact",
     updated="2026-10-21",
+    min_variant="",
 ):
     variants_text = ", ".join(f'"{item}"' for item in variants)
     skip_text = "true" if skip_for_context else "false"
@@ -35,6 +36,7 @@ def model_block(
         f"context = {context}\n"
         f'status = "{status}"\n'
         f"skip_for_context = {skip_text}\n"
+        f'min_variant = "{min_variant}"\n'
         f'note = "{note}"\n'
         f'updated = "{updated}"\n'
     )
@@ -234,6 +236,7 @@ class OrderTests(ScriptTestCase):
                 variants=("low", "high"),
                 context=200000,
                 skip_for_context=False,
+                min_variant="high",
             )
             + model_block(
                 "opencode/glm-5.3-flash-free",
@@ -248,8 +251,8 @@ class OrderTests(ScriptTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
             result.stdout,
-            "1 opencode/deepseek-v4.1-flash-free pool=free variants=low,high context=200000 skip_for_context=false\n"
-            "2 opencode/glm-5.3-flash-free pool=free variants=low,high,max context=200000 skip_for_context=true\n",
+            "1 opencode/deepseek-v4.1-flash-free pool=free variants=low,high min_variant=high context=200000 skip_for_context=false\n"
+            "2 opencode/glm-5.3-flash-free pool=free variants=low,high,max min_variant= context=200000 skip_for_context=true\n",
         )
 
 
@@ -267,6 +270,7 @@ class ShowTests(ScriptTestCase):
                 skip_for_context=True,
                 note="a fact",
                 updated="2026-10-21",
+                min_variant="max",
             )
         )
 
@@ -282,6 +286,7 @@ class ShowTests(ScriptTestCase):
             "context=200000\n"
             "status=active\n"
             "skip_for_context=true\n"
+            "min_variant=max\n"
             "note=a fact\n"
             "updated=2026-10-21\n",
         )
@@ -293,6 +298,27 @@ class ShowTests(ScriptTestCase):
 
 
 class InvalidTableTests(ScriptTestCase):
+    def test_min_variant_must_be_one_of_the_variants(self):
+        self.write_table(model_block("opencode/first", variants=("low", "high"), min_variant="max"))
+        result = self.run_script("order")
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(
+            result.stdout,
+            "TABLE_INVALID min_variant 'max' for 'opencode/first' is not one of its variants\n",
+        )
+
+    def test_min_variant_must_be_a_string(self):
+        self.write_table(model_block("opencode/first").replace('min_variant = ""', "min_variant = 1"))
+        result = self.run_script("order")
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stdout, "TABLE_INVALID min_variant for 'opencode/first' must be a string\n")
+
+    def test_min_variant_empty_means_no_floor(self):
+        self.write_table(model_block("opencode/first", variants=(), min_variant=""))
+        result = self.run_script("show", "opencode/first")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("min_variant=\n", result.stdout)
+
     def test_missing_field(self):
         self.write_table(
             "[[model]]\n"
@@ -303,6 +329,7 @@ class InvalidTableTests(ScriptTestCase):
             "context = 200000\n"
             'status = "active"\n'
             "skip_for_context = false\n"
+            'min_variant = ""\n'
             'updated = "2026-10-21"\n'
         )
         result = self.run_script("check")

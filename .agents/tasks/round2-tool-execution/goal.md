@@ -942,3 +942,9 @@ G150 2026-10-21（用户原话）：生产的故障先不管，先在 Hermes 上
 > 可以加入备选
 >
 >（答复 Claude 的问题“是否把 MiMo-V2.6-Flash 加进表作为第三备选”。）
+
+## G153 2026-10-21 用户原话
+
+> 这些免费的模型，至少使用high的推理强度，负责问题由你决定是否使用extra high或者是max强度。
+>
+>（“负责问题”按上下文理解为“复杂问题”。opencode 的模型只有 `#low`、`#high`、`#max` 三档，没有 extra high；免费 DeepSeek V4.1 Flash 只有 `#low`、`#high`，免费 GLM-5.3 Flash 有 `#max`，免费 MiMo 没有档位。记入表的 `min_variant` 字段。）
