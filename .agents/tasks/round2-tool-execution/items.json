@@ -1429,7 +1429,7 @@
         {
           "type": "test",
           "tag": "R2-H1",
-          "host": "cloud"
+          "host": "hermes"
         },
         {
           "type": "review",
