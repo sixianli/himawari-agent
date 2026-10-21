@@ -15,6 +15,7 @@ const detailFields = [
   "deadlineRemainingMs",
   "expectedSequence",
   "receivedSequence",
+  "text",
   "steps",
 ];
 const failureCodes = new Set([

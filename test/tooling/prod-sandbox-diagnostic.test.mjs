@@ -74,6 +74,7 @@ const detail = {
   deadlineRemainingMs: 5000,
   expectedSequence: 1,
   receivedSequence: null,
+  text: "permission denied while preparing sandbox",
   steps: [{ stage: "sdk_initialize", startedMs: 7000, elapsedMs: null }],
 };
 const diagnostic = {
@@ -85,7 +86,7 @@ const diagnostic = {
 };
 
 describe("[R2-L4][prod-sandbox-D1-script] frozen diagnostic output", () => {
-  it("validates with the product schema and exports only fixed enums and known field names", () => {
+  it("[R2-L14] validates with the product schema and exports only fixed enums and known field names", () => {
     const output = preparationDiagnosticOutput(
       {
         identity: { ownerId: "PRIVATE_SENTINEL" },
@@ -115,13 +116,14 @@ describe("[R2-L4][prod-sandbox-D1-script] frozen diagnostic output", () => {
         "deadlineRemainingMs",
         "expectedSequence",
         "receivedSequence",
+        "text",
         "steps",
       ],
     });
     assert.doesNotMatch(JSON.stringify(output), /PRIVATE|8000|7000|5000/);
   });
 
-  it("retains schema-defined nulls without inventing host detail", () => {
+  it("[R2-L14] retains schema-defined nulls without inventing host detail", () => {
     const output = preparationDiagnosticOutput(
       { ...diagnostic, hostStage: null, hostDetail: null },
       sandboxPreparationDiagnosticSchema,
@@ -129,6 +131,45 @@ describe("[R2-L4][prod-sandbox-D1-script] frozen diagnostic output", () => {
     assert.equal(output.hostStage, null);
     assert.equal(output.hostDetail, null);
     assert.deepEqual(output.hostDetailFieldNames, []);
+
+    const nullText = preparationDiagnosticOutput(
+      { ...diagnostic, hostDetail: { ...detail, text: null } },
+      sandboxPreparationDiagnosticSchema,
+    );
+    assert.deepEqual(nullText.hostDetail, {
+      code: "JOB_HOST_ENVIRONMENT_INVALID",
+      command: "prepare",
+      phase: "preparing",
+    });
+    assert.equal(Object.hasOwn(nullText.hostDetail, "text"), false);
+    assert.deepEqual(nullText.hostDetailFieldNames, [
+      "code",
+      "command",
+      "phase",
+      "elapsedMs",
+      "messageAgeMs",
+      "deadlineRemainingMs",
+      "expectedSequence",
+      "receivedSequence",
+      "text",
+      "steps",
+    ]);
+  });
+
+  it("[R2-L14] validates control characters in hostDetail.text without exporting the text", () => {
+    const text = `\u0000\u001b[31mdenied: ${"privileged operation ".repeat(64)}`;
+    const output = preparationDiagnosticOutput(
+      { ...diagnostic, hostDetail: { ...detail, text } },
+      sandboxPreparationDiagnosticSchema,
+    );
+    assert.equal(Object.hasOwn(output.hostDetail, "text"), false);
+    assert.equal(output.hostDetailFieldNames.includes("text"), true);
+    assert.deepEqual(output.hostDetail, {
+      code: "JOB_HOST_ENVIRONMENT_INVALID",
+      command: "prepare",
+      phase: "preparing",
+    });
+    assert.equal(JSON.stringify(output).includes("privileged operation"), false);
   });
 
   it.each(["stage", "reasonCode", "hostStage", "systemCode"])(
