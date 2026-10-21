@@ -141,4 +141,3 @@ Disk space is scarce on the development Mac and on the Hermes root disk, which i
 - Always keep test reports, logs, state readbacks, traces, screenshots, everything referenced as evidence, backups and recovery points, and on the cloud server every production release plus the one before it. Prefer deleting rebuildable artifacts over evidence; ask before reducing evidence.
 - Capture failure evidence deliberately, never by packing whole directories (see [the lesson on bulky evidence](docs/lessons.md#bulky-evidence)); task briefs for coding agents repeat this rule.
 - When the task ends, report which paths were deleted, how much space was freed, and which large artifacts were intentionally kept and why.
-
