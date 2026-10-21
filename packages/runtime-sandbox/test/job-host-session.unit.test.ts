@@ -6,7 +6,7 @@ import type { JobHostRequest } from "../src/job-host-protocol.ts";
 const { fork } = vi.hoisted(() => ({ fork: vi.fn() }));
 vi.mock("node:child_process", () => ({ fork }));
 
-import { prepareSandboxJobSession } from "../src/job-host-session.ts";
+import { JobHostPreparationError, prepareSandboxJobSession } from "../src/job-host-session.ts";
 
 function request(): JobHostRequest {
   return {
@@ -266,6 +266,34 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
       await session.result;
     },
   );
+
+  it("[R2-P2] rejects readiness with the host's preparation diagnostic when the host closes before ready", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    process.emitMessage({ type: "diagnostic", stage: "sdk_initialize", systemCode: "EIO" });
+    process.emit("close");
+    const failure = await session.ready.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(JobHostPreparationError);
+    expect(failure).toMatchObject({
+      message: "JOB_HOST_NOT_READY",
+      diagnostic: { stage: "sdk_initialize", systemCode: "EIO" },
+    });
+    expect(failure).not.toHaveProperty("code");
+    expect((await session.result).diagnostic).toEqual({
+      stage: "sdk_initialize",
+      systemCode: "EIO",
+    });
+  });
+
+  it("[R2-P2] rejects readiness without a diagnostic when the host closes silently", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    process.emit("close");
+    const failure = await session.ready.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(JobHostPreparationError);
+    expect(failure).toMatchObject({ message: "JOB_HOST_NOT_READY", diagnostic: undefined });
+    await session.result;
+  });
 
   it("[R2-P2] closes the session when a start names a process other than the resident one", async () => {
     const process = child();

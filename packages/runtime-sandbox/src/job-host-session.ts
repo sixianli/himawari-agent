@@ -38,6 +38,15 @@ export interface SandboxJobSessionRun {
   cancel(reason?: "cancelled" | "deadline"): void;
 }
 
+export class JobHostPreparationError extends Error {
+  readonly diagnostic: JobHostDiagnostic | undefined;
+  constructor(diagnostic: JobHostDiagnostic | undefined) {
+    super("JOB_HOST_NOT_READY");
+    this.name = "JobHostPreparationError";
+    this.diagnostic = diagnostic;
+  }
+}
+
 export interface SandboxJobSessionReady {
   readonly residentProcessId: number;
 }
@@ -388,7 +397,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
     clearTimeout(sessionTimer);
     clearTimeout(preparationTimer);
     clearTimeout(forceTimer);
-    rejectReady(new Error("JOB_HOST_NOT_READY"));
+    rejectReady(new JobHostPreparationError(diagnostic));
     const completedReason = completion?.["reason"];
     const reason = JOB_HOST_RESULT_REASONS.some((item) => item === completedReason)
       ? (completedReason as JobHostResult["reason"])

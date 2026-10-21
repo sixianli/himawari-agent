@@ -9,6 +9,7 @@ import type {
   SandboxJobSessionReady,
   SandboxJobSessionRun,
 } from "@himawari-agent/runtime-sandbox";
+import { JobHostPreparationError } from "@himawari-agent/runtime-sandbox";
 import type {
   ExecutionEnvironmentIdentity,
   ExecutionEnvironmentLocator,
@@ -106,16 +107,18 @@ function outcome(settled = true): JobHostCommandOutcome {
 
 class FakeSession implements SandboxJobSession {
   readonly pid: number | undefined = PID;
-  readonly ready: Promise<SandboxJobSessionReady> = Promise.resolve({
-    residentProcessId: RESIDENT_PID,
-  });
+  readonly ready: Promise<SandboxJobSessionReady>;
   readonly result: Promise<JobHostResult>;
   closeCount = 0;
   runCount = 0;
   outcome: JobHostCommandOutcome = outcome();
   pendingResult: Promise<JobHostCommandOutcome> | null = null;
   private settle!: (value: JobHostResult) => void;
-  constructor() {
+  constructor(readyFailure?: Error) {
+    this.ready = readyFailure
+      ? Promise.reject(readyFailure)
+      : Promise.resolve({ residentProcessId: RESIDENT_PID });
+    this.ready.catch(() => {});
     this.result = new Promise((resolve) => {
       this.settle = resolve;
     });
@@ -149,6 +152,7 @@ interface BackendFixture {
   readonly groups: Set<number>;
   readonly clock: { at: Date };
   readonly directory: string;
+  readonly readyFailure: { error?: Error };
 }
 
 interface SharedState {
@@ -167,20 +171,21 @@ async function backendFixture(
   const groups = shared?.groups ?? new Set<number>();
   const clock = shared?.clock ?? { at: NOW };
   const sessions: FakeSession[] = [];
+  const readyFailure: { error?: Error } = {};
   const backend = new SrtTaskEnvironmentBackend({
     stateDirectory: directory,
     runtimeInstanceId,
     proofValidityMs: 300_000,
     now: () => clock.at,
     prepareSession: () => {
-      const session = new FakeSession();
+      const session = new FakeSession(readyFailure.error);
       sessions.push(session);
       return session;
     },
     startToken: async (pid) => tokens.get(pid) ?? null,
     groupPresent: (groupId) => groups.has(groupId),
   });
-  return { backend, sessions, tokens, groups, clock, directory };
+  return { backend, sessions, tokens, groups, clock, directory, readyFailure };
 }
 
 function sessionRequest(
@@ -376,6 +381,35 @@ describe("[R2-P2] the SRT task environment backend", () => {
     });
     expect(await restarted.backend.inspect(target(environment, locator))).toMatchObject({
       state: "stopped",
+    });
+  });
+
+  it("[R2-P2] passes the host's preparation diagnostic through when the session never becomes ready", async () => {
+    const f = await backendFixture();
+    const environment = identity();
+    const locator = await f.backend.create({
+      identity: environment,
+      createIntentId: createIntentId(environment),
+      policyDigest: POLICY,
+      deadlineAt: DEADLINE,
+    });
+    const failure = new JobHostPreparationError({ stage: "sdk_initialize", systemCode: "EIO" });
+    f.readyFailure.error = failure;
+    const { request: hostRequest, kind } = sessionRequest(environment);
+    const rejected = await f.backend
+      .session({ target: target(environment, locator), kind, request: hostRequest })
+      .catch((error: unknown) => error);
+    expect(rejected).toBe(failure);
+    expect(rejected).toMatchObject({
+      message: "JOB_HOST_NOT_READY",
+      diagnostic: { stage: "sdk_initialize", systemCode: "EIO" },
+    });
+    expect((f.sessions[0] as FakeSession).closeCount).toBe(1);
+    const state = await readFile(
+      path.join(await environmentDirectory(f.directory), "sessions.json"),
+    );
+    expect(JSON.parse(state.toString("utf8"))).toMatchObject({
+      failed: "SRT_SESSION_START_FAILED",
     });
   });
 

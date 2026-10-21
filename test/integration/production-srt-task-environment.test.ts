@@ -29,6 +29,7 @@ import {
 import { resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import {
   type JobHostRequest,
+  JobHostPreparationError,
   type SandboxJobSession,
   prepareSandboxJobSession,
 } from "@himawari-agent/runtime-sandbox";
@@ -196,12 +197,14 @@ async function srtHarness(options: {
   readonly runtimeInstanceId?: string;
   readonly directoryOperations?: readonly HostFileOperationKind[];
   readonly failCommandSessionPreparation?: boolean;
+  readonly failCommandSessionReadiness?: boolean;
 }): Promise<Harness> {
   const stateDirectory = await mkdtemp(`${testTemporaryRoot()}/srt-env-`);
   cleanups.push(() => rm(stateDirectory, { recursive: true, force: true }));
   const prepareCalls: JobHostRequest[] = [];
   const sessions: SandboxJobSession[] = [];
   let failedCommandSessionPreparation = false;
+  let failedCommandSessionReadiness = false;
   if (options.failFirstWriteOutput) {
     const delivery = vi
       .spyOn(ProductionPayloadBrokerClient.prototype, "writeOutput")
@@ -229,6 +232,18 @@ async function srtHarness(options: {
       }
       const session = prepareSandboxJobSession(request);
       sessions.push(session);
+      if (
+        options.failCommandSessionReadiness &&
+        !failedCommandSessionReadiness &&
+        prepareCalls.length === 2
+      ) {
+        failedCommandSessionReadiness = true;
+        const ready = Promise.reject(
+          new JobHostPreparationError({ stage: "sdk_initialize", systemCode: "EIO" }),
+        );
+        ready.catch(() => {});
+        return { ...session, ready };
+      }
       let runs = 0;
       const run = session.run.bind(session);
       const wrapped: SandboxJobSession = {
@@ -765,6 +780,41 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     const [environment] = await primaryEnvironment(ctx);
     const environmentId = environment?.identity.environmentId ?? "";
     expect(await environmentRecord(ctx, environmentId)).toMatchObject({ state: "running" });
+
+    const third = await call();
+    await dispatch(ctx, third);
+    expect((await readPiResult(ctx, third))?.text).toContain("three");
+  });
+
+  it("[R2-P2] reports the Job Host's preparation diagnostic when a resident session never becomes ready", async () => {
+    const ctx = await srtHarness({
+      bindings: [
+        { binding: writeBinding, parameters: { path: "notes.txt", content: "resident-write" } },
+        { binding: bashBinding, parameters: { command: "echo two" } },
+        { binding: bashBinding, parameters: { command: "echo three" } },
+      ],
+      failCommandSessionReadiness: true,
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    await dispatch(ctx, first);
+    const second = await call();
+    const failed = await dispatch(ctx, second);
+    expect(failed.outcome).toBe("result_unknown");
+    expect(await preparationDiagnostic(ctx, second)).toMatchObject({
+      stage: "prepare",
+      reasonCode: "SANDBOX_PREPARATION_FAILED",
+      hostStage: "sdk_initialize",
+      systemCode: "EIO",
+    });
+
+    const invocation = { runId: RUN_ID, invocationId: second.prepared.plan.identity.invocationId };
+    const delivery = { assertDisclosure: async () => {}, saveReceipt: async () => {} };
+    expect(await ctx.f.services.completeToolResult(invocation, delivery)).toMatchObject({
+      outcome: "failed",
+      outputRef: null,
+      errorCode: "SANDBOX_TOOL_NOT_STARTED",
+    });
 
     const third = await call();
     await dispatch(ctx, third);

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:0819b9704bae81640fde3c5418ac14f9e9c4a4336f939c75c16898e544e2a5f0"
+contract_sha256: "sha256:263f2e2b6113761026ef5ce03f95c5636f57efcfe03908c544024a26d58cca36"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -896,7 +896,7 @@ Linux 前台清理证据要求原 PID namespace init 已消失、Host 自身进�
 
 ### 查看某一轮执行的诊断记录
 
-工具执行出错或一轮对话卡住时，完整失败细节保存在受保护诊断里（加密保存的 Trace 记录，页面和普通日志不显示全文）。准备失败另有 `sandbox.preparation.failed` 服务日志，管理员可先读取固定枚举及 `controlRef`，无需解密 Payload；这条日志不包含完整身份、路径和错误正文，也不能证明资源已释放。2026-10-12 起这条日志还带 `hostSteps`，逐项写成 `阶段:开始毫秒:耗时毫秒`，仍在进行的一步写 `running`，例如 `sdk_initialize:812:running` 表示准备停在 SDK 初始化。字段与缺失日志的边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。下列 `himawari diagnose run` 命令仍需密钥目录并解密受保护诊断，输出属于私人数据；它没有改成只输出安全字段的管理命令。管理员可以在服务所在的机器上读取某一个 Run（一轮对话的执行）的完整诊断：
+工具执行出错或一轮对话卡住时，完整失败细节保存在受保护诊断里（加密保存的 Trace 记录，页面和普通日志不显示全文）。准备失败另有 `sandbox.preparation.failed` 服务日志，管理员可先读取固定枚举及 `controlRef`，无需解密 Payload；这条日志不包含完整身份、路径和错误正文，也不能证明资源已释放。2026-10-12 起这条日志还带 `hostSteps`，逐项写成 `阶段:开始毫秒:耗时毫秒`，仍在进行的一步写 `running`，例如 `sdk_initialize:812:running` 表示准备停在 SDK 初始化。2026-10-22 起（D-54），Linux 上同一轮复用的常驻环境准备失败时，这条日志同样带宿主阶段、`systemCode` 和 `hostSteps`；在此之前常驻路径只记 `stage`、`reasonCode`，宿主字段缺失。字段与缺失日志的边界见[安全服务日志合同](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#preparation-safe-log)。下列 `himawari diagnose run` 命令仍需密钥目录并解密受保护诊断，输出属于私人数据；它没有改成只输出安全字段的管理命令。管理员可以在服务所在的机器上读取某一个 Run（一轮对话的执行）的完整诊断：
 
 `himawari diagnose run --config <绝对配置路径> --secret-dir <密钥目录的绝对路径> --run <Run 编号>`
 

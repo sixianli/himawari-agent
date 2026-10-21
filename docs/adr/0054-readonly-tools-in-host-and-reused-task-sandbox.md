@@ -27,6 +27,7 @@ date: "2026-10-13"
 - [2026-10-18 补充：第 4 层发现的缺口](#resident-fixes)
 - [2026-10-19 补充：复用路径 bind 前失败不再静默](#resident-bind-prefailure)
 - [2026-10-21 补充：重启后任务环境停止未确认时下一轮再试](#resident-stop-retry)
+- [2026-10-22 补充：常驻路径准备失败带上宿主诊断](#resident-preparation-diagnostic)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -200,6 +201,16 @@ D-53：候选 `882cc959` 的第 4 层里，`[R2-L6] retains unknown occupancy ac
 - **任务环境的已绑定记录按退避重试**：资源恢复调度对已绑定记录，在动作为停止、状态未解决、原因是上面的新码、且计划后端属于任务环境（`sandboxBackendKind` 判为 `task_environment`）时重新排期，沿用预约回收的 1、2、4、8、16、30 秒退避。预约阶段的可重试原因也加入新码。
 - **不变的部分**：一次性 SRT 的已绑定记录停止未确认后仍暂停、等人工重试（R2-D6、[BL-20260929-004](../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)）；任何后端遇到兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED` 都仍然暂停，不会对未知错误无限重试；执行权威、栅栏、恢复修订号的检查和超时都不变。
 - **界限**：旧的 Job Host 被冻结或卡死时，重试会一直按 30 秒间隔进行，工作区保持占用，直到旧进程消失或管理员处置，与“核查清楚之前一直占着”的既有规则一致。是否主动结束上一个 Worker 实例留下的进程，没有在本缺陷里决定，记在 [BL-20261021-008](../backlog/BL-20261021-008-重-启-后-上-一-个-worker-实.md)。
+
+<a id="resident-preparation-diagnostic"></a>
+
+## 2026-10-22 补充：常驻路径准备失败带上宿主诊断
+
+D-54：常驻 SRT 环境的会话在准备阶段失败（例如沙箱 SDK 初始化遇到 `EIO`）时，Job Host 已经发出诊断，Worker 侧的会话客户端也存下了，但只放进会话结果；常驻入口不经过一次性路径的宿主对象，[D-52 补充](#resident-bind-prefailure)里那条“走一次性路径已有的诊断通道”于是只交出了 `hostStage: null`、`systemCode: "UNKNOWN"`，服务日志的 `sandbox.preparation.failed` 也没有宿主字段，管理员看不到真实原因。一次性路径同样的失败给出 `hostStage: "sdk_initialize"`、`systemCode: "EIO"`。
+
+- **诊断随“没准备好”的错误一起交出**：会话客户端在 Job Host 没有报告就绪就退出时，用带诊断的 `JobHostPreparationError` 拒绝就绪等待（消息仍是 `JOB_HOST_NOT_READY`），诊断与随后放进会话结果的是同一份。常驻后端原样抛出这个错误，不另外等会话结果，所以不会在环境锁里多等。
+- **Worker 多认一个诊断来源**：准备诊断先取一次性路径宿主结果里的诊断；没有时再取这个错误带的诊断；两者都没有时照旧是 `hostStage: null`、`systemCode` 取错误自身的 `code` 或 `UNKNOWN`。
+- **不变的部分**：诊断形状、原因码、协议和私密内容过滤都不变，常驻路径交出的内容与一次性路径同一份宿主诊断；D-52 的“bind 之前失败按从未启动释放、环境保留”不变；容器任务环境不经过 Job Host，照旧没有宿主字段。
 
 <a id="references"></a>
 

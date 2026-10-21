@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   verify: vi.fn(),
 }));
-vi.mock("@himawari-agent/runtime-sandbox", () => ({
+vi.mock("@himawari-agent/runtime-sandbox", async (original) => ({
+  ...(await original<object>()),
   prepareSandboxJobHost: mocks.prepare,
   prepareJobPolicy: mocks.policy,
 }));

@@ -53,6 +53,7 @@ import {
 import {
   claimJobHostLaunch,
   prepareJobPolicy,
+  JobHostPreparationError,
   prepareSandboxJobHost,
   readJobHostFinalEvidence,
   type SandboxJobHost,
@@ -128,8 +129,6 @@ const HOST_PUBLICATION_CONTRACTS: ReadonlyMap<string, readonly string[]> = new M
   [PI_DIRECTORY_MOVE_CONTRACT.version, ["move_directory"]],
   [PI_COPY_SAVE_CONTRACT.version, ["save_copy"]],
 ]);
-/** Foreground v2 supervision through the existing broker. Unsupported operation
- * contracts never fall back to a generic or v1 runner. No database lives here. */
 export class ProductionSandboxExecutionV2 {
   private readonly options: Options;
   private readonly entries = new Map<string, Entry>();
@@ -254,7 +253,6 @@ export class ProductionSandboxExecutionV2 {
     try {
       const initial = (await this.rpc(entry, { kind: "read" })).record;
       this.assertRequest(entry, initial.plan);
-      // A bound or recovered execution is never a launch instruction.
       if (initial.phase !== "reserved") return this.unknown(entry);
       if (entry.cancelled || this.closed) return this.unknown(entry);
       const plan = initial.plan;
@@ -359,7 +357,6 @@ export class ProductionSandboxExecutionV2 {
         binding.privateRoot,
         `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
       );
-      // An existing control directory is an unresolved prior environment, not a retry target.
       await mkdir(controlDirectory, { mode: 0o700 });
       const input = await this.options.payloads.readInput(entry.invocation);
       if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
@@ -454,8 +451,6 @@ export class ProductionSandboxExecutionV2 {
         controlDirectory,
         async () => {
           if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
-          // Concurrent egress checks must not replace the supervision loop's
-          // record with an older snapshot returned by a delayed read.
           const current = (
             await this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
               kind: "resolve",
@@ -538,7 +533,6 @@ export class ProductionSandboxExecutionV2 {
         host.cancel();
         return this.unknown(entry);
       }
-      // Agent revalidates scope and installed bytes in the bind CAS. Host start is single-use.
       stage = "execute";
       const launchBinding = await this.hostBinding(plan);
       if (
@@ -667,16 +661,11 @@ export class ProductionSandboxExecutionV2 {
         const current = entry.record;
         if (!current || current.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
         try {
-          // Foreground network connections retain authority only while the same
-          // Grant remains valid, just like background tasks and services.
           await this.rpc(entry, { kind: "resolve" });
           if (taskCompleted && plan.mode === "foreground") {
             await flush(true, taskCompleted);
             break;
           }
-          // Completion can arrive during the asynchronous authority check. Its
-          // final output/cleanup path below still verifies every durable fact;
-          // do not enqueue a now-obsolete running-state observation first.
           if (finished) break;
           await flush(false);
           if (finished) break;
@@ -895,8 +884,11 @@ export class ProductionSandboxExecutionV2 {
       stage ??= entry.stage;
       if (!stage) return this.unknown(entry);
       const result = await entry.host?.result;
+      const hostDiagnostic =
+        result?.diagnostic ??
+        (error instanceof JobHostPreparationError ? error.diagnostic : undefined);
       const systemCode =
-        result?.diagnostic?.systemCode ??
+        hostDiagnostic?.systemCode ??
         (error && typeof error === "object" && "code" in error ? error.code : "UNKNOWN");
       const diagnostic = {
         stage,
@@ -908,8 +900,8 @@ export class ProductionSandboxExecutionV2 {
               : stage === "execute"
                 ? "SANDBOX_EXECUTION_FAILED"
                 : "SANDBOX_PREPARATION_FAILED",
-        hostStage: result?.diagnostic?.stage ?? null,
-        hostDetail: result?.diagnostic?.detail ?? null,
+        hostStage: hostDiagnostic?.stage ?? null,
+        hostDetail: hostDiagnostic?.detail ?? null,
         systemCode,
       };
       try {
@@ -926,7 +918,6 @@ export class ProductionSandboxExecutionV2 {
       } catch {}
       return this.unknown(entry);
     } finally {
-      // Even failed/uncertain bind replies retain the original host until bounded stop settles.
       if (entry.host) {
         entry.host.cancel();
         await entry.host.result;
