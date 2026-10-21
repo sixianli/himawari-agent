@@ -8,7 +8,6 @@ REQUIRED_FIELDS = (
     "id",
     "pool",
     "order",
-    "variants",
     "context",
     "status",
     "skip_for_context",
@@ -19,9 +18,13 @@ REQUIRED_FIELDS = (
 ALLOWED_POOLS = ("free", "go")
 ALLOWED_STATUSES = ("active", "paused", "withdrawn")
 ALLOWLIST_RELATIVE = Path(".opencode") / "allowed-models.txt"
+FLOOR_RELATIVE = Path(".opencode") / "variant-floor.txt"
 HEADER_LINES = (
     "# Generated from .agents/opencode-models.toml by .agents/opencode-models.py; do not edit by hand.",
     "# Run: python3 .agents/opencode-models.py export",
+)
+FLOOR_HEADER_LINES = HEADER_LINES + (
+    "# <provider/model> <lowest reasoning variant a new session may use>",
 )
 TABLE_RELATIVE = Path(".agents") / "opencode-models.toml"
 
@@ -71,21 +74,13 @@ def load_table(root):
             if order in seen_orders:
                 raise TableInvalid(f"duplicate order {order}")
             seen_orders.add(order)
-        variants = model["variants"]
-        if not isinstance(variants, list) or not all(isinstance(v, str) for v in variants):
-            raise TableInvalid(f"variants for '{model_id}' must be a list of strings")
         context = model["context"]
         if not isinstance(context, int) or isinstance(context, bool) or context < 0:
             raise TableInvalid(f"context for '{model_id}' must be a non-negative integer")
         if not isinstance(model["skip_for_context"], bool):
             raise TableInvalid(f"skip_for_context for '{model_id}' must be true or false")
-        min_variant = model["min_variant"]
-        if not isinstance(min_variant, str):
+        if not isinstance(model["min_variant"], str):
             raise TableInvalid(f"min_variant for '{model_id}' must be a string")
-        if min_variant and min_variant not in variants:
-            raise TableInvalid(
-                f"min_variant '{min_variant}' for '{model_id}' is not one of its variants"
-            )
         if not isinstance(model["note"], str):
             raise TableInvalid(f"note for '{model_id}' must be a string")
         if not isinstance(model["updated"], str):
@@ -103,6 +98,11 @@ def ordered_ids(models):
     return [model["id"] for model in sorted(active, key=sorting_key)]
 
 
+def floor_lines(models):
+    active = [model for model in models if model["status"] == "active" and model["min_variant"]]
+    return [f"{model['id']} {model['min_variant']}" for model in sorted(active, key=sorting_key)]
+
+
 def read_listed_ids(path):
     if not path.is_file():
         return None
@@ -118,6 +118,12 @@ def read_listed_ids(path):
 def write_allowlist(path, ids):
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "\n".join(HEADER_LINES + tuple(ids)) + "\n"
+    path.write_text(body, encoding="utf-8")
+
+
+def write_floor_file(path, lines):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(FLOOR_HEADER_LINES + tuple(lines)) + "\n"
     path.write_text(body, encoding="utf-8")
 
 
@@ -139,15 +145,15 @@ def display_path(root, path):
         return str(path)
 
 
-def report_mismatch(root, path, expected):
+def report_mismatch(root, path, expected, kind="allowlist"):
     listed = read_listed_ids(path)
     label = display_path(root, path)
     if listed is None:
-        print(f"missing allowlist file {label}")
+        print(f"missing {kind} file {label}")
         return
     if listed == expected:
         return
-    print(f"allowlist file {label}")
+    print(f"{kind} file {label}")
     for model_id in listed:
         if model_id not in expected:
             print(f"EXTRA {model_id}")
@@ -158,31 +164,41 @@ def report_mismatch(root, path, expected):
         print("ORDER_MISMATCH")
 
 
+def export_roots(root, check_all):
+    roots = [root]
+    if check_all:
+        roots.extend(worktree_roots(root))
+    return roots
+
+
 def command_export(root, check_all):
     models = load_table(root)
     ids = ordered_ids(models)
-    targets = [root / ALLOWLIST_RELATIVE]
-    if check_all:
-        targets.extend(worktree / ALLOWLIST_RELATIVE for worktree in worktree_roots(root))
-    for target in targets:
-        write_allowlist(target, ids)
-        print(f"EXPORTED {display_path(root, target)} {len(ids)}")
+    floors = floor_lines(models)
+    for base in export_roots(root, check_all):
+        write_allowlist(base / ALLOWLIST_RELATIVE, ids)
+        print(f"EXPORTED {display_path(root, base / ALLOWLIST_RELATIVE)} {len(ids)}")
+        write_floor_file(base / FLOOR_RELATIVE, floors)
+        print(f"EXPORTED {display_path(root, base / FLOOR_RELATIVE)} {len(floors)}")
     return 0
 
 
 def command_check(root, check_all):
     models = load_table(root)
     ids = ordered_ids(models)
-    targets = [root / ALLOWLIST_RELATIVE]
-    if check_all:
-        targets.extend(worktree / ALLOWLIST_RELATIVE for worktree in worktree_roots(root))
-    mismatched = [target for target in targets if read_listed_ids(target) != ids]
+    floors = floor_lines(models)
+    mismatched = []
+    for base in export_roots(root, check_all):
+        if read_listed_ids(base / ALLOWLIST_RELATIVE) != ids:
+            mismatched.append((base / ALLOWLIST_RELATIVE, ids, "allowlist"))
+        if read_listed_ids(base / FLOOR_RELATIVE) != floors:
+            mismatched.append((base / FLOOR_RELATIVE, floors, "floor"))
     if not mismatched:
         print("MODELS_IN_SYNC")
         return 0
     print("MODELS_OUT_OF_SYNC")
-    for target in mismatched:
-        report_mismatch(root, target, ids)
+    for target, expected, kind in mismatched:
+        report_mismatch(root, target, expected, kind)
     return 1
 
 
@@ -190,11 +206,10 @@ def command_order(root):
     models = load_table(root)
     active = [model for model in models if model["status"] == "active" and model["order"] > 0]
     for model in sorted(active, key=sorting_key):
-        variants = ",".join(model["variants"])
         skip = "true" if model["skip_for_context"] else "false"
         print(
             f"{model['order']} {model['id']} pool={model['pool']} "
-            f"variants={variants} min_variant={model['min_variant']} "
+            f"min_variant={model['min_variant']} "
             f"context={model['context']} skip_for_context={skip}"
         )
     return 0

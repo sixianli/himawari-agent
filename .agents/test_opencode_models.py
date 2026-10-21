@@ -11,13 +11,13 @@ BASE_HEADER = (
     "# Generated from .agents/opencode-models.toml by .agents/opencode-models.py; do not edit by hand.\n"
     "# Run: python3 .agents/opencode-models.py export\n"
 )
+FLOOR_HEADER = BASE_HEADER + "# <provider/model> <lowest reasoning variant a new session may use>\n"
 
 
 def model_block(
     model_id,
     pool="free",
     order=0,
-    variants=("low", "high"),
     context=200000,
     status="active",
     skip_for_context=False,
@@ -25,14 +25,12 @@ def model_block(
     updated="2026-10-21",
     min_variant="",
 ):
-    variants_text = ", ".join(f'"{item}"' for item in variants)
     skip_text = "true" if skip_for_context else "false"
     return (
         "[[model]]\n"
         f'id = "{model_id}"\n'
         f'pool = "{pool}"\n'
         f"order = {order}\n"
-        f"variants = [{variants_text}]\n"
         f"context = {context}\n"
         f'status = "{status}"\n'
         f"skip_for_context = {skip_text}\n"
@@ -69,6 +67,14 @@ class ScriptTestCase(unittest.TestCase):
     def allowlist_text(self, base=None):
         return ((base or self.root) / ".opencode" / "allowed-models.txt").read_text(encoding="utf-8")
 
+    def floor_text(self, base=None):
+        return ((base or self.root) / ".opencode" / "variant-floor.txt").read_text(encoding="utf-8")
+
+    def write_floor(self, text, base=None):
+        target = (base or self.root) / ".opencode" / "variant-floor.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+
     def make_worktree(self, name, with_opencode=True):
         worktree = self.root / ".ci-output" / "worktrees" / name
         worktree.mkdir(parents=True)
@@ -81,16 +87,30 @@ class ExportTests(ScriptTestCase):
     def test_export_writes_header_and_ordered_ids(self):
         self.write_table(
             model_block("open/third", order=3)
-            + model_block("open/first", order=1)
+            + model_block("open/first", order=1, min_variant="high")
             + model_block("open/second", order=2)
         )
         result = self.run_script("export")
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "EXPORTED .opencode/allowed-models.txt 3\n")
+        self.assertEqual(
+            result.stdout,
+            "EXPORTED .opencode/allowed-models.txt 3\nEXPORTED .opencode/variant-floor.txt 1\n",
+        )
         self.assertEqual(
             self.allowlist_text(),
             BASE_HEADER + "open/first\nopen/second\nopen/third\n",
         )
+        self.assertEqual(self.floor_text(), FLOOR_HEADER + "open/first high\n")
+
+    def test_export_floor_skips_models_without_a_floor_and_inactive_ones(self):
+        self.write_table(
+            model_block("open/first", order=1, min_variant="high")
+            + model_block("open/second", order=2)
+            + model_block("open/paused", order=3, status="paused", min_variant="max")
+        )
+        result = self.run_script("export")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.floor_text(), FLOOR_HEADER + "open/first high\n")
 
     def test_export_puts_order_zero_last_sorted_by_id(self):
         self.write_table(
@@ -114,8 +134,12 @@ class ExportTests(ScriptTestCase):
         )
         result = self.run_script("export")
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "EXPORTED .opencode/allowed-models.txt 1\n")
+        self.assertEqual(
+            result.stdout,
+            "EXPORTED .opencode/allowed-models.txt 1\nEXPORTED .opencode/variant-floor.txt 0\n",
+        )
         self.assertEqual(self.allowlist_text(), BASE_HEADER + "open/active\n")
+        self.assertEqual(self.floor_text(), FLOOR_HEADER)
 
     def test_export_without_all_leaves_worktrees_alone(self):
         self.write_table(model_block("open/only", order=1))
@@ -134,25 +158,51 @@ class ExportTests(ScriptTestCase):
         self.assertEqual(
             result.stdout,
             "EXPORTED .opencode/allowed-models.txt 1\n"
+            "EXPORTED .opencode/variant-floor.txt 0\n"
             "EXPORTED .ci-output/worktrees/wt-a/.opencode/allowed-models.txt 1\n"
-            "EXPORTED .ci-output/worktrees/wt-b/.opencode/allowed-models.txt 1\n",
+            "EXPORTED .ci-output/worktrees/wt-a/.opencode/variant-floor.txt 0\n"
+            "EXPORTED .ci-output/worktrees/wt-b/.opencode/allowed-models.txt 1\n"
+            "EXPORTED .ci-output/worktrees/wt-b/.opencode/variant-floor.txt 0\n",
         )
         expected = BASE_HEADER + "open/only\n"
         self.assertEqual(self.allowlist_text(first), expected)
         self.assertEqual(self.allowlist_text(second), expected)
+        self.assertEqual(self.floor_text(first), FLOOR_HEADER)
         self.assertFalse((without / ".opencode" / "allowed-models.txt").exists())
+        self.assertFalse((without / ".opencode" / "variant-floor.txt").exists())
 
 
 class CheckTests(ScriptTestCase):
     def setUp(self):
         super().setUp()
-        self.write_table(model_block("open/first", order=1) + model_block("open/second", order=2))
+        self.write_table(model_block("open/first", order=1, min_variant="high") + model_block("open/second", order=2))
+
+    def write_allowlist(self, text, base=None):
+        super().write_allowlist(text, base)
+        self.write_floor(FLOOR_HEADER + "open/first high\n", base)
 
     def test_check_in_sync(self):
         self.write_allowlist(BASE_HEADER + "open/first\nopen/second\n")
         result = self.run_script("check")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "MODELS_IN_SYNC\n")
+
+    def test_check_floor_file_missing(self):
+        self.write_allowlist(BASE_HEADER + "open/first\nopen/second\n")
+        (self.root / ".opencode" / "variant-floor.txt").unlink()
+        result = self.run_script("check")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "MODELS_OUT_OF_SYNC\nmissing floor file .opencode/variant-floor.txt\n")
+
+    def test_check_floor_file_differs(self):
+        self.write_allowlist(BASE_HEADER + "open/first\nopen/second\n")
+        self.write_floor(FLOOR_HEADER + "open/first low\n")
+        result = self.run_script("check")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(
+            result.stdout,
+            "MODELS_OUT_OF_SYNC\nfloor file .opencode/variant-floor.txt\nEXTRA open/first low\nMISSING open/first high\n",
+        )
 
     def test_check_missing_id(self):
         self.write_allowlist(BASE_HEADER + "open/first\n")
@@ -227,13 +277,11 @@ class OrderTests(ScriptTestCase):
                 "opencode-go/glm-5.3",
                 pool="go",
                 order=0,
-                variants=("low", "high", "max"),
                 context=0,
             )
             + model_block(
                 "opencode/deepseek-v4.1-flash-free",
                 order=1,
-                variants=("low", "high"),
                 context=200000,
                 skip_for_context=False,
                 min_variant="high",
@@ -241,7 +289,6 @@ class OrderTests(ScriptTestCase):
             + model_block(
                 "opencode/glm-5.3-flash-free",
                 order=2,
-                variants=("low", "high", "max"),
                 context=200000,
                 skip_for_context=True,
             )
@@ -251,8 +298,8 @@ class OrderTests(ScriptTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
             result.stdout,
-            "1 opencode/deepseek-v4.1-flash-free pool=free variants=low,high min_variant=high context=200000 skip_for_context=false\n"
-            "2 opencode/glm-5.3-flash-free pool=free variants=low,high,max min_variant= context=200000 skip_for_context=true\n",
+            "1 opencode/deepseek-v4.1-flash-free pool=free min_variant=high context=200000 skip_for_context=false\n"
+            "2 opencode/glm-5.3-flash-free pool=free min_variant= context=200000 skip_for_context=true\n",
         )
 
 
@@ -264,7 +311,6 @@ class ShowTests(ScriptTestCase):
                 "opencode/first",
                 pool="free",
                 order=1,
-                variants=("low", "high", "max"),
                 context=200000,
                 status="active",
                 skip_for_context=True,
@@ -282,7 +328,6 @@ class ShowTests(ScriptTestCase):
             "id=opencode/first\n"
             "pool=free\n"
             "order=1\n"
-            "variants=low,high,max\n"
             "context=200000\n"
             "status=active\n"
             "skip_for_context=true\n"
@@ -298,15 +343,6 @@ class ShowTests(ScriptTestCase):
 
 
 class InvalidTableTests(ScriptTestCase):
-    def test_min_variant_must_be_one_of_the_variants(self):
-        self.write_table(model_block("opencode/first", variants=("low", "high"), min_variant="max"))
-        result = self.run_script("order")
-        self.assertEqual(result.returncode, 3)
-        self.assertEqual(
-            result.stdout,
-            "TABLE_INVALID min_variant 'max' for 'opencode/first' is not one of its variants\n",
-        )
-
     def test_min_variant_must_be_a_string(self):
         self.write_table(model_block("opencode/first").replace('min_variant = ""', "min_variant = 1"))
         result = self.run_script("order")
@@ -314,7 +350,7 @@ class InvalidTableTests(ScriptTestCase):
         self.assertEqual(result.stdout, "TABLE_INVALID min_variant for 'opencode/first' must be a string\n")
 
     def test_min_variant_empty_means_no_floor(self):
-        self.write_table(model_block("opencode/first", variants=(), min_variant=""))
+        self.write_table(model_block("opencode/first", min_variant=""))
         result = self.run_script("show", "opencode/first")
         self.assertEqual(result.returncode, 0)
         self.assertIn("min_variant=\n", result.stdout)
@@ -325,7 +361,6 @@ class InvalidTableTests(ScriptTestCase):
             'id = "open/first"\n'
             'pool = "free"\n'
             "order = 1\n"
-            'variants = ["low"]\n'
             "context = 200000\n"
             'status = "active"\n'
             "skip_for_context = false\n"

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:4d4cc2fd030bb4da43a955cd849d80b9662312431baf540cb8d9f50c88de1023"
+contract_sha256: "sha256:026566062622157073f7ceb60bc5ba62a4deb7c2995b629cb5817d539758890d"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -75,7 +75,7 @@ date: "2026-10-21"
 
 ## Procedure
 
-1. **启动。** `oc-launch.sh new <简报> <运行前缀> '<provider/model>#<档位>' <标题>`，运行前缀必须带目录（例如 `.ci-output/handoff/<日期>-<任务>-oc-<N>`），否则 `PREFIX_WITHOUT_DIRECTORY`。会话连到任务自己的服务（`oc-server.sh`，状态在 `<前缀目录>/oc-server/`，密码文件不打印不提交）。
+1. **启动。** `oc-launch.sh new <简报> <运行前缀> '<provider/model>#<档位>' <标题>`，运行前缀必须带目录（例如 `.ci-output/handoff/<日期>-<任务>-oc-<N>`），否则 `PREFIX_WITHOUT_DIRECTORY`。会话连到任务自己的服务（`oc-server.sh`，状态在 `<前缀目录>/oc-server/`，密码文件不打印不提交）。启动前脚本向这个服务实时查询模型的推理档位，打印 `LIVE_VARIANTS model=<模型> variants=<当前列表>`，档位不在列表里或低于 `.opencode/variant-floor.txt` 的下限就拒绝（[ADR 0065](../adr/0065-live-reasoning-variants.md)）。
 2. **监视。** 用 `oc-watch.py <前缀> --stop-file <停止文件>` 挂监视；`CHECKPOINT:`、`QUESTION:`、`EDIT:`、`SIGNAL:`、`TOOL_ERROR:`、`STALL:` 各按 skill 的表处理。`SIGNAL: timeout` 常是代理在读含这个词的文件，先看命令再判断。
 3. **纠正。** 把消息写成文件，用 `oc-steer.sh <前缀> <消息文件>` 在当前步骤后送达，或加 `--interrupt` 立即中断并带消息续跑。中断不会停掉代理在测试主机上后台启动的任务，消息里要说明怎么处理。
 4. **代理连测试主机只用包装脚本。** `hermes-ssh.sh '<远程命令>'`、`ci-ssh.sh '<远程命令>'`（后者固定以 `himawari-ci` 登录）；传文件只用 `hermes-upload.sh` 或 `ci-upload.sh <本地文件> <远程路径>`，它们拒绝不存在的本地文件并比对两端 SHA-256。每条远程命令固定 300 秒上限；命令以 base64 编码发送、在远端 shell 里解码，所以远端进程命令行不含命令文本。
@@ -125,6 +125,8 @@ date: "2026-10-21"
 | 现象 | 含义 | 处理 |
 | --- | --- | --- |
 | `MODEL_NOT_ALLOWED` | 模型不在 `.opencode/allowed-models.txt` 里（按整行比较，`-free` 不会放行付费同名模型） | 查 `.agents/opencode-models.toml`，必要时改表后 `export --all` |
+| `VARIANT_UNAVAILABLE` / `MODEL_NOT_SERVED` / `VARIANT_LIST_UNAVAILABLE` | 请求的推理档位不在 opencode 服务实时列出的档位里 / 服务没列出这个模型 / 列表读不到（退出码 3） | 按拒绝信息里的当前档位列表重新选；服务异常时先 `oc-server.sh status` |
+| `VARIANT_BELOW_FLOOR` / `VARIANT_FLOOR_UNKNOWN` | 档位低于 `.opencode/variant-floor.txt` 里该模型的最低档位或没带档位 / 下限本身不在实时列表里 | 选下限或更高的档位；下限过期就改表后 `export --all`（[ADR 0065](../adr/0065-live-reasoning-variants.md)） |
 | `STOP_FILE_UNCLEAR` / `STOP_FILE_EXISTS` | 简报没指定恰好一个未写出的停止文件 / 续跑指定的停止文件已存在 | 改简报或换新的停止文件路径 |
 | `BRIEF_NAMES_DENIED_TEXT` | 简报提到会被禁止规则拦下的文字，却没有 `本地禁止规则：` 行 | 加上这一行并说明改用读文件工具 |
 | `REQUIRED_PLUGIN_MISSING` / `_CHANGED` / `_LIST_EMPTY` | 守卫插件或清单不一致 | 同步主检出和所有工作副本的插件与清单 |
