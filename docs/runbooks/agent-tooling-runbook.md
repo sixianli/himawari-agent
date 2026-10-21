@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d40b94d9a9cf240ae3db8e8c0b80fe9de16e1caccf98549008531aec9b83df2c"
+contract_sha256: "sha256:4d4cc2fd030bb4da43a955cd849d80b9662312431baf540cb8d9f50c88de1023"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -11,11 +11,11 @@ date: "2026-10-21"
 # 代理工具 Runbook：opencode 和 Grok 的启动、禁止清单、守卫插件和测试主机包装脚本
 
 <!-- runbook-contract:
-- docs/adr/0058-agent-collaboration-and-review-roles.md
+- docs/adr/0062-claude-writes-complex-code-opencode-routine.md
 - docs/adr/0060-hard-constraint-on-third-repeat.md
 -->
 
-本手册集中记录给 opencode（本地命令行里的编程代理）和 Grok 派活时用到的本地工具：启动脚本的检查、权限配置里的禁止清单、拒绝长时间等待的守卫插件、通往 Hermes 和云服务器的包装脚本，以及它们各自的拒绝码和正确写法。分工和理由在 [ADR 0058](../adr/0058-agent-collaboration-and-review-roles.md)，模型选择在 [ADR 0061](../adr/0061-opencode-model-table.md)，为什么要做成硬拦截在 [ADR 0060](../adr/0060-hard-constraint-on-third-repeat.md)；`AGENTS.md` 只留硬边界并链接到这里。这些工具文件大多在被 git 忽略的 `.ci-output/` 和 `.opencode/` 下，是本地未提交文件。
+本手册集中记录给 opencode（本地命令行里的编程代理）和 Grok 派活时用到的本地工具：启动脚本的检查、权限配置里的禁止清单、拒绝长时间等待的守卫插件、通往 Hermes 和云服务器的包装脚本，以及它们各自的拒绝码和正确写法。分工和理由在 [ADR 0062](../adr/0062-claude-writes-complex-code-opencode-routine.md)（复杂模块由 Claude 写、重复性编码交给 opencode；它保留了 [ADR 0058](../adr/0058-agent-collaboration-and-review-roles.md) 未变的部分），模型选择在 [ADR 0061](../adr/0061-opencode-model-table.md)，为什么要做成硬拦截在 [ADR 0060](../adr/0060-hard-constraint-on-third-repeat.md)；`AGENTS.md` 只留硬边界并链接到这里。这些工具文件大多在被 git 忽略的 `.ci-output/` 和 `.opencode/` 下，是本地未提交文件。
 
 ## 阅读导航
 
@@ -42,7 +42,7 @@ date: "2026-10-21"
 
 ## Authoritative Sources
 
-- 分工与互审：[SOURCE: docs/adr/0058-agent-collaboration-and-review-roles.md#decision]
+- 分工与互审：[SOURCE: docs/adr/0062-claude-writes-complex-code-opencode-routine.md#decision]
 - 重复错误的硬约束：[SOURCE: docs/adr/0060-hard-constraint-on-third-repeat.md#decision]
 - 模型表和导出命令：[ADR 0061](../adr/0061-opencode-model-table.md)，表在 `.agents/opencode-models.toml`
 - 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence` 条目
@@ -59,7 +59,7 @@ date: "2026-10-21"
   - `read` 块另外禁 `~/.ssh/**`、`*.pem`、`*.key`。
 - Grok 用本地未提交的 `.grok/config.toml` 承载同样的禁止规则，仓库用 `grok --trust` 标记为可信，否则 Grok 不加载它。
 - 按名字匹配的禁止规则也会拦住无害命令（例如 `ls` 一个名字命中的文件）。简报里要有一行以 `本地禁止规则：` 开头，列出会被拦的文字，并让代理改用读文件、按名查找和内容搜索工具；缺这一行时 `oc-launch.sh` 以 `BRIEF_NAMES_DENIED_TEXT` 拒绝启动。
-- 第一个会改变目标的动作是启动 opencode 会话本身；日常批次由 ADR 0058 授权。生产相关的一切需要用户单独授权。
+- 第一个会改变目标的动作是启动 opencode 会话本身；日常批次由 ADR 0062 授权。生产相关的一切需要用户单独授权。
 
 <a id="live-state-preflight"></a>
 

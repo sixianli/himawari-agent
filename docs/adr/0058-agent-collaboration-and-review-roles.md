@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
+decision_status: superseded
 supersedes: ""
-superseded_by: ""
+superseded_by: "docs/adr/0062-claude-writes-complex-code-opencode-routine.md"
 date: "2026-10-21"
 ---
 
