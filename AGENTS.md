@@ -127,7 +127,7 @@ The current rules are in [ADR 0057](docs/adr/0057-batch-layers-one-two-for-small
 - Documentation-only changes run documentation validation and Runbook checks only.
 - Reuse passing results while code, dependencies, test configuration, and relevant environment are unchanged. Commit messages and delivery reports must state which layers actually ran and which revision the full test covered; never describe an intermediate commit as fully tested when it was not.
 - These rules govern development testing only. The required GitHub CI checks in `ci/policy.json` are unchanged.
-- Before adding a test, answer the six test-value questions; keep tests within the speed and isolation budgets; storage, recovery, and model-facing changes carry the tests [ADR 0063](docs/adr/0063-test-value-gate-speed-budget-hygiene.md) names; the rules themselves are the `verification-discipline` skill's, and the hygiene gate and runner self-check are Backlog BL-20261021-001 and 002.
+- Before adding a test, answer the six test-value questions; keep tests within the speed and isolation budgets; storage, recovery, and model-facing changes carry the tests [ADR 0063](docs/adr/0063-test-value-gate-speed-budget-hygiene.md) names; the rules themselves are the `verification-discipline` skill's, and the hygiene gate is Backlog BL-20261021-001.
 
 ## Hermes Test Server Connectivity
 
