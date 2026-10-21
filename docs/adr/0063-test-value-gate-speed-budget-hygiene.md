@@ -23,7 +23,7 @@ date: "2026-10-21"
 
 ## 背景
 
-2026-10-21 用户让 Claude 通读 Cindy 项目作者整理的测试规则汇编，把亮点整合进本项目，通用部分抽进 `verification-discipline` skill（Claude 的测试与验证纪律 skill，所有项目共用）。对照后发现本项目已经有的：修 bug 先红后绿、分层按批运行（[ADR 0057](0057-batch-layers-one-two-for-small-defects.md)）、不放宽时限、不许削弱测试、`registeredTests` 白名单限制 `skip`、`scripts/ci/run.mjs` 把被跳过的测试判为 `CI_TEST_INCOMPLETE`、[审核不采信代理自报](../lessons.md)。本项目缺的：写测试之前的价值门槛、速度与隔离的硬数字、“改了某类代码就必须有某类测试”的要求、测试卫生的自动门禁。2026-10-21 的现状：5 个测试文件逐用例 `vi.resetModules()`，2 个文件用固定端口（容器资格测试），13 处 100ms 以上的真实等待（多在集成测试），4 个 `test/fixtures/*-child.test.ts` 子进程夹具不属于 `ci/policy.json` 的任何测试项目。
+2026-10-21 用户让 Claude 通读 Cindy 项目作者整理的测试规则汇编，把亮点整合进本项目，通用部分抽进 `verification-discipline` skill（Claude 的测试与验证纪律 skill，所有项目共用）。对照后发现本项目已经有的：修 bug 先红后绿、分层按批运行（[ADR 0057](0057-batch-layers-one-two-for-small-defects.md)）、不放宽时限、不许削弱测试、`registeredTests` 白名单限制 `skip`、`scripts/ci/run.mjs` 把被跳过的测试判为 `CI_TEST_INCOMPLETE`、[审核不采信代理自报](../lessons.md)。本项目缺的：写测试之前的价值门槛、速度与隔离的硬数字、“改了某类代码就必须有某类测试”的要求、测试卫生的自动门禁。2026-10-21 的现状：5 个测试文件逐用例 `vi.resetModules()`，2 个文件用固定端口（容器资格测试），13 处 100ms 以上的真实等待（多在集成测试）。“测试文件不属于任何项目就报错”本项目已经有：`scripts/ci/check-policy.mjs` 的 `planTestInventory` 要求每个测试文件恰好一个归属（测试项目或 `registeredTests` 登记），任何项目一个文件都没有也报错，`npm run check` 里的 `check:ci-policy` 每次提交前都跑；4 个 `test/fixtures/*-child.test.ts` 子进程夹具已登记为 `child-fixture`（修订 2026-10-21：本 ADR 第一版误写成它们不属于任何项目）。
 
 [↑ 返回阅读导航](#contents)
 
@@ -34,7 +34,7 @@ date: "2026-10-21"
 1. **通用规则在 skill，本项目直接采用。** 测试价值六项问答、速度预算、隔离清单、平台差异、三态结果（未跑 / 失败 / 通过）、红绿记录、不改门禁基线放行自己、复核不信自述，全部按 `verification-discipline` skill 执行（本地副本在 `~/.claude/skills/verification-discipline/`，源码在公开仓库 agent-skills）。本项目不另抄一份。
 2. **三类改动必带的测试。** 改 SQLite 结构或迁移：必有从旧版数据升级后照常可用的测试，只测全新安装不算，干净地拒绝旧数据不算通过（[BL-20261021-003](../backlog/BL-20261021-003-sqlite-升-级-回-放-要-用-真.md)）。改 Gateway、Worker、控制中心之间的重试、超时、重连：必有多个控制端共用同一资源、一个故障、其余不受影响的测试（[BL-20261021-004](../backlog/BL-20261021-004-gateway-worker-重-连-与-恢-复-多.md)）。改提示词、工具定义、模型映射、用量计量：假模型只证明配置传对，真实效果用手动评测脚本对真实模型实测并写明指标（[BL-20261021-005](../backlog/BL-20261021-005-模-型-行-为-改-动-的-评.md)）。
 3. **测试卫生门禁，基线只降不升。** 新脚本 `scripts/ci/check-test-hygiene.mjs` 拦四类问题：没写理由的逐用例模块重置、100ms 以上的真实等待、固定端口、普通单测读取生产源码文本。存量记在基线文件里，基线只能减少，工作区手改无效。先只报告一轮核对误报，再接入 `npm run check`；接入时改 `ci/policy.json`，按 ADR 0057 第 3 层单独跑（[BL-20261021-001](../backlog/BL-20261021-001-测-试-卫-生-门-禁-拦-无.md)）。这是 [ADR 0060](0060-hard-constraint-on-third-repeat.md) 所说的硬约束的一种。
-4. **测试文件不能悄悄不跑。** `scripts/ci/test.mjs` 启动时自检：不被任何测试项目匹配、又没登记为夹具的测试文件直接报错（[BL-20261021-002](../backlog/BL-20261021-002-测-试-运-行-脚-本-自-检.md)）。测试分层仍按 `ci/policy.json` 现有的 6 个项目（`unit`、`contracts`、`integration`、`e2e`、`pi-compat`、`tooling`），不改名。
+4. **测试文件不能悄悄不跑。** 这一条已由 `check-policy.mjs` 的 `planTestInventory` 实现，不新增代码；[BL-20261021-002](../backlog/BL-20261021-002-测-试-运-行-脚-本-自-检.md) 据此关闭。测试分层仍按 `ci/policy.json` 现有的 6 个项目（`unit`、`contracts`、`integration`、`e2e`、`pi-compat`、`tooling`），不改名。
 5. **覆盖率门禁保留，但不为数字补测试。** `ci/coverage-policy.json` 的改动行覆盖阈值照旧；不得为了凑覆盖率新增说不出价值的测试，评审可以要求删除。
 6. **界面改动看截图、报未覆盖。** 控制中心改动要在浅色和深色两种主题下实际渲染并看截图；没被任何检查加载的改动文件写“未验证”；不能用自己生成的截图批准自己的视觉改动，视觉改动仍按 AGENTS.md 的设计基线由用户确认（[BL-20261021-006](../backlog/BL-20261021-006-控-制-中-心-界-面-截-图.md)）。
 7. **派活简报与停止文件。** 给 opencode 的简报要求每个新测试附六项问答，停止文件按三态写结果、修 bug 附红绿记录；模板在 `opencode-orchestration` skill。
@@ -63,9 +63,9 @@ date: "2026-10-21"
 
 ## 后果
 
-- 正面：新测试有价值门槛，慢测试和不隔离的测试被门禁拦住，三类高风险改动有固定的测试要求，测试文件不会悄悄不跑。
+- 正面：新测试有价值门槛，慢测试和不隔离的测试被门禁拦住，三类高风险改动有固定的测试要求；测试文件不会悄悄不跑这一点已有现成检查守着。
 - 负面：接入门禁前要清掉或登记存量问题（见背景里的数字）；每个新测试要多写六项说明。
-- 后续：Backlog BL-20261021-001 到 006；`AGENTS.md` 的测试触发一节加一行指向本 ADR；`docs/lessons.md` 不改（没有新的重复错误）。
+- 后续：Backlog BL-20261021-001、003 到 006（002 已关闭）；`AGENTS.md` 的测试触发一节加一行指向本 ADR；`docs/lessons.md` 不改（没有新的重复错误）。
 
 [↑ 返回阅读导航](#contents)
 
