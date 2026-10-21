@@ -33,7 +33,6 @@ export interface SandboxReconciliationBackend {
   ): Promise<SandboxReconciliationObservation>;
 }
 
-/** Only fixed product reasons may leave the protected host diagnostics boundary. */
 export function sandboxReconciliationFailureReason(error: unknown): string {
   if (error instanceof Error) {
     if (
@@ -61,6 +60,8 @@ export function sandboxReconciliationFailureReason(error: unknown): string {
     )
       return error.message;
     if (error.message === "JOB_HOST_CONTROL_TIMEOUT") return "SANDBOX_CONTROL_TIMED_OUT";
+    if (error.message === "EXECUTION_STOP_UNCONFIRMED")
+      return "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED";
     if (["JOB_HOST_CONTROL_EVIDENCE_INVALID", "JOB_HOST_CONTROL_TOO_LARGE"].includes(error.message))
       return "SANDBOX_CONTROL_EVIDENCE_INVALID";
     if ("code" in error) {
@@ -77,10 +78,6 @@ export function sandboxReconciliationFailureReason(error: unknown): string {
   return "SANDBOX_RECONCILIATION_UNCONFIRMED";
 }
 
-/** Current Agent authority owns reconciliation; the original consumed Grant is
- * not consumed again and old Worker credentials are not inherited. Journal CAS
- * persists risk before a bounded backend request, and verifies any release.
- */
 interface ReconciliationOptions {
   readonly hostId: string;
   readonly journal: Pick<
@@ -255,8 +252,6 @@ export class SandboxExecutionReconciliationService {
     let reasonCode = "SANDBOX_RECONCILIATION_UNCONFIRMED";
     let applied = false;
     try {
-      // Released observations are monotonic. Legacy rows need a fresh proof,
-      // not a fabricated transition back into execution/reconciling.
       if (record.facts.resource.supervision !== "released") {
         const admitted = await append(
           observation("reconciling", "SANDBOX_RECONCILIATION_REQUESTED"),
@@ -350,19 +345,15 @@ export class SandboxExecutionReconciliationService {
         : "SANDBOX_RECONCILIATION_CONFIRMED";
       applied = mutation.applied;
     } catch (error) {
-      // Stop accepting callbacks before persisting the terminal recovery state.
       controller.abort();
       reasonCode = sandboxReconciliationFailureReason(error);
       await refreshOwned();
-      // Failure never revokes a historical release or invents isolation evidence.
       if (record.facts.resource.supervision !== "released")
         applied = (await append(observation("lost", reasonCode))).applied;
     } finally {
       removeAbortListener();
       clearTimeout(timer);
       controller.abort();
-      // Concurrent operation results are independent of resource recovery. Finish
-      // against the latest sequence without replacing them or another owner.
       await refreshOwned();
       if (record.releaseReceipt && !record.workspaceBlocked)
         reasonCode = "SANDBOX_RECONCILIATION_CONFIRMED";

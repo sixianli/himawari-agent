@@ -129,10 +129,11 @@ date: "2026-09-28"
 - `SANDBOX_CONTROL_UNCONFIRMED`：尚未确认原资源清理。
 - `SANDBOX_CONTROL_TIMED_OUT`、`SANDBOX_RECONCILIATION_TIMED_OUT`：控制请求或本次核查超时。
 - `SANDBOX_RECONCILIATION_INTERRUPTED`、`SANDBOX_RECONCILIATION_INCONCLUSIVE`：本次核查中断或没有结论。
+- `SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`：任务环境（常驻 SRT 和容器）的停止还没确认，例如上一个 Worker 实例留下的 Job Host 还没退出（2026-10-21 起，D-53）。
 
 最早尝试时间从上次实际 `finishedAt` 起计算。退避依次为 1、2、4、8、16、30 秒，之后每次为 30 秒；排定阶段不增加 attempts，真正开始核查才增加。持续清理不设总次数上限，但每次尝试仍受原 30 秒核查期限、当前权威和取消信号约束。服务重启保留恢复次数和已排定的 `nextAttemptAt`，按原 owner、revision 与当前权威规则接管，不能重置退避或让旧回调写入证明。未得到充分证明期间，工作区占用保持，后续相交请求不得获准启动。
 
-身份、目录、签名、受保护证据或权限错误，以及上述暂时原因以外的错误，保持暂停，等待管理员核对原绑定和证据；不自动替换身份、控制密钥或目录，也不重新授予执行权限。已绑定 `bound` 资源的原 inspect/stop 调度和暂停合同不变。这些尝试只处理原资源停止与核验，不创建新 start，不重放原工具，不延长工具或 Run 执行期限。充分证明被接受后，确定未启动的结果仍通过既有一次交付路径处理；原 Run 的继续或结束仍服从原取消、权限、披露和期限门禁。
+身份、目录、签名、受保护证据或权限错误，以及上述暂时原因以外的错误，保持暂停，等待管理员核对原绑定和证据；不自动替换身份、控制密钥或目录，也不重新授予执行权限。已绑定 `bound` 资源的原 inspect/stop 调度和暂停合同不变，只有一处例外：计划后端属于任务环境（常驻 SRT 和容器）的 `bound` 记录，stop 以 `SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED` 结束时，按上面同样的退避重新排定；一次性 SRT 的 `bound` 记录和兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停（见 [ADR 0054 的 2026-10-21 补充](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-stop-retry)）。这些尝试只处理原资源停止与核验，不创建新 start，不重放原工具，不延长工具或 Run 执行期限。充分证明被接受后，确定未启动的结果仍通过既有一次交付路径处理；原 Run 的继续或结束仍服从原取消、权限、披露和期限门禁。
 
 <a id="admin-reservation-disposition"></a>
 

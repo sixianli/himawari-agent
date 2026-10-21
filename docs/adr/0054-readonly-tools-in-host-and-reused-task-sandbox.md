@@ -26,6 +26,7 @@ date: "2026-10-13"
 - [2026-10-18 补充：同一轮复用沙箱的第二步（沙箱内常驻 runner）](#resident-runner)
 - [2026-10-18 补充：第 4 层发现的缺口](#resident-fixes)
 - [2026-10-19 补充：复用路径 bind 前失败不再静默](#resident-bind-prefailure)
+- [2026-10-21 补充：重启后任务环境停止未确认时下一轮再试](#resident-stop-retry)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -188,6 +189,17 @@ D-52：同一轮里的第二次调用，在常驻和容器两条复用路径上�
 - **让失败可见**：`runInSrtEnvironment` 和 `runInEnvironment` 在宿主绑定准备之前把诊断阶段记为 `prepare`，在 `bind` RPC 之前记为 `bind`，在绑定成功之后记为 `execute`；`run` 的错误分支据此走一次性路径已有的诊断通道（`preparation_diagnostic`），不再静默返回空结果。诊断形状与原因码沿用既有约定，不新增协议。绑定之后的失败因此记为执行阶段（`SANDBOX_EXECUTION_FAILED`），不会被误报成绑定失败。
 - **判为从未启动并立即释放**：Worker 返回后，Agent 读回的 admission 仍是 `reserved`、计划为前台任务环境、Run 仍在进行时，立即按[第 4 层发现的缺口](#resident-fixes)已有的路径停止该预约，并用 `task_environment_bind_fenced` 释放，随后交付一次固定失败 `SANDBOX_TOOL_NOT_STARTED`（“工具未启动：准备阶段失败，已确认清理完成。”）。**不停止环境**：命令从未交给环境，环境保持存活正是常驻环境两次调用之间的常态，别的 Run 仍由环境租约挡住。
 - **只对 bind 之前成立**：绑定已经提交，或失败发生在绑定之后的调用，仍按既有规则记为“效果未知”，保留工作区占用直到核查清楚，环境照旧停掉；不自动恢复、`read()` 对预约事实的拒绝，以及同一 Run 占用时后续调用排队等待的规则都不变。
+
+<a id="resident-stop-retry"></a>
+
+## 2026-10-21 补充：重启后任务环境停止未确认时下一轮再试
+
+D-53：候选 `882cc959` 的第 4 层里，`[R2-L6] retains unknown occupancy across real service restart until trusted release` 失败。常驻 SRT 环境里一条已绑定（bound）的调用，在服务成对重启后由资源恢复核对，动作是停止。新的 Worker 实例只能确认上一个实例留下的进程已经消失（见[第一步](#resident-job-host)），不会主动结束它们；旧的常驻任务宿主（Job Host）要等 Worker 心跳超时才自己退出，所以第一次核对时进程还在，停止没有确认，任务环境协调器报 `EXECUTION_STOP_UNCONFIRMED`。核对服务原来把这个错误归入兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED`，而已绑定记录在兜底原因下不再排期，于是旧进程随后退出了也没人再核对，Run 一直停在 `reconciling_external_result`，工作区一直被占。这与[第 4 层发现的缺口](#resident-fixes)第一条“Worker 暂时连不上（`EXECUTION_STOP_UNCONFIRMED`）时下一轮再试”不一致。
+
+- **单独的原因码**：核对服务把消息为 `EXECUTION_STOP_UNCONFIRMED` 的错误（任务环境协调器的停止，以及预约回收里 `stopRun` 没能释放环境）记为 `SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，不再落到兜底原因。
+- **任务环境的已绑定记录按退避重试**：资源恢复调度对已绑定记录，在动作为停止、状态未解决、原因是上面的新码、且计划后端属于任务环境（`sandboxBackendKind` 判为 `task_environment`）时重新排期，沿用预约回收的 1、2、4、8、16、30 秒退避。预约阶段的可重试原因也加入新码。
+- **不变的部分**：一次性 SRT 的已绑定记录停止未确认后仍暂停、等人工重试（R2-D6、[BL-20260929-004](../backlog/BL-20260929-004-agent-重-启-后-停-止-终-态.md)）；任何后端遇到兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED` 都仍然暂停，不会对未知错误无限重试；执行权威、栅栏、恢复修订号的检查和超时都不变。
+- **界限**：旧的 Job Host 被冻结或卡死时，重试会一直按 30 秒间隔进行，工作区保持占用，直到旧进程消失或管理员处置，与“核查清楚之前一直占着”的既有规则一致。是否主动结束上一个 Worker 实例留下的进程，没有在本缺陷里决定，记在 [BL-20261021-008](../backlog/BL-20261021-008-重-启-后-上-一-个-worker-实.md)。
 
 <a id="references"></a>
 

@@ -924,6 +924,7 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
     ["SANDBOX_RECONCILIATION_TIMED_OUT", true],
     ["SANDBOX_RECONCILIATION_INTERRUPTED", true],
     ["SANDBOX_RECONCILIATION_INCONCLUSIVE", true],
+    ["SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED", true],
     ["SANDBOX_CONTROL_IDENTITY_CHANGED", false],
     ["SANDBOX_CONTROL_EVIDENCE_INVALID", false],
     ["SANDBOX_RECONCILIATION_PERMISSION_DENIED", false],
@@ -1113,7 +1114,6 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
         });
         const before = await f.preparations.readAdmission(f.identity);
         release();
-        // A real subsequent journal read is queued after promise continuations.
         expect(await f.preparations.readAdmission(f.identity)).toEqual(before);
         expect(verify).not.toHaveBeenCalled();
         expect(evidence.verify).not.toHaveBeenCalled();
@@ -1210,8 +1210,6 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
       });
       expect(after?.facts.result).toEqual(before?.facts.result);
       expect(after?.facts.effect).toEqual(before?.facts.effect);
-      // Fault injection: a queue snapshot can lag an independently accepted
-      // release. Closing that queue must not manufacture another host attempt.
       f.database
         .prepare("UPDATE sandbox_execution_records SET recovery_json=? WHERE job_id=?")
         .run(JSON.stringify(queued), f.identity.jobId);
@@ -1249,7 +1247,6 @@ describe.each(["worker", "direct"] as const)("resource recovery scheduling (%s)"
       try {
         const preparations = reopened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
         expect(await preparations.readAdmission(f.identity)).toMatchObject({ recovery: scheduled });
-        // Scheduling state is durable; rediscovery does not reset its time or count.
         expect(await preparations.scheduleRecovery(rediscovery)).toEqual(scheduled);
         const attempt = await preparations.beginReservationRecovery({
           identity: f.identity,

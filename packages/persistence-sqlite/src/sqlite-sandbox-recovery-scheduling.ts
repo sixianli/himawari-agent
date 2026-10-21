@@ -3,11 +3,13 @@ import type {
   SandboxExecutionPreparationPort,
   SandboxRecoveryState,
 } from "@himawari-agent/application";
+import { sandboxBackendKind } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import { SANDBOX_AUTHORITY_WITHDRAWN_SQL } from "./sqlite-sandbox-authority-withdrawal.ts";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 
 type Input = Parameters<SandboxExecutionPreparationPort["scheduleRecovery"]>[0];
+const TASK_ENVIRONMENT_STOP_UNCONFIRMED = "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED";
 const initialReasons = new Set([
   "SANDBOX_PREVIOUS_BOOT_UNKNOWN",
   "SANDBOX_RELEASE_CONTRADICTED",
@@ -21,10 +23,9 @@ const retryableReservationReasons = new Set([
   "SANDBOX_RECONCILIATION_TIMED_OUT",
   "SANDBOX_RECONCILIATION_INTERRUPTED",
   "SANDBOX_RECONCILIATION_INCONCLUSIVE",
+  TASK_ENVIRONMENT_STOP_UNCONFIRMED,
 ]);
 
-/** Runs inside the existing authority-checked journal transaction. It grants
- * only a queued inspect/stop and fences unbound starts before scheduling stop. */
 export class SqliteSandboxRecoveryScheduling {
   private readonly db: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -101,17 +102,19 @@ export class SqliteSandboxRecoveryScheduling {
         !["lost", "reconciling", "released"].includes(admission.record.facts.resource.supervision))
     )
       return;
-    const retryReservation =
-      admission.phase === "reserved" &&
+    const retryStop =
       stop &&
       current?.status === "unresolved" &&
       current.action === "stop" &&
-      retryableReservationReasons.has(current.reasonCode);
+      (admission.phase === "reserved"
+        ? retryableReservationReasons.has(current.reasonCode)
+        : current.reasonCode === TASK_ENVIRONMENT_STOP_UNCONFIRMED &&
+          sandboxBackendKind(record.plan.backendRef) === "task_environment");
     if (
       current?.status === "unresolved" &&
       !initialReasons.has(current.reasonCode) &&
       !(stop && current.action !== "stop") &&
-      !retryReservation
+      !retryStop
     )
       return;
     if (current?.status === "scheduled" && current.action === action) {
@@ -124,7 +127,7 @@ export class SqliteSandboxRecoveryScheduling {
         });
     }
     const nextAttemptAt =
-      retryReservation && current?.status === "unresolved"
+      retryStop && current?.status === "unresolved"
         ? new Date(
             Date.parse(current.finishedAt ?? input.now) +
               Math.min(30_000, 1000 * 2 ** Math.min(5, Math.max(0, current.attempts - 1))),

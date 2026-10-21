@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import {
   type RunExecutionLeaseClaim,
   type RuntimeToolInvocation,
+  ExecutionEnvironmentError,
   recoverSandboxExecutionsAtStartup,
   type SandboxExecutionAdmissionRecord,
   type SandboxExecutionJournalPort,
@@ -1988,7 +1989,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "read",
         );
         expect(() => call(f, "admit", nested)).toThrow("occupied");
-        const alias = admission(f, "-next"); // Root labels cannot bypass filesystem identity.
+        const alias = admission(f, "-next");
         expect(() =>
           call(f, "admit", {
             ...alias,
@@ -2066,7 +2067,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         let record = start(f);
         record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
-        // Cleanup is independent of whether the read result has arrived.
         expect(record.releaseReceipt?.acceptedAt).toBe(T1);
         const sequence = record.facts.resource.sequence;
         const previous = record;
@@ -2617,8 +2617,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             invocation_id: plan.identity.invocationId,
           });
           expect(call(f, "admit", { ...a, plan, facts }).applied).toBe(false);
-          // Exercise the SQLite completion transaction independently of RunCoordinator:
-          // a resource admitted after its last enumeration must still block completion.
           await assertCompletionBlocked(f, plan);
         } finally {
           await f.close();
@@ -2900,7 +2898,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         const migrations = await loadBundledMigrations();
         old = openQualifiedDatabase(path.join(f.resource.stateRoot, "legacy.sqlite"));
         applyMigrations(old, migrations.slice(0, 27));
-        // Copy only this test's seeded data into the actual old schema; never drop a migration.
         old.pragma("foreign_keys = OFF");
         const tables = old
           .prepare(
@@ -2979,8 +2976,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     });
   });
 
-  // Characterizes the R1/R2 contract conflict found while composing R3. This is
-  // negative evidence, not an acceptance test for the proposed preparation protocol.
   it("records why current v2 cannot bind a policy first compiled after admission", async () => {
     const f = await openSandboxJournal();
     try {
@@ -3306,6 +3301,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     ["ETIMEDOUT", "SANDBOX_CONTROL_TIMED_OUT"],
     ["JOB_HOST_CONTROL_TIMEOUT", "SANDBOX_CONTROL_TIMED_OUT"],
     ["JOB_HOST_CONTROL_EVIDENCE_INVALID", "SANDBOX_CONTROL_EVIDENCE_INVALID"],
+    ["EXECUTION_STOP_UNCONFIRMED", "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED"],
     ["lost:SANDBOX_CONTROL_UNCONFIRMED", "SANDBOX_CONTROL_UNCONFIRMED"],
     ["lost:SANDBOX_HOST_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"],
     ["lost:SANDBOX_PRIVATE_SECRET", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
@@ -3821,7 +3817,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         record = append(f, record, result(f, record), true);
         record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
-        // Construct the schema-32 failure image inside this isolated fixture.
         const trigger = f.database
           .prepare("SELECT sql FROM sqlite_master WHERE name='sandbox_occupancy_release_monotonic'")
           .pluck()
@@ -4205,7 +4200,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
-  // Actual SQLite intents and output bindings; platform verification is synthetic.
   it.each([
     "deliver",
     "retained-release",
@@ -6506,8 +6500,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           },
         });
         if (change === "revive") {
-          // The approved lifecycle contract records a separate incident rather
-          // than discarding contradictory evidence or reviving the old claim.
           const protectedRecord = append(f, record, changed);
           expect(protectedRecord.facts).toEqual(record.facts);
           expect(protectedRecord.releaseReceipt).toEqual(record.releaseReceipt);
@@ -7247,6 +7239,142 @@ describe("[R2-P2] sandbox backend parity", () => {
   it("[R2-P2] keeps the parity table aligned with every named product backend", () => {
     expect(Object.keys(PARITY_CASES).sort()).toEqual([...SANDBOX_EXECUTION_BACKEND_REFS].sort());
   });
+
+  it.each([
+    [
+      SRT_BACKEND_REF,
+      "EXECUTION_STOP_UNCONFIRMED",
+      "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED",
+      [],
+    ],
+    [
+      SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      "EXECUTION_STOP_UNCONFIRMED",
+      "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED",
+      [1000, 2000, 4000],
+    ],
+    [
+      SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      "private backend diagnostic",
+      "SANDBOX_RECONCILIATION_UNCONFIRMED",
+      [],
+    ],
+  ] as const)(
+    "[R2-P2] schedules a bound %s stop again after %s only when its task environment stop is unconfirmed",
+    async (backendRef, failure, reasonCode, delays) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        const record = start(
+          f,
+          backendRef === SRT_BACKEND_REF ? admission(f) : residentTaskEnvironmentShare(f),
+        );
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(record.plan.identity.runId);
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        let clock = T1;
+        const stop = vi.fn(async () => {
+          throw failure === "EXECUTION_STOP_UNCONFIRMED"
+            ? new ExecutionEnvironmentError(failure)
+            : new Error(failure);
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => clock,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async () => {
+              throw new Error("unexpected inspect");
+            },
+            stop,
+          }),
+        });
+        const current = () => call(f, "read", record.plan.identity) as SandboxExecutionRecord;
+        const schedule = () =>
+          preparations.scheduleRecovery({
+            identity: record.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: clock,
+            expectedSequence: current().facts.resource.sequence,
+            expectedRecoveryRevision: current().recovery?.revision ?? 0,
+          });
+        let scheduled = await schedule();
+        expect(scheduled).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: 0,
+        });
+        const reconcile = (expectedRecoveryRevision: number) =>
+          service.reconcile({
+            identity: record.plan.identity,
+            expectedSequence: current().facts.resource.sequence,
+            authority: SERVICE_AUTHORITY,
+            action: "stop",
+            expectedRecoveryRevision,
+          });
+        const attempts = delays.length === 0 ? [null] : delays;
+        for (const [index, delay] of attempts.entries()) {
+          if (!scheduled) throw new Error("scheduled recovery missing");
+          await reconcile(scheduled.revision);
+          const failed = current().recovery;
+          expect(failed).toMatchObject({
+            status: "unresolved",
+            action: "stop",
+            reasonCode,
+            attempts: index + 1,
+            finishedAt: clock,
+          });
+          const retry = await schedule();
+          if (delay === null) {
+            expect(retry).toBeUndefined();
+            expect(current().recovery).toEqual(failed);
+            continue;
+          }
+          const retryAt = new Date(Date.parse(clock) + delay).toISOString();
+          expect(retry).toMatchObject({
+            status: "scheduled",
+            action: "stop",
+            attempts: index + 1,
+            nextAttemptAt: retryAt,
+          });
+          if (!retry) throw new Error("retry schedule missing");
+          clock = new Date(Date.parse(retryAt) - 1).toISOString();
+          await expect(reconcile(retry.revision)).rejects.toThrow("Scheduled recovery changed");
+          expect(current().recovery).toEqual(retry);
+          scheduled = retry;
+          clock = retryAt;
+        }
+        expect(stop).toHaveBeenCalledTimes(attempts.length);
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS activeClaims FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(record.plan.identity.jobId),
+        ).toEqual({ activeClaims: 1 });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
 
   const neverBoundCandidate = (
     f: Awaited<ReturnType<typeof openSandboxJournal>>,
