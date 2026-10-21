@@ -5,8 +5,6 @@ import { PI_RESIDENT_FRAME_LIMIT_BYTES } from "@himawari-agent/execution-contrac
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobHostRequest } from "../src/job-host-protocol.ts";
 
-// Model only OS, IPC and SRT boundaries. The real entrypoint owns admission,
-// ordering, output limits, namespace acknowledgement and cleanup decisions.
 const boundary = vi.hoisted(() => ({
   process: {},
   spawn: vi.fn(),
@@ -1575,12 +1573,31 @@ describe("[R2-P2] Job Host session mode", () => {
     expect(result()).toMatchObject({ reason: "host_failure" });
   });
 
+  async function finishSession() {
+    await vi.advanceTimersByTimeAsync(2100);
+    await drain();
+  }
+  const residentKilled = () =>
+    processBoundary.kill.mock.calls.some(([pid, signal]) => pid === -7000 && signal === "SIGKILL");
+  const settledFields = {
+    exitCode: null,
+    taskProcessExited: true,
+    stdioClosed: true,
+    processGroupGone: true,
+    namespace: "resident_intact",
+    cleanedUp: true,
+  };
+
   it("[R2-P2] settles the running command before a session cancel result", async () => {
-    await openSession();
+    await openSession(sessionRequest({ cleanupTimeoutMs: 1000 }));
     await readyRunner();
     await command("attempt-a", 1);
     await receive("cancel");
-    await drain();
+    await flush();
+    expect(residentKilled()).toBe(false);
+    expect(result()).toBeUndefined();
+    await resultFrame(1, 137);
+    await finishSession();
     const terminal = sent.filter(
       (item) => item["type"] === "command_result" || item["type"] === "result",
     );
@@ -1589,8 +1606,72 @@ describe("[R2-P2] Job Host session mode", () => {
       type: "command_result",
       attemptId: "attempt-a",
       reason: "cancelled",
+      ...settledFields,
     });
+    expect(residentKilled()).toBe(true);
     expect(boundary.manager.reset).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["deadline", "deadline"],
+    ["deadline", "cancelled"],
+    ["cancelled", "deadline"],
+  ] as const)(
+    "[R2-P2] keeps a deferred %s stop when a %s stop repeats before the command settles",
+    async (first, second) => {
+      await openSession(sessionRequest({ cleanupTimeoutMs: 1000 }));
+      await readyRunner();
+      await command("attempt-a", 1);
+      await receive("cancel", { reason: first });
+      await flush();
+      await receive("cancel", { reason: second });
+      await flush();
+      expect(residentKilled()).toBe(false);
+      await resultFrame(1, 137);
+      await finishSession();
+      expect(lastCommand()).toMatchObject({
+        attemptId: "attempt-a",
+        reason: first,
+        ...settledFields,
+      });
+      expect(result()).toMatchObject({ reason: first });
+      expect(residentKilled()).toBe(true);
+    },
+  );
+
+  it("[R2-P2] settles a command whose deadline equals the session deadline when the session timer fires first", async () => {
+    const deadlineAt = new Date(Date.now() + 1000).toISOString();
+    await openSession(sessionRequest({ deadlineAt, cleanupTimeoutMs: 1000 }));
+    await readyRunner();
+    await command("attempt-a", 1, { deadlineAt });
+    await advance(1100);
+    await receive("cancel", { reason: "deadline" });
+    await flush();
+    expect(residentKilled()).toBe(false);
+    await resultFrame(1, 137);
+    await finishSession();
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "deadline",
+      ...settledFields,
+    });
+    expect(result()).toMatchObject({ reason: "deadline" });
+  });
+
+  it("[R2-P2] keeps the session stop reason when a deferred command never reports back", async () => {
+    await openSession(sessionRequest({ cleanupTimeoutMs: 300 }));
+    await readyRunner();
+    await command("attempt-a", 1);
+    await receive("cancel", { reason: "deadline" });
+    await advance(500);
+    await drain();
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "deadline",
+      taskProcessExited: false,
+    });
+    expect(result()).toMatchObject({ reason: "deadline" });
+    expect(residentKilled()).toBe(true);
   });
 
   it("[R2-P2] ends an idle session at its own deadline", async () => {

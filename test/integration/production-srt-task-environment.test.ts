@@ -185,6 +185,7 @@ interface Harness {
   readonly srt: SrtTaskEnvironmentBackend;
   readonly prepareCalls: JobHostRequest[];
   readonly sessions: SandboxJobSession[];
+  readonly commandOutcomes: ReturnType<SandboxJobSession["run"]>["result"][];
   readonly stateDirectory: string;
   readonly bindings: readonly BindingSpec[];
   readonly runs: () => number;
@@ -198,11 +199,13 @@ async function srtHarness(options: {
   readonly directoryOperations?: readonly HostFileOperationKind[];
   readonly failCommandSessionPreparation?: boolean;
   readonly failCommandSessionReadiness?: boolean;
+  readonly closeSessionWhenFirstCommandStarts?: boolean;
 }): Promise<Harness> {
   const stateDirectory = await mkdtemp(`${testTemporaryRoot()}/srt-env-`);
   cleanups.push(() => rm(stateDirectory, { recursive: true, force: true }));
   const prepareCalls: JobHostRequest[] = [];
   const sessions: SandboxJobSession[] = [];
+  const commandOutcomes: ReturnType<SandboxJobSession["run"]>["result"][] = [];
   let failedCommandSessionPreparation = false;
   let failedCommandSessionReadiness = false;
   if (options.failFirstWriteOutput) {
@@ -252,6 +255,12 @@ async function srtHarness(options: {
           const active = run(input, authorize);
           runs += 1;
           totalRuns += 1;
+          commandOutcomes.push(active.result);
+          if (options.closeSessionWhenFirstCommandStarts && totalRuns === 1)
+            void active.started.then(
+              () => setTimeout(() => session.close(), 2000),
+              () => undefined,
+            );
           if (!options.forceFirstUnsettled || forced || runs !== 1) return active;
           forced = true;
           return {
@@ -319,6 +328,7 @@ async function srtHarness(options: {
     srt,
     prepareCalls,
     sessions,
+    commandOutcomes,
     stateDirectory,
     bindings: options.bindings,
     runs: () => totalRuns,
@@ -692,6 +702,23 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
       );
     expect(String(secondOutcome.error)).toContain("Workspace remains occupied");
     expect(ctx.prepareCalls).toHaveLength(1);
+  });
+
+  it("[R2-P2] settles a running command before stopping the resident runner when the session stops", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "sleep 90" } }],
+      closeSessionWhenFirstCommandStarts: true,
+    });
+    const call = makeCalls(ctx);
+    const first = await call();
+    const dispatched = dispatch(ctx, first).catch((error: unknown) => error);
+    const pending = await waitFor(() => ctx.commandOutcomes[0], 60_000);
+    expect(await pending).toMatchObject({
+      settled: true,
+      reason: "cancelled",
+      namespace: "resident_intact",
+    });
+    await dispatched;
   });
 
   it("[R2-P2] keeps the file_write session policy separate from the command session", async () => {

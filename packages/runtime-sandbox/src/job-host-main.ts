@@ -36,8 +36,6 @@ import {
 import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
 import type { SandboxSdk } from "./sandbox-sdk.ts";
 
-// This entry is forked by the trusted Worker with a clean environment before any
-// SDK import. The task gets pipes only; it never inherits this IPC channel.
 const diagnosticStarted = performance.now();
 const bootId = randomUUID();
 const processStartedAt = new Date().toISOString();
@@ -115,6 +113,7 @@ let sessionTaskStarted = false;
 let spawnedCommands = 0;
 let commandsExited = true;
 let commandsClosed = true;
+let pendingStop: "deadline" | "cancelled" | undefined;
 let commandGroupsGone = true;
 
 function send(message: Record<string, unknown>) {
@@ -217,14 +216,10 @@ function sendLaunchFailureDiagnostic(
 }
 
 function killTask() {
-  // After wait/exit, the numeric PID can be reused; never turn it into a
-  // recovery handle. Surviving descendants remain explicitly unverified.
   if (task?.pid && task.exitCode === null && task.signalCode === null) {
     try {
       process.kill(-task.pid, "SIGKILL");
-    } catch {
-      /* Already exited or unavailable; never claim tree cleanup. */
-    }
+    } catch {}
   }
 }
 async function finish() {
@@ -253,8 +248,6 @@ async function finish() {
     });
   let reset = false;
   try {
-    // Initialization/wrapping must settle before reset. The emergency deadline
-    // remains armed if the SDK never settles.
     await sdkOperation.catch(() => {});
     await egress?.close();
     if (sandboxManager) {
@@ -289,9 +282,7 @@ async function finish() {
     srtReset: reset,
     taskProcessGroupGone: sessionMode ? commandGroupsGone : taskProcessGroupGone,
   });
-  // IPC drains before disconnect; final close remains bounded by emergency.
   if (process.connected) process.disconnect();
-  // Keep the final-exit watchdog armed for leaked SDK handles.
   emergency?.unref();
   process.exitCode = reset ? 0 : 1;
 }
@@ -311,7 +302,12 @@ async function recordStart(groupId: number) {
 }
 function stop(cause: string) {
   if (phase === "finished") return;
-  if (phase !== "stopping") reason = cause;
+  if (phase === "running" && active && (cause === "deadline" || cause === "cancelled")) {
+    pendingStop ??= cause;
+    endCommand(active, cause);
+    return;
+  }
+  if (phase !== "stopping") reason = pendingStop ?? cause;
   phase = "stopping";
   networkAuthority.close();
   void egress?.close();
@@ -432,9 +428,6 @@ async function prepare(value: unknown, controlValue: unknown, session: boolean) 
   if (!manager.isSupportedPlatform() || dependencies.errors.length || dependencies.warnings.length)
     throw new Error("JOB_HOST_DEPENDENCIES_UNAVAILABLE");
   if (phase !== "preparing") return;
-  // The ephemeral upstream is infrastructure-owned, never accepted from a scope.
-  // The frozen policy digest binds the allowed targets; runtime digest binds this
-  // mandatory routing implementation. Both proxy schemes disable all bypasses.
   sdkOperation = (async () => {
     if (process.platform === "linux") {
       await startLinuxHostGuardian(request.cleanupTimeoutMs ?? 5000, () => stop("host_failure"));
@@ -510,10 +503,6 @@ interface TaskLaunch {
 }
 async function launchTask(launch: TaskLaunch) {
   const current = launch.request;
-  // SRT 0.0.75 advertises localhost in proxy URLs. Node's getaddrinfo can
-  // fail under the Mac resolver restrictions even with /etc/hosts readable.
-  // Normalize only SRT-owned proxy variables inside its wrapper; retain its
-  // authentication/ports and the OS deny policy, without opening DNS services.
   const namespaceToken = randomUUID();
   const namespaceGate = process.platform === "linux";
   const command = namespaceGate
@@ -551,7 +540,6 @@ async function launchTask(launch: TaskLaunch) {
   });
   child.stdin?.on("error", () => launch.failed());
   let startAcknowledged = false;
-  // On Mac, spawn already permits user code before its asynchronous event.
   if (!namespaceGate && child.pid !== undefined) launch.exposed();
   const acknowledgeStart = () => {
     if (!launch.running() || !child.pid || startAcknowledged)
@@ -616,9 +604,6 @@ async function launchTask(launch: TaskLaunch) {
           launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID"));
           return;
         }
-        // stderr is also used by the wrapping shell for startup diagnostics.
-        // Only the unpredictable token identifies our control frame; diagnostics
-        // cannot start user code, renew the deadline, or bypass namespace capture.
         while (gatePending) {
           const newline = gateBytes.indexOf(10);
           if (newline < 0) return;
@@ -1002,6 +987,7 @@ function settleCommand(command: SessionCommand): Promise<void> {
       if (jobHostCommandSettled(report)) phase = "ready";
       else stop("host_failure");
     } else if (phase === "stopping") void finish();
+    if (phase === "ready" && pendingStop !== undefined) stop(pendingStop);
   })();
   return command.settlement;
 }
@@ -1137,7 +1123,6 @@ process.on("message", (message: unknown) => {
       stop(cause === "deadline" || cause === "host_failure" ? cause : "cancelled");
     } else throw new Error("JOB_HOST_MESSAGE_INVALID");
   })().catch((error: unknown) => {
-    // Machine codes only, on infrastructure stderr; never emit task input or SDK text.
     const systemCode =
       error &&
       typeof error === "object" &&
