@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:bb1fb4346f4060d7d1708e418b9c76c9be7f7ae9168ad3c12c2030ae4a4a11f0"
+contract_sha256: "sha256:893380eff02c948483d63730768fdcdcc2672c93c07e4725117363b6fa66ea49"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -45,7 +45,8 @@ date: "2026-10-21"
 - 分工与互审：[SOURCE: docs/adr/0062-claude-writes-complex-code-opencode-routine.md#decision]
 - 重复错误的硬约束：[SOURCE: docs/adr/0060-hard-constraint-on-third-repeat.md#decision]
 - 模型表和导出命令：[ADR 0061](../adr/0061-opencode-model-table.md)，表在 `.agents/opencode-models.toml`
-- 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence`、`layer3-exit-code` 条目
+- 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence`、`layer3-exit-code`、`layer0-related-tests` 条目
+- 第 0 层清单与提交钩子：[SOURCE: docs/adr/0066-layer0-related-tests-declared.md#decision]
 - 测试主机的目录和清理：[测试主机操作 Runbook](test-host-operations-runbook.md)
 
 <a id="safety-and-preconditions"></a>
@@ -83,6 +84,7 @@ date: "2026-10-21"
 6. **检查命令的退出码。** 管道的退出码只来自最后一段；把输出写进文件，单独记下 `$?`，再显示尾部。只想知道有没有匹配时用 `grep -q`。
 7. **结束。** 批次以停止文件为结束标志。读它的摘要，核实每条说法，在权限内裁决，写回复文件后用 `oc-launch.sh resume` 续跑同一会话；任务结束时 `oc-server.sh stop <前缀目录>/oc-server`。
 8. **审查。** Claude 逐行审 opencode 的每个改动和它跑过的每条命令（事件流 `<前缀>.jsonl`），用 `longtask.py record --review --by claude` 记录；Claude 自己写的代码由 opencode 审，`--by opencode`。
+9. **第 0 层清单和提交钩子。** 写第 0 层脚本前运行 `python3 "$(git rev-parse --git-common-dir)/hooks/check-layer0-tests.py" derive`（工作区相对 `HEAD`；`derive --staged` 看暂存区，`derive <提交>` 看某个提交），把列出的文件全部放进第 0 层，只可增加。改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里每个第 0 层文件一行 `Layer-0-tests: <仓库相对路径>`，推导为空时写 `Layer-0-tests: none`。钩子装在仓库共享的 git 目录（`git rev-parse --git-common-dir` 下的 `hooks/`）：`check-layer0-tests.py`、`commit-msg`（`exec python3 "$common/hooks/check-layer0-tests.py" commit-msg "$1"`）、`pre-push`（`exec python3 "$common/hooks/check-layer0-tests.py" pre-push`），三个文件和自测的来源与 SHA-256 记在 [docs/lessons.md](../lessons.md#layer0-related-tests)；`git worktree` 建的工作树里 `.git` 是文件，脚本一律用共享 git 目录下的路径；新克隆或换机器后从 `.ci-output/handoff/l0-guard/` 复制安装，核对摘要，再跑一次自测（[ADR 0066](../adr/0066-layer0-related-tests-declared.md)）。
 
 <a id="verification"></a>
 
@@ -91,6 +93,7 @@ date: "2026-10-21"
 - 启动输出含 `started pid=… session=… model=…`；只读批次另有 `READ_ONLY_BRIEF`。
 - 事件流里没有访问禁止主机或在 MacBook 上跑测试的命令；代理声称的测试确实在所述版本上跑过。
 - `test-ssh-wrappers.sh` 对替身 `ssh` 全部打印 `ok`。
+- `bash .ci-output/handoff/l0-guard/selftest.sh <仓库根目录>` 最后一行是 `SELFTEST passed=<数> failed=0`，退出码 0；它只用 git 和 Python，在本机跑，不是项目测试。
 - 等待脚本的证据门禁（`evidence-gate.sh`，由 `oc-wait.sh` 调用）通过：本轮新增的证据里没有 `node_modules`、`.git`、含它们的压缩包或超过 50 MB 的文件，除非同目录的 `EVIDENCE-REASONS.txt` 写明 `文件名: 理由`。
 
 <a id="evidence"></a>
@@ -133,6 +136,11 @@ date: "2026-10-21"
 | `check-brief refused the brief` | 改代码的简报没挂条目编号 | 挂条目；只读任务加 `只读任务：是` |
 | 包装脚本退出 67 `*_BACKGROUND_REFUSED` | 远程命令写成 `… && setsid nohup … &` | 改为 `setsid -f`，`cd` 放进脚本 |
 | 退出 69 `*_SELF_MATCH_REFUSED` | 远程命令用了 `pgrep -f` 或 `pkill -f` | 用记录的 PID 判断存活 |
+| 提交时 `L0_RELATED_TESTS_UNDECLARED` | 改了产品源，提交说明没有任何 `Layer-0-tests:` 行 | 按列出的文件补跑第 0 层并逐行声明；推导为空时写 `Layer-0-tests: none` |
+| 提交或推送时 `L0_RELATED_TESTS_OMITTED` | 声明行缺了推导出的文件（括号里是原因：引用、同名或整体替换的包导出有变） | 把列出的文件放进第 0 层跑过后补进声明；推送时报的是已提交的说明，用 `git commit --amend` 补（只限未推送的提交） |
+| `L0_RELATED_TESTS_UNKNOWN` | 声明的路径不是 `ci/policy.json` 会收集的测试文件，或 `none` 和路径混写 | 改成仓库相对路径（可带 `./`），被排除的测试不要写进声明 |
+| `L0_RELATED_TESTS_ERROR`（退出 2） | git 读不出对象、`ci/policy.json` 或 `package.json` 不可用、说明文件读不出、推送输入格式异常 | 按信息修好再提交；检查出错一律当拒绝，不要用 `--no-verify` 绕过 |
+| `L0_RELATED_TESTS_SKIPPED_MERGE` | 合并提交不做这项检查（只在用户要求合并时出现） | 无需处理；合并里解决冲突改了产品源时，在说明里照常声明 |
 | 退出 70 `MASKED_STATUS_REFUSED` | 输出过滤器（`tail`、`head`、无 `-q` 的 `grep`、`sed`、`tee`）结尾的管道后面跟了 `&&`、`\|\|`（`\|\| true` 除外）或 `$?`，且没设 `pipefail` | 输出写文件、单独记 `$?`、再看尾部 |
 | 退出 71 `*_LONG_WAIT_REFUSED` / `WAIT_GUARD_REFUSED:` | 一条前台命令里同步等待：工具时限 0 或超过 300000 ms、`sleep` 合计超过 30 秒（含包装脚本的远程命令和 `bash -c`、`python3 -c` 正文）、`sleep(` 超过 30、含 `sleep` 的循环、含这些内容的本地脚本（只有仓库自己的 `hermes-wait.sh` 按真实路径豁免）、opencode 的 `execute` 工具；`setsid -f` 或后台启动的部分不检查 | 后台启动并用 `hermes-wait.sh` 等待 |
 | 上传入口退出 72 `*_LAYER3_VERDICT_MISSING` | 要上传的文件里出现 `local.mjs`（项目的本地 CI 入口脚本），却没有出现 `layer3-verdict.py`。本地跑 `local.mjs` 时，即使构建和测试全过，发布步骤也会因连不上安全审查服务（`SECURITY_REVIEW_HTTP_NOT_FOUND`）让它以 1 退出，按退出码判定会把通过当失败 | 第 3 层的结果改由 `layer3-verdict.py <local-summary.json> <被测提交> build,test` 读报告判定；退出码只接受 0 和 1，其他值（例如被杀掉的 137）直接算失败。只在说明文字里提到 `local.mjs` 的脚本也会被拦，改掉那段文字即可 |

@@ -35,6 +35,7 @@ date: "2026-10-13"
 - [代理在测试主机上的任务还没跑完就结束本轮](#turn-ended-before-done)
 - [加了新的沙箱后端，共用逻辑只接在原来的一次性路径上](#backend-branch-omission)
 - [按 `local.mjs` 的退出码判定第 3 层](#layer3-exit-code)
+- [第 0 层漏跑直接相关的测试文件](#layer0-related-tests)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -599,5 +600,24 @@ date: "2026-10-13"
   - 限制：
     - 入口检查只看文字：只在说明文字里提到 `local.mjs` 的脚本也会被拦（改文字即可）；文件里提到 `layer3-verdict.py` 却不真正用它判定时拦不住，仍靠审核。
     - 已经在测试主机上的旧脚本（例如 Hermes 上的 `run-l3w.sh` 和另外 7 个调用 `local.mjs` 的脚本）不受影响，下次上传时会被拦下，届时改成用判定脚本。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="layer0-related-tests"></a>
+
+## 第 0 层漏跑直接相关的测试文件
+
+- 反复出现的情况：第 0 层（改产品代码前后跑的定向测试）的文件清单由写方案的人凭印象挑，漏掉了直接引用被改文件的测试，要等第 2 层（整个受影响的 Vitest 项目）才暴露，每次多花一整轮测试。
+- 发生记录：
+  - 2026-10-19 D-52（提交 `882cc959`）：改了 `apps/execution-worker/src/production-sandbox-execution-v2.ts`，漏了直接引用它的 `test/integration/sandbox-v2-container-route.test.ts`，记在 `.agents/tasks/round2-tool-execution/plan.md`。
+  - 2026-10-22 D-54（提交 `9969a646`）：同样改了那个文件，第 0 层只跑 3 个文件；第 2 层发现 `sandbox-v2-container-route.test.ts` 整体替换 `@himawari-agent/runtime-sandbox` 的替身缺新导出的错误类，5 个用例超时（`plan.md`）。
+  - 2026-10-22 D-55（提交 `51f8b927`）：改了 `packages/runtime-sandbox/src/job-host-main.ts`，第 0 层只跑了集成文件，漏了 `packages/runtime-sandbox/test/job-host-main.unit.test.ts`；第 2 层 `d55-l12-01` 发现一个旧用例在新行为下失败（`.ci-output/handoff/2026-10-22-d55-decision.md`）。
+- 为什么要紧：第 2 层要构建并跑整个项目，在 Hermes 上一轮二三十分钟；漏掉的文件本来几秒就能在第 0 层发现。三次里有一次还白跑了一整轮第 1、2 层。
+- 第三次的根因：前两次之后的预防只有 `plan.md` 里的记录和交接文件里的计数，选第 0 层清单那一刻没有任何东西检查；而“哪些测试直接引用了被改文件”可以从代码机械算出。三次的提交说明正文其实都写到了漏掉的文件（第 2 层发现后补写的），所以只在说明全文里找文件名的检查三次都会放行。
+- 硬约束（2026-10-22，[ADR 0066](adr/0066-layer0-related-tests-declared.md)）：
+  - 检查脚本 `check-layer0-tests.py`，装在仓库共享 git 目录（`git rev-parse --git-common-dir`）的 `hooks/` 下，是本机文件，不进仓库；SHA-256 为 `0b66a9ec3683226a6e5776307163815338c7cbdb2bcfbc2c7786ac0de35680e1`，来源副本在 `.ci-output/handoff/l0-guard/`。`derive` 按 ADR 0066 的规则推导直接相关的测试：相对路径引用被改文件、同包同名、被改文件的导出有增删时整体替换它所在包的测试；测试文件按 `ci/policy.json` 的测试项目判定。
+  - 同目录的 `commit-msg`（SHA-256 `6828311ae2d24ca824c2097a77329cc6f097d54bbdc8b97b0b93d3784151da3e`）和 `pre-push`（SHA-256 `8ea9e1a28396b172d9398bb9103f01422b066a0657091c5a6df54d343336877d`）钩子运行它：改了 `apps/*/src/`、`packages/*/src/` 的提交，说明里必须逐行写 `Layer-0-tests: <路径>` 包含每个推导出的文件（推导为空时写 `Layer-0-tests: none`），否则拒绝提交；推送前对每个待推送提交按“父提交到该提交”再查一遍，覆盖 `--amend` 和跳过 `commit-msg` 的提交。合并提交打印 `L0_RELATED_TESTS_SKIPPED_MERGE` 后放行。所有工作树、所有代理的提交和推送都经过这两个钩子；opencode 和 Grok 的禁止规则已拒绝 `--no-verify`、改 `hooksPath` 和直接操作 `.git/hooks`。
+  - 验证：自测 `.ci-output/handoff/l0-guard/selftest.sh <仓库>`（SHA-256 `d131d0db36da7539a5f7f5c968150f821bf4d704053128a27367cba2deb2151c`）78 项全部通过（2026-10-22，`selftest-04.log`），结果在 `.ci-output/handoff/l0-guard/` 下。其中：用三次当时第 0 层实际跑过的文件写成声明行，检查都拒绝并点名漏掉的文件，补上后放行；三次的真实提交说明（文件名只在正文里）都被拒；临时仓库里用真实的 `git commit` 和 `git push` 验证只改文档或测试不需要声明，缺声明、漏文件、写了不是测试的路径被拒，同一提交里改 `ci/policy.json` 排除必需测试仍被拒，`--no-verify` 跳过的提交和 `--amend` 去掉声明的提交被 `pre-push` 拦下，合并提交打印跳过。审核：opencode（DeepSeek V4.1 Flash）四轮逐行审核，记录在 `.ci-output/handoff/2026-10-22-l0-omission-oc-stop-2.md` 到 `-stop-4.md`。
+  - 限制：只证明声明里包含推导出的文件，不证明它们真的跑过并通过；经包名引用又不整体替换的测试、经上层调用者到达的场景测试、按构建产物路径引用的产品路径测试找不到，仍靠写方案的人判断和第 2 层；改 `test/fixtures/` 下的辅助文件不要求引用者；钩子只在本机生效，新克隆要按[代理工具 Runbook](runbooks/agent-tooling-runbook.md#procedure) 安装。
 
 [回到目录](#编码代理反复犯的错误)
