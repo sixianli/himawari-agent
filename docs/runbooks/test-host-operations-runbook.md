@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d7aff0dbd10345e2bf9df091e6faeda9c39877214f062b6eece61f53e04544d2"
+contract_sha256: "sha256:7309e159a6d481c172f45893ecf613e65ed9e263aa35e98da1152fe24fd550ea"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -36,7 +36,7 @@ date: "2026-10-21"
 ## Scope
 
 - 适用：在 Hermes 或云服务器 `84.247.157.41` 的测试账号 `himawari-ci` 上运行第 0–4 层开发测试（定向测试、`npm run check`、受影响模块、完整 `npm test`、真实产品路径），以及每次运行前后的记录和清理。
-- 不适用：生产部署（第 5 层）、生产服务的任何操作、Mac 上的验证（用户 2026-09-30 起无限期推迟）、新下载（工具链、bubblewrap 等，需用户先批准）。
+- 不适用：生产部署（第 5 层）、生产服务的任何操作、Mac 上的验证（用户 2026-09-30 起无限期推迟）、新下载（工具链、bubblewrap 等，需用户先批准）。用户本人以管理员身份登录生产云服务器、查看生产服务和处理内核锁定，见[生产云服务器访问与系统更新 Runbook](production-server-access-runbook.md)。
 - 目标：Hermes（Ubuntu 22.04，bwrap 0.6.1）和云服务器的 `himawari-ci` 账号（Ubuntu 24.04，与生产服务同一台机器）。两者的结果互不代替，也都不代替生产安装的行为。
 
 <a id="authoritative-sources"></a>
