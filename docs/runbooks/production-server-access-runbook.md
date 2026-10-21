@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:e4dbd65ce9e0a1b5c271564b05afac58be64063a4b6dd6f697f0ea2d1f3be243"
+contract_sha256: "sha256:f361c193b5349520fd45a3aa82eaf70e569d4297fa2f609f6193f3752326b97d"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-22"
@@ -54,7 +54,7 @@ date: "2026-10-22"
 
 ## Safety and Preconditions
 
-- **只接受密钥登录**。`/etc/ssh/sshd_config.d/00-key-only.conf`（2026-10-01 写入）和 `60-cloudimg-settings.conf` 都设了 `PasswordAuthentication no`，`sshd_config` 里 `root` 为 `PermitRootLogin prohibit-password`：任何账号都不能用密码经 SSH 登录，`root` 只能用密钥。推断这份设置在 2026-10-19 重启后才实际生效，之前密码登录可能仍可用。
+- **只接受密钥登录**。`/etc/ssh/sshd_config.d/00-key-only.conf`（2026-10-01 写入）和 `60-cloudimg-settings.conf` 都设了 `PasswordAuthentication no`，`sshd_config` 里 `root` 为 `PermitRootLogin prohibit-password`：任何账号都不能用密码经 SSH 登录，`root` 只能用密钥。这份设置由用户 2026-10-01 运行 `ssh-key-only.sh` 写入，当天已从外部验证只剩密钥一种登录方式（撤销脚本 `revert-ssh-key-only.sh`，两个脚本在本地未提交的 `.ci-output/cloud-test-host/`）。
 - **管理员登录用 `root` 和用户 Mac 上已有的密钥**：`ssh root@84.247.157.41`。历次生产操作包的步骤脚本也用同一方式（`ssh -o BatchMode=yes ... root@84.247.157.41`，`BatchMode` 表示不弹出密码输入）。
 - **不要用 Contabo 面板的 “Reset credentials”**，除非现有密钥确实失效：它重置默认用户（`root`）的凭据，可能替换而不是追加 `root` 的密钥列表，让操作包脚本用的密钥失效；也可能需要重启服务器。确需使用时选 “SSH-Key” 页，粘贴 Mac 上 `.pub` 公钥文件的一整行，绝不粘贴私钥。
 - **启动前检查核对的系统状态**：内核版本（`os.release()`）必须与安装回执里封存时的版本完全相同；`/usr/bin/bwrap`、`/usr/bin/socat`、`/usr/bin/bash`、`/usr/bin/rg` 和 `bwrap` 的 AppArmor 配置文件的摘要必须不变。任何一项变化，服务启动前检查就失败，`systemd` 每 10 秒重试一次，且没有告警。
