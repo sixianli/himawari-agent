@@ -29,6 +29,7 @@ date: "2026-10-13"
 - [2026-10-21 补充：重启后任务环境停止未确认时下一轮再试](#resident-stop-retry)
 - [2026-10-22 补充：常驻路径准备失败带上宿主诊断](#resident-preparation-diagnostic)
 - [2026-10-22 补充：常驻命令到期限时稳定记成期限超时](#resident-deadline-settlement)
+- [2026-10-22 补充：服务关闭打断的资源核查在下次启动后再做一次](#interrupted-recovery-retry)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -221,6 +222,16 @@ D-55：候选 `9969a646` 的第 4 层里，`[R2-S3] terminates a running tool at
 
 - **会话停止时先结算正在运行的命令**：Job Host 在会话模式下因期限或取消停止、而有命令正在运行时，先按命令自己的结束流程以同一原因结束这条命令（会话仍处在运行阶段，常驻 runner 送回的结果帧照常接收），命令结算后再停会话和常驻进程组。期限那一刻 Job Host 自己的会话期限计时器和 Worker 发来的 `cancel` 会先后各调用一次停止，延后期内再收到期限或取消停止只记下最先的原因，不打断延后。命令没有及时退出时仍立即停止全部进程：等待上限是清理时限，Worker 发起的停止还受心跳看门狗限制（Worker 取消后不再发心跳，Job Host 1.5 秒收不到就按宿主故障停止），以先到者为准；这时命令报告未结算，会话的最终原因仍是最初的期限或取消：延后期内任何后到的宿主故障（命令清理兜底、心跳看门狗、runner 退出）都不改变最初原因，与改动前“先到的会话停止原因优先”相同。停止原因是宿主故障时立即停止，不延后。原来会话停止一开始就进入停止阶段并杀常驻进程组，之后到达的结果帧被当作无效帧拒收，命令只能是未结算。
 - **不变的部分**：未结算的命令报告仍记成结果未知并保留占用、等核查，不因原因是 `deadline` 就当作已确认清理；Worker 的取消和期限归因、期限、清理时限和运行时长上限都不变；一次性 SRT 路径不变。期限时刻其他可能的竞争（运行时长上限、沙箱内权限确认在期限后被拒）记在 [BL-20261022-002](../backlog/BL-20261022-002-运-行-时-长-上-限-与-工.md)。
+
+<a id="interrupted-recovery-retry"></a>
+
+## 2026-10-22 补充：服务关闭打断的资源核查在下次启动后再做一次
+
+D-56：候选 `51f8b927` 的完整第 4 层里，`[R2-T11][R2-S2] keeps an offline Worker result pending until paired service restart settles LOST` 在服务成对重启后 90 秒内一直停在 `reconciling_external_result`，资源没有释放，后面 7 个用例因发送按钮一直不可用连带失败；同一候选单独重跑这个用例通过，上一候选的完整第 4 层也通过。两次的差别在重启前一刻：通过时这条常驻命令的执行记录已经是 `lost`（第一次资源核查已经结束，原因是 [D-53](#resident-stop-retry) 的 `SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，重启后按退避重试）；失败时还是 `initializing`，说明第一次核查还没写下结论，测试就停了服务。服务关闭会中止资源恢复循环，进行中的核查以 `SANDBOX_RECONCILIATION_INTERRUPTED` 结束、恢复状态记成 `unresolved`。下次启动时，启动恢复不改动 `unresolved` 状态，资源恢复调度对 `bound` 记录又只在原因属于“初始原因”（如 `SANDBOX_PREVIOUS_BOOT_UNKNOWN`）或 D-53 的停止未确认时重新排定，于是这条记录再也没有人核查。中断原因对 `reserved` 记录本来就可以重试，`bound` 记录漏了。服务日志随测试临时目录删除了，失败那次的恢复原因码没有直接读回，所以“那次正是被中断”是由读回和代码推断的；“中断后再无人核查”这条链条本身由新增的集成测试复现。
+
+- **被中断等于没有结论**：资源恢复调度把 `SANDBOX_RECONCILIATION_INTERRUPTED` 和 `SANDBOX_PREVIOUS_BOOT_UNKNOWN` 一样当作初始原因：`bound` 记录（任何后端）的上一次核查以它结束时，下一次扫描立即重新排定一次，动作仍按 Run 状态决定。这个原因只在资源恢复循环被中止时产生：服务正常关闭，或派发循环失败（`#failClosed`，随后也会触发服务关闭）；循环被中止后本次运行不再扫描，所以实际效果是下次启动后再核查一次，不会在同一次运行里反复重试。数据库里记下的原因保持原样，不改写成 `SANDBOX_PREVIOUS_BOOT_UNKNOWN`。
+- **不变的部分**：再次核查的结果按原有规则处理：停止未确认时按 D-53 退避重试；兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED`、身份、证据、权限错误仍暂停；整个核查到期 `SANDBOX_RECONCILIATION_TIMED_OUT` 对 `bound` 记录仍暂停，是否放宽和是否给重试设总时长上限一起记在 [BL-20261021-008](../backlog/BL-20261021-008-重-启-后-上-一-个-worker-实.md)。工作区占用在拿到释放证明前一直保持，不重放原工具。D-55 与本缺陷无关：Worker 被杀时命令已经结算，Job Host 处在空闲阶段，不经过 D-55 的延后分支。
+- **方案比较**：DeepSeek V4.1 Flash 的独立诊断（`.ci-output/handoff/2026-10-22-l4-s19-diagnosis-oc-stop.md`）给出同一条链条，建议启动恢复把这类原因改写成 `SANDBOX_PREVIOUS_BOOT_UNKNOWN`，或让任务环境的 `bound` 记录复用预约阶段的整组可重试原因；采用它的诊断，修法改为在做排期决定的地方承认中断原因，原因记录保持真实，范围只到已证实的中断原因。
 
 <a id="references"></a>
 

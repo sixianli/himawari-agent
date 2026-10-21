@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:230f7bdfa609289b96db7a4cb64c6327c123436560c418f6eeaed027cd6c4425"
+contract_sha256: "sha256:4ea2943eb510cd9c23910c3943b7b82231de12834bef7b3155383f308e495779"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -456,7 +456,7 @@ U1 修订 `51fe7f6` 处理会话详情与执行状态读取之间发生的并发
 
 后台核查与操作结果并发写入时的版本处理，见[安装与诊断手册的核查说明](install-start-stop-runbook.md#troubleshooting)。该处理保留原资源事实、恢复所有权和期限检查，不新增数据格式，不改变本手册的备份、权威迁移或部署操作步骤；它不授权重放原工具。
 
-资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。一次性 SRT 的 `bound` 记录仍按原规则暂停；任务环境（常驻 SRT 和容器）的 `bound` 记录停止未确认（`SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，旧 Job Host 还没退出时常见）时，按同样的退避在下一次扫描重新排定（D-53，见 [ADR 0054 的 2026-10-21 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-stop-retry)）；兜底的 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
+资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。一次性 SRT 的 `bound` 记录仍按原规则暂停；任务环境（常驻 SRT 和容器）的 `bound` 记录停止未确认（`SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，旧 Job Host 还没退出时常见）时，按同样的退避在下一次扫描重新排定（D-53，见 [ADR 0054 的 2026-10-21 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-stop-retry)）；上一次核查因服务关闭或派发循环失败被中止（`SANDBOX_RECONCILIATION_INTERRUPTED`）的 `bound` 记录，不论后端，在下一次启动后的第一次扫描重新排定一次（D-56，见 [ADR 0054 的 2026-10-22 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#interrupted-recovery-retry)）；兜底的 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 

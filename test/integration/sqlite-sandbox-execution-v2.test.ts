@@ -7376,6 +7376,142 @@ describe("[R2-P2] sandbox backend parity", () => {
     },
   );
 
+  it.each([SRT_BACKEND_REF, SRT_TASK_ENVIRONMENT_BACKEND_REF] as const)(
+    "[R2-P2] schedules a bound %s stop again after the next start when a service shutdown interrupted it",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        const record = start(
+          f,
+          backendRef === SRT_BACKEND_REF ? admission(f) : residentTaskEnvironmentShare(f),
+        );
+        const identity = record.plan.identity;
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(identity.runId);
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        let reached!: () => void;
+        const entered = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+        let stopCalls = 0;
+        const stop = vi.fn(async (_record: SandboxExecutionRecord, signal: AbortSignal) => {
+          stopCalls += 1;
+          if (stopCalls > 1) throw new Error("private backend diagnostic");
+          reached();
+          await new Promise<void>((resolve) => {
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw new Error("late host response");
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (value) => call(f, "read", value),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async () => {
+              throw new Error("unexpected inspect");
+            },
+            stop,
+          }),
+        });
+        const current = () => call(f, "read", identity) as SandboxExecutionRecord;
+        const schedule = (authority: typeof SERVICE_AUTHORITY) =>
+          preparations.scheduleRecovery({
+            identity,
+            authority,
+            now: T1,
+            expectedSequence: current().facts.resource.sequence,
+            expectedRecoveryRevision: current().recovery?.revision ?? 0,
+          });
+        const reconcile = (
+          authority: typeof SERVICE_AUTHORITY,
+          expectedRecoveryRevision: number,
+          signal?: AbortSignal,
+        ) =>
+          service.reconcile({
+            identity,
+            expectedSequence: current().facts.resource.sequence,
+            authority,
+            action: "stop",
+            expectedRecoveryRevision,
+            ...(signal ? { signal } : {}),
+          });
+        const first = await schedule(SERVICE_AUTHORITY);
+        if (!first) throw new Error("scheduled recovery missing");
+        const shutdown = new AbortController();
+        const interrupted = reconcile(SERVICE_AUTHORITY, first.revision, shutdown.signal);
+        await entered;
+        shutdown.abort();
+        await interrupted;
+        const paused = current().recovery;
+        expect(paused).toMatchObject({
+          status: "unresolved",
+          action: "stop",
+          attempts: 1,
+          reasonCode: "SANDBOX_RECONCILIATION_INTERRUPTED",
+        });
+        const restarted = {
+          ...SERVICE_AUTHORITY,
+          agentServiceBootId: "restarted-agent-boot",
+          workerBootId: "restarted-worker-boot",
+        };
+        await recoverSandboxExecutionsAtStartup({
+          preparations,
+          journal: opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+          authority: () => restarted,
+          now: () => T1,
+        });
+        expect(current().recovery).toEqual(paused);
+        const retry = await schedule(restarted);
+        expect(retry).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: 1,
+          owner: restarted.agentServiceBootId,
+          nextAttemptAt: T1,
+        });
+        if (!retry) throw new Error("retry schedule missing");
+        await reconcile(restarted, retry.revision);
+        expect(stop).toHaveBeenCalledTimes(2);
+        expect(current().recovery).toMatchObject({
+          status: "unresolved",
+          action: "stop",
+          attempts: 2,
+          reasonCode: "SANDBOX_RECONCILIATION_UNCONFIRMED",
+        });
+        expect(await schedule(restarted)).toBeUndefined();
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS activeClaims FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(identity.jobId),
+        ).toEqual({ activeClaims: 1 });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
   const neverBoundCandidate = (
     f: Awaited<ReturnType<typeof openSandboxJournal>>,
     suffix: string,
