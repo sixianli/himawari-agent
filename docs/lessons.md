@@ -34,6 +34,7 @@ date: "2026-10-13"
 - [给 opencode 的简报没提醒本地禁止规则会拦哪些命令](#brief-denied-text)
 - [代理在测试主机上的任务还没跑完就结束本轮](#turn-ended-before-done)
 - [加了新的沙箱后端，共用逻辑只接在原来的一次性路径上](#backend-branch-omission)
+- [按 `local.mjs` 的退出码判定第 3 层](#layer3-exit-code)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -573,5 +574,30 @@ date: "2026-10-13"
   - 验证：工作区排队那一行套在不带 D-51 产品改动的树上（运行号 `stack-parity-red-01`，Hermes），一次性后端那一行通过，常驻后端那一行在断言原因码处失败（期望 `WORKSPACE_OCCUPIED`，实际 `WORKSPACE_QUEUED`，被请求自己的排队记录挡住）；带上 D-51 后两行都通过（`stack-parity-green-03`）。证据在 Hermes `/data/hermes/himawari/tool-audit-round2/r2-p2/stack/` 下对应运行号的目录。
   - 这张表在存储层，管不到 Worker 层：D-52 那样只在 Worker 某一条路径里漏掉的共用处理，它发现不了。
   - 还没覆盖的：容器任务环境后端不在产品清单里，它的同类问题（工作区冲突不排队）记在 [BL-20261019-001](backlog/BL-20261019-001-容-器-任-务-环-境-遇-到.md)；加入清单时这些行会自动对它生效。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="layer3-exit-code"></a>
+
+## 按 `local.mjs` 的退出码判定第 3 层
+
+- 反复出现的情况：第 3 层（构建加完整 `npm test`）在测试主机上用 `node scripts/ci/local.mjs --check test`（项目的本地 CI 入口脚本）运行。它在本地跑完构建和测试后，还要把结果发布给安全审查服务；本地连不上这个服务，发布步骤报 `SECURITY_REVIEW_HTTP_NOT_FOUND`，`local.mjs` 于是以退出码 1 结束，即使构建和测试全部通过（`scripts/ci/local.mjs` 只要 `publicationFailures` 非空就把总状态写成 `failed` 并以 1 退出）。脚本按退出码判定时，就把通过当成失败。
+- 为什么要紧：第 3 层是交付批次和生产候选的放行条件。判错会让正常的候选被停下、重跑，白占测试主机半小时以上；反过来，如果为了绕开它改成“只要是 1 就算通过”，被杀掉或真失败的运行也会被当成通过。
+- 发生记录：
+  - 2026-10-18 19:55：第六次“第 3 层加候选包”链的第一版写成 `[ "$RC3" = 0 ] || stop "LAYER3_RC $RC3"`，把预期的 1 当失败停下（`.ci-output/handoff/2026-10-18-r2p2-chain-rereview-stop.md`）。
+  - 2026-10-18：交接文件 `.ci-output/handoff/2026-10-18-claude-session-handoff.md` 第 7 节把它记为第二次；之前的预防只是交接文件和简报里的一句提醒。
+  - 2026-10-19：云测试账号的 `ci-lane.sh` 新加 `l3` 模式，用通用的 `step` 函数运行 `local.mjs`，`step` 把原始退出码写成 `layer3=1 seconds=…`，结尾的判定只要看到非零就报 `FAILED`。
+- 第三次的根因：判定规则只写在提醒里，每个新脚本都要重新想起“不能看退出码”；而按退出码判定是写脚本时最顺手的写法，复用通用的 `step` 函数时尤其看不出来。没有任何东西在脚本到达测试主机之前检查它怎么判定第 3 层。
+- 硬约束（2026-10-19 写好，2026-10-21 审核通过并启用）：
+  - 判定脚本 `.ci-output/handoff/scripts/layer3-verdict.py <local-summary.json> <被测提交> <要求的检查>`：读 `local.mjs` 写出的 `local-summary.json`，要求 `context.testedSha` 等于被测提交、`checks` 恰好是要求的几项（同一项出现两次判 `DUPLICATE_CHECK`）且都是 `passed`、`publicationFailures` 里只有 `SECURITY_REVIEW_HTTP_NOT_FOUND`；全部满足打印 `LAYER3_VERDICT_PASSED` 并以 0 退出，否则打印 `LAYER3_VERDICT_FAILED <原因>` 并以 1 退出。文件缺失、不是 JSON、字段缺失都判失败。
+  - 云测试账号的 `ci-lane.sh` `l3` 分支：`local.mjs` 的退出码只接受 0 和 1，其他值写 `layer3_abnormal_exit=<退出码>` 并判失败；是 0 或 1 时用锁定的 Python（`$HIMAWARI_CI_PYTHON -I`）运行判定脚本，`layer3=` 一行记判定结果，`seconds=` 从 `local.mjs` 启动时算起。两份脚本已放到 `/srv/himawari-ci/lane/`。
+  - 所有代理：往测试主机传文件只能经过 `hermes-upload.sh` 和 `ci-upload.sh`。两个入口在连接之前检查要上传的文件：出现 `local.mjs` 而没有出现 `layer3-verdict.py` 时打印 `*_LAYER3_VERDICT_MISSING` 并以退出码 72 结束，不连接（[代理工具 Runbook 的排障表](runbooks/agent-tooling-runbook.md#troubleshooting)）。
+  - 验证：
+    - `.ci-output/handoff/scripts/test-layer3-verdict.sh` 的 11 个样例全部通过（通过、`test` 失败、多一项、少一项、重复项、别的发布失败、被测提交不同、缺字段、缺文件、坏 JSON、期望提交不同）。
+    - `.ci-output/handoff/scripts/test-ssh-wrappers.sh` 115 个用例全部通过；其中每个入口有 2 拒 2 放的上传用例。改动前的入口把按退出码判定的旧版 `ci-lane.sh` 直接发出（替身 `ssh` 被调用）；第一轮只匹配 `scripts/ci/local.mjs` 的入口把“先 `cd scripts/ci` 再 `node local.mjs`”的文件直接发出；现在的入口对两者都以 72 拒绝。
+    - 真实报告：Hermes 第 3 层 `cc-layer3-882cc959-r1` 的 `local-summary.json`（`local.mjs` 退出码 1，构建和测试都通过）判为通过；云测试账号 `r2p2-l3-01` 的报告（`test` 为 `infrastructure_failed`）在本机和云上用锁定的 Python 都判为失败。证据在本地 `.ci-output/handoff/layer3-verdict/` 的 `before/`、`after/`、`before-2/`、`after-2/`、`claude-review-2/`。
+  - 限制：
+    - 入口检查只看文字：只在说明文字里提到 `local.mjs` 的脚本也会被拦（改文字即可）；文件里提到 `layer3-verdict.py` 却不真正用它判定时拦不住，仍靠审核。
+    - 已经在测试主机上的旧脚本（例如 Hermes 上的 `run-l3w.sh` 和另外 7 个调用 `local.mjs` 的脚本）不受影响，下次上传时会被拦下，届时改成用判定脚本。
 
 [回到目录](#编码代理反复犯的错误)

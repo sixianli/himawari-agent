@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:026566062622157073f7ceb60bc5ba62a4deb7c2995b629cb5817d539758890d"
+contract_sha256: "sha256:bb1fb4346f4060d7d1708e418b9c76c9be7f7ae9168ad3c12c2030ae4a4a11f0"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -45,7 +45,7 @@ date: "2026-10-21"
 - 分工与互审：[SOURCE: docs/adr/0062-claude-writes-complex-code-opencode-routine.md#decision]
 - 重复错误的硬约束：[SOURCE: docs/adr/0060-hard-constraint-on-third-repeat.md#decision]
 - 模型表和导出命令：[ADR 0061](../adr/0061-opencode-model-table.md)，表在 `.agents/opencode-models.toml`
-- 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence` 条目
+- 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence`、`layer3-exit-code` 条目
 - 测试主机的目录和清理：[测试主机操作 Runbook](test-host-operations-runbook.md)
 
 <a id="safety-and-preconditions"></a>
@@ -78,7 +78,7 @@ date: "2026-10-21"
 1. **启动。** `oc-launch.sh new <简报> <运行前缀> '<provider/model>#<档位>' <标题>`，运行前缀必须带目录（例如 `.ci-output/handoff/<日期>-<任务>-oc-<N>`），否则 `PREFIX_WITHOUT_DIRECTORY`。会话连到任务自己的服务（`oc-server.sh`，状态在 `<前缀目录>/oc-server/`，密码文件不打印不提交）。启动前脚本向这个服务实时查询模型的推理档位，打印 `LIVE_VARIANTS model=<模型> variants=<当前列表>`，档位不在列表里或低于 `.opencode/variant-floor.txt` 的下限就拒绝（[ADR 0065](../adr/0065-live-reasoning-variants.md)）。
 2. **监视。** 用 `oc-watch.py <前缀> --stop-file <停止文件>` 挂监视；`CHECKPOINT:`、`QUESTION:`、`EDIT:`、`SIGNAL:`、`TOOL_ERROR:`、`STALL:` 各按 skill 的表处理。`SIGNAL: timeout` 常是代理在读含这个词的文件，先看命令再判断。
 3. **纠正。** 把消息写成文件，用 `oc-steer.sh <前缀> <消息文件>` 在当前步骤后送达，或加 `--interrupt` 立即中断并带消息续跑。中断不会停掉代理在测试主机上后台启动的任务，消息里要说明怎么处理。
-4. **代理连测试主机只用包装脚本。** `hermes-ssh.sh '<远程命令>'`、`ci-ssh.sh '<远程命令>'`（后者固定以 `himawari-ci` 登录）；传文件只用 `hermes-upload.sh` 或 `ci-upload.sh <本地文件> <远程路径>`，它们拒绝不存在的本地文件并比对两端 SHA-256。每条远程命令固定 300 秒上限；命令以 base64 编码发送、在远端 shell 里解码，所以远端进程命令行不含命令文本。
+4. **代理连测试主机只用包装脚本。** `hermes-ssh.sh '<远程命令>'`、`ci-ssh.sh '<远程命令>'`（后者固定以 `himawari-ci` 登录）；传文件只用 `hermes-upload.sh` 或 `ci-upload.sh <本地文件> <远程路径>`，它们拒绝不存在的本地文件并比对两端 SHA-256，也拒绝运行 `local.mjs` 却不用 `layer3-verdict.py` 判定结果的脚本（退出码 72，见排障表）。每条远程命令固定 300 秒上限；命令以 base64 编码发送、在远端 shell 里解码，所以远端进程命令行不含命令文本。
 5. **长任务后台启动。** 预计超过几分钟的工作写成主机上的脚本，用 `setsid -f bash -c 'echo $$ > <pid 文件>; exec bash <脚本>' > <日志> 2>&1 < /dev/null` 启动（`cd` 写在脚本里），再用 `hermes-wait.sh <日志> '<结束行文本>' <pid 文件>` 等待：它按固定文本匹配结束行并核对 PID。不要写 `cd <目录> && setsid nohup … &`，整条 `&&` 列表会被放进子 shell，它的输出仍占着 SSH 通道，调用会一直等到命令结束。
 6. **检查命令的退出码。** 管道的退出码只来自最后一段；把输出写进文件，单独记下 `$?`，再显示尾部。只想知道有没有匹配时用 `grep -q`。
 7. **结束。** 批次以停止文件为结束标志。读它的摘要，核实每条说法，在权限内裁决，写回复文件后用 `oc-launch.sh resume` 续跑同一会话；任务结束时 `oc-server.sh stop <前缀目录>/oc-server`。
@@ -135,5 +135,6 @@ date: "2026-10-21"
 | 退出 69 `*_SELF_MATCH_REFUSED` | 远程命令用了 `pgrep -f` 或 `pkill -f` | 用记录的 PID 判断存活 |
 | 退出 70 `MASKED_STATUS_REFUSED` | 输出过滤器（`tail`、`head`、无 `-q` 的 `grep`、`sed`、`tee`）结尾的管道后面跟了 `&&`、`\|\|`（`\|\| true` 除外）或 `$?`，且没设 `pipefail` | 输出写文件、单独记 `$?`、再看尾部 |
 | 退出 71 `*_LONG_WAIT_REFUSED` / `WAIT_GUARD_REFUSED:` | 一条前台命令里同步等待：工具时限 0 或超过 300000 ms、`sleep` 合计超过 30 秒（含包装脚本的远程命令和 `bash -c`、`python3 -c` 正文）、`sleep(` 超过 30、含 `sleep` 的循环、含这些内容的本地脚本（只有仓库自己的 `hermes-wait.sh` 按真实路径豁免）、opencode 的 `execute` 工具；`setsid -f` 或后台启动的部分不检查 | 后台启动并用 `hermes-wait.sh` 等待 |
+| 上传入口退出 72 `*_LAYER3_VERDICT_MISSING` | 要上传的文件里出现 `local.mjs`（项目的本地 CI 入口脚本），却没有出现 `layer3-verdict.py`。本地跑 `local.mjs` 时，即使构建和测试全过，发布步骤也会因连不上安全审查服务（`SECURITY_REVIEW_HTTP_NOT_FOUND`）让它以 1 退出，按退出码判定会把通过当失败 | 第 3 层的结果改由 `layer3-verdict.py <local-summary.json> <被测提交> build,test` 读报告判定；退出码只接受 0 和 1，其他值（例如被杀掉的 137）直接算失败。只在说明文字里提到 `local.mjs` 的脚本也会被拦，改掉那段文字即可 |
 | 上传后远端文件为空 | 用 `cat >`、`tee`、`dd of=` 把标准输入写进远端文件 | 包装脚本已拒绝这种写法；先把文件写好再 `*-upload.sh` |
 | Claude 本地命令被 `zsh_word_guard.py` 拦下 | `~/.claude/hooks/` 的 `PreToolUse` 钩子做同样的管道检查 | 按提示改写，不要换写法绕过 |
