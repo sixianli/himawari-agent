@@ -37,9 +37,20 @@ note = "免费限时；按 opencode 说明不保留、不用于训练（G120）�
 updated = "2026-10-21"
 
 [[model]]
+id = "opencode/mimo-v2.6-flash-free"
+pool = "free"
+order = 3
+variants = []
+context = 1000000
+status = "active"
+skip_for_context = false
+note = "免费限时备选（G152）；没有推理档位，启动时不带 #；按 opencode 说明免费期间请求可能用于改进模型；2026-10-21 调研：短任务基准高、长链命令行任务弱，还没有本项目的使用记录"
+updated = "2026-10-21"
+
+[[model]]
 id = "opencode-go/deepseek-v4.1-flash"
 pool = "go"
-order = 3
+order = 4
 variants = ["low", "high", "max"]
 context = 0
 status = "active"
