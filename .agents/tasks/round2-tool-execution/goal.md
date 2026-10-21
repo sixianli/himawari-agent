@@ -947,4 +947,4 @@ G150 2026-10-21（用户原话）：生产的故障先不管，先在 Hermes 上
 
 > 这些免费的模型，至少使用high的推理强度，负责问题由你决定是否使用extra high或者是max强度。
 >
->（“负责问题”按上下文理解为“复杂问题”。opencode 的模型只有 `#low`、`#high`、`#max` 三档，没有 extra high；免费 DeepSeek V4.1 Flash 只有 `#low`、`#high`，免费 GLM-5.3 Flash 有 `#max`，免费 MiMo 没有档位。记入表的 `min_variant` 字段。）
+>（“负责问题”按上下文理解为“复杂问题”。opencode 的模型只有 `#low`、`#high`、`#max` 三档，没有 extra high；免费 DeepSeek V4.1 Flash 和免费 GLM-5.3 Flash 都有 `#max`（DeepSeek 的 `#max` 是用户 2026-10-21 指出、Claude 用一行提示实测确认的，表里 2026-10-15 的旧记录说没有），免费 MiMo 没有档位。记入表的 `min_variant` 字段。）

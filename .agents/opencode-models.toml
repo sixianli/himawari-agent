@@ -19,12 +19,12 @@
 id = "opencode/deepseek-v4.1-flash-free"
 pool = "free"
 order = 1
-variants = ["low", "high"]
+variants = ["low", "high", "max"]
 context = 200000
 status = "active"
 skip_for_context = false
 min_variant = "high"
-note = "免费限时；可能被限流（HTTP 429、FreeUsageLimitError）；可能用请求内容训练，用户已同意（G115）"
+note = "免费限时；可能被限流（HTTP 429、FreeUsageLimitError）；可能用请求内容训练，用户已同意（G115）；#max 于 2026-10-21 在 opencode v2.0.32 上实测可用（2026-10-15 探测时还没有）"
 updated = "2026-10-21"
 
 [[model]]
