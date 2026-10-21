@@ -46,6 +46,10 @@ The rule is in [ADR 0060](docs/adr/0060-hard-constraint-on-third-repeat.md): whe
 - The current chat page must follow the frozen prototype in `docs/assets/control-center/2026-09-15-v4/`, plus the execution environment status line and sidebar running marker approved on 2026-09-27 in `docs/assets/control-center/2026-09-27-v5/`; retain v1 as a historical reference and the source for brand assets. Changes must not reintroduce a standalone approval entry point, a general-purpose details sidebar, or conversation deletion actions.
 - Messages, models, thinking summaries, tool outputs, timings, and approvals in the prototypes are all demonstration data. They are not evidence that production features have been implemented or that real execution has succeeded.
 
+## Code Comments
+
+- Never write code comments, and delete the existing comments in every file you edit (user decision G149, 2026-10-21: comments mislead the model). Express intent through naming, structure, and tests; put rationale and verification evidence in commit messages and delivery notes. Keep only what is not a comment in effect: shebang lines, tool directives (`eslint-disable`, `biome-ignore`, `noqa`, `type: ignore`, `/// <reference>`, `@ts-expect-error` and the like), and license or copyright headers that must stay; never touch third-party, vendored, or generated code for this. Cleaning files that a task does not otherwise edit is a task of its own. This applies to Claude, opencode, and every other agent; see [the lesson on new code comments](docs/lessons.md#new-code-comments).
+
 ## Engineering Diagrams
 
 - Do not use the `archify` skill to generate any engineering diagrams for this project, including flowcharts, architecture diagrams, sequence diagrams, state diagrams, and data-flow diagrams, unless the user explicitly requests its use. A general request to create a diagram does not authorize using `archify`.
