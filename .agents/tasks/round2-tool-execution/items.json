@@ -1441,6 +1441,27 @@
         "on": "2026-10-21",
         "why": "用户 2026-10-21 批准把 Cindy 测试规则的亮点整合进项目（ADR 0063 决定 3）；门禁是 ADR 0060 所说的硬约束，需要在测试主机上证明红绿两面"
       }
+    },
+    {
+      "id": "R2-L14",
+      "title": "冻结只读诊断脚本的夹具缺少 hostDetail.text 字段，schema 校验用例在基线上就失败（BL-20261021-007）；夹具和测试数据补 text，先红后绿",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L14",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-21",
+        "why": "R2-H1 第 2 层发现 test/tooling/prod-sandbox-diagnostic.test.mjs 在 276a4b67 不带补丁就失败；根因是 5bab4de1 给 sandboxHostFailureDetailSchema 加了必填 text 而夹具 detailFields 没跟上；按“已发现缺陷不拖到下一轮”立即修"
+      }
     }
   ],
   "fingerprint": {

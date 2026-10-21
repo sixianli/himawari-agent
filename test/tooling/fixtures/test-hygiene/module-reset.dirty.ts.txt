@@ -1,0 +1,6 @@
+import { expect, it, vi } from "vitest";
+
+it("resets modules for every case", async () => {
+  vi.resetModules();
+  expect(await import("./example.js")).toBeDefined();
+});

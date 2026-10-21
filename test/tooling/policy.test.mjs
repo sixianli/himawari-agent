@@ -5,12 +5,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse, stringify } from "yaml";
 import {
+  evaluateTestHygiene,
   inspectTestSource,
+  parseTestHygieneBaseline,
   planTestInventory,
   main as policyMain,
   resolvePolicySource,
+  resolveTestHygieneBaseline,
   validatePolicy,
   validateTestFileSource,
+  validateTestHygiene,
   validateTestInventory,
   validateTestPlacement,
   validateVitestProjects,
@@ -773,8 +777,6 @@ describe("CI policy contract", () => {
     expect(repositoryInventory.files).toBeGreaterThan(100);
     expect(repositoryInventory.entries).toHaveLength(repositoryInventory.files);
   });
-  // Each source file is an independent regression case. Repository growth and coverage
-  // instrumentation must not make every source parse share a single unit-test deadline.
   it.each(repositoryInventory.entries)(
     "validates executable test source: $filename",
     ({ filename, registration }) => {
@@ -787,4 +789,193 @@ describe("CI policy contract", () => {
       ).not.toThrow();
     },
   );
+});
+
+describe("[R2-H1] 测试卫生门禁", () => {
+  const file = "apps/a/src/a.unit.test.ts";
+  const hygieneFixture = (name) =>
+    readFileSync(path.join(repositoryRoot, "test/tooling/fixtures/test-hygiene", name), "utf8");
+  const baseline = (mode, entries) => ({ schemaVersion: 1, mode, entries });
+  const finding = (kind, line, path = file) => ({ path, kind, line });
+  const codes = (result) => result.violations.map((violation) => violation.code);
+  const violation = (result, code) =>
+    result.violations.find((entry) => entry.code === code).message;
+
+  it("[R2-H1] 逐用例模块重置只认 Vitest 的 vi 对象", () => {
+    expect(
+      inspectTestSource(hygieneFixture("module-reset.dirty.ts.txt"), "dirty.unit.test.ts").hygiene,
+    ).toEqual([{ kind: "module-reset", line: 4 }]);
+    expect(
+      inspectTestSource(hygieneFixture("module-reset.clean.ts.txt"), "clean.unit.test.ts").hygiene,
+    ).toEqual([]);
+  });
+  it("[R2-H1] 100 毫秒以上的真实等待才拦", () => {
+    expect(
+      inspectTestSource(hygieneFixture("real-wait.dirty.ts.txt"), "dirty.unit.test.ts").hygiene,
+    ).toEqual([
+      { kind: "real-wait", line: 5 },
+      { kind: "real-wait", line: 9 },
+      { kind: "real-wait", line: 13 },
+    ]);
+    expect(
+      inspectTestSource(hygieneFixture("real-wait.clean.ts.txt"), "clean.unit.test.ts").hygiene,
+    ).toEqual([]);
+  });
+  it("[R2-H1] 固定端口监听被拦而 0 端口放行", () => {
+    expect(
+      inspectTestSource(hygieneFixture("fixed-port.dirty.ts.txt"), "dirty.unit.test.ts").hygiene,
+    ).toEqual([
+      { kind: "fixed-port", line: 7 },
+      { kind: "fixed-port", line: 11 },
+    ]);
+    expect(
+      inspectTestSource(hygieneFixture("fixed-port.clean.ts.txt"), "clean.unit.test.ts").hygiene,
+    ).toEqual([]);
+  });
+  it("[R2-H1] 普通单测读取生产源码文本被拦", () => {
+    const source = hygieneFixture("production-source-read.dirty.unit.ts.txt");
+    expect(inspectTestSource(source, "dirty.unit.test.ts").hygiene).toEqual([
+      { kind: "production-source-read", line: 7 },
+      { kind: "production-source-read", line: 12 },
+    ]);
+    expect(inspectTestSource(source, "dirty.contract.test.ts").hygiene).toEqual([]);
+    expect(
+      inspectTestSource(hygieneFixture("production-source-read.clean.ts.txt"), "clean.unit.test.ts")
+        .hygiene,
+    ).toEqual([]);
+  });
+  it("[R2-H1] 基线等于现状时不报错", () => {
+    const accepted = baseline("report", [{ path: file, kind: "module-reset", count: 1 }]);
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3)],
+      workspace: accepted,
+      accepted,
+    });
+    expect(result.violations).toEqual([]);
+  });
+  it("[R2-H1] 发现数超过基线时指到文件和行", () => {
+    const accepted = baseline("report", [{ path: file, kind: "module-reset", count: 1 }]);
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3), finding("module-reset", 7)],
+      workspace: accepted,
+      accepted,
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_EXCESS");
+    expect(violation(result, "TEST_HYGIENE_EXCESS")).toContain(`${file}:7`);
+    expect(violation(result, "TEST_HYGIENE_EXCESS")).toContain("module-reset");
+  });
+  it("[R2-H1] 基线可收紧未收紧时给出建议值", () => {
+    const accepted = baseline("report", [{ path: file, kind: "module-reset", count: 2 }]);
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3)],
+      workspace: accepted,
+      accepted,
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_STALE");
+    expect(violation(result, "TEST_HYGIENE_STALE")).toContain("lower the entry to 1");
+  });
+  it("[R2-H1] 工作区基线不得比基准提交多出条目", () => {
+    const accepted = baseline("report", []);
+    const workspace = baseline("report", [{ path: file, kind: "module-reset", count: 1 }]);
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3)],
+      workspace,
+      accepted,
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_UNACCEPTED");
+    expect(violation(result, "TEST_HYGIENE_UNACCEPTED")).toContain(file);
+  });
+  it("[R2-H1] 工作区基线不得比基准提交调高数量", () => {
+    const accepted = baseline("report", [{ path: file, kind: "module-reset", count: 1 }]);
+    const workspace = baseline("report", [{ path: file, kind: "module-reset", count: 2 }]);
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3), finding("module-reset", 7)],
+      workspace,
+      accepted,
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_RAISED");
+    expect(violation(result, "TEST_HYGIENE_RAISED")).toContain("baseline is 2");
+  });
+  it("[R2-H1] 工作区不得把阻断模式降回只报告", () => {
+    const entries = [{ path: file, kind: "module-reset", count: 1 }];
+    const result = evaluateTestHygiene({
+      findings: [finding("module-reset", 3)],
+      workspace: baseline("report", entries),
+      accepted: baseline("enforce", entries),
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_MODE_WEAKENED");
+  });
+  it("[R2-H1] 只报告模式打印文件行号且不抛错", () => {
+    const { root, git } = fixtureRepository();
+    const workspace = baseline("report", [
+      { path: file, kind: "module-reset", count: 1 },
+      { path: file, kind: "real-wait", count: 1 },
+    ]);
+    writeFileSync(path.join(root, "ci/test-hygiene-baseline.json"), JSON.stringify(workspace));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "hygiene baseline");
+    const written = [];
+    const result = validateTestHygiene({
+      root,
+      findings: [finding("module-reset", 3), finding("module-reset", 7)],
+      write: (line) => written.push(line),
+    });
+    expect(written).toContain(`TEST_HYGIENE_FINDING ${file}:3 module-reset\n`);
+    expect(written.some((line) => line.startsWith("TEST_HYGIENE_EXCESS:"))).toBe(true);
+    expect(written.some((line) => line.startsWith("TEST_HYGIENE_STALE:"))).toBe(true);
+    expect(result.summary).toContain("mode=report");
+    expect(written.at(-1)).toBe(`${result.summary}\n`);
+  });
+  it("[R2-H1] 基准提交的基线优先于工作区手改", () => {
+    const { root, git } = fixtureRepository();
+    const accepted = baseline("enforce", [{ path: file, kind: "module-reset", count: 1 }]);
+    const baselinePath = path.join(root, "ci/test-hygiene-baseline.json");
+    writeFileSync(baselinePath, JSON.stringify(accepted));
+    git("add", "ci");
+    git("commit", "--quiet", "-m", "accepted hygiene baseline");
+    const workspace = baseline("report", [{ path: file, kind: "module-reset", count: 5 }]);
+    writeFileSync(baselinePath, JSON.stringify(workspace));
+    const resolved = resolveTestHygieneBaseline({ root });
+    expect(resolved.initialization).toBe(false);
+    expect(resolved.baseline).toEqual(accepted);
+    const result = evaluateTestHygiene({
+      findings: [3, 4, 5, 6, 7].map((line) => finding("module-reset", line)),
+      workspace,
+      accepted: resolved.baseline,
+    });
+    expect(codes(result)).toContain("TEST_HYGIENE_RAISED");
+    expect(codes(result)).toContain("TEST_HYGIENE_MODE_WEAKENED");
+  });
+  it.each([
+    [
+      "未排序",
+      {
+        schemaVersion: 1,
+        mode: "report",
+        entries: [
+          { path: "b/x.unit.test.ts", kind: "module-reset", count: 1 },
+          { path: "a/x.unit.test.ts", kind: "module-reset", count: 1 },
+        ],
+      },
+    ],
+    [
+      "未知类别",
+      {
+        schemaVersion: 1,
+        mode: "report",
+        entries: [{ path: "a/x.unit.test.ts", kind: "slow", count: 1 }],
+      },
+    ],
+    [
+      "零计数",
+      {
+        schemaVersion: 1,
+        mode: "report",
+        entries: [{ path: "a/x.unit.test.ts", kind: "module-reset", count: 0 }],
+      },
+    ],
+    ["未知模式", { schemaVersion: 1, mode: "off", entries: [] }],
+  ])("[R2-H1] 基线文件结构损坏时关闭放行：%s", (_name, value) => {
+    expect(() => parseTestHygieneBaseline(value)).toThrow("TEST_HYGIENE_BASELINE_INVALID");
+  });
 });

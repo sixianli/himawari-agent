@@ -1,0 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { it } from "vitest";
+
+it("reads temporary state", () => {
+  const text = readFileSync(join("/tmp/himawari-fixture", "state/authority.json"), "utf8");
+  return Promise.resolve(text);
+});
+
+it("reads a variable path", () => {
+  const target = process.argv[2] as string;
+  return Promise.resolve(readFileSync(target, "utf8"));
+});
