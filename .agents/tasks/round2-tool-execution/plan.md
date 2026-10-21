@@ -124,6 +124,7 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-18 22:09 D-49、D-50 归入 R2-P2 当前批次（属于常驻任务环境，不新增条目），排在第六次候选之前：第六次要带上常驻路径，带着会让 Agent 服务反复崩溃的缺陷不能上线。先由 opencode 出独立方案（`.ci-output/handoff/2026-10-18-r2p2-f4f2-proposal-brief.md`），Claude 草稿写在看到它之前。status：共 70 项，当前版本已验证 6、旧版本验证过 49、未完成 12、等你决定 1、不做 2。
 - 2026-10-19 06:43 D-43、D-48、D-49/D-50、D-51 四项叠成一批，第 1、2 层在批次顶端跑一次（ADR 0057），再按顺序提交并推送：`761bf595`（D-43）、`cc0970a9`（D-48）、`f79bb58c`（D-49、D-50）、`14cae2a0`（D-51）。第 3 层还没跑，等 D-52 并入后在整批最终修订上跑一次。D-52 归入 R2-P2 当前批次，不新增条目：它和 D-43 同属常驻任务环境里“预约了却从未绑定”的调用，是第六次要带上的路径。status：共 70 项，当前版本已验证 6、旧版本验证过 50、未完成 11、等你决定 1、不做 2。
 - 2026-10-19 11:14 D-52 已提交推送（`882cc959`，含容器路径测试期望更新），R2-P2 本批产品改动全部提交。第 3 层同时在两台主机上跑：Hermes 上用 `sixth-l3-cand-chain.sh`（`30957bbf…`）对 `882cc959` 跑第 3 层并生成第六次候选材料（标签 `cc-layer3-882cc959-r1`，第六次候选的安装包必须来自 Hermes 的这次构建）；云测试账号上用 `ci-lane.sh` 的 `l3` 模式跑 `r2p2-l3-01`（`e1e0d66a` 代码包加 `e1e0d66a..882cc959` 的补丁，文件内容与 `882cc959` 相同），作为第二台主机的结果。第 4 层用例补丁（第 8 版，基于 `8553a1a3`）由 opencode 移到 `882cc959`（工作树 `.ci-output/worktrees/r2p2-l4u/`，简报 `.ci-output/handoff/2026-10-19-r2p2-l4-rebase-brief.md`），按 D-43、D-52 修复后的代码重新推导 local 43 常驻那套期望；Hermes 的链结束后在同一安装包上跑第 4 层。
+- 2026-10-22 01:21 D-53、D-54 归入 R2-P2 当前批次（都来自候选 `882cc959` 的第 4 层，属于常驻任务环境，不新增条目）。两项叠成一批，第 1、2 层在叠批顶端跑一次（Hermes `d5354-l12-01`），按 opencode 审核意见补改后在最终代码上复跑第 0 层（`d5354-l0-green-03`），再分开提交推送：`aaf3a72a`（D-53，任务环境停止未确认时按退避重试）、`9969a646`（D-54，常驻准备失败带宿主诊断）。新候选改为 `9969a646`：Hermes 上用同一条 `sixth-l3-cand-chain.sh` 跑第 3 层加候选材料（标签 `cc-layer3-9969a646-r1`），通过后套第 4 层补丁第 11 版跑不过滤的第 4 层（`cc-layer4-9969a646-full`），再单独提交第 4 层测试改动，作为 `make-new-values.py` 的回归基准版本。
 
 ## 意外和发现
 
@@ -248,6 +249,7 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-19 08:13 opencode 两个免费模型都报 `provider.auth`：本机当前网络出口的 IP 被判定为异常流量，不是 429 限流；11:13 再试仍然如此。按 G114 新会话改用 `opencode-go/deepseek-v4.1-flash`。本机有 NordVPN 帮助程序 06:37–06:40、08:02 多次崩溃的报告，可能和 VPN 出口有关，换网络或关闭 VPN 后才能恢复免费模型，要告诉用户。
 - 2026-10-19 10:54 D-52 第 1、2 层 `d52-l12-01`（云测试账号）：check 0；unit/contracts 4 条失败都不在 D-52 改动的模块里（MCP v2 SDK 两条，BL-20261019-002；`production-automatic-review.unit.test.ts`、`workspace-auto-authorization.unit.test.ts` 各一条 5000 毫秒超时，BL-20261019-003，前者是新出现的超时用例）；integration 除 3 个只在第 3 层跑的文件外，`sandbox-v2-container-route.test.ts` 有 5 条失败：调用序列多了 D-52 新增的 `preparation_diagnostic`。这是 D-52 定下的新行为，测试期望过时；opencode 改为同时断言诊断的阶段和原因码，`d52-ct-l0-red-01` 复现同样 5 条失败，`d52-ct-l0-green-01` 76/76 通过。流程疏漏：D-52 的第 0 层清单漏了直接测试被改函数 `runInEnvironment` 的这个文件，到第 2 层才暴露；同类第一次，候选做法是简报要求第 0 层清单附上“哪些测试文件导入了被改文件”的检索结果。生产服务全程 active、重启 0 次。
 - 2026-10-19 10:55 云上通道脚本换成带 `l3` 模式的新版（`52cf3df7…`，opencode 写、Claude 审），在 `d52-l12-01` 结束后用 `mv -f` 替换，没有覆盖正在运行的脚本。
+- 2026-10-22 第 1、2 层发现 `test/integration/sandbox-v2-container-route.test.ts` 5 个用例 30 秒超时：该文件替换 `@himawari-agent/runtime-sandbox` 时不带原模块，D-54 新增的 `JobHostPreparationError` 在测试里是 `undefined`，Worker 的 catch 里 `instanceof` 抛类型错误，准备诊断发不出去。第 0 层只跑直接相关的 3 个文件，没有覆盖这个间接受影响的替身；改为带原模块，随 D-54 提交。另外两处不带原模块的替换（`product-job-host.unit.test.ts`、`production-sandbox-worker.unit.test.ts`）今天走不到那段 catch，opencode 建议以后一并改（S7），未改。
 
 ## 决定
 
