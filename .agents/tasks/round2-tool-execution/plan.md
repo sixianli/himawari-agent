@@ -260,6 +260,7 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-22 第 1、2 层发现 `test/integration/sandbox-v2-container-route.test.ts` 5 个用例 30 秒超时：该文件替换 `@himawari-agent/runtime-sandbox` 时不带原模块，D-54 新增的 `JobHostPreparationError` 在测试里是 `undefined`，Worker 的 catch 里 `instanceof` 抛类型错误，准备诊断发不出去。第 0 层只跑直接相关的 3 个文件，没有覆盖这个间接受影响的替身；改为带原模块，随 D-54 提交。另外两处不带原模块的替换（`product-job-host.unit.test.ts`、`production-sandbox-worker.unit.test.ts`）今天走不到那段 catch，opencode 建议以后一并改（S7），未改。
 
 - 2026-10-22 第六次 S6_ACCEPTANCE 在生产失败（13:14–13:19），服务按 G156 停着。两次只读诊断（G159 及后续允许规则）定位到授权网络探测第 4 个场景的宿主启动约 2 秒后消失；himawari-ci 上 12 轮复现，单独、满负载、扫描 /proc 都通过，负载约为核心数两倍时候选得到 `JOB_HOST_HEARTBEAT_EXPIRED`（stage request，receivedSequence null），第五次版本同负载也以 host_failure 失败。证据 `.ci-output/handoff/sixth-netrepro/evidence/`。生产上为何在较低负载下触发仍未证实。
+- 2026-10-22 22:12 按 G162 生成正式修订工具（批准编号 `G162`，工具 `c4a116fe…`）在生产运行一次，只读前提检查拒绝：`REVISION_PRECONDITION_FAILED:TREE_EXTRA:acceptance/cloud/cloud-inputs.json`，接收新包之前就退出，生产没有改动，服务仍停着。原因：第一次 S6 按设计把 `cloud-inputs.json`（9473 字节，`531ae8af…`）写进了旧包目录，工具要求旧包与旧冻结清单完全一致，演练搭的第一次 S6 现场也漏了这个文件。修法（Claude 写，opencode 审）：工具只认这一个按固定摘要出现的文件；前提检查改为每项单独运行、一次报告全部失败；演练现场补上该文件并加一个同时报三个问题的拒绝用例。证据 `.ci-output/handoff/prod-sixth-evidence-1a3a6f15/revision-run-01-precondition/`。重跑修订工具前要再请用户批准。
 
 ## 决定
 
