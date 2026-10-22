@@ -67,6 +67,16 @@ date: "2026-10-13"
   - 升级前数据库里必须同时有可用的、对话已结束的、已用完的 Pi 句柄，且后两种的 `revoked_at` 为空，否则以 `PRODUCTION_SHAPE_HANDLES_NOT_PRODUCTION` 失败；报告里记下生产的参照数（Pi 24、搜索 0）。验证：只放一个可用句柄（相当于之前的演练）时在升级前以这个错误码失败，正式版本通过（Hermes `rehearsal-c53bca70/revision-02-code/handles-variant/` 与 `shape-full/`）。
   - 续做模式在 S7_CATALOG_UPGRADE 失败后等到准备的资格检查超过 5 分钟，要求 `capabilities upgrade-plan` 报 `CAPABILITY_DEPLOYMENT_QUALIFICATION_STALE`，把“生产上步骤之间时间更长”变成演练里的一步（Hermes `revision-02-code/shape-resume/`）。
   - 限制：仍是逐项列出的检查，只覆盖这三样；生产里还可能有别的历史数据或进程状态与演练不同。下一次起草操作包时，先把生产只读诊断里看到的每类历史数据（句柄、对话、审计记录的状态分布）写进形状演练的种子数据。
+- 第六次变更的包外修订工具（`.ci-output/sixth-packet-work/revision-01/`，就地替换已部分运行过的操作包的脚本）又发生三次（2026-10-22），每次都是演练现场里少了生产上第一次运行真实留下的东西：
+  - G162：前提检查以 `TREE_EXTRA:acceptance/cloud/cloud-inputs.json` 拒绝，第一次 S6 往旧包里写了这个文件，手写的演练现场里没有。
+  - opencode 审修复时发现：`s3_copy50-result.json` 在生产上属主是 999（服务账号），工具按 0 检查；演练在 `unshare -r -u`（普通账号模拟 root）下所有属主都显示为 0，测不出来。
+  - G163：安装新候选失败 `REVISION_INSTALL_FAILED:EXIT:1`。安装程序用“文件已存在就报错”的方式写 `python-extract.stdout`，第一次安装留下的这个文件没被归档：工具的 `INSTALL_FILES` 是照安装程序手抄的，九个命名输出漏了一个；演练现场 `build-rehearsal-stage.py` 也是手写的文件清单，同样漏了它，所以演练通过。
+- 这三次的根因：演练现场和工具里的文件清单都由人照着记忆或代码手写，没有任何检查把它们和生产上真实存在的文件或安装程序真实会写的文件对照。
+- 硬约束（2026-10-22，G165）：
+  - 生成修订工具和补装工具时（`revision-tool/make-revision.py`、`install-resume/make-resume.py`，每次生成都运行），`revision-tool/install_outputs.py` 从安装程序 `install/sixth-artifact-install.mjs` 的源码提取所有 `run(..., "<名字>")` 和直接写进证据根的文件名，要求 `INSTALL_FILES` 恰好等于每个 `<名字>.stdout`、直接写的文件和工具自己写的三个文件（`s1-install.stdout/.stderr`、`s1-result.json`），`INSTALL_OPTIONAL` 恰好等于每个 `<名字>.stderr`；缺一个以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:<缺的文件>` 拒绝，多一个以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA:<多的文件>` 拒绝（多列的名字会在安装成功之后才因找不到文件而失败）。源码里出现认不出的调用形式时以 `INSTALLER_RUN_CALL_UNRECOGNIZED` 等错误码拒绝；`evidence` 变量在写文件之外的用法数一旦变化（例如改用 `` `${evidence}/x.json` `` 拼路径），以 `INSTALLER_EVIDENCE_USES_UNRECOGNIZED` 拒绝，不会默默漏掉新写的文件。
+  - 演练现场从生产只读诊断推导：`rehearsal/production-shape.py` 读诊断 03 的输出，按修订开始时间把证据根里的文件分成“修订前就有”和“修订新建”，再加上归档清单里从证据根移走的文件，得到“首次修订前的证据根”；`build-rehearsal-stage.py` 按这份清单搭建，`rehearsal/check-stage.py` 在演练开始前和复现失败后各比对一次（名字、类型、权限），不一致就以 `STAGE_DIFFERS_FROM_PRODUCTION:<差异>` 失败。期望值取自生产诊断，不由演练自己另写。
+  - 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l13/install-resume-rehearsal-01/work-02/`，脚本 `rehearsal/rehearse-install-resume.sh`）：G163 版模板以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:python-extract.stdout,python-extract.stderr` 被拒，多列一个名字的模板以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA` 被拒，用 `` `${evidence}/...` `` 写文件的安装程序以 `INSTALLER_EVIDENCE_USES_UNRECOGNIZED` 被拒，补好的模板通过；去掉 `python-extract.stdout` 的现场以 `STAGE_DIFFERS_FROM_PRODUCTION:EVIDENCE:MISSING:python-extract.stdout` 被拒，按生产清单搭的现场通过；用去掉这两项的工具在按生产清单搭的现场上运行，复现了生产的 `REVISION_INSTALL_FAILED:EXIT:1`，失败后的现场与诊断 03 一致；只补做安装的工具 `install-resume/resume-install.py` 在这个现场上退出 0（9 次移动，安装检查通过），服务运行中、多一个残留文件、失败原因不是 `python-extract.stdout` 的 EEXIST、重复运行四种情况都被拒绝，现场不变。工具的审核由 CodeBuddy 逐行做（opencode 免费模型当时都返回 429），采纳了其中三条（名单改为恰好相等、`evidence` 用法计数、补装核对失败原因）后重跑演练。
+  - 限制：比对只看名字、类型和权限，不看属主（演练里都是 0）和内容；属主仍要在审核时对照诊断逐个核对。以后再写包外工具时，把生产只读诊断的列表作为演练现场的唯一来源。
 
 [回到目录](#编码代理反复犯的错误)
 
