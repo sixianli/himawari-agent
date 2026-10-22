@@ -427,6 +427,7 @@ it("renews the Worker lease while attached and stops renewing after completion",
   vi.useFakeTimers();
   const process = child();
   const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps: [] });
   await vi.advanceTimersByTimeAsync(500);
   const heartbeats = process.send.mock.calls.filter(([message]) => message.type === "heartbeat");
   expect(heartbeats.length).toBe(2);
@@ -595,6 +596,7 @@ it("retains the parent heartbeat expiry as the first private failure", async () 
   vi.useFakeTimers();
   const process = child();
   const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps: [] });
   await vi.advanceTimersByTimeAsync(1750);
   process.emit("close");
   expect((await host.result).diagnostic).toMatchObject({
@@ -606,6 +608,118 @@ it("retains the parent heartbeat expiry as the first private failure", async () 
       phase: "preparing",
       receivedSequence: null,
     },
+  });
+});
+
+it("[R2-D23] gives a silent new Job Host the startup window before the original lease applies", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(process.send.mock.calls.map(([message]) => message.type)).toEqual(["prepare"]);
+  process.emitMessage({ type: "heartbeat", steps: [] });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(process.send.mock.calls.filter(([message]) => message.type === "heartbeat").length).toBe(
+    2,
+  );
+  await vi.advanceTimersByTimeAsync(1250);
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    detail: { code: "JOB_HOST_HEARTBEAT_EXPIRED", phase: "preparing", expectedSequence: 2 },
+  });
+});
+
+it("[R2-D23] classifies a Job Host that never reports as a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(9900);
+  expect(process.send.mock.calls.some(([message]) => message.type === "cancel")).toBe(false);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "request",
+    systemCode: "UNKNOWN",
+    detail: {
+      code: "JOB_HOST_STARTUP_TIMEOUT",
+      phase: "preparing",
+      expectedSequence: 1,
+      receivedSequence: null,
+    },
+  });
+});
+
+it("[R2-D23] keeps a caller cancellation during startup instead of a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  host.cancel();
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(
+    process.send.mock.calls
+      .filter(([message]) => message.type === "cancel")
+      .map(([message]) => message.reason),
+  ).toEqual(["cancelled"]);
+  process.emit("close");
+  await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+  expect((await host.result).diagnostic).toBeUndefined();
+});
+
+it("[R2-D23] keeps a first-message authentication failure instead of a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  process.emitMessage({
+    type: "heartbeat",
+    steps: [],
+    sessionId: "00000000-0000-4000-8000-000000000000",
+  });
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(
+    process.send.mock.calls
+      .filter(([message]) => message.type === "cancel")
+      .map(([message]) => message.reason),
+  ).toEqual(["host_failure"]);
+  process.emit("close");
+  await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+  expect((await host.result).diagnostic).toBeUndefined();
+});
+
+it("[R2-D23] keeps the task deadline when it ends before the startup window", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 3000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(3250);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    detail: { code: "JOB_HOST_EXECUTION_DEADLINE" },
   });
 });
 

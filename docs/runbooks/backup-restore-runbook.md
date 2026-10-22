@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a0bf7d165f08c1346f6b8719eec7f517d1b63bda1f074c9f1bbdf101671adfdc"
+contract_sha256: "sha256:fba6b4ed602b2289f352ee7a36bd54c4b8b8027ce66877c4a5ca60044d1e4e0f"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -274,7 +274,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 恢复前的正常停机须等待[预热准备线程池](#pi-preparation-prewarm)拥有的全部线程退出，并等待 Job Host 已开始的 SDK 操作及 cleanup/reset 完成。SDK 的同一个 `SandboxManager` 在私有工作线程中执行依赖检查、初始化、启动参数生成、cleanup 和 reset；reset 成功回复与该线程自然以退出码 0 结束共同决定 `srtReset=true`。异常退出或强制终止不能代替清理证明，仍须检查原宿主、任务进程组、控制证据、服务进程、socket 和锁。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
-预热线程和 SDK 线程的进程内状态不属于恢复点。恢复后由同一完整安装的 Pi 准备入口、线程入口、pool 模块，以及 `sandbox-sdk.js` 和固定的 `sandbox-sdk-worker.js` 重新建立，不重放旧请求或恢复旧线程。SDK 操作移入工作线程后，Host 主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限；策略模块仍在主线程加载 SRT 的默认写路径和配置 schema。原 1500ms 消息年龄、30 秒准备上限、任务期限、协议和释放核验保持不变，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。本次改动不增加备份数据或 migration。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [策略编译模块](../../packages/runtime-sandbox/src/policy.ts)
+预热线程和 SDK 线程的进程内状态不属于恢复点。恢复后由同一完整安装的 Pi 准备入口、线程入口、pool 模块，以及 `sandbox-sdk.js` 和固定的 `sandbox-sdk-worker.js` 重新建立，不重放旧请求或恢复旧线程。SDK 操作移入工作线程后，Host 主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限；策略模块仍在主线程加载 SRT 的默认写路径和配置 schema。原 1500ms 消息年龄（2026-10-22 起从 Job Host 第一次回复开始计算；回复之前另有最长 10 秒、且不超过任务剩余期限的启动期限，一次性路径超时诊断为 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、父进程不生成诊断（BL-20261022-004），见[Job Host 启动单独计时](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)）、30 秒准备上限、任务期限、协议和释放核验保持不变，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。本次改动不增加备份数据或 migration。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [策略编译模块](../../packages/runtime-sandbox/src/policy.ts)
 
 在任何 mutation 前执行以下只读检查；将占位符替换为本次已解析的绝对路径和稳定 ID，不使用 shell glob：
 

@@ -13,6 +13,7 @@ import {
 } from "./job-host-messages.ts";
 import {
   JOB_HOST_NAMESPACE_STATES,
+  JOB_HOST_STARTUP_WINDOW_MS,
   type JobHostCommandOutcome,
   type JobHostCommandReport,
   type JobHostDiagnostic,
@@ -85,6 +86,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
   let diagnostic: JobHostDiagnostic | undefined;
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
+  let starting = true;
   let ipcSequence = 0;
   let workerSequence = 0;
   let runSequence = 0;
@@ -207,6 +209,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         }
       : null;
   const supervisionTimer = setInterval(() => {
+    if (starting) return;
     if (!ended && performance.now() - lastMessageTick > 1500) fail();
     if (!ended && !cancelled) send({ type: "heartbeat" });
   }, 250);
@@ -214,6 +217,10 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
   const sessionTimer = setTimeout(() => cancel("deadline"), Math.max(1, deadlineRemainingMs));
   const preparationTimer =
     deadlineRemainingMs > 30000 ? setTimeout(() => cancel("host_failure"), 30000) : undefined;
+  const startupTimer = setTimeout(
+    fail,
+    Math.min(JOB_HOST_STARTUP_WINDOW_MS, Math.max(1, deadlineRemainingMs)),
+  );
   const receiveCommandResult = (message: Record<string, unknown>) => {
     const command = active;
     const resources = message["resources"];
@@ -307,6 +314,10 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
     }
     ipcSequence++;
     lastMessageTick = performance.now();
+    if (starting) {
+      starting = false;
+      clearTimeout(startupTimer);
+    }
     supervision = authenticated;
     const type = message["type"];
     if (type === "heartbeat") {
@@ -396,6 +407,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
     clearInterval(supervisionTimer);
     clearTimeout(sessionTimer);
     clearTimeout(preparationTimer);
+    clearTimeout(startupTimer);
     clearTimeout(forceTimer);
     rejectReady(new JobHostPreparationError(diagnostic));
     const completedReason = completion?.["reason"];

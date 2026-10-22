@@ -12,6 +12,7 @@ import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import {
+  JOB_HOST_STARTUP_WINDOW_MS,
   JOB_HOST_SYSTEM_CODES,
   type JobHostCommandReport,
   type JobHostDiagnostic,
@@ -42,6 +43,7 @@ const processStartedAt = new Date().toISOString();
 const processIdentityRef = `job-host-process:${randomUUID()}`;
 let sessionId: string | undefined;
 let messageSequence = 0;
+let replied = false;
 let workerSequence = 0;
 let controlSequence = 0;
 let control: Awaited<ReturnType<typeof openJobHostControl>> | undefined;
@@ -117,23 +119,24 @@ let pendingStop: "deadline" | "cancelled" | undefined;
 let commandGroupsGone = true;
 
 function send(message: Record<string, unknown>) {
-  if (process.connected)
-    process.send?.(
-      {
-        ...message,
-        protocolVersion: "job-host.v2",
-        sessionId,
-        bootId,
-        processId: process.pid,
-        processIdentityRef,
-        processStartedAt,
-        sequence: ++messageSequence,
-        observedAt: new Date().toISOString(),
-      },
-      (error: Error | null) => {
-        if (error) stop("cancelled");
-      },
-    );
+  if (!process.connected) return;
+  replied = true;
+  process.send?.(
+    {
+      ...message,
+      protocolVersion: "job-host.v2",
+      sessionId,
+      bootId,
+      processId: process.pid,
+      processIdentityRef,
+      processStartedAt,
+      sequence: ++messageSequence,
+      observedAt: new Date().toISOString(),
+    },
+    (error: Error | null) => {
+      if (error) stop("cancelled");
+    },
+  );
 }
 const networkAuthority = new JobHostNetworkAuthority(send, () => stop("cancelled"));
 function sinceStart() {
@@ -1085,7 +1088,7 @@ process.on("message", (message: unknown) => {
       typeof message.observedAt !== "string" ||
       !Number.isFinite(Date.parse(message.observedAt)) ||
       Date.parse(message.observedAt) > receivedAt ||
-      receivedAt - Date.parse(message.observedAt) > 1500
+      receivedAt - Date.parse(message.observedAt) > (replied ? 1500 : JOB_HOST_STARTUP_WINDOW_MS)
     )
       throw new Error("JOB_HOST_WORKER_LEASE_INVALID");
     workerSequence++;

@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:d15848f0d99bebfa848e900c61cbf7be75507f80f6fdc917c7b0ee541c1ab5b7"
+contract_sha256: "sha256:e19e355045a8bd08ae1a0e77c38d6478c70978fa81d0d6818803a8a93684da9a"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -66,7 +66,7 @@ date: "2026-10-08"
 
 确认处置使用本次受验证的完整安装、匹配配置与当前 Schema 51（2026-10-18 起；此前为 Schema 50。Schema 51 由迁移 `0051_srt_task_environment_release.sql` 只给任务执行环境释放回执加了 `process_group_gone` 一种证明，管理员回执的结构和规则不变）。只读预览接受 Schema 49–51，不自动迁移；Schema 49 旧库须先完成下述独立离线路线，生产还需覆盖完整候选安装、备份、迁移和管理员处置的具体授权。Schema 49 及更旧 writer 不得接管新库；不得直接修改数据库列或补造 Host final。Agent 与 Worker 必须停止，确认命令自行取得原 state-root 独占锁；存活锁取得失败时停止，不删除或绕过它。
 
-新候选完整安装须包含 `sandbox-sdk.js` 与固定的 `sandbox-sdk-worker.js`。Job Host 把同一个 SRT `SandboxManager` 的策略编译、依赖检查、初始化、启动参数生成、cleanup 和 reset 放入私有 SDK 工作线程；主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限，2026-10-12 起不再加载 SRT（[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)）。同日起 Job Host 在准备第一步就打开控制通道，控制步骤之后的准备失败会写出签名终态并按原 `host_never_started` 依据自动释放；只有控制通道打开失败、SDK 线程从未创建（`srtReset=false`）或终态写出前被强制结束的预约，以及此前旧版本留下的预约（例如 S10 的 `run:c1284750-de9d-43dd-aee1-5474dc27539c`），仍需本 Runbook 的管理员处置，见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。原 1500ms 消息年龄、30 秒准备上限、任务期限和协议不变。正常清理必须取得 cleanup/reset 成功回复与 SDK 线程自然退出码 0，异常退出或强制终止不产生 `srtReset=true`。这不替代下述三项管理员独立现场核查，也不把“SDK 线程已退出”变成 Host 释放证明，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
+新候选完整安装须包含 `sandbox-sdk.js` 与固定的 `sandbox-sdk-worker.js`。Job Host 把同一个 SRT `SandboxManager` 的策略编译、依赖检查、初始化、启动参数生成、cleanup 和 reset 放入私有 SDK 工作线程；主线程仍负责原 IPC、心跳、控制、authority、任务进程和期限，2026-10-12 起不再加载 SRT（[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)）。同日起 Job Host 在准备第一步就打开控制通道，控制步骤之后的准备失败会写出签名终态并按原 `host_never_started` 依据自动释放；只有控制通道打开失败、SDK 线程从未创建（`srtReset=false`）或终态写出前被强制结束的预约，以及此前旧版本留下的预约（例如 S10 的 `run:c1284750-de9d-43dd-aee1-5474dc27539c`），仍需本 Runbook 的管理员处置，见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。原 1500ms 消息年龄（2026-10-22 起从 Job Host 第一次回复开始计算；回复之前另有最长 10 秒、且不超过任务剩余期限的启动期限，一次性路径超时诊断为 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、父进程不生成诊断（BL-20261022-004），见[Job Host 启动单独计时](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)）、30 秒准备上限、任务期限和协议不变。正常清理必须取得 cleanup/reset 成功回复与 SDK 线程自然退出码 0，异常退出或强制终止不产生 `srtReset=true`。这不替代下述三项管理员独立现场核查，也不把“SDK 线程已退出”变成 Host 释放证明，详见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
 执行账号须有目标配置与数据库的合法访问权。命令记录实际本机 UID/account/hostname，并分别保存 `--administrator` 声明引用；声明引用不证明具体自然人身份。准备本次独立现场报告、SHA-256、已经验证的完整恢复点及项目批准的受保护证据目录。
 

@@ -18,6 +18,7 @@ import {
   readJobHostOutputWindow,
 } from "./job-host-messages.ts";
 import {
+  JOB_HOST_STARTUP_WINDOW_MS,
   type JobHostDiagnostic,
   type JobHostRequest,
   type JobHostResult,
@@ -28,11 +29,9 @@ import {
 export interface SandboxJobHost {
   readonly controlBinding?: JobHostControlBinding;
   readonly ready: Promise<void>;
-  /** Resolves only after the authenticated child reports the actual task identity. */
   readonly started: Promise<NonNullable<JobHostSupervision["task"]>>;
   readonly result: Promise<JobHostResult>;
   readonly completed: Promise<SandboxTaskTermination | null>;
-  /** Bounded merged stdout/stderr in authenticated arrival order. Reading never starts work. */
   readOutput(
     offset: number,
     limit: number,
@@ -42,17 +41,12 @@ export interface SandboxJobHost {
     nextOffset: number;
     end: boolean;
   };
-  /** Observation only; an expired or replaced session never grants control. */
   inspect(): JobHostSupervision | null;
-  /** Limited stop of this owned fork only; never adopts a PID from a receipt. */
   stop(expected: Pick<JobHostSupervision, "sessionId" | "bootId" | "processIdentityRef">): void;
-  /** Caller must persist the unique start intent before sending this command. */
   start(): void;
   cancel(): void;
 }
 
-/** Trusted infrastructure only. Resolving ready never starts the task. Authority,
- * protected scope and qualification are owned by the Worker admission path. */
 export function prepareSandboxJobHost(
   value: JobHostRequest,
   controlDirectory?: string,
@@ -88,6 +82,7 @@ export function prepareSandboxJobHost(
   let diagnostic: JobHostDiagnostic | undefined;
   let supervision: JobHostSupervision | null = null;
   let lastMessageTick = performance.now();
+  let starting = true;
   let hostSteps: SandboxHostSteps | null = null;
   let ipcSequence = 0;
   let authorityCheckId = 0;
@@ -100,7 +95,7 @@ export function prepareSandboxJobHost(
     resolveReady = resolve;
     rejectReady = reject;
   });
-  void ready.catch(() => {}); // Result-only consumers still receive the failure.
+  void ready.catch(() => {});
   let resolveStarted!: (task: NonNullable<JobHostSupervision["task"]>) => void;
   let rejectStarted!: (error: Error) => void;
   const taskStarted = new Promise<NonNullable<JobHostSupervision["task"]>>((resolve, reject) => {
@@ -134,13 +129,9 @@ export function prepareSandboxJobHost(
     if (pid)
       try {
         process.kill(-pid, "SIGKILL");
-      } catch {
-        /* Exit is checked separately. */
-      }
+      } catch {}
   };
   const force = () => {
-    // Only the unreaped owned fork may be signalled. A task PID received over
-    // IPC is not a durable OS identity and must not be adopted after host loss.
     if (!childExited && !ended) killGroup(child.pid);
   };
   child.once("exit", () => {
@@ -190,6 +181,7 @@ export function prepareSandboxJobHost(
   const recordTimeout = (
     code:
       | "JOB_HOST_HEARTBEAT_EXPIRED"
+      | "JOB_HOST_STARTUP_TIMEOUT"
       | "JOB_HOST_PREPARATION_TIMEOUT"
       | "JOB_HOST_EXECUTION_DEADLINE",
   ) => {
@@ -214,6 +206,7 @@ export function prepareSandboxJobHost(
     };
   };
   const supervisionTimer = setInterval(() => {
+    if (starting) return;
     if (!ended && performance.now() - lastMessageTick > 1500) {
       recordTimeout("JOB_HOST_HEARTBEAT_EXPIRED");
       cancel("host_failure");
@@ -235,7 +228,13 @@ export function prepareSandboxJobHost(
           cancel("host_failure");
         }, 30000)
       : undefined;
-  // Job Host diagnostics are never propagated into user tool output.
+  const startupTimer = setTimeout(
+    () => {
+      recordTimeout("JOB_HOST_STARTUP_TIMEOUT");
+      cancel("host_failure");
+    },
+    Math.min(JOB_HOST_STARTUP_WINDOW_MS, Math.max(1, deadlineRemainingMs)),
+  );
   child.stderr?.on("data", () => {});
   child.on("message", (value: unknown) => {
     if (!value || typeof value !== "object" || !("type" in value)) {
@@ -255,6 +254,10 @@ export function prepareSandboxJobHost(
     }
     ipcSequence++;
     lastMessageTick = performance.now();
+    if (starting) {
+      starting = false;
+      clearTimeout(startupTimer);
+    }
     supervision = authenticated;
     if (message["type"] === "heartbeat") {
       try {
@@ -285,7 +288,6 @@ export function prepareSandboxJobHost(
           await assertNetworkAuthority();
           allowed = !cancelled && !ended && Date.now() < Date.parse(request.deadlineAt);
         } catch {
-          /* A missing answer or unavailable authority is denial. */
         } finally {
           authorityChecksPending--;
         }
@@ -390,6 +392,7 @@ export function prepareSandboxJobHost(
     clearInterval(supervisionTimer);
     clearTimeout(timer);
     clearTimeout(preparationTimer);
+    clearTimeout(startupTimer);
     clearTimeout(forceTimer);
     rejectReady(new Error("JOB_HOST_NOT_READY"));
     rejectStarted(new Error("JOB_HOST_START_UNCONFIRMED"));

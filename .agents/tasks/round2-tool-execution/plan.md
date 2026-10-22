@@ -10,6 +10,8 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - R2-P2：方案甲（常驻任务宿主加沙箱内常驻 runner，“决定”一节 2026-10-16 21:25 一条），实现前先在当前代码上定详细实现设计（Claude 方案加 DeepSeek、GLM 两份独立方案）。分两次提交：先常驻任务宿主、runner 每条命令新起，再 runner 常驻；两次都改 Agent-Worker 协议，各自单独跑第 3 层，受影响的产品路径场景跑第 4 层。证据：带 `[R2-P2]` 的测试在 Hermes 通过（至少：同一 Run 第二次调用复用环境、write 写的文件下一条 bash 读到、不同 Run 不共享、授权撤销或修订变化后不复用、Run 结束后环境停止并留下释放记录、上一条命令留下的后台进程在下一条开始前已不存在、超时只结束那一条、重启后不复用旧环境也不重放、越界读写和联网仍被拒绝），Claude 审核。
 - R2-L13：复制第五次操作包改成第六次。S9 回滚的原有检查之前加整理步骤：服务停着、没有进程打开数据库时，把 `-wal` 里尚未合并的内容并回主文件（或证明日志为空）后删除附属文件，处理前后各读回一次并比较；服务在运行或数据库被打开时拒绝。BL-20261017-007 的验收边界（日志为空、日志有未合并内容两种夹具，拒绝两种情形）在 Hermes 上用可重复的夹具证明。R2-P2 改了 runner，沿用第五次“停服时准备、5 分钟内升级”的能力升级顺序。证据：冻结包在 Hermes 演练通过、opencode 逐行审核，用户批准第六次后执行，用户确认 S10 真实使用核对通过。
 
+- R2-D23：任务宿主启动单独计时（G161）。消息格式不变：父进程仍在 fork 后立即发准备消息，但收到宿主第一条认证消息之前不检查 1.5 秒窗口、不发心跳，只等 10 秒启动期限（不超过任务期限，超时记 `JOB_HOST_STARTUP_TIMEOUT`）；宿主发出第一条回复之前接受 10 秒内的父端消息，之后恢复 1.5 秒（定案见“决定”一节 D-57 一条）；一次性路径和常驻会话路径都改；验收探测程序就绪失败时打印宿主诊断。证据：集成测试在宿主入口注入 2.2 秒同步停顿，旧代码以 `JOB_HOST_HEARTBEAT_EXPIRED` 失败、新代码就绪；消息格式不变，但改变了已有消息的计时规则，所以单独跑第 3 层；himawari-ci 高负载复现重跑；Hermes 演练后重新冻结第六次。
+
 ## 之后
 
 当前批次之后（G138 同意的顺序）：
@@ -129,6 +131,8 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-22 06:37 第 0 层漏跑直接相关测试第三次（D-52、D-54、D-55），按 ADR 0060 暂停第 0 层相关工作加硬约束：共享 git 目录的 `commit-msg`、`pre-push` 钩子要求改产品源的提交逐行声明 `Layer-0-tests:`，包含脚本推导出的直接相关测试（ADR 0066，`docs/lessons.md#layer0-related-tests`）。Claude 方案与 DeepSeek 独立方案的取舍见 `.ci-output/handoff/2026-10-22-l0-omission-decision.md`，opencode 四轮审核，自测 78 项通过。期间新候选 `51f8b927` 的第 4 层继续在 Hermes 上运行，不受影响。
 - 2026-10-22 08:23 D-56 归入 R2-P2 当前批次（来自候选 `51f8b927` 的第一次不过滤第 4 层：`[R2-T11][R2-S2] keeps an offline Worker result pending until paired service restart settles LOST` 重启后一直未释放，另 7 个用例连带失败；单独重跑和第二次不过滤第 4 层 `cc-layer4-51f8b927-full2` 都通过，属于 R2-S2，不新增条目）。根因：服务关闭中止进行中的资源核查，记成 `SANDBOX_RECONCILIATION_INTERRUPTED`，下次启动后已绑定记录不再排期。修法：排期把中断原因当初始原因，下次启动后再核查一次（ADR 0054 `#interrupted-recovery-retry`）。D-56 提交后产生新候选，第六次操作包改用新候选，新候选重跑第 3 层和不过滤第 4 层。
 - 2026-10-22 09:27 候选 `5f216875` 的第 3 层只有守护进程测试的就绪等待超时（BL-20261022-003 第二次出现），按该条约定立即修：只改测试和夹具，改为等夹具发出的就绪信号；修好后提交产生新候选，重跑第 3 层和不过滤第 4 层，第六次操作包改用新候选。
+
+- 2026-10-22 15:5x 新增 R2-D23 并放进当前批次（G161）：第六次 S6 验收在生产失败，himawari-ci 复现确认宿主启动被算进 1.5 秒监督窗口；修好后重新冻结第六次操作包。
 
 ## 意外和发现
 
@@ -254,6 +258,8 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-19 10:54 D-52 第 1、2 层 `d52-l12-01`（云测试账号）：check 0；unit/contracts 4 条失败都不在 D-52 改动的模块里（MCP v2 SDK 两条，BL-20261019-002；`production-automatic-review.unit.test.ts`、`workspace-auto-authorization.unit.test.ts` 各一条 5000 毫秒超时，BL-20261019-003，前者是新出现的超时用例）；integration 除 3 个只在第 3 层跑的文件外，`sandbox-v2-container-route.test.ts` 有 5 条失败：调用序列多了 D-52 新增的 `preparation_diagnostic`。这是 D-52 定下的新行为，测试期望过时；opencode 改为同时断言诊断的阶段和原因码，`d52-ct-l0-red-01` 复现同样 5 条失败，`d52-ct-l0-green-01` 76/76 通过。流程疏漏：D-52 的第 0 层清单漏了直接测试被改函数 `runInEnvironment` 的这个文件，到第 2 层才暴露；同类第一次，候选做法是简报要求第 0 层清单附上“哪些测试文件导入了被改文件”的检索结果。生产服务全程 active、重启 0 次。
 - 2026-10-19 10:55 云上通道脚本换成带 `l3` 模式的新版（`52cf3df7…`，opencode 写、Claude 审），在 `d52-l12-01` 结束后用 `mv -f` 替换，没有覆盖正在运行的脚本。
 - 2026-10-22 第 1、2 层发现 `test/integration/sandbox-v2-container-route.test.ts` 5 个用例 30 秒超时：该文件替换 `@himawari-agent/runtime-sandbox` 时不带原模块，D-54 新增的 `JobHostPreparationError` 在测试里是 `undefined`，Worker 的 catch 里 `instanceof` 抛类型错误，准备诊断发不出去。第 0 层只跑直接相关的 3 个文件，没有覆盖这个间接受影响的替身；改为带原模块，随 D-54 提交。另外两处不带原模块的替换（`product-job-host.unit.test.ts`、`production-sandbox-worker.unit.test.ts`）今天走不到那段 catch，opencode 建议以后一并改（S7），未改。
+
+- 2026-10-22 第六次 S6_ACCEPTANCE 在生产失败（13:14–13:19），服务按 G156 停着。两次只读诊断（G159 及后续允许规则）定位到授权网络探测第 4 个场景的宿主启动约 2 秒后消失；himawari-ci 上 12 轮复现，单独、满负载、扫描 /proc 都通过，负载约为核心数两倍时候选得到 `JOB_HOST_HEARTBEAT_EXPIRED`（stage request，receivedSequence null），第五次版本同负载也以 host_failure 失败。证据 `.ci-output/handoff/sixth-netrepro/evidence/`。生产上为何在较低负载下触发仍未证实。
 
 ## 决定
 
@@ -457,3 +463,14 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
   - 取自 opencode 方案（Claude 方案漏掉）：Worker 返回后，若预约仍是 `reserved`、后端是任务环境、Run 还在进行，Agent 立刻中断预约，用 D-43 已有的 `task_environment_bind_fenced` 依据释放，交付 `SANDBOX_TOOL_NOT_STARTED`；不停止环境。
   - 不采用：opencode 提的新增释放依据（D-43 已实现，复用）、多加“没有序号 2 观测”的条件（绑定在同一事务里同时写状态和观测，已有检查足够）、为不可达的 `cancelled` 分支加代码。
   - 测试先红后绿，后端一致性表加一行，按产品导出的后端清单遍历。实现交给 opencode，工作树 `.ci-output/worktrees/r2p2-d52/`，基于 D-51 叠批顶端 `e1e0d66a`。
+- 2026-10-22 15:5x D-57（R2-D23，任务宿主启动被算进 1.5 秒监督窗口）方案定案。对比 Claude 方案（`.ci-output/handoff/d55/claude-proposal.md`，写在看到对方之前；文件名里的 d55 是编号冲突前的旧称）和 opencode DeepSeek V4.1 Flash `#max` 独立方案（`.ci-output/handoff/2026-10-22-d55-startup-proposal-oc-stop.md`，会话 `ses_e9db9d9cfffefhxlipCCgMpt6B`）：
+  - 两边一致：启动阶段单独计时，期限 10 秒且不超过任务期限；第一条认证的宿主消息到达后恢复 1.5 秒双向监督；新增失败码 `JOB_HOST_STARTUP_TIMEOUT`；一次性路径 `job-host.ts` 和常驻路径 `job-host-session.ts` 都改。
+  - 采用 opencode 的线格式不变做法：父进程仍在 fork 时发序号 1 的 `prepare`，启动阶段不发心跳；宿主在发出第一条回复之前接受年龄不超过 10 秒的父端消息，回复后恢复 1.5 秒。不采用 Claude 草稿的新增 `listening` 消息和命令行传会话标识：线格式、认证分支和测试改动都更大，而 `prepare` 只能经父进程私有 IPC 送达，放宽它的年龄上限不增加冒充面。
+  - 采纳 opencode 指出、Claude 草稿漏掉的：编号 D-55 已被占用，本缺陷改记 D-57；`sandbox-preparation-control.test.ts` 的“已过期 prepare 被拒绝”用例按 2 秒改为接受，11 秒的拒绝由宿主单元测试覆盖；第五次版本 `fifth-r5-heavy` 的失败任务已启动（`process_group_gone`），属运行中窗口，不是启动窗口，运行中 1.5 秒窗口在 CPU 极度紧张时误判是本修复不覆盖的剩余风险，按 G73 不改，在设计文档写明。
+  - 常驻路径父端超时没有诊断（`fail()` 不生成 JobHostDiagnostic）不在本缺陷范围，另记 Backlog。
+
+- 2026-10-22 18:4x 第六次操作包在 S6 失败后的改版方式定案（G161；Claude 方案 `.ci-output/handoff/d55/claude-packet-revision-proposal.md`，DeepSeek V4.1 Flash `#max` 独立方案 `.ci-output/handoff/2026-10-22-sixth-revision-proposal-oc-stop.md`）：
+  - 两边一致：就地修订第一份包，不新开第二份包；沿用 S2 停服结果和 S3 的 Schema 50 恢复点（`S2_STOP` 要求初始服务 active，服务已停不能重跑）；换新候选、重新冻结后，用包外修订工具在生产上替换运输目录和操作目录里的包文件，只重跑 S6 及之后步骤；`/tmp/hh3uq` 保留，删除另问用户。
+  - 采纳 DeepSeek 指出、Claude 方案漏掉的：重新冻结后 `inputs/bindings.json` 的摘要必变，而 `maintenance/run-maintenance.mjs:34`、`:57` 要求 S3 报告的绑定摘要等于当前绑定摘要，S7 第一步会失败；办法是在新绑定的 `maintenance` 里只为 `S3_COPY50` 登记旧绑定摘要，`finalize-bindings.py` 严格校验这个字段，恢复点摘要仍重新核对；不改旧报告、不重跑 S3。旧候选安装目录同路径换装前整体归档（不删），失败时移回；旧 `packet`、`operations` 和第一次 S6、S1 安装证据都归档到证据根下并写清单；修订工具写新的 `s1-result.json`；列出的 11 处“已存在即拒绝”逐项处理；Hermes 演练新增修订工具在“S1–S3 已跑、S6 失败”现场运行一次，以及跨绑定复用 S3 报告的正例和两个反例。
+  - 不采纳 Claude 方案里删除旧候选安装目录和 `validation/source` 的做法：归档更稳，磁盘余量约 69 GB 足够。
+  - 修订工具和包内三处脚本改动（`run-maintenance.mjs`、`finalize-bindings.py`、`S1-publish-and-install.py` 或修订工具内的安装复用）属操作包工具，按 G148 交 opencode 写、Claude 逐行审；生产执行前经用户批准。

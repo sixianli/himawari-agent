@@ -3,7 +3,6 @@ import type { SandboxHostFailureDetail } from "@himawari-agent/execution-contrac
 import type { SandboxPolicyInput } from "./policy.ts";
 import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
-/** Infrastructure probe input; product inventory/Grant parsing stays outside this package. */
 export interface JobHostReadinessProbe {
   readonly kind: "unix_http";
   readonly ref: string;
@@ -36,7 +35,6 @@ function parseReadiness(value: unknown): JobHostReadinessProbe {
   return probe;
 }
 
-/** Trusted Worker-to-Job-Host IPC; not a model tool or authority grant. */
 export interface JobHostRequest {
   readonly jobId: string;
   readonly attemptId: string;
@@ -44,7 +42,6 @@ export interface JobHostRequest {
   readonly policyDigest: string;
   readonly executable: string;
   readonly args: readonly string[];
-  /** Authorized task bytes only, bounded and encoded for private Job Host IPC. */
   readonly stdinBase64?: string;
   readonly resourceLimits?: ResourceLimits;
   readonly readiness?: JobHostReadinessProbe;
@@ -300,11 +297,12 @@ export function jobHostCommandSettled(
   );
 }
 
-/** Quote argv elements without granting shell interpretation to their contents. */
 export function quoteJobArgument(argument: string): string {
   if (argument.includes("\0")) throw new Error("JOB_HOST_ARGS_INVALID");
   return `'${argument.replaceAll("'", `'"'"'`)}'`;
 }
+
+export const JOB_HOST_STARTUP_WINDOW_MS = 10_000;
 
 export const JOB_HOST_FAILURE_STAGES = [
   "request",
@@ -363,12 +361,9 @@ export interface JobHostResult {
   readonly taskProcessExited: boolean;
   readonly stdioClosed: boolean;
   readonly srtReset: boolean;
-  /** Process/group exit is not evidence that detached descendants are gone. */
   readonly taskTreeCleanup: "not_started" | "process_group_gone" | "unknown";
 }
 
-/** Authenticated only while attached to the original owned fork/IPC channel.
- * This is not a kernel task-tree identity and cannot be reconstructed from a PID. */
 export interface JobHostSupervision {
   readonly protocolVersion: "job-host.v2";
   readonly sessionId: string;

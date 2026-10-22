@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7b091826b34c3f1937ec0b4dd65ab82448d2cebd975fa4c7acf531f3602404da"
+contract_sha256: "sha256:009c80628f4813324633c5100ffb75f73e0d4e9078741d90efbc79e341f7a33d"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -1013,7 +1013,7 @@ Agent 只有在原 journal 已接纳永久释放记录且没有新保护时才�
 
 Job Host 启动先建立原私有 IPC 监督。完整安装必须同时包含编译后的 `sandbox-sdk.js` 适配器和 `sandbox-sdk-worker.js` 固定线程入口。SRT 的同一个 `SandboxManager` 和策略编译模块都只在这个私有工作线程中加载；策略编译、依赖检查、初始化、沙箱启动参数生成、`cleanupAfterCommand()` 和 `reset()` 都在该线程中按顺序执行。线程使用原 Host 的私有环境副本，`execArgv` 为 `[]`，不接收模型指定的线程入口或回调。原 IPC、心跳、控制请求、authority 转发、guardian、任务进程与期限仍由 Host 主线程负责。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
-`checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。2026-10-12 起策略编译也在 SDK 线程执行，Host 主线程不再加载 SRT：线程只返回策略 JSON，主线程自行计算 SHA-256 并与冻结的 `policyDigest` 比对；编译失败时已创建的 SDK 仍须进入原停止流程。Host 每进入一个准备步骤就立即发一次带逐步耗时的心跳，Worker 心跳过期时诊断记录最后一步，见[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。Worker 自身事件循环停顿不在此范围。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only]
+`checkDependenciesAsync()` 内部和 `initialize()` 的依赖检查包含同步操作。移入 SDK 线程后，这些同步操作不再占用 Host 主线程。2026-10-12 起策略编译也在 SDK 线程执行，Host 主线程不再加载 SRT：线程只返回策略 JSON，主线程自行计算 SHA-256 并与冻结的 `policyDigest` 比对；编译失败时已创建的 SDK 仍须进入原停止流程。Host 每进入一个准备步骤就立即发一次带逐步耗时的心跳，Worker 心跳过期时诊断记录最后一步，见[主线程只管心跳](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only)。Worker 自身事件循环停顿不在此范围。新鲜准备消息不会因后续加载慢而过期。原 1500ms 消息年龄（2026-10-22 起从 Job Host 第一次回复开始计算；回复之前另有最长 10 秒、且不超过任务剩余期限的启动期限，一次性路径超时诊断为 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、父进程不生成诊断（BL-20261022-004），见[Job Host 启动单独计时](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)）、30 秒准备上限、任务总期限、私有协议、认证及签名终态格式保持不变；加载期间的心跳不代表 ready 或清理完成。[策略编译模块](../../packages/runtime-sandbox/src/policy.ts) [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#main-thread-heartbeat-only]
 
 2026-10-12 起，Job Host 解析准备请求、启动自身期限计时后，先核对控制绑定（会话、Job、attempt 一致，控制目录不与工作区、私有目录和工具链目录重叠）并打开控制通道（Agent 用来停止和核验这个 Host 的私有连接），然后才加载诊断结构、SDK 线程和策略。控制观察里的 `policyDigest` 取请求中冻结的摘要；策略编译结果与它不一致时，准备以 `JOB_HOST_POLICY_CHANGED`（策略已变化）停止。因此控制通道打开之后的任何准备失败，例如 SRT 加载失败或环境检查失败，都会走原停止流程，并写出签名终态文件 `final.json`（Host 签名的最终状态，记录任务是否启动、SRT 是否已复位）；满足原认证、`taskStarted=false`、`srtReset=true` 及宿主和任务进程组已消失等条件时，按 `host_never_started` 释放，不再无限重试停止和核验。以下情况仍不能自动释放，继续占用并等待管理员处置：控制通道本身打开失败；SDK 线程从未创建，因而 `srtReset=false`；Host 写出终态前被强制结束。这些情况每次核查失败都会新增一条加密诊断记录，数量没有上限，见 [BL-20261012-001 清理核查诊断无上限](../backlog/BL-20261012-001-清-理-核-查-诊-断-无-上.md)。详见[控制通道在准备第一步打开](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first)。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#control-opened-first]
 

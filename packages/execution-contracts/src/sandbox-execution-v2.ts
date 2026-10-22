@@ -32,7 +32,6 @@ const digest: Schema<string> = {
 function fail(message: string): never {
   throw new ContractValidationError("$", message);
 }
-/** Strict discriminated parsing; never try a weaker branch after a branch fails. */
 function variant<const T extends Readonly<Record<string, Schema<unknown>>>>(
   key: string,
   branches: T,
@@ -57,7 +56,6 @@ export const sandboxPayloadReferenceSchema = object({
 });
 const evidence = object({ ref: machineString, digest });
 const contractIdentity = { ref: machineString, version: machineString };
-/** Trusted catalog descriptors, not model-selectable assertions about effects. */
 export const sandboxOperationContractSchema = variant("kind", {
   fixed_read: object({ ...contractIdentity, kind: literal("fixed_read") }),
   command: object({ ...contractIdentity, kind: literal("command") }),
@@ -122,7 +120,6 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
     (kind === "network_only" && mode !== "foreground")
   )
     fail("operation contract does not support execution mode");
-  // Reuse the exact v1 admission validation; no default fingerprint or implicit v1 upgrade.
   const base = schema.parse({ ...admission, schemaVersion: "sandbox-execution.v1" }, path);
   return Object.freeze({
     ...base,
@@ -148,7 +145,6 @@ export const sandboxExecutionPlanCandidateV2Schema: Schema<SandboxExecutionPlanC
     return parsePlan(sandboxExecutionPlanCandidateSchema, value, path);
   },
 };
-/** Version dispatch preserves old records and never supplies v2 supervision defaults. */
 export const versionedSandboxExecutionPlanSchema = variant("schemaVersion", {
   "sandbox-execution.v1": sandboxExecutionPlanSchema,
   "sandbox-execution.v2": sandboxExecutionPlanV2Schema,
@@ -403,11 +399,8 @@ const transitions: Record<
   stopping: ["stopping", "lost", "reconciling", "released"],
   lost: ["lost", "reconciling"],
   reconciling: ["reconciling", "lost", "released"],
-  // A fresh verification may renew the proof of the same terminal resource.
-  // It cannot revive the environment or replace its process/status facts.
   released: ["released"],
 };
-/** Checks binding/semantics only. Evidence authenticity must be resolved by trusted host ports. */
 export function validateSandboxExecutionFacts(
   rawPlan: SandboxExecutionPlanV2,
   raw: unknown,
@@ -625,7 +618,6 @@ function withTaskTermination<T extends { end: boolean }>(
   };
 }
 
-/** Protected, bounded output pages; cursor is a locator, never execution authority. */
 export const sandboxResourceOutputQuerySchema = object({
   resourceRef: machineString,
   cursor: nullable(machineString),
@@ -645,7 +637,6 @@ export const sandboxResourceOutputPageSchema = withTaskTermination(
 export type SandboxResourceOutputQuery = InferSchema<typeof sandboxResourceOutputQuerySchema>;
 export type SandboxResourceOutputPage = InferSchema<typeof sandboxResourceOutputPageSchema>;
 
-/** Append-only output captured by the original Worker; no host paths or executable input. */
 const outputBytes: Schema<string> = {
   parse(value, path = "$") {
     if (
@@ -667,8 +658,6 @@ export const sandboxOutputChunkSchema = withTaskTermination(
 );
 export type SandboxOutputChunk = InferSchema<typeof sandboxOutputChunkSchema>;
 
-/** Resource-specific infrastructure credential, carried only by authenticated
- * private Payload IPC and stored as a restricted Run artifact. Never a tool argument. */
 const controlDirectory: Schema<string> = {
   parse(value, path = "$") {
     if (
@@ -695,10 +684,10 @@ export const sandboxJobControlBindingSchema = object({
 });
 export type SandboxJobControlBinding = InferSchema<typeof sandboxJobControlBindingSchema>;
 
-/** Authenticated Worker requests carry facts and locators, never database authority. */
 export const SANDBOX_HOST_FAILURE_CODES = [
   "UNKNOWN",
   "JOB_HOST_HEARTBEAT_EXPIRED",
+  "JOB_HOST_STARTUP_TIMEOUT",
   "JOB_HOST_PREPARATION_TIMEOUT",
   "JOB_HOST_EXECUTION_DEADLINE",
   "JOB_HOST_ALREADY_PREPARED",

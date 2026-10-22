@@ -1462,6 +1462,27 @@
         "on": "2026-10-21",
         "why": "R2-H1 第 2 层发现 test/tooling/prod-sandbox-diagnostic.test.mjs 在 276a4b67 不带补丁就失败；根因是 5bab4de1 给 sandboxHostFailureDetailSchema 加了必填 text 而夹具 detailFields 没跟上；按“已发现缺陷不拖到下一轮”立即修"
       }
+    },
+    {
+      "id": "R2-D23",
+      "title": "任务宿主启动时间被算进 1.5 秒心跳和消息新鲜度窗口，CPU 紧张时准备失败（JOB_HOST_HEARTBEAT_EXPIRED → JOB_HOST_NOT_READY，第六次 S6 验收因此失败，D-57）：父进程收到宿主第一条认证消息前只等 10 秒启动期限、不做 1.5 秒监督，宿主第一次回复前接受 10 秒内的准备消息，消息格式不变；先红后绿",
+      "goal_ref": ["G161"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D23",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "opencode"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-22",
+        "why": "G161 用户要求修宿主启动期限后重新冻结第六次；himawari-ci 高负载复现 cand-r6-heavy 得到 JOB_HOST_HEARTBEAT_EXPIRED、stage request、receivedSequence null；第五次版本同负载下也失败"
+      }
     }
   ],
   "fingerprint": {

@@ -854,6 +854,18 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     );
     expect(boundary.spawn).not.toHaveBeenCalled();
   });
+  it("[R2-D23] accepts a first prepare that waited for a slow Job Host start", async () => {
+    await prepare(request(), { observedAt: new Date(Date.now() - 2000).toISOString() });
+    expect(sent).toContainEqual(expect.objectContaining({ type: "ready", sessionId: SESSION }));
+    expect(sent.some((message) => message["type"] === "diagnostic")).toBe(false);
+    expect(processBoundary.stderr.write).not.toHaveBeenCalled();
+  });
+  it("[R2-D23] rejects a first prepare older than the startup window", async () => {
+    await prepare(request(), { observedAt: new Date(Date.now() - 10_001).toISOString() });
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: false });
+    expect(processBoundary.stderr.write).toHaveBeenCalledWith("JOB_HOST_WORKER_LEASE_INVALID\n");
+    expect(sent.some((message) => message["type"] === "ready")).toBe(false);
+  });
   it("identifies a stale Worker message after ready without exposing its payload", async () => {
     await prepare();
     await receive("heartbeat", { observedAt: new Date(Date.now() - 1501).toISOString() });

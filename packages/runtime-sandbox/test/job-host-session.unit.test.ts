@@ -295,6 +295,44 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
     await session.result;
   });
 
+  it("[R2-D23] waits for a slow session host before supervising it", async () => {
+    vi.useFakeTimers();
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(process.send.mock.calls.map(([message]) => message.type)).toEqual(["prepare"]);
+    ready(process);
+    await session.ready;
+    expect(session.inspect()?.state).toBe("alive");
+    process.emit("close");
+    await session.result;
+  });
+
+  it("[R2-D23] ends a session host that never reports within the startup window", async () => {
+    vi.useFakeTimers();
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    await vi.advanceTimersByTimeAsync(9900);
+    expect(cancelled(process)).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(cancelled(process)).toBe(true);
+    process.emit("close");
+    await expect(session.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+    expect(await session.result).toMatchObject({ reason: "host_failure" });
+  });
+
+  it("[R2-D23] keeps the original lease once the session host has reported", async () => {
+    vi.useFakeTimers();
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    await vi.advanceTimersByTimeAsync(1750);
+    expect(cancelled(process)).toBe(true);
+    process.emit("close");
+    await session.result;
+  });
+
   it("[R2-P2] closes the session when a start names a process other than the resident one", async () => {
     const process = child();
     const session = prepareSandboxJobSession(request());

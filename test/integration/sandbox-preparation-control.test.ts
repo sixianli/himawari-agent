@@ -17,7 +17,7 @@ import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-
 const launch = vi.hoisted(() => ({
   hook: "",
   entry: "",
-  stalePrepare: false,
+  stalePrepareMs: 0,
   runtimeFork: 0,
   stderr: "",
   events: [] as Record<string, unknown>[],
@@ -66,12 +66,15 @@ vi.mock("node:child_process", async (original) => {
       child.stderr?.on("data", (chunk: Buffer) => {
         launch.stderr += chunk.toString();
       });
-      if (launch.stalePrepare) {
+      if (launch.stalePrepareMs) {
         const send = child.send.bind(child);
         child.send = ((message: Record<string, unknown>, ...args: unknown[]) =>
           Reflect.apply(send, child, [
             message["type"] === "prepare"
-              ? { ...message, observedAt: new Date(Date.now() - 2000).toISOString() }
+              ? {
+                  ...message,
+                  observedAt: new Date(Date.now() - launch.stalePrepareMs).toISOString(),
+                }
               : message,
             ...args,
           ])) as typeof child.send;
@@ -122,7 +125,7 @@ afterEach(async (context) => {
       },
     );
   }
-  launch.stalePrepare = false;
+  launch.stalePrepareMs = 0;
   launch.stderr = "";
   launch.events.length = 0;
 });
@@ -216,6 +219,7 @@ async function configureSdkLoad(
     blockDependenciesMs?: number;
     blockModuleMs?: number;
     blockContractsImportMs?: number;
+    blockEntryMs?: number;
     changePolicyText?: boolean;
     launchCommand?: string;
   },
@@ -257,6 +261,14 @@ register(${JSON.stringify(pathToFileURL(loader).href)});
     throw Object.assign(new Error("JOB_HOST_TEST_CONTRACTS_IMPORT_FAILURE"), { code: "EIO" });
   }
   const loaded = await nextLoad(url, context);
+  if (${Boolean(options.blockEntryMs)} && url === ${JSON.stringify(pathToFileURL(launch.entry).href)})
+    return { ...loaded, source: ${JSON.stringify(
+      `process.stderr.write(JSON.stringify({ stage: "ENTRY_STALL_STARTED", at: Date.now() }) + "\\n");
+const himawariFixtureEntryUntil = performance.now() + ${options.blockEntryMs ?? 0};
+while (performance.now() < himawariFixtureEntryUntil) {}
+process.stderr.write(JSON.stringify({ stage: "ENTRY_STALL_FINISHED", at: Date.now() }) + "\\n");
+`,
+    )} + loaded.source.toString() };
   ${entryDiagnostics.after}
   if (${Boolean(options.blockContractsImportMs)} && url.endsWith("/@himawari-agent/execution-contracts/dist/index.js"))
     return { ...loaded, source: ${JSON.stringify(
@@ -847,6 +859,50 @@ it("[R2-L7] keeps the original lease while the sandbox library loads slowly", as
   expect(observed).toMatchObject({ taskStarted: false, srtReset: true });
 });
 
+it("[R2-D23] waits for a Job Host whose own startup takes longer than the lease window", async () => {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0, blockEntryMs: 2200 });
+  const { observed, preparationError, preparedState } = await prepareStalledHost(
+    root,
+    "slow-host-startup",
+  );
+  const stalls = launch.stderr
+    .split("\n")
+    .filter((line) => line.startsWith("{") && line.includes("ENTRY_STALL_"))
+    .map((line) => JSON.parse(line) as { stage: string });
+  expect(stalls.map((entry) => entry.stage)).toEqual([
+    "ENTRY_STALL_STARTED",
+    "ENTRY_STALL_FINISHED",
+  ]);
+  expect(preparationError, JSON.stringify(observed)).toBeUndefined();
+  expect(preparedState).toBe("alive");
+  expect(observed).toMatchObject({ taskStarted: false, srtReset: true });
+  const first = launch.events.find((event) => event["stage"] === "host-message");
+  const queuedHeartbeats = launch.events.filter(
+    (event) =>
+      event["stage"] === "worker-message" &&
+      event["type"] === "heartbeat" &&
+      Number(event["at"]) < Number(first?.["at"]),
+  );
+  expect(queuedHeartbeats, JSON.stringify(launch.events)).toEqual([]);
+});
+
+it("[R2-D23] accepts the first prepare after it waited two seconds for the Job Host", async () => {
+  const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
+  cleanups.push(() => rm(root, { recursive: true, force: true }));
+  await configureSdkLoad(root, { delayMs: 0 });
+  launch.stalePrepareMs = 2000;
+  const { observed, preparationError, preparedState } = await prepareStalledHost(
+    root,
+    "waited-prepare",
+  );
+  expect(preparationError, JSON.stringify({ observed, stderr: launch.stderr })).toBeUndefined();
+  expect(preparedState).toBe("alive");
+  expect(observed).toMatchObject({ taskStarted: false, srtReset: true });
+  expect(launch.stderr).not.toContain("JOB_HOST_WORKER_LEASE_INVALID");
+});
+
 it("[R2-L7] records the preparation step that was running when the Job Host went silent", async () => {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -940,30 +996,30 @@ syncBuiltinESMExports();
 });
 
 it.each([
-  { name: "preparation deadline", delayMs: 31000, failImport: false, stalePrepare: false },
-  { name: "import failure", delayMs: 0, failImport: true, stalePrepare: false },
+  { name: "preparation deadline", delayMs: 31000, failImport: false, stalePrepareMs: 0 },
+  { name: "import failure", delayMs: 0, failImport: true, stalePrepareMs: 0 },
   {
     name: "contracts import failure",
     delayMs: 0,
     failImport: false,
     failContractsImport: true,
-    stalePrepare: false,
+    stalePrepareMs: 0,
   },
   {
     name: "task deadline during import",
     delayMs: 2500,
     failImport: false,
-    stalePrepare: false,
+    stalePrepareMs: 0,
     taskDeadlineMs: 1000,
   },
-  { name: "already stale prepare", delayMs: 0, failImport: false, stalePrepare: true },
+  { name: "already stale prepare", delayMs: 0, failImport: false, stalePrepareMs: 11000 },
 ])(
   "rejects $name without starting the user task",
   async (scenario) => {
     const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-prep-`));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     await configureSdkLoad(root, scenario);
-    launch.stalePrepare = scenario.stalePrepare;
+    launch.stalePrepareMs = scenario.stalePrepareMs;
     const marker = path.join(root, "user-task-started");
     const { policy, compiled } = await prepareJobPolicy({
       workspace: null,

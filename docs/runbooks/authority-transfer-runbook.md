@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:5363843e7688779d7e549b73c27e2394735a836d40cef39ad4df3b801b2e99fe"
+contract_sha256: "sha256:f5d094bf844fb13b9a55b10ab13369ebdf7d0fbf5d75ec547557c46cd3e11b6b"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -288,7 +288,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 源端 export 和目标端 import 前，正常停机须等待[预热准备线程池](#pi-preparation-prewarm)拥有的全部线程退出，并等待 Job Host 已开始的 SDK 操作及 cleanup/reset 完成。同一个 SRT `SandboxManager` 的依赖检查、初始化、启动参数生成、cleanup 和 reset 由私有 SDK 工作线程执行。收到 reset 成功回复、且 SDK 线程自然以退出码 0 结束后，Host 才能记录 `srtReset=true`；异常退出或强制终止不证明清理完成。仍须独立检查原宿主、任务进程组、控制证据、进程、socket、连接和锁。[Host 主线程入口](../../packages/runtime-sandbox/src/job-host-main.ts) [SDK 线程适配器](../../packages/runtime-sandbox/src/sandbox-sdk.ts) [SDK 固定线程入口](../../packages/runtime-sandbox/src/sandbox-sdk-worker.ts)
 
-迁移包不携带预热线程或 SDK 线程的进程内状态。目标完整安装须独立包含 Pi 准备入口、线程入口、pool 模块及 runtime-pi 导出，还须包含 `sandbox-sdk.js` 和固定的 `sandbox-sdk-worker.js`。激活后按当前权威交接新请求，不恢复旧线程或重发旧调用。Host 主线程仍承担原 IPC、心跳、控制、authority 转发、任务进程和期限；策略模块仍在主线程加载 SRT 的默认写路径和配置 schema。原 1500ms 消息年龄、30 秒准备上限、任务期限、协议和释放核验保持不变，见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。迁移仍须保留原控制 Payload 与持久释放事实。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [策略编译模块](../../packages/runtime-sandbox/src/policy.ts)
+迁移包不携带预热线程或 SDK 线程的进程内状态。目标完整安装须独立包含 Pi 准备入口、线程入口、pool 模块及 runtime-pi 导出，还须包含 `sandbox-sdk.js` 和固定的 `sandbox-sdk-worker.js`。激活后按当前权威交接新请求，不恢复旧线程或重发旧调用。Host 主线程仍承担原 IPC、心跳、控制、authority 转发、任务进程和期限；策略模块仍在主线程加载 SRT 的默认写路径和配置 schema。原 1500ms 消息年龄（2026-10-22 起从 Job Host 第一次回复开始计算；回复之前另有最长 10 秒、且不超过任务剩余期限的启动期限，一次性路径超时诊断为 `JOB_HOST_STARTUP_TIMEOUT`，常驻会话路径按 `host_failure` 结束会话、父进程不生成诊断（BL-20261022-004），见[Job Host 启动单独计时](../execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-window)）、30 秒准备上限、任务期限、协议和释放核验保持不变，见[Job Host SDK 线程与停止证明](install-start-stop-runbook.md#sdk-thread-supervision)。迁移仍须保留原控制 Payload 与持久释放事实。[SOURCE: docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md#startup-supervision] [策略编译模块](../../packages/runtime-sandbox/src/policy.ts)
 
 在任何 mutation 前执行并记录以下只读检查：
 
