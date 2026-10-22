@@ -954,3 +954,9 @@ G150 2026-10-21（用户原话）：生产的故障先不管，先在 Hermes 上
 > 那你为什么不直接加上“opencode使用模型的时候，指定推理强度时，实时地去查询可用的推理强度，然后从最新的推理强度的列表中选择high以上最合适的强度呢？”
 >
 >（起因：Claude 照模型表里 2026-10-15 的旧记录说免费 DeepSeek 没有 `#max`，用户用截图指出有。采纳：启动脚本每次向 opencode 服务实时查询档位，表只记最低档位，见 ADR 0065。）
+
+## G155 2026-10-22 用户原话
+
+> 批准
+>
+>（答复 Claude 09:38 的问题“要现在批准第六次的 S0 只读读取一次吗？”。范围：第六次 S0 生产只读读取一次，即按 `.ci-output/production/2026-10-17-sixth-change-packet-01/install/P0-readonly-preflight.md` 在 MacBook 运行 `bash .ci-output/production/run-sixth-s0.sh`，以 root 经 SSH 读数据库状态、四个系统工具身份和 npm；操作包改到候选 `4126f4f3` 后执行。不包括冻结、演练、上线或任何写操作；读取之后 `read-s0-db.mjs` 若再改，要先问用户再重读。）
