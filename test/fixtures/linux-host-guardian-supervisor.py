@@ -45,6 +45,12 @@ try:
             ready = json.loads(Path(ready_path).read_text())
             if ready["hostIdentity"]["processId"] != child:
                 raise RuntimeError("GUARDIAN_FIXTURE_HOST_CHANGED")
+            print("ready", flush=True)
+        if ready is None:
+            exited, status = os.waitpid(child, os.WNOHANG)
+            if exited:
+                reaped = True
+                raise RuntimeError(f"GUARDIAN_FIXTURE_HOST_EXITED:{os.waitstatus_to_exitcode(status)}")
         reap_members()
         available, _, _ = select.select([sys.stdin], [], [], 0.01)
         if not available:

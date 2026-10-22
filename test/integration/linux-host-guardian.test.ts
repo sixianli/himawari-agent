@@ -30,6 +30,7 @@ it("[R2-S4] reclaims a dead Host group before its parent reaps the zombie", asyn
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
+  supervisor.stdin.on("error", () => {});
   let stderr = "";
   supervisor.stderr.on("data", (value: Buffer) => {
     stderr += value.toString();
@@ -42,6 +43,15 @@ it("[R2-S4] reclaims a dead Host group before its parent reaps the zombie", asyn
     });
   });
   void closed.catch(() => {});
+  const readySignal = new Promise<void>((resolve, reject) => {
+    let stdout = "";
+    supervisor.stdout.on("data", (value: Buffer) => {
+      stdout += value.toString();
+      if (stdout.split("\n").includes("ready")) resolve();
+    });
+    closed.then(() => reject(new Error(`GUARDIAN_FIXTURE_EXITED_BEFORE_READY:${stderr}`)), reject);
+  });
+  void readySignal.catch(() => {});
   let ready:
     | {
         hostIdentity: LinuxProcessIdentity;
@@ -52,20 +62,15 @@ it("[R2-S4] reclaims a dead Host group before its parent reaps the zombie", asyn
       }
     | undefined;
   try {
-    await expect
-      .poll(async () => {
-        try {
-          ready = JSON.parse(await readFile(readyPath, "utf8"));
-          return true;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-          throw error;
-        }
-      })
-      .toBe(true);
-    if (!ready) throw new Error("GUARDIAN_FIXTURE_NOT_READY");
-    await writeFile(path.join(output, "ready.json"), JSON.stringify(ready, null, 2));
-    const host = ready.hostIdentity;
+    await readySignal;
+    const published: NonNullable<typeof ready> = JSON.parse(await readFile(readyPath, "utf8"));
+    ready = published;
+    await writeFile(path.join(output, "ready.json"), JSON.stringify(published, null, 2));
+    const host = published.hostIdentity;
+    const live = await readLinuxProcessIdentity(host.processId);
+    expect(live).not.toBeNull();
+    expect(live?.startToken).toBe(host.startToken);
+    expect(live?.state).not.toBe("Z");
     supervisor.stdin.write("kill\n");
     await expect
       .poll(async () => (await readLinuxProcessIdentity(host.processId))?.state)
