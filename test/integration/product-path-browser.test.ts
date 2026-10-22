@@ -40,6 +40,8 @@ import {
   readLinuxHostProcessGroup,
   type ProductPathJobHostStart,
   readLinuxJobProcesses,
+  readResidentJobHostStart,
+  readResidentTaskEnvironments,
 } from "../fixtures/product-path-processes.ts";
 
 const enabled = process.env["HIMAWARI_PRODUCT_PATH_E2E"] === "1";
@@ -122,6 +124,14 @@ let r2t5HomePath = "";
 let r2t5TrapPath = "";
 let networkPort = 0;
 let networkConnections = 0;
+
+const frontBashUsesOneShotSrt = process.platform !== "linux";
+const oneShotForegroundSrtIsNonLinuxOnly =
+  "Linux 上默认安装的前台 bash 走常驻任务环境，一次性准备协议由第 1、2 层测试覆盖";
+const residentSessionsReportOneExitResult =
+  "常驻会话每条命令只回报一份退出结果，没有可互相矛盾的退出事实；一次性路径的矛盾检查由第 1、2 层测试覆盖";
+const residentFinishGateStageIsOneShotOnly =
+  "常驻会话的重置、最终证据和会话结果都在命令结果之后，或者不存在；一次性路径的这些阶段由第 1、2 层测试覆盖，常驻路径的原始输出恢复由 before-end、after-end 和 restart=true 用例覆盖";
 
 const script: ModelScript = ({ lastUserText, toolResults, hasTools }) => {
   if (!hasTools) return { kind: "text", text: "工具恢复验证" };
@@ -442,6 +452,12 @@ async function scenario(name: string, body: () => Promise<void>) {
   }
 }
 
+async function restoreServices() {
+  await installation.stop();
+  await installation.start();
+  await page.reload();
+}
+
 function noteAnswer() {
   return toolAnswers().filter({ hasText: NOTE }).first();
 }
@@ -598,21 +614,113 @@ function executionReadback() {
   }
 }
 
-async function readJobHostStarts() {
-  const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
-  return Promise.all(
-    (await readdir(jobsRoot))
-      .filter((name) => name.startsWith("control-"))
-      .map(async (name) => {
-        const encoded = await readFile(path.join(jobsRoot, name, "started.json"), "utf8").catch(
-          (error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT") return null;
-            throw error;
-          },
-        );
-        if (encoded === null) return null;
-        return JSON.parse(JSON.parse(encoded).body) as ProductPathJobHostStart;
-      }),
+function residentEnvironmentReleaseProof(runId: string) {
+  const database = openQualifiedDatabase(installation.databasePath);
+  try {
+    return database
+      .prepare(
+        `SELECT e.environment_id AS environmentId, e.role, e.generation, e.state,
+          r.basis AS basis, r.accepted_at AS acceptedAt
+        FROM execution_environments e
+        JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+        LEFT JOIN execution_environment_release_receipts r ON r.environment_id=e.environment_id
+        WHERE j.run_id=? ORDER BY e.environment_id`,
+      )
+      .all(runId) as Array<{
+      environmentId: string;
+      role: string;
+      generation: number;
+      state: string;
+      basis: string | null;
+      acceptedAt: string | null;
+    }>;
+  } finally {
+    database.close();
+  }
+}
+
+async function expectSingleResidentExecution(runId: string, jobId: string) {
+  const database = openQualifiedDatabase(installation.databasePath);
+  let environments: Array<{
+    environmentId: string;
+    role: string;
+    generation: number;
+    state: string;
+  }>;
+  let calls: Array<{ environmentId: string; invocationId: string }>;
+  let records: Array<{ jobId: string; invocationId: string }>;
+  try {
+    environments = database
+      .prepare(
+        `SELECT e.environment_id AS environmentId, e.role, e.generation, e.state
+        FROM execution_environments e
+        JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+        WHERE j.run_id=? ORDER BY e.environment_id`,
+      )
+      .all(runId) as typeof environments;
+    calls = database
+      .prepare(
+        `SELECT c.environment_id AS environmentId, c.invocation_id AS invocationId
+        FROM execution_environment_calls c
+        JOIN execution_environments e ON e.environment_id=c.environment_id
+        JOIN execution_jobs j ON j.execution_job_id=e.execution_job_id
+        WHERE j.run_id=? ORDER BY c.invocation_id`,
+      )
+      .all(runId) as typeof calls;
+    records = database
+      .prepare(
+        `SELECT job_id AS jobId, json_extract(plan_json,'$.identity.invocationId') AS invocationId
+        FROM sandbox_execution_records WHERE job_id=?`,
+      )
+      .all(jobId) as typeof records;
+  } finally {
+    database.close();
+  }
+  const primary = environments.filter((environment) => environment.role === "primary");
+  expect(environments).toHaveLength(1);
+  expect(primary).toHaveLength(1);
+  expect(records).toHaveLength(1);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.invocationId).toBe(records[0]?.invocationId);
+  expect(calls[0]?.environmentId).toBe(primary[0]?.environmentId);
+  const resident = (await readResidentTaskEnvironments(installation.stateRoot)).filter(
+    (environment) => environment.runId === runId,
+  );
+  expect(resident).toHaveLength(1);
+  const identities = resident
+    .flatMap((environment) => environment.sessions)
+    .map((session) => ({
+      processId: session.residentProcessId,
+      startToken: session.residentStartToken,
+    }));
+  expect(identities).toHaveLength(1);
+  expect(identities[0]).toMatchObject({
+    processId: expect.any(Number),
+    startToken: expect.any(String),
+  });
+  return { environments, calls, records, resident };
+}
+
+async function readResidentHost(
+  runId: string,
+  group: "command" | "resident",
+): Promise<ProductPathJobHostStart> {
+  return await readResidentJobHostStart({ stateRoot: installation.stateRoot, runId, group });
+}
+
+async function residentHostReady(runId: string): Promise<boolean> {
+  const environments = (await readResidentTaskEnvironments(installation.stateRoot)).filter(
+    (environment) => environment.runId === runId,
+  );
+  if (environments.length !== 1) return false;
+  const session = environments[0]?.sessions.find((candidate) => candidate.kind === "command");
+  return Boolean(
+    session &&
+      session.pid !== null &&
+      session.startToken !== null &&
+      session.residentProcessId !== null &&
+      session.residentStartToken !== null &&
+      session.commandGroups.length === 1,
   );
 }
 
@@ -1143,7 +1251,7 @@ sys.exit(0 if report["passed"] else 1)
     expect(report.fault.preflight.directMarker.passed).toBe(true);
     expect(report.fault.preflight.frozenProduct.passed).toBe(true);
     expect(report.fault.preflight.frozenProduct.execution.preparation).toBe("bound");
-    expect(report.fault.preflight.frozenProduct.execution.supervision).toBe("controlled");
+    expect(report.fault.preflight.frozenProduct.execution.supervision).toBe("initializing");
     expect(report.fault.preflight.frozenProduct.execution.activeClaims).toBeGreaterThan(0);
     expect(report.fault.preflight.frozenProduct.execution.releaseReceiptPresent).toBe(false);
     expect(report.fault.preflight.frozenProduct.finalPresent).toBe(false);
@@ -2196,9 +2304,10 @@ productDescribe(
       });
     }, 1_800_000);
 
-    it.each([false, true])(
+    it.for([false, true])(
       "[R2-T11] handles a preparation transport failure across paired restart (legacy=%s)",
-      async (legacy) => {
+      async (legacy, testContext) => {
+        testContext.skip(legacy && !frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
         const name = legacy ? "32-legacy-preparation-upgrade" : "31-preparation-transport-recovery";
         const original = { installation, browser, context, page };
         await installation.stop();
@@ -2267,11 +2376,12 @@ productDescribe(
                   rows: executionReadback().filter((record) => record.jobId === job.jobId),
                   execution: database
                     .prepare(
-                      "SELECT preparation_state AS phase, started_at AS startedAt, plan_json AS plan, recovery_json AS recovery FROM sandbox_execution_records WHERE job_id=?",
+                      "SELECT preparation_state AS phase, started_at AS startedAt, reservation_stopped_at AS stopRequestedAt, plan_json AS plan, recovery_json AS recovery FROM sandbox_execution_records WHERE job_id=?",
                     )
                     .get(job.jobId) as {
                     phase: string;
                     startedAt: string | null;
+                    stopRequestedAt: string | null;
                     plan: string;
                     recovery: string | null;
                   },
@@ -2318,6 +2428,7 @@ productDescribe(
             try {
               expect(readback().execution).toMatchObject({ phase: "reserved", startedAt: null });
               const plan = JSON.parse(readback().execution.plan);
+              const resident = plan.backendRef === "srt-task-environment";
               const deadline = Date.parse(plan.originalDeadlineAt);
               if (legacy) {
                 expect(Object.hasOwn(plan, "preparationProtocol")).toBe(false);
@@ -2328,7 +2439,10 @@ productDescribe(
                   .toBe("unresolved");
                 expect(readback().controlArtifacts).toEqual([]);
               } else {
-                expect(plan.preparationProtocol).toBe("launch-or-block.v2");
+                if (process.platform === "linux")
+                  expect(plan.backendRef).toBe("srt-task-environment");
+                if (resident) expect(Object.hasOwn(plan, "preparationProtocol")).toBe(false);
+                else expect(plan.preparationProtocol).toBe("launch-or-block.v2");
                 await uiExpect
                   .poll(() => readback().rows[0]?.runStatus, { timeout: 40_000 })
                   .toBe("completed");
@@ -2339,11 +2453,16 @@ productDescribe(
                 }>;
                 expect(releases).toHaveLength(1);
                 expect(JSON.parse(releases[0]?.verification_json ?? "null")).toMatchObject({
-                  basis: "preparation_not_authorized",
+                  basis: resident ? "task_environment_bind_fenced" : "preparation_not_authorized",
                 });
+                if (resident) {
+                  expect(readback().execution.stopRequestedAt).toEqual(expect.any(String));
+                  expect(readback().controlArtifacts).toEqual([]);
+                } else {
+                  expect(readback().controlArtifacts).toHaveLength(1);
+                }
                 expect(readback().occupancy).not.toEqual([]);
                 expect(readback().occupancy).not.toContainEqual({ released_at: null });
-                expect(readback().controlArtifacts).toHaveLength(1);
                 expect(readback().replies.map((ids) => ids.length)).toEqual([1]);
                 expect(JSON.stringify(readback().modelMessages)).toContain(
                   "工具未启动：准备阶段失败，已确认清理完成。",
@@ -2362,8 +2481,10 @@ productDescribe(
                 expect(readback().rows[0]).toMatchObject({ runStatus: "completed", intents: 0 });
               }
               const diagnostic = installation.diagnose(job.runId) as {
+                run: { status: string };
                 diagnostics: Array<{ content: unknown }>;
               };
+              if (resident) expect(diagnostic.run.status).toBe("completed");
               expect(diagnostic.diagnostics).toContainEqual(
                 expect.objectContaining({
                   content: expect.objectContaining({
@@ -2420,7 +2541,8 @@ productDescribe(
       },
     );
 
-    it("[R2-T11][R2-D4] releases an accepted preparation after its ACK is lost without starting or replaying the tool", async () => {
+    it("[R2-T11][R2-D4] releases an accepted preparation after its ACK is lost without starting or replaying the tool", async (testContext) => {
+      testContext.skip(!frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
       await installation.stop();
       await installation.setRunDeadline(90_000);
       await installation.start();
@@ -2552,7 +2674,8 @@ productDescribe(
       }
     });
 
-    it("[R2-T11][R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async () => {
+    it("[R2-T11][R2-L4][prod-sandbox-D2] retries an unproved disconnected preparation and resumes its workspace after the original signed final returns", async (testContext) => {
+      testContext.skip(!frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
       await scenario("34-preparation-final-recovery", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -2778,7 +2901,8 @@ productDescribe(
       });
     });
 
-    it("[R2-T11][R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async () => {
+    it("[R2-T11][R2-L6][prod-sandbox-admin] ends an unproved reservation offline without replay and admits a new workspace request", async (testContext) => {
+      testContext.skip(!frontBashUsesOneShotSrt, oneShotForegroundSrtIsNonLinuxOnly);
       await scenario("35-reservation-administrator-cleanup", async () => {
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
@@ -3170,17 +3294,29 @@ productDescribe(
         const row = rows[0];
         if (!row) throw new Error("Preparation job missing");
         const database = openQualifiedDatabase(installation.databasePath);
-        let proof: unknown;
+        let proof: {
+          phase: string;
+          startedAt: string | null;
+          basis: string;
+          backendRef: string | null;
+        };
         try {
           proof = database
             .prepare(`SELECT r.preparation_state AS phase,r.started_at AS startedAt,
-          json_extract(receipt.verification_json,'$.basis') AS basis FROM sandbox_execution_records r
+          json_extract(receipt.verification_json,'$.basis') AS basis,
+          json_extract(r.plan_json,'$.backendRef') AS backendRef FROM sandbox_execution_records r
           JOIN sandbox_reservation_release_receipts receipt ON receipt.job_id=r.job_id WHERE r.job_id=?`)
-            .get(row.jobId);
+            .get(row.jobId) as typeof proof;
         } finally {
           database.close();
         }
-        expect(proof).toEqual({ phase: "reserved", startedAt: null, basis: "host_never_started" });
+        if (process.platform === "linux") expect(proof.backendRef).toBe("srt-task-environment");
+        const resident = proof.backendRef === "srt-task-environment";
+        expect(proof).toMatchObject({
+          phase: "reserved",
+          startedAt: null,
+          basis: resident ? "task_environment_bind_fenced" : "host_never_started",
+        });
         const diagnostic = installation.diagnose(row.runId) as {
           diagnostics: Array<{ content: unknown }>;
         };
@@ -3354,14 +3490,11 @@ productDescribe(
         if (!job) throw new Error("STOP_TEST_JOB_MISSING");
         expect(job).toMatchObject({ released: 0, runStatus: "running", intents: 0 });
         await uiExpect
-          .poll(
-            async () => (await readJobHostStarts()).some((entry) => entry?.jobId === job.jobId),
-            {
-              timeout: 60_000,
-            },
-          )
+          .poll(() => residentHostReady(job.runId), {
+            timeout: 60_000,
+          })
           .toBe(true);
-        const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
+        const host = await readResidentHost(job.runId, "command");
         expect(host).toBeDefined();
         if (!host) throw new Error("STOP_TEST_HOST_MISSING");
         const taskProcesses = () =>
@@ -3504,6 +3637,13 @@ productDescribe(
           expect(stopped.groupAlive).toBe(false);
           expect(stopped.shellAlive).toBe(false);
           expect(stopped.receipts).toHaveLength(1);
+          const stopReleaseProof = residentEnvironmentReleaseProof(job.runId);
+          expect(stopReleaseProof).toHaveLength(1);
+          expect(stopReleaseProof[0]).toMatchObject({
+            state: "released",
+            basis: "process_group_gone",
+            acceptedAt: expect.any(String),
+          });
           expect(stopped.occupancy.length).toBeGreaterThan(0);
           for (const entry of stopped.occupancy)
             expect(entry).toMatchObject({ releasedAt: expect.any(String) });
@@ -3618,6 +3758,7 @@ productDescribe(
         const startedAt = Date.now();
         const before = new Set(executionReadback().map((record) => record.jobId));
         let jobId: string | undefined;
+        let runId: string | undefined;
         let child:
           | {
               pid: number;
@@ -3716,8 +3857,10 @@ productDescribe(
               timeout: 60_000,
             })
             .toHaveLength(1);
-          jobId = executionReadback().find((record) => !before.has(record.jobId))?.jobId;
-          if (!jobId) throw new Error("B3_JOB_MISSING");
+          const startedRow = executionReadback().find((record) => !before.has(record.jobId));
+          jobId = startedRow?.jobId;
+          runId = startedRow?.runId;
+          if (!jobId || !runId) throw new Error("B3_JOB_MISSING");
           await uiExpect
             .poll(
               () => {
@@ -3762,12 +3905,14 @@ productDescribe(
             expect(child.stdoutDescriptor).toMatch(/(?:^|\n)t(?:PIPE|FIFO|unix)(?:\n|$)/);
           }
           expect(processRow(child.pid)?.command).toContain(marker);
+          if (!runId) throw new Error("B3_RUN_MISSING");
+          const residentRunId = runId;
           await uiExpect
-            .poll(async () => (await readJobHostStarts()).some((entry) => entry?.jobId === jobId), {
+            .poll(() => residentHostReady(residentRunId), {
               timeout: 30_000,
             })
             .toBe(true);
-          const host = (await readJobHostStarts()).find((entry) => entry?.jobId === jobId);
+          const host = await readResidentHost(residentRunId, "command");
           if (!host) throw new Error("B3_HOST_MISSING");
           hostIdentity = host;
           expect(child.pgid).not.toBe(host.taskProcessGroup.processGroupId);
@@ -3828,19 +3973,29 @@ productDescribe(
             .toBe(true);
           if (!released) throw new Error("B3_RELEASE_MISSING");
           await save("release-accepted", released);
+          const releasedPlan = JSON.parse((released.execution as { plan: string }).plan) as {
+            backendRef: string;
+          };
+          if (process.platform === "linux")
+            expect(releasedPlan.backendRef).toBe("srt-task-environment");
+          const residentPath = releasedPlan.backendRef === "srt-task-environment";
           expect(released.receipts).toEqual([
             expect.objectContaining({
-              cleanup: process.platform === "linux" ? "confirmed" : "process_group_gone",
+              cleanup: residentPath ? "process_group_gone" : "confirmed",
             }),
           ]);
-          expect(released.hostProcess).toBeNull();
-          expect(released.originalGroupMembers).toEqual([]);
-          if (process.platform === "linux") {
-            if (!linuxChild) throw new Error("B3_LINUX_CHILD_IDENTITY_MISSING");
+          if (residentPath) {
             expect(released.childProcess).toBeNull();
-            await assertLinuxTaskReleased(host, linuxChild, "33-detached-output");
           } else {
-            expect(released.childProcess?.command).toContain(marker);
+            expect(released.hostProcess).toBeNull();
+            expect(released.originalGroupMembers).toEqual([]);
+            if (process.platform === "linux") {
+              if (!linuxChild) throw new Error("B3_LINUX_CHILD_IDENTITY_MISSING");
+              expect(released.childProcess).toBeNull();
+              await assertLinuxTaskReleased(host, linuxChild, "33-detached-output");
+            } else {
+              expect(released.childProcess?.command).toContain(marker);
+            }
           }
           expect(released.occupancy).toEqual([
             expect.objectContaining({ releasedAt: expect.any(String) }),
@@ -3869,27 +4024,28 @@ productDescribe(
             "仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。",
           );
           expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
-          expect(
-            (await readJobHostStarts()).filter((entry) => entry?.jobId === jobId),
-          ).toHaveLength(1);
+          await expectSingleResidentExecution(residentRunId, jobId);
           await save("model-completed");
-          const jobsRoot = path.join(path.dirname(installation.stateRoot), "jobs");
-          const finalRecords = [];
-          for (const name of (await readdir(jobsRoot)).filter((name) =>
-            name.startsWith("control-"),
-          )) {
-            const controlDirectory = path.join(jobsRoot, name);
-            if (!(await readdir(controlDirectory)).includes("final.json")) continue;
-            const encoded = await readFile(path.join(controlDirectory, "final.json"), "utf8");
-            const final = JSON.parse(JSON.parse(encoded).body);
-            if (final.jobId === jobId) finalRecords.push(final);
-          }
+          await uiExpect
+            .poll(() => residentEnvironmentReleaseProof(residentRunId), { timeout: 60_000 })
+            .toContainEqual(expect.objectContaining({ state: "released" }));
+          const hostReleaseProof = residentEnvironmentReleaseProof(residentRunId);
           await writeFile(
-            path.join(outputDirectory, "33-detached-output-host-final.json"),
-            JSON.stringify(finalRecords, null, 2),
+            path.join(outputDirectory, "33-detached-output-host-release.json"),
+            JSON.stringify(hostReleaseProof, null, 2),
           );
-          expect(finalRecords).toHaveLength(1);
-          expect(finalRecords[0]).toMatchObject({ stdioClosed: true });
+          expect(hostReleaseProof).toHaveLength(1);
+          expect(hostReleaseProof[0]).toMatchObject({
+            state: "released",
+            basis: "process_group_gone",
+            acceptedAt: expect.any(String),
+          });
+          if (residentPath) {
+            await uiExpect.poll(() => readback().hostProcess, { timeout: 30_000 }).toBeNull();
+            expect(readback().originalGroupMembers).toEqual([]);
+            if (!linuxChild) throw new Error("B3_LINUX_CHILD_IDENTITY_MISSING");
+            await assertLinuxTaskReleased(host, linuxChild, "33-later-stage");
+          }
           const releasedStatus =
             process.platform === "linux"
               ? page.getByRole("button", { name: "默认模式 · 没有后台程序在运行", exact: true })
@@ -3924,6 +4080,7 @@ productDescribe(
       async (mode) => {
         const name = `30-original-deadline-${mode}`;
         const runExpiry = mode === "run";
+        let servicesRestored = mode !== "recovery";
         if (runExpiry) {
           await installation.stop();
           await installation.setRunDeadline(90_000);
@@ -3945,14 +4102,11 @@ productDescribe(
             const job = executionReadback().find((record) => !before.has(record.jobId));
             if (!job) throw new Error("DEADLINE_TEST_JOB_MISSING");
             await uiExpect
-              .poll(
-                async () => (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId),
-                {
-                  timeout: 60_000,
-                },
-              )
+              .poll(() => residentHostReady(job.runId), {
+                timeout: 60_000,
+              })
               .toBeTruthy();
-            const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
+            const host = await readResidentHost(job.runId, "command");
             if (!host) throw new Error("DEADLINE_TEST_HOST_MISSING");
             const alive = (pid: number) => {
               try {
@@ -4040,6 +4194,7 @@ productDescribe(
                 await installation.releaseFinishGate();
                 await waitForExpiredServiceLease();
                 await installation.start();
+                servicesRestored = true;
                 await page.reload();
               }
               await uiExpect
@@ -4095,9 +4250,14 @@ productDescribe(
               expect(ended.occupancy.length).toBeGreaterThan(0);
               for (const entry of ended.occupancy)
                 expect(entry).toMatchObject({ releasedAt: expect.any(String) });
-              expect(
-                (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
-              ).toHaveLength(1);
+              await expectSingleResidentExecution(job.runId, job.jobId);
+              const deadlineReleaseProof = residentEnvironmentReleaseProof(job.runId);
+              expect(deadlineReleaseProof).toHaveLength(1);
+              expect(deadlineReleaseProof[0]).toMatchObject({
+                state: "released",
+                basis: "process_group_gone",
+                acceptedAt: expect.any(String),
+              });
               if (!runExpiry)
                 await uiExpect(page.getByText(/结果未确认|结果仍未确认/)).toHaveCount(0);
               expect(JSON.stringify(observedToolMessages(text))).not.toContain("deadline-late");
@@ -4115,7 +4275,7 @@ productDescribe(
             await installation.setRunDeadline(900_000);
             await installation.start();
             await page.reload();
-          }
+          } else if (!servicesRestored) await restoreServices();
         }
       },
     );
@@ -4133,13 +4293,8 @@ productDescribe(
           .toHaveLength(1);
         const job = executionReadback().find((record) => !before.has(record.jobId));
         if (!job) throw new Error("RESTART_TEST_JOB_MISSING");
-        await uiExpect
-          .poll(
-            async () => (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId),
-            { timeout: 60_000 },
-          )
-          .toBeTruthy();
-        const host = (await readJobHostStarts()).find((entry) => entry?.jobId === job.jobId);
+        await uiExpect.poll(() => residentHostReady(job.runId), { timeout: 60_000 }).toBeTruthy();
+        const host = await readResidentHost(job.runId, "command");
         if (!host) throw new Error("RESTART_TEST_HOST_MISSING");
         let linuxTask: Awaited<ReturnType<typeof waitForRunningLinuxTask>> | undefined;
         if (process.platform === "linux") {
@@ -4166,13 +4321,15 @@ productDescribe(
           expect.objectContaining({ result: null, released: 0, intents: 0 }),
         ]);
         expect(observedToolReplies(text)).toEqual([]);
-        await installation.crash();
-        await waitForExpiredServiceLease();
-        await installation.start();
-        await page.reload();
-        await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
         const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
+        let servicesRestored = false;
         try {
+          await installation.crash();
+          await waitForExpiredServiceLease();
+          await installation.start();
+          servicesRestored = true;
+          await page.reload();
+          await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
           await uiExpect
             .poll(() => rows()[0], { timeout: 60_000 })
             .toMatchObject({ jobId: job.jobId, released: 1 });
@@ -4181,9 +4338,14 @@ productDescribe(
             if (!linuxTask) throw new Error("RESTART_TEST_LINUX_TASK_MISSING");
             await assertLinuxTaskReleased(host, linuxTask, "14-restart-running");
           }
-          expect(
-            (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
-          ).toHaveLength(1);
+          await expectSingleResidentExecution(job.runId, job.jobId);
+          const restartReleaseProof = residentEnvironmentReleaseProof(job.runId);
+          expect(restartReleaseProof).toHaveLength(1);
+          expect(restartReleaseProof[0]).toMatchObject({
+            state: "released",
+            basis: "process_group_gone",
+            acceptedAt: expect.any(String),
+          });
           await uiExpect
             .poll(() => rows()[0], { timeout: 40_000 })
             .toMatchObject({
@@ -4209,27 +4371,31 @@ productDescribe(
             timeout: 30_000,
           });
           const settled = rows();
+          servicesRestored = false;
           await installation.stop();
           await installation.start();
+          servicesRestored = true;
           await page.reload();
           expect(rows()).toEqual(settled);
           assertLostReply();
-          expect(
-            (await readJobHostStarts()).filter((entry) => entry?.jobId === job.jobId),
-          ).toHaveLength(1);
+          await expectSingleResidentExecution(job.runId, job.jobId);
         } finally {
-          await writeFile(
-            path.join(outputDirectory, "14-restart-running-after.json"),
-            JSON.stringify(
-              {
-                rows: rows(),
-                starts: await readJobHostStarts(),
-                replies: observedToolReplies(text),
-              },
-              null,
-              2,
-            ),
-          );
+          try {
+            await writeFile(
+              path.join(outputDirectory, "14-restart-running-after.json"),
+              JSON.stringify(
+                {
+                  rows: rows(),
+                  residentEnvironments: await readResidentTaskEnvironments(installation.stateRoot),
+                  replies: observedToolReplies(text),
+                },
+                null,
+                2,
+              ),
+            );
+          } finally {
+            if (!servicesRestored) await restoreServices();
+          }
         }
       });
     });
@@ -4264,15 +4430,17 @@ productDescribe(
               2,
             ),
           );
-          if (restart) await installation.crash();
-          await writeFile(source, changed);
-          await installation.releaseFinishGate();
-          if (restart) {
-            await waitForExpiredServiceLease();
-            await installation.start();
-            await page.reload();
-          }
+          let servicesRestored = !restart;
           try {
+            if (restart) await installation.crash();
+            await writeFile(source, changed);
+            await installation.releaseFinishGate();
+            if (restart) {
+              await waitForExpiredServiceLease();
+              await installation.start();
+              servicesRestored = true;
+              await page.reload();
+            }
             await uiExpect
               .poll(() => rows()[0], { timeout: 90_000 })
               .toMatchObject({
@@ -4288,30 +4456,37 @@ productDescribe(
             });
             await uiExpect(toolAnswers().filter({ hasText: changed })).toHaveCount(0);
             await uiExpect(page.getByText(/结果仍未确认/)).toHaveCount(0);
-            expect(
-              (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
-            ).toHaveLength(1);
+            const durabilityRow = rows()[0];
+            if (!durabilityRow) throw new Error("DURABILITY_ROW_MISSING");
+            await expectSingleResidentExecution(durabilityRow.runId, durabilityRow.jobId);
             expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
           } finally {
-            await writeFile(
-              path.join(outputDirectory, `${name}-after.json`),
-              JSON.stringify(
-                {
-                  rows: rows(),
-                  sourceContent: await readFile(source, "utf8"),
-                  starts: await readJobHostStarts(),
-                  replies: observedToolReplies(text),
-                },
-                null,
-                2,
-              ),
-            );
+            try {
+              await writeFile(
+                path.join(outputDirectory, `${name}-after.json`),
+                JSON.stringify(
+                  {
+                    rows: rows(),
+                    sourceContent: await readFile(source, "utf8"),
+                    residentEnvironments: await readResidentTaskEnvironments(
+                      installation.stateRoot,
+                    ),
+                    replies: observedToolReplies(text),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            } finally {
+              if (!servicesRestored) await restoreServices();
+            }
           }
         });
       },
     );
 
-    it("[R2-T11][R2-T12] rejects contradictory host completion instead of recovering the earlier success", async () => {
+    it("[R2-T11][R2-T12] rejects contradictory host completion instead of recovering the earlier success", async (testContext) => {
+      testContext.skip(!frontBashUsesOneShotSrt, residentSessionsReportOneExitResult);
       const name = "20-contradictory-completion";
       await scenario(name, async () => {
         await newThread();
@@ -4377,16 +4552,16 @@ productDescribe(
           });
           assertModelFailure();
           expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
-          expect(
-            (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
-          ).toHaveLength(1);
+          const contradictionRow = rows()[0];
+          if (!contradictionRow) throw new Error("CONTRADICTION_ROW_MISSING");
+          await expectSingleResidentExecution(contradictionRow.runId, contradictionRow.jobId);
         } finally {
           await writeFile(
             path.join(outputDirectory, `${name}-after.json`),
             JSON.stringify(
               {
                 rows: rows(),
-                starts: await readJobHostStarts(),
+                residentEnvironments: await readResidentTaskEnvironments(installation.stateRoot),
                 modelMessages: observedToolMessages(text),
               },
               null,
@@ -4403,6 +4578,8 @@ productDescribe(
         await newThread();
         const before = new Set(executionReadback().map((record) => record.jobId));
         const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
+        const resident = !frontBashUsesOneShotSrt;
+        let servicesRestored = false;
         const original = `离线恢复验证-${crypto.randomUUID()}`;
         await writeFile(path.join(installation.workspace, "durability.txt"), original);
         await installation.armFinishGate("before-end");
@@ -4419,7 +4596,7 @@ productDescribe(
             .poll(() => rows()[0], { timeout: 40_000 })
             .toMatchObject({
               runStatus: "reconciling_external_result",
-              released: 1,
+              released: resident ? 0 : 1,
               result: null,
               streamEnds: 0,
               definiteOperations: 0,
@@ -4451,6 +4628,7 @@ productDescribe(
           expect(observedToolReplies(text)).toEqual([]);
           await installation.stop();
           await installation.start();
+          servicesRestored = true;
           await page.reload();
           await uiExpect
             .poll(() => rows()[0], { timeout: 90_000 })
@@ -4466,27 +4644,31 @@ productDescribe(
           );
           expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
           expect(JSON.stringify(observedToolMessages(text))).toContain("SANDBOX_TOOL_RESULT_LOST");
-          expect(
-            (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
-          ).toHaveLength(1);
+          const offlineRow = rows()[0];
+          if (!offlineRow) throw new Error("OFFLINE_ROW_MISSING");
+          await expectSingleResidentExecution(offlineRow.runId, offlineRow.jobId);
         } finally {
-          await writeFile(
-            path.join(outputDirectory, `${name}-after.json`),
-            JSON.stringify(
-              {
-                rows: rows(),
-                starts: await readJobHostStarts(),
-                modelMessages: observedToolMessages(text),
-              },
-              null,
-              2,
-            ),
-          );
+          try {
+            await writeFile(
+              path.join(outputDirectory, `${name}-after.json`),
+              JSON.stringify(
+                {
+                  rows: rows(),
+                  residentEnvironments: await readResidentTaskEnvironments(installation.stateRoot),
+                  modelMessages: observedToolMessages(text),
+                },
+                null,
+                2,
+              ),
+            );
+          } finally {
+            if (!servicesRestored) await restoreServices();
+          }
         }
       });
     });
 
-    it.each([
+    it.for([
       ...(
         [
           "before-end",
@@ -4500,7 +4682,11 @@ productDescribe(
       ).flatMap((stage) => (["worker", "services"] as const).map((target) => ({ stage, target }))),
     ])(
       "[R2-T11] recovers original foreground bytes after $target exits at $stage",
-      async ({ stage, target }) => {
+      async ({ stage, target }, testContext) => {
+        testContext.skip(
+          !frontBashUsesOneShotSrt && stage !== "before-end" && stage !== "after-end",
+          residentFinishGateStageIsOneShotOnly,
+        );
         const name = `18-stream-${stage}-${target}`;
         await scenario(name, async () => {
           await newThread();
@@ -4529,16 +4715,18 @@ productDescribe(
               2,
             ),
           );
-          if (target === "worker") {
-            await installation.crashWorker();
-            await installation.stop();
-          } else await installation.crash();
-          await writeFile(source, changed);
-          await installation.releaseFinishGate();
-          if (target === "services") await waitForExpiredServiceLease();
-          await installation.start();
-          await page.reload();
+          let servicesRestored = false;
           try {
+            if (target === "worker") {
+              await installation.crashWorker();
+              await installation.stop();
+            } else await installation.crash();
+            await writeFile(source, changed);
+            await installation.releaseFinishGate();
+            if (target === "services") await waitForExpiredServiceLease();
+            await installation.start();
+            servicesRestored = true;
+            await page.reload();
             await uiExpect
               .poll(() => rows()[0], { timeout: 90_000 })
               .toMatchObject({
@@ -4554,30 +4742,36 @@ productDescribe(
             expect(JSON.stringify(observedToolMessages(text))).not.toContain(changed);
             await uiExpect(toolAnswers().filter({ hasText: changed })).toHaveCount(0);
             expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
-            expect(
-              (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
-            ).toHaveLength(1);
+            const streamRow = rows()[0];
+            if (!streamRow) throw new Error("STREAM_ROW_MISSING");
+            await expectSingleResidentExecution(streamRow.runId, streamRow.jobId);
           } finally {
-            await writeFile(
-              path.join(outputDirectory, `${name}-after.json`),
-              JSON.stringify(
-                {
-                  rows: rows(),
-                  starts: await readJobHostStarts(),
-                  replies: observedToolReplies(text),
-                  modelMessages: observedToolMessages(text),
-                  sourceContent: await readFile(source, "utf8"),
-                },
-                null,
-                2,
-              ),
-            );
+            try {
+              await writeFile(
+                path.join(outputDirectory, `${name}-after.json`),
+                JSON.stringify(
+                  {
+                    rows: rows(),
+                    residentEnvironments: await readResidentTaskEnvironments(
+                      installation.stateRoot,
+                    ),
+                    replies: observedToolReplies(text),
+                    modelMessages: observedToolMessages(text),
+                    sourceContent: await readFile(source, "utf8"),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            } finally {
+              if (!servicesRestored) await restoreServices();
+            }
           }
         });
       },
     );
 
-    it.each([
+    it.for([
       "before-reset",
       "after-reset",
       "before-final",
@@ -4586,7 +4780,8 @@ productDescribe(
       "after-result",
     ] as const)(
       "[R2-T11][R2-S4] recovers saved output after Job Host crashes during cleanup at %s",
-      async (stage) => {
+      async (stage, testContext) => {
+        testContext.skip(!frontBashUsesOneShotSrt, residentFinishGateStageIsOneShotOnly);
         const name = `16-finish-crash-${stage}`;
         await scenario(name, async () => {
           await newThread();
@@ -4607,10 +4802,10 @@ productDescribe(
           const rows = () => executionReadback().filter((record) => !before.has(record.jobId));
           await uiExpect.poll(() => rows()[0]?.streamEnds).toBe(1);
           expect(rows()[0]?.result).toBeNull();
-          const host = (await readJobHostStarts()).find(
-            (entry) => entry?.processId === entered.pid && entry?.jobId === rows()[0]?.jobId,
-          );
-          if (!host) throw new Error("FINISH_CRASH_HOST_IDENTITY_MISSING");
+          const crashRow = rows()[0];
+          if (!crashRow) throw new Error("FINISH_CRASH_ROW_MISSING");
+          const host = await readResidentHost(crashRow.runId, "resident");
+          expect(host.processId).toBe(entered.pid);
           const hostGroupBefore =
             process.platform === "linux" ? await readLinuxHostProcessGroup(host) : undefined;
           if (hostGroupBefore) expect(hostGroupBefore.recordedHostPresent).toBe(true);
@@ -4623,11 +4818,13 @@ productDescribe(
             ),
           );
           let crashEvidenceFailure: AggregateError | undefined;
+          let servicesRestored = false;
           try {
             await installation.crash();
             process.kill(entered.pid, "SIGKILL");
             await waitForExpiredServiceLease();
             await installation.start();
+            servicesRestored = true;
             await page.reload();
             await uiExpect
               .poll(() => rows()[0], { timeout: 90_000 })
@@ -4651,9 +4848,7 @@ productDescribe(
             expect(observedToolReplies(text).map((ids) => ids.length)).toEqual([1]);
             expect(JSON.stringify(observedToolMessages(text))).toContain(NOTE);
             expect(rows()).toHaveLength(1);
-            expect(
-              (await readJobHostStarts()).filter((host) => host?.jobId === rows()[0]?.jobId),
-            ).toHaveLength(1);
+            await expectSingleResidentExecution(crashRow.runId, crashRow.jobId);
           } finally {
             const captures = await Promise.allSettled([
               (async () => {
@@ -4662,7 +4857,9 @@ productDescribe(
                   JSON.stringify(
                     {
                       rows: rows(),
-                      starts: await readJobHostStarts(),
+                      residentEnvironments: await readResidentTaskEnvironments(
+                        installation.stateRoot,
+                      ),
                       replies: observedToolReplies(text),
                     },
                     null,
@@ -4688,6 +4885,7 @@ productDescribe(
               );
               console.error(crashEvidenceFailure);
             }
+            if (!servicesRestored) await restoreServices();
           }
           if (crashEvidenceFailure) throw crashEvidenceFailure;
         });
@@ -4716,60 +4914,66 @@ productDescribe(
             )
             .not.toBeNull();
           const entered = await installation.deliveryCrashEntered();
-          await installation.crash();
-          await uiExpect
-            .poll(
-              () => {
-                const database = openQualifiedDatabase(installation.databasePath);
-                try {
-                  return database
-                    .prepare(
-                      "SELECT COUNT(*) AS count FROM authority_leases WHERE released_at IS NULL AND expires_at>?",
-                    )
-                    .get(new Date().toISOString());
-                } finally {
-                  database.close();
-                }
-              },
-              { timeout: 40_000 },
-            )
-            .toEqual({ count: 0 });
-          const interrupted = executionReadback().filter((record) => !before.has(record.jobId));
-          await writeFile(
-            path.join(outputDirectory, `${name}-before.json`),
-            JSON.stringify({ entered, interrupted }, null, 2),
-          );
-          expect(interrupted).toHaveLength(1);
-          expect(interrupted[0]).toMatchObject({ result: "result", released: 1, intents: 1 });
-          if (tool === "write")
-            expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
-              "你好，Himawari",
+          let servicesRestored = false;
+          try {
+            await installation.crash();
+            await uiExpect
+              .poll(
+                () => {
+                  const database = openQualifiedDatabase(installation.databasePath);
+                  try {
+                    return database
+                      .prepare(
+                        "SELECT COUNT(*) AS count FROM authority_leases WHERE released_at IS NULL AND expires_at>?",
+                      )
+                      .get(new Date().toISOString());
+                  } finally {
+                    database.close();
+                  }
+                },
+                { timeout: 40_000 },
+              )
+              .toEqual({ count: 0 });
+            const interrupted = executionReadback().filter((record) => !before.has(record.jobId));
+            await writeFile(
+              path.join(outputDirectory, `${name}-before.json`),
+              JSON.stringify({ entered, interrupted }, null, 2),
             );
-          await installation.start();
-          await page.reload();
-          await uiExpect(toolAnswers().last()).toBeVisible({ timeout: 300_000 });
-          if (tool === "read") await uiExpect(noteAnswer()).toBeVisible();
-          if (tool === "write")
-            expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
-              "你好，Himawari",
+            expect(interrupted).toHaveLength(1);
+            expect(interrupted[0]).toMatchObject({ result: "result", released: 1, intents: 1 });
+            if (tool === "write")
+              expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+                "你好，Himawari",
+              );
+            await installation.start();
+            servicesRestored = true;
+            await page.reload();
+            await uiExpect(toolAnswers().last()).toBeVisible({ timeout: 300_000 });
+            if (tool === "read") await uiExpect(noteAnswer()).toBeVisible();
+            if (tool === "write")
+              expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
+                "你好，Himawari",
+              );
+            await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+              timeout: 300_000,
+            });
+            const rows = executionReadback().filter((record) => !before.has(record.jobId));
+            const replies = observedToolReplies(text);
+            await writeFile(
+              path.join(outputDirectory, `${name}-after.json`),
+              JSON.stringify({ entered, rows, replies }, null, 2),
             );
-          await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
-            timeout: 300_000,
-          });
-          const rows = executionReadback().filter((record) => !before.has(record.jobId));
-          const replies = observedToolReplies(text);
-          await writeFile(
-            path.join(outputDirectory, `${name}-after.json`),
-            JSON.stringify({ entered, rows, replies }, null, 2),
-          );
-          expect(rows).toHaveLength(1);
-          expect(rows[0]).toMatchObject({
-            result: "result",
-            released: 1,
-            intents: 1,
-            runStatus: "completed",
-          });
-          expect(replies.map((ids) => ids.length)).toEqual([1]);
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({
+              result: "result",
+              released: 1,
+              intents: 1,
+              runStatus: "completed",
+            });
+            expect(replies.map((ids) => ids.length)).toEqual([1]);
+          } finally {
+            if (!servicesRestored) await restoreServices();
+          }
         });
       },
     );
@@ -4780,13 +4984,19 @@ productDescribe(
         const answer = await sendToolRequest("服务重启前：请读取 notes.txt");
         await uiExpect(answer).toContainText(NOTE);
         await capture("07-service-restart-before");
-        await installation.stop();
-        await uiExpect(page.getByText(/连接中断|离线/).first()).toBeVisible({ timeout: 60_000 });
-        await installation.start();
-        await uiExpect(page.getByText(/连接中断|离线/)).toHaveCount(0, { timeout: 300_000 });
-        await uiExpect(noteAnswer()).toBeVisible();
-        await send("重启后继续");
-        await uiExpect(page.getByText("普通回答已完成").last()).toBeVisible({ timeout: 300_000 });
+        let servicesRestored = false;
+        try {
+          await installation.stop();
+          await uiExpect(page.getByText(/连接中断|离线/).first()).toBeVisible({ timeout: 60_000 });
+          await installation.start();
+          servicesRestored = true;
+          await uiExpect(page.getByText(/连接中断|离线/)).toHaveCount(0, { timeout: 300_000 });
+          await uiExpect(noteAnswer()).toBeVisible();
+          await send("重启后继续");
+          await uiExpect(page.getByText("普通回答已完成").last()).toBeVisible({ timeout: 300_000 });
+        } finally {
+          if (!servicesRestored) await restoreServices();
+        }
       });
     });
   },

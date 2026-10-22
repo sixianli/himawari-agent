@@ -1,12 +1,14 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
+import { createRequire } from "node:module";
 import {
   copyFile,
   lstat,
   mkdir,
   readFile,
   readdir,
+  readlink,
   realpath,
   stat,
   symlink,
@@ -28,6 +30,7 @@ import {
 } from "./sandbox-install-restart-model.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
+const requireFromProbe = createRequire(import.meta.url);
 const assertionIds = [
   "original_started",
   "old_pair_exited",
@@ -121,6 +124,256 @@ function execute(command, args, environment) {
       },
     );
   });
+}
+
+async function readResidentEnvironment(stateRoot, runId) {
+  const root = path.join(stateRoot, "runtime", "srt-environments");
+  const names = await readdir(root).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  const matches = [];
+  for (const name of names) {
+    if (!/^[a-f0-9]{32}$/.test(name)) continue;
+    const file = path.join(root, name, "sessions.json");
+    const bytes = await readFile(file).catch((error) => {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!bytes) continue;
+    const state = JSON.parse(bytes.toString());
+    if (state?.identity?.runId !== runId) continue;
+    matches.push({ file, sha256: digest(bytes), state });
+  }
+  return matches;
+}
+
+async function residentNamespace(residentPid, residentStartToken) {
+  const hostNamespace = await readlink("/proc/self/ns/pid");
+  const entries = (await readdir("/proc")).filter((name) => /^\d+$/.test(name));
+  const rows = [];
+  for (let offset = 0; offset < entries.length; offset += 64) {
+    const batch = await Promise.all(
+      entries.slice(offset, offset + 64).map(async (name) => {
+        const pid = Number(name);
+        const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => null);
+        if (!stat) return null;
+        const fields = stat
+          .slice(stat.lastIndexOf(")") + 2)
+          .trim()
+          .split(/\s+/);
+        if (
+          ![fields[1], fields[2], fields[3], fields[19]].every((field) => /^\d+$/.test(field ?? ""))
+        )
+          return null;
+        const status = await readFile(`/proc/${pid}/status`, "utf8").catch(() => null);
+        const pids = status
+          ? (/^NSpid:\s+([\d\t ]+)$/m.exec(status)?.[1]?.trim().split(/\s+/).map(Number) ?? null)
+          : null;
+        const namespaceId = await readlink(`/proc/${pid}/ns/pid`).catch(() => null);
+        return { pid, parentPid: Number(fields[1]), startTime: fields[19], namespaceId, pids };
+      }),
+    );
+    rows.push(...batch.filter((row) => row !== null));
+  }
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  const resident = byPid.get(residentPid);
+  requireFact(
+    resident && resident.startTime === residentStartToken,
+    "R2_L6_RESIDENT_RUNNER_IDENTITY_CHANGED",
+  );
+  requireFact(
+    resident.namespaceId === hostNamespace,
+    "R2_L6_RESIDENT_NAMESPACE_PRECONDITION_CHANGED",
+  );
+  const descends = (row) => {
+    const seen = new Set();
+    let current = row;
+    while (current && !seen.has(current.pid)) {
+      if (current.pid === residentPid) return true;
+      seen.add(current.pid);
+      current = byPid.get(current.parentPid);
+    }
+    return false;
+  };
+  const candidates = rows.filter(
+    (row) =>
+      row.namespaceId &&
+      row.namespaceId !== hostNamespace &&
+      row.pids &&
+      row.pids.at(-1) === 1 &&
+      /^\d+$/.test(row.startTime) &&
+      descends(row),
+  );
+  requireFact(candidates.length > 0, "R2_L6_RESIDENT_NAMESPACE_INIT_MISSING");
+  const deepest = Math.max(...candidates.map((row) => row.pids.length));
+  const innermost = candidates.filter((row) => row.pids.length === deepest);
+  requireFact(
+    innermost.length === 1,
+    `R2_L6_RESIDENT_NAMESPACE_INIT_AMBIGUOUS:${innermost
+      .map((row) => `${row.pid}:${row.namespaceId}:${row.pids.join("/")}`)
+      .join(",")}`,
+  );
+  return {
+    namespaceId: innermost[0].namespaceId,
+    initPid: innermost[0].pid,
+    initStartTicks: innermost[0].startTime,
+  };
+}
+
+async function residentHostIdentity(state, group) {
+  requireFact(group === "command" || group === "resident", "R2_L6_RESIDENT_GROUP_CHOICE_INVALID");
+  const session = state?.sessions?.command;
+  requireFact(
+    session &&
+      Number.isSafeInteger(session.pid) &&
+      typeof session.startToken === "string" &&
+      Number.isSafeInteger(session.residentGroup) &&
+      typeof session.residentStartToken === "string",
+    "R2_L6_RESIDENT_HOST_IDENTITY_MISSING",
+  );
+  const resident = await processIdentity(session.residentGroup);
+  requireFact(
+    resident.startTime === session.residentStartToken,
+    "R2_L6_RESIDENT_RUNNER_IDENTITY_CHANGED",
+  );
+  const linuxNamespace = await residentNamespace(session.residentGroup, session.residentStartToken);
+  const commandGroups = Array.isArray(session.commandGroups) ? session.commandGroups : [];
+  let groupId;
+  let groupStartToken;
+  if (group === "resident") {
+    groupId = session.residentGroup;
+    groupStartToken = session.residentStartToken;
+  } else {
+    requireFact(commandGroups.length > 0, "R2_L6_RESIDENT_COMMAND_GROUP_MISSING");
+    requireFact(commandGroups.length === 1, "R2_L6_RESIDENT_COMMAND_GROUP_NOT_UNIQUE");
+    groupId = commandGroups[0];
+    groupStartToken = (await processIdentity(groupId)).startTime;
+  }
+  return {
+    jobId: state.identity.executionJobId,
+    environmentId: state.identity.environmentId,
+    processId: session.pid,
+    processStartToken: session.startToken,
+    residentProcessId: session.residentGroup,
+    residentStartToken: session.residentStartToken,
+    processIdentityRef: `srt-environment-session:${state.identity.environmentId}`,
+    observedAt: new Date().toISOString(),
+    phase: "running",
+    taskStarted: true,
+    linuxNamespace,
+    taskProcessGroup: { processGroupId: groupId, startToken: groupStartToken },
+  };
+}
+
+const RESIDENT_NOT_READY_CODES = [
+  "R2_L6_RESIDENT_HOST_IDENTITY_MISSING",
+  "R2_L6_RESIDENT_NAMESPACE_INIT_MISSING",
+  "R2_L6_RESIDENT_COMMAND_GROUP_MISSING",
+];
+
+async function notReadyAsNull(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (RESIDENT_NOT_READY_CODES.some((code) => message.startsWith(code))) return null;
+    throw error;
+  }
+}
+
+function readReplayEvidence(runtimeRoot, databasePath, jobId) {
+  const Database = requireFromProbe(path.join(runtimeRoot, "node_modules", "better-sqlite3"));
+  const database = new Database(databasePath, {
+    readonly: true,
+    fileMustExist: true,
+    timeout: 1000,
+  });
+  try {
+    database.pragma("query_only = ON");
+    const records = database
+      .prepare("SELECT invocation_id AS invocationId FROM sandbox_execution_records WHERE job_id=?")
+      .all(jobId);
+    const invocationId = records.length === 1 ? records[0]?.invocationId : null;
+    const calls =
+      invocationId === null
+        ? []
+        : database
+            .prepare(
+              "SELECT environment_id AS environmentId FROM execution_environment_calls WHERE invocation_id=?",
+            )
+            .all(invocationId);
+    return { records, calls };
+  } finally {
+    database.close();
+  }
+}
+
+function readOriginalStartDiagnostics(runtimeRoot, databasePath, ownerId, agentId, runId) {
+  const Database = requireFromProbe(path.join(runtimeRoot, "node_modules", "better-sqlite3"));
+  const database = new Database(databasePath, {
+    readonly: true,
+    fileMustExist: true,
+    timeout: 1000,
+  });
+  try {
+    database.pragma("query_only = ON");
+    const all = (sql, ...args) => database.prepare(sql).all(...args);
+    return {
+      observedAt: new Date().toISOString(),
+      run: all(
+        "SELECT id, status, created_at AS createdAt, updated_at AS updatedAt FROM runs WHERE id=?",
+        runId,
+      ),
+      approvalRequests: all(
+        "SELECT id, status, risk, revision, requested_at AS requestedAt, decided_at AS decidedAt FROM approval_requests WHERE owner_id=? AND agent_id=? AND run_id=? ORDER BY requested_at",
+        ownerId,
+        agentId,
+        runId,
+      ),
+      executionRecords: all(
+        "SELECT job_id AS jobId, preparation_state AS preparationState, sequence, started_at AS startedAt, json_extract(facts_json,'$.resource.supervision') AS supervision, json_extract(facts_json,'$.resource.cleanup') AS cleanup, json_extract(facts_json,'$.result.kind') AS resultKind, json_extract(facts_json,'$.result.reasonCode') AS reasonCode, recovery_json AS recovery FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? ORDER BY started_at",
+        ownerId,
+        agentId,
+        runId,
+      ),
+      admissionQueue: all(
+        "SELECT job_id AS jobId, status, deadline_at AS deadlineAt FROM sandbox_admission_queue WHERE owner_id=? AND agent_id=? AND run_id=? ORDER BY sequence",
+        ownerId,
+        agentId,
+        runId,
+      ),
+    };
+  } finally {
+    database.close();
+  }
+}
+
+function srtTaskEnvironmentJobId(environmentId, kind) {
+  return `env-${createHash("sha256")
+    .update(JSON.stringify([environmentId, kind]))
+    .digest("hex")
+    .slice(0, 20)}`;
+}
+
+function readExecutionTaskEnvironmentId(runtimeRoot, databasePath, ownerId, agentId, runId) {
+  const Database = requireFromProbe(path.join(runtimeRoot, "node_modules", "better-sqlite3"));
+  const database = new Database(databasePath, {
+    readonly: true,
+    fileMustExist: true,
+    timeout: 1000,
+  });
+  try {
+    database.pragma("query_only = ON");
+    const row = database
+      .prepare(
+        "SELECT json_extract(facts_json,'$.environment.taskEnvironmentId') AS taskEnvironmentId FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? ORDER BY started_at LIMIT 1",
+      )
+      .get(ownerId, agentId, runId);
+    return typeof row?.taskEnvironmentId === "string" ? row.taskEnvironmentId : null;
+  } finally {
+    database.close();
+  }
 }
 
 async function startController(output) {
@@ -383,8 +636,7 @@ async function runProbe(input) {
   const httpEvidence = [],
     commands = [],
     pairs = [],
-    audits = [],
-    hostIdentities = new Set();
+    audits = [];
   const save = (name, value) =>
     writeFile(path.join(input.output, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`, {
       mode: 0o600,
@@ -816,69 +1068,84 @@ async function runProbe(input) {
     };
     const original = await submit(labels.original);
     report.originalRun = original;
-    let originalRow, originalRaw, markerPath, startedWitness;
-    const diagnose = async (runId) =>
-      admin("diagnose-run", [
-        "diagnose",
-        "run",
-        "--config",
-        configurationPath,
-        "--secret-dir",
-        secretDirectory,
-        "--run",
-        runId,
-      ]);
-    await waitFor("R2_L6_ORIGINAL_START_TIMEOUT", async () => {
-      await client.approvePendingRun(original.runId);
-      const rows = await audit("executions");
-      originalRow = rows.find(
-        (row) => row.runId === original.runId && row.supervision === "controlled",
-      );
-      if (!originalRow) return false;
-      markerPath = path.join(jobsRoot, originalRow.jobId, "r2-l6-marker");
-      if (!(await lstat(markerPath).catch(() => null))) return false;
-      const diagnostic = await diagnose(original.runId);
-      const running = diagnostic.diagnostics
-        .map((entry) => entry.content?.observation)
-        .filter(
-          (entry) =>
-            entry?.jobId === originalRow.jobId &&
-            entry.phase === "running" &&
-            entry.taskStarted &&
-            entry.processStartToken,
-        )
-        .sort((a, b) => b.sequence - a.sequence)[0];
-      if (!running) return false;
-      const witnessCandidates = (await readdir(jobsRoot)).filter((entry) =>
-        entry.startsWith("control-"),
-      );
-      for (const directory of witnessCandidates) {
-        const filename = path.join(jobsRoot, directory, "started.json");
-        const metadata = await lstat(filename).catch(() => null);
+    let originalRow, originalRaw, markerPath, startedWitness, originalTaskEnvironmentId;
+    const residentEnvironments = async () =>
+      (await audit("environments")).filter((row) => row.runId === original.runId);
+    try {
+      await waitFor("R2_L6_ORIGINAL_START_TIMEOUT", async () => {
+        await client.approvePendingRun(original.runId);
+        const rows = await audit("executions");
+        originalRow = rows.find(
+          (row) =>
+            row.runId === original.runId &&
+            ["controlled", "initializing"].includes(row.supervision),
+        );
+        if (!originalRow) return false;
+        if (originalTaskEnvironmentId === undefined)
+          originalTaskEnvironmentId = readExecutionTaskEnvironmentId(
+            runtimeRoot,
+            databasePath,
+            ownerId,
+            agentId,
+            original.runId,
+          );
+        if (!originalTaskEnvironmentId) return false;
+        const residentJobId = srtTaskEnvironmentJobId(originalTaskEnvironmentId, "command");
+        const matches = await readResidentEnvironment(stateRoot, original.runId);
+        if (matches.length !== 1) return false;
+        const privateDirectory = matches[0].state?.sessions?.command?.privateDirectory;
+        if (typeof privateDirectory !== "string") return false;
+        if (path.basename(privateDirectory) !== residentJobId)
+          throw new Error("R2_L6_RESIDENT_PRIVATE_DIRECTORY_MISMATCH");
+        markerPath = path.join(jobsRoot, residentJobId, "r2-l6-marker");
+        if (!(await lstat(markerPath).catch(() => null))) return false;
+        const primary = (await residentEnvironments()).filter((row) => row.role === "primary");
         if (
-          !metadata?.isFile() ||
-          metadata.uid !== process.getuid() ||
-          (metadata.mode & 0o777) !== 0o600
+          primary.length !== 1 ||
+          !["running", "unknown"].includes(primary[0].state) ||
+          primary[0].releaseReceiptPresent
         )
-          continue;
-        const bytes = await readFile(filename);
-        const body = JSON.parse(JSON.parse(bytes.toString()).body);
-        if (
-          body.jobId === originalRow.jobId &&
-          body.processStartToken === running.processStartToken
-        ) {
-          startedWitness = { path: filename, sha256: digest(bytes), jobId: body.jobId };
-          break;
+          return false;
+        const candidate = await notReadyAsNull(() =>
+          residentHostIdentity(matches[0].state, "command"),
+        );
+        if (!candidate) return false;
+        startedWitness = {
+          path: matches[0].file,
+          sha256: matches[0].sha256,
+          environmentId: matches[0].state.identity.environmentId,
+        };
+        originalRaw = candidate;
+        return true;
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "R2_L6_ORIGINAL_START_TIMEOUT") {
+        const diagnostics = readOriginalStartDiagnostics(
+          runtimeRoot,
+          databasePath,
+          ownerId,
+          agentId,
+          original.runId,
+        );
+        report.originalStartDiagnostics = diagnostics;
+        await save("original-start-diagnostics", diagnostics);
+        for (const suffix of ["", "-wal", "-shm"]) {
+          await copyFile(
+            `${databasePath}${suffix}`,
+            path.join(input.output, `original-start-product.sqlite${suffix}`),
+            constants.COPYFILE_EXCL,
+          ).catch((copyError) => {
+            if (copyError?.code !== "ENOENT") throw copyError;
+          });
         }
       }
-      if (!startedWitness) return false;
-      originalRaw = running;
-      return true;
-    });
+      throw error;
+    }
     requireFact(
       originalRow.activeClaims > 0 && !originalRow.releaseReceiptPresent,
       "R2_L6_ORIGINAL_OCCUPANCY_MISSING",
     );
+    const knownJobIds = new Set((await audit("executions")).map((row) => row.jobId));
     report.markers = { before: await markerSnapshot(markerPath) };
     report.marker = {
       path: markerPath,
@@ -905,25 +1172,29 @@ async function runProbe(input) {
       identity: await controller.send("register", { role: "originalHost", identity: hostIdentity }),
       startedWitness,
     };
-    hostIdentities.add(originalRaw.processIdentityRef);
     ownedIdentities.push(...(await ownedProcessReadback(ownedIdentities)));
     const originalQueue = (await audit("queue")).find((row) => row.runId === original.runId);
-    const latestDiagnostic = await diagnose(original.runId);
-    const latestRaw = latestDiagnostic.diagnostics
-      .map((entry) => entry.content?.observation)
-      .filter(
-        (entry) =>
-          entry?.jobId === originalRow.jobId &&
-          entry.phase === "running" &&
-          entry.taskStarted &&
-          entry.processStartToken === originalRaw.processStartToken,
-      )
-      .sort((a, b) => b.sequence - a.sequence)[0];
+    const freshMatches = await readResidentEnvironment(stateRoot, original.runId);
+    const freshRaw =
+      freshMatches.length === 1
+        ? await residentHostIdentity(freshMatches[0].state, "command")
+        : null;
     requireFact(
-      latestRaw && latestRaw.processIdentityRef === originalRaw.processIdentityRef,
+      freshRaw &&
+        freshRaw.processId === originalRaw.processId &&
+        freshRaw.processStartToken === originalRaw.processStartToken &&
+        freshRaw.processIdentityRef === originalRaw.processIdentityRef,
       "R2_L6_FRESH_HOST_EVIDENCE_MISSING",
     );
-    originalRaw = latestRaw;
+    originalRaw = freshRaw;
+    startedWitness =
+      freshMatches.length === 1
+        ? {
+            path: freshMatches[0].file,
+            sha256: freshMatches[0].sha256,
+            environmentId: freshMatches[0].state.identity.environmentId,
+          }
+        : startedWitness;
     requireFact(
       originalRaw.linuxNamespace && originalRaw.taskProcessGroup,
       "R2_L6_TASK_TREE_IDENTITY_MISSING",
@@ -997,53 +1268,52 @@ async function runProbe(input) {
     const frozenExecution = (await audit("executions")).find(
       (row) => row.jobId === originalRow.jobId,
     );
-    const frozenDiagnostic = await diagnose(original.runId);
-    const baselineOperations = new Set(
-      latestDiagnostic.diagnostics.map((entry) => entry.operationKey),
+    const frozenEnvironments = await residentEnvironments();
+    const frozenPrimary = frozenEnvironments.filter((row) => row.role === "primary");
+    const frozenResident = await readResidentEnvironment(stateRoot, original.runId);
+    const frozenHost =
+      frozenResident.length === 1
+        ? await residentHostIdentity(frozenResident[0].state, "command")
+        : null;
+    const frozenOtherRuns = (await audit("executions")).filter(
+      (row) => !knownJobIds.has(row.jobId),
     );
-    const jobObservations = frozenDiagnostic.diagnostics.filter(
-      (entry) => entry.content?.observation?.jobId === originalRow.jobId,
-    );
-    const newNonrunningObservations = jobObservations
-      .filter(
-        (entry) =>
-          !baselineOperations.has(entry.operationKey) &&
-          entry.content.observation.phase !== "running",
-      )
-      .map((entry) => ({ operationKey: entry.operationKey, ...entry.content.observation }));
-    const finalPresent = jobObservations.some(
-      (entry) => entry.content.observation.phase === "finished",
-    );
-    const finalWitnessPath = path.join(path.dirname(startedWitness.path), "final.json");
-    const finalWitness = await lstat(finalWitnessPath).catch((error) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
+    const releaseReceiptPresent = frozenPrimary[0]?.releaseReceiptPresent === true;
     report.fault.preflight.frozenProduct = {
       measurementPoint: "after-SIGSTOP-confirmation-before-SIGKILL",
       startedAt: frozenProductStartedAt,
       checkedAt: new Date().toISOString(),
       execution: frozenExecution,
-      finalPresent,
-      finalEvidenceSource: "product-diagnostics-phase-finished",
-      finalWitness: { path: finalWitnessPath, present: finalWitness !== null },
-      newNonrunningObservations,
-      diagnosticFile: "frozen-diagnostics.json",
+      primaryEnvironmentCount: frozenPrimary.length,
+      environmentCount: frozenEnvironments.length,
+      residentIdentity: frozenHost,
+      residentStateFile: frozenResident[0]?.file ?? null,
+      finalPresent: releaseReceiptPresent,
+      finalEvidenceSource: "execution_environment_release_receipts",
+      finalWitness: { path: frozenResident[0]?.file ?? null, present: releaseReceiptPresent },
+      newNonrunningObservations: frozenOtherRuns.map((row) => row.jobId),
       passed: false,
     };
-    await save("frozen-diagnostics", frozenDiagnostic);
+    await save("frozen-environments", {
+      environments: frozenEnvironments,
+      resident: frozenResident.map(({ file, sha256 }) => ({ file, sha256 })),
+    });
     requireFact(
       frozenExecution?.preparation === "bound" &&
-        frozenExecution.supervision === "controlled" &&
+        frozenExecution.supervision === "initializing" &&
         frozenExecution.activeClaims > 0 &&
         !frozenExecution.releaseReceiptPresent &&
         frozenExecution.stopRequestedAt === null &&
         (frozenExecution.result === null || frozenExecution.result === "unknown") &&
-        !finalPresent &&
-        finalWitness === null &&
-        newNonrunningObservations.length === 0 &&
-        !frozenDiagnostic.diagnostics.some((entry) => entry.errorCode) &&
-        jobObservations.length > 0,
+        frozenEnvironments.length === 1 &&
+        frozenPrimary.length === 1 &&
+        ["running", "unknown"].includes(frozenPrimary[0].state) &&
+        !frozenPrimary[0].releaseReceiptPresent &&
+        frozenHost !== null &&
+        frozenHost.processId === originalRaw.processId &&
+        frozenHost.processStartToken === originalRaw.processStartToken &&
+        frozenOtherRuns.length === 0 &&
+        frozenResident.length === 1,
       "R2_L6_FROZEN_PRODUCT_STATE_CHANGED",
     );
     report.fault.preflight.frozenProduct.passed = true;
@@ -1180,14 +1450,47 @@ async function runProbe(input) {
       JSON.stringify(report.markers.afterRelease) === JSON.stringify(report.markers.before),
       "R2_L6_MARKER_CHANGED_AFTER_RELEASE",
     );
-    const finalDiagnostic = await diagnose(original.runId);
-    for (const entry of finalDiagnostic.diagnostics) {
-      const raw = entry.content?.observation;
-      if (raw?.jobId === originalRow.jobId && raw.taskStarted)
-        hostIdentities.add(raw.processIdentityRef);
+    const finalEnvironments = await residentEnvironments();
+    const finalPrimary = finalEnvironments.filter((row) => row.role === "primary");
+    const finalResident = await readResidentEnvironment(stateRoot, original.runId);
+    await save("final-environments", {
+      environments: finalEnvironments,
+      resident: finalResident.map(({ file, sha256 }) => ({ file, sha256 })),
+    });
+    const replayEvidence = readReplayEvidence(runtimeRoot, databasePath, originalRow.jobId);
+    const finalSession = finalResident[0]?.state?.sessions?.command;
+    const residentIdentities = new Set();
+    for (const match of finalResident) {
+      for (const session of Object.values(match.state?.sessions ?? {})) {
+        if (
+          session &&
+          Number.isSafeInteger(session.residentGroup) &&
+          typeof session.residentStartToken === "string"
+        )
+          residentIdentities.add(`${session.residentGroup}:${session.residentStartToken}`);
+      }
     }
-    report.originalHostStartCount = hostIdentities.size;
-    requireFact(hostIdentities.size === 1, "R2_L6_HOST_REPLAYED");
+    report.originalHostReplay = {
+      environmentRows: finalPrimary.length,
+      callRows: replayEvidence.calls.length,
+      recordRows: replayEvidence.records.length,
+      sessionUnchanged: Boolean(
+        finalSession &&
+          finalSession.pid === originalRaw.processId &&
+          finalSession.startToken === originalRaw.processStartToken &&
+          finalSession.residentGroup === originalRaw.residentProcessId &&
+          finalSession.residentStartToken === originalRaw.residentStartToken,
+      ),
+    };
+    report.originalHostStartCount = residentIdentities.size;
+    requireFact(
+      finalPrimary.length === 1 &&
+        replayEvidence.records.length === 1 &&
+        replayEvidence.calls.length === 1 &&
+        report.originalHostReplay.sessionUnchanged &&
+        residentIdentities.size === 1,
+      "R2_L6_HOST_REPLAYED",
+    );
     passed("original_not_replayed");
     passed("trusted_release");
     const admitted = await submit(labels.admitted);
@@ -1204,32 +1507,46 @@ async function runProbe(input) {
     });
     passed("new_admission");
     await client.cancelRun(admitted.runId);
+    let admittedIdentity = null;
     report.afterRelease.newRequestRelease = await waitFor(
       "R2_L6_NEW_REQUEST_RELEASE_MISSING",
-      async () =>
-        (await audit("executions")).find(
+      async () => {
+        if (!admittedIdentity) {
+          const matches = await readResidentEnvironment(stateRoot, admitted.runId);
+          if (matches.length === 1)
+            admittedIdentity = await notReadyAsNull(() =>
+              residentHostIdentity(matches[0].state, "command"),
+            );
+        }
+        return (await audit("executions")).find(
           (row) =>
             row.runId === admitted.runId &&
             ((row.supervision === "released" && row.releaseReceiptPresent) ||
               (row.preparation === "reserved" && row.reservationReleaseReceiptPresent)) &&
             row.activeClaims === 0 &&
             row.activeBarriers === 0,
-        ),
+        );
+      },
     );
-    const newDiagnostic = await diagnose(admitted.runId);
-    for (const entry of newDiagnostic.diagnostics) {
-      const raw = entry.content?.observation;
+    report.afterRelease.newRequestPreparation = report.afterRelease.newRequestRelease.preparation;
+    report.afterRelease.newRequestIdentity = admittedIdentity;
+    requireFact(
+      report.afterRelease.newRequestRelease.preparation !== "bound" || admittedIdentity !== null,
+      "R2_L6_NEW_REQUEST_IDENTITY_MISSING",
+    );
+    if (admittedIdentity) {
       if (
-        raw?.taskStarted &&
-        raw.linuxNamespace &&
-        raw.taskProcessGroup &&
-        !taskIdentities.some((identity) => identity.processIdentityRef === raw.processIdentityRef)
+        !taskIdentities.some(
+          (identity) => identity.processIdentityRef === admittedIdentity.processIdentityRef,
+        )
       )
-        taskIdentities.push(raw);
+        taskIdentities.push(admittedIdentity);
     }
-    await save("new-request-diagnostics", newDiagnostic);
+    const newResident = await readResidentEnvironment(stateRoot, admitted.runId);
+    await save("new-request-environments", {
+      resident: newResident.map(({ file, sha256 }) => ({ file, sha256 })),
+    });
     await save("audits", audits);
-    await save("final-diagnostics", finalDiagnostic);
   } catch (error) {
     if (error.controllerResult)
       report.fault = { ...report.fault, controllerFailure: error.controllerResult };
