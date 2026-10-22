@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:44b62e91ee0c537f7d0d9c31addd77850865181b347a4268ce5d3434a31d38e9"
+contract_sha256: "sha256:a2c33a7aaa7641e8c4f304bfc25febe77ba8226fea344157b90499a71b5b692a"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -460,7 +460,7 @@ U1 修订 `51fe7f6` 处理会话详情与执行状态读取之间发生的并发
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 
-未配置受保护安装时，每个进程首次使用某个期望摘要会在独立工作线程逐字节读取全部文件，保留路径、权限、文件身份和前后变化检查，并记录元数据指纹；此后每次调用只复核元数据，任何差异都丢弃指纹并重新完整审计，见 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]。验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
+未配置受保护安装时，每个进程首次使用某个期望摘要会在独立工作线程逐字节读取全部文件，保留路径、权限、文件身份和前后变化检查，并记录元数据指纹；此后每次调用只复核元数据，任何差异都丢弃指纹并重新完整审计，见 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md]（取代 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。Node 可执行文件和 runner 同样只在首次读全部字节，之后元数据不变就不再读内容；元数据遍历只对运行时根目录求真实路径。验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
 
 ADR 0034 沿用 ADR 0028 的受保护 Linux 安装，作为上述逐次复核的显式替代路径。迁移前准备独立系统运行账号、由 root 保护的安装/启动入口和 `/etc/himawari` 中的版本记录，保留部署账号管理权限。账号不得加入 sudo、Docker 或其他特权组；systemd 使用 `User=himawari`、`NoNewPrivileges=yes`，子进程明确继承 `HIMAWARI_RUNTIME_PROTECTION_FILE`。运行数据和私有秘密仍由运行账号持有；签名私钥不能交给它。Himawari 自有父目录只给予必要穿越权限，不公开同级服务。共享的 `/data/hermes` 属于另一套 Hermes Agent，其权限会被该服务重设为 0700，不能依赖一次 chmod，也不得停用它的安全加固。系统单元以 `TemporaryFileSystem=/data/hermes:ro,mode=0755` 和 `BindPaths=/data/hermes/himawari` 提供私有目录视图，宿主父目录保留原所有者和 0700。root 持有安装及保护记录的要求保持不变。启动时可写的能力快照和 attestation 放在私有运行数据目录，不能要求服务修改受保护资格目录。
 

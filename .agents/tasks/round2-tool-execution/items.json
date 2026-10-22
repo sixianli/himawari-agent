@@ -1483,6 +1483,27 @@
         "on": "2026-10-22",
         "why": "G161 用户要求修宿主启动期限后重新冻结第六次；himawari-ci 高负载复现 cand-r6-heavy 得到 JOB_HOST_HEARTBEAT_EXPIRED、stage request、receivedSequence null；第五次版本同负载下也失败"
       }
+    },
+    {
+      "id": "R2-D24",
+      "title": "运行时未保护时（S6_RUNTIME_PROTECTION 之前），宿主核验每轮都遍历整个运行时目录（约 4.7 万项）并重算 node 可执行文件和 runner 的摘要，生产机上每轮 2.3–6.5 秒，一个任务启动前要走 4–6 轮，第六次 S6 验收因此超时：同一进程内对未改动的文件不重复读取内容和遍历，任何内容、权限或替换变化仍被发现；先红后绿",
+      "goal_ref": ["G167"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D24",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "G167 用户选乙；生产 agent-1.stderr 的 sandbox.admission.timing 显示宿主核验每轮 2.3–6.5 秒、Hermes 约 0.9 秒"
+      }
     }
   ],
   "fingerprint": {

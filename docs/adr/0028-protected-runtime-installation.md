@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: docs/adr/0034-runtime-verification-by-inode-metadata.md
+superseded_by: docs/adr/0067-runtime-artifacts-by-inode-metadata.md
 date: "2026-09-11"
 ---
 

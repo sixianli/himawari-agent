@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: docs/adr/0028-protected-runtime-installation.md
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: docs/adr/0067-runtime-artifacts-by-inode-metadata.md
 date: "2026-09-27"
 ---
 

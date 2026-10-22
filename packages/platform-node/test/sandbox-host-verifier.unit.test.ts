@@ -23,7 +23,7 @@ import type {
   SandboxRuntimeQualification,
 } from "@himawari-agent/execution-contracts";
 import { sandboxScopeSchema } from "@himawari-agent/execution-contracts";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   digestSandboxRuntime,
   resolveSandboxFileWorkspaceClaim,
@@ -31,6 +31,18 @@ import {
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
 import { createDirectoryMoveJournal, resolveSandboxDirectoryMoveScope } from "../src/index.js";
+
+const artifactReads = vi.hoisted(() => vi.fn());
+vi.mock("../src/capabilities/artifact-verifier.js", async (original) => {
+  const verifier = await original<typeof import("../src/capabilities/artifact-verifier.js")>();
+  return {
+    ...verifier,
+    digestRegularFile: (filePath: string) => {
+      artifactReads(filePath);
+      return verifier.digestRegularFile(filePath);
+    },
+  };
+});
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -172,6 +184,35 @@ it("does not let an audit of one expected digest vouch for another", async () =>
       qualification: { ...input.qualification, runtimeDigest: other },
     }),
   ).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("[R2-D24] does not re-read an unchanged executable and runner on later verifications", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  artifactReads.mockClear();
+  await verifySandboxHost(input);
+  await verifySandboxHost(input);
+  expect(artifactReads).not.toHaveBeenCalled();
+});
+it("[R2-D24] detects a same-size executable rewrite whose timestamps were restored", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  const before = await stat(input.binding.executable.path);
+  await writeFile(input.binding.executable.path, "EXECUTABLE");
+  await utimes(input.binding.executable.path, before.atime, before.mtime);
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+});
+it("[R2-D24] re-reads a runner replaced by identical bytes and rejects a changed one", async () => {
+  const input = await fixture();
+  await verifySandboxHost(input);
+  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "runner-replacement");
+  await writeFile(replacement, "runner", { mode: 0o600 });
+  await rename(replacement, input.binding.runner.path);
+  artifactReads.mockClear();
+  await verifySandboxHost(input);
+  expect(artifactReads).toHaveBeenCalledWith(input.binding.runner.path);
+  await writeFile(replacement, "RUNNER", { mode: 0o600 });
+  await rename(replacement, input.binding.runner.path);
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
 });
 it("uses the installation inventory digest convention", async () => {
   const input = await fixture();
@@ -514,7 +555,6 @@ it("moves a real directory without overwrite and recovers inode-bound results wi
     privateDirectory,
     directoryRenameExecutable: executable,
   };
-  // Call the native boundary directly with a destination created after resolution.
   await mkdir(path.join(root.canonicalPath, "archive"));
   const occupied = await stat(path.join(root.canonicalPath, "archive"));
   const argv = [
@@ -556,11 +596,9 @@ it("moves a real directory without overwrite and recovers inode-bound results wi
   expect(await readFile(path.join(root.canonicalPath, "archive/a.txt"), "utf8")).toBe("retained");
   expect(await journal.recover()).toEqual(proof);
   await expect(journal.execute()).rejects.toThrow();
-  // The original durable receipt is historical even after a later user edit.
   await writeFile(path.join(root.canonicalPath, "archive/a.txt"), "later edit");
   expect(await journal.recover()).toEqual(proof);
   expect(await readFile(path.join(root.canonicalPath, "archive/a.txt"), "utf8")).toBe("later edit");
-  // Without the final receipt, matching source identity still explains the FS/DB gap.
   await unlink(path.join(privateDirectory, "directory-move-verified.json"));
   expect(await journal.recover()).toEqual(proof);
   await rename(

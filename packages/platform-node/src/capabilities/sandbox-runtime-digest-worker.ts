@@ -18,10 +18,6 @@ export interface SandboxRuntimeDigestRequest {
   readonly mode: "digest" | "fingerprint";
 }
 
-/** A single worker owns its bounded read buffer and file descriptors. Synchronous
- * reads here avoid tens of thousands of libuv round trips without blocking the
- * Agent event loop. Digest mode reads every byte; fingerprint mode reads only the
- * inode metadata that any content, permission or replacement change must alter. */
 function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
   if (mode !== "digest" && mode !== "fingerprint")
     throw new Error("SANDBOX_HOST_DIGEST_MODE_INVALID");
@@ -73,7 +69,6 @@ function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
     }
   };
   const visit = (directory: string, prefix: string) => {
-    if (realpathSync(directory) !== directory) throw new Error("SANDBOX_HOST_PATH_UNSAFE");
     const before = check(directory, true);
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const filename = path.join(directory, entry.name);
@@ -82,8 +77,6 @@ function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
         visit(filename, relative);
         continue;
       }
-      // Parent identity is rechecked after descendants. readdir names cannot
-      // introduce path components; O_NOFOLLOW rejects a replaced symlink leaf.
       const metadata = check(filename, false);
       if (mode === "digest") {
         const sha256 = digestFile(filename, metadata);
@@ -97,11 +90,12 @@ function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
       }
       identities.push(identity(relative, metadata));
     }
-    if (realpathSync(directory) !== directory || !same(before, check(directory, true)))
-      throw new Error("SANDBOX_HOST_CHANGED");
+    if (!same(before, check(directory, true))) throw new Error("SANDBOX_HOST_CHANGED");
     identities.push(identity(prefix, before));
   };
+  if (realpathSync(root) !== root) throw new Error("SANDBOX_HOST_PATH_UNSAFE");
   visit(root, "");
+  if (realpathSync(root) !== root) throw new Error("SANDBOX_HOST_CHANGED");
   identities.sort();
   const fingerprint = createHash("sha256").update(identities.join("\n")).digest("hex");
   if (mode === "fingerprint") return { fingerprint };

@@ -28,9 +28,6 @@ import { digestRegularFile } from "./artifact-verifier.js";
 import { verifyProtectedRuntime } from "./protected-runtime.js";
 import type { SandboxRuntimeDigestRequest } from "./sandbox-runtime-digest-worker.js";
 
-/** Same path/hash/size/mode digest as the installation artifact inventory.
- * Read the actual closure, including SRT helper files; a manifest hash alone
- * cannot establish that installed executable code is unchanged. */
 export async function digestSandboxRuntime(root: string): Promise<string> {
   return (await auditSandboxRuntime(root)).digest;
 }
@@ -38,8 +35,6 @@ export async function digestSandboxRuntime(root: string): Promise<string> {
 function inspectSandboxRuntime(
   request: SandboxRuntimeDigestRequest,
 ): Promise<{ digest?: string; fingerprint: string }> {
-  // Source checkout uses Node's native TypeScript erasure; packaged code uses
-  // the compiled sibling. This keeps the same verifier in tests and releases.
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
   return new Promise((resolve, reject) => {
     const worker = new Worker(
@@ -90,6 +85,23 @@ async function unprotectedRuntimeMatches(root: string, expected: string): Promis
   return true;
 }
 
+const artifactAudits = new Map<string, string>();
+async function artifactIdentity(filename: string) {
+  const info = await lstat(filename, { bigint: true });
+  return [info.dev, info.ino, info.mode, info.uid, info.size, info.mtimeNs, info.ctimeNs].join(
+    "\0",
+  );
+}
+async function unprotectedArtifactMatches(artifact: SandboxHostBinding["executable"]) {
+  const key = `${artifact.path}\0${artifact.sha256}`;
+  const before = await artifactIdentity(artifact.path);
+  if (artifactAudits.get(key) === before) return true;
+  artifactAudits.delete(key);
+  if ((await digestRegularFile(artifact.path)) !== `sha256:${artifact.sha256}`) return false;
+  if ((await artifactIdentity(artifact.path)) === before) artifactAudits.set(key, before);
+  return true;
+}
+
 async function checkedPath(filename: string, directory: boolean) {
   if (
     !path.isAbsolute(filename) ||
@@ -110,11 +122,6 @@ async function checkedMetadata(filename: string, directory: boolean) {
   return info;
 }
 
-/** The binding/qualification must originate in the verified deployment snapshot.
- * This checks live host identity and bytes, and never issues a qualification or
- * treats inventory roots/domains as execution authority. Mutable installations
- * are audited per call; protected installations retain a process-local initial
- * audit only while administrator-owned deployment identity remains unchanged. */
 export async function verifySandboxHost(input: {
   readonly binding: SandboxHostBinding;
   readonly qualification: SandboxRuntimeQualification;
@@ -198,23 +205,14 @@ export async function verifySandboxHost(input: {
     ])
   )
     return;
-  const [executableDigest, runnerDigest, runtimeMatches] = await Promise.all([
-    digestRegularFile(binding.executable.path),
-    digestRegularFile(binding.runner.path),
+  const matches = await Promise.all([
+    unprotectedArtifactMatches(binding.executable),
+    unprotectedArtifactMatches(binding.runner),
     unprotectedRuntimeMatches(binding.runtimeRoot, binding.runtimeDigest),
   ]);
-  if (
-    executableDigest !== `sha256:${binding.executable.sha256}` ||
-    runnerDigest !== `sha256:${binding.runner.sha256}` ||
-    !runtimeMatches
-  )
-    throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
+  if (matches.includes(false)) throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }
 
-/** Current host directory identities for R2 occupancy. Scope must already have
- * passed the existing directory/Grant/parent checks; inventory never grants access. */
-/** Resolve only an authenticated scope under this host's private copy store.
- * No model path, arbitrary private directory, or source grant can select this root. */
 export async function resolveSandboxWorkspaceRoot(input: {
   readonly binding: SandboxHostBinding;
   readonly scope: SandboxScope;
@@ -300,9 +298,6 @@ export async function resolveSandboxWorkspaceClaim(input: {
   });
 }
 
-/** Exact-file coordination for the installed fixed-target Operations contract.
- * Missing parents retain directory coverage until a parent-creation protocol is
- * available. Neither this resolver nor a model annotation grants filesystem I/O. */
 export async function resolveSandboxFileScope(input: {
   readonly binding: SandboxHostBinding;
   readonly scope: SandboxScope;

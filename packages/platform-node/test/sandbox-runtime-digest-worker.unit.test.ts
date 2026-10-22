@@ -18,6 +18,7 @@ const boundary = vi.hoisted(() => ({
   port: { postMessage: vi.fn() } as { postMessage: ReturnType<typeof vi.fn> } | null,
   opened: vi.fn(),
   read: vi.fn(),
+  resolved: vi.fn(),
 }));
 vi.mock("node:worker_threads", () => ({
   get parentPort() {
@@ -39,6 +40,13 @@ vi.mock("node:fs", async (original) => {
       boundary.read();
       return fs.readSync(...args);
     },
+    realpathSync: Object.assign(
+      (...args: Parameters<typeof fs.realpathSync>) => {
+        boundary.resolved(args[0]);
+        return fs.realpathSync(...args);
+      },
+      { native: fs.realpathSync.native },
+    ),
   };
 });
 let root: string;
@@ -143,8 +151,31 @@ describe("installed runtime byte verification worker", () => {
       });
       await expect(load()).rejects.toThrow("SANDBOX_HOST_CHANGED");
       expect(boundary.port?.postMessage).not.toHaveBeenCalled();
-      // The owned temporary file remains removable after the failed read.
       rmSync(path.join(root, "file"));
+    },
+  );
+  it.each(["digest", "fingerprint"] as const)(
+    "[R2-D24] resolves only the runtime root in %s mode",
+    async (mode) => {
+      boundary.mode = mode;
+      put("a/b/c/file", "fixture");
+      put("d/file", "fixture");
+      await load();
+      expect(boundary.port?.postMessage).toHaveBeenCalledOnce();
+      expect(new Set(boundary.resolved.mock.calls.map(([value]) => value))).toEqual(
+        new Set([root]),
+      );
+    },
+  );
+  it.each(["digest", "fingerprint"] as const)(
+    "[R2-D24] rejects a nested directory replaced by a symlink in %s mode",
+    async (mode) => {
+      boundary.mode = mode;
+      put("outside/file", "fixture");
+      put("inside/keep", "fixture");
+      symlinkSync(path.join(root, "outside"), path.join(root, "inside", "linked"));
+      await expect(load()).rejects.toThrow("SANDBOX_HOST_PATH_UNSAFE");
+      expect(boundary.port?.postMessage).not.toHaveBeenCalled();
     },
   );
   it("does no work when imported without a Worker channel", async () => {
