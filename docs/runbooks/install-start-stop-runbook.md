@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7eb883124b1226f7848a8d3ab8acc06a2094e6f3cf80c78696a1930ced786837"
+contract_sha256: "sha256:7b091826b34c3f1937ec0b4dd65ab82448d2cebd975fa4c7acf531f3602404da"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -279,6 +279,8 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 2026-10-08 第八组已在 Hermes 自然结束。最终测试文件 `fd09d2a1…`、控制器 `d5051c9a…`、主探针 `3bcc3fae…` 在三轮中保持相同；每轮 2 项 R2-L6 测试通过、48 项因名称筛选跳过、0 失败。三轮独立安装摘要检查、十项恢复断言、原登记进程退出及任务树释放读回全部通过。每轮先保留完整输出，再检查并删除本轮输出副本，重新取得 scratch 删除许可；最终实际读回 `/tmp/hunjt`、`/tmp/hmw40`、`/tmp/hig7h` 和各轮源码输出目录均不存在。关闭 opt-in 的单独检查另有 50 项全部跳过、0 执行、0 失败；它没有安装或运行恢复探针。原件保留在 Hermes 的 `/data/hermes/himawari/tool-audit-round2/r30/evidence/r72/`，执行与证据范围见[本轮记录](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r72/README.md)。完整第 1、2 层仍待运行，不能用这三轮定向结果替代。
 
 2026-10-16 第四次变更的 Hermes 安装演练中，主探针在找原始 bash 时失败一次：它先列出作业宿主的进程树，再逐个读取 `/proc/<pid>` 的进程身份，中间有一个存在时间很短的进程退出，读取报 `ENOENT`（“文件不存在”）。探针改为跳过读取时已退出、或进程号已被另一个进程复用（启动时间不同）的进程，仍要求恰好找到一个原始 bash；十项恢复断言和时限都不变。上面 `3bcc3fae…` 是 2026-10-08 那三轮所用的版本。
+
+2026-10-22 起（提交 `36df1cb9`），Linux 默认安装的前台 bash 走 SRT 常驻环境，主探针改为从状态目录 `runtime/srt-environments` 的常驻环境记录里找原始 bash 和原 Host 身份，不再从一次性作业记录里找；十项恢复断言的名字和顺序、各项时限都不变。产品路径测试在 Linux 上跳过常驻路径不存在的一次性完成闸门阶段，原因写在测试常量里，这些阶段由第 1、2 层测试覆盖。第六次变更的操作包携带的探针副本须取自这个提交。
 
 2026-10-08，最终 Cfa 第十组三次和完整第1层通过；whole产品路径业务文件49通过、0失败、1原比较基线跳过，Vitest退出0。主会话使用固定Playwright1.62.1连续live raw trace，保留screenshots/snapshots/network/stacks/resources，依次保存report、关闭真实installation、停止trace、关闭browser；原四阶段、完整raw及固定reader通过，原120000ms保持。helper/legacy/baseline没有进入主trace修正，旧helpercold超时原因仍uncertain。原whole外层因晚启动同UID不可读进程拒绝清理退出1，scratch/output按reply09保留。之后P5演练清理通过只对新scratch成立，[BL008](../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)仍open；见[最终事实和原EID](../execution/plans/2026-09-28-tool-execution-audit-plan.md#r74-final-validation)。
 

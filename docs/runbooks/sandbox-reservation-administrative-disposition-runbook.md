@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c729e5b6fc21e8c8c286942c2b4ec3488b74abbb28f87018db9395e763571611"
+contract_sha256: "sha256:d15848f0d99bebfa848e900c61cbf7be75507f80f6fdc917c7b0ee541c1ab5b7"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-08"
@@ -144,7 +144,9 @@ date: "2026-10-08"
 
 保留原失败证据和本次新证据，不覆盖历史。正文、控制密钥、环境变量、secret 值和未经筛选的配置输出不进入公开文档或聊天。生产报告不能用 Hermes 夹具报告代替。
 
-Run 进入 `reconciling_external_result` 不表示停止记录和恢复记录已经持久化。Hermes 管理员安装场景须在原期限内等待公共只读 `inspect-reservation` 接受目标，再保存处置前读回；该等待不替代独立进程组和 final 核查，也不放宽原状态断言。
+Run 进入 `reconciling_external_result` 不表示停止记录和恢复记录已经持久化。管理员安装场景（产品路径测试 `[prod-sandbox-admin]`）须在原期限内等待公共只读 `inspect-reservation` 接受目标，再保存处置前读回；该等待不替代独立进程组和 final 核查，也不放宽原状态断言。
+
+2026-10-22 起（提交 `36df1cb9`），这个安装场景只在非 Linux 平台运行：Linux 默认安装的前台 bash 改走 SRT 常驻环境，这个场景用来制造目标的一次性前台预约在 Linux 上不再出现，所以 Hermes 上的第 4 层把它标为跳过，原因写在测试常量 `oneShotForegroundSrtIsNonLinuxOnly` 里。Linux 上的处置规则仍由第 2 层集成测试 `test/integration/sandbox-reservation-administration.test.ts` 覆盖（候选 `4126f4f3` 的第 3 层里全部通过）。升级前留下的 `srt` 预约照常按本 Runbook 处置；Mac 的产品路径验证按用户 2026-09-30 的决定暂停，目前未验证。
 
 该安装夹具失败时保留原错误和独立读回。只有目标尚无释放回执、原签名 final 的摘要和长度匹配且原宿主与进程组已不存在，才恢复夹具保存的原 final 并等待正常证明释放；已有管理员回执时不恢复 final。失败收尾始终继续报告失败，不能计作管理员场景通过；这也不是生产处置步骤。
 
