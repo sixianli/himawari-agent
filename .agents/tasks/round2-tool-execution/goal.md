@@ -1034,3 +1034,17 @@ G150 2026-10-21（用户原话）：生产的故障先不管，先在 Hermes 上
 > 不用关himawari的线上服务如何，因为现在没有人用，也就是没有真实的用户。所以请你尽快把第 6 版上线，因为我要体验最新版本。
 
 （答复交接文件里的问题“按这个方向先加硬性检查、再做只补装的小工具并演练吗？”。Claude 的理解：选“按这个方向做”，继续第六次上线，不退回第五次；停服时长不用顾虑，要尽快。2026-10-22 23:12 东京实测 opencode 三个免费模型都返回 HTTP 429 FreeUsageLimitError（DeepSeek 两次），按用户这句话，原本给 opencode 的审核和编码改交 CodeBuddy（codebuddy-orchestration skill，模型 deepseek-v4.1-flash，自检 total_cost_usd 0）。生产上的每次运行仍要用户另行批准。）
+
+## G166 2026-10-22 用户原话
+
+> Bash(bash .ci-output/sixth-packet-work/revision-01/install-resume/run-sixth-install-resume-01.sh)
+>
+> 已加
+
+（答复 Claude 的请求“批准 G166：在生产运行补装，然后逐步跑 S6–S8 吗？”。用户引用了补装工具的允许规则并说已加。Claude 的理解：批准在生产上以 root 运行一次补装工具 `run-sixth-install-resume-01.sh`（工具摘要 050ed880…，服务保持停止）；S6–S8 各步的允许规则没有提到。）
+
+随后用户又发来：
+
+> 批准 G166
+
+（Claude 的理解：G166 按 Claude 上一条消息“需要你批准的事（G166）”的定义，包括运行补装，以及补装通过后用 `run-sixth-step.sh` 依次运行 S6_ACCEPTANCE 到 S8_READBACK，每步读回，非零退出就停下报告。S9、S10 和删除 /tmp/hh3uq 不在范围内。）
