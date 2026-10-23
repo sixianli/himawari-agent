@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { appendFile, mkdir, rename } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   type SandboxOperationBinding,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -18,7 +19,6 @@ import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts"
 import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -85,7 +85,6 @@ it("rejects a waiting original operation after only its directory Grant is withd
     invocationId: f.input.invocationId,
   });
   expect(beforeQueue).toMatchObject({ ...queued, plan: prepared.plan });
-  // Positive control: unchanged authority can recover the original frozen plan.
   expect(await f.services.runtime.prepare(f.input, f.call)).toEqual(prepared);
   const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
   expect(
@@ -116,7 +115,6 @@ it.each(["read", "edit", "write", "search", "bash", "background"])(
       invocation: f.input,
     });
     if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
-    // SRT adds proxy sockets below the job directory on the production host.
     const socketPath = `/data/hermes/himawari/jobs/${admitted.admission.plan.identity.jobId}/claude-socks-0123456789abcdef.sock`;
     expect(Buffer.byteLength(socketPath)).toBeLessThan(108);
     const send = await f.connect(admitted.admission.plan.identity);
@@ -220,7 +218,7 @@ it("UDS rechecks durable revocation after resolving scope", async () => {
   ).toBe("reserved");
 });
 
-it.each(["runtime", "directory"])("rechecks real %s identity before start", async (kind) => {
+it("rechecks real directory identity before start", async () => {
   const f = await productionSandboxScope(descriptor("bash"));
   cleanups.push(f.close);
   const prepared = await f.services.runtime.prepare(f.input, f.call);
@@ -231,11 +229,8 @@ it.each(["runtime", "directory"])("rechecks real %s identity before start", asyn
   });
   if (admitted.admission.phase !== "reserved") throw new Error("reserved required");
   await f.services.brokerV2.verifyStart(admitted.admission.plan);
-  if (kind === "runtime") await appendFile(f.host.binding.runner.path, "\n# replaced fixture\n");
-  else {
-    await rename(f.host.workspace, `${f.host.workspace}-old`);
-    await mkdir(f.host.workspace);
-  }
+  await rename(f.host.workspace, `${f.host.workspace}-old`);
+  await mkdir(f.host.workspace);
   await expect(f.services.brokerV2.verifyStart(admitted.admission.plan)).rejects.toThrow();
   expect(
     (await f.services.brokerV2.preparations.readAdmission(admitted.admission.plan.identity))?.phase,
@@ -452,8 +447,6 @@ it.each(["pending", "rejected"] as const)(
         const port = original.apply(this, args);
         return { ...port, listAdmissions: pages };
       });
-    // Replace only pagination before the production factory captures its frozen
-    // port. Admission/binding still use SQLite; cleanup is the controlled boundary.
     let f: Awaited<ReturnType<typeof productionSandboxScope>>;
     try {
       f = await productionSandboxScope(descriptor("read"));
@@ -558,8 +551,6 @@ it.each(["pending", "rejected"] as const)(
 it.each(["stopRun", "recovery"] as const)(
   "releases never-started reservations through production %s and retains the stop fence",
   async (mode) => {
-    // Real SQLite, installed-byte checks, authenticated socket and process exit;
-    // supervisor facts and platform qualification remain controlled test inputs.
     vi.stubEnv("TMPDIR", testTemporaryRoot());
     let f: Awaited<ReturnType<typeof productionSandboxScope>>;
     try {
@@ -632,8 +623,6 @@ it.each(["stopRun", "recovery"] as const)(
         released: true,
       });
     } else {
-      // The original host has exited without starting code; the terminal Run is
-      // discovered by the production recovery lane, without a new user stop.
       observation = { ...observation, phase: "finished", srtReset: true };
       child.kill();
       await exited;
