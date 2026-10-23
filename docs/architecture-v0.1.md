@@ -712,4 +712,4 @@ Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚�
 执行与验收记录：[SOURCE: docs/execution/specs/2026-09-10-control-center-local-acceptance-design.md]、[SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md]。
 
 
-受保护安装校验由 platform-node 实现，见 [ADR 0069](adr/0069-trust-unprotected-runtime-like-claude-code.md)（取代 ADR 0067、ADR 0034 和 ADR 0028）。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效。未配置保护记录的安装（含 Mac）信任安装结果：宿主核验不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要，与 Claude Code 的做法一致；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装。
+受保护安装校验由 platform-node 实现，见 [ADR 0069](adr/0069-trust-unprotected-runtime-like-claude-code.md)（取代 ADR 0067、ADR 0034 和 ADR 0028）。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效。未配置保护记录的安装（含 Mac）信任安装结果：宿主核验不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要，与 Claude Code 的做法一致；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装。前台工具运行期间 Worker 约每 250 毫秒检查一次控制状态；任务进程尚未启动或第一次资源采样尚未完成时，Agent 服务返回与正常收尾相同的非终态观察 `cleanup_pending`，Worker 继续等待而不取消任务，见[启动阶段的非终态观察](execution/specs/2026-09-28-sandbox-cleanup-observation-design.md#启动阶段的非终态观察)。

@@ -15,6 +15,7 @@ date: "2026-09-28"
 - [用户可见的问题与证据](#用户可见的问题与证据)
 - [建议的调整](#建议的调整)
 - [责任与接口](#责任与接口)
+- [启动阶段的非终态观察](#启动阶段的非终态观察)
 - [中断与失败](#中断与失败)
 - [取舍与范围](#取舍与范围)
 - [验收与第一步](#验收与第一步)
@@ -71,6 +72,18 @@ type SandboxReconciliationObservation =
 | 前台结果交付 | 继续等待资源确认，资源释放后才按权限交付；本提案不改变模型消费或已派发 intent 的规则 |
 
 TE-01 已做的局部修复继续保留：只有操作版本发生变化且资源事实完全未变，才重新核验合并后的事实；资源改变或恢复被接管仍拒绝旧证明。它解决另一个独立竞争，不代替本提案。
+
+## 启动阶段的非终态观察
+
+2026-10-23 补充（R2-D26）。前台工具运行期间，Execution Worker（执行工作进程）大约每 250 毫秒做一轮检查：先请求 `resolve`（重新核对执行授权与宿主），再请求 `observe_control`（让 Agent 服务读取 Job Host 的控制观察并分类）。ADR 0069 之后，宿主核验不再遍历运行时文件，一轮检查只要几毫秒，于是 `observe_control` 经常落在任务刚开始的几十毫秒里。
+
+当时的分类把两种正常的启动瞬间都判成 `lost`（失去控制）：Job Host 已进入 `running` 但任务进程还没启动（`taskStarted=false`）；任务已启动、资源观察器的第一次进程快照还没读完（`resources.samples=0`）。Worker 收到 `lost` 就取消任务，作业宿主随后报告 `reason: "cancelled"`，一个本来会正常结束的命令最终交付为 `SANDBOX_EXIT_UNKNOWN`（结果未知）。Hermes 上 `r2t10-not-started.test.ts` 与另外两个集成测试文件并行运行时 6 次失败 5 次，诊断打印见 `/data/hermes/himawari/tool-audit-round2/r2-d25/evidence/r2t10-diag3/`。
+
+调整：这两种启动瞬间与正常收尾一样，返回已有的非终态观察 `cleanup_pending`（含义是“宿主还在过渡，稍后再查”），不写入新的资源观察，也不写入 `lost`。只有在下面条件全部成立时才这样返回：身份与签名、开机标识和监督者一致；Job Host 处于 `running`；任务进程没有退出；Linux 任务命名空间没有释放；原 Host 进程仍在；观察不超过 1.5 秒；没有到执行期限。任一条件不满足仍判 `lost`。没有资源观察器的已启动任务（`resources` 为空）也仍判 `lost`，因为它永远不会进入受控状态。Job Host 还处于 `ready`（尚未处理启动消息）时也不在此列，仍判 `lost`：Job Host 收到启动消息时同步进入 `running`，而 Worker 发出启动消息后要先完成一次 `resolve` 往返才会请求观察，这个窗口在实际路径上不出现；常驻任务宿主在两条命令之间也处于 `ready`，把 `ready` 算进来会把空闲宿主当成正在启动。
+
+这种等待有上限：任务进程要么在启动步骤中失败并由 Job Host 自己结束，要么在第一次快照完成后进入受控状态，快照失败时观察器以 `host_failure` 停止任务；执行期限由 Job Host 自己的计时器强制。Worker 一侧只在记录不再是 `bound`，或服务端明确写入 `controlled`、`initializing` 以外的状态时才取消；收到“稍后再查”时记录保持 `initializing`，下一轮继续检查。这同时修正了正常收尾窗口：记录仍为 `initializing`（还没有写过 `controlled`）时，如果任务进程已退出、输出管道尚未关闭，Worker 以前也会因为同样的规则取消任务，使 Job Host 不再发送 `completed`。
+
+接口没有新增类型：沿用 `cleanup_pending`，它的含义由“正在清理”扩展为“宿主处于启动或清理的过渡中”。恢复服务对它的处理（同一期限内每 250 毫秒再观察一次）对启动瞬间同样适用。测试：`sandbox-control-evidence.test.ts` 中带 `[R2-D26]` 的用例覆盖两种启动瞬间返回非终态、到期后仍判 `lost`；`sandbox-v2-worker-lifecycle.test.ts` 的 `[R2-D26] start-pending` 场景证明 Worker 收到非终态后不取消，任务正常结束后交付结果。
 
 ## 中断与失败
 

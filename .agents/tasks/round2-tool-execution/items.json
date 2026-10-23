@@ -1524,6 +1524,24 @@
         "on": "2026-10-23",
         "why": "G172 用户要求全部去掉未保护运行时的内容和身份检查，只靠沙箱禁止写入和受保护安装"
       }
+    },
+    {
+      "id": "R2-D26",
+      "title": "命令刚启动时（任务宿主已运行但任务还没启动，或任务已启动但还没有资源样本），服务端监督观察不再判为失去监督，而是在 1.5 秒内的新观察、进程仍在、截止时间未到时返回尚未定论，Worker 不据此取消正常启动",
+      "goal_ref": ["G1"],
+      "done_when": [
+        { "type": "test", "tag": "R2-D26", "host": "hermes" },
+        { "type": "review", "by": "opencode" },
+        {
+          "type": "doc",
+          "path": "docs/execution/specs/2026-09-28-sandbox-cleanup-observation-design.md"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "R2-D25 让宿主核验变快后，r2t10 诊断（.ci-output/handoff/r2d25/r2t10-diag3.sh）6 次失败 5 次：服务端在启动瞬间判 lost，Worker 取消任务，结果为 SANDBOX_EXIT_UNKNOWN"
+      }
     }
   ],
   "fingerprint": {

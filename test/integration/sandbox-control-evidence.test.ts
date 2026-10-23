@@ -36,8 +36,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-// A real authenticated socket and durable journal exercise the product verifier.
-// The supervisor and qualification facts here are synthetic, not platform qualification.
 async function fixture(
   options: {
     qualified?: boolean;
@@ -548,19 +546,59 @@ it.each([
     "SANDBOX_CONTROL_EVIDENCE_CHANGED",
   );
 });
-it.each(["no-task", "exited", "no-samples", "expired", "supervisor-changed"])(
+it.each(["no-task", "no-samples"])(
+  "[R2-D26] keeps a task that is still starting pending instead of lost (%s)",
+  async (reason) => {
+    const f = await fixture();
+    f.set({
+      phase: "running",
+      taskStarted: reason === "no-samples",
+      taskProcessExited: false,
+      resources:
+        reason === "no-samples"
+          ? { samples: 0, observedCpuTimeMs: 0, peakObservedMemoryBytes: 0 }
+          : null,
+    });
+    const observed = await f.control.observe(f.record);
+    expect(observed).toMatchObject({
+      kind: "cleanup_pending",
+      identity: f.record.plan.identity,
+      resourceSequence: f.record.facts.resource.sequence,
+    });
+    expect(observed).not.toHaveProperty("supervision");
+  },
+);
+it.each(["no-task", "no-samples"])(
+  "[R2-D26] still classifies a starting task as lost after its deadline (%s)",
+  async (reason) => {
+    const f = await fixture();
+    f.set({
+      phase: "running",
+      taskStarted: reason === "no-samples",
+      taskProcessExited: false,
+      resources:
+        reason === "no-samples"
+          ? { samples: 0, observedCpuTimeMs: 0, peakObservedMemoryBytes: 0 }
+          : null,
+    });
+    const record = {
+      ...f.record,
+      plan: { ...f.record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
+    };
+    const resource = settled(await f.control.observe(record));
+    expect(resource.supervision).toBe("lost");
+    expect(resource.cleanup).toBe("unknown");
+  },
+);
+it.each(["exited", "expired", "supervisor-changed"])(
   "does not classify incomplete supervision as controlled (%s)",
   async (reason) => {
     const f = await fixture();
     f.set({
       phase: "running",
-      taskStarted: reason !== "no-task",
+      taskStarted: true,
       taskProcessExited: reason === "exited",
-      resources: {
-        samples: reason === "no-samples" ? 0 : 1,
-        observedCpuTimeMs: 1,
-        peakObservedMemoryBytes: 1024,
-      },
+      resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
     });
     const record =
       reason === "expired"
@@ -618,8 +656,6 @@ it.each(["alive", "started", "cleanup-unknown", "verified"] as const)(
     const departedPid = child.pid;
     await once(child, "exit");
     if (!departedPid) throw new Error("child PID missing");
-    // The socket is real; supervisor facts are controlled, as in the other
-    // verifier tests. A reaped child supplies an actually absent PID.
     f.set({
       phase: "finished",
       taskStarted: scenario === "started",

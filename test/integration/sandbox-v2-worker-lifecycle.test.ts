@@ -69,6 +69,7 @@ it.each([
   "diagnostic-handshake-rejected",
   "revoked-running",
   "finished-during-check",
+  "[R2-D26] start-pending",
   "background",
   "background-ack-loss",
   "service",
@@ -94,6 +95,8 @@ it.each([
   const preBindResident = scenario === "[R2-P2] bind-pre-failure-resident";
   const preBindContainer = scenario === "[R2-P2] bind-pre-failure-container";
   const preBind = preBindResident || preBindContainer;
+  const startPending = scenario === "[R2-D26] start-pending";
+  let pendingObservations = 0;
   let streamAttempts = 0;
   const streamChunks = new Map<number, unknown>();
   const fixedTarget = {
@@ -183,7 +186,12 @@ it.each([
     inspect: () => ({ bootId: "boot", state: "alive" }),
     start: vi.fn(() => {
       calls.push("host-start");
-      if (background || scenario === "revoked-running" || scenario === "finished-during-check")
+      if (
+        background ||
+        startPending ||
+        scenario === "revoked-running" ||
+        scenario === "finished-during-check"
+      )
         return;
       resolveResult({
         stdout: new TextEncoder().encode("result"),
@@ -389,7 +397,18 @@ it.each([
         facts = command.facts;
         if (scenario === "bind-ack-loss") throw new Error("ack lost after commit");
       }
-      if (command.kind === "observe_control") {
+      if (command.kind === "observe_control" && startPending) {
+        pendingObservations++;
+        if (pendingObservations === 2)
+          resolveResult({
+            stdout: new TextEncoder().encode("result"),
+            taskStarted: true,
+            taskProcessExited: true,
+            stdioClosed: true,
+            exitCode: 0,
+            reason: "exited",
+          });
+      } else if (command.kind === "observe_control") {
         facts = {
           ...facts,
           resource: {
@@ -635,6 +654,17 @@ it.each([
     ]);
     expect(await worker.execute(request)).toEqual(outcome);
     expect(proxy.requests.filter((url) => url.endsWith("/handshake"))).toHaveLength(2);
+    await worker.shutdown();
+    return;
+  }
+  if (startPending) {
+    expect(host.start).toHaveBeenCalledOnce();
+    expect(pendingObservations).toBe(2);
+    expect(calls.indexOf("observe_control")).toBeGreaterThan(calls.indexOf("host-start"));
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      output: { ref: "output", byteLength: 6 },
+    });
     await worker.shutdown();
     return;
   }

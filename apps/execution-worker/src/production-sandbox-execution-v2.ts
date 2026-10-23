@@ -673,12 +673,12 @@ export class ProductionSandboxExecutionV2 {
             kind: "observe_control",
             expectedSequence: current.facts.resource.sequence,
           });
-          if (
-            observed.record.phase !== "bound" ||
-            observed.record.facts.resource.supervision !== "controlled"
-          )
-            host.cancel();
-          else await acknowledge();
+          const supervision =
+            observed.record.phase === "bound"
+              ? observed.record.facts.resource.supervision
+              : undefined;
+          if (supervision !== "controlled" && supervision !== "initializing") host.cancel();
+          else if (supervision === "controlled") await acknowledge();
         } catch {
           host.cancel();
           break;

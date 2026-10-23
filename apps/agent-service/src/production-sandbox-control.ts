@@ -104,14 +104,10 @@ interface Options {
     key: string,
     value: unknown,
   ) => Promise<{ ref: string; digest: string }>;
-  /** Installed host identity/bytes and mode qualification, independent of an expired Grant. */
   readonly host: (
     plan: SandboxExecutionPlanV2,
   ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
-  /** Verify the protected terminal proof of the qualified, closed fixed-file
-   * program. Never supplied by the model, and never used for arbitrary commands. */
   readonly fixedFileCompleted?: (record: SandboxExecutionRecord) => Promise<boolean>;
-  /** Admission checks current scope/Grant and host bytes together before registration. */
   readonly admit: (
     plan: SandboxExecutionPlanV2,
   ) => Promise<{ binding: SandboxHostBinding; qualification: SandboxRuntimeQualification }>;
@@ -151,6 +147,7 @@ type ControlState =
   | "released"
   | "process_group_gone"
   | "exit_cleanup_pending"
+  | "start_pending"
   | "lost";
 const resourceState = (state: ControlState) =>
   ({
@@ -159,6 +156,7 @@ const resourceState = (state: ControlState) =>
     process_group_gone: { supervision: "released", cleanup: "process_group_gone" },
     lost: { supervision: "lost", cleanup: "unknown" },
     exit_cleanup_pending: null,
+    start_pending: null,
   })[state];
 async function hostProcessGroupGone(processId: number): Promise<boolean> {
   if (process.platform !== "linux") return true;
@@ -180,10 +178,6 @@ function neverStartedReleased(
   );
 }
 
-/** Uses the existing protected Run artifacts for control bindings and raw facts.
- * It never installs a backend, consumes a Grant, executes user code, or signals a
- * numeric PID. A live stop goes to the original authenticated Job Host only.
- */
 export function createProductionSandboxControl(options: Options) {
   const assertStopRequestedAt = (stopRequestedAt: string | undefined): string => {
     if (
@@ -236,8 +230,6 @@ export function createProductionSandboxControl(options: Options) {
     stage: "control" | "host" | "classification",
     error: unknown,
   ) => {
-    // The production writer encrypts these as restricted trace artifacts. Never
-    // include diagnostic text in resource facts, public reasons, or tool output.
     await options.write(plan, `${key(plan)}:diagnostic:${randomUUID()}`, {
       identity: plan.identity,
       environmentId: plan.environmentId,
@@ -400,8 +392,6 @@ export function createProductionSandboxControl(options: Options) {
       try {
         observation = await readJobHostFinalEvidence(stored.control);
       } catch (proofError) {
-        // An absent final file is not the cause of a failed live request. Keep
-        // its timeout/permission/connection reason; invalid final proof still wins.
         if (errorCode(proofError) === "ENOENT") return new UnreachableHost(requestError);
         throw proofError;
       }
@@ -523,9 +513,6 @@ export function createProductionSandboxControl(options: Options) {
       processAbsent(raw.processId)
     )
       return release("released");
-    // This qualification concerns a closed program, not arbitrary process-tree
-    // termination. Its only shared publisher has returned; its native helper is
-    // awaited and cannot fork. Interrupted/unverified programs remain unknown.
     if (
       qualification.guarantees?.includes(FIXED_FILE_COMPLETION_GUARANTEE) &&
       record.plan.operationContract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
@@ -544,8 +531,6 @@ export function createProductionSandboxControl(options: Options) {
       (await options.fixedFileCompleted?.(record))
     )
       return release("released");
-    // A finished, never-started environment can be released only after the
-    // original host PID is absent. PID reuse/permission errors remain unknown.
     if (neverStartedReleased(raw, namespace)) return release("released");
     if (
       raw.taskStarted &&
@@ -556,9 +541,6 @@ export function createProductionSandboxControl(options: Options) {
       processAbsent(raw.processId)
     )
       return release("process_group_gone");
-    // Mac's accepted profile binds inherited SRT restrictions and sampled
-    // supervision, not a promise of arbitrary descendant reclamation. Linux's
-    // stronger tree requirement is not inferred from this Mac evidence.
     if (
       ((qualification.platform === "darwin" && qualification.terminationMode === "best_effort") ||
         (qualification.platform === "linux" &&
@@ -583,6 +565,16 @@ export function createProductionSandboxControl(options: Options) {
         Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500)
     )
       return "exit_cleanup_pending";
+    if (
+      raw.phase === "running" &&
+      !raw.taskProcessExited &&
+      (!raw.taskStarted || raw.resources?.samples === 0) &&
+      namespace !== "released" &&
+      !processAbsent(raw.processId) &&
+      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500 &&
+      options.now() < record.plan.effectiveDeadlineAt
+    )
+      return "start_pending";
     return "lost";
   };
   const observeGone = async (
@@ -642,20 +634,15 @@ export function createProductionSandboxControl(options: Options) {
       if ("kind" in crash) return crash;
       return observeGone(record, control, { crash });
     };
-    // Stop the authenticated original host promptly, then verify its resulting
-    // state. File verification must never delay delivery of a stop request.
     if (command === "stop") {
       const stopped = await attempt(record.plan, "stop", signal);
       if (stopped instanceof UnreachableHost) return afterCrash(stopped);
     }
-    // Read installed bytes before sampling a live process. A slow disk must not
-    // consume the observation's freshness window before classification begins.
     let host: Awaited<ReturnType<Options["host"]>> | undefined;
     let reasonCode = "SANDBOX_CONTROL_UNCONFIRMED";
     try {
       host = await options.host(record.plan);
     } catch (error) {
-      // Still retain the process observation; unqualified cleanup remains lost.
       await saveDiagnostic(record.plan, command, "host", error);
       const classified = sandboxReconciliationFailureReason(error);
       reasonCode =
@@ -696,7 +683,7 @@ export function createProductionSandboxControl(options: Options) {
       const crash = await crashedWithinBoot(record);
       if (crash) return "kind" in crash ? crash : observeGone(record, control, { crash });
     }
-    if (state === "exit_cleanup_pending")
+    if (state === "exit_cleanup_pending" || state === "start_pending")
       return {
         kind: "cleanup_pending",
         identity: record.plan.identity,
@@ -1027,8 +1014,6 @@ export function createProductionSandboxControl(options: Options) {
           }
         }
         const observation = await inspectPreparation(plan, "stop", signal);
-        // This is a cleanup request receipt, never an environment release proof.
-        // A stopped reservation remains protected until independent verification.
         await options.write(plan, `${key(plan)}:preparation-stop:${observation.sequence}`, {
           fingerprint: plan.semanticFingerprint,
           environmentId: plan.environmentId,
@@ -1131,8 +1116,6 @@ export function createProductionSandboxControl(options: Options) {
         throw new Error("SANDBOX_CONTROL_PREPARATION_CHANGED");
     },
     observe,
-    // Carry proof produced by this same host/process verification. Do not repeat
-    // the expensive installed-byte check after issuing a one-second proof.
     async refreshEvidence(
       record: SandboxExecutionRecord,
       command: "inspect" | "stop" = "inspect",

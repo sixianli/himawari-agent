@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:c95d5c90ef64a0b10e4c224b74660377b7a85f5d7fcee73c6251ed53f8dde1c6"
+contract_sha256: "sha256:9c9a8a6f0197cc7c09b8fb727fdb2e697c9cbc06aaf978cab135e395f4436bed"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -850,7 +850,7 @@ D15 的三条完整归档用例使用同一正式构建产物和匹配 Context�
 
 资源核查失败时先看持久恢复终点与安全原因：`SANDBOX_RECONCILIATION_PERMISSION_DENIED` 表示宿主检查被拒绝，不代表原执行 Grant 应重新授予；`SANDBOX_CONTROL_TIMED_OUT` 是控制连接请求超时，`SANDBOX_RECONCILIATION_TIMED_OUT` 是整个核查任务到期；身份、目录或证据变化必须核对原绑定，不能直接采用当前 PID。`unresolved` 表示本次核查已经结束。一次性 SRT 的 `bound` 记录仍按原规则暂停；任务环境（常驻 SRT 和容器）的 `bound` 记录停止未确认（`SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED`，旧 Job Host 还没退出时常见）时，按同样的退避在下一次扫描重新排定（D-53，见 [ADR 0054 的 2026-10-21 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-stop-retry)）；上一次核查因服务关闭或派发循环失败被中止（`SANDBOX_RECONCILIATION_INTERRUPTED`）的 `bound` 记录，不论后端，在下一次启动后的第一次扫描重新排定一次（D-56，见 [ADR 0054 的 2026-10-22 补充](../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#interrupted-recovery-retry)）；兜底的 `SANDBOX_RECONCILIATION_UNCONFIRMED` 仍暂停；身份、签名、权限等非暂时错误仍暂停。对需要停止的 `reserved` 暂时失败，下一次扫描可重新排定，退避与状态读回见[资源恢复调度](#schema-43-资源恢复调度)。失败细节经原 Job 的受保护 `restricted` Trace 保存，保留备份但不得直接输出到页面或普通日志。没有充分新释放证明时仍保留相交资源保护；不得用删除 claim 或重跑原工具来清除错误。
 
-工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。已认证 `finished` 终态的签名时间固定，不作为活动心跳使用；宿主仍存活且任务退出、stdio 已关闭、SRT 已复位时，pending 观察时间取本次身份与终态核验时间，签名文件不改写。运行中观察仍核对原心跳时间，释放仍须证明原宿主和进程组已消失。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
+工具的前台结果交给模型之前，如果这次沙箱执行记录处于 `lost`（失去控制）或 `reconciling`（后台正在核查）——任务结束后记录都会先经过这两个状态，再由后台核查确认释放——交付会先等后台核查结束，最多 35 秒：核查确认 `released`（已释放）后照常交付；核查以 `unresolved` 结束时不交付，保留“结果未确认”，页面提示先停止本轮；35 秒后仍未结束时以 `SANDBOX_RECOVERY_UNSETTLED` 失败，不绕过核查直接交付。任务已退出且原 Job Host（负责启动和清理任务的宿主进程）仍在正常收尾，或原宿主已经确认进入停止阶段时，通过身份和签名检查的新鲜观察返回 `cleanup_pending`。Job Host 已进入运行阶段但任务进程尚未启动，或任务已启动但第一次资源采样尚未完成时，同样的新鲜观察也返回 `cleanup_pending`，未到执行期限前不判 `lost`（规则见[启动阶段的非终态观察](../execution/specs/2026-09-28-sandbox-cleanup-observation-design.md#启动阶段的非终态观察)）。它不是释放证明，不占用终态证据序号，也不据此让 Worker 取消正常启动或正常收尾。后台核查在同一个 owner、revision 和原期限内继续观察：stop 只发送一次，之后每隔 250 毫秒 inspect，最长仍为 30 秒。执行期限到达不禁止清理；观察超过 1.5 秒、身份不符或控制失联不能当作正常 pending。已认证 `finished` 终态的签名时间固定，不作为活动心跳使用；宿主仍存活且任务退出、stdio 已关闭、SRT 已复位时，pending 观察时间取本次身份与终态核验时间，签名文件不改写。运行中观察仍核对原心跳时间，释放仍须证明原宿主和进程组已消失。核查期限届满仍保留占用并记录 unresolved。前台交付在核验证据期间若被后台核查更新记录，会在原 35 秒窗口内重读最新记录、重新检查披露权限和释放事实；仅重试版本确有变化的派发前准备，不重放已经派发的结果。要查看某一轮的这些状态变化和受保护诊断，用[查看某一轮执行的诊断记录](#diagnose-run)。
 
 Unix socket 路径以 UTF-8 字节计数，macOS 最多 103 字节、Linux 最多 107 字节（不含终止 NUL）。启动在绑定前拒绝超长路径；应选择更短的独立 state root，不能依靠系统截断后的文件名或手工改 socket 名称继续运行。
 
