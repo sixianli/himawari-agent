@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:893380eff02c948483d63730768fdcdcc2672c93c07e4725117363b6fa66ea49"
+contract_sha256: "sha256:9da4be13a6bf4f1dc3680a8d7160a015c8fecdf5fdea94de598dfef6ff625685"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-21"
@@ -15,7 +15,7 @@ date: "2026-10-21"
 - docs/adr/0060-hard-constraint-on-third-repeat.md
 -->
 
-本手册集中记录给 opencode（本地命令行里的编程代理）和 Grok 派活时用到的本地工具：启动脚本的检查、权限配置里的禁止清单、拒绝长时间等待的守卫插件、通往 Hermes 和云服务器的包装脚本，以及它们各自的拒绝码和正确写法。分工和理由在 [ADR 0062](../adr/0062-claude-writes-complex-code-opencode-routine.md)（复杂模块由 Claude 写、重复性编码交给 opencode；它保留了 [ADR 0058](../adr/0058-agent-collaboration-and-review-roles.md) 未变的部分），模型选择在 [ADR 0061](../adr/0061-opencode-model-table.md)，为什么要做成硬拦截在 [ADR 0060](../adr/0060-hard-constraint-on-third-repeat.md)；`AGENTS.md` 只留硬边界并链接到这里。这些工具文件大多在被 git 忽略的 `.ci-output/` 和 `.opencode/` 下，是本地未提交文件。
+本手册集中记录给 opencode（本地命令行里的编程代理）和 Grok 派活时用到的本地工具：启动脚本的检查、权限配置里的禁止清单、拒绝长时间等待的守卫插件、通往 Hermes 和云服务器的包装脚本，以及它们各自的拒绝码和正确写法。分工和理由在 [ADR 0062](../adr/0062-claude-writes-complex-code-opencode-routine.md)（复杂模块由 Claude 写、重复性编码交给 opencode；它保留了 [ADR 0058](../adr/0058-agent-collaboration-and-review-roles.md) 未变的部分），模型选择在 [ADR 0068](../adr/0068-deepseek-only-codebuddy-fallback.md)，为什么要做成硬拦截在 [ADR 0060](../adr/0060-hard-constraint-on-third-repeat.md)；`AGENTS.md` 只留硬边界并链接到这里。这些工具文件大多在被 git 忽略的 `.ci-output/` 和 `.opencode/` 下，是本地未提交文件。
 
 ## 阅读导航
 
@@ -44,7 +44,7 @@ date: "2026-10-21"
 
 - 分工与互审：[SOURCE: docs/adr/0062-claude-writes-complex-code-opencode-routine.md#decision]
 - 重复错误的硬约束：[SOURCE: docs/adr/0060-hard-constraint-on-third-repeat.md#decision]
-- 模型表和导出命令：[ADR 0061](../adr/0061-opencode-model-table.md)，表在 `.agents/opencode-models.toml`
+- 模型规则：[ADR 0068](../adr/0068-deepseek-only-codebuddy-fallback.md)（只用 DeepSeek V4.1，opencode 的免费 DeepSeek 用不了时改用 CodeBuddy；表和导出命令沿用 [ADR 0061](../adr/0061-opencode-model-table.md)），表在 `.agents/opencode-models.toml`
 - 各条拒绝规则的来历：[docs/lessons.md](../lessons.md) 的 `upload-before-written`、`long-blocking-wait`、`hand-written-wait`、`masked-exit-status`、`brief-denied-text`、`bulky-evidence`、`layer3-exit-code`、`layer0-related-tests` 条目
 - 第 0 层清单与提交钩子：[SOURCE: docs/adr/0066-layer0-related-tests-declared.md#decision]
 - 测试主机的目录和清理：[测试主机操作 Runbook](test-host-operations-runbook.md)
@@ -70,7 +70,7 @@ date: "2026-10-21"
 2. `.opencode/required-plugins.txt` 列出 `.opencode/plugins/wait-guard/index.ts` 的 SHA-256；主检出和每个有 `.opencode/` 目录的 `.ci-output/worktrees/*/` 都有同一份插件和清单。启动脚本对缺失、被改或清单为空的情况分别以 `REQUIRED_PLUGIN_MISSING`、`REQUIRED_PLUGIN_CHANGED`、`REQUIRED_PLUGIN_LIST_EMPTY` 拒绝。
 3. 包装脚本存在且可执行：`.ci-output/handoff/scripts/hermes-ssh.sh`、`hermes-upload.sh`、`hermes-wait.sh`、`require-quiet-host.sh`，`.ci-output/cloud-test-host-2026-10-14/ci-ssh.sh`、`ci-upload.sh`。改过包装脚本后先跑 `.ci-output/handoff/scripts/test-ssh-wrappers.sh`，它用一个只打印标记的替身 `ssh` 验证各条拒绝，不会碰真实主机。
 4. 简报恰好指定一个尚未写出的停止文件（路径以 `stop.md` 或 `stop-<N>.md` 结尾）；否则 `STOP_FILE_UNCLEAR`。改代码的批次在“范围”一节挂长任务条目编号；只读批次（读代码出报告、审查文档）单独写一行 `只读任务：是`，启动脚本打印 `READ_ONLY_BRIEF` 并跳过条目检查。
-5. 开新会话前查东京时间并按 ADR 0061 选模型和档位；报一行模型 ID、档位、时间、原因。
+5. 开新会话前查东京时间并按 [ADR 0068](../adr/0068-deepseek-only-codebuddy-fallback.md) 选模型和档位；报一行模型 ID、档位、时间、原因。
 
 <a id="procedure"></a>
 

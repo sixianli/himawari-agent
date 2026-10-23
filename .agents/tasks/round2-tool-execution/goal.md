@@ -1064,3 +1064,13 @@ G150 2026-10-21（用户原话）：生产的故障先不管，先在 Hermes 上
 > 批准
 
 （Claude 的理解：预先批准在生产 `84.247.157.41` 上运行第二版归档工具 `revision-02`（把第二次 S6 验收的残留移入证据根下的 `s6-attempt-02`、旧操作和发布目录改名为 `.sixth-attempt-02-20261023`、删除空的 `qualification/sixth-20261017`、接收并安装重新冻结的操作包），再按 G166 的方式逐步重跑 S6_ACCEPTANCE 到 S8_READBACK，任何一步退出码不是 0 就停。前提：Hermes 完整演练通过并经审核；生产命令仍在用户加允许规则后才运行。不包括 S9、S10，也不包括删除 `/tmp/hh3uq`、`/tmp/hga59` 等现场目录。）
+
+## G169 2026-10-23 用户原话
+
+上下文：用户问“你在什么情况下才使用 codebuddy 的模型？”，Claude 答“只要还有一个免费模型能用，就继续用 opencode”。
+
+> 只要还有一个免费模型能用，就继续用 opencode
+>
+> 这里我要修改为：我更希望你用 DeepSeek v4.1 的模型，因为它比较强。如果 opencode 的 deepseek 免费用不了，请有效使用 codebuddy 的 DeepSeek v4.1
+
+（Claude 的理解：派给代理的编码、审核和独立方案只用 DeepSeek V4.1 Flash。先用 opencode 的免费 `opencode/deepseek-v4.1-flash-free`；它被限流（约 30 秒后第二次仍返回 HTTP 429）、下线或不可用时，改用 CodeBuddy 的 `deepseek-v4.1-flash`（codebuddy-orchestration skill）。opencode 的 GLM、MiMo 和 Go 套餐模型不再用于新会话，在模型表里改为暂停。两条 DeepSeek 路线都用不了时停下告诉用户。取代 G165 里“免费模型都不能用才交 CodeBuddy”的条件。决定记在 ADR 0068。）

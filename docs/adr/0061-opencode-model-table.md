@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: "docs/adr/0059-opencode-model-selection-free-first.md"
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: "docs/adr/0068-deepseek-only-codebuddy-fallback.md"
 date: "2026-10-21"
 ---
 

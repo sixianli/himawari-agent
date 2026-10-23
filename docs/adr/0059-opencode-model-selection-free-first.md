@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: "docs/adr/0061-opencode-model-table.md"
+superseded_by: "docs/adr/0068-deepseek-only-codebuddy-fallback.md"
 date: "2026-10-21"
 ---
 
