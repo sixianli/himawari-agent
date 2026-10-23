@@ -101,14 +101,12 @@ if (process.argv[2] === "worker") {
     let final;
     let namespaceState;
     for (;;) {
-      final = await readJobHostFinalEvidence(binding).catch((error) => {
-        if (Date.now() >= settleUntil) throw error;
-        return undefined;
-      });
+      final = await readJobHostFinalEvidence(binding).catch(() => undefined);
       namespaceState = await readLinuxNamespaceState(before.linuxNamespace);
       if ((final && namespaceState === "released") || Date.now() >= settleUntil) break;
       await delay(250);
     }
+    final ??= await readJobHostFinalEvidence(binding);
     const markerAbsent = await readFile(path.join(root, "workspace/escaped")).then(
       () => false,
       (error) => {

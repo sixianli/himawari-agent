@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:44e6f1a4c5cc5b4934c2e8d8f0b1f2cbf8d6a5992bbdca043b85f3bc7f18d34d"
+contract_sha256: "sha256:253b1b02aa0d9b7bc0ee12a610a69daedeae0de6c27af7feebf9c51ca4c52194"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -347,7 +347,7 @@ Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失�
 
 1. 检查本 Runbook 静态合同。只传输已审阅且通过秘密扫描的源码白名单；不打包配置、凭据、真实数据或历史浏览器证据。构建安装到本次独立发布目录，保留旧版本。
 2. 打包统一文件和目录权限，禁止 group/other write。安装固定 Pi 工具普通文件后，针对实际安装树执行 Pi、组合、网络允许/拒绝、Worker 崩溃清理及公开搜索探针。固定探针使用合成数据；必须验证真实 namespace 释放、安装字节摘要、实际工具和 provider 返回，不能复用旧资格或伪造结果。任何产物变更后重新执行受影响资格。
-3. 实测通过后，使用该主机既有受保护签名源签署本次安装事实，保存证据摘要、runtime/runner/system tool 字节摘要及精确能力上界。Pi、授权网络、网络边界、Worker 崩溃清理和公开搜索探针都使用与正式 Worker 相同的 5 秒清理期限；各探针的整体期限按慢机器留足余量，授权网络的 cpu 场景忙等 20 秒，因为资源观察器按 `ps` 的整秒计 CPU 时间（BL-20261024-001）。Pi write/edit 使用 verified_effect，并要求安装的 Pi 程序在实际回读成功后生成内容摘要、字节数和路径；Worker 将原受保护输出绑定到持久证据，Agent 再核对原调用、Grant 和输入。不能以 exit 0 代替效果校验。bash 本轮只读，退出事实为 not_asserted。搜索为独立 fixed_read 程序，出口仅 `mcp.exa.ai:443`。两者都要求既有目录 Grant 和动作/披露授权。用户明确开启“允许联网搜索”后，固定 Exa 搜索可从服务端设置派生精确的一次性 Grant，记录真实的 policyAuthorization 来源；关闭设置后，旧派生 Grant 在消费和 Sandbox 准入时失效。该设置不授权其他工具、附件或任意网络出口。配置中的搜索路径或模型披露身份改变时，设置失效，须重新确认。
+3. 实测通过后，使用该主机既有受保护签名源签署本次安装事实，保存证据摘要、runtime/runner/system tool 字节摘要及精确能力上界。Pi、授权网络、网络边界、Worker 崩溃清理和公开搜索探针都使用与正式 Worker 相同的 5 秒清理期限；各探针的整体期限按慢机器留足余量，授权网络的 cpu 场景忙等 45 秒，因为资源观察器按 `ps` 的整秒计 CPU 时间（BL-20261024-001）；install 场景期限 120 秒，cancel 场景最多等 30 秒隧道建立再取消。Worker 崩溃清理探针轮询 30 秒仍读不到最终证据时，按读取本身的错误失败。Pi write/edit 使用 verified_effect，并要求安装的 Pi 程序在实际回读成功后生成内容摘要、字节数和路径；Worker 将原受保护输出绑定到持久证据，Agent 再核对原调用、Grant 和输入。不能以 exit 0 代替效果校验。bash 本轮只读，退出事实为 not_asserted。搜索为独立 fixed_read 程序，出口仅 `mcp.exa.ai:443`。两者都要求既有目录 Grant 和动作/披露授权。用户明确开启“允许联网搜索”后，固定 Exa 搜索可从服务端设置派生精确的一次性 Grant，记录真实的 policyAuthorization 来源；关闭设置后，旧派生 Grant 在消费和 Sandbox 准入时失效。该设置不授权其他工具、附件或任意网络出口。配置中的搜索路径或模型披露身份改变时，设置失效，须重新确认。
 4. 在切换前复查旧服务无活动 Run。停止已核验的 `himawari.service`，检查旧 Agent/Worker 完全退出与锁释放；再次执行[尚未解决的 SRT 未启动预约统计](#live-state-preflight)，保存停服后的查询结果，非零或查询失败时停止服务切换和新版启动并报告用户。已接受有效释放回执的历史预约不阻断本项；其他未解决预约须按独立获授权的处置流程处理后重新统计。使用正式 backup create/verify 命令保存并核验恢复点：优先旧安装；若已复现旧备份缺陷，可使用经回归与安装资格验证、schema 相同的候选 CLI 完成备份，不改写旧数据或放宽验证，同时私密保留配置、单元和旧签名启动器。不能删除活动锁或清理未知子进程。
 5. 用新安装的 `db migrate --confirm APPLY_MIGRATIONS` 升级同一数据库。该命令在停机独占锁内用 SQLite backup 创建并校验同主机迁移前快照，存于 state/data 下新建的 0700 目录，文件 0600；输出 snapshotPath，重复执行且无待迁移时不再创建快照。此快照不替代步骤 4 的完整恢复点。保留原 Owner、Agent、部署、对话、授权和受保护 Payload。只有没有外部 Owner 绑定时才通过 `account create` 建立内置账号；已有绑定不得自动覆盖。Hermes 当前保留 Cloudflare 产品登录，内置账号迁移须明确确认具体 Owner 与会话撤销影响后另行执行。密码输入和验证器设置只放在 0700 目录中的 0600 文件。
 6. 通过 `workspace grant` 授权已核验的工作目录，并明确确认其规范绝对路径；默认仅 read/create/update，不代替动作审批。通过 `capabilities register` 显式确认合格部署快照摘要并写入现有 Registry；已登记能力只换程序或安装目录时，改用[能力升级](#capability-upgrade)的 `capabilities upgrade-plan` 和 `capabilities upgrade --confirm <planDigest>`。不得手工插入批准或资格记录。
