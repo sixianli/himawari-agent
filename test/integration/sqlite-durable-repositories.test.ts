@@ -11,9 +11,12 @@ import type {
   ReliableEventRecord,
   ReliableEventSinkPort,
   SessionDeletionRecord,
+  TraceEvent,
 } from "@himawari-agent/application";
 import {
+  ApplicationPortError,
   actionIntentFingerprint,
+  type PortErrorCode,
   PORT_ERROR_CODES,
   SessionTraceRecorder,
 } from "@himawari-agent/application";
@@ -47,6 +50,7 @@ import {
   traceStorePortConformance,
 } from "@himawari-agent/testing/conformance";
 import { describe, expect, it } from "vitest";
+import { SqliteDurableOperations } from "../../packages/persistence-sqlite/src/sqlite-durable-operations.ts";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -164,12 +168,33 @@ async function seedRepository(
   database.close();
 }
 
+function seedTraceEvents(databasePath: string, events: readonly TraceEvent[]): void {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const operations = new SqliteDurableOperations(
+      database,
+      (code, message, details) => {
+        throw new ApplicationPortError(code as PortErrorCode, message, details);
+      },
+      () => undefined,
+    );
+    database.transaction(() => {
+      for (const event of events) operations.execute("trace.append", { event });
+    })();
+  } finally {
+    database.close();
+  }
+}
+
 async function openRepository(
   now = T0,
   runStatus: "accepted" | "running" = "accepted",
+  existingTrace: readonly TraceEvent[] = [],
 ): Promise<RepositoryResource> {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-sqlite-durable-"));
-  await seedRepository(path.join(stateRoot, "product.sqlite"), runStatus);
+  const databasePath = path.join(stateRoot, "product.sqlite");
+  await seedRepository(databasePath, runStatus);
+  seedTraceEvents(databasePath, existingTrace);
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
     minimumFreeBytes: 0,
@@ -212,37 +237,37 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   it.each([0, 1000, 1001])(
     "records into SQLite after %i events using bounded trace pages",
     async (count) => {
-      const resource = await openRepository();
+      const scope = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        threadId: createThreadId("thread-conformance"),
+        runId: RUN_ID,
+        turnId: null,
+        parentEventId: null,
+        causationId: null,
+        correlationId: "correlation-paged-trace",
+        actorId: "agent-service",
+        dataClassification: "private" as const,
+        eventType: "runtime.message",
+      };
+      const existingTrace = Array.from(
+        { length: count },
+        (_, index): TraceEvent => ({
+          ...scope,
+          id: `existing-trace:${index + 1}`,
+          schemaVersion: "trace.v1",
+          sequence: index + 1,
+          occurredAt: T0,
+          recordedAt: T0,
+          payloadRef: null,
+        }),
+      );
+      const resource = await openRepository(T0, "accepted", existingTrace);
       try {
-        const trace = resource.repository.traceStore();
-        const scope = {
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          sessionId: SESSION_ID,
-          threadId: createThreadId("thread-conformance"),
-          runId: RUN_ID,
-          turnId: null,
-          parentEventId: null,
-          causationId: null,
-          correlationId: "correlation-paged-trace",
-          actorId: "agent-service",
-          dataClassification: "private" as const,
-          eventType: "runtime.message",
-        };
-        for (let sequence = 1; sequence <= count; sequence += 1) {
-          await trace.append({
-            ...scope,
-            id: `existing-trace:${sequence}`,
-            schemaVersion: "trace.v1",
-            sequence,
-            occurredAt: T0,
-            recordedAt: T0,
-            payloadRef: null,
-          });
-        }
         const adapters = createReferenceAdapterSet();
         const recorder = new SessionTraceRecorder({
-          trace,
+          trace: resource.repository.traceStore(),
           artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
             product: AUTHORITY,
             lease: LEASE,
@@ -1412,7 +1437,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               afterCursor: "cursor-01",
             },
           })) {
-            // Exhaust the subscription so cursor validation runs.
           }
         })(),
       ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });
