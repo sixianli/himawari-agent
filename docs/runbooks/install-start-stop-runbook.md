@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:9c9a8a6f0197cc7c09b8fb727fdb2e697c9cbc06aaf978cab135e395f4436bed"
+contract_sha256: "sha256:05fc1f6dd75eb7bc19eda6eed14b4ea57713bea032c08940a7aacec58ea01f66"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -284,7 +284,7 @@ Agent 启动在开放准入前还会使用当前权威失效 v2 旧监督观察�
 
 2026-10-08，最终 Cfa 第十组三次和完整第1层通过；whole产品路径业务文件49通过、0失败、1原比较基线跳过，Vitest退出0。主会话使用固定Playwright1.62.1连续live raw trace，保留screenshots/snapshots/network/stacks/resources，依次保存report、关闭真实installation、停止trace、关闭browser；原四阶段、完整raw及固定reader通过，原120000ms保持。helper/legacy/baseline没有进入主trace修正，旧helpercold超时原因仍uncertain。原whole外层因晚启动同UID不可读进程拒绝清理退出1，scratch/output按reply09保留。之后P5演练清理通过只对新scratch成立，[BL008](../backlog/BL-20261007-008-同-账-号-不-可-读-进-程.md)仍open；见[最终事实和原EID](../execution/plans/2026-09-28-tool-execution-audit-plan.md#r74-final-validation)。
 
-R2-L6可信释放后的原effect仍unknown、result仍null；只恢复新admission，随后取消新请求，没有第二次Bash执行。Hermes完整七报告和同安装摘要证据不代替正式云现场、Mac或生产资格。2026-10-08，P6第二次候选CLI doctor严格加载在新scratch实际退出0，记录 `E20261008T100042-26d55a`；[原件](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)返回 `configurationSchema=himawari.configuration.v1`、`configurationLoaded=true`、`ready=false`，没有init、服务、模型请求或资格发行。runtime `a796a630978446edc335db42e4eb4b81ce50200b8f56bebffb8756d60866cdd2` 前后相同；26原身份gone、hyzh3 absent、原清理/删除/采样0，225280B根盘短差未知。原run01在doctor前因控制层漏helper/漏runtime环境失败、未产生fresh BEFORE，其原件保留。这只完成清单准备的严格加载检查，不批准生产参数；旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，正式云现场和授权门槛不变。
+R2-L6可信释放后的原effect仍unknown、result仍null；只恢复新admission，随后取消新请求，原请求的Bash没有第二次执行。取消新请求之前，探针先等它自己的命令（`printf`加`sleep 120`，读完身份就被取消，不会真的等满）启动，在常驻进程和命令进程组都还在时读下身份（任务宿主的进程号和启动标记只从状态文件记下，这一刻不复核），并把它加进清理阶段的任务树核对，然后才取消，只接受监督已释放、带释放回执、且没有活动占用或障碍的执行记录，并要求它已绑定；取消之后不再读新请求的进程身份，清理阶段仍按记下的身份核对它的命名空间和进程组都已释放。2026-10-23 起这样做：R2-D25 让准备变快后，候选 `36496423` 的第 4 层里新请求在取消前就已绑定并启动，原来“取消后再读身份”的写法读到了正在退出的常驻进程或命令进程组（`ENOENT`），此前各候选取消时新请求都还只预留了沙箱。Hermes完整七报告和同安装摘要证据不代替正式云现场、Mac或生产资格。2026-10-08，P6第二次候选CLI doctor严格加载在新scratch实际退出0，记录 `E20261008T100042-26d55a`；[原件](../../.ci-output/tool-execution-audit/2026-09-28/round2/hermes-r74/p5/p6-doctor-02-full/)返回 `configurationSchema=himawari.configuration.v1`、`configurationLoaded=true`、`ready=false`，没有init、服务、模型请求或资格发行。runtime `a796a630978446edc335db42e4eb4b81ce50200b8f56bebffb8756d60866cdd2` 前后相同；26原身份gone、hyzh3 absent、原清理/删除/采样0，225280B根盘短差未知。原run01在doctor前因控制层漏helper/漏runtime环境失败、未产生fresh BEFORE，其原件保留。这只完成清单准备的严格加载检查，不批准生产参数；旧final04/central01保持历史原件；正式85路径漏传P5源码证明已在Hermes由同一材料检查先失败1、修正后通过0，记录 `E20261008T102918-e3116e`、`E20261008T102918-e5615a`。当前prep08为86正式+8 Hermes-only+11审阅、105成员读回0；central02四次完整稳定读取441份实际文件、442条SUMS，记录 `E20261008T102918-420065`。详见[P3运输遗漏及新冻结](../backlog/BL-20261008-006-p3-正-式-运-输-遗-漏-p5.md#2026-10-08-修正后实际结果)；[BL001准备缺口](../backlog/BL-20261007-001-首-次-部-署-清-单-的-准.md#2026-10-08-最终公开清单与集中材料读回)按reply-01关闭，正式云现场和授权门槛不变。
 
 本 Runbook 只覆盖当前仓库已经验证的本地 Node runtime：从锁定依赖构建可重定位 artifact，安装到明确的绝对前缀，使用受保护的 Execution Worker UDS 启动 Agent Service，执行只读 doctor/db status，并以有界信号完成正常停止或故障重启。它不负责安装 systemd/launchd unit、不修改公网入口、不切换 authority、不配置真实 provider、不部署到 Hermes，也不替代 authority transfer Runbook。
 

@@ -727,7 +727,7 @@ async function runProbe(input) {
           arguments: {
             command: original
               ? `set -C; printf '%s' '${markerContent}' > "$HOME/r2-l6-marker" || exit 91; printf 'r2-l6-started'; /bin/sleep 120; printf 'r2-l6-finished'`
-              : "printf 'r2-l6-new-request'; /bin/sleep 2",
+              : "printf 'r2-l6-new-request'; /bin/sleep 120",
             timeout: 240,
           },
         };
@@ -1506,42 +1506,36 @@ async function runProbe(input) {
       );
     });
     passed("new_admission");
+    const admittedIdentity = await waitFor("R2_L6_NEW_REQUEST_IDENTITY_MISSING", async () => {
+      const matches = await readResidentEnvironment(stateRoot, admitted.runId);
+      if (matches.length !== 1) return null;
+      return notReadyAsNull(() => residentHostIdentity(matches[0].state, "command"));
+    });
+    if (
+      !taskIdentities.some(
+        (identity) => identity.processIdentityRef === admittedIdentity.processIdentityRef,
+      )
+    )
+      taskIdentities.push(admittedIdentity);
     await client.cancelRun(admitted.runId);
-    let admittedIdentity = null;
     report.afterRelease.newRequestRelease = await waitFor(
       "R2_L6_NEW_REQUEST_RELEASE_MISSING",
-      async () => {
-        if (!admittedIdentity) {
-          const matches = await readResidentEnvironment(stateRoot, admitted.runId);
-          if (matches.length === 1)
-            admittedIdentity = await notReadyAsNull(() =>
-              residentHostIdentity(matches[0].state, "command"),
-            );
-        }
-        return (await audit("executions")).find(
+      async () =>
+        (await audit("executions")).find(
           (row) =>
             row.runId === admitted.runId &&
-            ((row.supervision === "released" && row.releaseReceiptPresent) ||
-              (row.preparation === "reserved" && row.reservationReleaseReceiptPresent)) &&
+            row.supervision === "released" &&
+            row.releaseReceiptPresent &&
             row.activeClaims === 0 &&
             row.activeBarriers === 0,
-        );
-      },
+        ),
     );
     report.afterRelease.newRequestPreparation = report.afterRelease.newRequestRelease.preparation;
-    report.afterRelease.newRequestIdentity = admittedIdentity;
     requireFact(
-      report.afterRelease.newRequestRelease.preparation !== "bound" || admittedIdentity !== null,
-      "R2_L6_NEW_REQUEST_IDENTITY_MISSING",
+      report.afterRelease.newRequestPreparation === "bound",
+      "R2_L6_NEW_REQUEST_NOT_BOUND",
     );
-    if (admittedIdentity) {
-      if (
-        !taskIdentities.some(
-          (identity) => identity.processIdentityRef === admittedIdentity.processIdentityRef,
-        )
-      )
-        taskIdentities.push(admittedIdentity);
-    }
+    report.afterRelease.newRequestIdentity = admittedIdentity;
     const newResident = await readResidentEnvironment(stateRoot, admitted.runId);
     await save("new-request-environments", {
       resident: newResident.map(({ file, sha256 }) => ({ file, sha256 })),
