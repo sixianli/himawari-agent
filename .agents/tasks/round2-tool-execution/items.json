@@ -1560,6 +1560,27 @@
         "on": "2026-10-23",
         "why": "第三次 S6_ACCEPTANCE 失败：生产机 pi-installed 探针第 21 次调用在门握手阶段超时，结束记录 linuxNamespace 为 null（.ci-output/production/2026-10-23-sixth-s6-diagnostic-04/、-05/）；生产握手常需约 1 秒，固定 1500 ms 余量不足"
       }
+    },
+    {
+      "id": "R2-D28",
+      "title": "第六次 S6 验收在生产机速度下不因探针固定时限失败：公开搜索、工作进程丢失、网络边界、授权网络四个探针的清理时限都是 5000 ms（与正式服务一致），整体期限、就绪等待和收尾读取留足慢机器余量，cpu 场景在 CPU 只按整秒计时的情况下仍能触发上限；失败时打印作业宿主结果摘要；Hermes 按生产机速度连续多遍完整验收通过",
+      "goal_ref": ["G1", "G174", "G175"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "SLOW_REHEARSAL_DIR=<revision-04 演练目录> bash slow-acceptance.sh 87c2e3ec0142064d3262e119a4e1e3e3316f1a9d <label> 0 1（连续三遍）",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "codebuddy"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "第四次 S6_ACCEPTANCE 失败：生产机 web-search-installed 读最终证据报 ENOENT，探针 cleanupTimeoutMs 只有 1000 ms（.ci-output/production/2026-10-24-sixth-s6-diagnostic-07/ 至 -09/）；时限排查发现同类余量不足还有 worker-loss、boundary、authorized-network，Hermes 慢速演练又发现 cpu 场景因 ps 整秒计时不触发上限"
+      }
     }
   ],
   "fingerprint": {
