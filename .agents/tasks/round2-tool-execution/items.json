@@ -1542,6 +1542,24 @@
         "on": "2026-10-23",
         "why": "R2-D25 让宿主核验变快后，r2t10 诊断（.ci-output/handoff/r2d25/r2t10-diag3.sh）6 次失败 5 次：服务端在启动瞬间判 lost，Worker 取消任务，结果为 SANDBOX_EXIT_UNKNOWN"
       }
+    },
+    {
+      "id": "R2-D27",
+      "title": "Linux 命名空间门握手超过 1.5 秒但在 10 秒内（且任务期限未到）时，Job Host 仍完成握手、记录命名空间身份并启动用户命令，不再以 JOB_HOST_NAMESPACE_GATE_TIMEOUT 放弃；10 秒内仍未握手才按原失败码结束",
+      "goal_ref": ["G1", "G173"],
+      "done_when": [
+        { "type": "test", "tag": "R2-D27", "host": "hermes" },
+        { "type": "review", "by": "opencode" },
+        {
+          "type": "doc",
+          "path": "docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "第三次 S6_ACCEPTANCE 失败：生产机 pi-installed 探针第 21 次调用在门握手阶段超时，结束记录 linuxNamespace 为 null（.ci-output/production/2026-10-23-sixth-s6-diagnostic-04/、-05/）；生产握手常需约 1 秒，固定 1500 ms 余量不足"
+      }
     }
   ],
   "fingerprint": {
