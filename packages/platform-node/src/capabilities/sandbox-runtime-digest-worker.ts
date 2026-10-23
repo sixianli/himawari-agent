@@ -15,16 +15,12 @@ import { parentPort, workerData } from "node:worker_threads";
 
 export interface SandboxRuntimeDigestRequest {
   readonly root: string;
-  readonly mode: "digest" | "fingerprint";
 }
 
-function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
-  if (mode !== "digest" && mode !== "fingerprint")
-    throw new Error("SANDBOX_HOST_DIGEST_MODE_INVALID");
+function digestRuntime({ root }: SandboxRuntimeDigestRequest) {
   if (typeof root !== "string" || !path.isAbsolute(root) || path.normalize(root) !== root)
     throw new Error("SANDBOX_HOST_PATH_UNSAFE");
   const files: { path: string; sha256: string; bytes: number; mode: number }[] = [];
-  const identities: string[] = [];
   const buffer = Buffer.allocUnsafe(65536);
   const same = (a: BigIntStats, b: BigIntStats) =>
     a.dev === b.dev &&
@@ -34,10 +30,6 @@ function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
     a.uid === b.uid &&
     a.mtimeNs === b.mtimeNs &&
     a.ctimeNs === b.ctimeNs;
-  const identity = (relative: string, info: BigIntStats) =>
-    [relative, info.dev, info.ino, info.mode, info.uid, info.size, info.mtimeNs, info.ctimeNs].join(
-      "\0",
-    );
   const check = (filename: string, directory: boolean) => {
     const info = lstatSync(filename, { bigint: true });
     if (
@@ -78,32 +70,22 @@ function inspectRuntime({ root, mode }: SandboxRuntimeDigestRequest) {
         continue;
       }
       const metadata = check(filename, false);
-      if (mode === "digest") {
-        const sha256 = digestFile(filename, metadata);
-        if (!same(metadata, check(filename, false))) throw new Error("SANDBOX_HOST_CHANGED");
-        files.push({
-          path: relative,
-          sha256,
-          bytes: Number(metadata.size),
-          mode: Number(metadata.mode) & 0o777,
-        });
-      }
-      identities.push(identity(relative, metadata));
+      const sha256 = digestFile(filename, metadata);
+      if (!same(metadata, check(filename, false))) throw new Error("SANDBOX_HOST_CHANGED");
+      files.push({
+        path: relative,
+        sha256,
+        bytes: Number(metadata.size),
+        mode: Number(metadata.mode) & 0o777,
+      });
     }
     if (!same(before, check(directory, true))) throw new Error("SANDBOX_HOST_CHANGED");
-    identities.push(identity(prefix, before));
   };
   if (realpathSync(root) !== root) throw new Error("SANDBOX_HOST_PATH_UNSAFE");
   visit(root, "");
   if (realpathSync(root) !== root) throw new Error("SANDBOX_HOST_CHANGED");
-  identities.sort();
-  const fingerprint = createHash("sha256").update(identities.join("\n")).digest("hex");
-  if (mode === "fingerprint") return { fingerprint };
   files.sort((a, b) => a.path.localeCompare(b.path));
-  return {
-    digest: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
-    fingerprint,
-  };
+  return { digest: createHash("sha256").update(JSON.stringify(files)).digest("hex") };
 }
 
-if (parentPort) parentPort.postMessage(inspectRuntime(workerData as SandboxRuntimeDigestRequest));
+if (parentPort) parentPort.postMessage(digestRuntime(workerData as SandboxRuntimeDigestRequest));

@@ -3,7 +3,7 @@ status: superseded
 document_type: adr
 decision_status: superseded
 supersedes: ""
-superseded_by: docs/adr/0067-runtime-artifacts-by-inode-metadata.md
+superseded_by: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md
 date: "2026-09-27"
 ---
 

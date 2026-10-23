@@ -12,7 +12,6 @@ import {
   stat,
   symlink,
   unlink,
-  utimes,
   writeFile,
 } from "node:fs/promises";
 import { release, tmpdir } from "node:os";
@@ -135,84 +134,30 @@ async function fixture() {
   }
   return { binding, qualification, hostId: "host" };
 }
-it("checks the complete installed closure again on every verification", async () => {
+it("[R2-D25] trusts an unprotected installation without reading or comparing its files", async () => {
   const input = await fixture();
   await verifySandboxHost(input);
-  await writeFile(path.join(input.binding.runtimeRoot, "helper"), "changed");
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("detects a same-size rewrite whose timestamps were restored after a verified run", async () => {
-  const input = await fixture();
-  await verifySandboxHost(input);
-  const helper = path.join(input.binding.runtimeRoot, "helper");
-  const before = await stat(helper);
-  await writeFile(helper, "HELPER");
-  await utimes(helper, before.atime, before.mtime);
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("detects a same-size file renamed over the runtime after a verified run", async () => {
-  const input = await fixture();
-  await verifySandboxHost(input);
-  const helper = path.join(input.binding.runtimeRoot, "helper");
-  const before = await stat(helper);
-  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "replacement");
-  await writeFile(replacement, "HELPER", { mode: 0o600 });
-  await utimes(replacement, before.atime, before.mtime);
-  await rename(replacement, helper);
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("accepts an unchanged runtime again and re-reads bytes after an identical replacement", async () => {
-  const input = await fixture();
-  await verifySandboxHost(input);
-  await verifySandboxHost(input);
-  const helper = path.join(input.binding.runtimeRoot, "helper");
-  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "replacement");
-  await writeFile(replacement, "helper", { mode: 0o600 });
-  await rename(replacement, helper);
-  await verifySandboxHost(input);
-  await writeFile(helper, "helpeR");
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("does not let an audit of one expected digest vouch for another", async () => {
-  const input = await fixture();
+  const runtime = input.binding.runtimeRoot;
+  await writeFile(path.join(runtime, "helper"), "changed");
+  await writeFile(path.join(runtime, "injected.js"), "code", { mode: 0o600 });
+  await writeFile(input.binding.executable.path, "EXECUTABLE");
+  await writeFile(input.binding.runner.path, "RUNNER");
+  await chmod(path.join(runtime, "helper"), 0o200);
+  await mkdir(path.join(runtime, "unlisted"), { mode: 0o000 });
+  artifactReads.mockClear();
   await verifySandboxHost(input);
   const other = digest("other runtime");
-  await expect(
-    verifySandboxHost({
-      ...input,
-      binding: { ...input.binding, runtimeDigest: other },
-      qualification: { ...input.qualification, runtimeDigest: other },
-    }),
-  ).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("[R2-D24] does not re-read an unchanged executable and runner on later verifications", async () => {
-  const input = await fixture();
-  await verifySandboxHost(input);
-  artifactReads.mockClear();
-  await verifySandboxHost(input);
-  await verifySandboxHost(input);
+  await verifySandboxHost({
+    ...input,
+    binding: { ...input.binding, runtimeDigest: other },
+    qualification: { ...input.qualification, runtimeDigest: other },
+  });
   expect(artifactReads).not.toHaveBeenCalled();
 });
-it("[R2-D24] detects a same-size executable rewrite whose timestamps were restored", async () => {
+it("[R2-D25] still rejects an unsafe runtime root without walking it", async () => {
   const input = await fixture();
-  await verifySandboxHost(input);
-  const before = await stat(input.binding.executable.path);
-  await writeFile(input.binding.executable.path, "EXECUTABLE");
-  await utimes(input.binding.executable.path, before.atime, before.mtime);
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
-});
-it("[R2-D24] re-reads a runner replaced by identical bytes and rejects a changed one", async () => {
-  const input = await fixture();
-  await verifySandboxHost(input);
-  const replacement = path.join(path.dirname(input.binding.runtimeRoot), "runner-replacement");
-  await writeFile(replacement, "runner", { mode: 0o600 });
-  await rename(replacement, input.binding.runner.path);
-  artifactReads.mockClear();
-  await verifySandboxHost(input);
-  expect(artifactReads).toHaveBeenCalledWith(input.binding.runner.path);
-  await writeFile(replacement, "RUNNER", { mode: 0o600 });
-  await rename(replacement, input.binding.runner.path);
-  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_ARTIFACT_CHANGED");
+  await chmod(input.binding.runtimeRoot, 0o777);
+  await expect(verifySandboxHost(input)).rejects.toThrow("SANDBOX_HOST_PATH_UNSAFE");
 });
 it("uses the installation inventory digest convention", async () => {
   const input = await fixture();
@@ -223,29 +168,24 @@ it("uses the installation inventory digest convention", async () => {
   ];
   expect(input.binding.runtimeDigest).toBe(digest(JSON.stringify(files)));
 });
-it.each(["host", "os", "root", "symlink", "writable", "added"])(
-  "rejects changed %s",
-  async (mode) => {
-    const input = await fixture();
-    if (mode === "host") input.hostId = "other";
-    if (mode === "os") Object.assign(input.qualification, { osRelease: "other" });
-    if (mode === "root") {
-      const root = input.binding.roots[0]?.canonicalPath;
-      if (!root) throw new Error("fixture root missing");
-      await rename(root, `${root}-old`);
-      await mkdir(root);
-    }
-    if (mode === "symlink") {
-      const runner = input.binding.runner.path;
-      await rename(runner, `${runner}.old`);
-      await symlink(`${runner}.old`, runner);
-    }
-    if (mode === "writable") await chmod(input.binding.runner.path, 0o666);
-    if (mode === "added")
-      await writeFile(path.join(input.binding.runtimeRoot, "injected.js"), "code");
-    await expect(verifySandboxHost(input)).rejects.toThrow(/SANDBOX_HOST/);
-  },
-);
+it.each(["host", "os", "root", "symlink", "writable"])("rejects changed %s", async (mode) => {
+  const input = await fixture();
+  if (mode === "host") input.hostId = "other";
+  if (mode === "os") Object.assign(input.qualification, { osRelease: "other" });
+  if (mode === "root") {
+    const root = input.binding.roots[0]?.canonicalPath;
+    if (!root) throw new Error("fixture root missing");
+    await rename(root, `${root}-old`);
+    await mkdir(root);
+  }
+  if (mode === "symlink") {
+    const runner = input.binding.runner.path;
+    await rename(runner, `${runner}.old`);
+    await symlink(`${runner}.old`, runner);
+  }
+  if (mode === "writable") await chmod(input.binding.runner.path, 0o666);
+  await expect(verifySandboxHost(input)).rejects.toThrow(/SANDBOX_HOST/);
+});
 
 it.each(["valid", "final", "qualification", "runner", "capability", "guarantee", "ceiling"])(
   "binds the job to the live host: %s",
@@ -398,38 +338,6 @@ it("rejects foreign roots and symlink aliases rather than trusting root labels",
     }),
   ).rejects.toThrow("PATH_UNSAFE");
 });
-
-it.each(["content", "file-link", "directory-link", "writable"])(
-  "revalidates nested runtime leaves and rejects %s changes",
-  async (change) => {
-    const input = await fixture();
-    const directory = path.join(input.binding.runtimeRoot, "nested");
-    await mkdir(directory, { mode: 0o700 });
-    await Promise.all(
-      Array.from({ length: 18 }, (_, index) =>
-        writeFile(path.join(directory, `helper-${index}`), "nested-helper", { mode: 0o600 }),
-      ),
-    );
-    const expected = await digestSandboxRuntime(input.binding.runtimeRoot);
-    Object.assign(input.binding, { runtimeDigest: expected });
-    Object.assign(input.qualification, { runtimeDigest: expected });
-    await verifySandboxHost(input);
-    const target = path.join(directory, "helper-0");
-    if (change === "content") await writeFile(target, "changed-helper");
-    if (change === "writable") await chmod(target, 0o666);
-    if (change === "file-link") {
-      const outside = path.join(input.binding.privateRoot, "helper");
-      await rename(target, outside);
-      await symlink(outside, target);
-    }
-    if (change === "directory-link") {
-      const outside = path.join(input.binding.privateRoot, "nested");
-      await rename(directory, outside);
-      await symlink(outside, directory);
-    }
-    await expect(verifySandboxHost(input)).rejects.toThrow(/SANDBOX_HOST/);
-  },
-);
 
 it("resolves file slots and inode identities without locking sibling files", async () => {
   const input = await fixture();

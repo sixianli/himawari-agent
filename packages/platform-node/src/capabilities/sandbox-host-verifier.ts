@@ -24,18 +24,12 @@ import {
   sandboxRuntimeQualificationSchema,
   sandboxScopeSchema,
 } from "@himawari-agent/execution-contracts";
-import { digestRegularFile } from "./artifact-verifier.js";
 import { verifyProtectedRuntime } from "./protected-runtime.js";
 import type { SandboxRuntimeDigestRequest } from "./sandbox-runtime-digest-worker.js";
 
-export async function digestSandboxRuntime(root: string): Promise<string> {
-  return (await auditSandboxRuntime(root)).digest;
-}
-
-function inspectSandboxRuntime(
-  request: SandboxRuntimeDigestRequest,
-): Promise<{ digest?: string; fingerprint: string }> {
+export function digestSandboxRuntime(root: string): Promise<string> {
   const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+  const request: SandboxRuntimeDigestRequest = { root };
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL(`./sandbox-runtime-digest-worker.${extension}`, import.meta.url),
@@ -43,63 +37,19 @@ function inspectSandboxRuntime(
     );
     let received = false;
     worker.once("message", (value: unknown) => {
-      const result = value as { digest?: unknown; fingerprint?: unknown } | null;
-      if (
-        typeof result?.fingerprint !== "string" ||
-        !/^[a-f0-9]{64}$/.test(result.fingerprint) ||
-        (request.mode === "digest"
-          ? typeof result.digest !== "string" || !/^[a-f0-9]{64}$/.test(result.digest)
-          : result.digest !== undefined)
-      ) {
+      const digest = (value as { digest?: unknown } | null)?.digest;
+      if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) {
         reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
         return;
       }
       received = true;
-      resolve(result as { digest?: string; fingerprint: string });
+      resolve(digest);
     });
     worker.once("error", reject);
     worker.once("exit", (code) => {
       if (!received) reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
     });
   });
-}
-
-async function auditSandboxRuntime(root: string) {
-  const result = await inspectSandboxRuntime({ root, mode: "digest" });
-  return { digest: result.digest as string, fingerprint: result.fingerprint };
-}
-
-const runtimeAudits = new Map<string, string>();
-async function unprotectedRuntimeMatches(root: string, expected: string): Promise<boolean> {
-  const key = `${root}\0${expected}`;
-  const audited = runtimeAudits.get(key);
-  if (
-    audited !== undefined &&
-    (await inspectSandboxRuntime({ root, mode: "fingerprint" })).fingerprint === audited
-  )
-    return true;
-  runtimeAudits.delete(key);
-  const { digest, fingerprint } = await auditSandboxRuntime(root);
-  if (digest !== expected) return false;
-  runtimeAudits.set(key, fingerprint);
-  return true;
-}
-
-const artifactAudits = new Map<string, string>();
-async function artifactIdentity(filename: string) {
-  const info = await lstat(filename, { bigint: true });
-  return [info.dev, info.ino, info.mode, info.uid, info.size, info.mtimeNs, info.ctimeNs].join(
-    "\0",
-  );
-}
-async function unprotectedArtifactMatches(artifact: SandboxHostBinding["executable"]) {
-  const key = `${artifact.path}\0${artifact.sha256}`;
-  const before = await artifactIdentity(artifact.path);
-  if (artifactAudits.get(key) === before) return true;
-  artifactAudits.delete(key);
-  if ((await digestRegularFile(artifact.path)) !== `sha256:${artifact.sha256}`) return false;
-  if ((await artifactIdentity(artifact.path)) === before) artifactAudits.set(key, before);
-  return true;
 }
 
 async function checkedPath(filename: string, directory: boolean) {
@@ -196,21 +146,13 @@ export async function verifySandboxHost(input: {
     const info = await lstat(filename);
     await checkedPath(filename, info.isDirectory());
   }
+  await checkedPath(binding.runtimeRoot, true);
   await checkedPath(binding.executable.path, false);
   await checkedPath(binding.runner.path, false);
-  if (
-    await verifyProtectedRuntime(binding.runtimeRoot, binding.runtimeDigest, digestSandboxRuntime, [
-      binding.executable,
-      binding.runner,
-    ])
-  )
-    return;
-  const matches = await Promise.all([
-    unprotectedArtifactMatches(binding.executable),
-    unprotectedArtifactMatches(binding.runner),
-    unprotectedRuntimeMatches(binding.runtimeRoot, binding.runtimeDigest),
+  await verifyProtectedRuntime(binding.runtimeRoot, binding.runtimeDigest, digestSandboxRuntime, [
+    binding.executable,
+    binding.runner,
   ]);
-  if (matches.includes(false)) throw new Error("SANDBOX_HOST_ARTIFACT_CHANGED");
 }
 
 export async function resolveSandboxWorkspaceRoot(input: {

@@ -110,6 +110,33 @@ describe("SRT candidate policy compilation", () => {
     ).rejects.toThrow("TOOLCHAIN_OVERLAP");
   });
 
+  it("[R2-D25] keeps the runtime toolchain out of every writable directory", async () => {
+    const toolchain = input.readOnlyToolchainPaths[0] as string;
+    await mkdir(path.join(input.workspace, "runtime"));
+    await mkdir(path.join(input.privateDirectory, "runtime"));
+    await mkdir(path.join(toolchain, "workspace"));
+    await mkdir(path.join(toolchain, "private"));
+    for (const overlap of [
+      { readOnlyToolchainPaths: [path.join(input.workspace, "runtime")] },
+      { readOnlyToolchainPaths: [path.join(input.privateDirectory, "runtime")] },
+      { workspace: path.join(toolchain, "workspace") },
+      { privateDirectory: path.join(toolchain, "private") },
+    ])
+      await expect(compileSandboxPolicy({ ...input, ...overlap })).rejects.toThrow(
+        "TOOLCHAIN_OVERLAP",
+      );
+    const policy = JSON.parse((await compileSandboxPolicy(input)).policyJson);
+    expect(policy.filesystem.allowRead).toContain(toolchain);
+    expect(
+      policy.filesystem.allowWrite.some(
+        (entry: string) =>
+          entry === toolchain ||
+          entry.startsWith(`${toolchain}/`) ||
+          toolchain.startsWith(`${entry}/`),
+      ),
+    ).toBe(false);
+  });
+
   it("rejects noncanonical directories and symlinks", async () => {
     const link = path.join(root, "link");
     await symlink(input.workspace, link);

@@ -1503,6 +1503,26 @@
         "by": "claude",
         "on": "2026-10-23",
         "why": "G167 用户选乙；生产 agent-1.stderr 的 sandbox.admission.timing 显示宿主核验每轮 2.3–6.5 秒、Hermes 约 0.9 秒"
+      },
+      "withdrawn": { "on": "2026-10-23", "ref": "G172" }
+    },
+    {
+      "id": "R2-D25",
+      "title": "运行时未保护时，宿主核验与 Claude Code 一致：不读取、不计算摘要、不遍历运行时目录、node 可执行文件和 runner，进程启动时也不算摘要；只保留绑定、资格、计划字段和路径检查，防改动靠沙箱只读（运行时目录不与工作区、私有目录互相包含）和受保护安装（ADR 0069）",
+      "goal_ref": ["G170", "G171", "G172"],
+      "done_when": [
+        { "type": "test", "tag": "R2-D25", "host": "hermes" },
+        { "type": "review", "by": "opencode" },
+        {
+          "type": "doc",
+          "path": "docs/adr/0069-trust-unprotected-runtime-like-claude-code.md",
+          "quotes": ["G171", "G172"]
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "G172 用户要求全部去掉未保护运行时的内容和身份检查，只靠沙箱禁止写入和受保护安装"
       }
     }
   ],

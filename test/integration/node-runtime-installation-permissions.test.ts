@@ -14,7 +14,6 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Worker } from "node:worker_threads";
 import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { digestSandboxRuntime as digestSourceRuntime } from "../../packages/platform-node/src/capabilities/sandbox-host-verifier.js";
 import { describe, expect, it } from "vitest";
@@ -153,43 +152,6 @@ const expectedArchiveSamples = (() => {
   }
   return [...samples.values()];
 })();
-
-async function fingerprintInstalledRuntime(prefix: string, runtime: string) {
-  const worker = new Worker(
-    pathToFileURL(
-      path.join(
-        runtime,
-        "node_modules/@himawari-agent/platform-node/dist/capabilities/sandbox-runtime-digest-worker.js",
-      ),
-    ),
-    { workerData: { root: prefix, mode: "fingerprint" } },
-  );
-  return new Promise<{ fingerprint: string }>((resolve, reject) => {
-    let received: unknown;
-    worker.once("message", (value: unknown) => {
-      received = value;
-    });
-    worker.once("error", reject);
-    worker.once("exit", (code) => {
-      if (code !== 0) {
-        reject(new Error(`SANDBOX_HOST_DIGEST_WORKER_EXIT:${code}`));
-        return;
-      }
-      if (
-        received === null ||
-        typeof received !== "object" ||
-        !("fingerprint" in received) ||
-        typeof received.fingerprint !== "string" ||
-        !/^[a-f0-9]{64}$/.test(received.fingerprint) ||
-        Object.keys(received).length !== 1
-      ) {
-        reject(new Error("SANDBOX_HOST_DIGEST_INVALID"));
-        return;
-      }
-      resolve(received as { fingerprint: string });
-    });
-  });
-}
 
 describe("runtime permissions through full artifacts and small source fixtures", () => {
   it("[R2-D15] rejects linked source roots without changing source directories or the existing runtime", async () => {
@@ -388,9 +350,7 @@ describe("runtime permissions through full artifacts and small source fixtures",
         }
         expectedInstallationFiles.sort((a, b) => a.path.localeCompare(b.path));
         if (!fullInstallationDigest) {
-          await expect(fingerprintInstalledRuntime(prefix, runtime)).resolves.toEqual({
-            fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
-          });
+          expect(modes.filter((entry) => (entry.mode & 0o022) !== 0)).toEqual([]);
           for (const file of expectedArchiveSamples) {
             const filename = path.join(runtime, file.path);
             const bytes = await readFile(filename);

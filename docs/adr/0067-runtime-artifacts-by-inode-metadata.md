@@ -1,9 +1,9 @@
 ---
-status: active
+status: superseded
 document_type: adr
-decision_status: accepted
-supersedes: docs/adr/0034-runtime-verification-by-inode-metadata.md, docs/adr/0028-protected-runtime-installation.md
-superseded_by: ""
+decision_status: superseded
+supersedes: ""
+superseded_by: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md
 date: "2026-10-23"
 ---
 

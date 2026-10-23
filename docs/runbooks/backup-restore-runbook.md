@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2be75c7c994bc95dd89ca6a9e94ea1cefc6735db4e99ff624f06a503c7502045"
+contract_sha256: "sha256:50528102d089a325be54163017fba03e53403a159d403e9bb496438ac92933c0"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -164,7 +164,7 @@ date: "2026-08-27"
 
 2026-09-11 聊天运行体验更新：可撤销的联网搜索设置保存在既有 Product State，关联审批记录通过 `policyAuthorization` 标明真实授权来源，不新增迁移文件。备份/迁移须共同保留设置 revision、派生 Grant 与审计；关闭设置后，旧 Grant 的消费和 Sandbox 准入被拒绝。恢复后核对设置与当前固定 Exa 路径、主机/目录路由和模型披露身份一致，配置绑定不同不能沿用开启状态。它不授予其他文件、命令或网络权限。Pi 更新合并仅影响尚未持久化的连续累计片段，不能删除已持久化记录或工具边界。`runPolicy.timeZone` 是显式 IANA 时区，只用于新 Run 的时间上下文；历史已冻结内容保持原值。
 
-未配置受保护安装时，每个进程首次使用某个期望摘要会在独立工作线程完整读取 runtime 字节，同时记录全部目录与文件的元数据指纹；此后每次调用在同一工作线程只复核元数据（设备号、inode、权限、所有者、大小、修改时间和纳秒级 `ctime`），任何差异都丢弃指纹并重新完整审计，见 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md]（取代 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。Node 可执行文件和 runner 同样只在首次读全部字节，之后元数据不变就不再读内容；元数据遍历只对运行时根目录求真实路径。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`。ADR 0034 沿用 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
+未配置受保护安装时，宿主核验信任安装结果，不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。安装必须包含编译后的 `sandbox-runtime-digest-worker.js`，供受保护安装首次审计和安装工具计算摘要使用。ADR 0069 保留 ADR 0028 的受保护 Linux 路径：已经独立验证权限的安装，在相同进程、相同 root 保护版本身份下复用首次完整审计；每次仍验证当前进程和保护记录，失效立即拒绝，不接受普通时间缓存。保护记录不属于备份或迁移数据，目标主机必须重新建立身份、权限与安装资格，不能复制源主机记录作为证据。此变化不改变数据格式、迁移权威或停止条件。参见 [SOURCE: docs/adr/0028-protected-runtime-installation.md] 和 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]；本 Runbook 原有操作范围保持不变。
 
 2026-09-11 合同核查：新增离线初始化、目录 Grant 与能力登记仍属于当前身份的停机管理操作，不修改本 Runbook 的备份/迁移数据格式。恢复必须保留其审计、目录身份与授权；不能在已恢复 state root 再运行首次初始化，不能将原主机安装资格当作目标主机资格。启动后快照按原字节复查，工具每次仍检查当前主机与授权；模型失败展示改进不改变原始记录和费用核算。
 
@@ -366,7 +366,7 @@ Schema 34 新增 `authorization_reservations` 并为使用记录增加请求身�
 
 执行过程使用现有 Thread 事件游标，新增记忆检索、筛选和上下文阶段的发生记录；这些阶段不向页面公开记忆正文或完整模型上下文。工具请求从模型消息中的调用 ID、名称和参数派生，并与同 ID 的执行及结果关联。恢复后核对阶段、工具参数和结果投影仍可读取，不另建第二套历史或重新执行工具以补齐展示。
 
-启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用，安装外的程序仍逐次校验；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
+启用沙箱能力的 Agent 必须在本进程完成首次安装校验后才进入 ready，不能以 Worker 已就绪代替。受保护程序摘要可在安装及文件身份未变化时复用；未受保护的安装按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查；这不改变本手册的数据格式、权威转移或停机步骤。恢复到另一安装或主机时，原进程缓存不适用，必须重新验证实际安装。Hermes 的 NVMe 私有只读挂载及设备回读另见 [SOURCE: docs/runbooks/hermes-control-center-upgrade-runbook.md]。
 
 工具审批续跑快照同时保存本轮进展指纹和已完成工具结果，备份、恢复及迁移须连同其受保护 Payload 一起保留。恢复审批时只重放同一暂停点已有的结果，不再次执行对应工具；因循环保护中止的 Run 保持失败，即使随后生成了结果说明，也不能改记为任务成功。这些运行层行为不依赖具体模型提供商。
 

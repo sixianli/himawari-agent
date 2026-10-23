@@ -10,7 +10,7 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
       "platform-node/capabilities/sandbox-host-verifier",
       {
         verifySandboxHost: ['"host.verify"', "input.plan?.identity"],
-        inspectSandboxRuntime: ['"runtime.inspect." + request.mode', "null"],
+        digestSandboxRuntime: ['"runtime.digest"', "null"],
       },
     ],
     [

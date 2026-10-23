@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:a2c33a7aaa7641e8c4f304bfc25febe77ba8226fea344157b90499a71b5b692a"
+contract_sha256: "sha256:c5d3c64009f5b6b3698295a8368c3727fb4158707e8edcb302207fba8c3e54dd"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -337,7 +337,7 @@ Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时�
 
 NVMe 迁移保持已签名能力的规范运行路径不变：在服务私有挂载视图中，用 `BindReadOnlyPaths=/opt/himawari/releases/<版本>:/data/hermes/himawari/releases/2026-09-11-control-center` 将固态盘的受保护安装挂到原路径。宿主上的旧机械盘安装保留，作为切换前回退源；服务实际读取的设备必须通过其挂载命名空间内的 `findmnt`、`stat` 和 `/proc/<PID>/exe` 独立核对，不能只看路径名。新版本的资格探针必须采用完全相同的只读绑定视图，并重新签署实际运行时摘要。切换脚本只替换保护记录、启动入口和绑定配置，不重命名或覆盖旧机械盘安装；后续升级必须检查现有 `BindReadOnlyPaths`，不能继续套用只替换宿主旧目录的脚本。
 
-Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失败不得进入 ready。Worker 的独立校验不能代替 Agent 的校验。受保护安装仅复用安装身份及文件身份、权限、大小和修改时间均一致的程序摘要；每次仍检查保护记录、进程权限、父目录、工作区和执行授权。外置或未受保护程序保留逐次字节校验。首次校验、不同 runner 之间的复用、权限变化和失败重试均须通过自动化回归；记忆检索及其参与问答的流程保持完整，不添加空记忆跳过路径。
+Agent 在创建沙箱服务时完成本进程的首次安装校验，校验失败不得进入 ready。Worker 的独立校验不能代替 Agent 的校验。受保护安装仅复用安装身份及文件身份、权限、大小和修改时间均一致的程序摘要；每次仍检查保护记录、进程权限、父目录、工作区和执行授权。未受保护的程序按 ADR 0069 不做内容校验，只靠沙箱只读和路径检查。首次校验、不同 runner 之间的复用、权限变化和失败重试均须通过自动化回归；记忆检索及其参与问答的流程保持完整，不添加空记忆跳过路径。
 
 迁移前先保持旧服务运行，在独立资格目录验收写入拒绝、六组现有 Linux 探针和实际 host verification 的首次及重复耗时。全部通过后确认无活动 Run 和未清理沙箱，停服创建并独立核验 schema 32 备份，再切换绑定、保护记录和启动配置。首次启动前失败恢复旧 unit、保护记录、配置及 attestation；首次启动已尝试后保留数据库和失败现场。Agent 与 Worker ready 后，再通过真实请求测量记忆检索、搜索启动和完整回答耗时；安装探针通过不代表问答已通过。
 
@@ -460,9 +460,9 @@ U1 修订 `51fe7f6` 处理会话详情与执行状态读取之间发生的并发
 
 `SANDBOX_HOST_PATH_UNSAFE` 先核对精确路径及 mode，以及 SRT Unix socket 路径长度；生产 jobId 使用完整 SHA-256 的 base64url 编码缩短目录名，外部恢复 ID 合同不变；重新正确打包和验证，不放宽检查。Provider 429 显示限流/过载，保留未知费用与失败记录，不伪造完成。`result_unknown` 检查原环境终态及 namespace，不能通过清空占用重跑。SSH 未认证先使用已授权替代链路；不得打印 Cloudflare 一次性认证链接中的令牌。
 
-未配置受保护安装时，每个进程首次使用某个期望摘要会在独立工作线程逐字节读取全部文件，保留路径、权限、文件身份和前后变化检查，并记录元数据指纹；此后每次调用只复核元数据，任何差异都丢弃指纹并重新完整审计，见 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md]（取代 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。Node 可执行文件和 runner 同样只在首次读全部字节，之后元数据不变就不再读内容；元数据遍历只对运行时根目录求真实路径。验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
+未配置受保护安装时，宿主核验信任安装结果，不读取、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要；防改动靠沙箱只读和受保护安装，见 [SOURCE: docs/adr/0069-trust-unprotected-runtime-like-claude-code.md]（取代 [SOURCE: docs/adr/0067-runtime-artifacts-by-inode-metadata.md] 和 [SOURCE: docs/adr/0034-runtime-verification-by-inode-metadata.md]）。受保护安装首次审计仍在独立工作线程逐字节读取全部文件；验证 Node 源码入口与安装后的 JavaScript Worker 均能加载，校验摘要必须与原算法一致。
 
-ADR 0034 沿用 ADR 0028 的受保护 Linux 安装，作为上述逐次复核的显式替代路径。迁移前准备独立系统运行账号、由 root 保护的安装/启动入口和 `/etc/himawari` 中的版本记录，保留部署账号管理权限。账号不得加入 sudo、Docker 或其他特权组；systemd 使用 `User=himawari`、`NoNewPrivileges=yes`，子进程明确继承 `HIMAWARI_RUNTIME_PROTECTION_FILE`。运行数据和私有秘密仍由运行账号持有；签名私钥不能交给它。Himawari 自有父目录只给予必要穿越权限，不公开同级服务。共享的 `/data/hermes` 属于另一套 Hermes Agent，其权限会被该服务重设为 0700，不能依赖一次 chmod，也不得停用它的安全加固。系统单元以 `TemporaryFileSystem=/data/hermes:ro,mode=0755` 和 `BindPaths=/data/hermes/himawari` 提供私有目录视图，宿主父目录保留原所有者和 0700。root 持有安装及保护记录的要求保持不变。启动时可写的能力快照和 attestation 放在私有运行数据目录，不能要求服务修改受保护资格目录。
+ADR 0069 保留 ADR 0028 的受保护 Linux 安装，需要防篡改的部署必须使用它。迁移前准备独立系统运行账号、由 root 保护的安装/启动入口和 `/etc/himawari` 中的版本记录，保留部署账号管理权限。账号不得加入 sudo、Docker 或其他特权组；systemd 使用 `User=himawari`、`NoNewPrivileges=yes`，子进程明确继承 `HIMAWARI_RUNTIME_PROTECTION_FILE`。运行数据和私有秘密仍由运行账号持有；签名私钥不能交给它。Himawari 自有父目录只给予必要穿越权限，不公开同级服务。共享的 `/data/hermes` 属于另一套 Hermes Agent，其权限会被该服务重设为 0700，不能依赖一次 chmod，也不得停用它的安全加固。系统单元以 `TemporaryFileSystem=/data/hermes:ro,mode=0755` 和 `BindPaths=/data/hermes/himawari` 提供私有目录视图，宿主父目录保留原所有者和 0700。root 持有安装及保护记录的要求保持不变。启动时可写的能力快照和 attestation 放在私有运行数据目录，不能要求服务修改受保护资格目录。
 
 停服前先以新账号在同样的 systemd 私有目录视图中验证：父目录由 root 持有且为 0755，仅能看到 himawari 子目录，映射目录的 device/inode 与原目录一致，Node 确实可执行。此检查失败时保留原服务，不能先停服再验证账号能否启动解释器。正式单元和六组验收均使用相同视图、NoNewPrivileges 和 capability 限制；限定临时单元设置运行期限，并在异常后停止、释放。
 
