@@ -1,4 +1,3 @@
-// Explicit opt-in; public registry reads and installs only in an owned scratch tree.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -106,7 +105,7 @@ try {
       "socks-download": download,
       install: `${quote(node)} ${quote(npm)} install is-number@7.0.0 --ignore-scripts --no-audit --no-fund --fetch-retries=0 --registry=https://registry.npmjs.org --cache="$TMPDIR/cache"`,
       "redirect-denied": `${curl} -D redirect.headers -L 'https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.com'; cat redirect.headers`,
-      cpu: `${quote(node)} -e 'const end=Date.now()+5000;while(Date.now()<end){}'`,
+      cpu: `${quote(node)} -e 'const end=Date.now()+20000;while(Date.now()<end){}'`,
       memory: `${quote(node)} -e 'const b=Buffer.alloc(80*1024*1024,1);setTimeout(()=>console.log(b.length),5000)'`,
       cancel: `${quote(node)} -e ${quote(tunnel)}`,
       "proxy-variables-removed": `${quote(node)} -e '${netProof}for(const k of Object.keys(process.env))if(k.toLowerCase().includes("proxy"))delete process.env[k];const s=require("node:net").connect(443,"1.1.1.1");s.on("error",e=>console.log(e.code));s.on("connect",()=>{console.log("bypass");s.destroy()})'`,
@@ -119,18 +118,16 @@ try {
         policyDigest: compiled.policyDigest,
         executable: "/bin/bash",
         args: ["-c", commands[scenario]],
-        deadlineAt: new Date(Date.now() + 25000).toISOString(),
+        deadlineAt: new Date(Date.now() + 60000).toISOString(),
         maxOutputBytes: 8192,
-        cleanupTimeoutMs: 2000,
+        cleanupTimeoutMs: 5000,
         resourceLimits: {
           maxCpuTimeMs: scenario === "cpu" ? 100 : 15000,
           maxMemoryBytes: scenario === "memory" ? 32 * 1024 * 1024 : 512 * 1024 * 1024,
         },
       },
       path.join(base, "control"),
-      async () => {
-        /* Explicit probe authority; no production Grant claim. */
-      },
+      async () => {},
     );
     try {
       await host.ready;

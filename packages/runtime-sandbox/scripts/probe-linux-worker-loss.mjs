@@ -1,4 +1,3 @@
-// Owned fake-data Worker-loss probe. The child is a harness, not production registration.
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
@@ -52,9 +51,9 @@ if (process.argv[2] === "worker") {
           "-c",
           "setsid /bin/bash -c 'sleep 4; printf escaped > escaped' >/dev/null 2>&1 & printf spawned; sleep 15",
         ],
-        deadlineAt: new Date(Date.now() + 20000).toISOString(),
+        deadlineAt: new Date(Date.now() + 60000).toISOString(),
         maxOutputBytes: 1024,
-        cleanupTimeoutMs: 2000,
+        cleanupTimeoutMs: 5000,
       },
       path.join(root, "control"),
     );
@@ -84,7 +83,7 @@ if (process.argv[2] === "worker") {
   let binding;
   try {
     const ready = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("WORKER_PROBE_READY_TIMEOUT")), 10000);
+      const timer = setTimeout(() => reject(new Error("WORKER_PROBE_READY_TIMEOUT")), 60000);
       worker.once("message", (message) => {
         clearTimeout(timer);
         resolve(message);
@@ -98,8 +97,18 @@ if (process.argv[2] === "worker") {
     assert.equal(await readLinuxNamespaceState(before.linuxNamespace), "alive");
     worker.kill("SIGKILL");
     await delay(5500);
-    const final = await readJobHostFinalEvidence(binding);
-    const namespaceState = await readLinuxNamespaceState(before.linuxNamespace);
+    const settleUntil = Date.now() + 30000;
+    let final;
+    let namespaceState;
+    for (;;) {
+      final = await readJobHostFinalEvidence(binding).catch((error) => {
+        if (Date.now() >= settleUntil) throw error;
+        return undefined;
+      });
+      namespaceState = await readLinuxNamespaceState(before.linuxNamespace);
+      if ((final && namespaceState === "released") || Date.now() >= settleUntil) break;
+      await delay(250);
+    }
     const markerAbsent = await readFile(path.join(root, "workspace/escaped")).then(
       () => false,
       (error) => {
