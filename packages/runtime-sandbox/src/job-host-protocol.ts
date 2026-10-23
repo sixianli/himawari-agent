@@ -304,6 +304,8 @@ export function quoteJobArgument(argument: string): string {
 
 export const JOB_HOST_STARTUP_WINDOW_MS = 10_000;
 
+export const JOB_HOST_NAMESPACE_GATE_WINDOW_MS = 10_000;
+
 export const JOB_HOST_FAILURE_STAGES = [
   "request",
   "policy",

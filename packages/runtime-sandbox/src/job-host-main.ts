@@ -12,6 +12,7 @@ import { jobCommand } from "./job-command.ts";
 import { type JobHostControlBinding, openJobHostControl } from "./job-host-control.ts";
 import { JobHostNetworkAuthority } from "./job-host-network-authority.ts";
 import {
+  JOB_HOST_NAMESPACE_GATE_WINDOW_MS,
   JOB_HOST_STARTUP_WINDOW_MS,
   JOB_HOST_SYSTEM_CODES,
   type JobHostCommandReport,
@@ -573,9 +574,11 @@ async function launchTask(launch: TaskLaunch) {
     return { code, systemCode: launchFailureSystemCode(text), text: text || null };
   };
   let gatePending = namespaceGate;
-  const gateTimeout = namespaceGate
-    ? setTimeout(() => launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_TIMEOUT")), 1500)
-    : undefined;
+  const armGateTimeout = () =>
+    setTimeout(() => {
+      if (launch.running()) launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_TIMEOUT"));
+    }, JOB_HOST_NAMESPACE_GATE_WINDOW_MS);
+  let gateTimeout = namespaceGate ? armGateTimeout() : undefined;
   const receiveGate = async (line: string) => {
     const match = new RegExp(`^${namespaceToken}:(\\d+):(pid:\\[\\d+\\])$`).exec(line);
     if (!match || !child.pid || !match[1] || !match[2])
@@ -604,7 +607,8 @@ async function launchTask(launch: TaskLaunch) {
         gateReceivedBytes += chunk.byteLength;
         gateBytes = Buffer.concat([gateBytes, chunk]);
         if (gateReceivedBytes > 1024) {
-          launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID"));
+          clearTimeout(gateTimeout);
+          if (launch.running()) launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID"));
           return;
         }
         while (gatePending) {
@@ -618,10 +622,12 @@ async function launchTask(launch: TaskLaunch) {
             continue;
           }
           gatePending = false;
+          clearTimeout(gateTimeout);
+          gateTimeout = armGateTimeout();
           chunk = Buffer.concat([...gateDiagnostics, gateBytes]);
-          void receiveGate(line).catch(() =>
-            launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID")),
-          );
+          void receiveGate(line).catch(() => {
+            if (launch.running()) launch.failed(gateFailure("JOB_HOST_NAMESPACE_GATE_INVALID"));
+          });
         }
       }
       const available = Math.max(0, launch.maxOutputBytes - total);

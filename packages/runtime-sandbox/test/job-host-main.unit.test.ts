@@ -3,7 +3,10 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { PI_RESIDENT_FRAME_LIMIT_BYTES } from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { JobHostRequest } from "../src/job-host-protocol.ts";
+import {
+  JOB_HOST_NAMESPACE_GATE_WINDOW_MS,
+  type JobHostRequest,
+} from "../src/job-host-protocol.ts";
 
 const boundary = vi.hoisted(() => ({
   process: {},
@@ -404,11 +407,15 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     await closeTask();
   });
   it("never treats diagnostic lines as proof or extends the namespace deadline", async () => {
-    await prepare();
+    await prepare({ ...request(), deadlineAt: new Date(Date.now() + 60000).toISOString() });
     await receive("start");
     task.stderr.write("wrong-token:1:pid:[9001]\n");
-    await vi.advanceTimersByTimeAsync(1400);
-    await receive("heartbeat");
+    const beforeWindowEnd = JOB_HOST_NAMESPACE_GATE_WINDOW_MS - 100;
+    for (let elapsed = 0; elapsed < beforeWindowEnd; elapsed += 1000) {
+      await vi.advanceTimersByTimeAsync(Math.min(1000, beforeWindowEnd - elapsed));
+      await receive("heartbeat");
+    }
+    expect(processBoundary.kill).not.toHaveBeenCalled();
     expect(boundary.namespace).not.toHaveBeenCalled();
     expect(sent.some((item) => item["type"] === "started")).toBe(false);
     await vi.advanceTimersByTimeAsync(100);

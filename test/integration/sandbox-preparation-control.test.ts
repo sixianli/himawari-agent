@@ -222,8 +222,11 @@ async function configureSdkLoad(
     blockEntryMs?: number;
     changePolicyText?: boolean;
     launchCommand?: string;
+    gateDelaySeconds?: number;
   },
 ) {
+  if (options.launchCommand && options.gateDelaySeconds)
+    throw new Error("FIXTURE_LAUNCH_COMMAND_AND_GATE_DELAY_EXCLUSIVE");
   launch.entry = jobHostEntry();
   launch.hook = path.join(root, "preload.mjs");
   const loader = path.join(root, "loader.mjs");
@@ -335,7 +338,11 @@ SandboxManager.wrapWithSandboxArgv = async (command, shell) => {
   process.stderr.write(JSON.stringify({ stage: "r2t10_launch_argv", argv: wrapped.argv }) + "\\n");
   return wrapped;
 };\n`
-        : ""),
+        : options.gateDelaySeconds
+          ? `\nconst himawariFixtureGateWrapArgv = SandboxManager.wrapWithSandboxArgv.bind(SandboxManager);
+SandboxManager.wrapWithSandboxArgv = async (command, shell) =>
+  himawariFixtureGateWrapArgv("/usr/bin/sleep ${options.gateDelaySeconds}; " + command, shell);\n`
+          : ""),
   )} };
 }
 `,
@@ -548,12 +555,17 @@ it("[R2-L8] proves release when preparation fails before the control step after 
   Object.assign(context.task.meta, { cleanupReadback: { observed, release } });
 });
 
-async function r2t10Host(input: { readonly jobId: string; readonly launchCommand?: string }) {
+async function r2t10Host(input: {
+  readonly jobId: string;
+  readonly launchCommand?: string;
+  readonly gateDelaySeconds?: number;
+}) {
   const root = await realpath(await mkdtemp(`${testTemporaryRoot()}/hma-r2t10-`));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   await configureSdkLoad(root, {
     delayMs: 0,
     ...(input.launchCommand ? { launchCommand: input.launchCommand } : {}),
+    ...(input.gateDelaySeconds ? { gateDelaySeconds: input.gateDelaySeconds } : {}),
   });
   const toolchain = [
     ...new Set(
@@ -566,6 +578,7 @@ async function r2t10Host(input: { readonly jobId: string; readonly launchCommand
           "/lib64",
           "/proc",
           "/dev",
+          path.dirname(process.execPath),
           path.join(runtimeRoot, "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp"),
         ].map((filename) => realpath(filename)),
       ),
@@ -652,6 +665,23 @@ it("[R2-T10] reproduces a sandbox that never releases the user command", async (
   await expect(readFile(path.join(directory, "started.json"))).rejects.toMatchObject({
     code: "ENOENT",
   });
+});
+
+it("[R2-D27] starts the user command when the namespace gate answers after 2.5 seconds", async () => {
+  const { host, observed } = await r2t10Host({
+    jobId: "r2d27-slow-gate",
+    gateDelaySeconds: 2.5,
+  });
+  expect(observed, `${JSON.stringify(observed)}\nSTDERR:\n${launch.stderr}`).toMatchObject({
+    reason: "exited",
+    exitCode: 99,
+    taskStarted: true,
+    srtReset: true,
+  });
+  expect(observed.diagnostic ?? null).toBeNull();
+  if (!host.controlBinding) throw new Error("Original control binding missing");
+  const final = await readJobHostFinalEvidence(host.controlBinding);
+  expect(final.linuxNamespace?.namespaceId).toMatch(/^pid:\[\d+\]$/);
 });
 
 it("[R2-T10] classifies an oversized namespace gate as JOB_HOST_NAMESPACE_GATE_INVALID", async () => {

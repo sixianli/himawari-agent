@@ -33,6 +33,7 @@ date: "2026-09-28"
 - [第三轮：主线程只管心跳，诊断记录每步耗时](#main-thread-heartbeat-only)
 - [第三轮：控制通道在准备第一步打开](#control-opened-first)
 - [第四轮：Job Host 启动单独计时](#startup-window)
+- [第五轮：命名空间门握手放宽到 10 秒](#namespace-gate-window)
 
 ## 目标与来源
 
@@ -326,7 +327,7 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 - `sandboxHostFailureDetailSchema` 新增必填字段 `steps`（可为 null，表示从未收到列表）。Worker、Job Host 和 Agent 同版本发布；产品代码不重新解析已保存的旧记录。旧版本保存的受保护诊断没有这个字段，读取旧记录的只读脚本须使用对应版本的 schema。安全服务日志相应增加 `hostSteps` 字段，见[准备失败的安全服务日志](#preparation-safe-log)。
 - 2026-10-14 起主机失败码新增 `JOB_HOST_LAUNCH_ARGV_UNEXPECTED`（Linux 启动参数不是预期的 bubblewrap 形状；bubblewrap 是 Linux 上隔离进程的程序，命令名是 bwrap。见 R2-T5），按本条规则同版本发布，旧发布目录的 schema 不认识这个码，读新记录要用新发布目录。
 - 2026-10-15 起（R2-T10）：`sandboxHostFailureDetailSchema` 再新增必填字段 `text`（可为 null）。它保存启动失败的原始说明，写入前去掉控制字符和换行、按 UTF-8 截到 512 字节；只进受保护诊断记录（`<controlRef>:diagnostic:preparation-failure`），**不进** `sandbox.preparation.failed` 安全日志。Agent 在写入受保护记录前用项目的 `scanMachineSecrets` 扫描，命中就把它置为 null。与 `steps` 同样同版本发布，旧版本保存的记录没有这个字段，读取要用对应版本的 schema。
-- 2026-10-15 起（R2-T10）：启动失败诊断新增两个主机失败码 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`（Linux 命名空间门在 1500 毫秒内没有收到令牌）和 `JOB_HOST_LAUNCH_SPAWN_FAILED`（启动隔离程序的 `spawn` 报错）；门输出超过 1024 字节、门那一行格式不对或核验失败仍用已有的 `JOB_HOST_NAMESPACE_GATE_INVALID`。`systemCode` 只从以 `bwrap: ` 开头的标准错误行映射，没有这种行就是 `UNKNOWN`；`spawn` 报错用 `error.code`。安全日志相应新增 `hostDetailCode` 取值，字段本身不变。
+- 2026-10-15 起（R2-T10）：启动失败诊断新增两个主机失败码 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`（Linux 命名空间门在时限内没有收到令牌；时限原为 1500 毫秒，2026-10-23 起为 10 秒，见[第五轮：命名空间门握手放宽到 10 秒](#namespace-gate-window)）和 `JOB_HOST_LAUNCH_SPAWN_FAILED`（启动隔离程序的 `spawn` 报错）；门输出超过 1024 字节、门那一行格式不对或核验失败仍用已有的 `JOB_HOST_NAMESPACE_GATE_INVALID`。`systemCode` 只从以 `bwrap: ` 开头的标准错误行映射，没有这种行就是 `UNKNOWN`；`spawn` 报错用 `error.code`。安全日志相应新增 `hostDetailCode` 取值，字段本身不变。
 
 1.5 秒双向监督窗口、30 秒准备上限、任务期限、清理期限、控制绑定、签名终态、唯一启动授权和全部认证检查均不变（1.5 秒窗口的起点在 2026-10-22 改为 Job Host 第一条认证消息，见[第四轮：Job Host 启动单独计时](#startup-window)）。逐步记录只说明哪一步在何时开始、用了多久，不代表 ready、释放证明或启动授权。Worker 自身事件循环停顿仍不在这次修复范围内。
 
@@ -392,5 +393,40 @@ Job Host 解析并核对准备请求、启动自身期限计时后，立即核�
 ### 验证
 
 `test/integration/sandbox-preparation-control.test.ts` 新增两项 `[R2-D23]` 测试：一项在真实打包 Job Host 的入口模块求值时注入 2200 ms 同步停顿（在消息处理器注册之前），要求准备成功、宿主第一条消息之前没有排队心跳；另一项让第一条准备消息带 2 秒前的时间，要求被接受。修复前两项分别以 `JOB_HOST_HEARTBEAT_EXPIRED`（`elapsedMs` 1517）和 `JOB_HOST_WORKER_LEASE_INVALID` 失败（云服务器测试账号，Ubuntu 24.04）；“已过期准备消息被拒绝”的原用例改为 11 秒，仍被拒绝。Job Host、常驻会话和 Worker 端单元测试覆盖启动期限、启动期限早于任务期限、启动后恢复 1.5 秒窗口、超过 10 秒的准备消息被拒绝，以及启动期间调用方取消或第一条消息认证失败时不被改记为启动超时。同一台服务器的测试账号上，用 8 个死循环进程加 2 个进程轮询器制造高负载，连跑真实打包的授权网络探测：修复版 14 次中 13 次通过，启动阶段没有再失败；唯一失败在就绪之后的取消场景，属于上面的运行中窗口风险（修复前候选版本 2 次中 1 次在启动阶段失败，第五次版本 2 次中 2 次在运行阶段失败）。各层命令和结果记录在 `.agents/tasks/round2-tool-execution/evidence.jsonl` 对应 R2-D23 的条目（在本修复提交之后，用紧接着的证据提交写入）。
+
+[返回阅读导航](#阅读导航)
+
+<a id="namespace-gate-window"></a>
+
+## 第五轮：命名空间门握手放宽到 10 秒
+
+### 现象与推断的原因
+
+Linux 上，Job Host 用 bubblewrap（隔离进程的程序，命令名 `bwrap`）启动用户命令时，先在沙箱里运行一小段“门”脚本：它把一个随机令牌、自己的进程号和 PID 命名空间编号（Linux 用来隔离进程编号的机制）写到标准错误，然后等 Job Host 从标准输入送回同一个令牌，才执行用户命令。Job Host 收到这一行后核对命名空间身份，记进结束记录的 `linuxNamespace` 字段，再放行命令。这一来一回叫“门握手”。修复前 Job Host 只等 1500 毫秒，超时就以 `JOB_HOST_NAMESPACE_GATE_TIMEOUT` 放弃，用户命令不运行。
+
+2026-10-23 第六次生产变更第三次限定主机验收（S6_ACCEPTANCE，候选 `cca9d993`）失败：已安装运行时探针第 21 次调用（后台运行的 bash 命令）的结束记录里 `linuxNamespace` 为 null，探针断言失败。只读诊断 04、05（`.ci-output/production/2026-10-23-sixth-s6-diagnostic-04/`、`-05/`）每秒采样一次进程表，显示这台生产机上 Job Host 启动后 1 秒才出现 `bwrap`，再过 1 秒才只剩门脚本，随后全部退出，与 1500 毫秒时限到期吻合；其余调用的握手也常需约 1 秒。Hermes 上同一探针空闲和 16 个死循环进程加压下共 9 遍都通过，握手远低于 1 秒，因此生产机的启动慢没有在 Hermes 复现，原因（主机 CPU、磁盘或内核差异）未证实；结论“门时限余量不足”来自采样时间线的推断。这个缺陷不只影响验收：真实使用中任何工具调用都可能因此偶发失败。用户决定先修这个缺陷，按完整流程测试、重新冻结、演练后再上生产（G173）。
+
+### 修复后的行为
+
+- 门握手时限改为常量 `JOB_HOST_NAMESPACE_GATE_WINDOW_MS`（10 秒，定义在 `packages/runtime-sandbox/src/job-host-protocol.ts`，与 `JOB_HOST_STARTUP_WINDOW_MS` 相邻），一次性路径和常驻会话路径共用 `launchTask` 里的同一个计时器。10 秒内仍没有收到门那一行，照旧以 `JOB_HOST_NAMESPACE_GATE_TIMEOUT` 结束、发 `stage: launch` 诊断，失败码、诊断格式和 Worker 处理都不变。
+- 不超过任务期限：Job Host 原有的任务期限计时器（解析请求后按 `deadlineAt` 计时）在门等待期间继续有效，任务剩余期限短于 10 秒时由它先停止，结果仍按期限处理。
+- 门那一行一到（还没核对命名空间身份）就重新开始一个 10 秒窗口给核对用，核对成功后清除；这样在窗口末尾到达的有效门不会因为核对要扫描 `/proc` 而被判超时，核对本身卡住时仍在 10 秒后以 `JOB_HOST_NAMESPACE_GATE_TIMEOUT` 结束。
+- Job Host 已经在停止（被取消、期限到或 Worker 断开）时，门计时器到期、门核对失败或门输出超过 1024 字节都不再发 `stage: launch` 诊断，避免诊断和结束原因不一致。
+- 门等待期间 Job Host 照常发心跳，Worker 的 1.5 秒双向监督窗口和服务端的启动阶段判定（R2-D26，见[清理观察设计](2026-09-28-sandbox-cleanup-observation-design.md)）都不受影响：服务端在任务尚未启动、观察新鲜、截止时间未到时返回尚未定论，不按时间长短判失去监督。
+- 一次性路径的门等待在 `ready` 之后，不占 30 秒准备上限；常驻会话路径在准备阶段内启动常驻进程，门等待算在 30 秒准备上限里，所以准备已用掉较多时间时，留给门的时间少于 10 秒，超出时按原来的准备超时（`host_failure`）结束。修复前这种情况在 1.5 秒就会失败，所以不是新问题。
+- 门输出超过 1024 字节、格式不对或命名空间核验失败仍立即以 `JOB_HOST_NAMESPACE_GATE_INVALID` 结束，不等 10 秒。
+- 10 秒的依据：生产采样里正常握手约 1 秒、失败的一次超过 1.5 秒，10 秒留出数倍余量。数值与 Worker 的启动期限 `JOB_HOST_STARTUP_WINDOW_MS` 相同，但两个计时器的起点和清除条件不同：启动期限在 Worker 收到第一条认证消息时就清除，并不保护门等待。没有握手耗时的分布数据，这是取值判断，不是测量结果。
+- 剩余影响：门脚本真的卡住时（例如沙箱里的 bash 起不来），工具调用要等 10 秒才报失败，比原来多等约 8.5 秒。
+
+### 验证
+
+`test/integration/sandbox-preparation-control.test.ts` 新增 `[R2-D27]` 测试：测试夹具在 SDK 的 `wrapWithSandboxArgv` 处给门脚本前面加 `sleep 2.5`，让真实打包的 Job Host 在 bubblewrap 里等 2.5 秒才收到门那一行；要求任务启动、退出码 99、没有诊断、签名结束记录里 `linuxNamespace` 的命名空间编号形如 `pid:[数字]`。原有 `[R2-T10]` 门超时测试（门脚本永不应答）继续要求 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`，现在在 10 秒后触发。
+
+2026-10-23 在 Hermes 上用提交前的最终补丁验证（证据 `/data/hermes/himawari/tool-audit-round2/r2-l13/r2d27/evidence/l01-r5/`，基于 `cca9d993`）。这些测试使用第 3 层产物里安装好的 `dist/node-runtime`，所以先编译修改后的源码，只把 `job-host-main.js` 和 `job-host-protocol.js` 覆盖进去，并确认其余 Job Host 文件与产物一致：
+
+- 修复前（旧运行时）：`[R2-D27]` 约 1.9 秒后以 `JOB_HOST_NAMESPACE_GATE_TIMEOUT` 失败，任务未启动。
+- 修复后：13 个相关测试文件 411 项全部通过，其中 `[R2-T10]` 门超时测试约 10.6 秒后得到 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`；`sandbox-preparation-control` 和 `r2t10-not-started` 两个文件重复 3 轮，每轮 23 项通过；`npm run check` 通过，Biome 格式检查没有改动。
+- 直接导入这两个源文件的 6 个单元测试文件另行补跑（证据 `.../r2d27/evidence/unit-r3/`），209 项全部通过，`npm run check` 通过。其中 `job-host-main.unit.test.ts` 原来把 1500 毫秒写死，现在改为按 `JOB_HOST_NAMESPACE_GATE_WINDOW_MS` 推进假时钟：到时限前 100 毫秒还没有结束进程，到时限才结束；请求期限设为 60 秒，避免和门时限同时到期。
+- 夹具的工具目录加入了 Node.js 所在目录（`path.dirname(process.execPath)`）。Hermes 的 Node.js 不在 `/usr/bin`，第一次运行时沙箱里找不到它，命令以退出码 127 结束。
 
 [返回阅读导航](#阅读导航)
