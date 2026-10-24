@@ -1,6 +1,12 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { PublicWebAdapterPort, WebSearchCandidate } from "@himawari-agent/application";
-import { scanMachineSecrets } from "@himawari-agent/application";
+import type {
+  PublicWebAdapterPort,
+  WebFetchProvider,
+  WebFetchResult,
+  WebSearchCandidate,
+  WebSearchProvider,
+} from "@himawari-agent/application";
+import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
@@ -9,12 +15,13 @@ const endpoint = "https://mcp.exa.ai/mcp";
 const rateLimitNotice = /\brate[- ]limit/i;
 const rateLimitBackoffMs = 1000;
 const minimumRetryCallMs = 5000;
+const fetchToolNames = ["web_fetch_exa", "crawling_exa"] as const;
 
 export function publicSearchFailure(error: unknown): {
   readonly code: "WEB_SEARCH_RATE_LIMITED" | "WEB_SEARCH_FAILED";
   readonly output: string;
 } {
-  return error instanceof Error && error.message === "WEB_SEARCH_RATE_LIMITED"
+  return error instanceof Error && /RATE_LIMITED$/.test(error.message)
     ? {
         code: "WEB_SEARCH_RATE_LIMITED",
         output: JSON.stringify({
@@ -31,6 +38,27 @@ export function publicSearchFailure(error: unknown): {
       };
 }
 
+export function publicFetchFailure(error: unknown): {
+  readonly code: "WEB_FETCH_RATE_LIMITED" | "WEB_FETCH_FAILED";
+  readonly output: string;
+} {
+  return error instanceof Error && /RATE_LIMITED$/.test(error.message)
+    ? {
+        code: "WEB_FETCH_RATE_LIMITED",
+        output: JSON.stringify({
+          error: "WEB_FETCH_RATE_LIMITED",
+          message: "读网页服务正在限流，请稍等片刻再试。",
+        }),
+      }
+    : {
+        code: "WEB_FETCH_FAILED",
+        output: JSON.stringify({
+          error: "WEB_FETCH_FAILED",
+          message: "读取网页失败。",
+        }),
+      };
+}
+
 export function parseExaSearchResults(text: string, limit: number): readonly WebSearchCandidate[] {
   if (Buffer.byteLength(text) > 128 * 1024) throw new Error("WEB_SEARCH_OUTPUT_LIMIT");
   const results: WebSearchCandidate[] = [];
@@ -40,9 +68,6 @@ export function parseExaSearchResults(text: string, limit: number): readonly Web
     if (!title || !rawUrl) continue;
     const url = new URL(rawUrl);
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) continue;
-    // Exa's Z suffix means UTC. Spell it out for readers without converting
-    // the source time or assigning a zone to date-only / offset-free values.
-    // Only annotate the metadata header; quoted excerpt text stays intact.
     const highlights = part.indexOf("\nHighlights:");
     const headerEnd = highlights < 0 ? part.length : highlights;
     const summary =
@@ -70,12 +95,93 @@ export function parseExaSearchResults(text: string, limit: number): readonly Web
   return results;
 }
 
-/** Public search only. Transport remains the MCP SDK; the host owns disclosure
- * admission and the authenticated SRT egress proxy. No browser cookies or API key. */
-export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "search"> {
+export function truncateUtf8(text: string, maximumBytes: number) {
+  const bytes = Buffer.from(text);
+  if (bytes.length <= maximumBytes) return { text, truncated: false };
+  return {
+    text: new TextDecoder("utf-8").decode(bytes.subarray(0, maximumBytes)).replace(/�$/, ""),
+    truncated: true,
+  };
+}
+
+export function parseExaFetchResult(
+  text: string,
+  url: string,
+  maximumBytes: number,
+): WebFetchResult {
+  if (!text.trim()) throw new Error("WEB_FETCH_RESPONSE_UNRECOGNIZED");
+  if (Buffer.byteLength(text) <= 4096 && rateLimitNotice.test(text) && !/^Title:/m.test(text))
+    throw new Error("WEB_FETCH_RATE_LIMITED");
+  const title = (/^Title:\s*(.+)$/m.exec(text)?.[1] ?? "").slice(0, 1024);
+  const body = truncateUtf8(text, maximumBytes);
+  return { url, title, markdown: body.text, truncated: body.truncated };
+}
+
+export function validatePublicFetchUrl(value: string): string {
+  if (Buffer.byteLength(value) > 8192 || scanMachineSecrets(value).length)
+    throw new Error("WEB_FETCH_INPUT_INVALID");
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("WEB_FETCH_INPUT_INVALID");
+  }
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    !["https:", "http:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    !host ||
+    !host.includes(".") ||
+    host === "localhost" ||
+    /\.(localhost|local|internal|lan|home|arpa)$/.test(host) ||
+    /^(0|10|127)\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\.|^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(
+      host,
+    ) ||
+    host.includes(":")
+  )
+    throw new Error("WEB_FETCH_INPUT_INVALID");
+  return url.href;
+}
+
+export function sandboxProxy(prefix: string) {
+  const proxyUrl = process.env["HTTPS_PROXY"];
+  if (!proxyUrl) throw new Error(`${prefix}_SANDBOX_PROXY_REQUIRED`);
+  const proxy = new URL(proxyUrl);
+  if (
+    proxy.protocol !== "http:" ||
+    !["127.0.0.1", "localhost"].includes(proxy.hostname) ||
+    !proxy.username ||
+    !proxy.password
+  )
+    throw new Error(`${prefix}_SANDBOX_PROXY_INVALID`);
+  const token = `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}`;
+  proxy.username = "";
+  proxy.password = "";
+  return { uri: proxy.href, token };
+}
+
+type McpMessage = {
+  readonly method?: unknown;
+  readonly params?: { readonly name?: unknown; readonly arguments?: Record<string, unknown> };
+};
+
+interface ExaSession {
+  readonly client: Client;
+  readonly deadline: number;
+  readonly lifetime: AbortSignal;
+  renew(): void;
+}
+
+export class ExaPublicSearchAdapter
+  implements Pick<PublicWebAdapterPort, "search">, WebSearchProvider, WebFetchProvider
+{
+  readonly descriptor = WEB_PROVIDERS["exa-public"];
+
   async search(input: {
     readonly query: string;
     readonly limit: number;
+    readonly signal?: AbortSignal;
   }): Promise<readonly WebSearchCandidate[]> {
     if (
       !input.query.trim() ||
@@ -88,48 +194,136 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
       throw new Error("WEB_SEARCH_INPUT_INVALID");
     const query = input.query.trim();
     const limit = input.limit;
-    const proxyUrl = process.env["HTTPS_PROXY"];
-    if (!proxyUrl) throw new Error("WEB_SEARCH_SANDBOX_PROXY_REQUIRED");
-    const proxy = new URL(proxyUrl);
+    return this.#session(
+      "WEB_SEARCH",
+      (message) =>
+        message.method === "tools/call" &&
+        message.params?.name === "web_search_exa" &&
+        message.params?.arguments?.["query"] === query &&
+        message.params?.arguments?.["numResults"] === limit,
+      input.signal,
+      async (session) => {
+        const callSearch = async () => {
+          const result = await session.client.callTool(
+            {
+              name: "web_search_exa",
+              arguments: {
+                query,
+                objective:
+                  "Find current public sources matching the query. Return titles, source URLs, publication dates and relevant excerpts.",
+                numResults: limit,
+              },
+            },
+            { timeout: 30000 },
+          );
+          if (result.isError || !Array.isArray(result.content))
+            throw new Error("WEB_SEARCH_PROVIDER_FAILED");
+          const text = result.content
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n\n---\n\n");
+          if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
+          return parseExaSearchResults(text, limit);
+        };
+        try {
+          return await callSearch();
+        } catch (error) {
+          if (
+            publicSearchFailure(error).code !== "WEB_SEARCH_RATE_LIMITED" ||
+            session.deadline - performance.now() < rateLimitBackoffMs + minimumRetryCallMs
+          )
+            throw error;
+        }
+        await delay(rateLimitBackoffMs, undefined, { signal: session.lifetime });
+        session.renew();
+        return await callSearch();
+      },
+    );
+  }
+
+  async fetch(input: {
+    readonly url: string;
+    readonly maximumBytes: number;
+    readonly signal?: AbortSignal;
+  }): Promise<WebFetchResult> {
     if (
-      proxy.protocol !== "http:" ||
-      !["127.0.0.1", "localhost"].includes(proxy.hostname) ||
-      !proxy.username ||
-      !proxy.password
+      !Number.isSafeInteger(input.maximumBytes) ||
+      input.maximumBytes < 1 ||
+      input.maximumBytes > 48 * 1024
     )
-      throw new Error("WEB_SEARCH_SANDBOX_PROXY_INVALID");
-    const token = `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}`;
-    proxy.username = "";
-    proxy.password = "";
-    // Retain the existing 15 s connect + 30 s call budget across the one retry.
+      throw new Error("WEB_FETCH_INPUT_INVALID");
+    const url = validatePublicFetchUrl(input.url);
+    let toolName: string | undefined;
+    let toolArguments: Record<string, unknown> | undefined;
+    return this.#session(
+      "WEB_FETCH",
+      (message) =>
+        message.method === "tools/list" ||
+        (message.method === "tools/call" &&
+          toolName !== undefined &&
+          message.params?.name === toolName &&
+          JSON.stringify(message.params?.arguments) === JSON.stringify(toolArguments)),
+      input.signal,
+      async (session) => {
+        const listed = await session.client.listTools(undefined, { timeout: 15000 });
+        const tool = fetchToolNames
+          .map((name) => listed.tools.find((entry) => entry.name === name))
+          .find((entry) => entry !== undefined);
+        if (!tool) throw new Error("WEB_FETCH_PROVIDER_FAILED");
+        const properties = (tool.inputSchema?.properties ?? {}) as Record<string, unknown>;
+        toolName = tool.name;
+        toolArguments = {
+          ...("urls" in properties ? { urls: [url] } : { url }),
+          ...("maxCharacters" in properties ? { maxCharacters: input.maximumBytes } : {}),
+        };
+        const result = await session.client.callTool(
+          { name: toolName, arguments: toolArguments },
+          { timeout: 30000 },
+        );
+        if (result.isError || !Array.isArray(result.content))
+          throw new Error("WEB_FETCH_PROVIDER_FAILED");
+        const text = result.content
+          .filter((item) => item.type === "text")
+          .map((item) => item.text)
+          .join("\n\n");
+        if (scanMachineSecrets(text).length) throw new Error("WEB_FETCH_OUTPUT_REDACTED");
+        return parseExaFetchResult(text, url, input.maximumBytes);
+      },
+    );
+  }
+
+  async #session<T>(
+    prefix: "WEB_SEARCH" | "WEB_FETCH",
+    readonly: (message: McpMessage) => boolean,
+    external: AbortSignal | undefined,
+    work: (session: ExaSession) => Promise<T>,
+  ): Promise<T> {
+    const proxy = sandboxProxy(prefix);
     const deadline = performance.now() + 45000;
-    const lifetime = AbortSignal.timeout(45000);
+    const lifetime = external
+      ? AbortSignal.any([external, AbortSignal.timeout(45000)])
+      : AbortSignal.timeout(45000);
     let retried = false;
-    let dispatcher = new ProxyAgent({ uri: proxy.href, token });
+    let dispatcher = new ProxyAgent(proxy);
     const dispatchers = [dispatcher];
     const client = new Client({ name: "himawari-public-search", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
       fetch: async (url, init) => {
-        if (String(url) !== endpoint) throw new Error("WEB_SEARCH_ENDPOINT_CHANGED");
+        if (String(url) !== endpoint) throw new Error(`${prefix}_ENDPOINT_CHANGED`);
         if (init?.body !== undefined && init.body !== null && typeof init.body !== "string")
-          throw new Error("WEB_SEARCH_REQUEST_INVALID");
-        let readonlySearch = false;
+          throw new Error(`${prefix}_REQUEST_INVALID`);
+        let replayable = false;
         if (init?.method === "POST" && typeof init.body === "string") {
           try {
-            const message = JSON.parse(init.body);
-            readonlySearch =
-              message?.method === "tools/call" &&
-              message.params?.name === "web_search_exa" &&
-              message.params?.arguments?.query === query &&
-              message.params?.arguments?.numResults === limit;
+            replayable = readonly(JSON.parse(init.body) as McpMessage);
           } catch {
-            /* Unrecognized MCP bodies are never replayed. */
+            replayable = false;
           }
         }
         const signal = init?.signal ? AbortSignal.any([init.signal, lifetime]) : lifetime;
         const send = () => {
           signal.throwIfAborted();
-          if (performance.now() >= deadline) throw new Error("WEB_SEARCH_TIMEOUT");
+          if (performance.now() >= deadline) throw new Error(`${prefix}_TIMEOUT`);
           return proxyFetch(String(url), {
             ...(init?.method ? { method: init.method } : {}),
             headers: Object.fromEntries(new Headers(init?.headers).entries()),
@@ -148,16 +342,13 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         }
         signal.throwIfAborted();
         const backoff =
-          readonlySearch && !retried ? readonlyNetworkRetryDelay(response, failure) : null;
+          replayable && !retried ? readonlyNetworkRetryDelay(response, failure) : null;
         if (backoff !== null && !signal.aborted && deadline - performance.now() > backoff) {
           retried = true;
           await response?.body?.cancel().catch(() => undefined);
           await delay(backoff, undefined, { signal });
-          // The original MCP request signal and SRT authority remain in force.
           signal.throwIfAborted();
-          // A pooled TLS tunnel would skip CONNECT admission. A fresh proxy
-          // pool forces this attempt through SRT and the live authority check.
-          dispatcher = new ProxyAgent({ uri: proxy.href, token });
+          dispatcher = new ProxyAgent(proxy);
           dispatchers.push(dispatcher);
           response = await send();
         }
@@ -173,7 +364,7 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
             new TransformStream<Uint8Array, Uint8Array>({
               transform(chunk, controller) {
                 total += chunk.byteLength;
-                if (total > 256 * 1024) throw new Error("WEB_SEARCH_RESPONSE_LIMIT");
+                if (total > 256 * 1024) throw new Error(`${prefix}_RESPONSE_LIMIT`);
                 controller.enqueue(chunk);
               },
             }),
@@ -186,43 +377,17 @@ export class ExaPublicSearchAdapter implements Pick<PublicWebAdapterPort, "searc
         );
       },
     });
-    const callSearch = async () => {
-      const result = await client.callTool(
-        {
-          name: "web_search_exa",
-          arguments: {
-            query,
-            objective:
-              "Find current public sources matching the query. Return titles, source URLs, publication dates and relevant excerpts.",
-            numResults: limit,
-          },
-        },
-        { timeout: 30000 },
-      );
-      if (result.isError || !Array.isArray(result.content))
-        throw new Error("WEB_SEARCH_PROVIDER_FAILED");
-      const text = result.content
-        .filter((item) => item.type === "text")
-        .map((item) => item.text)
-        .join("\n\n---\n\n");
-      if (scanMachineSecrets(text).length) throw new Error("WEB_SEARCH_OUTPUT_REDACTED");
-      return parseExaSearchResults(text, limit);
-    };
     try {
       await client.connect(transport, { timeout: 15000 });
-      try {
-        return await callSearch();
-      } catch (error) {
-        if (
-          publicSearchFailure(error).code !== "WEB_SEARCH_RATE_LIMITED" ||
-          deadline - performance.now() < rateLimitBackoffMs + minimumRetryCallMs
-        )
-          throw error;
-      }
-      await delay(rateLimitBackoffMs, undefined, { signal: lifetime });
-      dispatcher = new ProxyAgent({ uri: proxy.href, token });
-      dispatchers.push(dispatcher);
-      return await callSearch();
+      return await work({
+        client,
+        deadline,
+        lifetime,
+        renew: () => {
+          dispatcher = new ProxyAgent(proxy);
+          dispatchers.push(dispatcher);
+        },
+      });
     } finally {
       await client.close().catch(() => undefined);
       await Promise.all(dispatchers.map((entry) => entry.close()));

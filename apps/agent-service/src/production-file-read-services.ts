@@ -18,9 +18,9 @@ import type { ProductionFileReadServices } from "./production-file-read-workflow
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { createProductionHostReadOnly } from "./production-host-read.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import { WebToolMemory } from "./web-tool-memory.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
 
-/** Production composition: routing never creates grants or capability qualification. */
 export function createProductionFileReadServices(options: {
   readonly configuration: ProductConfiguration;
   readonly repository: Pick<
@@ -36,7 +36,6 @@ export function createProductionFileReadServices(options: {
   readonly authority: () => CapabilityInvocationAuthority;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
-  /** Opt-in host coordinator; absent until review configuration and delegation are approved. */
   readonly automaticReview?: AutomaticActionReviewPort;
   readonly workspaceAuto?: WorkspaceAutoAuthorization;
   readonly hostReadOnlyPort?: HostReadOnlyPort;
@@ -68,8 +67,13 @@ export function createProductionFileReadServices(options: {
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
   const hostPort = options.hostReadOnlyPort;
   const hostReadOnly = hostPort?.available ? createProductionHostReadOnly(hostPort) : undefined;
+  const webMemory =
+    configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
+      ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
+      : undefined;
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
+    ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {
       const coding = configuration.runPolicy?.coding;
       const route = coding?.enabledTools.some(
@@ -79,7 +83,10 @@ export function createProductionFileReadServices(options: {
         : call.capabilityRef ===
             `${configuration.runPolicy?.publicSearch?.capabilityRef}.web_search`
           ? configuration.runPolicy?.publicSearch
-          : configuration.runPolicy?.fileRead;
+          : call.capabilityRef ===
+              `${configuration.runPolicy?.publicFetch?.capabilityRef}.web_fetch`
+            ? configuration.runPolicy?.publicFetch
+            : configuration.runPolicy?.fileRead;
       const context = call.context;
       if (!route || !context?.threadId) return undefined;
       const authority = options.authority();
@@ -123,7 +130,6 @@ export function createProductionFileReadServices(options: {
       );
       if (!model || !model.allowedDataClassifications.includes(call.dataClassification))
         return undefined;
-      // Freeze the configured provider/model/routing identity, including fallback changes.
       const common = {
         hostId: route.hostId,
         workerInstanceId: route.workerInstanceId,
@@ -133,9 +139,16 @@ export function createProductionFileReadServices(options: {
         threadId: context.threadId,
         modelRef: context.modelRef,
         modelIdentity: configuredModelDisclosureIdentity(model),
+        ...("providers" in route && route.providers ? { providers: route.providers } : {}),
       };
       if ("scopeSource" in route && route.scopeSource === "private_temp") {
-        if (call.capabilityRef !== `${route.capabilityRef}.web_search`) return undefined;
+        if (
+          (route !== configuration.runPolicy?.publicFetch ||
+            call.capabilityRef !== `${route.capabilityRef}.web_fetch`) &&
+          (route !== configuration.runPolicy?.publicSearch ||
+            call.capabilityRef !== `${route.capabilityRef}.web_search`)
+        )
+          return undefined;
         return { ...common, revision: 1, grant: null };
       }
       if (!("grantId" in route)) return undefined;

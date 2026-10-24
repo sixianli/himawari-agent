@@ -66,7 +66,7 @@ beforeEach(() => {
           enabled,
           revision,
           available: true,
-          recipient: "https://mcp.exa.ai",
+          recipients: ["https://mcp.exa.ai"],
           generatedAt: "2026-09-14T00:00:00.000Z",
         },
       };
@@ -126,7 +126,7 @@ describe("search authorization menu", () => {
     await click("chat.search.enable");
     expect(mutate.mock.calls[0]?.[0]).toMatchObject({
       type: "search.authorization.set",
-      payload: { enabled: true, expectedRevision: 2, recipient: "https://mcp.exa.ai" },
+      payload: { enabled: true, expectedRevision: 2, recipients: ["https://mcp.exa.ai"] },
     });
     expect(storage.readPendingGovernanceMutation("search-authorization:2:enable")).toBeNull();
     expect(button("chat.search.revoke").disabled).toBe(false);
@@ -150,7 +150,12 @@ describe("search authorization menu", () => {
       query.mockResolvedValue({
         ...envelope,
         type: "search.authorization.snapshot",
-        payload: { enabled: false, available: false, revision: 2, recipient: "https://mcp.exa.ai" },
+        payload: {
+          enabled: false,
+          available: false,
+          revision: 2,
+          recipients: ["https://mcp.exa.ai"],
+        },
       });
     await render(SearchAuthorizationControl, props);
     await click("chat.search.enable");
@@ -299,7 +304,7 @@ describe("inline search choice", () => {
     expect(mutate.mock.calls[0]?.[0].payload).toEqual({
       expectedRevision: 2,
       enabled: true,
-      recipient: "https://mcp.exa.ai",
+      recipients: ["https://mcp.exa.ai"],
     });
     expect(mutate.mock.calls[1]?.[0].payload).toMatchObject({
       approvalRequestId: "approval-target",

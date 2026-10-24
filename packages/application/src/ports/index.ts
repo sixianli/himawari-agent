@@ -43,6 +43,7 @@ export * from "./sandbox-execution-journal.js";
 export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";
+export * from "./web-providers.js";
 export * from "./workspaces.js";
 
 export * from "./thread-search-projection.js";

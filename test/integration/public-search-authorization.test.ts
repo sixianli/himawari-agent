@@ -70,7 +70,7 @@ it.each(["directory", "private"] as const)(
         commandMessage(
           ui,
           "search.authorization.set",
-          { enabled, expectedRevision: revision, recipient: "https://mcp.exa.ai" },
+          { enabled, expectedRevision: revision, recipients: ["https://mcp.exa.ai"] },
           { authorizationRef: ui.authorizationRef, idempotencyKey: key, risk: "high" },
         ),
         SERVICE_AUTHORITY.lease,
@@ -249,3 +249,138 @@ it.each(["directory", "private"] as const)(
     }
   },
 );
+
+it("covers page reading under the same owner switch and asks again when the provider list changes", async () => {
+  const resource = await openRepository();
+  const config = parseProductConfiguration(
+    JSON.parse(
+      await readFile(
+        new URL("./fixtures/file-summary/configuration.json", import.meta.url),
+        "utf8",
+      ),
+    ),
+    T1,
+  );
+  if (!config.runPolicy) throw new Error("fixture policy required");
+  const policy = config.runPolicy;
+  const route = {
+    hostId: "host",
+    workerInstanceId: "worker",
+    scopeSource: "private_temp" as const,
+    capabilityVersion: "1",
+    maximumBytes: 4096,
+  };
+  const ui = {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ...SERVICE_AUTHORITY.product,
+    actorId: OWNER_ID,
+    csrfToken: "test",
+    authorizationRef: "owner-authorization",
+  };
+  let sequence = 0;
+  const service = (providers?: readonly ("exa-public" | "deepseek")[]) =>
+    new PublicSearchAuthorization({
+      configuration: {
+        ...config,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runPolicy: {
+          ...policy,
+          publicSearch: { ...route, capabilityRef: "search" },
+          publicFetch: {
+            ...route,
+            capabilityRef: "fetch",
+            ...(providers ? { providers } : {}),
+          },
+        },
+      },
+      repository: resource.repository,
+      clock: { now: () => T1 },
+      ids: { next: (prefix) => `${prefix}:${++sequence}` },
+    });
+  const model = config.modelDescriptors.find((item) => item.role === "primary");
+  if (!model) throw new Error("fixture model required");
+  const intent: GovernedActionIntent = {
+    contractVersion: "authorization.v2",
+    id: "fetch-intent",
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    runId: RUN_ID,
+    threadId: "thread-capability-invocation",
+    capabilityRef: "fetch",
+    capabilityVersion: "1",
+    operation: "web_fetch",
+    resourceRef: "coding:url",
+    resourceRefs: ["coding:url"],
+    targets: [
+      { type: "network-domain", ref: "mcp.exa.ai:443" },
+      { type: "host", ref: route.hostId },
+    ],
+    dataClassification: "private",
+    sideEffect: "none",
+    estimatedCostMicros: 0,
+    frequency: { count: 1, intervalMs: null },
+    idempotencyKey: createIdempotencyKey("fetch-intent"),
+    reversible: true,
+    requestedAt: T1,
+    expiresAt: T2,
+    actionKind: "READ",
+    disclosure: "named_recipients",
+    recipients: [configuredModelDisclosureIdentity(model), "https://mcp.exa.ai"],
+    credentialOrAccessChange: false,
+    modelClassification: {
+      actionKind: "READ",
+      suggestedRisk: "HIGH",
+      reasonCode: "governed-fetch",
+    },
+    deterministicFacts: [],
+    finalRisk: "HIGH",
+  };
+  const set = (target: PublicSearchAuthorization, recipients: string[], key: string) =>
+    target.set(
+      commandMessage(
+        ui,
+        "search.authorization.set",
+        { enabled: true, expectedRevision: 0, recipients },
+        { authorizationRef: ui.authorizationRef, idempotencyKey: key, risk: "high" },
+      ),
+      SERVICE_AUTHORITY.lease,
+    );
+  try {
+    const exaOnly = service();
+    await expect(
+      set(exaOnly, ["https://mcp.exa.ai", "https://api.deepseek.com"], "stale-list"),
+    ).rejects.toThrow("SEARCH_RECIPIENTS_CHANGED");
+    await set(exaOnly, ["https://mcp.exa.ai"], "enable");
+    await exaOnly.authorize({ ...intent, capabilityRef: "search" });
+    await exaOnly.authorize({
+      ...intent,
+      targets: [...intent.targets, { type: "network-domain", ref: "api.deepseek.com:443" }],
+    });
+    expect(
+      await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
+    ).toHaveLength(0);
+    await exaOnly.authorize(intent);
+    expect(
+      await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
+    ).toHaveLength(1);
+    const widened = service(["exa-public", "deepseek"]);
+    expect(await widened.query(queryMessage(ui, "search.authorization.read", {}))).toMatchObject({
+      payload: { enabled: false, recipients: ["https://mcp.exa.ai", "https://api.deepseek.com"] },
+    });
+    await widened.authorize({
+      ...intent,
+      id: "fetch-intent-2",
+      idempotencyKey: createIdempotencyKey("fetch-intent-2"),
+      targets: [...intent.targets, { type: "network-domain", ref: "api.deepseek.com:443" }],
+      recipients: [...intent.recipients, "https://api.deepseek.com"],
+    });
+    expect(
+      await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
+    ).toHaveLength(1);
+  } finally {
+    await resource.repository.close();
+    await rm(resource.stateRoot, { recursive: true, force: true });
+  }
+});

@@ -40,9 +40,9 @@ export function RunApprovalCard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rememberSearch, setRememberSearch] = useState(true);
   const isSearch =
-    snapshot?.payload.intent.operation === "web_search" &&
-    snapshot.payload.intent.sideEffect === "none" &&
-    snapshot.payload.intent.recipientRefs.includes("https://mcp.exa.ai");
+    (snapshot?.payload.intent.operation === "web_search" ||
+      snapshot?.payload.intent.operation === "web_fetch") &&
+    snapshot.payload.intent.sideEffect === "none";
   const responseLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -97,7 +97,13 @@ export function RunApprovalCard({
         );
         if (policy.type !== "search.authorization.snapshot")
           throw new Error("SEARCH_AUTHORIZATION_INVALID");
-        if (!policy.payload.enabled)
+        if (
+          !policy.payload.enabled &&
+          policy.payload.recipients.length > 0 &&
+          policy.payload.recipients.every((value) =>
+            snapshot.payload.intent.recipientRefs.includes(value),
+          )
+        )
           await setSearchAuthorization({
             client,
             configuration,
@@ -151,9 +157,7 @@ export function RunApprovalCard({
           title: typeof args.path === "string" ? args.path : message("threads.draft"),
           text: args.content,
         };
-    } catch {
-      /* Incomplete arguments are not a preview. */
-    }
+    } catch {}
   return (
     <section
       id={`approval-${runId}`}
