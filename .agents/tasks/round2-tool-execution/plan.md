@@ -503,3 +503,9 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
   - 根因和新硬约束记在 `docs/lessons.md`“演练把生产里不同的东西合成了一个”一节。
   - CodeBuddy 审核两轮（`.ci-output/handoff/cb-review-rev05-01/`、`-02/`），都是 0 阻断，应改和建议全部采纳；Hermes 最终演练 r05d 判定 `PASS`。冻结清单 `210a4007…`，绑定 `734984ba…`，修订工具 `51ca89cc…`（批准 G176）。
 - 2026-10-24 14:0x 修订工具演练第一遍（work-01）停在反例 `run0-fifth-s6-failed`：反例只改了 `passed`，没改 `exitCode`，工具先报 `S6_REPORT_CONTENT`，演练期望的 `S6_REPORT_FREEZES` 写错了，工具行为正确。改演练脚本：原反例改为期望 `S6_REPORT_CONTENT`，另加同时改两个字段的反例，期望 `S6_REPORT_FREEZES`。工具和冻结包都不变，第二遍（work-02）通过，随后在生产上运行修订。
+- 2026-10-24 14:3x R2-D30（第六次 S6 停在 `S6_READ`）按 G176 由 Claude 定案，做 revision-06，候选仍是 87c2e3ec：
+  - 只改 `measurement/probe/bootstrap.mjs` 的两处插入（分号改逗号表达式）和对应摘要表，其余文件与 revision-05 相同；冻结清单 `ed7a03a8…`，绑定 `3e232df2…`。
+  - 最终演练加 `probe` 阶段：新 bootstrap 必须通过，revision-05 的旧 bootstrap 必须按生产上的方式失败，两条都写进 `REHEARSAL_VERDICT`；Hermes r06 判定 `PASS`。
+  - 修订工具 revision-06：修订前要求临时读服务 `himawari-sixth-read-20261017.service` 是 failed，接收并校验新包后用 `systemctl reset-failed` 清掉，否则重跑 S6_READ 时 `measurement/S6-service-read.py:74` 见单元不是 `not-found`，以 `UNIQUE_UNRUN_PROBE_TARGET_REQUIRED` 拒绝；`make-revision.py` 把模板里 7 组现场名单与诊断 20 生成的 `production-shape.json` 比较。
+  - 根因和新硬约束记在 `docs/lessons.md`“操作包里写死的摘要和文件清单没跟着内容更新”一节，修订工具的一致性检查补在“演练把生产里不同的东西合成了一个”一节。
+- 2026-10-24 15:13 修订工具演练（Hermes `revision-rehearsal-06/work/`）通过：拒绝用例全过，正式运行归档 46 项、临时读服务从 failed 变成已清除，第二次运行在前提检查被拒（含 `READ_UNIT_STATE`）。生产修订工具 `9a2c2c49…`（批准 G176）由同一模板生成，只替换载荷和根分区空间下限两行。等 CodeBuddy 审核后在生产上运行。

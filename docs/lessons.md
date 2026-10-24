@@ -88,6 +88,7 @@ date: "2026-10-13"
   - 签署链第 99 行的修正在生产上做了只读预演（诊断 14，写出位置换成临时目录），发布、签署、签署读回、运行时保护都退出 0。
   - 新夹具 `signing/verify-finalize-capability-check.py`（演练入口 fixtures 阶段运行）：从 `signing/finalize-binding-inputs.py` 截出逐个能力检查的源码原样执行，输入是真实 S0；真实 S0 必须通过，标记改 `false` 或删除、运行程序摘要或运行目录不同都必须被拒绝。验证（Hermes `rehearsal-87c2e3ec-r05c/`，输出存于 `.ci-output/handoff/rev05/r05c-rehearsal-output.txt`）：新代码 17 个用例全过；revision-04 的旧代码在 `production-s0-accepted` 失败，退出码 1。审核后补了“标记为空”和“删除标记必须是具体的 `KeyError`”两类用例，最终演练（Hermes `rehearsal-87c2e3ec-r05d/`，输出存于 `.ci-output/handoff/rev05/r05d-rehearsal-output.txt`）新代码 23 个用例全过，旧代码仍在 `production-s0-accepted` 失败；演练脚本最后的 `REHEARSAL_VERDICT` 把“旧代码必须失败”也写成了硬判断，结果是 `PASS`。
   - 限制：分类只看运行程序摘要；夹具只截取逐个能力检查的一段，脚本其余部分仍要求 root 和生产主机名，不在演练里运行。以后起草操作包时，签署和维护的夹具一律从 `inputs/s0-db-readback.json` 派生期望值。
+- 补充（2026-10-24，revision-06）：包外修订工具每多一次 S6，模板里就多一批要和生产现场对上的名单（S6 写进包里的文件、S6 证据文件、验收目录、资格目录、运行时保护文件、辅助脚本、临时读服务状态），以前除第一组外都靠人照诊断手抄。`revision-tool/make-revision.py` 现在每次生成工具时读 `rehearsal/production-shape.json`（`rehearsal/production-shape.py` 由修订前的只读诊断 20 生成），把模板里这 7 组常量逐一与它比较，任何一组不等就以 `TEMPLATE_<名单>_DIFFER(S)_FROM_PRODUCTION` 拒绝生成。验证（Hermes `revision-rehearsal-06/work/`，日志存于 `.ci-output/handoff/rev06/revision-rehearsal-06-work/`）：修订演练 `rehearse-revision.sh` 对新加的 6 组各删改一项，6 个反例都以对应错误码被拒，未改的模板通过，随后的修订演练 `PASS`。限制：只比较这 7 组；诊断里没列出的现场仍要在审核时对照。
 
 [回到目录](#编码代理反复犯的错误)
 
@@ -309,6 +310,16 @@ date: "2026-10-13"
   - 补充（2026-10-16）：`run-cand.sh` 生成记录工具后，先确认工具里不再残留 `fourth-source-inputs-01`，并且工具里写死的位置正好是它实际存放的位置，否则打印 `CAPTURE_PATH_LEFT` 或 `CAPTURE_TOOL_PATH_MISMATCH` 并以退出码 2 结束，不再运行记录步骤。验证：按 `run-cand.sh` 的方式只替换版本号、不替换目录名时，检查打印 `CAPTURE_PATH_LEFT` 并以退出码 2 结束；两处都替换后通过。
   - 补充（2026-10-16，第五次之后）：前面的检查只核对“清单记的摘要”和“文件实际内容”，没核对清单自己的身份字段是不是这一次的。`check-packet-consistency.py` 现在从验收输入清单的真实使用者 `finalize-cloud-inputs.py` 读出这一次的工作目录、发布目录、`schema` 和 `profile`，要求清单的 `schema`、`profile`、`runtime`、`sourceRoot`、`evidenceRoot` 与之相等，并且清单里其余以 `/var/tmp/` 或 `/opt/himawari/releases/` 开头的路径都在这一次的目录下，否则打印 `CLOUD_INPUT_IDENTITY_STALE` 并以退出码 1 结束；读不到这些值时打印 `CLOUD_INPUT_CONSUMER_IDENTITY_NOT_FOUND`。期望值取自使用者脚本，不由检查自己另写一份。验证：夹具 `verify-packet-consistency.py` 新增旧 `schema`、旧 `profile`、旧工作目录下的路径、旧发布目录下的 `runtime` 四种情况，加检查前四种都以退出码 0 漏过，加检查后都以退出码 1 拒绝，10 个夹具全部通过；对修正前的操作包，旧检查判通过，新检查报 11 处。
   - 限制：只能发现“被已登记文件按名字引用”的漏登记；按拼接出来的路径载入的文件发现不了。身份字段只检查验收输入清单，期望值只取 `finalize-cloud-inputs.py` 一处，`run-cloud-acceptance.sh`、`run-network-preparation.py` 等其他使用者里写死的同一组值不比对；路径只看 `/var/tmp/` 和 `/opt/himawari/releases/` 两个前缀。其他清单里的格式名（例如 `composition-source-contract.json` 的 `schema`）没有脚本校验，仍可能留着上一次的名字。
+- 第六次变更第六次 S6 在 `S6_READ` 失败（2026-10-24，R2-D30），同样出在 `bootstrap.mjs`，但不是摘要过期：
+  - `bootstrap.mjs` 用两处正则在作业宿主 `job-host-main.js` 的 `phase = "x";` 后面插入 `__probeStage("x");`（记录探针阶段的调用）。候选从 `5bab4de1`（2026-10-18）起有一处不带花括号的 `if (...) phase = "ready"; else stop("host_failure");`，插入后 `else` 前多了一句，改写出来的模块有语法错误，宿主一加载就以退出码 1 结束，生产报 `SERVICE_ENVIRONMENT_REAL_READ_FAILED`，临时读服务留在 failed 状态。
+  - 上面的一致性检查只要求每个锚点恰好出现一次，这次全部通过；没有任何检查加载改写后的模块。最终演练 `final-rehearsal.sh` 也从没跑过 S6_READ 的探针。
+- 这一次的根因：探针对候选源码做文本改写，检查只核对改写前的锚点，不核对改写后的结果能不能运行；演练覆盖的阶段里又没有 S6_READ。
+- 硬约束（2026-10-24，G176，revision-06）：
+  - 修法：两处插入改成逗号表达式 `phase = "x", __probeStage("x");`，在不带花括号的分支里仍是一句。
+  - 演练入口 `run-sixth-rehearsal.sh` 加 `probe` 阶段，用真实的 `measurement/probe/run-service-probe.py --hermes-rehearsal` 在装好的候选上跑一次 S6_READ 的探针。最终演练 `final-rehearsal.sh` 要求它退出 0、`probe-run.json` 和 `read-report.json` 都通过、宿主 12 项和沙箱线程 6 项计时齐全（打印 `PROBE_NEW_PASSED`），否则判定 `FAIL`。
+  - 同一次最终演练再用 revision-05 的旧 `bootstrap.mjs`（摘要 `418b9592…`，开头核对摘要，不符时以 `OLD_BOOTSTRAP_PROOF_CHANGED` 停下）跑一遍，必须以生产上的同样特征失败：`REAL_SANDBOX_READ_FAILED`、`host_failure`、`taskStarted: false`、宿主只记下载入事件、宿主退出码 1（打印 `PROBE_OLD_FAILED_AS_PRODUCTION`），否则也判定 `FAIL`。这证明新阶段确实跑到了宿主加载这一步，不是在更早的地方通过或失败。
+  - 验证（Hermes `rehearsal-87c2e3ec-r06/`，输出存于 `.ci-output/handoff/rev05/r06-rehearsal-output.txt`）：新 `bootstrap.mjs` 通过，旧的按生产上的方式失败，`REHEARSAL_VERDICT=PASS`。
+  - 限制：演练用 `--hermes-rehearsal` 在普通账号下运行，不经过生产的 `systemd-run` 和服务账号，只证明改写结果能加载并完成一次读取。以后再对候选源码做文本改写时，检查要加载改写后的结果，不能只数锚点。
 
 [回到目录](#编码代理反复犯的错误)
 

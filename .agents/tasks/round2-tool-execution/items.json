@@ -1597,6 +1597,22 @@
         "on": "2026-10-24",
         "why": "S6_FINALIZE_BINDINGS 生产失败：finalize-binding-inputs.py:99 要求 integrityMatchesSnapshot、declarationInvariantMatchesSnapshot 为 false，冻结的 S0 读回和包内另外四处检查都是 true（.ci-output/production/2026-10-24-sixth-step-status-12/）；演练从未用真实 S0 读回跑过这一步"
       }
+    },
+    {
+      "id": "R2-D30",
+      "title": "第六次 S6_READ 的探针能在真实候选上加载并完成读取：bootstrap.mjs 插入的阶段记录不破坏不带花括号的 if/else；最终演练跑 S6_READ 探针，新 bootstrap 必须通过、旧 bootstrap 必须按生产上的方式失败；第六次修订工具在接收新包后清掉 failed 的临时读服务，模板里的现场名单与修订前的生产诊断一致",
+      "goal_ref": ["G1", "G175", "G176"],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "codebuddy"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "S6_READ 生产失败 SERVICE_ENVIRONMENT_REAL_READ_FAILED：bootstrap.mjs 在 job-host-main.js 的 if (...) phase = \"ready\"; else ... 里插入第二句，宿主模块语法错误、加载即退出 1（.ci-output/production/2026-10-24-sixth-step-status-16/ 至 -19/，Hermes 复现 .ci-output/handoff/rev05/s6-read-diagnosis/repro-output.txt）；锚点检查只数次数，最终演练从未跑过 S6_READ"
+      }
     }
   ],
   "fingerprint": {
