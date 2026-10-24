@@ -1581,6 +1581,22 @@
         "on": "2026-10-24",
         "why": "第四次 S6_ACCEPTANCE 失败：生产机 web-search-installed 读最终证据报 ENOENT，探针 cleanupTimeoutMs 只有 1000 ms（.ci-output/production/2026-10-24-sixth-s6-diagnostic-07/ 至 -09/）；时限排查发现同类余量不足还有 worker-loss、boundary、authorized-network，Hermes 慢速演练又发现 cpu 场景因 ps 整秒计时不触发上限"
       }
+    },
+    {
+      "id": "R2-D29",
+      "title": "第六次签署输入步骤按真实 S0 读回通过：finalize-binding-inputs.py 对旧能力的两项快照比较与包内其他检查一致（为 true）；本机 ssh 带保活参数；S6_FINALIZE_BINDINGS 之后各步对冻结输入的硬性期望逐项按真实 S0 读回核对无矛盾；第五次修订工具能归档验收已通过、材料已发布的现场",
+      "goal_ref": ["G1", "G175", "G176"],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "codebuddy"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "S6_FINALIZE_BINDINGS 生产失败：finalize-binding-inputs.py:99 要求 integrityMatchesSnapshot、declarationInvariantMatchesSnapshot 为 false，冻结的 S0 读回和包内另外四处检查都是 true（.ci-output/production/2026-10-24-sixth-step-status-12/）；演练从未用真实 S0 读回跑过这一步"
+      }
     }
   ],
   "fingerprint": {

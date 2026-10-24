@@ -497,3 +497,9 @@ G138、G139、G140：第五次之后的第二轮剩余工作，先做 R2-P2，�
 - 2026-10-24 02:20 CodeBuddy 第一轮审核（`.ci-output/handoff/cb-review-rev04-probes-01/rev04-probes-review-1.md`，0 阻断、4 应改、5 建议）后：采纳 M1、M3、M4 的报错被盖住部分、S2、S3、S5；不采纳 M2（父进程 60 秒就绪计时器已兜底）、S1（结果字段都存在、标准错误写文件）、S4（正式服务控制通道也是 1 秒，与生产一致）。慢速验收 r04-1 用的是改前副本，所以三遍连续通过从改后副本重新计数。
 - 2026-10-24 02:35 CodeBuddy 第二轮审核（`.ci-output/handoff/cb-review-rev04-probes-02/rev04-probes-review-2.md`）0 阻断、0 应改、4 建议：只采纳 S4（清单文字），S1–S3 不改，保持会执行的探针与 chain-2 慢速验收测的版本一致。
 - 2026-10-24 03:43 R2-D28 慢速验收结果：新副本 r04b-1/2/3（0 号 CPU，2、2、3 个占满进程）都通过；对照包 ctl-2（旧公开搜索探针，3 个占满进程）也通过，Hermes 复现不了第四次 S6 的 ENOENT，而 Hermes 各子检查比生产更慢，说明生产失败不是单纯 CPU 慢（推测是生产真实连接外部搜索服务后清理变长，未验证）。决定：新时限与正式服务的 5000 毫秒一致、失败时打印诊断，按 G174、G175 继续最终演练和重新冻结，不再加慢速轮次；这一推测和“未复现”写进操作包 README 和给用户的报告。
+- 2026-10-24 13:4x R2-D29（第五次 S6 停在 `S6_FINALIZE_BINDINGS`）按 G176 由 Claude 定案，做 revision-05，候选仍是 87c2e3ec：
+  - 修 `signing/finalize-binding-inputs.py` 第 99 行写反的条件（要求旧能力两项快照比较为 `False`，真实 S0 读回和包内另外四处检查都是 `true`），并加夹具 `signing/verify-finalize-capability-check.py`：截取这段源码，用真实 `inputs/s0-db-readback.json` 执行，23 个用例。
+  - 只读核对后续各步时发现 `S7_CATALOG_UPGRADE` 必然失败：公开搜索的运行程序在新构件里没变，维护脚本要求每个能力都变。一并修维护脚本；形状演练改为先按真实 S0 分类，再按 `changed`、`unchanged` 各跑一遍，分类必须正好是“Pi 变、公开搜索不变”。
+  - 根因和新硬约束记在 `docs/lessons.md`“演练把生产里不同的东西合成了一个”一节。
+  - CodeBuddy 审核两轮（`.ci-output/handoff/cb-review-rev05-01/`、`-02/`），都是 0 阻断，应改和建议全部采纳；Hermes 最终演练 r05d 判定 `PASS`。冻结清单 `210a4007…`，绑定 `734984ba…`，修订工具 `51ca89cc…`（批准 G176）。
+- 2026-10-24 14:0x 修订工具演练第一遍（work-01）停在反例 `run0-fifth-s6-failed`：反例只改了 `passed`，没改 `exitCode`，工具先报 `S6_REPORT_CONTENT`，演练期望的 `S6_REPORT_FREEZES` 写错了，工具行为正确。改演练脚本：原反例改为期望 `S6_REPORT_CONTENT`，另加同时改两个字段的反例，期望 `S6_REPORT_FREEZES`。工具和冻结包都不变，第二遍（work-02）通过，随后在生产上运行修订。

@@ -77,6 +77,17 @@ date: "2026-10-13"
   - 演练现场从生产只读诊断推导：`rehearsal/production-shape.py` 读诊断 03 的输出，按修订开始时间把证据根里的文件分成“修订前就有”和“修订新建”，再加上归档清单里从证据根移走的文件，得到“首次修订前的证据根”；`build-rehearsal-stage.py` 按这份清单搭建，`rehearsal/check-stage.py` 在演练开始前和复现失败后各比对一次（名字、类型、权限），不一致就以 `STAGE_DIFFERS_FROM_PRODUCTION:<差异>` 失败。期望值取自生产诊断，不由演练自己另写。
   - 验证（Hermes `/data/hermes/himawari/tool-audit-round2/r2-l13/install-resume-rehearsal-01/work-02/`，脚本 `rehearsal/rehearse-install-resume.sh`）：G163 版模板以 `TEMPLATE_INSTALL_OUTPUTS_MISSING:python-extract.stdout,python-extract.stderr` 被拒，多列一个名字的模板以 `TEMPLATE_INSTALL_OUTPUTS_EXTRA` 被拒，用 `` `${evidence}/...` `` 写文件的安装程序以 `INSTALLER_EVIDENCE_USES_UNRECOGNIZED` 被拒，补好的模板通过；去掉 `python-extract.stdout` 的现场以 `STAGE_DIFFERS_FROM_PRODUCTION:EVIDENCE:MISSING:python-extract.stdout` 被拒，按生产清单搭的现场通过；用去掉这两项的工具在按生产清单搭的现场上运行，复现了生产的 `REVISION_INSTALL_FAILED:EXIT:1`，失败后的现场与诊断 03 一致；只补做安装的工具 `install-resume/resume-install.py` 在这个现场上退出 0（9 次移动，安装检查通过），服务运行中、多一个残留文件、失败原因不是 `python-extract.stdout` 的 EEXIST、重复运行四种情况都被拒绝，现场不变。工具的审核由 CodeBuddy 逐行做（opencode 免费模型当时都返回 429），采纳了其中三条（名单改为恰好相等、`evidence` 用法计数、补装核对失败原因）后重跑演练。
   - 限制：比对只看名字、类型和权限，不看属主（演练里都是 0）和内容；属主仍要在审核时对照诊断逐个核对。以后再写包外工具时，把生产只读诊断的列表作为演练现场的唯一来源。
+- 第六次变更第五次 S6 又发生两次（2026-10-24，R2-D29）：
+  - `S6_FINALIZE_BINDINGS` 失败：`signing/finalize-binding-inputs.py` 第 99 行要求旧能力的两个摘要比较结果为 `False`，真实 S0 读回里都是 `true`。夹具用的是手写的 S0，期望值跟着写反的条件走，没有用操作包里真实的 `inputs/s0-db-readback.json`。
+  - 只读核对后面各步时发现 `S7_CATALOG_UPGRADE` 必然失败：生产上公开搜索的运行程序摘要在新构件里没变，Pi 的变了；维护脚本要求每个能力的运行程序都变。形状演练只登记 Pi 一个能力，而 Pi 每次都变，生产上“有的变、有的不变”被合成了“全部都变”。包里的说明文件原本就写着“exa 的升级由生产 S7 逐项检查”，这个缺口是明知的。
+- 这两次的根因：前面几次的硬约束都是逐项列出的实体，“同一步里不同能力的运行程序有的变有的不变”不在清单上；签署夹具也没用真实 S0。
+- 新增硬约束（2026-10-24，G176，在 `maintenance/verify-production-shape-chain.mjs`，演练入口 `run-sixth-rehearsal.sh` 的形状阶段冻结前必须通过）：
+  - 形状演练开头读真实 S0，把每个能力按“新构件运行程序摘要是否等于 S0 记录”分成“变”和“不变”；生产里出现演练不认识的能力时以 `PRODUCTION_SHAPE_PRODUCTION_CAPABILITY_UNKNOWN` 失败，本次演练的类别生产里没有时以 `PRODUCTION_SHAPE_RUNNER_CLASS_NOT_IN_PRODUCTION` 失败。演练入口按 `--runner-class changed` 和 `--runner-class unchanged` 各跑一遍整条 S7–S8，两遍都通过才算通过。
+  - 验证（Hermes `rehearsal-87c2e3ec-r05/shape-proof/`，输出存于 `.ci-output/handoff/rev05/shape-proof-output.txt`）：用 revision-04 的维护脚本跑 `unchanged` 一遍，以 `SIXTH_MAINTENANCE_PREPARED_RUNNER_UNCHANGED`、`SIXTH_MAINTENANCE_UPGRADE_PLAN_RUNNER_UNCHANGED` 在 `S7_CATALOG_UPGRADE` 失败，与生产会遇到的错误相同；换 revision-05 的脚本后通过，报告里的生产分类是 Pi 变、公开搜索不变。
+  - 生产分类还必须正好是“Pi 变、公开搜索不变”，否则以 `PRODUCTION_SHAPE_PRODUCTION_RUNNER_CLASSES_CHANGED` 失败。
+  - 签署链第 99 行的修正在生产上做了只读预演（诊断 14，写出位置换成临时目录），发布、签署、签署读回、运行时保护都退出 0。
+  - 新夹具 `signing/verify-finalize-capability-check.py`（演练入口 fixtures 阶段运行）：从 `signing/finalize-binding-inputs.py` 截出逐个能力检查的源码原样执行，输入是真实 S0；真实 S0 必须通过，标记改 `false` 或删除、运行程序摘要或运行目录不同都必须被拒绝。验证（Hermes `rehearsal-87c2e3ec-r05c/`，输出存于 `.ci-output/handoff/rev05/r05c-rehearsal-output.txt`）：新代码 17 个用例全过；revision-04 的旧代码在 `production-s0-accepted` 失败，退出码 1。审核后补了“标记为空”和“删除标记必须是具体的 `KeyError`”两类用例，最终演练（Hermes `rehearsal-87c2e3ec-r05d/`，输出存于 `.ci-output/handoff/rev05/r05d-rehearsal-output.txt`）新代码 23 个用例全过，旧代码仍在 `production-s0-accepted` 失败；演练脚本最后的 `REHEARSAL_VERDICT` 把“旧代码必须失败”也写成了硬判断，结果是 `PASS`。
+  - 限制：分类只看运行程序摘要；夹具只截取逐个能力检查的一段，脚本其余部分仍要求 root 和生产主机名，不在演练里运行。以后起草操作包时，签署和维护的夹具一律从 `inputs/s0-db-readback.json` 派生期望值。
 
 [回到目录](#编码代理反复犯的错误)
 
