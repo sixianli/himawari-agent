@@ -274,6 +274,7 @@ export interface JobHostCommandReport {
   readonly stdioClosed: boolean;
   readonly processGroupGone: boolean;
   readonly namespace: JobHostNamespaceState;
+  readonly namespaceSwept: boolean;
   readonly cleanedUp: boolean;
 }
 export interface JobHostCommandOutcome extends JobHostCommandReport {

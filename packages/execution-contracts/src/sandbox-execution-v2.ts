@@ -343,6 +343,26 @@ const supervisionEvidence = object({
     task_environment: object({ kind: literal("task_environment"), environmentId: machineString }),
   }),
 });
+const releasedFields = {
+  ...resourceFields,
+  supervision: literal("released"),
+  cleanup: enumeration(["confirmed", "process_group_gone"]),
+  evidence: supervisionEvidence,
+};
+const releasedBase = object(releasedFields);
+const releasedScoped = object({ ...releasedFields, cleanupScope: literal("pid_namespace") });
+const releasedObservation: Schema<
+  InferSchema<typeof releasedBase> & { readonly cleanupScope?: "pid_namespace" }
+> = {
+  parse(value, path = "$") {
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, "cleanupScope"))
+      return releasedBase.parse(value, path);
+    const scoped = releasedScoped.parse(value, path);
+    if (scoped.cleanup !== "process_group_gone")
+      throw new ContractValidationError(`${path}.cleanupScope`, "requires process_group_gone");
+    return scoped;
+  },
+};
 export const sandboxResourceObservationSchema = variant("supervision", {
   initializing: object({
     ...resourceFields,
@@ -373,12 +393,7 @@ export const sandboxResourceObservationSchema = variant("supervision", {
     cleanup: enumeration(["pending", "unknown"]),
     reasonCode: machineString,
   }),
-  released: object({
-    ...resourceFields,
-    supervision: literal("released"),
-    cleanup: enumeration(["confirmed", "process_group_gone"]),
-    evidence: supervisionEvidence,
-  }),
+  released: releasedObservation,
 });
 export type SandboxResourceObservation = InferSchema<typeof sandboxResourceObservationSchema>;
 export const sandboxExecutionFactsSchema = object({

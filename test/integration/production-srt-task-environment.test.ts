@@ -866,6 +866,11 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
 
     const secondResult = await readPiResult(ctx, second);
     expect(secondResult?.text).not.toContain("sleep 600");
+    expect((await readRecord(ctx, first))?.facts.resource).toMatchObject({
+      supervision: "released",
+      cleanup: "process_group_gone",
+      cleanupScope: "pid_namespace",
+    });
     const leftovers = await waitFor(async () => {
       const found = await processesWith("sleep 600");
       return found.length === 0 ? [] : undefined;

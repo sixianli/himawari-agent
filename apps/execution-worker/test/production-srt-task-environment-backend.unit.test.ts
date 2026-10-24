@@ -98,6 +98,7 @@ function outcome(settled = true): JobHostCommandOutcome {
     stdioClosed: true,
     processGroupGone: true,
     namespace: "resident_intact",
+    namespaceSwept: false,
     cleanedUp: true,
     settled,
     stdout: new Uint8Array(),

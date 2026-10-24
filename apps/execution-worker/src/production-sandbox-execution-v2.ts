@@ -1526,6 +1526,7 @@ export class ProductionSandboxExecutionV2 {
             occurredAt: this.options.clock.now(),
             supervision: "released",
             cleanup: "process_group_gone",
+            ...(outcome.namespaceSwept ? { cleanupScope: "pid_namespace" } : {}),
             evidence: {
               ...taskEnvironmentCallEvidence({
                 environmentId: environment.identity.environmentId,

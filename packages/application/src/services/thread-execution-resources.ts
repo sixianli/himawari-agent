@@ -146,7 +146,9 @@ export async function readThreadExecutionResources(input: {
     if (released) {
       phase = "released";
       reason =
-        resource?.supervision === "released" && resource.cleanup === "process_group_gone"
+        resource?.supervision === "released" &&
+        resource.cleanup === "process_group_gone" &&
+        resource.cleanupScope !== "pid_namespace"
           ? "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED"
           : "RESOURCE_RELEASE_CONFIRMED";
     } else if (recovering) {

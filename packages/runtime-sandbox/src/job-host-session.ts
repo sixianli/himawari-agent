@@ -176,6 +176,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         stdioClosed: false,
         processGroupGone: false,
         namespace: "unknown",
+        namespaceSwept: false,
         cleanedUp: false,
       },
       false,
@@ -241,6 +242,8 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
       !isFlag(message["stdioClosed"]) ||
       !isFlag(message["processGroupGone"]) ||
       !isFlag(message["cleanedUp"]) ||
+      !isFlag(message["namespaceSwept"]) ||
+      (message["namespaceSwept"] && !message["processGroupGone"]) ||
       !JOB_HOST_NAMESPACE_STATES.some((state) => state === message["namespace"]) ||
       message["taskStarted"] !== (command.task !== null)
     ) {
@@ -260,6 +263,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
         stdioClosed: message["stdioClosed"],
         processGroupGone: message["processGroupGone"],
         namespace: message["namespace"] as JobHostCommandReport["namespace"],
+        namespaceSwept: message["namespaceSwept"],
         cleanedUp: message["cleanedUp"],
       },
       true,
