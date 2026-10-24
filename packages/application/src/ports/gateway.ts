@@ -18,6 +18,8 @@ import type {
   ThreadGatewayQuery,
   ThreadGatewayRequestResult,
   ThreadGatewaySubscription,
+  ThreadExecutionChangedEvent,
+  ThreadExecutionEventsSubscription,
 } from "@himawari-agent/gateway-contracts";
 import type { RecentAuthenticationEvidence } from "./recent-authentication.js";
 
@@ -27,9 +29,7 @@ export interface GatewayAuthenticationContext {
   readonly deviceId: string;
   readonly authenticatedAt: string;
   readonly authenticationRef: string;
-  /** Verified product session identity, when the transport uses product sessions. */
   readonly sessionId?: string;
-  /** Optional provider evidence; ordinary authentication remains usable without it. */
   readonly recentAuthenticationEvidence?: RecentAuthenticationEvidence;
 }
 
@@ -91,7 +91,6 @@ export interface GatewayV2ControlPlanePort {
   execute(input: GatewayV2CommandExecution): Promise<GatewayCommandResult>;
 }
 
-/** Snapshot invalidations are hints, not durable events or replay cursors. */
 export type GatewayV2StreamItem =
   | GatewayV2Event
   | {
@@ -131,7 +130,10 @@ export interface AgentGatewayV2Port {
 }
 
 export type ThreadGatewayRequestMessage = ThreadGatewayCommand | ThreadGatewayQuery;
-export type ThreadGatewayInboundMessage = ThreadGatewayRequestMessage | ThreadGatewaySubscription;
+export type ThreadGatewayInboundMessage =
+  | ThreadGatewayRequestMessage
+  | ThreadGatewaySubscription
+  | ThreadExecutionEventsSubscription;
 
 export interface ThreadGatewayAccessPolicyPort {
   authorize(input: {
@@ -157,6 +159,11 @@ export interface ThreadGatewayReadModelPort {
     readonly subscription: ThreadGatewaySubscription;
     readonly signal?: AbortSignal;
   }): AsyncIterable<ThreadGatewayEvent>;
+  watchExecution?(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly subscription: ThreadExecutionEventsSubscription;
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<ThreadExecutionChangedEvent>;
 }
 
 export interface AgentThreadGatewayPort {
@@ -169,4 +176,9 @@ export interface AgentThreadGatewayPort {
     subscription: ThreadGatewaySubscription,
     signal?: AbortSignal,
   ): AsyncIterable<ThreadGatewayEvent>;
+  watchExecution?(
+    authentication: GatewayAuthenticationContext,
+    subscription: ThreadExecutionEventsSubscription,
+    signal?: AbortSignal,
+  ): AsyncIterable<ThreadExecutionChangedEvent>;
 }

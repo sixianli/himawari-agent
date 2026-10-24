@@ -32,6 +32,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.task.resolve",
   "thread.deletion_impact",
   "thread.events",
+  "thread.execution_events",
   "thread.list",
   "thread.detail",
   "thread.execution",
@@ -53,6 +54,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.command_result",
   "thread.conflict",
   "thread.event",
+  "thread.execution_changed",
 ] as const;
 export type ThreadGatewayMessageType = (typeof THREAD_GATEWAY_MESSAGE_TYPES)[number];
 
@@ -334,6 +336,11 @@ export const threadEventsV3SubscriptionSchema = object({
   payload: object({ afterCursor: nullable(machineString) }),
 });
 
+export const threadExecutionEventsSubscriptionSchema = object({
+  ...envelope("subscription", "thread.execution_events"),
+  payload: object({ threadId: machineString }),
+});
+
 export const threadSnapshotV3Schema = object({
   ...envelope("snapshot", "thread.snapshot"),
   payload: object({
@@ -520,6 +527,18 @@ export const threadEventV3Schema = object({
   }),
 });
 
+export const threadExecutionChangedSchema = object({
+  ...envelope("event", "thread.execution_changed"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    runRevision: integer(1),
+    traceSequence: integer(0),
+    resourceRevision: nullable(machineString),
+    observedAt: timestamp,
+  }),
+});
+
 const displayText: Schema<string> = {
   parse(value, path = "$") {
     if (typeof value !== "string" || value.length > 65536)
@@ -568,7 +587,6 @@ const threadExecutionSnapshotSchema = object({
   }),
 });
 
-/** Product conclusions; transport health and local clocks are deliberately absent. */
 export const threadExecutionDisplayPhaseSchema = enumeration([
   "preparing",
   "awaiting_approval",
@@ -602,7 +620,6 @@ export const threadExecutionStateSchema = object({
   availableActions: array(enumeration(["stop", "review_approval", "retry_cleanup"])),
   needsAttention: booleanValue,
   timing: executionTimingSchema,
-  // These are operation results, not evidence that every side effect was rolled back or cleaned up.
   effectSummary: array(object({ itemId: machineString, outcome: executionEffectSchema })),
   operations: array(
     object({
@@ -679,6 +696,7 @@ const schemasByType = {
   "thread.task.resolve": resolveThreadTaskV3CommandSchema,
   "thread.deletion_impact": threadDeletionImpactV3QuerySchema,
   "thread.events": threadEventsV3SubscriptionSchema,
+  "thread.execution_events": threadExecutionEventsSubscriptionSchema,
   "thread.list": listThreadsV3QuerySchema,
   "thread.detail": threadDetailV3QuerySchema,
   "thread.search": searchThreadsV3QuerySchema,
@@ -694,15 +712,24 @@ const schemasByType = {
   "thread.command_result": threadCommandResultV3Schema,
   "thread.conflict": threadConflictV3Schema,
   "thread.event": threadEventV3Schema,
+  "thread.execution_changed": threadExecutionChangedSchema,
 } as const satisfies Record<ThreadGatewayMessageType, Schema<unknown>>;
 
 type SchemaByType = typeof schemasByType;
 export type ThreadGatewayMessage = InferSchema<SchemaByType[keyof SchemaByType]>;
 export type ThreadGatewayCommand = Extract<ThreadGatewayMessage, { kind: "command" }>;
 export type ThreadGatewayQuery = Extract<ThreadGatewayMessage, { kind: "query" }>;
-export type ThreadGatewaySubscription = Extract<ThreadGatewayMessage, { kind: "subscription" }>;
+export type ThreadGatewaySubscription = Extract<ThreadGatewayMessage, { type: "thread.events" }>;
+export type ThreadExecutionEventsSubscription = Extract<
+  ThreadGatewayMessage,
+  { type: "thread.execution_events" }
+>;
 export type ThreadGatewaySnapshot = Extract<ThreadGatewayMessage, { kind: "snapshot" }>;
-export type ThreadGatewayEvent = Extract<ThreadGatewayMessage, { kind: "event" }>;
+export type ThreadGatewayEvent = Extract<ThreadGatewayMessage, { type: "thread.event" }>;
+export type ThreadExecutionChangedEvent = Extract<
+  ThreadGatewayMessage,
+  { type: "thread.execution_changed" }
+>;
 export type ThreadGatewayRequestResult = Extract<
   ThreadGatewayMessage,
   { kind: "snapshot" | "result" | "conflict" }

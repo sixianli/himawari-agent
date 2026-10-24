@@ -125,7 +125,7 @@ function subscription(afterCursor: string | null): ThreadGatewaySubscription {
     ...envelope("subscription", "thread.events"),
     payload: { afterCursor },
   });
-  if (parsed.kind !== "subscription") throw new Error("expected subscription");
+  if (parsed.type !== "thread.events") throw new Error("expected subscription");
   return parsed;
 }
 
@@ -588,7 +588,6 @@ describe("Thread Gateway lifecycle and empty projections", () => {
         .subscribe({ authentication, subscription: subscription(null), signal: controller.signal })
         [Symbol.asyncIterator]();
       expect(await iterator.next()).toMatchObject({ done: true });
-      // Read persisted state through a fresh repository, independently of command acknowledgements.
       await repository.close();
       const reopened = await SqliteProductStateRepository.open({
         ...paths,

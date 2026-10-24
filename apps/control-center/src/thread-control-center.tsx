@@ -23,6 +23,7 @@ import type {
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
+import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
 
 import { listPendingRunApprovals } from "./run-approval.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
@@ -67,6 +68,8 @@ export interface ThreadControlCenterOptions {
   ) => string;
   readonly navigate: (route: ControlCenterRouteState) => void;
   readonly refreshSignal: number;
+  readonly threadEventSignal?: number;
+  readonly threadEvents?: { readonly current: (string | null)[] };
   readonly route: ControlCenterRouteState;
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
@@ -119,6 +122,8 @@ export function useThreadControlCenter(
     navigate,
     onUnauthorized,
     refreshSignal,
+    threadEventSignal = 0,
+    threadEvents,
     route,
     storage,
   } = options;
@@ -188,13 +193,18 @@ export function useThreadControlCenter(
   const refreshSequence = useRef(0);
   const refreshing = useRef(false);
   const refreshAgain = useRef(false);
-  const refreshLatest = useRef<() => Promise<void>>(async () => {});
+  const refreshLatest = useRef<(force?: boolean, full?: boolean) => Promise<void>>(async () => {});
+  const fullRefreshRequested = useRef(true);
+  const eventThreadIds = useRef(new Set<string | null>());
+  const detailRef = useRef<ThreadDetailSnapshot | undefined>(undefined);
   const refreshTimer = useRef<number | undefined>(undefined);
   const selectedThreadId = route.objectId ?? null;
   const selectedIdRef = useRef(selectedThreadId);
   selectedIdRef.current = selectedThreadId;
   const shownThreadId = useRef<string | null>(null);
-  shownThreadId.current = detail?.payload.thread.threadId ?? null;
+  const shownDetailThreadId = detail?.payload.thread.threadId ?? null;
+  shownThreadId.current = shownDetailThreadId;
+  detailRef.current = detail;
   useEffect(() => {
     refreshSequence.current++;
     setDetail(undefined);
@@ -270,9 +280,18 @@ export function useThreadControlCenter(
     }
   }, [client, configuration]);
 
+  const scheduleRefresh = useCallback((threadId?: string | null, delay = 80) => {
+    if (threadId !== undefined) eventThreadIds.current.add(threadId);
+    refreshTimer.current ??= window.setTimeout(() => {
+      refreshTimer.current = undefined;
+      void refreshLatest.current(false, false);
+    }, delay);
+  }, []);
+
   const refresh = useCallback(
-    async (force = false) => {
+    async (force = false, full = true) => {
       if (!active || !client || !configuration) return;
+      if (full) fullRefreshRequested.current = true;
       if (refreshing.current && !force) {
         refreshAgain.current = true;
         return;
@@ -290,6 +309,11 @@ export function useThreadControlCenter(
       refreshing.current = true;
       const sequence = ++refreshSequence.current;
       const background = selectedThreadId !== null && shownThreadId.current === selectedThreadId;
+      const previousDetail =
+        background && !fullRefreshRequested.current ? detailRef.current : undefined;
+      const eventThreads = new Set(eventThreadIds.current);
+      fullRefreshRequested.current = false;
+      eventThreadIds.current.clear();
       let conversationShown = background;
       let phase: "list" | "conversation" = "list";
       let retryDelay: number | null = null;
@@ -378,19 +402,24 @@ export function useThreadControlCenter(
           succeeded();
           return;
         }
+        if (previousDetail && !eventThreads.has(selectedThreadId) && !eventThreads.has(null)) {
+          succeeded();
+          return;
+        }
         phase = "conversation";
         if (!background) setReadScope("conversation");
+        const knownMessages = previousDetail?.payload.messages ?? [];
         let current = await client.queryThread(
           threadQueryMessage(configuration, "thread.detail", {
             threadId: selectedThreadId,
-            afterSequence: 0,
+            afterSequence: knownMessages.at(-1)?.sequence ?? 0,
             limit: 1000,
           }),
           controller.signal,
         );
         if (sequence !== refreshSequence.current || current.type !== "thread.detail_snapshot")
           return;
-        const pages = [...current.payload.messages];
+        const pages = [...knownMessages, ...current.payload.messages];
         while (current.payload.nextSequence !== null) {
           const page = await client.queryThread(
             threadQueryMessage(configuration, "thread.detail", {
@@ -425,73 +454,28 @@ export function useThreadControlCenter(
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
           ...current.payload.messages.map(({ contentRef }) => contentRef),
         ]);
-        if (configuration.executionPresentationAvailable) {
-          await Promise.all(
-            current.payload.runs.map(async (run) => {
-              const cached = executionCache.current[run.runId] ?? [];
-              let afterSequence = cached.at(-1)?.sequence ?? 0;
-              const records = [...cached];
-              for (;;) {
-                const page = await client.queryThread(
-                  threadQueryMessage(configuration, "thread.execution", {
-                    threadId: selectedThreadId,
-                    runId: run.runId,
-                    afterSequence,
-                    limit: 200,
-                  }),
-                  controller.signal,
-                );
-                if (
-                  sequence !== refreshSequence.current ||
-                  page.type !== "thread.execution_snapshot"
-                )
-                  return;
-                records.push(...page.payload.records);
-                if (page.payload.nextSequence === null) break;
-                if (page.payload.nextSequence <= afterSequence)
-                  throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
-                afterSequence = page.payload.nextSequence;
-              }
-              executionCache.current[run.runId] = [
-                ...new Map(records.map((item) => [item.id, item])).values(),
-              ].sort((a, b) => a.sequence - b.sequence);
-            }),
-          );
-          if (sequence !== refreshSequence.current) return;
-          setExecution({ ...executionCache.current });
-        }
-        if (configuration.executionStateAvailable) {
-          const states = await Promise.all(
-            current.payload.runs.map(async (run) => {
-              const result = await client.queryThread(
-                threadQueryMessage(configuration, "thread.execution_state", {
-                  threadId: selectedThreadId,
-                  runId: run.runId,
-                }),
-                controller.signal,
-              );
-              if (
-                result.type !== "thread.execution_state_snapshot" ||
-                result.payload.threadId !== selectedThreadId ||
-                result.payload.runId !== run.runId
-              )
-                throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
-              if (result.payload.state.runRevision < run.revision)
-                throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
-              return [run.runId, result.payload.state] as const;
-            }),
-          );
-          if (sequence !== refreshSequence.current) return;
-          setExecutionStates(Object.fromEntries(states));
-        }
+        const changedRuns = current.payload.runs.filter(
+          (run) =>
+            previousDetail?.payload.runs.find((item) => item.runId === run.runId)?.revision !==
+            run.revision,
+        );
+        await readRunExecution(
+          client,
+          configuration,
+          selectedThreadId,
+          changedRuns,
+          executionCache.current,
+          () => sequence === refreshSequence.current,
+          setExecution,
+          setExecutionStates,
+          controller.signal,
+        );
+        if (sequence !== refreshSequence.current) return;
         succeeded();
       } catch (caught) {
         if (controller.signal.aborted || sequence !== refreshSequence.current) return;
-        const status =
-          caught && typeof caught === "object" && "status" in caught
-            ? (caught as { readonly status?: unknown }).status
-            : null;
-        if (status === 401) onUnauthorized();
+        if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
+        fullRefreshRequested.current = true;
         readFailures.current++;
         if (!conversationShown) setReadFailed(true);
         else {
@@ -508,16 +492,8 @@ export function useThreadControlCenter(
           if (sequence === refreshSequence.current) setLoading(false);
           if (refreshAgain.current) {
             refreshAgain.current = false;
-            refreshTimer.current = window.setTimeout(() => {
-              refreshTimer.current = undefined;
-              void refreshLatest.current();
-            }, 80);
-          } else if (retryDelay !== null && refreshTimer.current === undefined) {
-            refreshTimer.current = window.setTimeout(() => {
-              refreshTimer.current = undefined;
-              void refreshLatest.current();
-            }, retryDelay);
-          }
+            scheduleRefresh();
+          } else if (retryDelay !== null) scheduleRefresh(undefined, retryDelay);
         }
       }
     },
@@ -530,6 +506,7 @@ export function useThreadControlCenter(
       onUnauthorized,
       route.afterCursor,
       route.status,
+      scheduleRefresh,
       selectedThreadId,
     ],
   );
@@ -538,12 +515,13 @@ export function useThreadControlCenter(
   useEffect(() => {
     void refresh;
     void refreshSignal;
-    if (refreshTimer.current === undefined)
-      refreshTimer.current = window.setTimeout(() => {
-        refreshTimer.current = undefined;
-        void refreshLatest.current();
-      }, 80);
-  }, [refresh, refreshSignal]);
+    fullRefreshRequested.current = true;
+    scheduleRefresh();
+  }, [refresh, refreshSignal, scheduleRefresh]);
+  useEffect(() => {
+    if (!threadEventSignal) return;
+    for (const threadId of threadEvents?.current.splice(0) ?? [null]) scheduleRefresh(threadId);
+  }, [threadEventSignal, threadEvents, scheduleRefresh]);
   useEffect(
     () => () => {
       if (refreshTimer.current !== undefined) window.clearTimeout(refreshTimer.current);
@@ -551,37 +529,92 @@ export function useThreadControlCenter(
     [],
   );
 
+  const executionRuns = useRef(new Set<string>());
+  const executionTimer = useRef<number | undefined>(undefined);
+  const executionReading = useRef(false);
+  const refreshExecutionLatest = useRef(async () => {});
+  const scheduleExecution = useCallback((runIds: readonly string[]) => {
+    for (const runId of runIds) executionRuns.current.add(runId);
+    executionTimer.current ??= window.setTimeout(() => {
+      executionTimer.current = undefined;
+      void refreshExecutionLatest.current();
+    }, 80);
+  }, []);
+  refreshExecutionLatest.current = async () => {
+    const shown = detailRef.current;
+    if (
+      !active ||
+      !client ||
+      !configuration ||
+      !selectedThreadId ||
+      shown?.payload.thread.threadId !== selectedThreadId
+    )
+      return;
+    if (executionReading.current) return scheduleExecution([]);
+    const runs = shown.payload.runs.filter((run) => executionRuns.current.has(run.runId));
+    executionRuns.current.clear();
+    if (!runs.length) return;
+    const epoch = refreshSequence.current;
+    executionReading.current = true;
+    try {
+      await readRunExecution(
+        client,
+        configuration,
+        selectedThreadId,
+        runs,
+        executionCache.current,
+        () => epoch === refreshSequence.current,
+        setExecution,
+        setExecutionStates,
+      );
+    } catch {
+      if (epoch !== refreshSequence.current) return;
+      fullRefreshRequested.current = true;
+      scheduleRefresh();
+    } finally {
+      executionReading.current = false;
+    }
+  };
+  useEffect(
+    () => () => {
+      if (executionTimer.current !== undefined) window.clearTimeout(executionTimer.current);
+    },
+    [],
+  );
+
+  const offline = connection === "offline";
   useEffect(() => {
     if (
       !active ||
+      !configuration?.executionEventsAvailable ||
       !selectedThreadId ||
-      !configuration?.executionStateAvailable ||
-      connection !== "connected" ||
-      !detail?.payload.runs.length
+      shownDetailThreadId !== selectedThreadId ||
+      offline
     )
       return;
-    let stopped = false;
-    let timer: number;
-    const check = async () => {
-      if (document.visibilityState === "visible") await refreshLatest.current();
-      if (!stopped)
-        timer = window.setTimeout(() => {
-          void check();
-        }, 2000);
-    };
-    timer = window.setTimeout(() => {
-      void check();
-    }, 2000);
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
+    const synchronizer = new ThreadExecutionSynchronizer({
+      configuration,
+      threadId: selectedThreadId,
+      onConnected: () =>
+        scheduleExecution(detailRef.current?.payload.runs.map((run) => run.runId) ?? []),
+      onChanged: (event) => {
+        const run = detailRef.current?.payload.runs.find((item) => item.runId === event.runId);
+        if (!run || run.revision < event.runRevision) scheduleRefresh(selectedThreadId);
+        if (run) scheduleExecution([run.runId]);
+      },
+      onUnauthorized,
+    });
+    synchronizer.start();
+    return () => synchronizer.stop();
   }, [
     active,
+    configuration,
+    offline,
+    onUnauthorized,
+    scheduleExecution,
+    scheduleRefresh,
     selectedThreadId,
-    configuration?.executionStateAvailable,
-    connection,
-    detail?.payload.runs.length,
+    shownDetailThreadId,
   ]);
 
   const programCount = environment?.programs.length ?? 0;
@@ -930,8 +963,7 @@ export function useThreadControlCenter(
       );
     } catch (caught) {
       if (controller.signal.aborted || sequence !== searchSequence.current) return;
-      if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
-        onUnauthorized();
+      if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
       setSearchFailed(true);
     } finally {
       if (searchController.current === controller) {
@@ -1276,4 +1308,78 @@ export function useThreadControlCenter(
       ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
       : message("chat.untitled"),
   });
+}
+
+async function readRunExecution(
+  client: GatewayClient,
+  configuration: ControlCenterRuntimeConfiguration,
+  threadId: string,
+  runs: readonly { readonly runId: string; readonly revision: number }[],
+  cache: Record<string, ThreadExecutionRecord[]>,
+  current: () => boolean,
+  setExecution: (value: Record<string, ThreadExecutionRecord[]>) => void,
+  setStates: (
+    update: (prior: Record<string, ThreadExecutionState>) => Record<string, ThreadExecutionState>,
+  ) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const records = configuration.executionPresentationAvailable
+    ? await Promise.all(
+        runs.map(async (run) => {
+          const merged = [...(cache[run.runId] ?? [])];
+          let afterSequence = merged.at(-1)?.sequence ?? 0;
+          for (;;) {
+            const page = await client.queryThread(
+              threadQueryMessage(configuration, "thread.execution", {
+                threadId,
+                runId: run.runId,
+                afterSequence,
+                limit: 200,
+              }),
+              signal,
+            );
+            if (page.type !== "thread.execution_snapshot")
+              throw new Error("EXECUTION_SCOPE_MISMATCH");
+            merged.push(...page.payload.records);
+            if (page.payload.nextSequence === null) break;
+            if (page.payload.nextSequence <= afterSequence)
+              throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
+            afterSequence = page.payload.nextSequence;
+          }
+          return [
+            run.runId,
+            [...new Map(merged.map((item) => [item.id, item])).values()].sort(
+              (a, b) => a.sequence - b.sequence,
+            ),
+          ] as const;
+        }),
+      )
+    : null;
+  if (!current()) return;
+  if (records) {
+    Object.assign(cache, Object.fromEntries(records));
+    setExecution({ ...cache });
+  }
+  if (!configuration.executionStateAvailable) return;
+  const states = await Promise.all(
+    runs.map(async (run) => {
+      const result = await client.queryThread(
+        threadQueryMessage(configuration, "thread.execution_state", {
+          threadId,
+          runId: run.runId,
+        }),
+        signal,
+      );
+      if (
+        result.type !== "thread.execution_state_snapshot" ||
+        result.payload.threadId !== threadId ||
+        result.payload.runId !== run.runId
+      )
+        throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
+      if (result.payload.state.runRevision < run.revision)
+        throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
+      return [run.runId, result.payload.state] as const;
+    }),
+  );
+  if (current()) setStates((prior) => ({ ...prior, ...Object.fromEntries(states) }));
 }

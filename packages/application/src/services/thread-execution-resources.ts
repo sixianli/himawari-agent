@@ -293,3 +293,25 @@ export async function readThreadExecutionResources(input: {
     operations: values,
   };
 }
+
+const RESOURCE_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+export function nextThreadExecutionResourceChangeAt(
+  inventory: SandboxExecutionRunInventory,
+  now: string,
+): string | null {
+  const current = Date.parse(now);
+  if (!Number.isFinite(current)) throw new Error("THREAD_EXECUTION_RESOURCE_CLOCK_INVALID");
+  let next: { readonly at: number; readonly value: string } | null = null;
+  const pending: unknown[] = [inventory];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      if (!RESOURCE_INSTANT.test(value)) continue;
+      const at = Date.parse(value);
+      if (Number.isFinite(at) && at > current && (!next || at < next.at)) next = { at, value };
+    } else if (Array.isArray(value)) pending.push(...value);
+    else if (value && typeof value === "object") pending.push(...Object.values(value));
+  }
+  return next?.value ?? null;
+}

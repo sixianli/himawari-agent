@@ -15,6 +15,7 @@ import {
   threadQueryMessage,
 } from "../src/messages.js";
 import { type EventSourceLike, SseStateSynchronizer } from "../src/sse-synchronizer.js";
+import { ThreadExecutionSynchronizer } from "../src/thread-execution-synchronizer.js";
 import { ThreadSseSynchronizer } from "../src/thread-sse-synchronizer.js";
 
 const configuration = {
@@ -927,6 +928,7 @@ describe("browser storage and SSE recovery", () => {
     sources[0]?.onmessage?.(message);
     sources[0]?.onmessage?.(message);
     expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledWith("thread-01");
     synchronizer.setNetworkOnline(false);
     sources[0]?.onopen?.(new Event("open"));
     sources[0]?.onmessage?.(message);
@@ -1022,5 +1024,147 @@ describe("browser identity session", () => {
       status: 403,
     });
     expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Thread execution synchronizer", () => {
+  function executionSources() {
+    const sources: Array<
+      EventSourceLike & {
+        readonly url: string;
+        readonly listeners: Map<string, (event: MessageEvent<string>) => void>;
+        readonly close: ReturnType<typeof vi.fn>;
+      }
+    > = [];
+    return {
+      sources,
+      create(url: string) {
+        const listeners = new Map<string, (event: MessageEvent<string>) => void>();
+        const source = {
+          url,
+          listeners,
+          onopen: null,
+          onmessage: null,
+          onerror: null,
+          addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+            listeners.set(type, listener);
+          },
+          close: vi.fn(),
+        };
+        sources.push(source);
+        return source;
+      },
+    };
+  }
+  const changedEvent = (threadId: string) => ({
+    data: JSON.stringify({
+      schemaVersion: "gateway.thread.v3",
+      kind: "event",
+      type: "thread.execution_changed",
+      messageId: "execution:1:subscription",
+      correlationId: "subscription",
+      causationId: "subscription",
+      scope: { ownerId: configuration.ownerId, agentId: configuration.agentId },
+      authority: {
+        deploymentId: configuration.deploymentId,
+        authorityEpoch: configuration.authorityEpoch,
+        fencingToken: configuration.fencingToken,
+      },
+      actor: { actorType: "system", actorId: "thread-gateway" },
+      payload: {
+        threadId,
+        runId: "run-01",
+        runRevision: 2,
+        traceSequence: 7,
+        resourceRevision: null,
+        observedAt: "2026-10-25T00:00:00.000Z",
+      },
+    }),
+  });
+
+  it("subscribes to one Thread, catches up on every open and passes only its changes", () => {
+    const { sources, create } = executionSources();
+    const scheduled: Array<() => void> = [];
+    const connected = vi.fn();
+    const changed = vi.fn();
+    const log = vi.fn();
+    const synchronizer = new ThreadExecutionSynchronizer({
+      configuration,
+      threadId: "thread-01",
+      createEventSource: create,
+      onConnected: connected,
+      onChanged: changed,
+      log,
+      schedule: (callback) => scheduled.push(callback),
+      cancelSchedule: vi.fn(),
+    });
+    synchronizer.start();
+    const url = new URL(sources[0]?.url ?? "", "https://himawari.test");
+    expect(url.pathname).toBe("/api/gateway/thread/v3/execution-events");
+    const encoded = url.searchParams.get("subscription") ?? "";
+    const subscription = JSON.parse(atob(encoded.replaceAll("-", "+").replaceAll("_", "/")));
+    expect(subscription).toMatchObject({
+      type: "thread.execution_events",
+      payload: { threadId: "thread-01" },
+    });
+    sources[0]?.onopen?.(new Event("open"));
+    expect(connected).toHaveBeenCalledTimes(1);
+    sources[0]?.listeners.get("thread.execution_changed")?.(
+      changedEvent("thread-01") as MessageEvent<string>,
+    );
+    sources[0]?.listeners.get("thread.execution_changed")?.(
+      changedEvent("thread-02") as MessageEvent<string>,
+    );
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-01" }));
+    expect(log).toHaveBeenCalledTimes(1);
+    sources[0]?.onerror?.(new Event("error"));
+    expect(sources[0]?.close).toHaveBeenCalled();
+    scheduled.shift()?.();
+    expect(sources).toHaveLength(2);
+    sources[1]?.onopen?.(new Event("open"));
+    expect(connected).toHaveBeenCalledTimes(2);
+    synchronizer.stop();
+    expect(sources[1]?.close).toHaveBeenCalled();
+  });
+
+  it("stops for an unavailable Thread and for an invalid session", () => {
+    const { sources, create } = executionSources();
+    const unauthorized = vi.fn();
+    const first = new ThreadExecutionSynchronizer({
+      configuration,
+      threadId: "thread-01",
+      createEventSource: create,
+      onConnected: vi.fn(),
+      onChanged: vi.fn(),
+      onUnauthorized: unauthorized,
+      log: vi.fn(),
+      schedule: vi.fn(),
+      cancelSchedule: vi.fn(),
+    });
+    first.start();
+    sources[0]?.listeners.get("thread.execution_unavailable")?.({
+      data: JSON.stringify({ code: "PORT_NOT_FOUND" }),
+    } as MessageEvent<string>);
+    expect(sources[0]?.close).toHaveBeenCalled();
+    first.reconnectNow();
+    expect(sources).toHaveLength(1);
+    const second = new ThreadExecutionSynchronizer({
+      configuration,
+      threadId: "thread-01",
+      createEventSource: create,
+      onConnected: vi.fn(),
+      onChanged: vi.fn(),
+      onUnauthorized: unauthorized,
+      log: vi.fn(),
+      schedule: vi.fn(),
+      cancelSchedule: vi.fn(),
+    });
+    second.start();
+    sources[1]?.listeners.get("gateway.stream_error")?.({
+      data: JSON.stringify({ code: "IDENTITY_SESSION_INVALID" }),
+    } as MessageEvent<string>);
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+    expect(sources[1]?.close).toHaveBeenCalled();
   });
 });

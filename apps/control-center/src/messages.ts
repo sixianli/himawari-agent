@@ -4,7 +4,7 @@ import {
   gatewayV2MessageSchema,
   type ThreadGatewayCommand,
   type ThreadGatewayQuery,
-  type ThreadGatewaySubscription,
+  type ThreadGatewayMessage,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
 import type { ControlCenterRuntimeConfiguration } from "./gateway-client.js";
@@ -144,16 +144,15 @@ export function threadCommandMessage(
   return parsed;
 }
 
-export function threadSubscriptionMessage(
+export function threadSubscriptionMessage<Type extends "thread.events" | "thread.execution_events">(
   configuration: ControlCenterRuntimeConfiguration,
-  afterCursor: string | null,
-): ThreadGatewaySubscription {
+  type: Type,
+  payload: Extract<ThreadGatewayMessage, { type: Type }>["payload"],
+): Extract<ThreadGatewayMessage, { type: Type }> {
   const parsed = threadGatewayMessageSchema.parse({
-    ...threadBase(configuration, "subscription", "thread.events"),
-    payload: { afterCursor },
+    ...threadBase(configuration, "subscription", type),
+    payload,
   });
-  if (parsed.kind !== "subscription") {
-    throw new Error("CONTROL_CENTER_THREAD_SUBSCRIPTION_INVALID");
-  }
-  return parsed;
+  if (parsed.type !== type) throw new Error("CONTROL_CENTER_THREAD_SUBSCRIPTION_INVALID");
+  return parsed as Extract<ThreadGatewayMessage, { type: Type }>;
 }

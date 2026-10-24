@@ -35,6 +35,7 @@ const payloads = new Map([
 ]);
 const threadEvents = [];
 const threadEventClients = new Set();
+const executionEventClients = new Map();
 const threads = new Map([
   [
     "thread-main",
@@ -536,6 +537,26 @@ function threadConflict(request, threadId) {
       generatedAt: now,
     },
   };
+}
+
+function writeExecutionChanged(threadId, run) {
+  const clients = executionEventClients.get(threadId);
+  if (!clients?.size) return;
+  cursorSequence += 1;
+  const event = {
+    ...threadEnvelope("event", "thread.execution_changed"),
+    messageId: `execution:thread:${cursorSequence}`,
+    payload: {
+      threadId,
+      runId: run.runId,
+      runRevision: run.revision,
+      traceSequence: (executionRecords.get(run.runId) ?? []).at(-1)?.sequence ?? 0,
+      resourceRevision: null,
+      observedAt: now,
+    },
+  };
+  const wire = `event: thread.execution_changed\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const client of clients) client.write(wire);
 }
 
 function writeThreadEvent(request, threadId, eventType, payloadRef = null) {
@@ -1223,6 +1244,7 @@ async function handleRequest(request, response) {
         ? {
             executionPresentationAvailable: true,
             executionStateAvailable: executionStates.size > 0,
+            executionEventsAvailable: true,
             executionEnvironmentAvailable: executionEnvironment !== undefined,
             canCancelRun: true,
             availableModels: [
@@ -1283,6 +1305,50 @@ async function handleRequest(request, response) {
       primaryModelRef: "model:fixture-primary:v1",
       repositoryAllowlistRefs: ["fixture-owner/fixture-repository"],
       disclosedDataClassifications: ["private"],
+    });
+    return;
+  }
+  if (executionQualification && url.pathname === "/__fixture/execution-changed") {
+    const input = await body(request);
+    const thread = threads.get(input.threadId);
+    const run = thread?.runs.find((item) => item.runId === input.runId);
+    if (!run) {
+      json(response, 404, {});
+      return;
+    }
+    writeExecutionChanged(thread.threadId, run);
+    json(response, 200, { accepted: true });
+    return;
+  }
+  if (
+    executionQualification &&
+    request.method === "GET" &&
+    url.pathname === "/api/gateway/thread/v3/execution-events"
+  ) {
+    let threadId;
+    try {
+      const subscription = JSON.parse(
+        Buffer.from(url.searchParams.get("subscription") ?? "", "base64url").toString("utf8"),
+      );
+      if (subscription.type !== "thread.execution_events") throw new Error("type");
+      threadId = subscription.payload.threadId;
+    } catch {
+      json(response, 400, { error: { code: "HTTP_GATEWAY_REQUEST_INVALID" } });
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      connection: "keep-alive",
+    });
+    response.write(": connected\n\n");
+    const clients = executionEventClients.get(threadId) ?? new Set();
+    clients.add(response);
+    executionEventClients.set(threadId, clients);
+    const timer = setInterval(() => response.write(": heartbeat\n\n"), 1000);
+    request.on("close", () => {
+      clearInterval(timer);
+      clients.delete(response);
     });
     return;
   }
@@ -1353,6 +1419,7 @@ async function handleRequest(request, response) {
         thread.threadId,
         "thread.execution.updated",
       );
+    writeExecutionChanged(thread.threadId, run);
     if (input.replay) {
       const event = threadEvents.at(-1);
       for (const client of threadEventClients) client.write(`data: ${JSON.stringify(event)}\n\n`);

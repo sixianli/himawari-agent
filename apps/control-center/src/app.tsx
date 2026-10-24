@@ -1,7 +1,7 @@
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
   CONTROL_CENTER_SURFACE_INVENTORY,
@@ -202,6 +202,8 @@ function LocalizedControlCenterApp({
   const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
   const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
   const [threadRefreshSignal, setThreadRefreshSignal] = useState(0);
+  const [threadEventSignal, setThreadEventSignal] = useState(0);
+  const threadEventQueue = useRef<(string | null)[]>([]);
   const [connection, setConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
@@ -263,9 +265,7 @@ function LocalizedControlCenterApp({
         if (value.method === "built-in" || value.method === "cloudflare-access")
           setIdentityMethod(value.method);
       })
-      .catch(() => {
-        /* Older external Gateway deployments retain their explicit session exchange. */
-      });
+      .catch(() => {});
     return () => {
       active = false;
     };
@@ -298,15 +298,12 @@ function LocalizedControlCenterApp({
     if (!configuration) return;
     const synchronizer = new SseStateSynchronizer({
       storage,
-      createEventSource: (url) => new EventSource(url, { withCredentials: true }),
       onEvent: () => setGatewayRefreshSignal((current) => current + 1),
       onSnapshotRequired: () => setGatewayRefreshSignal((current) => current + 1),
       onConnectionState: setConnection,
       onUnauthorized: clearPrivateViewState,
-      log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
@@ -328,15 +325,15 @@ function LocalizedControlCenterApp({
     const synchronizer = new ThreadSseSynchronizer({
       configuration,
       storage,
-      createEventSource: (url) => new EventSource(url, { withCredentials: true }),
-      onCommittedEvent: () => setThreadRefreshSignal((current) => current + 1),
+      onCommittedEvent: (threadId) => {
+        threadEventQueue.current.push(threadId);
+        setThreadEventSignal((current) => current + 1);
+      },
       onSnapshotRequired: () => setThreadRefreshSignal((current) => current + 1),
       onConnectionState: setThreadConnection,
       onUnauthorized: clearPrivateViewState,
-      log: (entry) => window.dispatchEvent(new CustomEvent("himawari:safe-log", { detail: entry })),
     });
     synchronizer.start();
-    // navigator.onLine is an OS hint; establish the real transport before declaring offline.
     const online = () => synchronizer.setNetworkOnline(true);
     const offline = () => synchronizer.setNetworkOnline(false);
     const reconnect = () => {
@@ -344,7 +341,8 @@ function LocalizedControlCenterApp({
     };
     const synchronizeTab = (event: StorageEvent) => {
       if (event.key === THREAD_CURSOR_STORAGE_KEY) {
-        setThreadRefreshSignal((current) => current + 1);
+        threadEventQueue.current.push(null);
+        setThreadEventSignal((current) => current + 1);
       }
     };
     window.addEventListener("online", online);
@@ -397,6 +395,8 @@ function LocalizedControlCenterApp({
     message,
     navigate,
     refreshSignal: threadRefreshSignal + gatewayRefreshSignal,
+    threadEventSignal,
+    threadEvents: threadEventQueue,
     route,
     storage,
     onUnauthorized: clearPrivateViewState,

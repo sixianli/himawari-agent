@@ -84,8 +84,6 @@ export async function qualifyDeploymentAvailability(page, baseUrl) {
     if (request.url().endsWith("/api/gateway/v2/queries")) unsupportedQueries += 1;
   };
   page.on("request", countQueries);
-  // Removed global menu entries stay absent. Direct legacy URLs still enforce
-  // installed-operation boundaries for bookmarks and existing clients.
   const unavailableRoutes = [
     "/tasks",
     "/inbox",
@@ -177,18 +175,13 @@ export async function qualifyBrowser({
   const profile = profiles[profileName];
   if (!profile) throw new Error(`CONTROL_CENTER_BROWSER_PROFILE_INVALID:${profileName}`);
 
-  // Verify actual network blocking and recovery without navigating away from the draft.
-  // Linux WebKit can retain a false OS hint and emit offline on setOffline(false).
-  // Supply the missing online event only after an uncached HTTP request succeeds.
   async function setEmulatedOffline(context, page, offline) {
     await context.setOffline(offline);
     const state = await page.evaluate(async (offline) => {
       let reachable = false;
       try {
         reachable = (await fetch(`/?network-probe=${offline}`, { cache: "no-store" })).ok;
-      } catch {
-        // A failed request is required while the browser transport is disabled.
-      }
+      } catch {}
       return { reachable, onlineHint: navigator.onLine };
     }, offline);
     if (state.reachable === offline)
@@ -461,7 +454,6 @@ export async function qualifyBrowser({
 
     if (profile.emulation) await page.locator(".mobile-sidebar-toggle").click();
 
-    // Reject before dispatch, as the real gateway does for an expired CSRF token.
     let csrfRefreshes = 0;
     const csrfRequests = [];
     const refreshRoute = async (route) => {
@@ -870,7 +862,6 @@ export async function qualifyBrowser({
       throw new Error("CONTROL_CENTER_REVOKED_SESSION_VIEW_STATE_RETAINED");
     }
     await page.unroute("**/api/gateway/v2/queries", revokedSessionHandler);
-    // The injected revocation has ended; bootstrap a newly authorized fixture session.
     await page.reload();
     await waitForConnected(page);
 
@@ -1037,6 +1028,7 @@ export async function qualifyBrowser({
       [
         "/api/gateway/v2/events",
         "/api/gateway/thread/v3/events",
+        "/api/gateway/thread/v3/execution-events",
         "/api/gateway/thread/v3/queries",
       ].some((path) => error.includes(path));
     if (requestErrors.length)

@@ -50,6 +50,7 @@ export interface AvailableModel {
 export interface ControlCenterRuntimeConfiguration {
   readonly executionPresentationAvailable?: boolean;
   readonly executionStateAvailable?: boolean;
+  readonly executionEventsAvailable?: boolean;
   readonly executionEnvironmentAvailable?: boolean;
   readonly canCancelRun?: boolean;
   readonly availableModels?: readonly AvailableModel[];
@@ -80,7 +81,6 @@ export interface ControlCenterRuntimeConfiguration {
   )[];
 }
 
-/** Exchange the current verified Access identity for a secure product session. */
 export async function createBrowserSession(
   fetchImplementation: typeof globalThis.fetch,
   deviceLabel: string,
@@ -110,6 +110,7 @@ export async function loadRuntimeConfiguration(
   const value = body as {
     readonly executionPresentationAvailable?: unknown;
     readonly executionStateAvailable?: unknown;
+    readonly executionEventsAvailable?: unknown;
     readonly executionEnvironmentAvailable?: unknown;
     readonly canCancelRun?: unknown;
     readonly availableModels?: unknown;
@@ -231,6 +232,7 @@ export async function loadRuntimeConfiguration(
     >),
     executionPresentationAvailable: value.executionPresentationAvailable === true,
     executionStateAvailable: value.executionStateAvailable === true,
+    executionEventsAvailable: value.executionEventsAvailable === true,
     executionEnvironmentAvailable: value.executionEnvironmentAvailable === true,
     canCancelRun: value.canCancelRun === true,
     availableModels: Object.freeze(availableModels as AvailableModel[]),
@@ -319,7 +321,6 @@ export class GatewayClient {
     this.options = options;
   }
 
-  /** A CSRF rejection happens before dispatch. Retry only that rejection, once. */
   private async authenticatedFetch(url: string, init: RequestInit): Promise<Response> {
     const token = this.refreshedCsrfToken ?? this.options.csrfToken();
     const send = (csrfToken: string) => {
