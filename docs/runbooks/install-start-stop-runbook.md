@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:2dc0ac350786af3b1163a7c7e5d4bdf68eeafec0c3349e7a42c16de08beda622"
+contract_sha256: "sha256:273766bdc47478170557519e5c020b42a05ab0f2d9f8bbfd200a6e10712e5fce"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -467,7 +467,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 }
 ~~~
 
-系统指令不得包含凭据。Memory 选取数不得超过检索数，实际注入分类同时受当前 Run 分类约束。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
+系统指令不得包含凭据。2026-10-24 起，Agent 在配置的系统指令和时间说明之后自动追加一段“本轮能力边界”：配置了 `runPolicy.coding` 时说明沙箱没有外网，并写出 coding 目录 Grant 的路径（Grant 失效或读不到就不写路径）；配置了 `runPolicy.publicSearch` 时让模型用 web_search 并核对来源日期，没配置时让模型直接说明查不到实时信息，不要让用户去配置网络或代理。这段由配置生成，不需要写进 `systemInstruction`。Memory 选取数不得超过检索数，实际注入分类同时受当前 Run 分类约束。模型描述符和费用上限仍由原配置字段提供。修改配置只影响尚未冻结输入的 Run；运行中的已冻结请求不会改用新指令。已有数据库需按同机 snapshot 和迁移合同升级到当前 schema，不能跳过备份直接启动旧库。
 
 启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
 

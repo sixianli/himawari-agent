@@ -91,7 +91,7 @@ import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
-import { createProductionRunPolicy } from "./production-run-policy.js";
+import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import { createProductionSandboxServices } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
@@ -1119,6 +1119,7 @@ export async function runAgentService(
           handles: capabilities,
           clock,
           ids,
+          workspaceRoot: configuredWorkspaceRoot(configuration, repository, clock),
         }),
         clock,
         ids,

@@ -12,7 +12,11 @@ import {
   embeddingAdmissionDescriptor,
   createProductionRunMemory,
 } from "../src/production-run-memory.js";
-import { createProductionRunPolicy } from "../src/production-run-policy.js";
+import {
+  configuredWorkspaceRoot,
+  createProductionRunPolicy,
+  runCapabilityNotice,
+} from "../src/production-run-policy.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -524,6 +528,12 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     "2026-09-11 08:04:00 GMT+09:00",
   );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    "本轮没有联网搜索工具",
+  );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).not.toContain(
+    "使用真实查询",
+  );
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
   const threadSource = {
@@ -552,6 +562,59 @@ it("selects trusted Run policy and binds instruction content across configuratio
   await expect(policy({ ...source, dataClassification: "restricted" })).rejects.toThrow(
     "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
   );
+});
+
+describe("Run capability notice", () => {
+  it("tells the model what it cannot reach when no search is configured", () => {
+    const notice = runCapabilityNotice({
+      publicSearch: false,
+      coding: true,
+      workspaceRoot: "/var/lib/himawari/workspace",
+    });
+    expect(notice).toContain("沙箱没有外网");
+    expect(notice).toContain("工作目录是 /var/lib/himawari/workspace");
+    expect(notice).toContain("本轮没有联网搜索工具");
+    expect(notice).toContain("不要让用户去配置网络或代理");
+    expect(notice).not.toContain("web_search");
+  });
+
+  it("points the model to web_search when search is configured", () => {
+    const notice = runCapabilityNotice({ publicSearch: true, coding: false, workspaceRoot: null });
+    expect(notice).toContain("web_search");
+    expect(notice).toContain("核对来源日期");
+    expect(notice).not.toContain("沙箱");
+    expect(notice).not.toContain("工作目录");
+  });
+
+  it("names the workspace only from a current coding grant", async () => {
+    const now = "2026-10-24T00:00:00.000Z";
+    const grant = {
+      id: "directory:workspace",
+      hostId: "host",
+      displayPath: "/var/lib/himawari/workspace",
+      revokedAt: null,
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    };
+    const configuration = {
+      ownerId: "owner",
+      agentId: "agent",
+      runPolicy: { coding: { grantId: grant.id, hostId: grant.hostId } },
+    } as unknown as Parameters<typeof configuredWorkspaceRoot>[0];
+    const read = (value: unknown) => ({
+      readScopedState: vi.fn(async () => (value ? { value } : undefined)) as never,
+    });
+    const clock = { now: () => now };
+    expect(await configuredWorkspaceRoot(configuration, read(grant), clock)()).toBe(
+      grant.displayPath,
+    );
+    expect(
+      await configuredWorkspaceRoot(configuration, read({ ...grant, revokedAt: now }), clock)(),
+    ).toBeNull();
+    expect(
+      await configuredWorkspaceRoot(configuration, read({ ...grant, hostId: "other" }), clock)(),
+    ).toBeNull();
+    expect(await configuredWorkspaceRoot(configuration, read(undefined), clock)()).toBeNull();
+  });
 });
 
 it("propagates Run cancellation and remaining deadline to embedding and retains uncertain spend", async () => {
