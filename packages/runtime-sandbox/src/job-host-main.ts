@@ -35,7 +35,12 @@ import {
   type ResidentInfrastructure,
   sweepResidentCommand,
 } from "./resident-process-tree.ts";
-import { observeTaskResources, readProcessSnapshot } from "./resource-observer.ts";
+import {
+  classifyObservationError,
+  observeTaskResources,
+  readProcessSnapshot,
+  type ResourceObservationFailure,
+} from "./resource-observer.ts";
 import type { SandboxSdk } from "./sandbox-sdk.ts";
 
 const diagnosticStarted = performance.now();
@@ -219,6 +224,22 @@ function sendLaunchFailureDiagnostic(
   });
 }
 
+function sendResourceObservationDiagnostic(
+  failure: ResourceObservationFailure,
+  detail: string | undefined,
+  command: "start" | "run",
+) {
+  if (phase !== "running" || pendingStop !== undefined) return;
+  sendLaunchFailureDiagnostic(
+    {
+      code: "JOB_HOST_RESOURCE_OBSERVATION_FAILED",
+      systemCode: "UNKNOWN",
+      text: detail === undefined ? failure : `${failure} ${detail}`,
+    },
+    command,
+  );
+}
+
 function killTask() {
   if (task?.pid && task.exitCode === null && task.signalCode === null) {
     try {
@@ -313,6 +334,7 @@ function stop(cause: string) {
   }
   if (phase !== "stopping") reason = pendingStop ?? cause;
   phase = "stopping";
+  observer?.stop();
   networkAuthority.close();
   void egress?.close();
   killTask();
@@ -700,7 +722,10 @@ async function start() {
           .catch(() => stop("host_failure"));
       }
       if (current.resourceLimits)
-        observer = observeTaskResources(pid, current.resourceLimits, stop);
+        observer = observeTaskResources(pid, current.resourceLimits, (cause, failure, detail) => {
+          if (failure) sendResourceObservationDiagnostic(failure, detail, "start");
+          stop(cause);
+        });
     },
     output: (channel, bytes) => send({ type: "output", channel, bytes: bytes.toString("base64") }),
     outputLimit: () => stop("output_limit"),
@@ -950,6 +975,7 @@ function killCommand(command: SessionCommand) {
 function endCommand(command: SessionCommand, cause: CommandCause) {
   if (active !== command || command.cause !== undefined || phase !== "running") return;
   command.cause = cause;
+  command.observer?.stop();
   killCommand(command);
   command.timers.push(
     setTimeout(() => {
@@ -1034,8 +1060,12 @@ async function runCommand(value: unknown) {
   let baseline: Awaited<ReturnType<typeof readProcessSnapshot>>;
   try {
     baseline = await readProcessSnapshot();
-  } catch {
-    stop("host_failure");
+  } catch (error) {
+    if (active === command && phase === "running" && command.cause === undefined) {
+      const { failure, detail } = classifyObservationError(error);
+      sendResourceObservationDiagnostic(failure, detail, "run");
+      stop("host_failure");
+    } else if (active === command && phase === "running") void settleCommand(command);
     return;
   }
   if (active !== command || phase !== "running" || command.cause !== undefined) {
@@ -1056,9 +1086,12 @@ async function runCommand(value: unknown) {
   command.observer = observeTaskResources(
     runner.group,
     run.resourceLimits,
-    (cause) => {
+    (cause, failure, detail) => {
       if (cause === "resource_limit") endCommand(command, cause);
-      else stop("host_failure");
+      else {
+        if (failure) sendResourceObservationDiagnostic(failure, detail, "run");
+        stop("host_failure");
+      }
     },
     baseline,
   );

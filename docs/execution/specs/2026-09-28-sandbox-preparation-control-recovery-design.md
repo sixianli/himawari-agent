@@ -34,6 +34,7 @@ date: "2026-09-28"
 - [第三轮：控制通道在准备第一步打开](#control-opened-first)
 - [第四轮：Job Host 启动单独计时](#startup-window)
 - [第五轮：命名空间门握手放宽到 10 秒](#namespace-gate-window)
+- [第六轮：资源观察器拿不到快照先重试](#resource-observation-grace)
 
 ## 目标与来源
 
@@ -327,7 +328,7 @@ reply-38下重新运行完整unit：30000ms仅是获批的云端项目默认测�
 - `sandboxHostFailureDetailSchema` 新增必填字段 `steps`（可为 null，表示从未收到列表）。Worker、Job Host 和 Agent 同版本发布；产品代码不重新解析已保存的旧记录。旧版本保存的受保护诊断没有这个字段，读取旧记录的只读脚本须使用对应版本的 schema。安全服务日志相应增加 `hostSteps` 字段，见[准备失败的安全服务日志](#preparation-safe-log)。
 - 2026-10-14 起主机失败码新增 `JOB_HOST_LAUNCH_ARGV_UNEXPECTED`（Linux 启动参数不是预期的 bubblewrap 形状；bubblewrap 是 Linux 上隔离进程的程序，命令名是 bwrap。见 R2-T5），按本条规则同版本发布，旧发布目录的 schema 不认识这个码，读新记录要用新发布目录。
 - 2026-10-15 起（R2-T10）：`sandboxHostFailureDetailSchema` 再新增必填字段 `text`（可为 null）。它保存启动失败的原始说明，写入前去掉控制字符和换行、按 UTF-8 截到 512 字节；只进受保护诊断记录（`<controlRef>:diagnostic:preparation-failure`），**不进** `sandbox.preparation.failed` 安全日志。Agent 在写入受保护记录前用项目的 `scanMachineSecrets` 扫描，命中就把它置为 null。与 `steps` 同样同版本发布，旧版本保存的记录没有这个字段，读取要用对应版本的 schema。
-- 2026-10-15 起（R2-T10）：启动失败诊断新增两个主机失败码 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`（Linux 命名空间门在时限内没有收到令牌；时限原为 1500 毫秒，2026-10-23 起为 10 秒，见[第五轮：命名空间门握手放宽到 10 秒](#namespace-gate-window)）和 `JOB_HOST_LAUNCH_SPAWN_FAILED`（启动隔离程序的 `spawn` 报错）；门输出超过 1024 字节、门那一行格式不对或核验失败仍用已有的 `JOB_HOST_NAMESPACE_GATE_INVALID`。`systemCode` 只从以 `bwrap: ` 开头的标准错误行映射，没有这种行就是 `UNKNOWN`；`spawn` 报错用 `error.code`。安全日志相应新增 `hostDetailCode` 取值，字段本身不变。
+- 2026-10-15 起（R2-T10）：启动失败诊断新增两个主机失败码 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`（Linux 命名空间门在时限内没有收到令牌；时限原为 1500 毫秒，2026-10-23 起为 10 秒，见[第五轮：命名空间门握手放宽到 10 秒](#namespace-gate-window)）和 `JOB_HOST_LAUNCH_SPAWN_FAILED`（启动隔离程序的 `spawn` 报错）；门输出超过 1024 字节、门那一行格式不对或核验失败仍用已有的 `JOB_HOST_NAMESPACE_GATE_INVALID`。`systemCode` 只从以 `bwrap: ` 开头的标准错误行映射，没有这种行就是 `UNKNOWN`；`spawn` 报错用 `error.code`。安全日志相应新增 `hostDetailCode` 取值，字段本身不变。 2026-10-24 起（R2-D31）再新增 `JOB_HOST_RESOURCE_OBSERVATION_FAILED`：任务已经启动后资源观察器连续拿不到进程快照或快照无效，宿主停止前发这条诊断（见[第六轮：资源观察器拿不到快照先重试](#resource-observation-grace)）。
 
 1.5 秒双向监督窗口、30 秒准备上限、任务期限、清理期限、控制绑定、签名终态、唯一启动授权和全部认证检查均不变（1.5 秒窗口的起点在 2026-10-22 改为 Job Host 第一条认证消息，见[第四轮：Job Host 启动单独计时](#startup-window)）。逐步记录只说明哪一步在何时开始、用了多久，不代表 ready、释放证明或启动授权。Worker 自身事件循环停顿仍不在这次修复范围内。
 
@@ -428,5 +429,45 @@ Linux 上，Job Host 用 bubblewrap（隔离进程的程序，命令名 `bwrap`�
 - 修复后：13 个相关测试文件 411 项全部通过，其中 `[R2-T10]` 门超时测试约 10.6 秒后得到 `JOB_HOST_NAMESPACE_GATE_TIMEOUT`；`sandbox-preparation-control` 和 `r2t10-not-started` 两个文件重复 3 轮，每轮 23 项通过；`npm run check` 通过，Biome 格式检查没有改动。
 - 直接导入这两个源文件的 6 个单元测试文件另行补跑（证据 `.../r2d27/evidence/unit-r3/`），209 项全部通过，`npm run check` 通过。其中 `job-host-main.unit.test.ts` 原来把 1500 毫秒写死，现在改为按 `JOB_HOST_NAMESPACE_GATE_WINDOW_MS` 推进假时钟：到时限前 100 毫秒还没有结束进程，到时限才结束；请求期限设为 60 秒，避免和门时限同时到期。
 - 夹具的工具目录加入了 Node.js 所在目录（`path.dirname(process.execPath)`）。Hermes 的 Node.js 不在 `/usr/bin`，第一次运行时沙箱里找不到它，命令以退出码 127 结束。
+
+[返回阅读导航](#阅读导航)
+
+<a id="resource-observation-grace"></a>
+
+## 第六轮：资源观察器拿不到快照先重试
+
+### 现象与推断的原因
+
+请求带 `resourceLimits`（任务的 CPU 时间和内存上限）时，Job Host 在任务进程启动后建一个资源观察器（`observeTaskResources`，`packages/runtime-sandbox/src/resource-observer.ts`）：每 100 毫秒串行运行一次 `/bin/ps -axo pid=,ppid=,pgid=,rss=,time=,lstart=`，从进程表里挑出任务进程组的进程，累加 CPU 时间、取内存峰值，超过上限就以 `resource_limit` 停止任务。修复前 `ps` 的超时是 1000 毫秒，`ps` 的任何错误（包括超时被 `SIGTERM` 杀掉）都抛 `RESOURCE_OBSERVATION_UNAVAILABLE`，观察器直接 `stopTask("host_failure")`，这条路不发任何诊断，调用方只看到 `reason: "host_failure"`、`diagnostic: null`。
+
+2026-10-24 第六次生产变更 revision-06 的 `S6_READ`（在生产服务账号下跑一次真实沙箱作业的读取探针）失败：宿主正常加载，1461 毫秒进入 running，任务进程启动，4313 毫秒宿主自行转 stopping，没有 `completed` 消息；同一候选 `87c2e3ec` 的同一探针在 Hermes 通过。只读诊断 21–25（`.ci-output/production/2026-10-24-sixth-revision-06-diagnostic-21/` 至 `-25/`）：`owned-processes.json` 记到宿主的两个 `ps` 子进程，第二个启动后约 1.0–1.05 秒宿主转 stopping，正好是 1000 毫秒超时加收尾；`final.json` 的 `resources.samples` 只有 6，任务跑了约 1.7 秒才采到 6 次，平均每次 `ps` 约 180 毫秒，而空闲时同一条命令 20 次用时 17–25 毫秒；宿主定时器迟到峰值 236 毫秒；当时 4 核机器上调用方、宿主、两个守护子进程和任务的 node 进程都处于可运行状态，CPU 窃取为 0。排除了调用方租约过期、消息处理器出错、门握手失败（这些都会带诊断）和守护子进程退出。结论“任务启动高峰时 `ps` 超过 1 秒、观察器把负载造成的慢当成宿主故障”来自代码路径和时间线的对照，没有重跑复现。
+
+这和[第五轮](#namespace-gate-window)是同一类问题：为生产机留的固定时限余量不足，Hermes 竞争轻、测不出来。这是第二次。
+
+### 修复后的行为
+
+- `ps` 超时改为常量 `RESOURCE_SNAPSHOT_TIMEOUT_MS`（5000 毫秒）。采样是串行的（上一次 `ps` 返回后才安排下一次），`ps` 慢只会拉长采样间隔，不会堆积 `ps` 进程。
+- `RESOURCE_OBSERVATION_UNAVAILABLE`（`ps` 起不来、出错或超时）视为暂时失败：这次不计样本、不把已记到的用量清零，100 毫秒后再采。停止由一个独立的看门狗计时器决定：观察开始时和每次成功样本后各开一个 `RESOURCE_OBSERVATION_GRACE_MS`（10 秒）的计时器，到期仍没有新的成功样本就以 `host_failure` 停止，并把失败码 `RESOURCE_OBSERVATION_UNAVAILABLE` 和最后一次 `ps` 错误的 `code`、`signal`、`killed`（例如 `signal=SIGTERM killed=true`）交给宿主。用独立计时器而不是在采样失败时比较时间，是因为 `ps` 卡死永不返回时采样循环本身不会再醒来（这一点来自 opencode 的独立方案）。
+- `RESOURCE_OBSERVATION_INVALID`（快照解析不了）和 `RESOURCE_OBSERVATION_CAPACITY`（进程组超过容量）仍立即以 `host_failure` 停止：它们不是负载问题，等也没用。
+- 观察器停止任务的回调多带失败码和错误说明；宿主收到带失败码的 `host_failure` 时，停止前发一条 `stage: launch` 诊断：`code: "JOB_HOST_RESOURCE_OBSERVATION_FAILED"`（新加进 `SANDBOX_HOST_FAILURE_CODES`），`systemCode: "UNKNOWN"`，`text` 为观察器失败码加错误说明（例如 `RESOURCE_OBSERVATION_UNAVAILABLE signal=SIGTERM killed=true`，经原有的控制字符清理、512 字节截断和秘密扫描），`command` 在一次性路径是 `start`、在常驻会话路径是 `run`。调用方结果里的 `diagnostic` 不再是 null。会话模式下资源超限仍只结束当前命令，观察失败仍停止整个宿主，与修复前一致。
+- 看门狗到期即停：到期那一刻还在途的 `ps` 结果不算数（事件循环先跑到期回调还是先跑进程回调不确定，所以不把这一刻的样本当作成功）；成功样本一经记入就同步重开看门狗，不会出现“记了成功样本又被看门狗停掉”。
+- 宿主已经在停止（取消、期限到、Worker 断开）时，观察器的迟到回调不再发诊断：`sendResourceObservationDiagnostic` 只在 `phase` 为 running 且会话模式没有记下 `pendingStop`（宿主收到取消或期限到、正在等当前命令收尾的那段时间）时发送；宿主 `stop()` 置为 stopping 后立即停止观察器，不再起 `ps`。会话模式结束一条命令的 `endCommand`（宿主取消、期限到、`run_cancel` 都走它）也在记下结束原因后立即停止这条命令的观察器，而不是等到命令收尾时。结束原因由原有的 `phase !== "stopping"` 判断和会话模式的 `pendingStop` 保护，不会被观察器改写。
+- 会话模式每条 `run` 命令启动前读一次基线快照；这次快照失败原来只是无诊断的 `host_failure`，现在同样先发 `JOB_HOST_RESOURCE_OBSERVATION_FAILED`（`command: "run"`，`text` 为失败码加错误说明，由 `classifyObservationError` 从错误对象得出）再停止。基线快照失败只在这条命令仍是当前命令、宿主仍在 running 且命令没有被取消时才发诊断并停止宿主；命令已被 `run_cancel` 或宿主取消的，直接按取消收尾（`command_result` 原因 `cancelled`、`taskStarted: false`），不发诊断。注意这之后宿主并不会回到 ready：从未启动的命令按既有的妥善结束判定 `jobHostCommandSettled` 算未妥善结束，宿主仍以 `host_failure` 结束，这是 R2-D31 之前就有的行为，两端（宿主与 Worker）共用这个判定，本轮没有改，记在 [BL-20261024-002](../../backlog/BL-20261024-002-session-command-cancelled-before-start-stops-host.md)。`prepare` 阶段的预检快照失败仍走原有的 `UNKNOWN` 码诊断，不在本轮范围。
+- 超限判定不变：成功样本超过上限仍立即 `resource_limit`；任务结束后迟到的样本仍忽略。
+- 代价：宽限期内任务超限最多多跑约 10 秒才被发现；资源观察本来就不是硬配额（源码原注释写明 “never a hard quota”）。`ps` 真的 10 秒拿不到结果时任务仍以 `host_failure` 结束，但这次带诊断，能定位。
+- 10 秒和 5 秒的依据：生产现场每次 `ps` 约 180 毫秒、最慢一次超过 1 秒，5 秒留出数倍余量；10 秒与门握手时限同数量级。没有 `ps` 耗时的分布数据，这是取值判断。
+- 没有一起改的：`ps` 的 `time=` 字段只到整秒（[BL-20261024-001](../../backlog/BL-20261024-001-资-源-观-察-器-按-ps-整.md)）；Linux 上改为直接读 `/proc/<pid>/stat` 的替代方案也记在那条 Backlog 里。
+
+### 验证
+
+`packages/runtime-sandbox/test/resource-observer.unit.test.ts`：`ps` 参数断言改为 `timeout` 5000；原来“无效或不可用都立即停止”的用例拆成三个：快照无效立即 `("host_failure", "RESOURCE_OBSERVATION_INVALID")`；`[R2-D31]` `ps` 持续超时时用假时钟推进 9900 毫秒不停止且已重试 90 次以上，推进到 10 秒后才 `("host_failure", "RESOURCE_OBSERVATION_UNAVAILABLE", "signal=SIGTERM killed=true")`，之后不再采样；`[R2-D31]` `ps` 永不返回时只起过一次 `ps`，10 秒后仍停止；“任务结束后迟到的样本”用例改用假时钟，观察器 `stop()` 后推进 20 秒仍不停止、不再起 `ps`；`[R2-D31]` 连续失败 6 秒后一次成功样本重置宽限，再过 9.9 秒不停止，10 秒后才停止，`current()` 仍是那一次成功样本的用量。`packages/runtime-sandbox/test/job-host-main.unit.test.ts` 新增 `[R2-D31]`：任务启动后用观察器回调触发 `("host_failure", "RESOURCE_OBSERVATION_UNAVAILABLE")`，要求先发出 `code: JOB_HOST_RESOURCE_OBSERVATION_FAILED`、`command: start`、`text: RESOURCE_OBSERVATION_UNAVAILABLE signal=SIGTERM killed=true` 的诊断，再以 `SIGKILL` 结束任务进程组（用 `invocationCallOrder` 断言诊断的 `send` 先于 `kill`），结果 `reason: host_failure`；任务已被取消后再触发同一回调，不发诊断、观察器已被停止、结果仍是 `cancelled`；会话模式一条 `run` 命令的观察器回调触发后，诊断 `command: run`、宿主以 `host_failure` 结束；会话模式基线快照被拒绝（`cause` 带 `killed`、`signal`）时不发 `started`，诊断 `command: run`、`text` 含 `signal=SIGTERM killed=true`，宿主以 `host_failure` 结束；会话收到 `cancel` 后命令观察器已被停止，再触发其回调不发诊断，结果仍是 `cancelled`；一条 `run` 在基线 `ps` 期间收到 `run_cancel`、随后基线被拒绝时不发诊断，`command_result` 原因 `cancelled`、`taskStarted: false`、`exitCode: null`，没有向常驻 runner 发任何 run 帧、也没有再 `spawn`（这个用例在修复前的源码上也通过，只是防止基线诊断漏进取消路径的回归守卫，不是先红后绿的用例；宿主随后仍以 `host_failure` 结束的既有行为见 BL-20261024-002，用例不断言它）。`node:child_process` 的 `execFile` 替身改为一调用就抛错，避免误走真实 `ps` 路径时测试挂住。观察器测试另加 `classifyObservationError` 的直接用例：UNAVAILABLE 带 `cause` 得 `code=ENOENT killed=false`，无 `cause` 得 `detail: undefined`，INVALID 和 CAPACITY 原样返回，非 Error 对象按 INVALID。期望值 10 秒、5000 毫秒直接写在测试里，不取自源码常量。
+
+这些测试和代码经 opencode（DeepSeek V4.1 Flash）四轮只读审核（停止文件 `.ci-output/handoff/2026-10-24-r2d31-review-oc-stop.md`、`-stop-2.md`、`-stop-3.md`、`-stop-4.md`，都在 git 忽略的交接目录）：第一轮（第 3 版）0 阻断、2 应改（宿主停止中仍发诊断、会话基线快照失败无诊断）、4 建议；第二轮（第 4 版）0 阻断、2 应改（会话取消窗口里命令观察器仍活着、基线 `catch` 在取消检查之前发诊断）、3 建议；第三轮（第 7 版）1 阻断（新用例要求基线取消后宿主继续服务，而未启动命令按既有判定算未妥善结束，见 BL-20261024-002）、1 应改、1 建议；第四轮（第 8 版，即提交的代码）0 阻断、1 应改（把接受该既有行为写成明确的发布决定，已写进上文和 Backlog）、1 建议。应改项全部采纳，10 秒边界的在途样本按“到期即停”写进上文。
+
+2026-10-24 在 Hermes 上验证（脚本 `.ci-output/handoff/scripts/r2h1-l012.sh`、`r2h1-l012-v2.sh`，源码 `958fe61b` 加补丁，证据 `/data/hermes/himawari/tool-audit-round2/r2-h1/evidence/r2d31-l012-01/` 到 `-07/`；第七遍的补丁 `r2d31-full-08.patch` 与提交的代码逐字节一致）：
+
+- 修复前（只打测试补丁）：5 个直接相关的单元测试文件 156 项里 14 项失败，正是改了超时的 4 项、改了导入的 1 项和新加的 9 项（新加的 10 项里，基线取消用例在旧源码上也通过，见上文）。
+- 修复后：同 5 个文件 156 项通过；4 个模拟运行时沙箱导出的集成测试文件 94 项通过；第 2 层 unit 2698 项、contracts 431 项通过；`npm run check`（Biome、类型检查、测试卫生）通过。前六遍逐遍修正：Biome 换行两遍、一处测试类型声明、一个用例不发 Worker 心跳触发宿主的 1500 毫秒心跳规则、一个用例断言了既有判定不允许的“宿主继续服务”。
+- integration 项目没有在这里跑：Hermes 检出里没有构建产物，`ci/policy.json` 的 `test` 任务本就依赖 `build`，所以它由第 3 层候选链（先构建再全量测试）覆盖。
 
 [返回阅读导航](#阅读导航)

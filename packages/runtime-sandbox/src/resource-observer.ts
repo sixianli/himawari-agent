@@ -1,5 +1,19 @@
 import { execFile } from "node:child_process";
 
+export const RESOURCE_SNAPSHOT_TIMEOUT_MS = 5_000;
+export const RESOURCE_SAMPLE_INTERVAL_MS = 100;
+export const RESOURCE_OBSERVATION_GRACE_MS = 10_000;
+export const RESOURCE_OBSERVATION_FAILURES = [
+  "RESOURCE_OBSERVATION_UNAVAILABLE",
+  "RESOURCE_OBSERVATION_INVALID",
+  "RESOURCE_OBSERVATION_CAPACITY",
+] as const;
+export type ResourceObservationFailure = (typeof RESOURCE_OBSERVATION_FAILURES)[number];
+export interface ResourceObservationProblem {
+  readonly failure: ResourceObservationFailure;
+  readonly detail: string | undefined;
+}
+
 export interface ResourceLimits {
   readonly maxCpuTimeMs: number;
   readonly maxMemoryBytes: number;
@@ -18,8 +32,6 @@ export interface ProcessSample {
   readonly birth: string;
 }
 
-/** ps snapshots omit short-lived/unobserved descendants. These are observations,
- * never a hard quota or proof of task-tree completeness. No command lines are read. */
 export function parseProcessSnapshot(value: string): readonly ProcessSample[] {
   return value
     .split("\n")
@@ -63,13 +75,13 @@ export function readProcessSnapshot(): Promise<readonly ProcessSample[]> {
       ["-axo", "pid=,ppid=,pgid=,rss=,time=,lstart="],
       {
         encoding: "utf8",
-        timeout: 1000,
+        timeout: RESOURCE_SNAPSHOT_TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
         env: { PATH: "/usr/bin:/bin", LC_ALL: "C", TZ: "UTC" },
       },
       (error, stdout) => {
         if (error) {
-          reject(new Error("RESOURCE_OBSERVATION_UNAVAILABLE"));
+          reject(new Error("RESOURCE_OBSERVATION_UNAVAILABLE", { cause: error }));
           return;
         }
         try {
@@ -82,8 +94,6 @@ export function readProcessSnapshot(): Promise<readonly ProcessSample[]> {
   });
 }
 
-/** Tracks observed descendants after reparenting, and keeps their observed CPU
- * after exit. A changed birth marker does not inherit the old PID's membership. */
 export class TaskResourceAccumulator {
   readonly #root: number;
   readonly #known = new Map<number, string>();
@@ -123,8 +133,6 @@ export class TaskResourceAccumulator {
       if (birth === process.birth || (process.pid === this.#root && birth === undefined))
         members.add(process.pid);
     }
-    // Walk the snapshot once per edge; a deep process tree must not delay stop
-    // decisions through repeated full-table scans.
     const children = new Map<number, number[]>();
     for (const process of snapshot) {
       const siblings = children.get(process.parent) ?? [];
@@ -153,45 +161,103 @@ export class TaskResourceAccumulator {
   }
 }
 
-/** One bounded query at a time; stop() prevents late samples from cancelling an
- * already completed job. Observation failures are never converted to zero usage. */
 export function observeTaskResources(
   root: number,
   limits: ResourceLimits,
-  stopTask: (reason: "resource_limit" | "host_failure") => void,
+  stopTask: (
+    reason: "resource_limit" | "host_failure",
+    failure?: ResourceObservationFailure,
+    detail?: string,
+  ) => void,
   baseline?: readonly ProcessSample[],
 ) {
   const accumulator = new TaskResourceAccumulator(root, baseline);
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  let lastUnavailable: string | undefined;
+  const fail = (failure: ResourceObservationFailure, detail?: string) => {
+    stopped = true;
+    clearTimeout(timer);
+    clearTimeout(watchdog);
+    if (detail === undefined) stopTask("host_failure", failure);
+    else stopTask("host_failure", failure, detail);
+  };
+  const armWatchdog = () => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(
+      () => fail("RESOURCE_OBSERVATION_UNAVAILABLE", lastUnavailable),
+      RESOURCE_OBSERVATION_GRACE_MS,
+    );
+  };
+  const schedule = () => {
+    if (!stopped) timer = setTimeout(() => void sample(), RESOURCE_SAMPLE_INTERVAL_MS);
+  };
   const sample = async () => {
+    let snapshot: readonly ProcessSample[];
     try {
-      const snapshot = await readProcessSnapshot();
+      snapshot = await readProcessSnapshot();
+    } catch (error) {
       if (stopped) return;
-      const usage = accumulator.add(snapshot);
-      if (
-        usage.observedCpuTimeMs > limits.maxCpuTimeMs ||
-        usage.peakObservedMemoryBytes > limits.maxMemoryBytes
-      ) {
-        stopped = true;
-        stopTask("resource_limit");
+      const { failure, detail } = classifyObservationError(error);
+      if (failure !== "RESOURCE_OBSERVATION_UNAVAILABLE") {
+        fail(failure);
         return;
       }
-    } catch {
-      if (!stopped) {
-        stopped = true;
-        stopTask("host_failure");
-      }
+      lastUnavailable = detail;
+      schedule();
       return;
     }
-    if (!stopped) timer = setTimeout(() => void sample(), 100);
+    if (stopped) return;
+    let usage: ResourceObservation;
+    try {
+      usage = accumulator.add(snapshot);
+    } catch (error) {
+      fail(observationFailure(error) ?? "RESOURCE_OBSERVATION_INVALID");
+      return;
+    }
+    lastUnavailable = undefined;
+    if (
+      usage.observedCpuTimeMs > limits.maxCpuTimeMs ||
+      usage.peakObservedMemoryBytes > limits.maxMemoryBytes
+    ) {
+      stopped = true;
+      clearTimeout(watchdog);
+      stopTask("resource_limit");
+      return;
+    }
+    armWatchdog();
+    schedule();
   };
+  armWatchdog();
   void sample();
   return {
     current: () => accumulator.current(),
     stop: () => {
       stopped = true;
       clearTimeout(timer);
+      clearTimeout(watchdog);
     },
   };
+}
+
+export function classifyObservationError(error: unknown): ResourceObservationProblem {
+  const failure = observationFailure(error) ?? "RESOURCE_OBSERVATION_INVALID";
+  if (failure !== "RESOURCE_OBSERVATION_UNAVAILABLE") return { failure, detail: undefined };
+  return { failure, detail: describeUnavailable(error) };
+}
+
+function describeUnavailable(error: unknown): string | undefined {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (!cause || typeof cause !== "object") return undefined;
+  const parts = ["code", "signal", "killed"]
+    .map((key) => [key, (cause as Record<string, unknown>)[key]] as const)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}=${String(value)}`);
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function observationFailure(error: unknown): ResourceObservationFailure | undefined {
+  const message = error instanceof Error ? error.message : undefined;
+  return RESOURCE_OBSERVATION_FAILURES.find((code) => code === message);
 }

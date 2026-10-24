@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:0f0cf3632d743ecd8d0ec2dce530b1465a50a59bd325a04a007044ef616907a1"
+contract_sha256: "sha256:405b7469009315b4aba457f515cf56c2d698a6cc03e7c593e51bba97ee3c4484"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -333,7 +333,7 @@ Worker 单独退出而 Agent 继续运行时，服务整体不可用，页面也
 
 此错误沿原 Pi 批次交付一次，模型得到“工具已运行并结束，但输出和退出结果在服务重启时丢失；没有重新执行。它可能已经产生了效果，是否重做请先确认。”当前 Run、租约、取消、期限、披露与预算仍须核验；取消或过期不能复活或补交，旧 Handle 不因恢复而取得新 fence 权限。没有签名退出证明或原尝试仍可提交时不能声称丢失。页面仅将这一已释放的确定错误显示为失败，不推断工作区效果已核验。
 
-按 [ADR 0033 决定第 2、5 条](../adr/0033-process-sandbox-default-and-optional-containers.md#decision)，SRT 资源观察器不因后代脱离进程组而停止任务。CPU/内存超限、样本不可用或非法时仍停止；PID 身份核验、原期限和进程组消失证明不变。`process_group_gone` 不证明脱离后代已停止。
+按 [ADR 0033 决定第 2、5 条](../adr/0033-process-sandbox-default-and-optional-containers.md#decision)，SRT 资源观察器不因后代脱离进程组而停止任务。CPU/内存超限、样本非法或超过容量时仍立即停止；样本不可用（`ps` 出错或超时，超时 5 秒）先每 100 毫秒重试，自上次成功样本起连续 10 秒拿不到才停止，停止前发 `JOB_HOST_RESOURCE_OBSERVATION_FAILED` 诊断（2026-10-24 起，R2-D31）；PID 身份核验、原期限和进程组消失证明不变。`process_group_gone` 不证明脱离后代已停止。
 
 升级、备份和恢复应共同保留原控制关联、签名控制证据、释放回执、operation journal、原 Pi 批次及交付记录，还有既有受保护 trace 中的 `sandbox-tool-result-lost:<invocationId>` 固定错误 Payload。本修改不扩展恢复包或迁移包范围；数据库恢复点不等于保存了宿主原控制目录，缺少匹配的原签名证据时不得新认定结果丢失。这里不新增原工具输出的宿主明文文件，不新增表、迁移、状态或队列；同 schema 不证明旧 writer 理解本错误的恢复和交付语义。仍须替换唯一 writer，回退前核对匹配程序和完整恢复点。参见[工具执行排查记录](../execution/plans/2026-09-28-tool-execution-audit-plan.md#缺陷和待验证项)；Linux 现场资格不能由 Mac 证据替代。
 

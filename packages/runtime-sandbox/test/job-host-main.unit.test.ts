@@ -34,7 +34,12 @@ const boundary = vi.hoisted(() => ({
   },
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
-vi.mock("node:child_process", () => ({ spawn: boundary.spawn }));
+vi.mock("node:child_process", () => ({
+  spawn: boundary.spawn,
+  execFile: vi.fn(() => {
+    throw new Error("JOB_HOST_TEST_EXECFILE_NOT_STUBBED");
+  }),
+}));
 vi.mock("node:fs/promises", () => ({ realpath: boundary.realpath, stat: boundary.stat }));
 vi.mock("../src/sandbox-sdk.ts", () => ({ createSandboxSdk: boundary.sdk }));
 vi.mock("../src/job-host-control.ts", () => ({ openJobHostControl: boundary.control }));
@@ -46,7 +51,8 @@ vi.mock("../src/network-egress.ts", () => ({ openNetworkEgress: boundary.egress 
 vi.mock("../src/readiness-probe.ts", () => ({ startReadinessProbe: boundary.readiness }));
 vi.mock("../src/process-identity.ts", () => ({ readProcessStartToken: boundary.startToken }));
 vi.mock("../src/linux-host-guardian.ts", () => ({ startLinuxHostGuardian: boundary.guardian }));
-vi.mock("../src/resource-observer.ts", () => ({
+vi.mock("../src/resource-observer.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/resource-observer.ts")>()),
   observeTaskResources: boundary.observe,
   readProcessSnapshot: boundary.snapshot,
 }));
@@ -1065,6 +1071,58 @@ describe("Job Host entrypoint protocol and lifecycle", () => {
     );
   });
 
+  it("[R2-D31] reports the observer failure code before stopping a running task", async () => {
+    await prepare({ ...request(), resourceLimits: { maxCpuTimeMs: 1000, maxMemoryBytes: 10000 } });
+    await startLinux();
+    const observe = boundary.observe.mock.calls[0];
+    expect(observe?.[0]).toBe(7000);
+    (observe?.[2] as (reason: string, failure?: string, detail?: string) => void)(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+      "signal=SIGTERM killed=true",
+    );
+    await settle();
+    expect(processBoundary.kill).toHaveBeenCalledWith(-7000, "SIGKILL");
+    const diagnosticIndex = sent.findIndex((item) => item["type"] === "diagnostic");
+    expect(sent[diagnosticIndex]).toMatchObject({
+      type: "diagnostic",
+      stage: "launch",
+      systemCode: "UNKNOWN",
+      detail: {
+        code: "JOB_HOST_RESOURCE_OBSERVATION_FAILED",
+        command: "start",
+        phase: "running",
+        text: "RESOURCE_OBSERVATION_UNAVAILABLE signal=SIGTERM killed=true",
+      },
+    });
+    const killIndex = processBoundary.kill.mock.calls.findIndex(
+      ([pid, signal]) => pid === -7000 && signal === "SIGKILL",
+    );
+    const sendOrder = processBoundary.send?.mock.invocationCallOrder[diagnosticIndex] ?? Infinity;
+    const killOrder = processBoundary.kill.mock.invocationCallOrder[killIndex] ?? 0;
+    expect(sendOrder).toBeLessThan(killOrder);
+    expect(resource.stop).toHaveBeenCalled();
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "host_failure", taskStarted: true });
+  });
+
+  it("[R2-D31] sends no observer diagnostic once the task is already being cancelled", async () => {
+    await prepare({ ...request(), resourceLimits: { maxCpuTimeMs: 1000, maxMemoryBytes: 10000 } });
+    await startLinux();
+    const observe = boundary.observe.mock.calls[0];
+    await receive("cancel");
+    expect(resource.stop).toHaveBeenCalled();
+    (observe?.[2] as (reason: string, failure?: string, detail?: string) => void)(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+      "signal=SIGTERM killed=true",
+    );
+    await settle();
+    expect(sent.some((item) => item["type"] === "diagnostic")).toBe(false);
+    await closeTask();
+    expect(result()).toMatchObject({ reason: "cancelled", taskStarted: true });
+  });
+
   it("[R2-T5] does not spawn when the Linux launch argv is not the expected bwrap command", async () => {
     boundary.manager.wrapWithSandboxArgv.mockResolvedValue({
       argv: ["/bin/bash", "-c", "echo hello"],
@@ -1606,6 +1664,96 @@ describe("[R2-P2] Job Host session mode", () => {
     namespace: "resident_intact",
     cleanedUp: true,
   };
+
+  it("[R2-D31] reports the observer failure of a resident command and stops the host", async () => {
+    await openSession();
+    await readyRunner();
+    await command("attempt-a", 1);
+    const observe = boundary.observe.mock.calls.at(-1);
+    (observe?.[2] as (reason: string, failure?: string, detail?: string) => void)(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+      "code=EAGAIN",
+    );
+    await finishSession();
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      type: "diagnostic",
+      stage: "launch",
+      systemCode: "UNKNOWN",
+      detail: {
+        code: "JOB_HOST_RESOURCE_OBSERVATION_FAILED",
+        command: "run",
+        text: "RESOURCE_OBSERVATION_UNAVAILABLE code=EAGAIN",
+      },
+    });
+    expect(result()).toMatchObject({ type: "result", reason: "host_failure" });
+  });
+
+  it("[R2-D31] reports a failed baseline snapshot before a resident command starts", async () => {
+    await openSession();
+    await readyRunner();
+    boundary.snapshot.mockRejectedValueOnce(
+      new Error("RESOURCE_OBSERVATION_UNAVAILABLE", { cause: { killed: true, signal: "SIGTERM" } }),
+    );
+    await command("attempt-a", 1);
+    await finishSession();
+    expect(sent.some((item) => item["type"] === "started")).toBe(false);
+    expect(sent.find((item) => item["type"] === "diagnostic")).toMatchObject({
+      type: "diagnostic",
+      stage: "launch",
+      systemCode: "UNKNOWN",
+      detail: {
+        code: "JOB_HOST_RESOURCE_OBSERVATION_FAILED",
+        command: "run",
+        text: "RESOURCE_OBSERVATION_UNAVAILABLE signal=SIGTERM killed=true",
+      },
+    });
+    expect(result()).toMatchObject({ type: "result", reason: "host_failure" });
+  });
+
+  it("[R2-D31] sends no observer diagnostic once the session is being cancelled", async () => {
+    await openSession(sessionRequest({ cleanupTimeoutMs: 1000 }));
+    await readyRunner();
+    await command("attempt-a", 1);
+    const observe = boundary.observe.mock.calls.at(-1);
+    await receive("cancel");
+    expect(resource.stop).toHaveBeenCalled();
+    (observe?.[2] as (reason: string, failure?: string, detail?: string) => void)(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+      "code=EAGAIN",
+    );
+    await flush();
+    expect(sent.some((item) => item["type"] === "diagnostic")).toBe(false);
+    await resultFrame(1, 137);
+    await finishSession();
+    expect(result()).toMatchObject({ type: "result", reason: "cancelled" });
+  });
+
+  it("[R2-D31] sends no baseline diagnostic for a command cancelled while ps was running", async () => {
+    await openSession();
+    await readyRunner();
+    let reject!: (error: Error) => void;
+    boundary.snapshot.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    await command("attempt-a", 1);
+    await receive("run_cancel", { attemptId: "attempt-a", reason: "cancelled" });
+    reject(new Error("RESOURCE_OBSERVATION_UNAVAILABLE"));
+    await drain();
+    expect(sent.some((item) => item["type"] === "diagnostic")).toBe(false);
+    expect(lastCommand()).toMatchObject({
+      attemptId: "attempt-a",
+      reason: "cancelled",
+      taskStarted: false,
+      exitCode: null,
+    });
+    expect(boundary.spawn).toHaveBeenCalledOnce();
+    expect(runFrames()).toEqual([]);
+  });
 
   it("[R2-P2] settles the running command before a session cancel result", async () => {
     await openSession(sessionRequest({ cleanupTimeoutMs: 1000 }));

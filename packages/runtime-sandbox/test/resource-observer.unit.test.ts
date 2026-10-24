@@ -5,6 +5,7 @@ vi.mock("node:child_process", () => ({ execFile }));
 
 import { parseJobHostRequest } from "../src/job-host-protocol.ts";
 import {
+  classifyObservationError,
   observeTaskResources,
   parseProcessSnapshot,
   TaskResourceAccumulator,
@@ -106,7 +107,7 @@ describe("sampled task resources", () => {
       const [command, args, options] = execFile.mock.calls[0] ?? [];
       expect(command).toBe("/bin/ps");
       expect(args).toEqual(["-axo", "pid=,ppid=,pgid=,rss=,time=,lstart="]);
-      expect(options.timeout).toBe(1000);
+      expect(options.timeout).toBe(5000);
       resolve(
         null,
         row(10, 1, 10, 0, "00:00.00") +
@@ -119,25 +120,81 @@ describe("sampled task resources", () => {
       observer.stop();
     },
   );
-  it.each(["unavailable", "invalid"])(
-    "stops on %s observation instead of inventing zero usage",
-    async (kind) => {
-      execFile.mockImplementation((_file, _args, _options, callback) =>
-        callback(
-          kind === "unavailable" ? new Error("denied") : null,
-          kind === "invalid" ? "invalid sample" : "",
-        ),
-      );
-      const stop = vi.fn();
-      const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure");
-      expect(observer.current().samples).toBe(0);
-      observer.stop();
-    },
-  );
+  it("stops on an invalid observation at once instead of inventing zero usage", async () => {
+    execFile.mockImplementation((_file, _args, _options, callback) =>
+      callback(null, "invalid sample"),
+    );
+    const stop = vi.fn();
+    const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stop).toHaveBeenCalledExactlyOnceWith("host_failure", "RESOURCE_OBSERVATION_INVALID");
+    expect(observer.current().samples).toBe(0);
+    observer.stop();
+  });
+  it("[R2-D31] keeps sampling through unavailable snapshots and stops only after 10 seconds without one", async () => {
+    vi.useFakeTimers();
+    execFile.mockImplementation((_file, _args, _options, callback) =>
+      callback(Object.assign(new Error("killed"), { killed: true, signal: "SIGTERM" }), ""),
+    );
+    const stop = vi.fn();
+    const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
+    await vi.advanceTimersByTimeAsync(9900);
+    expect(stop).not.toHaveBeenCalled();
+    expect(execFile.mock.calls.length).toBeGreaterThan(90);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(stop).toHaveBeenCalledExactlyOnceWith(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+      "signal=SIGTERM killed=true",
+    );
+    const calls = execFile.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(execFile).toHaveBeenCalledTimes(calls);
+    expect(observer.current().samples).toBe(0);
+    observer.stop();
+  });
+  it("[R2-D31] stops after 10 seconds when ps never answers", async () => {
+    vi.useFakeTimers();
+    execFile.mockImplementation(() => undefined);
+    const stop = vi.fn();
+    const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
+    await vi.advanceTimersByTimeAsync(9900);
+    expect(stop).not.toHaveBeenCalled();
+    expect(execFile).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(stop).toHaveBeenCalledExactlyOnceWith(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+    );
+    observer.stop();
+  });
+  it("[R2-D31] restarts the 10 second window at every successful snapshot", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    execFile.mockImplementation((_file, _args, _options, callback) => {
+      calls++;
+      if (calls === 61) callback(null, row(10, 1, 10, 1, "00:00.01"));
+      else callback(new Error("denied"), "");
+    });
+    const stop = vi.fn();
+    const observer = observeTaskResources(10, { maxCpuTimeMs: 100, maxMemoryBytes: 1024 }, stop);
+    await vi.advanceTimersByTimeAsync(15900);
+    expect(stop).not.toHaveBeenCalled();
+    expect(observer.current()).toEqual({
+      samples: 1,
+      observedCpuTimeMs: 10,
+      peakObservedMemoryBytes: 1024,
+    });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(stop).toHaveBeenCalledExactlyOnceWith(
+      "host_failure",
+      "RESOURCE_OBSERVATION_UNAVAILABLE",
+    );
+    observer.stop();
+  });
   it("ignores a late observation after task completion", async () => {
+    vi.useFakeTimers();
     let resolve!: (error: Error | null, stdout: string) => void;
     execFile.mockImplementation((_file, _args, _options, callback) => {
       resolve = callback;
@@ -150,6 +207,34 @@ describe("sampled task resources", () => {
     await Promise.resolve();
     expect(stop).not.toHaveBeenCalled();
     expect(observer.current().samples).toBe(0);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(stop).not.toHaveBeenCalled();
+    expect(execFile).toHaveBeenCalledTimes(1);
+  });
+  it("[R2-D31] classifies snapshot errors into a failure code and the ps error detail", () => {
+    expect(
+      classifyObservationError(
+        new Error("RESOURCE_OBSERVATION_UNAVAILABLE", {
+          cause: { code: "ENOENT", signal: null, killed: false },
+        }),
+      ),
+    ).toEqual({ failure: "RESOURCE_OBSERVATION_UNAVAILABLE", detail: "code=ENOENT killed=false" });
+    expect(classifyObservationError(new Error("RESOURCE_OBSERVATION_UNAVAILABLE"))).toEqual({
+      failure: "RESOURCE_OBSERVATION_UNAVAILABLE",
+      detail: undefined,
+    });
+    expect(classifyObservationError(new Error("RESOURCE_OBSERVATION_INVALID"))).toEqual({
+      failure: "RESOURCE_OBSERVATION_INVALID",
+      detail: undefined,
+    });
+    expect(classifyObservationError(new Error("RESOURCE_OBSERVATION_CAPACITY"))).toEqual({
+      failure: "RESOURCE_OBSERVATION_CAPACITY",
+      detail: undefined,
+    });
+    expect(classifyObservationError("denied")).toEqual({
+      failure: "RESOURCE_OBSERVATION_INVALID",
+      detail: undefined,
+    });
   });
   it("rejects malformed resource limits before launching any process", () => {
     const input = {
