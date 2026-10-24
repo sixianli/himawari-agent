@@ -1776,7 +1776,7 @@ productDescribe(
         expect(observed.content).toContain("Command exited with code 7");
         expect(Object.keys(observed.result ?? {})[0]).toBe("effectNotice");
         expect(observed.result?.["effectNotice"]).toContain("命令以退出码 7 结束");
-        expect(observed.result?.["effectNotice"]).toContain("可能已修改工作区");
+        expect(observed.result?.["effectNotice"]).toContain("没有核验这条命令是否改动了工作区");
         expect(observed.result).toMatchObject({
           schemaVersion: "pi-result.v1",
           tool: "bash",

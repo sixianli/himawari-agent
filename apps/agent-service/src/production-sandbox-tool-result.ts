@@ -109,7 +109,7 @@ export function failedCommandModelContent(
   const status =
     commandExitCode === null ? "命令没有正常结束" : `命令以退出码 ${envelopeExitCode} 结束`;
   return JSON.stringify({
-    effectNotice: `命令执行失败：${status}。这不代表工作区没有变化，命令可能已修改工作区文件，具体效果尚未核验；请先检查工作区再决定下一步。`,
+    effectNotice: `命令执行失败：${status}。Himawari 没有核验这条命令是否改动了工作区；如果它会写入文件，继续前先检查目标文件。`,
     ...fields,
   });
 }

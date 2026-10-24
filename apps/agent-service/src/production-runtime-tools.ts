@@ -1776,7 +1776,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
                   : completion.errorCode === SANDBOX_WRITE_EFFECT_UNVERIFIED
                     ? `${SANDBOX_WRITE_EFFECT_UNVERIFIED}：${SANDBOX_WRITE_EFFECT_UNVERIFIED_MESSAGE}`
                     : commandEffectUnverified
-                      ? "命令执行失败，但这不代表工作区没有变化；命令可能已修改工作区文件，具体效果尚未核验。请先检查工作区再决定下一步。"
+                      ? "命令执行失败。Himawari 没有核验这条命令是否改动了工作区；如果它会写入文件，继续前先检查目标文件。"
                       : "操作未确认成功。",
       };
     }

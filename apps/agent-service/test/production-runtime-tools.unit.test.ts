@@ -413,7 +413,7 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
-  it("warns that a failed command may have changed the workspace", async () => {
+  it("tells the model a failed command's workspace effect is unverified", async () => {
     const f = fixture();
     const completeSandboxToolResult = vi.fn<
       NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
@@ -435,7 +435,7 @@ describe("ProductionRuntimeTools", () => {
       dispatchState: "accepted",
       outcome: "failed",
       errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
-      modelContent: expect.stringContaining("命令可能已修改工作区文件"),
+      modelContent: expect.stringContaining("没有核验这条命令是否改动了工作区"),
     });
     expect(
       f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
@@ -1265,8 +1265,8 @@ describe("[R2-T14] failed command output for the model", () => {
       expect(rest).toEqual(original);
       expect(effectNotice).toContain("命令执行失败");
       expect(effectNotice).toContain(status);
-      expect(effectNotice).toContain("命令可能已修改工作区文件");
-      expect(effectNotice).toContain("请先检查工作区");
+      expect(effectNotice).toContain("没有核验这条命令是否改动了工作区");
+      expect(effectNotice).toContain("继续前先检查目标文件");
     },
   );
 
@@ -1294,7 +1294,7 @@ describe("[R2-T14] failed command output for the model", () => {
       errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
       resultRef: null,
     });
-    expect(result.modelContent).toContain("命令可能已修改工作区文件");
+    expect(result.modelContent).toContain("没有核验这条命令是否改动了工作区");
     expect(result.modelContent).not.toContain("R2T14-OUT");
     expect(result.modelContent).not.toContain("伪造");
   });
