@@ -232,9 +232,6 @@ async function createDefaultModelComposition(
     });
     return Object.freeze({
       descriptors: created.descriptors,
-      // Revocable handle port and provider secret source stay owned here so the
-      // automatic reviewer can obtain scoped credentials without a second
-      // secret path. `close` clears both with the shared composition.
       handles,
       secretSource: sources.provider,
       composition: Object.freeze({
@@ -475,7 +472,6 @@ export async function runAgentService(
   lifecycle.register({
     name: "resource-recovery",
     stopAccepting: () => {
-      // Abort immediately, before draining or closing the authority and journal.
       resourceRecoveryDrain = resourceOnlyLoop?.stop(runStopTimeoutMs);
       void resourceRecoveryDrain?.catch(() => undefined);
     },
@@ -484,8 +480,6 @@ export async function runAgentService(
       if (drained && !drained.drained) throw new Error("RESOURCE_RECOVERY_DRAIN_DEADLINE_EXCEEDED");
     },
     close: async () => {
-      // Reuse the same bounded drain, including an unsuccessful one. Do not
-      // restart its timeout after dependencies have begun closing.
       await resourceRecoveryDrain;
     },
   });
@@ -638,15 +632,8 @@ export async function runAgentService(
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
       memoryComposition = await memoryFactory({ configuration, repository, sources });
     }
-    // Opt-in only: without a configured review the value stays undefined, so the
-    // production entry keeps its original human/deny path with no disclosure. A
-    // deployment that configures review but cannot compose it fails startup rather
-    // than silently running without the review it asked for.
     let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
     if (configuration.runPolicy?.automaticReview !== undefined) {
-      // Review needs the same product model boundary and protected payload store the
-      // Run uses. A deterministic-only or non-public deployment cannot evaluate a
-      // delegated request, so it must not silently ignore the configured review.
       if (!modelComposition || !protector) throw new Error("AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE");
       automaticReview = createProductionAutomaticReview({
         configuration,
@@ -656,8 +643,6 @@ export async function runAgentService(
         payloads: activeRepository.payloadStore(configuration.ownerId, configuration.agentId),
         protector,
         store: activeRepository.automaticReviewStore(),
-        // Read-only view of the live lease; the durable review transaction
-        // still revalidates it before committing any decision.
         executionLease: currentRunExecutionLease,
         clock,
         ids,
@@ -691,8 +676,6 @@ export async function runAgentService(
         workerInstanceId: peerBinding.workerInstanceId,
         workerBootId: peerBinding.workerBootId,
       });
-    // No admission/HTTP consumer is running yet. The new process may record old
-    // attempts as unknown, but must not inherit their execution permission.
     await recoverSandboxJobsAtStartup({
       journal: repository.sandboxJobJournal(configuration.ownerId, configuration.agentId),
       authority: invocationAuthority,
@@ -929,8 +912,6 @@ export async function runAgentService(
         return `${scope}:${idSequence}:${randomUUID()}`;
       },
     });
-    // Initial handshake includes the Worker's complete installed-byte checks.
-    // Respect its configured request budget on slower installation volumes.
     const handshake = await connectWorkerWithRetry(
       worker,
       configuration.deadlines.workerRequestMs,
@@ -1249,8 +1230,6 @@ export async function runAgentService(
     }
     if (!webEnabled && sandboxServices) {
       const activeAuthority = authorityLifecycle;
-      // Reuse the existing bounded loop without creating Run/model execution
-      // services. Web mode already owns one resource lane in its Run loop.
       resourceOnlyLoop = new ProductionRunDispatchLoop({
         dispatcher: {
           pump: async () => {},

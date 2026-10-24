@@ -285,7 +285,6 @@ describe("ProductionRuntimeTools", () => {
     const result = await (await exposed(f)).execute(invocation);
     expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_DEADLINE_EXCEEDED" });
     resume();
-    // Flush the admitted continuation, then independently inspect sent requests.
     await new Promise((resolve) => setImmediate(resolve));
     expect(f.request.mock.calls.map(([message]) => message.type)).toEqual(["work.delegate"]);
   });
@@ -346,7 +345,6 @@ describe("ProductionRuntimeTools", () => {
       allowed: false,
       reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
     });
-    // Calling execute directly must not bypass preflight.
     await expect(tool.execute(call)).rejects.toThrow();
     expect(f.request).not.toHaveBeenCalled();
     expect(f.artifacts.size).toBe(0);
@@ -712,7 +710,6 @@ describe("ProductionRuntimeTools", () => {
       const result = await tool.execute(invocation);
       expect(result.outcome).toBe(verified ?? "result_unknown");
       expect(completeSandboxToolResult).toHaveBeenCalledOnce();
-      // cancelledAt is a notification time, never the actual execution end.
       expect(result).not.toHaveProperty("executionTiming");
       expect(f.request).toHaveBeenCalledTimes(2);
     },
@@ -984,7 +981,6 @@ it("recovers a persisted sandbox handoff after interruption without executing ag
   const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
   await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
   expect((await tool.execute(invocation)).outcome).toBe("succeeded");
-  // Simulate interruption after the protected handoff but before runtime result persistence.
   const resultKey = [...f.artifacts.keys()].find((key) => key.startsWith("runtime-tool-result:"));
   if (!resultKey) throw new Error("missing result fixture");
   f.artifacts.delete(resultKey);

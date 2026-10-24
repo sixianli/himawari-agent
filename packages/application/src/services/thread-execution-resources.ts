@@ -49,8 +49,6 @@ const priority: Record<ThreadResourcePhase, number> = {
   unresolved: 7,
 };
 
-/** Read-only product projection. Protected identities stay behind this boundary;
- * authenticated historical scope is never used as a current execution grant. */
 export async function readThreadExecutionResources(input: {
   readonly ownerId: string;
   readonly agentId: string;
@@ -226,9 +224,6 @@ export async function readThreadExecutionResources(input: {
       taskEnvironmentObservedAt,
     ].filter((value): value is string => !!value);
     const itemId = await add(plan, phase, reason, dates.sort().at(-1) ?? null);
-    // An active operation has no final result yet. That absence becomes an
-    // uncertain outcome only when current preparation/execution is no longer
-    // established; an explicitly recorded unknown outcome remains unknown.
     const awaitingResult =
       entry.phase === "bound" &&
       entry.record.facts.result === null &&
@@ -255,7 +250,6 @@ export async function readThreadExecutionResources(input: {
     await add(plan, "record_deleted", "EXECUTION_RECORD_DELETED", null);
   }
   for (const queued of inventory.queue) {
-    // An admitted queue row and its journal are the same attempt, not two resources.
     const admittedPlan = admitted.get(queued.plan.identity.jobId);
     if (admittedPlan) {
       if (queued.status !== "admitted" || admittedPlan !== threadCommandFingerprint(queued.plan))

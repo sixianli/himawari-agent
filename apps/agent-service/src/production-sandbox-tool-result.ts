@@ -40,15 +40,10 @@ export interface SandboxToolDelivery {
     readonly executionLease: SandboxExecutionRecord["plan"]["executionLease"];
     readonly deadlineAt: string;
   };
-  /** Recheck the original Handle, Run, authority, Grant and model disclosure. */
   assertDisclosure(): Promise<void>;
-  /** A protected receipt for this handoff, separate from the returned tool result. */
   saveReceipt(value: SandboxToolCompletion): Promise<void>;
 }
 
-/** A nonzero shell exit is a known command failure, but it does not prove that
- * the command left the workspace unchanged. Preserve that distinction for Pi
- * and the durable execution projection. */
 export function sandboxCommandEffectReason(input: {
   readonly operationKind: SandboxOperationContract["kind"];
   readonly result: SandboxOperationResult | null;
@@ -130,9 +125,6 @@ function awaitingRecovery(record: SandboxExecutionRecord) {
   return supervision === "lost" || supervision === "reconciling";
 }
 
-/** Worker completion is a notification. Only the Agent's existing verified
- * projection and durable continuation intents can hand a foreground result to Pi.
- */
 export function createProductionSandboxToolResult(options: {
   preparations: Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation"> &
     Partial<Pick<SandboxExecutionPreparationPort, "authorizeReservationResult">>;
@@ -289,7 +281,6 @@ export function createProductionSandboxToolResult(options: {
     if (!prepared) return undefined;
     const { result, projection, context, intent } = prepared;
     await delivery.assertDisclosure();
-    // A repeated handoff retries only the immutable receipt, never executable work.
     await options.journal.dispatchIntent(intent());
     try {
       await delivery.assertDisclosure();

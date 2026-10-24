@@ -15,7 +15,6 @@ import {
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
-/** Resolve policy from trusted host configuration and durable, Run-scoped grants. */
 export function createProductionRunPolicy(options: {
   readonly configuration: ProductConfiguration;
   readonly artifacts: RunPayloadArtifactPort;
