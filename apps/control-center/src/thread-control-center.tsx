@@ -366,9 +366,7 @@ export function useThreadControlCenter(
                   ...new Set(approvals.map((approval) => approval.payload.intent.threadId)),
                 ]);
             })
-            .catch(() => {
-              /* Preserve the last verified state while reconnecting. */
-            });
+            .catch(() => undefined);
         }
         void loadPayloads(
           expandedList.payload.threads.flatMap((thread) =>
@@ -422,6 +420,7 @@ export function useThreadControlCenter(
         };
         setDetail(current);
         conversationShown = true;
+        setReadInBackground(true);
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
           ...current.payload.messages.map(({ contentRef }) => contentRef),
@@ -561,9 +560,6 @@ export function useThreadControlCenter(
       !detail?.payload.runs.length
     )
       return;
-    // Journal changes and expired observation windows need not create a Thread
-    // event. Re-read authoritative state while this conversation is visible;
-    // transport heartbeats and local elapsed time never manufacture progress.
     let stopped = false;
     let timer: number;
     const check = async () => {

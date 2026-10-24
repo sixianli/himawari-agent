@@ -132,8 +132,6 @@ beforeEach(() => {
     this.open = false;
     this.dispatchEvent(new Event("close"));
   };
-  // These component tests invoke refresh explicitly. Keep the independent SSE
-  // debounce clock controlled so it cannot replace a search during assertions.
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -1132,6 +1130,75 @@ describe("thread control center interactions", () => {
     expect(document.body.textContent).not.toContain(messages["loading.retry"]);
     expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("shows no slow-load notice once the first read has displayed the conversation", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-3",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    const held: (() => void)[] = [];
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        await new Promise<void>((resolve) => {
+          held.push(resolve);
+        });
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    let firstRead: Promise<void> | undefined;
+    await act(async () => {
+      firstRead = model.refresh();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(held.length).toBeGreaterThan(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.slowList"]);
+    expect(container.querySelector(".thread-load-feedback")).toBeNull();
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    await act(async () => {
+      for (const resolve of held.splice(0)) resolve();
+      await firstRead;
+    });
   });
 
   it("[R2-U3] shows a finished tool's result and duration while the Run keeps advancing past the summary", async () => {

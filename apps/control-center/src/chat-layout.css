@@ -1,4 +1,3 @@
-/* Brand and chat follow v1; sidebar hierarchy follows the September 13 refinement. */
 [hidden] {
   /* biome-ignore lint/complexity/noImportantStyles: The HTML hidden state must override component display rules. */
   display: none !important;
@@ -255,7 +254,6 @@
   background: transparent;
   border-color: transparent;
 }
-/* Route announcements focus a non-interactive heading, not an editable title. */
 .page-heading h1:focus {
   outline: none;
 }
@@ -503,6 +501,7 @@
   display: flex;
 }
 .thread-content {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1337,8 +1336,28 @@
   display: block;
   margin: 0 0 4px;
 }
+.thread-content > .thread-load-feedback {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 6px 6px 6px 14px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px #0004;
+  font-size: 12px;
+}
+.thread-content > .thread-load-feedback .thread-load-message {
+  margin: 0;
+}
 
-/* Compact, chronological execution steps from the confirmed chat prototype. */
 .turn-process > summary,
 .tool-record > summary {
   display: flex;
