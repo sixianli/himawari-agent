@@ -118,7 +118,7 @@ class FakeSession implements SandboxJobSession {
   constructor(readyFailure?: Error) {
     this.ready = readyFailure
       ? Promise.reject(readyFailure)
-      : Promise.resolve({ residentProcessId: RESIDENT_PID });
+      : Promise.resolve({ residentProcessId: RESIDENT_PID, hostSteps: null });
     this.ready.catch(() => {});
     this.result = new Promise((resolve) => {
       this.settle = resolve;

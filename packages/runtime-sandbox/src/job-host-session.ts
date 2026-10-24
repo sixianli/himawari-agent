@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { sandboxHostStepsSchema } from "@himawari-agent/execution-contracts";
+import { type SandboxHostSteps, sandboxHostStepsSchema } from "@himawari-agent/execution-contracts";
 import {
   authenticateJobHostEnvelope,
   decodeJobHostOutput,
@@ -50,6 +50,7 @@ export class JobHostPreparationError extends Error {
 
 export interface SandboxJobSessionReady {
   readonly residentProcessId: number;
+  readonly hostSteps: SandboxHostSteps | null;
 }
 
 export interface SandboxJobSession {
@@ -102,6 +103,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
   let completion: Record<string, unknown> | undefined;
   let forceTimer: ReturnType<typeof setTimeout> | undefined;
   let residentProcessId: number | null = null;
+  let hostSteps: SandboxHostSteps | null = null;
   let resolveReady!: (value: SandboxJobSessionReady) => void;
   let rejectReady!: (error: Error) => void;
   const ready = new Promise<SandboxJobSessionReady>((resolve, reject) => {
@@ -326,7 +328,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
     const type = message["type"];
     if (type === "heartbeat") {
       try {
-        sandboxHostStepsSchema.parse(message["steps"]);
+        hostSteps = sandboxHostStepsSchema.parse(message["steps"]);
       } catch {
         fail();
       }
@@ -351,7 +353,7 @@ export function prepareSandboxJobSession(value: JobHostRequest): SandboxJobSessi
       prepared = true;
       residentProcessId = message["residentProcessId"];
       clearTimeout(preparationTimer);
-      if (!cancelled) resolveReady({ residentProcessId });
+      if (!cancelled) resolveReady({ residentProcessId, hostSteps });
     } else if (type === "started") {
       const task = parseJobHostStartedTask(message);
       const command = active;

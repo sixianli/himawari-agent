@@ -23,6 +23,7 @@ import {
   processGroupPresent,
   readProcessStartToken,
   type SandboxJobSession,
+  type SandboxJobSessionReady,
   type SandboxJobSessionRun,
 } from "@himawari-agent/runtime-sandbox";
 
@@ -334,8 +335,12 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
         residentStartToken: null,
         commandGroups: [],
       };
+      const timingStarted = performance.now();
       const starting = { ...state, sessions: { ...state.sessions, [input.kind]: record } };
       await this.write(starting);
+      const timing: Record<string, number> = {
+        write_state: Math.round(performance.now() - timingStarted),
+      };
       let session: SandboxJobSession;
       try {
         session = this.options.prepareSession({ ...input.request, deadlineAt: state.deadlineAt });
@@ -361,20 +366,41 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
       }
       const startToken = await this.options.startToken(pid).catch(() => null);
       await this.updateSession(identity, input.kind, (current) => ({ ...current, startToken }));
+      timing["spawn_and_start_token"] = Math.round(
+        performance.now() - timingStarted - (timing["write_state"] ?? 0),
+      );
       let residentGroup: number;
+      let hostSteps: SandboxJobSessionReady["hostSteps"] = null;
       try {
-        ({ residentProcessId: residentGroup } = await session.ready);
+        ({ residentProcessId: residentGroup, hostSteps } = await session.ready);
       } catch (error) {
         session.close();
         await this.fail(await this.require(identity), "SRT_SESSION_START_FAILED");
         throw error;
       }
+      timing["ready"] = Math.round(
+        performance.now() -
+          timingStarted -
+          (timing["write_state"] ?? 0) -
+          (timing["spawn_and_start_token"] ?? 0),
+      );
       const residentStartToken = await this.options.startToken(residentGroup).catch(() => null);
       await this.updateSession(identity, input.kind, (current) => ({
         ...current,
         residentGroup,
         residentStartToken,
       }));
+      console.error(
+        JSON.stringify({
+          event: "sandbox.srt_session.timing",
+          environmentId: identity.environmentId,
+          session: input.kind,
+          stages: timing,
+          hostSteps,
+          totalMs: Math.round(performance.now() - timingStarted),
+          at: new Date().toISOString(),
+        }),
+      );
       return this.wrap(identity, input.kind, session, record.policyDigest, state.deadlineAt);
     });
   }

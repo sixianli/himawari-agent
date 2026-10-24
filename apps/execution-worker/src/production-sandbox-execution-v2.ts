@@ -1213,8 +1213,11 @@ export class ProductionSandboxExecutionV2 {
     const plan = initial.plan;
     const kind = srtTaskEnvironmentSession(plan);
     if (!kind) throw new Error("PI_RUNNER_CONTRACT_UNSUPPORTED");
+    const timing = srtCallTiming(plan.identity.runId, plan.identity.invocationId, kind);
     const binding = await this.hostBinding(plan);
+    timing.mark("host_binding");
     const resolved = await this.rpc(entry, { kind: "resolve" });
+    timing.mark("resolve");
     const resolvedScope = resolved.resolvedScope;
     const scope = resolvedScope?.scope;
     const environment = resolved.environment;
@@ -1241,6 +1244,7 @@ export class ProductionSandboxExecutionV2 {
       throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
     const root = await resolveSandboxWorkspaceRoot({ binding, scope });
     if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
+    timing.mark("workspace_root");
     const { policy, compiled } = await prepareJobPolicy({
       workspace: root.canonicalPath,
       privateRoot: binding.privateRoot,
@@ -1258,7 +1262,9 @@ export class ProductionSandboxExecutionV2 {
       ],
       allowedDomains: resolvedScope.allowedDomains,
     });
+    timing.mark("job_policy");
     const input = await this.options.payloads.readInput(entry.invocation);
+    timing.mark("read_input");
     if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
     const parametersJson = new TextDecoder("utf-8", { fatal: true }).decode(input);
     const runnerInput = Buffer.from(
@@ -1302,15 +1308,18 @@ export class ProductionSandboxExecutionV2 {
         cleanupTimeoutMs: 5000,
       },
     });
+    timing.mark("session");
     const facts = sandboxExecutionFactsSchema.parse(
       this.environmentFacts(plan, initial, environment),
     );
     if (entry.cancelled || this.closed) return this.unknown(entry);
     entry.stage = "bind";
     const bound = await this.rpc(entry, { kind: "bind", expectedSequence: 1, facts });
+    timing.mark("bind");
     if (!bound.applied || entry.cancelled || this.closed) return this.unknown(entry);
     entry.stage = "execute";
     const current = await this.rpc(entry, { kind: "resolve" });
+    timing.mark("resolve_bound");
     if (
       entry.cancelled ||
       this.closed ||
@@ -1377,6 +1386,10 @@ export class ProductionSandboxExecutionV2 {
         },
       );
       const active = run;
+      void active.started.then(
+        () => timing.finish("command_started"),
+        () => timing.finish("command_not_started"),
+      );
       const flush = this.outputStream(entry, plan, (offset, limit, channel) =>
         active.readOutput(offset, limit, channel),
       );
@@ -1799,4 +1812,33 @@ export class ProductionSandboxExecutionV2 {
     }
     await Promise.allSettled([...this.entries.values()].map((entry) => entry.supervision));
   }
+}
+
+function srtCallTiming(runId: string, invocationId: string, session: string) {
+  const started = performance.now();
+  let last = started;
+  const stages: { [stage: string]: number } = {};
+  const mark = (stage: string) => {
+    const now = performance.now();
+    stages[stage] = Math.round(now - last);
+    last = now;
+    return now;
+  };
+  return {
+    mark,
+    finish(stage: string) {
+      const now = mark(stage);
+      console.error(
+        JSON.stringify({
+          event: "sandbox.srt_call.timing",
+          runId,
+          invocationId,
+          session,
+          stages,
+          totalMs: Math.round(now - started),
+          at: new Date().toISOString(),
+        }),
+      );
+    },
+  };
 }

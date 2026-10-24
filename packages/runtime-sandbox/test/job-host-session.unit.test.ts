@@ -136,6 +136,20 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
     await session.result;
   });
 
+  it("hands the host's latest preparation steps to the caller once ready", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    const steps = [
+      { stage: "dependencies", startedMs: 3, elapsedMs: 40 },
+      { stage: "launch", startedMs: 43, elapsedMs: null },
+    ];
+    process.emitMessage({ type: "heartbeat", steps });
+    ready(process);
+    expect(await session.ready).toEqual({ residentProcessId: 4321, hostSteps: steps });
+    process.emit("close");
+    await session.result;
+  });
+
   it("[R2-P2] runs two commands in order with their own output and settled results", async () => {
     const process = child();
     const session = prepareSandboxJobSession(request());
