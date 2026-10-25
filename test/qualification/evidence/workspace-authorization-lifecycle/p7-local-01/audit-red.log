@@ -1,0 +1,24 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |tooling| test/tooling/workspace-lifecycle-audit.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/workspace-lifecycle-audit.test.ts [ test/tooling/workspace-lifecycle-audit.test.ts ]
+Error: Cannot find module '../../scripts/operations/workspace-lifecycle-audit.mjs' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/test/tooling/workspace-lifecycle-audit.test.ts
+ ❯ test/tooling/workspace-lifecycle-audit.test.ts:4:1
+      2| import path from "node:path";
+      3| import { afterEach, describe, expect, it } from "vitest";
+      4| import { auditWorkspaceLifecycle } from "../../scripts/operations/work…
+       | ^
+      5| import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox…
+      6| import { AGENT_ID, OWNER_ID, openSandboxJournal } from "../fixtures/sq…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  18:21:26
+   Duration  313ms (transform 38ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)

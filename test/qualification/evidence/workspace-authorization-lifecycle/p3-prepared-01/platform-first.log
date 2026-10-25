@@ -1,0 +1,30 @@
+
+> himawari-agent@0.0.0 test:unit
+> vitest run --config vitest.workspace.ts --project unit packages/platform-node/test/constrained-file-system.unit.test.ts packages/platform-node/test/sandboxed-coding-operations.unit.test.ts packages/platform-node/test/pi-file-publication.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts (19 tests | 1 failed) 763ms
+     × pins a fixed file call to its target even within a broader grant 32ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > pins a fixed file call to its target even within a broader grant
+Error: PI_MULTIPLE_WRITES_UNSUPPORTED
+ ❯ Object.writeFile packages/platform-node/src/files/sandboxed-coding-operations.ts:171:31
+    169|     },
+    170|     async writeFile(absolute, content) {
+    171|       if (writeStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTE…
+       |                               ^
+    172|       writeStarted = true;
+    173|       const name = relative(absolute);
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:124:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 72 passed (73)
+   Start at  00:51:52
+   Duration  3.15s (transform 2.92s, setup 0ms, import 5.77s, tests 2.80s, environment 0ms)

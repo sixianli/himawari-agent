@@ -6,16 +6,22 @@ import type {
 } from "@himawari-agent/application";
 import {
   type ClockPort,
+  claimFromRunExecutionLease,
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
+  type RuntimeRequest,
+  RemoteExecutionBackend,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
 } from "@himawari-agent/application";
-import type {
-  ExecutionAdmissionPeerBinding,
-  SandboxExecutionSupport,
+import {
+  type ExecutionAdmissionPeerBinding,
+  payloadBrokerV1BodyBytes,
+  type SandboxExecutionSupport,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
 import {
   inspectDeploymentAuthorityReadOnly,
@@ -36,6 +42,7 @@ import {
   MacOsKeychainSecretSource,
   PayloadUdsServer,
   parseServiceArguments,
+  DescriptorRelativeReadOnly,
   RuntimeHealthModel,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
@@ -44,18 +51,26 @@ import {
   SystemdCredentialSecretSource,
   SystemdProviderSecretSource,
   stableErrorCode,
+  TypeSafeJevTransport,
   writeAgentServiceBootBinding,
   writeAuthorityFile,
   writeServiceDiagnostic,
 } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
+  createPiFilePreparationPool,
   getPiModelPresentation,
 } from "@himawari-agent/runtime-pi";
 import { createProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
+import { createProductionAutomaticReview } from "./production-automatic-review.js";
 import { ProductionExecutionAdmissionHandler } from "./production-execution-admission-handler.js";
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
+import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
+import {
+  WorkspaceAutoAuthorization,
+  resolveCodingNetworkFacts,
+} from "./workspace-auto-authorization.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -72,13 +87,17 @@ import {
 } from "./production-model-composition.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
+import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
   createProductionRunMemory,
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
-import { createProductionRunPolicy } from "./production-run-policy.js";
+import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
-import { createProductionSandboxServices } from "./production-sandbox-services.js";
+import {
+  createProductionSandboxServices,
+  type ProductionTaskEnvironments,
+} from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 
@@ -98,11 +117,13 @@ const AUTHORITY_RENEWAL_INTERVAL_MS = 10_000;
 const STARTUP_RETRY_DELAY_MS = 50;
 const MAXIMUM_BODY_BYTES = 65_536;
 const MAXIMUM_PAYLOAD_BYTES = 48 * 1024;
+const PI_FILE_PREPARATION_MEMORY_BYTES = 256 * 1024 * 1024;
 
 export interface AgentServiceModelCompositionContext {
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
   readonly sources?: ReturnType<typeof hostModelSources>;
+  readonly admission?: ModelInvocationAdmissionResolver;
 }
 
 export type AgentServiceModelCompositionFactory = (
@@ -132,6 +153,49 @@ function productionClock(): ClockPort {
 
 function productionIds(): IdGeneratorPort {
   return Object.freeze({ next: (namespace: string) => `${namespace}:${randomUUID()}` });
+}
+
+type SandboxEnvironmentPrewarm = NonNullable<
+  Awaited<ReturnType<typeof createProductionSandboxServices>>
+>["prewarmEnvironment"];
+
+function sandboxEnvironmentPrewarm(
+  sandbox: { readonly prewarmEnvironment: SandboxEnvironmentPrewarm },
+  route: Parameters<SandboxEnvironmentPrewarm>[1],
+  output: NodeJS.WritableStream,
+): (request: RuntimeRequest) => void {
+  return (request) => {
+    const started = performance.now();
+    void sandbox.prewarmEnvironment(request, route).then(
+      (requested) =>
+        writeServiceDiagnostic(output, {
+          component: "agent-service",
+          event: "sandbox.srt_prewarm.requested",
+          runId: request.runId,
+          requested,
+          durationMs: Math.round(performance.now() - started),
+        }),
+      (error: unknown) =>
+        writeServiceDiagnostic(output, {
+          component: "agent-service",
+          event: "sandbox.srt_prewarm.failed",
+          runId: request.runId,
+          code: stableErrorCode(error),
+          durationMs: Math.round(performance.now() - started),
+        }),
+    );
+  };
+}
+
+function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionTaskEnvironments {
+  return {
+    backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+    session: "srt",
+    guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
+    inspectBeforeReuse: true,
+    lifecycle,
+    prewarm: (input) => lifecycle.prewarm(input),
+  };
 }
 
 function configuredEmbedding(configuration: ProductConfiguration) {
@@ -211,11 +275,12 @@ async function createDefaultModelComposition(
       ids,
       clock,
       requestTimeoutMs: configuration.deadlines.providerRequestMs,
-      siteUrl: configuration.publicOrigin,
-      appName: "himawari-agent",
+      ...(context.admission === undefined ? {} : { admission: context.admission }),
     });
     return Object.freeze({
       descriptors: created.descriptors,
+      handles,
+      secretSource: sources.provider,
       composition: Object.freeze({
         ...created.composition,
         close: async () => {
@@ -363,8 +428,12 @@ export async function runAgentService(
   let modelComposition: ProductionConfiguredModelComposition | undefined;
   let memoryComposition: ProductionMemoryComposition | undefined;
   let memoryWorker: ProductionMemoryWorker | undefined;
+  let piFilePreparationPool: ReturnType<typeof createPiFilePreparationPool> | undefined;
   let http: ProductionHttpComposition | undefined;
   let runs: ReturnType<typeof createProductionRunComposition> | undefined;
+  let runDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
+  let resourceOnlyLoop: ProductionRunDispatchLoop | undefined;
+  let resourceRecoveryDrain: ReturnType<ProductionRunDispatchLoop["stop"]> | undefined;
   let health: RuntimeHealthModel | undefined;
   let runStopTimeoutMs = 30_000;
   let runInterruption: Promise<void> | undefined;
@@ -378,6 +447,18 @@ export async function runAgentService(
   const authorityLoss = new Promise<void>((resolve) => {
     resolveAuthorityLoss = resolve;
   });
+  const failRuntime = (error: unknown, phase?: string) => {
+    writeServiceDiagnostic(errorOutput, {
+      component: "agent-service",
+      event: "runtime.failed",
+      code: stableErrorCode(error),
+      ...(phase === undefined ? {} : { phase }),
+    });
+    health?.setAuthorityActive(false);
+    authorityLost = true;
+    authorityLossError = error;
+    resolveAuthorityLoss?.();
+  };
   let reverseStop: Promise<void> | undefined;
   const stopReverseServices = (): Promise<void> => {
     if (reverseStop) return reverseStop;
@@ -404,6 +485,10 @@ export async function runAgentService(
     close: () => memoryWorker?.drain(),
   });
   lifecycle.register({
+    name: "pi-file-preparation",
+    close: () => piFilePreparationPool?.close(),
+  });
+  lifecycle.register({
     name: "worker-channels",
     close: stopReverseServices,
   });
@@ -412,17 +497,38 @@ export async function runAgentService(
     stopAccepting: () => {
       health?.setAuthorityActive(false);
       runs?.dispatcher.stopAccepting();
+      runDrain = runs?.loop.stop(runStopTimeoutMs);
+      void runDrain?.catch(() => undefined);
       runInterruption = runs?.coordinator.interruptAllExecutions("SERVICE_STOPPING");
+      void runInterruption?.catch(() => undefined);
     },
     drain: async () => {
       if (!runs) return;
       await runInterruption;
-      const drained = await runs.loop.stop(runStopTimeoutMs);
-      if (!drained.drained) throw new Error("RUN_DRAIN_DEADLINE_EXCEEDED");
+      const drained = await runDrain;
+      if (!drained?.drained) throw new Error("RUN_DRAIN_DEADLINE_EXCEEDED");
     },
     close: async () => {
-      await runs?.loop.stop(runStopTimeoutMs);
-      await runs?.titles?.stop();
+      try {
+        await runDrain;
+      } finally {
+        await runs?.titles?.stop();
+        await runs?.memoryCapture?.stop();
+      }
+    },
+  });
+  lifecycle.register({
+    name: "resource-recovery",
+    stopAccepting: () => {
+      resourceRecoveryDrain = resourceOnlyLoop?.stop(runStopTimeoutMs);
+      void resourceRecoveryDrain?.catch(() => undefined);
+    },
+    drain: async () => {
+      const drained = await resourceRecoveryDrain;
+      if (drained && !drained.drained) throw new Error("RESOURCE_RECOVERY_DRAIN_DEADLINE_EXCEEDED");
+    },
+    close: async () => {
+      await resourceRecoveryDrain;
     },
   });
   lifecycle.register({
@@ -536,11 +642,59 @@ export async function runAgentService(
       },
     });
     const embedding = configuredEmbedding(configuration);
+    const currentRunExecutionLease = async (
+      runId: Parameters<ModelInvocationAdmissionResolver>[0]["runId"],
+    ) => {
+      const lease = await activeRepository
+        .runDispatch(
+          configuration.ownerId,
+          configuration.agentId,
+          authority,
+          { leaseId: authorityLease.leaseId, fencingToken: authorityLease.fencingToken },
+          agentServiceBootId,
+        )
+        .currentExecutionLease?.({ runId, at: clock.now() });
+      if (!lease) throw new Error("AUTOMATIC_REVIEW_LEASE_UNAVAILABLE");
+      return claimFromRunExecutionLease(lease);
+    };
+    const modelAdmission: ModelInvocationAdmissionResolver = async (scope) => {
+      if (scope.ownerId !== configuration.ownerId || scope.agentId !== configuration.agentId)
+        return undefined;
+      try {
+        return runs?.admission({
+          ...scope,
+          executionLease: await currentRunExecutionLease(scope.runId),
+        });
+      } catch {
+        return undefined;
+      }
+    };
     if (!isDeterministicOnly(configuration)) {
       const factory = dependencies.modelCompositionFactory ?? createDefaultModelComposition;
-      modelComposition = await factory({ configuration, repository, sources });
+      modelComposition = await factory({
+        configuration,
+        repository,
+        sources,
+        admission: modelAdmission,
+      });
       const memoryFactory = dependencies.memoryCompositionFactory ?? createDefaultMemoryComposition;
       memoryComposition = await memoryFactory({ configuration, repository, sources });
+    }
+    let automaticReview: ReturnType<typeof createProductionAutomaticReview>;
+    if (configuration.runPolicy?.automaticReview !== undefined) {
+      if (!modelComposition || !protector) throw new Error("AUTOMATIC_REVIEW_RUNTIME_UNAVAILABLE");
+      automaticReview = createProductionAutomaticReview({
+        configuration,
+        model: modelComposition.composition.model,
+        descriptors: modelComposition.descriptors.generation,
+        handles: modelComposition.handles,
+        payloads: activeRepository.payloadStore(configuration.ownerId, configuration.agentId),
+        protector,
+        store: activeRepository.automaticReviewStore(),
+        executionLease: currentRunExecutionLease,
+        clock,
+        ids,
+      });
     }
     const credential = await readRestrictedExecutionTokenFile(args.workerTokenPath);
     const workerBinding = await waitForWorkerBootBinding({
@@ -570,28 +724,119 @@ export async function runAgentService(
         workerInstanceId: peerBinding.workerInstanceId,
         workerBootId: peerBinding.workerBootId,
       });
-    // No admission/HTTP consumer is running yet. The new process may record old
-    // attempts as unknown, but must not inherit their execution permission.
     await recoverSandboxJobsAtStartup({
       journal: repository.sandboxJobJournal(configuration.ownerId, configuration.agentId),
       authority: invocationAuthority,
       now: () => clock.now(),
     });
     await recoverSandboxExecutionsAtStartup({
+      preparations: repository.sandboxExecutionPreparations(
+        configuration.ownerId,
+        configuration.agentId,
+      ),
       journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
       authority: invocationAuthority,
       now: () => clock.now(),
     });
+    const workspaceNetwork = await resolveCodingNetworkFacts(configuration, clock);
+    const workspaceAuto =
+      workspaceNetwork && configuration.runPolicy?.coding
+        ? new WorkspaceAutoAuthorization({
+            configuration,
+            repository,
+            clock,
+            ids,
+            network: workspaceNetwork,
+          })
+        : undefined;
+    if (workspaceAuto) await workspaceAuto.sync(invocationAuthority().lease);
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
       authority: invocationAuthority,
       clock,
       ids,
+      hostReadOnlyPort: new DescriptorRelativeReadOnly(),
+      ...(automaticReview ? { automaticReview } : {}),
+      ...(workspaceAuto ? { workspaceAuto } : {}),
     });
     let workerSandboxSupport: SandboxExecutionSupport | undefined;
+    const taskEnvironmentConfiguration = configuration.taskEnvironments;
     const sandboxServices = await createProductionSandboxServices({
+      diagnosticOutput: errorOutput,
+      createPiFilePreparation: () => {
+        piFilePreparationPool = createPiFilePreparationPool({
+          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
+          onWarmupFailure: (error) => {
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "pi.preparation.warmup_failed",
+              code: stableErrorCode(error),
+            });
+          },
+          onWarmupRecovered: () => {
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "pi.preparation.warmup_recovered",
+            });
+          },
+        });
+        return piFilePreparationPool.prepare;
+      },
       workerSupport: () => workerSandboxSupport,
+      ...(taskEnvironmentConfiguration
+        ? {
+            taskEnvironments: {
+              backendRef: taskEnvironmentConfiguration.backendRef,
+              imageDigest: taskEnvironmentConfiguration.image.digest,
+              lifecycle: new RemoteExecutionBackend({
+                backendRef: taskEnvironmentConfiguration.backendRef,
+                transport: {
+                  request: (message) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.request(message);
+                  },
+                  events: (afterCursor) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.events(afterCursor);
+                  },
+                },
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                authority: () => invocationAuthority().product,
+                nextId: (scope) => `${scope}:${randomUUID()}`,
+                now: () => clock.now(),
+                requestTimeoutMs: configuration.deadlines.workerRequestMs,
+                resultTimeoutMs: configuration.deadlines.runMs,
+                pollIntervalMs: 100,
+              }),
+            },
+          }
+        : {
+            srtTaskEnvironments: srtTaskEnvironmentRoute(
+              new RemoteExecutionBackend({
+                backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+                transport: {
+                  request: (message) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.request(message);
+                  },
+                  events: (afterCursor) => {
+                    if (!worker) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                    return worker.events(afterCursor);
+                  },
+                },
+                ownerId: configuration.ownerId,
+                agentId: configuration.agentId,
+                authority: () => invocationAuthority().product,
+                nextId: (scope) => `${scope}:${randomUUID()}`,
+                now: () => clock.now(),
+                requestTimeoutMs: configuration.deadlines.workerRequestMs,
+                resultTimeoutMs: configuration.deadlines.runMs,
+                pollIntervalMs: 100,
+              }),
+            ),
+          }),
       configuration,
       repository,
       protector,
@@ -668,7 +913,7 @@ export async function runAgentService(
       ],
       authorityEpoch: authority.authorityEpoch,
       fencingToken: authority.fencingToken,
-      maximumBodyBytes: MAXIMUM_BODY_BYTES,
+      maximumBodyBytes: payloadBrokerV1BodyBytes(MAXIMUM_PAYLOAD_BYTES),
       maximumPayloadBytes: MAXIMUM_PAYLOAD_BYTES,
       requestTimeoutMs: configuration.deadlines.workerRequestMs,
       handler: payloadHandler,
@@ -711,8 +956,6 @@ export async function runAgentService(
         return `${scope}:${idSequence}:${randomUUID()}`;
       },
     });
-    // Initial handshake includes the Worker's complete installed-byte checks.
-    // Respect its configured request budget on slower installation volumes.
     const handshake = await connectWorkerWithRetry(
       worker,
       configuration.deadlines.workerRequestMs,
@@ -776,6 +1019,7 @@ export async function runAgentService(
       });
       if (!webEnabled) await memoryWorker.start();
     }
+    let boundListenPort: number | undefined;
     if (webEnabled) {
       if (!modelComposition || !memoryComposition || !durableMemory || !protector || !worker)
         throw new Error("PUBLIC_RUNTIME_DEPENDENCY_MISSING");
@@ -791,21 +1035,13 @@ export async function runAgentService(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
-      const failRuntime = (error: unknown) => {
-        writeServiceDiagnostic(errorOutput, {
-          component: "agent-service",
-          event: "runtime.failed",
-          code: stableErrorCode(error),
-        });
-        health?.setAuthorityActive(false);
-        authorityLost = true;
-        authorityLossError = error;
-        resolveAuthorityLoss?.();
-      };
       const tools = new ProductionRuntimeTools({
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
+          : {}),
+        ...(configuration.runPolicy?.publicFetch
+          ? { publicFetch: configuration.runPolicy.publicFetch }
           : {}),
         ...(configuration.runPolicy?.coding ? { coding: configuration.runPolicy.coding } : {}),
         fileRead: fileReadServices,
@@ -847,7 +1083,7 @@ export async function runAgentService(
         ceiling: {
           maxWallTimeMs: configuration.deadlines.workerRequestMs,
           maxCpuTimeMs: configuration.deadlines.workerRequestMs,
-          maxMemoryBytes: 256 * 1024 * 1024,
+          maxMemoryBytes: PI_FILE_PREPARATION_MEMORY_BYTES,
           maxOutputBytes: MAXIMUM_PAYLOAD_BYTES,
           maxProgressEvents: 100,
         },
@@ -881,7 +1117,55 @@ export async function runAgentService(
             event: "thread-title.failed",
             code: stableErrorCode(error),
           }),
-        ...(sandboxServices ? { resources: sandboxServices.resources } : {}),
+        ...(modelComposition.composition.generateText
+          ? {
+              memoryCapture: {
+                product: durableMemory,
+                approvals: repository.sensitiveMemoryApprovals(),
+                generate: (request, prompt, gate) => {
+                  const generateText = modelComposition?.composition.generateText;
+                  if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
+                  return generateText(request, prompt, gate, {
+                    invocationId: `memory-capture:${request.runId}`,
+                    maxOutputTokens: 1024,
+                    reasoningOutputTokens: 4096,
+                    requestTimeoutMs: 45000,
+                    errorPrefix: "MEMORY_CAPTURE",
+                  });
+                },
+                onAudit: (record) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "memory-capture.audit",
+                    outcome: record.outcome,
+                    candidateOrdinal: record.candidateOrdinal ?? -1,
+                    classification: record.classification,
+                  }),
+                onFailure: (error) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "memory-capture.failed",
+                    code: stableErrorCode(error),
+                  }),
+              },
+            }
+          : {}),
+        ...(sandboxServices
+          ? {
+              resources: sandboxServices.resources,
+              recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
+              prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
+              ...(configuration.runPolicy?.coding
+                ? {
+                    prewarmSandboxEnvironment: sandboxEnvironmentPrewarm(
+                      sandboxServices,
+                      configuration.runPolicy.coding,
+                      errorOutput,
+                    ),
+                  }
+                : {}),
+            }
+          : {}),
         configuration,
         repository,
         authority: activeAuthority,
@@ -889,7 +1173,9 @@ export async function runAgentService(
         modelRegistry: [
           ...modelComposition.descriptors.generation.map((descriptor) => ({
             ...descriptor,
-            ...admissionCostForConfiguredPiModel(descriptor),
+            ...(descriptor.api === "typesafe-systemone"
+              ? TypeSafeJevTransport.estimatedAdmissionCost(descriptor)
+              : admissionCostForConfiguredPiModel(descriptor)),
           })),
           embeddingAdmissionDescriptor(configuration),
         ],
@@ -903,19 +1189,36 @@ export async function runAgentService(
           handles: capabilities,
           clock,
           ids,
+          workspaceRoot: configuredWorkspaceRoot(configuration, repository, clock),
         }),
         clock,
         ids,
         instanceId: agentServiceBootId,
         cwd: configuration.stateRoot,
         agentDir: path.join(configuration.cacheDirectory, "pi-agent"),
-        onFailure: ({ error }) => failRuntime(error),
+        onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;
+      const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
+        memory: {
+          service: activeDurableMemory,
+          onAudit: (record) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory-capture.audit",
+              outcome: record.outcome,
+              candidateOrdinal: record.candidateOrdinal ?? -1,
+              classification: record.classification,
+            }),
+        },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
-            .filter((descriptor) => descriptor.allowedDataClassifications.includes("private"))
+            .filter(
+              (descriptor) =>
+                descriptor.api === "openai-completions" &&
+                descriptor.allowedDataClassifications.includes("private"),
+            )
             .map(async (descriptor) =>
               getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
             ),
@@ -936,6 +1239,17 @@ export async function runAgentService(
         authority: () => activeAuthority.authorityFence(),
         executionAuthority: () => activeAuthority.authorityLease(),
         secretSources: sources,
+        executionEnvironment: {
+          mode:
+            sandboxServices?.executionMode ?? (configuration.taskEnvironments ? "strict" : "srt"),
+          unavailableTools: async () =>
+            sandboxServices?.executionMode === "strict"
+              ? strictModeUnavailableTools({
+                  runPolicy: configuration.runPolicy,
+                  refusal: sandboxServices.strictModeRefusal,
+                })
+              : [],
+        },
         ...dependencies.httpOptions,
         health,
       });
@@ -995,6 +1309,10 @@ export async function runAgentService(
       await runs.loop.start();
       if (authorityLost) throw authorityLossError;
       await http.listen();
+      const listenAddress = http.app.server.address();
+      if (listenAddress === null || typeof listenAddress === "string")
+        throw new Error("HTTP_LISTENER_ADDRESS_UNAVAILABLE");
+      boundListenPort = listenAddress.port;
       health.setLive(true);
       for (const name of [
         "authority",
@@ -1011,6 +1329,27 @@ export async function runAgentService(
         health.observe({ name, required: true, status: "healthy", reasonCode: null });
       health.setAuthorityActive(true);
     }
+    if (!webEnabled && sandboxServices) {
+      const activeAuthority = authorityLifecycle;
+      resourceOnlyLoop = new ProductionRunDispatchLoop({
+        dispatcher: {
+          pump: async () => {},
+          drain: async () => ({ drained: true, inFlight: 0 }),
+        },
+        fallbackScanIntervalMs: 1000,
+        recoverResources: async (signal) => {
+          await activeAuthority.assertActive();
+          if (authorityLost) throw new Error(AGENT_SERVICE_ERROR_CODES.AUTHORITY_LOST);
+          await sandboxServices.resources.recoverPending(
+            signal,
+            configuration.concurrency.totalRuns,
+          );
+        },
+        onFailure: ({ phase, error }) => failRuntime(error, phase),
+      });
+      await resourceOnlyLoop.start();
+      if (authorityLost) throw authorityLossError;
+    }
     lifecycle.ready();
     writeServiceDiagnostic(output, {
       component: "agent-service",
@@ -1021,6 +1360,7 @@ export async function runAgentService(
       sqliteVersion: sqlite.sqliteVersion,
       workerSchemaVersion: handshake.payload.selectedSchemaVersion,
       publicMode: configuration.publicMode,
+      ...(boundListenPort === undefined ? {} : { listenPort: boundListenPort }),
       unfinishedRuns: recovery.unfinishedRunKeys.length,
       pendingApprovals: recovery.pendingApprovalRequestIds.length,
       recoverableOccurrences: recovery.retryableJobOccurrenceIds.length,

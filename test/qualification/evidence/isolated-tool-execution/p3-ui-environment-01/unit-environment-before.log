@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-execution-environment.unit.test.ts [ apps/agent-service/test/production-execution-environment.unit.test.ts ]
+Error: Cannot find module '../src/production-execution-environment.ts' imported from /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/apps/agent-service/test/production-execution-environment.unit.test.ts
+ ❯ apps/agent-service/test/production-execution-environment.unit.test.ts:3:1
+      1| import type { RunPolicyConfiguration } from "@himawari-agent/applicati…
+      2| import { describe, expect, it } from "vitest";
+      3| import { strictModeUnavailableTools } from "../src/production-executio…
+       | ^
+      4|
+      5| const route = (capabilityRef: string) => ({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'ERR_MODULE_NOT_FOUND' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  13:14:37
+   Duration  118ms (transform 16ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)

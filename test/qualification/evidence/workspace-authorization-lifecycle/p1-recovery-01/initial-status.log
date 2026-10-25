@@ -1,0 +1,18 @@
+# branch.oid 98fdc0edbc2e1aee960e3bf47018825f68756e71
+# branch.head codex/ux-fixes
+1 .M N... 100644 100644 100644 8c3b993a7b82a3cbfe495cd3d2c9e90564994802 8c3b993a7b82a3cbfe495cd3d2c9e90564994802 AGENTS.md
+? apps/control-center/src/components/execution-process 2.tsx
+? apps/control-center/src/execution-view 2.ts
+? apps/control-center/test/execution-view.unit.test 2.ts
+? docs/assets/control-center/2026-09-16-state-review-r2/
+? docs/assets/control-center/2026-09-16-state-review/
+? scripts/test-execution-chain-browser 2.mjs
+? test/qualification/evidence/runtime-history/e2e-mobile-320-drawer-before.png
+? test/qualification/evidence/runtime-history/e2e-mobile-before.png
+? test/qualification/evidence/runtime-history/e2e-post-cutover-mobile.png
+? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome-final/
+? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome-v2/
+? test/qualification/evidence/runtime-history/ui-locale-csrf-chrome/
+? test/qualification/evidence/runtime-history/ui-locale-only-browser/
+? test/qualification/evidence/runtime-history/ui-locale-only-chrome-final/
+? test/qualification/evidence/runtime-history/ui-locale-only-chrome/

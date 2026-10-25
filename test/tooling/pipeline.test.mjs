@@ -71,7 +71,7 @@ const browserReport = (engine) => ({
   profile: engine,
   browserVersion: "123.0",
   locales: ["zh-CN", "en", "ja"],
-  keyboard: ["visible-focus", "settings-tabs-roving"],
+  keyboard: ["visible-focus", "settings-keyboard-navigation"],
   axeViolations: 0,
   keyboardFocus: { visible: true, accessibleName: "Settings" },
   journeys: ["workspace"],
@@ -261,6 +261,28 @@ describe("build process contract", () => {
 });
 
 describe("five-project execution contract", () => {
+  it("passes the integration resource budget to Vitest while retaining other project limits", async () => {
+    const options = await fixture();
+    const value = mocks.policy.getMockImplementation()().policy;
+    Object.assign(
+      value.testProjects.find((project) => project.id === "integration"),
+      {
+        fileParallelism: true,
+        workerLimits: { maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 },
+      },
+    );
+    await runTests(options);
+    const expected = Math.max(
+      1,
+      Math.min(3, os.availableParallelism(), Math.floor(os.totalmem() / (2 * 1024 ** 3))),
+    );
+    for (const [, args] of mocks.execute.mock.calls) {
+      const project = args[args.indexOf("--project") + 1];
+      expect(args[args.indexOf("--maxWorkers") + 1]).toBe(
+        String(project === "integration" ? expected : 1),
+      );
+    }
+  });
   it("shares the policy check budget across projects without an extra five-minute limit", async () => {
     const options = await fixture();
     let elapsed = 0;

@@ -1,5 +1,9 @@
 import { Readable } from "node:stream";
 import type { PiRunnerInput } from "@himawari-agent/execution-contracts";
+import {
+  PI_RESIDENT_FRAME_LIMIT_BYTES,
+  PI_RESIDENT_OUTPUT_CHUNK_BYTES,
+} from "@himawari-agent/execution-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({
@@ -18,6 +22,7 @@ const boundary = vi.hoisted(() => ({
   operations: vi.fn(),
   execute: vi.fn(),
   exportFile: vi.fn(),
+  fitOutput: vi.fn(),
   command: vi.fn(),
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
@@ -26,11 +31,22 @@ vi.mock("node:fs/promises", async (original) => ({
   lstat: boundary.metadata,
   realpath: boundary.canonical,
 }));
-vi.mock("@himawari-agent/platform-node", () => ({
+vi.mock("@himawari-agent/platform-node", async (original) => ({
+  ...(await original<object>()),
   createSandboxedCodingOperations: boundary.operations,
+}));
+vi.mock("../../../packages/platform-node/src/files/pi-output-export.ts", () => ({
   exportPiOutputFile: boundary.exportFile,
 }));
-vi.mock("@himawari-agent/runtime-pi", () => ({ executeSandboxedPiCodingTool: boundary.execute }));
+vi.mock("@himawari-agent/runtime-pi", () => ({
+  executeSandboxedPiCodingTool: boundary.execute,
+  fitPiResultOutput: boundary.fitOutput,
+}));
+
+await Promise.all([
+  vi.importActual("@himawari-agent/application"),
+  vi.importActual("@himawari-agent/platform-node"),
+]);
 function input(tool: PiRunnerInput["tool"] = "read"): PiRunnerInput {
   return {
     schemaVersion: "pi-runner.v1",
@@ -83,6 +99,35 @@ function output() {
     boundary.process.stdout.write.mock.calls.map(([value]) => String(value)).join(""),
   );
 }
+function frames(): Record<string, unknown>[] {
+  return boundary.process.stdout.write.mock.calls
+    .map(([value]) => String(value))
+    .join("")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+const runFrame = (seq: number, value: unknown) =>
+  `${JSON.stringify({
+    type: "run",
+    seq,
+    inputBase64: Buffer.from(JSON.stringify(value)).toString("base64"),
+  })}\n`;
+async function runResident(lines: readonly string[]) {
+  boundary.process.argv = [
+    "node",
+    "pi-coding-main",
+    "host-program",
+    "worker-program",
+    "--resident",
+    "/runtime",
+  ];
+  boundary.process.stdin = Readable.from(lines.map((line) => Buffer.from(line)));
+  await import("../src/capability-programs/pi-coding-main.ts");
+}
+function outputsFor(seq: number): Record<string, unknown>[] {
+  return frames().filter((frame) => frame["seq"] === seq && frame["type"] === "output");
+}
 beforeEach(() => {
   vi.resetModules();
   vi.resetAllMocks();
@@ -92,6 +137,7 @@ beforeEach(() => {
   boundary.process.cwd.mockReturnValue("/workspace");
   boundary.metadata.mockResolvedValue({
     isFile: () => true,
+    isDirectory: () => false,
     isSymbolicLink: () => false,
     mode: 0o755,
   });
@@ -104,18 +150,21 @@ beforeEach(() => {
     isError: false,
   });
   boundary.exportFile.mockResolvedValue({ text: "Complete output", byteLength: 15 });
+  boundary.fitOutput.mockImplementation((json: string, maxBytes: number) =>
+    Buffer.byteLength(json, "utf-8") <= maxBytes ? json : null,
+  );
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("installed Pi coding program boundary", () => {
-  it("binds its existing Pi executor to the frozen grant and serializes a scoped result", async () => {
+  it("[R2-D22] binds its existing Pi executor to the frozen grant and serializes a scoped result", async () => {
     await run(input());
     expect(boundary.process.exitCode).toBeUndefined();
     expect(boundary.operations).toHaveBeenCalledWith(
       expect.objectContaining({
         targetPath: "/workspace/README.md",
         privateDirectory: "/private-runner",
-        binaryDirectory: "/runtime/pi-tools/bin",
+        commandPath: "/runtime/pi-tools/bin:/usr/local/bin:/usr/bin:/bin",
         grant: expect.objectContaining({
           hostId: "host-program",
           id: "directory-program",
@@ -138,6 +187,37 @@ describe("installed Pi coding program boundary", () => {
       verifiedWrite: null,
       source: { directoryGrantRef: "directory-program", directoryGrantRevision: 1 },
     });
+    expect(boundary.process.env).toMatchObject({
+      PI_OFFLINE: "1",
+      PATH: "/runtime/pi-tools/bin",
+      PI_CODING_AGENT_DIR: "/runtime/pi-tools",
+    });
+  });
+  it("[R2-T1] reports a directory read as a directory and never runs the Pi tool", async () => {
+    boundary.metadata.mockResolvedValue({
+      isFile: () => false,
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+      mode: 0o755,
+    });
+    await run(input("read"));
+    expect(boundary.operations).not.toHaveBeenCalled();
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(boundary.process.exitCode).toBe(1);
+    expect(JSON.stringify(output())).toContain("是目录");
+  });
+  it("[R2-T3] finds sandboxed bash commands in the verified tool directory before the system directories", async () => {
+    boundary.execute.mockImplementation(async ({ operations }) => {
+      await operations.executeCommand({ command: "ls", onData: vi.fn() });
+      return { content: [], isError: false };
+    });
+    await run(input("bash"));
+    expect(boundary.operations).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shell: "/runtime/pi-tools/bin/bash",
+        commandPath: "/runtime/pi-tools/bin:/usr/local/bin:/usr/bin:/bin",
+      }),
+    );
     expect(boundary.process.env).toMatchObject({
       PI_OFFLINE: "1",
       PATH: "/runtime/pi-tools/bin",
@@ -245,8 +325,9 @@ describe("installed Pi coding program boundary", () => {
     expect(boundary.exportFile).toHaveBeenCalledWith(
       "/private-runner/output.txt",
       "/private-runner",
-      65536,
+      expect.any(Number),
     );
+    expect(boundary.exportFile.mock.calls[0]?.[2]).toBeLessThanOrEqual(65536);
     expect(output()).toMatchObject({
       details: { other: "kept" },
       fullOutput: { text: "Complete output" },
@@ -256,7 +337,7 @@ describe("installed Pi coding program boundary", () => {
   it("records exactly one independently verified write", async () => {
     const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
     boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
-      onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
       return { executeCommand: boundary.command };
     });
     await run(input("write"));
@@ -265,12 +346,55 @@ describe("installed Pi coding program boundary", () => {
   it("rejects multiple write proofs instead of presenting ambiguous provenance", async () => {
     boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
       const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
-      onVerifiedWrite(proof);
-      onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
+      await onVerifiedWrite(proof);
     });
     await run(input("write"));
     failed();
     expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+  });
+  it("rejects concurrent write proofs before accepting either as unique provenance", async () => {
+    boundary.operations.mockImplementation(async ({ onVerifiedWrite }) => {
+      const proof = { path: "note.txt", contentDigest: "sha256:verified", byteLength: 4 };
+      await Promise.all([onVerifiedWrite(proof), onVerifiedWrite(proof)]);
+      return { executeCommand: boundary.command };
+    });
+    await run(input("write"));
+    failed();
+    expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["edit", false, true],
+    ["write", false, true],
+    ["edit", true, false],
+    ["bash", false, false],
+  ] as const)(
+    "[R2-T14] marks a %s failure as not written only when no commit started (commit %s)",
+    async (tool, commitStarted, marked) => {
+      let commitStarting: (() => Promise<void>) | undefined;
+      boundary.operations.mockImplementation(async (options) => {
+        commitStarting = options.onCommitStarting;
+        return { executeCommand: boundary.command };
+      });
+      boundary.execute.mockImplementation(async () => {
+        if (commitStarted) await commitStarting?.();
+        return {
+          content: [{ type: "text", text: "Could not find the exact text in README.md." }],
+          details: {},
+          isError: true,
+        };
+      });
+      await run(input(tool));
+      expect(boundary.process.exitCode).toBe(1);
+      expect(output()).toMatchObject({ tool, isError: true, verifiedWrite: null });
+      if (marked) expect(output().writeNotStarted).toBe(true);
+      else expect(output()).not.toHaveProperty("writeNotStarted");
+    },
+  );
+  it("[R2-T14] does not mark a successful edit as not written", async () => {
+    await run(input("edit"));
+    expect(boundary.process.exitCode).toBeUndefined();
+    expect(output()).not.toHaveProperty("writeNotStarted");
   });
   it.each([0, 7, 300])("maps tool failure to a valid process exit code (%s)", async (exitCode) => {
     boundary.command.mockResolvedValue({ exitCode });
@@ -304,21 +428,165 @@ describe("installed Pi coding program boundary", () => {
     ]);
     expect(boundary.process.exitCode).toBe(7);
   });
-  it.each(["too-large", "secret"])("blocks unsafe background output (%s)", async (kind) => {
-    boundary.command.mockImplementation(async ({ onData }) => {
-      onData(
-        Buffer.from(
-          kind === "too-large" ? "x".repeat(65537) : ["-----BEGIN", "PRIVATE KEY-----\n"].join(" "),
-        ),
-      );
-      return { exitCode: 0 };
+  it.each(["too-large", "secret", "[R2-T14] key tail"])(
+    "blocks unsafe background output (%s)",
+    async (kind) => {
+      boundary.command.mockImplementation(async ({ onData }) => {
+        onData(
+          Buffer.from(
+            kind === "too-large"
+              ? "x".repeat(65537)
+              : kind === "secret"
+                ? ["-----BEGIN", "PRIVATE KEY-----\n"].join(" ")
+                : `MIIEvR2T14TAILBODY\n${["-----END", "PRIVATE KEY-----\n"].join(" ")}`,
+          ),
+        );
+        return { exitCode: 0 };
+      });
+      boundary.execute.mockImplementation(async ({ operations }) => {
+        await operations.executeCommand({ command: "fixture", onData: vi.fn() });
+        return { content: [], isError: false };
+      });
+      await run({ ...input("bash"), executionMode: "background" });
+      failed();
+      expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("[R2-P2] installed Pi coding program resident mode", () => {
+  it("[R2-P2] enters resident mode and announces ready before reading any request", async () => {
+    await runResident([]);
+    expect(frames()).toEqual([{ type: "ready" }]);
+    expect(boundary.process.env).toMatchObject({
+      PI_OFFLINE: "1",
+      PATH: "/runtime/pi-tools/bin",
+      PI_CODING_AGENT_DIR: "/runtime/pi-tools",
     });
-    boundary.execute.mockImplementation(async ({ operations }) => {
-      await operations.executeCommand({ command: "fixture", onData: vi.fn() });
-      return { content: [], isError: false };
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it("[R2-P2] serves consecutive requests with matching sequence numbers and chunked output", async () => {
+    const large = "x".repeat(PI_RESIDENT_OUTPUT_CHUNK_BYTES + 10);
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: large }],
+      details: {},
+      isError: false,
     });
-    await run({ ...input("bash"), executionMode: "background" });
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: "second" }],
+      details: {},
+      isError: false,
+    });
+    await runResident([runFrame(1, input()), runFrame(2, input())]);
+    const all = frames();
+    expect(all[0]).toEqual({ type: "ready" });
+    const firstOutputs = outputsFor(1);
+    expect(firstOutputs.length).toBeGreaterThan(1);
+    expect(firstOutputs.every((frame) => frame["channel"] === "stdout")).toBe(true);
+    expect(
+      firstOutputs.every(
+        (frame) =>
+          Buffer.from(String(frame["bytes"]), "base64").byteLength <=
+          PI_RESIDENT_OUTPUT_CHUNK_BYTES,
+      ),
+    ).toBe(true);
+    const firstBody = Buffer.concat(
+      firstOutputs.map((frame) => Buffer.from(String(frame["bytes"]), "base64")),
+    );
+    expect(JSON.parse(firstBody.toString("utf8"))).toMatchObject({ tool: "read", isError: false });
+    expect(all.filter((frame) => frame["seq"] === 1).at(-1)).toMatchObject({
+      type: "result",
+      seq: 1,
+      exitCode: 0,
+    });
+    const secondOutputs = outputsFor(2);
+    expect(secondOutputs).toHaveLength(1);
+    expect(
+      JSON.parse(Buffer.from(String(secondOutputs[0]?.["bytes"]), "base64").toString("utf8")),
+    ).toMatchObject({ tool: "read" });
+    expect(all.filter((frame) => frame["seq"] === 2).at(-1)).toMatchObject({
+      type: "result",
+      seq: 2,
+      exitCode: 0,
+    });
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it.each([
+    ["a skipped sequence", runFrame(2, input())],
+    ["an extra key", `${JSON.stringify({ type: "run", seq: 1, inputBase64: "", extra: true })}\n`],
+    ["malformed base64", `${JSON.stringify({ type: "run", seq: 1, inputBase64: "!!" })}\n`],
+    ["a line over the frame limit", `${"x".repeat(PI_RESIDENT_FRAME_LIMIT_BYTES + 1)}\n`],
+  ])("[R2-P2] ends the runner on %s without executing the request", async (_kind, line) => {
+    await runResident([line]);
     failed();
-    expect(boundary.process.stdout.write).not.toHaveBeenCalled();
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(frames().some((frame) => frame["type"] === "result")).toBe(false);
+  });
+
+  it("[R2-P2] reports a failed request and keeps serving the next one", async () => {
+    boundary.execute.mockRejectedValueOnce(new Error("boom"));
+    boundary.execute.mockResolvedValueOnce({
+      content: [{ type: "text", text: "second" }],
+      details: {},
+      isError: false,
+    });
+    await runResident([runFrame(1, input()), runFrame(2, input())]);
+    const failure = Buffer.from("PI_RUNNER_EXECUTION_FAILED\n").toString("base64");
+    expect(frames().filter((frame) => frame["seq"] === 1)).toEqual([
+      { type: "output", seq: 1, channel: "stderr", bytes: failure },
+      { type: "result", seq: 1, exitCode: 1 },
+    ]);
+    expect(
+      frames()
+        .filter((frame) => frame["seq"] === 2)
+        .at(-1),
+    ).toMatchObject({
+      type: "result",
+      seq: 2,
+      exitCode: 0,
+    });
+    expect(boundary.process.exitCode).toBeUndefined();
+  });
+
+  it("[R2-P2] refuses a request whose runtime root differs from the launch argument", async () => {
+    await runResident([runFrame(1, { ...input(), runtimeRoot: "/other" })]);
+    expect(boundary.execute).not.toHaveBeenCalled();
+    expect(frames().filter((frame) => frame["seq"] === 1)).toEqual([
+      {
+        type: "output",
+        seq: 1,
+        channel: "stderr",
+        bytes: Buffer.from("PI_RUNNER_EXECUTION_FAILED\n").toString("base64"),
+      },
+      { type: "result", seq: 1, exitCode: 1 },
+    ]);
+    expect(boundary.process.exitCode).toBeUndefined();
+    const { runPiCodingRequest } = await import("../src/capability-programs/pi-coding-request.ts");
+    await expect(
+      runPiCodingRequest(
+        Buffer.from(JSON.stringify({ ...input(), runtimeRoot: "/other" })),
+        { hostId: "host-program", workerInstanceId: "worker-program", runtimeRoot: "/runtime" },
+        () => {},
+      ),
+    ).rejects.toThrow("PI_RUNNER_SCOPE_INVALID");
+  });
+
+  it.each([
+    ["a relative resident runtime root", ["--resident", "runtime"]],
+    ["an extra trailing argument", ["--resident", "/runtime", "extra"]],
+  ])("[R2-P2] refuses %s before announcing ready", async (_kind, extra) => {
+    boundary.process.argv = [
+      "node",
+      "pi-coding-main",
+      "host-program",
+      "worker-program",
+      ...(extra as string[]),
+    ];
+    boundary.process.stdin = Readable.from([]);
+    await import("../src/capability-programs/pi-coding-main.ts");
+    failed();
+    expect(frames()).toEqual([]);
   });
 });

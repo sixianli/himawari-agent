@@ -1,0 +1,43 @@
+command: npx vitest run --config vitest.workspace.ts --project integration test/integration/production-sandbox-environment-identity.test.ts --reporter=verbose
+git: e9432d3783302cfa844d6fbdd878c712484e5234 + uncommitted new test file test/integration/production-sandbox-environment-identity.test.ts (sha256 ef4ff2cb894a610999c2c42b0ebe3ce53e0e6a3ff250434e7ad6f0d20d06c1c2)
+node: v22.22.3 platform: Darwin 27.2.0 at: 2026-09-25T07:36:03Z
+
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.2630839999997079,"at":"2026-09-25T07:36:07.552Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.04395899999963,"at":"2026-09-25T07:36:07.585Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.4537909999999101,"at":"2026-09-25T07:36:07.586Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.7270409999996446,"at":"2026-09-25T07:36:07.588Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.7347079999999551,"at":"2026-09-25T07:36:07.589Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.2383749999999054,"at":"2026-09-25T07:36:07.595Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":44.090999999999894,"at":"2026-09-25T07:36:07.639Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6463340000000244,"at":"2026-09-25T07:36:07.640Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.8881249999999454,"at":"2026-09-25T07:36:07.645Z"}
+
+stderr | test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.9812079999996968,"at":"2026-09-25T07:36:07.647Z"}
+
+ ✓ |integration| test/integration/production-sandbox-environment-identity.test.ts > gives each SRT tool call its own environment, so a later call in the same Run waits for the earlier occupancy 610ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  16:36:04
+   Duration  3.26s (transform 992ms, setup 0ms, import 2.56s, tests 611ms, environment 0ms)

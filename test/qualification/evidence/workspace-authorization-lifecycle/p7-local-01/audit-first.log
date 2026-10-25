@@ -1,0 +1,26 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |tooling| test/tooling/workspace-lifecycle-audit.test.ts (6 tests | 1 failed) 7504ms
+     × reports held resources without creating release proof or changing database bytes 5511ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/workspace-lifecycle-audit.test.ts > workspace lifecycle read-only audit > reports held resources without creating release proof or changing database bytes
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ test/tooling/workspace-lifecycle-audit.test.ts:20:3
+     18|
+     19| describe("workspace lifecycle read-only audit", () => {
+     20|   it("reports held resources without creating release proof or changin…
+       |   ^
+     21|     const f = await fixture();
+     22|     f.database.pragma("wal_checkpoint(TRUNCATE)");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  18:23:21
+   Duration  11.03s (transform 2.21s, setup 0ms, import 3.35s, tests 7.50s, environment 0ms)

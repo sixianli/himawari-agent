@@ -1,0 +1,41 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/platform-node/src/files/pi-file-publication.ts(47,25): error TS4111: Property 'path' comes from an index signature, so it must be accessed with ['path'].
+packages/platform-node/src/files/pi-file-publication.ts(47,87): error TS4111: Property 'path' comes from an index signature, so it must be accessed with ['path'].
+packages/platform-node/src/files/pi-file-publication.ts(47,124): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(79,18): error TS4111: Property 'schemaVersion' comes from an index signature, so it must be accessed with ['schemaVersion'].
+packages/platform-node/src/files/pi-file-publication.ts(79,67): error TS4111: Property 'bindingDigest' comes from an index signature, so it must be accessed with ['bindingDigest'].
+packages/platform-node/src/files/pi-file-publication.ts(80,21): error TS4111: Property 'proof' comes from an index signature, so it must be accessed with ['proof'].
+packages/platform-node/src/files/pi-file-publication.ts(100,61): error TS4111: Property 'publication' comes from an index signature, so it must be accessed with ['publication'].
+packages/platform-node/src/files/pi-file-publication.ts(100,105): error TS4111: Property 'identity' comes from an index signature, so it must be accessed with ['identity'].
+packages/platform-node/src/files/pi-file-publication.ts(101,15): error TS4111: Property 'relativePath' comes from an index signature, so it must be accessed with ['relativePath'].
+packages/platform-node/src/files/pi-file-publication.ts(101,32): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(101,69): error TS4111: Property 'contentDigest' comes from an index signature, so it must be accessed with ['contentDigest'].
+packages/platform-node/src/files/pi-file-publication.ts(101,101): error TS4111: Property 'byteLength' comes from an index signature, so it must be accessed with ['byteLength'].
+packages/platform-node/src/files/pi-file-publication.ts(102,28): error TS4111: Property 'stagedRelativePath' comes from an index signature, so it must be accessed with ['stagedRelativePath'].
+packages/platform-node/src/files/pi-file-publication.ts(102,132): error TS4111: Property 'stagedRelativePath' comes from an index signature, so it must be accessed with ['stagedRelativePath'].
+packages/platform-node/src/files/pi-file-publication.ts(103,18): error TS4111: Property 'canonicalPath' comes from an index signature, so it must be accessed with ['canonicalPath'].
+packages/platform-node/src/files/pi-file-publication.ts(103,75): error TS4111: Property 'stagedRelativePath' comes from an index signature, so it must be accessed with ['stagedRelativePath'].
+packages/platform-node/src/files/pi-file-publication.ts(104,32): error TS4111: Property 'device' comes from an index signature, so it must be accessed with ['device'].
+packages/platform-node/src/files/pi-file-publication.ts(104,66): error TS4111: Property 'inode' comes from an index signature, so it must be accessed with ['inode'].
+packages/platform-node/src/files/pi-file-publication.ts(104,85): error TS4111: Property 'device' comes from an index signature, so it must be accessed with ['device'].
+packages/platform-node/src/files/pi-file-publication.ts(104,96): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(105,40): error TS4111: Property 'mode' comes from an index signature, so it must be accessed with ['mode'].
+packages/platform-node/src/files/pi-file-publication.ts(105,66): error TS4111: Property 'mode' comes from an index signature, so it must be accessed with ['mode'].
+packages/platform-node/src/files/pi-file-publication.ts(106,18): error TS4111: Property 'linkCount' comes from an index signature, so it must be accessed with ['linkCount'].
+packages/platform-node/src/files/pi-file-publication.ts(106,46): error TS4111: Property 'sizeBytes' comes from an index signature, so it must be accessed with ['sizeBytes'].
+packages/platform-node/src/files/pi-file-publication.ts(106,66): error TS4111: Property 'byteLength' comes from an index signature, so it must be accessed with ['byteLength'].
+packages/platform-node/src/files/pi-file-publication.ts(106,96): error TS4111: Property 'modifiedAtMillis' comes from an index signature, so it must be accessed with ['modifiedAtMillis'].
+packages/platform-node/src/files/pi-file-publication.ts(106,155): error TS4111: Property 'modifiedAtMillis' comes from an index signature, so it must be accessed with ['modifiedAtMillis'].
+packages/platform-node/src/files/pi-file-publication.ts(111,15): error TS4111: Property 'path' comes from an index signature, so it must be accessed with ['path'].
+packages/platform-node/src/files/pi-file-publication.ts(111,51): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(111,81): error TS4111: Property 'contentDigest' comes from an index signature, so it must be accessed with ['contentDigest'].
+packages/platform-node/src/files/pi-file-publication.ts(111,134): error TS4111: Property 'byteLength' comes from an index signature, so it must be accessed with ['byteLength'].
+packages/platform-node/src/files/pi-file-publication.ts(112,26): error TS4111: Property 'path' comes from an index signature, so it must be accessed with ['path'].
+packages/platform-node/src/files/pi-file-publication.ts(136,39): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(137,51): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(142,65): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(143,48): error TS18048: 'target' is possibly 'undefined'.
+packages/platform-node/src/files/pi-file-publication.ts(145,56): error TS18048: 'target' is possibly 'undefined'.

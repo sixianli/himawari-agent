@@ -14,11 +14,17 @@ import {
   type GatewayV2AccessPolicyPort,
   type ProductConfiguration,
   type RecentAuthenticationGuardPort,
+  type GatewayV2ControlPlanePort,
 } from "@himawari-agent/application";
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
+import {
+  PRODUCTION_MEMORY_OPERATIONS,
+  type ProductionMemoryControl,
+} from "./production-memory-control.js";
 
 export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.list",
@@ -38,6 +44,8 @@ export function createProductionApprovalGateway(options: {
   readonly recentAuthentication: RecentAuthenticationGuardPort;
   readonly clock: ClockPort;
   readonly authority: () => ProductAuthorityFence;
+  readonly workspaceCopies?: GatewayV2ControlPlanePort;
+  readonly memoryControl?: ProductionMemoryControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -62,7 +70,10 @@ export function createProductionApprovalGateway(options: {
     capabilities,
     clock,
     delegate: {
-      query: (query) => searchAuthorization.query(query),
+      query: (query) =>
+        query.type.startsWith("memory.") && options.memoryControl
+          ? options.memoryControl.query(query)
+          : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -96,6 +107,7 @@ export function createProductionApprovalGateway(options: {
           const version = JSON.stringify([
             authority,
             await searchAuthorization.revision(),
+            await options.memoryControl?.revision(),
             approvals.map((approval) => [
               approval.id,
               approval.revision,
@@ -153,6 +165,10 @@ export function createProductionApprovalGateway(options: {
           authentication.subjectId !== command.actor.actorId
         )
           return unsupported();
+        if (command.type.startsWith("memory.") && options.memoryControl)
+          return options.memoryControl.execute(command);
+        if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
+          return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
       },
     },
@@ -167,7 +183,11 @@ export function createProductionApprovalGateway(options: {
     recentAuthentication: options.recentAuthentication,
   });
   return new AgentGatewayV2Service({
-    installedOperations: PRODUCTION_APPROVAL_OPERATIONS,
+    installedOperations: [
+      ...PRODUCTION_APPROVAL_OPERATIONS,
+      ...(options.workspaceCopies ? PRODUCTION_COPY_OPERATIONS : []),
+      ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
+    ],
     reads,
     controlPlane,
     access: {

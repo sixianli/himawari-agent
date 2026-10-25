@@ -1,6 +1,19 @@
-import type { RuntimeToolInvocation } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  type PayloadRef,
+  type RuntimeToolInvocation,
+} from "@himawari-agent/application";
+import { piFileRecoveryOperationKey } from "@himawari-agent/execution-contracts";
 import { describe, expect, it, vi } from "vitest";
-import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
+import type {
+  ProductionHostReadOnlyInput,
+  ProductionHostReadOnlyResult,
+} from "../src/production-host-read.js";
+import {
+  type ProductionRuntimeSandbox,
+  ProductionRuntimeTools,
+  type ProductionRuntimeToolsOptions,
+} from "../src/production-runtime-tools.js";
 import {
   runtimeToolFixture as fixture,
   identities,
@@ -15,6 +28,266 @@ async function exposed(f: ReturnType<typeof fixture>) {
 }
 
 describe("ProductionRuntimeTools", () => {
+  it.each(["deadline", "revoked"] as const)(
+    "stops waiting for a hung result verification after %s",
+    async (mode) => {
+      const f = fixture(mode === "deadline" ? 150 : 10_000);
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const completeSandboxToolResult = vi.fn(async () => {
+        await pending;
+        return undefined;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      let outcome: Awaited<ReturnType<ProductionRuntimeTools["execute"]>> | undefined;
+      const execution = tool.execute(invocation).then((value) => {
+        outcome = value;
+      });
+      try {
+        await vi.waitFor(() => expect(completeSandboxToolResult).toHaveBeenCalledOnce());
+        if (mode === "revoked") f.revoke();
+        await vi.waitFor(
+          () => expect(outcome).toMatchObject({ outcome: "result_unknown", resultRef: null }),
+          { timeout: 1000 },
+        );
+        expect(f.request.mock.calls.filter(([item]) => item.type === "work.execute")).toHaveLength(
+          1,
+        );
+        expect(f.request.mock.calls.filter(([item]) => item.type === "work.cancel")).toHaveLength(
+          mode === "revoked" ? 1 : 0,
+        );
+      } finally {
+        release();
+        await execution;
+      }
+    },
+  );
+
+  it("passes the active cancellation signal into preparation before Worker dispatch", async () => {
+    const f = fixture();
+    const controller = new AbortController();
+    let received: AbortSignal | undefined;
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected admission");
+    };
+    const prepare = vi.fn<ProductionRuntimeSandbox["prepare"]>(
+      async (_input, _call, _parent, signal): Promise<never> => {
+        received = signal;
+        controller.abort();
+        signal?.throwIfAborted();
+        throw new Error("preparation did not receive cancellation");
+      },
+    );
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      sandbox: {
+        journal: { admit: unused },
+        scopes: { read: unused },
+        prepare,
+      },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    await tool.execute(invocation, { signal: controller.signal });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(received).toBe(controller.signal);
+    expect(f.request).not.toHaveBeenCalled();
+  });
+
+  it.each(["read", "write"])(
+    "classifies pre-dispatch file version changes for %s and replays without dispatch",
+    async (operation) => {
+      const f = fixture();
+      const unused = async (): Promise<never> => {
+        throw new Error("unexpected admission");
+      };
+      const prepare = vi.fn(async (): Promise<never> => {
+        throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+      });
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        capabilities: {
+          ...f.options.capabilities,
+          getExecutionHandle: async (ref) => {
+            const handle = await f.options.capabilities.getExecutionHandle(ref);
+            if (!handle) return undefined;
+            return { ...handle, operation, operations: [operation] };
+          },
+        },
+        sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+      });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject({
+        outcome: "failed",
+        errorCode: operation === "write" ? "FILE_VERSION_CONFLICT" : "WORKER_NOT_DISPATCHED",
+      });
+      expect(result.modelContent.includes("重新读取")).toBe(operation === "write");
+      expect(await tool.execute(invocation)).toEqual(result);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(f.request).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports a tool refused by strict mode as not dispatched and unavailable in strict mode", async () => {
+    const f = fixture();
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected admission");
+    };
+    const prepare = vi.fn(async (): Promise<never> => {
+      throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
+    });
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+    });
+    expect(result.modelContent).toContain("严格模式");
+    expect(result.modelContent).toContain("不要改用其他方式");
+    expect(await tool.execute(invocation)).toEqual(result);
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(f.request).not.toHaveBeenCalled();
+  });
+
+  it("binds a protected recovery checkpoint before dispatch and preserves it on replay", async () => {
+    const f = fixture();
+    const call = {
+      ...invocation,
+      context: {
+        threadId: null,
+        modelRef: "model:test",
+        continuationRef: "checkpoint:original",
+        executionLease: {
+          ...f.options.authority().product,
+          executionLeaseId: "execution:test" as NonNullable<
+            RuntimeToolInvocation["context"]
+          >["executionLease"]["executionLeaseId"],
+          authorityLeaseId: f.options.authority().lease.leaseId,
+          authorityFencingToken: 1,
+          expectedLeaseRevision: 1,
+          consumerId: "consumer:test",
+        },
+      },
+    };
+    const original = f.request.getMockImplementation();
+    if (!original) throw new Error("fixture");
+    const readIntent = async () => {
+      const artifact = [...f.artifacts.values()].find((value) =>
+        value.operationKey.startsWith("runtime-tool-intent:"),
+      );
+      if (!artifact) throw new Error("intent missing");
+      const payload = await f.options.payloads.get(artifact.payloadRef);
+      if (!payload) throw new Error("payload missing");
+      const bytes = await f.options.protector.unprotect({
+        ownerId: artifact.ownerId,
+        agentId: artifact.agentId,
+        payload,
+      });
+      return JSON.parse(new TextDecoder().decode(bytes));
+    };
+    const recoveries: unknown[] = [];
+    f.request.mockImplementation(async (message) => {
+      recoveries.push((await readIntent()).recovery);
+      expect(JSON.stringify(message)).not.toContain("checkpoint:original");
+      return original(message);
+    });
+    const first = await (await exposed(f)).execute(call);
+    expect(recoveries).toEqual(
+      [0, 1].map(() => ({
+        version: "tool-batch-recovery.v1",
+        continuationRef: "checkpoint:original",
+        toolCallId: invocation.toolCallId,
+      })),
+    );
+    expect(first.outcome).toBe("succeeded");
+    expect(JSON.stringify(first)).not.toContain("checkpoint:original");
+    expect(
+      await (await exposed(f)).execute({
+        ...call,
+        context: { ...call.context, continuationRef: "checkpoint:later" },
+      }),
+    ).toEqual(first);
+    expect((await readIntent()).recovery.continuationRef).toBe("checkpoint:original");
+    expect(f.request).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports admission refusal as not dispatched and retains a protected diagnostic", async () => {
+    const f = fixture();
+    vi.spyOn(f.options.invocations, "consume").mockRejectedValue(
+      new ApplicationPortError("PORT_CONFLICT", "private host path must not appear"),
+    );
+    const revokeExecutionHandle = vi.fn(async () => {
+      const handle = await f.options.capabilities.getExecutionHandle(
+        invocation.capabilityHandleRef,
+      );
+      if (!handle) throw new Error("Fixture Handle missing");
+      return handle;
+    });
+    const tool = new ProductionRuntimeTools({
+      ...f.options,
+      capabilities: { ...f.options.capabilities, revokeExecutionHandle },
+    });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(revokeExecutionHandle).toHaveBeenCalledWith(invocation.capabilityHandleRef, now);
+    expect(result).toMatchObject({
+      outcome: "failed",
+      errorCode: "WORKER_ADMISSION_CONFLICT",
+      modelContent: "操作尚未派发：资源或请求状态发生冲突。",
+    });
+    expect(JSON.stringify(result)).not.toContain("private host");
+    expect(f.request).not.toHaveBeenCalled();
+    expect([...f.artifacts.keys()].some((key) => key.startsWith("runtime-tool-diagnostic:"))).toBe(
+      true,
+    );
+    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+    expect(f.options.invocations.consume).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ["PORT_HANDLE_REVOKED", "WORKER_AUTHORIZATION_DENIED"],
+    ["PORT_NOT_AUTHORITATIVE", "WORKER_AUTHORITY_UNAVAILABLE"],
+    ["PORT_NOT_FOUND", "WORKER_ADMISSION_RESOURCE_MISSING"],
+  ] as const)("keeps a safe reason for pre-dispatch refusal (%s)", async (portCode, reasonCode) => {
+    const f = fixture();
+    vi.spyOn(f.options.invocations, "consume").mockRejectedValue(
+      new ApplicationPortError(portCode, "private host path and token"),
+    );
+    const tool = await exposed(f);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: reasonCode,
+    });
+    expect(JSON.stringify(result)).not.toContain("private host path");
+    expect(f.request.mock.calls.some(([message]) => message.type === "work.execute")).toBe(false);
+  });
+  it("never sends a late execute after delegation outlives the caller deadline", async () => {
+    const f = fixture(10);
+    const original = f.request.getMockImplementation();
+    if (!original) throw new Error("fixture");
+    let resume: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    f.request.mockImplementation(async (message) => {
+      if (message.type === "work.delegate") await gate;
+      return original(message);
+    });
+    const result = await (await exposed(f)).execute(invocation);
+    expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_DEADLINE_EXCEEDED" });
+    resume();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(f.request.mock.calls.map(([message]) => message.type)).toEqual(["work.delegate"]);
+  });
   it("intersects configured resources with the qualified capability before dispatch", async () => {
     const f = fixture();
     const qualified = { ...f.options.ceiling, maxCpuTimeMs: 30, maxOutputBytes: 10000 };
@@ -32,6 +305,25 @@ describe("ProductionRuntimeTools", () => {
       },
     });
     expect(maximumResourceCeiling).toHaveBeenCalledWith(invocation.capabilityRef, "1.0.0");
+  });
+  it("reports a tightened Worker ceiling as a distinct pre-dispatch reason", async () => {
+    const f = fixture();
+    let reads = 0;
+    const maximumResourceCeiling = vi.fn(async () => {
+      reads += 1;
+      return reads === 1
+        ? f.options.ceiling
+        : { ...f.options.ceiling, maxCpuTimeMs: f.options.ceiling.maxCpuTimeMs - 1 };
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, maximumResourceCeiling });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "not_sent",
+      outcome: "failed",
+      errorCode: "WORKER_RESOURCE_CEILING_CHANGED",
+    });
+    expect(f.request.mock.calls.some(([message]) => message.type === "work.execute")).toBe(false);
   });
   it("offers a path request without a Handle and never dispatches it before authorization exists", async () => {
     const f = fixture();
@@ -53,7 +345,6 @@ describe("ProductionRuntimeTools", () => {
       allowed: false,
       reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
     });
-    // Calling execute directly must not bypass preflight.
     await expect(tool.execute(call)).rejects.toThrow();
     expect(f.request).not.toHaveBeenCalled();
     expect(f.artifacts.size).toBe(0);
@@ -120,6 +411,133 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
+  it("tells the model a failed command's workspace effect is unverified", async () => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: null,
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+    expect(await tool.execute(invocation)).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+      modelContent: expect.stringContaining("没有核验这条命令是否改动了工作区"),
+    });
+    expect(
+      f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+    ).toHaveLength(1);
+  });
+  it("[R2-T14] warns that a failed file write may have changed the file", async () => {
+    const f = fixture();
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: null,
+        errorCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+    const result = await tool.execute(invocation);
+    expect(result).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_WRITE_EFFECT_UNVERIFIED",
+      modelContent: expect.stringContaining("文件可能已被修改"),
+    });
+    expect(result.modelContent).not.toBe("操作未确认成功。");
+  });
+  it.each([
+    ["output:tools", { outcome: "failed", resultRef: "output:tools", modelContent: "已读取结果" }],
+    ["output:unobserved", { outcome: "result_unknown", resultRef: null }],
+  ] as const)(
+    "gives the model a failed read's error output only when the Worker produced it (%s)",
+    async (outputRef, expected) => {
+      const f = fixture();
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        const completion = {
+          outcome: "failed" as const,
+          outputRef,
+          errorCode: "SANDBOX_OPERATION_FAILED",
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+
+      const result = await tool.execute(invocation);
+      expect(result).toMatchObject(expected);
+      if (expected.outcome !== "failed") expect(result.modelContent).not.toContain("已读取结果");
+    },
+  );
+  it.each([true, false])(
+    "uses worker end timing only for settled effects (%s)",
+    async (settled) => {
+      const f = fixture();
+      const original = f.options.transport.events.bind(f.options.transport);
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
+        for await (const event of original(cursor)) {
+          if (event.type === "work.result") {
+            yield {
+              ...event,
+              type: "work.progress",
+              messageId: "start:tools",
+              payload: {
+                requestId: event.payload.requestId,
+                cursor: "start",
+                sequence: 0,
+                stage: "worker.execution.started",
+                progressPermille: 0,
+                payloadRef: null,
+                occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
+              },
+            };
+          }
+          yield event;
+        }
+      });
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        ...(settled ? {} : { completeSandboxToolResult: async () => undefined }),
+      });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      if (settled)
+        expect(result).toMatchObject({
+          executionTiming: {
+            startedAt: new Date(Date.parse(now) - 1200).toISOString(),
+            endedAt: now,
+          },
+        });
+      else expect(result).not.toHaveProperty("executionTiming");
+      expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+      expect(f.request).toHaveBeenCalledTimes(2);
+    },
+  );
   it("rejects expanded input, cross-Run and revoked handles without dispatch", async () => {
     const f = fixture();
     const tool = await exposed(f);
@@ -158,17 +576,144 @@ describe("ProductionRuntimeTools", () => {
         expect(await (await exposed(f)).execute(invocation)).toMatchObject({
           outcome: "result_unknown",
         });
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+      ).toHaveLength(1);
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.delegate"),
+      ).toHaveLength(1);
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.cancel"),
+      ).toHaveLength(mode === "revoke" ? 1 : 0);
+    },
+  );
+  it.each(["requested", "unconfirmed"])(
+    "requests stop when authority is withdrawn during a hung event stream: %s",
+    async (stopState) => {
+      const f = fixture(250);
+      const send = f.request.getMockImplementation();
+      if (!send) throw new Error("missing transport");
+      f.request.mockImplementation(async (message) => {
+        if (message.type === "work.cancel" && stopState === "unconfirmed")
+          throw new Error("private stop transport failure");
+        return send(message);
+      });
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* () {
+        f.revoke();
+        await new Promise(() => {});
+      });
+      const tool = await exposed(f);
+      const result = await tool.execute(invocation);
+      expect(f.request.mock.calls.map(([message]) => message.type)).toEqual([
+        "work.delegate",
+        "work.execute",
+        "work.cancel",
+      ]);
+      expect(f.request.mock.calls[2]?.[0]).toMatchObject({
+        type: "work.cancel",
+        payload: {
+          targetRequestId: f.request.mock.calls[1]?.[0].messageId,
+          reasonCode: "AUTHORITY_WITHDRAWN",
+        },
+      });
+      expect(result).toMatchObject({ outcome: "result_unknown", resultRef: null });
+      expect(result).not.toHaveProperty("executionTiming");
+      expect(result).toMatchObject({ errorCode: "WORKER_AUTHORITY_WITHDRAWN" });
+      expect(result.modelContent).not.toContain("private stop transport failure");
+      const artifact = [...f.artifacts.values()].find((value) =>
+        value.operationKey.startsWith("runtime-tool-diagnostic:"),
+      );
+      const protectedRecord = artifact && f.payloads.get(artifact.payloadRef);
+      if (!protectedRecord) throw new Error("missing protected stop evidence");
+      expect(JSON.parse(new TextDecoder().decode(protectedRecord.ciphertext))).toMatchObject({
+        authorityWithdrawn: true,
+        stopRequest: stopState,
+      });
+      expect(f.options.invocations.consume).toHaveBeenCalledOnce();
+      await expect(tool.execute(invocation)).rejects.toThrow();
+      expect(
+        f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("keeps an unverified cancellation unknown and never resends it", async () => {
+    const f = fixture();
+    f.setMode("cancelled");
+    const result = await (await exposed(f)).execute(invocation);
+    expect(result).toMatchObject({
+      outcome: "result_unknown",
+      errorCode: "WORKER_RESULT_RECONCILIATION_REQUIRED",
+    });
+    expect(await (await exposed(f)).execute(invocation)).toEqual(result);
+    expect(f.request).toHaveBeenCalledTimes(2);
+    const diagnostic = [...f.artifacts.values()].find((value) =>
+      value.operationKey.startsWith("runtime-tool-diagnostic:"),
+    );
+    if (!diagnostic) throw new Error("Missing cancellation diagnostic");
+    const payload = await f.options.payloads.get(diagnostic.payloadRef);
+    if (!payload) throw new Error("Missing protected diagnostic");
+    const bytes = await f.options.protector.unprotect({
+      ownerId: diagnostic.ownerId,
+      agentId: diagnostic.agentId,
+      payload,
+    });
+    expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
+      stage: "accepted",
+      reasonCode: "WORKER_CANCELLATION_OBSERVED",
+      cancellationReason: "CANCELLED",
+    });
+    expect(result.modelContent).not.toContain("CANCELLED");
+  });
+  it.each(["succeeded", "failed", null, undefined] as const)(
+    "verifies cancellation notifications before settling a tool: %s",
+    async (verified) => {
+      const f = fixture();
+      f.setMode("cancelled");
+      const original = f.options.transport.events.bind(f.options.transport);
+      vi.spyOn(f.options.transport, "events").mockImplementation(async function* (cursor) {
+        for await (const event of original(cursor)) {
+          if (event.type === "work.cancelled")
+            yield {
+              ...event,
+              type: "work.progress",
+              messageId: "start:tools",
+              payload: {
+                requestId: event.payload.requestId,
+                cursor: "start",
+                sequence: 0,
+                stage: "worker.execution.started",
+                progressPermille: 0,
+                payloadRef: null,
+                occurredAt: new Date(Date.parse(now) - 1200).toISOString(),
+              },
+            };
+          yield event;
+        }
+      });
+      const completeSandboxToolResult = vi.fn<
+        NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+      >(async (_input, delivery) => {
+        await delivery.assertDisclosure();
+        if (verified === null || verified === undefined) return verified;
+        const completion = {
+          outcome: verified,
+          outputRef: verified === "succeeded" ? "output:tools" : null,
+          errorCode: verified === "failed" ? "COMMAND_FAILED" : null,
+          externalActionId: null,
+        };
+        await delivery.saveReceipt(completion);
+        return completion;
+      });
+      const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      const result = await tool.execute(invocation);
+      expect(result.outcome).toBe(verified ?? "result_unknown");
+      expect(completeSandboxToolResult).toHaveBeenCalledOnce();
+      expect(result).not.toHaveProperty("executionTiming");
       expect(f.request).toHaveBeenCalledTimes(2);
     },
   );
-  it("records a cancellation as failed", async () => {
-    const f = fixture();
-    f.setMode("cancelled");
-    expect(await (await exposed(f)).execute(invocation)).toMatchObject({
-      outcome: "failed",
-      errorCode: "CANCELLED",
-    });
-  });
   it("denies disclosure of a previously successful result after revocation", async () => {
     const f = fixture();
     const tool = await exposed(f);
@@ -417,5 +962,336 @@ describe("runtime tool exposure and live authority", () => {
       }),
     ).rejects.toThrow("not authorized");
     expect(f.request).not.toHaveBeenCalled();
+  });
+});
+
+it("recovers a persisted sandbox handoff after interruption without executing again", async () => {
+  const f = fixture();
+  const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+    await delivery.assertDisclosure();
+    const result = {
+      outcome: "succeeded" as const,
+      outputRef: "output:tools",
+      errorCode: null,
+      externalActionId: null,
+    };
+    await delivery.saveReceipt(result);
+    return result;
+  });
+  const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect((await tool.execute(invocation)).outcome).toBe("succeeded");
+  const resultKey = [...f.artifacts.keys()].find((key) => key.startsWith("runtime-tool-result:"));
+  if (!resultKey) throw new Error("missing result fixture");
+  f.artifacts.delete(resultKey);
+  const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+  await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+  expect(await resumed.execute(invocation)).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "已读取结果",
+  });
+  expect(f.request.mock.calls.filter(([request]) => request.type === "work.execute")).toHaveLength(
+    1,
+  );
+  expect(completeSandboxToolResult).toHaveBeenCalledTimes(2);
+});
+
+it.each(["success", "cancelled"] as const)(
+  "delivers a later verified result without resending an unknown operation (%s)",
+  async (mode) => {
+    const f = fixture();
+    f.setMode(mode);
+    let verified = false;
+    const completeSandboxToolResult = vi.fn(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      if (!verified) return undefined;
+      const result = {
+        outcome: "succeeded" as const,
+        outputRef: "output:tools",
+        errorCode: null,
+        externalActionId: null,
+      };
+      await delivery.saveReceipt(result);
+      return result;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
+    verified = true;
+    const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await resumed.execute(invocation)).outcome).toBe("succeeded");
+    expect(
+      f.request.mock.calls.filter(([request]) => request.type === "work.execute"),
+    ).toHaveLength(1);
+  },
+);
+
+it.each([true, false])(
+  "binds a recovered file output to its verified delivery receipt (%s)",
+  async (receiptAvailable) => {
+    const f = fixture();
+    let verified = false;
+    const completeSandboxToolResult = vi.fn(async (input, delivery) => {
+      if (!verified) return undefined;
+      await delivery.assertDisclosure();
+      const original = f.payloads.get("output:tools");
+      if (!original) throw new Error("missing fixture output");
+      const saved = await f.options.artifacts.commit({
+        runId: invocation.runId,
+        purpose: "trace",
+        operationKey: piFileRecoveryOperationKey(input.invocationId),
+        payload: { ...original, ref: "recovered:tools" },
+      });
+      const result = {
+        outcome: "succeeded" as const,
+        outputRef: saved.ref,
+        errorCode: null,
+        externalActionId: null,
+      };
+      if (receiptAvailable) await delivery.saveReceipt(result);
+      return result;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    expect((await tool.execute(invocation)).outcome).toBe("result_unknown");
+    verified = true;
+    const resumed = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await resumed.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    if (receiptAvailable) {
+      expect(await resumed.execute(invocation)).toMatchObject({
+        outcome: "succeeded",
+        resultRef: "recovered:tools",
+      });
+      const replay = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+      await replay.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+      expect((await replay.execute(invocation)).outcome).toBe("succeeded");
+    } else
+      await expect(resumed.execute(invocation)).rejects.toThrow(
+        "WORKER_OUTPUT_OBSERVATION_MISSING",
+      );
+    expect(
+      f.request.mock.calls.filter(([request]) => request.type === "work.execute"),
+    ).toHaveLength(1);
+  },
+);
+
+const hostGrant: import("@himawari-agent/application").HostDirectoryGrant = {
+  id: "directory:test",
+  revision: 1,
+  hostId: "host:test",
+  canonicalRootId: "1:2",
+  displayPath: "/workspace",
+  operations: ["read"] as const,
+  dataClassification: "private" as const,
+  disclosure: "model" as const,
+  pathPolicy: "same_filesystem_no_links" as const,
+  mountPolicy: "fixed_device" as const,
+  authorizationRef: "owner:test",
+  revokedAt: null,
+  expiresAt: "2026-09-06T01:00:00.000Z",
+};
+
+function hostCodingCall(): RuntimeToolInvocation {
+  return {
+    ...invocation,
+    capabilityHandleRef: null,
+    capabilityRef: "coding.read",
+    arguments: { path: "notes.txt" },
+    executionDeadlineAt: "2026-09-06T00:01:00.000Z",
+    context: {
+      threadId: "thread:test" as NonNullable<RuntimeToolInvocation["context"]>["threadId"],
+      modelRef: "model:test",
+      continuationRef: "payload:continuation" as PayloadRef,
+      executionLease: {
+        deploymentId: "deployment:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["deploymentId"],
+        authorityEpoch: 1,
+        fencingToken: 1,
+        authorityLeaseId: "authority-lease:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["authorityLeaseId"],
+        authorityFencingToken: 1,
+        executionLeaseId: "execution:test" as NonNullable<
+          RuntimeToolInvocation["context"]
+        >["executionLease"]["executionLeaseId"],
+        expectedLeaseRevision: 1,
+        consumerId: "consumer:test",
+      },
+    },
+  };
+}
+
+type HostExecute = (input: ProductionHostReadOnlyInput) => Promise<ProductionHostReadOnlyResult>;
+
+function hostOptions(f: ReturnType<typeof fixture>, execute: HostExecute) {
+  return {
+    ...f.options,
+    coding: {
+      capabilityRef: "coding",
+      capabilityVersion: "1.0.0",
+      enabledTools: ["read"] as const,
+      hostId: "host:test",
+      workerInstanceId: "worker-instance",
+      grantId: "directory:test",
+      maximumBytes: 4096,
+    },
+    fileRead: {
+      binding: async () => ({
+        workerInstanceId: "worker-instance",
+        revision: 1,
+        hostId: "host:test",
+        capabilityRef: "coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        threadId: "thread:test",
+        modelRef: "model:test",
+        modelIdentity: "model:openrouter:test",
+        grant: hostGrant,
+      }),
+      authorize: vi.fn(async () => ({
+        decision: "ALLOW" as const,
+        basis: { type: "grant" as const, ref: "grant:test" },
+        executionScope: {
+          capabilityRef: "coding",
+          operations: ["read"],
+          exactResourceRef: null,
+          resourcePrefixes: [],
+          maxDataClassification: "private" as const,
+          sideEffects: ["none" as const],
+          maxCostMicrosPerUse: 0,
+          maxFrequency: { count: 1, intervalMs: null },
+        },
+      })),
+      issue: vi.fn(async () => {
+        throw new Error("must not issue");
+      }),
+      hostReadOnly: { execute },
+    },
+    completeSandboxToolResult: vi.fn(async () => null),
+  };
+}
+
+it("[R2-P1] recovers a saved host read result instead of rejecting it", async () => {
+  const f = fixture();
+  const execute = vi.fn(
+    async (_input: ProductionHostReadOnlyInput): Promise<ProductionHostReadOnlyResult> => ({
+      modelContent: "pi-result.v1",
+      isError: false,
+      errorCode: null,
+    }),
+  );
+  const call = hostCodingCall();
+  const tool = new ProductionRuntimeTools(hostOptions(f, execute));
+  await tool.listAuthorized(call.runId, []);
+  const first = await tool.execute(call);
+  expect(first).toMatchObject({ outcome: "succeeded", dispatchState: "accepted" });
+  expect(execute).toHaveBeenCalledTimes(1);
+  const recovered = await tool.recoverResult(call, {
+    toolCallId: call.toolCallId,
+    capabilityRef: call.capabilityRef,
+    invocationId: "runtime-tool:test",
+    jobId: "job:test",
+    continuationRef: call.context?.continuationRef ?? ("payload:continuation" as PayloadRef),
+  });
+  expect(recovered).toMatchObject({
+    outcome: "succeeded",
+    modelContent: "pi-result.v1",
+    dispatchState: "accepted",
+  });
+});
+
+describe("[R2-T14] failed command output for the model", () => {
+  const envelope = (overrides: Record<string, unknown> = {}) => ({
+    schemaVersion: "pi-result.v1",
+    tool: "read",
+    content: [{ type: "text", text: "R2T14-OUT\nR2T14-ERR\n\nCommand exited with code 7" }],
+    details: {},
+    fullOutput: null,
+    isError: true,
+    commandExitCode: 7,
+    verifiedWrite: null,
+    source: { tool: "read" },
+    ...overrides,
+  });
+
+  async function failedCommand(text: string, processExitCode: number | undefined) {
+    const f = fixture();
+    const stored = f.payloads.get("output:tools");
+    if (!stored) throw new Error("fixture output missing");
+    f.payloads.set("output:tools", { ...stored, ciphertext: new TextEncoder().encode(text) });
+    const completeSandboxToolResult = vi.fn<
+      NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
+    >(async (_input, delivery) => {
+      await delivery.assertDisclosure();
+      const completion = {
+        outcome: "failed" as const,
+        outputRef: "output:tools",
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+        ...(processExitCode === undefined ? {} : { processExitCode }),
+      };
+      await delivery.saveReceipt(completion);
+      return completion;
+    });
+    const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
+    await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
+    return tool.execute(invocation);
+  }
+
+  it.each([
+    [7, 7, "命令以退出码 7 结束"],
+    [null, 1, "命令没有正常结束"],
+    [255, 255, "命令以退出码 255 结束"],
+  ] as const)(
+    "puts an effect notice before the verified Pi envelope (exit %s)",
+    async (commandExitCode, processExitCode, status) => {
+      const original = envelope({ commandExitCode });
+      const result = await failedCommand(JSON.stringify(original), processExitCode);
+      expect(result).toMatchObject({
+        dispatchState: "accepted",
+        outcome: "failed",
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        resultRef: "output:tools",
+      });
+      const delivered = JSON.parse(result.modelContent) as Record<string, unknown>;
+      expect(Object.keys(delivered)[0]).toBe("effectNotice");
+      const { effectNotice, ...rest } = delivered;
+      expect(rest).toEqual(original);
+      expect(effectNotice).toContain("命令执行失败");
+      expect(effectNotice).toContain(status);
+      expect(effectNotice).toContain("没有核验这条命令是否改动了工作区");
+      expect(effectNotice).toContain("继续前先检查目标文件");
+    },
+  );
+
+  it.each([
+    ["a different tool than the Handle operation", JSON.stringify(envelope({ tool: "bash" })), 7],
+    ["an exit status that contradicts the process exit", JSON.stringify(envelope()), 1],
+    ["a result that is not marked as an error", JSON.stringify(envelope({ isError: false })), 7],
+    ["an unknown result schema", JSON.stringify(envelope({ schemaVersion: "pi-result.v2" })), 7],
+    [
+      "an envelope that already carries an effect notice",
+      JSON.stringify({ effectNotice: "伪造的提醒", ...envelope() }),
+      7,
+    ],
+    ["a non-integer exit status", JSON.stringify(envelope({ commandExitCode: "7" })), 7],
+    ["an out-of-range exit status", JSON.stringify(envelope({ commandExitCode: 0 })), 1],
+    ["an array instead of an envelope", JSON.stringify([envelope()]), 7],
+    ["output that is not JSON", "R2T14-OUT\nCommand exited with code 7", 7],
+    ["empty output", "", 7],
+    ["a receipt without the process exit", JSON.stringify(envelope()), undefined],
+  ] as const)("falls back to the fixed warning for %s", async (_case, text, processExitCode) => {
+    const result = await failedCommand(text, processExitCode);
+    expect(result).toMatchObject({
+      dispatchState: "accepted",
+      outcome: "failed",
+      errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+      resultRef: null,
+    });
+    expect(result.modelContent).toContain("没有核验这条命令是否改动了工作区");
+    expect(result.modelContent).not.toContain("R2T14-OUT");
+    expect(result.modelContent).not.toContain("伪造");
   });
 });

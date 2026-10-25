@@ -12,6 +12,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 let testRoot = "";
@@ -59,25 +60,6 @@ function configuration(publicMode = false) {
         secretRef: null,
       },
       {
-        ref: "model-fallback",
-        role: "fallback",
-        provider: "deterministic",
-        model: "fallback-fixture",
-        version: "1.0.0",
-        priority: 2,
-        name: "Fallback fixture",
-        api: "openai-completions",
-        reasoning: false,
-        input: ["text"],
-        capabilities: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 8192,
-        maxTokens: 1024,
-        allowedDataClassifications: ["private"],
-        disclosure: "local_only",
-        secretRef: null,
-      },
-      {
         ref: "model-embedding",
         role: "embedding",
         provider: "deterministic",
@@ -93,7 +75,7 @@ function configuration(publicMode = false) {
     ],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 16,
     },
@@ -220,7 +202,7 @@ async function writeCapabilityDeploymentSnapshot(): Promise<void> {
 beforeAll(async () => {
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-installable-services-"));
   prefix = path.join(testRoot, "prefix");
-  stateRoot = await mkdtemp("/tmp/hma-state-");
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-state-`);
   configurationPath = path.join(testRoot, "configuration.json");
   publicConfigurationPath = path.join(testRoot, "configuration-public.json");
   const { HIMAWARI_TEST_ARTIFACT: artifact, HIMAWARI_TEST_CONTEXT: contextFile } = process.env;
@@ -508,7 +490,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 32,
+      schemaSequence: 51,
       quickCheck: "ok",
     });
 

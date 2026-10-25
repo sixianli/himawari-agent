@@ -4,10 +4,17 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0021-platform-capability-runtime-isolation.md, docs/adr/0022-mac-tiered-command-sandbox.md, docs/adr/0024-srt-unified-execution.md"
 superseded_by: ""
+amended_by: "docs/adr/0031-isolated-tool-execution.md"
 date: "2026-09-09"
 ---
 
 # ADR 0025：复用 Pi 并分离工具、任务与执行环境生命周期
+
+## 后续部分修正（2026-09-24）
+
+本文仅在 ADR 0031 明确保留的范围继续有效。决定 5 的宿主 SRT 首选和单次作业环境默认、决定 6 的 Mac 尽力停止及容器仅作为可选增强，以及对应方案比较和影响，已由任务级隔离执行环境、可替换 backend 与严格停止证明修正。Pi 复用、授权权威、结果/效果/清理分离和禁止未知重放继续有效。
+
+适用范围以 [ADR 0031 的修正表](0031-isolated-tool-execution.md#amendments) 为准：[SOURCE: docs/adr/0031-isolated-tool-execution.md]。本文原决定正文保留为历史记录，`active / accepted` 不表示被修正条款仍可用于新路径；本次不是整份替代，既有 supersession 链保持不变。
 
 ## 背景
 

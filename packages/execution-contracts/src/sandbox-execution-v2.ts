@@ -32,7 +32,6 @@ const digest: Schema<string> = {
 function fail(message: string): never {
   throw new ContractValidationError("$", message);
 }
-/** Strict discriminated parsing; never try a weaker branch after a branch fails. */
 function variant<const T extends Readonly<Record<string, Schema<unknown>>>>(
   key: string,
   branches: T,
@@ -57,10 +56,10 @@ export const sandboxPayloadReferenceSchema = object({
 });
 const evidence = object({ ref: machineString, digest });
 const contractIdentity = { ref: machineString, version: machineString };
-/** Trusted catalog descriptors, not model-selectable assertions about effects. */
 export const sandboxOperationContractSchema = variant("kind", {
   fixed_read: object({ ...contractIdentity, kind: literal("fixed_read") }),
   command: object({ ...contractIdentity, kind: literal("command") }),
+  network_only: object({ ...contractIdentity, kind: literal("network_only") }),
   verified_effect: object({
     ...contractIdentity,
     kind: literal("verified_effect"),
@@ -82,7 +81,13 @@ const additions = object({
   backendRef: machineString,
   environmentId: machineString,
 });
-type Additions = InferSchema<typeof additions>;
+export const SANDBOX_PREPARATION_PROTOCOL = "register-before-host.v1" as const;
+export const SANDBOX_PREPARATION_LAUNCH_PROTOCOL = "launch-or-block.v2" as const;
+type Additions = InferSchema<typeof additions> & {
+  readonly preparationProtocol?:
+    | typeof SANDBOX_PREPARATION_PROTOCOL
+    | typeof SANDBOX_PREPARATION_LAUNCH_PROTOCOL;
+};
 export type SandboxExecutionPlanV2 = Omit<SandboxExecutionPlan, "schemaVersion"> &
   Additions & {
     readonly schemaVersion: typeof SANDBOX_EXECUTION_V2_SCHEMA_VERSION;
@@ -97,19 +102,38 @@ function parsePlan<T extends SandboxExecutionPlan | SandboxExecutionPlanCandidat
   path: string,
 ) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("expected a plan");
-  const { schemaVersion, mode, operationContract, backendRef, environmentId, ...admission } =
-    value as Record<string, unknown>;
+  const {
+    schemaVersion,
+    mode,
+    operationContract,
+    backendRef,
+    environmentId,
+    preparationProtocol,
+    ...admission
+  } = value as Record<string, unknown>;
   version.parse(schemaVersion, `${path}.schemaVersion`);
   const extra = additions.parse({ mode, operationContract, backendRef, environmentId }, path);
   const kind = extra.operationContract.kind;
   if (
     (kind === "task_start") !== (mode === "background") ||
-    (kind === "service_start" && mode !== "service")
+    (kind === "service_start" && mode !== "service") ||
+    (kind === "network_only" && mode !== "foreground")
   )
     fail("operation contract does not support execution mode");
-  // Reuse the exact v1 admission validation; no default fingerprint or implicit v1 upgrade.
   const base = schema.parse({ ...admission, schemaVersion: "sandbox-execution.v1" }, path);
-  return Object.freeze({ ...base, ...extra, schemaVersion: SANDBOX_EXECUTION_V2_SCHEMA_VERSION });
+  return Object.freeze({
+    ...base,
+    ...extra,
+    schemaVersion: SANDBOX_EXECUTION_V2_SCHEMA_VERSION,
+    ...(Object.hasOwn(value, "preparationProtocol")
+      ? {
+          preparationProtocol: enumeration([
+            SANDBOX_PREPARATION_PROTOCOL,
+            SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+          ]).parse(preparationProtocol, `${path}.preparationProtocol`),
+        }
+      : {}),
+  });
 }
 export const sandboxExecutionPlanV2Schema: Schema<SandboxExecutionPlanV2> = {
   parse(value, path = "$") {
@@ -121,7 +145,6 @@ export const sandboxExecutionPlanCandidateV2Schema: Schema<SandboxExecutionPlanC
     return parsePlan(sandboxExecutionPlanCandidateSchema, value, path);
   },
 };
-/** Version dispatch preserves old records and never supplies v2 supervision defaults. */
 export const versionedSandboxExecutionPlanSchema = variant("schemaVersion", {
   "sandbox-execution.v1": sandboxExecutionPlanSchema,
   "sandbox-execution.v2": sandboxExecutionPlanV2Schema,
@@ -153,6 +176,17 @@ export const sandboxEnvironmentSchema = variant("kind", {
     privateDirectoryOwnerRef: machineString,
   }),
   remote: object({ ...environmentFields, kind: literal("remote"), connectionRef: machineString }),
+  container: object({
+    ...environmentFields,
+    kind: literal("container"),
+    taskEnvironmentId: machineString,
+    executionJobId: machineString,
+    environmentGeneration: integer(1),
+    runtimeInstanceId: machineString,
+    runtimeEnvironmentId: machineString,
+    createIntentId: machineString,
+    stopFence: integer(0),
+  }),
 });
 export type SandboxEnvironment = InferSchema<typeof sandboxEnvironmentSchema>;
 const handleFields = {
@@ -215,6 +249,49 @@ export const sandboxOperationResultSchema = variant("kind", {
   unknown: object({ ...resultFields, kind: literal("unknown"), reasonCode: machineString }),
 });
 export type SandboxOperationResult = InferSchema<typeof sandboxOperationResultSchema>;
+
+export const SANDBOX_TOOL_DEADLINE_EXCEEDED = "SANDBOX_TOOL_DEADLINE_EXCEEDED";
+export const SANDBOX_TOOL_RESULT_LOST = "SANDBOX_TOOL_RESULT_LOST";
+export const SANDBOX_TOOL_NOT_STARTED = "SANDBOX_TOOL_NOT_STARTED";
+export const SANDBOX_HOST_COMPLETION_CONTRADICTED = "SANDBOX_HOST_COMPLETION_CONTRADICTED";
+export const FILE_WRITE_NOT_STARTED = "FILE_WRITE_NOT_STARTED";
+export const SANDBOX_WRITE_EFFECT_UNVERIFIED = "SANDBOX_WRITE_EFFECT_UNVERIFIED";
+export const sandboxLostResultOperationKey = (invocationId: string) =>
+  `sandbox-tool-result-lost:${invocationId}`;
+export function isSandboxToolResultLost(result: SandboxOperationResult | null | undefined) {
+  return (
+    result?.kind === "error" &&
+    result.reasonCode === SANDBOX_TOOL_RESULT_LOST &&
+    result.termination.type === "failure"
+  );
+}
+export function isSandboxBoundedToolFailure(result: SandboxOperationResult | null | undefined) {
+  return (
+    isSandboxToolResultLost(result) ||
+    (result?.kind === "error" &&
+      result.termination.type === "failure" &&
+      (result.reasonCode === SANDBOX_TOOL_DEADLINE_EXCEEDED ||
+        result.reasonCode === SANDBOX_TOOL_NOT_STARTED ||
+        result.reasonCode === SANDBOX_HOST_COMPLETION_CONTRADICTED ||
+        result.reasonCode === SANDBOX_WRITE_EFFECT_UNVERIFIED))
+  );
+}
+export function isSandboxExecutionFenceSuperseded(
+  plan: SandboxExecutionPlanV2,
+  current: Pick<
+    SandboxExecutionPlanV2["executionLease"],
+    "deploymentId" | "authorityEpoch" | "fencingToken"
+  >,
+) {
+  const original = plan.executionLease;
+  return (
+    current.deploymentId === original.deploymentId &&
+    (current.authorityEpoch > original.authorityEpoch ||
+      (current.authorityEpoch === original.authorityEpoch &&
+        current.fencingToken > original.fencingToken))
+  );
+}
+
 export const sandboxEffectObservationSchema = variant("kind", {
   not_applicable: object({ kind: literal("not_applicable") }),
   not_asserted: object({ kind: literal("not_asserted") }),
@@ -263,8 +340,29 @@ const supervisionEvidence = object({
   subject: variant("kind", {
     local_process: object({ kind: literal("local_process"), processIdentityRef: machineString }),
     remote_connection: object({ kind: literal("remote_connection"), connectionRef: machineString }),
+    task_environment: object({ kind: literal("task_environment"), environmentId: machineString }),
   }),
 });
+const releasedFields = {
+  ...resourceFields,
+  supervision: literal("released"),
+  cleanup: enumeration(["confirmed", "process_group_gone"]),
+  evidence: supervisionEvidence,
+};
+const releasedBase = object(releasedFields);
+const releasedScoped = object({ ...releasedFields, cleanupScope: literal("pid_namespace") });
+const releasedObservation: Schema<
+  InferSchema<typeof releasedBase> & { readonly cleanupScope?: "pid_namespace" }
+> = {
+  parse(value, path = "$") {
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, "cleanupScope"))
+      return releasedBase.parse(value, path);
+    const scoped = releasedScoped.parse(value, path);
+    if (scoped.cleanup !== "process_group_gone")
+      throw new ContractValidationError(`${path}.cleanupScope`, "requires process_group_gone");
+    return scoped;
+  },
+};
 export const sandboxResourceObservationSchema = variant("supervision", {
   initializing: object({
     ...resourceFields,
@@ -295,12 +393,7 @@ export const sandboxResourceObservationSchema = variant("supervision", {
     cleanup: enumeration(["pending", "unknown"]),
     reasonCode: machineString,
   }),
-  released: object({
-    ...resourceFields,
-    supervision: literal("released"),
-    cleanup: literal("confirmed"),
-    evidence: supervisionEvidence,
-  }),
+  released: releasedObservation,
 });
 export type SandboxResourceObservation = InferSchema<typeof sandboxResourceObservationSchema>;
 export const sandboxExecutionFactsSchema = object({
@@ -321,11 +414,8 @@ const transitions: Record<
   stopping: ["stopping", "lost", "reconciling", "released"],
   lost: ["lost", "reconciling"],
   reconciling: ["reconciling", "lost", "released"],
-  // A fresh verification may renew the proof of the same terminal resource.
-  // It cannot revive the environment or replace its process/status facts.
   released: ["released"],
 };
-/** Checks binding/semantics only. Evidence authenticity must be resolved by trusted host ports. */
 export function validateSandboxExecutionFacts(
   rawPlan: SandboxExecutionPlanV2,
   raw: unknown,
@@ -360,6 +450,14 @@ export function validateSandboxExecutionFacts(
     Date.parse(plan.effectiveDeadlineAt) > Date.parse(env.deadlineAt)
   )
     fail("environment scope mismatch");
+  if (
+    env.kind === "container" &&
+    (env.mode !== "foreground" ||
+      env.supervisor.supervisorId !== env.runtimeEnvironmentId ||
+      env.supervisor.bootId !== env.runtimeInstanceId ||
+      env.supervisor.epoch !== 1)
+  )
+    fail("task environment binding mismatch");
   const sharedRequest = plan.mode === "service" && plan.operationContract.kind !== "service_start";
   if (
     !sharedRequest &&
@@ -395,7 +493,9 @@ export function validateSandboxExecutionFacts(
     if (
       env.kind === "local"
         ? subject.kind !== "local_process"
-        : subject.kind !== "remote_connection" || subject.connectionRef !== env.connectionRef
+        : env.kind === "container"
+          ? subject.kind !== "task_environment" || subject.environmentId !== env.taskEnvironmentId
+          : subject.kind !== "remote_connection" || subject.connectionRef !== env.connectionRef
     )
       fail("supervision subject mismatch");
     if (
@@ -420,6 +520,7 @@ export function validateSandboxExecutionFacts(
       obs.supervision === "released" &&
       (!same(prior.resource.status, obs.status) ||
         !same(prior.resource.metrics, obs.metrics) ||
+        prior.resource.cleanup !== obs.cleanup ||
         !same(prior.resource.evidence.subject, obs.evidence.subject))
     )
       fail("released resource facts are immutable");
@@ -469,13 +570,16 @@ export function validateSandboxExecutionFacts(
     } else if (
       result.kind === "error" &&
       result.termination.type === "exit" &&
-      contract.kind !== "command"
+      !["command", "network_only"].includes(contract.kind)
     ) {
       fail("exit branch requires command contract");
     } else if (result.kind === "result") {
       if (contract.kind === "task_start" || contract.kind === "service_start")
         fail("resource start cannot report operation completion");
-      if ((contract.kind === "command") !== (result.completion.type === "exit"))
+      if (
+        ["command", "network_only"].includes(contract.kind) !==
+        (result.completion.type === "exit")
+      )
         fail("completion branch does not match operation contract");
     }
   }
@@ -489,7 +593,7 @@ export function validateSandboxExecutionFacts(
     const registered =
       result?.kind === "started" &&
       (contract.kind === "task_start" || contract.kind === "service_start");
-    if (!(contract.kind === "command" && normalExit) && !registered)
+    if (!(["command", "network_only"].includes(contract.kind) && normalExit) && !registered)
       fail("missing normal result cannot weaken effects");
   }
   if (effect.kind === "verified") {
@@ -529,7 +633,6 @@ function withTaskTermination<T extends { end: boolean }>(
   };
 }
 
-/** Protected, bounded output pages; cursor is a locator, never execution authority. */
 export const sandboxResourceOutputQuerySchema = object({
   resourceRef: machineString,
   cursor: nullable(machineString),
@@ -549,7 +652,6 @@ export const sandboxResourceOutputPageSchema = withTaskTermination(
 export type SandboxResourceOutputQuery = InferSchema<typeof sandboxResourceOutputQuerySchema>;
 export type SandboxResourceOutputPage = InferSchema<typeof sandboxResourceOutputPageSchema>;
 
-/** Append-only output captured by the original Worker; no host paths or executable input. */
 const outputBytes: Schema<string> = {
   parse(value, path = "$") {
     if (
@@ -571,8 +673,6 @@ export const sandboxOutputChunkSchema = withTaskTermination(
 );
 export type SandboxOutputChunk = InferSchema<typeof sandboxOutputChunkSchema>;
 
-/** Resource-specific infrastructure credential, carried only by authenticated
- * private Payload IPC and stored as a restricted Run artifact. Never a tool argument. */
 const controlDirectory: Schema<string> = {
   parse(value, path = "$") {
     if (
@@ -599,8 +699,141 @@ export const sandboxJobControlBindingSchema = object({
 });
 export type SandboxJobControlBinding = InferSchema<typeof sandboxJobControlBindingSchema>;
 
-/** Authenticated Worker requests carry facts and locators, never database authority. */
+export const SANDBOX_HOST_FAILURE_CODES = [
+  "UNKNOWN",
+  "JOB_HOST_HEARTBEAT_EXPIRED",
+  "JOB_HOST_STARTUP_TIMEOUT",
+  "JOB_HOST_PREPARATION_TIMEOUT",
+  "JOB_HOST_EXECUTION_DEADLINE",
+  "JOB_HOST_ALREADY_PREPARED",
+  "JOB_HOST_CONTROL_BINDING_INVALID",
+  "JOB_HOST_CONTROL_SCOPE_OVERLAP",
+  "JOB_HOST_DEPENDENCIES_UNAVAILABLE",
+  "JOB_HOST_ENVIRONMENT_INVALID",
+  "JOB_HOST_LAUNCH_INVALID",
+  "JOB_HOST_LAUNCH_ARGV_UNEXPECTED",
+  "JOB_HOST_JAVA_AGENT_INVALID",
+  "JOB_HOST_MESSAGE_INVALID",
+  "JOB_HOST_NAMESPACE_GATE_INVALID",
+  "JOB_HOST_NAMESPACE_GATE_TIMEOUT",
+  "JOB_HOST_LAUNCH_SPAWN_FAILED",
+  "JOB_HOST_NOT_READY",
+  "JOB_HOST_POLICY_CHANGED",
+  "JOB_HOST_RESOURCE_OBSERVATION_FAILED",
+  "JOB_HOST_RUN_INVALID",
+  "JOB_HOST_RUN_NOT_ALLOWED",
+  "JOB_HOST_SESSION_INVALID",
+  "JOB_HOST_SESSION_MODE_INVALID",
+  "JOB_HOST_SESSION_REPLACED",
+  "JOB_HOST_START_ABORTED",
+  "JOB_HOST_WORKER_LEASE_INVALID",
+] as const;
+export const SANDBOX_HOST_STAGES = [
+  "request",
+  "policy",
+  "control",
+  "resource_snapshot",
+  "dependencies",
+  "network",
+  "sdk_initialize",
+  "launch",
+] as const;
+export const sandboxHostStepsSchema = array(
+  object({
+    stage: enumeration(SANDBOX_HOST_STAGES),
+    startedMs: integer(0, 86_400_000),
+    elapsedMs: nullable(integer(0, 86_400_000)),
+  }),
+  16,
+);
+export type SandboxHostSteps = InferSchema<typeof sandboxHostStepsSchema>;
+const HOST_FAILURE_TEXT_MAX_BYTES = 512;
+const hostFailureTextSchema: Schema<string> = {
+  parse(value, path = "$") {
+    if (typeof value !== "string")
+      throw new ContractValidationError(path, "expected host failure text");
+    const cleaned = value
+      .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    let result = "";
+    let bytes = 0;
+    for (const character of cleaned) {
+      const size = new TextEncoder().encode(character).byteLength;
+      if (bytes + size > HOST_FAILURE_TEXT_MAX_BYTES) break;
+      bytes += size;
+      result += character;
+    }
+    return result;
+  },
+};
+export const sandboxHostFailureDetailSchema = object({
+  code: enumeration(SANDBOX_HOST_FAILURE_CODES),
+  command: enumeration([
+    "prepare",
+    "heartbeat",
+    "start",
+    "run",
+    "run_cancel",
+    "cancel",
+    "authority_result",
+    "unknown",
+  ]),
+  phase: enumeration(["waiting", "preparing", "ready", "running", "stopping", "finished"]),
+  elapsedMs: integer(0, 86_400_000),
+  messageAgeMs: nullable(integer(-86_400_000, 86_400_000)),
+  deadlineRemainingMs: nullable(integer(-86_400_000, 86_400_000)),
+  expectedSequence: integer(0),
+  receivedSequence: nullable(integer(0)),
+  text: nullable(hostFailureTextSchema),
+  steps: nullable(sandboxHostStepsSchema),
+});
+export type SandboxHostFailureDetail = InferSchema<typeof sandboxHostFailureDetailSchema>;
+export const sandboxPreparationDiagnosticSchema = object({
+  stage: enumeration([
+    "prepare",
+    "register_preparation_control",
+    "register_control",
+    "bind",
+    "execute",
+  ]),
+  reasonCode: enumeration([
+    "SANDBOX_PREPARATION_FAILED",
+    "SANDBOX_CONTROL_REGISTRATION_FAILED",
+    "SANDBOX_BIND_FAILED",
+    "SANDBOX_EXECUTION_FAILED",
+  ]),
+  hostDetail: nullable(sandboxHostFailureDetailSchema),
+  hostStage: nullable(enumeration(SANDBOX_HOST_STAGES)),
+  systemCode: enumeration([
+    "UNKNOWN",
+    "EACCES",
+    "EPERM",
+    "ENOENT",
+    "EIO",
+    "ENOSPC",
+    "EMFILE",
+    "ENFILE",
+    "ENOMEM",
+    "EAGAIN",
+    "EADDRINUSE",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EINVAL",
+  ]),
+});
+export type SandboxPreparationDiagnostic = InferSchema<typeof sandboxPreparationDiagnosticSchema>;
 export const sandboxExecutionBrokerCommandSchema = variant("kind", {
+  preparation_diagnostic: object({
+    kind: literal("preparation_diagnostic"),
+    diagnostic: sandboxPreparationDiagnosticSchema,
+  }),
+  register_preparation_control: object({
+    kind: literal("register_preparation_control"),
+    expectedSequence: integer(1, 1),
+    control: sandboxJobControlBindingSchema,
+    policyDigest: digest,
+  }),
   register_control: object({
     kind: literal("register_control"),
     expectedSequence: integer(1, 1),
@@ -634,7 +867,7 @@ export const sandboxExecutionBrokerCommandSchema = variant("kind", {
   }),
   append_output: object({
     kind: literal("append_output"),
-    resourceRef: machineString,
+    resourceRef: nullable(machineString),
     expectedSequence: integer(1),
     chunk: sandboxOutputChunkSchema,
   }),

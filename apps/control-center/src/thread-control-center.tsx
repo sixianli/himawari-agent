@@ -1,5 +1,9 @@
+import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
+import { ArchivedConversations } from "./components/archived-conversations.js";
 import type {
+  ThreadExecutionEnvironment,
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewayRequestResult,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
@@ -7,10 +11,11 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ChatComposer } from "./components/chat-composer.js";
+import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
 import { ChatHistory } from "./components/chat-history.js";
-import { ActionButton, Banner, Field, SemanticList, StatusRegion } from "./components/index.js";
+import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
 import type {
   ControlCenterRuntimeConfiguration,
   GatewayClient,
@@ -18,7 +23,10 @@ import type {
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
-import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
+import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
+import { isTerminalRun } from "./execution-view.js";
+
+import { listPendingRunApprovals } from "./run-approval.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
 
 type ThreadCollectionSnapshot = Extract<
@@ -26,14 +34,6 @@ type ThreadCollectionSnapshot = Extract<
   { type: "thread.collection_snapshot" | "thread.search_snapshot" }
 >;
 type ThreadDetailSnapshot = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
-type ThreadCheckpointSnapshot = Extract<
-  ThreadGatewaySnapshot,
-  { type: "thread.checkpoint_snapshot" }
->;
-type ThreadDeletionImpactSnapshot = Extract<
-  ThreadGatewaySnapshot,
-  { type: "thread.deletion_impact_snapshot" }
->;
 type ThreadSummary = ThreadDetailSnapshot["payload"]["thread"];
 
 type ThreadIntent =
@@ -47,7 +47,6 @@ type ThreadIntent =
   | { readonly kind: "pin"; readonly pinOrder: number | null }
   | { readonly kind: "archive" }
   | { readonly kind: "restore" }
-  | { readonly kind: "trash" }
   | {
       readonly kind: "fork";
       readonly sourceTurnId: string;
@@ -70,55 +69,21 @@ export interface ThreadControlCenterOptions {
   ) => string;
   readonly navigate: (route: ControlCenterRouteState) => void;
   readonly refreshSignal: number;
+  readonly threadEventSignal?: number;
+  readonly threadEvents?: { readonly current: (string | null)[] };
   readonly route: ControlCenterRouteState;
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
+  readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
 }
 
 export interface ThreadControlCenterModel {
   readonly title: string;
   readonly content: ReactNode;
   readonly details: ReactNode;
+  readonly settingsData: ReactNode;
   readonly list: ReactNode;
   readonly refresh: () => Promise<void>;
-}
-
-function threadStatusMessageId(status: ThreadSummary["status"]): MessageId {
-  switch (status) {
-    case "active":
-      return "threads.status.active";
-    case "archived":
-      return "threads.status.archived";
-    case "trashed":
-      return "threads.status.trashed";
-    case "deletion_pending":
-      return "threads.status.deletionPending";
-    case "deleted_verified":
-      return "threads.status.deletedVerified";
-  }
-}
-
-function runStatusMessageId(
-  status: ThreadDetailSnapshot["payload"]["runs"][number]["status"],
-): MessageId {
-  switch (status) {
-    case "accepted":
-      return "runs.status.accepted";
-    case "building_context":
-      return "runs.status.buildingContext";
-    case "running":
-      return "runs.status.running";
-    case "awaiting_approval":
-      return "runs.status.awaitingApproval";
-    case "reconciling_external_result":
-      return "runs.status.reconcilingExternalResult";
-    case "completed":
-      return "runs.status.completed";
-    case "failed":
-      return "runs.status.failed";
-    case "cancelled":
-      return "runs.status.cancelled";
-  }
 }
 
 function mutationMessageId(status: MutationStatus | null): MessageId {
@@ -159,17 +124,34 @@ export function useThreadControlCenter(
     navigate,
     onUnauthorized,
     refreshSignal,
+    threadEventSignal = 0,
+    threadEvents,
     route,
     storage,
   } = options;
+  const [showOffline, setShowOffline] = useState(false);
+  useEffect(() => {
+    if (connection !== "offline") {
+      setShowOffline(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowOffline(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [connection]);
+  const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
+  const [pendingThreadIds, setPendingThreadIds] = useState<readonly string[]>([]);
+  const [environment, setEnvironment] = useState<ThreadExecutionEnvironment>();
+  const listPages = useRef(1);
   const [collection, setCollection] = useState<ThreadCollectionSnapshot>();
+  const [searchResults, setSearchResults] = useState<ThreadCollectionSnapshot>();
   const [detail, setDetail] = useState<ThreadDetailSnapshot>();
-  const [checkpoint, setCheckpoint] = useState<ThreadCheckpointSnapshot>();
-  const [deletionImpact, setDeletionImpact] = useState<ThreadDeletionImpactSnapshot>();
   const [contentByRef, setContentByRef] = useState<Readonly<Record<string, string>>>({});
   const [draft, setDraft] = useState("");
   const [execution, setExecution] = useState<
     Readonly<Record<string, readonly ThreadExecutionRecord[]>>
+  >({});
+  const [executionStates, setExecutionStates] = useState<
+    Readonly<Record<string, ThreadExecutionState>>
   >({});
   const [modelRef, setModelRef] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("off");
@@ -181,14 +163,30 @@ export function useThreadControlCenter(
   const selectedThinking = selectedModel?.thinkingLevels.includes(thinkingLevel)
     ? thinkingLevel
     : (selectedModel?.thinkingLevels[0] ?? "off");
+  const payloadEpoch = useRef(0);
   const payloadCache = useRef<Record<string, string>>({});
   const executionCache = useRef<Record<string, ThreadExecutionRecord[]>>({});
   const [renameTitle, setRenameTitle] = useState("");
+  const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
+  const submissionLock = useRef(false);
   const [searchText, setSearchText] = useState("");
+  const searchController = useRef<AbortController | null>(null);
+  const searchSequence = useRef(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  useEffect(() => {
+    void client;
+    return () => {
+      searchSequence.current++;
+      searchController.current?.abort();
+    };
+  }, [client]);
   const [loading, setLoading] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
   const [readScope, setReadScope] = useState<"list" | "conversation" | "search">("list");
   const [readAttempt, setReadAttempt] = useState(0);
+  const [readInBackground, setReadInBackground] = useState(false);
+  const readFailures = useRef(0);
   const readController = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
@@ -196,15 +194,23 @@ export function useThreadControlCenter(
   const refreshSequence = useRef(0);
   const refreshing = useRef(false);
   const refreshAgain = useRef(false);
-  const refreshLatest = useRef<() => Promise<void>>(async () => {});
+  const refreshLatest = useRef<(force?: boolean, full?: boolean) => Promise<void>>(async () => {});
+  const fullRefreshRequested = useRef(true);
+  const eventThreadIds = useRef(new Set<string | null>());
+  const detailRef = useRef<ThreadDetailSnapshot | undefined>(undefined);
   const refreshTimer = useRef<number | undefined>(undefined);
   const selectedThreadId = route.objectId ?? null;
   const selectedIdRef = useRef(selectedThreadId);
   selectedIdRef.current = selectedThreadId;
+  const shownThreadId = useRef<string | null>(null);
+  const shownDetailThreadId = detail?.payload.thread.threadId ?? null;
+  shownThreadId.current = shownDetailThreadId;
+  detailRef.current = detail;
   useEffect(() => {
     refreshSequence.current++;
     setDetail(undefined);
-    setDraft(selectedThreadId ? storage.readDraft(selectedThreadId) : "");
+    setPreview(null);
+    setDraft(storage.readDraft(selectedThreadId ?? "new"));
     setConflict(null);
     setMutationStatus(null);
   }, [selectedThreadId, storage]);
@@ -212,8 +218,10 @@ export function useThreadControlCenter(
     void client;
     setContentByRef({});
     setExecution({});
+    setExecutionStates({});
     return () => {
       refreshSequence.current++;
+      payloadEpoch.current++;
       payloadCache.current = {};
       executionCache.current = {};
     };
@@ -225,7 +233,9 @@ export function useThreadControlCenter(
     void route.status;
     void route.afterCursor;
     void active;
+    readFailures.current = 0;
     setReadFailed(false);
+    setReadInBackground(false);
     return () => {
       readController.current?.abort();
       readController.current = null;
@@ -239,7 +249,7 @@ export function useThreadControlCenter(
     async (refs: readonly string[]) => {
       if (!client) return;
       const unique = [...new Set(refs)].filter((ref) => payloadCache.current[ref] === undefined);
-      const sequence = refreshSequence.current;
+      const epoch = payloadEpoch.current;
       const entries = await Promise.all(
         unique.map(async (ref) => {
           try {
@@ -249,16 +259,37 @@ export function useThreadControlCenter(
           }
         }),
       );
-      if (sequence !== refreshSequence.current) return;
+      if (epoch !== payloadEpoch.current) return;
       Object.assign(payloadCache.current, Object.fromEntries(entries));
       setContentByRef({ ...payloadCache.current });
     },
     [client, message],
   );
 
+  const loadEnvironment = useCallback(async () => {
+    if (!client || !configuration?.executionEnvironmentAvailable) return;
+    try {
+      const snapshot = await client.queryThread(
+        threadQueryMessage(configuration, "thread.execution_environment", {}),
+      );
+      if (snapshot.type !== "thread.execution_environment_snapshot")
+        throw new Error("THREAD_EXECUTION_ENVIRONMENT_INVALID");
+      setEnvironment(snapshot.payload.environment);
+    } catch {}
+  }, [client, configuration]);
+
+  const scheduleRefresh = useCallback((threadId?: string | null, delay = 80) => {
+    if (threadId !== undefined) eventThreadIds.current.add(threadId);
+    refreshTimer.current ??= window.setTimeout(() => {
+      refreshTimer.current = undefined;
+      void refreshLatest.current(false, false);
+    }, delay);
+  }, []);
+
   const refresh = useCallback(
-    async (force = false) => {
+    async (force = false, full = true) => {
       if (!active || !client || !configuration) return;
+      if (full) fullRefreshRequested.current = true;
       if (refreshing.current && !force) {
         refreshAgain.current = true;
         return;
@@ -275,9 +306,25 @@ export function useThreadControlCenter(
       readController.current = controller;
       refreshing.current = true;
       const sequence = ++refreshSequence.current;
+      const background = selectedThreadId !== null && shownThreadId.current === selectedThreadId;
+      const previousDetail =
+        background && !fullRefreshRequested.current ? detailRef.current : undefined;
+      const eventThreads = new Set(eventThreadIds.current);
+      fullRefreshRequested.current = false;
+      eventThreadIds.current.clear();
+      let conversationShown = background;
+      let phase: "list" | "conversation" = "list";
+      let retryDelay: number | null = null;
+      const succeeded = () => {
+        readFailures.current = 0;
+        setReadFailed(false);
+      };
       setLoading(true);
-      setReadFailed(false);
-      setReadScope("list");
+      setReadInBackground(background);
+      if (!background) {
+        setReadFailed(false);
+        setReadScope("list");
+      }
       setReadAttempt(sequence);
       try {
         const statuses =
@@ -298,26 +345,79 @@ export function useThreadControlCenter(
         if (sequence !== refreshSequence.current || list.type !== "thread.collection_snapshot") {
           return;
         }
-        setCollection(list);
+        let expandedList = list;
+        const seenCursors = new Set<string>();
+        for (let page = 1; page < listPages.current && expandedList.payload.nextCursor; page++) {
+          const cursor = expandedList.payload.nextCursor;
+          if (seenCursors.has(cursor)) throw new Error("THREAD_LIST_CURSOR_REPEATED");
+          seenCursors.add(cursor);
+          const next = await client.queryThread(
+            threadQueryMessage(configuration, "thread.list", {
+              statuses,
+              pinnedOnly: false,
+              afterCursor: cursor,
+              limit: 100,
+            }),
+            controller.signal,
+          );
+          if (sequence !== refreshSequence.current) return;
+          if (next.type !== "thread.collection_snapshot") throw new Error("THREAD_LIST_INVALID");
+          if (next.payload.nextCursor === cursor) throw new Error("THREAD_LIST_CURSOR_REPEATED");
+          expandedList = {
+            ...next,
+            payload: {
+              ...next.payload,
+              threads: [
+                ...new Map(
+                  [...expandedList.payload.threads, ...next.payload.threads].map((thread) => [
+                    thread.threadId,
+                    thread,
+                  ]),
+                ).values(),
+              ],
+            },
+          };
+        }
+        setCollection(expandedList);
+        void loadEnvironment();
+        if (configuration.installedGatewayV2Operations?.includes("approval.list")) {
+          void listPendingRunApprovals(client, configuration)
+            .then((approvals) => {
+              if (sequence === refreshSequence.current)
+                setPendingThreadIds([
+                  ...new Set(approvals.map((approval) => approval.payload.intent.threadId)),
+                ]);
+            })
+            .catch(() => undefined);
+        }
         void loadPayloads(
-          list.payload.threads.flatMap((thread) => (thread.titleRef ? [thread.titleRef] : [])),
+          expandedList.payload.threads.flatMap((thread) =>
+            thread.titleRef ? [thread.titleRef] : [],
+          ),
         );
         if (!selectedThreadId) {
           setDetail(undefined);
+          succeeded();
           return;
         }
-        setReadScope("conversation");
+        if (previousDetail && !eventThreads.has(selectedThreadId) && !eventThreads.has(null)) {
+          succeeded();
+          return;
+        }
+        phase = "conversation";
+        if (!background) setReadScope("conversation");
+        const knownMessages = previousDetail?.payload.messages ?? [];
         let current = await client.queryThread(
           threadQueryMessage(configuration, "thread.detail", {
             threadId: selectedThreadId,
-            afterSequence: 0,
+            afterSequence: knownMessages.at(-1)?.sequence ?? 0,
             limit: 1000,
           }),
           controller.signal,
         );
         if (sequence !== refreshSequence.current || current.type !== "thread.detail_snapshot")
           return;
-        const pages = [...current.payload.messages];
+        const pages = [...knownMessages, ...current.payload.messages];
         while (current.payload.nextSequence !== null) {
           const page = await client.queryThread(
             threadQueryMessage(configuration, "thread.detail", {
@@ -346,53 +446,43 @@ export function useThreadControlCenter(
           },
         };
         setDetail(current);
-        if (configuration.executionPresentationAvailable) {
-          await Promise.all(
-            current.payload.runs.map(async (run) => {
-              const cached = executionCache.current[run.runId] ?? [];
-              let afterSequence = cached.at(-1)?.sequence ?? 0;
-              const records = [...cached];
-              for (;;) {
-                const page = await client.queryThread(
-                  threadQueryMessage(configuration, "thread.execution", {
-                    threadId: selectedThreadId,
-                    runId: run.runId,
-                    afterSequence,
-                    limit: 200,
-                  }),
-                  controller.signal,
-                );
-                if (
-                  sequence !== refreshSequence.current ||
-                  page.type !== "thread.execution_snapshot"
-                )
-                  return;
-                records.push(...page.payload.records);
-                if (page.payload.nextSequence === null) break;
-                if (page.payload.nextSequence <= afterSequence)
-                  throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
-                afterSequence = page.payload.nextSequence;
-              }
-              executionCache.current[run.runId] = [
-                ...new Map(records.map((item) => [item.id, item])).values(),
-              ].sort((a, b) => a.sequence - b.sequence);
-            }),
-          );
-          if (sequence !== refreshSequence.current) return;
-          setExecution({ ...executionCache.current });
-        }
+        conversationShown = true;
+        setReadInBackground(true);
         void loadPayloads([
           ...(current.payload.thread.titleRef ? [current.payload.thread.titleRef] : []),
           ...current.payload.messages.map(({ contentRef }) => contentRef),
         ]);
+        const changedRuns = current.payload.runs.filter(
+          (run) =>
+            previousDetail?.payload.runs.find((item) => item.runId === run.runId)?.revision !==
+            run.revision,
+        );
+        await readRunExecution(
+          client,
+          configuration,
+          selectedThreadId,
+          changedRuns,
+          executionCache.current,
+          () => sequence === refreshSequence.current,
+          setExecution,
+          setExecutionStates,
+          controller.signal,
+        );
+        if (sequence !== refreshSequence.current) return;
+        succeeded();
       } catch (caught) {
         if (controller.signal.aborted || sequence !== refreshSequence.current) return;
-        const status =
-          caught && typeof caught === "object" && "status" in caught
-            ? (caught as { readonly status?: unknown }).status
-            : null;
-        if (status === 401) onUnauthorized();
-        setReadFailed(true);
+        if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
+        fullRefreshRequested.current = true;
+        readFailures.current++;
+        if (!conversationShown) setReadFailed(true);
+        else {
+          retryDelay = Math.min(8_000, 1_000 * 2 ** (readFailures.current - 1));
+          if (readFailures.current >= 3) {
+            setReadScope(phase);
+            setReadFailed(true);
+          }
+        }
       } finally {
         if (readController.current === controller) {
           readController.current = null;
@@ -400,11 +490,8 @@ export function useThreadControlCenter(
           if (sequence === refreshSequence.current) setLoading(false);
           if (refreshAgain.current) {
             refreshAgain.current = false;
-            refreshTimer.current = window.setTimeout(() => {
-              refreshTimer.current = undefined;
-              void refreshLatest.current();
-            }, 80);
-          }
+            scheduleRefresh();
+          } else if (retryDelay !== null) scheduleRefresh(undefined, retryDelay);
         }
       }
     },
@@ -412,10 +499,12 @@ export function useThreadControlCenter(
       active,
       client,
       configuration,
+      loadEnvironment,
       loadPayloads,
       onUnauthorized,
       route.afterCursor,
       route.status,
+      scheduleRefresh,
       selectedThreadId,
     ],
   );
@@ -424,12 +513,13 @@ export function useThreadControlCenter(
   useEffect(() => {
     void refresh;
     void refreshSignal;
-    if (refreshTimer.current === undefined)
-      refreshTimer.current = window.setTimeout(() => {
-        refreshTimer.current = undefined;
-        void refreshLatest.current();
-      }, 80);
-  }, [refresh, refreshSignal]);
+    fullRefreshRequested.current = true;
+    scheduleRefresh();
+  }, [refresh, refreshSignal, scheduleRefresh]);
+  useEffect(() => {
+    if (!threadEventSignal) return;
+    for (const threadId of threadEvents?.current.splice(0) ?? [null]) scheduleRefresh(threadId);
+  }, [threadEventSignal, threadEvents, scheduleRefresh]);
   useEffect(
     () => () => {
       if (refreshTimer.current !== undefined) window.clearTimeout(refreshTimer.current);
@@ -437,13 +527,122 @@ export function useThreadControlCenter(
     [],
   );
 
+  const executionRuns = useRef(new Set<string>());
+  const executionTimer = useRef<number | undefined>(undefined);
+  const executionReading = useRef(false);
+  const refreshExecutionLatest = useRef(async () => {});
+  const scheduleExecution = useCallback((runIds: readonly string[]) => {
+    for (const runId of runIds) executionRuns.current.add(runId);
+    executionTimer.current ??= window.setTimeout(() => {
+      executionTimer.current = undefined;
+      void refreshExecutionLatest.current();
+    }, 80);
+  }, []);
+  refreshExecutionLatest.current = async () => {
+    const shown = detailRef.current;
+    if (
+      !active ||
+      !client ||
+      !configuration ||
+      !selectedThreadId ||
+      shown?.payload.thread.threadId !== selectedThreadId
+    )
+      return;
+    if (executionReading.current) return scheduleExecution([]);
+    const runs = shown.payload.runs.filter((run) => executionRuns.current.has(run.runId));
+    executionRuns.current.clear();
+    if (!runs.length) return;
+    const epoch = refreshSequence.current;
+    executionReading.current = true;
+    try {
+      await readRunExecution(
+        client,
+        configuration,
+        selectedThreadId,
+        runs,
+        executionCache.current,
+        () => epoch === refreshSequence.current,
+        setExecution,
+        setExecutionStates,
+      );
+      if (epoch !== refreshSequence.current) scheduleExecution(runs.map((run) => run.runId));
+    } catch {
+      if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
+      fullRefreshRequested.current = true;
+      scheduleRefresh();
+    } finally {
+      executionReading.current = false;
+    }
+  };
+  useEffect(
+    () => () => {
+      if (executionTimer.current !== undefined) window.clearTimeout(executionTimer.current);
+    },
+    [],
+  );
+
+  const offline = connection === "offline";
+  const executionLive =
+    detail?.payload.runs.some(
+      (run) => !isTerminalRun(run) || executionStates[run.runId]?.displayPhase === "unresolved",
+    ) ?? false;
+  useEffect(() => {
+    if (
+      !active ||
+      !configuration?.executionEventsAvailable ||
+      !selectedThreadId ||
+      shownDetailThreadId !== selectedThreadId ||
+      offline ||
+      !executionLive
+    )
+      return;
+    const synchronizer = new ThreadExecutionSynchronizer({
+      configuration,
+      threadId: selectedThreadId,
+      onConnected: () =>
+        scheduleExecution(detailRef.current?.payload.runs.map((run) => run.runId) ?? []),
+      onChanged: (event) => {
+        const run = detailRef.current?.payload.runs.find((item) => item.runId === event.runId);
+        if (!run || run.revision < event.runRevision) scheduleRefresh(selectedThreadId);
+        if (run) scheduleExecution([run.runId]);
+      },
+      onUnauthorized,
+    });
+    synchronizer.start();
+    return () => synchronizer.stop();
+  }, [
+    active,
+    configuration,
+    executionLive,
+    offline,
+    onUnauthorized,
+    scheduleExecution,
+    scheduleRefresh,
+    selectedThreadId,
+    shownDetailThreadId,
+  ]);
+
+  const programCount = environment?.programs.length ?? 0;
+  useEffect(() => {
+    if (!active || connection !== "connected" || !programCount) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadEnvironment();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [active, connection, programCount, loadEnvironment]);
+
   const settleMutation = useCallback(
     async (
       identity: PendingThreadMutation,
       result: ThreadGatewayRequestResult,
       intent: ThreadIntent | null,
+      origin: string | null,
     ) => {
       storage.clearPendingThreadMutation(identity.operationKey);
+      if (origin !== selectedIdRef.current) {
+        void refreshLatest.current();
+        return;
+      }
       if (result.kind === "conflict") {
         setMutationStatus("rejected");
         if (intent) {
@@ -456,23 +655,39 @@ export function useThreadControlCenter(
         setMutationStatus(result.payload.replayed ? "replayed" : "accepted");
         setConflict(null);
       }
-      await refresh();
+      void refreshLatest.current();
     },
-    [refresh, storage],
+    [storage],
   );
 
   const performIntent = useCallback(
-    async (intent: ThreadIntent, expectedRevision?: number) => {
+    async (intent: ThreadIntent, expectedRevision?: number, target?: ThreadSummary) => {
       if (
         !client ||
         !configuration ||
-        !detail ||
-        detail.payload.thread.threadId !== selectedIdRef.current ||
-        connection !== "connected"
+        (!target && (!detail || detail.payload.thread.threadId !== selectedIdRef.current)) ||
+        connection === "offline"
       )
         return;
-      const thread = detail.payload.thread;
-      const revision = expectedRevision ?? thread.revision;
+      const origin = selectedIdRef.current;
+      const thread = target ?? detail?.payload.thread;
+      if (!thread) return;
+      const pendingSubmission =
+        intent.kind === "submit" ? storage.readPendingThreadSubmission(thread.threadId) : null;
+      if (pendingSubmission)
+        intent = {
+          kind: "submit",
+          content: pendingSubmission.content,
+          ...(pendingSubmission.selection ? { selection: pendingSubmission.selection } : {}),
+        };
+      const revision = pendingSubmission?.revision ?? expectedRevision ?? thread.revision;
+      if (intent.kind === "submit" && !pendingSubmission)
+        storage.savePendingThreadSubmission({
+          threadId: thread.threadId,
+          revision,
+          content: intent.content,
+          ...(intent.selection ? { selection: intent.selection } : {}),
+        });
       const commandType =
         intent.kind === "submit"
           ? intent.selection
@@ -485,7 +700,7 @@ export function useThreadControlCenter(
         operationKey: operationKey(
           intent.kind,
           thread.threadId,
-          intent.kind === "stop" ? intent.runId : revision,
+          intent.kind === "stop" ? intent.runId : intent.kind === "submit" ? "pending" : revision,
         ),
         commandType,
         threadId: thread.threadId,
@@ -508,8 +723,7 @@ export function useThreadControlCenter(
           | "thread.pin"
           | "thread.archive"
           | "thread.restore"
-          | "thread.fork"
-          | "thread.trash";
+          | "thread.fork";
         switch (intent.kind) {
           case "submit": {
             if (!configuration.sessionId)
@@ -542,7 +756,7 @@ export function useThreadControlCenter(
               threadId: thread.threadId,
               runId: intent.runId,
               expectedRunRevision:
-                detail.payload.runs.find((run) => run.runId === intent.runId)?.revision ??
+                detail?.payload.runs.find((run) => run.runId === intent.runId)?.revision ??
                 intent.revision,
               resultRef,
             };
@@ -574,7 +788,6 @@ export function useThreadControlCenter(
             break;
           case "archive":
           case "restore":
-          case "trash":
             type = `thread.${intent.kind}`;
             payload = {
               threadId: thread.threadId,
@@ -600,14 +813,19 @@ export function useThreadControlCenter(
           threadCommandMessage(configuration, type, payload, identity.idempotencyKey),
         );
         if (intent.kind === "submit" && result.kind === "result") {
-          storage.saveDraft(thread.threadId, "");
-          if (selectedIdRef.current === thread.threadId) setDraft("");
+          if (storage.readDraft(thread.threadId) === intent.content) {
+            storage.saveDraft(thread.threadId, "");
+            if (selectedIdRef.current === thread.threadId) setDraft("");
+          }
         }
         if (intent.kind === "fork" && result.kind === "result") {
           navigate({ ...route, objectId: result.payload.threadId, view: "content" });
         }
-        await settleMutation(identity, result, intent);
+        if (intent.kind === "submit") storage.clearPendingThreadSubmission(thread.threadId);
+        await settleMutation(identity, result, intent, origin);
+        return result;
       } catch (caught) {
+        if (origin !== selectedIdRef.current) return;
         setMutationStatus("rejected");
         setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
       }
@@ -615,54 +833,117 @@ export function useThreadControlCenter(
     [client, configuration, connection, detail, navigate, route, settleMutation, storage],
   );
 
-  const createThread = async () => {
-    if (!client || !configuration || connection !== "connected") return;
-    const threadId = `thread:${crypto.randomUUID()}`;
-    const identity = mutationIdentity(storage, {
-      operationKey: operationKey("create", threadId, "new"),
-      commandType: "thread.create",
-      threadId,
-    });
-    setMutationStatus("pending");
+  const createThread = () => {
+    refreshSequence.current++;
+    readController.current?.abort();
+    navigate({ ...route, objectId: null, status: null, afterCursor: null, view: "content" });
+    setDetail(undefined);
+    setDraft(storage.readDraft("new"));
+    setError(null);
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus(),
+    );
+  };
+
+  const submitDraft = async () => {
+    if (
+      submissionLock.current ||
+      !client ||
+      !configuration ||
+      (!draft.trim() &&
+        !storage.readPendingThreadSubmission(
+          selectedIdRef.current ??
+            storage.readPendingThreadMutation("new-draft-create")?.threadId ??
+            "new",
+        ))
+    )
+      return;
+    submissionLock.current = true;
+    const origin = selectedIdRef.current;
+    const pendingNew = !origin ? storage.readPendingThreadMutation("new-draft-create") : null;
+    const pendingSubmission = storage.readPendingThreadSubmission(
+      origin ?? pendingNew?.threadId ?? "new",
+    );
+    const content = pendingSubmission?.content ?? draft;
+    const selection =
+      pendingSubmission?.selection ??
+      (selectedModel
+        ? { modelRef: selectedModel.ref, thinkingLevel: selectedThinking }
+        : undefined);
     try {
-      const suffix = identity.idempotencyKey.split(":").at(-1) ?? crypto.randomUUID();
-      const resultRef = await client.protectText(
-        "thread-action:create",
-        "private",
-        `payload-result:${suffix}`,
+      let target =
+        origin && detail?.payload.thread.threadId === origin ? detail.payload.thread : undefined;
+      if (!origin) {
+        setMutationStatus("pending");
+        const existing = storage.readPendingThreadMutation("new-draft-create");
+        const identity = mutationIdentity(storage, {
+          operationKey: "new-draft-create",
+          commandType: "thread.create",
+          threadId: existing?.threadId ?? `thread:${crypto.randomUUID()}`,
+        });
+        const resultRef = await client.protectText(
+          "thread-action:create",
+          "private",
+          `payload-create:${identity.threadId.slice(-36)}`,
+        );
+        const result = await client.mutateThread(
+          threadCommandMessage(
+            configuration,
+            "thread.create",
+            { threadId: identity.threadId, answerLocale: "zh-CN", resultRef },
+            identity.idempotencyKey,
+          ),
+        );
+        if (result.kind !== "result") throw new Error("CONTROL_CENTER_REQUEST_REJECTED");
+        const snapshot = await client.queryThread(
+          threadQueryMessage(configuration, "thread.detail", {
+            threadId: result.payload.threadId,
+            afterSequence: 0,
+            limit: 1,
+          }),
+        );
+        if (snapshot.type !== "thread.detail_snapshot")
+          throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+        target = snapshot.payload.thread;
+      }
+      if (!target) return;
+      const result = await performIntent(
+        { kind: "submit", content, ...(selection ? { selection } : {}) },
+        undefined,
+        target,
       );
-      const result = await client.mutateThread(
-        threadCommandMessage(
-          configuration,
-          "thread.create",
-          { threadId, answerLocale: "zh-CN", resultRef },
-          identity.idempotencyKey,
-        ),
-      );
-      await settleMutation(identity, result, null);
-      if (result.kind === "result") {
-        navigate({ ...route, objectId: result.payload.threadId, view: "content" });
+      if (result?.kind === "result" && !origin) {
+        storage.clearPendingThreadMutation("new-draft-create");
+        if (storage.readDraft("new") === content) storage.saveDraft("new", "");
+        if (selectedIdRef.current === origin) {
+          const remaining = storage.readDraft("new");
+          if (remaining) {
+            storage.saveDraft(target.threadId, remaining);
+            storage.saveDraft("new", "");
+          }
+          navigate({ ...route, objectId: target.threadId, view: "content" });
+        }
       }
     } catch (caught) {
+      if (origin !== selectedIdRef.current) return;
       setMutationStatus("rejected");
       setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
+    } finally {
+      submissionLock.current = false;
     }
   };
 
   const search = async () => {
     if (!client || !configuration || !searchText.trim()) return;
-    readController.current?.abort();
+    searchController.current?.abort();
     const controller = new AbortController();
-    readController.current = controller;
-    refreshing.current = true;
-    const sequence = ++refreshSequence.current;
-    setLoading(true);
-    setReadFailed(false);
-    setReadScope("search");
-    setReadAttempt(sequence);
+    searchController.current = controller;
+    const sequence = ++searchSequence.current;
+    setSearchLoading(true);
+    setSearchFailed(false);
     try {
       const prepared = await client.prepareThreadSearch(searchText);
-      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
+      if (controller.signal.aborted || sequence !== searchSequence.current) return;
       const result = await client.queryThread(
         threadQueryMessage(configuration, "thread.search", {
           queryRef: prepared.queryRef,
@@ -677,95 +958,47 @@ export function useThreadControlCenter(
         }),
         controller.signal,
       );
-      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
+      if (controller.signal.aborted || sequence !== searchSequence.current) return;
       if (result.type !== "thread.search_snapshot") {
         throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
       }
-      setCollection(result);
+      setSearchResults(result);
       void loadPayloads(
         result.payload.threads.flatMap((thread) => (thread.titleRef ? [thread.titleRef] : [])),
       );
     } catch (caught) {
-      if (controller.signal.aborted || sequence !== refreshSequence.current) return;
-      if (caught && typeof caught === "object" && "status" in caught && caught.status === 401)
-        onUnauthorized();
-      setReadFailed(true);
+      if (controller.signal.aborted || sequence !== searchSequence.current) return;
+      if ((caught as { readonly status?: unknown } | null)?.status === 401) onUnauthorized();
+      setSearchFailed(true);
     } finally {
-      if (readController.current === controller) {
-        readController.current = null;
-        refreshing.current = false;
-        refreshAgain.current = false;
-        setLoading(false);
+      if (searchController.current === controller) {
+        searchController.current = null;
+        setSearchLoading(false);
       }
     }
   };
 
-  const inspectCheckpoint = async () => {
-    if (!client || !configuration || !detail) return;
-    const result = await client.queryThread(
-      threadQueryMessage(configuration, "thread.checkpoint", {
-        threadId: detail.payload.thread.threadId,
-        sourceWatermark: null,
-      }),
-    );
-    if (result.type === "thread.checkpoint_snapshot") setCheckpoint(result);
-  };
-
-  const inspectDeletion = async () => {
-    if (!client || !configuration || !detail) return;
-    const result = await client.queryThread(
-      threadQueryMessage(configuration, "thread.deletion_impact", {
-        threadId: detail.payload.thread.threadId,
-      }),
-    );
-    if (result.type === "thread.deletion_impact_snapshot") setDeletionImpact(result);
-  };
-
-  const resolveTask = async (
-    task: ThreadDeletionImpactSnapshot["payload"]["associatedTasks"][number],
-    action: "pause" | "cancel" | "rebind",
-  ) => {
-    if (!client || !configuration || !detail) return;
-    const thread = detail.payload.thread;
-    const identity = mutationIdentity(storage, {
-      operationKey: operationKey(`${action}:${task.taskId}`, thread.threadId, task.revision),
-      commandType: "thread.task.resolve",
-      threadId: thread.threadId,
-    });
-    const suffix = identity.idempotencyKey.split(":").at(-1) ?? crypto.randomUUID();
-    try {
-      const resultRef = await client.protectText(
-        `thread-task:${action}`,
-        "private",
-        `payload-result:${suffix}`,
-      );
-      const targetThread =
-        action === "rebind"
-          ? collection?.payload.threads.find(({ threadId }) => threadId !== thread.threadId)
-          : undefined;
-      if (action === "rebind" && !targetThread) return;
-      const result = await client.mutateThread(
-        threadCommandMessage(
-          configuration,
-          "thread.task.resolve",
-          {
-            threadId: thread.threadId,
-            taskId: task.taskId,
-            expectedTaskRevision: task.revision,
-            action,
-            targetThreadId: targetThread?.threadId ?? null,
-            reasonCode: "owner_resolved_deletion_dependency",
-            resultRef,
-          },
-          identity.idempotencyKey,
-        ),
-      );
-      await settleMutation(identity, result, null);
-      await inspectDeletion();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
-    }
-  };
+  const currentExecutionStates = Object.fromEntries(
+    (detail?.payload.runs ?? []).flatMap((run) => {
+      const state = executionStates[run.runId];
+      return state && state.runRevision >= run.revision ? [[run.runId, state]] : [];
+    }),
+  );
+  const canStop = (run: { runId: string; status: string }) =>
+    configuration?.executionStateAvailable
+      ? currentExecutionStates[run.runId]?.availableActions.includes("stop") === true
+      : !["completed", "failed", "cancelled"].includes(run.status);
+  const projectedPendingThreadIds =
+    detail &&
+    configuration?.executionStateAvailable &&
+    detail.payload.runs.every((run) => currentExecutionStates[run.runId])
+      ? [
+          ...pendingThreadIds.filter((id) => id !== detail.payload.thread.threadId),
+          ...(Object.values(currentExecutionStates).some((state) => state.needsAttention)
+            ? [detail.payload.thread.threadId]
+            : []),
+        ]
+      : pendingThreadIds;
 
   const threadItems = collection?.payload.threads ?? [];
   const selectedSummary =
@@ -777,19 +1010,43 @@ export function useThreadControlCenter(
   const list = (
     <ThreadSidebar
       threads={threadItems}
+      onLoadMore={
+        collection?.payload.nextCursor
+          ? () => {
+              if (!loading) {
+                listPages.current++;
+                void refresh(true);
+              }
+            }
+          : undefined
+      }
+      searchResults={searchResults?.payload.threads ?? []}
+      pendingThreadIds={projectedPendingThreadIds}
+      runningThreadIds={(environment?.programs ?? []).flatMap((program) =>
+        program.threadId ? [program.threadId] : [],
+      )}
       contentByRef={contentByRef}
       loading={loading}
       hasLoaded={collection !== undefined}
       feedback={
         readScope !== "conversation" && !feedbackInConversation ? (
           <ThreadLoadFeedback
-            pending={loading}
+            pending={loading && !readInBackground}
             failed={readFailed}
             scope={readScope}
             attempt={readAttempt}
             onRetry={() => void (readScope === "search" ? search() : refresh(true))}
           />
         ) : null
+      }
+      searchFeedback={
+        <ThreadLoadFeedback
+          pending={searchLoading}
+          failed={searchFailed}
+          scope="search"
+          attempt={searchSequence.current}
+          onRetry={() => void search()}
+        />
       }
       searchText={searchText}
       route={route}
@@ -798,6 +1055,28 @@ export function useThreadControlCenter(
       onSearch={() => void search()}
       onCreate={() => void createThread()}
       onRefresh={() => void refresh(true)}
+      onRename={(thread) => {
+        setRenameTarget(thread);
+        setRenameTitle(thread.titleRef ? (contentByRef[thread.titleRef] ?? "") : "");
+      }}
+      onPin={(thread) =>
+        void performIntent(
+          { kind: "pin", pinOrder: thread.pinOrder === null ? 0 : null },
+          undefined,
+          thread,
+        )
+      }
+      onArchive={(thread) => {
+        if (projectedPendingThreadIds.includes(thread.threadId)) {
+          setError(message("review.archivePending"));
+          return;
+        }
+        void performIntent(
+          { kind: thread.status === "archived" ? "restore" : "archive" },
+          undefined,
+          thread,
+        );
+      }}
       onNavigate={navigate}
     />
   );
@@ -812,14 +1091,19 @@ export function useThreadControlCenter(
           <code>{error}</code>
         </Banner>
       ) : null}
-      {connection === "offline" ? (
+      {showOffline ? (
         <Banner title={message("state.offline")} tone="warning">
-          <code>CONTROL_CENTER_OFFLINE</code>
+          <p>{message("review.disconnected")}</p>
+          {detail?.payload.runs.some(
+            (run) => !["completed", "failed", "cancelled"].includes(run.status),
+          ) ? (
+            <p>{message("review.progressUnknown")}</p>
+          ) : null}
         </Banner>
       ) : null}
       {feedbackInConversation ? (
         <ThreadLoadFeedback
-          pending={loading}
+          pending={loading && !readInBackground}
           failed={readFailed}
           scope="conversation"
           attempt={readAttempt}
@@ -829,13 +1113,15 @@ export function useThreadControlCenter(
       {conflict ? (
         <Banner title={message("threads.conflictTitle")} tone="warning">
           <p>{message("threads.conflictDescription")}</p>
-          <p>
-            {message("threads.latestRevision")}: {conflict.latest?.revision ?? "—"}
-          </p>
+          <p>{message("threads.conflictDescription")}</p>
           <ActionButton
-            disabled={!conflict.latest || connection !== "connected"}
+            disabled={!conflict.latest || connection === "offline"}
             onClick={() =>
-              void performIntent(conflict.intent, conflict.latest?.revision ?? undefined)
+              void performIntent(
+                conflict.intent,
+                conflict.latest?.revision ?? undefined,
+                conflict.latest ?? undefined,
+              )
             }
           >
             {message("threads.reapply")}
@@ -845,289 +1131,181 @@ export function useThreadControlCenter(
     </>
   );
 
+  const pendingCreation = !selectedThreadId
+    ? storage.readPendingThreadMutation("new-draft-create")
+    : null;
+  const unresolvedSubmission = storage.readPendingThreadSubmission(
+    selectedThreadId ?? pendingCreation?.threadId ?? "new",
+  );
+
   const content = (
-    <div className="thread-content">
-      {route.view !== "details" || !selectedSummary ? feedback : null}
-      {!detail && selectedThreadId ? (
-        <ThreadLoadingSkeleton scope="conversation" />
-      ) : !detail ? (
-        <div className="thread-welcome">
-          <h2>{message("chat.welcome")}</h2>
-          <p>{message("chat.welcomeHint")}</p>
-          <ActionButton onClick={() => void createThread()} variant="secondary">
-            {message("chat.start")}
-          </ActionButton>
-        </div>
-      ) : (
-        <>
-          <ChatHistory
-            key={detail.payload.thread.threadId}
-            detail={detail}
-            contentByRef={contentByRef}
-            execution={execution}
-            connection={connection}
-            renderApproval={(runId, records) =>
-              client && configuration ? (
-                <RunApprovalCard
-                  runId={runId}
-                  records={records}
-                  client={client}
-                  configuration={configuration}
-                  storage={storage}
-                  connection={connection}
-                  refreshSignal={refreshSignal}
-                  message={message}
-                  onSettled={refresh}
-                  onUnauthorized={onUnauthorized}
-                />
-              ) : null
-            }
-            message={message}
-            onFork={(turnId, sequence) =>
-              void performIntent({ kind: "fork", sourceTurnId: turnId, sourceWatermark: sequence })
-            }
-          />
-          <ChatComposer
-            searchControl={
-              client &&
-              configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
-                <SearchAuthorizationControl
-                  client={client}
-                  configuration={configuration}
-                  storage={storage}
-                  connected={connection === "connected"}
-                  refreshSignal={refreshSignal}
-                  message={message}
-                />
-              ) : null
-            }
-            key={`composer:${detail.payload.thread.threadId}`}
-            draft={draft}
-            onDraft={(value) => {
-              setDraft(value);
-              storage.saveDraft(detail.payload.thread.threadId, value);
-            }}
-            onSubmit={() =>
-              void performIntent({
-                kind: "submit",
-                content: draft,
-                ...(selectedModel
-                  ? { selection: { modelRef: selectedModel.ref, thinkingLevel: selectedThinking } }
-                  : {}),
-              })
-            }
-            connected={connection === "connected"}
-            pending={mutationStatus === "pending"}
-            model={configuration?.primaryModel?.model}
-            models={availableModels}
-            modelRef={selectedModel?.ref ?? ""}
-            thinkingLevel={selectedThinking}
-            onModelChange={setModelRef}
-            onThinkingChange={setThinkingLevel}
-            onStop={
-              configuration?.canCancelRun &&
-              detail.payload.runs.some(
-                (run) => !["completed", "failed", "cancelled"].includes(run.status),
-              )
-                ? () => {
-                    const run = detail.payload.runs.find(
-                      (item) => !["completed", "failed", "cancelled"].includes(item.status),
-                    );
-                    if (run)
-                      void performIntent({
-                        kind: "stop",
-                        runId: run.runId,
-                        revision: run.revision,
-                      });
-                  }
-                : undefined
-            }
-            message={message}
-            canSend={
-              detail.payload.thread.status === "active" &&
-              !detail.payload.runs.some(
-                (run) => !["completed", "failed", "cancelled"].includes(run.status),
-              )
-            }
-          />
-        </>
-      )}
+    <div className="thread-workarea">
+      <div className="thread-content">
+        {feedback}
+        {!detail && selectedThreadId ? (
+          <ThreadLoadingSkeleton scope="conversation" />
+        ) : !detail ? (
+          <div className="thread-welcome">
+            <h2>{message("chat.welcome")}</h2>
+            <p>{message("chat.welcomeHint")}</p>
+          </div>
+        ) : (
+          <>
+            <ChatHistory
+              key={detail.payload.thread.threadId}
+              detail={detail}
+              contentByRef={contentByRef}
+              execution={execution}
+              executionStates={currentExecutionStates}
+              executionStateAvailable={configuration?.executionStateAvailable}
+              onPreview={setPreview}
+              connection={connection}
+              renderMemory={options.renderMemory}
+              renderApproval={(runId, records) =>
+                client && configuration ? (
+                  <RunApprovalCard
+                    onPreview={setPreview}
+                    runId={runId}
+                    records={records}
+                    client={client}
+                    configuration={configuration}
+                    storage={storage}
+                    connection={connection}
+                    refreshSignal={refreshSignal}
+                    message={message}
+                    onSettled={refresh}
+                    onUnauthorized={onUnauthorized}
+                  />
+                ) : null
+              }
+              message={message}
+              onCleanup={
+                configuration?.canCancelRun
+                  ? (run) =>
+                      void performIntent({ kind: "stop", runId: run.runId, revision: run.revision })
+                  : undefined
+              }
+              onFork={(turnId, sequence) =>
+                void performIntent({
+                  kind: "fork",
+                  sourceTurnId: turnId,
+                  sourceWatermark: sequence,
+                })
+              }
+            />
+          </>
+        )}
+        <ChatComposer
+          key={`composer:${selectedThreadId ?? "new"}`}
+          draft={draft}
+          onDraft={(value) => {
+            setDraft(value);
+            storage.saveDraft(selectedThreadId ?? "new", value);
+          }}
+          onSubmit={() => void submitDraft()}
+          retryPending={Boolean(unresolvedSubmission)}
+          connected={Boolean(client && configuration) && connection !== "offline"}
+          pending={mutationStatus === "pending"}
+          model={configuration?.primaryModel?.model}
+          models={availableModels}
+          modelRef={selectedModel?.ref ?? ""}
+          thinkingLevel={selectedThinking}
+          onModelChange={setModelRef}
+          onThinkingChange={setThinkingLevel}
+          onStop={
+            configuration?.canCancelRun && (detail?.payload.runs ?? []).some((run) => canStop(run))
+              ? () => {
+                  const run = (detail?.payload.runs ?? []).find((item) => canStop(item));
+                  if (run)
+                    void performIntent({
+                      kind: "stop",
+                      runId: run.runId,
+                      revision: run.revision,
+                    });
+                }
+              : undefined
+          }
+          message={message}
+          environment={
+            configuration?.executionEnvironmentAvailable ? (
+              <ExecutionEnvironmentLine
+                environment={environment}
+                threadTitle={(threadId) => {
+                  const thread = [...threadItems, ...(searchResults?.payload.threads ?? [])].find(
+                    (item) => item.threadId === threadId,
+                  );
+                  if (!thread) return undefined;
+                  return (
+                    (thread.titleRef && contentByRef[thread.titleRef]) || message("chat.untitled")
+                  );
+                }}
+                onOpen={() => void loadEnvironment()}
+                onOpenThread={(threadId) =>
+                  navigate({ ...route, objectId: threadId, status: null, view: "content" })
+                }
+                message={message}
+              />
+            ) : null
+          }
+          canSend={
+            (!selectedThreadId || detail?.payload.thread.threadId === selectedThreadId) &&
+            (Boolean(unresolvedSubmission) ||
+              ((!detail || detail.payload.thread.status === "active") &&
+                !(detail?.payload.runs ?? []).some(
+                  (run) => !["completed", "failed", "cancelled"].includes(run.status),
+                )))
+          }
+        />
+        {!client || !configuration ? (
+          <output className="composer-readiness">{message("review.preparing")}</output>
+        ) : null}
+      </div>
+      {preview ? <ContentPreview value={preview} onClose={() => setPreview(null)} /> : null}
     </div>
   );
 
-  const details = selectedSummary ? (
-    <div className="thread-details">
-      {route.view === "details" ? feedback : null}
-      <p>{message("threads.rawContentNotice")}</p>
-      <dl>
-        <div>
-          <dt>Thread ID</dt>
-          <dd>
-            <code>{selectedSummary.threadId}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>{message("common.status")}</dt>
-          <dd>{message(threadStatusMessageId(selectedSummary.status))}</dd>
-        </div>
-        <div>
-          <dt>{message("threads.revision")}</dt>
-          <dd>{selectedSummary.revision}</dd>
-        </div>
-      </dl>
-      {detail ? (
-        <>
-          <Field label={message("threads.rename")}>
-            <input value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} />
-          </Field>
-          <div className="actions action-grid">
-            <ActionButton
-              disabled={!renameTitle.trim() || connection !== "connected"}
-              onClick={() => void performIntent({ kind: "rename", title: renameTitle })}
-              variant="secondary"
-            >
-              {message("threads.rename")}
-            </ActionButton>
-            <ActionButton
-              onClick={() =>
-                void performIntent({
-                  kind: "pin",
-                  pinOrder: detail.payload.thread.pinOrder === null ? 0 : null,
-                })
-              }
-              variant="secondary"
-            >
-              {message(detail.payload.thread.pinOrder === null ? "threads.pin" : "threads.unpin")}
-            </ActionButton>
-            <ActionButton
-              onClick={() =>
-                void performIntent({
-                  kind: detail.payload.thread.status === "archived" ? "restore" : "archive",
-                })
-              }
-              variant="secondary"
-            >
-              {message(
-                detail.payload.thread.status === "archived" ? "threads.restore" : "threads.archive",
-              )}
-            </ActionButton>
-            <ActionButton onClick={() => void inspectCheckpoint()} variant="secondary">
-              {message("threads.checkpoint")}
-            </ActionButton>
-            <ActionButton onClick={() => void inspectDeletion()} variant="secondary">
-              {message("threads.inspectDeletion")}
-            </ActionButton>
-            <ActionButton
-              disabled={!deletionImpact?.payload.deletionAllowed}
-              onClick={() => void performIntent({ kind: "trash" })}
-              variant="danger"
-            >
-              {message("threads.trash")}
-            </ActionButton>
-          </div>
-          <section aria-labelledby="thread-runs-title">
-            <h2 id="thread-runs-title">{message("threads.runStatus")}</h2>
-            <SemanticList
-              empty={message("common.noRecords")}
-              getId={(run) => run.runId}
-              items={detail.payload.runs}
-              label={message("threads.runStatus")}
-              renderItem={(run) => (
-                <span>
-                  <code>{run.runId}</code> {message(runStatusMessageId(run.status))}
-                  {configuration?.canCancelRun && ["cancelled", "failed"].includes(run.status) ? (
-                    <ActionButton
-                      variant="secondary"
-                      disabled={connection !== "connected" || mutationStatus === "pending"}
-                      onClick={() =>
-                        void performIntent({
-                          kind: "stop",
-                          runId: run.runId,
-                          revision: run.revision,
-                        })
-                      }
-                    >
-                      {message("chat.retryCleanup")}
-                    </ActionButton>
-                  ) : null}
-                  {run.status === "awaiting_approval" ? (
-                    <ActionButton
-                      variant="secondary"
-                      onClick={() =>
-                        document
-                          .getElementById(`approval-${run.runId}`)
-                          ?.scrollIntoView({ block: "center" })
-                      }
-                    >
-                      {message("nav.approvals")}
-                    </ActionButton>
-                  ) : null}
-                </span>
-              )}
-            />
-          </section>
-          <section aria-labelledby="checkpoint-title">
-            <h3 id="checkpoint-title">{message("checkpoints.status")}</h3>
-            <p>{checkpoint?.payload.status ?? message("checkpoints.none")}</p>
-            {checkpoint?.payload.summaryRef ? <code>{checkpoint.payload.summaryRef}</code> : null}
-          </section>
-          {deletionImpact ? (
-            <section aria-labelledby="deletion-impact-title">
-              <h3 id="deletion-impact-title">{message("deletion.activeTasks")}</h3>
-              <p>
-                {message(
-                  deletionImpact.payload.deletionAllowed ? "deletion.allowed" : "deletion.blocked",
-                )}
-              </p>
-              <SemanticList
-                empty={message("common.noRecords")}
-                getId={(task) => task.taskId}
-                items={deletionImpact.payload.associatedTasks}
-                label={message("deletion.activeTasks")}
-                renderItem={(task) => (
-                  <div>
-                    <code>{task.taskId}</code>
-                    {task.status === "active" ? (
-                      <div className="actions">
-                        <ActionButton
-                          onClick={() => void resolveTask(task, "pause")}
-                          variant="secondary"
-                        >
-                          {message("deletion.pauseTask")}
-                        </ActionButton>
-                        <ActionButton
-                          onClick={() => void resolveTask(task, "cancel")}
-                          variant="secondary"
-                        >
-                          {message("deletion.cancelTask")}
-                        </ActionButton>
-                        <ActionButton
-                          disabled={
-                            !threadItems.some(
-                              ({ threadId }) => threadId !== selectedSummary.threadId,
-                            )
-                          }
-                          onClick={() => void resolveTask(task, "rebind")}
-                          variant="secondary"
-                        >
-                          {message("deletion.rebindTask")}
-                        </ActionButton>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              />
-            </section>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  ) : (
-    <p>{message("common.select")}</p>
+  const details = (
+    <ModalDialog
+      open={renameTarget !== null}
+      title={message("threads.rename")}
+      closeLabel={message("common.close")}
+      onClose={() => setRenameTarget(null)}
+    >
+      <Field label={message("review.conversationName")}>
+        <input value={renameTitle} onChange={(event) => setRenameTitle(event.target.value)} />
+      </Field>
+      <ActionButton
+        disabled={!renameTitle.trim()}
+        onClick={async () => {
+          if (!renameTarget) return;
+          const result = await performIntent(
+            { kind: "rename", title: renameTitle },
+            undefined,
+            renameTarget,
+          );
+          if (result) setRenameTarget(null);
+        }}
+      >
+        {message("review.save")}
+      </ActionButton>
+    </ModalDialog>
   );
 
   return Object.freeze({
     content,
+    settingsData: (
+      <ArchivedConversations
+        client={client}
+        configuration={configuration}
+        onRestore={async (thread) => {
+          const result = await performIntent({ kind: "restore" }, undefined, thread);
+          if (result?.kind !== "result") throw new Error("RESTORE_FAILED");
+        }}
+        onOpen={(thread) =>
+          navigate({ ...route, objectId: thread.threadId, status: null, view: "content" })
+        }
+      />
+    ),
     details,
     list,
     refresh,
@@ -1135,4 +1313,78 @@ export function useThreadControlCenter(
       ? (contentByRef[selectedSummary.titleRef] ?? message("chat.untitled"))
       : message("chat.untitled"),
   });
+}
+
+async function readRunExecution(
+  client: GatewayClient,
+  configuration: ControlCenterRuntimeConfiguration,
+  threadId: string,
+  runs: readonly { readonly runId: string; readonly revision: number }[],
+  cache: Record<string, ThreadExecutionRecord[]>,
+  current: () => boolean,
+  setExecution: (value: Record<string, ThreadExecutionRecord[]>) => void,
+  setStates: (
+    update: (prior: Record<string, ThreadExecutionState>) => Record<string, ThreadExecutionState>,
+  ) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const records = configuration.executionPresentationAvailable
+    ? await Promise.all(
+        runs.map(async (run) => {
+          const merged = [...(cache[run.runId] ?? [])];
+          let afterSequence = merged.at(-1)?.sequence ?? 0;
+          for (;;) {
+            const page = await client.queryThread(
+              threadQueryMessage(configuration, "thread.execution", {
+                threadId,
+                runId: run.runId,
+                afterSequence,
+                limit: 200,
+              }),
+              signal,
+            );
+            if (page.type !== "thread.execution_snapshot")
+              throw new Error("EXECUTION_SCOPE_MISMATCH");
+            merged.push(...page.payload.records);
+            if (page.payload.nextSequence === null) break;
+            if (page.payload.nextSequence <= afterSequence)
+              throw new Error("EXECUTION_PAGE_NOT_ADVANCING");
+            afterSequence = page.payload.nextSequence;
+          }
+          return [
+            run.runId,
+            [...new Map(merged.map((item) => [item.id, item])).values()].sort(
+              (a, b) => a.sequence - b.sequence,
+            ),
+          ] as const;
+        }),
+      )
+    : null;
+  if (!current()) return;
+  if (records) {
+    Object.assign(cache, Object.fromEntries(records));
+    setExecution({ ...cache });
+  }
+  if (!configuration.executionStateAvailable) return;
+  const states = await Promise.all(
+    runs.map(async (run) => {
+      const result = await client.queryThread(
+        threadQueryMessage(configuration, "thread.execution_state", {
+          threadId,
+          runId: run.runId,
+        }),
+        signal,
+      );
+      if (
+        result.type !== "thread.execution_state_snapshot" ||
+        result.payload.threadId !== threadId ||
+        result.payload.runId !== run.runId
+      )
+        throw new Error("EXECUTION_STATE_SCOPE_MISMATCH");
+      if (result.payload.state.runRevision < run.revision)
+        throw new Error("EXECUTION_STATE_REVISION_MISMATCH");
+      return [run.runId, result.payload.state] as const;
+    }),
+  );
+  if (current()) setStates((prior) => ({ ...prior, ...Object.fromEntries(states) }));
 }

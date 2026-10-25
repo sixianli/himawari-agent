@@ -1,0 +1,218 @@
+{
+  "create": {
+    "completion": {
+      "outcome": "succeeded",
+      "outputRef": "queued-live:12",
+      "errorCode": null,
+      "externalActionId": null
+    },
+    "resource": {
+      "supervision": "released",
+      "cleanup": "confirmed"
+    },
+    "effect": {
+      "kind": "verified",
+      "verifierRef": "host-copy-save",
+      "verifierVersion": "1",
+      "targetRef": "pi-input:operation",
+      "evidence": {
+        "ref": "queued-live:12",
+        "digest": "08dffdd6cdfc5585d539bb0a34c9f1764370a9d75fd2d36a78d62c7bb4528dbf"
+      },
+      "occurredAt": "2026-09-21T14:05:58.927Z"
+    },
+    "result": {
+      "schemaVersion": "sandbox-execution.v2",
+      "identity": {
+        "jobId": "jO4vMqK_K6QX0r7YHIe0J5yum610MOR-mpmQKRNXV5eU",
+        "attemptId": "sandbox-attempt:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+        "invocationId": "runtime-tool:7819a085b3bd87d7bd3880fd997f50000005aca906c951c7c45d849389517f5c",
+        "receiptRef": "receipt-capability-invocation",
+        "hostId": "sandbox-host",
+        "ownerId": "owner-capability-invocation",
+        "agentId": "agent-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "runId": "run-capability-invocation",
+        "toolCallId": "tool-save_copy"
+      },
+      "environmentId": "environment:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+      "policyDigest": "0498f9305bbca229243fa689ef8968a2ac80d735576f7574acaec5c03923c206",
+      "contract": {
+        "ref": "pi-coding-tool",
+        "version": "5"
+      },
+      "occurredAt": "2026-09-21T14:05:58.926Z",
+      "kind": "result",
+      "output": {
+        "ref": "queued-live:12",
+        "digest": "08dffdd6cdfc5585d539bb0a34c9f1764370a9d75fd2d36a78d62c7bb4528dbf",
+        "byteLength": 635
+      },
+      "completion": {
+        "type": "value"
+      }
+    }
+  },
+  "update": {
+    "completion": {
+      "outcome": "succeeded",
+      "outputRef": "queued-live:12",
+      "errorCode": null,
+      "externalActionId": null
+    },
+    "resource": {
+      "supervision": "released",
+      "cleanup": "confirmed"
+    },
+    "effect": {
+      "kind": "verified",
+      "verifierRef": "host-copy-save",
+      "verifierVersion": "1",
+      "targetRef": "pi-input:operation",
+      "evidence": {
+        "ref": "queued-live:12",
+        "digest": "8be170519cf24a367ffa393410f506a4e73fedc60ef67ba2ebc2adaa44fec004"
+      },
+      "occurredAt": "2026-09-21T14:06:46.611Z"
+    },
+    "result": {
+      "schemaVersion": "sandbox-execution.v2",
+      "identity": {
+        "jobId": "jO4vMqK_K6QX0r7YHIe0J5yum610MOR-mpmQKRNXV5eU",
+        "attemptId": "sandbox-attempt:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+        "invocationId": "runtime-tool:7819a085b3bd87d7bd3880fd997f50000005aca906c951c7c45d849389517f5c",
+        "receiptRef": "receipt-capability-invocation",
+        "hostId": "sandbox-host",
+        "ownerId": "owner-capability-invocation",
+        "agentId": "agent-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "runId": "run-capability-invocation",
+        "toolCallId": "tool-save_copy"
+      },
+      "environmentId": "environment:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+      "policyDigest": "70ac1a2fd051a1ceaa9ba2172bab7ba19c4be4fb9fbf9ce833dc5dcca4bb96a1",
+      "contract": {
+        "ref": "pi-coding-tool",
+        "version": "5"
+      },
+      "occurredAt": "2026-09-21T14:06:46.609Z",
+      "kind": "result",
+      "output": {
+        "ref": "queued-live:12",
+        "digest": "8be170519cf24a367ffa393410f506a4e73fedc60ef67ba2ebc2adaa44fec004",
+        "byteLength": 635
+      },
+      "completion": {
+        "type": "value"
+      }
+    }
+  },
+  "move": {
+    "completion": {
+      "outcome": "succeeded",
+      "outputRef": "queued-live:12",
+      "errorCode": null,
+      "externalActionId": null
+    },
+    "resource": {
+      "supervision": "released",
+      "cleanup": "confirmed"
+    },
+    "effect": {
+      "kind": "verified",
+      "verifierRef": "host-copy-save",
+      "verifierVersion": "1",
+      "targetRef": "pi-input:operation",
+      "evidence": {
+        "ref": "queued-live:12",
+        "digest": "e262cc34b7ecc8611e81ec1da42e7aca91028a28e951c4581c0db219880fb3f4"
+      },
+      "occurredAt": "2026-09-21T14:07:31.363Z"
+    },
+    "result": {
+      "schemaVersion": "sandbox-execution.v2",
+      "identity": {
+        "jobId": "jO4vMqK_K6QX0r7YHIe0J5yum610MOR-mpmQKRNXV5eU",
+        "attemptId": "sandbox-attempt:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+        "invocationId": "runtime-tool:7819a085b3bd87d7bd3880fd997f50000005aca906c951c7c45d849389517f5c",
+        "receiptRef": "receipt-capability-invocation",
+        "hostId": "sandbox-host",
+        "ownerId": "owner-capability-invocation",
+        "agentId": "agent-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "runId": "run-capability-invocation",
+        "toolCallId": "tool-save_copy"
+      },
+      "environmentId": "environment:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+      "policyDigest": "9788c6d04093023e18be5c99e5fad10fda411307b41552503d3ae5109c25f2d1",
+      "contract": {
+        "ref": "pi-coding-tool",
+        "version": "5"
+      },
+      "occurredAt": "2026-09-21T14:07:31.362Z",
+      "kind": "result",
+      "output": {
+        "ref": "queued-live:12",
+        "digest": "e262cc34b7ecc8611e81ec1da42e7aca91028a28e951c4581c0db219880fb3f4",
+        "byteLength": 635
+      },
+      "completion": {
+        "type": "value"
+      }
+    }
+  },
+  "trash": {
+    "completion": {
+      "outcome": "succeeded",
+      "outputRef": "queued-live:12",
+      "errorCode": null,
+      "externalActionId": null
+    },
+    "resource": {
+      "supervision": "released",
+      "cleanup": "confirmed"
+    },
+    "effect": {
+      "kind": "verified",
+      "verifierRef": "host-copy-save",
+      "verifierVersion": "1",
+      "targetRef": "pi-input:operation",
+      "evidence": {
+        "ref": "queued-live:12",
+        "digest": "8d1c4d9e620a96ff08d6df9da0e51884d67a7225ae69fbd080ba64cb2de2280e"
+      },
+      "occurredAt": "2026-09-21T14:08:18.036Z"
+    },
+    "result": {
+      "schemaVersion": "sandbox-execution.v2",
+      "identity": {
+        "jobId": "jO4vMqK_K6QX0r7YHIe0J5yum610MOR-mpmQKRNXV5eU",
+        "attemptId": "sandbox-attempt:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+        "invocationId": "runtime-tool:7819a085b3bd87d7bd3880fd997f50000005aca906c951c7c45d849389517f5c",
+        "receiptRef": "receipt-capability-invocation",
+        "hostId": "sandbox-host",
+        "ownerId": "owner-capability-invocation",
+        "agentId": "agent-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "runId": "run-capability-invocation",
+        "toolCallId": "tool-save_copy"
+      },
+      "environmentId": "environment:3b8bcca8afcae905f4afb60721ed09e72ba6eb5d0c391fa6a6640a44d5d5e5e5",
+      "policyDigest": "235352ec64d285892f29a351ec16cac7482985f876cc503008decb2bec1dfd3b",
+      "contract": {
+        "ref": "pi-coding-tool",
+        "version": "5"
+      },
+      "occurredAt": "2026-09-21T14:08:18.035Z",
+      "kind": "result",
+      "output": {
+        "ref": "queued-live:12",
+        "digest": "8d1c4d9e620a96ff08d6df9da0e51884d67a7225ae69fbd080ba64cb2de2280e",
+        "byteLength": 635
+      },
+      "completion": {
+        "type": "value"
+      }
+    }
+  }
+}

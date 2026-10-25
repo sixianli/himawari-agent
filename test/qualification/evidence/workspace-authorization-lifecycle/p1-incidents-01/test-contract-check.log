@@ -1,0 +1,23 @@
+test/integration/sqlite-sandbox-execution-v2.test.ts:1265:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    1263 │         if (state === "missing_host") delete plan.identity.hostId;
+    1264 │         const rawObservation: Record<string, unknown> = { ...observation };
+  > 1265 │         if (state === "missing_state") delete rawObservation["state"];
+         │                                                              ^^^^^^^
+    1266 │         old
+    1267 │           .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+  i Unsafe fix: Use a literal key instead.
+
+    1263 1263 │           if (state === "missing_host") delete plan.identity.hostId;
+    1264 1264 │           const rawObservation: Record<string, unknown> = { ...observation };
+    1265      │ - ········if·(state·===·"missing_state")·delete·rawObservation["state"];
+         1265 │ + ········if·(state·===·"missing_state")·delete·rawObservation.state;
+    1266 1266 │           old
+    1267 1267 │             .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+
+Checked 1 file in 85ms. No fixes applied.
+Found 1 info.

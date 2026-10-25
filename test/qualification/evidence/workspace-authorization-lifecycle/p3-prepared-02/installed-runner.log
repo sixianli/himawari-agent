@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/prepared-file-runner.test.ts (8 tests | 8 skipped) 398ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/prepared-file-runner.test.ts [ test/integration/prepared-file-runner.test.ts ]
+Error: PREPARED_RUNNER_INSTALL_FAILED:ARTIFACT_LOCKED_PYTHON_REQUIRED
+
+ ❯ test/integration/prepared-file-runner.test.ts:48:37
+     46|     },
+     47|   );
+     48|   if (installed.status !== 0) throw new Error(`PREPARED_RUNNER_INSTALL…
+       |                                     ^
+     49|   runtimeRoot = path.join(installation, "lib/himawari-agent");
+     50| }, 240_000);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 skipped (8)
+   Start at  01:43:51
+   Duration  1.54s (transform 642ms, setup 0ms, import 1.06s, tests 398ms, environment 0ms)

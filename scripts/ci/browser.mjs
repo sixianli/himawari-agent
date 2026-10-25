@@ -7,6 +7,15 @@ import { parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute } from "./execute.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
+export async function browserReportFiles(directory) {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .sort()
+    .map((file) => ({ path: file, kind: file.endsWith(".json") ? "json" : "diagnostic" }));
+}
+
 export function browserCounts(report, engine) {
   if (
     !report ||
@@ -19,7 +28,7 @@ export function browserCounts(report, engine) {
     throw new Error("CI_BROWSER_IDENTITY_OR_STATUS_INVALID");
   for (const [key, expected] of [
     ["locales", ["zh-CN", "en", "ja"]],
-    ["keyboard", ["visible-focus", "settings-tabs-roving"]],
+    ["keyboard", ["visible-focus", "settings-keyboard-navigation"]],
   ]) {
     if (JSON.stringify(report[key]) !== JSON.stringify(expected))
       throw new Error(`CI_BROWSER_COVERAGE_MISSING:${key}`);
@@ -102,11 +111,7 @@ export async function runBrowser({
       { path: archive, kind: "artifact" },
       { path: log, kind: "diagnostic" },
     ];
-    for (const filename of await readdir(reportDirectory))
-      reports.push({
-        path: path.join(reportDirectory, filename),
-        kind: filename.endsWith(".json") ? "json" : "diagnostic",
-      });
+    reports.push(...(await browserReportFiles(reportDirectory)));
     const summary = path.join(destination, "browser-execution.json");
     await writeFile(
       summary,

@@ -1,0 +1,50 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.1313329999998132,"at":"2026-09-20T07:49:09.039Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.621791999999914,"at":"2026-09-20T07:49:09.072Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5455839999999625,"at":"2026-09-20T07:49:09.073Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.0989580000000387,"at":"2026-09-20T07:49:09.076Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8519160000000738,"at":"2026-09-20T07:49:09.077Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.1323339999999007,"at":"2026-09-20T07:49:09.096Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":32.81470799999988,"at":"2026-09-20T07:49:09.129Z"}
+
+stderr | test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.5861249999998108,"at":"2026-09-20T07:49:09.129Z"}
+
+ ❯ |integration| test/integration/thread-resource-projection.test.ts (2 tests | 1 failed) 2101ms
+   × projects the production queue and reservation from SQLite without renewing authority 1837ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-resource-projection.test.ts > projects the production queue and reservation from SQLite without renewing authority
+ApplicationPortError: Invalid reservation release verification
+ ❯ SqliteExecutionContext.receive packages/persistence-sqlite/src/sqlite-execution-context.ts:109:9
+    107|     if (error.kind === "application") {
+    108|       operation.reject(
+    109|         new ApplicationPortError(error.code as PortErrorCode, error.me…
+       |         ^
+    110|       );
+    111|       return;
+ ❯ Worker.<anonymous> packages/persistence-sqlite/src/sqlite-execution-context.ts:50:60
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  16:49:05
+   Duration  3.54s (transform 958ms, setup 0ms, import 1.35s, tests 2.10s, environment 0ms)

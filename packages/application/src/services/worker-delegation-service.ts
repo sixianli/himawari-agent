@@ -92,7 +92,13 @@ export interface WorkerDelegationAdmissionServiceOptions {
   readonly sandbox?: {
     readonly appliesTo?: (invocation: ConsumeCapabilityInvocationInput) => boolean;
     readonly journal: Pick<SandboxJobJournalPort, "admit">;
-    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve">;
+    readonly preparations?: Pick<SandboxExecutionPreparationPort, "reserve"> &
+      Partial<
+        Pick<
+          SandboxExecutionPreparationPort,
+          "enqueue" | "cancelQueued" | "readAdmission" | "readQueuedByInvocation"
+        >
+      >;
     readonly scopes: Pick<SandboxScopeService, "read">;
     readonly prepare: (
       invocation: ConsumeCapabilityInvocationInput,
@@ -101,11 +107,16 @@ export interface WorkerDelegationAdmissionServiceOptions {
       | Omit<Parameters<SandboxJobJournalPort["admit"]>[0], "invocation">
       | Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">
     >;
+    readonly acquireEnvironment?: (
+      prepared: Omit<Parameters<SandboxExecutionPreparationPort["reserve"]>[0], "invocation">,
+    ) => Promise<void>;
   };
   /** Trusted current Agent/Worker attempt and product lease identity. */
   readonly invocationAuthority: () => CapabilityInvocationAuthority;
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
+  /** Injectable wait for deterministic queue tests; authority is rechecked after every wait. */
+  readonly waitForWorkspace?: (milliseconds: number) => Promise<void>;
 }
 
 export interface WorkerDelegationProjection {
@@ -299,13 +310,81 @@ export class WorkerDelegationAdmissionService {
         );
       const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
       const reservation = sandboxExecutionReservationSchema.parse(prepared.reservation);
-      await sandbox.scopes.read(plan, request.causationId);
-      const admitted = await sandbox.preparations.reserve({
-        plan,
-        reservation,
-        workspaces: prepared.workspaces,
-        invocation: { ...input, consumedAt: this.#options.now() },
-      });
+      const preparations = sandbox.preparations;
+      let queued = false;
+      let admitted: Awaited<ReturnType<SandboxExecutionPreparationPort["reserve"]>>;
+      try {
+        for (;;) {
+          await sandbox.scopes.read(plan, request.causationId);
+          const now = this.#options.now();
+          if (now >= plan.effectiveDeadlineAt)
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "Queued execution expired",
+            );
+          const candidate = {
+            ...(prepared.recovery ? { recovery: prepared.recovery } : {}),
+            ...(prepared.environmentDeadlineAt === undefined
+              ? {}
+              : { environmentDeadlineAt: prepared.environmentDeadlineAt }),
+            plan,
+            reservation,
+            workspaces: prepared.workspaces,
+            invocation: { ...input, receiptRef: plan.identity.receiptRef, consumedAt: now },
+          };
+          if (preparations.enqueue && !(await preparations.readAdmission?.(plan.identity))) {
+            if (!preparations.cancelQueued)
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.INVALID_OPERATION,
+                "Queue cancellation owner unavailable",
+              );
+            const position = await preparations.enqueue(candidate);
+            if (position.status === "cancelled")
+              throw new ApplicationPortError(
+                PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+                "Queued execution was cancelled",
+              );
+            queued = position.status === "queued";
+          }
+          try {
+            await sandbox.acquireEnvironment?.(candidate);
+            admitted = await preparations.reserve(candidate);
+            break;
+          } catch (error) {
+            if (
+              !queued ||
+              !(error instanceof ApplicationPortError) ||
+              !["WORKSPACE_QUEUED", "WORKSPACE_OCCUPIED"].includes(
+                String(error.details["reasonCode"]),
+              )
+            )
+              throw error;
+            const remaining =
+              Date.parse(plan.effectiveDeadlineAt) - Date.parse(this.#options.now());
+            if (remaining <= 0) throw error;
+            await (
+              this.#options.waitForWorkspace ??
+              ((milliseconds) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)))
+            )(Math.min(250, remaining));
+          }
+        }
+      } catch (error) {
+        if (queued && preparations.cancelQueued) {
+          try {
+            await preparations.cancelQueued({
+              identity: plan.identity,
+              authority: this.#options.invocationAuthority(),
+              now: this.#options.now(),
+            });
+          } catch (cleanupError) {
+            throw new AggregateError(
+              [error, cleanupError],
+              "Queue cancellation requires reconciliation",
+            );
+          }
+        }
+        throw error;
+      }
       const saved =
         admitted.admission.phase === "reserved"
           ? admitted.admission.plan
@@ -356,7 +435,10 @@ export class WorkerDelegationService {
     this.#admission = new WorkerDelegationAdmissionService(options);
   }
 
-  async dispatch(request: WorkerExecuteRequest): Promise<void> {
+  async dispatch(
+    request: WorkerExecuteRequest,
+    beforeExecute?: () => Promise<void>,
+  ): Promise<void> {
     const admission = await this.#admission.admit(request);
     if (admission.disposition === "replayed") return;
 
@@ -376,6 +458,9 @@ export class WorkerDelegationService {
         "Worker did not accept the attenuated Capability Handle",
       );
     }
+    // Admission and Handle delivery can await slow I/O. The caller must still
+    // own a live deadline/Run immediately before the first executable message.
+    await beforeExecute?.();
     const response = await this.#options.transport.request(projection.execute);
     if (response !== null) {
       throw new ApplicationPortError(

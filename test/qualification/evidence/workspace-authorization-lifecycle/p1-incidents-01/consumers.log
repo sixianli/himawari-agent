@@ -1,0 +1,31 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (134 tests | 2 failed) 25365ms
+       × protects a fresh contradictory resource observation without revoking release 248ms
+       × protects a fresh contradictory resource observation without revoking release 80ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation without revoking release
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation without revoking release
+AssertionError: expected [Function] to throw error including 'occupied' but got 'Capability invocation invocation-next…'
+
+Expected: "occupied"
+Received: "Capability invocation invocation-next exceeds its durable authority"
+
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:480:63
+    478|
+    479|         expect(call(f, "append", input).applied).toBe(false);
+    480|         expect(() => call(f, "admit", admission(f, "-next"))).toThrow(…
+       |                                                               ^
+    481|         expect(
+    482|           f.database
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  2 failed | 230 passed (232)
+   Start at  11:13:12
+   Duration  57.29s (transform 1.15s, setup 0ms, import 2.87s, tests 53.96s, environment 0ms)

@@ -1,0 +1,1031 @@
+{
+  "checkedAt": "2026-09-16T08:45:07.347Z",
+  "scope": "静态审核原型；非产品 E2E，不访问模型、数据库或真实文件",
+  "browser": "153.0.8010.37",
+  "checks": [
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "key": "cancelled",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "allowed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "alternative",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "alternative_review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "manual",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "review_failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "denied",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "queued",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "preparing",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "regenerate",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "conflict_help",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "rename_wait",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "target_changed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "target_review",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "current_shell",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "stopping",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "stopped",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "unresolved",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "verifying",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "delivery",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "key": "cancelled",
+      "overflow": false
+    }
+  ],
+  "interactions": [
+    "确认与拒绝",
+    "替代方案形成新请求",
+    "确认新位置",
+    "取消等待",
+    "停止确认",
+    "核验不重做",
+    "差异与已保存文件预览",
+    "Escape 关闭",
+    "断线禁用与草稿保留",
+    "窄屏确认可达",
+    "200% CSS zoom 与键盘确认"
+  ],
+  "zoomScope": "CSS zoom 200%，不是浏览器全页缩放资格",
+  "errors": [],
+  "externalRequests": []
+}

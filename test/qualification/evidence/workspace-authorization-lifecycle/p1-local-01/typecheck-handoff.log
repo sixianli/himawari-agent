@@ -1,0 +1,10 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-runtime-tools.ts(794,17): error TS2322: Type '{ executionTiming: { startedAt: string; endedAt: string; }; outcome: "failed" | "succeeded" | "result_unknown"; resultRef: string | null; errorCode: string | null; externalActionId: string | null; modelContent: string; } | { ...; }' is not assignable to type 'RuntimeToolExecutionResult'.
+  Object literal may only specify known properties, and 'executionTiming' does not exist in type 'RuntimeToolSuspendedResult'.
+apps/agent-service/src/production-runtime-tools.ts(898,7): error TS2322: Type '{ outcome: "awaiting_approval" | "failed" | "result_unknown"; resultRef: null; errorCode: string | null; externalActionId: string | null; modelContent: string; }' is not assignable to type 'RuntimeToolExecutionResult'.
+  Types of property 'outcome' are incompatible.
+    Type '"awaiting_approval" | "failed" | "result_unknown"' is not assignable to type '"failed" | "succeeded" | "result_unknown"'.
+      Type '"awaiting_approval"' is not assignable to type '"failed" | "succeeded" | "result_unknown"'.

@@ -1,0 +1,8 @@
+{
+  "error": "Error: expect(locator).toContainText(expected) failed\n\nLocator: locator('.turn-activity output')\nExpected substring: \"正在执行\"\nReceived string:    \"部分执行记录暂不可读取。\"\nTimeout: 5000ms\n\nCall log:\n  - Expect \"to.have.text\" with timeout 5000ms\n  - waiting for locator('.turn-activity output')\n    11 × locator resolved to <output>…</output>\n       - unexpected value \"部分执行记录暂不可读取。\"\n",
+  "queries": 5,
+  "errors": [],
+  "state": {
+    "error": "SqlitePersistenceError: The SQLite execution worker is not running"
+  }
+}

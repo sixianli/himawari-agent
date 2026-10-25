@@ -286,6 +286,7 @@ export async function qualifySandboxJournal(evidenceRoot: string) {
     journal = repository.sandboxExecutionJournal(ownerId, agentId);
     assert.equal((await journal.start(start)).applied, false);
     const recovered = await recoverSandboxExecutionsAtStartup({
+      preparations: repository.sandboxExecutionPreparations(ownerId, agentId),
       journal,
       authority: () => authority,
       now: () => new Date().toISOString(),

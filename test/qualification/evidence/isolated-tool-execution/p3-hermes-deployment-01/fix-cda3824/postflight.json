@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-28T04:05:33Z",
+  "sourceCommit": "cda38240f559ec9b0b934f8c3eaf6aa7e9d2cdc9",
+  "runtimeDigest": "315f6c54f77cf150ca8534c620de5e0072f3feaa80e3f4ef91817dbd14b8b8b0",
+  "serviceActive": true,
+  "activeSince": "2026-09-28T04:04:51Z",
+  "restartsSinceCutover": 0,
+  "activeRuns": [
+    "run:3e15ce20-48db-4d49-a734-c157052d37dc"
+  ],
+  "supersededBy": {
+    "sourceCommit": "ddbdac7991a2bad87ae12530812e01cdde3d5984",
+    "at": "2026-09-28T05:10:52Z"
+  },
+  "modelCallsByDeployment": 0,
+  "temporarySudoRevoked": false
+}

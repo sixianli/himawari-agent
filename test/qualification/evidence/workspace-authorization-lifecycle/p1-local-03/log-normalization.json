@@ -1,0 +1,167 @@
+[
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/authority-transfer-seal-final.log",
+    "rawSha256": "8dcae489fd39d119e7564230706ddc0d6f99fd700b99fef49f4712d2fd339a7a",
+    "normalizedSha256": "8dcae489fd39d119e7564230706ddc0d6f99fd700b99fef49f4712d2fd339a7a"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/authority-transfer-seal.log",
+    "rawSha256": "8dcae489fd39d119e7564230706ddc0d6f99fd700b99fef49f4712d2fd339a7a",
+    "normalizedSha256": "8dcae489fd39d119e7564230706ddc0d6f99fd700b99fef49f4712d2fd339a7a"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/backup-restore-seal-final.log",
+    "rawSha256": "0c9293db99e4f9167558ae653243fc1aa39767cedcf1ff914fc60a899f8602ff",
+    "normalizedSha256": "0c9293db99e4f9167558ae653243fc1aa39767cedcf1ff914fc60a899f8602ff"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/backup-restore-seal.log",
+    "rawSha256": "0c9293db99e4f9167558ae653243fc1aa39767cedcf1ff914fc60a899f8602ff",
+    "normalizedSha256": "0c9293db99e4f9167558ae653243fc1aa39767cedcf1ff914fc60a899f8602ff"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/boundaries.log",
+    "rawSha256": "d0d3de1e693a285e45d6f88f485bda7981a60d554d6d309610d43f70a9660ed0",
+    "normalizedSha256": "d0d3de1e693a285e45d6f88f485bda7981a60d554d6d309610d43f70a9660ed0"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/ci-policy.log",
+    "rawSha256": "7edd74a8e8a6a16be70fd9b98a4af0c424dee1ebbb5ccba4f8541ce36b7ac7f2",
+    "normalizedSha256": "7edd74a8e8a6a16be70fd9b98a4af0c424dee1ebbb5ccba4f8541ce36b7ac7f2"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/contracts-schema-count.log",
+    "rawSha256": "643aeb2eafbf85d745b7578b89ea0face83912a9a6f2a6e826625c345835fdc2",
+    "normalizedSha256": "ad22836603dd99a26eef9628aa901573799c64155cab73ee0a64fd86b6da7018"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/contracts-schema-final.log",
+    "rawSha256": "ac7a5517470571520c98d54169ccd77efc35eaf9578932b32395a36b1994dc20",
+    "normalizedSha256": "425f44574006ed5250864a7824c6e668e0506c902c454444f4b1fb1748a5f5d3"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/coverage.log",
+    "rawSha256": "f8f5c698f6e1caf46acf657dba7fc98936d3930861382236dbf2a8937d77b9ed",
+    "normalizedSha256": "f8f5c698f6e1caf46acf657dba7fc98936d3930861382236dbf2a8937d77b9ed"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/docs-drift.log",
+    "rawSha256": "50dd3120dc47d3aefbd3358f14b56e67b85ca4b782a6d971231437c75196a26c",
+    "normalizedSha256": "50dd3120dc47d3aefbd3358f14b56e67b85ca4b782a6d971231437c75196a26c"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/docs-final.log",
+    "rawSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+    "normalizedSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/docs.log",
+    "rawSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+    "normalizedSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/format-final.log",
+    "rawSha256": "c13b89b0f2424f9a7651ab60d7ae9a436cb751e4ecd52f862fb0210a4185e408",
+    "normalizedSha256": "c13b89b0f2424f9a7651ab60d7ae9a436cb751e4ecd52f862fb0210a4185e408"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/hermes-control-center-upgrade-seal-final.log",
+    "rawSha256": "45298aec52c5bc45c605d1b667dffc2660be6b117432f1607af344099a77d5d7",
+    "normalizedSha256": "45298aec52c5bc45c605d1b667dffc2660be6b117432f1607af344099a77d5d7"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/hermes-control-center-upgrade-seal.log",
+    "rawSha256": "45298aec52c5bc45c605d1b667dffc2660be6b117432f1607af344099a77d5d7",
+    "normalizedSha256": "45298aec52c5bc45c605d1b667dffc2660be6b117432f1607af344099a77d5d7"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/install-start-stop-seal-final.log",
+    "rawSha256": "97752a4b77af0008368360502ddfbb89ad9535fcf73594f97cd9cd5cfa6619e6",
+    "normalizedSha256": "97752a4b77af0008368360502ddfbb89ad9535fcf73594f97cd9cd5cfa6619e6"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/install-start-stop-seal.log",
+    "rawSha256": "97752a4b77af0008368360502ddfbb89ad9535fcf73594f97cd9cd5cfa6619e6",
+    "normalizedSha256": "97752a4b77af0008368360502ddfbb89ad9535fcf73594f97cd9cd5cfa6619e6"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/invariants.log",
+    "rawSha256": "682c6222eb554be991da4667ad4791b1f985841095590d95eaed78a3af366d31",
+    "normalizedSha256": "682c6222eb554be991da4667ad4791b1f985841095590d95eaed78a3af366d31"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/lint.log",
+    "rawSha256": "4ae0d39dd80e84a4053a0084bb9a93c8ba00fa38cd55c61d245ee750e22235ef",
+    "normalizedSha256": "d9b61dac4b06c3f53708779019ddc78a5fedb6fc7958bd0a12e474a3c808e00b"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/secrets.log",
+    "rawSha256": "69f43fa33b2c0d00396311696a2e2f1fdeaab4b48477886e5717e4d1f0c8b1c3",
+    "normalizedSha256": "69f43fa33b2c0d00396311696a2e2f1fdeaab4b48477886e5717e4d1f0c8b1c3"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/standard-ci.log",
+    "rawSha256": "cb3befe918e3d5efe9f72d804920b5043d6e5e586ed7b7987fc1a8e01707eab3",
+    "normalizedSha256": "cb3befe918e3d5efe9f72d804920b5043d6e5e586ed7b7987fc1a8e01707eab3"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/typecheck-final.log",
+    "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+    "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/typecheck-v2.log",
+    "rawSha256": "15f497bde9e5d95ee8a3e2af665012837fd35b5b6fefb6d32abb65ec537f3e5d",
+    "normalizedSha256": "15f497bde9e5d95ee8a3e2af665012837fd35b5b6fefb6d32abb65ec537f3e5d"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/typecheck-v3.log",
+    "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+    "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/typecheck.log",
+    "rawSha256": "f45f3730d3dccc7f76229f403fa1af8389901c45541a2fb2dace5b026e4db79e",
+    "normalizedSha256": "f45f3730d3dccc7f76229f403fa1af8389901c45541a2fb2dace5b026e4db79e"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-consumers-final.log",
+    "rawSha256": "2d41c6d9e77ff000f6cba5dbc6062f3496156e429eb241418e41ed287b0c19cb",
+    "normalizedSha256": "afeacba4b1cf0c750e0cdf4ef56e874a8c12caed5497b46636885834ed6810b8"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-consumers-v2.log",
+    "rawSha256": "7eda7e6921ebd868c873b697037dfeccb44bfbc461fbfc124cf0e416021a3149",
+    "normalizedSha256": "e2c58c9760fdf3338f81317240e8aa13a4d247ce91ecc44bcadad308e4f89ec7"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-consumers.log",
+    "rawSha256": "a3b223a88254e6b2487ca95113cda429739e3154eabe4c1191e7e01000c626a7",
+    "normalizedSha256": "82947ba34d4d1f17d1cbb29dbc825c76a35f7e5d90dbb3b8c805c4a6d4b8272a"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-final.log",
+    "rawSha256": "18e8040222d087489e0a8dfc7b866d983ab0277eb742bf20ffaddcc0f3e87a85",
+    "normalizedSha256": "8078cc93e846348ee1cef123dc6bf57ca43feb196eaa6a57be7212dba4b1344d"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-stop-diagnostic.log",
+    "rawSha256": "b606999268cb27d4b5d83f281e016f5491e4ed58870c2b7aae0946fdcf14a735",
+    "normalizedSha256": "bd69349ceaf70155bc273fcc274bb369af071ec7c37ce6402bb9b1f1cbf2f670"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/unbound-stop-red.log",
+    "rawSha256": "c6a24c36c53eb663f3a510e4d900a49b5edd11a2d385672c36e123edbbc2eb1c",
+    "normalizedSha256": "2a0265b93e29a71cd52fdcbfcbe62b144df88bdb81ce78bba9865e9ad2a53238"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/workspace-lifecycle-audit-seal-final.log",
+    "rawSha256": "bc59b4b70f822b2e1e1a0522f1c924afc3a6654041a28e94d4c642a04e945561",
+    "normalizedSha256": "bc59b4b70f822b2e1e1a0522f1c924afc3a6654041a28e94d4c642a04e945561"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p1-local-03/workspace-lifecycle-audit-seal.log",
+    "rawSha256": "bc59b4b70f822b2e1e1a0522f1c924afc3a6654041a28e94d4c642a04e945561",
+    "normalizedSha256": "bc59b4b70f822b2e1e1a0522f1c924afc3a6654041a28e94d4c642a04e945561"
+  }
+]

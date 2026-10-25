@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "checkId": "test",
+  "matrixKey": "macos-arm64",
+  "repository": "sixianli/himawari-agent",
+  "event": "workflow_dispatch",
+  "runId": "1789885112597",
+  "attempt": 1,
+  "testedSha": "aa22759164cb33c8aa97485d9ba1ee7fae1c07d4",
+  "headSha": "aa22759164cb33c8aa97485d9ba1ee7fae1c07d4",
+  "baseSha": "aa22759164cb33c8aa97485d9ba1ee7fae1c07d4",
+  "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "initialization": false,
+  "toolchain": {
+    "node": "22.22.3",
+    "npm": "11.8.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "abi": "127",
+    "runnerImage": "local"
+  },
+  "status": "passed",
+  "exitCode": 0,
+  "durationMs": 660032,
+  "retryCount": 0,
+  "counts": {
+    "files": 245,
+    "executed": 3859,
+    "passed": 3859,
+    "failed": 0,
+    "skipped": 0
+  },
+  "projects": [
+    {
+      "id": "unit",
+      "counts": {
+        "files": 130,
+        "executed": 1819,
+        "passed": 1819,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "contracts",
+      "counts": {
+        "files": 23,
+        "executed": 337,
+        "passed": 337,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "integration",
+      "counts": {
+        "files": 79,
+        "executed": 1570,
+        "passed": 1570,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "e2e",
+      "counts": {
+        "files": 1,
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "pi-compat",
+      "counts": {
+        "files": 12,
+        "executed": 130,
+        "passed": 130,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "reports": [
+    {
+      "path": "tests/unit.json",
+      "kind": "json",
+      "sha256": "f16f1378eb19a19c4526db75d946a22bf644bc2356c0135d76c4169ad4564510",
+      "bytes": 633583
+    },
+    {
+      "path": "tests/unit.xml",
+      "kind": "junit",
+      "sha256": "80f1b05b4b675ef86ab803def0ce07a7cd69f4de400ec7635771f3236c25274c",
+      "bytes": 470490
+    },
+    {
+      "path": "tests/unit.log",
+      "kind": "diagnostic",
+      "sha256": "1f8bc5622a5898fd23160cd1cc4a70e836abe807d4169f332bc881918bd418ea",
+      "bytes": 353
+    },
+    {
+      "path": "tests/contracts.json",
+      "kind": "json",
+      "sha256": "2c4b594b9f4d4b72e86ad1430f3deecdedd752f073117b394dcba7d6da019e39",
+      "bytes": 212335
+    },
+    {
+      "path": "tests/contracts.xml",
+      "kind": "junit",
+      "sha256": "e6b273dd16a39e7170264467d9d5b9d8de5bcd491665fadfe4e8031a81a1019c",
+      "bytes": 137198
+    },
+    {
+      "path": "tests/contracts.log",
+      "kind": "diagnostic",
+      "sha256": "3ad021be7408ed8a055fa8ce24ce490f5750f99effa819c85c5f4eccec10d62e",
+      "bytes": 363
+    },
+    {
+      "path": "tests/integration.json",
+      "kind": "json",
+      "sha256": "a30b0e7e109ed9c04317c8813a60357e704e01b309519ba2ec12e3b4f8a53308",
+      "bytes": 578595
+    },
+    {
+      "path": "tests/integration.xml",
+      "kind": "junit",
+      "sha256": "17b1df15be363a94171ffea393fe7f9d9a812b10f83796eea63c14abd8975b7c",
+      "bytes": 558555
+    },
+    {
+      "path": "tests/integration.log",
+      "kind": "diagnostic",
+      "sha256": "7542a5723e54e41b2f20e52d245a1a82bc1025729bd7ace7c91748030b32dd3f",
+      "bytes": 2517
+    },
+    {
+      "path": "tests/e2e.json",
+      "kind": "json",
+      "sha256": "0c3ec43bc6a1311be4e92a15436c425a7d9648658f60513a06d27cb48e762617",
+      "bytes": 1830
+    },
+    {
+      "path": "tests/e2e.xml",
+      "kind": "junit",
+      "sha256": "e4ce9a2923e055948e63f183a982ddc0d5d03363fa31a256285a5f87f304659b",
+      "bytes": 1047
+    },
+    {
+      "path": "tests/e2e.log",
+      "kind": "diagnostic",
+      "sha256": "f4780c3fd30a6515b72b5be6ef0a018232549dccfc3b0b1e2506b82a5b45c68b",
+      "bytes": 350
+    },
+    {
+      "path": "tests/pi-compat.json",
+      "kind": "json",
+      "sha256": "8246e7bb232ae217bbe5d9c2adcf774aa87ddfd7052111a8860a172a32d5efd4",
+      "bytes": 47848
+    },
+    {
+      "path": "tests/pi-compat.xml",
+      "kind": "junit",
+      "sha256": "55b7e8f0eeaa3edf7df8c5630c7799fe96e5e5a67c0a681b958adfad65881e00",
+      "bytes": 34728
+    },
+    {
+      "path": "tests/pi-compat.log",
+      "kind": "diagnostic",
+      "sha256": "4cabdc0c4a1e69a5ad6ef64fcad2f6e46069f4df009236154c970950d45482ac",
+      "bytes": 363
+    },
+    {
+      "path": "tests/tests.json",
+      "kind": "json",
+      "sha256": "1cbf97ccba06d1494806566fd900d4e50e1ae7eff42191bdd0104733e8ab135d",
+      "bytes": 1657
+    },
+    {
+      "path": "macos-arm64-abi127-aa22759164cb33c8aa97485d9ba1ee7fae1c07d4-1789885112597-1.tar.gz",
+      "kind": "artifact",
+      "sha256": "fd6caa190b901a714f1c5ef6691ba8408b7797f27d9d36046ae2cc6cb231a7e1",
+      "bytes": 64191322
+    },
+    {
+      "path": "details.json",
+      "kind": "json",
+      "sha256": "c1b834ab4eb1bdfd3f4e957cc0cff50489458d945d194c6b54aa97d3c9f7d01f",
+      "bytes": 1174
+    }
+  ],
+  "artifacts": [
+    {
+      "role": "consumed",
+      "platform": "macos-arm64",
+      "path": "macos-arm64-abi127-aa22759164cb33c8aa97485d9ba1ee7fae1c07d4-1789885112597-1.tar.gz",
+      "sha256": "fd6caa190b901a714f1c5ef6691ba8408b7797f27d9d36046ae2cc6cb231a7e1"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+
+TYPECHECK_TIMEOUT_AFTER_180S

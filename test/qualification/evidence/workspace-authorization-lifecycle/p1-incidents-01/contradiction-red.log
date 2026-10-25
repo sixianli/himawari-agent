@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (118 tests | 2 failed | 116 skipped) 366ms
+       × protects a fresh contradictory resource observation without revoking release 282ms
+       × protects a fresh contradictory resource observation without revoking release 82ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation without revoking release
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation without revoking release
+ApplicationPortError: $: invalid resource observation transition
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ sandboxV2Call test/fixtures/sandbox-execution-v2-fixture.ts:110:44
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:433:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 116 skipped (118)
+   Start at  11:06:12
+   Duration  2.23s (transform 1.15s, setup 0ms, import 1.73s, tests 366ms, environment 0ms)

@@ -32,10 +32,15 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.task.resolve",
   "thread.deletion_impact",
   "thread.events",
+  "thread.execution_events",
   "thread.list",
   "thread.detail",
   "thread.execution",
   "thread.execution_snapshot",
+  "thread.execution_state",
+  "thread.execution_state_snapshot",
+  "thread.execution_environment",
+  "thread.execution_environment_snapshot",
   "thread.search",
   "thread.lineage",
   "thread.checkpoint",
@@ -49,6 +54,7 @@ export const THREAD_GATEWAY_MESSAGE_TYPES = [
   "thread.command_result",
   "thread.conflict",
   "thread.event",
+  "thread.execution_changed",
 ] as const;
 export type ThreadGatewayMessageType = (typeof THREAD_GATEWAY_MESSAGE_TYPES)[number];
 
@@ -330,6 +336,11 @@ export const threadEventsV3SubscriptionSchema = object({
   payload: object({ afterCursor: nullable(machineString) }),
 });
 
+export const threadExecutionEventsSubscriptionSchema = object({
+  ...envelope("subscription", "thread.execution_events"),
+  payload: object({ threadId: machineString }),
+});
+
 export const threadSnapshotV3Schema = object({
   ...envelope("snapshot", "thread.snapshot"),
   payload: object({
@@ -516,6 +527,18 @@ export const threadEventV3Schema = object({
   }),
 });
 
+export const threadExecutionChangedSchema = object({
+  ...envelope("event", "thread.execution_changed"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    runRevision: integer(1),
+    traceSequence: integer(0),
+    resourceRevision: nullable(machineString),
+    observedAt: timestamp,
+  }),
+});
+
 const displayText: Schema<string> = {
   parse(value, path = "$") {
     if (typeof value !== "string" || value.length > 65536)
@@ -564,10 +587,100 @@ const threadExecutionSnapshotSchema = object({
   }),
 });
 
+export const threadExecutionDisplayPhaseSchema = enumeration([
+  "preparing",
+  "awaiting_approval",
+  "reviewing",
+  "model_waiting",
+  "model_thinking",
+  "model_output",
+  "completed",
+  "failed",
+  "stopped",
+  "unresolved",
+  "not_dispatched",
+]);
+const executionTimingSchema = object({
+  reviewMilliseconds: nullable(integer(0)),
+  executionMilliseconds: nullable(integer(0)),
+});
+const executionEffectSchema = enumeration([
+  "succeeded",
+  "failed",
+  "unknown",
+  "not_dispatched",
+  "pending",
+]);
+export const threadExecutionStateSchema = object({
+  runRevision: integer(1),
+  revision: machineString,
+  lastObservedAt: timestamp,
+  displayPhase: threadExecutionDisplayPhaseSchema,
+  reasonCode: machineString,
+  availableActions: array(enumeration(["stop", "review_approval", "retry_cleanup"])),
+  needsAttention: booleanValue,
+  timing: executionTimingSchema,
+  effectSummary: array(object({ itemId: machineString, outcome: executionEffectSchema })),
+  operations: array(
+    object({
+      itemId: machineString,
+      displayPhase: threadExecutionDisplayPhaseSchema,
+      reasonCode: machineString,
+      lastObservedAt: timestamp,
+      executionMilliseconds: nullable(integer(0)),
+    }),
+  ),
+});
+export type ThreadExecutionState = InferSchema<typeof threadExecutionStateSchema>;
+const threadExecutionStateQuerySchema = object({
+  ...envelope("query", "thread.execution_state"),
+  payload: object({ threadId: machineString, runId: machineString }),
+});
+const threadExecutionStateSnapshotSchema = object({
+  ...envelope("snapshot", "thread.execution_state_snapshot"),
+  payload: object({
+    threadId: machineString,
+    runId: machineString,
+    state: threadExecutionStateSchema,
+    generatedAt: timestamp,
+  }),
+});
+
+export const threadExecutionEnvironmentSchema = object({
+  mode: enumeration(["srt", "strict"]),
+  programs: array(
+    object({
+      threadId: nullable(machineString),
+      kind: enumeration(["background", "service"]),
+      toolName: machineString,
+      startedAt: timestamp,
+    }),
+  ),
+  unavailableTools: array(
+    object({
+      toolName: machineString,
+      reasonCode: enumeration(["SANDBOX_OPERATION_SRT_ONLY", "SANDBOX_BINDING_SRT_ONLY"]),
+    }),
+  ),
+});
+export type ThreadExecutionEnvironment = InferSchema<typeof threadExecutionEnvironmentSchema>;
+const threadExecutionEnvironmentQuerySchema = object({
+  ...envelope("query", "thread.execution_environment"),
+  payload: object({}),
+});
+const threadExecutionEnvironmentSnapshotSchema = object({
+  ...envelope("snapshot", "thread.execution_environment_snapshot"),
+  payload: object({ environment: threadExecutionEnvironmentSchema, generatedAt: timestamp }),
+});
+
 const schemasByType = {
   "thread.message.submit_configured": submitConfiguredThreadMessageSchema,
   "thread.run.cancel": cancelThreadRunSchema,
   "thread.execution": threadExecutionQuerySchema,
+  "thread.execution_state": threadExecutionStateQuerySchema,
+  "thread.execution_state_snapshot": threadExecutionStateSnapshotSchema,
+  "thread.execution_environment": threadExecutionEnvironmentQuerySchema,
+  "thread.execution_environment_snapshot": threadExecutionEnvironmentSnapshotSchema,
   "thread.execution_snapshot": threadExecutionSnapshotSchema,
   "thread.create": createThreadV3CommandSchema,
   "thread.message.submit": submitThreadMessageV3CommandSchema,
@@ -583,6 +696,7 @@ const schemasByType = {
   "thread.task.resolve": resolveThreadTaskV3CommandSchema,
   "thread.deletion_impact": threadDeletionImpactV3QuerySchema,
   "thread.events": threadEventsV3SubscriptionSchema,
+  "thread.execution_events": threadExecutionEventsSubscriptionSchema,
   "thread.list": listThreadsV3QuerySchema,
   "thread.detail": threadDetailV3QuerySchema,
   "thread.search": searchThreadsV3QuerySchema,
@@ -598,15 +712,24 @@ const schemasByType = {
   "thread.command_result": threadCommandResultV3Schema,
   "thread.conflict": threadConflictV3Schema,
   "thread.event": threadEventV3Schema,
+  "thread.execution_changed": threadExecutionChangedSchema,
 } as const satisfies Record<ThreadGatewayMessageType, Schema<unknown>>;
 
 type SchemaByType = typeof schemasByType;
 export type ThreadGatewayMessage = InferSchema<SchemaByType[keyof SchemaByType]>;
 export type ThreadGatewayCommand = Extract<ThreadGatewayMessage, { kind: "command" }>;
 export type ThreadGatewayQuery = Extract<ThreadGatewayMessage, { kind: "query" }>;
-export type ThreadGatewaySubscription = Extract<ThreadGatewayMessage, { kind: "subscription" }>;
+export type ThreadGatewaySubscription = Extract<ThreadGatewayMessage, { type: "thread.events" }>;
+export type ThreadExecutionEventsSubscription = Extract<
+  ThreadGatewayMessage,
+  { type: "thread.execution_events" }
+>;
 export type ThreadGatewaySnapshot = Extract<ThreadGatewayMessage, { kind: "snapshot" }>;
-export type ThreadGatewayEvent = Extract<ThreadGatewayMessage, { kind: "event" }>;
+export type ThreadGatewayEvent = Extract<ThreadGatewayMessage, { type: "thread.event" }>;
+export type ThreadExecutionChangedEvent = Extract<
+  ThreadGatewayMessage,
+  { type: "thread.execution_changed" }
+>;
 export type ThreadGatewayRequestResult = Extract<
   ThreadGatewayMessage,
   { kind: "snapshot" | "result" | "conflict" }

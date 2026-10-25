@@ -1,10 +1,10 @@
 import type {
   ConfiguredEmbeddingModelDescriptor,
-  ConfiguredGenerationModelDescriptor,
+  ConfiguredCompletionsGenerationModelDescriptor,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
-  createOpenRouterMem0ProjectionAdapter,
+  createAiGatewayMem0ProjectionAdapter,
   type Mem0Loader,
   type Mem0ProjectionAdapter,
 } from "@himawari-agent/memory-mem0";
@@ -32,7 +32,7 @@ export interface ProductionMemoryComposition {
 
 function primaryDescriptor(
   configuration: ProductConfiguration,
-): ConfiguredGenerationModelDescriptor {
+): ConfiguredCompletionsGenerationModelDescriptor {
   const descriptor = configuration.modelDescriptors.find(({ role }) => role === "primary");
   if (!descriptor || descriptor.role !== "primary") {
     throw new Error("MEM0_PRIMARY_DESCRIPTOR_MISSING");
@@ -75,7 +75,7 @@ export async function createProductionMemoryCompositionFromConfiguration(
   }
 
   const descriptor = resolveConfiguredModelDescriptorSet(options.configuration).embedding;
-  const projection = await createOpenRouterMem0ProjectionAdapter({
+  const projection = await createAiGatewayMem0ProjectionAdapter({
     stateRoot: options.configuration.stateRoot,
     memory: options.configuration.memory,
     llm: primary,

@@ -1,0 +1,6 @@
+ERROR: docs/runbooks/authority-transfer-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+ERROR: docs/runbooks/backup-restore-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+ERROR: docs/runbooks/hermes-control-center-upgrade-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+ERROR: docs/runbooks/install-start-stop-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+ERROR: docs/runbooks/workspace-lifecycle-audit-runbook.md: contract_sha256 does not match the current Runbook and contract sources
+Document governance validation failed: 5 error(s), 0 warning(s).

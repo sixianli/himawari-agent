@@ -140,6 +140,43 @@ const MESSAGE_SELECT = `SELECT id, owner_id AS ownerId, agent_id AS agentId,
   content_ref AS contentRef, classification AS dataClassification,
   message_status AS status, committed_at AS committedAt FROM thread_messages`;
 
+export function appendThreadGatewayEventInTransaction(
+  database: Database.Database,
+  input: Parameters<SqliteThreadOperations["appendGatewayEventInTransaction"]>[0],
+): void {
+  const cursorSequence =
+    Number(
+      database
+        .prepare("SELECT COALESCE(MAX(cursor_sequence), 0) FROM thread_gateway_events")
+        .pluck()
+        .get(),
+    ) + 1;
+  database
+    .prepare(
+      `INSERT INTO thread_gateway_events (
+        cursor_sequence, cursor, event_id, owner_id, agent_id, deployment_id,
+        authority_epoch, fencing_token, thread_id,
+        thread_revision, causation_command_id, event_type, payload_ref, occurred_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      cursorSequence,
+      `thread-cursor:${cursorSequence}`,
+      input.eventId,
+      input.ownerId,
+      input.agentId,
+      input.authority.deploymentId,
+      input.authority.authorityEpoch,
+      input.authority.fencingToken,
+      input.threadId,
+      input.threadRevision,
+      input.commandId,
+      input.commandType,
+      input.resultRef,
+      input.committedAt,
+    );
+}
+
 export class SqliteThreadOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -424,37 +461,7 @@ export class SqliteThreadOperations {
     committedAt: string;
     authority: ThreadCreateInput["authority"];
   }): void {
-    const cursorSequence =
-      Number(
-        this.database
-          .prepare("SELECT COALESCE(MAX(cursor_sequence), 0) FROM thread_gateway_events")
-          .pluck()
-          .get(),
-      ) + 1;
-    this.database
-      .prepare(
-        `INSERT INTO thread_gateway_events (
-          cursor_sequence, cursor, event_id, owner_id, agent_id, deployment_id,
-          authority_epoch, fencing_token, thread_id,
-          thread_revision, causation_command_id, event_type, payload_ref, occurred_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        cursorSequence,
-        `thread-cursor:${cursorSequence}`,
-        input.eventId,
-        input.ownerId,
-        input.agentId,
-        input.authority.deploymentId,
-        input.authority.authorityEpoch,
-        input.authority.fencingToken,
-        input.threadId,
-        input.threadRevision,
-        input.commandId,
-        input.commandType,
-        input.resultRef,
-        input.committedAt,
-      );
+    appendThreadGatewayEventInTransaction(this.database, input);
   }
 
   private writeReceipt(input: {

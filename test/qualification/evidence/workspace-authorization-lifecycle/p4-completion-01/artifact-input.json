@@ -1,0 +1,10 @@
+{
+  "artifact": {
+    "role": "produced",
+    "platform": "macos-arm64",
+    "path": "macos-arm64-abi127-7c150ff025ecd3dd242515a9fb1e1895ac2457c3-1789999971690-1.tar.gz",
+    "sha256": "ebd49dd7c5b4d34227bfbfad1273a8d9b01c9d94ffd5cd1afa86dee526cbe8ee"
+  },
+  "sha256Verified": true,
+  "sourceFreeze": "source-freeze.json"
+}

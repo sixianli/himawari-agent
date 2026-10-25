@@ -5,6 +5,8 @@ import {
   type PayloadBrokerHandshakeRequest,
   type PayloadBrokerInputReadRequest,
   type PayloadBrokerInputReadResult,
+  type PayloadBrokerInvocationValidated,
+  type PayloadBrokerInvocationValidateRequest,
   type PayloadBrokerMessage,
   type PayloadBrokerOutputWriteAccepted,
   type PayloadBrokerOutputWriteRequest,
@@ -12,6 +14,7 @@ import {
   type PayloadBrokerSandboxExecutionResult,
   type PayloadBrokerSandboxJobRequest,
   type PayloadBrokerSandboxJobResult,
+  payloadBrokerV1BodyBytes,
   payloadBrokerV1MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import {
@@ -21,9 +24,12 @@ import {
   AuthenticatedUdsTransportError,
 } from "./authenticated-uds-transport.js";
 
+import { UdsHandshakeSession } from "./uds-handshake-session.js";
+
 const SANDBOX_EXECUTION_PATH = "/payload/v1/sandbox/execution";
 const SANDBOX_JOB_PATH = "/payload/v1/sandbox/job";
 const HANDSHAKE_PATH = "/payload/v1/handshake";
+const INVOCATION_VALIDATE_PATH = "/payload/v1/invocation/validate";
 const INPUT_READ_PATH = "/payload/v1/input/read";
 const OUTPUT_WRITE_PATH = "/payload/v1/output/write";
 const JSON_CONTENT_TYPE = "application/json";
@@ -88,12 +94,13 @@ export interface PayloadBrokerOutputReceipt {
 }
 
 export interface PayloadBrokerTrustedHandler {
+  validateInvocation?(request: PayloadBrokerInvocationValidateRequest): Promise<void>;
   sandboxExecution?(
     request: PayloadBrokerSandboxExecutionRequest,
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   >;
 
@@ -146,6 +153,7 @@ function responseEnvelope(
     | "payload.sandbox.execution.result"
     | "payload.sandbox.job.result"
     | "payload.handshake.accepted"
+    | "payload.invocation.validated"
     | "payload.input.read.result"
     | "payload.output.write.accepted",
 ) {
@@ -162,6 +170,7 @@ function responseEnvelope(
 function requestEnvelope(
   type:
     | "payload.handshake"
+    | "payload.invocation.validate"
     | "payload.input.read"
     | "payload.output.write"
     | "payload.sandbox.job"
@@ -242,9 +251,11 @@ export class PayloadUdsServer {
     if (
       !Number.isSafeInteger(options.maximumPayloadBytes) ||
       options.maximumPayloadBytes < 1 ||
-      options.maximumPayloadBytes > options.maximumBodyBytes
+      payloadBrokerV1BodyBytes(options.maximumPayloadBytes) > options.maximumBodyBytes
     ) {
-      throw new TypeError("Payload UDS maximum payload bytes must fit inside the body limit");
+      throw new TypeError(
+        "Payload UDS body limit must hold the largest payload as base64 and its envelope",
+      );
     }
     if (options.allowedWorkerIdentities.length === 0) {
       throw new TypeError("Payload UDS requires an allowed Worker identity");
@@ -351,6 +362,29 @@ export class PayloadUdsServer {
         );
         return;
       }
+      if (
+        url.pathname === INVOCATION_VALIDATE_PATH &&
+        message.type === "payload.invocation.validate"
+      ) {
+        this.assertOperationIdentity(message, request);
+        if (!this.options.handler.validateInvocation)
+          throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDLER_FAILED, 503);
+        await this.options.handler.validateInvocation(message);
+        if (response.headersSent || response.writableEnded || response.destroyed) return;
+        sendJson(
+          response,
+          payloadBrokerV1MessageSchema.parse({
+            ...responseEnvelope(message, "payload.invocation.validated"),
+            payload: {
+              ...message.payload,
+              agentServiceInstanceId: this.options.agentServiceInstanceId,
+              agentServiceBootId: this.options.agentServiceBootId,
+            },
+          }),
+          this.options.maximumBodyBytes,
+        );
+        return;
+      }
       if (url.pathname === INPUT_READ_PATH && message.type === "payload.input.read") {
         this.assertOperationIdentity(message, request);
         const bytes = await this.readInput(message);
@@ -434,6 +468,7 @@ export class PayloadUdsServer {
 
   private assertOperationIdentity(
     request:
+      | PayloadBrokerInvocationValidateRequest
       | PayloadBrokerInputReadRequest
       | PayloadBrokerOutputWriteRequest
       | PayloadBrokerSandboxJobRequest
@@ -519,7 +554,7 @@ export class PayloadUdsClient {
   readonly schemaVersion = PAYLOAD_BROKER_V1_SCHEMA_VERSION;
   private readonly options: PayloadUdsClientOptions;
   private readonly uds: AuthenticatedUdsClient;
-  private connected = false;
+  private readonly connection: UdsHandshakeSession<PayloadBrokerHandshakeAccepted>;
 
   constructor(options: PayloadUdsClientOptions) {
     if (!Number.isSafeInteger(options.authorityEpoch) || options.authorityEpoch < 1) {
@@ -531,9 +566,11 @@ export class PayloadUdsClient {
     if (
       !Number.isSafeInteger(options.maximumPayloadBytes) ||
       options.maximumPayloadBytes < 1 ||
-      options.maximumPayloadBytes > options.maximumBodyBytes
+      payloadBrokerV1BodyBytes(options.maximumPayloadBytes) > options.maximumBodyBytes
     ) {
-      throw new TypeError("Payload UDS maximum payload bytes must fit inside the body limit");
+      throw new TypeError(
+        "Payload UDS body limit must hold the largest payload as base64 and its envelope",
+      );
     }
     this.options = options;
     this.uds = new AuthenticatedUdsClient({
@@ -545,13 +582,21 @@ export class PayloadUdsClient {
       requestTimeoutMs: options.requestTimeoutMs,
       errorCodes: COMMON_UDS_ERROR_CODES,
     });
+    this.connection = new UdsHandshakeSession(
+      () => this.handshake(),
+      () => new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDSHAKE_REQUIRED, 401),
+    );
   }
 
   isReady(): boolean {
-    return this.connected;
+    return this.connection.isReady();
   }
 
-  async connect(): Promise<PayloadBrokerHandshakeAccepted> {
+  connect(): Promise<PayloadBrokerHandshakeAccepted> {
+    return this.connection.connect();
+  }
+
+  private async handshake(): Promise<PayloadBrokerHandshakeAccepted> {
     const message = {
       ...requestEnvelope("payload.handshake", this.options.nextId("payload-handshake")),
       payload: {
@@ -573,12 +618,27 @@ export class PayloadUdsClient {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
     }
     this.assertHandshakeIdentity(accepted);
-    this.connected = true;
     return accepted;
   }
 
+  async validateInvocation(identity: PayloadBrokerInvocationIdentity): Promise<void> {
+    await this.connection.ensureConnected();
+    this.assertClientIdentity(identity);
+    const request = payloadBrokerV1MessageSchema.parse({
+      ...requestEnvelope("payload.invocation.validate", this.options.nextId("invocation-validate")),
+      payload: payloadIdentity(identity),
+    });
+    const response = await this.send(INVOCATION_VALIDATE_PATH, request);
+    if (response.statusCode !== 200) this.throwRemote(response.body, response.statusCode);
+    const result = parseJsonResponse(response.body, response.contentType);
+    this.assertResponseEnvelope(result, request);
+    if (result.type !== "payload.invocation.validated")
+      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
+    this.assertResponseIdentity(result, identity);
+  }
+
   async readInput(identity: PayloadBrokerInvocationIdentity): Promise<Uint8Array> {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.input.read", this.options.nextId("payload-input-read")),
@@ -609,10 +669,10 @@ export class PayloadUdsClient {
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   > {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.sandbox.execution", this.options.nextId("sandbox-execution")),
@@ -635,6 +695,7 @@ export class PayloadUdsClient {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.RESPONSE_IDENTITY_MISMATCH, 502);
     if (
       (command.kind === "resolve") !== (result.payload.resolvedScope !== null) ||
+      (command.kind !== "resolve" && result.payload.environment !== null) ||
       (command.kind === "output") !== (result.payload.output !== null) ||
       ((command.kind === "read" ||
         command.kind === "resolve" ||
@@ -656,6 +717,7 @@ export class PayloadUdsClient {
       record: result.payload.record,
       applied: result.payload.applied,
       resolvedScope: result.payload.resolvedScope,
+      environment: result.payload.environment,
       output: result.payload.output,
     };
   }
@@ -668,7 +730,7 @@ export class PayloadUdsClient {
   ): Promise<
     Pick<PayloadBrokerSandboxJobResult["payload"], "record" | "applied" | "resolvedScope">
   > {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     const request = payloadBrokerV1MessageSchema.parse({
       ...requestEnvelope("payload.sandbox.job", this.options.nextId("sandbox-job")),
@@ -710,7 +772,7 @@ export class PayloadUdsClient {
     plaintext: Uint8Array,
     contentType: string,
   ): Promise<PayloadBrokerOutputReceipt> {
-    this.assertConnected();
+    await this.connection.ensureConnected();
     this.assertClientIdentity(identity);
     if (plaintext.byteLength > this.options.maximumPayloadBytes) {
       throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.PAYLOAD_TOO_LARGE, 413);
@@ -735,7 +797,7 @@ export class PayloadUdsClient {
   }
 
   disconnect(): void {
-    this.connected = false;
+    this.connection.disconnect();
   }
 
   private async send(path: string, message: PayloadBrokerMessage) {
@@ -751,17 +813,11 @@ export class PayloadUdsClient {
         contentType: JSON_CONTENT_TYPE,
       });
     } catch (error) {
-      this.connected = false;
+      this.connection.failed();
       if (error instanceof AuthenticatedUdsTransportError) {
         throw new PayloadUdsError(error.code as PayloadUdsErrorCode, error.statusCode, error);
       }
       throw error;
-    }
-  }
-
-  private assertConnected(): void {
-    if (!this.connected) {
-      throw new PayloadUdsError(PAYLOAD_UDS_ERROR_CODES.HANDSHAKE_REQUIRED, 401);
     }
   }
 
@@ -791,6 +847,7 @@ export class PayloadUdsClient {
 
   private assertResponseIdentity(
     response:
+      | PayloadBrokerInvocationValidated
       | PayloadBrokerInputReadResult
       | PayloadBrokerOutputWriteAccepted
       | PayloadBrokerSandboxJobResult

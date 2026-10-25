@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (176 tests | 2 failed | 170 skipped) 1225ms
+       × persists foreground creator, environment and resource handle in the admission transaction 268ms
+       × persists foreground creator, environment and resource handle in the admission transaction 93ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ApplicationPortError: $: resource mode mismatch
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:462:11
+    460|     details?: Readonly<Record<string, string>>,
+    461|   ): never => {
+    462|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    463|   };
+    464|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ sandboxV2Call test/fixtures/sandbox-execution-v2-fixture.ts:110:44
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:954:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed | 170 skipped (176)
+   Start at  17:27:59
+   Duration  2.93s (transform 1.05s, setup 0ms, import 1.59s, tests 1.22s, environment 0ms)

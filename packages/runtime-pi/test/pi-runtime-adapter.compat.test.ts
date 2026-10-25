@@ -364,6 +364,7 @@ function fakeSessionFactory(
     return {
       session: {
         agent: {
+          state: { messages: [] },
           abort() {},
           streamFunction: async () => {
             throw new Error("fake stream function was not configured");
@@ -960,6 +961,46 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       "fragment 1000",
     );
     expect(events.at(-1)?.type).toBe("runtime.completed");
+  });
+
+  it("retains thinking-stream boundaries while coalescing deltas", async () => {
+    const projection = new RecordingProjection();
+    const message = {
+      role: "assistant",
+      timestamp: 123,
+      content: [{ type: "thinking", thinking: "PRIVATE_REASONING" }],
+    };
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message });
+        for (const type of ["thinking_start", "thinking_delta", "thinking_delta", "thinking_end"])
+          emit({
+            type: "message_update",
+            message,
+            assistantMessageEvent: { type, contentIndex: 0 },
+          });
+        emit({
+          type: "message_end",
+          message: { ...message, content: [{ type: "text", text: "Done" }], stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+    );
+    expect((await collect(adapter.run(request))).at(-1)?.type).toBe("runtime.completed");
+    const captured = projection.captures as {
+      value: { thinkingBoundary?: { phase: string; contentIndex: number } };
+    }[];
+    expect(
+      captured.flatMap((entry) =>
+        entry.value.thinkingBoundary ? [entry.value.thinkingBoundary] : [],
+      ),
+    ).toEqual([
+      { phase: "started", contentIndex: 0 },
+      { phase: "ended", contentIndex: 0 },
+    ]);
   });
 
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
@@ -1947,7 +1988,7 @@ it.each(["approved", "denied", "effect_without_receipt"] as const)(
   },
 );
 
-it("runs configured OpenRouter sessions without storing credentials in the shared Pi runtime", async () => {
+it("[R2-L5] runs configured Gateway sessions without storing credentials in the shared Pi runtime", async () => {
   const { createServer } = await import("node:http");
   const { ConfiguredPiModelBindingPort } = await import("../src/index.js");
   const authorizations: Array<string | undefined> = [];
@@ -1956,7 +1997,7 @@ it("runs configured OpenRouter sessions without storing credentials in the share
     incoming.resume();
     response.writeHead(200, { "content-type": "text/event-stream" });
     response.end(
-      `data: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "local-primary", choices: [{ index: 0, delta: { role: "assistant", content: "凭据受控回答" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "local-primary", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { role: "assistant", content: "凭据受控回答" }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-completion", object: "chat.completion.chunk", model: "deepseek/deepseek-v4.1-flash", choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "gen:fixture", routing: { finalProvider: "morph" }, cost: "0" } } }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0" } })}\n\ndata: [DONE]\n\n`,
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -1964,30 +2005,33 @@ it("runs configured OpenRouter sessions without storing credentials in the share
   if (!address || typeof address === "string") throw new Error("LOCAL_PROVIDER_REQUIRED");
   const secretReads: string[] = [];
   const models = new ConfiguredPiModelBindingPort({
-    descriptors: (["primary", "fallback"] as const).map((role) => ({
-      ref: `local-${role}`,
-      model: `local-${role}`,
-      provider: "openrouter",
-      version: "v1",
-      name: role,
-      routingClass: role,
-      priority: role === "primary" ? 1 : 2,
-      api: "openai-completions",
-      baseUrl: `http://127.0.0.1:${address.port}/v1`,
-      reasoning: false,
-      input: ["text"],
-      contextWindow: 8192,
-      maxTokens: 1024,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      capabilities: ["text"],
-      disclosure: "trusted_remote",
-      allowedDataClassifications: ["private"],
-      secretRequirement: {
-        secretRef: "fixture-key",
-        secretVersion: "v1",
-        purpose: "model-provider-auth",
+    descriptors: [
+      {
+        ref: "local-primary",
+        model: "deepseek/deepseek-v4.1-flash",
+        provider: "vercel-ai-gateway",
+        version: "v1",
+        name: "DeepSeek V4.1 Flash",
+        routingClass: "primary",
+        providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
+        priority: 1,
+        api: "openai-completions",
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        reasoning: false,
+        input: ["text"],
+        contextWindow: 8192,
+        maxTokens: 1024,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        capabilities: ["text"],
+        disclosure: "trusted_remote",
+        allowedDataClassifications: ["private"],
+        secretRequirement: {
+          secretRef: "fixture-key",
+          secretVersion: "v1",
+          purpose: "model-provider-auth",
+        },
       },
-    })),
+    ],
     secretSource: {
       productionSuitable: true,
       resolve: async (ref) => {
@@ -1998,7 +2042,7 @@ it("runs configured OpenRouter sessions without storing credentials in the share
   });
   try {
     const binding = await models.resolve("local-primary");
-    expect(binding.modelRuntime.hasConfiguredAuth("openrouter")).toBe(false);
+    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
     const projection = new RecordingProjection();
     let admitted = false;
     const adapter = new PiAgentRuntimeAdapter({
@@ -2028,7 +2072,7 @@ it("runs configured OpenRouter sessions without storing credentials in the share
       ["Bearer", "fixture-request-key"],
     ]);
     expect(projection.finalAnswers[0]?.text).toBe("凭据受控回答");
-    expect(binding.modelRuntime.hasConfiguredAuth("openrouter")).toBe(false);
+    expect(binding.modelRuntime.hasConfiguredAuth("vercel-ai-gateway")).toBe(false);
     expect(await binding.modelRuntime.listCredentials()).toEqual([]);
   } finally {
     await models.close();
@@ -2361,6 +2405,18 @@ it("restores already disclosed batch results across consecutive approvals withou
   const suspended = first.at(-1);
   expect(suspended?.type).toBe("runtime.suspended");
   if (suspended?.type !== "runtime.suspended") throw new Error("Expected approval wait");
+  expect(snapshots.size).toBe(2);
+  expect(JSON.parse(snapshots.get(suspended.continuationRef) ?? "null")).toMatchObject({
+    batch: {
+      waitingToolCallId: "waiting-action",
+      completedResults: [
+        {
+          toolCallId: "completed-before-wait",
+          content: [{ type: "text", text: "first confirmed result" }],
+        },
+      ],
+    },
+  });
   approvals = 1;
   const secondWait = await collect(
     create().run({ ...input, continuationRef: suspended.continuationRef }),
@@ -2769,4 +2825,316 @@ it("preserves owner cancellation during admission of the loop summary", async ()
   expect(events.some((event) => event.type === "runtime.completed")).toBe(false);
   expect(model.observed).toHaveLength(4);
   expect(tools.execute).toHaveBeenCalledTimes(4);
+});
+
+it.each(["saved", "storage-failed"] as const)(
+  "persists a protected Pi batch before entering the product tool: %s",
+  async (mode) => {
+    const model = await createFauxModelFixture("完成", {
+      name: "controlled_action",
+      id: "checkpoint-call",
+      arguments: { value: "test" },
+    });
+    const projection = new RecordingProjection();
+    let effects = 0;
+    const snapshots: unknown[] = [];
+    const save = vi.fn(async (_request: RuntimeRequest, value: unknown) => {
+      expect(effects).toBe(0);
+      if (mode === "storage-failed") throw new Error("private checkpoint storage diagnostic");
+      snapshots.push(structuredClone(value));
+      return "protected-before-tool";
+    });
+    const execute = vi.fn(async (call: Parameters<RuntimeToolPort["execute"]>[0]) => {
+      expect(call.context?.continuationRef).toBe("protected-before-tool");
+      expect(snapshots).toHaveLength(1);
+      effects++;
+      return {
+        outcome: "succeeded" as const,
+        resultRef: "result",
+        errorCode: null,
+        externalActionId: null,
+        modelContent: "已执行",
+      };
+    });
+    const adapter = new PiAgentRuntimeAdapter({
+      projection,
+      models: model.models,
+      cwd: process.cwd(),
+      now: () => NOW,
+      admission: async (scope) => allowAdmission(scope),
+      logicalSlot: (_request, ordinal) => `pre-tool-checkpoint:${ordinal}`,
+      tools: {
+        listAuthorized: async () => [
+          {
+            name: "controlled_action",
+            description: "test",
+            capabilityRef: "test.checkpoint",
+            capabilityHandleRef: null,
+            parameters: {
+              type: "object",
+              properties: { value: { type: "string" } },
+              required: ["value"],
+            },
+          },
+        ],
+        preflight: async () => ({
+          allowed: true,
+          permissionDecisionRef: "test",
+          reasonCode: "test",
+        }),
+        execute,
+      },
+      continuations: {
+        save,
+        load: async () => {
+          throw new Error("not a resumed call");
+        },
+      },
+    });
+    const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(mode === "saved" ? 1 : 0);
+    if (mode === "saved")
+      expect(snapshots[0]).toMatchObject({
+        batch: {
+          version: "pi-tool-batch.v2",
+          waitingToolCallId: "checkpoint-call",
+          completedResults: [],
+        },
+      });
+    else {
+      expect(JSON.stringify(events)).not.toContain("private checkpoint storage diagnostic");
+      expect(projection.captures).toContainEqual(
+        expect.objectContaining({
+          kind: "tool_result",
+          value: expect.objectContaining({ toolCallId: "checkpoint-call", isError: true }),
+        }),
+      );
+    }
+  },
+);
+
+it.each(["known", "rejected", "missing-reader", "wrong-call"] as const)(
+  "restores a known result without reentering tool execution: %s",
+  async (scenario) => {
+    const model = await createFauxModelFixture("已收到原结果", {
+      name: "controlled_action",
+      id: "late-result-call",
+      arguments: { value: "original" },
+    });
+    const projection = new RecordingProjection();
+    const snapshots = new Map<string, unknown>();
+    const slots: number[] = [];
+    const preflight = vi.fn(async () => ({
+      allowed: true,
+      permissionDecisionRef: "test",
+      reasonCode: "test",
+    }));
+    const execute = vi.fn(async () => ({
+      outcome: "result_unknown" as const,
+      resultRef: null,
+      errorCode: "WAIT_EXPIRED",
+      externalActionId: "original-job",
+      modelContent: "结果待核查",
+    }));
+    const recoverResult = vi.fn(async () => {
+      if (scenario === "rejected") throw new Error("RESULT_NO_LONGER_DISCLOSABLE");
+      return {
+        outcome: "succeeded" as const,
+        resultRef: "original-output",
+        errorCode: null,
+        externalActionId: "original-job",
+        modelContent: "原工具的确定结果",
+      };
+    });
+    const tools = {
+      listAuthorized: async () => [
+        {
+          name: "controlled_action",
+          description: "test",
+          capabilityRef: "test.late-result",
+          capabilityHandleRef: null,
+          parameters: { type: "object", properties: { value: { type: "string" } } },
+        },
+      ],
+      preflight,
+      execute,
+      ...(scenario === "missing-reader" ? {} : { recoverResult }),
+    };
+    const create = () =>
+      new PiAgentRuntimeAdapter({
+        projection,
+        tools,
+        models: model.models,
+        cwd: process.cwd(),
+        now: () => NOW,
+        admission: async (scope) => allowAdmission(scope),
+        logicalSlot: (_request, ordinal) => {
+          slots.push(ordinal);
+          return `late-result:${ordinal}`;
+        },
+        continuations: {
+          save: async (_request, value) => {
+            const ref = `late-snapshot:${snapshots.size}`;
+            snapshots.set(ref, structuredClone(value));
+            return ref;
+          },
+          load: async (_request, ref) => structuredClone(snapshots.get(ref)),
+        },
+      });
+    const input = { ...request, modelRef: model.descriptor.ref };
+    expect((await collect(create().run(input))).at(-1)?.type).toBe("runtime.result_unknown");
+    expect(execute).toHaveBeenCalledTimes(1);
+    const resumedInput = {
+      ...input,
+      continuationRef: "late-snapshot:0",
+      knownToolResult: {
+        capabilityRef: "test.late-result",
+        continuationRef: "late-snapshot:0",
+        toolCallId: scenario === "wrong-call" ? "different-call" : "late-result-call",
+        jobId: "original-job",
+        invocationId: "original-invocation",
+      },
+    };
+    const resumed = await collect(create().run(resumedInput));
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(snapshots.size).toBe(1);
+    if (scenario === "known") {
+      expect(recoverResult).toHaveBeenCalledTimes(1);
+      expect(resumed.at(-1)?.type).toBe("runtime.completed");
+      expect(slots).toEqual([1, 2]);
+      expect(JSON.stringify(model.observed.at(-1))).toContain("原工具的确定结果");
+    } else {
+      expect(resumed.at(-1)?.type).not.toBe("runtime.completed");
+      expect(slots).toEqual([1]);
+      expect(model.observed).toHaveLength(1);
+    }
+  },
+);
+
+it("forwards Pi cancellation to a product tool without persisting the signal in its identity", async () => {
+  const model = await createFauxModelFixture("Must not answer after Stop", {
+    name: "restaurant_search",
+    id: "stop-review-call",
+    arguments: { query: "test" },
+  });
+  const defaults = new RecordingRuntimeTools();
+  let started!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  let identity: unknown;
+  const execute = vi.fn(
+    async (
+      call: Parameters<RuntimeToolPort["execute"]>[0],
+      options?: { signal?: AbortSignal },
+    ): Promise<RuntimeToolExecutionResult> => {
+      identity = structuredClone(call);
+      signal = options?.signal;
+      signal?.addEventListener("abort", release, { once: true });
+      started();
+      await waiting;
+      return {
+        outcome: "failed",
+        resultRef: null,
+        errorCode: "action_cancelled",
+        externalActionId: null,
+        modelContent: "操作已取消",
+      };
+    },
+  );
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `stop-review:${ordinal}`,
+    tools: {
+      listAuthorized: () => defaults.listAuthorized(),
+      preflight: defaults.preflight,
+      execute,
+    },
+  });
+  const pending = collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  await entered;
+  try {
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(identity).not.toHaveProperty("signal");
+    await adapter.cancel(request.runId);
+    expect(signal?.aborted).toBe(true);
+    expect((await pending).at(-1)?.type).toBe("runtime.cancelled");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(model.observed).toHaveLength(1);
+  } finally {
+    release();
+    await adapter.cancel(request.runId);
+    await pending;
+  }
+});
+
+it("links regenerated file calls through native Pi history and stops changing-content conflicts", async () => {
+  const calls = Array.from({ length: 4 }, (_, index) => ({
+    name: "write",
+    id: `file-conflict-${index}`,
+    arguments: { path: "note.txt", content: `new candidate ${index}` },
+  }));
+  const model = await createFauxModelFixture(
+    "文件持续变化，已停止重试并保留候选。",
+    calls[0],
+    calls
+      .slice(1)
+      .flatMap((call, index) => [
+        [{ name: "read", id: `refresh-${index}`, arguments: { path: "note.txt" } }],
+        [call],
+      ]),
+  );
+  const tools = new RecordingRuntimeTools();
+  vi.spyOn(tools, "listAuthorized").mockResolvedValue(
+    ["read", "write"].map((name) => ({
+      definition: "builtin-coding" as const,
+      name: name as "read" | "write",
+      capabilityRef: `coding.${name}`,
+      capabilityHandleRef: null,
+    })),
+  );
+  tools.execute.mockImplementation(async (call) => ({
+    outcome: call.capabilityRef === "coding.write" ? "failed" : "succeeded",
+    resultRef: null,
+    errorCode: call.capabilityRef === "coding.write" ? "FILE_VERSION_CONFLICT" : null,
+    externalActionId: null,
+    modelContent:
+      call.capabilityRef === "coding.write" ? "重新读取最新内容后生成新请求" : "其他人的修改",
+  }));
+  const adapter = new PiAgentRuntimeAdapter({
+    projection: new RecordingProjection(),
+    tools,
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `file-conflict:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  const writes = tools.execute.mock.calls
+    .map(([call]) => call)
+    .filter((call) => call.capabilityRef === "coding.write");
+  expect(writes.map((call) => call.fileConflictOf)).toEqual([
+    undefined,
+    "file-conflict-0",
+    "file-conflict-1",
+    "file-conflict-2",
+  ]);
+  expect(events.at(-1)).toMatchObject({
+    type: "runtime.failed",
+    errorCode: "PI_TOOL_LOOP_DETECTED",
+  });
+  expect(model.observed).toHaveLength(8);
+  expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
 });

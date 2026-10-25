@@ -1,0 +1,26 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (42 tests | 1 failed) 337ms
+   × reads a complete opened version while another operation atomically replaces its path 30ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > reads a complete opened version while another operation atomically replaces its path
+Error: HOST_FILE_CONTENT_CHANGED
+ ❯ ConstrainedHostFileSystem.read packages/platform-node/src/files/constrained-file-system.ts:84:15
+     82|       const after = await handle.stat();
+     83|       if (!same(observed, identity(target, after)) || info.ctimeMs !==…
+     84|         throw new Error("HOST_FILE_CONTENT_CHANGED");
+       |               ^
+     85|       await this.#assertParentChain(grant, relativePath, parentChain);
+     86|       const current = await this.inspect(grant, relativePath);
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:970:37
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 41 passed (42)
+   Start at  20:45:17
+   Duration  2.80s (transform 1.29s, setup 0ms, import 2.03s, tests 337ms, environment 0ms)

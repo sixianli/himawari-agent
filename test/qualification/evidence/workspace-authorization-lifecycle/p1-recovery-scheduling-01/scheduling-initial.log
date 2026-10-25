@@ -1,0 +1,120 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (14 tests | 14 failed) 1859ms
+     × discovers and schedules original resources independently of Run status completed 242ms
+     × discovers and schedules original resources independently of Run status failed 179ms
+     × discovers and schedules original resources independently of Run status cancelled 182ms
+     × discovers and schedules original resources independently of Run status reconciling_external_result 188ms
+     × fences unbound starts before queuing cleanup without inventing process identity 181ms
+     × pauses a failed attempt durably and only schedules a later distinct stop obligation 189ms
+     × runs one bounded original-resource stop then preserves an explicit pause across scans 183ms
+     × discovers and schedules original resources independently of Run status completed 74ms
+     × discovers and schedules original resources independently of Run status failed 71ms
+     × discovers and schedules original resources independently of Run status cancelled 70ms
+     × discovers and schedules original resources independently of Run status reconciling_external_result 74ms
+     × fences unbound starts before queuing cleanup without inventing process identity 73ms
+     × pauses a failed attempt durably and only schedules a later distinct stop obligation 75ms
+     × runs one bounded original-resource stop then preserves an explicit pause across scans 77ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > discovers and schedules original resources independently of Run status completed
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > discovers and schedules original resources independently of Run status failed
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > discovers and schedules original resources independently of Run status cancelled
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > discovers and schedules original resources independently of Run status reconciling_external_result
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > pauses a failed attempt durably and only schedules a later distinct stop obligation
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > runs one bounded original-resource stop then preserves an explicit pause across scans
+SqlitePersistenceError: The SQLite execution worker exited with status 0
+ ❯ Worker.<anonymous> packages/persistence-sqlite/src/sqlite-execution-context.ts:56:11
+     54|       if (this.pending.size > 0) {
+     55|         this.failAll(
+     56|           new SqlitePersistenceError(
+       |           ^
+     57|             SQLITE_PERSISTENCE_ERROR_CODES.WORKER_EXITED,
+     58|             `The SQLite execution worker exited with status ${code}`,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > fences unbound starts before queuing cleanup without inventing process identity
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > fences unbound starts before queuing cleanup without inventing process identity
+SqlitePersistenceError: The SQLite product-state repository is closed
+ ❯ SqliteProductStateRepository.assertOpen packages/persistence-sqlite/src/product-state-repository.ts:554:13
+    552|   private assertOpen(): void {
+    553|     if (this.closed) {
+    554|       throw new SqlitePersistenceError(
+       |             ^
+    555|         SQLITE_PERSISTENCE_ERROR_CODES.REPOSITORY_CLOSED,
+    556|         "The SQLite product-state repository is closed",
+ ❯ SqliteProductStateRepository.writeRequest packages/persistence-sqlite/src/product-state-repository.ts:542:10
+ ❯ Object.write packages/persistence-sqlite/src/product-state-repository.ts:164:43
+ ❯ Object.reserve packages/persistence-sqlite/src/durable-adapters.ts:481:22
+ ❯ fixture test/integration/sandbox-resource-recovery-scheduling.test.ts:21:24
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:67:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > discovers and schedules original resources independently of Run status completed
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > discovers and schedules original resources independently of Run status failed
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > discovers and schedules original resources independently of Run status cancelled
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > discovers and schedules original resources independently of Run status reconciling_external_result
+ApplicationPortError: The database connection is not open
+ ❯ SqliteCapabilityInvocationOperations.fail test/integration/sqlite-contract-execution.fixture.ts:43:17
+     41|         database,
+     42|         (code, message, details) => {
+     43|           throw new ApplicationPortError(code as PortErrorCode, messag…
+       |                 ^
+     44|         },
+     45|         () => undefined,
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ SqliteDurableOperations.execute packages/persistence-sqlite/src/sqlite-durable-operations.ts:458:41
+ ❯ Object.request test/integration/sqlite-contract-execution.fixture.ts:60:29
+ ❯ Object.read packages/persistence-sqlite/src/product-state-repository.ts:163:50
+ ❯ Object.listRecoveryCandidates packages/persistence-sqlite/src/durable-adapters.ts:444:55
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:50:37
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > pauses a failed attempt durably and only schedules a later distinct stop obligation
+ApplicationPortError: The database connection is not open
+ ❯ SqliteCapabilityInvocationOperations.fail test/integration/sqlite-contract-execution.fixture.ts:43:17
+     41|         database,
+     42|         (code, message, details) => {
+     43|           throw new ApplicationPortError(code as PortErrorCode, messag…
+       |                 ^
+     44|         },
+     45|         () => undefined,
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ SqliteDurableOperations.execute packages/persistence-sqlite/src/sqlite-durable-operations.ts:458:41
+ ❯ Object.request test/integration/sqlite-contract-execution.fixture.ts:60:29
+ ❯ Object.read packages/persistence-sqlite/src/product-state-repository.ts:163:50
+ ❯ Object.listAdmissions packages/persistence-sqlite/src/durable-adapters.ts:507:22
+ ❯ recoverSandboxExecutionsAtStartup packages/application/src/services/sandbox-startup-recovery.ts:71:45
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:82:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > runs one bounded original-resource stop then preserves an explicit pause across scans
+ApplicationPortError: The database connection is not open
+ ❯ SqliteCapabilityInvocationOperations.fail test/integration/sqlite-contract-execution.fixture.ts:43:17
+     41|         database,
+     42|         (code, message, details) => {
+     43|           throw new ApplicationPortError(code as PortErrorCode, messag…
+       |                 ^
+     44|         },
+     45|         () => undefined,
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:545:21
+ ❯ SqliteDurableOperations.execute packages/persistence-sqlite/src/sqlite-durable-operations.ts:458:41
+ ❯ Object.request test/integration/sqlite-contract-execution.fixture.ts:60:29
+ ❯ Object.read packages/persistence-sqlite/src/product-state-repository.ts:163:50
+ ❯ Object.listRecoveryCandidates packages/persistence-sqlite/src/durable-adapters.ts:444:55
+ ❯ SandboxResourceRecoveryService.pump packages/application/src/services/sandbox-resource-recovery.ts:46:50
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:122:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed (14)
+   Start at  12:39:19
+   Duration  3.41s (transform 908ms, setup 0ms, import 1.45s, tests 1.86s, environment 0ms)

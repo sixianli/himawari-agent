@@ -1,0 +1,49 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (26 tests | 2 failed) 5423ms
+     × fences a stopped reservation durably without fabricating release or execution 200ms
+     × finds an unbound prior attempt at startup and keeps its start fence after reopening 434ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > fences a stopped reservation durably without fabricating release or execution
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/integration/sandbox-execution-preparation.test.ts:120:9
+    118|       expect(
+    119|         f.database.prepare("SELECT count(*) FROM sandbox_execution_obs…
+    120|       ).toBe(0);
+       |         ^
+    121|       expect(
+    122|         f.database
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > finds an unbound prior attempt at startup and keeps its start fence after reopening
+AssertionError: expected [Function] to throw error including 'occupied' but got 'Workspace has a pending preparation'
+
+Expected: "occupied"
+Received: "Workspace has a pending preparation"
+
+ ❯ test/integration/sandbox-execution-preparation.test.ts:201:66
+    199|         ).toEqual({ examined: 1, quarantined: 0 });
+    200|         await expect(preparations.bindAndStart(start)).rejects.toThrow…
+    201|         await expect(preparations.reserve(input(f, "-conflict"))).reje…
+       |                                                                  ^
+    202|       } finally {
+    203|         await repo.close();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  2 failed | 196 passed (198)
+   Start at  22:20:41
+   Duration  52.07s (transform 1.17s, setup 0ms, import 3.84s, tests 47.63s, environment 0ms)

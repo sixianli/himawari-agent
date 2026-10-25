@@ -1,43 +1,49 @@
-import { ExaPublicSearchAdapter } from "@himawari-agent/platform-node";
+import process from "node:process";
+import {
+  publicSearchFailure,
+  searchWithProviders,
+  WebProviderChainError,
+} from "@himawari-agent/platform-node";
+import {
+  programProvider,
+  programProviders,
+  programSecrets,
+  providerSource,
+  readProgramInput,
+} from "./web-program-io.js";
 
-// Installed fixed-read program; Worker supplies admitted protected input and SRT
-// restricts network access to the declared search provider.
 try {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    const bytes = Buffer.from(chunk);
-    size += bytes.length;
-    if (size > 8192) throw new Error("WEB_SEARCH_INPUT_LIMIT");
-    chunks.push(bytes);
-  }
-  const input: unknown = JSON.parse(
-    new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks)),
-  );
-  if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("WEB_SEARCH_INPUT_INVALID");
-  const args = input as Record<string, unknown>;
+  const args = await readProgramInput("WEB_SEARCH");
   if (
-    Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    Object.keys(args).some((key) => !["query", "limit", "providers", "secrets"].includes(key)) ||
     typeof args["query"] !== "string" ||
     (args["limit"] !== undefined && typeof args["limit"] !== "number")
   )
     throw new Error("WEB_SEARCH_INPUT_INVALID");
-  const results = await new ExaPublicSearchAdapter().search({
+  const secrets = programSecrets(args["secrets"], "WEB_SEARCH");
+  const searched = await searchWithProviders({
+    providers: programProviders(args["providers"], "WEB_SEARCH"),
+    secrets,
     query: args["query"],
     limit: (args["limit"] as number | undefined) ?? 5,
+    create: programProvider(secrets),
   });
   process.stdout.write(
     JSON.stringify({
       retrievedAt: new Date().toISOString(),
-      source: "Exa public web search",
+      source: providerSource[searched.provider],
+      provider: searched.provider,
+      ...(searched.attempts.length ? { fallbackFrom: searched.attempts } : {}),
       contentKind: "search_excerpts",
       pagesOpened: false,
-      results,
+      results: searched.result,
     }),
   );
-} catch {
-  // Provider errors can include transport credentials; only this stable code exits.
-  process.stderr.write("WEB_SEARCH_FAILED\n");
+} catch (error) {
+  const failure = publicSearchFailure(
+    error instanceof WebProviderChainError ? new Error(error.last.code) : error,
+  );
+  process.stdout.write(failure.output);
+  process.stderr.write(`${failure.code}\n`);
   process.exitCode = 1;
 }

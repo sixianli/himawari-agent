@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   copyFile,
+  link,
   lstat,
   mkdir,
   open,
@@ -13,14 +15,24 @@ import {
   unlink,
 } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type {
   HostDirectoryGrant,
   HostFileIdentity,
   HostFilePlatformPort,
+  HostFilePublication,
+  HostFilePublishHooks,
 } from "@himawari-agent/application";
 import { identityKey, normalizeRelativePath } from "@himawari-agent/application";
 
 export class ConstrainedHostFileSystem implements HostFilePlatformPort {
+  readonly #directoryRenameExecutable: string;
+  constructor(input: { readonly directoryRenameExecutable?: string } = {}) {
+    this.#directoryRenameExecutable =
+      input.directoryRenameExecutable ?? fileURLToPath(new URL("./rename-native", import.meta.url));
+  }
+
   async inspectRoot(root: string): Promise<HostFileIdentity> {
     const canonical = await realpath(root);
     const info = await lstat(canonical);
@@ -48,6 +60,7 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     relativePath: string,
     maximumBytes: number,
     expected?: HostFileIdentity,
+    consistency: "current_path" | "opened_version" = "current_path",
   ): Promise<Uint8Array> {
     if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
       throw new Error("HOST_FILE_READ_REJECTED");
@@ -77,31 +90,48 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
         offset += bytesRead;
       }
       const after = await handle.stat();
-      if (!same(observed, identity(target, after)) || info.ctimeMs !== after.ctimeMs)
+      // Atomic replacement unlinks the old inode without changing its bytes.
+      // Only explicitly versioned reads may finish from that opened descriptor;
+      // verification and write baselines still require the current path.
+      const openedVersion =
+        consistency === "opened_version" && info.nlink === 1 && after.nlink === 0;
+      const afterIdentity = identity(target, after);
+      if (
+        !same(
+          observed,
+          openedVersion ? { ...afterIdentity, linkCount: observed.linkCount } : afterIdentity,
+        ) ||
+        (!openedVersion && info.ctimeMs !== after.ctimeMs)
+      )
         throw new Error("HOST_FILE_CONTENT_CHANGED");
       await this.#assertParentChain(grant, relativePath, parentChain);
       const current = await this.inspect(grant, relativePath);
-      if (!current || !same(observed, current)) throw new Error("HOST_FILE_IDENTITY_CHANGED");
+      if (
+        !current ||
+        (!same(observed, current) &&
+          !(
+            openedVersion &&
+            current.device === observed.device &&
+            current.inode !== observed.inode
+          ))
+      )
+        throw new Error("HOST_FILE_IDENTITY_CHANGED");
       return bytes;
     } finally {
       await handle.close();
     }
   }
 
-  async createExclusive(grant: HostDirectoryGrant, relativePath: string, bytes: Uint8Array) {
-    const target = await this.#resolve(grant, relativePath, false, true);
-    const handle = await open(
-      target,
-      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    return this.#requiredSafeIdentity(grant, relativePath);
+  async createExclusive(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    bytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
+  ) {
+    bytes = new Uint8Array(bytes);
+    grant = structuredClone(grant);
+    const publication = await this.stagePublication(grant, bytes, 0o600);
+    return this.publishPrepared(grant, relativePath, publication, null, new Uint8Array(), hooks);
   }
 
   async replaceAtomic(
@@ -110,51 +140,188 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     expected: HostFileIdentity,
     bytes: Uint8Array,
     previousBytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
   ) {
-    const target = await this.#resolve(grant, relativePath, true);
+    grant = structuredClone(grant);
+    expected = { ...expected };
+    previousBytes = new Uint8Array(previousBytes);
+    const publication = await this.stagePublication(grant, bytes, expected.mode & 0o777);
+    return this.publishPrepared(grant, relativePath, publication, expected, previousBytes, hooks);
+  }
+
+  /** Preparation writes only our private recovery area, never the target or its parents. */
+  async stagePublication(grant: HostDirectoryGrant, bytes: Uint8Array, mode = 0o600) {
+    return this.#stage(structuredClone(grant), new Uint8Array(bytes), mode);
+  }
+
+  async readPublication(grant: HostDirectoryGrant, publication: HostFilePublication) {
+    grant = structuredClone(grant);
+    publication = structuredClone(publication);
+    await this.#assertStaged(grant, publication);
+    return this.read(
+      grant,
+      publication.stagedRelativePath,
+      Math.max(1, publication.identity.sizeBytes),
+      publication.identity,
+    );
+  }
+
+  /** Caller owns commit admission. A prepared inode is never regenerated on conflict. */
+  async publishPrepared(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    publication: HostFilePublication,
+    expected: HostFileIdentity | null,
+    previousBytes: Uint8Array,
+    hooks?: HostFilePublishHooks,
+  ) {
+    grant = structuredClone(grant);
+    publication = structuredClone(publication);
+    expected = expected ? { ...expected } : null;
+    previousBytes = new Uint8Array(previousBytes);
+    await this.#assertStaged(grant, publication);
+    const target = await this.#resolve(grant, relativePath, expected !== null, expected === null);
     const parentChain = await this.#captureParentChain(grant, relativePath);
-    const before = await this.#requiredSafeIdentity(grant, relativePath);
-    if (identityKey(before) !== identityKey(expected))
-      throw new Error("HOST_FILE_IDENTITY_CHANGED");
-    const assertContentUnchanged = async () => {
+    const recoveryRoot = path.dirname(publication.identity.canonicalPath);
+    const assertUnchanged = async () => {
+      if (!expected) return;
+      const before = await this.#requiredSafeIdentity(grant, relativePath);
+      if (identityKey(before) !== identityKey(expected))
+        throw new Error("HOST_FILE_IDENTITY_CHANGED");
       const current = await this.read(grant, relativePath, Math.max(1, previousBytes.byteLength));
       if (!Buffer.from(current).equals(previousBytes)) throw new Error("HOST_FILE_CONTENT_CHANGED");
     };
-    await assertContentUnchanged();
-    const recoveryRoot = await this.#ensureControlledDirectory(grant, ".himawari-recovery");
-    const recovery = path.join(
-      recoveryRoot,
-      `${createHash("sha256").update(relativePath).digest("hex")}-${randomUUID()}.bak`,
-    );
-    await this.#assertParentChain(grant, relativePath, parentChain);
-    await copyFile(target, recovery, constants.COPYFILE_EXCL);
-    const temporary = path.join(path.dirname(target), `.himawari-${randomUUID()}.tmp`);
-    let temporaryCreated = false;
-    try {
-      const handle = await open(
-        temporary,
-        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-        0o600,
+    await assertUnchanged();
+    if (expected) {
+      const recovery = path.join(
+        recoveryRoot,
+        `${createHash("sha256").update(relativePath).digest("hex")}-${randomUUID()}.bak`,
       );
-      temporaryCreated = true;
-      try {
-        await handle.writeFile(bytes);
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      const immediatelyBeforeRename = await this.#requiredSafeIdentity(grant, relativePath);
-      if (identityKey(immediatelyBeforeRename) !== identityKey(expected))
-        throw new Error("HOST_FILE_IDENTITY_CHANGED");
       await this.#assertParentChain(grant, relativePath, parentChain);
-      // External writers must be isolated for a strict compare-and-replace guarantee.
-      await assertContentUnchanged();
-      await rename(temporary, target);
-      temporaryCreated = false;
-    } finally {
-      if (temporaryCreated) await unlink(temporary).catch(() => undefined);
+      await copyFile(target, recovery, constants.COPYFILE_EXCL);
+      const backup = await open(recovery, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        await backup.sync();
+      } finally {
+        await backup.close();
+      }
+      await syncDirectory(recoveryRoot);
     }
+    await hooks?.beforePublish(publication);
+    await this.#assertParentChain(grant, relativePath, parentChain);
+    await this.#assertStaged(grant, publication);
+    await assertUnchanged();
+    await hooks?.assertCurrentAuthority?.();
+    await hooks?.commitStarting?.();
+    await hooks?.assertCurrentAuthority?.();
+    // External uncooperative writers are detected, not a strict filesystem CAS.
+    if (expected) await rename(publication.identity.canonicalPath, target);
+    else {
+      await link(publication.identity.canonicalPath, target);
+      await unlink(publication.identity.canonicalPath);
+    }
+    await syncDirectory(path.dirname(target));
+    await syncDirectory(recoveryRoot);
     return this.#requiredSafeIdentity(grant, relativePath);
+  }
+
+  async recoverPublication(
+    grant: HostDirectoryGrant,
+    relativePath: string,
+    publication: HostFilePublication,
+  ): Promise<HostFileIdentity> {
+    const targetParent = await this.#captureParentChain(grant, relativePath);
+    const normalized = normalizeRelativePath(relativePath);
+    const root = await this.#resolveRoot(grant);
+    const target = path.join(root, normalized);
+    const stage = await this.#publicationPath(grant, publication);
+    const current = await lstat(target);
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      current.nlink > 2 ||
+      identityKey(identity(target, current)) !== identityKey(publication.identity) ||
+      current.size !== publication.identity.sizeBytes ||
+      current.mtimeMs !== publication.identity.modifiedAtMillis
+    )
+      throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+    const staged = await lstat(stage).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (staged) {
+      if (
+        !staged.isFile() ||
+        staged.isSymbolicLink() ||
+        staged.dev !== current.dev ||
+        staged.ino !== current.ino
+      )
+        throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+      // A crash between link and unlink left our private alias. No other alias
+      // may be removed, and bytes alone cannot authorize this recovery.
+      await unlink(stage);
+      await syncDirectory(path.dirname(stage));
+    } else if (current.nlink !== 1) throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+    await this.#assertParentChain(grant, relativePath, targetParent);
+    await syncDirectory(path.dirname(target));
+    return this.#requiredSafeIdentity(grant, relativePath);
+  }
+
+  async #publicationPath(grant: HostDirectoryGrant, publication: HostFilePublication) {
+    if (!/^\.himawari-recovery\/staged-[0-9a-f-]{36}\.tmp$/.test(publication.stagedRelativePath))
+      throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+    const directory = await this.#resolve(grant, ".himawari-recovery", true);
+    const filename = path.join(directory, path.basename(publication.stagedRelativePath));
+    if (filename !== publication.identity.canonicalPath)
+      throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+    return filename;
+  }
+
+  async #assertStaged(grant: HostDirectoryGrant, publication: HostFilePublication) {
+    const filename = await this.#publicationPath(grant, publication);
+    const info = await lstat(filename);
+    rejectUnsafeObject(info);
+    if (
+      !info.isFile() ||
+      identityKey(identity(filename, info)) !== identityKey(publication.identity) ||
+      info.size !== publication.identity.sizeBytes ||
+      info.mtimeMs !== publication.identity.modifiedAtMillis
+    )
+      throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+  }
+
+  async #stage(
+    grant: HostDirectoryGrant,
+    bytes: Uint8Array,
+    mode: number,
+  ): Promise<HostFilePublication> {
+    const directory = await this.#ensureControlledDirectory(grant, ".himawari-recovery");
+    const name = `staged-${randomUUID()}.tmp`;
+    const filename = path.join(directory, name);
+    const handle = await open(
+      filename,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    );
+    let complete = false;
+    try {
+      await handle.writeFile(bytes);
+      await handle.chmod(mode);
+      await handle.sync();
+      const info = await handle.stat();
+      rejectUnsafeObject(info);
+      if (!info.isFile() || info.size !== bytes.byteLength)
+        throw new Error("HOST_FILE_PUBLICATION_UNVERIFIED");
+      await syncDirectory(directory);
+      complete = true;
+      return {
+        stagedRelativePath: `.himawari-recovery/${name}`,
+        identity: identity(filename, info),
+      };
+    } finally {
+      await handle.close();
+      if (!complete) await unlink(filename).catch(() => undefined);
+    }
   }
 
   async move(
@@ -163,17 +330,65 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     destinationRelativePath: string,
     expected: HostFileIdentity,
   ) {
+    grant = structuredClone(grant);
+    expected = { ...expected };
     const source = await this.#resolve(grant, sourceRelativePath, true);
-    const destination = await this.#resolve(grant, destinationRelativePath, false, true);
+    // Directory moves must not create parents as a hidden side effect before admission.
+    const destination = await this.#resolve(
+      grant,
+      destinationRelativePath,
+      false,
+      (expected.mode & constants.S_IFMT) !== constants.S_IFDIR,
+    );
     const sourceChain = await this.#captureParentChain(grant, sourceRelativePath);
     const destinationChain = await this.#captureParentChain(grant, destinationRelativePath);
-    if (await lstat(destination).catch(() => undefined)) throw new Error("HOST_FILE_TARGET_EXISTS");
+    if (
+      await lstat(destination).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      })
+    )
+      throw new Error("HOST_FILE_TARGET_EXISTS");
     const current = await this.#requiredSafeIdentity(grant, sourceRelativePath);
     if (identityKey(current) !== identityKey(expected))
       throw new Error("HOST_FILE_IDENTITY_CHANGED");
     await this.#assertParentChain(grant, sourceRelativePath, sourceChain);
     await this.#assertParentChain(grant, destinationRelativePath, destinationChain);
-    await rename(source, destination);
+    if ((current.mode & constants.S_IFMT) === constants.S_IFDIR) {
+      if (destination.startsWith(`${source}${path.sep}`))
+        throw new Error("HOST_DIRECTORY_DESTINATION_INSIDE_SOURCE");
+      const root = await this.#resolveRoot(grant);
+      const rootInfo = await lstat(root);
+      const executable = await lstat(this.#directoryRenameExecutable);
+      if (!executable.isFile() || executable.isSymbolicLink() || !(executable.mode & 0o111))
+        throw new Error("HOST_DIRECTORY_RENAME_UNAVAILABLE");
+      try {
+        await promisify(execFile)(
+          this.#directoryRenameExecutable,
+          [
+            root,
+            normalizeRelativePath(sourceRelativePath),
+            normalizeRelativePath(destinationRelativePath),
+            String(rootInfo.dev),
+            String(rootInfo.ino),
+            expected.device,
+            expected.inode,
+          ],
+          { maxBuffer: 1024, env: {} },
+        );
+      } catch (error) {
+        const code = (error as { stderr?: string }).stderr?.trim();
+        throw new Error(
+          code && /^HOST_[A-Z_]+$/.test(code) ? code : "HOST_DIRECTORY_RESULT_UNKNOWN",
+        );
+      }
+    } else {
+      await rename(source, destination);
+      await syncDirectory(path.dirname(source));
+      await syncDirectory(path.dirname(destination));
+    }
+    await this.#assertParentChain(grant, sourceRelativePath, sourceChain);
+    await this.#assertParentChain(grant, destinationRelativePath, destinationChain);
     return this.#requiredSafeIdentity(grant, destinationRelativePath);
   }
 
@@ -338,7 +553,10 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
       const isTarget = index === parts.length - 1;
       let info = await lstat(current).catch(() => undefined);
       if (!info && !isTarget && createParents) {
-        await mkdir(current, { mode: 0o700 });
+        await mkdir(current, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+        });
+        await syncDirectory(path.dirname(current));
         info = await lstat(current);
       }
       if (!info) {
@@ -374,6 +592,9 @@ export class ConstrainedHostFileSystem implements HostFilePlatformPort {
     const safe = await this.#resolve(grant, relativePath, true);
     const info = await lstat(safe);
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("HOST_PATH_ESCAPE_BLOCKED");
+    if ((info.mode & 0o077) !== 0 || (process.getuid && info.uid !== process.getuid()))
+      throw new Error("HOST_RECOVERY_DIRECTORY_UNSAFE");
+    await syncDirectory(path.dirname(safe));
     return safe;
   }
 
@@ -426,4 +647,17 @@ function identity(
     sizeBytes: Number(info.size),
     modifiedAtMillis: Number(info.mtimeMs),
   });
+}
+
+/** Failure here is an uncertain durability result, never a successful receipt. */
+async function syncDirectory(directory: string): Promise<void> {
+  const handle = await open(
+    directory,
+    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+  );
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }

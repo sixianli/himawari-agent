@@ -1,5 +1,11 @@
+import { cp, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { fileURLToPath } from "node:url";
 import type {
+  CapabilityInvocationAuthorityPort,
   CapabilityInvocationRequest,
   CapabilityManifest,
   PayloadProtectorPort,
@@ -7,6 +13,7 @@ import type {
   PayloadStorePort,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
+import { build } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CapabilityEndpointBinding,
@@ -132,6 +139,8 @@ async function runtimeFixture(
   fetch?: typeof globalThis.fetch,
   listActive?: () => Promise<readonly CapabilityManifest[]>,
   payloadBoundaryOverrides?: Partial<CapabilityPayloadBoundary>,
+  invocationAuthority?: CapabilityInvocationAuthorityPort,
+  waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>,
 ) {
   const clock = { now: () => NOW };
   const payloadStore = new FixturePayloadStore();
@@ -190,6 +199,8 @@ async function runtimeFixture(
     secretSource: { resolve: async () => "fixture-secret" },
     clock,
     ...(fetch ? { fetch } : {}),
+    ...(invocationAuthority ? { invocationAuthority } : {}),
+    ...(waitForRetry ? { waitForRetry } : {}),
   });
   const putInput = async (input: CapabilityInvocationRequest, value: unknown) => {
     await payloadStore.put(
@@ -322,100 +333,325 @@ describe("NodeCapabilityRuntimePort", () => {
     expect(new TextDecoder().decode(outputCall.plaintext)).toBe("program output");
   });
 
-  it("uses the official MCP v2 stdio SDK, enforces exact server/tool identity, and protects output", async () => {
-    const capability = manifest(
-      {
-        kind: "mcp",
-        serverIdentity: "himawari-qualified-echo@1.0.0",
-        transport: "stdio:mcp-2026-07-28",
-        mappedResources: ["tool:echo"],
-      },
-      "mcp",
-      { ref: "qualified-mcp", isolation: "sandbox", operations: ["echo"] },
-    );
-    const binding: CapabilityProcessBinding = {
-      capabilityRef: capability.ref,
-      capabilityVersion: capability.version,
-      artifactDigest: capability.integrity,
-      runtimeRoot: "/fixture/not-used-by-sdk-test",
-      command: process.execPath,
-      workdirRef: "fixture",
-      sandboxWorkdir: "/",
-      environment: {},
-      availableExecutables: [process.execPath],
-      resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
-      filesystem: [],
-      maximumResourceCeiling: CEILING,
-      mcpServerIdentity: "himawari-qualified-echo@1.0.0",
-      mcpServerName: "himawari-qualified-echo",
-      mcpServerVersion: "1.0.0",
-      mcpOperationMap: { echo: "echo" },
-    };
-    const bindings: CapabilityRuntimeBindingPort = {
-      resolveProcess: async () => binding,
-      resolveEndpoint: async () => undefined,
-    };
-    const isolation: SandboxedProcessIsolationBackend = {
-      qualify: async () => ({
-        qualificationVersion: "capability-runtime-qualification.v1",
-        platform: "darwin",
-        runtimeIdentity: "test-only-direct-process",
-        productionSuitable: false,
-        artifactDigest: DIGEST,
-        enforcement: {
-          filesystem: false,
-          network: false,
-          processes: false,
-          secrets: false,
-          resourceCeilings: false,
-          termination: true,
-        },
-        reasonCodes: ["TEST_ONLY_NO_PRODUCTION_ISOLATION"],
-        checkedAt: NOW,
-      }),
-      createLaunch: async (_manifest, ceiling) => ({
-        command: process.execPath,
-        args: [MCP_FIXTURE],
-        cwd: "/",
-        environment: {},
-        ceiling,
-      }),
-    };
-    const fixture = await runtimeFixture([capability], bindings, isolation);
-    const invocation = request(capability.ref, "echo");
-    await fixture.putInput(invocation, { value: "hello from qualified MCP" });
-    const events = await collect(fixture.port, invocation);
-    expect(events).toEqual([
-      {
-        type: "capability.completed",
-        invocationId: invocation.invocationId,
-        resultRef: `payload:result:${invocation.invocationId}`,
-        occurredAt: NOW,
-      },
-    ]);
-    const output = await fixture.payloadStore.get(`payload:result:${invocation.invocationId}`);
-    expect(output).toBeDefined();
-    if (!output) throw new Error("protected MCP output is missing");
-    expect(JSON.stringify(output)).not.toContain("hello from qualified MCP");
-    expect(fixture.readInputCalls).toEqual([invocation]);
-    const outputCall = fixture.writeOutputCalls[0];
-    expect(outputCall).toBeDefined();
-    if (!outputCall) throw new Error("MCP output boundary call is missing");
-    expect(outputCall.request).toEqual(invocation);
-    expect(outputCall.contentType).toBe("application/json");
-    const decoded = JSON.parse(
-      new TextDecoder().decode(
-        await fixture.protector.unprotect({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          payload: output,
+  it.for(["active", "revoked_before_tool", "startup_timeout"])(
+    "uses the official MCP v2 SDK with current authority: %s",
+    async (mode, context) => {
+      const timingRoot = await mkdtemp(path.join(tmpdir(), "hma-mcp-stage-"));
+      const tracePath = path.join(timingRoot, "children.jsonl");
+      const stages: Record<string, unknown>[] = [];
+      const origin = performance.now();
+      const transports = new Set<StdioClientTransport>();
+      const sessions = new WeakSet<StdioClientTransport>();
+      const note = (stage: string, extra: Record<string, unknown> = {}) => {
+        stages.push({ stage, at: Date.now(), elapsedMs: performance.now() - origin, ...extra });
+      };
+      const measure = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
+        const started = performance.now();
+        note(`${stage}.begin`);
+        try {
+          const value = await operation();
+          note(`${stage}.end`, { durationMs: performance.now() - started });
+          return value;
+        } catch (error) {
+          note(`${stage}.error`, {
+            durationMs: performance.now() - started,
+            error:
+              error instanceof Error
+                ? {
+                    name: error.name,
+                    message: error.message,
+                    code: "code" in error ? error.code : null,
+                  }
+                : { name: "non-error" },
+          });
+          throw error;
+        }
+      };
+      const connect = Client.prototype.connect;
+      const listTools = Client.prototype.listTools;
+      const callTool = Client.prototype.callTool;
+      const start = StdioClientTransport.prototype.start;
+      const send = StdioClientTransport.prototype.send;
+      const spies = [
+        vi.spyOn(Client.prototype, "connect").mockImplementation(function (this: Client, ...args) {
+          if (args[0] instanceof StdioClientTransport) sessions.add(args[0]);
+          note("connect.options", {
+            timeout: args[1]?.timeout,
+            maxTotalTimeout: args[1]?.maxTotalTimeout,
+          });
+          return measure("connect", () => Reflect.apply(connect, this, args));
         }),
-      ),
-    );
-    expect(decoded).toMatchObject({
-      content: [{ type: "text", text: "hello from qualified MCP" }],
-    });
-  });
+        vi.spyOn(Client.prototype, "listTools").mockImplementation(function (
+          this: Client,
+          ...args
+        ) {
+          return measure("listTools", () => Reflect.apply(listTools, this, args));
+        }),
+        vi.spyOn(Client.prototype, "callTool").mockImplementation(function (this: Client, ...args) {
+          return measure("callTool", () => Reflect.apply(callTool, this, args));
+        }),
+        vi.spyOn(StdioClientTransport.prototype, "start").mockImplementation(async function (
+          this: StdioClientTransport,
+        ) {
+          transports.add(this);
+          const role = sessions.has(this) ? "session" : "probe";
+          await measure(`${role}.spawn`, () => Reflect.apply(start, this, []));
+          note(`${role}.pid`, { pid: this.pid });
+        }),
+        vi.spyOn(StdioClientTransport.prototype, "send").mockImplementation(function (
+          this: StdioClientTransport,
+          message,
+        ) {
+          note("transport.send", {
+            pid: this.pid,
+            method: "method" in message ? message.method : "response",
+          });
+          return Reflect.apply(send, this, [message]);
+        }),
+      ];
+      context.onTestFinished(async () => {
+        for (const spy of spies) spy.mockRestore();
+        for (const transport of transports) await transport.close();
+        const children = await readFile(tracePath, "utf8").catch(() => "");
+        if (
+          context.task.result?.state === "fail" ||
+          process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1"
+        )
+          Object.assign(context.task.meta, {
+            startupTiming: {
+              stages,
+              children: children
+                .trim()
+                .split("\n")
+                .filter(Boolean)
+                .map((line) => JSON.parse(line)),
+            },
+          });
+        const output = process.env["HIMAWARI_TEST_DIAGNOSTIC_OUTPUT"];
+        if (context.task.result?.state === "fail" && output)
+          await cp(timingRoot, path.join(output, `mcp-${mode}`), {
+            recursive: true,
+            errorOnExist: true,
+            force: false,
+          });
+        await rm(timingRoot, { recursive: true, force: true });
+      });
+      const bundledFixture = path.join(timingRoot, "mcp-echo.mjs");
+      await build({
+        configFile: false,
+        logLevel: "silent",
+        publicDir: false,
+        ssr: { noExternal: true },
+        build: {
+          ssr: MCP_FIXTURE,
+          outDir: timingRoot,
+          emptyOutDir: false,
+          copyPublicDir: false,
+          minify: false,
+          rolldownOptions: {
+            output: { format: "es", entryFileNames: "mcp-echo.mjs", inlineDynamicImports: true },
+          },
+        },
+      });
+      expect(await readdir(timingRoot)).toEqual(["mcp-echo.mjs"]);
+      const capability = manifest(
+        {
+          kind: "mcp",
+          serverIdentity: "himawari-qualified-echo@1.0.0",
+          transport: "stdio:mcp-2026-07-28",
+          mappedResources: ["tool:echo"],
+        },
+        "mcp",
+        { ref: "qualified-mcp", isolation: "sandbox", operations: ["echo"] },
+      );
+      const binding: CapabilityProcessBinding = {
+        capabilityRef: capability.ref,
+        capabilityVersion: capability.version,
+        artifactDigest: capability.integrity,
+        runtimeRoot: "/fixture/not-used-by-sdk-test",
+        command: process.execPath,
+        workdirRef: "fixture",
+        sandboxWorkdir: "/",
+        environment: {},
+        availableExecutables: [process.execPath],
+        resourceLimitExecutable: { sandboxPath: "/bin/prlimit", sha256: DIGEST },
+        filesystem: [],
+        maximumResourceCeiling: CEILING,
+        mcpServerIdentity: "himawari-qualified-echo@1.0.0",
+        mcpServerName: "himawari-qualified-echo",
+        mcpServerVersion: "1.0.0",
+        mcpOperationMap: { echo: "echo" },
+      };
+      const bindings: CapabilityRuntimeBindingPort = {
+        resolveProcess: async () => binding,
+        resolveEndpoint: async () => undefined,
+      };
+      const isolation: SandboxedProcessIsolationBackend = {
+        qualify: async () => ({
+          qualificationVersion: "capability-runtime-qualification.v1",
+          platform: "darwin",
+          runtimeIdentity: "test-only-direct-process",
+          productionSuitable: false,
+          artifactDigest: DIGEST,
+          enforcement: {
+            filesystem: false,
+            network: false,
+            processes: false,
+            secrets: false,
+            resourceCeilings: false,
+            termination: true,
+          },
+          reasonCodes: ["TEST_ONLY_NO_PRODUCTION_ISOLATION"],
+          checkedAt: NOW,
+        }),
+        createLaunch: async (_manifest, ceiling) => ({
+          command: process.execPath,
+          args: [
+            "--import",
+            fileURLToPath(new URL("./fixtures/mcp-startup-preload.mjs", import.meta.url)),
+            bundledFixture,
+          ],
+          cwd: "/",
+          environment: {
+            HIMAWARI_MCP_TEST_TIMING_PATH: tracePath,
+            HIMAWARI_MCP_TEST_STARTUP_DELAY_MS: mode === "startup_timeout" ? "4000" : "0",
+          },
+          ceiling,
+        }),
+      };
+      let checks = 0;
+      const fixture = await runtimeFixture(
+        [capability],
+        bindings,
+        isolation,
+        undefined,
+        undefined,
+        undefined,
+        {
+          assertCurrent: async () => {
+            checks += 1;
+            if (mode === "revoked_before_tool" && checks === 4)
+              throw new Error("Grant revoked after tools/list");
+          },
+        },
+      );
+      const invocation = request(capability.ref, "echo");
+      await fixture.putInput(invocation, { value: "hello from qualified MCP" });
+      const events = await collect(fixture.port, invocation);
+      if (mode === "startup_timeout") {
+        expect(events).toMatchObject([
+          { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_MCP_FAILED" },
+        ]);
+        expect(stages).toContainEqual(
+          expect.objectContaining({
+            stage: "connect.options",
+            timeout: 3000,
+            maxTotalTimeout: 3000,
+          }),
+        );
+        const failure = stages.find((item) => item["stage"] === "connect.error");
+        expect(failure).toMatchObject({ error: { code: "ERA_NEGOTIATION_FAILED" } });
+        expect(failure?.["durationMs"]).toBeGreaterThanOrEqual(3000);
+        expect(failure?.["durationMs"]).toBeLessThan(4000);
+        expect(stages.some((item) => item["stage"] === "listTools.begin")).toBe(false);
+        expect(fixture.writeOutputCalls).toHaveLength(0);
+        return;
+      }
+      if (mode === "revoked_before_tool") {
+        expect(events).toMatchObject([
+          { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+        ]);
+        expect(fixture.writeOutputCalls).toHaveLength(0);
+        return;
+      }
+      expect(events).toEqual([
+        {
+          type: "capability.completed",
+          invocationId: invocation.invocationId,
+          resultRef: `payload:result:${invocation.invocationId}`,
+          occurredAt: NOW,
+        },
+      ]);
+      const output = await fixture.payloadStore.get(`payload:result:${invocation.invocationId}`);
+      expect(output).toBeDefined();
+      if (!output) throw new Error("protected MCP output is missing");
+      expect(JSON.stringify(output)).not.toContain("hello from qualified MCP");
+      expect(fixture.readInputCalls).toEqual([invocation]);
+      const outputCall = fixture.writeOutputCalls[0];
+      expect(outputCall).toBeDefined();
+      if (!outputCall) throw new Error("MCP output boundary call is missing");
+      expect(outputCall.request).toEqual(invocation);
+      expect(outputCall.contentType).toBe("application/json");
+      const decoded = JSON.parse(
+        new TextDecoder().decode(
+          await fixture.protector.unprotect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            payload: output,
+          }),
+        ),
+      );
+      expect(decoded).toMatchObject({
+        content: [{ type: "text", text: "hello from qualified MCP" }],
+      });
+    },
+  );
+
+  it.each(["revoked", "unavailable"])(
+    "blocks egress when current authority is %s after input was read",
+    async (reason) => {
+      let active = true;
+      const capability = manifest(
+        { kind: "adapter", endpointIdentity: "adapter:revocation", protectedReferenceOnly: true },
+        "adapter",
+        { ref: "revoked-adapter", isolation: "remote" },
+      );
+      const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("{}"));
+      const authority = {
+        assertCurrent: vi.fn(async () => {
+          if (!active) throw new Error(reason);
+        }),
+      };
+      const fixture = await runtimeFixture(
+        [capability],
+        {
+          resolveProcess: async () => undefined,
+          resolveEndpoint: async () => {
+            active = false;
+            return {
+              endpointIdentity: "adapter:revocation",
+              artifactDigest: DIGEST,
+              url: "https://api.example.test",
+              allowedMethods: ["POST"],
+              operations: { execute: { method: "POST", path: "/execute", secretHeaders: {} } },
+              productionSuitable: true,
+              allowLoopbackQualification: false,
+            };
+          },
+        },
+        {
+          qualify: async () => {
+            throw new Error("unexpected process");
+          },
+          createLaunch: async () => {
+            throw new Error("unexpected process");
+          },
+        },
+        fetch,
+        undefined,
+        undefined,
+        authority,
+      );
+      const invocation = request(capability.ref);
+      await fixture.putInput(invocation, { value: "private input" });
+      expect(await collect(fixture.port, invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+      ]);
+      expect(fixture.readInputCalls).toHaveLength(1);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    },
+  );
 
   it("binds a remote adapter to one same-origin endpoint and reports uncertain side effects", async () => {
     const capability = manifest(
@@ -688,4 +924,336 @@ describe("NodeCapabilityRuntimePort", () => {
       },
     ]);
   });
+});
+
+async function readonlyEndpointFixture(
+  fetch: typeof globalThis.fetch,
+  authority?: CapabilityInvocationAuthorityPort,
+  method: "GET" | "POST" = "GET",
+  withSecret = false,
+  costMicros = 0,
+  waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>,
+) {
+  const capability = manifest(
+    { kind: "adapter", endpointIdentity: "adapter:retry", protectedReferenceOnly: true },
+    "adapter",
+    { ref: "retry-adapter", isolation: "remote", secrets: withSecret ? ["provider-token"] : [] },
+  );
+  const fixture = await runtimeFixture(
+    [{ ...capability, cost: { currency: "USD", maxMicrosPerInvocation: costMicros } }],
+    {
+      resolveProcess: async () => undefined,
+      resolveEndpoint: async () => ({
+        endpointIdentity: "adapter:retry",
+        artifactDigest: DIGEST,
+        url: "https://api.example.test",
+        allowedMethods: [method],
+        operations: {
+          execute: {
+            method,
+            path: "/read",
+            secretHeaders: withSecret ? { "provider-token": "x-provider-token" } : {},
+          },
+        },
+        productionSuitable: true,
+        allowLoopbackQualification: false,
+      }),
+    },
+    {
+      qualify: async () => {
+        throw new Error("unexpected process");
+      },
+      createLaunch: async () => {
+        throw new Error("unexpected process");
+      },
+    },
+    fetch,
+    undefined,
+    undefined,
+    authority,
+    waitForRetry,
+  );
+  const base = request(capability.ref);
+  const secretHandle = withSecret
+    ? await fixture.secretHandles.issueHandle({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        secretRef: "provider-token",
+        secretVersion: "version-1",
+        purpose: "execute",
+        scopeRef: base.invocationId,
+        expiresAt: "2026-08-28T09:20:00.000Z",
+      })
+    : undefined;
+  const invocation = { ...base, secretHandleRefs: secretHandle ? [secretHandle.ref] : [] };
+  await fixture.putInput(invocation, {});
+  return { ...fixture, invocation };
+}
+
+describe("bounded readonly endpoint retry", () => {
+  it("retains one invocation and protected output after a transient HTTP failure", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"answer":42}'));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.completed" },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fixture.readInputCalls).toHaveLength(1);
+    expect(fixture.writeOutputCalls).toHaveLength(1);
+    expect(new TextDecoder().decode(fixture.writeOutputCalls[0]?.plaintext)).toBe('{"answer":42}');
+    for (const [, init] of fetch.mock.calls)
+      expect(new Headers(init?.headers).get("idempotency-key")).toBe(
+        fixture.invocation.invocationId,
+      );
+  });
+  it("bounds repeated transient socket failures at two attempts", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(
+      new TypeError("fetch failed", {
+        cause: Object.assign(new Error("reset"), { code: "ECONNRESET" }),
+      }),
+    );
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fixture.writeOutputCalls).toHaveLength(0);
+  });
+  it.each([400, 401, 403, 404, 422])("does not retry permanent HTTP %s", async (status) => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("rejected", { status }));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not repeat an uncertain POST even for HTTP 503", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("busy", { status: 503 }));
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "POST");
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.result_unknown" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not shorten Retry-After to fit the original deadline", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response("busy", { status: 429, headers: { "retry-after": "60" } }));
+    const fixture = await readonlyEndpointFixture(fetch);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("checks current authority again before retrying a previously admitted GET", async () => {
+    let active = true;
+    const authority = {
+      assertCurrent: async () => {
+        if (!active) throw new Error("revoked");
+      },
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      active = false;
+      return new Response("busy", { status: 503 });
+    });
+    const fixture = await readonlyEndpointFixture(fetch, authority);
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fixture.writeOutputCalls).toHaveLength(0);
+  });
+});
+
+describe("readonly retry withdrawal and deadline", () => {
+  it("does not replay a GET when cancelled after the first response", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const fixture = await readonlyEndpointFixture(fetch);
+    fetch.mockImplementation(async () => {
+      await fixture.port.cancel(fixture.invocation.invocationId, "owner_cancelled");
+      return new Response("busy", { status: 503 });
+    });
+    expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+      { type: "capability.cancelled" },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it.each(["revoked", "expired"])(
+    "rechecks a %s secret handle before a second send",
+    async (mode) => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", true);
+      const [ref] = fixture.invocation.secretHandleRefs;
+      if (!ref) throw new Error("missing fixture secret");
+      fetch.mockImplementation(async (_url, init) => {
+        expect(new Headers(init?.headers).get("x-provider-token")).toBe("fixture-secret");
+        if (mode === "revoked") await fixture.secretHandles.revokeHandle(ref, NOW);
+        else {
+          const handle = await fixture.secretHandles.inspectHandle(ref);
+          if (!handle) throw new Error("missing fixture handle");
+          vi.spyOn(fixture.secretHandles, "inspectHandle").mockResolvedValue({
+            ...handle,
+            expiresAt: NOW,
+          });
+        }
+        return new Response("busy", { status: 503 });
+      });
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_SECRET_INVALID" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    },
+  );
+  it("keeps one wall-time budget instead of granting the retry a new deadline", async () => {
+    let elapsed = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      elapsed = 2800;
+      return new Response("busy", { status: 503 });
+    });
+    const fixture = await readonlyEndpointFixture(fetch);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it("does not retry certificate, schema or unknown failures", async () => {
+    for (const error of [
+      new TypeError("invalid URL"),
+      Object.assign(new Error("certificate"), { code: "CERT_HAS_EXPIRED" }),
+      new Error("unknown provider failure"),
+    ]) {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(error);
+      const fixture = await readonlyEndpointFixture(fetch);
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+    }
+  });
+});
+
+it("honors a server Retry-After before the second readonly send", async () => {
+  const sends: number[] = [];
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+    sends.push(performance.now());
+    return sends.length === 1
+      ? new Response("busy", { status: 429, headers: { "retry-after": "1" } })
+      : new Response("{}");
+  });
+  const fixture = await readonlyEndpointFixture(fetch);
+  expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+    { type: "capability.completed" },
+  ]);
+  expect(sends).toHaveLength(2);
+  expect((sends[1] ?? 0) - (sends[0] ?? 0)).toBeGreaterThanOrEqual(990);
+});
+
+describe("readonly retry monotonic waiting", () => {
+  it("does not send early when a retry wait returns before its target", async () => {
+    let elapsed = 0;
+    const sends: number[] = [];
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => {
+      sends.push(performance.now());
+      return sends.length === 1
+        ? new Response("busy", { status: 429, headers: { "retry-after": "1" } })
+        : new Response("{}");
+    });
+    const wait = vi.fn(async (milliseconds: number, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      elapsed += Math.min(milliseconds, 985);
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.completed" },
+      ]);
+      expect(sends).toHaveLength(2);
+      expect((sends[1] ?? 0) - (sends[0] ?? 0)).toBeGreaterThanOrEqual(1000);
+      expect(fixture.writeOutputCalls).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("does not supplement a wait after the original wall-time budget runs out", async () => {
+    let waited = false;
+    let readings = 0;
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "1" } }))
+      .mockResolvedValueOnce(new Response("{}"));
+    const wait = vi.fn(async () => {
+      waited = true;
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => {
+      if (!waited) return 0;
+      return ++readings === 1 ? 985 : 3000;
+    });
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.failed", errorCode: "CAPABILITY_RUNTIME_PROCESS_TIMEOUT" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(wait).toHaveBeenCalledOnce();
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("uses the original abort signal during a supplementary wait", async () => {
+    let elapsed = 0;
+    const signals: AbortSignal[] = [];
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "1" } }))
+      .mockResolvedValueOnce(new Response("{}"));
+    const wait = vi.fn(async (_milliseconds: number, signal: AbortSignal) => {
+      signals.push(signal);
+      if (signals.length === 1) elapsed = 985;
+      else await fixture.port.cancel(fixture.invocation.invocationId, "owner_cancelled");
+      signal.throwIfAborted();
+    });
+    const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 0, wait);
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    try {
+      expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+        { type: "capability.cancelled" },
+      ]);
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(signals).toHaveLength(2);
+      expect(signals[1]).toBe(signals[0]);
+      expect(signals[1]?.aborted).toBe(true);
+      expect(fixture.writeOutputCalls).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
+
+it("does not add a second provider request to a priced endpoint invocation", async () => {
+  const fetch = vi
+    .fn<typeof globalThis.fetch>()
+    .mockResolvedValue(new Response("busy", { status: 503 }));
+  const fixture = await readonlyEndpointFixture(fetch, undefined, "GET", false, 1000);
+  expect(await collect(fixture.port, fixture.invocation)).toMatchObject([
+    { type: "capability.failed" },
+  ]);
+  expect(fetch).toHaveBeenCalledOnce();
 });

@@ -9,7 +9,8 @@ export const SRT_VERSION = "0.0.75" as const;
 /** Infrastructure input resolved from protected scope and host inventory, never model arguments.
  * Compilation does not authorize execution or establish platform qualification. */
 export interface SandboxPolicyInput {
-  readonly workspace: string;
+  /** Null is a private-only Job; it must not grant a shared writable workspace. */
+  readonly workspace: string | null;
   readonly writable: boolean;
   readonly privateDirectory: string;
   readonly readOnlyToolchainPaths: readonly string[];
@@ -89,7 +90,8 @@ export async function compileSandboxPolicy(
   if (
     !input ||
     Object.keys(input).some((key) => !keys.includes(key)) ||
-    typeof input.writable !== "boolean"
+    typeof input.writable !== "boolean" ||
+    (input.workspace === null && input.writable)
   ) {
     throw new Error("SRT_POLICY_INPUT_INVALID");
   }
@@ -106,9 +108,12 @@ export async function compileSandboxPolicy(
   const protectedInput = [...input.protectedPaths];
   const domains = [...input.allowedDomains];
   const sockets = [...(input.allowedUnixSockets ?? [])];
-  const workspace = await canonicalPath(workspaceInput, true);
+  const workspace = workspaceInput === null ? null : await canonicalPath(workspaceInput, true);
   const privateDirectory = await canonicalPath(privateInput, true);
-  if (contains(workspace, privateDirectory) || contains(privateDirectory, workspace)) {
+  if (
+    workspace &&
+    (contains(workspace, privateDirectory) || contains(privateDirectory, workspace))
+  ) {
     throw new Error("SRT_POLICY_PRIVATE_DIRECTORY_OVERLAP");
   }
   const toolchains = [
@@ -117,7 +122,7 @@ export async function compileSandboxPolicy(
   const protectedPaths = [
     ...new Set(await Promise.all(protectedInput.map(canonicalProtectedPath))),
   ].sort();
-  const allows = [workspace, privateDirectory, ...toolchains];
+  const allows = [...(workspace ? [workspace] : []), privateDirectory, ...toolchains];
   for (const protectedPath of protectedPaths) {
     // The root read deny already protects host data outside explicit exceptions.
     // Explicit secret/control paths may not be reopened through an exception.
@@ -127,9 +132,9 @@ export async function compileSandboxPolicy(
   if (
     toolchains.some(
       (entry) =>
-        contains(workspace, entry) ||
+        (workspace !== null && contains(workspace, entry)) ||
         contains(privateDirectory, entry) ||
-        contains(entry, workspace) ||
+        (workspace !== null && contains(entry, workspace)) ||
         contains(entry, privateDirectory),
     )
   ) {
@@ -172,7 +177,7 @@ export async function compileSandboxPolicy(
     filesystem: {
       denyRead: ["/", ...protectedPaths],
       allowRead: [...new Set(allows)].sort(),
-      allowWrite: writable ? [workspace, privateDirectory].sort() : [privateDirectory],
+      allowWrite: writable && workspace ? [workspace, privateDirectory].sort() : [privateDirectory],
       denyWrite: [
         ...new Set([
           ...protectedPaths,
@@ -199,7 +204,7 @@ export async function compileSandboxPolicy(
     version: SRT_VERSION,
     policyJson,
     policyDigest: createHash("sha256").update(policyJson).digest("hex"),
-    cwd: workspace,
+    cwd: workspace ?? privateDirectory,
     privateDirectory,
   });
 }

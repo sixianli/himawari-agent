@@ -1,0 +1,11 @@
+{
+  "exceptionType": "RuntimeError",
+  "messageCode": "CUTOVER_CHILD_FAILED",
+  "rollback": {
+    "attempted": false,
+    "completed": false,
+    "migrationStarted": true,
+    "newServiceStartAttempted": false,
+    "reason": "database_migration_started_restore_verified_backup_manually"
+  }
+}

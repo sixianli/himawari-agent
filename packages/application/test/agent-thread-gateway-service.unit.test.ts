@@ -1,4 +1,6 @@
 import {
+  type ThreadExecutionChangedEvent,
+  type ThreadExecutionEventsSubscription,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
@@ -69,7 +71,7 @@ function subscription(): ThreadGatewaySubscription {
     type: "thread.events",
     payload: { afterCursor: null },
   });
-  if (parsed.kind !== "subscription") throw new Error("expected subscription");
+  if (parsed.type !== "thread.events") throw new Error("expected subscription");
   return parsed;
 }
 
@@ -91,7 +93,7 @@ function event(cursor: string, revision: number): ThreadGatewayEvent {
       occurredAt: "2026-08-28T00:00:00.000Z",
     },
   });
-  if (parsed.kind !== "event") throw new Error("expected event");
+  if (parsed.type !== "thread.event") throw new Error("expected event");
   return parsed;
 }
 
@@ -234,7 +236,6 @@ describe("AgentThreadGatewayService", () => {
     await expect(
       (async () => {
         for await (const _item of duplicate.subscribe(authentication, subscription())) {
-          // Exhaust the stream.
         }
       })(),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
@@ -242,9 +243,88 @@ describe("AgentThreadGatewayService", () => {
     await expect(
       (async () => {
         for await (const _item of backwards.subscribe(authentication, subscription())) {
-          // Exhaust the stream.
         }
       })(),
     ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+  });
+});
+
+describe("AgentThreadGatewayService execution watch", () => {
+  function executionSubscription(): ThreadExecutionEventsSubscription {
+    const parsed = threadGatewayMessageSchema.parse({
+      ...base,
+      kind: "subscription",
+      type: "thread.execution_events",
+      payload: { threadId: "thread-01" },
+    });
+    if (parsed.type !== "thread.execution_events") throw new Error("expected subscription");
+    return parsed;
+  }
+  function changed(threadId: string, ownerId = "owner-01"): ThreadExecutionChangedEvent {
+    const parsed = threadGatewayMessageSchema.parse({
+      ...base,
+      scope: { ...base.scope, ownerId },
+      kind: "event",
+      type: "thread.execution_changed",
+      actor: { actorType: "system", actorId: "thread-gateway" },
+      payload: {
+        threadId,
+        runId: "run-01",
+        runRevision: 1,
+        traceSequence: 3,
+        resourceRevision: null,
+        observedAt: "2026-08-28T00:00:00.000Z",
+      },
+    });
+    if (parsed.type !== "thread.execution_changed") throw new Error("expected event");
+    return parsed;
+  }
+
+  it("authorizes the subscription and passes the watched Thread's changes", async () => {
+    const { gateway, reads, authorized } = fixture();
+    reads.watchExecution = async function* () {
+      yield changed("thread-01");
+    };
+    const streamed = [];
+    for await (const item of gateway.watchExecution(authentication, executionSubscription()))
+      streamed.push(item.payload.traceSequence);
+    expect(streamed).toEqual([3]);
+    expect(authorized.at(0)).toBe("thread.execution_events");
+  });
+
+  it.each([
+    ["another Thread", changed("thread-02")],
+    ["another Owner", changed("thread-01", "owner-02")],
+  ])("rejects a change from %s", async (_label, item) => {
+    const { gateway, reads } = fixture();
+    reads.watchExecution = async function* () {
+      yield item;
+    };
+    const stream = gateway
+      .watchExecution(authentication, executionSubscription())
+      [Symbol.asyncIterator]();
+    await expect(stream.next()).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    });
+  });
+
+  it("refuses when the read model cannot watch and when access is denied", async () => {
+    const { gateway, access, reads } = fixture();
+    await expect(
+      gateway
+        .watchExecution(authentication, executionSubscription())
+        [Symbol.asyncIterator]()
+        .next(),
+    ).rejects.toThrow("THREAD_EXECUTION_EVENTS_NOT_INSTALLED");
+    reads.watchExecution = async function* () {
+      yield changed("thread-01");
+    };
+    access.authorize = async () => ({ allowed: false, reasonCode: "REVOKED" });
+    await expect(
+      gateway
+        .watchExecution(authentication, executionSubscription())
+        [Symbol.asyncIterator]()
+        .next(),
+    ).rejects.toMatchObject({ code: PORT_ERROR_CODES.NOT_AUTHORITATIVE });
   });
 });

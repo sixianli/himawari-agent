@@ -46,6 +46,7 @@ const contracts = {
     targetRef: "file",
   },
   shell: { ref: "shell", version: "1", kind: "command" },
+  network: { ref: "network", version: "1", kind: "network_only" },
   background: { ref: "background", version: "1", kind: "task_start" },
   service: {
     ref: "service",
@@ -152,7 +153,10 @@ function fixture(kind: keyof typeof contracts = "read") {
           ...common,
           kind: "result",
           output,
-          completion: kind === "shell" ? { type: "exit", exitCode: 0 } : { type: "value" },
+          completion:
+            kind === "shell" || kind === "network"
+              ? { type: "exit", exitCode: 0 }
+              : { type: "value" },
         };
   const facts = sandboxExecutionFactsSchema.parse({
     schemaVersion: "sandbox-execution.v2",
@@ -258,6 +262,48 @@ function released(f: ReturnType<typeof fixture>): SandboxExecutionFacts {
     resource: { ...f.facts.resource, supervision: "released", cleanup: "confirmed", sequence: 3 },
   });
 }
+
+describe("accepted resource release", () => {
+  it("survives expiry without granting result disclosure or execution", () => {
+    const f = fixture();
+    const facts = released(f);
+    const original = context(f.plan, facts);
+    const releaseReceipt = { acceptedAt: at, verification: original.verification };
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt,
+      }),
+    ).toMatchObject({
+      resourceObligationReleased: true,
+      resourcePending: false,
+      showResult: false,
+      deliverToolResult: false,
+      dispatchNewOperation: false,
+    });
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt: { ...releaseReceipt, acceptedAt: deadline },
+      }).resourceObligationReleased,
+    ).toBe(false);
+    expect(
+      projectSandboxExecution(f.plan, facts, {
+        ...original,
+        now: deadline,
+        verification: null,
+        releaseReceipt: {
+          ...releaseReceipt,
+          verification: { ...original.verification, identity: { ...identity, jobId: "other" } },
+        },
+      }).resourceObligationReleased,
+    ).toBe(false);
+  });
+});
 
 describe("R1 six operation scenarios and independent completion gates", () => {
   it.each([
@@ -660,6 +706,45 @@ describe("R1 strict branches, bindings and observation history", () => {
       ),
     ).toThrow("transition");
   });
+  it("records a process-group release apart from a confirmed stop and never rewrites either", () => {
+    const f = fixture();
+    const c = context(f.plan, f.facts);
+    const lost = loss(f);
+    const reconciling = sandboxExecutionFactsSchema.parse({
+      ...lost,
+      resource: { ...lost.resource, supervision: "reconciling", sequence: 3 },
+    });
+    const groupGone = sandboxExecutionFactsSchema.parse({
+      ...released(f),
+      resource: { ...released(f).resource, cleanup: "process_group_gone", sequence: 4 },
+    });
+    expect(validateSandboxExecutionFacts(f.plan, groupGone, c, reconciling).resource).toMatchObject(
+      {
+        supervision: "released",
+        cleanup: "process_group_gone",
+      },
+    );
+    expect(() =>
+      sandboxExecutionFactsSchema.parse({
+        ...released(f),
+        resource: { ...released(f).resource, cleanup: "unknown" },
+      }),
+    ).toThrow();
+    const confirmed = sandboxExecutionFactsSchema.parse({
+      ...groupGone,
+      resource: { ...groupGone.resource, cleanup: "confirmed", sequence: 5 },
+    });
+    expect(() => validateSandboxExecutionFacts(f.plan, confirmed, c, groupGone)).toThrow(
+      "immutable",
+    );
+    const downgraded = sandboxExecutionFactsSchema.parse({
+      ...released(f),
+      resource: { ...released(f).resource, cleanup: "process_group_gone", sequence: 4 },
+    });
+    expect(() => validateSandboxExecutionFacts(f.plan, downgraded, c, released(f))).toThrow(
+      "immutable",
+    );
+  });
   it("pending preparation is not a failed operation and cannot continue the model", () => {
     const f = fixture();
     const { evidence: _evidence, ...resource } = f.facts.resource as Extract<
@@ -826,4 +911,175 @@ describe("R1 strict branches, bindings and observation history", () => {
       }),
     ).toThrow();
   });
+});
+
+it("network-only reports exit status without asserting the absence of remote effects", () => {
+  const f = fixture("network");
+  expect(validateSandboxExecutionFacts(f.plan, f.facts, context(f.plan, f.facts))).toEqual(f.facts);
+  expect(f.facts.effect).toEqual({ kind: "not_asserted" });
+  expect(() => sandboxExecutionPlanV2Schema.parse({ ...f.plan, mode: "background" })).toThrow();
+  expect(() =>
+    validateSandboxExecutionFacts(
+      f.plan,
+      { ...f.facts, effect: { kind: "not_applicable" } },
+      context(f.plan, f.facts),
+    ),
+  ).toThrow();
+});
+
+describe.each([
+  "SANDBOX_TOOL_RESULT_LOST",
+  "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+  "SANDBOX_TOOL_NOT_STARTED",
+  "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+])("bounded failure disclosure %s", (reasonCode) => {
+  it.each(["read", "write", "shell"] as const)(
+    "delivers a bounded %s failure without inventing its effects",
+    (kind) => {
+      const f = fixture(kind);
+      const original = released(f);
+      const proof = context(f.plan, original);
+      const facts = sandboxExecutionFactsSchema.parse({
+        ...original,
+        effect: { kind: "unknown", reasonCode: reasonCode },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          identity,
+          environmentId: original.environment.environmentId,
+          policyDigest: hash,
+          contract: { ref: f.plan.operationContract.ref, version: "1" },
+          occurredAt: at,
+          kind: "error",
+          output,
+          reasonCode: reasonCode,
+          termination: { type: "failure" },
+        },
+      });
+      const input = {
+        ...context(f.plan, facts),
+        releaseReceipt: { acceptedAt: at, verification: proof.verification },
+      };
+      expect(projectSandboxExecution(f.plan, facts, input)).toMatchObject({
+        conclusion: "failed",
+        deliverToolResult: true,
+        resourceObligationReleased: true,
+        reuseEnvironment: false,
+      });
+      expect(facts.effect).toEqual({ kind: "unknown", reasonCode: reasonCode });
+      for (const denied of [
+        { runState: "terminated" as const },
+        { currentAuthority: false },
+        { currentFence: false },
+        { modelDisclosureAllowed: false },
+        { conflictingWorkspaceRisk: true },
+        { resultAlreadyDelivered: true },
+        { now: deadline },
+        { verification: { ...input.verification, outputs: [] } },
+      ])
+        expect(
+          projectSandboxExecution(f.plan, facts, { ...input, ...denied }).deliverToolResult,
+        ).toBe(false);
+      if (!facts.result) throw new Error("Lost result fixture missing");
+      expect(
+        projectSandboxExecution(
+          f.plan,
+          {
+            ...facts,
+            result: { ...facts.result, reasonCode: "SOME_UNKNOWN_FAILURE" },
+          } as SandboxExecutionFacts,
+          input,
+        ).deliverToolResult,
+      ).toBe(false);
+    },
+  );
+});
+
+describe("[R2-T12] contradicted host completion keeps its recorded effect", () => {
+  it("delivers a contradicted fixed read without asserting user effects", () => {
+    const f = fixture("read");
+    const original = released(f);
+    const proof = context(f.plan, original);
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...original,
+      effect: { kind: "not_applicable" },
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity,
+        environmentId: original.environment.environmentId,
+        policyDigest: hash,
+        contract: { ref: f.plan.operationContract.ref, version: "1" },
+        occurredAt: at,
+        kind: "error",
+        output,
+        reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+        termination: { type: "failure" },
+      },
+    });
+    const input = {
+      ...context(f.plan, facts),
+      releaseReceipt: { acceptedAt: at, verification: proof.verification },
+    };
+    expect(projectSandboxExecution(f.plan, facts, input)).toMatchObject({
+      conclusion: "failed",
+      deliverToolResult: true,
+      continuePi: false,
+      dispatchNewOperation: false,
+    });
+  });
+  it("rejects a not_asserted effect for a contradicted completion", () => {
+    const f = fixture("shell");
+    const original = released(f);
+    expect(() =>
+      validateSandboxExecutionFacts(
+        f.plan,
+        {
+          ...original,
+          effect: { kind: "not_asserted" },
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity,
+            environmentId: original.environment.environmentId,
+            policyDigest: hash,
+            contract: { ref: f.plan.operationContract.ref, version: "1" },
+            occurredAt: at,
+            kind: "error",
+            output,
+            reasonCode: "SANDBOX_HOST_COMPLETION_CONTRADICTED",
+            termination: { type: "failure" },
+          },
+        } as SandboxExecutionFacts,
+        context(f.plan, original),
+      ),
+    ).toThrow("missing normal result cannot weaken effects");
+  });
+});
+
+describe("preparation protocol plan compatibility", () => {
+  it("preserves an old stored plan byte for byte without upgrading its protocol", () => {
+    const original = JSON.stringify(fixture().plan);
+    const parsed = sandboxExecutionPlanV2Schema.parse(JSON.parse(original));
+    expect(JSON.stringify(parsed)).toBe(original);
+    expect(Object.hasOwn(parsed, "preparationProtocol")).toBe(false);
+  });
+  it.each(["register-before-host.v1", "launch-or-block.v2"])(
+    "[R2-D4] accepts protocol %s on plans and candidates without changing their identity",
+    (preparationProtocol) => {
+      const old = fixture().plan;
+      const input = { ...old, backendRef: "srt", preparationProtocol };
+      const parsed = sandboxExecutionPlanV2Schema.parse(input);
+      expect(parsed).toEqual(input);
+      expect(parsed.semanticFingerprint).toBe(old.semanticFingerprint);
+      expect(parsed.binding).toEqual(old.binding);
+      const { semanticFingerprint: _fingerprint, ...candidate } = input;
+      expect(sandboxExecutionPlanCandidateV2Schema.parse(candidate)).toEqual(candidate);
+    },
+  );
+  it.each([undefined, null, "", "register-before-host.v2", false])(
+    "rejects an explicitly invalid preparation protocol %s",
+    (preparationProtocol) => {
+      expect(() =>
+        sandboxExecutionPlanV2Schema.parse({ ...fixture().plan, preparationProtocol }),
+      ).toThrow();
+    },
+  );
 });

@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (18 tests | 1 failed) 332ms
+     × rejects resource changes across the Trace read even when the Run revision is unchanged 34ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects resource changes across the Trace read even when the Run revision is unchanged
+AssertionError: expected [Function] to throw error including 'THREAD_EXECUTION_RESOURCES_CHANGED_DU…' but got 'this.dependencies.payloads is not a f…'
+
+Expected: "THREAD_EXECUTION_RESOURCES_CHANGED_DURING_READ"
+Received: "this.dependencies.payloads is not a function"
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:222:46
+    220|     } as unknown as ConstructorParameters<typeof ThreadExecutionProjec…
+    221|     vi.spyOn(projection, "read").mockResolvedValue({ records: [], next…
+    222|     await expect(projection.readState(input)).rejects.toThrow("THREAD_…
+       |                                              ^
+    223|   });
+    224|   it("reads all pages so an earlier unresolved tool cannot be hidden b…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 passed (18)
+   Start at  16:35:52
+   Duration  1.25s (transform 583ms, setup 0ms, import 694ms, tests 332ms, environment 0ms)

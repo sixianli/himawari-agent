@@ -1,5 +1,5 @@
 export const allowedInternalDependencies = new Map([
-  ["@himawari-agent/runtime-sandbox", new Set()],
+  ["@himawari-agent/runtime-sandbox", new Set(["@himawari-agent/execution-contracts"])],
   ["@himawari-agent/domain", new Set()],
   ["@himawari-agent/gateway-contracts", new Set()],
   ["@himawari-agent/execution-contracts", new Set()],

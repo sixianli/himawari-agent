@@ -1,0 +1,170 @@
+scripts/test-control-center-v4.mjs:153:44 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    151 │     await textarea.fill("初始化期间的草稿");
+    152 │     await expect(page.locator(".composer-readiness")).toBeVisible();
+  > 153 │     if (out) await page.screenshot({ path: out + "/startup-draft.png" });
+        │                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    154 │     release();
+    155 │     await expect(page.locator(".composer-readiness")).toHaveCount(0);
+
+  i Unsafe fix: Use a template literal.
+
+    151 151 │       await textarea.fill("初始化期间的草稿");
+    152 152 │       await expect(page.locator(".composer-readiness")).toBeVisible();
+    153     │ - ····if·(out)·await·page.screenshot({·path:·out·+·"/startup-draft.png"·});
+        153 │ + ····if·(out)·await·page.screenshot({·path:·`${out}/startup-draft.png`·});
+    154 154 │       release();
+    155 155 │       await expect(page.locator(".composer-readiness")).toHaveCount(0);
+
+
+scripts/test-control-center-v4.mjs:161:44 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    159 │     await page.getByRole("button", { name: "设置", exact: true }).click();
+    160 │     await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
+  > 161 │     if (out) await page.screenshot({ path: out + "/settings.png" });
+        │                                            ^^^^^^^^^^^^^^^^^^^^^
+    162 │     await page.getByRole("button", { name: "关闭", exact: true }).last().click();
+    163 │     await page.locator(".model-picker > summary").click();
+
+  i Unsafe fix: Use a template literal.
+
+    159 159 │       await page.getByRole("button", { name: "设置", exact: true }).click();
+    160 160 │       await expect(page.getByRole("dialog", { name: "设置" })).toBeVisible();
+    161     │ - ····if·(out)·await·page.screenshot({·path:·out·+·"/settings.png"·});
+        161 │ + ····if·(out)·await·page.screenshot({·path:·`${out}/settings.png`·});
+    162 162 │       await page.getByRole("button", { name: "关闭", exact: true }).last().click();
+    163 163 │       await page.locator(".model-picker > summary").click();
+
+
+scripts/test-control-center-v4.mjs:164:44 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    162 │     await page.getByRole("button", { name: "关闭", exact: true }).last().click();
+    163 │     await page.locator(".model-picker > summary").click();
+  > 164 │     if (out) await page.screenshot({ path: out + "/model-picker.png" });
+        │                                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+    165 │     const slider = page.getByRole("slider");
+    166 │     await expect(slider).toBeVisible();
+
+  i Unsafe fix: Use a template literal.
+
+    162 162 │       await page.getByRole("button", { name: "关闭", exact: true }).last().click();
+    163 163 │       await page.locator(".model-picker > summary").click();
+    164     │ - ····if·(out)·await·page.screenshot({·path:·out·+·"/model-picker.png"·});
+        164 │ + ····if·(out)·await·page.screenshot({·path:·`${out}/model-picker.png`·});
+    165 165 │       const slider = page.getByRole("slider");
+    166 166 │       await expect(slider).toBeVisible();
+
+
+scripts/test-control-center-v4.mjs:170:44 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    168 │     await expect(slider).toHaveValue("2");
+    169 │     await slider.press("Escape");
+  > 170 │     if (out) await page.screenshot({ path: out + "/desktop.png" });
+        │                                            ^^^^^^^^^^^^^^^^^^^^
+    171 │     await page.getByRole("button", { name: "发送", exact: true }).click();
+    172 │     await expect(page).toHaveURL(/\/threads\/thread/);
+
+  i Unsafe fix: Use a template literal.
+
+    168 168 │       await expect(slider).toHaveValue("2");
+    169 169 │       await slider.press("Escape");
+    170     │ - ····if·(out)·await·page.screenshot({·path:·out·+·"/desktop.png"·});
+        170 │ + ····if·(out)·await·page.screenshot({·path:·`${out}/desktop.png`·});
+    171 171 │       await page.getByRole("button", { name: "发送", exact: true }).click();
+    172 172 │       await expect(page).toHaveURL(/\/threads\/thread/);
+
+
+scripts/test-control-center-v4.mjs:177:46 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    175 │     for (const width of [390, 320]) {
+    176 │       await page.setViewportSize({ width, height: 820 });
+  > 177 │       if (out) await page.screenshot({ path: out + `/mobile-${width}.png` });
+        │                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    178 │       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    179 │         width,
+
+  i Unsafe fix: Use a template literal.
+
+    175 175 │       for (const width of [390, 320]) {
+    176 176 │         await page.setViewportSize({ width, height: 820 });
+    177     │ - ······if·(out)·await·page.screenshot({·path:·out·+·`/mobile-${width}.png`·});
+        177 │ + ······if·(out)·await·page.screenshot({·path:·`${out}/mobile-${width}.png`·});
+    178 178 │         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    179 179 │           width,
+
+
+scripts/test-control-center-v4.mjs:185:9 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    183 │     if (out)
+    184 │       await writeFile(
+  > 185 │         out + "/browser-v4.json",
+        │         ^^^^^^^^^^^^^^^^^^^^^^^^
+    186 │         JSON.stringify(
+    187 │           {
+
+  i Unsafe fix: Use a template literal.
+
+    183 183 │       if (out)
+    184 184 │         await writeFile(
+    185     │ - ········out·+·"/browser-v4.json",
+        185 │ + ········`${out}/browser-v4.json`,
+    186 186 │           JSON.stringify(
+    187 187 │             {
+
+
+scripts/test-control-center-v4.mjs:197:44 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    195 │       );
+    196 │   } catch (error) {
+  > 197 │     if (out) await page.screenshot({ path: out + "/failure.png", fullPage: true });
+        │                                            ^^^^^^^^^^^^^^^^^^^^
+    198 │     if (out) await writeFile(out + "/failure.txt", String(error));
+    199 │     throw error;
+
+  i Unsafe fix: Use a template literal.
+
+    195 195 │         );
+    196 196 │     } catch (error) {
+    197     │ - ····if·(out)·await·page.screenshot({·path:·out·+·"/failure.png",·fullPage:·true·});
+        197 │ + ····if·(out)·await·page.screenshot({·path:·`${out}/failure.png`,·fullPage:·true·});
+    198 198 │       if (out) await writeFile(out + "/failure.txt", String(error));
+    199 199 │       throw error;
+
+
+scripts/test-control-center-v4.mjs:198:30 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+
+    196 │   } catch (error) {
+    197 │     if (out) await page.screenshot({ path: out + "/failure.png", fullPage: true });
+  > 198 │     if (out) await writeFile(out + "/failure.txt", String(error));
+        │                              ^^^^^^^^^^^^^^^^^^^^
+    199 │     throw error;
+    200 │   } finally {
+
+  i Unsafe fix: Use a template literal.
+
+    196 196 │     } catch (error) {
+    197 197 │       if (out) await page.screenshot({ path: out + "/failure.png", fullPage: true });
+    198     │ - ····if·(out)·await·writeFile(out·+·"/failure.txt",·String(error));
+        198 │ + ····if·(out)·await·writeFile(`${out}/failure.txt`,·String(error));
+    199 199 │       throw error;
+    200 200 │     } finally {
+
+
+Checked 1 file in 56ms. No fixes applied.
+Found 8 infos.

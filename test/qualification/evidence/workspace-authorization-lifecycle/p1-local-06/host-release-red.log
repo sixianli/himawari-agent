@@ -1,0 +1,31 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-control-evidence.test.ts (38 tests | 4 failed) 7933ms
+   × attests a never-started reservation only with independent host exit proof: alive 247ms
+   × attests a never-started reservation only with independent host exit proof: started 229ms
+   × attests a never-started reservation only with independent host exit proof: cleanup-unknown 243ms
+   × attests a never-started reservation only with independent host exit proof: verified 230ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: alive
+ FAIL  |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: started
+ FAIL  |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: cleanup-unknown
+ FAIL  |integration| test/integration/sandbox-control-evidence.test.ts > attests a never-started reservation only with independent host exit proof: verified
+TypeError: f.control.verifyReservationRelease is not a function
+ ❯ test/integration/sandbox-control-evidence.test.ts:403:35
+    401|     const before = f.counts();
+    402|     const stoppedAt = new Date(Date.now() - 1000).toISOString();
+    403|     const proof = await f.control.verifyReservationRelease(f.record.pl…
+       |                                   ^
+    404|     expect(f.counts().admissionChecks).toBe(before.admissionChecks);
+    405|     expect(f.counts().hostChecks).toBe(before.hostChecks + 1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 34 passed (38)
+   Start at  23:27:40
+   Duration  9.37s (transform 856ms, setup 0ms, import 1.35s, tests 7.93s, environment 0ms)

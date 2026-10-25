@@ -1,0 +1,43 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts (14 tests | 3 failed) 147ms
+   × rejects a host-frozen baseline changed before runner startup: content 8ms
+   × rejects a host-frozen baseline changed before runner startup: inode 3ms
+   × rejects a host-frozen baseline changed before runner startup: created 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > rejects a host-frozen baseline changed before runner startup: content
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > rejects a host-frozen baseline changed before runner startup: inode
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > rejects a host-frozen baseline changed before runner startup: created
+AssertionError: promise resolved "{ access: [AsyncFunction access], …(4) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "access": [Function access],
++   "executeCommand": [Function executeCommand],
++   "makeDirectory": [Function makeDirectory],
++   "readFile": [Function readFile],
++   "writeFile": [Function writeFile],
+  }
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:199:6
+    197|   await expect(createSandboxedCodingOperations({ grant, targetPath: fi…
+    198|     shell: "/bin/bash", privateDirectory: root, binaryDirectory: "/usr…
+    199|   })).rejects.toThrow("PI_FILE_VERSION_CHANGED");
+       |      ^
+    200|   expect(await readFile(file, "utf8")).toBe("other writer's version");
+    201| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 11 passed (14)
+   Start at  20:52:18
+   Duration  1.31s (transform 631ms, setup 0ms, import 1.06s, tests 147ms, environment 0ms)

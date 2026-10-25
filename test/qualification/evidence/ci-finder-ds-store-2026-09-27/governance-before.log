@@ -1,0 +1,72 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 通过符号路径调用 CLI 仍执行检查
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 锁定双方平台、完整 Action SHA、扫描工具和 wheel 闭包
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝未知字段
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝浮动 Node
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝缩写 SHA
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝重复 Action
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝缺失平台
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝非官方源
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝缺失许可证据
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝空 wheel 闭包
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 拒绝重复 wheel
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 下载内容变化时摘要校验失败
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 损坏的缓存下载物也必须失败
+ ↓ |tooling| test/tooling/toolchain.test.mjs > 固定工具身份 > 子进程只使用临时 HOME 和显式环境，不继承凭据或 Node 注入选项
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > SQLite真实内存建表、写入、读取及版本探针
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 按逐项锁版本验收 Pi，并接受仓库内部 workspace 链接
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 拒绝错误 Pi 实际版本
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 拒绝指向相邻源码的 Pi symlink
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 拒绝未经登记的安装脚本，即使 lock 未设置 hasInstallScript
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 拒绝本地 prepare 绕过依赖审阅
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 拒绝 manifest 的版本范围及锁文件不一致
+ ↓ |tooling| test/tooling/toolchain.test.mjs > npm 发布包身份与 lifecycle > 只允许缺席的其他平台 optional 依赖
+ × |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 仓库原始快照及 Owner 授权的摘要可独立验证 14ms
+   → 治理快照包含未登记文件
+ × |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 忽略访达在快照各层写入的 .DS_Store 5ms
+   → 治理快照包含未登记文件
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 名字相近的文件仍算未登记文件 4ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 名为 .DS_Store 的目录里的文件仍算未登记文件 4ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 其他未登记文件仍算未登记文件 6ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 名为 .DS_Store 的符号链接仍被拒绝 4ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 缺少任一导入模块则失败 3ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 修改原始 validator 则失败 4ms
+ ✓ |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 许可状态或授权文本被替换则失败 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 仓库原始快照及 Owner 授权的摘要可独立验证
+Error: 治理快照包含未登记文件
+ ❯ assert scripts/ci/sync-governance.mjs:35:25
+     33|
+     34| function assert(condition, message) {
+     35|   if (!condition) throw new Error(message);
+       |                         ^
+     36| }
+     37|
+ ❯ verifyGovernance scripts/ci/sync-governance.mjs:97:3
+ ❯ test/tooling/toolchain.test.mjs:293:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |tooling| test/tooling/toolchain.test.mjs > 治理原始来源闭包 > 忽略访达在快照各层写入的 .DS_Store
+Error: 治理快照包含未登记文件
+ ❯ assert scripts/ci/sync-governance.mjs:35:25
+     33|
+     34| function assert(condition, message) {
+     35|   if (!condition) throw new Error(message);
+       |                         ^
+     36| }
+     37|
+ ❯ verifyGovernance scripts/ci/sync-governance.mjs:97:3
+ ❯ test/tooling/toolchain.test.mjs:300:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed | 22 skipped (31)
+   Start at  12:20:39
+   Duration  217ms (transform 48ms, setup 0ms, import 70ms, tests 49ms, environment 0ms)

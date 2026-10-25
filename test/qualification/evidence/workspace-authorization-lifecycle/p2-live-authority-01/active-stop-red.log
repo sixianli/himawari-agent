@@ -1,0 +1,34 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts (67 tests | 1 failed | 66 skipped) 284ms
+     × requests stop when authority is withdrawn while the Worker event stream is hung 283ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > requests stop when authority is withdrawn while the Worker event stream is hung
+AssertionError: expected [ 'work.delegate', 'work.execute' ] to deeply equal [ 'work.delegate', …(2) ]
+
+- Expected
++ Received
+
+  [
+    "work.delegate",
+    "work.execute",
+-   "work.cancel",
+  ]
+
+ ❯ apps/agent-service/test/production-runtime-tools.unit.test.ts:399:67
+    397|     const tool = await exposed(f);
+    398|     const result = await tool.execute(invocation);
+    399|     expect(f.request.mock.calls.map(([message]) => message.type)).toEq…
+       |                                                                   ^
+    400|       "work.delegate", "work.execute", "work.cancel",
+    401|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 66 skipped (67)
+   Start at  18:53:59
+   Duration  1.54s (transform 937ms, setup 0ms, import 1.15s, tests 284ms, environment 0ms)

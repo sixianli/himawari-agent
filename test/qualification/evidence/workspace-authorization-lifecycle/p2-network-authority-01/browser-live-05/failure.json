@@ -1,0 +1,22 @@
+{
+  "error": "Error: expect(locator).toContainText(expected) failed\n\nLocator: locator('.turn-activity output')\nExpected substring: \"正在执行\"\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.have.text\" with timeout 5000ms\n  - waiting for locator('.turn-activity output')\n",
+  "queries": 0,
+  "errors": [],
+  "state": {
+    "runRevision": 0,
+    "lastObservedAt": "2026-09-20T12:07:57.159Z",
+    "displayPhase": "preparing",
+    "reasonCode": "RESOURCE_EXECUTION_OBSERVED",
+    "availableActions": [
+      "stop"
+    ],
+    "needsAttention": false,
+    "timing": {
+      "reviewMilliseconds": null,
+      "executionMilliseconds": null
+    },
+    "effectSummary": [],
+    "operations": [],
+    "revision": "thread-command:v1:01c941d3a442736a5c032a0f606c3cd3"
+  }
+}

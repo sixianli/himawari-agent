@@ -1,0 +1,90 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ × |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP composition > authenticates an RS256 assertion, admits a durable Thread run, and replays after restart 534ms
+   → expected { …(20) } to match object { …(3) }
+(21 matching properties omitted from actual)
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenHost=0.0.0.0 880ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=0 498ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=65536 258ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=1.5 229ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=0 201ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=16777217 192ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=1.5 223ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=0 284ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=67108865 217ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=1.5 195ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=9 236ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=300001 206ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=10.5 216ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires the http boundary 206ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires the identity boundary 262ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > does not enable external Access identity in local mode 226ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin invalid 364ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin http://agent.example.test 229ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin https://agent.example.test/path 208ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=invalid 206ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=http://team.cloudflareaccess.com 195ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=https://team.cloudflareaccess.com/path 203ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=invalid 207ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=http://team.cloudflareaccess.com/cdn-cgi/access/certs 206ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://person@team.cloudflareaccess.com/cdn-cgi/access/certs 204ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://:fixture@team.cloudflareaccess.com/cdn-cgi/access/certs 192ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://team.cloudflareaccess.com/cdn-cgi/access/certs?redirect=1 201ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://team.cloudflareaccess.com/cdn-cgi/access/certs#fragment 202ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://elsewhere.example.test/cdn-cgi/access/certs 190ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact relative 213ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact /tmp/../tmp/browser 223ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact /tmp/himawari-nonexistent-contract-root 195ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority deploymentId=deployment-other 206ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority authorityEpoch=0 193ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority authorityEpoch=1.5 190ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority fencingToken=0 484ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority fencingToken=1.5 226ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires exactly one correctly bound payload-encryption secret reference 430ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires exactly one correctly bound identity-csrf secret reference 414ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > requires the active session on every authorized read 2ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects message-owner mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects message-agent mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects authentication-owner mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects actor mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session ownerId substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session deviceId substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session status substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects an unbound session and a subject that is not the owner 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > binds thread.message.submit to the current browser session 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > binds thread.message.submit_configured to the current browser session 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP composition > authenticates an RS256 assertion, admits a durable Thread run, and replays after restart
+AssertionError: expected { …(20) } to match object { …(3) }
+(21 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -1,7 +1,6 @@
+  {
+-   "executionEnvironmentAvailable": true,
+    "healthDependenciesAvailable": true,
+    "installedGatewayV2Operations": [
+      "approval.list",
+      "approval.detail",
+      "approval.respond",
+
+ ❯ apps/agent-service/test/production-http-composition.unit.test.ts:348:37
+    346|       });
+    347|       expect(configResponse.statusCode).toBe(200);
+    348|       expect(configResponse.json()).toMatchObject({
+       |                                     ^
+    349|         executionEnvironmentAvailable: true,
+    350|         installedGatewayV2Operations: [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 50 passed (51)
+   Start at  13:20:12
+   Duration  12.56s (transform 1.24s, setup 0ms, import 1.79s, tests 10.65s, environment 0ms)

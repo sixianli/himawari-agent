@@ -12,6 +12,7 @@ import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
 export type ModelBudgetAccountParent =
   | { readonly kind: "run"; readonly runId: RunId }
+  | { readonly kind: "thread-title"; readonly runId: RunId }
   | { readonly kind: "occurrence"; readonly occurrenceId: OccurrenceId }
   | { readonly kind: "memory-projection"; readonly jobId: string };
 
@@ -22,11 +23,8 @@ export type ModelBudgetActiveParent =
       readonly claimedBy: string;
       readonly attemptCount: number;
     }
-  | {
-      readonly kind: "run";
-      readonly runId: RunId;
-      readonly executionLease: RunExecutionLeaseClaim;
-    }
+  | ModelBudgetRunLeaseParent<"run">
+  | ModelBudgetRunLeaseParent<"thread-title">
   | {
       readonly kind: "occurrence";
       readonly occurrenceId: OccurrenceId;
@@ -34,6 +32,12 @@ export type ModelBudgetActiveParent =
       readonly workLeaseId: string;
       readonly workLeaseHolderId: string;
     };
+
+export interface ModelBudgetRunLeaseParent<Kind extends "run" | "thread-title"> {
+  readonly kind: Kind;
+  readonly runId: RunId;
+  readonly executionLease: RunExecutionLeaseClaim;
+}
 
 export interface ModelBudgetScope {
   readonly ownerId: OwnerId;

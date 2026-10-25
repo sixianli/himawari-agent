@@ -1,0 +1,59 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > requires an absolute archive and the fixed Python interpreter
+ × |tooling| test/tooling/artifact.test.mjs > same-artifact verification > ignores Finder .DS_Store files written after packaging at any depth 475ms
+   → promise rejected "Error: ARTIFACT_CONTENT_MISMATCH" instead of resolving
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a similar name 339ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a suffixed name 405ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects an unrecorded file with a directory 327ms
+ ✓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > still rejects a .DS_Store symbolic link 304ms
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid node-version payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid source-tree payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid entrypoint payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid native-binary payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid test-adapter payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid dependency-identity payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects internally rehashed but invalid runtime-identity payload
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > packages nested import-only dependencies and rejects missing mandatory dependencies
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > checks exact regular-file bytes, modes, dependency identity and platform
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects single byte
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing migration
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects missing dependency
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects extra file
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong source SHA
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong ABI
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong OS
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > rejects wrong lock
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > keeps generation time outside the payload content digest
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > creates a deterministic archive, verifies it, and streams prevalidated members
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar ../escape before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar /absolute before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar symbolic before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar hardlink before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar duplicate before writing any member
+ ↓ |tooling| test/tooling/artifact.test.mjs > same-artifact verification > preflights and rejects malicious tar fifo before writing any member
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/artifact.test.mjs > same-artifact verification > ignores Finder .DS_Store files written after packaging at any depth
+AssertionError: promise rejected "Error: ARTIFACT_CONTENT_MISMATCH" instead of resolving
+ ❯ test/tooling/artifact.test.mjs:113:64
+    111|     for (const directory of ["", "runtime", "runtime/node_modules/bett…
+    112|       await writeFile(path.join(payload, directory, ".DS_Store"), "Fin…
+    113|     await expect(verifyExtractedArtifact(payload, { context })).resolv…
+       |                                                                ^
+    114|     expect(
+    115|       (await collectArtifactFiles(payload)).filter((file) => file.path…
+
+Caused by: Error: ARTIFACT_CONTENT_MISMATCH
+ ❯ verifyExtractedArtifact scripts/ci/verify-artifact.mjs:169:11
+ ❯ test/tooling/artifact.test.mjs:113:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed | 26 skipped (31)
+   Start at  11:45:26
+   Duration  2.32s (transform 92ms, setup 0ms, import 377ms, tests 1.85s, environment 0ms)

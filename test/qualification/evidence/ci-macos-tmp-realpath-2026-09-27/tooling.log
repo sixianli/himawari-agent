@@ -1,0 +1,27 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 从锁定工具运行隔离的 npm ci，只发布成功安装的最小依赖目录 11ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 拒绝覆盖现有 node_modules 2ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 拒绝覆盖现有 .ci-output/gate-runtime 3ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > npm 失败时不暴露依赖入口，保留安装输入供诊断且拒绝重用残留目录 4ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 共享依赖和循环依赖只投影一次，嵌套依赖按最近父目录解析 2ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 先重新验证资格，再构建、扫描新产物并执行安装服务测试，发布可核对的结果 11ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > evidence 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > tools 失败后停止下一阶段，保留受控失败报告 2ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > build 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > security 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"exitCode":1}，即使测试报告声称成功 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"error":"spawn failed"}，即使测试报告声称成功 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"termination":"timeout"}，即使测试报告声称成功 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：failed 6ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：pending 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：wrong-file 4ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：extra-file 4ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：missing 4ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝构建目录以外的产物，不启动安装服务测试 3ms
+
+ Test Files  2 passed (2)
+      Tests  19 passed (19)
+   Start at  12:48:13
+   Duration  674ms (transform 204ms, setup 0ms, import 582ms, tests 87ms, environment 0ms)

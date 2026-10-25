@@ -1,0 +1,20 @@
+{
+  "scope": "Valid current Run lease queue binding; interrupted Run and cross-fence Pi continuation recovery remain incomplete",
+  "standard": {
+    "files": 249,
+    "executed": 4010,
+    "passed": 4010,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frozenInputCount": 1016,
+  "changedFrozenInputs": [],
+  "rawLogCount": 35,
+  "rawLogBytesVerified": true,
+  "fullSourceTestRun": true,
+  "limitations": [
+    "Synthetic Worker transport in queue service fixture",
+    "No full Agent restart/model loop recovery path",
+    "Pre-existing prototype format and lint failures"
+  ]
+}

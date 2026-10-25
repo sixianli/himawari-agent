@@ -1,0 +1,37 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts (12 tests | 1 failed | 11 skipped) 7ms
+     × does not disclose bytes when a Grant is revoked during input decryption 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > does not disclose bytes when a Grant is revoked during input decryption
+AssertionError: promise resolved "Uint8Array[ 16, 17, 18 ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
+- }
++ Uint8Array [
++   16,
++   17,
++   18,
++ ]
+
+ ❯ apps/agent-service/test/production-payload-broker-handler.unit.test.ts:308:60
+    306|   it("does not disclose bytes when a Grant is revoked during input dec…
+    307|     const fixture = handlerFixture({ onUnprotect: () => fixture.revoke…
+    308|     await expect(fixture.handler.readInput(inputRequest())).rejects.to…
+       |                                                            ^
+    309|       code: PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.AUTHORITY_REJECTED,
+    310|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 skipped (12)
+   Start at  18:45:19
+   Duration  823ms (transform 578ms, setup 0ms, import 714ms, tests 7ms, environment 0ms)

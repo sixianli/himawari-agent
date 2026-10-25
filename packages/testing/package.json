@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./conformance": "./src/conformance/index.ts"
+    "./conformance": "./src/conformance/index.ts",
+    "./temporary-root": {
+      "types": "./src/temporary-root.d.mts",
+      "default": "./src/temporary-root.mjs"
+    }
   },
   "dependencies": {
     "@himawari-agent/application": "0.0.0",

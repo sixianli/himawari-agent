@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ExaPublicSearchAdapter, parseExaSearchResults } from "../src/exa-public-search.js";
+import {
+  ExaPublicSearchAdapter,
+  parseExaSearchResults,
+  publicSearchFailure,
+} from "../src/exa-public-search.js";
+
+const exaFreeRateLimitNotice =
+  "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY";
 
 describe("public search provider boundary", () => {
   it("preserves source dates and marks excerpts as unopened", () => {
@@ -20,6 +27,25 @@ describe("public search provider boundary", () => {
       "WEB_SEARCH_RESPONSE_UNRECOGNIZED",
     );
     expect(() => parseExaSearchResults("x".repeat(131073), 5)).toThrow("WEB_SEARCH_OUTPUT_LIMIT");
+  });
+  it("[R2-T13] reports the free MCP rate-limit notice as a rate limit, not a changed format", () => {
+    expect(() => parseExaSearchResults(exaFreeRateLimitNotice, 3)).toThrow(
+      "WEB_SEARCH_RATE_LIMITED",
+    );
+    expect(() =>
+      parseExaSearchResults(exaFreeRateLimitNotice.replace("rate limit", "usage limit"), 3),
+    ).toThrow("WEB_SEARCH_RESPONSE_UNRECOGNIZED");
+    expect(() => parseExaSearchResults(" \n ", 3)).not.toThrow();
+    expect(() =>
+      parseExaSearchResults(`${exaFreeRateLimitNotice}\n${"x".repeat(4096)}`, 3),
+    ).toThrow("WEB_SEARCH_RESPONSE_UNRECOGNIZED");
+  });
+  it("[R2-T13] keeps real results whose excerpts mention a rate limit", () => {
+    const results = parseExaSearchResults(
+      `Title: Exa limits\nURL: https://example.org/limits\nHighlights:\n${exaFreeRateLimitNotice}`,
+      3,
+    );
+    expect(results).toMatchObject([{ title: "Exa limits", url: "https://example.org/limits" }]);
   });
   it.each([
     ["2026-09-12T07:45:00.000Z", "2026-09-12T07:45:00.000Z (UTC)"],
@@ -53,5 +79,31 @@ describe("public search provider boundary", () => {
       { query: "sk-" + "a".repeat(40), limit: 5 },
     ])
       await expect(adapter.search(input)).rejects.toThrow("WEB_SEARCH_INPUT_INVALID");
+  });
+});
+
+describe("[R2-T13] public search failure reports", () => {
+  it("tells the model about a rate limit and hides every other failure detail", () => {
+    expect(publicSearchFailure(new Error("WEB_SEARCH_RATE_LIMITED"))).toEqual({
+      code: "WEB_SEARCH_RATE_LIMITED",
+      output: JSON.stringify({
+        error: "WEB_SEARCH_RATE_LIMITED",
+        message: "公开搜索服务正在限流，请稍等片刻再搜索。",
+      }),
+    });
+    for (const error of [
+      new Error("WEB_SEARCH_RESPONSE_UNRECOGNIZED"),
+      new Error("connect http://user:secret@127.0.0.1:4321 failed"),
+      Object.assign(new Error("x"), { cause: new Error("WEB_SEARCH_RATE_LIMITED") }),
+      "WEB_SEARCH_RATE_LIMITED",
+      undefined,
+    ])
+      expect(publicSearchFailure(error)).toEqual({
+        code: "WEB_SEARCH_FAILED",
+        output: JSON.stringify({
+          error: "WEB_SEARCH_FAILED",
+          message: "公开网页搜索失败。",
+        }),
+      });
   });
 });

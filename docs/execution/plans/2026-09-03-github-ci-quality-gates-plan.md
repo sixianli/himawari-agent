@@ -8,6 +8,8 @@ date: "2026-09-03"
 
 # Himawari Agent GitHub CI 与质量门禁实施 Plan
 
+本次增量：[2026-09-29 集成测试并行规则与验证](#integration-parallel-20260929)、[2026-10-14 集成测试并行预算调整](#integration-parallel-20261014)。历史实施记录保留其当时的政策与证据边界。
+
 **来源 Spec：** [SOURCE: docs/execution/specs/2026-09-03-github-ci-quality-gates-design.md]
 
 **协同来源：**
@@ -145,7 +147,7 @@ Task 7 与 Task 8 可在不同文件范围并行。构建脚本、npm scripts、
 - [x] 将四类 opt-in suite 分配给专用资格 project，从普通 integration 集合明确排除；保留其具体路径与理由。
 - [x] 使 `npm test` 与 CI 共用主测试执行入口。入口显式准备/接收产物，五个 project 均非空，不使用 `passWithNoTests`。
 - [x] 移除安装测试的内部 `build:node`。测试从本次归档安装到临时 prefix，在非源码 cwd 下运行三个 binary，禁止开发依赖搜索路径补漏。
-- [x] 保持 integration 文件串行。完成现有启动、doctor、SQLite、锁冲突、drain/restart、恢复与迁移模拟场景，核验安装前后归档摘要不变。
+- [x] 当时保持 integration 文件串行。完成现有启动、doctor、SQLite、锁冲突、drain/restart、恢复与迁移模拟场景，核验安装前后归档摘要不变。后续调度变更见[2026-09-29 并行验证](#integration-parallel-20260929)。
 - [x] 测试失败、主 project 清空、产物被替换、缺少依赖和测试内部重新构建均产生非零结果。保留 source-independent 安装成功对照。
 
 ### Task 6：把真实浏览器纳入必需矩阵
@@ -503,3 +505,63 @@ WebKit 首轮卡在网络恢复。最小空页面证明 Linux WebKit 的模拟�
 ### 2026-09-15 macOS 测试夹具修复
 
 同次托管运行的覆盖率 4148/4148、87.387187%/80.26554% 通过，历史比较无回退；Linux 常规测试、最低 Node、两平台构建与三浏览器通过。macOS 常规测试的 15 项失败集中在三份新增单元测试：模拟 `/proc` 时未固定 Linux 平台、临时目录未解析 macOS 路径别名、服务编排只替换了 Systemd 密钥来源。修正仅涉及测试夹具：保留生产平台拒绝和路径规范化检查，为两种主机密钥来源提供受控替身，显式覆盖两平台的就绪与退出顺序，并补测非 Linux 的命名空间拒绝。Darwin 密钥来源遗漏已在 Linux 模拟测试复现，修正后相关 74 项通过；真实 macOS 的最终结果仍由下一次托管运行确认。
+
+
+<a id="integration-parallel-20260929"></a>
+
+### 2026-09-29 集成测试并行规则与验证
+
+依据[测试触发时机决定](../../adr/0038-test-layer-trigger-timing.md)和用户的本次并行化任务，按[更新后的测试集合约束](../specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)执行。规则由 `ci/policy.json`、其 schema、政策检查、Vitest 配置和正式测试入口共同约束；只修改测试基础设施，不修改产品代码、产品期限或 B1 测试文件。[SOURCE: docs/adr/0038-test-layer-trigger-timing.md]
+
+- [x] 逐条回读串行基线：`f-full-2` 的 100 文件、2278 条断言全部 passed，耗时 678.542 秒。
+- [x] 核对普通 integration 文件及公共 fixture 的可写目录、SQLite、UDS、进程和端口；当前没有实测需要独占的文件，因此没有新增串行分组或排除项。
+- [x] 在原产品代码上执行 4 worker 完整实验，以及同时执行正式独立输出构建的负载实验；全部断言通过。
+- [x] 在实现前建立策略红测试，再加入 CPU/内存上限、配置一致性、文件隔离与旧政策迁移；初始定向 3 文件、460 条通过；随后用真实 Vitest 子进程复现多项目不同并发数同阶段冲突，加入独立调度阶段与双向拒绝检查。
+- [x] 完成全部 tooling、`npm run check`、文档与 Runbook 校验、自查后，以最终配置执行构建和连续三轮完整 `npm test`。每轮五个项目合计 4941 条断言全部通过、0 跳过，其中 integration 为 100 文件、2278 条；逐条回读包含失败实验及报告副本在内的 45 份 Vitest JSON。
+
+初始测量设备为 8 核、8 GiB 的 macOS arm64，Node 22.22.3、Vitest 4.1.9。每秒采样命令及其可见后代进程的 CPU 和 RSS（常驻内存）；100% CPU 表示一个逻辑核心，RSS 可能重复计入共享页，峰值只是采样下界。两份成功报告与历史基线的断言集合一致；历史基线不是同一时刻同一负载的控制组，不据此宣称托管机器获得相同收益。
+
+| 实验 | 文件 / passed / skipped | 耗时 | 测试进程树 RSS 峰值 | CPU 峰值 |
+| --- | --- | --- | --- | --- |
+| 历史串行 `f-full-2` | 100 / 2278 / 0 | 678.542 秒 | 未采集 | 未采集 |
+| `experiment-w4-01` | 100 / 2278 / 0 | 292.843 秒 | 1217.52 MiB | 559.5% |
+| `experiment-w4-load-01` | 100 / 2278 / 0 | 408.025 秒 | 1167.13 MiB | 508.1% |
+| 正式入口 `full-01` | 100 / 2278 / 0 | 272.514 秒 | 1339.97 MiB | 546.0% |
+| 正式入口 `full-02` | 100 / 2278 / 0 | 310.566 秒 | 1305.16 MiB | 537.2% |
+| 正式入口 `full-03` | 100 / 2278 / 0 | 443.185 秒 | 1099.50 MiB | 535.7% |
+
+首次 4 worker 相对历史基线少 385.699 秒（约 56.8%）。负载实验期间独立构建也通过，命令耗时 435.086 秒；系统负载增高，结束附近只读进程检查观察到 macOS 后台服务占用 CPU，不能把所有变慢归因于构建。4 worker 为当前已测上限，未测试更大数量；较小机器按 CPU/内存自动减少，不能由这台 Mac 的结果宣称所有机器均已资格通过。
+
+三轮正式 integration 平均 342.088 秒，比历史串行基线少 336.454 秒（约 49.6%）；各轮分别少 406.028、367.976、235.357 秒。五项目完整 `npm test` 连同入口校验分别耗时 422.216、475.433、639.901 秒，最终构建耗时 107.715 秒。三轮文件与断言名称集合均与基线一致，报告中的文件时间区间最大重叠均为 4；CPU/RSS 取 integration 实际运行时间区间内的采样。第三轮耗时明显增加，补采系统快照已保留，但一次快照不能证明整轮差异的原因，不能把最快一轮当作固定收益。
+
+最终执行发生在 `a37668cebe2140cb82042628ffde2278abace82d` 加 `candidate-sources-01.json` 所记录的冻结改动上，三轮期间执行源码未变化；后续只补充文档结果并提交。构建产物 SHA-256 为 `97775dfb0b99cdb70b66b07fb33c53086c3bfe6336894bc2adf30fef3ab06e85`。L0 定向 463/463、L1 静态检查、L2 整组 tooling 1103/1103、L3 构建和三轮完整测试均通过。当前结果属于本机普通测试路径；没有执行托管 CI、完整覆盖率流水线、Mac 产品路径资格或 Linux/Hermes 资格。
+
+保留两个诊断边界：文中历史“默认并发两轮 2/5 项 5 秒超时”实际描述 tooling；其 `.ci-output/github-task13-20260903/` 等原始本机目录和旧 checkout 路径现已不存在，因此历史超时原因仍未确认，不能猜为 integration 的数据库或套接字冲突。本次首轮 2 worker 实验遗漏正式环境的 `HIMAWARI_CI_PYTHON`，三个安装 suite 准备失败，2260 passed、18 skipped；失败报告原样保留，未计入成功或提速验收。随后启动器复用正式工具校验和隔离环境，三个安装文件 18/18 定向通过后才恢复整组实验。
+
+策略定向测试还暴露了既有数量断言过时：新增产品路径资格 project 后已登记 15 个主/资格项目，测试仍期待 14。修改前结果保留在 `policy-red-02`；修正为当前登记数量，不减少项目或断言。
+
+证据根目录为 `.ci-output/tool-execution-audit/2026-09-29/integration-parallel/`，包含每次独立运行的完整 argv、环境、revision/差异、控制台日志、资源采样、原始 JSON 和逐条断言读回。`README.md` 说明实验命令与限制，`decisions.tsv` 记录决策；`acceptance-summary-final.json` 汇总正式结果，`assertions-audit-final.json` 保留 45 份报告的逐条状态，历史失败不被后续成功覆盖。完整证据保留，可重建归档按磁盘规则清理，重跑先按记录的修订重新构建。
+
+<a id="integration-parallel-20261014"></a>
+
+### 2026-10-14 集成测试并行预算调整
+
+条目 R2-T4 要求完整 `npm test` 在 Hermes 上于 `ci/policy.json` 的 30 分钟（1800 秒）总预算内跑完且不放宽任何时限。基线 `4bf19bd` 的 `test` 检查是 1779 秒，只剩约 21 秒余量；R2-T1、R2-T2 增加测试后，2026-10-13 的第 20、21 批两次在 1800 秒时被终止。本轮先做两项改动：**改动 A**（已迁移模板库，提交 `091142c`）让每个 integration 用例的 SQLite 状态根从同一 worker 模块内共享的已迁移模板拷贝，不再逐用例重放全部 50 个迁移；**改动 B** 把 integration 的 `workerLimits` 由 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 改为 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`。规则仍由 `ci/policy.json`、其 schema、政策检查、Vitest 配置和正式测试入口共同约束；只改测试基础设施与并行预算，不改产品代码、产品期限或任一用例时限。
+
+- [x] 把改动 B 的预算变化作为**一次固定迁移**写入政策检查：`resolvePolicySource` 只在已接受政策的 `workerLimits` 恰好等于 2026-09-29 已接受值 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 时才换成当前值 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`；其他任何已接受值保持原样，由 `validateVitestProjects` 照常报漂移。这样同一次变更不能取消自己的检查。
+- [x] 改动 A 的第 0 层（4 个受影响文件改前/改后，均为 1019 用例通过）：725.03 秒 → 567.15 秒；第 1 层 `npm run check` rc=0；第 2 层 integration 107 文件 / 2733 用例全部通过，1572.0 秒 → 1377.4 秒（−194.7 秒，约 −12.4%）。
+- [x] 改动 B 的第 1 层 `npm run check` rc=0，第 2 层 `tooling` 项目 45 文件 / 1223 用例全部通过。改动 B 与改动 A 一起只影响测试基础设施、政策文件和文档。
+- [x] 第 3 层在 `091142c` 加改动 B 的版本上跑两轮：**4 个进程** `test` 检查 1525.4 秒、integration 1218.2 秒，出现 5 个 30 秒超时（`node-runtime-installation-permissions` 3 条、`production-http-composition-process` 1 条、`sqlite-sandbox-execution-v2` 1 条）；按预先批准的退路把 `maximum` 改为 3，**3 个进程** `test` 检查 1549.7 秒、integration 1241.9 秒，**5687 个用例全部通过、0 失败、0 跳过**。
+
+实测最关键的一点是**总工作量随进程数变大**：全部用例耗时之和（串行工作量 W）在 2、3、4 个进程时分别为 2507.3、3443.2、4310.3 秒，因此 integration 墙钟只从 2 个进程的 1377.4 秒降到 3 个进程的 1241.9 秒和 4 个进程的 1218.2 秒；3 个进程时 `W/3 + 约 131 秒启动` 与实测 1242 秒相当，已贴近该进程数的下限。拆分最慢的单个文件 `test/integration/sqlite-sandbox-execution-v2.test.ts`（2/3/4 个进程分别为 658.7 / 910.5 / 1210.9 秒）**不会降低下限**，因为 3 个进程时 integration 已贴近 W/3；用户在 G98 同意拆分，经核算本轮不做。本轮**不削减测试工作量**：不减少 worker 变体、不重构最重的用例。
+
+| 运行 | 进程 | `test` 检查 | integration | 用例 | `npm test` 退出码 |
+| --- | --- | --- | --- | --- | --- |
+| 第 3 层第一轮 | 4 | 1525.4 秒 | 1218.2 秒 | 2733 中 2728 通过，5 个超时 | 1 |
+| 第 3 层第二轮 | 3 | 1549.7 秒 | 1241.9 秒 | 5687 全部通过 | 1（仅发布步骤失败，非测试失败） |
+
+资源采样（每 30 秒）：4 个进程时 loadavg 2.8–7.6、内存峰值 6.8 GiB（共 15.8 GiB）；3 个进程时 loadavg 3.4–7.3、内存峰值 6.8 GiB。内存没有吃紧，但 4 核上 3–4 个测试进程再加它们自己启动的子进程、嵌套 Vitest、沙箱和服务长期把 loadavg 推到 5–7，属于过订阅。耗时 ÷ 30000 毫秒的比值表里，4 个进程有多条达到 0.5（最高 2.567，即 `durable-phase-process-recovery`，它自身时限是 120000 毫秒）；3 个进程 0 个失败，最高比值 2.107（同一用例，自身时限下 0.527），该 >0.5 的一条由 R2-T7 处理。两轮里 `npm test` 退出码为 1 都**不是测试失败**：第二轮是 `local.mjs` 的发布步骤读 GitHub 安全审查评论时，仓库改为私有后不带令牌返回 404 所致，与并发度和本批代码无关。
+
+3 个进程下 `test` 检查用 1549.7 秒，仍在 `ci/policy.json` 的 30 分钟硬性预算内（余量约 250 秒），没有放宽任何时限。**GitHub 托管运行器的核数以及这条预算在托管运行器上的表现没有验证**：本轮的时长、资源采样和比值都只在 Hermes 的 4 核上测得，托管运行器是否为 4 核、并发收益如何，需要托管 CI 或另一次实验才能确认。
+
+证据位于 Hermes `/data/hermes/himawari/tool-audit-round2/r2-u1/evidence/r2t4-22/`：改动 A 的 Layer 0/1/2 在 `run-04-before`、`run-05-after`、`run-06-check-a`、`run-10-layer2-a-3`；改动 B 的 Layer 1/2 在 `run-13-check-b`、`run-17-check-b3`；两轮第 3 层在 `run-14-layer3-b4`、`run-16-layer3-b3`（含 `local-summary.json`、`tests/`、`resource-samples.txt`、比值表）。政策检查的两次固定迁移与 schema 同步见 `scripts/ci/check-policy.mjs`、`ci/policy.schema.json` 和规格的[测试集合约束](../specs/2026-09-03-github-ci-quality-gates-design.md#3-测试集合完整且不重复)；依据文件变化后 `install-start-stop-runbook.md`、`hermes-control-center-upgrade-runbook.md` 已在干净副本上重新封存。

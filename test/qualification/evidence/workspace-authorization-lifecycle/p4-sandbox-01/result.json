@@ -1,0 +1,39 @@
+{
+  "scope": "P4 current-directory and private sandbox access; not candidate command qualification",
+  "sourceSha256": {
+    "packages/runtime-sandbox/src/job-host-main.ts": "afcf59d3a0c06458800bd1bb245c6ff580801aaeb2ef3fe9fed8389865fe911f",
+    "packages/runtime-sandbox/test/job-host-main.unit.test.ts": "cf17b7fe8352b42d4c1ef0a1682e2c181b4a575704e964aea7365041285b8807",
+    "packages/runtime-sandbox/scripts/probe-workspace-access.mjs": "c888cf21b7ce9307c01bf238b3863702b6d9d32573044d821431206d6bbd7497"
+  },
+  "platforms": {
+    "macos": {
+      "node": "v22.22.3",
+      "report": "mac-access-02.log",
+      "passedModes": [
+        "read",
+        "write",
+        "private"
+      ]
+    },
+    "linux": {
+      "node": "v22.22.3",
+      "report": "linux-access-04.log",
+      "passedModes": [
+        "read",
+        "write",
+        "private"
+      ]
+    }
+  },
+  "rootCause": "Shell startup diagnostics preceded the authenticated Linux namespace frame on stderr",
+  "verification": {
+    "namespaceGateTests": 56,
+    "diagnosticsBounded": true,
+    "unauthenticatedLinesCannotStart": true,
+    "originalDeadlineRetained": true
+  },
+  "limits": [
+    "Task-tree cleanup remains unknown for these general commands",
+    "No production qualification or deployment was performed"
+  ]
+}

@@ -7,6 +7,7 @@ import type {
   AuthorityLeasePort,
   AuthorityLeaseRecord,
   AuthorizationStorePort,
+  AutomaticReviewStorePort,
   BackgroundWorkStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
@@ -19,6 +20,7 @@ import type {
   CommitStateAndEventsResult,
   DeploymentAuthorityStatePort,
   DurableGitHubMonitorHistoryPolicyPort,
+  ExecutionEnvironmentStorePort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
   MemoryProjectionJobStatePort,
@@ -374,6 +376,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
     return this.durable.auditLedger();
   }
 
+  automaticReviewStore(): AutomaticReviewStorePort {
+    return this.durable.automaticReviewStore();
+  }
+
   authorizationStore(): AuthorizationStorePort {
     return this.durable.authorizationStore();
   }
@@ -405,6 +411,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {
     return this.durable.sandboxExecutionJournal(ownerId, agentId);
+  }
+
+  executionEnvironmentStore(ownerId: OwnerId, agentId: AgentId): ExecutionEnvironmentStorePort {
+    return this.durable.executionEnvironmentStore(ownerId, agentId);
   }
 
   sandboxJobJournal(ownerId: OwnerId, agentId: AgentId): SandboxJobJournalPort {

@@ -1,0 +1,69 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (27 tests | 27 failed) 6770ms
+     × fences a stopped reservation durably without fabricating release or execution 334ms
+     × returns a concurrent bound attempt for normal cleanup instead of overwriting it 202ms
+     × finds an unbound prior attempt at startup and keeps its start fence after reopening 239ms
+     × rejects changing the persisted queued request at admission: claim 215ms
+     × rejects changing the persisted queued request at admission: contract 214ms
+     × rejects changing the persisted queued request at admission: deadline 256ms
+     × does not give one invocation two queue identities or two places in line 205ms
+     × coordinates concrete file resources: different 193ms
+     × coordinates concrete file resources: same-slot 196ms
+     × coordinates concrete file resources: same-inode 216ms
+     × coordinates concrete file resources: atomic-read 260ms
+     × coordinates concrete file resources: directory-write 191ms
+     × allows two read-only preparations over the same workspace 190ms
+     × revalidates a queued production admission before consuming: available 216ms
+     × revalidates a queued production admission before consuming: cancelled 230ms
+     × revalidates a queued production admission before consuming: expired 209ms
+     × queues without effects and prevents a newer conflicting request from jumping ahead 229ms
+     × does not place unrelated resources behind an older queued request 318ms
+     × rejects changed queue identities and revoked Handles without creating occupancy 400ms
+     × preserves reservations and fixed start bindings across database reopen 265ms
+     × reads the original unconsumed queue snapshot after reopening the database 230ms
+     × admits without fabricated runtime values, then fixes the actual binding exactly once 416ms
+     × retains occupancy before preparation and rolls back a conflicting consume 306ms
+     × rejects revoked authority at binding and keeps the reservation unbound 241ms
+     × does not upgrade an existing unstarted v2 record into permission to launch 328ms
+     × rejects reservation mutation and binding that claims execution before start 233ms
+   × releases stopped never-started reservations durably without manufacturing runtime facts 238ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 27 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > fences a stopped reservation durably without fabricating release or execution
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > returns a concurrent bound attempt for normal cleanup instead of overwriting it
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > finds an unbound prior attempt at startup and keeps its start fence after reopening
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: claim
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: contract
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: deadline
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not give one invocation two queue identities or two places in line
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > coordinates concrete file resources: different
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > coordinates concrete file resources: same-slot
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > coordinates concrete file resources: same-inode
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > coordinates concrete file resources: atomic-read
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > coordinates concrete file resources: directory-write
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > allows two read-only preparations over the same workspace
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > revalidates a queued production admission before consuming: available
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > revalidates a queued production admission before consuming: cancelled
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > revalidates a queued production admission before consuming: expired
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > queues without effects and prevents a newer conflicting request from jumping ahead
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not place unrelated resources behind an older queued request
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changed queue identities and revoked Handles without creating occupancy
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > preserves reservations and fixed start bindings across database reopen
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > reads the original unconsumed queue snapshot after reopening the database
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > admits without fabricated runtime values, then fixes the actual binding exactly once
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > retains occupancy before preparation and rolls back a conflicting consume
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects revoked authority at binding and keeps the reservation unbound
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not upgrade an existing unstarted v2 record into permission to launch
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects reservation mutation and binding that claims execution before start
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > releases stopped never-started reservations durably without manufacturing runtime facts
+SyntaxError: TypeScript parameter property is not supported in strip-only mode
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/27]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  27 failed (27)
+   Start at  23:24:40
+   Duration  9.12s (transform 1.22s, setup 0ms, import 2.15s, tests 6.77s, environment 0ms)

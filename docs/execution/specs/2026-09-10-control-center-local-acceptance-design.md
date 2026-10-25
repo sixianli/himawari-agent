@@ -8,6 +8,9 @@ date: "2026-09-10"
 
 # 控制中心完整测试与 Hermes 真实服务验收
 
+> 2026-10-06适用修正：本文所述Hermes实例和OpenRouter链路是2026-09-10验收基线。当前代码按[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)使用Vercel、单主文本模型和Mem0 3.3.1；这些改动尚未证明已部署到历史实例。测试主机为Hermes，生产主机为云服务器，Mac新版本验证仍延期，具体位置遵守[ADR 0052](../../adr/0052-third-production-host-acceptance-exception.md#hosts)。原现场及付费授权不自动适用于当前版本。
+> [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
+
 ## 目标与来源
 
 用户要求将已确认的 Web 设计落实为可日常使用的 AI Agent。天气搜索、文件读写、脚本编写是代表性场景，不能以硬编码示例或受控服务代替真实模型、工具、审批和恢复。用户于 2026-09-11 明确最终运行主机为 Hermes Linux，Mac 仅承担开发与浏览器访问。
@@ -19,7 +22,7 @@ date: "2026-09-10"
 
 ## 当前链路与缺口
 
-正式链路为控制中心、Gateway、RunCoordinator、Pi 0.84.2、OpenRouter、独立 Execution Worker、SQLite 与受保护 Payload。Hermes 已有 Himawari 的活动 Owner/Agent/deployment、两个已完成 Run 和 HTTPS 入口；此前 Capability Registry 未登记声明，未配置目录 Grant，通用工具尚未连到自然语言请求。不能重新初始化或覆盖该真实实例。
+2026-09-10验收基线的链路为控制中心、Gateway、RunCoordinator、Pi 0.84.2、OpenRouter、独立 Execution Worker、SQLite 与受保护 Payload。当时Hermes已有Himawari的活动Owner/Agent/deployment、两个已完成Run和HTTPS入口；此前Capability Registry未登记声明，未配置目录Grant，通用工具尚未连到自然语言请求。该历史记录不授权重新初始化或覆盖真实实例。
 
 Pi 提供模型连接、流式事件、会话、Agent Loop 和 read/write/edit/bash/find/grep/ls 工具定义；`packages/runtime-pi` 内复用既有 governed 工具与 Operations。Himawari 负责动作授权、明确接收方的披露、限定主机和目录、Worker 调度、加密记录、预算与审计。Pi 没有内置公开 Web 搜索，项目已有 `PublicWebAdapterPort`，通过现有 MCP SDK 增加 Exa 只读搜索适配，不另建 MCP 或模型协议。
 
@@ -35,13 +38,13 @@ Pi 提供模型连接、流式事件、会话、Agent Loop 和 read/write/edit/b
 
 工具参数冻结到受保护的 Run artifact。动作 Intent 只包含工具、范围、输入摘要和明确接收方；原始文件内容、命令和凭据不放进公开审批摘要。动作/披露批准后签发单次 Handle，继续走现有 Worker 准入、scope 与隔离；拒绝和暂停不签发可执行 Handle。恢复复查原输入、目录版本、模型身份、执行租约、截止时间和当前授权，不能因刷新改变操作或重新授予期限。
 
-`workspace grant` 离线登记明确确认的规范目录及真实设备/inode，默认 read/create/update、private/model 披露；它不代替逐次动作批准。`capabilities register` 只登记经严格 loader 验证且 Owner 明确确认摘要的安装声明，不生成主机资格。
+`workspace grant` 离线登记明确确认的规范目录及真实设备/inode，默认 read/create/update、private/model 披露；它不代替逐次动作批准。`capabilities register` 只登记经严格 loader 验证且 Owner 明确确认摘要的安装声明，不生成主机资格。已登记能力只换程序字节或安装目录时，用 `capabilities upgrade-plan` 列出差异并给出确认摘要，再用 `capabilities upgrade --confirm <planDigest>` 在一个事务里更新登记、撤销该能力尚未用完的执行 Handle（每次工具调用前签发的一次性执行授权）并写审计；声明的其他任何变化仍须按新能力重新审核，操作步骤见[升级 Runbook 的能力升级一节](../../runbooks/hermes-control-center-upgrade-runbook.md#capability-upgrade)。
 
 Pi write/edit 在真实平台回读校验成功后附带路径、内容摘要和字节数，Worker 将原受保护输出绑定为持久效果证据，Agent 再验证原调用、输入和 Grant；本次安装 bash 仅有只读目录范围，文件修改使用 write/edit。路径穿越、符号链接、跨设备、受保护目录与机器秘密继续拒绝。不能为了让脚本可运行而默认开放删除、安装、凭据或其他目录。
 
 ## 公开搜索
 
-搜索适配实现既有 PublicWebAdapterPort 的 search 部分，使用固定 `https://mcp.exa.ai/mcp` 与 MCP SDK。只支持真实 `web_search_exa`，不提供无法满足完整网页状态/内容合同的伪 open 实现。查询限制长度与结果数量、拒绝机器秘密；披露审批明确包含 Exa 与本轮模型。运行程序只接收已准入的受保护 stdin，使用认证 SRT 代理，安装网络上界只有 `mcp.exa.ai:443`，禁止重定向扩大出口。
+搜索适配实现既有 PublicWebAdapterPort 的 search 部分，使用固定 `https://mcp.exa.ai/mcp` 与 MCP SDK。只支持真实 `web_search_exa`，不提供无法满足完整网页状态/内容合同的伪 open 实现。查询限制长度与结果数量、拒绝机器秘密；披露审批明确包含 Exa 与本轮模型。运行程序只接收已准入的受保护 stdin，使用认证 SRT 代理，安装网络上界只有 `mcp.exa.ai:443`，禁止重定向扩大出口。Exa 免费 MCP 限流时返回的是不带错误标记的说明文字，适配器把没有结果、带有 rate limit 字样的短回复认作限流，在原期限内等 1 秒并经新代理连接重试一次（两次查询共用原有的一次传输级重试，单次搜索最多 4 次只读查询），仍限流则报 `WEB_SEARCH_RATE_LIMITED`；其他无法识别的回复仍报格式变化，不当作空结果。搜索程序失败时在标准输出写固定的错误码和说明，作为模型拿到的工具结果；标准错误只写错误码（2026-10-16，R2-T13）。
 
 结果保留实际标题、网址、日期摘录与查询时间，`openedResourceId` 为 null；不能把搜索摘录表述为已打开全文。未知 provider 格式、限流或真实错误必须失败，不返回编造的空成功。第三方返回视为不可信资料，不能变成新的工具授权。免费服务也可能限流，其可用性以实际请求为证据。
 

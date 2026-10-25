@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts (11 tests | 1 failed) 143ms
+     × does not turn a partial file write grant into arbitrary shell authority 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > does not turn a partial file write grant into arbitrary shell authority
+AssertionError: expected [Function] to throw error including 'PI_SHELL_EFFECT_SCOPE_INCOMPLETE' but got 'PI_FIXED_FILE_COMMAND_DENIED'
+
+Expected: "PI_SHELL_EFFECT_SCOPE_INCOMPLETE"
+Received: "PI_FIXED_FILE_COMMAND_DENIED"
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:115:83
+    113|   it("does not turn a partial file write grant into arbitrary shell au…
+    114|     const { root, port } = await setup();
+    115|     await expect(port.executeCommand({ cwd: root, command: "true", onD…
+       |                                                                                   ^
+    116|       "PI_SHELL_EFFECT_SCOPE_INCOMPLETE",
+    117|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 passed (11)
+   Start at  20:38:25
+   Duration  1.30s (transform 660ms, setup 0ms, import 1.07s, tests 143ms, environment 0ms)

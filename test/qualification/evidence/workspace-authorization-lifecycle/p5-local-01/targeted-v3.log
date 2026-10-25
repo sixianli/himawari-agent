@@ -1,0 +1,64 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (33 tests | 1 failed) 70ms
+     × does not treat a review return value as execution authority 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > optional automatic review entry > does not treat a review return value as execution authority
+AssertionError: expected "vi.fn()" to be called once with arguments: [ { intent: { …(27) }, …(2) }, …(1) ]
+
+Received:
+
+  1st vi.fn() call:
+
+@@ -1,8 +1,9 @@
+  [
+    {
+-     "deadlineAt": "2026-08-28T00:01:00.000Z",
++     "approvalExpiresAt": "2026-08-28T00:01:00.000Z",
++     "deadlineAt": "2026-08-28T00:00:01.000Z",
+      "intent": {
+        "actionKind": "READ",
+        "agentId": "agent-governance-v2",
+        "capabilityRef": "governed-tool",
+        "capabilityVersion": "1.0.0",
+@@ -44,7 +45,17 @@
+        ],
+        "threadId": "thread-governance-v2",
+      },
+      "policyVersion": "continuity-policy",
+    },
+-   Any<AbortSignal>,
++   AbortSignal {
++     Symbol(kEvents): Map {},
++     Symbol(events.maxEventTargetListeners): 0,
++     Symbol(events.maxEventTargetListenersWarned): false,
++     Symbol(kHandlers): Map {},
++     Symbol(kAborted): true,
++     Symbol(kReason): AbortError {
++       "message": "This operation was aborted",
++     },
++     Symbol(kComposite): false,
++   },
+  ]
+
+
+Number of calls: 1
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1211:20
+    1209|     const action = intent({ id: "review-no-authority" });
+    1210|     expect(await f.service([], { review }).evaluate(action, { uiAvaila…
+    1211|     expect(review).toHaveBeenCalledExactlyOnceWith({ intent: action, p…
+       |                    ^
+    1212|     expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqu…
+    1213|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 89 passed (90)
+   Start at  20:20:52
+   Duration  10.19s (transform 2.31s, setup 0ms, import 3.80s, tests 7.00s, environment 0ms)

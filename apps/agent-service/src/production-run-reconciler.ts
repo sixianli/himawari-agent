@@ -6,6 +6,7 @@ import {
   PORT_ERROR_CODES,
   type RunLifecyclePort,
   type RunReconciliationPort,
+  type RunReconciliationCandidate,
 } from "@himawari-agent/application";
 import type { ProductionRunReconciler } from "./production-run-dispatcher.js";
 
@@ -16,6 +17,7 @@ export function createProductionRunReconciler(options: {
   readonly runs: Pick<RunLifecyclePort, "readRun">;
   readonly recovery: RunReconciliationPort;
   readonly clock: ClockPort;
+  readonly settleExpired?: (candidate: RunReconciliationCandidate) => Promise<boolean>;
 }): ProductionRunReconciler {
   return async ({ candidate, reasonCode, executionLease }) => {
     if (candidate.ownerId !== options.ownerId || candidate.agentId !== options.agentId)
@@ -24,6 +26,7 @@ export function createProductionRunReconciler(options: {
     if (!current)
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Recovery Run missing");
     if (["completed", "failed", "cancelled"].includes(current.run.status)) return;
+    if (!executionLease && (await options.settleExpired?.(candidate))) return;
     await options.recovery.quarantine({
       runId: candidate.runId,
       expectedRunRevision: current.revision,

@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:browser
+> vitest run --config vitest.workspace.ts --project browser apps/control-center/test/execution-view.unit.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  12 passed (12)
+   Start at  18:16:48
+   Duration  405ms (transform 75ms, setup 0ms, import 101ms, tests 16ms, environment 0ms)

@@ -1,0 +1,289 @@
+{
+  "verifiedAt": "2026-09-21T02:27:55.763531+00:00",
+  "standardStatus": "local_passed",
+  "frozenInputsUnchanged": 1089,
+  "sourceTreeSha256": "ee104e7c57502bfd281df2dba87a41bf867a1ba121d06b26f3c2a0e118f10e71",
+  "artifactSourceMatches": true,
+  "archiveSha256": "33cc204736779ff56b3f1a177656295d4e20d4f8b21b6231557426822a9f06e4",
+  "archiveBytesVerified": true,
+  "duplicateArchiveRejected": true,
+  "logs": {
+    "himawari-dispatch-runbook-backup-dry.log": {
+      "bytes": 334,
+      "sha256": "1d9a206bf730780b6106b3d8e4657578821947162e610b7ffbd1ececb581d41e"
+    },
+    "himawari-dispatch-quota-matrix.log": {
+      "bytes": 252,
+      "sha256": "11ab4ce682bf1581ffc894825882ae37bd49c9af3fc58692eb18702f7e8fb57e"
+    },
+    "himawari-dispatch-runbook-upgrade-check.log": {
+      "bytes": 335,
+      "sha256": "d4b9a8bc58f00ec275898c78bd15c9c4022d3cb8e198b691618f627d924dc4d7"
+    },
+    "himawari-dispatch-consumers.log": {
+      "bytes": 255,
+      "sha256": "7eecdb0ae49cfe4298facb310cc8911f004e7e216b2b76896f171158e75f731c"
+    },
+    "himawari-dispatch-format.log": {
+      "bytes": 8471,
+      "sha256": "2abfd74eb19af9bb5f1706710e8b1aa7fbd5b19deca2443c58853cb525688690"
+    },
+    "himawari-dispatch-docs-reconciled.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-dispatch-docs-complete.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-dispatch-runbook-authority-dry.log": {
+      "bytes": 338,
+      "sha256": "be1681577ffd063045540c9668ebee43750887b4480eab394685d1808f388419"
+    },
+    "himawari-dispatch-fixture-format.log": {
+      "bytes": 42,
+      "sha256": "61898ed2750f61ffc957175f2a3c3c6620628cc8aee176b44278233c901d3866"
+    },
+    "himawari-dispatch-revalidation-after.log": {
+      "bytes": 251,
+      "sha256": "fade8bbfacf6f6fb664221ec4745bf83618ac711bc45feb6c0d088979a24c47f"
+    },
+    "himawari-dispatch-types.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-dispatch-boundaries.log": {
+      "bytes": 130,
+      "sha256": "38acf89f01a139db6583e68bd61c9f37466aec749cf1116a7527b1561e1b6a80"
+    },
+    "himawari-dispatch-global-format-check.log": {
+      "bytes": 26988,
+      "sha256": "78263cf443fa03edcc5794a9bb06aefb3207758366485a2ea91f68b88d9fa3c7"
+    },
+    "himawari-dispatch-revalidation-before.log": {
+      "bytes": 11363,
+      "sha256": "8a73d30dc84070337217668f4768025df03a7b97e581f52853330734a8104590"
+    },
+    "himawari-dispatch-docs.log": {
+      "bytes": 309,
+      "sha256": "68e8bfbc9a01d6278e98bb853884aac9353766db21aceed0081abe1510ad4632"
+    },
+    "himawari-dispatch-runbooks-before.log": {
+      "bytes": 136,
+      "sha256": "ff685d63c012e5d912c80998be9e004df38ac708d361cf26bbd8a4b355a24178"
+    },
+    "himawari-dispatch-standard.log": {
+      "bytes": 91,
+      "sha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+    },
+    "himawari-dispatch-runbook-authority-check.log": {
+      "bytes": 324,
+      "sha256": "6f5c1b18c52ff7912dab03fb2a5f91e5fa522c6c3cabc48242947ec5140612b8"
+    },
+    "himawari-dispatch-types-final.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-dispatch-runbook-backup-check.log": {
+      "bytes": 320,
+      "sha256": "519b9d1fb6ba27a851cfc23c4cea356106993a5cb6b2ab0a752e4b7b74cf04ea"
+    },
+    "himawari-dispatch-docs-delivery.log": {
+      "bytes": 53,
+      "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    "himawari-dispatch-runbook-install-dry.log": {
+      "bytes": 338,
+      "sha256": "1e1b83a9535ce8bc131d704f2eb1902ff47ab0e85e686cad895f0d046f99bb66"
+    },
+    "himawari-dispatch-policy-format.log": {
+      "bytes": 40,
+      "sha256": "474e53964c7affe7efd2a898873e06d77e1fcfca76d7d14aa191db5a3b9cd289"
+    },
+    "himawari-dispatch-runbook-backup-seal.log": {
+      "bytes": 332,
+      "sha256": "65030ad803f94be13b6ecfbdf8a5a2ce55e3ebd19837d1df2ae5c60a454e91a8"
+    },
+    "himawari-dispatch-runbook-install-check.log": {
+      "bytes": 324,
+      "sha256": "81967027137f3a42d474105a7041f70532fe5c81d8dfce6268dc6f34d79e7058"
+    },
+    "himawari-dispatch-format-task.log": {
+      "bytes": 175,
+      "sha256": "84555a0f7c25f45e6328efdd63855754addf9f2f64382532668655667d65e732"
+    },
+    "himawari-dispatch-ci-policy.log": {
+      "bytes": 511,
+      "sha256": "c2e55baddb6cd7a2e6dc772f3a260519495507e34208ae0666f4e4b1d0886b7a"
+    },
+    "himawari-dispatch-v0.2-invariants.log": {
+      "bytes": 190,
+      "sha256": "3deac5aa3fb3af9f4ad7a46395d2086a52957a3131d338f618629bf4759e201b"
+    },
+    "himawari-dispatch-matrix-after.log": {
+      "bytes": 252,
+      "sha256": "3dfbe49a5b032e9b004aef0bea934e2c55fdd4229bda7df1e0439b03f4878134"
+    },
+    "himawari-dispatch-types-complete.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-dispatch-runtime-consumers.log": {
+      "bytes": 250,
+      "sha256": "b72af47aa6d25fdcc98c53d1172ee23ea4e007093253a1a9c900ddbe8bcb9fb4"
+    },
+    "himawari-dispatch-runbook-upgrade-dry.log": {
+      "bytes": 349,
+      "sha256": "83750ca102537298304afdcabf886b9a401bb50af1f47b2b824c4648faad9a2a"
+    },
+    "himawari-dispatch-matrix-valid-before.log": {
+      "bytes": 10039,
+      "sha256": "3ec99eebf08a7c8658a94b24a1427bfa8eb6bf10336017f0bc1328daa88c5a86"
+    },
+    "himawari-dispatch-v0.2-coverage.log": {
+      "bytes": 171,
+      "sha256": "1b9451fdb7da719b550f1e9aeb0dbf4e089ce39a1655faba326dc3f13df4a187"
+    },
+    "himawari-dispatch-runbook-authority-seal.log": {
+      "bytes": 336,
+      "sha256": "e670118f92078dda57787e9e13ffb0b13fe17304b8be7e2a38cbe494b51f29b5"
+    },
+    "himawari-dispatch-types-final-verified.log": {
+      "bytes": 102,
+      "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9"
+    },
+    "himawari-dispatch-matrix-before.log": {
+      "bytes": 40850,
+      "sha256": "e0084b6b9e7aa2d179163b48eecb326f19378e15810acbb243e2462b7b9bd942"
+    },
+    "himawari-dispatch-runbook-upgrade-seal.log": {
+      "bytes": 347,
+      "sha256": "efc8ffe48fe8552e0aee4f368199c9017d29937662ee806d342eed59f48abded"
+    },
+    "himawari-dispatch-global-lint.log": {
+      "bytes": 19598,
+      "sha256": "aff1e910944961f4d9623e89143aa7088d55f9c664afaa4c28514cd2438d016a"
+    },
+    "himawari-dispatch-runbook-install-seal.log": {
+      "bytes": 336,
+      "sha256": "b5982fe3aeebd10d932ebdbee4d1e7ac75f96512cb8da0bd3d651aef95fbf15b"
+    },
+    "himawari-dispatch-secrets.log": {
+      "bytes": 119,
+      "sha256": "2b0460d17b915980761532b6b7a77ce3a2690bcd114766461aadce872733589c"
+    },
+    "himawari-dispatch-policy-matrix.log": {
+      "bytes": 252,
+      "sha256": "91d559bac123d376ada85f8f94222c04e6e6b808a5ed53afa733b6882137e3ce"
+    },
+    "build-macos-arm64-browser-budget.json": {
+      "bytes": 709,
+      "sha256": "631c7386ca79377ba55ea9e2ba682bdf064692b6a0b7d03d653fd2ee9b1bde7e"
+    },
+    "build-macos-arm64-browser-budget.log": {
+      "bytes": 545,
+      "sha256": "577b8778e711e22c343dca999effe4e189e7f64087c198b11688e05fc6f2652e"
+    },
+    "build-macos-arm64-compile-node.log": {
+      "bytes": 49,
+      "sha256": "b4290798cfaf324e6f5e80067403e3d99892b8ccf70bf64c5fbc9de3469c1eca"
+    },
+    "build-macos-arm64-native-probe.log": {
+      "bytes": 47,
+      "sha256": "59ff407b1971e58676bb79d3b0a6ce58e905e58a881a78547aabe209cc4a4935"
+    },
+    "build-macos-arm64-build-manifest.json": {
+      "bytes": 7845498,
+      "sha256": "4007a5d203844ae4c16bb28456c6ab31490964cd09077b70785c26899c272113"
+    },
+    "build-macos-arm64-compile-browser.log": {
+      "bytes": 1830,
+      "sha256": "4f5e8008f86117e0fc3b466e0744fefc65b18854c3a7e17f92385c6ba124482a"
+    },
+    "build-macos-arm64-provider-imports.log": {
+      "bytes": 48,
+      "sha256": "33f0c107150d942ede871ab75b6a247dc8b29f86d0437e6fc7dc6c9b3894b42c"
+    },
+    "build-macos-arm64-build.json": {
+      "bytes": 8498283,
+      "sha256": "6ae0f1b200e348bc75144057ae7e18e3ab51410770d79195dbc1433228899eb9"
+    },
+    "test-macos-arm64-e2e.xml": {
+      "bytes": 1047,
+      "sha256": "be8c7ac07e0a4261e0f8a737f6480d68ff0a2f27241a50f75aee38a6b5692f44"
+    },
+    "test-macos-arm64-contracts.log": {
+      "bytes": 379,
+      "sha256": "51c765318ba169dc9a6ac698cbfbde016d9accd418e0bdc96eb34453b2de9742"
+    },
+    "test-macos-arm64-tests.json": {
+      "bytes": 1658,
+      "sha256": "c49985dd32f4642a7450c31796cb0f9e5fddd3a284fd3075d17d0784675df519"
+    },
+    "test-macos-arm64-pi-compat.xml": {
+      "bytes": 34723,
+      "sha256": "b17730bd6d8fba1f462ee021e480cc16e00193b562f313f8f925536d43b94c49"
+    },
+    "test-macos-arm64-unit.xml": {
+      "bytes": 484916,
+      "sha256": "2b1ae37045fece741341611a4853c7815b873bde44e9f31df5e58b23fbb9ee10"
+    },
+    "test-macos-arm64-e2e.json": {
+      "bytes": 1832,
+      "sha256": "293ce3810fd1e3b29b49e62c7a2992aefbbc4d3221c54d3cccc42d2e40527ab3"
+    },
+    "test-macos-arm64-integration.log": {
+      "bytes": 2516,
+      "sha256": "ab7935da080f3c7cbd442e63721094dc7b2af0be842a2fa11b3f27d6f9c61ed5"
+    },
+    "test-macos-arm64-contracts.json": {
+      "bytes": 215305,
+      "sha256": "6127eaffb7a6836bb96024c06ce14716e376b95b675550ea056ee5ddb3843649"
+    },
+    "test-macos-arm64-context.json": {
+      "bytes": 456,
+      "sha256": "b5328255cca57de26f0c22f33ec4bc3a435f1fe805a54588579205a13d6d68f6"
+    },
+    "test-macos-arm64-unit.log": {
+      "bytes": 370,
+      "sha256": "e7a4323872f56280728cf7b751e93c45d3eea05f2888c59fba8cf9a0a4a2c695"
+    },
+    "test-macos-arm64-integration.xml": {
+      "bytes": 700471,
+      "sha256": "c97387476d6e348c6a8e31ecca1522e7754686472e734d6cdb0f054daf0d5932"
+    },
+    "test-macos-arm64-unit.json": {
+      "bytes": 653094,
+      "sha256": "a2f028870b12d0d6046676383c75097caa99b1b92b44e84c0de08e6dc4714540"
+    },
+    "test-macos-arm64-pi-compat.json": {
+      "bytes": 47841,
+      "sha256": "05bffe8ee8c4af6e9c47ad3bd70d6240d95b8d53bb1c07bb4b95c9a4fbc28622"
+    },
+    "test-macos-arm64-e2e.log": {
+      "bytes": 366,
+      "sha256": "34a54d6be89d2c2b5c8d5126d680309073b96f82fb96d701eea9c463ab0eb278"
+    },
+    "test-macos-arm64-integration.json": {
+      "bytes": 621272,
+      "sha256": "cc8608caf24617e19396296fa311e195699fbcd83640267653f3ba2349f97a3b"
+    },
+    "test-macos-arm64-contracts.xml": {
+      "bytes": 139400,
+      "sha256": "2c5ab3b77e7376b7a2aeee08b7edf8cc7506d66635fed61654464f7af5698bda"
+    },
+    "test-macos-arm64-pi-compat.log": {
+      "bytes": 379,
+      "sha256": "bab28fa28a6fc25f19eae926ef7048950d96ba4630e23cb3d2e52a5345968659"
+    }
+  },
+  "boundaries": [
+    "real SQLite, Run lifecycle, quota reservation and directory identity",
+    "controlled Worker transport, policy edit and current resource ceiling",
+    "no browser, paid provider or live Worker effect claims"
+  ],
+  "knownGlobalStaticBlockers": [
+    "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs",
+    "docs/assets/control-center/2026-09-16-state-review/verify.cjs"
+  ]
+}

@@ -1,0 +1,1661 @@
+{
+  "task": "round2-tool-execution",
+  "prefix": "R2",
+  "items": [
+    {
+      "id": "R2-S1",
+      "title": "工具运行中停止本轮：宿主和进程组退出、Run 取消、不交给模型",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S1",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 1，TE-07 已修；回归测试待加标签"
+      }
+    },
+    {
+      "id": "R2-S2",
+      "title": "运行中、收尾、交付时重启服务后结果不丢、不重复",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S2",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 2，TE-08 方案 B，提交 81a9fd2"
+      }
+    },
+    {
+      "id": "R2-S3",
+      "title": "执行期限到达时按原期限终止工具并认证清理",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S3",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 3，TE-09，提交 ac094b9"
+      }
+    },
+    {
+      "id": "R2-S4",
+      "title": "Job Host finish() 各步崩溃后的结果交付",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S4",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 4，B7 矩阵含 6 个宿主崩溃位置；回归测试待加标签"
+      }
+    },
+    {
+      "id": "R2-S5",
+      "title": "剩余交错组合、F 健康检查缺口、历史样本 13、resolve 报错原因",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-S5",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "第二轮交接场景 5，暂停点第 4 批"
+      }
+    },
+    {
+      "id": "R2-D1",
+      "title": "Job Host 期限诊断只按原期限分类一次",
+      "goal_ref": ["G1", "G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "packages/runtime-sandbox/test/job-host.unit.test.ts",
+          "name": "does not classify queued timeout callbacks after the host is",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D1，提交 325ef03"
+      }
+    },
+    {
+      "id": "R2-D2",
+      "title": "prepared 测试夹具 20 秒超时（只在 Hermes 机械盘上确认过）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D2",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D2；云端未复现，复制候选已撤回，剩余风险与 R2-D19 有关"
+      }
+    },
+    {
+      "id": "R2-D3",
+      "title": "非沙箱工具结果未知时 Run 没有终止路径（B4）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D3",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D3"
+      }
+    },
+    {
+      "id": "R2-D4",
+      "title": "ACK 丢失（A2 余项）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D4",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D4"
+      }
+    },
+    {
+      "id": "R2-D5",
+      "title": "fixture(25) 偶发失败",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D5",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D5"
+      }
+    },
+    {
+      "id": "R2-D6",
+      "title": "Agent 重启后停止终态 Run 的未绑定容器环境",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D6",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D6，BL-20260929-004"
+      }
+    },
+    {
+      "id": "R2-D7",
+      "title": "Worker 历史事件的内存占用和重复读取（需先设计）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D7",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D7，BL-20260929-005"
+      }
+    },
+    {
+      "id": "R2-D8",
+      "title": "前台 Bash 脱离后后台程序的显示（本轮只改状态行文字）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D8",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D8，BL-20260929-006"
+      }
+    },
+    {
+      "id": "R2-D9",
+      "title": "主机名变化后的旧锁（Linux 部分；Mac 部分按 G5 报告未验证）",
+      "goal_ref": ["G3", "G5", "G14", "G15"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D9",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D9，BL-20260929-002"
+      }
+    },
+    {
+      "id": "R2-D10",
+      "title": "安装和部署说明写清 Ubuntu 24.04 的 bwrap 前提、AppArmor 规则和撤销方法",
+      "goal_ref": ["G9"],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/runbooks/install-start-stop-runbook.md",
+          "heading": "Ubuntu 24.04 的 bwrap 前提"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D10，BL-20261001-001；用户决定第二轮只补文档"
+      }
+    },
+    {
+      "id": "R2-D11",
+      "title": "只读网络能力 Retry-After 提前重试",
+      "goal_ref": ["G3", "G10"],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "packages/platform-node/test/node-capability-runtime.unit.test.ts",
+          "name": "does not send early when a retry wait returns before its target",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D11，提交 3217e4b、98b3822"
+      }
+    },
+    {
+      "id": "R2-D12",
+      "title": "测试直接加载源码线程文件时 Node 22 自带 TypeScript 解析器内部断言（memory access out of bounds）",
+      "goal_ref": ["G3", "G13"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D12",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D12，BL-20261001-003；用户 2026-10-02 决定算进第二轮"
+      }
+    },
+    {
+      "id": "R2-D13",
+      "title": "准备期 Job Host 心跳过期（事件循环约 2.76 秒无响应）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D13",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D13，原因未定"
+      }
+    },
+    {
+      "id": "R2-D14",
+      "title": "执行 Worker 进程测试的子夹具就绪超时",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "runs work, cancellation, cursor reconnect and unknown-result reconciliation across UDS",
+          "host": "hermes"
+        },
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "rejects stale fences and never falls back in-process when the Worker crashes",
+          "host": "hermes"
+        },
+        {
+          "type": "test",
+          "file": "test/integration/execution-worker-process.test.ts",
+          "name": "keeps one result when the real Agent client process crashes after dispatch",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D14，提交 0dadfcd"
+      }
+    },
+    {
+      "id": "R2-D15",
+      "title": "安装解压目录继承安装者 umask，umask 0002 时产品拒绝自己的安装",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D15",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D15，BL-20261001-004"
+      }
+    },
+    {
+      "id": "R2-D16",
+      "title": "正式 npm test 下三个 integration 测试仍读本地 dist/node-runtime",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D16",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D16，BL-20261002-001"
+      }
+    },
+    {
+      "id": "R2-D17",
+      "title": "SQLite 夹具临时目录前缀过长，控制套接字超过 100 字节",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "file": "test/integration/production-sandbox-scope.test.ts",
+          "name": "releases never-started reservations through production",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D17，提交 bdc3250"
+      }
+    },
+    {
+      "id": "R2-D18",
+      "title": "生产 privateRoot 超过 27 字节时沙箱工具必然失败，启动时不检查",
+      "goal_ref": ["G3", "G11"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D18",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D18，BL-20261002-002；首次生产部署前必须完成"
+      }
+    },
+    {
+      "id": "R2-D19",
+      "title": "Pi 准备线程每次重新加载模块，启动占 10 秒预算 36%–61%",
+      "goal_ref": ["G3", "G11"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D19",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "缺陷 D19，BL-20261002-003；改预算或计时起点要先问用户"
+      }
+    },
+    {
+      "id": "R2-E1",
+      "title": "测试用户 umask 0002 造成的 100 项 SANDBOX_HOST_PATH_UNSAFE（测试环境）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "环境问题 E1，记录器已设 umask 022；以 20 文件复跑结果审核"
+      }
+    },
+    {
+      "id": "R2-A1",
+      "title": "最终版本上 npm run check 和完整 npm test 在 Hermes 通过",
+      "goal_ref": ["G1", "G8", "G10"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run check",
+          "host": "hermes"
+        },
+        {
+          "type": "command",
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项；云端默认测试时限 30000ms"
+      }
+    },
+    {
+      "id": "R2-A2",
+      "title": "不筛选的 Linux 产品路径资格在 Hermes 通过",
+      "goal_ref": ["G1", "G8"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "node_modules/.bin/vitest run --config vitest.workspace.ts --project qualification-product-path --reporter=default --reporter=json --outputFile=.ci-output/r64/independent-product-01/product-unfiltered-vitest.json",
+          "host": "hermes"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项 Linux 部分"
+      }
+    },
+    {
+      "id": "R2-A3",
+      "title": "不筛选的 Mac 资格",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "什么时候恢复 Mac 验证？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 6 项 Mac 部分"
+      },
+      "withdrawn": {
+        "on": "2026-09-30",
+        "ref": "G5"
+      }
+    },
+    {
+      "id": "R2-A4",
+      "title": "文档严格校验通过（Runbook 的重新封存由改动其依据文件的提交各自完成）",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "python3 ~/.claude/skills/document-governance/scripts/validate_docs.py . --strict"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "用户要求代码和文档不漂移"
+      }
+    },
+    {
+      "id": "R2-A5",
+      "title": "中文总报告",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-28-tool-execution-audit-plan.md",
+          "heading": "第二轮总报告"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "交接验收第 7 项"
+      }
+    },
+    {
+      "id": "R2-L1",
+      "title": "首次生产部署计划按同机测试和 Ubuntu 24.04 前提更新",
+      "goal_ref": ["G11"],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-30-production-first-deployment-plan.md",
+          "heading": "2026-10-01 更新：同机测试与 Ubuntu 24.04 前提"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "上线准备"
+      }
+    },
+    {
+      "id": "R2-L2",
+      "title": "云服务器上生产要用的 bwrap 0.11.2 和 AppArmor 规则可用",
+      "goal_ref": ["G11"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "/usr/local/libexec/bubblewrap-0.11.2/bwrap --version",
+          "host": "84.247.157.41",
+          "scope": "environment",
+          "max_age_days": 7
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "用户 2026-10-01 运行安装脚本"
+      }
+    },
+    {
+      "id": "R2-L3",
+      "title": "慢同步写入对产品响应时间的影响：测量一次真实对话加一次工具调用",
+      "goal_ref": ["G11"],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/execution/plans/2026-09-30-production-first-deployment-plan.md",
+          "heading": "响应时间测量"
+        },
+        {
+          "type": "user",
+          "ref": "G89",
+          "question": "测得的响应时间是否可以接受？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "部署计划要求部署前测量并由用户决定"
+      }
+    },
+    {
+      "id": "R2-L4",
+      "title": "首次生产部署",
+      "goal_ref": ["G4", "G8", "G11"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G63",
+          "question": "什么时候部署到生产？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "每次部署都要用户明确授权"
+      }
+    },
+    {
+      "id": "R2-D20",
+      "title": "父进程退出后的期限测试用固定字节数判断，机器忙时误报失败",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D20",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "stop-45：正式第 3 层 unit 里 preserves deadline after the parent exits 收到 49 字节（parent-start 一行加 3 行 more-output），断言要求大于 64；期限分类和父进程退出后的输出收集都正确，判为测试缺陷"
+      }
+    },
+    {
+      "id": "R2-E2",
+      "title": "云服务器上放宽 npm test 总时限，测试自己的时限放宽到 4 倍且不少于 30 秒（只在云端，GitHub CI 和产品期限不变）",
+      "goal_ref": ["G16", "G17", "G18"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-E2",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "stop-46：正式第 3 层在 integration 中途耗尽 ci/policy.json 的 30 分钟总时限；account-cli 写死的 15000ms 在负载下超时；用户选择只在云端放宽"
+      },
+      "withdrawn": {
+        "on": "2026-10-02",
+        "ref": "G20"
+      }
+    },
+    {
+      "id": "R2-D21",
+      "title": "thread-run-lifecycle 的期限后恢复用例依赖 1 秒真实时间，磁盘慢时先到期走错分支",
+      "goal_ref": ["G3"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D21",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "stop-01（r50 测量）：crash-after-output 和 crash-before-transition 两例失败，实际得到 RUN_EXECUTION_DEADLINE_EXCEEDED；用例设 maximumRunDurationMs 1000，原因待诊断"
+      }
+    },
+    {
+      "id": "R2-E3",
+      "title": "撤掉 HIMAWARI_TEST_TIMEOUT_MS，测试时限回到项目原值（Hermes 上不放宽）",
+      "goal_ref": ["G19", "G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-E3",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-02",
+        "why": "G20：放宽方案整个撤掉；BL-20261001-002 的恢复工作"
+      }
+    },
+    {
+      "id": "R2-D22",
+      "title": "agent-service 两个测试文件的首条用例在 Hermes 上超过 5 秒期限（干净版本也出现，原因待查）",
+      "goal_ref": ["G3", "G29"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D22",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-03",
+        "why": "stop-05：干净 556d4b2 也超时（pi-coding-program 首例 5365ms），r56 模块重跑 pi-coding-program 首例 6410ms、production-http-composition 首例 5066ms（c1b3d62 时 1972ms）；阻塞 R2-A1"
+      }
+    },
+    {
+      "id": "R2-L5",
+      "title": "模型网关从 OpenRouter 迁到 Vercel AI Gateway，文本模型只用 deepseek/deepseek-v4.1-flash（BL-20261004-002）",
+      "goal_ref": ["G34", "G35", "G36"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L5",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-04",
+        "why": "用户 2026-10-04 决定换网关并排在上线前；ADR 0048"
+      }
+    },
+    {
+      "id": "R2-L6",
+      "title": "首次生产验收补“清理不确定时保持工作区占用”和“真实进程重启后恢复”的有限探针，先在 Hermes 验证（BL-20261007-002）",
+      "goal_ref": ["G51", "G60"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L6",
+          "host": "hermes"
+        },
+        {
+          "type": "review"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-07",
+        "why": "cloud-packet stop-02 发现 G51 两项保证没有运行证据；用户 G60 选择补探针"
+      }
+    },
+    {
+      "id": "R2-L7",
+      "title": "任务宿主进程主线程只做消息和心跳：准备阶段的模块加载、依赖检查等移到已有 SDK 线程，诊断记录每步耗时，1.5 秒心跳规则不变",
+      "goal_ref": ["G1", "G73"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L7",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "S10 生产诊断 03/04：准备阶段主线程停顿超过 1.5 秒，JOB_HOST_HEARTBEAT_EXPIRED"
+      }
+    },
+    {
+      "id": "R2-L8",
+      "title": "准备阶段宿主失联、用户任务未启动时，停止核查不能无限重试让一轮永远卡住：查明每次核查失败原因并按准备恢复设计给出确定结果",
+      "goal_ref": ["G1", "G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L8",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "S10 Run c1284750 停止核查重试 15 次以上仍未成功，停在结果未确认"
+      }
+    },
+    {
+      "id": "R2-U1",
+      "title": "会话已显示后，后台刷新和执行记录附带读取的短暂失败安静重试，不再弹出“无法加载这段对话”挤占聊天区（v4 基线第 7 条）",
+      "goal_ref": ["G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "用户 G74 截图"
+      }
+    },
+    {
+      "id": "R2-U2",
+      "title": "一轮卡住时界面说明卡在哪个工具、原因、是否仍在进行和用户能做什么，不再出现“没有程序在运行”与可停止按钮互相矛盾",
+      "goal_ref": ["G74"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "用户 G74 第二张截图"
+      }
+    },
+    {
+      "id": "R2-L9",
+      "title": "第三次生产部署：上线 R2-L7、R2-L8、R2-U1、R2-U2，并在同一停服窗口管理员处置 Run c1284750（G72）",
+      "goal_ref": ["G72"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G80",
+          "question": "是否批准第三次生产部署及其操作包？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-12",
+        "why": "G65/G66 只覆盖第二次部署，第三次需要用户另行授权"
+      }
+    },
+    {
+      "id": "R2-U3",
+      "title": "一轮运行期间控制中心实时显示跟上实际进度：已结束的工具调用显示结果和耗时，不再一直显示“Preparing · Time not recorded”，运行中不弹出“无法加载这段对话”",
+      "goal_ref": ["G86"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U3",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第三次部署后 S10 真实聊天（thread:f652065f）运行中界面停在 Preparing 并弹出加载失败，结束后重开正常"
+      }
+    },
+    {
+      "id": "R2-T1",
+      "title": "生产开放更多编码工具（G85、G88）：ls、find、grep、write、edit、bash 在 Hermes 产品路径真实执行通过；读目录时报“这是目录”而不是 CODING_PATH_OUTSIDE_SCOPE",
+      "goal_ref": ["G85"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "生产 enabledTools 只有 read，模型无法列目录只能猜文件名"
+      }
+    },
+    {
+      "id": "R2-L10",
+      "title": "第四次生产变更：上线 R2-U3、R2-T1、R2-T2、R2-T3、R2-P1、R2-P2（含 enabledTools 和授权配置改动），授权根目录改为 /var/lib/himawari/workspace/（repos/、files/，G90），不接入 GitHub（G91）",
+      "goal_ref": ["G85", "G86", "G88", "G89", "G90", "G91", "G92"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G111",
+          "question": "是否批准第四次生产变更及其操作包？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "G75 只覆盖第三次部署，生产配置和版本变更需要用户另行授权"
+      }
+    },
+    {
+      "id": "R2-T2",
+      "title": "授权工作目录内读、写、编辑、沙箱内不联网命令默认允许，越界写入和联网命令才询问（ADR 0053，参照 Codex Auto）",
+      "goal_ref": ["G88"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G88：按 Codex Auto 做个人全能 Agent"
+      }
+    },
+    {
+      "id": "R2-T3",
+      "title": "沙箱里的 bash 可以使用系统自带命令：子命令 PATH 依次为 pi-tools/bin、/usr/local/bin、/usr/bin、/bin，bash/rg/fd 仍用安装包里核验过的固定程序；ls、cat、git 在 Hermes 产品路径真实执行通过，越界写入和联网仍被拒绝（ADR 0055）",
+      "goal_ref": ["G92"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T3",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第 19 批发现沙箱 PATH 只有 pi-tools/bin，常用命令都不能用；用户 G92 选择使用系统自带命令"
+      }
+    },
+    {
+      "id": "R2-T4",
+      "title": "完整测试 npm test 在 Hermes 上于 30 分钟总预算内跑完（不放宽时限）：集成测试平时就要约 1505 秒，总时长只剩约 21 秒余量，R2-T1、R2-T2 加测试后超时",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "第 20 批 run-05、run-14 两次 npm test 在 30 分钟时被终止；G20 要求 Hermes 一律默认时限、超时就当缺陷修"
+      }
+    },
+    {
+      "id": "R2-T5",
+      "title": "沙箱里的 bash 写授权工作目录和私有临时目录以外的路径时，命令要明确失败；现在写进沙箱自建的临时文件系统并报成功，沙箱结束后内容消失，模型会以为已经保存",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T5",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 21 批 run-04 实测：printf 写工作目录的父目录成功，宿主上没有文件（r2t3-escape-readback.json）"
+      }
+    },
+    {
+      "id": "R2-T6",
+      "title": "production-http-composition-process 的 [R2-L5] 测试先用 listen(端口 0) 探一个空闲端口再关掉、之后子服务才绑定（reservePort），两步之间端口可能被别的进程占用，负载下出现 EADDRINUSE 和就绪等待超时",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T6",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 22 批 run-09（2 个进程）三条 [R2-L5] 失败：EADDRINUSE 与 HTTP child readiness timed out；test/integration/production-http-composition-process.test.ts 第 151–164 行"
+      }
+    },
+    {
+      "id": "R2-T7",
+      "title": "durable-phase-process-recovery 的子进程等待写死 15 秒，子进程里冷启动嵌套 Vitest 在负载下超过 15 秒就判失败（不放宽时限，消除冷启动开销或改用就绪信号）",
+      "goal_ref": ["G20"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T7",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "第 22 批 run-07（2 个进程）Durable phase child timed out：子进程 15.001 秒只打印 RUN v4.1.9；test/integration/durable-phase-process-recovery.test.ts 第 105–106 行；3 个进程时耗时 ÷ 自身时限 0.527"
+      }
+    },
+    {
+      "id": "R2-T8",
+      "title": "让测试本身变快且不减少测试内容：例如 10 个集成测试文件各自安装一遍约 66 MB 的 Node 运行时，改为每次测试只装一次、大家只读共用；先测量各项耗时，按实测收益排序再改",
+      "goal_ref": ["G102", "G20"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /data/hermes/himawari/tool-audit-round2/r30/tools",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "用户 G102；R2-T4 实测 Hermes 4 核上 CPU 是瓶颈，改动 A 共用迁移模板库已省约 195 秒"
+      }
+    },
+    {
+      "id": "R2-T9",
+      "title": "编码工具输出超过配置上限时不再整次失败：Pi 的 read、grep、find、ls、bash 自己会把输出截到 50 KB 并说明已截断，Himawari 的 maximumBytes（生产 4096，配置最多 48 KiB）却在其后把超限结果报成 PI_RESULT_OUTPUT_LIMIT；改为让 Pi 的截断先生效、模型拿到截断后的内容和续读提示",
+      "goal_ref": ["G85", "G88", "G108"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T9",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "起草第四次变更操作包时读生产配置发现：maximumBytes 4096，production-host-read.ts 和 pi-coding-main.ts 超限直接报错，读稍大的文件就失败"
+      }
+    },
+    {
+      "id": "R2-T10",
+      "title": "一次工具调用的沙箱没能启动时，要很快把这次调用以明确原因结束并交还给模型（或明确结束这一轮），不能停在“对账外部结果”阶段等满整轮运行期限（产品路径为 900 秒）；启动失败时 bwrap 或作业宿主的原始错误要留在产品日志里，不能只剩 systemCode UNKNOWN",
+      "goal_ref": ["G1", "G108"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T10",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "第 23 批诊断（停止文件 23f4）：第 20、21 次产品路径里一条 bash 的沙箱约 20 秒就以 SANDBOX_NOT_STARTED 释放，第 20 次日志只有 sandbox.preparation.failed、SANDBOX_EXECUTION_FAILED、systemCode UNKNOWN；之后这一轮停在 reconciling_external_result，到 900 秒运行期限才以 RUN_EXECUTION_DEADLINE_EXCEEDED 失败，用户看到的就是对话卡 15 分钟再报错"
+      }
+    },
+    {
+      "id": "R2-T11",
+      "title": "产品路径的沙箱故障恢复用例改用 bash 触发：R2-P1、R2-T2 之后 read 不再进沙箱，约 29 个用例（两次连续读取、三十次读取、准备期传输故障、ACK 丢失、D2、管理员处置、D3、前台输出保留、矛盾完成、离线 Worker、14 个前台字节恢复、6 个 Job Host finish 崩溃、进程崩溃恢复）仍用 read 去触发沙箱故障，故障门永远等不到，测试失败；改写后要仍然覆盖原来的沙箱恢复行为",
+      "goal_ref": ["G1", "G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T11",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "不过滤第 4 层 cc-layer4-04660f2b-full-r2 的 36 个失败里约 29 个属于这一类；最后一次不过滤的第 4 层通过是 10-07 的 3a65b90，之后 read 改为主进程执行，沙箱恢复行为在当前代码上没有被验证"
+      }
+    },
+    {
+      "id": "R2-T12",
+      "title": "前台 bash（command 类）调用的执行宿主前后退出事实矛盾时，产品记下 SANDBOX_HOST_COMPLETION_CONTRADICTED，却把效果留在初始值 unknown/SANDBOX_NOT_STARTED，投影判为需要核对，不交付也不结束，这一轮一直停在“运行中”；改为命令类效果记为未断言，按文档向模型交付明确失败说明",
+      "goal_ref": ["G1", "G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T12",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-15",
+        "why": "第 30 批把矛盾完成用例从 read 改成 bash 后第一次覆盖 command 路径，run-15-contradict 的数据库读回显示 effect 为 unknown/SANDBOX_NOT_STARTED、没有 tool_result intent、Run 停在 running；production-sandbox-execution-v2.ts 只给 fixed_read 设了 not_applicable"
+      }
+    },
+    {
+      "id": "R2-E4",
+      "title": "84.247.157.41 兼作测试机（G100）：新建无 sudo 的测试账号，测试进程放进有内存和 CPU 权重上限的独立 cgroup，生产服务优先；完整 npm test 在该机跑通，并记录期间生产服务健康",
+      "goal_ref": ["G100"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm test -- --tools /srv/himawari-ci/tools",
+          "host": "cloud"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-14",
+        "why": "用户 G100；旧测试账号 himawari-test 已按 G58 在首次部署前删除，2026-10-14 登录被拒（Permission denied (publickey)）"
+      }
+    },
+    {
+      "id": "R2-P1",
+      "title": "read、ls、find、grep 在可信主进程执行，复用 Pi 工具和可替换文件操作接口，路径不能经 ..、符号链接、硬链接或检查后替换跑出授权目录（ADR 0054）",
+      "goal_ref": ["G89"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-P1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G89：读一个文件 7–14 秒，主流做法只读工具不进沙箱"
+      }
+    },
+    {
+      "id": "R2-P2",
+      "title": "同一轮对话的 bash、write、edit 复用一个已启动的任务沙箱，一轮结束或授权变化时停止并释放（ADR 0054）",
+      "goal_ref": ["G89"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-P2",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-13",
+        "why": "用户 G89"
+      }
+    },
+    {
+      "id": "R2-U4",
+      "title": "打开或刷新一段对话后，对话内容还没加载完就点发送，消息没有发出，页面却一直停在“正在提交，尚未接纳”、发送按钮变灰；改为对话内容加载完之前发送和重试都不可用、草稿保留，加载完再发送",
+      "goal_ref": ["G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U4",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "第 4 层 cc-layer4-370d2c2d-full 的 R2-S1 在刷新后发送失败：页面停在 mutation.pending、产品数据库没有第二条 submit、服务日志该段为空；thread-control-center.tsx submitDraft 先设 pending，详情未加载时 if (!target) return 静默返回"
+      }
+    },
+    {
+      "id": "R2-U5",
+      "title": "运维页面执行任务操作或保存反思设置失败后，页面同时显示错误和“正在提交，尚未接纳”；改为失败后状态显示为已拒绝",
+      "goal_ref": ["G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-U5",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "DeepSeek 为 R2-U4 出方案时读代码发现、Claude 核实：operations-control-center.tsx executeAction 在非 409/401 失败和 409 冲突时、configureReflection 在非 401 失败时都不改 mutationStatus，状态停在 pending；该页的 pending 只影响状态文字，不禁用按钮"
+      }
+    },
+    {
+      "id": "R2-T13",
+      "title": "公开搜索遇到 Exa 免费 MCP 限流时，Exa 返回不带错误标记的限流提示文字，解析器报 WEB_SEARCH_RESPONSE_UNRECOGNIZED，搜索程序只在标准错误写 WEB_SEARCH_FAILED，模型拿到空内容、看不出原因；改为在原期限内有上限地重试，仍限流时把能看出是限流的固定说明交给模型",
+      "goal_ref": ["G1", "G113"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T13",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "第四次变更安装演练验收 3 次中 2 次在 public-query 3–4 秒失败；Hermes 上直接调用 web_search_exa 60 次有 2 次返回 246 字节的限流提示（isError 未设置），沙箱内 30 次有 1 次 WEB_SEARCH_RESPONSE_UNRECOGNIZED；同一现象 2026-10-09 见 BL-20261009-001"
+      }
+    },
+    {
+      "id": "R2-T14",
+      "title": "bash 以非零退出码结束（含运行中超过命令输出上限被产品结束）时，模型只看到“命令执行失败…请先检查工作区”，看不到标准输出和标准错误，测试失败等情况无法排错；改为把有界、经机密扫描的输出结尾连同“效果未核实”的提醒交给模型（G109 第 6 项，BL-20261015-001）",
+      "goal_ref": ["G1", "G109"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-T14",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "G109 第 6 项定为第五次变更的待办；BL-20261015-001 记下了现行设计的位置和第 29 批补充的超限结束情形"
+      }
+    },
+    {
+      "id": "R2-L11",
+      "title": "能力升级入口：换 runner 后数据库能力目录的完整性摘要与实际运行的不一致，产品没有升级命令，第四次变更只能在操作包里放宽“runner 等于登记值”（G122 只批准那一次）；补一个主人审核新旧声明差异（只允许 runner 制品摘要变化）后在一个事务里更新登记记录和 integrity 列、留下审计记录的入口，之后部署包恢复严格检查（BL-20261016-001）",
+      "goal_ref": ["G108", "G109", "G121", "G122"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L11",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-16",
+        "why": "第五次变更的 R2-P2、R2-T14 都要改 Pi runner；没有升级入口，第五次操作包就要再次放宽检查并重新请用户批准"
+      }
+    },
+    {
+      "id": "R2-L12",
+      "title": "第五次生产变更：上线 R2-T14、R2-L11（R2-P2 推迟），在服务停着时用 R2-L11 的升级入口把 pi、exa 的能力登记更新为第五次快照的声明，并恢复“登记等于快照声明”的严格检查；不改配置，第四次建好的工作目录和授权保持不变",
+      "goal_ref": ["G109", "G121", "G124", "G125"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G137",
+          "question": "第五次变更按冻结操作包在生产执行、S10 真实使用核对通过后，是否确认完成？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G125 批准今晚上线第五次变更，附带条件：第 0–3 层和受影响场景的产品路径通过、DeepSeek 逐行审核、冻结包先在 Hermes 演练通过；冻结包、执行和核对需要单独跟踪"
+      }
+    },
+    {
+      "id": "R2-L13",
+      "title": "第六次生产变更：上线 R2-P2；冻结操作包在 S9 回滚前先整理数据库旁的 -wal、-shm 附属文件（BL-20261017-007），服务在运行或数据库被别的进程打开时拒绝执行，留下处理前后的读回证据；hostId、workerInstanceId 和第五次相同",
+      "goal_ref": ["G138"],
+      "done_when": [
+        {
+          "type": "user",
+          "ref": null,
+          "question": "第六次变更按冻结操作包在生产执行、S10 真实使用核对通过后，是否确认完成？"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-17",
+        "why": "G138 同意下一批做 R2-P2 并修 BL-20261017-007；BL-20261017-007 的修法只能放进第六次操作包的 S9（第五次没有改，见该 Backlog），冻结包、演练、执行和核对需要单独跟踪"
+      }
+    },
+    {
+      "id": "R2-H1",
+      "title": "测试卫生门禁：check-policy 对每个测试文件检查逐用例模块重置、100ms 以上真实等待、固定端口、普通单测读生产源码文本；存量记在基线文件里，基线只能减少、工作区手改无效；先只报告后阻断（ADR 0063，BL-20261021-001）",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-H1",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-21",
+        "why": "用户 2026-10-21 批准把 Cindy 测试规则的亮点整合进项目（ADR 0063 决定 3）；门禁是 ADR 0060 所说的硬约束，需要在测试主机上证明红绿两面"
+      }
+    },
+    {
+      "id": "R2-L14",
+      "title": "冻结只读诊断脚本的夹具缺少 hostDetail.text 字段，schema 校验用例在基线上就失败（BL-20261021-007）；夹具和测试数据补 text，先红后绿",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-L14",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-21",
+        "why": "R2-H1 第 2 层发现 test/tooling/prod-sandbox-diagnostic.test.mjs 在 276a4b67 不带补丁就失败；根因是 5bab4de1 给 sandboxHostFailureDetailSchema 加了必填 text 而夹具 detailFields 没跟上；按“已发现缺陷不拖到下一轮”立即修"
+      }
+    },
+    {
+      "id": "R2-D23",
+      "title": "任务宿主启动时间被算进 1.5 秒心跳和消息新鲜度窗口，CPU 紧张时准备失败（JOB_HOST_HEARTBEAT_EXPIRED → JOB_HOST_NOT_READY，第六次 S6 验收因此失败，D-57）：父进程收到宿主第一条认证消息前只等 10 秒启动期限、不做 1.5 秒监督，宿主第一次回复前接受 10 秒内的准备消息，消息格式不变；先红后绿",
+      "goal_ref": ["G161"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D23",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "opencode"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-22",
+        "why": "G161 用户要求修宿主启动期限后重新冻结第六次；himawari-ci 高负载复现 cand-r6-heavy 得到 JOB_HOST_HEARTBEAT_EXPIRED、stage request、receivedSequence null；第五次版本同负载下也失败"
+      }
+    },
+    {
+      "id": "R2-D24",
+      "title": "运行时未保护时（S6_RUNTIME_PROTECTION 之前），宿主核验每轮都遍历整个运行时目录（约 4.7 万项）并重算 node 可执行文件和 runner 的摘要，生产机上每轮 2.3–6.5 秒，一个任务启动前要走 4–6 轮，第六次 S6 验收因此超时：同一进程内对未改动的文件不重复读取内容和遍历，任何内容、权限或替换变化仍被发现；先红后绿",
+      "goal_ref": ["G167"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D24",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "claude"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "G167 用户选乙；生产 agent-1.stderr 的 sandbox.admission.timing 显示宿主核验每轮 2.3–6.5 秒、Hermes 约 0.9 秒"
+      },
+      "withdrawn": {
+        "on": "2026-10-23",
+        "ref": "G172"
+      }
+    },
+    {
+      "id": "R2-D25",
+      "title": "运行时未保护时，宿主核验与 Claude Code 一致：不读取、不计算摘要、不遍历运行时目录、node 可执行文件和 runner，进程启动时也不算摘要；只保留绑定、资格、计划字段和路径检查，防改动靠沙箱只读（运行时目录不与工作区、私有目录互相包含）和受保护安装（ADR 0069）",
+      "goal_ref": ["G170", "G171", "G172"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D25",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "opencode"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0069-trust-unprotected-runtime-like-claude-code.md",
+          "quotes": ["G171", "G172"]
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "G172 用户要求全部去掉未保护运行时的内容和身份检查，只靠沙箱禁止写入和受保护安装"
+      }
+    },
+    {
+      "id": "R2-D26",
+      "title": "命令刚启动时（任务宿主已运行但任务还没启动，或任务已启动但还没有资源样本），服务端监督观察不再判为失去监督，而是在 1.5 秒内的新观察、进程仍在、截止时间未到时返回尚未定论，Worker 不据此取消正常启动",
+      "goal_ref": ["G1"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D26",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "opencode"
+        },
+        {
+          "type": "doc",
+          "path": "docs/execution/specs/2026-09-28-sandbox-cleanup-observation-design.md"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "R2-D25 让宿主核验变快后，r2t10 诊断（.ci-output/handoff/r2d25/r2t10-diag3.sh）6 次失败 5 次：服务端在启动瞬间判 lost，Worker 取消任务，结果为 SANDBOX_EXIT_UNKNOWN"
+      }
+    },
+    {
+      "id": "R2-D27",
+      "title": "Linux 命名空间门握手超过 1.5 秒但在 10 秒内（且任务期限未到）时，Job Host 仍完成握手、记录命名空间身份并启动用户命令，不再以 JOB_HOST_NAMESPACE_GATE_TIMEOUT 放弃；10 秒内仍未握手才按原失败码结束",
+      "goal_ref": ["G1", "G173"],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "R2-D27",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "opencode"
+        },
+        {
+          "type": "doc",
+          "path": "docs/execution/specs/2026-09-28-sandbox-preparation-control-recovery-design.md"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-23",
+        "why": "第三次 S6_ACCEPTANCE 失败：生产机 pi-installed 探针第 21 次调用在门握手阶段超时，结束记录 linuxNamespace 为 null（.ci-output/production/2026-10-23-sixth-s6-diagnostic-04/、-05/）；生产握手常需约 1 秒，固定 1500 ms 余量不足"
+      }
+    },
+    {
+      "id": "R2-D28",
+      "title": "第六次 S6 验收在生产机速度下不因探针固定时限失败：公开搜索、工作进程丢失、网络边界、授权网络四个探针的清理时限都是 5000 ms（与正式服务一致），整体期限、就绪等待和收尾读取留足慢机器余量，cpu 场景在 CPU 只按整秒计时的情况下仍能触发上限；失败时打印作业宿主结果摘要；Hermes 按生产机速度连续多遍完整验收通过",
+      "goal_ref": ["G1", "G174", "G175"],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "SLOW_REHEARSAL_DIR=<revision-04 演练目录> bash slow-acceptance.sh 87c2e3ec0142064d3262e119a4e1e3e3316f1a9d <label> 0 1（连续三遍）",
+          "host": "hermes"
+        },
+        {
+          "type": "review",
+          "by": "codebuddy"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "第四次 S6_ACCEPTANCE 失败：生产机 web-search-installed 读最终证据报 ENOENT，探针 cleanupTimeoutMs 只有 1000 ms（.ci-output/production/2026-10-24-sixth-s6-diagnostic-07/ 至 -09/）；时限排查发现同类余量不足还有 worker-loss、boundary、authorized-network，Hermes 慢速演练又发现 cpu 场景因 ps 整秒计时不触发上限"
+      }
+    },
+    {
+      "id": "R2-D29",
+      "title": "第六次签署输入步骤按真实 S0 读回通过：finalize-binding-inputs.py 对旧能力的两项快照比较与包内其他检查一致（为 true）；本机 ssh 带保活参数；S6_FINALIZE_BINDINGS 之后各步对冻结输入的硬性期望逐项按真实 S0 读回核对无矛盾；第五次修订工具能归档验收已通过、材料已发布的现场",
+      "goal_ref": ["G1", "G175", "G176"],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "codebuddy"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "S6_FINALIZE_BINDINGS 生产失败：finalize-binding-inputs.py:99 要求 integrityMatchesSnapshot、declarationInvariantMatchesSnapshot 为 false，冻结的 S0 读回和包内另外四处检查都是 true（.ci-output/production/2026-10-24-sixth-step-status-12/）；演练从未用真实 S0 读回跑过这一步"
+      }
+    },
+    {
+      "id": "R2-D30",
+      "title": "第六次 S6_READ 的探针能在真实候选上加载并完成读取：bootstrap.mjs 插入的阶段记录不破坏不带花括号的 if/else；最终演练跑 S6_READ 探针，新 bootstrap 必须通过、旧 bootstrap 必须按生产上的方式失败；第六次修订工具在接收新包后清掉 failed 的临时读服务，模板里的现场名单与修订前的生产诊断一致",
+      "goal_ref": ["G1", "G175", "G176"],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "opencode"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "S6_READ 生产失败 SERVICE_ENVIRONMENT_REAL_READ_FAILED：bootstrap.mjs 在 job-host-main.js 的 if (...) phase = \"ready\"; else ... 里插入第二句，宿主模块语法错误、加载即退出 1（.ci-output/production/2026-10-24-sixth-step-status-16/ 至 -19/，Hermes 复现 .ci-output/handoff/rev05/s6-read-diagnosis/repro-output.txt）；锚点检查只数次数，最终演练从未跑过 S6_READ"
+      }
+    },
+    {
+      "id": "R2-D31",
+      "title": "作业宿主的资源观察器在生产机负载下不再把慢的 ps 当成宿主故障：ps 超时 1 秒改 5 秒，拿不到快照先重试、连续 10 秒拿不到才以 host_failure 停止，并发带 JOB_HOST_RESOURCE_OBSERVATION_FAILED 的启动失败诊断；解析失败和容量失败仍立即停止",
+      "goal_ref": ["G1", "G175", "G176"],
+      "done_when": [
+        {
+          "type": "review",
+          "by": "opencode"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-24",
+        "why": "第六次 revision-06 S6_READ 生产失败：宿主 running 1461 ms、4313 ms 自行 stopping，reason host_failure、diagnostic null；owned-processes.json 记到宿主第二个 ps 子进程启动后约 1 秒宿主停止，6 个样本用了 1.7 秒（每次 ps 约 180 ms，空闲 20 ms），4 核上 5 个 node 同时可运行（.ci-output/production/2026-10-24-sixth-revision-06-diagnostic-21/ 至 -25/）；resource-observer.ts 的 ps 超时 1000 ms，任何错误直接 stopTask(\"host_failure\") 且不发诊断"
+      }
+    }
+  ],
+  "fingerprint": {
+    "test_exclude": ["docs/", "AGENTS.md"]
+  }
+}

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
-import { scanMachineSecrets } from "@himawari-agent/application";
+import { containsToolOutputSecret } from "@himawari-agent/application";
 
 /** Read an untrusted Pi output locator only in the owned private directory.
  * Bytes, never a host path, cross the existing protected Payload channel. */
@@ -40,7 +40,7 @@ export async function exportPiOutputFile(
     const after = await handle.stat();
     if (after.size !== before.size || after.ctimeMs !== before.ctimeMs || after.nlink !== 1)
       throw new Error("PI_OUTPUT_FILE_CHANGED");
-    if (scanMachineSecrets(bytes.toString("utf8")).length)
+    if (containsToolOutputSecret(bytes.toString("utf8")))
       throw new Error("PI_OUTPUT_SECRET_REJECTED");
     return {
       encoding: "base64",

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import {
   type CapabilityInvocationAuthority,
   type ClockPort,
@@ -10,52 +11,100 @@ import {
   type IdGeneratorPort,
   type PayloadProtectorPort,
   type ProductConfiguration,
+  type RuntimeRequest,
   type RuntimeToolInvocation,
   resolveSandboxActionGrant,
   type SandboxExecutionEvidencePort,
   type SandboxExecutionPlan,
   SandboxExecutionReconciliationService,
+  type SandboxExecutionProjectionContext,
+  type SandboxExecutionRecord,
+  SandboxResourceRecoveryService,
   SandboxScopeService,
+  scanMachineSecrets,
   type WorkerDelegationAdmissionServiceOptions,
 } from "@himawari-agent/application";
+import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import {
   assertSandboxExecutionSupport,
+  executionV2MessageSchema,
+  FILE_WRITE_NOT_STARTED,
+  isSandboxToolResultLost,
+  PI_COPY_SAVE_CONTRACT,
+  PI_DIRECTORY_MOVE_CONTRACT,
+  PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
+  piFileRecoveryOperationKey,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SANDBOX_TOOL_RESULT_LOST,
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+  sandboxBackendKind,
+  type SandboxExecutionFacts,
   type SandboxExecutionPlanCandidate,
   type SandboxExecutionPlanCandidateV2,
   type SandboxExecutionPlanV2,
+  type SandboxExecutionScope,
   type SandboxExecutionSupport,
+  type SandboxHostBinding,
   type SandboxOperationBinding,
   type SandboxScope,
+  type SandboxWorkspaceCopy,
+  sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateSchema,
   sandboxExecutionPlanCandidateV2Schema,
   sandboxExecutionReservationSchema,
+  sandboxExecutionScopeSchema,
+  sandboxFileOperationFailureReason,
+  sandboxLostResultOperationKey,
   sandboxScopeSchema,
+  srtTaskEnvironmentSession,
 } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CapabilityDeploymentSnapshotLoader,
+  createDirectoryMoveJournal,
+  createPiFilePublicationJournal,
+  resolveSandboxDirectoryMoveScope,
+  resolveSandboxFileScope,
   resolveSandboxWorkspaceClaim,
   revalidateCapabilityDeploymentSnapshot,
+  verifiedPiWriteFailure,
   verifyPiWriteEvidence,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
-import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
+import type { preparePiFileMutation } from "@himawari-agent/runtime-pi";
+import {
+  importProductionCopySave,
+  prepareProductionCopySave,
+  resolveProductionCopySaveClaims,
+} from "./production-copy-save.js";
+import { prepareProductionFile } from "./production-file-preparation.js";
 import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
 import { createProductionManagedTasks } from "./production-managed-tasks.js";
+import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import type { ProductionRuntimeSandbox } from "./production-runtime-tools.js";
 import { createProductionSandboxControl } from "./production-sandbox-control.js";
+import { createProductionSandboxFileRecovery } from "./production-sandbox-file-recovery.js";
+import { createProductionSandboxLostResultRecovery } from "./production-sandbox-lost-result-recovery.js";
+import { isGlobalServiceFailure } from "./production-record-failure.js";
 import { createProductionSandboxOutput } from "./production-sandbox-output.js";
-import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
 import { createProductionSandboxStream } from "./production-sandbox-stream.js";
+import { createProductionSandboxStreamResultRecovery } from "./production-sandbox-stream-result-recovery.js";
+import { createProductionSandboxToolResult } from "./production-sandbox-tool-result.js";
+import {
+  createProductionTaskEnvironments,
+  type ProductionTaskEnvironments,
+} from "./production-task-environments.js";
 
-// Job directory names encode the full digest compactly: SRT appends Unix socket
-// names below them. External reconciliation IDs retain their separate contract.
+export type { ProductionTaskEnvironments } from "./production-task-environments.js";
+
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
+const PREWARM_WAIT_MS = 10_000;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
-/** Composition only: existing grants, protected Run artifacts and the existing
- * job journal retain authority. Neither inventory nor this factory issues it. */
 export async function createProductionSandboxServices(options: {
   readonly configuration: Pick<
     ProductConfiguration,
@@ -67,7 +116,12 @@ export async function createProductionSandboxServices(options: {
   readonly fileRead: ProductionFileReadServices;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly diagnosticOutput?: NodeJS.WritableStream;
   readonly workerSupport?: () => SandboxExecutionSupport | undefined;
+  readonly taskEnvironments?: ProductionTaskEnvironments;
+  readonly srtTaskEnvironments?: ProductionTaskEnvironments;
+  readonly piFilePreparation?: typeof preparePiFileMutation;
+  readonly createPiFilePreparation?: () => typeof preparePiFileMutation;
 }) {
   const { configuration, repository, protector, clock, ids } = options;
   if (!configuration.capabilityDeployment) return undefined;
@@ -80,6 +134,18 @@ export async function createProductionSandboxServices(options: {
     (entry) => entry.binding.kind === "sandbox",
   );
   if (sandboxEntries.length === 0) return undefined;
+  const hasPreparedFileContract = sandboxEntries.some(
+    (entry) =>
+      entry.binding.kind === "sandbox" &&
+      entry.binding.value.operationBindings?.some(
+        ({ contract }) =>
+          contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+          contract.version === PI_PREPARED_FILE_CONTRACT.version,
+      ),
+  );
+  const piFilePreparation =
+    options.piFilePreparation ??
+    (hasPreparedFileContract ? options.createPiFilePreparation?.() : undefined);
   const modelIdentity = (ref: string) => {
     const model = configuration.modelDescriptors.find(
       (model) => model.ref === ref && model.role !== "embedding",
@@ -95,9 +161,6 @@ export async function createProductionSandboxServices(options: {
   if (hostIds.size !== 1) throw new Error("SANDBOX_HOST_BINDING_AMBIGUOUS");
   const hostId = [...hostIds][0];
   if (!hostId) throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
-  // Complete the first installation audit in this Agent process before readiness.
-  // Worker verification uses a separate process and cannot warm this cache.
-  // Per-invocation plan, authority and host checks remain in resolve below.
   for (const entry of sandboxEntries) {
     if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
@@ -108,6 +171,25 @@ export async function createProductionSandboxServices(options: {
     });
   }
   const journal = repository.sandboxJobJournal(configuration.ownerId, configuration.agentId);
+  const environments = options.taskEnvironments
+    ? createProductionTaskEnvironments({
+        configuration: options.taskEnvironments,
+        store: repository.executionEnvironmentStore(configuration.ownerId, configuration.agentId),
+        authority: options.authority,
+        clock,
+        ids,
+      })
+    : undefined;
+  const srtEnvironments =
+    !environments && options.srtTaskEnvironments && process.platform === "linux"
+      ? createProductionTaskEnvironments({
+          configuration: options.srtTaskEnvironments,
+          store: repository.executionEnvironmentStore(configuration.ownerId, configuration.agentId),
+          authority: options.authority,
+          clock,
+          ids,
+        })
+      : undefined;
   const preparations = repository.sandboxExecutionPreparations(
     configuration.ownerId,
     configuration.agentId,
@@ -145,8 +227,19 @@ export async function createProductionSandboxServices(options: {
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
     return { binding: entry.binding.value, qualification: entry.qualification.sandbox };
   };
+  const strictRefusal = (
+    binding: Awaited<ReturnType<typeof entryFor>>["binding"],
+    operation: string,
+  ): "SANDBOX_OPERATION_SRT_ONLY" | "SANDBOX_BINDING_SRT_ONLY" | null => {
+    if (!environments) return null;
+    if (!binding.operationBindings) return "SANDBOX_BINDING_SRT_ONLY";
+    return binding.operationBindings.find((item) => item.operation === operation)?.backendRef ===
+      SRT_BACKEND_REF
+      ? "SANDBOX_OPERATION_SRT_ONLY"
+      : null;
+  };
   const verifyParent = async (
-    scope: SandboxScope,
+    scope: SandboxExecutionScope,
     plan: SandboxExecutionPlanCandidate | SandboxExecutionPlanCandidateV2,
   ) => {
     const saved = await artifacts().lookup({
@@ -284,15 +377,19 @@ export async function createProductionSandboxServices(options: {
       const descriptor = binding.operationBindings?.find(
         (item) => item.operation === plan.operation,
       );
+      const backendMatches =
+        plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF
+          ? descriptor?.backendRef === SRT_BACKEND_REF && srtTaskEnvironmentSession(plan) !== null
+          : descriptor?.backendRef === plan.backendRef;
       if (
         !descriptor ||
         descriptor.mode !== plan.mode ||
-        descriptor.backendRef !== plan.backendRef ||
+        !backendMatches ||
         hash(descriptor.contract) !== hash(plan.operationContract)
       )
         throw new Error("SANDBOX_OPERATION_BINDING_CHANGED");
     }
-    const raw = sandboxScopeSchema.parse(
+    const raw = sandboxExecutionScopeSchema.parse(
       await timed("scope_payload", () => readJson(plan.binding.scopeRef)),
     );
     if (plan.schemaVersion === "sandbox-execution.v2") {
@@ -301,21 +398,52 @@ export async function createProductionSandboxServices(options: {
       );
       if (
         !descriptor ||
-        descriptor.directoryOperations.some((op) => !raw.directoryGrant.operations.includes(op)) ||
-        raw.directoryGrant.operations.some((op) => !descriptor.directoryOperations.includes(op)) ||
+        (descriptor.scopeSource === "private_temp"
+          ? raw.directoryGrant !== null
+          : raw.directoryGrant === null ||
+            descriptor.directoryOperations.some(
+              (op) =>
+                !(
+                  raw.schemaVersion === "sandbox-scope.v1" &&
+                  (raw.workspaceCopy || raw.copySave)
+                ) && !raw.directoryGrant?.operations.includes(op),
+            ) ||
+            raw.directoryGrant.operations.some(
+              (op) => !descriptor.directoryOperations.includes(op),
+            )) ||
         (descriptor.network === "disabled" && raw.networkAuthorizationRef !== null)
       )
         throw new Error("SANDBOX_OPERATION_SCOPE_CHANGED");
-      if (descriptor.scopeSource === "grant_targets") {
+      if (
+        raw.schemaVersion === "sandbox-scope.v1" &&
+        raw.workspaceCopy &&
+        (plan.operation !== "bash" ||
+          plan.mode !== "foreground" ||
+          plan.operationContract.kind !== "command" ||
+          descriptor.scopeSource !== "grant_targets")
+      )
+        throw new Error("SANDBOX_COPY_CONTRACT_CHANGED");
+      if (descriptor.scopeSource === "grant_targets" || descriptor.scopeSource === "private_temp") {
         const { intent } = await resolveSandboxActionGrant({
           plan,
           authorizations: repository.authorizationStore(),
           now: () => clock.now(),
         });
         const directories = intent.targets.filter((item) => item.type === "directory-grant");
+        const copies = intent.targets.filter((item) => item.type === "workspace-copy");
+        const copy = raw.schemaVersion === "sandbox-scope.v1" ? raw.workspaceCopy : undefined;
         if (
-          directories.length !== 1 ||
-          directories[0]?.ref !== raw.directoryGrant.ref ||
+          copy
+            ? copies.length !== 1 || copies[0]?.ref !== copy.canonicalRootId
+            : copies.length !== 0
+        )
+          throw new Error("SANDBOX_COPY_AUTHORIZATION_CHANGED");
+        if (
+          (descriptor.scopeSource === "private_temp"
+            ? intent.targets.some((item) =>
+                ["directory-grant", "directory-path", "file-path"].includes(item.type),
+              )
+            : directories.length !== 1 || directories[0]?.ref !== raw.directoryGrant?.ref) ||
           !intent.targets.some((item) => item.type === "host" && item.ref === hostId) ||
           intent.disclosure !== "named_recipients" ||
           !intent.recipients.includes(modelIdentity(plan.modelRef))
@@ -348,19 +476,173 @@ export async function createProductionSandboxServices(options: {
     const resolved = await timed("scope_authorization", () =>
       reader.resolve(plan, raw.parentRequestId),
     );
+    const directoryScope = resolved.scope;
+    if (directoryScope.directoryGrant === null)
+      return { binding, qualification, workspaceClaims: [], ...resolved };
     if (
       !binding.roots.some(
-        (root) => root.canonicalRootId === resolved.scope.directoryGrant.canonicalRootId,
+        (root) => root.canonicalRootId === directoryScope.directoryGrant.canonicalRootId,
       )
     )
       throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    const workspaceClaim = await timed("workspace_identity", () =>
-      resolveSandboxWorkspaceClaim({ binding, scope: resolved.scope }),
+    const directoryClaim = await timed("workspace_identity", () =>
+      resolveSandboxWorkspaceClaim({ binding, scope: directoryScope }),
     );
-    return { binding, qualification, workspaceClaim, ...resolved };
+    let workspaceClaim = directoryClaim;
+    const fixed =
+      plan.schemaVersion === "sandbox-execution.v2" && fixedFileContract(plan.operationContract);
+    const staged =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+      plan.operationContract.version === PI_PREPARED_FILE_CONTRACT.version;
+    if (
+      Boolean(resolved.scope.preparedFile) !== staged ||
+      (staged && !["write", "edit"].includes(plan.operation))
+    )
+      throw new Error("SANDBOX_PREPARED_FILE_CONTRACT_CHANGED");
+    if (Boolean(resolved.scope.fileTarget) !== fixed)
+      throw new Error("SANDBOX_FILE_CONTRACT_CHANGED");
+    if (fixed && plan.schemaVersion === "sandbox-execution.v2") {
+      const admission = await preparations.readAdmission(plan.identity);
+      if (admission?.phase === "bound") {
+        const retained = admission.record.workspaces[0];
+        if (
+          !retained ||
+          (!retained.file && !resolved.scope.fileTarget?.missingParents) ||
+          admission.record.workspaces.length !== 1
+        )
+          throw new Error("SANDBOX_FILE_CLAIM_CHANGED");
+        workspaceClaim = retained;
+      } else {
+        const current = await fileTarget(directoryScope, binding);
+        if (hash(current.target) !== hash(resolved.scope.fileTarget))
+          throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+        workspaceClaim = current.claim;
+      }
+    }
+    let workspaceClaims = [workspaceClaim];
+    const moving =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+      plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version;
+    if (Boolean(directoryScope.directoryMove) !== moving)
+      throw new Error("SANDBOX_DIRECTORY_MOVE_CONTRACT_CHANGED");
+    if (moving && plan.schemaVersion === "sandbox-execution.v2") {
+      if (plan.operation !== "move_directory")
+        throw new Error("SANDBOX_DIRECTORY_MOVE_CONTRACT_CHANGED");
+      const admission = await preparations.readAdmission(plan.identity);
+      if (admission?.phase === "bound") {
+        workspaceClaims = [...admission.record.workspaces];
+        if (workspaceClaims.length !== 3) throw new Error("SANDBOX_DIRECTORY_MOVE_CLAIMS_CHANGED");
+      } else {
+        const current = await directoryMoveTarget(directoryScope, binding).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (
+              error.code === "ENOENT" ||
+              ["HOST_FILE_TARGET_EXISTS", "SANDBOX_HOST_PATH_CHANGED"].includes(error.message)
+            )
+              throw new Error("SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED");
+            throw error;
+          },
+        );
+        if (hash(current.target) !== hash(directoryScope.directoryMove))
+          throw new Error("SANDBOX_DIRECTORY_MOVE_TARGET_CHANGED");
+        workspaceClaims = [...current.claims];
+      }
+    }
+    const saving =
+      plan.schemaVersion === "sandbox-execution.v2" &&
+      plan.operationContract.ref === PI_COPY_SAVE_CONTRACT.ref &&
+      plan.operationContract.version === PI_COPY_SAVE_CONTRACT.version;
+    if (Boolean(directoryScope.copySave) !== saving) throw new Error("COPY_SAVE_CONTRACT_CHANGED");
+    if (saving && plan.schemaVersion === "sandbox-execution.v2") {
+      const admission = await preparations.readAdmission(plan.identity);
+      workspaceClaims =
+        admission?.phase === "bound"
+          ? [...admission.record.workspaces]
+          : await resolveProductionCopySaveClaims({ scope: directoryScope, binding });
+      if (!workspaceClaims.length) throw new Error("COPY_SAVE_CLAIMS_REQUIRED");
+    }
+    return { binding, qualification, workspaceClaims, directoryClaim, ...resolved };
   };
-  const persistScope = async (scope: SandboxScope, invocationId: string) => {
-    const plaintext = new TextEncoder().encode(JSON.stringify(sandboxScopeSchema.parse(scope)));
+  const fixedFileContract = (contract: { readonly ref: string; readonly version: string }) =>
+    contract.ref === PI_FIXED_FILE_CONTRACT.ref &&
+    [PI_FIXED_FILE_CONTRACT.version, PI_PREPARED_FILE_CONTRACT.version].some(
+      (version) => version === contract.version,
+    );
+  const fileTarget = async (scope: SandboxScope, binding: SandboxHostBinding) => {
+    if (!["read", "write", "edit"].includes(scope.operation))
+      throw new Error("SANDBOX_FILE_CONTRACT_UNSUPPORTED");
+    const root = binding.roots.find(
+      (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+    );
+    const parameters = (await readJson(scope.inputRef)) as { path?: unknown };
+    if (!root || !parameters || typeof parameters.path !== "string")
+      throw new Error("SANDBOX_FILE_TARGET_INVALID");
+    const relativePath = path.relative(
+      root.canonicalPath,
+      path.resolve(root.canonicalPath, parameters.path),
+    );
+    return resolveSandboxFileScope({
+      binding,
+      scope,
+      relativePath,
+      access: scope.operation === "read" ? "read" : "write",
+    });
+  };
+  const directoryMoveTarget = async (scope: SandboxScope, binding: SandboxHostBinding) => {
+    const parameters = (await readJson(scope.inputRef)) as {
+      path?: unknown;
+      destination?: unknown;
+    };
+    const root = binding.roots.find(
+      (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+    );
+    if (
+      !root ||
+      typeof parameters?.path !== "string" ||
+      typeof parameters.destination !== "string" ||
+      Object.keys(parameters).some((key) => !["path", "destination"].includes(key))
+    )
+      throw new Error("SANDBOX_DIRECTORY_MOVE_INPUT_INVALID");
+    return resolveSandboxDirectoryMoveScope({
+      binding,
+      scope,
+      sourceRelativePath: path.relative(
+        root.canonicalPath,
+        path.resolve(root.canonicalPath, parameters.path),
+      ),
+      destinationRelativePath: path.relative(
+        root.canonicalPath,
+        path.resolve(root.canonicalPath, parameters.destination),
+      ),
+    });
+  };
+  const freezeFileScope = async (
+    scope: SandboxScope,
+    binding: SandboxHostBinding,
+    contract: { readonly ref: string; readonly version: string },
+  ) => {
+    const { fileTarget: _parentTarget, directoryMove: _parentMove, ...plain } = scope;
+    if (
+      contract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+      contract.version === PI_DIRECTORY_MOVE_CONTRACT.version
+    )
+      return sandboxScopeSchema.parse({
+        ...plain,
+        directoryMove: (await directoryMoveTarget(plain, binding)).target,
+      });
+    return fixedFileContract(contract)
+      ? sandboxScopeSchema.parse({
+          ...plain,
+          fileTarget: (await fileTarget(plain, binding)).target,
+        })
+      : sandboxScopeSchema.parse(plain);
+  };
+  const persistScope = async (scope: SandboxExecutionScope, invocationId: string) => {
+    const plaintext = new TextEncoder().encode(
+      JSON.stringify(sandboxExecutionScopeSchema.parse(scope)),
+    );
     const payload = await protector.protect({
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
@@ -376,8 +658,8 @@ export async function createProductionSandboxServices(options: {
       operationKey: `sandbox-scope:${invocationId}`,
       payload,
     });
-    const actual = sandboxScopeSchema.parse(await readJson(saved.ref));
-    if (hash(actual) !== hash(sandboxScopeSchema.parse(scope)))
+    const actual = sandboxExecutionScopeSchema.parse(await readJson(saved.ref));
+    if (hash(actual) !== hash(sandboxExecutionScopeSchema.parse(scope)))
       throw new Error("SANDBOX_SCOPE_CHANGED");
     return { scopeRef: saved.ref, scopeDigest: bytesHash(plaintext) };
   };
@@ -438,8 +720,6 @@ export async function createProductionSandboxServices(options: {
       invocationId: input.invocationId,
     });
     if (existing) {
-      // The reservation is immutable. A replay returns its original admission;
-      // reserve will never project a second executable Worker request.
       const plan = existing.phase === "reserved" ? existing.plan : existing.record.plan;
       const { semanticFingerprint: _fingerprint, ...candidate } = plan;
       const workspaces =
@@ -460,6 +740,28 @@ export async function createProductionSandboxServices(options: {
       await resolve(candidate);
       return { plan: candidate, reservation, workspaces };
     }
+    const queued = await preparations.readQueuedByInvocation({
+      runId: input.requestScope.runId,
+      invocationId: input.invocationId,
+    });
+    if (queued) {
+      const { consumedAt: _now, ...invocation } = input;
+      if (
+        queued.status !== "queued" ||
+        canonicalAuthorizationSnapshot({
+          ...invocation,
+          receiptRef: queued.invocation.receiptRef,
+        }) !== canonicalAuthorizationSnapshot(queued.invocation)
+      )
+        throw new Error("SANDBOX_QUEUED_REQUEST_CHANGED");
+      await resolve(queued.plan);
+      return {
+        ...(queued.recovery ? { recovery: queued.recovery } : {}),
+        plan: queued.plan,
+        reservation: queued.reservation,
+        workspaces: queued.workspaces,
+      };
+    }
     return undefined;
   };
   const prepareRuntimeV2 = async (
@@ -467,10 +769,20 @@ export async function createProductionSandboxServices(options: {
     call: RuntimeToolInvocation,
     parentCall: RuntimeToolInvocation | undefined,
     descriptor: SandboxOperationBinding,
+    signal?: AbortSignal,
   ) => {
+    signal?.throwIfAborted();
     const replay = await replayReservation(input);
     if (replay) return replay;
     const handle = await currentHandle(input);
+    if (input.authorizationRef !== null && input.authorizationRef !== handle.authorizationRef)
+      throw new Error("SANDBOX_EXECUTION_HANDLE_MISMATCH");
+    if (
+      canonicalAuthorizationSnapshot(input.authority) !==
+      canonicalAuthorizationSnapshot(options.authority())
+    )
+      throw new Error("SANDBOX_PREPARATION_AUTHORITY_CHANGED");
+    await preparations.validatePreparation({ ...input, consumedAt: clock.now() });
     if (!call.context || !call.executionDeadlineAt)
       throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
     const { binding, qualification } = await entryFor(input.capabilityRef, input.capabilityVersion);
@@ -486,10 +798,12 @@ export async function createProductionSandboxServices(options: {
       ),
     ).toISOString();
     let grant: HostDirectoryGrant | undefined;
+    let workspaceCopy: SandboxWorkspaceCopy | undefined;
     if (descriptor.scopeSource === "file_workflow") {
       const file = await options.fileRead.binding(parentCall ?? call);
       if (
         !file ||
+        !file.grant ||
         file.capabilityRef !== input.capabilityRef ||
         file.capabilityVersion !== input.capabilityVersion ||
         !["inspect", "read"].includes(input.operation)
@@ -515,28 +829,82 @@ export async function createProductionSandboxServices(options: {
         now: () => clock.now(),
       });
       const targets = intent.targets.filter((item) => item.type === "directory-grant");
+      const copyTargets = intent.targets.filter((item) => item.type === "workspace-copy");
+      if (copyTargets.length) {
+        const file = await options.fileRead.binding(parentCall ?? call);
+        if (
+          descriptor.scopeSource !== "grant_targets" ||
+          input.operation !== "bash" ||
+          descriptor.mode !== "foreground" ||
+          descriptor.contract.kind !== "command" ||
+          !file?.grant ||
+          !file.workspaceCopy ||
+          copyTargets.length !== 1 ||
+          copyTargets[0]?.ref !== file.workspaceCopy.canonicalRootId ||
+          targets.length !== 1 ||
+          targets[0]?.ref !== file.grant.id
+        )
+          throw new Error("SANDBOX_COPY_BINDING_CHANGED");
+        workspaceCopy = file.workspaceCopy;
+      }
       if (
-        targets.length !== 1 ||
-        !targets[0] ||
+        (descriptor.scopeSource === "private_temp"
+          ? intent.targets.some((item) =>
+              ["directory-grant", "directory-path", "file-path"].includes(item.type),
+            )
+          : targets.length !== 1 || !targets[0]) ||
         !intent.targets.some((item) => item.type === "host" && item.ref === hostId) ||
         intent.disclosure !== "named_recipients" ||
         !intent.recipients.includes(modelIdentity(call.context.modelRef))
       )
         throw new Error("SANDBOX_SCOPE_SOURCE_UNAVAILABLE");
-      grant = (
+      if (descriptor.scopeSource !== "private_temp" && targets[0])
+        grant = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(targets[0].ref),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined;
+    }
+    if (!grant && descriptor.scopeSource !== "private_temp")
+      throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
+    if (grant)
+      expiresAt = new Date(
+        Math.min(Date.parse(expiresAt), Date.parse(grant.expiresAt)),
+      ).toISOString();
+    let copyOperation: import("@himawari-agent/application").PreparedFileOperation | undefined;
+    if (input.operation === "save_copy") {
+      if (
+        !grant ||
+        descriptor.contract.ref !== PI_COPY_SAVE_CONTRACT.ref ||
+        descriptor.contract.version !== PI_COPY_SAVE_CONTRACT.version ||
+        descriptor.mode !== "foreground"
+      )
+        throw new Error("COPY_SAVE_CONTRACT_CHANGED");
+      const parameters = (await readJson(input.inputRef)) as {
+        operationId?: unknown;
+        expectedHash?: unknown;
+      };
+      if (typeof parameters.operationId !== "string") throw new Error("COPY_SAVE_INPUT_INVALID");
+      copyOperation = (
         await repository.readScopedState(
           configuration.ownerId,
           configuration.agentId,
-          hostDirectoryGrantStateKey(targets[0].ref),
+          `host-workspace:file-operation:${parameters.operationId}`,
         )
-      )?.value as unknown as HostDirectoryGrant | undefined;
+      )?.value as unknown as typeof copyOperation;
+      if (
+        !copyOperation ||
+        copyOperation.canonicalHash !== parameters.expectedHash ||
+        copyOperation.grantId !== grant.id ||
+        !["create", "update", "move", "trash"].includes(copyOperation.operation) ||
+        !descriptor.directoryOperations.includes(copyOperation.operation)
+      )
+        throw new Error("COPY_SAVE_OPERATION_UNAVAILABLE");
     }
-    if (!grant) throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
-    expiresAt = new Date(
-      Math.min(Date.parse(expiresAt), Date.parse(grant.expiresAt)),
-    ).toISOString();
-    const scope = sandboxScopeSchema.parse({
-      schemaVersion: "sandbox-scope.v1",
+    const scope = sandboxExecutionScopeSchema.parse({
+      schemaVersion: grant ? "sandbox-scope.v1" : "sandbox-scope.v2",
       ownerId: configuration.ownerId,
       agentId: configuration.agentId,
       threadId: call.context.threadId,
@@ -551,18 +919,130 @@ export async function createProductionSandboxServices(options: {
       authorizationRef: handle.authorizationRef,
       modelRef: call.context.modelRef,
       profileRef: binding.profileRef,
-      directoryGrant: {
-        ref: grant.id,
-        revision: grant.revision,
-        canonicalRootId: grant.canonicalRootId,
-        authorizationRef: grant.authorizationRef,
-        operations: descriptor.directoryOperations,
-      },
+      directoryGrant: grant
+        ? {
+            ref: grant.id,
+            revision: grant.revision,
+            canonicalRootId: grant.canonicalRootId,
+            authorizationRef: grant.authorizationRef,
+            operations: workspaceCopy
+              ? ["read"]
+              : copyOperation
+                ? ["read", copyOperation.operation]
+                : descriptor.directoryOperations,
+          }
+        : null,
+      ...(workspaceCopy ? { workspaceCopy } : {}),
       networkAuthorizationRef:
         descriptor.network === "grant_targets" ? handle.authorizationRef : null,
       expiresAt,
     });
-    const scopeBinding = await persistScope(scope, input.invocationId);
+    if (
+      grant &&
+      (grant.revokedAt !== null ||
+        grant.expiresAt <= clock.now() ||
+        grant.hostId !== hostId ||
+        grant.pathPolicy !== "same_filesystem_no_links" ||
+        grant.mountPolicy !== "fixed_device" ||
+        (workspaceCopy
+          ? !grant.operations.includes("read")
+          : (copyOperation
+              ? ["read", copyOperation.operation]
+              : descriptor.directoryOperations
+            ).some((operation) => !grant.operations.some((allowed) => allowed === operation))))
+    )
+      throw new Error("SANDBOX_DIRECTORY_GRANT_UNAVAILABLE");
+    const retainedScope = await artifacts().lookup({
+      runId: scope.runId as RuntimeToolInvocation["runId"],
+      purpose: "trace",
+      operationKey: `sandbox-scope:${input.invocationId}`,
+    });
+    let frozenScope: SandboxExecutionScope;
+    if (retainedScope) {
+      frozenScope = sandboxExecutionScopeSchema.parse(await readJson(retainedScope.payloadRef));
+      const {
+        fileTarget: _target,
+        preparedFile: _prepared,
+        directoryMove: _move,
+        copySave: _copySave,
+        ...baseScope
+      } = frozenScope;
+      if (hash(baseScope) !== hash(scope)) throw new Error("SANDBOX_SCOPE_CHANGED");
+    } else {
+      frozenScope =
+        scope.schemaVersion === "sandbox-scope.v1"
+          ? await freezeFileScope(scope, binding, descriptor.contract)
+          : scope;
+      if (copyOperation && grant && frozenScope.schemaVersion === "sandbox-scope.v1") {
+        frozenScope = await prepareProductionCopySave({
+          scope: frozenScope,
+          binding,
+          grant,
+          now: clock.now(),
+          parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
+          readPrepared: async (id) =>
+            (
+              await repository.readScopedState(
+                configuration.ownerId,
+                configuration.agentId,
+                `host-workspace:file-operation:${id}`,
+              )
+            )?.value as unknown as
+              | import("@himawari-agent/application").PreparedFileOperation
+              | undefined,
+          readBytes: async (ref) => {
+            const payload = await payloads.get(ref);
+            if (!payload) throw new Error("COPY_SAVE_PAYLOAD_MISSING");
+            return protector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            });
+          },
+        });
+      }
+      if (
+        descriptor.contract.ref === PI_PREPARED_FILE_CONTRACT.ref &&
+        descriptor.contract.version === PI_PREPARED_FILE_CONTRACT.version
+      ) {
+        if (
+          frozenScope.schemaVersion !== "sandbox-scope.v1" ||
+          !frozenScope.fileTarget ||
+          !grant ||
+          (input.operation !== "write" && input.operation !== "edit")
+        )
+          throw new Error("SANDBOX_PREPARED_FILE_CONTRACT_CHANGED");
+        frozenScope = sandboxScopeSchema.parse({
+          ...frozenScope,
+          preparedFile: await prepareProductionFile(
+            {
+              ...(signal ? { signal } : {}),
+              grant,
+              target: frozenScope.fileTarget,
+              tool: input.operation,
+              toolCallId: scope.toolCallId,
+              parameters: (await readJson(input.inputRef)) as Record<string, unknown>,
+              resourceCeiling: {
+                ...input.resourceCeiling,
+                maxWallTimeMs: Math.min(
+                  input.resourceCeiling.maxWallTimeMs,
+                  Date.parse(expiresAt) - Date.parse(clock.now()),
+                ),
+              },
+            },
+            piFilePreparation,
+          ),
+        });
+      }
+    }
+    const scopeBinding = await persistScope(frozenScope, input.invocationId);
+    signal?.throwIfAborted();
+    if (
+      canonicalAuthorizationSnapshot(input.authority) !==
+      canonicalAuthorizationSnapshot(options.authority())
+    )
+      throw new Error("SANDBOX_PREPARATION_AUTHORITY_CHANGED");
+    await preparations.validatePreparation({ ...input, consumedAt: clock.now() });
     const base = createSandboxExecutionPlanCandidate({
       admission: input,
       handle,
@@ -590,42 +1070,141 @@ export async function createProductionSandboxServices(options: {
       },
       digest: (canonical) => createHash("sha256").update(canonical).digest("hex"),
     });
+    const srtSession =
+      descriptor.backendRef === SRT_BACKEND_REF
+        ? srtTaskEnvironmentSession({
+            mode: descriptor.mode,
+            operation: input.operation,
+            operationContract: descriptor.contract,
+          })
+        : null;
+    const srtFacade = srtSession ? srtEnvironments : undefined;
     const plan = sandboxExecutionPlanCandidateV2Schema.parse({
       ...base,
       schemaVersion: "sandbox-execution.v2",
       effectiveDeadlineAt: expiresAt,
       mode: descriptor.mode,
       operationContract: descriptor.contract,
-      backendRef: descriptor.backendRef,
+      backendRef: srtFacade ? SRT_TASK_ENVIRONMENT_BACKEND_REF : descriptor.backendRef,
+      ...(descriptor.backendRef === SRT_BACKEND_REF && !srtFacade
+        ? { preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
+        : {}),
       environmentId: `environment:${hash(input.invocationId)}`,
     });
     const resolved = await resolve(plan);
+    if (!srtFacade && descriptor.backendRef !== SRT_BACKEND_REF) {
+      if (descriptor.backendRef !== environments?.backendRef || !grant)
+        throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+      await environments.acquire({
+        runId: call.runId,
+        hostId,
+        grant,
+        claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
+        binding,
+        deadlineAt: new Date(
+          Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
+        ).toISOString(),
+      });
+    }
     const reservation = sandboxExecutionReservationSchema.parse({
       schemaVersion: "sandbox-preparation.v1",
       identity: plan.identity,
       environmentId: plan.environmentId,
       resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
       mode: plan.mode,
-      workspaceConflictRefs: [resolved.workspaceClaim.ref],
+      workspaceConflictRefs: resolved.workspaceClaims.map((claim) => claim.ref),
       sequence: 1,
       createdAt: plan.requestedAt,
     });
-    return { plan, reservation, workspaces: [resolved.workspaceClaim] };
+    const recoveryCall = parentCall ?? call;
+    return {
+      ...(recoveryCall.context?.continuationRef
+        ? {
+            recovery: {
+              version: "queued-tool-batch.v1" as const,
+              continuationRef: recoveryCall.context.continuationRef,
+              toolCallId: recoveryCall.toolCallId,
+              authority: input.authority.product,
+            },
+          }
+        : {}),
+      ...(srtFacade && grant
+        ? {
+            environmentDeadlineAt: new Date(
+              Math.min(Date.parse(call.executionDeadlineAt), Date.parse(grant.expiresAt)),
+            ).toISOString(),
+          }
+        : {}),
+      plan,
+      reservation,
+      workspaces: resolved.workspaceClaims,
+    };
+  };
+  const prewarming = new Map<string, Promise<boolean>>();
+  const acquireResidentEnvironment = async (prepared: {
+    readonly plan: SandboxExecutionPlanCandidateV2;
+    readonly environmentDeadlineAt?: string;
+  }) => {
+    const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
+    if (plan.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF) return;
+    if (!srtEnvironments) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    const prewarm = prewarming.get(plan.identity.runId);
+    if (prewarm) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        prewarm.catch(() => false),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, PREWARM_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
+    const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+    const resolved = await resolve(plan);
+    const { intent } = await resolveSandboxActionGrant({
+      plan,
+      authorizations: repository.authorizationStore(),
+      now: () => clock.now(),
+    });
+    const directory = intent.targets.find((item) => item.type === "directory-grant");
+    const grant = directory
+      ? ((
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(directory.ref),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined)
+      : undefined;
+    if (!grant) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    await srtEnvironments.acquireSrt({
+      runId: plan.identity.runId,
+      hostId,
+      grant,
+      claims: "directoryClaim" in resolved ? [resolved.directoryClaim] : [],
+      binding,
+      allowedDomains: resolved.allowedDomains,
+      plan,
+      deadlineAt: prepared.environmentDeadlineAt ?? plan.effectiveDeadlineAt,
+    });
   };
   const runtime: ProductionRuntimeSandbox = {
     journal,
     preparations,
     scopes,
     appliesTo,
-    prepare: async (input, call, parentCall) => {
+    acquireEnvironment: acquireResidentEnvironment,
+    prepare: async (input, call, parentCall, signal) => {
+      signal?.throwIfAborted();
       const selected = await entryFor(input.capabilityRef, input.capabilityVersion);
-      if (selected.binding.operationBindings) {
-        const descriptor = selected.binding.operationBindings.find(
-          (item) => item.operation === input.operation,
-        );
-        if (!descriptor) throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
-        return prepareRuntimeV2(input, call, parentCall, descriptor);
-      }
+      const descriptor = selected.binding.operationBindings?.find(
+        (item) => item.operation === input.operation,
+      );
+      if (selected.binding.operationBindings && !descriptor)
+        throw new Error("SANDBOX_OPERATION_UNAVAILABLE");
+      if (strictRefusal(selected.binding, input.operation))
+        throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
+      if (descriptor) return prepareRuntimeV2(input, call, parentCall, descriptor, signal);
       const existing = await journal.readByInvocation({
         runId: input.requestScope.runId,
         invocationId: input.invocationId,
@@ -638,6 +1217,7 @@ export async function createProductionSandboxServices(options: {
       const file = await options.fileRead.binding(parentCall ?? call);
       if (
         !file ||
+        !file.grant ||
         file.capabilityRef !== input.capabilityRef ||
         file.capabilityVersion !== input.capabilityVersion ||
         !["inspect", "read"].includes(input.operation) ||
@@ -719,6 +1299,7 @@ export async function createProductionSandboxServices(options: {
     scopes,
     appliesTo,
     prepare: async (input, request) => {
+      if (environments) throw new Error("SANDBOX_STRICT_MODE_UNAVAILABLE");
       const childEntry = await entryFor(input.capabilityRef, input.capabilityVersion);
       if (childEntry.binding.operationBindings) {
         const replay = await replayReservation(input);
@@ -740,6 +1321,14 @@ export async function createProductionSandboxServices(options: {
           throw new Error("SANDBOX_PARENT_UNAVAILABLE");
         const prior = parent.record.plan;
         const inherited = await resolve(prior);
+        if (
+          inherited.scope.schemaVersion !== "sandbox-scope.v1" ||
+          inherited.scope.workspaceCopy !== undefined ||
+          inherited.scope.copySave !== undefined ||
+          descriptor.scopeSource === "private_temp"
+        )
+          throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");
+        const inheritedDirectory = inherited.scope.directoryGrant;
         const handle = await currentHandle(input);
         const { binding, qualification } = childEntry;
         assertSandboxExecutionSupport(
@@ -754,7 +1343,7 @@ export async function createProductionSandboxServices(options: {
           binding.hostId !== prior.identity.hostId ||
           binding.profileRef !== prior.binding.profileRef ||
           descriptor.directoryOperations.some(
-            (op) => !inherited.scope.directoryGrant.operations.includes(op),
+            (op) => !inheritedDirectory.operations.includes(op),
           ) ||
           Object.entries(input.resourceCeiling).some(
             ([key, value]) =>
@@ -786,8 +1375,15 @@ export async function createProductionSandboxServices(options: {
           },
           expiresAt,
         });
-        const scopeBinding = await persistScope(scope, input.invocationId);
-        const { semanticFingerprint: _fingerprint, ...candidate } = prior;
+        const scopeBinding = await persistScope(
+          await freezeFileScope(scope, binding, descriptor.contract),
+          input.invocationId,
+        );
+        const {
+          semanticFingerprint: _fingerprint,
+          preparationProtocol: _preparationProtocol,
+          ...candidate
+        } = prior;
         const plan = sandboxExecutionPlanCandidateV2Schema.parse({
           ...candidate,
           identity: {
@@ -802,6 +1398,9 @@ export async function createProductionSandboxServices(options: {
           mode: descriptor.mode,
           operationContract: descriptor.contract,
           backendRef: descriptor.backendRef,
+          ...(descriptor.backendRef === "srt"
+            ? { preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
+            : {}),
           handleRef: handle.ref,
           inputRef: input.inputRef,
           operation: input.operation,
@@ -821,6 +1420,7 @@ export async function createProductionSandboxServices(options: {
           },
         });
         const resolved = await resolve(plan);
+        if (!resolved.workspaceClaims.length) throw new Error("SANDBOX_CHILD_SCOPE_UNSUPPORTED");
         if (resolved.allowedDomains.some((domain) => !inherited.allowedDomains.includes(domain)))
           throw new Error("SANDBOX_CHILD_SCOPE_EXCEEDED");
         const reservation = sandboxExecutionReservationSchema.parse({
@@ -829,11 +1429,11 @@ export async function createProductionSandboxServices(options: {
           environmentId: plan.environmentId,
           resourceRef: plan.mode === "foreground" ? null : ids.next("sandbox-resource"),
           mode: plan.mode,
-          workspaceConflictRefs: [resolved.workspaceClaim.ref],
+          workspaceConflictRefs: resolved.workspaceClaims.map((claim) => claim.ref),
           sequence: 1,
           createdAt: plan.requestedAt,
         });
-        return { plan, reservation, workspaces: [resolved.workspaceClaim] };
+        return { plan, reservation, workspaces: resolved.workspaceClaims };
       }
       if (!request.causationId) throw new Error("SANDBOX_PARENT_UNAVAILABLE");
       const parent = await journal.readByInvocation({
@@ -914,6 +1514,24 @@ export async function createProductionSandboxServices(options: {
     },
   };
   const control = createProductionSandboxControl({
+    ...(options.diagnosticOutput ? { diagnosticOutput: options.diagnosticOutput } : {}),
+    machineBootId: () => readMachineBootId(),
+    fixedFileCompleted: async (record) => {
+      const result = record.facts.result;
+      if (
+        record.facts.effect.kind !== "verified" ||
+        !result ||
+        (result.kind !== "result" &&
+          !(result.kind === "error" && result.reasonCode === "FILE_VERSION_CONFLICT"))
+      )
+        return false;
+      const verified = await verifyOutput({
+        plan: record.plan,
+        facts: record.facts,
+        now: clock.now(),
+      });
+      return verified.effectEvidence.length === 1 && verified.fixedFileClosed;
+    },
     now: () => clock.now(),
     admit: resolve,
     host: async (plan) => {
@@ -962,12 +1580,10 @@ export async function createProductionSandboxServices(options: {
     facts,
     now,
   }: Parameters<SandboxExecutionEvidencePort["verify"]>[0]) => {
+    let fixedFileClosed = false;
     const effectEvidence: { ref: string; digest: string }[] = [];
     const outputs: { ref: string; digest: string; byteLength: number }[] = [];
     if (facts.result && facts.result.kind !== "unknown") {
-      // A retained result is already bound by the journal to its immutable
-      // invocation artifact. Reconciliation under a new boot may authenticate
-      // these same bytes without adopting the old Worker's execution authority.
       const previous = await repository
         .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
         .read(plan.identity);
@@ -976,15 +1592,39 @@ export async function createProductionSandboxServices(options: {
         previous.plan.semanticFingerprint === plan.semanticFingerprint &&
         JSON.stringify(previous.facts.result) === JSON.stringify(facts.result);
       if (!retained) {
-        const artifact = await repository
-          .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
-          .lookupOutput({
-            handleRef: plan.handleRef,
-            invocationId: plan.identity.invocationId,
-            authority: options.authority(),
-            now,
-          });
-        if (!artifact || artifact.payloadRef !== facts.result.output.ref)
+        const artifact = isSandboxToolResultLost(facts.result)
+          ? undefined
+          : await repository
+              .capabilityInvocationResultPort(configuration.ownerId, configuration.agentId)
+              .lookupOutput({
+                handleRef: plan.handleRef,
+                invocationId: plan.identity.invocationId,
+                authority: options.authority(),
+                now,
+              });
+        const recovered =
+          (fixedFileContract(plan.operationContract) ||
+            (plan.operationContract.ref === PI_DIRECTORY_MOVE_CONTRACT.ref &&
+              plan.operationContract.version === PI_DIRECTORY_MOVE_CONTRACT.version)) &&
+          plan.operationContract.kind === "verified_effect"
+            ? await artifacts().lookup({
+                runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+                purpose: "trace",
+                operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
+              })
+            : undefined;
+        const lost = isSandboxToolResultLost(facts.result)
+          ? await artifacts().lookup({
+              runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+              purpose: "trace",
+              operationKey: sandboxLostResultOperationKey(plan.identity.invocationId),
+            })
+          : undefined;
+        if (
+          lost?.payloadRef !== facts.result.output.ref &&
+          (!artifact || artifact.payloadRef !== facts.result.output.ref) &&
+          recovered?.payloadRef !== facts.result.output.ref
+        )
           throw new Error("SANDBOX_OUTPUT_BINDING_CHANGED");
       }
       const payload = await payloads.get(facts.result.output.ref);
@@ -1002,24 +1642,80 @@ export async function createProductionSandboxServices(options: {
       )
         throw new Error("SANDBOX_OUTPUT_CHANGED");
       if (facts.effect.kind === "verified") {
+        const expectedOutcome =
+          facts.result.kind === "result"
+            ? "published"
+            : facts.result.kind === "error" && facts.result.reasonCode === "FILE_VERSION_CONFLICT"
+              ? "conflict"
+              : facts.result.kind === "error" && facts.result.reasonCode === FILE_WRITE_NOT_STARTED
+                ? "not_written"
+                : null;
         if (
-          facts.result.kind !== "result" ||
+          expectedOutcome === null ||
           facts.effect.evidence.ref !== facts.result.output.ref ||
           facts.effect.evidence.digest !== facts.result.output.digest
         )
           throw new Error("PI_WRITE_EVIDENCE_INVALID");
-        verifyPiWriteEvidence({
+        const verifiedOutcome = verifyPiWriteEvidence({
           bytes,
           parameters: await readJson(plan.inputRef),
           plan,
           scope: sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef)),
         });
+        if (verifiedOutcome !== expectedOutcome) throw new Error("PI_WRITE_EVIDENCE_INVALID");
+        if (plan.operation === "save_copy") {
+          const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+          const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+          const root = binding.roots.find(
+            (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+          );
+          if (!root) throw new Error("COPY_SAVE_ROOT_UNAVAILABLE");
+          const saved = await importProductionCopySave({
+            scope,
+            workspace: root.canonicalPath,
+            privateDirectory: path.join(binding.privateRoot, plan.identity.jobId),
+            repository,
+            authority: options.authority().lease,
+            now,
+          });
+          const proof = JSON.parse(Buffer.from(bytes).toString()).verifiedCopySave;
+          if (
+            !saved ||
+            (verifiedOutcome === "conflict"
+              ? !saved.conflict
+              : saved.operation.status !== "verified") ||
+            saved.operation.revision !== proof.revision
+          )
+            throw new Error("COPY_SAVE_CHECKPOINT_UNAVAILABLE");
+        }
+        fixedFileClosed =
+          JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)).fileCommitClosed ===
+          true;
         effectEvidence.push({ ...facts.effect.evidence });
       }
       outputs.push({ ...facts.result.output });
     }
-    return { outputs, effectEvidence };
+    return { outputs, effectEvidence, fixedFileClosed };
   };
+  const taskEnvironmentFor = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
+    const container = facts.environment.kind === "container";
+    if (container !== (sandboxBackendKind(plan.backendRef) === "task_environment"))
+      throw new Error("SANDBOX_TASK_ENVIRONMENT_BINDING_CHANGED");
+    if (!container) return undefined;
+    const selected =
+      plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? srtEnvironments : environments;
+    if (!selected || plan.backendRef !== selected.backendRef)
+      throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    return selected;
+  };
+  const supervisionEvidence = (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) =>
+    taskEnvironmentFor(plan, facts)?.evidence(plan, facts) ?? control.evidence(plan, facts);
+  const taskEnvironmentExit = (record: SandboxExecutionRecord) =>
+    taskEnvironmentFor(record.plan, record.facts)?.confirmsExit(record);
+  const recoverableBackend = async (record: SandboxExecutionRecord) =>
+    (await taskEnvironmentExit(record)) ?? record.plan.backendRef === SRT_BACKEND_REF;
+  const verifyExited = async (record: SandboxExecutionRecord) =>
+    (await taskEnvironmentExit(record)) ?? control.hasExitedTask(record);
   const evidence: SandboxExecutionEvidencePort = {
     verify: async ({ plan, facts, now }) => {
       const { outputs, effectEvidence } = await verifyOutput({ plan, facts, now });
@@ -1032,17 +1728,27 @@ export async function createProductionSandboxServices(options: {
         checkedAt: now,
         validUntil: new Date(Date.parse(now) + 1000).toISOString(),
         outputs,
-        evidence: [...(await control.evidence(plan, facts)), ...effectEvidence],
+        evidence: [...(await supervisionEvidence(plan, facts)), ...effectEvidence],
       };
     },
   };
-  const refreshVerification = async (record: Parameters<typeof control.refreshEvidence>[0]) => {
+  const refreshObservation = async (
+    record: Parameters<typeof control.refreshEvidence>[0],
+    retainedRelease = false,
+    action: "inspect" | "stop" = "inspect",
+    signal?: AbortSignal,
+  ) => {
     const { outputs, effectEvidence } = await verifyOutput({
       plan: record.plan,
       facts: record.facts,
       now: clock.now(),
     });
-    const observed = await control.refreshEvidence(record);
+    const observed =
+      retainedRelease && record.releaseReceipt
+        ? { resource: record.facts.resource, evidence: [] }
+        : ((await taskEnvironmentFor(record.plan, record.facts)?.observe(record)) ??
+          (await control.refreshEvidence(record, action, signal)));
+    if ("kind" in observed) return observed;
     const facts = { ...record.facts, resource: observed.resource };
     const now = clock.now();
     return {
@@ -1057,12 +1763,230 @@ export async function createProductionSandboxServices(options: {
       evidence: [...observed.evidence, ...effectEvidence],
     };
   };
-  const completeToolResult = createProductionSandboxToolResult({
-    preparations,
+  const refreshVerification = async (...args: Parameters<typeof refreshObservation>) => {
+    const observed = await refreshObservation(...args);
+    if ("kind" in observed) throw new Error("SANDBOX_CLEANUP_PENDING");
+    return observed;
+  };
+  const recoverFileResult = createProductionSandboxFileRecovery({
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     authority: options.authority,
     now: () => clock.now(),
-    verifyFresh: refreshVerification,
+    verifyFresh: (record) => refreshVerification(record, true),
+    recoverOutput: async ({ plan }) => {
+      const key = {
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace" as const,
+        operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
+      };
+      const retained = await artifacts().lookup(key);
+      if (retained) {
+        const value = await readJson(retained.payloadRef);
+        const bytes = Buffer.from(JSON.stringify(value));
+        return {
+          ref: retained.payloadRef,
+          digest: bytesHash(bytes),
+          byteLength: bytes.length,
+          outcome: (value as { fileConflict?: unknown }).fileConflict
+            ? ("conflict" as const)
+            : ("published" as const),
+        };
+      }
+      const entry = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+      await verifySandboxHost({ ...entry, hostId, plan });
+      const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+      const root = entry.binding.roots.find(
+        (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+      );
+      if (!root || hash(scope) !== plan.binding.scopeDigest)
+        throw new Error("SANDBOX_RECOVERY_SCOPE_CHANGED");
+      const parameters = await readJson(plan.inputRef);
+      const grant: HostDirectoryGrant = {
+        id: scope.directoryGrant.ref,
+        revision: scope.directoryGrant.revision,
+        hostId: scope.hostId,
+        canonicalRootId: scope.directoryGrant.canonicalRootId,
+        displayPath: root.canonicalPath,
+        operations: scope.directoryGrant.operations,
+        authorizationRef: scope.directoryGrant.authorizationRef,
+        expiresAt: scope.expiresAt,
+        revokedAt: null,
+        dataClassification: "private",
+        disclosure: "none",
+        pathPolicy: "same_filesystem_no_links",
+        mountPolicy: "fixed_device",
+      };
+      const moving = plan.operation === "move_directory";
+      const saving = plan.operation === "save_copy";
+      const privateDirectory = path.join(entry.binding.privateRoot, plan.identity.jobId);
+      const savedCopy = saving
+        ? await importProductionCopySave({
+            scope,
+            workspace: root.canonicalPath,
+            privateDirectory,
+            repository,
+            authority: options.authority().lease,
+            now: clock.now(),
+            recover: true,
+          })
+        : undefined;
+      const publication =
+        moving || saving
+          ? undefined
+          : createPiFilePublicationJournal({
+              privateDirectory,
+              workspace: root.canonicalPath,
+              scope,
+              parametersJson: JSON.stringify(parameters),
+            });
+      const fileConflict =
+        saving && savedCopy?.conflict
+          ? {
+              operationId: savedCopy.operation.id,
+              canonicalHash: savedCopy.operation.canonicalHash,
+            }
+          : await publication?.recoverConflict();
+      const proof = fileConflict
+        ? undefined
+        : saving
+          ? savedCopy?.operation.status === "verified"
+            ? {
+                operationId: savedCopy.operation.id,
+                canonicalHash: savedCopy.operation.canonicalHash,
+                status: "verified",
+                revision: savedCopy.operation.revision,
+              }
+            : undefined
+          : moving
+            ? await createDirectoryMoveJournal({
+                privateDirectory,
+                workspace: root.canonicalPath,
+                scope,
+              }).recover()
+            : await publication?.recover(grant);
+      if (!proof && !fileConflict) return undefined;
+      const invocationPrefix = "runtime-tool:";
+      if (!plan.identity.invocationId.startsWith(invocationPrefix))
+        throw new Error("SANDBOX_RECOVERY_REQUEST_UNAVAILABLE");
+      const original = await artifacts().lookup({
+        runId: key.runId,
+        purpose: "trace",
+        operationKey: `runtime-tool-intent:${plan.identity.invocationId.slice(invocationPrefix.length)}`,
+      });
+      if (!original) throw new Error("SANDBOX_RECOVERY_REQUEST_UNAVAILABLE");
+      const originalIntent = (await readJson(original.payloadRef)) as { request?: unknown };
+      const request = executionV2MessageSchema.parse(originalIntent.request);
+      if (
+        request.type !== "work.execute" ||
+        request.messageId !== plan.identity.invocationId ||
+        request.scope.runId !== plan.identity.runId ||
+        request.payload.capabilityHandleRef !== plan.handleRef ||
+        request.payload.inputRef !== plan.inputRef
+      )
+        throw new Error("SANDBOX_RECOVERY_REQUEST_CHANGED");
+      const value = {
+        schemaVersion: "pi-result.v1",
+        tool: plan.operation,
+        isError: Boolean(fileConflict),
+        content: [
+          {
+            type: "text",
+            text: fileConflict
+              ? "已核验原操作在发布前因版本冲突停止；候选保留，未重新执行。"
+              : moving
+                ? "已核验本次目录移动；结果来自原操作记录，未再次执行移动。"
+                : "已核验本次文件保存；结果来自原操作的持久发布记录，未再次执行写入。",
+          },
+        ],
+        details: { recoveredPublication: true },
+        fullOutput: null,
+        commandExitCode: null,
+        ...(fileConflict
+          ? {
+              fileConflict,
+              ...(saving && savedCopy
+                ? {
+                    verifiedCopySave: {
+                      operationId: savedCopy.operation.id,
+                      canonicalHash: savedCopy.operation.canonicalHash,
+                      status: "not_started",
+                      revision: savedCopy.operation.revision,
+                    },
+                  }
+                : {}),
+            }
+          : saving
+            ? { verifiedCopySave: proof }
+            : moving
+              ? { verifiedMove: proof }
+              : { verifiedWrite: proof }),
+        source: {
+          workspace: root.canonicalPath,
+          toolCallId: scope.toolCallId,
+          directoryGrantRef: scope.directoryGrant.ref,
+          directoryGrantRevision: scope.directoryGrant.revision,
+          parameters,
+        },
+      };
+      const plaintext = Buffer.from(JSON.stringify(value));
+      if (
+        plaintext.length > plan.resourceCeiling.maxOutputBytes ||
+        scanMachineSecrets(plaintext.toString()).length
+      )
+        throw new Error("SANDBOX_RECOVERY_OUTPUT_REJECTED");
+      verifyPiWriteEvidence({
+        bytes: plaintext,
+        parameters,
+        plan,
+        scope,
+        workspace: root.canonicalPath,
+      });
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("sandbox-file-recovery"),
+        dataClassification: request.dataClassification,
+        contentType: "application/json",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({ ...key, payload });
+      if (hash(await readJson(saved.ref)) !== bytesHash(plaintext))
+        throw new Error("SANDBOX_RECOVERY_OUTPUT_CHANGED");
+      return {
+        ref: saved.ref,
+        digest: bytesHash(plaintext),
+        byteLength: plaintext.length,
+        outcome: fileConflict ? ("conflict" as const) : ("published" as const),
+      };
+    },
+  });
+  const recoverLostResult = createProductionSandboxLostResultRecovery({
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    recoverableBackend,
+    verifyExited,
+    verifyFresh: (record) => refreshVerification(record, true),
+    saveOutput: async ({ plan }) => {
+      const plaintext = Buffer.from(SANDBOX_TOOL_RESULT_LOST);
+      const payload = await protector.protect({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        ref: ids.next("sandbox-result-lost"),
+        dataClassification: "public",
+        contentType: "text/plain",
+        plaintext,
+        createdAt: clock.now(),
+      });
+      const saved = await artifacts().commit({
+        runId: plan.identity.runId as RuntimeToolInvocation["runId"],
+        purpose: "trace",
+        operationKey: sandboxLostResultOperationKey(plan.identity.invocationId),
+        payload,
+      });
+      return { ref: saved.ref, digest: bytesHash(plaintext), byteLength: plaintext.length };
+    },
   });
   const outputOptions = {
     ownerId: configuration.ownerId,
@@ -1074,16 +1998,233 @@ export async function createProductionSandboxServices(options: {
     ids,
   };
   const stream = createProductionSandboxStream(outputOptions);
+  const recoverStreamResult = createProductionSandboxStreamResultRecovery({
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    stream,
+    payloads,
+    protector,
+    nextRef: () => ids.next("sandbox-stream-recovery"),
+    recoverableBackend,
+    verifyExited,
+    requiresControlArtifact: (record) =>
+      sandboxBackendKind(record.plan.backendRef) === "one_shot_srt",
+    facts: async (record, bytes, termination, output) => {
+      const plan = record.plan;
+      const contract = plan.operationContract;
+      let effect = record.facts.effect;
+      let fileFailure: "conflict" | "not_written" | null = null;
+      if (contract.kind === "fixed_read") effect = { kind: "not_applicable" };
+      else if (contract.kind === "command" || contract.kind === "network_only")
+        effect = { kind: "not_asserted" };
+      else if (contract.kind === "verified_effect") {
+        const parameters = await readJson(plan.inputRef);
+        const scope = sandboxScopeSchema.parse(await readJson(plan.binding.scopeRef));
+        fileFailure =
+          termination.exitCode === 1
+            ? verifiedPiWriteFailure({ bytes, parameters, plan, scope })
+            : null;
+        if (termination.exitCode === 0 || fileFailure !== null) {
+          const outcome = verifyPiWriteEvidence({ bytes, parameters, plan, scope });
+          if (termination.exitCode === 0 && outcome !== "published")
+            throw new Error("PI_WRITE_EVIDENCE_INVALID");
+          if (plan.operation === "save_copy") {
+            const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+            const root = binding.roots.find(
+              (item) => item.canonicalRootId === scope.directoryGrant.canonicalRootId,
+            );
+            if (!root) throw new Error("COPY_SAVE_ROOT_UNAVAILABLE");
+            const saved = await importProductionCopySave({
+              scope,
+              workspace: root.canonicalPath,
+              privateDirectory: path.join(binding.privateRoot, plan.identity.jobId),
+              repository,
+              authority: options.authority().lease,
+              now: clock.now(),
+            });
+            const proof = JSON.parse(Buffer.from(bytes).toString()).verifiedCopySave;
+            if (
+              !saved ||
+              (outcome === "conflict" ? !saved.conflict : saved.operation.status !== "verified") ||
+              saved.operation.revision !== proof.revision
+            )
+              throw new Error("COPY_SAVE_CHECKPOINT_UNAVAILABLE");
+          }
+          effect = {
+            kind: "verified",
+            verifierRef: contract.verifierRef,
+            verifierVersion: contract.verifierVersion,
+            targetRef: contract.targetRef,
+            evidence: { ref: output.ref, digest: output.digest },
+            occurredAt: clock.now(),
+          };
+        }
+      }
+      const fields = {
+        schemaVersion: "sandbox-execution.v2",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: contract.ref, version: contract.version },
+        occurredAt: clock.now(),
+        output,
+      };
+      return sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect,
+        result:
+          contract.kind === "command" ||
+          contract.kind === "network_only" ||
+          termination.exitCode === 0
+            ? {
+                ...fields,
+                kind: "result",
+                completion:
+                  contract.kind === "command" || contract.kind === "network_only"
+                    ? { type: "exit", exitCode: termination.exitCode }
+                    : { type: "value" },
+              }
+            : {
+                ...fields,
+                kind: "error",
+                reasonCode: sandboxFileOperationFailureReason(plan, fileFailure),
+                termination: { type: "failure" },
+              },
+      });
+    },
+  });
+  const recoverMissingToolResult = async (record: SandboxExecutionRecord) =>
+    recoverLostResult(await recoverFileResult(await recoverStreamResult(record)));
+  const releaseUnboundInvocation = async (input: { runId: string; invocationId: string }) => {
+    const admission = await preparations.readAdmissionByInvocation(input);
+    if (
+      admission?.phase !== "reserved" ||
+      admission.plan.mode !== "foreground" ||
+      admission.plan.backendRef === SRT_BACKEND_REF ||
+      admission.workspaceBlocked ||
+      admission.releaseReceipt
+    )
+      return false;
+    const taskEnvironment =
+      admission.plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF
+        ? srtEnvironments
+        : environments;
+    if (!taskEnvironment || admission.plan.backendRef !== taskEnvironment.backendRef) return false;
+    try {
+      const interrupted = (
+        await preparations.interruptReservation({
+          identity: admission.plan.identity,
+          authority: options.authority(),
+          now: clock.now(),
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        })
+      ).admission;
+      if (interrupted.phase !== "reserved" || !interrupted.stopRequestedAt) return false;
+      const verification =
+        (await taskEnvironment.releaseReservation(interrupted.plan, interrupted.stopRequestedAt)) ??
+        taskEnvironment.fenceReservation(interrupted.plan, interrupted.stopRequestedAt);
+      await preparations.releaseReservation({
+        identity: interrupted.plan.identity,
+        authority: options.authority(),
+        now: clock.now(),
+        verification,
+      });
+    } catch {
+      return false;
+    }
+    const latest = await preparations.readAdmissionByInvocation(input);
+    return (
+      latest?.phase === "reserved" &&
+      latest.releaseReceipt !== undefined &&
+      latest.workspaceBlocked === false
+    );
+  };
+  const completeToolResult = createProductionSandboxToolResult({
+    preparations,
+    journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
+    authority: options.authority,
+    now: () => clock.now(),
+    verifyFresh: (record) => refreshVerification(record, true),
+    recoverResult: recoverMissingToolResult,
+    releaseUnbound: releaseUnboundInvocation,
+  });
   const readForegroundOutput = createProductionSandboxOutput(outputOptions);
+  const settleUnknownTaskEnvironmentResult = async (record: SandboxExecutionRecord) => {
+    const { plan } = record;
+    if (
+      sandboxBackendKind(plan.backendRef) !== "task_environment" ||
+      plan.mode !== "foreground" ||
+      !record.startedAt ||
+      record.facts.result !== null ||
+      record.facts.resource.supervision !== "released" ||
+      !record.releaseReceipt
+    )
+      return;
+    const now = clock.now();
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      effect:
+        plan.operationContract.kind === "fixed_read"
+          ? { kind: "not_applicable" }
+          : { kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" },
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity: plan.identity,
+        environmentId: plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: plan.operationContract.ref, version: plan.operationContract.version },
+        occurredAt: now,
+        kind: "unknown",
+        reasonCode: "SANDBOX_EXIT_UNKNOWN",
+      },
+    });
+    const context: SandboxExecutionProjectionContext = {
+      now,
+      environment: record.facts.environment,
+      operationContract: plan.operationContract,
+      verification: null,
+      releaseReceipt: record.releaseReceipt,
+      currentResourceSequence: record.facts.resource.sequence,
+      runState: "terminated",
+      currentAuthority: false,
+      currentFence: false,
+      userDisclosureAllowed: false,
+      modelDisclosureAllowed: false,
+      conflictingWorkspaceRisk: false,
+      pendingApprovalOrReconciliation: false,
+      resultAlreadyDelivered: false,
+    };
+    try {
+      await repository
+        .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
+        .recordOperation({
+          identity: plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts,
+          authority: options.authority(),
+          now,
+          context,
+        });
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "PORT_CONFLICT")
+        throw error;
+    }
+  };
   const reconciliation = new SandboxExecutionReconciliationService({
     hostId,
     journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),
     evidence,
-    backend: control.backend,
-    // Reconciliation verifies installed runtime bytes on the host as well as process facts.
-    // Use the existing bounded maximum so mechanical-disk verification can finish.
+    backend: {
+      observe: async (record, action, signal) => {
+        const observed = await refreshObservation(record, false, action, signal);
+        return "kind" in observed ? observed : { kind: "verified", verification: observed };
+      },
+    },
     timeoutMs: 30000,
     now: () => clock.now(),
+    onReleased: settleUnknownTaskEnvironmentResult,
   });
   const stopRecord = async (record: Parameters<typeof stream.output>[0]) => {
     let current = record;
@@ -1112,6 +2253,58 @@ export async function createProductionSandboxServices(options: {
     }
     throw new Error("SANDBOX_STOP_OBSERVATION_CONFLICT");
   };
+  const resourceRecovery = new SandboxResourceRecoveryService({
+    hostId,
+    preparations,
+    reconciliation,
+    isGlobalFailure: isGlobalServiceFailure,
+    reservations: {
+      stop: async (plan, signal) => {
+        const admission = await preparations.readAdmission(plan.identity);
+        if (admission?.phase !== "reserved" || !admission.stopRequestedAt)
+          throw new Error("SANDBOX_RESERVATION_STOP_FENCE_INVALID");
+        if (plan.backendRef === SRT_BACKEND_REF) {
+          await control.stopPreparation(plan, signal, admission.stopRequestedAt);
+          return;
+        }
+        const taskEnvironment =
+          plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? srtEnvironments : environments;
+        if (!taskEnvironment || plan.backendRef !== taskEnvironment.backendRef)
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+        const current = await repository
+          .runLifecycle(configuration.ownerId, configuration.agentId, options.authority().product)
+          .readRun(plan.identity.runId as RuntimeToolInvocation["runId"]);
+        if (!current) throw new Error("SANDBOX_RECOVERY_RUN_UNAVAILABLE");
+        if (["completed", "failed", "cancelled"].includes(current.run.status)) {
+          if (signal.aborted) throw new Error("SANDBOX_RECONCILIATION_INTERRUPTED");
+          const released = await taskEnvironment.stopRun(
+            plan.identity.runId,
+            current.run.status === "cancelled" ? "run_cancelled" : "run_finished",
+          );
+          if (!released) throw new Error("EXECUTION_STOP_UNCONFIRMED");
+        }
+      },
+      verify: async (plan, stopRequestedAt, signal) => {
+        if (plan.backendRef === SRT_BACKEND_REF)
+          return control.verifyReservationRelease(plan, stopRequestedAt, signal);
+        const taskEnvironment =
+          plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? srtEnvironments : environments;
+        if (!taskEnvironment || plan.backendRef !== taskEnvironment.backendRef)
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+        const released = await taskEnvironment.releaseReservation(plan, stopRequestedAt);
+        if (released) return released;
+        const current = await repository
+          .runLifecycle(configuration.ownerId, configuration.agentId, options.authority().product)
+          .readRun(plan.identity.runId as RuntimeToolInvocation["runId"]);
+        if (!current) throw new Error("SANDBOX_RECOVERY_RUN_UNAVAILABLE");
+        if (["completed", "failed", "cancelled"].includes(current.run.status)) return undefined;
+        return taskEnvironment.fenceReservation(plan, stopRequestedAt);
+      },
+    },
+    authority: options.authority,
+    now: () => clock.now(),
+    timeoutMs: 30000,
+  });
   const resolveTask = async (call: RuntimeToolInvocation, resourceRef: string) => {
     const admission = await preparations.readAdmissionByResource({
       runId: call.runId,
@@ -1207,33 +2400,286 @@ export async function createProductionSandboxServices(options: {
     },
   });
   return {
+    executionMode: environments ? ("strict" as const) : ("srt" as const),
+    strictModeRefusal: async (input: {
+      readonly capabilityRef: string;
+      readonly capabilityVersion: string;
+      readonly operation: string;
+    }) =>
+      strictRefusal(
+        (await entryFor(input.capabilityRef, input.capabilityVersion)).binding,
+        input.operation,
+      ),
+    rebindQueuedRun: async (
+      request: Pick<
+        RuntimeRequest,
+        | "runId"
+        | "threadId"
+        | "executionLease"
+        | "modelRef"
+        | "capabilityHandleRefs"
+        | "executionDeadlineAt"
+        | "continuationRef"
+      >,
+    ): Promise<void> => {
+      const inventory = await preparations.readRunInventory({ runId: request.runId });
+      for (const queued of inventory.queue) {
+        if (queued.status !== "queued") continue;
+        const authority = options.authority();
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...queued.plan,
+          executionLease: request.executionLease,
+        });
+        let privateChild = false;
+        if (queued.recovery && queued.recovery.continuationRef === request.continuationRef) {
+          const scope = sandboxExecutionScopeSchema.parse(await readJson(plan.binding.scopeRef));
+          const savedIntent = await artifacts().lookup({
+            runId: request.runId,
+            purpose: "trace",
+            operationKey: `runtime-tool-intent:${hash([request.runId, scope.toolCallId])}`,
+          });
+          const original = savedIntent
+            ? ((await readJson(savedIntent.payloadRef)) as {
+                recovery?: { continuationRef: string; toolCallId: string };
+              })
+            : undefined;
+          privateChild =
+            scope.parentToolCallId === queued.recovery.toolCallId &&
+            original?.recovery?.continuationRef === queued.recovery.continuationRef &&
+            original.recovery.toolCallId === queued.recovery.toolCallId;
+        }
+        if (
+          plan.identity.threadId !== request.threadId ||
+          plan.modelRef !== request.modelRef ||
+          (!request.capabilityHandleRefs.includes(plan.handleRef) && !privateChild) ||
+          (request.executionDeadlineAt && plan.effectiveDeadlineAt > request.executionDeadlineAt)
+        )
+          throw new Error("SANDBOX_QUEUE_RUN_CONTEXT_CHANGED");
+        await resolve(plan);
+        await preparations.rebindQueued({
+          ...(queued.recovery ? { recovery: queued.recovery } : {}),
+          plan,
+          reservation: queued.reservation,
+          workspaces: queued.workspaces,
+          invocation: {
+            ...queued.invocation,
+            authority,
+            consumedAt: clock.now(),
+            requestScope: {
+              ...queued.invocation.requestScope,
+              ...authority.product,
+            },
+          },
+          expectedBindingRevision: queued.bindingRevision,
+        });
+      }
+    },
+    prewarmEnvironment: async (
+      request: Pick<
+        RuntimeRequest,
+        "runId" | "threadId" | "executionLease" | "modelRef" | "executionDeadlineAt"
+      >,
+      route: Pick<
+        NonNullable<NonNullable<ProductConfiguration["runPolicy"]>["coding"]>,
+        "hostId" | "grantId" | "capabilityRef" | "capabilityVersion" | "enabledTools"
+      >,
+    ): Promise<boolean> => {
+      const pending = prewarming.get(request.runId);
+      if (pending) return pending;
+      const started = (async (): Promise<boolean> => {
+        if (!srtEnvironments || !request.executionDeadlineAt || route.hostId !== hostId)
+          return false;
+        const { binding, qualification } = await entryFor(
+          route.capabilityRef,
+          route.capabilityVersion,
+        );
+        const descriptor = binding.operationBindings?.find(
+          (item) =>
+            route.enabledTools.some((tool) => tool === item.operation) &&
+            item.backendRef === SRT_BACKEND_REF &&
+            item.scopeSource === "grant_targets" &&
+            item.network === "disabled" &&
+            srtTaskEnvironmentSession({
+              mode: item.mode,
+              operation: item.operation,
+              operationContract: item.contract,
+            }) !== null,
+        );
+        if (!descriptor) return false;
+        const grant = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(route.grantId),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined;
+        if (
+          !grant ||
+          grant.id !== route.grantId ||
+          grant.hostId !== hostId ||
+          grant.revokedAt !== null ||
+          grant.expiresAt <= clock.now() ||
+          descriptor.directoryOperations.some(
+            (operation) => !grant.operations.some((allowed) => allowed === operation),
+          )
+        )
+          return false;
+        const claim = await resolveSandboxWorkspaceClaim({
+          binding,
+          scope: sandboxScopeSchema.parse({
+            schemaVersion: "sandbox-scope.v1",
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            threadId: request.threadId,
+            runId: request.runId,
+            toolCallId: `environment-prewarm:${hash(request.runId)}`,
+            parentToolCallId: null,
+            parentRequestId: request.runId,
+            hostId,
+            handleRef: `environment-prewarm:${hash(request.runId)}`,
+            inputRef: `environment-prewarm:${hash(request.runId)}`,
+            operation: descriptor.operation,
+            authorizationRef: grant.authorizationRef,
+            modelRef: request.modelRef,
+            profileRef: binding.profileRef,
+            directoryGrant: {
+              ref: grant.id,
+              revision: grant.revision,
+              canonicalRootId: grant.canonicalRootId,
+              authorizationRef: grant.authorizationRef,
+              operations: descriptor.directoryOperations,
+            },
+            networkAuthorizationRef: null,
+            expiresAt: grant.expiresAt,
+          }),
+        });
+        return srtEnvironments.prewarmSrt({
+          runId: request.runId,
+          hostId,
+          grant,
+          claims: [claim],
+          binding,
+          allowedDomains: [],
+          plan: {
+            executionLease: request.executionLease,
+            identity: {
+              threadId: request.threadId,
+              jobId: jobId(["environment-prewarm", request.runId]),
+            },
+            modelRef: request.modelRef,
+            binding: { qualificationRef: qualification.qualificationRef },
+          },
+          deadlineAt: new Date(
+            Math.min(Date.parse(request.executionDeadlineAt), Date.parse(grant.expiresAt)),
+          ).toISOString(),
+          capabilityRef: route.capabilityRef,
+          capabilityVersion: route.capabilityVersion,
+        });
+      })();
+      prewarming.set(request.runId, started);
+      try {
+        return await started;
+      } finally {
+        if (prewarming.get(request.runId) === started) prewarming.delete(request.runId);
+      }
+    },
     maximumResourceCeiling: async (capabilityRef: string, capabilityVersion: string) => {
       if (!sandboxEntries.some((entry) => entry.manifest.ref === capabilityRef)) return undefined;
       return (await entryFor(capabilityRef, capabilityVersion)).binding.maximumResourceCeiling;
     },
     runtime,
     completeToolResult,
+    recoverMissingToolResult,
     child,
     managedTasks,
     resources: {
-      stopRun: async (runId: RuntimeToolInvocation["runId"]) => {
+      recoverPending: async (signal: AbortSignal, maximum: number) => {
+        await resourceRecovery.pump(signal, maximum);
+        if (signal.aborted) return;
+        const limit = Math.min(maximum, 100);
+        await Promise.all(
+          [environments, srtEnvironments].map((taskEnvironment) =>
+            taskEnvironment?.stopLeftovers(limit),
+          ),
+        );
+      },
+      stopRun: async (
+        runId: RuntimeToolInvocation["runId"],
+        reason: "run_finished" | "run_cancelled",
+      ) => {
         let afterJobId: string | null = null;
-        let released = true;
+        const environmentStops = await Promise.all([
+          environments ? environments.stopRun(runId, reason) : Promise.resolve(true),
+          srtEnvironments ? srtEnvironments.stopRun(runId, reason) : Promise.resolve(true),
+        ]);
+        let released = environmentStops.every(Boolean);
+        const stops: Promise<void>[] = [];
         for (;;) {
           const page = await preparations.listAdmissions({ runId, afterJobId, limit: 100 });
-          for (const admission of page) {
+          for (let admission of page) {
             const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
             if (plan.identity.runId !== runId) continue;
-            if (admission.phase !== "bound") {
-              released = false;
-              continue;
-            }
-            try {
-              const result = { record: await stopRecord(admission.record) };
-              if (result.record.facts.resource.supervision !== "released") released = false;
-            } catch {
-              released = false;
-            }
+            stops.push(
+              (async () => {
+                if (admission.phase === "reserved") {
+                  if (admission.releaseReceipt && admission.workspaceBlocked === false) return;
+                  try {
+                    admission = (
+                      await preparations.interruptReservation({
+                        identity: plan.identity,
+                        authority: options.authority(),
+                        now: clock.now(),
+                        reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+                      })
+                    ).admission;
+                    if (admission.phase === "reserved") {
+                      const taskEnvironment =
+                        plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF
+                          ? srtEnvironments
+                          : plan.backendRef !== SRT_BACKEND_REF
+                            ? environments
+                            : undefined;
+                      if (!taskEnvironment)
+                        await control.stopPreparation(plan, undefined, admission.stopRequestedAt);
+                      if (!admission.stopRequestedAt) throw new Error("SANDBOX_STOP_FENCE_MISSING");
+                      if (plan.backendRef !== SRT_BACKEND_REF && !taskEnvironment)
+                        throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+                      const verification = taskEnvironment
+                        ? await taskEnvironment.releaseReservation(plan, admission.stopRequestedAt)
+                        : await control.verifyReservationRelease(plan, admission.stopRequestedAt);
+                      if (verification)
+                        admission = (
+                          await preparations.releaseReservation({
+                            identity: plan.identity,
+                            authority: options.authority(),
+                            now: clock.now(),
+                            verification,
+                          })
+                        ).admission;
+                    }
+                  } catch {
+                    released = false;
+                    return;
+                  }
+                  if (admission.phase === "reserved") {
+                    if (!admission.releaseReceipt || admission.workspaceBlocked !== false)
+                      released = false;
+                    return;
+                  }
+                }
+                try {
+                  const result = { record: await stopRecord(admission.record) };
+                  if (
+                    result.record.facts.resource.supervision !== "released" ||
+                    !result.record.releaseReceipt ||
+                    result.record.workspaceBlocked
+                  )
+                    released = false;
+                } catch {
+                  released = false;
+                }
+              })(),
+            );
           }
           if (page.length < 100) break;
           const last = page.at(-1);
@@ -1241,6 +2687,7 @@ export async function createProductionSandboxServices(options: {
           afterJobId =
             last.phase === "bound" ? last.record.plan.identity.jobId : last.plan.identity.jobId;
         }
+        await Promise.all(stops);
         return { released };
       },
     },
@@ -1274,9 +2721,25 @@ export async function createProductionSandboxServices(options: {
         record.plan.mode === "foreground"
           ? readForegroundOutput(record, query)
           : stream.output(record, query),
+      recordPreparationDiagnostic: control.recordPreparationDiagnostic,
+      registerPreparationControl: control.registerPreparation,
       registerControl: control.register,
-      observeVerifiedControl: refreshVerification,
-      verifyPreparation: control.verifyPreparation,
+      observeVerifiedControl: (record: Parameters<typeof refreshObservation>[0]) =>
+        refreshObservation(record),
+      verifyPreparation: async (plan: SandboxExecutionPlanV2, facts: SandboxExecutionFacts) => {
+        const taskEnvironment = taskEnvironmentFor(plan, facts);
+        if (!taskEnvironment) return control.verifyPreparation(plan, facts);
+        const admission = await preparations.readAdmission(plan.identity);
+        if (admission?.phase !== "reserved")
+          throw new Error("SANDBOX_TASK_ENVIRONMENT_BINDING_CHANGED");
+        await taskEnvironment.verifyPreparation(plan, facts, admission.workspaces);
+      },
+      resolveEnvironment: async (plan: SandboxExecutionPlanV2) => {
+        if (plan.backendRef === SRT_BACKEND_REF) return null;
+        const selected =
+          plan.backendRef === SRT_TASK_ENVIRONMENT_BACKEND_REF ? srtEnvironments : environments;
+        return (await selected?.binding(plan)) ?? null;
+      },
       reconciliation,
       hostId,
       journal: repository.sandboxExecutionJournal(configuration.ownerId, configuration.agentId),

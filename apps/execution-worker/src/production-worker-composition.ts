@@ -3,14 +3,17 @@ import path from "node:path";
 import type {
   CapabilityRuntimeQualification,
   ClockPort,
+  ExecutionEnvironmentLifecyclePort,
   ExecutionWorkerService,
   IdGeneratorPort,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import { ExecutionWorkerService as ExecutionWorkerServiceImplementation } from "@himawari-agent/application";
-import type {
-  ExecutionAdmissionPeerBinding,
-  ResourceCeiling,
+import {
+  type ExecutionAdmissionPeerBinding,
+  payloadBrokerV1BodyBytes,
+  type ResourceCeiling,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
 } from "@himawari-agent/execution-contracts";
 import {
   assertProductionSecretSource,
@@ -33,6 +36,8 @@ import { ProductionExecutionWorker } from "./production-execution-worker.js";
 import { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import { ProductionSandboxExecutionV2 } from "./production-sandbox-execution-v2.js";
 import { createProductionSandboxWorker } from "./production-sandbox-worker.js";
+import { SrtTaskEnvironmentBackend } from "./production-srt-task-environment-backend.js";
+import { createWorkerTaskEnvironments } from "./production-task-environment-backend.js";
 import { WorkerDelegationStore } from "./worker-delegation-store.js";
 
 export const PRODUCTION_WORKER_COMPOSITION_ERROR_CODES = Object.freeze({
@@ -76,7 +81,6 @@ export interface ProductionWorkerCompositionOptions {
   readonly configuration: ProductConfiguration;
   readonly credential: ExecutionUdsCredential;
   readonly authority: ProductionWorkerAuthorityBinding;
-  /** Must be supplied by the Agent boot coordinator; it is never derived. */
   readonly agentServiceBootId?: string;
   readonly agentServiceInstanceId?: string;
   readonly workerInstanceId?: string;
@@ -422,8 +426,7 @@ export async function createProductionWorkerComposition(
     !Number.isSafeInteger(maximumBodyBytes) ||
     maximumBodyBytes < 1 ||
     !Number.isSafeInteger(maximumPayloadBytes) ||
-    maximumPayloadBytes < 1 ||
-    maximumPayloadBytes > maximumBodyBytes
+    maximumPayloadBytes < 1
   ) {
     throw new ProductionWorkerCompositionError(
       PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.CREDENTIAL_INVALID,
@@ -462,7 +465,7 @@ export async function createProductionWorkerComposition(
     workerBootId,
     authorityEpoch: options.authority.authorityEpoch,
     fencingToken: options.authority.fencingToken,
-    maximumBodyBytes,
+    maximumBodyBytes: payloadBrokerV1BodyBytes(maximumPayloadBytes),
     maximumPayloadBytes,
     requestTimeoutMs,
     nextId,
@@ -485,12 +488,14 @@ export async function createProductionWorkerComposition(
     isolation,
     payloads,
     secretHandles,
+    invocationAuthority: payloads,
     secretSource: providerSecrets,
     clock,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
   const service = new ExecutionWorkerServiceImplementation({
     handles: delegations,
+    invocationAuthority: payloads,
     capability: runtime,
     secrets: secretHandles,
     clock,
@@ -499,7 +504,7 @@ export async function createProductionWorkerComposition(
   });
 
   let stopped = false;
-  let agentServicesReady = false;
+  let agentServicesInitialized = false;
   let connectPromise: Promise<void> | undefined;
   const readiness = (): ProductionWorkerReadiness => {
     if (stopped) {
@@ -509,24 +514,55 @@ export async function createProductionWorkerComposition(
         reasonCodes: Object.freeze([PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN]),
       });
     }
+    const ready = admission.isReady() && payloads.isReady();
+    if (agentServicesInitialized && !ready && !connectPromise)
+      void connectAgentServices().catch(() => undefined);
     return Object.freeze({
       live: true,
-      ready: agentServicesReady,
+      ready,
       reasonCodes: Object.freeze(
-        agentServicesReady
-          ? []
-          : [PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE],
+        ready ? [] : [PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE],
       ),
     });
   };
+  const taskEnvironments = configuration.taskEnvironments
+    ? createWorkerTaskEnvironments({
+        configuration: configuration.taskEnvironments,
+        runtimeDirectory: configuration.runtimeDirectory,
+        bindings: deployment.snapshot.capabilities.flatMap((entry) =>
+          entry.binding.kind === "sandbox" ? [entry.binding.value] : [],
+        ),
+        now: () => new Date(clock.now()),
+      })
+    : undefined;
+  const sandboxDeployed = deployment.snapshot.capabilities.some(
+    (entry) => entry.binding.kind === "sandbox",
+  );
+  const srtEnvironments =
+    sandboxDeployed && platform === "linux"
+      ? new SrtTaskEnvironmentBackend({
+          stateDirectory: path.join(configuration.runtimeDirectory, "srt-environments"),
+          runtimeInstanceId: workerBootId,
+          proofValidityMs: 60_000,
+          now: () => new Date(clock.now()),
+        })
+      : undefined;
+  const environments = new Map<string, ExecutionEnvironmentLifecyclePort>();
+  if (configuration.taskEnvironments && taskEnvironments)
+    environments.set(configuration.taskEnvironments.backendRef, taskEnvironments.environments);
+  if (srtEnvironments) environments.set(SRT_TASK_ENVIRONMENT_BACKEND_REF, srtEnvironments);
   const worker = new ProductionExecutionWorker({
-    ...(deployment.snapshot.capabilities.some((entry) => entry.binding.kind === "sandbox")
+    ...(environments.size > 0 ? { environments } : {}),
+    ...(sandboxDeployed
       ? {
           sandboxV2: new ProductionSandboxExecutionV2({
             configuration,
             peer: peerBinding,
             payloads,
             clock,
+            ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
+            ...(srtEnvironments ? { srtEnvironments } : {}),
+            secrets: providerSecrets,
           }),
           sandbox: createProductionSandboxWorker({
             configuration,
@@ -555,7 +591,7 @@ export async function createProductionWorkerComposition(
       throw new ProductionWorkerCompositionError(
         PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
       );
-    if (agentServicesReady) return;
+    if (admission.isReady() && payloads.isReady()) return;
     if (connectPromise) return connectPromise;
     connectPromise = (async () => {
       try {
@@ -565,11 +601,14 @@ export async function createProductionWorkerComposition(
           throw new ProductionWorkerCompositionError(
             PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
           );
-        agentServicesReady = true;
+        agentServicesInitialized = true;
       } catch (error) {
+        if (stopped)
+          throw new ProductionWorkerCompositionError(
+            PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.SHUTDOWN,
+          );
         admission.disconnect();
         payloads.disconnect();
-        agentServicesReady = false;
         if (error instanceof ProductionWorkerCompositionError) throw error;
         throw new ProductionWorkerCompositionError(
           PRODUCTION_WORKER_COMPOSITION_ERROR_CODES.AGENT_SERVICES_UNAVAILABLE,
@@ -584,10 +623,10 @@ export async function createProductionWorkerComposition(
   const close = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    agentServicesReady = false;
+    agentServicesInitialized = false;
     try {
-      // Keep the broker available while jobs stop and persist their final observations.
       await worker.shutdown();
+      await srtEnvironments?.close();
     } finally {
       admission.disconnect();
       payloads.disconnect();

@@ -138,10 +138,25 @@ date: "2026-09-03"
 - 每个主 project 至少包含一个测试文件和一个实际执行测试。禁止 `passWithNoTests`、`.only`、未登记的 `.skip`、`.todo` 和空 suite。
 - 聚焦/跳过检测按实际测试声明或发现结果判定，不能把负向 fixture 中的字符串和注释误识别为运行中的 `.only`。fixture 豁免必须精确且接受正反测试。
 - 将两类 scale 与两类 live provider 测试从普通 integration 集合明确排除，分配到专用 project。登记具体文件和原因，不使用覆盖整个目录的任意 skip。
-- integration 保持 `fileParallelism: false`。跨 job 通过独立 checkout 并行，不能用全局测试并行化覆盖 SQLite、UDS 或固定端口约束。
+- integration 启用文件并行，并保留文件隔离：每个文件使用独立测试进程与模块状态。`ci/policy.json` 的 `workerLimits` 定义最多 3 个 worker（同时执行测试文件的进程），每个至少对应 1 个可用 CPU 核心和 2048 MiB 物理内存。实际数量取三个上限的最小值并至少为 1，因此 8 核、8 GiB 的机器使用 3，4 核、16 GiB 的机器使用 3，2 核机器使用 2；不使用某台机器的固定数字作为所有环境的并发数。
+- `vitest.workspace.ts` 与正式五项目入口共用 `test-concurrency.mjs` 计算数量。integration 使用 `sequence.groupOrder: 1`，其他主/资格项目使用默认阶段 0；同一次覆盖率或多项目调用先完成阶段 0，再运行 integration 阶段内部的文件并行，避免 Vitest 对同阶段不同 worker 数量的拒绝。政策检查拒绝无资源限制的并行、数量不一致、关闭文件隔离或调度阶段冲突；其余主项目维持正式入口原有的 1 worker。只迁移已接受旧政策中的 integration 调度字段，保留原始政策摘要、测试文件清单、资格排除项、阈值及其他门禁。2026-10-14 起另有一次固定迁移：只把已接受的 `{ maximum: 4, cpusPerWorker: 2, memoryMiBPerWorker: 2048 }` 换成 `{ maximum: 3, cpusPerWorker: 1, memoryMiBPerWorker: 2048 }`，其他任何已接受值都不迁移，由政策检查照常报漂移。
+- 当前 100 个普通 integration 文件的完整并行和构建负载实验均未复现跨文件共享数据库、套接字或固定端口冲突，没有新增独占串行文件。临时数据库、UDS（本机进程间通信套接字）、安装 prefix 和可写测试目录必须按测试创建；公共源码和构建归档只读。正式入口需要运行时的测试从校验过的本次归档安装并运行；直接开发运行仍可能读取 `dist/node-runtime`，并发构建必须使用 CI 的独立输出目录，不能同时覆盖这些输入。新增真实共享资源时先消除共享写入；确实需要独占的文件必须先形成具体证据、显式分组和禁止误入并行组的政策测试，不能静默排除或跳过。
+- 不改变 integration 的既有 30 秒测试预算，也不放宽各例产品期限、断言和超时。后续变更并行规则时保留完整测试报告、逐条断言状态、资源采样与失败记录；历史试验和当前托管验证的边界见[实施记录](../plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20260929)，最近一次规则调整见[2026-10-14 集成测试并行规则调整](../plans/2026-09-03-github-ci-quality-gates-plan.md#integration-parallel-20261014)。
 - CI 默认禁用测试重试。基础设施失败可以重跑整个检查并保留 attempt，禁止只选成功重试隐藏不稳定测试。
 
 本地 `npm test` 与 CI 通过同一个主测试执行入口消费政策。该入口显式准备需要的产物，再执行测试。测试文件自身不构建，不更改全局目录或工具版本。
+
+需要已构建运行时的 integration 文件共用 `test/fixtures/node-runtime.ts` 的安装器适配：同时提供 `HIMAWARI_TEST_ARTIFACT` 和 `HIMAWARI_TEST_CONTEXT` 时，integration 项目自 2026-10-15（R2-T8）起由 Vitest `globalSetup`（`test/integration/global-setup.ts`）在整轮测试开始时调用 `scripts/install-node-runtime.mjs` 安装本次归档**一次**，把整棵树置为只读（目录 0555、文件 0444、可执行文件 0555）后经 `provide`/`inject` 交给各文件；每个文件使用前核对 path/mode/bytes/mtime 结构摘要，不符即 `SHARED_RUNTIME_MISMATCH`，run 结束时核对全部内容摘要并在报 `SHARED_RUNTIME_MODIFIED` 后恢复写权限再删除，任何情况都不退回自装。`node-runtime-installation-permissions.test.ts` 与 `installable-node-services.test.ts` 仍各自安装，因为安装行为本身是它们被测的内容。两者都没有时使用开发构建，只设置一个时报错。安装子进程和准备 hook 沿用 prepared 的 180000ms、240000ms，安装目录在 `afterAll` 清理。三个 `[R2-D16]` 读回断言直接读取所选 Job Host、计时目标模块及目录移动程序，确认实际路径属于产物安装目录或开发构建，只在 `HIMAWARI_TEST_DIAGNOSTIC_OUTPUT` 非空时额外保存文件长度与 SHA-256；单变量配置由拒绝断言覆盖。真实子进程和目录移动行为继续由原有测试验证。这项修复及范围见 [BL-20261002-001](../../backlog/BL-20261002-001-正-式-测-试-入-口-下-三.md)。[SOURCE: docs/backlog/BL-20261002-001-正-式-测-试-入-口-下-三.md]
+
+按用户 2026-10-02 的决定，测试回到 Hermes 并撤掉云端测试时限例外，见 [ADR 0046 的测试时限规则](../../adr/0046-tests-back-on-hermes.md#time-limits)。[SOURCE: docs/adr/0046-tests-back-on-hermes.md] `vitest.workspace.ts` 不再读取或校验 `HIMAWARI_TEST_TIMEOUT_MS`。无论这个已撤销变量缺省、设为原先合法的值或非法的值，配置加载均不受它影响：没有自设时限的项目仍使用 Vitest 默认 5000ms，integration 保留原 30000ms；配置不新增 `hookTimeout`，用例显式时限和产品期限不变。
+
+正式 `npm test` 使用的共享 runner 不再将 `HIMAWARI_TEST_TIMEOUT_MS` 加入隔离环境，也不透传其他未声明变量。带 `[R2-E3]` 标签的 `test/tooling/test-timeout.test.mjs` 用真实 Node 子进程加载配置，对照缺省、原合法值及非法值时所有项目的配置；`test/tooling/test-timeout-entry.test.mjs` 通过真实 `runCheck`、`runTests` 与子进程调度，独立读取五个项目的环境，断言已撤销变量和无关变量均不存在。后者沿用固定工具、归档校验和 Vitest 本体的受控传输夹具，环境构造和进程调用不 mock；真实 Vitest 和完整正式入口的执行另由第 2、3 层验证。本次撤销只恢复已有时限，不改变 `ci/policy.json` 或 GitHub 必需检查集合；代码撤销和默认时限复验记录见 [BL-20261001-002 的恢复工作](../../backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md#恢复时要做的事)。[SOURCE: docs/backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md]
+
+`execution-worker-process.test.ts` 的独立 Agent/Worker 子进程直接执行测试侧 `.mjs`，加载真实构建的 UDS 服务器和执行客户端，继续核对崩溃恢复及独立状态读回。Agent 仅导入 `production-execution-client.js`，避免测试夹具加载无关服务启动依赖；产品入口不变。父测试沿用 prepared 的准备流程：同时提供 `HIMAWARI_TEST_ARTIFACT` 与 `HIMAWARI_TEST_CONTEXT` 时，用现有安装器校验并安装到测试临时目录，子进程从该目录运行；两者都没有时读取 `dist/node-runtime`，只设置一个时报错。安装子进程期限 180000ms、准备 hook 期限 240000ms，安装目录在 `afterAll` 删除；原 Worker 就绪和 Agent 接受期限均保持 15000ms。每次运行的阶段记录保存在 `HIMAWARI_TEST_DIAGNOSTIC_OUTPUT`。
+
+旧 child Vitest 测试、配置及 UDS helper 已停止被父测试使用，但内容暂时保留原样：main 已接受的 CI 政策仍登记旧测试，删除须先完成 [BL-20261001-005](../../backlog/BL-20261001-005-主-分-支-接-受-政-策-后.md)，本批不修改登记政策。
+
+容器资格入口另为真实运行时夹具设置 `HIMAWARI_LIVE_SANDBOX_PROBE=1`，使用现有实时输入和租约期限，避免把固定历史测试时间送到 Docker。该设置只用于独立 `qualification-container` 检查，不改变普通五项目时限、重试或产品期限。D6 场景通过公开取消与资源恢复入口重开 Agent 仓库和服务，并重建同配置的 Docker 控制对象；使用独有环境标识，保留停止前后的 Docker 状态、原认证停止证明、SQLite 释放回执和工作区读回。受控资格及直接 Docker 控制的结果不等于生产安装、真实 Worker 网络或生产服务器资格。
 
 ### 4. 一次构建的产物经过安装验证后再交付
 
@@ -154,6 +169,24 @@ date: "2026-09-03"
 同一份经验证的归档用于后续 artifact 交付。归档按 OS、arch、ABI、tested SHA、run ID 和 attempt 命名。消费者按本次构建返回的 artifact ID 下载并核验内容，禁止按 latest、相同分支名或模糊名称获取旧产物。
 
 这证明被测试与被交付的内容一致，不自动证明跨 OS 相同字节或独立构建的字节级可重复。后者需要单独实验，不能从两个绿色 build 推断。
+
+<a id="artifact-extraction-and-inventory"></a>
+
+#### 归档解包与文件清单
+
+归档 `extract` 入口先将 gzip 完整解压到权限为 `0600` 的匿名临时文件，再在同一份未压缩 tar 数据上完成原有完整预检和文件写出。临时文件使用 `tempfile.TemporaryFile`，位于解压目的目录父链中最近的已有目录。查找该目录只读，不提前创建缺失的父目录。正常返回或异常退出上下文时，临时文件关闭并自动释放；Linux 的匿名文件不会留下后续可使用的路径。其他平台的实际运行行为须分别验证。
+
+原始解压 tar 数据最多为 `2 GiB + 256 MiB`，即 `2415919104` 字节。该上限计入 tar 头、PAX 扩展、填充和 gzip 解压所得的其他字节。原有完整预检对普通文件逻辑内容总量的 `2 GiB` 上限不变；两个检查均使用 `ARTIFACT_SIZE_LIMIT`。新增原始上限没有扩大普通文件内容上限。超过原始上限的输入，即使普通文件内容总量未超限，也会被拒绝。
+
+完整 gzip 读取成功且 tar 完整预检通过之后，解包器才创建目的目录及其缺失父目录。损坏、截断或原始解压大小超限的 gzip 因此先于目标创建被拒绝。输入同时包含 gzip 错误或原始大小超限与 tar 结构错误时，先报告 gzip 或原始大小错误；单独的 tar 结构错误仍由原预检报告。原有路径、普通成员类型、重复成员、权限、空归档及文件与目录冲突检查不变，`stream` 操作保持原实现。
+
+解包器只缓存本次已经成功创建并设置为 `0755` 的目录，或经原有检查确认已存在的目录，避免为同一父目录反复发起创建请求。普通文件仍排他创建，复制全部字节并恢复包内模式。文件写出期间匿名 tar 与 payload 同时存在，安装前须分别核对最近已有祖先目录和解压目标所在盘的空间；不能只按压缩归档大小规划容量。临时容量与安装前提见[归档解包与临时磁盘](../../runbooks/install-start-stop-runbook.md#artifact-extraction-contract)。[SOURCE: docs/runbooks/install-start-stop-runbook.md#artifact-extraction-contract]
+
+文件清单继续按原有串行目录遍历顺序检查路径、链接和特殊文件，目录条目与最终文件清单仍按 `localeCompare` 排序。普通模式最多同时运行 16 个文件的 `lstat` 和流式 SHA-256 任务，每个普通文件仍读取全部字节。成功输出的路径、字节数、模式、SHA-256 和内容摘要格式保持不变。已启动任务都等待结束，失败转换成结果对象，不留下未处理的 Promise 拒绝。
+
+文件失败按目录遍历遇到文件的先后顺序选择，早于后续的结构或遍历错误；任务完成快慢不改变该选择。遍历一旦报错，不再加入后续文件。在固定输入同时有文件读取失败和后续结构错误时，这与原串行实现先报告前一文件失败的顺序一致。该规则不保证外部同时替换或修改文件时，两种调度得到相同结果。`normalizeModes=true` 的构建路径逐文件等待完成，仍串行执行 chmod 和摘要计算，保留失败前已经完成的模式修改。
+
+归档安装分支在全部清单检查后，直接移动已由解包器设置 `0755` 目录模式的运行时，省去重复的目录规范遍历。源码复制分支继续执行原目录规范流程。安装 CLI 的全部 payload 内容检查与产品 checker 不变。权限测试的独立回读范围和计时边界见[安装权限验收证据](../../runbooks/install-start-stop-runbook.md#installation-permission-evidence)。[SOURCE: docs/runbooks/install-start-stop-runbook.md#installation-permission-evidence]
 
 ### 5. PR 验证图
 
@@ -203,7 +236,7 @@ PR 的增量范围取目标分支与 head 的 merge-base 到 head。默认分支
 
 例外必须包含精确 advisory/规则、依赖版本或路径、理由、Owner、审阅依据和到期日。运行时使用 UTC 判断到期；重复、未知、无效或扩大范围的例外失败。新例外与基线变更单独审阅，不由失败 job 自动生成。真实 Secret、缺失测试、缺失平台和伪造产物没有通用豁免入口。
 
-2026-09-14 经 Owner 明确批准，新增独立的精确清单审批入口，用于尚未进入目标分支的新测试或依赖文档值。常规例外仍从目标分支读取，候选分支不能自行替换它们。`.github/security-review-manifest.json` 保存审核过的原始清单，`.github/security-review-comment.json` 只定位 PR 评论；本地文件中的批准声明不是授权证据。检查通过固定 GitHub HTTPS API 读取评论，核验仓库所有者的数字身份与登录名、仓库和 PR、被审核源码提交、清单原始字节摘要、批准决定与最长 30 天的有效期。新增或修改清单的 PR 还须匹配本次事件编号和 head；来源提交必须属于被测提交的历史。网络失败、缺少记录、错误作者、过期或范围变化均失败。
+2026-09-14 经 Owner 明确批准，新增独立的精确清单审批入口，用于尚未进入目标分支的新测试或依赖文档值。常规例外仍从目标分支读取，候选分支不能自行替换它们。`.github/security-review-manifest.json` 保存审核过的原始清单，`.github/security-review-comment.json` 只定位 PR 评论；本地文件中的批准声明不是授权证据。检查通过固定 GitHub HTTPS API 读取评论，核验仓库所有者的数字身份与登录名、仓库和 PR、被审核源码提交、清单原始字节摘要、批准决定与最长 30 天的有效期。新增或修改清单的 PR 还须匹配本次事件编号和 head；来源提交必须属于被测提交的历史。网络失败、缺少记录、错误作者、过期或范围变化均失败。仓库为私有时，本地运行可以经 `HIMAWARI_CI_GITHUB_TOKEN` 提供只读令牌（令牌只经标准输入交给 curl，不进入参数或子进程环境）；在 Actions 里该令牌只用于本仓库。
 
 该入口只能补充批准清单列出的合成 token、机器扫描误报和依赖文档示例。token 继续核验不可变源码、字面量分类、历史范围及数量；原有条目使用目标分支的来源证据，新增条目只使用批准提交的对应证据。机器扫描器仍取目标分支版本，报告保留所有发现；批准仅匹配精确路径、规则、摘要及数量，新增、重复或消失的匹配均拒绝。依赖文档使用下述既有成员校验，不扩大为包或目录豁免。清单及评论引用已经原样合入目标分支后，后续 PR 继承该分支接受的精确范围，继续核验评论和有效期；修改清单仍需新的明确批准。既有例外不因这条补充路径延长有效期。
 

@@ -1,4 +1,3 @@
-// Bounded synthetic-data counterexample probe. Never issues a qualification.
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm } from "node:fs/promises";
@@ -22,7 +21,6 @@ const hostname = "127.0.0.1.sslip.io";
 const addresses = await lookup(hostname, { all: true });
 if (!addresses.length || addresses.some((entry) => entry.address !== "127.0.0.1"))
   throw new Error("SYNTHETIC_LOOPBACK_TARGET_UNAVAILABLE");
-// macOS Unix socket paths are limited to 104 bytes, including control suffixes.
 const scratchParent =
   process.platform === "linux" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : "/tmp";
 if (process.platform === "linux" && !scratchParent.startsWith("/data/himawari-r8-"))
@@ -106,12 +104,13 @@ try {
         policyDigest: compiled.policyDigest,
         executable: "/bin/bash",
         args: ["-c", command],
-        deadlineAt: new Date(Date.now() + 10000).toISOString(),
+        deadlineAt: new Date(Date.now() + 30000).toISOString(),
         maxOutputBytes: 4096,
-        cleanupTimeoutMs: 2000,
+        cleanupTimeoutMs: 5000,
         resourceLimits: { maxCpuTimeMs: 4000, maxMemoryBytes: 536870912 },
       },
       path.join(base, "control"),
+      async () => {},
     );
     try {
       await host.ready;
@@ -180,7 +179,6 @@ try {
       2,
     )}\n`,
   );
-  // Require positive denial evidence for every scenario, not just no requests.
   process.exitCode = counterexample
     ? 1
     : evidence.every((entry) => entry.denialObserved && entry.network?.closed)

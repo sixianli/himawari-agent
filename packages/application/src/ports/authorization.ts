@@ -87,6 +87,37 @@ export interface PermissionPolicyRule {
   readonly reasonCode: string;
 }
 
+/** Host-owned review outcome. It reports what the coordinator durably committed; it is never an
+ * execution grant, and "alternative" carries untrusted text that can only seed a new request.
+ * A coordinator that only persists its decision may resolve to `undefined`; absence is never
+ * an approval. */
+export type AutomaticReviewOutcome =
+  | { readonly decision: "approve" | "deny" | "human" }
+  | {
+      readonly decision: "alternative";
+      readonly reasonCode: string;
+      readonly suggestionRef: string | null;
+    };
+
+/** Host-owned review coordinator, not an untrusted model response or execution grant.
+ * It may persist a validated decision through the original Approval/Grant boundary.
+ * Apply only while the signal, request deadline and delegated policy remain current;
+ * repeated or late results must never overwrite another decision or repeat execution.
+ * A missing or unreadable outcome leaves the original human/deny path untouched.
+ * A coordinator that persists nothing returns undefined: absence is never an approval. */
+export interface AutomaticActionReviewPort {
+  readonly maximumWaitMs: number;
+  review(
+    input: {
+      readonly intent: GovernedActionIntent;
+      readonly policyVersion: string;
+      readonly deadlineAt: string;
+      readonly approvalExpiresAt: string;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomaticReviewOutcome | undefined>;
+}
+
 export interface PermissionPolicy {
   readonly version: string;
   readonly rules: readonly PermissionPolicyRule[];
@@ -136,6 +167,12 @@ export interface GrantRecord {
 }
 
 export interface ApprovalRequest {
+  readonly automaticReview?: {
+    readonly reviewId: string;
+    readonly configurationVersion: string;
+    readonly modelRef: string;
+    readonly outputRef: string;
+  };
   /** A durable Owner policy decision, never a claim of a per-action human click. */
   readonly policyAuthorization?: { readonly key: string; readonly revision: number };
   readonly id: string;
@@ -197,7 +234,34 @@ export interface GovernedGrantRecord extends GrantRecord {
   readonly intentFingerprint: string | null;
 }
 
+export interface AuthorizationReservation {
+  readonly id: string;
+  readonly grantId: string;
+  readonly intent: GovernedActionIntent;
+  readonly semanticSnapshotHash: string;
+  readonly status: "reserved" | "committed" | "released";
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly handleRef: string | null;
+  readonly invocationRef: string | null;
+  readonly resolvedAt: string | null;
+  readonly reasonCode: string | null;
+}
+
+export interface ReserveAuthorizationInput {
+  readonly grantId: string;
+  readonly intent: GovernedActionIntent;
+  readonly now: string;
+}
+
 export interface AuthorizationStorePort {
+  getAuthorizationReservation?(id: string): Promise<AuthorizationReservation | undefined>;
+  reserveAuthorization?(input: ReserveAuthorizationInput): Promise<AuthorizationReservation>;
+  releaseAuthorization?(input: {
+    readonly reservationId: string;
+    readonly now: string;
+    readonly reasonCode: string;
+  }): Promise<AuthorizationReservation>;
   isPolicyAuthorizationCurrent?(input: {
     ownerId: OwnerId;
     agentId: AgentId;
@@ -220,6 +284,12 @@ export interface AuthorizationStorePort {
 }
 
 export interface PermissionAllowDecision {
+  /** Local durable reservation; it is never a Worker-authority wire credential. */
+  readonly authorizationReservation?: {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+  };
   readonly decision: "ALLOW";
   readonly basis: { readonly type: "policy" | "grant"; readonly ref: string };
   readonly executionScope: GrantScope;
@@ -234,6 +304,13 @@ export interface PermissionDenyDecision {
   readonly decision: "DENY";
   readonly reasonCode: string;
   readonly alternativesAllowed: boolean;
+  /** Set only when a host review coordinator durably recorded a safer alternative for this
+   * exact request. The referenced text is untrusted and may only seed a new request. */
+  readonly automaticReview?: {
+    readonly outcome: "alternative";
+    readonly reasonCode: string;
+    readonly suggestionRef: string | null;
+  };
 }
 
 export type PermissionDecision =

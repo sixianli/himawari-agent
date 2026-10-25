@@ -36,7 +36,7 @@ interface RunDispatchRecord {
   readonly leaseRevision: number;
 }
 
-export type RunDispatchAction = "start" | "resume";
+export type RunDispatchAction = "start" | "resume" | "deliver_completed" | "resume_tool_result";
 
 export interface RunDispatchCandidate extends RunDispatchRecord {
   readonly action: RunDispatchAction;
@@ -44,6 +44,7 @@ export interface RunDispatchCandidate extends RunDispatchRecord {
 
 export interface RunReconciliationCandidate extends RunDispatchRecord {
   readonly action: "reconcile";
+  readonly scanUpperBoundRunId?: RunId;
 }
 
 export interface RunExecutionLease {
@@ -64,6 +65,18 @@ export interface RunExecutionLease {
 
 export interface RunExecutionLeaseReceipt extends RunExecutionLease {
   readonly replayed: boolean;
+}
+
+export interface RunToolResultRecoveryClaim {
+  readonly reservationReleaseDigest?: string;
+  readonly jobId: string;
+  readonly invocationId: string;
+  readonly semanticFingerprint: string;
+  readonly checkpointRevision: number;
+  readonly operationRevision: number;
+  readonly resourceSequence: number;
+  readonly completedStreamOrdinal: number;
+  readonly deadlineAt: string;
 }
 
 export interface RunExecutionLeaseClaim {
@@ -119,8 +132,11 @@ export interface RunDispatchPort {
   listReconciliationRequired(input: {
     readonly now: string;
     readonly limit: number;
+    readonly afterRunId?: RunId;
+    readonly throughRunId?: RunId;
   }): Promise<readonly RunReconciliationCandidate[]>;
   claim(input: {
+    readonly toolResultRecovery?: RunToolResultRecoveryClaim;
     readonly runId: RunId;
     readonly expectedRunRevision: number;
     readonly expectedLeaseRevision: number;
@@ -147,10 +163,33 @@ export interface RunDispatchPort {
     readonly executionLeaseId: RunExecutionLeaseId;
     readonly at: string;
   }): Promise<RunExecutionLease>;
+  /**
+   * Read-only lookup of the current unreleased lease for a Run, used by host
+   * coordinators that must bind a durable decision to the live execution
+   * authority. It grants nothing: every consumer still compares the returned
+   * lease against the claim it was given and revalidates inside its own
+   * transaction.
+   */
+  currentExecutionLease?(input: {
+    readonly runId: RunId;
+    readonly at: string;
+  }): Promise<RunExecutionLease | undefined>;
 }
 
 /** Recovery can quarantine uncertain work, but cannot grant permission to execute it. */
 export interface RunReconciliationPort {
+  settleExpired(input: {
+    readonly runId: RunId;
+    readonly expectedRunRevision: number;
+    readonly expectedCheckpointRevision: number;
+    readonly expectedLeaseRevision: number;
+    readonly executionLeaseId: RunExecutionLeaseId;
+    readonly frozenInputRef: string;
+    readonly frozenInputDigest: string;
+    readonly originalDeadlineAt: string;
+    readonly at: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<{ readonly settled: boolean }>;
   quarantine(input: {
     readonly runId: RunId;
     readonly expectedRunRevision: number;

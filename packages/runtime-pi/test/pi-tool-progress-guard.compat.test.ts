@@ -44,3 +44,13 @@ describe("provider-independent tool progress guard", () => {
     );
   });
 });
+
+it("bounds file conflicts across changing content, intervening reads, and approval restoration", () => {
+  let guard = new PiToolProgressGuard();
+  for (let i = 0; i < 4; i++) {
+    guard.observe("write", { path: "note", content: i }, "conflict", true, "FILE_VERSION_CONFLICT");
+    guard.observe("read", { path: "note", offset: i }, `latest ${i}`, false);
+    guard = new PiToolProgressGuard(guard.snapshot());
+    expect(guard.blocked).toBe(i === 3);
+  }
+});

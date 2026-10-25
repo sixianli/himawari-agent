@@ -1,0 +1,1601 @@
+{
+  "status": "comparison-only; nonzero differences are not pixel parity",
+  "scope": "Frozen sandboxed reference and built UI with matched fixture data; only the review toolbar and 1px outer frame are excluded",
+  "states": {
+    "model": {
+      "viewport": {
+        "width": 1246,
+        "height": 809
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          },
+          "product": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          },
+          "product": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 15921,
+        "totalPixels": 1008014,
+        "identical": false
+      }
+    },
+    "empty": {
+      "viewport": {
+        "width": 1246,
+        "height": 809
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          },
+          "product": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          },
+          "product": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 15644,
+        "totalPixels": 1008014,
+        "identical": false
+      }
+    },
+    "settings": {
+      "viewport": {
+        "width": 1246,
+        "height": 809
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          },
+          "product": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(38, 38, 38)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          },
+          "product": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(44, 44, 44)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(222, 222, 222)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 37281,
+        "totalPixels": 1008014,
+        "identical": false
+      }
+    },
+    "settings-light": {
+      "viewport": {
+        "width": 1246,
+        "height": 809
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          },
+          "product": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          },
+          "product": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 72813,
+        "totalPixels": 1008014,
+        "identical": false
+      }
+    },
+    "light": {
+      "viewport": {
+        "width": 1246,
+        "height": 809
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          },
+          "product": {
+            "width": 232,
+            "height": 809,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 1014,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 23px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          },
+          "product": {
+            "width": 680,
+            "height": 143,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 670,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 680,
+            "height": 499.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 87.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 211,
+            "height": 42.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 112,
+            "height": 22.390625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 196,
+            "height": 31.25,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "25px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "31.25px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 9270,
+        "totalPixels": 1008014,
+        "identical": false
+      }
+    },
+    "mobile-light": {
+      "viewport": {
+        "width": 390,
+        "height": 720
+      },
+      "components": {
+        "sidebar": {
+          "reference": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          },
+          "product": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "18px 10px 12px",
+            "borderRadius": "0px",
+            "background": "rgb(243, 243, 241)"
+          }
+        },
+        "header": {
+          "reference": {
+            "width": 390,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 13px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 390,
+            "height": 61,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 13px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "composer": {
+          "reference": {
+            "width": 354,
+            "height": 151.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          },
+          "product": {
+            "width": 354,
+            "height": 151,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "4px",
+            "borderRadius": "19px",
+            "background": "rgb(245, 245, 243)"
+          }
+        },
+        "input": {
+          "reference": {
+            "width": 344,
+            "height": 96.78125,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "25.6px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 344,
+            "height": 88,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "16px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "25.6px",
+            "padding": "14px 15px 6px",
+            "borderRadius": "16px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome": {
+          "reference": {
+            "width": 352,
+            "height": 407.625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 354,
+            "height": 412.40625,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px 0px 40px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav": {
+          "reference": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "430",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "nav-button": {
+          "reference": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "10px 13px",
+            "borderRadius": "8px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "thread-name": {
+          "reference": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 0,
+            "height": 0,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "14px",
+            "fontWeight": "400",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "22.4px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        },
+        "welcome-title": {
+          "reference": {
+            "width": 180,
+            "height": 28.75,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "23px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "28.75px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          },
+          "product": {
+            "width": 180,
+            "height": 28.75,
+            "font": "-apple-system, \"system-ui\", \"SF Pro Text\", \"PingFang SC\", sans-serif",
+            "fontSize": "23px",
+            "fontWeight": "500",
+            "color": "rgb(40, 40, 40)",
+            "smoothing": "auto",
+            "lineHeight": "28.75px",
+            "padding": "0px",
+            "borderRadius": "0px",
+            "background": "rgba(0, 0, 0, 0)"
+          }
+        }
+      },
+      "pixels": {
+        "changedPixels": 15032,
+        "totalPixels": 280800,
+        "identical": false
+      }
+    }
+  },
+  "controlledChange": {
+    "changedPixels": 400,
+    "totalPixels": 1008014,
+    "identical": false
+  }
+}

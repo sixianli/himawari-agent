@@ -1,0 +1,60 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts (11 tests | 1 failed) 13ms
+   × records cancellation when transport reports a terminal failure instead of throwing 4ms
+ ❯ |unit| packages/runtime-pi/test/pi-model-transport.unit.test.ts (14 tests | 1 failed) 20ms
+   × does not offer a retry after the caller cancels an active Pi stream 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/trusted-model-provider.unit.test.ts > records cancellation when transport reports a terminal failure instead of throwing
+AssertionError: expected [ 'provider_unresolved' ] to deeply equal [ 'cancel_unresolved' ]
+
+- Expected
++ Received
+
+  [
+-   "cancel_unresolved",
++   "provider_unresolved",
+  ]
+
+ ❯ packages/platform-node/test/trusted-model-provider.unit.test.ts:500:19
+    498|   });
+    499|   for await (const _event of model.invoke({ ...invocation(), signal: c…
+    500|   expect(unknown).toEqual(['cancel_unresolved']);
+       |                   ^
+    501| });
+    502|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| packages/runtime-pi/test/pi-model-transport.unit.test.ts > does not offer a retry after the caller cancels an active Pi stream
+AssertionError: expected { type: 'model.failed', …(5) } to match object { type: 'model.failed', …(2) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "errorCode": "MODEL_REQUEST_CANCELLED",
++   "errorCode": "OPENROUTER_RESPONSE_ERROR",
+    "retryable": false,
+    "type": "model.failed",
+  }
+
+ ❯ packages/runtime-pi/test/pi-model-transport.unit.test.ts:574:25
+    572|   });
+    573|   const events = await collect(transport.invoke({ descriptor, request:…
+    574|   expect(events.at(-1)).toMatchObject({ type: 'model.failed', errorCod…
+       |                         ^
+    575| });
+    576|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 23 passed (25)
+   Start at  20:42:07
+   Duration  1.75s (transform 651ms, setup 0ms, import 2.29s, tests 33ms, environment 0ms)

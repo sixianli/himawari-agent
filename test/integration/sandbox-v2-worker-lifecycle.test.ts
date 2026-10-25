@@ -1,6 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, mkdtemp, rm, rmdir } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
+import { PayloadUdsServer } from "@himawari-agent/platform-node";
+import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.ts";
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -8,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   verify: vi.fn(),
 }));
-vi.mock("@himawari-agent/runtime-sandbox", () => ({
+vi.mock("@himawari-agent/runtime-sandbox", async (original) => ({
+  ...(await original<object>()),
   prepareSandboxJobHost: mocks.prepare,
   prepareJobPolicy: mocks.policy,
 }));
@@ -23,12 +26,22 @@ vi.mock("@himawari-agent/platform-node", async (original) => ({
 
 import { ProductionSandboxExecutionV2 } from "../../apps/execution-worker/src/production-sandbox-execution-v2.ts";
 import { parseJobHostRequest } from "../../packages/runtime-sandbox/src/job-host-protocol.ts";
+import {
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
+} from "@himawari-agent/execution-contracts";
+import {
+  blockJobHostLaunch,
+  type JobHostControlBinding,
+} from "@himawari-agent/runtime-sandbox/control";
+import { udsFaultProxy } from "@himawari-agent/testing";
 import { sandboxV2Admission, sandboxV2Call } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   openSandboxJournal,
   serviceRequest,
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -38,22 +51,60 @@ afterEach(async () => {
 it.each([
   "normal",
   "command",
+  "network",
   "pi",
+  "pi-fixed",
+  "pi-fixed-without-target",
+  "pi-recovered-during-delivery",
   "replay",
   "bind-ack-loss",
   "registration-revoked",
+  "preparation-registration-ack-loss",
+  "[R2-D4] preparation-ack-blocked",
+  "[R2-P2] bind-pre-failure-resident",
+  "[R2-P2] bind-pre-failure-container",
+  "preparation-sealed",
+  "preparation-failed",
+  "resolve-transport-failure",
+  "diagnostic-handshake-rejected",
   "revoked-running",
   "finished-during-check",
+  "[R2-D26] start-pending",
   "background",
   "background-ack-loss",
   "service",
+  "stream-incomplete-stdio",
+  "stream-resource-race",
+  "stream-ack-race",
+  "stream-unchanged-rejected",
+  "stream-authority-revoked",
+  "stream-environment-changed",
+  "stream-repeated-race",
 ] as const)("v2 lifecycle: %s", async (scenario) => {
   const f = await openSandboxJournal();
   cleanups.push(f.close);
-  const root = await mkdtemp("/tmp/r4-worker-v2-");
+  const root = await mkdtemp(`${testTemporaryRoot()}/r4-worker-v2-`);
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const admitted = sandboxV2Call(f, "admit", sandboxV2Admission(f)).record;
   const service = scenario === "service";
+  const piScenario = scenario.startsWith("pi");
+  const validPi = piScenario && scenario !== "pi-fixed-without-target";
+  const recoveredDuringDelivery = scenario === "pi-recovered-during-delivery";
+  const streamScenario = scenario.startsWith("stream-");
+  const launchBlocked = scenario === "[R2-D4] preparation-ack-blocked";
+  const preBindResident = scenario === "[R2-P2] bind-pre-failure-resident";
+  const preBindContainer = scenario === "[R2-P2] bind-pre-failure-container";
+  const preBind = preBindResident || preBindContainer;
+  const startPending = scenario === "[R2-D26] start-pending";
+  let pendingObservations = 0;
+  let streamAttempts = 0;
+  const streamChunks = new Map<number, unknown>();
+  const fixedTarget = {
+    schemaVersion: "sandbox-file-target.v1",
+    relativePath: "file.txt",
+    lineage: [{ device: "1", inode: "10" }],
+    before: null,
+  };
   const background = scenario.startsWith("background") || service;
   const probe = {
     kind: "unix_http" as const,
@@ -63,31 +114,52 @@ it.each([
     expectedStatus: 204,
     timeoutMs: 1000,
   };
-  const plan = background
-    ? {
-        ...admitted.plan,
-        mode: service ? ("service" as const) : ("background" as const),
-        operationContract: service
-          ? {
-              kind: "service_start" as const,
-              ref: "service",
-              version: "1",
-              readinessProbeRef: "ready",
-            }
-          : { kind: "task_start" as const, ref: "task", version: "1" },
-      }
-    : scenario === "command"
+  const plan = launchBlocked
+    ? { ...admitted.plan, preparationProtocol: SANDBOX_PREPARATION_LAUNCH_PROTOCOL }
+    : preBind
       ? {
           ...admitted.plan,
-          operationContract: { kind: "command" as const, ref: "command", version: "1" },
+          operation: "bash",
+          backendRef: preBindResident ? SRT_TASK_ENVIRONMENT_BACKEND_REF : "container-pre-bind",
+          operationContract: { kind: "command" as const, ref: "pi-coding-tool", version: "1" },
         }
-      : scenario === "pi"
+      : background
         ? {
             ...admitted.plan,
-            operationContract: { kind: "fixed_read" as const, ref: "pi-coding-tool", version: "1" },
+            mode: service ? ("service" as const) : ("background" as const),
+            operationContract: service
+              ? {
+                  kind: "service_start" as const,
+                  ref: "service",
+                  version: "1",
+                  readinessProbeRef: "ready",
+                }
+              : { kind: "task_start" as const, ref: "task", version: "1" },
           }
-        : admitted.plan;
+        : scenario === "command" || scenario === "network"
+          ? {
+              ...admitted.plan,
+              operationContract: {
+                kind: scenario === "network" ? ("network_only" as const) : ("command" as const),
+                ref: "command",
+                version: "1",
+              },
+            }
+          : piScenario
+            ? {
+                ...admitted.plan,
+                operationContract: {
+                  kind: "fixed_read" as const,
+                  ref: "pi-coding-tool",
+                  version: scenario === "pi" || recoveredDuringDelivery ? "1" : "2",
+                },
+              }
+            : admitted.plan;
   const calls: string[] = [];
+  const diagnostics: unknown[] = [];
+  let reconcilingResource: unknown;
+  let releasedResource: unknown;
+  let reconcilingReads = 0;
   let bound = false;
   let facts = admitted.facts;
   let resolveResult!: (value: unknown) => void;
@@ -97,8 +169,13 @@ it.each([
   const host = {
     ready: Promise.resolve(),
     started: Promise.resolve({ processId: 1234 }),
-    readOutput: () => ({ bytes: new Uint8Array(), nextOffset: 0, end: true }),
+    readOutput: () => ({
+      bytes: streamScenario ? new TextEncoder().encode("result") : new Uint8Array(),
+      nextOffset: streamScenario ? 6 : 0,
+      end: true,
+    }),
     result,
+    completed: result.then(() => null),
     controlBinding: {
       directory: `${root}/control`,
       token: "a".repeat(64),
@@ -109,13 +186,20 @@ it.each([
     inspect: () => ({ bootId: "boot", state: "alive" }),
     start: vi.fn(() => {
       calls.push("host-start");
-      if (background || scenario === "revoked-running" || scenario === "finished-during-check")
+      if (
+        background ||
+        startPending ||
+        scenario === "revoked-running" ||
+        scenario === "finished-during-check"
+      )
         return;
       resolveResult({
         stdout: new TextEncoder().encode("result"),
         taskStarted: true,
         taskProcessExited: true,
-        exitCode: 0,
+        exitCode: recoveredDuringDelivery ? 1 : 0,
+        stdioClosed: scenario !== "stream-incomplete-stdio",
+        reason: "exited",
       });
     }),
     cancel: vi.fn(() =>
@@ -123,13 +207,20 @@ it.each([
         stdout: new Uint8Array(),
         taskStarted: false,
         taskProcessExited: false,
+        stdioClosed: false,
         exitCode: null,
       }),
     ),
   };
-  mocks.prepare.mockImplementation((request) => {
+  mocks.prepare.mockImplementation((request, _directory, _authority, control) => {
+    host.controlBinding = control;
+    if (scenario === "preparation-failed") {
+      host.ready = Promise.reject(new Error("JOB_HOST_NOT_READY"));
+      void host.ready.catch(() => {});
+    }
+    calls.push("host-fork");
     parseJobHostRequest({ ...request, deadlineAt: new Date(Date.now() + 60000).toISOString() });
-    if (scenario === "pi") {
+    if (piScenario) {
       const input = JSON.parse(Buffer.from(request.stdinBase64, "base64").toString("utf8"));
       expect(input).toMatchObject({
         schemaVersion: "pi-runner.v1",
@@ -137,6 +228,8 @@ it.each([
         workspace: root,
         scope: { authorizationRef: plan.authorizationRef, profileRef: "authorized-project.v1" },
       });
+      if (scenario === "pi-fixed") expect(input.scope.fileTarget).toEqual(fixedTarget);
+      else expect(input.scope.fileTarget).toBeUndefined();
       expect(JSON.parse(input.parametersJson)).toEqual({
         path: "file.txt",
         workspace: "/untrusted",
@@ -147,7 +240,7 @@ it.each([
   });
   mocks.policy.mockResolvedValue({
     policy: {
-      workspace: root,
+      workspace: scenario === "network" ? null : root,
       privateDirectory: `${root}/scratch`,
       ...(service ? { allowedUnixSockets: [`${root}/scratch/ready.sock`] } : {}),
       writable: false,
@@ -155,7 +248,10 @@ it.each([
       protectedPaths: [],
       allowedDomains: [],
     },
-    compiled: { policyDigest: admitted.facts.environment.policyDigest },
+    compiled: {
+      cwd: scenario === "network" ? `${root}/scratch` : root,
+      policyDigest: admitted.facts.environment.policyDigest,
+    },
   });
   mocks.load.mockResolvedValue({
     snapshot: {
@@ -186,11 +282,14 @@ it.each([
   mocks.verify.mockResolvedValue(undefined);
   const reservation = {
     resourceRef: background ? "resource-task" : null,
-    workspaceConflictRefs: admitted.workspaces.map((item) => item.ref),
+    workspaceConflictRefs:
+      scenario === "network" ? [] : admitted.workspaces.map((item) => item.ref),
   };
-  const payloads = {
+  const transportFailure =
+    scenario === "resolve-transport-failure" || scenario === "diagnostic-handshake-rejected";
+  let payloads = {
     readInput: async () =>
-      scenario === "pi"
+      piScenario
         ? Buffer.from(
             JSON.stringify({
               path: "file.txt",
@@ -203,9 +302,73 @@ it.each([
     sandboxExecution: async (
       _invocation: unknown,
       _identity: unknown,
-      command: { kind: string; facts?: typeof facts },
+      command: {
+        kind: string;
+        diagnostic?: unknown;
+        facts?: typeof facts;
+        expectedSequence?: number;
+        chunk?: { index: number; end: boolean; bytesBase64: string };
+        control?: JobHostControlBinding;
+        policyDigest?: string;
+      },
     ) => {
       calls.push(command.kind);
+      if (command.kind === "preparation_diagnostic") diagnostics.push(command.diagnostic);
+      if (command.kind === "read" && scenario === "stream-authority-revoked" && streamAttempts)
+        throw new Error("authority changed");
+      if (command.kind === "append_output" && streamScenario) {
+        if (!command.chunk) throw new Error("stream chunk missing");
+        streamAttempts++;
+        const changed =
+          scenario === "stream-repeated-race" ||
+          (streamAttempts === 1 &&
+            [
+              "stream-resource-race",
+              "stream-ack-race",
+              "stream-authority-revoked",
+              "stream-environment-changed",
+            ].includes(scenario));
+        if (changed)
+          facts = {
+            ...facts,
+            resource: { ...facts.resource, sequence: facts.resource.sequence + 1 },
+          };
+        if (scenario === "stream-environment-changed")
+          facts = { ...facts, environment: { ...facts.environment, policyDigest: "e".repeat(64) } };
+        if (scenario === "stream-ack-race" && streamAttempts === 1)
+          streamChunks.set(command.chunk.index, command.chunk);
+        if (changed || scenario === "stream-unchanged-rejected")
+          throw new Error("sandbox job rejected");
+        expect(command.expectedSequence).toBe(facts.resource.sequence);
+        if (streamChunks.has(command.chunk.index))
+          expect(command.chunk).toEqual(streamChunks.get(command.chunk.index));
+        streamChunks.set(command.chunk.index, command.chunk);
+      }
+      if (command.kind === "register_preparation_control" && scenario === "preparation-sealed")
+        throw Object.assign(new Error("Preparation already sealed"), { code: "PORT_CONFLICT" });
+      if (command.kind === "register_preparation_control" && launchBlocked) {
+        if (!command.control || !command.policyDigest)
+          throw new Error("Preparation binding missing");
+        const metadata = await lstat(command.control.directory);
+        expect(
+          await blockJobHostLaunch(
+            {
+              plan,
+              control: command.control,
+              policyDigest: command.policyDigest,
+              directoryDevice: String(metadata.dev),
+              directoryInode: String(metadata.ino),
+            },
+            T1,
+          ),
+        ).toBe(true);
+        calls.push("launch-blocked", "preparation-acknowledged");
+      }
+      if (
+        command.kind === "register_preparation_control" &&
+        scenario === "preparation-registration-ack-loss"
+      )
+        throw new Error("registration ack lost");
       if (
         command.kind === "resolve" &&
         scenario === "finished-during-check" &&
@@ -215,6 +378,7 @@ it.each([
           stdout: new TextEncoder().encode("result"),
           taskStarted: true,
           taskProcessExited: true,
+          stdioClosed: true,
           exitCode: 0,
         });
         await Promise.resolve();
@@ -233,7 +397,18 @@ it.each([
         facts = command.facts;
         if (scenario === "bind-ack-loss") throw new Error("ack lost after commit");
       }
-      if (command.kind === "observe_control") {
+      if (command.kind === "observe_control" && startPending) {
+        pendingObservations++;
+        if (pendingObservations === 2)
+          resolveResult({
+            stdout: new TextEncoder().encode("result"),
+            taskStarted: true,
+            taskProcessExited: true,
+            stdioClosed: true,
+            exitCode: 0,
+            reason: "exited",
+          });
+      } else if (command.kind === "observe_control") {
         facts = {
           ...facts,
           resource: {
@@ -255,6 +430,56 @@ it.each([
           },
         };
       }
+      if (
+        command.kind === "read" &&
+        recoveredDuringDelivery &&
+        facts.resource.supervision === "reconciling" &&
+        ++reconcilingReads > 1
+      ) {
+        const { reasonCode: _reason, ...reconciling } = facts.resource as typeof facts.resource & {
+          reasonCode?: string;
+        };
+        facts = {
+          ...facts,
+          resource: {
+            ...reconciling,
+            sequence: reconciling.sequence + 1,
+            supervision: "released",
+            cleanup: "confirmed",
+            evidence: {
+              ref: "release-proof",
+              subject: { kind: "local_process", processIdentityRef: "task-process" },
+              digest: "b".repeat(64),
+              profileRef: plan.binding.profileRef,
+              qualificationRef: plan.binding.qualificationRef,
+              validUntil: plan.effectiveDeadlineAt,
+            },
+          },
+        } as unknown as typeof facts;
+        releasedResource = facts.resource;
+      }
+      if (
+        command.kind === "append" &&
+        recoveredDuringDelivery &&
+        command.facts?.result &&
+        reconcilingResource === undefined
+      ) {
+        const { evidence: _evidence, ...resource } = facts.resource as typeof facts.resource & {
+          evidence?: unknown;
+        };
+        facts = {
+          ...facts,
+          resource: {
+            ...resource,
+            sequence: facts.resource.sequence + 1,
+            supervision: "reconciling",
+            cleanup: "unknown",
+            reasonCode: "SANDBOX_RECONCILIATION_REQUESTED",
+          },
+        } as typeof facts;
+        reconcilingResource = facts.resource;
+        throw new Error("Observation CAS failed");
+      }
       if (command.kind === "append" || command.kind === "operation") {
         if (!command.facts) throw new Error("facts missing");
         facts = command.facts;
@@ -269,20 +494,122 @@ it.each([
         resolvedScope:
           command.kind === "resolve"
             ? {
-                scope:
-                  scenario === "pi" ? { ...f.scope, profileRef: "authorized-project.v1" } : f.scope,
-                allowedDomains: [],
+                scope: piScenario
+                  ? {
+                      ...f.scope,
+                      profileRef: "authorized-project.v1",
+                      ...(scenario === "pi-fixed" ? { fileTarget: fixedTarget } : {}),
+                    }
+                  : scenario === "network"
+                    ? {
+                        ...f.scope,
+                        schemaVersion: "sandbox-scope.v2",
+                        directoryGrant: null,
+                        networkAuthorizationRef: plan.authorizationRef,
+                      }
+                    : f.scope,
+                allowedDomains: scenario === "network" ? ["example.test:443"] : [],
               }
             : null,
         output: null,
       };
     },
   } as unknown as ProductionPayloadBrokerClient;
+  let proxy: Awaited<ReturnType<typeof udsFaultProxy>> | undefined;
+  if (transportFailure) {
+    const options = {
+      credential: { tokenRef: "credential", tokenValue: "f".repeat(32) },
+      agentServiceInstanceId: "agent",
+      agentServiceBootId: "agent-boot",
+      workerInstanceId: "worker",
+      workerBootId: "worker-boot",
+      authorityEpoch: plan.executionLease.authorityEpoch,
+      fencingToken: plan.executionLease.fencingToken,
+      maximumBodyBytes: 65536,
+      maximumPayloadBytes: 16384,
+      requestTimeoutMs: 1000,
+    };
+    const server = new PayloadUdsServer({
+      ...options,
+      runtimeDirectory: root,
+      allowedWorkerIdentities: [options],
+      handler: {
+        readInput: async () => new Uint8Array(),
+        writeOutput: async () => ({ outputRef: "unused", replayed: false }),
+        sandboxExecution: async ({ payload }) => {
+          expect(["read", "preparation_diagnostic"]).toContain(payload.command.kind);
+          return {
+            record: {
+              phase: "reserved",
+              plan,
+              reservation: {
+                ...reservation,
+                schemaVersion: "sandbox-preparation.v1",
+                identity: plan.identity,
+                environmentId: plan.environmentId,
+                mode: plan.mode,
+                sequence: 1,
+                createdAt: plan.requestedAt,
+              },
+              startedAt: null,
+              operationRevision: 0,
+            },
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
+        },
+      },
+    });
+    await server.start();
+    cleanups.push(() => server.stop());
+    const faultProxy = await udsFaultProxy(`${root}/proxy.sock`, server.socketPath, (url, body) => {
+      calls.push(
+        url.endsWith("/handshake") ? "handshake" : JSON.parse(body.toString()).payload.command.kind,
+      );
+    });
+    proxy = faultProxy;
+    cleanups.push(() => faultProxy.close());
+    let sequence = 0;
+    payloads = new ProductionPayloadBrokerClient({
+      ...options,
+      socketPath: `${root}/proxy.sock`,
+      nextId: () => `message:${++sequence}`,
+    });
+    await payloads.connect();
+    calls.length = 0;
+    proxy.dropNext(
+      "/payload/v1/sandbox/execution",
+      (body) => JSON.parse(body.toString()).payload.command.kind === "resolve",
+    );
+    if (scenario === "diagnostic-handshake-rejected") proxy.blockHandshakes(true);
+    proxy.releaseHandshakes();
+  }
   const worker = new ProductionSandboxExecutionV2({
     configuration: { capabilityDeployment: {} as never },
     peer: { workerInstanceId: "worker" } as never,
     payloads,
     clock: { now: () => T1 },
+    ...(preBindResident
+      ? {
+          srtEnvironments: {
+            session: async () => {
+              throw new Error("SRT_TASK_ENVIRONMENT_SESSION_FAILED");
+            },
+          } as never,
+        }
+      : {}),
+    ...(preBindContainer
+      ? {
+          containers: {
+            backendRef: "container-pre-bind",
+            execute: async () => {
+              throw new Error("CONTAINER_EXECUTION_UNEXPECTED");
+            },
+          } as never,
+        }
+      : {}),
   });
   const base = serviceRequest();
   const request = {
@@ -313,6 +640,81 @@ it.each([
     },
   };
   const outcome = await worker.execute(request);
+  if (transportFailure) {
+    if (!proxy) throw new Error("Transport fault proxy missing");
+    expect(outcome.outcome).toBe("result_unknown");
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+    expect(proxy.requests.filter((url) => url.endsWith("/handshake"))).toHaveLength(2);
+    expect(calls).toEqual([
+      "read",
+      "resolve",
+      "handshake",
+      ...(scenario === "resolve-transport-failure" ? ["preparation_diagnostic"] : []),
+    ]);
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(proxy.requests.filter((url) => url.endsWith("/handshake"))).toHaveLength(2);
+    await worker.shutdown();
+    return;
+  }
+  if (startPending) {
+    expect(host.start).toHaveBeenCalledOnce();
+    expect(pendingObservations).toBe(2);
+    expect(calls.indexOf("observe_control")).toBeGreaterThan(calls.indexOf("host-start"));
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      output: { ref: "output", byteLength: 6 },
+    });
+    await worker.shutdown();
+    return;
+  }
+  if (scenario === "stream-incomplete-stdio") {
+    expect(host.start).toHaveBeenCalledOnce();
+    expect
+      .soft([...streamChunks.values()].some((chunk) => (chunk as { end: boolean }).end))
+      .toBe(false);
+    expect.soft(facts.result?.kind).not.toBe("result");
+    expect([...streamChunks.values()]).toEqual([
+      { index: 0, offset: 0, bytesBase64: "cmVzdWx0", end: false },
+    ]);
+    expect(facts.result).toMatchObject({ kind: "unknown", reasonCode: "SANDBOX_EXIT_UNKNOWN" });
+    expect(host.cancel).toHaveBeenCalled();
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(host.start).toHaveBeenCalledOnce();
+    await worker.shutdown();
+    return;
+  }
+  if (streamScenario) {
+    const recoverable = ["stream-resource-race", "stream-ack-race"].includes(scenario);
+    expect(host.start).toHaveBeenCalledOnce();
+    expect(streamAttempts).toBe(recoverable ? 2 : scenario === "stream-repeated-race" ? 5 : 1);
+    expect([...streamChunks.values()]).toEqual(
+      recoverable
+        ? [expect.objectContaining({ index: 0, end: true, bytesBase64: "cmVzdWx0" })]
+        : [],
+    );
+    if (recoverable)
+      expect(facts.result).toMatchObject({ kind: "result", output: { byteLength: 6 } });
+    else expect(facts.result?.kind).not.toBe("result");
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(host.start).toHaveBeenCalledOnce();
+    await worker.shutdown();
+    return;
+  }
+  if (scenario === "network") {
+    expect(mocks.policy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace: null,
+        writable: false,
+        allowedDomains: ["example.test:443"],
+      }),
+    );
+    expect(facts.environment.workspaceConflictRefs).toEqual([]);
+    expect(facts.result).toMatchObject({
+      kind: "result",
+      completion: { type: "exit", exitCode: 0 },
+    });
+  }
   expect(outcome.outcome).toBe(
     scenario === "background" || service ? "succeeded" : "result_unknown",
   );
@@ -335,15 +737,16 @@ it.each([
   expect(host.start).toHaveBeenCalledTimes(
     scenario === "normal" ||
       scenario === "command" ||
-      scenario === "pi" ||
+      scenario === "network" ||
+      validPi ||
       scenario === "finished-during-check" ||
       scenario === "revoked-running"
       ? 1
       : 0,
   );
-  if (scenario === "normal" || scenario === "pi")
-    expect(facts.effect).toEqual({ kind: "not_applicable" });
-  if (scenario === "command") expect(facts.effect).toEqual({ kind: "not_asserted" });
+  if (scenario === "normal" || validPi) expect(facts.effect).toEqual({ kind: "not_applicable" });
+  if (scenario === "command" || scenario === "network")
+    expect(facts.effect).toEqual({ kind: "not_asserted" });
   if (scenario === "finished-during-check") {
     expect(calls).not.toContain("observe_control");
     expect(calls).toContain("append");
@@ -353,7 +756,20 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  if (scenario === "normal" || scenario === "command" || scenario === "pi") {
+  if (recoveredDuringDelivery) {
+    expect(calls.lastIndexOf("operation")).toBeGreaterThan(calls.indexOf("append"));
+    expect(facts.result).toMatchObject({
+      kind: "error",
+      reasonCode: "SANDBOX_OPERATION_FAILED",
+      output: { ref: "output", byteLength: 6 },
+    });
+    expect(facts.effect).toEqual({ kind: "not_applicable" });
+    expect(reconcilingResource).toMatchObject({ supervision: "reconciling" });
+    expect(reconcilingReads).toBe(2);
+    expect(facts.resource).toEqual(releasedResource);
+  } else if (scenario === "normal" || scenario === "command" || scenario === "network" || validPi) {
+    expect(calls).toContain("register_preparation_control");
+    expect(calls.indexOf("register_preparation_control")).toBeLessThan(calls.indexOf("host-fork"));
     expect(calls.indexOf("register_control")).toBeLessThan(calls.indexOf("bind"));
     expect(calls.indexOf("bind")).toBeLessThan(calls.indexOf("host-start"));
     expect(facts.result).toMatchObject({
@@ -362,6 +778,60 @@ it.each([
     });
     expect(facts.resource).toMatchObject({ supervision: "lost", cleanup: "unknown" });
   }
-  expect(host.cancel).toHaveBeenCalled();
+  if (
+    scenario === "pi-fixed-without-target" ||
+    scenario === "preparation-registration-ack-loss" ||
+    scenario === "preparation-sealed" ||
+    launchBlocked ||
+    preBind
+  ) {
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.cancel).not.toHaveBeenCalled();
+  } else expect(host.cancel).toHaveBeenCalled();
+  if (launchBlocked) {
+    expect(calls.indexOf("launch-blocked")).toBeLessThan(calls.indexOf("preparation-acknowledged"));
+    expect(host.start).not.toHaveBeenCalled();
+    expect(calls).not.toContain("register_control");
+    expect(calls).not.toContain("bind");
+    expect(await worker.execute(request)).toEqual(outcome);
+    expect(calls.filter((kind) => kind === "register_preparation_control")).toHaveLength(1);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  }
+  if (
+    [
+      "preparation-registration-ack-loss",
+      "preparation-failed",
+      "registration-revoked",
+      "bind-ack-loss",
+    ].includes(scenario)
+  ) {
+    expect(calls.filter((kind) => kind === "preparation_diagnostic")).toHaveLength(1);
+    expect(host.start).not.toHaveBeenCalled();
+  }
+  if (preBind) {
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+    expect(calls).not.toContain("bind");
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ stage: "prepare", reasonCode: "SANDBOX_PREPARATION_FAILED" }),
+    ]);
+  }
+  if (scenario === "preparation-sealed") {
+    await worker.shutdown();
+    await rmdir(
+      `${root}/control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
+    );
+    const replacement = new ProductionSandboxExecutionV2({
+      configuration: { capabilityDeployment: {} as never },
+      peer: { workerInstanceId: "worker", workerBootId: "replacement-boot" } as never,
+      payloads,
+      clock: { now: () => T1 },
+    });
+    await replacement.execute(request);
+    await replacement.shutdown();
+    expect(calls.filter((kind) => kind === "register_preparation_control")).toHaveLength(2);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+  }
   await worker.shutdown();
 });

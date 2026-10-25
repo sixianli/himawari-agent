@@ -1,4 +1,3 @@
-// Explicit installed-runtime qualification. Only synthetic public queries; no keys.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
@@ -61,18 +60,43 @@ try {
         ).toString("base64"),
         deadlineAt: new Date(Date.now() + 60000).toISOString(),
         maxOutputBytes: 131072,
-        cleanupTimeoutMs: 1000,
+        cleanupTimeoutMs: 5000,
       },
       control,
+      async () => {},
     );
     await host.ready;
     host.start();
     const result = await host.result;
-    const final = await readJobHostFinalEvidence(host.controlBinding);
-    assert(final.linuxNamespace);
-    const namespaceState = await readLinuxNamespaceState(final.linuxNamespace);
-    assert.equal(namespaceState, "released");
-    assert.equal(result.network.closed, true);
+    let namespaceState;
+    try {
+      const final = await readJobHostFinalEvidence(host.controlBinding);
+      assert(final.linuxNamespace);
+      namespaceState = await readLinuxNamespaceState(final.linuxNamespace);
+      assert.equal(namespaceState, "released");
+      assert.equal(result.network.closed, true);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          probeFailure: scenario,
+          error: error instanceof Error ? error.message : String(error),
+          result: {
+            reason: result.reason,
+            exitCode: result.exitCode,
+            taskStarted: result.taskStarted,
+            taskProcessExited: result.taskProcessExited,
+            stdioClosed: result.stdioClosed,
+            srtReset: result.srtReset,
+            taskTreeCleanup: result.taskTreeCleanup,
+            network: result.network,
+            diagnostic: result.diagnostic,
+            supervision: result.supervision,
+            stderr: Buffer.from(result.stderr).toString("utf8").slice(0, 2000),
+          },
+        }),
+      );
+      throw error;
+    }
     const output = Buffer.from(result.stdout).toString("utf8");
     if (scenario === "public-query") {
       assert.equal(result.exitCode, 0, Buffer.from(result.stderr).toString());

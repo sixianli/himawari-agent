@@ -1,0 +1,41 @@
+
+> himawari-agent@0.0.0 build
+> npm run build:node && npm run build:browser && npm run build:artifacts
+
+
+> himawari-agent@0.0.0 build:node
+> tsc -p tsconfig.node-build.json && node scripts/package-node-runtime.mjs
+
+Relocatable Node runtime written to /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime
+
+> himawari-agent@0.0.0 build:browser
+> npm run build --workspace @himawari-agent/control-center && node scripts/check-control-center-build.mjs
+
+
+> @himawari-agent/control-center@0.0.0 build
+> vite build
+
+vite v8.2.2 building client environment for production...
+transforming...
+✓ 72 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                               0.40 kB │ gzip:   0.27 kB
+dist/assets/logo-symbol-light-DDULTiXD.png  942.35 kB
+dist/assets/index-CDYJqPcS.css               49.66 kB │ gzip:  10.49 kB
+dist/assets/en-Bgxyjmd2.js                   25.31 kB │ gzip:   7.96 kB
+dist/assets/ja-DWlgiBxX.js                   29.60 kB │ gzip:   9.61 kB
+dist/assets/index-BfWfieA9.js               508.24 kB │ gzip: 147.41 kB
+
+✓ built in 186ms
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+{"schemaVersion":1,"status":"passed","errors":[],"assets":[{"name":"en-Bgxyjmd2.js","bytes":25310,"gzipBytes":7911},{"name":"index-BfWfieA9.js","bytes":508249,"gzipBytes":146221},{"name":"index-CDYJqPcS.css","bytes":49669,"gzipBytes":10414},{"name":"ja-DWlgiBxX.js","bytes":29605,"gzipBytes":9599}],"localeChunks":["en-Bgxyjmd2.js","ja-DWlgiBxX.js"],"sourceMaps":0,"inlineScripts":0,"inlineStyles":0,"budgets":{"maximumEntryGzipBytes":153600,"maximumTotalGzipBytes":184320,"totalGzipBytes":174145}}
+
+> himawari-agent@0.0.0 build:artifacts
+> node scripts/generate-artifact-manifest.mjs
+
+Build artifact manifest written to dist/build-artifact-manifest.json

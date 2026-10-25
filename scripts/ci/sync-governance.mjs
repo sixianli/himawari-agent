@@ -53,6 +53,7 @@ function listFiles(root, prefix = "") {
   return readdirSync(join(root, prefix), { withFileTypes: true }).flatMap((entry) => {
     const path = prefix ? `${prefix}/${entry.name}` : entry.name;
     assert(!entry.isSymbolicLink(), `治理目录不接受符号链接: ${path}`);
+    if (entry.isFile() && entry.name === ".DS_Store") return [];
     return entry.isDirectory() ? listFiles(root, path) : [path];
   });
 }

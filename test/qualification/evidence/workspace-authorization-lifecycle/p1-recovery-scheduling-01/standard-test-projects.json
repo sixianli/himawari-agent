@@ -1,0 +1,95 @@
+{
+  "status": "passed",
+  "counts": {
+    "files": 244,
+    "executed": 3802,
+    "passed": 3802,
+    "failed": 0,
+    "skipped": 0
+  },
+  "projects": [
+    {
+      "id": "unit",
+      "counts": {
+        "files": 129,
+        "executed": 1788,
+        "passed": 1788,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "contracts",
+      "counts": {
+        "files": 23,
+        "executed": 335,
+        "passed": 335,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "integration",
+      "counts": {
+        "files": 79,
+        "executed": 1546,
+        "passed": 1546,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "e2e",
+      "counts": {
+        "files": 1,
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "id": "pi-compat",
+      "counts": {
+        "files": 12,
+        "executed": 130,
+        "passed": 130,
+        "failed": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "unit",
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 91855
+    },
+    {
+      "id": "contracts",
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 10870
+    },
+    {
+      "id": "integration",
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 482658
+    },
+    {
+      "id": "e2e",
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 2074
+    },
+    {
+      "id": "pi-compat",
+      "exitCode": 0,
+      "signal": null,
+      "durationMs": 20818
+    }
+  ],
+  "archiveSha256": "f96250542e108012a73279d772f53258ad54d6c37cd4cf96eee8eacddb3de5d6"
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/browser.log",
+    "rawSha256": "2834af029361607638862321db76e40654371c89339206e3247bd9e81b6687bb",
+    "normalizedSha256": "2834af029361607638862321db76e40654371c89339206e3247bd9e81b6687bb"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/ci-policy.log",
+    "rawSha256": "fe34cb70807f169ee1c8f55450fb8a79777aed4f63119a8db23e062e373fa45c",
+    "normalizedSha256": "fe34cb70807f169ee1c8f55450fb8a79777aed4f63119a8db23e062e373fa45c"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/docs.log",
+    "rawSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+    "normalizedSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/draft-browser.log",
+    "rawSha256": "a327c65c7b88808079d97e396ec03042245959e724ccb86beb1895e2874f34c6",
+    "normalizedSha256": "a327c65c7b88808079d97e396ec03042245959e724ccb86beb1895e2874f34c6"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/format.log",
+    "rawSha256": "7205acd7baa0906cbb53a65f61012cf088650fe32c55c53b75297bd5b787451d",
+    "normalizedSha256": "7205acd7baa0906cbb53a65f61012cf088650fe32c55c53b75297bd5b787451d"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/links.log",
+    "rawSha256": "9d5fd6fc36286233e20fdfaf0bce80c59aa9617257d1902210fa5c57094a6c76",
+    "normalizedSha256": "9d5fd6fc36286233e20fdfaf0bce80c59aa9617257d1902210fa5c57094a6c76"
+  },
+  {
+    "path": "test/qualification/evidence/workspace-authorization-lifecycle/p0-local-02/lint.log",
+    "rawSha256": "8bc0884e7555b7f688aee725fc6c63e19570159aa52b913dbd25b246d52ca9d1",
+    "normalizedSha256": "d8bad29ad30625df3665dc8acf658ad06ee945bfaf5c2574285d01e2f31ec8f5"
+  }
+]

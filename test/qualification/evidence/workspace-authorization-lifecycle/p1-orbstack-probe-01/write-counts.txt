@@ -1,0 +1,3 @@
+initial=4
+after_stop=42
+after_quiescence=42

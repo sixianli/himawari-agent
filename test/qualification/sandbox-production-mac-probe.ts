@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import { hostDirectoryGrantStateKey } from "@himawari-agent/application";
+import {
+  hostDirectoryGrantStateKey,
+  type SandboxExecutionPreparationPort,
+  ThreadExecutionProjection,
+} from "@himawari-agent/application";
 import {
   type ExecutionV2Request,
   executionV2MessageSchema,
@@ -14,6 +18,9 @@ import {
 import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsServer, resolveSandboxWorkspaceClaim } from "@himawari-agent/platform-node";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.js";
+import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
+import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.js";
 import {
   AGENT_ID,
   LIVE_SANDBOX,
@@ -26,9 +33,18 @@ import {
   T1,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
 
-export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false) {
-  if (revokeNetwork && (!v2 || process.platform !== "linux"))
-    throw new Error("NETWORK_REVOCATION_REQUIRES_LINUX_V2");
+export async function qualifyProductionSandbox(
+  v2 = false,
+  revokeNetwork = false,
+  revokeDirectory = false,
+  browser?: {
+    running: (readState: () => ReturnType<ThreadExecutionProjection["readState"]>) => Promise<void>;
+    stopped: () => Promise<void>;
+  },
+) {
+  const withdraw = revokeNetwork || revokeDirectory;
+  if (withdraw && (!v2 || (revokeNetwork && revokeDirectory)))
+    throw new Error("REVOCATION_REQUIRES_V2_AND_ONE_AUTHORITY");
   if (
     !LIVE_SANDBOX ||
     !["darwin", "linux"].includes(process.platform) ||
@@ -59,11 +75,11 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
   };
 
   try {
-    const fixture = await openSandboxJournal(
-      false,
-      revokeNetwork ? ["registry.npmjs.org:443"] : [],
-    );
+    const fixture = await openSandboxJournal(false, withdraw ? ["registry.npmjs.org:443"] : []);
     cleanup.push(() => fixture.close());
+    // Gateway Run summaries start at revision 1. This controlled fixture creates
+    // the initial Run directly; do not relax the browser's revision validation.
+    if (browser) fixture.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(RUN_ID);
     const hostRoot = v2 ? await mkdtemp("/tmp/h-v2-") : fixture.resource.stateRoot;
     if (v2) cleanup.push(() => rm(hostRoot, { recursive: true, force: true }));
     const host = await macSandboxDeployment(
@@ -72,7 +88,7 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       T1,
       v2,
       process.platform as "darwin" | "linux",
-      revokeNetwork,
+      withdraw,
     );
     const scope = sandboxScopeSchema.parse({ ...fixture.scope, parentToolCallId: null });
     const payload = await fixture.protector.protect({
@@ -106,8 +122,8 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
         T1,
       );
     let v2Plan: SandboxExecutionPlanV2 | undefined;
+    let competingReservation: Parameters<SandboxExecutionPreparationPort["reserve"]>[0] | undefined;
     if (v2) {
-      const { sandboxV2Admission } = await import("../fixtures/sandbox-execution-v2-fixture.js");
       const input = sandboxV2Admission(fixture);
       const { semanticFingerprint: _fingerprint, ...candidate } = plan;
       const next = sandboxExecutionPlanCandidateV2Schema.parse({
@@ -138,6 +154,22 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
         },
       ) as { admission: { plan: SandboxExecutionPlanV2 } };
       v2Plan = saved.admission.plan;
+      const competitor = sandboxV2Admission(fixture, "-competing");
+      const competingPlan = sandboxExecutionPlanCandidateV2Schema.parse({
+        ...next,
+        identity: competitor.plan.identity,
+        environmentId: competitor.plan.environmentId,
+      });
+      competingReservation = {
+        invocation: competitor.invocation,
+        plan: competingPlan,
+        reservation: sandboxExecutionReservationSchema.parse({
+          ...reservation,
+          identity: competingPlan.identity,
+          environmentId: competingPlan.environmentId,
+        }),
+        workspaces: [{ ...workspace, access: "write" }],
+      };
     } else
       fixture.call("Prepare", { plan, observation: { ...fixture.prepared, policyDigest: null } });
     fixture.database.close();
@@ -147,6 +179,12 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       now: () => new Date().toISOString(),
     });
     cleanup.push(() => repository.close());
+    const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+    const occupied = (error: unknown) =>
+      error instanceof Error &&
+      /Workspace (has a pending preparation|remains occupied)/.test(error.message);
+    if (competingReservation)
+      await assert.rejects(preparations.reserve(competingReservation), occupied);
     const directory = await mkdtemp("/tmp/h-live-");
     cleanup.push(() => rm(directory, { recursive: true, force: true }));
     const peer = { ...SERVICE_AUTHORITY, ...SERVICE_AUTHORITY.product };
@@ -279,6 +317,28 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       nextId: () => `live-rpc:${++counter}`,
     });
     cleanup.push(async () => client.disconnect());
+    if (browser) {
+      const call = client.sandboxExecution.bind(client);
+      client.sandboxExecution = async (...args) => {
+        try {
+          const reply = await call(...args);
+          if (args[2].kind === "observe_control" && reply.record.phase === "bound")
+            console.error(
+              JSON.stringify({ event: "probe.control", resource: reply.record.facts.resource }),
+            );
+          return reply;
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              event: "probe.broker_error",
+              command: args[2].kind,
+              error: String(error),
+            }),
+          );
+          throw error;
+        }
+      };
+    }
     const { ProductionSandboxExecutionV2 } = await import(
       "../../apps/execution-worker/src/production-sandbox-execution-v2.js"
     );
@@ -309,29 +369,78 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       },
     }) as Extract<ExecutionV2Request, { type: "work.execute" }>;
     let revocationStarted: number | undefined;
+    let originalApproval: unknown;
+    let originalUses: number | undefined;
+    let originalOutput: string | undefined;
+    let originalRunsIdentity: { ino: number; mtimeMs: number; ctimeMs: number } | undefined;
     const executing = worker.execute(request);
-    if (revokeNetwork) {
+    if (withdraw) {
       const marker = path.join(host.privateRoot, plan.identity.jobId, "network-established");
       const deadline = Date.now() + 15000;
       while (!(await readFile(marker, "utf8").catch(() => ""))) {
         if (Date.now() >= deadline) throw new Error("NETWORK_CONNECTION_NOT_ESTABLISHED");
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
+      if (browser) {
+        const projection = new ThreadExecutionProjection({
+          threads: repository.threadRepository(),
+          trace: repository.traceStore(),
+          payloads: () => repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: fixture.protector,
+          resources: {
+            readInventory: ({ runId }) => preparations.readRunInventory({ runId }),
+            now: clock.now,
+            digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+          },
+        });
+        await browser.running(() =>
+          projection.readState({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            threadId: plan.identity.threadId ?? "",
+            runId: RUN_ID,
+            canCancelRun: true,
+          }),
+        );
+      }
       const authorizations = repository.authorizationStore();
       const grant = (await authorizations.listGrants(OWNER_ID, AGENT_ID)).find(
         (value) => value.id === scope.authorizationRef,
       );
       assert.ok(grant);
-      revocationStarted = performance.now();
-      await authorizations.revokeGrant(
-        grant.id,
-        new Date().toISOString(),
-        "LIVE_NETWORK_REVOCATION",
-        grant.revision,
+      originalApproval = await authorizations.getApproval(grant.sourceApprovalRequestId);
+      originalUses = grant.uses;
+      originalOutput = await readFile(
+        path.join(host.privateRoot, plan.identity.jobId, "runs"),
+        "utf8",
       );
+      const before = await stat(path.join(host.privateRoot, plan.identity.jobId, "runs"));
+      originalRunsIdentity = { ino: before.ino, mtimeMs: before.mtimeMs, ctimeMs: before.ctimeMs };
+      revocationStarted = performance.now();
+      if (revokeDirectory) {
+        const revokedAt = clock.now();
+        const saved = await revokeFixtureDirectoryGrant(
+          repository,
+          scope.directoryGrant.ref,
+          revokedAt,
+        );
+        assert.equal(saved?.value["revokedAt"], revokedAt);
+        assert.equal(
+          (await authorizations.listGrants(OWNER_ID, AGENT_ID)).find(
+            (value) => value.id === grant.id,
+          )?.revokedAt,
+          null,
+        );
+      } else
+        await authorizations.revokeGrant(
+          grant.id,
+          new Date().toISOString(),
+          "LIVE_NETWORK_REVOCATION",
+          grant.revision,
+        );
     }
     const result = await executing;
-    const revokeToReleasedMs =
+    const revokeToObservedStopMs =
       revocationStarted === undefined ? null : Math.ceil(performance.now() - revocationStarted);
     assert.equal(result.outcome, "result_unknown");
     const record = v2
@@ -339,28 +448,92 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       : await services.broker.journal.read(plan.identity);
     const observation = record && "facts" in record ? record.facts.resource : record?.observation;
     assert.ok(observation);
+    const releasedCleanup = process.platform === "linux" ? "confirmed" : "process_group_gone";
     if ("supervision" in observation) {
-      assert.equal(observation.supervision, process.platform === "linux" ? "released" : "lost");
-      assert.equal(observation.cleanup, process.platform === "linux" ? "confirmed" : "unknown");
+      assert.equal(observation.supervision, "released");
+      assert.equal(observation.cleanup, releasedCleanup);
     } else
       assert.equal(observation.state, process.platform === "linux" ? "released" : "quarantined");
-    if (revokeToReleasedMs !== null)
-      assert.ok(revokeToReleasedMs < 8000, "NETWORK_REVOCATION_TOO_SLOW");
-    if (!revokeNetwork) {
-      const outputRef =
+    if (revokeToObservedStopMs !== null)
+      assert.ok(revokeToObservedStopMs < 8000, "AUTHORITY_REVOCATION_TOO_SLOW");
+    // Read through the same durable inventory/projection used by status queries;
+    // no event or successful task result is synthesized by this probe.
+    const projected = v2
+      ? await readThreadExecutionResources({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId: plan.identity.threadId ?? "",
+          runId: RUN_ID,
+          inventory: await preparations.readRunInventory({ runId: RUN_ID }),
+          now: clock.now(),
+          payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: fixture.protector,
+          digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+          itemId: (toolCallId) => `probe:${toolCallId}`,
+        })
+      : null;
+    if (projected) {
+      assert.equal(projected.allReleased, true);
+      assert.equal(projected.pendingResources, false);
+    }
+    if (withdraw) {
+      assert.ok(v2Plan);
+      // Use the same live scope check as Worker disclosure/network admission.
+      await assert.rejects(services.brokerV2.resolveScope(v2Plan));
+      const grant = (await repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).find(
+        (value) => value.id === scope.authorizationRef,
+      );
+      assert.ok(grant);
+      assert.equal(grant.uses, originalUses);
+      assert.deepEqual(
+        await repository.authorizationStore().getApproval(grant.sourceApprovalRequestId),
+        originalApproval,
+      );
+    }
+    await browser?.stopped();
+    if (competingReservation) {
+      assert.ok(record && "facts" in record);
+      assert.equal(Boolean(record.releaseReceipt), true);
+      assert.equal(record.workspaceBlocked, false);
+      // A competitor using the original revoked Grant cannot test release:
+      // current authority rejects it before workspace admission is reached.
+      if (!withdraw) {
+        await preparations.reserve(competingReservation);
+        const admitted = await preparations.readAdmission(competingReservation.plan.identity);
+        assert.ok(admitted?.phase === "reserved");
+        assert.equal(admitted.plan.identity.jobId, competingReservation.plan.identity.jobId);
+      }
+    }
+    {
+      const resultOutputRef =
         record && "facts" in record && record.facts.result && "output" in record.facts.result
           ? record.facts.result.output.ref
           : record && "observation" in record
             ? record.observation.outputRef
             : null;
-      const output = await repository.payloadStore(OWNER_ID, AGENT_ID).get(outputRef ?? "missing");
+      // Unknown completion intentionally has no successful-result output field.
+      // The frozen invocation receipt retains bytes observed before stopping.
+      const retained = await repository
+        .capabilityInvocationResultPort(OWNER_ID, AGENT_ID)
+        .lookupOutput({
+          handleRef: plan.handleRef,
+          invocationId: plan.identity.invocationId,
+          authority: SERVICE_AUTHORITY,
+          now: clock.now(),
+        });
+      assert.ok(retained, "original invocation output receipt missing");
+      if (resultOutputRef !== null) assert.equal(retained.payloadRef, resultOutputRef);
+      const output = await repository.payloadStore(OWNER_ID, AGENT_ID).get(retained.payloadRef);
       if (!output) throw new Error("live output absent");
       const bytes = await fixture.protector.unprotect({
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
         payload: output,
       });
-      assert.equal(new TextDecoder().decode(bytes), '{"probe":"passed"}');
+      assert.equal(
+        new TextDecoder().decode(bytes),
+        withdraw ? '{"probe":"network-established"}' : '{"probe":"passed"}',
+      );
     }
     assert.equal(
       await readFile(path.join(host.privateRoot, plan.identity.jobId, "runs"), "utf8"),
@@ -383,23 +556,51 @@ export async function qualifyProductionSandbox(v2 = false, revokeNetwork = false
       await readFile(path.join(host.privateRoot, plan.identity.jobId, "runs"), "utf8"),
       "run\n",
     );
+    if (withdraw) {
+      const preservedPath = path.join(host.privateRoot, plan.identity.jobId, "runs");
+      assert.equal(await readFile(preservedPath, "utf8"), originalOutput);
+      const after = await stat(preservedPath);
+      assert.deepEqual(
+        { ino: after.ino, mtimeMs: after.mtimeMs, ctimeMs: after.ctimeMs },
+        originalRunsIdentity,
+      );
+      const grant = (await repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).find(
+        (value) => value.id === scope.authorizationRef,
+      );
+      assert.equal(grant?.uses, originalUses);
+    }
     return {
       productionSandboxProbePassed: true,
       schema: v2 ? "sandbox-execution.v2" : "sandbox-execution.v1",
       productionSuitable: false,
-      networkDenial: revokeNetwork ? null : "blocked-by-allowlist",
-      networkRevocation: revokeNetwork
+      networkDenial: withdraw ? null : "blocked-by-allowlist",
+      networkRevocation: withdraw
         ? {
             connectionEstablished: true,
-            grantRevoked: true,
-            revokeToReleasedMs,
+            authorityRevoked: revokeDirectory ? "directory" : "action_grant",
+            grantRevoked: revokeNetwork,
+            revokeToObservedStopMs,
             jobHostExited: true,
-            taskNamespaceReleased: true,
+            currentScopeRejected: true,
+            approvalHistoryPreserved: true,
+            quotaUsesUnchanged: true,
+            preRevocationFileBytesAndIdentityPreserved: true,
+            fileEvidenceBoundary:
+              "private execution marker; user-file publication is independently covered by the existing queued Worker probe",
+            taskNamespaceReleased: process.platform === "linux",
           }
         : null,
       platform: process.platform,
-      cleanup: process.platform === "linux" ? "confirmed" : "unknown",
+      resourceProjection: projected,
+      cleanup: v2 ? releasedCleanup : "unknown",
       replayExecuted: false,
+      workspaceProtection: v2
+        ? {
+            blockedBeforeExecution: true,
+            admittedAfterExecution: withdraw ? null : true,
+            occupiedAfterExecution: record && "facts" in record ? record.workspaceBlocked : null,
+          }
+        : null,
     };
   } finally {
     await dispose();

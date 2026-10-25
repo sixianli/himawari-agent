@@ -1,0 +1,193 @@
+import path from "node:path";
+import {
+  type RunExecutionLeaseClaim,
+  recoverSandboxExecutionsAtStartup,
+  type SandboxExecutionJournalPort,
+  type SandboxExecutionProjectionContext,
+  SandboxExecutionReconciliationService,
+  type SandboxExecutionRecord,
+} from "@himawari-agent/application";
+import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
+import {
+  type SandboxExecutionFacts,
+  sandboxExecutionFactsSchema,
+  sandboxExecutionPlanCandidateV2Schema,
+} from "@himawari-agent/execution-contracts";
+import {
+  applyMigrations,
+  createVerifiedMigrationSnapshot,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  readMigrationLedger,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { describe, expect, it, vi } from "vitest";
+import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
+import {
+  sandboxV2Admission as admission,
+  sandboxV2Call as call,
+} from "../fixtures/sandbox-execution-v2-fixture.ts";
+import {
+  AGENT_ID,
+  OWNER_ID,
+  openSandboxJournal,
+  operationsForDatabase,
+  outputObservation,
+  outputPayload,
+  SERVICE_AUTHORITY,
+  T1,
+  T2,
+} from "../fixtures/sqlite-capability-invocation-fixture.ts";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+const evidence = { ref: "supervision-evidence", digest: "e".repeat(64) };
+function context(
+  record: SandboxExecutionRecord,
+  facts: SandboxExecutionFacts,
+): SandboxExecutionProjectionContext {
+  return {
+    now: T1,
+    environment: record.facts.environment,
+    operationContract: record.plan.operationContract,
+    verification: {
+      facts,
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: facts.environment.policyDigest,
+      resourceSequence: facts.resource.sequence,
+      checkedAt: T1,
+      validUntil: T2,
+      evidence: [evidence],
+      outputs: facts.result && facts.result.kind !== "unknown" ? [facts.result.output] : [],
+    },
+    currentResourceSequence: facts.resource.sequence,
+    runState: "active",
+    currentAuthority: true,
+    currentFence: true,
+    userDisclosureAllowed: true,
+    modelDisclosureAllowed: true,
+    conflictingWorkspaceRisk: false,
+    pendingApprovalOrReconciliation: false,
+    resultAlreadyDelivered: false,
+  };
+}
+function append(
+  f: Fixture,
+  record: SandboxExecutionRecord,
+  facts: SandboxExecutionFacts,
+  operationOnly = false,
+) {
+  return call(f, operationOnly ? "recordOperation" : "append", {
+    identity: record.plan.identity,
+    expectedSequence: record.facts.resource.sequence,
+    expectedOperationRevision: record.operationRevision,
+    facts,
+    authority: SERVICE_AUTHORITY,
+    now: T1,
+    context: context(record, facts),
+  }).record;
+}
+function resource(
+  record: SandboxExecutionRecord,
+  state: "controlled" | "stopping" | "lost" | "reconciling" | "released",
+): SandboxExecutionFacts {
+  const old = record.facts.resource;
+  const { supervision: _supervision, cleanup: _cleanup, ...common } = old;
+  const {
+    evidence: _evidence,
+    reasonCode: _reason,
+    ...base
+  } = common as typeof common & { evidence?: unknown; reasonCode?: string };
+  const extra =
+    state === "controlled" || state === "released"
+      ? {
+          evidence: {
+            ...evidence,
+            qualificationRef: record.plan.binding.qualificationRef,
+            profileRef: record.plan.binding.profileRef,
+            validUntil: T2,
+            subject: { kind: "local_process", processIdentityRef: "process" },
+          },
+        }
+      : { reasonCode: "requested" };
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    resource: {
+      ...base,
+      ...extra,
+      sequence: old.sequence + 1,
+      supervision: state,
+      cleanup: state === "released" ? "confirmed" : state === "lost" ? "unknown" : "pending",
+    },
+  });
+}
+function start(f: Fixture, a = admission(f)) {
+  const record = call(f, "admit", a).record;
+  call(f, "start", {
+    identity: record.plan.identity,
+    expectedSequence: 1,
+    policyDigest: record.facts.environment.policyDigest,
+    authority: SERVICE_AUTHORITY,
+    now: T1,
+  });
+  return call(f, "read", record.plan.identity) as SandboxExecutionRecord;
+}
+function result(f: Fixture, record: SandboxExecutionRecord) {
+  const output = { ref: "output", digest: "f".repeat(64), byteLength: 0 };
+  operationsForDatabase(f.database).execute("capabilityInvocationResult.observeOutput", {
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    input: outputObservation({ payload: outputPayload(output.ref, `sha256:${output.digest}`) }),
+  });
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    effect: { kind: "not_applicable" },
+    result: {
+      schemaVersion: "sandbox-execution.v2",
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: record.facts.environment.policyDigest,
+      contract: { ref: "fixed-read", version: "1" },
+      occurredAt: T1,
+      kind: "result",
+      output,
+      completion: { type: "value" },
+    },
+  });
+}
+describe.each(["worker", "direct"] as const)("P0 release expiry reproduction (%s)", (execution) => {
+  useSqliteContractExecution(execution);
+  it.each([-1, 0, 11, 151])("keeps release after result ACK at evidence expiry %+d ms", async (delay) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "stopping"));
+      const facts = resource(record, "released");
+      if (facts.resource.supervision !== "released") throw new Error("release required");
+      const expiresAt = new Date(Date.parse(T1) + 1000).toISOString();
+      const released = { ...facts, resource: { ...facts.resource, evidence: { ...facts.resource.evidence, validUntil: expiresAt } } };
+      record = append(f, record, released);
+      const readOccupancy = () => f.database.prepare("SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?").get(record.plan.identity.jobId) as { releasedAt: string | null };
+      expect(readOccupancy().releasedAt).toBe(T1);
+      const request = { identity: record.plan.identity, intentId: "p0-delivery", kind: "tool_result" as const, expectedSequence: record.facts.resource.sequence, authority: SERVICE_AUTHORITY, now: T1, context: context(record, record.facts) };
+      call(f, "prepareIntent", request);
+      expect(call(f, "dispatchIntent", request).applied).toBe(true);
+      const afterDispatch = readOccupancy();
+      const ackAt = new Date(Date.parse(expiresAt) + delay).toISOString();
+      call(f, "acknowledgeIntent", { identity: request.identity, intentId: request.intentId, authority: SERVICE_AUTHORITY, now: ackAt, context: request.context });
+      call(f, "acknowledgeIntent", { identity: request.identity, intentId: request.intentId, authority: SERVICE_AUTHORITY, now: ackAt, context: request.context });
+      const current = call(f, "read", request.identity) as SandboxExecutionRecord;
+      expect(current.facts.resource.supervision).toBe("released");
+      expect(current.facts.resource.cleanup).toBe("confirmed");
+      expect(f.database.prepare("SELECT count(*) AS count FROM sandbox_execution_intents WHERE acknowledged_at IS NULL").get()).toEqual({ count: 0 });
+      const pending = call(f, "listPending", { afterJobId: null, limit: 10 });
+      let conflict = "";
+      try { call(f, "admit", admission(f, "-next")); } catch (error) { conflict = String(error); }
+      console.info(JSON.stringify({ execution, delay, expiresAt, ackAt, afterDispatch, afterAck: readOccupancy(), pending, conflict }));
+      expect(readOccupancy().releasedAt).not.toBeNull();
+      expect(conflict).toBe("");
+    } finally { await f.close(); }
+  });
+});

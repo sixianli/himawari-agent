@@ -1,7 +1,7 @@
-import { Client } from "@modelcontextprotocol/client";
-import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { setTimeout as delay } from "node:timers/promises";
 import type {
   CapabilityDescriptor,
+  CapabilityInvocationAuthorityPort,
   CapabilityInvocationEvent,
   CapabilityInvocationRequest,
   CapabilityManifest,
@@ -10,15 +10,19 @@ import type {
   PayloadRef,
   SecretPort,
 } from "@himawari-agent/application";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { readonlyNetworkRetryDelay } from "../readonly-network-retry.js";
 import {
   type CapabilityEndpointBinding,
   type CapabilityRuntimeBindingPort,
+  runSandboxedProcess,
   type SandboxedProcessIsolationBackend,
   type SandboxedProcessLaunch,
-  runSandboxedProcess,
 } from "./isolation.js";
 
 export const NODE_CAPABILITY_RUNTIME_ERROR_CODES = Object.freeze({
+  CAPABILITY_AUTHORITY_REJECTED: "CAPABILITY_RUNTIME_AUTHORITY_REJECTED",
   CAPABILITY_NOT_ACTIVE: "CAPABILITY_RUNTIME_NOT_ACTIVE",
   CAPABILITY_OPERATION_UNSUPPORTED: "CAPABILITY_RUNTIME_OPERATION_UNSUPPORTED",
   CAPABILITY_INPUT_MISSING: "CAPABILITY_RUNTIME_INPUT_MISSING",
@@ -55,6 +59,7 @@ export interface CapabilitySecretMaterialSource {
 
 export interface NodeCapabilityRuntimeOptions {
   readonly manifests: ActiveCapabilityManifestPort;
+  readonly invocationAuthority?: CapabilityInvocationAuthorityPort;
   readonly bindings: CapabilityRuntimeBindingPort;
   readonly isolation: SandboxedProcessIsolationBackend;
   readonly payloads: CapabilityPayloadBoundary;
@@ -62,7 +67,10 @@ export interface NodeCapabilityRuntimeOptions {
   readonly secretSource: CapabilitySecretMaterialSource;
   readonly clock: ClockPort;
   readonly fetch?: typeof globalThis.fetch;
+  readonly waitForRetry?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
 }
+
+class InvocationAuthorityRejected extends Error {}
 
 function descriptor(manifest: CapabilityManifest): CapabilityDescriptor {
   return Object.freeze({
@@ -137,6 +145,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
   }
 
   async *invoke(request: CapabilityInvocationRequest): AsyncIterable<CapabilityInvocationEvent> {
+    const startedAt = performance.now();
     const abort = new AbortController();
     if (this.#cancellations.has(request.invocationId))
       throw new Error("CAPABILITY_INVOCATION_ALREADY_RUNNING");
@@ -170,6 +179,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
         return;
       }
       abort.signal.throwIfAborted();
+      await this.assertCurrent(request, abort.signal);
       const input = await this.readInput(request);
       abort.signal.throwIfAborted();
       if (manifest.runtime.kind === "program") {
@@ -177,7 +187,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       } else if (manifest.runtime.kind === "mcp") {
         yield* this.invokeMcp(manifest, request, input, abort.signal);
       } else if (manifest.runtime.kind === "remote_api" || manifest.runtime.kind === "adapter") {
-        yield* this.invokeEndpoint(manifest, request, input, abort.signal);
+        yield* this.invokeEndpoint(manifest, request, input, abort.signal, startedAt);
       } else {
         yield failed(
           request,
@@ -185,7 +195,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
           this.#options.clock.now(),
         );
       }
-    } catch {
+    } catch (error) {
       if (abort.signal.aborted)
         yield {
           type: "capability.cancelled",
@@ -196,7 +206,9 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       else
         yield failed(
           request,
-          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_INVALID,
+          error instanceof InvocationAuthorityRejected
+            ? NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_AUTHORITY_REJECTED
+            : NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_INPUT_INVALID,
           this.#options.clock.now(),
         );
     } finally {
@@ -206,6 +218,22 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
 
   async cancel(invocationId: string, _reasonCode: string): Promise<void> {
     this.#cancellations.get(invocationId)?.abort();
+  }
+
+  private async assertCurrent(
+    request: CapabilityInvocationRequest,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    try {
+      await this.#options.invocationAuthority?.assertCurrent({
+        handleRef: request.capabilityHandleRef,
+        invocationId: request.invocationId,
+      });
+    } catch {
+      throw new InvocationAuthorityRejected();
+    }
+    signal.throwIfAborted();
   }
 
   private async readInput(request: CapabilityInvocationRequest): Promise<Uint8Array> {
@@ -247,6 +275,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       payloadRef: null,
       occurredAt: this.#options.clock.now(),
     });
+    await this.assertCurrent(request, signal);
     const result = await runSandboxedProcess(
       launch,
       manifest.runtime.stdin === "protected_payload" ? input : null,
@@ -342,6 +371,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       if (stderrBytes > (request.resourceCeiling?.maxOutputBytes ?? 0)) void client.close();
     });
     try {
+      await this.assertCurrent(request, signal);
       await client.connect(transport, {
         signal,
         timeout: request.resourceCeiling.maxWallTimeMs,
@@ -357,6 +387,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
         return;
       }
       const toolName = binding.mcpOperationMap[request.operation];
+      await this.assertCurrent(request, signal);
       const tools = await client.listTools(undefined, {
         signal,
         timeout: request.resourceCeiling.maxWallTimeMs,
@@ -379,6 +410,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new TypeError("MCP input must be an object");
       }
+      await this.assertCurrent(request, signal);
       const result = await client.callTool(
         { name: toolName, arguments: parsed as Record<string, unknown> },
         {
@@ -411,12 +443,14 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
         resultRef,
         occurredAt: this.#options.clock.now(),
       });
-    } catch {
+    } catch (error) {
       yield failed(
         request,
-        signal.aborted
-          ? NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT
-          : NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_MCP_FAILED,
+        error instanceof InvocationAuthorityRejected
+          ? NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_AUTHORITY_REJECTED
+          : signal.aborted
+            ? NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT
+            : NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_MCP_FAILED,
         this.#options.clock.now(),
       );
     } finally {
@@ -429,6 +463,7 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
     request: CapabilityInvocationRequest,
     input: Uint8Array,
     signal: AbortSignal,
+    startedAt: number,
   ): AsyncIterable<CapabilityInvocationEvent> {
     if (
       (manifest.runtime.kind !== "remote_api" && manifest.runtime.kind !== "adapter") ||
@@ -453,21 +488,6 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       yield failed(
         request,
         NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_ENDPOINT_UNAVAILABLE,
-        this.#options.clock.now(),
-      );
-      return;
-    }
-    const headers = new Headers({
-      accept: "application/json",
-      "content-type": "application/json",
-      "idempotency-key": request.invocationId,
-    });
-    try {
-      await this.injectEndpointSecrets(manifest, binding, request, headers);
-    } catch {
-      yield failed(
-        request,
-        NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_SECRET_INVALID,
         this.#options.clock.now(),
       );
       return;
@@ -497,19 +517,84 @@ export class NodeCapabilityRuntimePort implements CapabilityPort {
       );
       return;
     }
-    signal.throwIfAborted();
-    const timeout = AbortSignal.timeout(request.resourceCeiling.maxWallTimeMs);
+    const deadline = startedAt + request.resourceCeiling.maxWallTimeMs;
+    const timeout = AbortSignal.timeout(Math.max(0, Math.ceil(deadline - performance.now())));
     const combined = AbortSignal.any([signal, timeout]);
-    let response: Response;
-    try {
-      response = await (this.#options.fetch ?? globalThis.fetch)(endpoint, {
-        method: operation.method,
-        headers,
-        ...(operation.method === "GET" ? {} : { body: Buffer.from(input) }),
-        redirect: "error",
-        signal: combined,
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      signal.throwIfAborted();
+      await this.assertCurrent(request, signal);
+      const headers = new Headers({
+        accept: "application/json",
+        "content-type": "application/json",
+        "idempotency-key": request.invocationId,
       });
-    } catch {
+      try {
+        await this.injectEndpointSecrets(manifest, binding, request, headers);
+      } catch {
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_SECRET_INVALID,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+      // Secret resolution is asynchronous; permission and time may have changed.
+      await this.assertCurrent(request, signal);
+      if (timeout.aborted || performance.now() >= deadline) {
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+      let failure: unknown;
+      try {
+        response = await (this.#options.fetch ?? globalThis.fetch)(endpoint, {
+          method: operation.method,
+          headers,
+          ...(operation.method === "GET" ? {} : { body: Buffer.from(input) }),
+          redirect: "error",
+          signal: combined,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      if (operation.method === "GET") signal.throwIfAborted();
+      const backoff =
+        operation.method === "GET" && manifest.cost.maxMicrosPerInvocation === 0 && attempt === 0
+          ? readonlyNetworkRetryDelay(response, failure)
+          : null;
+      if (backoff === null || combined.aborted || deadline - performance.now() <= backoff) break;
+      const retryAt = performance.now() + backoff;
+      await response?.body?.cancel().catch(() => undefined);
+      response = undefined;
+      try {
+        for (;;) {
+          const remainingMs = retryAt - performance.now();
+          if (remainingMs <= 0) break;
+          combined.throwIfAborted();
+          if (deadline - performance.now() <= remainingMs) {
+            throw new Error(NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT);
+          }
+          if (this.#options.waitForRetry) {
+            await this.#options.waitForRetry(remainingMs, combined);
+          } else {
+            await delay(remainingMs, undefined, { signal: combined });
+          }
+        }
+      } catch {
+        signal.throwIfAborted();
+        yield failed(
+          request,
+          NODE_CAPABILITY_RUNTIME_ERROR_CODES.CAPABILITY_PROCESS_TIMEOUT,
+          this.#options.clock.now(),
+        );
+        return;
+      }
+    }
+    if (!response) {
       if (sideEffecting(operation.method)) {
         yield Object.freeze({
           type: "capability.result_unknown" as const,

@@ -81,15 +81,7 @@ function freezeBatch(
  * are restored as conversation state; only unfinished calls enter product execution.
  */
 export function restorePiToolBatch(session: AgentSession, saved: PiToolBatchContinuation) {
-  if (saved.version !== "pi-tool-batch.v2") throw new Error("PI_CONTINUATION_VERSION_INVALID");
-  // Reuse capture validation, including that the waiting call belongs to this batch.
-  const transcript = [...saved.prefix, saved.assistant, ...saved.completedResults];
-  const checked = freezeBatch(
-    transcript,
-    saved.waitingToolCallId,
-    saved.completedStreamOrdinal,
-    saved.systemPrompt,
-  );
+  const checked = validateSavedBatch(saved);
   session.agent.state.messages = checked.prefix;
   session.agent.state.systemPrompt = checked.systemPrompt;
   let consumed = false;
@@ -113,5 +105,32 @@ export function restorePiToolBatch(session: AgentSession, saved: PiToolBatchCont
       stream.end();
       return stream;
     },
+  };
+}
+
+function validateSavedBatch(saved: PiToolBatchContinuation): PiToolBatchContinuation {
+  if (saved.version !== "pi-tool-batch.v2") throw new Error("PI_CONTINUATION_VERSION_INVALID");
+  const transcript = [...saved.prefix, saved.assistant, ...saved.completedResults];
+  const checked = freezeBatch(
+    transcript,
+    saved.waitingToolCallId,
+    saved.completedStreamOrdinal,
+    saved.systemPrompt,
+  );
+  return checked;
+}
+
+export function inspectPiToolBatch(value: unknown) {
+  const saved = validateSavedBatch(value as PiToolBatchContinuation);
+  const waiting = saved.assistant.content.find(
+    (part) => part.type === "toolCall" && part.id === saved.waitingToolCallId,
+  );
+  if (!waiting || waiting.type !== "toolCall") throw new Error("PI_CONTINUATION_BATCH_INVALID");
+  return {
+    completedStreamOrdinal: saved.completedStreamOrdinal,
+    completedToolCallIds: saved.completedResults.map((result) => result.toolCallId),
+    waitingToolCallId: waiting.id,
+    toolName: waiting.name,
+    arguments: structuredClone(waiting.arguments),
   };
 }

@@ -10,6 +10,28 @@ export type {
   ProductContextTriggerSource,
 } from "./ports/context-projection.js";
 export type { GovernedCodingOperationsPort } from "./ports/host-files.js";
+export {
+  HOST_READ_ONLY_ERROR_CODES,
+  HostReadOnlyError,
+} from "./ports/host-files.js";
+export type {
+  HostDirectoryGrant,
+  HostReadOnlyDirectoryEntry,
+  HostReadOnlyEntryKind,
+  HostReadOnlyPort,
+} from "./ports/host-files.js";
+export {
+  firstProtectedDirectoryEntry,
+  firstRejectedPathComponent,
+  isProtectedDirectoryEntry,
+  isProtectedDirectoryName,
+  isRejectedPathComponent,
+  PROTECTED_DIRECTORY_NAMES,
+  PROTECTED_DIRECTORY_PATH,
+  PROTECTED_DIRECTORY_PREFIXES,
+  PROTECTED_DIRECTORY_SUFFIXES,
+  REJECTED_PATH_COMPONENT_PREFIX,
+} from "@himawari-agent/execution-contracts";
 export type {
   AgentRuntimePort,
   ModelDescriptor,
@@ -72,6 +94,7 @@ export type {
   RuntimeHistoryState,
 } from "./ports/runtime-history.js";
 export type { ClockPort } from "./ports/system.js";
+export { usdCostsEqual, usdCostToMicros } from "./services/model-cost.js";
 export {
   assertMachineSecretFree,
   redactMachineSecrets,

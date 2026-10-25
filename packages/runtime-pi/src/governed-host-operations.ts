@@ -17,6 +17,14 @@ function timeoutMilliseconds(seconds: number | undefined): number | undefined {
   return milliseconds;
 }
 
+function piCommandError(error: unknown, timeoutSeconds: number | undefined): unknown {
+  if (!(error instanceof Error)) return error;
+  if (error.message === "PI_COMMAND_TIMEOUT" && timeoutSeconds !== undefined)
+    return new Error(`timeout:${timeoutSeconds}`);
+  if (error.message === "PI_COMMAND_ABORTED") return new Error("aborted");
+  return error;
+}
+
 export function createPiOperationsFromGovernedHostPort(
   port: GovernedCodingOperationsPort,
 ): Pick<GovernedPiCodingToolOperations, "read" | "write" | "edit" | "bash"> {
@@ -42,14 +50,18 @@ export function createPiOperationsFromGovernedHostPort(
   const bash: BashOperations = {
     exec: async (command, cwd, options) => {
       const timeoutMs = timeoutMilliseconds(options.timeout);
-      return port.executeCommand({
-        command,
-        cwd,
-        ...(options.signal ? { signal: options.signal } : {}),
-        ...(timeoutMs === undefined ? {} : { timeoutMs }),
-        ...(options.env ? { environment: options.env } : {}),
-        onData: (data) => options.onData(Buffer.from(data)),
-      });
+      try {
+        return await port.executeCommand({
+          command,
+          cwd,
+          ...(options.signal ? { signal: options.signal } : {}),
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          ...(options.env ? { environment: options.env } : {}),
+          onData: (data) => options.onData(Buffer.from(data)),
+        });
+      } catch (error) {
+        throw piCommandError(error, options.timeout);
+      }
     },
   };
   return Object.freeze({ read, write, edit, bash });

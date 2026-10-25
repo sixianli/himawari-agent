@@ -1,18 +1,60 @@
 # Himawari Agent Project Instructions
 
+## Delivery Mode
+
+Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode.
+
 ## Documentation Governance
 
 This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`.
 
+## Code and Documentation Consistency
+
+In fast mode this section is suspended; see [Delivery Mode](#delivery-mode).
+
+The user asked on 2026-09-29 that code and documentation never drift apart. Documentation drift already happened once: commit `51fe7f6` changed `apps/control-center/src` without resealing `docs/runbooks/hermes-control-center-upgrade-runbook.md`, and strict validation failed from then on.
+
+- Every commit that changes behavior, interfaces, configuration, tests' required environment, or operational steps updates the affected documentation in the same commit: specs, plans, the architecture document, Runbooks, Backlog items, and ADR follow-up (supersede an ADR instead of rewriting it). If no document is affected, say so in the delivery notes with the reason.
+- Before every commit, run strict documentation validation, for example `python3 <document-governance skill>/scripts/validate_docs.py . --strict`. A commit must not introduce a new validation error. When a change touches a Runbook's contract sources, review the Runbook against the new code, then reseal it with `runbook.py seal ... --confirm-reconciled --apply` in the same commit.
+- Documentation validation and Runbook checks are read-only scripts that finish in seconds; they may run on the MacBook. This does not extend to builds or tests.
+- When fixing a defect, also correct documentation that describes the old behavior. When a document records a decision, keep its status fields and links current.
+- Commit messages and delivery reports list the documents updated and the result of strict validation.
+
+## Repeated Mistakes
+
+The rule is in [ADR 0060](docs/adr/0060-hard-constraint-on-third-repeat.md): when the same mistake happens for the third time, by Claude or by any agent it directs, stop the current work, find why the earlier prevention failed, and add a hard constraint (an automated test, a commit or CI gate, a check a script runs on every use, a deny rule, a hook or plugin, or a refusal in the host wrappers) that blocks the mistake for every agent alike. Prove it by showing it fail on a reproduction and pass once the mistake is removed; when it needs a change only the user can make, prepare it, ask, and keep that mistake's work paused. A single mistake needs no record.
+
+- Count occurrences across sessions and agents with `docs/lessons.md`, handoff files, stop files, and commit messages as the history. A session handoff names any mistake that has happened twice.
+- Record the result where it belongs: a mistake coding agents repeat, with its constraint, in `docs/lessons.md` (extend an existing entry when one covers it; an entry that reached three occurrences names its constraint and where it runs); a way of briefing, reviewing, or driving opencode and Grok in the `opencode-orchestration` skill; a product defect fixed in the task or filed as a Backlog item; a change to how a test, deployment, or operation runs in its Runbook, plan, or spec; a user preference about how Claude works in Claude's memory.
+- Delivery reports name the root cause found and where it was recorded.
+
+## Project Instruction Commits
+
+- Changes to this project-level `AGENTS.md` may be committed separately after review and applicable checks, without asking the user for confirmation. The same holds for the instruction files under `.agents/instructions/` that this file points to. Stage only those files in such a commit and preserve unrelated work. Push it like every other commit (see "Pushing Commits" below).
+
 ## Documentation Language and Clarity
 
-- Write all project documentation content in Simplified Chinese.
+- Keep this `AGENTS.md` and the instruction files under `.agents/instructions/` entirely in English. Write all other project documentation content in Simplified Chinese.
 
-## 已确认的 Web 设计基准
+## Document Readability and Navigation
 
-- 在修改控制中心的视觉、聊天交互或品牌资源前，先阅读 [已确认的 Web 与 Logo 设计基准](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md)，并打开其中的交互原型和效果图。
-- `assets/brand/himawari/v1/` 与 `docs/assets/control-center/2026-09-10-v1/` 保存用户于 2026-09-10 确认的原始设计。后续实现以此核对布局、主题、逐轮过程与工具展示；不要直接覆盖基准文件。设计发生经用户确认的变化时，另存新版本并更新文档引用。
-- 原型中的消息、模型、thinking 摘要、工具输出、计时和审批均为演示数据，不能作为正式功能已实现或真实执行成功的证据。
+- When creating or revising project documentation, provide convenient navigation links wherever practical. Place a clickable table of contents or review summary at the beginning of long documents; do not add unnecessary structure solely for navigation in short documents.
+- When referring to sections within the same document, use internal links with descriptive section titles rather than bare references such as "Sections 2 and 9" or "5.1 and 5.4". References to detailed rules in summary tables should also link directly to the relevant sections.
+- Where useful, provide "Back to contents" or "Back to review summary" links in longer sections reached from the table of contents or review summary, so readers can easily navigate back and forth.
+- When referring to other project documents, use meaningful link text and repository-relative paths. Link to the relevant section whenever practical if a specific passage is intended. Preserve the SOURCE markers required by documentation governance; navigation links must not replace source declarations.
+- Use heading anchors or explicit anchors supported by the target Markdown reader. Update related links when headings, sections, or paths change. Before delivery, check that targets exist and anchors are unique; do not claim that navigation works in the reader unless it has been verified by actually clicking the links.
+- Improve navigation incrementally within the scope of the current documentation task. Do not rewrite unrelated documents or reorganize historical content in bulk merely to add links.
+
+## Approved Web Design Baselines
+
+- Before changing the control center's visual design, chat interactions, or brand assets, read the [current v4 interaction and visual baseline](docs/execution/specs/2026-09-15-control-center-v4-design.md) and the [original logo baseline](docs/execution/specs/2026-09-10-control-center-visual-baseline-design.md), and open the interactive prototypes and visual mockups referenced in them.
+- `assets/brand/himawari/v1/` and `docs/assets/control-center/2026-09-10-v1/` preserve the original design approved by the user on 2026-09-10. Check subsequent implementations against these references for layout, themes, per-turn execution processes, and tool displays; do not overwrite the baseline files. When the user approves a design change, save it as a new version and update the documentation references.
+- The current chat page must follow the frozen prototype in `docs/assets/control-center/2026-09-15-v4/`, plus the execution environment status line and sidebar running marker approved on 2026-09-27 in `docs/assets/control-center/2026-09-27-v5/`; retain v1 as a historical reference and the source for brand assets. Changes must not reintroduce a standalone approval entry point, a general-purpose details sidebar, or conversation deletion actions.
+- Messages, models, thinking summaries, tool outputs, timings, and approvals in the prototypes are all demonstration data. They are not evidence that production features have been implemented or that real execution has succeeded.
+
+## Code Comments
+
+The user's global rule against code comments (user decision G149, 2026-10-21) applies here: write none, and delete existing ones in every file you edit. Project additions: it binds Claude, opencode, Grok, and every other agent; put rationale and verification evidence in commit messages as well as delivery notes; `biome-ignore` counts as a tool directive to keep; see [the lesson on new code comments](docs/lessons.md#new-code-comments).
 
 ## Engineering Diagrams
 
@@ -22,7 +64,7 @@ This repository explicitly adopts the `document-governance` skill for all govern
 
 - Product code and product documentation belong in this repository.
 - The sibling `pi-mono` repository is an upstream source reference and debugging checkout.
-- Use `/Users/triggerjames/Documents/sxl_code_work_space/pi-mono` as the canonical read-only Pi source checkout; do not rediscover other checkouts, and report if it is unavailable. This does not authorize local dependency linking or committed dependency changes.
+- Use `/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/pi-mono` as the canonical read-only Pi source checkout; do not rediscover other checkouts, and report if it is unavailable. This does not authorize local dependency linking or committed dependency changes.
 - Do not place Himawari-specific product logic in `pi-mono`.
 
 ## Pi-First Development Principle
@@ -39,3 +81,32 @@ This repository explicitly adopts the `document-governance` skill for all govern
 - Keep all direct external dependency versions exact; do not introduce ranges for direct dependencies.
 - Import `@earendil-works/pi-*` packages only from `packages/runtime-pi`; product domain, contracts, application code and entrypoints depend on product-owned types.
 - Keep published Pi dependencies in committed manifests and lockfiles. Local `../pi-mono` source linking must be opt-in, reversible and must not change committed dependency declarations.
+
+## Pushing Commits
+
+The user's global push rule (push every commit to the same-named `origin` branch at once, user decision 2026-09-30) is kept by [ADR 0057](docs/adr/0057-batch-layers-one-two-for-small-defects.md#unchanged). Project additions:
+
+- It applies to Claude, Codex, and opencode alike, including commits made during delegated tasks.
+- A pushed commit is not a fully tested commit. Commit messages must still state which test layers actually ran; Layer 3 runs before a PR or merge, not before each push.
+
+## Delegated Coding Agents
+
+Before briefing, dispatching, reviewing, or answering opencode, Grok, or any other coding agent, and before choosing an opencode model, read [.agents/instructions/delegated-coding-agents.md](.agents/instructions/delegated-coding-agents.md).
+
+## Test and Production Hosts
+
+Before running, scheduling, or delegating any build, test, qualification, or deployment, or logging in to Hermes or the cloud server `84.247.157.41`, read [.agents/instructions/test-and-production-hosts.md](.agents/instructions/test-and-production-hosts.md). In short: never run Himawari tests on the MacBook.
+
+## Test Trigger Timing
+
+Before deciding which test layers to run, writing the test layers into a commit message, or adding a test, read [.agents/instructions/test-trigger-timing.md](.agents/instructions/test-trigger-timing.md). It defines Layers 0-5 and the `Layer-0-tests:` commit lines that the shared hooks enforce.
+
+## Hermes Test Server Connectivity
+
+- Run every Hermes command through `.ci-output/handoff/scripts/hermes-ssh.sh '<command>'` and every upload through `.ci-output/handoff/scripts/hermes-upload.sh <local file> <remote path>`; never call `ssh`, `scp`, `sftp`, or `rsync` to Hermes directly. The wrappers connect over Tailscale (`ProxyCommand=none`, `HostName=100.64.53.104`), check that the remote hostname is `hermes-home`, cap one call at 300 seconds, and allow only read-only commands while a guarded Layer 3 or Layer 4 run is in progress, because any other process on Hermes voids that run. The `hermes_direct_ssh_guard.py` PreToolUse hook refuses direct calls ([lesson](docs/lessons.md#measurement-not-isolated)). When Tailscale is unavailable, report it to the user instead of switching to the `hermes-ssh` skill's Cloudflare route by hand. Toolchain `PATH`, environment variables, `umask 022`, and code sync by `git bundle` are in the [test host operations Runbook](docs/runbooks/test-host-operations-runbook.md#live-state-preflight).
+- New downloads, including a newer toolchain or bubblewrap, need the user's approval first. Do not edit code on the server.
+- Do not change SSH configuration, credentials, the Cloudflare setup, firewall, or host-key verification to bypass a failure; report it to the user.
+
+## Disk Space Hygiene
+
+Before a full build, a full `npm test`, a product-path qualification, or a deployment, and before deleting build output, scratch, or evidence on the Mac or a test host, read [.agents/instructions/disk-space-hygiene.md](.agents/instructions/disk-space-hygiene.md).

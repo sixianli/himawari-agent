@@ -1,26 +1,32 @@
 import {
-  ACTION_KINDS,
   ACTION_KIND_RISK_BASELINE,
+  ACTION_KINDS,
+  type ActionKind,
   ActionPolicyService,
+  type ActionRiskLevel,
   ApprovalService,
-  CapabilityHandleService,
-  CapabilityLifecycleService,
-  ExecutionWorkerService,
-  GrantService,
-  PORT_ERROR_CODES,
+  type AutomaticReviewOutcome,
   actionIntentFingerprint,
   assessActionIntentCompleteness,
+  type CapabilityArtifactVerifierPort,
+  CapabilityHandleService,
+  CapabilityLifecycleService,
+  type CapabilityManifest,
   computeActionRisk,
+  ExecutionWorkerService,
+  type GovernedActionIntent,
+  type GovernedGrantRecord,
+  type GovernedGrantScope,
+  GrantService,
+  type PermissionPolicy,
+  PORT_ERROR_CODES,
   validateCapabilityManifest,
   validateGovernedActionIntent,
-  type ActionKind,
-  type ActionRiskLevel,
-  type CapabilityArtifactVerifierPort,
-  type CapabilityManifest,
-  type GovernedActionIntent,
-  type GovernedGrantScope,
-  type PermissionPolicy,
 } from "@himawari-agent/application";
+import {
+  actionIntentFingerprintMatches,
+  legacyActionIntentFingerprint,
+} from "@himawari-agent/application/action-intent-snapshot";
 import {
   createAgentId,
   createIdempotencyKey,
@@ -32,12 +38,12 @@ import {
   type ExecuteWorkRequest,
 } from "@himawari-agent/execution-contracts";
 import {
+  createReferenceAdapterSet,
   InMemoryAuthorizationStore,
   InMemoryCapabilityRegistryStore,
   ManualClock,
-  createReferenceAdapterSet,
 } from "@himawari-agent/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const OWNER_ID = createOwnerId("owner-governance-v2");
 const AGENT_ID = createAgentId("agent-governance-v2");
@@ -391,7 +397,7 @@ describe("S4 authorization and capability governance", () => {
       policy.evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
     ).resolves.toMatchObject({ decision: "ALLOW", basis: { type: "grant", ref: grant.id } });
     const stored = (await store.listGrants(OWNER_ID, AGENT_ID))[0];
-    expect(stored).toMatchObject({ uses: 1, spentCostMicros: 100 });
+    expect(stored).toMatchObject({ uses: 0, spentCostMicros: 0 });
 
     const critical = intent({ id: "critical-approval", actionKind: "PUBLICATION" });
     const criticalAsk = await policy.evaluate(critical, {
@@ -905,4 +911,694 @@ describe("S4 authorization and capability governance", () => {
       { version: "1.0.0" },
     ]);
   });
+});
+
+async function continuityFixture(rules: PermissionPolicy["rules"] = POLICY.rules) {
+  const capability = await activeCapability();
+  const store = new InMemoryAuthorizationStore();
+  const ids = createReferenceAdapterSet({ clock: capability.clock }).ids;
+  const service = (
+    policyRules = rules,
+    automaticReview?: {
+      review(
+        input: {
+          readonly intent: GovernedActionIntent;
+          readonly policyVersion: string;
+          readonly deadlineAt: string;
+          readonly approvalExpiresAt: string;
+        },
+        signal: AbortSignal,
+      ): Promise<AutomaticReviewOutcome | undefined>;
+    },
+  ) =>
+    new ActionPolicyService({
+      store,
+      clock: capability.clock,
+      ids,
+      policy: { version: "continuity-policy", rules: policyRules },
+      ...(automaticReview ? { automaticReview: { maximumWaitMs: 1000, ...automaticReview } } : {}),
+      capabilities: {
+        inspect: async (ref) => {
+          const record = await capability.store.get(ref);
+          return record
+            ? { lifecycle: record.lifecycle, manifest: record.declaration as CapabilityManifest }
+            : undefined;
+        },
+      },
+    });
+  return { ...capability, authorization: store, ids, service };
+}
+
+describe("authorization continuity", () => {
+  it("denies an expired action even when a current read rule would allow it", async () => {
+    const f = await continuityFixture();
+    f.clock.set(T2);
+    expect(
+      await f.service().evaluate(intent({ id: "expired-allowed-read" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T2,
+      }),
+    ).toMatchObject({ decision: "DENY", reasonCode: "intent_expired" });
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+  });
+  it("applies a hard denial when any target intersects forbidden resources", async () => {
+    const f = await continuityFixture();
+    const original = intent({
+      id: "mixed-targets",
+      actionKind: "DELETE",
+      operation: "delete",
+      resourceRef: "account:owner",
+    });
+    const action = { ...original, resourceRefs: ["account:owner", "repo:approved/project"] };
+    expect(
+      await f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "DENY", reasonCode: "account_root_denied" });
+  });
+  it("does not revive a denied action after policy relaxation", async () => {
+    const f = await continuityFixture([]);
+    const action = intent({ id: "policy-relaxed" });
+    const ask = await f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 });
+    if (ask.decision !== "ASK") throw new Error("expected approval");
+    const approvals = new ApprovalService({ store: f.authorization, clock: f.clock });
+    await approvals.respond({
+      approvalRequestId: ask.approvalRequest.id,
+      expectedRevision: 1,
+      semanticSnapshotHash: ask.approvalRequest.semanticSnapshotHash,
+      response: { decision: "denied" },
+    });
+    expect(
+      await f.service(POLICY.rules).evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "DENY", reasonCode: "approval_denied" });
+  });
+  it("returns the same durable approval when two evaluations race", async () => {
+    const f = await continuityFixture([]);
+    const action = intent({ id: "racing-approval" });
+    const results = await Promise.all([
+      f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+      f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+  });
+  it("acknowledges a repeated denial without another decision or revision", async () => {
+    const f = await continuityFixture([]);
+    const ask = await f
+      .service()
+      .evaluate(intent({ id: "repeated-denial" }), { uiAvailable: true, approvalExpiresAt: T1 });
+    if (ask.decision !== "ASK") throw new Error("expected approval");
+    const approvals = new ApprovalService({ store: f.authorization, clock: f.clock });
+    const response = {
+      approvalRequestId: ask.approvalRequest.id,
+      expectedRevision: 1,
+      semanticSnapshotHash: ask.approvalRequest.semanticSnapshotHash,
+      response: { decision: "denied" as const },
+    };
+    const first = await approvals.respond(response);
+    expect(await approvals.respond(response)).toEqual(first);
+    expect(first.revision).toBe(2);
+  });
+  it("uses a versioned cryptographic snapshot identity independent of object key order", () => {
+    const action = intent({ id: "canonical-hash" });
+    expect(actionIntentFingerprint(action)).toMatch(/^intent\.v2\.sha256:[0-9a-f]{64}$/);
+    const reordered = {
+      ...action,
+      frequency: { intervalMs: null, count: 1 },
+      targets: action.targets.map((target) => ({ ref: target.ref, type: target.type })),
+    };
+    expect(actionIntentFingerprint(reordered)).toBe(actionIntentFingerprint(action));
+    expect(actionIntentFingerprint({ ...action, estimatedCostMicros: 101 })).not.toBe(
+      actionIntentFingerprint(action),
+    );
+  });
+});
+
+describe("authorization snapshot compatibility", () => {
+  it("accepts a historical FNV snapshot without accepting a changed request", () => {
+    const action = intent({ id: "canonical-hash" });
+    expect(legacyActionIntentFingerprint(action)).toBe("intent-2a3329f0");
+    expect(actionIntentFingerprintMatches(action, "intent-2a3329f0")).toBe(true);
+    expect(
+      actionIntentFingerprintMatches({ ...action, threadId: "another-thread" }, "intent-2a3329f0"),
+    ).toBe(false);
+    expect(actionIntentFingerprintMatches(action, "intent.v3:unknown")).toBe(false);
+  });
+  it("denies reusing an existing intent identity in another thread even with a read policy", async () => {
+    const f = await continuityFixture([]);
+    const action = intent({ id: "cross-thread-reuse" });
+    await f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 });
+    expect(
+      await f
+        .service(POLICY.rules)
+        .evaluate(
+          { ...action, threadId: "other-thread" },
+          { uiAvailable: true, approvalExpiresAt: T1 },
+        ),
+    ).toMatchObject({ decision: "DENY", reasonCode: "approval_hash_mismatch" });
+  });
+  it("does not turn a recorded approval into policy authority after the grant is revoked", async () => {
+    const f = await continuityFixture([]);
+    const action = intent({ id: "revoked-approved-read" });
+    const ask = await f.service().evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 });
+    if (ask.decision !== "ASK") throw new Error("expected ASK");
+    const grants = new GrantService({ store: f.authorization, clock: f.clock, ids: f.ids });
+    const grant = grants.create({
+      kind: "one_time",
+      intent: action,
+      approvalRequestId: ask.approvalRequest.id,
+      expiresAt: T1,
+      maxUses: 1,
+      maxTotalCostMicros: 100,
+      scope: {
+        capabilityRef: action.capabilityRef,
+        capabilityVersion: action.capabilityVersion,
+        operations: [action.operation],
+        exactResourceRef: action.resourceRef,
+        resourceIdentities: action.resourceRefs,
+        resourcePrefixes: [],
+        maxDataClassification: action.dataClassification,
+        disclosure: action.disclosure,
+        sideEffects: [action.sideEffect],
+        recipients: [],
+        credentialOrAccessChange: false,
+        maxCostMicrosPerUse: 100,
+        maxFrequency: action.frequency,
+      },
+    });
+    const approvals = new ApprovalService({ store: f.authorization, clock: f.clock });
+    const response = {
+      approvalRequestId: ask.approvalRequest.id,
+      expectedRevision: 1,
+      semanticSnapshotHash: ask.approvalRequest.semanticSnapshotHash,
+      response: { decision: "approved" as const, grant, recentAuthenticationRef: null },
+    };
+    const accepted = await approvals.respond(response);
+    await grants.revoke(grant.id, "owner-revoked");
+    expect(await approvals.respond(response)).toEqual(accepted);
+    expect(
+      await f.service(POLICY.rules).evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "DENY" });
+    expect((await f.authorization.listGrants(OWNER_ID, AGENT_ID))[0]?.revokedAt).toBe(T0);
+  });
+});
+
+describe("authorization selection boundaries", () => {
+  it("rechecks the deadline after asynchronous capability inspection", async () => {
+    const f = await continuityFixture();
+    const policy = new ActionPolicyService({
+      store: f.authorization,
+      clock: f.clock,
+      ids: f.ids,
+      policy: POLICY,
+      capabilities: {
+        inspect: async (ref) => {
+          const record = await f.store.get(ref);
+          f.clock.set(T2);
+          return record
+            ? { lifecycle: record.lifecycle, manifest: record.declaration as CapabilityManifest }
+            : undefined;
+        },
+      },
+    });
+    expect(
+      await policy.evaluate(intent({ id: "expires-during-inspection" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+      }),
+    ).toMatchObject({ decision: "DENY", reasonCode: "intent_expired" });
+  });
+  it("uses another covering grant when an earlier grant has no remaining quota", async () => {
+    const f = await continuityFixture([]);
+    const grants = new GrantService({ store: f.authorization, clock: f.clock, ids: f.ids });
+    const approvals = new ApprovalService({ store: f.authorization, clock: f.clock });
+    const created: GovernedGrantRecord[] = [];
+    for (const id of ["spent-scope", "available-scope"]) {
+      const action = intent({ id });
+      const hash = actionIntentFingerprint(action);
+      const approval = await f.authorization.createApproval({
+        id: `approval:${id}`,
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: action.runId,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: hash,
+        status: "pending",
+        deliveryState: "deliverable",
+        requestedAt: T0,
+        expiresAt: T1,
+        decidedAt: null,
+        grantId: null,
+      });
+      const grant = grants.create({
+        kind: "long_term",
+        intent: action,
+        approvalRequestId: approval.id,
+        expiresAt: T2,
+        maxUses: 1,
+        maxTotalCostMicros: 100,
+        scope: {
+          capabilityRef: action.capabilityRef,
+          capabilityVersion: action.capabilityVersion,
+          operations: ["read"],
+          exactResourceRef: action.resourceRef,
+          resourceIdentities: action.resourceRefs,
+          resourcePrefixes: [],
+          maxDataClassification: "private",
+          sideEffects: ["none"],
+          disclosure: "none",
+          recipients: [],
+          credentialOrAccessChange: false,
+          maxCostMicrosPerUse: 100,
+          maxFrequency: action.frequency,
+        },
+      });
+      await approvals.respond({
+        approvalRequestId: approval.id,
+        expectedRevision: 1,
+        semanticSnapshotHash: hash,
+        response: { decision: "approved", grant, recentAuthenticationRef: null },
+      });
+      created.push(grant);
+    }
+    const first = created[0],
+      second = created[1];
+    if (!first || !second) throw new Error("missing grants");
+    await f.authorization.consumeGrant({
+      grantId: first.id,
+      expectedRevision: 1,
+      costMicros: 100,
+      consumedAt: T0,
+    });
+    expect(
+      await f.service().evaluate(intent({ id: "covered-by-second-grant" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+      }),
+    ).toMatchObject({ decision: "ALLOW", basis: { type: "grant", ref: second.id } });
+    expect(
+      await f.service().evaluate(intent({ id: "covered-by-second-grant" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+      }),
+    ).toMatchObject({ decision: "ALLOW", basis: { type: "grant", ref: second.id } });
+    expect(
+      await f
+        .service()
+        .evaluate(intent({ id: "no-quota-left" }), { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "DENY", reasonCode: "authorization_quota_unavailable" });
+  });
+});
+
+describe("optional automatic review entry", () => {
+  it("does not treat a review return value as execution authority", async () => {
+    const f = await continuityFixture([]);
+    const review = vi.fn(async () => ({ decision: "ALLOW" }) as unknown as undefined);
+    const action = intent({ id: "review-no-authority" });
+    expect(
+      await f
+        .service([], { review })
+        .evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "ASK" });
+    expect(review).toHaveBeenCalledExactlyOnceWith(
+      {
+        intent: action,
+        policyVersion: "continuity-policy",
+        deadlineAt: "2026-08-28T00:00:01.000Z",
+        approvalExpiresAt: T1,
+      },
+      expect.any(AbortSignal),
+    );
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+  });
+  it("falls back to the original human path when the reviewer fails", async () => {
+    const f = await continuityFixture([]);
+    const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
+      throw new Error("private provider diagnostic");
+    });
+    const result = await f
+      .service([], { review })
+      .evaluate(intent({ id: "review-unavailable" }), { uiAvailable: true, approvalExpiresAt: T1 });
+    expect(result).toMatchObject({ decision: "ASK" });
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(result)).not.toContain("private provider diagnostic");
+  });
+  it.each(["expiry", "disable"] as const)(
+    "rechecks %s after review before creating human approval",
+    async (change) => {
+      const f = await continuityFixture([]);
+      const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
+        if (change === "expiry") f.clock.set(T2);
+        else await f.lifecycle.disable("governed-tool");
+        return undefined;
+      });
+      expect(
+        await f.service([], { review }).evaluate(intent({ id: `review-${change}` }), {
+          uiAvailable: true,
+          approvalExpiresAt: T1,
+        }),
+      ).toMatchObject({
+        decision: "DENY",
+        reasonCode: change === "expiry" ? "intent_expired" : "capability_not_active",
+      });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    },
+  );
+  it("keeps hard denial, existing approval and allowed reads ahead of review", async () => {
+    const f = await continuityFixture();
+    const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => undefined);
+    const service = f.service(POLICY.rules, { review });
+    expect(
+      await service.evaluate(intent({ id: "review-safe-read" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+      }),
+    ).toMatchObject({ decision: "ALLOW" });
+    expect(
+      await service.evaluate(
+        intent({
+          id: "review-hard-deny",
+          operation: "delete",
+          actionKind: "DELETE",
+          resourceRef: "account:owner",
+        }),
+        { uiAvailable: true, approvalExpiresAt: T1 },
+      ),
+    ).toMatchObject({ decision: "DENY" });
+    const action = intent({ id: "review-pending" });
+    await f.service([]).evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 });
+    expect(
+      await f
+        .service([], { review })
+        .evaluate(action, { uiAvailable: true, approvalExpiresAt: T1 }),
+    ).toMatchObject({ decision: "ASK" });
+    expect(review).not.toHaveBeenCalled();
+  });
+  it("turns a recorded safer alternative into a denial the model must re-request", async () => {
+    const f = await continuityFixture([]);
+    const review = vi.fn(
+      async (
+        _input: { readonly intent: GovernedActionIntent },
+        _signal: AbortSignal,
+      ): Promise<AutomaticReviewOutcome | undefined> => ({
+        decision: "alternative",
+        reasonCode: "OUT_OF_SCOPE",
+        suggestionRef: "protected-suggestion",
+      }),
+    );
+    const service = f.service([], { review });
+    const options = { uiAvailable: true, approvalExpiresAt: T1 };
+    const first = await service.evaluate(intent({ id: "review-alternative" }), options);
+    expect(first).toEqual({
+      decision: "DENY",
+      reasonCode: "automatic_review_suggested_alternative",
+      alternativesAllowed: true,
+      automaticReview: {
+        outcome: "alternative",
+        reasonCode: "OUT_OF_SCOPE",
+        suggestionRef: "protected-suggestion",
+      },
+    });
+    // No Grant, Approval or reservation is created for the suggestion itself.
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    // A different request is a new intent that passes the same entry again. The
+    // original alternative is never replayed as authority for it, and its fingerprint
+    // differs, so nothing about the first review can be reused for the new request.
+    const corrected = intent({ id: "review-alternative-corrected", resourceRef: "safe-resource" });
+    const second = await service.evaluate(corrected, options);
+    expect(second).toMatchObject({
+      decision: "DENY",
+      reasonCode: "automatic_review_suggested_alternative",
+    });
+    expect(review).toHaveBeenCalledTimes(2);
+    const reviewedIntents = review.mock.calls.map(([input]) => input.intent);
+    expect(reviewedIntents).toHaveLength(2);
+    expect(actionIntentFingerprint(reviewedIntents[0] as GovernedActionIntent)).not.toBe(
+      actionIntentFingerprint(reviewedIntents[1] as GovernedActionIntent),
+    );
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+  });
+  it("does not let a late automatic approval outlive revocation or expiry", async () => {
+    for (const mode of ["revoked", "expired"] as const) {
+      const f = await continuityFixture([]);
+      const action = intent({ id: `review-late-${mode}` });
+      const review = vi.fn(
+        async (
+          _input: unknown,
+          _signal: AbortSignal,
+        ): Promise<AutomaticReviewOutcome | undefined> => {
+          // The review commits its exact one-time Grant, then authority changes before
+          // the caller can act on it.
+          const asked = await f
+            .service([])
+            .evaluate(action, { uiAvailable: false, approvalExpiresAt: T1 });
+          if (asked.decision !== "ASK") throw new Error("expected approval");
+          const grant = new GrantService({
+            store: f.authorization,
+            clock: f.clock,
+            ids: f.ids,
+          }).create({
+            kind: "one_time",
+            intent: action,
+            approvalRequestId: asked.approvalRequest.id,
+            expiresAt: T1,
+            maxUses: 1,
+            maxTotalCostMicros: action.estimatedCostMicros,
+            scope: {
+              capabilityRef: action.capabilityRef,
+              capabilityVersion: action.capabilityVersion,
+              operations: [action.operation],
+              exactResourceRef: action.resourceRef,
+              resourceIdentities: action.resourceRefs,
+              resourcePrefixes: [],
+              maxDataClassification: action.dataClassification,
+              disclosure: action.disclosure,
+              sideEffects: [action.sideEffect],
+              recipients: action.recipients,
+              credentialOrAccessChange: false,
+              maxCostMicrosPerUse: action.estimatedCostMicros,
+              maxFrequency: action.frequency,
+            },
+          });
+          await new ApprovalService({ store: f.authorization, clock: f.clock }).respond({
+            approvalRequestId: asked.approvalRequest.id,
+            expectedRevision: 1,
+            semanticSnapshotHash: asked.approvalRequest.semanticSnapshotHash,
+            response: { decision: "approved", grant, recentAuthenticationRef: null },
+          });
+          return { decision: "approve" };
+        },
+      );
+      const service = f.service([], { review });
+      const options = { uiAvailable: true, approvalExpiresAt: T1 };
+      expect(await service.evaluate(action, options)).toMatchObject({ decision: "ALLOW" });
+      if (mode === "revoked") {
+        const grant = (await f.authorization.listGrants(OWNER_ID, AGENT_ID))[0];
+        if (!grant) throw new Error("expected grant");
+        await f.authorization.revokeGrant(grant.id, T1, "owner_revoked");
+        expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      } else if (mode === "expired") {
+        f.clock.set(T2);
+        expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      }
+      // The late review never opens a second human request or a second Grant, and
+      // repeating the request keeps returning the already-decided outcome.
+      expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+      expect(await service.evaluate(action, options)).toMatchObject({ decision: "DENY" });
+      expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(1);
+    }
+  });
+});
+
+it("bounds an unresponsive review and aborts it before falling back to confirmation", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = await continuityFixture([]);
+    let signal: AbortSignal | undefined;
+    const pending = f
+      .service([], {
+        review: async (_input, cancellation) => {
+          signal = cancellation;
+          await new Promise<void>(() => {});
+          return undefined;
+        },
+      })
+      .evaluate(intent({ id: "review-timeout" }), { uiAvailable: true, approvalExpiresAt: T1 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await pending).toMatchObject({ decision: "ASK" });
+    expect(signal?.aborted).toBe(true);
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("reuses a host-persisted review grant through the existing quota reservation boundary", async () => {
+  const f = await continuityFixture([]);
+  const action = intent({ id: "review-stored-grant" });
+  const review = vi.fn(async (): Promise<AutomaticReviewOutcome | undefined> => {
+    const asked = await f
+      .service([])
+      .evaluate(action, { uiAvailable: false, approvalExpiresAt: T1 });
+    if (asked.decision !== "ASK") throw new Error("expected approval");
+    const grant = new GrantService({ store: f.authorization, clock: f.clock, ids: f.ids }).create({
+      kind: "one_time",
+      intent: action,
+      approvalRequestId: asked.approvalRequest.id,
+      expiresAt: T1,
+      maxUses: 1,
+      maxTotalCostMicros: action.estimatedCostMicros,
+      scope: {
+        capabilityRef: action.capabilityRef,
+        capabilityVersion: action.capabilityVersion,
+        operations: [action.operation],
+        exactResourceRef: action.resourceRef,
+        resourceIdentities: action.resourceRefs,
+        resourcePrefixes: [],
+        maxDataClassification: action.dataClassification,
+        disclosure: action.disclosure,
+        sideEffects: [action.sideEffect],
+        recipients: action.recipients,
+        credentialOrAccessChange: false,
+        maxCostMicrosPerUse: action.estimatedCostMicros,
+        maxFrequency: action.frequency,
+      },
+    });
+    await new ApprovalService({ store: f.authorization, clock: f.clock }).respond({
+      approvalRequestId: asked.approvalRequest.id,
+      expectedRevision: 1,
+      semanticSnapshotHash: asked.approvalRequest.semanticSnapshotHash,
+      response: { decision: "approved", grant, recentAuthenticationRef: null },
+    });
+    return undefined;
+  });
+  const service = f.service([], { review });
+  const options = { uiAvailable: true, approvalExpiresAt: T1 };
+  const result = await service.evaluate(action, options);
+  expect(result).toMatchObject({
+    decision: "ALLOW",
+    basis: { type: "grant" },
+    authorizationReservation: { id: `authorization-reservation:${action.id}` },
+  });
+  expect(await service.evaluate(action, options)).toEqual(result);
+  expect(review).toHaveBeenCalledTimes(1);
+  expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toMatchObject([
+    { uses: 0, spentCostMicros: 0 },
+  ]);
+});
+
+it("observes a decision that wins the race while creating the fallback approval", async () => {
+  const f = await continuityFixture([]);
+  const original = f.authorization.createApproval.bind(f.authorization);
+  vi.spyOn(f.authorization, "createApproval").mockImplementation(async (request) => {
+    const created = await original(request);
+    return f.authorization.resolveApproval({
+      approvalRequestId: created.id,
+      expectedRevision: created.revision,
+      semanticSnapshotHash: created.semanticSnapshotHash,
+      resolution: "denied",
+      decidedAt: T0,
+      grant: null,
+    });
+  });
+  expect(
+    await f.service([]).evaluate(intent({ id: "approval-creation-race" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+    }),
+  ).toMatchObject({ decision: "DENY", reasonCode: "approval_denied" });
+});
+
+it("does not enter review or create approval for an already cancelled action", async () => {
+  const f = await continuityFixture([]);
+  const controller = new AbortController();
+  controller.abort();
+  const review = vi.fn(async () => undefined);
+  expect(
+    await f.service([], { review }).evaluate(intent({ id: "cancel-before-review" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      signal: controller.signal,
+    }),
+  ).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+  expect(review).not.toHaveBeenCalled();
+  expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+});
+
+it("ends an unresponsive review on caller cancellation without opening human approval", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = await continuityFixture([]);
+    const controller = new AbortController();
+    let reviewSignal: AbortSignal | undefined;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pending = f
+      .service([], {
+        review: async (_input, signal) => {
+          reviewSignal = signal;
+          started();
+          await new Promise<void>(() => {});
+          return undefined;
+        },
+      })
+      .evaluate(intent({ id: "cancel-during-review" }), {
+        uiAvailable: true,
+        approvalExpiresAt: T1,
+        signal: controller.signal,
+      });
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await entered;
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reviewSignal?.aborted).toBe(true);
+    expect(settled).toBe(true);
+    expect(await pending).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+    expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    await vi.advanceTimersByTimeAsync(1000);
+    vi.useRealTimers();
+  }
+});
+
+it("does not return permission after cancellation during the final authority trace", async () => {
+  const f = await continuityFixture();
+  const controller = new AbortController();
+  const policy = new ActionPolicyService({
+    store: f.authorization,
+    clock: f.clock,
+    ids: f.ids,
+    policy: POLICY,
+    capabilities: {
+      inspect: async (ref) => {
+        const record = await f.store.get(ref);
+        return record
+          ? { lifecycle: record.lifecycle, manifest: record.declaration as CapabilityManifest }
+          : undefined;
+      },
+    },
+    trace: {
+      record: async () => {
+        controller.abort();
+      },
+    },
+  });
+  expect(
+    await policy.evaluate(intent({ id: "cancel-in-trace" }), {
+      uiAvailable: true,
+      approvalExpiresAt: T1,
+      signal: controller.signal,
+    }),
+  ).toMatchObject({ decision: "DENY", reasonCode: "action_cancelled" });
+  expect(await f.authorization.listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
 });

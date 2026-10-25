@@ -7,12 +7,16 @@ import type {
   RunExecutionSource,
 } from "@himawari-agent/application";
 
-import type { Mem0EmbeddingBoundary } from "@himawari-agent/memory-mem0";
+import type { Mem0EmbeddingBoundary, Mem0EmbeddingResponse } from "@himawari-agent/memory-mem0";
 import {
   embeddingAdmissionDescriptor,
   createProductionRunMemory,
 } from "../src/production-run-memory.js";
-import { createProductionRunPolicy } from "../src/production-run-policy.js";
+import {
+  configuredWorkspaceRoot,
+  createProductionRunPolicy,
+  runCapabilityNotice,
+} from "../src/production-run-policy.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,11 +28,11 @@ import type {
 } from "@himawari-agent/runtime-pi";
 import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import {
-  createProductionMemoryCompositionFromConfiguration,
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
-} from "../src/index.js";
+} from "../src/production-model-composition.js";
 
 let temporaryDirectory: string;
 
@@ -41,62 +45,31 @@ afterEach(async () => {
 });
 
 const primaryModel: ConfiguredPiModelDescriptor = {
-  ref: "model-openrouter-primary",
-  provider: "openrouter",
-  model: "deepseek/deepseek-v4-flash-0731",
-  version: "catalog-2026-08-28",
+  ref: "model-vercel-ai-gateway-primary",
+  provider: "vercel-ai-gateway",
+  model: "deepseek/deepseek-v4.1-flash",
+  version: "catalog-2026-10-06",
   routingClass: "primary",
   priority: 1,
   disclosure: "external_remote",
   capabilities: ["text", "tool_calling", "structured_outputs"],
   allowedDataClassifications: ["public", "private"],
   secretRequirement: {
-    secretRef: "openrouter-api-key",
+    secretRef: "vercel-ai-gateway-api-key",
     secretVersion: "v1",
     purpose: "model-provider-auth",
   },
-  name: "DeepSeek V4 Flash 0731",
+  providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
+  name: "DeepSeek V4.1 Flash",
   api: "openai-completions",
   reasoning: false,
   input: ["text"],
-  cost: { input: 0.03, output: 0.1, cacheRead: 0.007, cacheWrite: 0 },
-  contextWindow: 1_310_720,
-  maxTokens: 131_072,
+  cost: { input: 0.3, output: 2.4, cacheRead: 0.3, cacheWrite: 0.3 },
+  contextWindow: 1_048_576,
+  maxTokens: 32768,
 };
 
-const fallbackRouting = {
-  order: ["z-ai"],
-  allow_fallbacks: false,
-  require_parameters: true,
-  data_collection: "deny" as const,
-};
-
-const fallbackModel: ConfiguredPiModelDescriptor = {
-  ref: "model-openrouter-fallback",
-  provider: "openrouter",
-  model: "z-ai/glm-5.3-flash",
-  version: "catalog-2026-08-28",
-  routingClass: "fallback",
-  priority: 2,
-  disclosure: "external_remote",
-  capabilities: ["text", "tool_calling", "structured_outputs"],
-  allowedDataClassifications: ["private"],
-  secretRequirement: {
-    secretRef: "openrouter-api-key",
-    secretVersion: "v1",
-    purpose: "model-provider-auth",
-  },
-  providerRouting: fallbackRouting,
-  name: "GLM 5.3 Flash",
-  api: "openai-completions",
-  reasoning: false,
-  input: ["text"],
-  cost: { input: 0.075, output: 0.25, cacheRead: 0.015, cacheWrite: 0 },
-  contextWindow: 1_310_720,
-  maxTokens: 131_072,
-};
-
-const descriptors = [primaryModel, fallbackModel] as const;
+const descriptors = [primaryModel] as const;
 
 class RecordingRuntime {
   readonly models = new Map<string, unknown>();
@@ -166,7 +139,7 @@ function selectedEmbeddingConfiguration(stateRoot: string) {
         {
           ref: "model-primary",
           role: "primary",
-          provider: "openrouter",
+          provider: "vercel-ai-gateway",
           model: primaryModel.model,
           version: primaryModel.version,
           priority: primaryModel.priority,
@@ -178,54 +151,35 @@ function selectedEmbeddingConfiguration(stateRoot: string) {
           cost: { ...primaryModel.cost },
           contextWindow: primaryModel.contextWindow,
           maxTokens: primaryModel.maxTokens,
+          providerRouting: primaryModel.providerRouting,
           allowedDataClassifications: ["public", "private"],
           disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
-        },
-        {
-          ref: "model-fallback",
-          role: "fallback",
-          provider: "openrouter",
-          model: fallbackModel.model,
-          version: fallbackModel.version,
-          priority: fallbackModel.priority,
-          name: fallbackModel.name,
-          api: "openai-completions",
-          reasoning: fallbackModel.reasoning,
-          input: [...fallbackModel.input],
-          capabilities: [...fallbackModel.capabilities],
-          cost: { ...fallbackModel.cost },
-          contextWindow: fallbackModel.contextWindow,
-          maxTokens: fallbackModel.maxTokens,
-          allowedDataClassifications: ["private"],
-          disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
-          providerRouting: fallbackRouting,
+          secretRef: "vercel-ai-gateway-api-key",
         },
         {
           ref: "model-embedding",
           role: "embedding",
-          provider: "openrouter",
-          model: "qwen/qwen3-embedding-8b",
-          version: "catalog-2026-08-28",
+          provider: "vercel-ai-gateway",
+          model: "alibaba/qwen3-embedding-8b",
+          version: "catalog-2026-10-06",
           capabilities: ["embedding"],
           cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
           dimensions: 4096,
           allowedDataClassifications: ["public", "private"],
           disclosure: "external_remote",
-          secretRef: "openrouter-api-key",
+          secretRef: "vercel-ai-gateway-api-key",
         },
       ],
       memory: {
         adapter: "mem0-oss",
-        version: "3.1.7",
+        version: "3.3.1",
         storagePath: `${stateRoot}/data/memory`,
         dimensions: 4096,
       },
       repositoryAllowlistRefs: [],
       secretReferences: [
         {
-          ref: "openrouter-api-key",
+          ref: "vercel-ai-gateway-api-key",
           version: "v1",
           purpose: "model-provider-auth",
           scope: "model",
@@ -261,11 +215,13 @@ describe("production model composition", () => {
     expect(await composition.model.listAvailable()).toEqual(descriptors);
     expect(prepared.resolve).not.toHaveBeenCalled();
     const binding = await composition.piModels.resolve(primaryModel.ref);
-    expect(binding.model).toBe(runtime.models.get("openrouter:deepseek/deepseek-v4-flash-0731"));
+    expect(binding.model).toBe(
+      runtime.models.get("vercel-ai-gateway:deepseek/deepseek-v4.1-flash"),
+    );
     expect(prepared.resolve).not.toHaveBeenCalled();
     if (!binding.resolveSecret) throw new Error("Expected deferred provider secret resolver");
     await expect(binding.resolveSecret()).resolves.toBe("fixture-provider-value");
-    expect(prepared.resolve).toHaveBeenCalledWith("openrouter-api-key", "v1");
+    expect(prepared.resolve).toHaveBeenCalledWith("vercel-ai-gateway-api-key", "v1");
     expect(prepared.resolve).toHaveBeenCalledTimes(1);
     expect(composition.transport).toBeDefined();
     expect(composition.payloadBoundary).toBeDefined();
@@ -294,16 +250,16 @@ describe("production model composition", () => {
           descriptors: [
             primaryModel,
             {
-              ...fallbackModel,
-              secretRequirement: { ...fallbackModel.secretRequirement, secretVersion: "v2" },
+              ...primaryModel,
+              secretRequirement: { ...primaryModel.secretRequirement, secretVersion: "v2" },
             },
           ],
         }).options,
       ),
-    ).toThrow("PI_MODEL_BINDING_REQUIRES_SHARED_PROVIDER_SECRET");
+    ).toThrow("PI_MODEL_BINDING_REQUIRES_ONE_PRIMARY");
   });
 
-  it("maps strict configuration into one Pi generation set and an independent embedding descriptor", () => {
+  it("[R2-L5] maps strict configuration into one Pi generation set and an independent embedding descriptor", () => {
     const stateRoot = temporaryDirectory;
     const configuration = parseProductConfiguration(
       {
@@ -320,7 +276,7 @@ describe("production model composition", () => {
           {
             ref: "model-primary",
             role: "primary",
-            provider: "openrouter",
+            provider: "vercel-ai-gateway",
             model: primaryModel.model,
             version: primaryModel.version,
             priority: 1,
@@ -332,39 +288,20 @@ describe("production model composition", () => {
             cost: { ...primaryModel.cost },
             contextWindow: primaryModel.contextWindow,
             maxTokens: primaryModel.maxTokens,
+            providerRouting: primaryModel.providerRouting,
             allowedDataClassifications: ["public", "private"],
             disclosure: "external_remote",
-            secretRef: "openrouter-api-key",
-          },
-          {
-            ref: "model-fallback",
-            role: "fallback",
-            provider: "openrouter",
-            model: fallbackModel.model,
-            version: fallbackModel.version,
-            priority: 2,
-            name: fallbackModel.name,
-            api: "openai-completions",
-            reasoning: false,
-            input: ["text"],
-            capabilities: [...fallbackModel.capabilities],
-            cost: { ...fallbackModel.cost },
-            contextWindow: fallbackModel.contextWindow,
-            maxTokens: fallbackModel.maxTokens,
-            allowedDataClassifications: ["private"],
-            disclosure: "external_remote",
-            secretRef: "openrouter-api-key",
-            providerRouting: fallbackRouting,
+            secretRef: "vercel-ai-gateway-api-key",
           },
           {
             ref: "model-embedding",
             role: "embedding",
-            provider: "openai-compatible",
-            model: "text-embedding-fixture",
-            version: "catalog-2026-08-28",
+            provider: "vercel-ai-gateway",
+            model: "alibaba/qwen3-embedding-8b",
+            version: "catalog-2026-10-06",
             capabilities: ["embedding"],
             cost: { input: 0.02, output: 0, cacheRead: 0, cacheWrite: 0 },
-            dimensions: 1536,
+            dimensions: 4096,
             allowedDataClassifications: ["public", "private"],
             disclosure: "trusted_remote",
             secretRef: "embedding-api-key",
@@ -372,14 +309,14 @@ describe("production model composition", () => {
         ],
         memory: {
           adapter: "mem0-oss",
-          version: "3.1.7",
+          version: "3.3.1",
           storagePath: `${stateRoot}/data/memory`,
-          dimensions: 1536,
+          dimensions: 4096,
         },
         repositoryAllowlistRefs: [],
         secretReferences: [
           {
-            ref: "openrouter-api-key",
+            ref: "vercel-ai-gateway-api-key",
             version: "v1",
             purpose: "model-provider-auth",
             scope: "model",
@@ -403,23 +340,23 @@ describe("production model composition", () => {
     );
 
     const resolved = resolveConfiguredModelDescriptorSet(configuration);
-    expect(resolved.generation).toHaveLength(2);
+    expect(resolved.generation).toHaveLength(1);
     expect(resolved.generation[0]).toMatchObject({
       ref: "model-primary",
-      provider: "openrouter",
+      provider: "vercel-ai-gateway",
       secretRequirement: {
-        secretRef: "openrouter-api-key",
+        secretRef: "vercel-ai-gateway-api-key",
         secretVersion: "v1",
         purpose: "model-provider-auth",
       },
     });
-    expect(resolved.generation[1]?.providerRouting).toEqual(fallbackRouting);
+    expect(resolved.generation[0]?.providerRouting).toEqual(primaryModel.providerRouting);
     expect(resolved.embedding).toMatchObject({
       ref: "model-embedding",
-      provider: "openai-compatible",
-      model: "text-embedding-fixture",
-      version: "catalog-2026-08-28",
-      dimensions: 1536,
+      provider: "vercel-ai-gateway",
+      model: "alibaba/qwen3-embedding-8b",
+      version: "catalog-2026-10-06",
+      dimensions: 4096,
       secretRequirement: {
         secretRef: "embedding-api-key",
         secretVersion: "v2",
@@ -430,11 +367,57 @@ describe("production model composition", () => {
     expect(resolved.embedding).not.toHaveProperty("api");
   });
 
+  it("keeps a dedicated TypeSafe reviewer outside the single Pi generation route", () => {
+    const base = selectedEmbeddingConfiguration(temporaryDirectory);
+    const configuration = {
+      ...base,
+      modelDescriptors: [
+        ...base.modelDescriptors,
+        {
+          ref: "model-specialist",
+          role: "specialist" as const,
+          provider: "typesafe",
+          model: "jev-latest",
+          version: "review-config-1",
+          modelVersion: "jev-1.13.0",
+          priority: 3,
+          name: "JEV reviewer",
+          api: "typesafe-systemone" as const,
+          capabilities: ["text"],
+          cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+          allowedDataClassifications: ["private" as const],
+          disclosure: "external_remote" as const,
+          secretRef: "typesafe-api-key",
+        },
+      ],
+      secretReferences: [
+        ...base.secretReferences,
+        { ref: "typesafe-api-key", version: "v1", purpose: "model-provider-auth", scope: "model" },
+      ],
+    };
+    const resolved = resolveConfiguredModelDescriptorSet(configuration);
+    expect(resolved.generation).toHaveLength(2);
+    expect(resolved.generation.map(({ routingClass }) => routingClass)).toEqual([
+      "primary",
+      "specialist",
+    ]);
+    expect(resolved.generation[1]).toMatchObject({
+      api: "typesafe-systemone",
+      model: "jev-latest",
+      version: "jev-1.13.0",
+      secretRequirement: { secretRef: "typesafe-api-key", secretVersion: "v1" },
+    });
+    const piRoutes = resolved.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
+    expect(piRoutes).toHaveLength(1);
+  });
+
   it("fails closed instead of inventing a Pi route for an unregistered generation provider", () => {
     const configuration = {
       modelDescriptors: [
         { ...primaryModel, role: "primary" as const, provider: "unknown-provider" },
-        { ...fallbackModel, role: "fallback" as const },
         {
           ref: "model-embedding",
           role: "embedding" as const,
@@ -459,7 +442,7 @@ describe("production model composition", () => {
     );
   });
 
-  it("composes the selected 4096-dimensional Qwen embedding through Mem0", async () => {
+  it("[R2-L5] composes the selected 4096-dimensional Qwen embedding through Mem0", async () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
@@ -473,6 +456,7 @@ describe("production model composition", () => {
         },
       },
       load: async () => ({
+        VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
         Memory: class {
           readonly configuration: Readonly<Record<string, unknown>>;
 
@@ -484,13 +468,13 @@ describe("production model composition", () => {
     });
 
     expect(composition.descriptor).toMatchObject({
-      provider: "openrouter",
-      model: "qwen/qwen3-embedding-8b",
-      version: "catalog-2026-08-28",
+      provider: "vercel-ai-gateway",
+      model: "alibaba/qwen3-embedding-8b",
+      version: "catalog-2026-10-06",
       dimensions: 4096,
       cost: { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 },
     });
-    expect(resolvedSecrets).toEqual(["openrouter-api-key@v1"]);
+    expect(resolvedSecrets).toEqual(["vercel-ai-gateway-api-key@v1"]);
     await composition.close();
   });
 });
@@ -544,6 +528,12 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     "2026-09-11 08:04:00 GMT+09:00",
   );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    "本轮没有联网搜索工具",
+  );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).not.toContain(
+    "使用真实查询",
+  );
   expect(list).toHaveBeenCalledWith(source.runId, adapters.clock.now());
   expect((await policy(source)).systemInstructionRef).toBe(first.systemInstructionRef);
   const threadSource = {
@@ -572,6 +562,59 @@ it("selects trusted Run policy and binds instruction content across configuratio
   await expect(policy({ ...source, dataClassification: "restricted" })).rejects.toThrow(
     "RUN_POLICY_MODEL_DISCLOSURE_DENIED",
   );
+});
+
+describe("Run capability notice", () => {
+  it("tells the model what it cannot reach when no search is configured", () => {
+    const notice = runCapabilityNotice({
+      publicSearch: false,
+      coding: true,
+      workspaceRoot: "/var/lib/himawari/workspace",
+    });
+    expect(notice).toContain("沙箱没有外网");
+    expect(notice).toContain("工作目录是 /var/lib/himawari/workspace");
+    expect(notice).toContain("本轮没有联网搜索工具");
+    expect(notice).toContain("不要让用户去配置网络或代理");
+    expect(notice).not.toContain("web_search");
+  });
+
+  it("points the model to web_search when search is configured", () => {
+    const notice = runCapabilityNotice({ publicSearch: true, coding: false, workspaceRoot: null });
+    expect(notice).toContain("web_search");
+    expect(notice).toContain("核对来源日期");
+    expect(notice).not.toContain("沙箱");
+    expect(notice).not.toContain("工作目录");
+  });
+
+  it("names the workspace only from a current coding grant", async () => {
+    const now = "2026-10-24T00:00:00.000Z";
+    const grant = {
+      id: "directory:workspace",
+      hostId: "host",
+      displayPath: "/var/lib/himawari/workspace",
+      revokedAt: null,
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    };
+    const configuration = {
+      ownerId: "owner",
+      agentId: "agent",
+      runPolicy: { coding: { grantId: grant.id, hostId: grant.hostId } },
+    } as unknown as Parameters<typeof configuredWorkspaceRoot>[0];
+    const read = (value: unknown) => ({
+      readScopedState: vi.fn(async () => (value ? { value } : undefined)) as never,
+    });
+    const clock = { now: () => now };
+    expect(await configuredWorkspaceRoot(configuration, read(grant), clock)()).toBe(
+      grant.displayPath,
+    );
+    expect(
+      await configuredWorkspaceRoot(configuration, read({ ...grant, revokedAt: now }), clock)(),
+    ).toBeNull();
+    expect(
+      await configuredWorkspaceRoot(configuration, read({ ...grant, hostId: "other" }), clock)(),
+    ).toBeNull();
+    expect(await configuredWorkspaceRoot(configuration, read(undefined), clock)()).toBeNull();
+  });
 });
 
 it("propagates Run cancellation and remaining deadline to embedding and retains uncertain spend", async () => {
@@ -604,7 +647,7 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
       search: async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "qwen/qwen3-embedding-8b", input: "query", dimensions: 4096 },
+          { model: "alibaba/qwen3-embedding-8b", input: "query", dimensions: 4096 },
           send,
         );
         return [];
@@ -673,6 +716,14 @@ it("retries only unstarted projection reservations and never repeats an uncertai
   });
   const send = vi.fn(async () => ({
     data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 0.1) }],
+    model: "alibaba/qwen3-embedding-8b",
+    providerMetadata: {
+      gateway: {
+        cost: "0.00000019",
+        generationId: "projection-generation",
+        routing: { finalProvider: "deepinfra" },
+      },
+    },
     usage: { prompt_tokens: 8, total_tokens: 8 },
   }));
   const project = () =>
@@ -687,7 +738,7 @@ it("retries only unstarted projection reservations and never repeats an uncertai
       async () => {
         if (!boundary) throw new Error("BOUNDARY_MISSING");
         await boundary(
-          { model: "qwen/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+          { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
           send,
         );
         return "provider-memory-1";
@@ -745,14 +796,16 @@ it.each([false, true])(
       stream(_model: unknown, _context: unknown, options: Record<string, unknown>) {
         streamOptions.push(options);
         return (async function* () {
-          await (options["fetch"] as typeof fetch)("https://openrouter.ai/api/v1/chat/completions");
+          await (options["fetch"] as typeof fetch)(
+            "https://ai-gateway.vercel.sh/v1/chat/completions",
+          );
           yield {
             type: "done",
             message: {
               role: "assistant",
               content: [{ type: "text", text: "日本今日头条" }],
               api: "openai-completions",
-              provider: "openrouter",
+              provider: "vercel-ai-gateway",
               model: primaryModel.model,
               stopReason:
                 reasoningRequired && Number(options["maxTokens"]) < 512 ? "length" : "stop",
@@ -784,7 +837,7 @@ it.each([false, true])(
       fetch: vi.fn(
         async () =>
           new Response(
-            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, openrouter_metadata: { attempts: [{ provider: "Fixture", model: primaryModel.model, status: 200 }] } })}\n\ndata: [DONE]\n\n`,
+            `data: ${JSON.stringify({ id: "generation:title", model: primaryModel.model, usage: { cost: 0.000001 }, choices: [{ index: 0, delta: { provider_metadata: { gateway: { generationId: "generation:title", routing: { finalProvider: "deepinfra" }, cost: 0.000001 } } } }] })}\n\ndata: [DONE]\n\n`,
             { headers: { "content-type": "text/event-stream" } },
           ),
       ),
@@ -793,8 +846,9 @@ it.each([false, true])(
       ...prepared.options,
       descriptors: prepared.options.descriptors.map((descriptor) => ({
         ...descriptor,
-        reasoning: reasoningRequired || descriptor.reasoning,
-        reasoningRequired,
+        ...(descriptor.api === "openai-completions"
+          ? { reasoning: reasoningRequired || descriptor.reasoning, reasoningRequired }
+          : {}),
       })),
     });
     try {
@@ -828,7 +882,7 @@ it.each([false, true])(
       );
       expect(permit.markStarted).toHaveBeenCalledTimes(1);
       expect(permit.settle).toHaveBeenCalledWith(
-        expect.objectContaining({ inputTokens: 30, outputTokens: 10 }),
+        expect.objectContaining({ inputTokens: 30, outputTokens: 10, reportedCostMicros: 1 }),
       );
       expect(permit.markUnknown).not.toHaveBeenCalled();
       expect(streamOptions[0]).toMatchObject({
@@ -839,5 +893,247 @@ it.each([false, true])(
     } finally {
       await composition.close();
     }
+  },
+);
+
+function embeddingAccountingFixture(mode: "query" | "projection", response: unknown) {
+  const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
+  let boundary: Mem0EmbeddingBoundary | undefined;
+  const controller = new AbortController();
+  const time = { now: "2026-10-06T00:00:00.000Z" };
+  const permit = {
+    assertActive: vi.fn(async () => undefined),
+    markStarted: vi.fn(async () => undefined),
+    releaseReserved: vi.fn(async () => undefined),
+    settle: vi.fn(async () => undefined),
+    markUnknown: vi.fn(async () => undefined),
+  };
+  const budget = {
+    reserve: vi.fn(async () => ({ allocation: { status: "reserved" }, replayed: false })),
+    markStarted: vi.fn(async () => undefined),
+    releaseReserved: vi.fn(async () => undefined),
+    settle: vi.fn(async () => undefined),
+    markUnknown: vi.fn(async () => undefined),
+  };
+  const send = vi.fn(async () => response as Mem0EmbeddingResponse);
+  const request: MemorySearchRequest = {
+    ownerId: configuration.ownerId,
+    agentId: configuration.agentId,
+    runId: "embedding-accounting-run" as never,
+    executionLease: {} as never,
+    queryRef: "embedding-query" as never,
+    queryTerms: [],
+    dataClassification: "private",
+    limit: 3,
+    signal: controller.signal,
+    deadlineAt: "2026-10-06T00:00:30.000Z",
+  };
+  const invoke = () => {
+    if (!boundary) throw new Error("BOUNDARY_MISSING");
+    return boundary(
+      { model: "alibaba/qwen3-embedding-8b", input: "memory", dimensions: 4096 },
+      send,
+    );
+  };
+  const memory = createProductionRunMemory({
+    configuration,
+    projection: {
+      bindEmbeddingBoundary: (value) => {
+        boundary = value;
+      },
+    },
+    payloads: { get: async () => ({ dataClassification: "private" }) as never },
+    memory: {
+      search: async () => {
+        await invoke();
+        return [];
+      },
+    },
+    admission: async () => ({ begin: async () => ({ disposition: "fresh", permit }) }) as never,
+    budget: budget as never,
+    assertActive: async () => undefined,
+    now: () => time.now,
+  });
+  const run =
+    mode === "query"
+      ? () => memory.search(request)
+      : () =>
+          memory.project(
+            {
+              id: "projection-accounting",
+              claimedBy: "consumer",
+              attemptCount: 1,
+              claimExpiresAt: request.deadlineAt,
+            } as never,
+            { dataClassification: "private" } as never,
+            async () => {
+              await invoke();
+              return "provider-memory";
+            },
+          );
+  return {
+    run,
+    send,
+    controller,
+    permit,
+    budget,
+    time,
+    ledger: mode === "query" ? permit : budget,
+  };
+}
+
+function gatewayEmbeddingResponse(cost: unknown = "0.000077") {
+  return {
+    model: "alibaba/qwen3-embedding-8b",
+    data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 0.1) }],
+    usage: { prompt_tokens: 8, total_tokens: 8 },
+    providerMetadata: {
+      gateway: {
+        generationId: "embedding-generation",
+        routing: { finalProvider: "deepinfra" },
+        cost,
+      },
+    },
+  };
+}
+
+for (const mode of ["query", "projection"] as const) {
+  it.each([
+    [0, 0],
+    ["0.00000019", 1],
+    ["0.000077", 77],
+  ])("[R2-L5] settles embedding %s as %s actual micros for " + mode, async (cost, micros) => {
+    const fixture = embeddingAccountingFixture(mode, gatewayEmbeddingResponse(cost));
+    await fixture.run();
+    expect(fixture.send).toHaveBeenCalledTimes(1);
+    expect(fixture.ledger.markStarted).toHaveBeenCalledTimes(1);
+    expect(fixture.ledger.markUnknown).not.toHaveBeenCalled();
+    if (mode === "query") {
+      expect(fixture.permit.settle).toHaveBeenCalledWith({
+        inputTokens: 8,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reportedCostMicros: micros,
+      });
+    } else {
+      expect(fixture.budget.settle).toHaveBeenCalledWith(
+        expect.objectContaining({ actualCostMicros: micros }),
+      );
+    }
+  });
+
+  it.each([
+    { name: "missing gateway", change: { providerMetadata: undefined } },
+    {
+      name: "missing cost",
+      change: {
+        providerMetadata: {
+          gateway: { generationId: "generation", routing: { finalProvider: "deepinfra" } },
+        },
+      },
+    },
+    {
+      name: "negative cost",
+      change: {
+        providerMetadata: {
+          gateway: {
+            generationId: "generation",
+            routing: { finalProvider: "deepinfra" },
+            cost: "-0.1",
+          },
+        },
+      },
+    },
+    {
+      name: "unsafe cost",
+      change: {
+        providerMetadata: {
+          gateway: {
+            generationId: "generation",
+            routing: { finalProvider: "deepinfra" },
+            cost: "9007199254.7409910001",
+          },
+        },
+      },
+    },
+    {
+      name: "boolean cost",
+      change: {
+        providerMetadata: {
+          gateway: {
+            generationId: "generation",
+            routing: { finalProvider: "deepinfra" },
+            cost: false,
+          },
+        },
+      },
+    },
+    {
+      name: "missing generation",
+      change: {
+        providerMetadata: { gateway: { routing: { finalProvider: "deepinfra" }, cost: "0.1" } },
+      },
+    },
+    {
+      name: "missing provider",
+      change: { providerMetadata: { gateway: { generationId: "generation", cost: "0.1" } } },
+    },
+    { name: "model drift", change: { model: "another-embedding" } },
+    { name: "conflicting token totals", change: { usage: { prompt_tokens: 8, total_tokens: 7 } } },
+    { name: "missing total", change: { usage: { prompt_tokens: 8 } } },
+    { name: "invalid total", change: { usage: { prompt_tokens: 8, total_tokens: Number.NaN } } },
+    {
+      name: "conflicting optional fee",
+      change: { usage: { prompt_tokens: 8, total_tokens: 8, cost: "0.0000771" } },
+    },
+    {
+      name: "invalid optional fee",
+      change: { usage: { prompt_tokens: 8, total_tokens: 8, cost: null } },
+    },
+    { name: "missing vector", change: { data: [] } },
+    { name: "wrong dimensions", change: { data: [{ index: 0, embedding: [0.1] }] } },
+    {
+      name: "nonfinite vector",
+      change: { data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => Number.NaN) }] },
+    },
+  ])("[R2-L5] retains unknown embedding $name for " + mode, async ({ change }) => {
+    const fixture = embeddingAccountingFixture(mode, { ...gatewayEmbeddingResponse(), ...change });
+    await expect(fixture.run()).rejects.toThrow();
+    expect(fixture.send).toHaveBeenCalledTimes(1);
+    expect(fixture.ledger.markUnknown).toHaveBeenCalledTimes(1);
+    expect(fixture.ledger.settle).not.toHaveBeenCalled();
+    expect(fixture.ledger.releaseReserved).not.toHaveBeenCalled();
+  });
+}
+
+it("[R2-L5] retains unknown embedding when cancellation occurs before final settlement", async () => {
+  const fixture = embeddingAccountingFixture("query", gatewayEmbeddingResponse());
+  fixture.send.mockImplementation(async () => {
+    fixture.controller.abort(new Error("RUN_CANCELLED"));
+    return gatewayEmbeddingResponse();
+  });
+  await expect(fixture.run()).rejects.toThrow("RUN_CANCELLED");
+  expect(fixture.permit.markUnknown).toHaveBeenCalledTimes(1);
+  expect(fixture.permit.settle).not.toHaveBeenCalled();
+});
+
+it.each(["cancel", "deadline"] as const)(
+  "[R2-L5] retains unknown embedding when %s occurs during the final authority check",
+  async (ending) => {
+    const fixture = embeddingAccountingFixture("query", gatewayEmbeddingResponse());
+    fixture.permit.assertActive
+      .mockImplementationOnce(async () => undefined)
+      .mockImplementationOnce(async () => {
+        if (ending === "cancel") fixture.controller.abort(new Error("RUN_CANCELLED_DURING_CHECK"));
+        else fixture.time.now = "2026-10-06T00:00:30.000Z";
+      });
+    await expect(fixture.run()).rejects.toThrow(
+      ending === "cancel" ? "RUN_CANCELLED_DURING_CHECK" : "EMBEDDING_DEADLINE_EXCEEDED",
+    );
+    expect(fixture.send).toHaveBeenCalledTimes(1);
+    expect(fixture.permit.markUnknown).toHaveBeenCalledWith("transport_unresolved");
+    expect(fixture.permit.settle).not.toHaveBeenCalled();
+    expect(fixture.permit.releaseReserved).not.toHaveBeenCalled();
   },
 );

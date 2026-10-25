@@ -1,0 +1,102 @@
+<style>
+html,body{margin:0;background:light-dark(#fcfcfb,#1e1e1e)}
+body{padding:16px;max-width:1240px;margin:0 auto}
+#hw-review.light{color-scheme:light}
+#hw-review .hw-app.phone{width:390px;max-width:100%;margin:0 auto}
+#hw-review .hw-reviewbar select{font-size:12px}
+#hw-review .hw-reviewbar .hw-pick{display:flex;align-items:center;gap:6px}
+#hw-review .hw-reviewbar .hw-title{font-weight:500}
+#hw-review .hw-run{width:7px;height:11px;flex:none;color:var(--hw-muted);display:inline-flex;justify-content:center;overflow:visible}
+#hw-review .hw-run svg{width:11px;height:11px;flex:none}
+#hw-review .hw-mode-line{display:flex;align-items:center;gap:6px;width:fit-content;min-height:28px;padding:3px 8px;margin:0 0 6px 2px;font-size:12px;color:var(--hw-muted);border-radius:8px}
+#hw-review .hw-mode-line svg{width:14px;height:14px}
+#hw-review .hw-env-pop{max-height:min(560px,calc(100vh - 260px));overflow:auto;position:absolute;left:0;bottom:calc(100% + 8px);z-index:9;width:440px;max-width:100%;padding:16px 18px 12px;border:1px solid var(--hw-line);border-radius:18px;background:var(--hw-panel);box-shadow:0 12px 35px #0004;font-size:13px}
+#hw-review .hw-env-pop h3{font-size:14px;margin-bottom:4px}
+#hw-review .hw-env-section{padding:12px 0;border-bottom:1px solid var(--hw-line)}
+#hw-review .hw-env-section:last-child{border:0;padding-bottom:4px}
+#hw-review .hw-env-section>strong{display:block;margin-bottom:6px}
+#hw-review .hw-env-section p{font-size:12px;color:var(--hw-muted);margin-top:4px}
+#hw-review .hw-env-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px}
+#hw-review .hw-env-list li{display:flex;align-items:center;gap:8px;min-height:38px;font-size:13px;border-radius:8px;padding:2px 4px}
+#hw-review .hw-env-list li svg{width:16px;height:16px;color:var(--hw-muted)}
+#hw-review .hw-env-list .hw-env-name{min-width:0;flex:1;overflow-wrap:anywhere;display:flex;flex-direction:column;line-height:1.45}
+#hw-review .hw-env-list .hw-env-name small{font-size:11px;color:var(--hw-muted)}
+#hw-review .hw-env-list .hw-env-meta{margin-left:auto;font-size:11px;color:var(--hw-muted);white-space:nowrap;display:flex;align-items:center;gap:4px}
+#hw-review .hw-env-list button{font-size:12px;min-height:30px;padding:4px 8px;margin-left:auto;color:var(--hw-muted);white-space:nowrap;flex:none;max-width:48%;overflow:hidden;text-overflow:ellipsis;display:inline-flex}
+#hw-review .hw-env-list button span{overflow:hidden;text-overflow:ellipsis}
+#hw-review .hw-mode-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hw-line);border-radius:999px;padding:2px 10px;font-size:12px}
+#hw-review .hw-step-refused{color:var(--hw-muted)}
+#hw-review .hw-callout{margin:10px 0 0;font-size:12px;color:var(--hw-muted);line-height:1.7}
+.hw-caption{max-width:1240px;margin:12px auto 0;font:13px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:light-dark(#686868,#a5a5a5)}
+.hw-caption strong{color:light-dark(#282828,#dedede);font-weight:500}
+@media(max-width:560px){body{padding:8px}#hw-review .hw-env-pop{width:100%}}
+</style>
+<div id="hw-review" aria-label="执行环境显示 v5 原型">
+  <div class="hw-reviewbar">
+    <span class="hw-title">v5 · 执行环境显示 · 2026-09-27 批准（方案 B 状态条 + 侧栏运行标记）· 演示数据</span>
+    <span class="hw-pick">场景 <select id="scene" aria-label="场景"></select></span>
+    <span class="hw-pick">模式 <select id="mode" aria-label="模式"><option value="strict">严格模式</option><option value="default">默认模式</option></select></span>
+    <span class="hw-pick">主题 <select id="theme" aria-label="主题"><option value="dark">深色</option><option value="light">浅色</option></select></span>
+    <span class="hw-pick">宽度 <select id="width" aria-label="宽度"><option value="desktop">桌面</option><option value="phone">手机 390</option></select></span>
+  </div>
+  <div class="hw-app" id="app"></div>
+</div>
+<p class="hw-caption" id="caption"></p>
+<script>
+const LOGO="__LOGO__";
+const I={
+settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+panel:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>',
+plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>',
+right:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>',
+x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+terminal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6M12 19h8"/></svg>',
+server:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
+brain:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5a3 3 0 1 0-5.99.13 4 4 0 0 0-2.53 5.77 4 4 0 0 0 .56 6.6A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.99.13 4 4 0 0 1 2.53 5.77 4 4 0 0 1-.56 6.6A4 4 0 1 1 12 18Z"/></svg>',
+file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+split:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8M12 12v4"/></svg>',
+box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>',
+shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+run:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8" stroke-opacity=".35"/><path d="M12 4a8 8 0 0 1 8 8"/></svg>'
+};
+const scenes=[["chat","状态条收起"],["pop","状态条展开"],["nav","手机：展开会话列表"],["idle","没有程序在运行"]];
+const threads=[{id:"t1",title:"整理季度报表",running:1},{id:"t2",title:"周报草稿"},{id:"t3",title:"代码审查：登录模块",running:1},{id:"t4",title:"迁移脚本检查",pending:1},{id:"t5",title:"读书笔记"}];
+const allPrograms=[{name:"bash",kind:"服务",icon:"server",thread:"整理季度报表",since:"12:04 开始"},{name:"bash",kind:"后台任务",icon:"terminal",thread:"代码审查：登录模块",since:"12:13 开始"}];let programs=allPrograms;
+const unavailable=[{name:"bash",icon:"terminal",why:"只能在进程级沙箱（SRT）里运行"},{name:"read",icon:"file",why:"安装声明没有逐项写明可在容器里运行"}];
+const $=s=>document.querySelector(s);
+function modeText(m){return m==="strict"?{name:"严格模式",line:"每个工具都在本轮对话专用的容器里运行。",icon:"box"}:{name:"默认模式",line:"工具在本机的进程级沙箱（SRT）里运行，限制它能碰到的文件和网络。停止只保证工具的进程组已结束，离开进程组的程序可能仍在运行。",icon:"shield"}}
+function sidebar(){
+  const row=t=>{const mark=t.pending?'<span class="hw-dot" title="待你确认"></span>':(t.running&&programs.length?'<span class="hw-run" title="有程序在运行" aria-hidden="true">'+I.run+'</span>':'<span class="hw-space"></span>');
+    const label=t.title+(t.pending?"，待你确认":"")+(t.running&&programs.length?"，有程序在运行":"");
+    return '<div class="hw-row '+(t.id==="t1"?"active":"")+'"><button class="hw-thread" aria-label="'+label+'">'+mark+'<span class="hw-name">'+t.title+'</span></button></div>'};
+  return '<aside class="hw-sidebar" aria-label="会话导航"><div class="hw-brand"><img src="'+LOGO+'" alt="">Himawari</div><div class="hw-nav"><button>'+I.plus+'新对话</button></div><div class="hw-history"><div class="hw-group">最近</div>'+threads.map(row).join("")+'</div></aside>'}
+function timeline(mode){
+  const steps=[["brain",'<span class="hw-kind">思考摘要</span>',"先启动开发服务器，再读取报表模板","完成","2.1s"],["server","<code>service</code>","启动开发服务器 npm run dev","正在执行","12:04"]];
+  if(mode==="strict")steps.push(["terminal","<code>bash</code>","统计 reports/ 下的文件数量","严格模式下不可用","—"]);
+  else steps.push(["terminal","<code>bash</code>","统计 reports/ 下的文件数量","完成","0.8s"]);
+  return '<details class="hw-timeline" open><summary>'+I.down+'<span>思考 1 次 · 工具 2 次</span><span class="hw-total-state">执行中</span></summary><div class="hw-timeline-track">'+steps.map((s,i)=>'<details class="hw-step '+(s[3]==="严格模式下不可用"?"hw-step-refused":"")+'" data-state="'+(s[3]==="正在执行"?"running":"done")+'"><summary><span class="hw-node"></span>'+I[s[0]]+s[1]+'<span class="hw-step-title">'+s[2]+'</span><span class="hw-step-meta"><span>'+s[3]+'</span><time>'+s[4]+'</time></span></summary></details>').join("")+'</div></details>'}
+function envPanel(mode,compact){
+  const m=modeText(mode);
+  const modeSec='<div class="hw-env-section"><strong>当前模式</strong><span class="hw-mode-badge">'+I[m.icon]+m.name+'</span><p>'+m.line+'</p><p>模式由安装配置决定，页面上不能切换。</p></div>';
+  const runSec='<div class="hw-env-section"><strong>仍在运行的程序</strong>'+(programs.length?'<ul class="hw-env-list">'+programs.map(p=>'<li>'+I[p.icon]+'<span class="hw-env-name"><span><code>'+p.name+'</code></span><small>'+p.kind+' · '+p.since+'</small></span><button aria-label="打开所属对话：'+p.thread+'"><span>'+p.thread+'</span>'+I.right+'</button></li>').join("")+'</ul>':'<p>没有正在运行的程序。</p>')+'<p>要停止某个程序，打开它所属的对话，在那一轮的执行过程里操作。</p></div>';
+  const unSec=mode==="strict"?'<div class="hw-env-section"><strong>严格模式下不可用的工具</strong><ul class="hw-env-list">'+unavailable.map(u=>'<li>'+I[u.icon]+'<span class="hw-env-name"><code>'+u.name+'</code></span><span class="hw-env-meta">'+u.why+'</span></li>').join("")+'</ul><p>工具内部再发起的子任务也不可用。调用这些工具时，对应步骤会显示“严格模式下不可用”，不会改用其他方式执行。</p></div>':'<div class="hw-env-section"><strong>工具可用情况</strong><p>默认模式下没有因为模式而不可用的工具。</p></div>';
+  return (compact?"":'<h3>执行环境</h3>')+modeSec+runSec+unSec}
+function composer(scene,mode){
+  const m=modeText(mode);
+  const line='<div style="position:relative"><button type="button" class="hw-mode-line" aria-expanded="'+(scene==="pop")+'">'+I[m.icon]+m.name+' · '+(programs.length?programs.length+' 个程序在运行':'没有程序在运行')+' '+I.down+'</button>'+(scene==="pop"?'<div class="hw-env-pop" role="dialog" aria-label="执行环境">'+envPanel(mode,true)+'</div>':'')+'</div>';
+  return '<div class="hw-composer-wrap">'+line+'<form class="hw-composer"><textarea aria-label="输入消息" placeholder="有什么想交给 Himawari？" rows="3"></textarea><div class="hw-tools"><button type="button" class="hw-icon" aria-label="添加附件">'+I.plus+'</button><div class="hw-model"><button type="button">GLM 5.3 Flash '+I.down+'</button><button type="button">最低</button></div><button class="hw-send" type="button" disabled aria-label="发送消息">'+I.up+'</button></div></form><div class="hw-hint"><span>需要你确认的操作，会在当前对话中询问</span><span>Enter 发送 · Shift Enter 换行</span></div></div>'}
+function render(){
+  const mode=$("#mode").value,sc=$("#scene");
+  if(!sc.options.length)sc.innerHTML=scenes.map(([v,n])=>'<option value="'+v+'">'+n+'</option>').join("");
+  const scene=sc.value;programs=scene==="idle"?[]:allPrograms;
+  document.getElementById("hw-review").className=$("#theme").value==="light"?"light":"";
+  document.documentElement.style.colorScheme=$("#theme").value;
+  const app=$("#app");app.className="hw-app"+($("#width").value==="phone"||scene==="nav"?" phone":"");if(scene==="nav")app.dataset.nav="open";else delete app.dataset.nav;
+  app.innerHTML=sidebar()+'<div class="hw-workspace"><header class="hw-header"><button class="hw-icon hw-mobile-nav" aria-label="展开会话列表">'+I.panel+'</button><h1>整理季度报表</h1><button class="hw-icon" aria-label="设置">'+I.settings+'</button></header><div class="hw-body"><main class="hw-main"><div class="hw-transcript"><div class="hw-transcript-inner"><div class="hw-owner">启动开发服务器，然后统计一下 reports 目录里有多少份报表。</div><div class="hw-flow-agent"><img src="'+LOGO+'" alt="">Himawari</div>'+timeline(mode)+'</div></div>'+composer(scene==="pop"?"pop":"chat",mode)+'</main></div></div>';
+  $("#caption").innerHTML="<strong>v5 执行环境显示</strong>：输入框上方一行小字写着当前模式和仍在运行的程序数量，点开弹出面板，列出当前模式及含义、仍在运行的后台或服务程序（点对话名跳到所属对话）、严格模式下不可用的工具。侧栏里有程序在运行的会话，名字前有灰色转圈标记，和待你确认的红点同一位置、不同样子；读屏软件读出“有程序在运行”。程序只显示工具名、类型和开始时间，不显示命令内容。页面里的程序、对话、时间都是演示数据，不代表已实现。";
+}
+["scene","mode","theme","width"].forEach(id=>$("#"+id).addEventListener("change",render));
+render();
+</script>

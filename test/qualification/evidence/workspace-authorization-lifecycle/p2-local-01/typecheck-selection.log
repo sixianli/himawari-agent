@@ -1,0 +1,6 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/application/src/services/action-policy-service.ts(316,70): error TS4111: Property 'reasonCode' comes from an index signature, so it must be accessed with ['reasonCode'].
+test/integration/authorization-capability-governance.test.ts(1104,20): error TS2552: Cannot find name 'GovernedGrantRecord'. Did you mean 'GovernedGrantScope'?

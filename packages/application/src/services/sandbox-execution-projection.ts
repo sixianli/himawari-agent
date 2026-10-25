@@ -1,4 +1,7 @@
 import {
+  isSandboxBoundedToolFailure,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SANDBOX_PREPARATION_PROTOCOL,
   type SandboxEnvironment,
   type SandboxExecutionFacts,
   type SandboxExecutionPlanV2,
@@ -8,13 +11,41 @@ import {
   validateSandboxExecutionFacts,
 } from "@himawari-agent/execution-contracts";
 import type { SandboxExecutionVerification } from "../ports/sandbox-execution.js";
+import type {
+  SandboxReleaseReceipt,
+  SandboxReservationReleaseReceipt,
+} from "../ports/sandbox-execution-journal.js";
+
+export const RECOVERY_SETTLE_WAIT_MS = 35000;
+
+export function isSandboxReservationNeverStarted(
+  plan: SandboxExecutionPlanV2,
+  verification: SandboxReservationReleaseReceipt["verification"] | undefined,
+): boolean {
+  return (
+    verification?.basis === "host_never_started" ||
+    (verification?.basis === "preparation_not_authorized" &&
+      plan.backendRef === "srt" &&
+      (plan.preparationProtocol === SANDBOX_PREPARATION_PROTOCOL ||
+        plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL)) ||
+    (verification?.basis === "preparation_launch_blocked" &&
+      plan.backendRef === "srt" &&
+      plan.preparationProtocol === SANDBOX_PREPARATION_LAUNCH_PROTOCOL) ||
+    ((verification?.basis === "task_environment_released" ||
+      verification?.basis === "task_environment_bind_fenced") &&
+      plan.backendRef !== "srt")
+  );
+}
 
 export interface SandboxExecutionProjectionContext {
+  readonly resultDeliveryDeadlineAt?: string;
   readonly now: string;
   readonly environment: SandboxEnvironment;
   /** Resolve by capability/version from the trusted catalog, not request arguments. */
   readonly operationContract: SandboxOperationContract;
   readonly verification: SandboxExecutionVerification | null;
+  /** From the trusted journal only. It proves cleanup, never current disclosure or execution rights. */
+  readonly releaseReceipt?: SandboxReleaseReceipt | null;
   readonly currentResourceSequence: number;
   readonly runState: "active" | "cancelled" | "expired" | "terminated";
   readonly currentAuthority: boolean;
@@ -41,6 +72,49 @@ export interface SandboxExecutionProjection {
 }
 const sameIdentity = (a: SandboxJobIdentity, b: SandboxJobIdentity) =>
   (Object.keys(b) as (keyof SandboxJobIdentity)[]).every((key) => a[key] === b[key]);
+function snapshotVerified(
+  plan: SandboxExecutionPlanV2,
+  facts: SandboxExecutionFacts,
+  context: SandboxExecutionProjectionContext,
+): boolean {
+  const { resource, result, effect } = facts;
+  const now = Date.parse(context.now);
+  const proof = context.verification;
+  return (
+    proof !== null &&
+    JSON.stringify(sandboxExecutionFactsSchema.parse(proof.facts)) === JSON.stringify(facts) &&
+    sameIdentity(proof.identity, plan.identity) &&
+    proof.environmentId === plan.environmentId &&
+    proof.policyDigest === facts.environment.policyDigest &&
+    proof.resourceSequence === resource.sequence &&
+    context.currentResourceSequence === resource.sequence &&
+    Date.parse(proof.checkedAt) <= now &&
+    now < Date.parse(proof.validUntil) &&
+    Date.parse(resource.occurredAt) <= Date.parse(proof.checkedAt) &&
+    (!result || Date.parse(result.occurredAt) <= Date.parse(proof.checkedAt)) &&
+    (effect.kind !== "verified" || Date.parse(effect.occurredAt) <= Date.parse(proof.checkedAt))
+  );
+}
+/** A fresh host observation proves supervision independently of execution rights
+ * or the environment deadline. Expired authority may still require safe cleanup. */
+export function hasVerifiedSandboxSupervision(
+  plan: SandboxExecutionPlanV2,
+  input: SandboxExecutionFacts,
+  context: SandboxExecutionProjectionContext,
+): boolean {
+  const facts = validateSandboxExecutionFacts(plan, input, context);
+  const resource = facts.resource;
+  return (
+    (resource.supervision === "controlled" || resource.supervision === "released") &&
+    snapshotVerified(plan, facts, context) &&
+    Date.parse(context.now) < Date.parse(resource.evidence.validUntil) &&
+    Boolean(
+      context.verification?.evidence.some(
+        (item) => item.ref === resource.evidence.ref && item.digest === resource.evidence.digest,
+      ),
+    )
+  );
+}
 /** Shared read projection for Worker, Run and UI. It grants no authority and performs no dispatch.
  * Consumers must CAS the returned decision against the current sequence/fence, then recheck at dispatch.
  */
@@ -53,27 +127,15 @@ export function projectSandboxExecution(
   const { result, effect, resource } = facts;
   const now = Date.parse(context.now);
   const proof = context.verification;
-  const snapshotVerified =
-    proof !== null &&
-    JSON.stringify(sandboxExecutionFactsSchema.parse(proof.facts)) === JSON.stringify(facts) &&
-    sameIdentity(proof.identity, plan.identity) &&
-    proof.environmentId === plan.environmentId &&
-    proof.policyDigest === facts.environment.policyDigest &&
-    proof.resourceSequence === resource.sequence &&
-    context.currentResourceSequence === resource.sequence &&
-    Date.parse(proof.checkedAt) <= now &&
-    now < Date.parse(proof.validUntil) &&
-    Date.parse(resource.occurredAt) <= Date.parse(proof.checkedAt) &&
-    (!result || Date.parse(result.occurredAt) <= Date.parse(proof.checkedAt)) &&
-    (effect.kind !== "verified" || Date.parse(effect.occurredAt) <= Date.parse(proof.checkedAt));
+  const snapshotIsVerified = snapshotVerified(plan, facts, context);
   const hasEvidence = (value: { readonly ref: string; readonly digest: string }) =>
-    snapshotVerified &&
+    snapshotIsVerified &&
     proof !== null &&
     proof.evidence.some((item) => item.ref === value.ref && item.digest === value.digest);
   const outputProtected =
     result !== null &&
     result.kind !== "unknown" &&
-    snapshotVerified &&
+    snapshotIsVerified &&
     proof !== null &&
     proof.outputs.some(
       (item) =>
@@ -82,11 +144,29 @@ export function projectSandboxExecution(
         item.byteLength === result.output.byteLength,
     ) &&
     result.output.byteLength <= plan.resourceCeiling.maxOutputBytes;
-  const supervisionVerified =
-    (resource.supervision === "controlled" || resource.supervision === "released") &&
-    hasEvidence(resource.evidence) &&
-    now < Date.parse(resource.evidence.validUntil);
-  const released = resource.supervision === "released" && supervisionVerified;
+  const supervisionVerified = hasVerifiedSandboxSupervision(plan, facts, context);
+  const receipt = context.releaseReceipt;
+  const historical = receipt?.verification.facts;
+  const acceptedRelease =
+    receipt != null &&
+    historical?.resource.supervision === "released" &&
+    resource.supervision === "released" &&
+    context.currentResourceSequence === resource.sequence &&
+    historical.resource.sequence <= resource.sequence &&
+    Date.parse(receipt.acceptedAt) <= now &&
+    JSON.stringify(historical.environment) === JSON.stringify(facts.environment) &&
+    JSON.stringify(historical.resource.status) === JSON.stringify(resource.status) &&
+    JSON.stringify(historical.resource.metrics) === JSON.stringify(resource.metrics) &&
+    JSON.stringify(historical.resource.evidence.subject) ===
+      JSON.stringify(resource.evidence.subject) &&
+    projectSandboxExecution(plan, historical, {
+      ...context,
+      now: receipt.acceptedAt,
+      verification: receipt.verification,
+      releaseReceipt: null,
+      currentResourceSequence: historical.resource.sequence,
+    }).resourceObligationReleased;
+  const released = resource.supervision === "released" && (supervisionVerified || acceptedRelease);
   const controlled =
     resource.supervision === "controlled" &&
     supervisionVerified &&
@@ -118,24 +198,37 @@ export function projectSandboxExecution(
     conclusion === "unknown" ||
     resource.cleanup === "unknown" ||
     resource.supervision === "reconciling" ||
-    ((resource.supervision === "controlled" || resource.supervision === "released") &&
-      !supervisionVerified);
+    (resource.supervision === "controlled" && !supervisionVerified) ||
+    (resource.supervision === "released" && !released);
   const active = context.runState === "active" && now < Date.parse(plan.effectiveDeadlineAt);
-  const canAct =
-    active &&
+  const boundedFailure =
+    plan.mode === "foreground" &&
+    acceptedRelease &&
+    outputProtected &&
+    isSandboxBoundedToolFailure(result);
+  const disclosureAllowed =
+    context.runState === "active" &&
     context.currentAuthority &&
     context.currentFence &&
     context.modelDisclosureAllowed &&
     !context.conflictingWorkspaceRisk &&
     !context.pendingApprovalOrReconciliation &&
-    settled &&
-    !needsReconciliation &&
+    ((settled && !needsReconciliation) || boundedFailure) &&
     (controlled || released);
+  const canAct = active && disclosureAllowed && !boundedFailure;
+  const canRecoverResult =
+    disclosureAllowed &&
+    released &&
+    plan.mode === "foreground" &&
+    (result?.kind === "result" || result?.kind === "error") &&
+    context.resultDeliveryDeadlineAt !== undefined &&
+    now < Date.parse(context.resultDeliveryDeadlineAt);
   return Object.freeze({
     conclusion,
     // Known output remains visible after resource loss; user and model disclosure are independent.
     showResult: context.userDisclosureAllowed && outputProtected,
-    deliverToolResult: canAct && !context.resultAlreadyDelivered,
+    deliverToolResult:
+      ((active && disclosureAllowed) || canRecoverResult) && !context.resultAlreadyDelivered,
     continuePi: canAct,
     dispatchNewOperation: canAct,
     invokeService:

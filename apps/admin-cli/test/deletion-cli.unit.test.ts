@@ -31,7 +31,7 @@ function sink() {
 }
 
 function configuration(stateRoot: string) {
-  const model = (ref: string, role: "primary" | "fallback" | "embedding") =>
+  const model = (ref: string, role: "primary" | "embedding") =>
     role === "embedding"
       ? {
           ref,
@@ -52,8 +52,8 @@ function configuration(stateRoot: string) {
           provider: "provider-local",
           model: ref,
           version: "snapshot-1",
-          priority: role === "primary" ? 1 : 2,
-          name: role === "primary" ? "Primary fixture" : "Fallback fixture",
+          priority: 1,
+          name: "Primary fixture",
           api: "openai-completions",
           reasoning: false,
           input: ["text"],
@@ -61,7 +61,7 @@ function configuration(stateRoot: string) {
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 8192,
           maxTokens: 1024,
-          allowedDataClassifications: role === "fallback" ? ["private"] : ["public", "private"],
+          allowedDataClassifications: ["public", "private"],
           disclosure: "local_only",
           secretRef: null,
         };
@@ -75,14 +75,10 @@ function configuration(stateRoot: string) {
     cacheDirectory: path.join(stateRoot, "cache"),
     publicOrigin: "http://127.0.0.1",
     publicMode: false,
-    modelDescriptors: [
-      model("model-primary", "primary"),
-      model("model-fallback", "fallback"),
-      model("model-embedding", "embedding"),
-    ],
+    modelDescriptors: [model("model-primary", "primary"), model("model-embedding", "embedding")],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 1536,
     },

@@ -1,0 +1,30 @@
+{
+  "baseCommit": "7c150ff025ecd3dd242515a9fb1e1895ac2457c3",
+  "files": {
+    "apps/agent-service/src/capability-programs/pi-coding-main.ts": "22b9761ff967b9f64195c8f8ff228ff24e9a132e9748e1e279e6fd626c86f045",
+    "apps/agent-service/src/production-coding-workflow.ts": "07a6578ddf1590f1439e8ef73240c568305e5f1c0026f72a5d0ab6ddbc5005e3",
+    "apps/agent-service/src/production-copy-save.ts": "ee9aa35e3d4c7ab38ffb841b2c405a2e1adcb4c1ed0cd1352b1c720029d2ca6d",
+    "apps/agent-service/src/production-file-read-services.ts": "74804564ce3df1460a4d42da640f9e4402ff8429897896596c545ba96b4fe807",
+    "apps/agent-service/src/production-file-read-workflow.ts": "6f8032f5dd03a86f5b306a1a74559d37b6d7874a630254b205a78405a440204c",
+    "apps/agent-service/src/production-runtime-tools.ts": "fcc4564c3c138efadbc46fb28c60e1ea9e1cefa8d9f9766b451078e954f90e78",
+    "apps/agent-service/src/production-sandbox-control.ts": "fddb726f2af9392d7d4f4100ed26bf36c50e6ea251126e8bbd9ba68a796fec90",
+    "apps/agent-service/src/production-sandbox-file-recovery.ts": "bfe94aea67ebed671b55545a0cdc97ea8e6c740ae78fe0c2489bda2386b57872",
+    "apps/agent-service/src/production-sandbox-services.ts": "786111512f6575a27f4683a79b23f4c9a479fe540185fee6890de4e65d891afa",
+    "apps/agent-service/test/production-coding-workflow.unit.test.ts": "840a0471e6628a97519026504606b946fb6c94907b9476caa386ac53c631f552",
+    "apps/execution-worker/src/production-sandbox-execution-v2.ts": "ad35831e71222ba833b008187952044c6daebfe845528a7c21d3c34ef4227a14",
+    "packages/application/src/ports/configuration.ts": "510e09ccf3c8a8eb43c3799dff99df328a3a0034e6ad11cdc2e2985946b11212",
+    "packages/application/src/ports/host-files.ts": "5b02b524dbdf96094671fafd31fa45113b3f5bf42fe122ab20190dcb5ac8f8d8",
+    "packages/application/src/services/file-operation-service.ts": "e8c045dbdad87c0eb79003f0347873405d8d9ff1cf0ee9c1815cbf1cd3d5249a",
+    "packages/application/src/services/workspace-copy-service.ts": "d1584f6b7491af496d554249ff2e2e47eea9070d61d35e00d3f82c56004d2e84",
+    "packages/execution-contracts/src/pi-runner-v1.ts": "ec77d99ba82e04ed4ac9dd38a5cc2aa07367c06f0e990c2c252ea18ec709c885",
+    "packages/execution-contracts/src/sandbox-scope-v1.ts": "337c770cc10e5907934eb83804ebaae99d49e90198aa0becfa96c2aa58e27f58",
+    "packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts": "9453c71929d92f93fcde1b4845795a4b8d3183d856ca79642dabcb0b335f7bcc",
+    "packages/platform-node/src/files/pi-file-publication.ts": "fee4b1e334217f16cf1df0d5f4578e9b213b1355a8b029cf24e70dafc03a742c",
+    "packages/platform-node/src/files/pi-write-evidence.ts": "c31d64c42ea9723a5c9a20fb2c149c6e89ab196057ca7c9e6f5eab54037f2745",
+    "packages/platform-node/src/files/workspace-copy-publication.ts": "539101034b22af3fb5bf01d31bd161766bee5ed1de4b4aa4afdcdf248410a42f",
+    "packages/platform-node/src/index.ts": "8d83eb1395579c48bf6eddedba25d4a0de58fc2dafde768368cb95854c333f89",
+    "packages/platform-node/src/strict-configuration.ts": "f8db6e30f7141baf2d46f372d452e17bdfba3fdd873419d3846a5a4f4775ed0b",
+    "test/fixtures/production-sandbox-scope.ts": "f437ff29e997e605807e37e0fcde6b218a813be7c802e57ca3f4ccee987261c0",
+    "test/integration/production-copy-save.test.ts": "d82a0ef573e9febf742ecc5992a7add95bafaaf5c398606c489fe1a063254875"
+  }
+}

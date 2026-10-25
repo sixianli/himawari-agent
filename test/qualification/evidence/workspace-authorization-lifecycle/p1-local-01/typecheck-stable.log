@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/sqlite-sandbox-execution-v2.test.ts(1169,19): error TS2367: This comparison appears to be unintentional because the types '"verified" | "unavailable" | "expired"' and '"evidence-timeout"' have no overlap.

@@ -6,6 +6,7 @@ import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
 } from "../src/production-file-read-workflow.js";
+import { WebToolMemory } from "../src/web-tool-memory.js";
 import { invocation, now, runtimeToolFixture } from "./runtime-tools.fixture.js";
 
 function fixture() {
@@ -80,7 +81,10 @@ function fixture() {
     })),
   };
   const authorize = vi.fn(
-    async (): Promise<PermissionDecision> => ({
+    async (
+      _intent: import("@himawari-agent/application").GovernedActionIntent,
+      _signal?: AbortSignal,
+    ): Promise<PermissionDecision> => ({
       decision: "DENY",
       reasonCode: "test-denied",
       alternativesAllowed: false,
@@ -93,7 +97,23 @@ function fixture() {
       throw new Error("must not issue before permission");
     }),
   };
-  return { call, binding, ctx, services, authorize };
+  return { base, values, call, binding, ctx, services, authorize };
+}
+function allowRead(): ProductionFileReadServices["authorize"] {
+  return vi.fn<ProductionFileReadServices["authorize"]>(async () => ({
+    decision: "ALLOW",
+    basis: { type: "grant", ref: "grant:test" },
+    executionScope: {
+      capabilityRef: "coding",
+      operations: ["read"],
+      exactResourceRef: null,
+      resourcePrefixes: [],
+      maxDataClassification: "private",
+      sideEffects: ["none"],
+      maxCostMicrosPerUse: 0,
+      maxFrequency: { count: 1, intervalMs: null },
+    },
+  }));
 }
 describe("governed coding requests", () => {
   it("binds the exact tool input and recipient to approval before issuing a handle", async () => {
@@ -107,6 +127,7 @@ describe("governed coding requests", () => {
         disclosure: "named_recipients",
         sideEffect: "reversible",
       }),
+      undefined,
     );
     expect(JSON.stringify(f.authorize.mock.calls)).not.toContain('"content":"hello"');
     expect(f.services.issue).not.toHaveBeenCalled();
@@ -123,10 +144,83 @@ describe("governed coding requests", () => {
           f.services,
           f.ctx,
         ),
-      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE" });
+      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE", dispatchState: "not_sent" });
       expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
     },
   );
+  it.each([".", "./", "/workspace", "/workspace/", "/workspace//"])(
+    "[R2-T1] reports a directory target as a directory instead of outside scope: %s",
+    async (path) => {
+      const f = fixture();
+      const result = await executeProductionCodingRequest(
+        { ...f.call, capabilityRef: "coding.read", arguments: { path } },
+        "read",
+        f.services,
+        f.ctx,
+      );
+      expect(result).toMatchObject({
+        errorCode: "CODING_PATH_IS_DIRECTORY",
+        dispatchState: "not_sent",
+        outcome: "failed",
+      });
+      expect(result.modelContent).toContain("目录");
+      expect(result.modelContent).toContain("ls");
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["/var/lib/himawari/state", "../outside", "/workspace/../outside", "/outside"])(
+    "[R2-T1] still rejects an out-of-scope read target as outside scope: %s",
+    async (path) => {
+      const f = fixture();
+      expect(
+        await executeProductionCodingRequest(
+          { ...f.call, capabilityRef: "coding.read", arguments: { path } },
+          "read",
+          f.services,
+          f.ctx,
+        ),
+      ).toMatchObject({ errorCode: "CODING_PATH_OUTSIDE_SCOPE", dispatchState: "not_sent" });
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    },
+  );
+  it("[R2-T1] keeps the granted directory as a valid ls, find and grep query", async () => {
+    for (const tool of ["ls", "find", "grep"] as const) {
+      const f = fixture();
+      await executeProductionCodingRequest(
+        { ...f.call, capabilityRef: `coding.${tool}`, arguments: {} },
+        tool,
+        f.services,
+        f.ctx,
+      );
+      expect(f.authorize).toHaveBeenCalledWith(
+        expect.objectContaining({ operation: tool }),
+        undefined,
+      );
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    }
+  });
+  it("[R2-T1] reports the grant root as a directory for write and edit", async () => {
+    for (const tool of ["write", "edit"] as const) {
+      const f = fixture();
+      expect(
+        await executeProductionCodingRequest(
+          {
+            ...f.call,
+            capabilityRef: `coding.${tool}`,
+            arguments: { path: "/workspace", content: "x" },
+          },
+          tool,
+          f.services,
+          f.ctx,
+        ),
+      ).toMatchObject({ errorCode: "CODING_PATH_IS_DIRECTORY", dispatchState: "not_sent" });
+      expect(f.authorize).not.toHaveBeenCalled();
+      expect(f.ctx.phase).not.toHaveBeenCalled();
+    }
+  });
   it("accepts the grant root for directory queries but does not execute without approval", async () => {
     const f = fixture();
     await executeProductionCodingRequest(
@@ -135,7 +229,10 @@ describe("governed coding requests", () => {
       f.services,
       f.ctx,
     );
-    expect(f.authorize).toHaveBeenCalledWith(expect.objectContaining({ operation: "ls" }));
+    expect(f.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "ls" }),
+      undefined,
+    );
     expect(f.ctx.phase).not.toHaveBeenCalled();
   });
   it("does not substitute changed arguments when a request is resumed", async () => {
@@ -187,6 +284,7 @@ it("binds public search disclosure to the provider and query without issuing bef
       targets: expect.arrayContaining([{ type: "network-domain", ref: "mcp.exa.ai:443" }]),
       sideEffect: "none",
     }),
+    undefined,
   );
   expect(f.services.issue).not.toHaveBeenCalled();
 });
@@ -200,4 +298,450 @@ it("rejects invalid public search queries before disclosure approval", async () 
   );
   expect(result.errorCode).toBe("WEB_SEARCH_INPUT_INVALID");
   expect(f.authorize).not.toHaveBeenCalled();
+});
+
+it("discloses a configured provider chain to every provider and freezes it into the program input", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: null,
+    providers: ["exa-public", "deepseek"],
+  });
+  const issue = vi.fn(async () => ({ ref: "handle:search" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_search", arguments: { query: "Tokyo forecast" } },
+    "web_search",
+    services,
+    f.ctx,
+  );
+  expect(services.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      recipients: [f.binding.modelIdentity, "https://mcp.exa.ai", "https://api.deepseek.com"],
+      targets: expect.arrayContaining([
+        { type: "network-domain", ref: "api.deepseek.com:443" },
+        { type: "network-domain", ref: "mcp.exa.ai:443" },
+      ]),
+    }),
+    undefined,
+  );
+  expect(f.values.get("input")).toEqual({
+    query: "Tokyo forecast",
+    providers: ["exa-public", "deepseek"],
+  });
+});
+it("grants only the configured provider secret by name and keeps its value out of the program input", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: null,
+    providers: ["deepseek", "exa-public"],
+    providerSecrets: [
+      {
+        provider: "deepseek",
+        secretRef: "deepseek-web",
+        secretVersion: "v1",
+        purpose: "web-provider",
+      },
+    ],
+  });
+  const issue = vi.fn(async (_input: { secretRefs: unknown }) => ({ ref: "handle:search" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_search", arguments: { query: "Tokyo forecast" } },
+    "web_search",
+    services,
+    f.ctx,
+  );
+  expect(issue.mock.calls[0]?.[0].secretRefs).toEqual([
+    { secretRef: "deepseek-web", secretVersion: "v1", purpose: "web-provider" },
+  ]);
+  expect(f.values.get("input")).toEqual({
+    query: "Tokyo forecast",
+    providers: ["deepseek", "exa-public"],
+    secretRefs: { deepseek: "deepseek-web" },
+  });
+});
+it("fetches a public page through the provider with the configured size and no model-chosen fields", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const issue = vi.fn(async () => ({ ref: "handle:fetch" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_fetch", arguments: { url: "https://example.org/a" } },
+    "web_fetch",
+    services,
+    f.ctx,
+  );
+  expect(services.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operation: "web_fetch",
+      recipients: [f.binding.modelIdentity, "https://mcp.exa.ai"],
+      targets: expect.arrayContaining([{ type: "network-domain", ref: "mcp.exa.ai:443" }]),
+      sideEffect: "none",
+    }),
+    undefined,
+  );
+  expect(f.values.get("input")).toEqual({
+    url: "https://example.org/a",
+    maximumBytes: f.binding.maximumBytes,
+  });
+});
+it("answers a repeated approved search from host memory without a second provider request", async () => {
+  const memory = new WebToolMemory();
+  const run = async (toolCallId: string) => {
+    const f = fixture();
+    f.services.binding = async () => ({ ...f.binding, grant: null });
+    const issue = vi.fn(async () => ({ ref: `handle:${toolCallId}` }));
+    const services = {
+      ...f.services,
+      authorize: allowRead(),
+      issue,
+      webMemory: memory,
+    } as unknown as typeof f.services;
+    const result = await executeProductionCodingRequest(
+      {
+        ...f.call,
+        toolCallId,
+        capabilityRef: "coding.web_search",
+        arguments: { query: "Tokyo  Forecast" },
+      },
+      "web_search",
+      services,
+      f.ctx,
+    );
+    return { f, issue, services, result };
+  };
+  const first = await run("call-a");
+  expect(first.f.ctx.phase).toHaveBeenCalledTimes(1);
+  const second = await run("call-b");
+  expect(second.services.authorize).toHaveBeenCalledTimes(1);
+  expect(second.issue).not.toHaveBeenCalled();
+  expect(second.f.ctx.phase).not.toHaveBeenCalled();
+  expect(second.result).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "not_sent",
+    modelContent: "actual tool result",
+  });
+  expect(second.f.values.get("host-result")).toEqual(second.result);
+});
+it.each([
+  { url: "http://localhost:8080/admin" },
+  { url: "http://192.168.1.10/" },
+  { url: "https://user:pw@example.org/" },
+  { url: "file:///etc/passwd" },
+  { url: "https://example.org/", maximumBytes: 1 },
+])("rejects a private or widened fetch request %j before disclosure", async (args) => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const result = await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_fetch", arguments: args },
+    "web_fetch",
+    f.services,
+    f.ctx,
+  );
+  expect(result.errorCode).toBe("WEB_FETCH_INPUT_INVALID");
+  expect(f.authorize).not.toHaveBeenCalled();
+});
+
+it("passes cancellation to coding authorization before a handle or file effect exists", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const authorize = vi.fn<ProductionFileReadServices["authorize"]>(async (_intent, signal) => {
+    controller.abort();
+    expect(signal?.aborted).toBe(true);
+    return { decision: "DENY", reasonCode: "action_cancelled", alternativesAllowed: false };
+  });
+  expect(
+    await executeProductionCodingRequest(
+      f.call,
+      "write",
+      { ...f.services, authorize },
+      {
+        ...f.ctx,
+        signal: controller.signal,
+      },
+    ),
+  ).toMatchObject({ outcome: "failed", errorCode: "action_cancelled" });
+  expect(authorize).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ operation: "write" }),
+    controller.signal,
+  );
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+
+it("authorizes private-only search without a directory and rejects using that binding for files", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.web_search",
+    arguments: { query: "public weather" },
+  };
+  await executeProductionCodingRequest(call, "web_search", f.services, f.ctx);
+  expect(f.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      expiresAt: call.executionDeadlineAt,
+      targets: expect.not.arrayContaining([expect.objectContaining({ type: "directory-grant" })]),
+    }),
+    undefined,
+  );
+  expect(JSON.stringify(f.authorize.mock.calls)).not.toContain("/workspace");
+  f.authorize.mockClear();
+  expect(await executeProductionCodingRequest(f.call, "write", f.services, f.ctx)).toMatchObject({
+    errorCode: "CODING_DIRECTORY_UNAVAILABLE",
+  });
+  expect(f.authorize).not.toHaveBeenCalled();
+});
+
+it("associates new content with the verified conflict and asks the original policy again", async () => {
+  const f = fixture();
+  const previous = { ...f.call, toolCallId: "previous" };
+  f.ctx.fileConflict = async (id) =>
+    id === previous.toolCallId ? { call: previous, binding: f.binding, depth: 0 } : undefined;
+  const result = await executeProductionCodingRequest(
+    {
+      ...f.call,
+      fileConflictOf: previous.toolCallId,
+      arguments: { path: "note.txt", content: "preserve their change and add mine" },
+    },
+    "write",
+    f.services,
+    f.ctx,
+  );
+  expect(result.outcome).toBe("failed");
+  expect(f.authorize).toHaveBeenCalledOnce();
+  const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;
+  expect(lineage).toMatchObject({ previousToolCallId: "previous", depth: 1 });
+  expect(lineage["intentId"]).not.toBe(lineage["previousIntentId"]);
+  expect(f.authorize.mock.calls[0]?.[0]).toMatchObject({ id: lineage["intentId"] });
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+
+it.each(["unverified", "different-target", "different-binding", "same-call", "limit"])(
+  "blocks invalid conflict regeneration before asking permission: %s",
+  async (mode) => {
+    const f = fixture();
+    const previous = {
+      ...f.call,
+      toolCallId: mode === "same-call" ? f.call.toolCallId : "previous",
+      arguments:
+        mode === "different-target" ? { path: "other.txt", content: "x" } : f.call.arguments,
+    };
+    f.ctx.fileConflict = async (id) =>
+      mode === "unverified" || id === f.call.toolCallId
+        ? undefined
+        : {
+            call: previous,
+            binding:
+              mode === "different-binding" ? { ...f.binding, hostId: "other-host" } : f.binding,
+            depth: mode === "limit" ? 3 : 0,
+          };
+    expect(
+      await executeProductionCodingRequest(
+        { ...f.call, fileConflictOf: previous.toolCallId },
+        "write",
+        f.services,
+        f.ctx,
+      ),
+    ).toMatchObject({ errorCode: "CODING_CONFLICT_REGENERATION_BLOCKED" });
+    expect(f.authorize).not.toHaveBeenCalled();
+    expect(f.services.issue).not.toHaveBeenCalled();
+  },
+);
+
+it("changes only authority after queue proof and still rejects changed outer tool arguments", async () => {
+  const f = fixture();
+  await executeProductionCodingRequest(f.call, "write", f.services, f.ctx);
+  if (!f.call.context) throw new Error("context missing");
+  const call = {
+    ...f.call,
+    context: {
+      ...f.call.context,
+      continuationRef: "original-batch",
+      executionLease: {
+        ...f.call.context.executionLease,
+        fencingToken: 2,
+        authorityFencingToken: 2,
+      },
+    },
+  };
+  const proof = vi.fn(async () => false);
+  const context = { ...f.ctx, authorityFence: () => 2, canResumeAuthority: proof };
+  expect(await executeProductionCodingRequest(call, "write", f.services, context)).toMatchObject({
+    errorCode: "CODING_CONTEXT_CHANGED",
+  });
+  proof.mockResolvedValue(true);
+  expect(await executeProductionCodingRequest(call, "write", f.services, context)).toMatchObject({
+    errorCode: "test-denied",
+  });
+  const calls = f.authorize.mock.calls.length;
+  expect(
+    await executeProductionCodingRequest(
+      { ...call, arguments: { ...call.arguments, content: "changed" } },
+      "write",
+      f.services,
+      context,
+    ),
+  ).toMatchObject({ errorCode: "CODING_CONTEXT_CHANGED" });
+  expect(f.authorize).toHaveBeenCalledTimes(calls);
+  expect(proof).toHaveBeenCalledWith({
+    deploymentId: f.call.context.executionLease.deploymentId,
+    authorityEpoch: 1,
+    fencingToken: 1,
+  });
+});
+
+it("replays a verified Worker conflict as accepted without dispatching or renewing approval", async () => {
+  const f = fixture();
+  f.ctx.fileConflict = async () => ({
+    call: f.call,
+    binding: f.binding,
+    depth: 0,
+    dispatchState: "accepted",
+  });
+  expect(await executeProductionCodingRequest(f.call, "write", f.services, f.ctx)).toMatchObject({
+    dispatchState: "accepted",
+    outcome: "failed",
+    errorCode: "FILE_VERSION_CONFLICT",
+  });
+  expect(f.authorize).not.toHaveBeenCalled();
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+});
+it("freezes both directory move paths under the original move permission", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: { ...f.binding.grant, operations: ["read", "move"] },
+  });
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.move_directory",
+    arguments: { path: "reports", destination: "archive" },
+  };
+  await executeProductionCodingRequest(call, "move_directory", f.services, f.ctx);
+  expect(f.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operation: "move_directory",
+      targets: expect.arrayContaining([
+        { type: "file-path", ref: "reports" },
+        { type: "destination-path", ref: "archive" },
+      ]),
+    }),
+    undefined,
+  );
+  f.authorize.mockClear();
+  expect(
+    await executeProductionCodingRequest(
+      { ...call, arguments: { path: "reports", destination: "../outside" } },
+      "move_directory",
+      f.services,
+      f.ctx,
+    ),
+  ).toMatchObject({ outcome: "failed" });
+  expect(f.authorize).not.toHaveBeenCalled();
+});
+
+it.each(["create", "update", "move", "trash"] as const)(
+  "authorizes the actual prepared copy %s effect",
+  async (operation) => {
+    const f = fixture();
+    f.services.binding = async () => ({
+      ...f.binding,
+      grant: { ...f.binding.grant, operations: ["read", operation] },
+      copySaveOperation: { id: "prepared:copy", operation, canonicalHash: "sha256:copy" },
+    });
+    const call = {
+      ...f.call,
+      capabilityRef: "coding.save_copy",
+      arguments: { operationId: "prepared:copy", expectedHash: "sha256:copy" },
+    };
+    await executeProductionCodingRequest(call, "save_copy", f.services, f.ctx);
+    expect(f.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: operation === "trash" ? "DELETE" : "CREATE_OR_UPDATE",
+        targets: expect.arrayContaining([
+          { type: "prepared-file-operation", ref: "prepared:copy" },
+        ]),
+      }),
+      undefined,
+    );
+    f.authorize.mockClear();
+    expect(
+      await executeProductionCodingRequest(
+        { ...call, arguments: { ...call.arguments, expectedHash: "changed" } },
+        "save_copy",
+        f.services,
+        f.ctx,
+      ),
+    ).toMatchObject({ outcome: "failed" });
+    expect(f.authorize).not.toHaveBeenCalled();
+  },
+);
+
+it("[R2-P1] executes read-only tools in the host process and reuses the saved result", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "pi-result.v1",
+    isError: false,
+    errorCode: null,
+  }));
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "notes.txt" } };
+  const first = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(first).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "accepted",
+    modelContent: "pi-result.v1",
+    executionTiming: expect.any(Object),
+  });
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+  expect(f.services.issue).not.toHaveBeenCalled();
+  const second = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(second).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "accepted",
+    modelContent: "pi-result.v1",
+  });
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("[R2-P1] marks a host read that ran and failed as dispatched, not as not sent", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "ENOENT: no such file or directory, open 'missing.txt'",
+    isError: true,
+    errorCode: "ENOENT",
+  }));
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "missing.txt" } };
+  const result = await executeProductionCodingRequest(call, "read", services, f.ctx);
+  expect(result).toMatchObject({
+    outcome: "failed",
+    dispatchState: "accepted",
+    errorCode: "ENOENT",
+    executionTiming: expect.any(Object),
+  });
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("[R2-P1] keeps a read rejected before execution as not sent", async () => {
+  const f = fixture();
+  const execute = vi.fn(async () => ({
+    modelContent: "unreachable",
+    isError: false,
+    errorCode: null,
+  }));
+  const services = { ...f.services, authorize: allowRead(), hostReadOnly: { execute } };
+  const call = { ...f.call, capabilityRef: "coding.read", arguments: { path: "../outside" } };
+  expect(await executeProductionCodingRequest(call, "read", services, f.ctx)).toMatchObject({
+    outcome: "failed",
+    dispatchState: "not_sent",
+    errorCode: "CODING_PATH_OUTSIDE_SCOPE",
+  });
+  expect(execute).not.toHaveBeenCalled();
 });

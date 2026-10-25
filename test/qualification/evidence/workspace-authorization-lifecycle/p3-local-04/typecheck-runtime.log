@@ -1,0 +1,8 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-runtime-tools.ts(726,7): error TS2322: Type 'Readonly<{ readonly deploymentId: string; readonly authorityEpoch: number; readonly fencingToken: number; readonly ownerId: string | null; readonly agentId: string | null; readonly runId: string | null; readonly workerRunId: string | null; }>' is not assignable to type '{ readonly deploymentId: string; readonly authorityEpoch: number; readonly fencingToken: number; readonly ownerId: string; readonly agentId: string; readonly runId: string; readonly workerRunId: string; }'.
+  Types of property 'ownerId' are incompatible.
+    Type 'string | null' is not assignable to type 'string'.
+      Type 'null' is not assignable to type 'string'.

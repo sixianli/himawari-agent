@@ -1,0 +1,1183 @@
+{
+  "checkedAt": "2026-09-16T02:06:48.290Z",
+  "scope": "静态审核原型；无产品服务、数据库、模型或工具执行",
+  "browserVersion": "153.0.8010.37",
+  "layoutChecks": 192,
+  "checks": [
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "dark",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 320,
+      "theme": "light",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "dark",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1024,
+      "theme": "light",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "approval",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "queued",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "preparing",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "dispatched",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "running",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "verifying",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "cleaning",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "success",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "not_executed",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "denied",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "expired",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "stopping",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "stopped",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "cancelled",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "reconciling",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "unresolved",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "partial",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "revoked",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "staging",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "conflict",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "isolated",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "candidate",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "search",
+      "horizontalOverflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "scenario": "not_published",
+      "horizontalOverflow": false
+    }
+  ],
+  "interactions": [
+    "批准",
+    "拒绝",
+    "取消排队",
+    "重新确认",
+    "安全重试样例",
+    "停止请求",
+    "重新核验",
+    "断线禁用操作",
+    "草稿保留",
+    "文件预览与 Escape",
+    "失效权限不显示预览",
+    "移动侧栏",
+    "版本冲突差异预览",
+    "网络工具独立展示",
+    "暂存错误重试",
+    "核验无固定两分钟",
+    "搜索停止保留工具身份",
+    "命令停止保留工具身份"
+  ],
+  "pageErrors": [],
+  "externalRequests": [],
+  "sandbox": "allow-scripts"
+}

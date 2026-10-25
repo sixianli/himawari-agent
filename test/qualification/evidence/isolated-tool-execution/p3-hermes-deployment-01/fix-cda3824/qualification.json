@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "candidatePrefix": "/opt/himawari/releases/2026-09-28-cda3824",
+  "qualifiedRuntimePath": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+  "runtimeDigest": "315f6c54f77cf150ca8534c620de5e0072f3feaa80e3f4ef91817dbd14b8b8b0",
+  "receiptDigest": "6b2a154776e81e49a1b04326bf5d0311ad792142f6d011ae345707923607ee16",
+  "runtimeUid": 998,
+  "productionServiceChanged": false,
+  "productionDatabaseWritten": false,
+  "modelCalls": 0,
+  "next": "verified backup and installation switch still required"
+}

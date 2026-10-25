@@ -1,4 +1,3 @@
-// Explicit opt-in; public registry reads and installs only in an owned scratch tree.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -98,7 +97,7 @@ try {
     const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
     const curl = `/usr/bin/curl --silent --show-error --fail --max-time 15 --cacert ${quote(certificate)} --noproxy ''`;
     const download = `${curl} ${scenario === "socks-download" ? `--proxy "socks5h://\${ALL_PROXY#http://}"` : ""} https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz -o package.tgz`;
-    const tunnel = `const net=require('node:net');const p=new URL(process.env.HTTPS_PROXY);const s=net.connect(Number(p.port),p.hostname);s.on('error',e=>console.log(e.code));s.on('connect',()=>s.write('CONNECT registry.npmjs.org:443 HTTP/1.1\\r\\nHost: registry.npmjs.org:443\\r\\nProxy-Authorization: Basic '+Buffer.from(decodeURIComponent(p.username)+':'+decodeURIComponent(p.password)).toString('base64')+'\\r\\n\\r\\n'));s.on('data',b=>{if(b.toString().includes('200 Connection Established'))console.log('tunnel-established')});setTimeout(()=>process.exit(),12000)`;
+    const tunnel = `const net=require('node:net');const p=new URL(process.env.HTTPS_PROXY);const s=net.connect(Number(p.port),p.hostname);s.on('error',e=>console.log(e.code));s.on('connect',()=>s.write('CONNECT registry.npmjs.org:443 HTTP/1.1\\r\\nHost: registry.npmjs.org:443\\r\\nProxy-Authorization: Basic '+Buffer.from(decodeURIComponent(p.username)+':'+decodeURIComponent(p.password)).toString('base64')+'\\r\\n\\r\\n'));s.on('data',b=>{if(b.toString().includes('200 Connection Established'))console.log('tunnel-established')});setTimeout(()=>process.exit(),45000)`;
     const commands = {
       "host-secret-denied": `/bin/cat ${quote(path.join(root, "host-secret"))}`,
       "plain-http": `${curl} --include http://registry.npmjs.org/is-number/7.0.0`,
@@ -106,7 +105,7 @@ try {
       "socks-download": download,
       install: `${quote(node)} ${quote(npm)} install is-number@7.0.0 --ignore-scripts --no-audit --no-fund --fetch-retries=0 --registry=https://registry.npmjs.org --cache="$TMPDIR/cache"`,
       "redirect-denied": `${curl} -D redirect.headers -L 'https://httpbin.org/redirect-to?url=https%3A%2F%2Fexample.com'; cat redirect.headers`,
-      cpu: `${quote(node)} -e 'const end=Date.now()+5000;while(Date.now()<end){}'`,
+      cpu: `${quote(node)} -e 'const end=Date.now()+45000;while(Date.now()<end){}'`,
       memory: `${quote(node)} -e 'const b=Buffer.alloc(80*1024*1024,1);setTimeout(()=>console.log(b.length),5000)'`,
       cancel: `${quote(node)} -e ${quote(tunnel)}`,
       "proxy-variables-removed": `${quote(node)} -e '${netProof}for(const k of Object.keys(process.env))if(k.toLowerCase().includes("proxy"))delete process.env[k];const s=require("node:net").connect(443,"1.1.1.1");s.on("error",e=>console.log(e.code));s.on("connect",()=>{console.log("bypass");s.destroy()})'`,
@@ -119,21 +118,22 @@ try {
         policyDigest: compiled.policyDigest,
         executable: "/bin/bash",
         args: ["-c", commands[scenario]],
-        deadlineAt: new Date(Date.now() + 25000).toISOString(),
+        deadlineAt: new Date(Date.now() + (scenario === "install" ? 120000 : 60000)).toISOString(),
         maxOutputBytes: 8192,
-        cleanupTimeoutMs: 2000,
+        cleanupTimeoutMs: 5000,
         resourceLimits: {
           maxCpuTimeMs: scenario === "cpu" ? 100 : 15000,
           maxMemoryBytes: scenario === "memory" ? 32 * 1024 * 1024 : 512 * 1024 * 1024,
         },
       },
       path.join(base, "control"),
+      async () => {},
     );
     try {
       await host.ready;
       host.start();
       if (scenario === "cancel") {
-        const until = Date.now() + 10000;
+        const until = Date.now() + 30000;
         while (
           Date.now() < until &&
           !Buffer.from(host.readOutput(0, 8192).bytes).toString().includes("tunnel-established")

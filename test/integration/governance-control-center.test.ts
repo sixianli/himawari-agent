@@ -328,6 +328,52 @@ async function fixture() {
 }
 
 describe("S4 Task 11 governance Control Center boundary", () => {
+  it("acknowledges the same approval decision from another device without a second grant", async () => {
+    const setup = await fixture();
+    const payload = {
+      approvalRequestId: setup.approval.id,
+      expectedRevision: 1,
+      decision: "approved" as const,
+      semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+      recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+      editedPayloadRef: null,
+    };
+    const first = await setup.control.execute({
+      authentication: AUTHENTICATION,
+      command: command("approval.respond", "device-one", "device-one", payload),
+    });
+    const second = await setup.control.execute({
+      authentication: { ...AUTHENTICATION, deviceId: createDeviceId("second-device") },
+      command: command("approval.respond", "device-two", "device-two", payload),
+    });
+    expect(second.resultRef).toBe(first.resultRef);
+    expect(await setup.authorization.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(1);
+  });
+
+  it("arbitrates concurrent device approval decisions without a second grant", async () => {
+    const setup = await fixture();
+    const payload = {
+      approvalRequestId: setup.approval.id,
+      expectedRevision: 1,
+      decision: "approved" as const,
+      semanticSnapshotHash: setup.approval.semanticSnapshotHash,
+      recentAuthenticationRef: AUTHENTICATION.authenticationRef,
+      editedPayloadRef: null,
+    };
+    const [first, second] = await Promise.all([
+      setup.control.execute({
+        authentication: AUTHENTICATION,
+        command: command("approval.respond", "device-one", "device-one", payload),
+      }),
+      setup.control.execute({
+        authentication: { ...AUTHENTICATION, deviceId: createDeviceId("second-device") },
+        command: command("approval.respond", "device-two", "device-two", payload),
+      }),
+    ]);
+    expect(second.resultRef).toBe(first.resultRef);
+    expect(await setup.authorization.listGrants(OWNER_ID, AGENT_ID)).toHaveLength(1);
+  });
+
   it("shows elapsed pending approvals as expired without claiming an Owner decision", async () => {
     const setup = await fixture();
     setup.clock.set(EXPIRES_AT);
@@ -780,7 +826,18 @@ describe("governance recovery and read boundaries", () => {
   });
   it("paginates a stable approval list and rejects an unknown cursor", async () => {
     const setup = await fixture();
-    await setup.authorization.createApproval({ ...setup.approval, id: "approval-z" });
+    const otherIntent = {
+      ...setup.approval.intentSnapshot,
+      id: "intent-z",
+      idempotencyKey: createIdempotencyKey("intent-z"),
+    };
+    await setup.authorization.createApproval({
+      ...setup.approval,
+      id: "approval-z",
+      intentId: otherIntent.id,
+      intentSnapshot: otherIntent,
+      semanticSnapshotHash: actionIntentFingerprint(otherIntent),
+    });
     expect(
       await setup.reads.query(
         query("approval.list", "page-one", { status: null, afterCursor: null, limit: 1 }),

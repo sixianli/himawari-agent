@@ -1,25 +1,27 @@
 import {
   type ClockPort,
-  type RuntimeRequest,
-  type ModelInvocationAdmissionPort,
   ContextFormationService,
   ContextProjectionService,
   type IdGeneratorPort,
   type MemoryPort,
   type ModelInvocationAdmissionDescriptor,
+  type ModelInvocationAdmissionPort,
   type ModelInvocationAdmissionResolver,
   ModelInvocationAdmissionService,
   type PayloadProtectorPort,
   type ProductConfiguration,
   RunCoordinator,
-  RuntimeContinuationService,
   RunExecutionInputService,
   type RunExecutionPolicy,
   type RunExecutionSource,
+  RuntimeContinuationService,
+  type RuntimeRequest,
   type RuntimeToolPort,
+  type SandboxExecutionRecord,
   SessionTraceRecorder,
   type WorkerRunPort,
 } from "@himawari-agent/application";
+import { canonicalAuthorizationSnapshot } from "@himawari-agent/application/action-intent-snapshot";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import { PiAgentRuntimeAdapter, type PiModelBindingPort } from "@himawari-agent/runtime-pi";
 import type { ProductionAuthorityLifecycle } from "./production-authority-lifecycle.js";
@@ -28,8 +30,18 @@ import {
   type ProductionRunDispatchLoopFailure,
 } from "./production-run-dispatch-loop.js";
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
-import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
+import { createProductionRunExpiry } from "./production-run-expiry.js";
+import {
+  ProductionMemoryCapture,
+  type ProductionMemoryCaptureOptions,
+} from "./production-memory-capture.js";
+
+type ProductionMemoryCaptureRecall = NonNullable<
+  ReturnType<NonNullable<ProductionMemoryCaptureOptions["relevantMemoryIds"]>>
+>[number];
+import { ProductionThreadTitles } from "./production-thread-titles.js";
+import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
 export interface ProductionRunCompositionOptions {
   readonly generateTitle?: (
@@ -38,9 +50,24 @@ export interface ProductionRunCompositionOptions {
     admission: ModelInvocationAdmissionPort,
   ) => Promise<string>;
   readonly onTitleFailure?: (error: unknown) => void;
+  readonly memoryCapture?: Pick<
+    ProductionMemoryCaptureOptions,
+    "product" | "approvals" | "onAudit" | "onFailure"
+  > & {
+    readonly generate: (
+      request: RuntimeRequest,
+      prompt: string,
+      admission: ModelInvocationAdmissionPort,
+    ) => Promise<string>;
+  };
+  readonly recoverMissingToolResult?: (
+    record: SandboxExecutionRecord,
+  ) => Promise<SandboxExecutionRecord>;
   readonly resources?: {
+    recoverPending?(signal: AbortSignal, maximum: number): Promise<void>;
     stopRun(
       runId: Parameters<RunCoordinator["cancel"]>[0]["runId"],
+      reason: "run_finished" | "run_cancelled",
     ): Promise<{ released: boolean }>;
   };
   readonly configuration: Pick<
@@ -57,6 +84,8 @@ export interface ProductionRunCompositionOptions {
   readonly protector: PayloadProtectorPort;
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
+  readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
+  readonly prewarmSandboxEnvironment?: (request: RuntimeRequest) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -67,7 +96,6 @@ export interface ProductionRunCompositionOptions {
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
 }
 
-/** One scoped composition owns dispatch, product context, Pi and durable completion. */
 export function createProductionRunComposition(options: ProductionRunCompositionOptions) {
   const { configuration, repository, authority, clock, ids, protector } = options;
   const { ownerId, agentId } = configuration;
@@ -105,8 +133,26 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
   });
+  const recalled = new Map<string, readonly ProductionMemoryCaptureRecall[]>();
+  const memory: Pick<MemoryPort, "search"> = {
+    search: async (request) => {
+      const found = await options.memory.search(request);
+      if (options.memoryCapture && request.runId) {
+        recalled.delete(request.runId);
+        recalled.set(
+          request.runId,
+          found.map(({ id }) => id as ProductionMemoryCaptureRecall),
+        );
+        if (recalled.size > 200) {
+          const oldest = recalled.keys().next().value;
+          if (oldest !== undefined) recalled.delete(oldest);
+        }
+      }
+      return found;
+    },
+  };
   const context = new ContextFormationService({
-    memory: options.memory,
+    memory,
     trace,
     artifacts,
     payloads,
@@ -127,12 +173,57 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
   });
+  const prepareToolResultRecovery = createProductionToolResultRecovery({
+    ...(options.recoverMissingToolResult
+      ? { recoverMissingResult: options.recoverMissingToolResult }
+      : {}),
+    ownerId,
+    agentId,
+    repository,
+    artifacts,
+    checkpoints,
+    protector,
+    clock,
+  });
   const continuations = new RuntimeContinuationService({
     artifacts,
     payloads,
     protector,
     clock,
     ids,
+    authorizeAuthorityChange: async (request, ref, previousAuthority) => {
+      if (request.knownToolResult) {
+        const prepared = await prepareToolResultRecovery(request);
+        return (
+          prepared !== undefined &&
+          prepared.binding.continuationRef === ref &&
+          canonicalAuthorizationSnapshot(prepared.binding) ===
+            canonicalAuthorizationSnapshot(request.knownToolResult) &&
+          canonicalAuthorizationSnapshot(prepared.previousAuthority) ===
+            canonicalAuthorizationSnapshot(previousAuthority)
+        );
+      }
+      const saved = await checkpoints.read(request.runId);
+      const recovery = saved?.queuedToolBatch;
+      if (
+        !recovery ||
+        recovery.continuationRef !== ref ||
+        canonicalAuthorizationSnapshot(previousAuthority) !==
+          canonicalAuthorizationSnapshot(recovery.authority)
+      )
+        return false;
+      const inventory = await repository
+        .sandboxExecutionPreparations(ownerId, agentId)
+        .readRunInventory({ runId: request.runId });
+      const pending = inventory.queue.filter((item) => item.status === "queued");
+      return (
+        pending.length === 1 &&
+        pending[0]?.recovery?.continuationRef === ref &&
+        pending[0].bindingRevision > 0 &&
+        canonicalAuthorizationSnapshot(pending[0].plan.executionLease) ===
+          canonicalAuthorizationSnapshot(request.executionLease)
+      );
+    },
     assertActive: async (request) => {
       if (request.ownerId !== ownerId || request.agentId !== agentId)
         throw new Error("RUNTIME_SCOPE_INVALID");
@@ -156,8 +247,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     agentDir: options.agentDir,
     admission,
     now: () => clock.now(),
-    // Each slot is scoped to a durable Run. The identity ledger prevents replay
-    // of settled or uncertain physical streams after process restart.
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
   const titles = options.generateTitle
@@ -175,7 +264,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
           return options.generateTitle(request, prompt, {
             context: gate.context,
             begin: async (input) => {
-              const result = await gate.begin(input);
+              const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
               if (result.disposition !== "fresh") return result;
               const { permit } = result;
               return {
@@ -197,21 +286,72 @@ export function createProductionRunComposition(options: ProductionRunComposition
         onFailure: (error) => options.onTitleFailure?.(error),
       })
     : undefined;
+  const memoryCaptureOptions = options.memoryCapture;
+  const memoryCapture = memoryCaptureOptions
+    ? new ProductionMemoryCapture({
+        sources: repository.runExecutionSource(ownerId, agentId),
+        threads: repository.threadRepository(),
+        generations: repository.threadDistillationState(),
+        state: repository.productMemoryState(),
+        relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
+        product: memoryCaptureOptions.product,
+        approvals: memoryCaptureOptions.approvals,
+        payloads,
+        protector,
+        clock,
+        assertActive: () => authority.assertActive(),
+        generate: async (request, prompt, onAdmitted) => {
+          const gate = await admission(request);
+          if (!gate) throw new Error("MEMORY_CAPTURE_ADMISSION_UNAVAILABLE");
+          return memoryCaptureOptions.generate(request, prompt, {
+            context: gate.context,
+            begin: async (input) => {
+              const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
+              if (result.disposition !== "fresh") return result;
+              const { permit } = result;
+              return {
+                ...result,
+                permit: {
+                  assertActive: () => permit.assertActive(),
+                  releaseReserved: () => permit.releaseReserved(),
+                  settle: (usage) => permit.settle(usage),
+                  markUnknown: (reason) => permit.markUnknown(reason),
+                  markStarted: async () => {
+                    await permit.markStarted();
+                    onAdmitted();
+                  },
+                },
+              };
+            },
+          });
+        },
+        onAudit: memoryCaptureOptions.onAudit,
+        onFailure: memoryCaptureOptions.onFailure,
+      })
+    : undefined;
   const titledRuntime = {
     cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
+      await options.prepareQueuedSandboxExecutions?.(request);
+      options.prewarmSandboxEnvironment?.(request);
       let requested = false;
       let titleAdmission: Promise<void> | undefined;
+      let memoryAdmission: Promise<void> | undefined;
       for await (const event of runtime.run(request)) {
         if (!requested && event.type === "runtime.message" && event.role === "assistant") {
           requested = true;
           titleAdmission = titles?.start(request);
+          if (memoryCapture)
+            memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve()).then(() =>
+              memoryCapture.start(request),
+            );
         }
-        // The coordinator stops consuming at these events and then releases the Run lease.
         if (
           ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
-        )
+        ) {
           await titleAdmission;
+          await memoryAdmission;
+        }
         yield event;
       }
     },
@@ -242,11 +382,20 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     coordinator,
     input: (candidate) => input.create(candidate),
+    prepareToolResultRecovery,
     reconcile: createProductionRunReconciler({
       ownerId,
       agentId,
       runs: repository.runLifecycle(ownerId, agentId, fence),
       recovery: repository.runReconciliation(ownerId, agentId, fence, lease, options.instanceId),
+      settleExpired: createProductionRunExpiry({
+        repository,
+        protector,
+        clock,
+        ids,
+        scope: [ownerId, agentId, fence, lease, options.instanceId],
+        executionLeaseDurationMs: 30_000,
+      }),
       clock,
     }),
     clock,
@@ -258,6 +407,14 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatcher,
     fallbackScanIntervalMs: 1000,
     onFailure: options.onFailure,
+    ...(options.resources?.recoverPending
+      ? {
+          recoverResources: async (signal: AbortSignal) => {
+            await authority.assertActive();
+            await options.resources?.recoverPending?.(signal, configuration.concurrency.totalRuns);
+          },
+        }
+      : {}),
   });
   return Object.freeze({
     input,
@@ -268,5 +425,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatcher,
     loop,
     titles,
+    memoryCapture,
   });
 }

@@ -1,0 +1,76 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (22 tests | 4 failed) 1138ms
+   × still stops resources when runtime cancellation fails via reject 13ms
+   × still stops resources when runtime cancellation fails via throw 2ms
+   × starts resource stopping while runtime cancellation is still pending 1005ms
+   × still cancels the active Worker when resource stopping fails 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > still stops resources when runtime cancellation fails via reject
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'run-cancel-independent-reject' ]
+
+Number of calls: 0
+
+ ❯ test/integration/run-coordinator.test.ts:913:21
+    911|       authority: f.authority, command: f.input.commands.cancelled, rea…
+    912|     }).catch((error: unknown) => error);
+    913|     expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+       |                     ^
+    914|     expect(result).toBeInstanceOf(AggregateError);
+    915|     expect((result as AggregateError).errors).toEqual([error]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > still stops resources when runtime cancellation fails via throw
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'run-cancel-independent-throw' ]
+
+Number of calls: 0
+
+ ❯ test/integration/run-coordinator.test.ts:913:21
+    911|       authority: f.authority, command: f.input.commands.cancelled, rea…
+    912|     }).catch((error: unknown) => error);
+    913|     expect(stopRun).toHaveBeenCalledWith(f.input.runId);
+       |                     ^
+    914|     expect(result).toBeInstanceOf(AggregateError);
+    915|     expect((result as AggregateError).errors).toEqual([error]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > starts resource stopping while runtime cancellation is still pending
+AssertionError: expected "vi.fn()" to be called with arguments: [ 'run-cancel-independent-pending' ]
+
+Number of calls: 0
+
+ ❯ test/integration/run-coordinator.test.ts:932:44
+    930|   });
+    931|   try {
+    932|     await vi.waitFor(() => expect(stopRun).toHaveBeenCalledWith(f.inpu…
+       |                                            ^
+    933|     expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("ca…
+    934|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > still cancels the active Worker when resource stopping fails
+AssertionError: expected "cancel" to be called with arguments: [ 'independent-worker', …(1) ]
+
+Number of calls: 0
+
+ ❯ test/integration/run-coordinator.test.ts:972:26
+    970|       authority: f.authority, command: f.input.commands.cancelled, rea…
+    971|     }).catch((error: unknown) => error);
+    972|     expect(cancelWorker).toHaveBeenCalledWith(request.workerRunId, "OW…
+       |                          ^
+    973|     expect(result).toBeInstanceOf(AggregateError);
+    974|     expect((result as AggregateError).errors).toEqual([error]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 18 passed (22)
+   Start at  21:50:21
+   Duration  2.33s (transform 801ms, setup 0ms, import 973ms, tests 1.14s, environment 0ms)

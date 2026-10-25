@@ -77,7 +77,7 @@ function fixture(
     permissionDecisionRef: "permission-events",
     reasonCode: "allowed",
   }));
-  const execute = vi.fn(async (_input: unknown) => ({
+  const execute = vi.fn<PiAgentRuntimeAdapterDependencies["tools"]["execute"]>(async (_input) => ({
     outcome: "succeeded" as const,
     resultRef: "result-events",
     errorCode: null,
@@ -358,7 +358,33 @@ describe("product runtime event and tool contracts", () => {
     expect(f.execute).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       isError: true,
-      details: { reasonCode: "revoked", productOutcome: "failed" },
+      details: { reasonCode: "revoked", productOutcome: "failed", dispatchState: "not_sent" },
+    });
+  });
+  it("preserves product dispatch evidence in the existing Pi tool result", async () => {
+    let result: unknown;
+    const f = fixture(async (emit, options) => {
+      const tool = options.customTools?.[0];
+      if (!tool) throw new Error("Missing tool");
+      result = await tool.execute("call-one", {}, undefined, undefined, {} as never);
+      finish(emit);
+    });
+    f.execute.mockResolvedValue({
+      outcome: "failed",
+      dispatchState: "not_sent",
+      resultRef: null,
+      errorCode: "CODING_PATH_REQUIRED",
+      externalActionId: null,
+      modelContent: "工具未执行。",
+    });
+    await f.run();
+    expect(result).toMatchObject({
+      isError: true,
+      details: {
+        dispatchState: "not_sent",
+        productOutcome: "failed",
+        errorCode: "CODING_PATH_REQUIRED",
+      },
     });
   });
   it("retains uncertain execution instead of claiming failed side effects never occurred", async () => {

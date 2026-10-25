@@ -36,6 +36,37 @@ describe("governed Pi host operations", () => {
     expect(executeCommand).toHaveBeenCalledTimes(2);
   });
 
+  it("[R2-T14] reports governed command timeouts and cancellations in Pi's own error words", async () => {
+    let failure = "";
+    const unused = async () => {
+      throw new Error("unexpected file operation");
+    };
+    const operations = createPiOperationsFromGovernedHostPort({
+      access: unused,
+      readFile: unused,
+      writeFile: unused,
+      makeDirectory: unused,
+      executeCommand: async () => {
+        throw new Error(failure);
+      },
+    });
+    const onData = () => undefined;
+    const run = (code: string, timeout?: number) => {
+      failure = code;
+      return operations.bash?.exec("sleep 30", "/workspace", {
+        onData,
+        ...(timeout === undefined ? {} : { timeout }),
+      });
+    };
+    await expect(run("PI_COMMAND_TIMEOUT", 2.5)).rejects.toThrow(/^timeout:2\.5$/);
+    await expect(run("PI_COMMAND_TIMEOUT")).rejects.toThrow(/^PI_COMMAND_TIMEOUT$/);
+    await expect(run("PI_COMMAND_ABORTED", 2.5)).rejects.toThrow(/^aborted$/);
+    await expect(run("PI_COMMAND_GRANT_EXPIRED", 2.5)).rejects.toThrow(
+      /^PI_COMMAND_GRANT_EXPIRED$/,
+    );
+    await expect(run("PI_COMMAND_OUTPUT_LIMIT", 2.5)).rejects.toThrow(/^PI_COMMAND_OUTPUT_LIMIT$/);
+  });
+
   it("reuses Pi tool schemas and delegates every enabled operation to the governed port", async () => {
     const calls: string[] = [];
     const port: GovernedCodingOperationsPort = {

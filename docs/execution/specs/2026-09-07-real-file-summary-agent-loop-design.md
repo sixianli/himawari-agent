@@ -8,6 +8,9 @@ date: "2026-09-07"
 
 # 真实模型读取 Mac 文件并总结的验收与接入设计
 
+> 2026-10-06适用修正：本文的OpenRouter、GLM备用、Mem0 3.1.7及Mac付费验收记录保留为原版本证据，不能用于当前配置或新的调用授权。当前文本只用Vercel AI Gateway的DeepSeek，嵌入使用Qwen 4096维，Mem0按G46升级到3.3.1；接口和费用合同见[网关迁移设计](2026-10-06-vercel-gateway-migration-design.md)。工具授权、保护Payload和持久结果合同继续适用；Mac新版本验证仍延期。
+> [SOURCE: docs/adr/0048-vercel-ai-gateway-replaces-openrouter.md]
+
 ## 目标
 
 Owner 从 ego Lite 提交文件总结请求，由 OpenRouter 的真实 DeepSeek 模型选择工具，经产品授权后由 Mac Worker 读取文件；Pi 将工具结果加入模型上下文，再请求模型生成中文总结，最终结果持久保存并由浏览器回读。

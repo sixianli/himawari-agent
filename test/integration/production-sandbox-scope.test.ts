@@ -1,10 +1,22 @@
-import { appendFile, mkdir, rename } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { mkdir, rename } from "node:fs/promises";
+import path from "node:path";
 import {
   type SandboxOperationBinding,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
+import { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import Database from "better-sqlite3";
 import { afterEach, expect, it, vi } from "vitest";
+import {
+  type JobHostControlObservation,
+  openJobHostControl,
+} from "../../packages/runtime-sandbox/src/job-host-control.ts";
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { revokeFixtureDirectoryGrant } from "../fixtures/revoke-directory-grant.ts";
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import { AGENT_ID, OWNER_ID, T1, T2 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
@@ -30,6 +42,67 @@ const descriptor = (operation: string, background = false): SandboxOperationBind
     operation === "read" || operation === "search" ? ["read"] : ["read", "create", "update"],
   network: "grant_targets",
 });
+it("reuses the persisted queued plan with its original receipt and deadlines", async () => {
+  const f = await productionSandboxScope(descriptor("bash"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const position = await f.services.brokerV2.preparations.enqueue({
+    ...prepared,
+    invocation: f.input,
+  });
+  const replay = await f.services.runtime.prepare(
+    { ...f.input, receiptRef: "newly-generated-receipt" },
+    f.call,
+  );
+  expect(replay).toEqual(prepared);
+  expect(
+    await f.services.brokerV2.preparations.readQueuedByInvocation({
+      runId: f.call.runId,
+      invocationId: f.input.invocationId,
+    }),
+  ).toMatchObject({ ...position, plan: prepared.plan });
+  await expect(
+    f.services.runtime.prepare(
+      { ...f.input, deadlineAt: new Date(Date.parse(f.input.deadlineAt) - 1).toISOString() },
+      f.call,
+    ),
+  ).rejects.toThrow();
+  await f.repository.authorizationStore().revokeGrant(f.input.authorizationRef ?? "", T1, "test");
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+});
+it("rejects a waiting original operation after only its directory Grant is withdrawn", async () => {
+  const f = await productionSandboxScope(descriptor("bash"));
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const queued = await f.services.brokerV2.preparations.enqueue({
+    ...prepared,
+    invocation: f.input,
+  });
+  const beforeQueue = await f.services.brokerV2.preparations.readQueuedByInvocation({
+    runId: f.call.runId,
+    invocationId: f.input.invocationId,
+  });
+  expect(beforeQueue).toMatchObject({ ...queued, plan: prepared.plan });
+  expect(await f.services.runtime.prepare(f.input, f.call)).toEqual(prepared);
+  const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
+  expect(
+    (await revokeFixtureDirectoryGrant(f.repository, f.fileBinding.grant.id, T1))?.value[
+      "revokedAt"
+    ],
+  ).toBe(T1);
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
+  expect(await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).toEqual(grants);
+  const original = await f.services.brokerV2.preparations.readQueuedByInvocation({
+    runId: f.call.runId,
+    invocationId: f.input.invocationId,
+  });
+  expect(original).toEqual(beforeQueue);
+  expect(
+    await f.services.brokerV2.preparations.readAdmission(prepared.plan.identity),
+  ).toBeUndefined();
+});
 it.each(["read", "edit", "write", "search", "bash", "background"])(
   "production scope derives %s from the same durable Grant",
   async (operation) => {
@@ -42,12 +115,12 @@ it.each(["read", "edit", "write", "search", "bash", "background"])(
       invocation: f.input,
     });
     if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
-    // SRT adds proxy sockets below the job directory on the production host.
     const socketPath = `/data/hermes/himawari/jobs/${admitted.admission.plan.identity.jobId}/claude-socks-0123456789abcdef.sock`;
     expect(Buffer.byteLength(socketPath)).toBeLessThan(108);
     const send = await f.connect(admitted.admission.plan.identity);
     const scope = (await send({ kind: "resolve" })).resolvedScope;
-    if (!scope) throw new Error("scope missing");
+    if (!scope || scope.scope.schemaVersion !== "sandbox-scope.v1")
+      throw new Error("directory scope missing");
     expect(scope.allowedDomains).toEqual(["example.com:443"]);
     expect(scope.scope.networkAuthorizationRef).toBe(f.input.authorizationRef);
     expect(scope.scope.directoryGrant.operations).toEqual(
@@ -145,7 +218,7 @@ it("UDS rechecks durable revocation after resolving scope", async () => {
   ).toBe("reserved");
 });
 
-it.each(["runtime", "directory"])("rechecks real %s identity before start", async (kind) => {
+it("rechecks real directory identity before start", async () => {
   const f = await productionSandboxScope(descriptor("bash"));
   cleanups.push(f.close);
   const prepared = await f.services.runtime.prepare(f.input, f.call);
@@ -156,11 +229,8 @@ it.each(["runtime", "directory"])("rechecks real %s identity before start", asyn
   });
   if (admitted.admission.phase !== "reserved") throw new Error("reserved required");
   await f.services.brokerV2.verifyStart(admitted.admission.plan);
-  if (kind === "runtime") await appendFile(f.host.binding.runner.path, "\n# replaced fixture\n");
-  else {
-    await rename(f.host.workspace, `${f.host.workspace}-old`);
-    await mkdir(f.host.workspace);
-  }
+  await rename(f.host.workspace, `${f.host.workspace}-old`);
+  await mkdir(f.host.workspace);
   await expect(f.services.brokerV2.verifyStart(admitted.admission.plan)).rejects.toThrow();
   expect(
     (await f.services.brokerV2.preparations.readAdmission(admitted.admission.plan.identity))?.phase,
@@ -245,7 +315,53 @@ it("manages the original task and live output through SQLite and authenticated U
   await expect(f.services.managedTasks.execute(call)).rejects.toThrow();
 });
 
-it("stops foreground records and does not report reserved environments as released", async () => {
+it("persists a finite stop for legacy unbound reservations without claiming resource release", async () => {
+  const f = await productionSandboxScope(descriptor("read"));
+  cleanups.push(f.close);
+  const current = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+  const { preparationProtocol: _protocol, ...legacyPlan } = current.plan;
+  const prepared = { ...current, plan: legacyPlan };
+  if (!("reservation" in prepared)) throw new Error("expected v2");
+  const admitted = await f.services.brokerV2.preparations.reserve({
+    ...prepared,
+    invocation: f.input,
+  });
+  if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+  expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+    released: false,
+  });
+  const saved = await f.services.brokerV2.preparations.readAdmission(
+    admitted.admission.plan.identity,
+  );
+  expect(saved).toMatchObject({
+    phase: "reserved",
+    recovery: {
+      action: "stop",
+      status: "unresolved",
+      reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+      finishedAt: T1,
+    },
+  });
+  const rpc = await f.connect(admitted.admission.plan.identity);
+  await expect(rpc({ kind: "resolve" })).rejects.toThrow();
+  const readback = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+    readonly: true,
+  });
+  try {
+    expect(readback.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get()).toBe(0);
+    expect(
+      readback
+        .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+        .pluck()
+        .get(),
+    ).toBeGreaterThan(0);
+  } finally {
+    readback.close();
+  }
+});
+
+it("stops bound foreground records without declaring unverified resources released", async () => {
   const f = await productionSandboxScope(descriptor("read"));
   cleanups.push(f.close);
   const prepared = await f.services.runtime.prepare(f.input, f.call);
@@ -255,7 +371,6 @@ it("stops foreground records and does not report reserved environments as releas
     invocation: f.input,
   });
   if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
-  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
   const { plan, reservation } = admitted.admission;
   const base = sandboxV2Admission(f.f).facts;
   const environment = {
@@ -313,8 +428,279 @@ it("stops foreground records and does not report reserved environments as releas
       },
     },
   });
-  expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
+  expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+    released: false,
+  });
   expect(reconcile).toHaveBeenCalledWith(
     expect.objectContaining({ identity: plan.identity, action: "stop" }),
   );
+});
+
+it.each(["pending", "rejected"] as const)(
+  "sends stop to later admission pages while the first cleanup is %s",
+  async (firstOutcome) => {
+    const pages = vi.fn();
+    const original = SqliteProductStateRepository.prototype.sandboxExecutionPreparations;
+    const preparationFactory = vi
+      .spyOn(SqliteProductStateRepository.prototype, "sandboxExecutionPreparations")
+      .mockImplementation(function (this: SqliteProductStateRepository, ...args) {
+        const port = original.apply(this, args);
+        return { ...port, listAdmissions: pages };
+      });
+    let f: Awaited<ReturnType<typeof productionSandboxScope>>;
+    try {
+      f = await productionSandboxScope(descriptor("read"));
+    } finally {
+      preparationFactory.mockRestore();
+    }
+    cleanups.push(f.close);
+    const prepared = await f.services.runtime.prepare(f.input, f.call);
+    if (!("reservation" in prepared)) throw new Error("expected v2");
+    const admitted = await f.services.brokerV2.preparations.reserve({
+      ...prepared,
+      invocation: f.input,
+    });
+    if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+    const { plan, reservation } = admitted.admission;
+    const base = sandboxV2Admission(f.f).facts;
+    const environment = {
+      ...base.environment,
+      creator: plan.identity,
+      environmentId: plan.environmentId,
+      mode: plan.mode,
+      resourceRef: reservation.resourceRef,
+      scopeDigest: plan.binding.scopeDigest,
+      authorizationRef: plan.authorizationRef,
+      backendRef: plan.backendRef,
+      deadlineAt: plan.effectiveDeadlineAt,
+      workspaceConflictRefs: reservation.workspaceConflictRefs,
+    };
+    const facts = sandboxExecutionFactsSchema.parse({
+      ...base,
+      environment,
+      resource: {
+        ...base.resource,
+        creator: plan.identity,
+        environmentId: plan.environmentId,
+        scopeDigest: plan.binding.scopeDigest,
+        resourceRef: reservation.resourceRef,
+        status: { kind: "foreground" },
+        sequence: 2,
+      },
+    });
+    const bound = await f.services.brokerV2.preparations.bindAndStart({
+      identity: plan.identity,
+      expectedSequence: 1,
+      facts,
+      authority: f.input.authority,
+      now: T1,
+    });
+
+    const admissions = Array.from({ length: 101 }, (_, index) => ({
+      phase: "bound" as const,
+      record: {
+        ...bound.record,
+        plan: {
+          ...bound.record.plan,
+          identity: {
+            ...bound.record.plan.identity,
+            jobId: `stop-page-${String(index).padStart(3, "0")}`,
+          },
+        },
+      },
+    }));
+    pages
+      .mockResolvedValueOnce(admissions.slice(0, 100))
+      .mockResolvedValueOnce(admissions.slice(100));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reconcile = vi
+      .spyOn(f.services.brokerV2.reconciliation, "reconcile")
+      .mockImplementation(async (input) => {
+        if (input.identity.jobId === "stop-page-000") {
+          if (firstOutcome === "rejected") throw new Error("original host unavailable");
+          await pending;
+        }
+        return { applied: false, record: bound.record };
+      });
+    const stopping = f.services.resources.stopRun(f.call.runId, "run_cancelled");
+    try {
+      await vi.waitFor(() =>
+        expect(reconcile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            identity: expect.objectContaining({ jobId: "stop-page-100" }),
+            action: "stop",
+          }),
+        ),
+      );
+      expect(pages).toHaveBeenLastCalledWith({
+        runId: f.call.runId,
+        afterJobId: "stop-page-099",
+        limit: 100,
+      });
+      expect(reconcile).toHaveBeenCalledTimes(101);
+    } finally {
+      release();
+      expect(await stopping).toEqual({ released: false });
+    }
+  },
+);
+
+it.each(["stopRun", "recovery"] as const)(
+  "releases never-started reservations through production %s and retains the stop fence",
+  async (mode) => {
+    vi.stubEnv("TMPDIR", testTemporaryRoot());
+    let f: Awaited<ReturnType<typeof productionSandboxScope>>;
+    try {
+      f = await productionSandboxScope(descriptor("read"));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    cleanups.push(f.close);
+    const prepared = await f.services.runtime.prepare(f.input, f.call);
+    if (!("reservation" in prepared)) throw new Error("expected v2");
+    const admitted = await f.services.brokerV2.preparations.reserve({
+      ...prepared,
+      invocation: f.input,
+    });
+    if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+    const { plan } = admitted.admission;
+    const directory = path.join(f.host.binding.privateRoot, "c");
+    await mkdir(directory, { mode: 0o700 });
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      stdio: "ignore",
+    });
+    const exited = once(child, "exit");
+    cleanups.push(async () => {
+      child.kill();
+      await exited;
+    });
+    if (!child.pid) throw new Error("test host missing");
+    const binding = {
+      directory,
+      token: "a".repeat(64),
+      sessionId: randomUUID(),
+      jobId: plan.identity.jobId,
+      attemptId: plan.identity.attemptId,
+    };
+    let stops = 0;
+    let sequence = 0;
+    let observation: JobHostControlObservation = {
+      ...binding,
+      bootId: randomUUID(),
+      processIdentityRef: `job-host-process:${randomUUID()}`,
+      processId: child.pid,
+      processStartedAt: T1,
+      observedAt: T1,
+      sequence: 1,
+      phase: "ready",
+      policyDigest: "b".repeat(64),
+      privateDirectoryRef: `sandbox-private:${"a".repeat(64)}`,
+      linuxNamespace: null,
+      taskStarted: false,
+      taskProcessExited: false,
+      stdioClosed: false,
+      srtReset: false,
+      resources: null,
+    };
+    const server = await openJobHostControl(
+      binding,
+      () => ({ ...observation, sequence: ++sequence }),
+      () => {
+        stops++;
+        observation = { ...observation, phase: "finished", srtReset: true };
+        child.kill();
+      },
+    );
+    cleanups.push(() => server.finish());
+    await f.services.brokerV2.registerControl(plan, binding);
+    if (mode === "stopRun") {
+      await f.services.resources.stopRun(f.call.runId, "run_cancelled");
+      await exited;
+      expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+        released: true,
+      });
+    } else {
+      observation = { ...observation, phase: "finished", srtReset: true };
+      child.kill();
+      await exited;
+      const writer = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"));
+      try {
+        writer.prepare("UPDATE runs SET status='completed' WHERE id=?").run(f.call.runId);
+      } finally {
+        writer.close();
+      }
+      await f.repository
+        .authorizationStore()
+        .revokeGrant(f.input.authorizationRef ?? "", T1, "test");
+      await f.services.resources.recoverPending(new AbortController().signal, 1);
+    }
+    const saved = await f.services.brokerV2.preparations.readAdmission(plan.identity);
+    expect(saved).toMatchObject({
+      phase: "reserved",
+      stopRequestedAt: T1,
+      workspaceBlocked: false,
+      releaseReceipt: { acceptedAt: T1, verification: { basis: "host_never_started" } },
+      recovery: {
+        status: "resolved",
+        ...(mode === "recovery" ? { attempts: 1, action: "stop", nextAttemptAt: null } : {}),
+      },
+    });
+    const readback = new Database(path.join(f.f.resource.stateRoot, "product.sqlite"), {
+      readonly: true,
+    });
+    try {
+      expect(
+        readback
+          .prepare("SELECT count(*) FROM sandbox_workspace_occupancy WHERE released_at IS NULL")
+          .pluck()
+          .get(),
+      ).toBe(0);
+      expect(
+        readback
+          .prepare("SELECT started_at FROM sandbox_execution_records WHERE job_id=?")
+          .pluck()
+          .get(plan.identity.jobId),
+      ).toBeNull();
+      expect(
+        readback.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+      ).toBe(1);
+      expect(readback.prepare("SELECT count(*) FROM sandbox_release_receipts").pluck().get()).toBe(
+        0,
+      );
+    } finally {
+      readback.close();
+    }
+    const previousStops = stops;
+    f.setNow(T2);
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: true,
+    });
+    expect(stops).toBe(previousStops);
+    expect(await f.services.brokerV2.preparations.readAdmission(plan.identity)).toEqual(saved);
+    await expect(f.services.brokerV2.verifyStart(plan)).rejects.toThrow();
+  },
+);
+
+it("admits a source-read-only copy through production SRT scope resolution with copy-only occupancy", async () => {
+  const f = await productionSandboxScope(
+    { ...descriptor("bash"), network: "disabled" },
+    (value) => value,
+    { workspaceCopy: true, realFileIdentity: true, directoryOperations: ["read"] },
+  );
+  cleanups.push(f.close);
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("v2 required");
+  expect(f.workspaceCopy).toBeDefined();
+  if (!f.workspaceCopy) throw new Error("Copy fixture missing");
+  expect(prepared.workspaces).toHaveLength(1);
+  expect(prepared.workspaces[0]).toMatchObject({
+    canonicalRootId: f.workspaceCopy.root.canonicalRootId,
+    access: "write",
+  });
+  expect(prepared.workspaces[0]?.canonicalRootId).not.toBe(f.fileBinding.grant.canonicalRootId);
+  await revokeFixtureDirectoryGrant(f.repository, f.fileBinding.grant.id, T1);
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow();
 });

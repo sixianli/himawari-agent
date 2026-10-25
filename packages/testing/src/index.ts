@@ -4,3 +4,4 @@ export * from "./in-memory/index.js";
 export * from "./reference-adapters.js";
 export * from "./v02-canonical-contract.js";
 export * from "./v02-fixture.js";
+export * from "./uds-fault-proxy.js";

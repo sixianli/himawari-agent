@@ -14,7 +14,7 @@ const item = object({
   mode: enumeration(["foreground", "background", "service"]),
   contract: sandboxOperationContractSchema,
   backendRef: machineString,
-  scopeSource: enumeration(["file_workflow", "grant_targets"]),
+  scopeSource: enumeration(["file_workflow", "grant_targets", "private_temp"]),
   directoryOperations: array(
     enumeration(["read", "create", "update", "move", "trash", "restore", "permanent_delete"]),
   ),
@@ -31,7 +31,12 @@ export const sandboxOperationBindingsSchema: Schema<readonly SandboxOperationBin
       new Set(parsed.map((item) => item.operation)).size !== parsed.length ||
       parsed.some(
         (item) =>
-          item.directoryOperations.length === 0 ||
+          (item.scopeSource === "private_temp"
+            ? item.directoryOperations.length !== 0 ||
+              item.contract.kind !== "network_only" ||
+              item.mode !== "foreground" ||
+              item.network !== "grant_targets"
+            : item.directoryOperations.length === 0 || item.contract.kind === "network_only") ||
           new Set(item.directoryOperations).size !== item.directoryOperations.length ||
           (item.contract.kind === "fixed_read" &&
             item.directoryOperations.some((op) => op !== "read")) ||

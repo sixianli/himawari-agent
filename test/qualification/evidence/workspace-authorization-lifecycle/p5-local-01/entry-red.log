@@ -1,0 +1,79 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (31 tests | 4 failed) 42ms
+     × does not treat a review return value as execution authority 5ms
+     × falls back to the original human path when the reviewer fails 1ms
+     × rechecks expiry after review before creating human approval 2ms
+     × rechecks disable after review before creating human approval 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > optional automatic review entry > does not treat a review return value as execution authority
+AssertionError: expected "vi.fn()" to be called once with arguments: [ { intent: { …(27) }, …(2) } ]
+
+Number of calls: 0
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1211:20
+    1209|     const action = intent({ id: "review-no-authority" });
+    1210|     expect(await f.service([], { review }).evaluate(action, { uiAvaila…
+    1211|     expect(review).toHaveBeenCalledExactlyOnceWith({ intent: action, p…
+       |                    ^
+    1212|     expect(await f.authorization.listGrants(OWNER_ID, AGENT_ID)).toEqu…
+    1213|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > optional automatic review entry > falls back to the original human path when the reviewer fails
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ test/integration/authorization-capability-governance.test.ts:1219:20
+    1217|     const result = await f.service([], { review }).evaluate(intent({ i…
+    1218|     expect(result).toMatchObject({ decision: "ASK" });
+    1219|     expect(review).toHaveBeenCalledTimes(1);
+       |                    ^
+    1220|     expect(JSON.stringify(result)).not.toContain("private provider dia…
+    1221|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > optional automatic review entry > rechecks expiry after review before creating human approval
+AssertionError: expected { decision: 'ASK', …(1) } to match object { decision: 'DENY', …(1) }
+(18 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "intent_expired",
++   "decision": "ASK",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1225:136
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > optional automatic review entry > rechecks disable after review before creating human approval
+AssertionError: expected { decision: 'ASK', …(1) } to match object { decision: 'DENY', …(1) }
+(18 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "decision": "DENY",
+-   "reasonCode": "capability_not_active",
++   "decision": "ASK",
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:1225:136
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 27 passed (31)
+   Start at  20:03:22
+   Duration  817ms (transform 548ms, setup 0ms, import 666ms, tests 42ms, environment 0ms)

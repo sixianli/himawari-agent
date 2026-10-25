@@ -1,0 +1,57 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":2.045040999999401,"at":"2026-09-19T14:03:55.562Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":35.07224999999926,"at":"2026-09-19T14:03:55.597Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.26345799999944575,"at":"2026-09-19T14:03:55.598Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.0030000000006112,"at":"2026-09-19T14:03:55.599Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4337919999998121,"at":"2026-09-19T14:03:55.600Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.4779170000001614,"at":"2026-09-19T14:03:56.003Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":36.14362499999879,"at":"2026-09-19T14:03:56.039Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.29004100000020117,"at":"2026-09-19T14:03:56.039Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":0.8767909999987751,"at":"2026-09-19T14:03:56.041Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.4980830000004062,"at":"2026-09-19T14:03:56.041Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (23 tests | 2 failed) 12106ms
+   × sends stop to later admission pages while the first cleanup is pending 457ms
+   × sends stop to later admission pages while the first cleanup is rejected 438ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is pending
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > sends stop to later admission pages while the first cleanup is rejected
+TypeError: Cannot redefine property: listAdmissions
+ ❯ test/integration/production-sandbox-scope.test.ts:455:8
+    453|     }));
+    454|     const pages = vi
+    455|       .spyOn(f.services.brokerV2.preparations, "listAdmissions")
+       |        ^
+    456|       .mockResolvedValueOnce(admissions.slice(0, 100))
+    457|       .mockResolvedValueOnce(admissions.slice(100));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 21 passed (23)
+   Start at  23:03:42
+   Duration  13.72s (transform 957ms, setup 0ms, import 1.51s, tests 12.11s, environment 0ms)

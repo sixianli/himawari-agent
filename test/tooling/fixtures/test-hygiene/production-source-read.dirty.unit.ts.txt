@@ -1,0 +1,14 @@
+import { readFile } from "node:fs/promises";
+import { it } from "vitest";
+
+const entryPath = new URL("../src/entry.ts", import.meta.url);
+
+it("reads a literal production path", async () => {
+  const source = await readFile("packages/example/src/entry.ts", "utf8");
+  await Promise.resolve(source);
+});
+
+it("reads a production path held in a constant", async () => {
+  const source = await readFile(entryPath, "utf8");
+  await Promise.resolve(source);
+});

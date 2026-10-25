@@ -48,6 +48,7 @@ import type {
   RuntimeToolPort,
 } from "@himawari-agent/application/runtime-port";
 import { redactMachineSecrets } from "@himawari-agent/application/runtime-port";
+import { gatewayPayload, observeGatewayFetch } from "./gateway-observation.js";
 import { createGovernedPiCodingTools } from "./governed-coding-tools.js";
 import { createPiOperationsFromGovernedHostPort } from "./governed-host-operations.js";
 import { nativeHistoryMessages } from "./pi-native-history.js";
@@ -57,6 +58,43 @@ import {
   restorePiToolBatch,
 } from "./pi-tool-batch-continuation.js";
 import { PiToolProgressGuard, type PiToolProgressState } from "./pi-tool-progress-guard.js";
+
+/** A history hint, never authority. The product host checks the durable non-dispatch
+ * diagnostic and same target before associating a new immutable intent. */
+function previousFileConflict(
+  messages: AgentSession["agent"]["state"]["messages"],
+  runId: string,
+  target: unknown,
+): string | undefined {
+  if (typeof target !== "string") return undefined;
+  const calls = new Map<string, string>();
+  let previous: string | undefined;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const part of message.content)
+        if (
+          part.type === "toolCall" &&
+          ["write", "edit"].includes(part.name) &&
+          typeof part.arguments["path"] === "string"
+        )
+          calls.set(part.id, part.arguments["path"]);
+    } else if (message.role === "toolResult" && calls.get(message.toolCallId) === target) {
+      const details = message.details as
+        | {
+            productRunId?: unknown;
+            productOutcome?: unknown;
+            errorCode?: unknown;
+          }
+        | undefined;
+      if (details?.productRunId !== runId) continue;
+      previous =
+        details.productOutcome === "failed" && details.errorCode === "FILE_VERSION_CONFLICT"
+          ? message.toolCallId
+          : undefined;
+    }
+  }
+  return previous;
+}
 
 type RuntimeTurnId = Extract<RuntimeEvent, { readonly type: "runtime.turn_completed" }>["turnId"];
 type PiStreamFunction = (
@@ -484,6 +522,7 @@ function relayAdmittedPiStream(
   permit: ModelInvocationPermit,
   model: Model<Api>,
   signal: AbortSignal | undefined,
+  gateway: ReturnType<typeof observeGatewayFetch> | undefined,
 ): AssistantMessageEventStream {
   const output = createAssistantMessageEventStream();
   let accounted = false;
@@ -503,7 +542,25 @@ function relayAdmittedPiStream(
     try {
       for await (const event of stream) {
         if (event.type === "done") {
-          const usage = safePiUsage(event.message);
+          let usage = safePiUsage(event.message);
+          if (gateway !== undefined && usage !== undefined) {
+            const observation = await gateway.result();
+            if (signal?.aborted || observation.status !== "verified") {
+              const accountedUnknown = await markUnknown(
+                signal?.aborted ? "cancel_unresolved" : "provider_unresolved",
+              );
+              output.push(
+                piErrorEvent(
+                  model,
+                  accountedUnknown
+                    ? "Model provider billing is unavailable"
+                    : "Model budget accounting is unavailable",
+                ),
+              );
+              return;
+            }
+            usage = { ...usage, reportedCostMicros: observation.billing.costMicros };
+          }
           if (usage === undefined) {
             const accountedUnknown = await markUnknown("provider_unresolved");
             output.push(
@@ -626,6 +683,16 @@ async function admitPiStream(
     if (model !== binding.model) {
       return failedPiStream(model, "Model invocation binding mismatch");
     }
+    const isGateway = binding.descriptor.provider === "vercel-ai-gateway";
+    if (
+      isGateway &&
+      (binding.descriptor.providerRouting === undefined ||
+        (options?.maxTokens !== undefined &&
+          (!Number.isSafeInteger(options.maxTokens) ||
+            options.maxTokens < 1 ||
+            options.maxTokens > Math.min(model.maxTokens, 32768))))
+    )
+      return failedPiStream(model, "Model invocation gateway options are invalid");
     const logicalSlot = logicalSlotFor(request, ordinal);
     if (typeof logicalSlot !== "string" || logicalSlot.trim().length === 0) {
       return failedPiStream(model, "Model invocation logical slot is unavailable");
@@ -661,6 +728,19 @@ async function admitPiStream(
     }
     const withoutAmbientApiKey: SimpleStreamOptions = { ...options };
     delete withoutAmbientApiKey.apiKey;
+    const gateway = isGateway
+      ? observeGatewayFetch(options?.fetch ?? globalThis.fetch, model.id)
+      : undefined;
+    if (gateway !== undefined) {
+      withoutAmbientApiKey.fetch = gateway.fetch;
+      withoutAmbientApiKey.onPayload = async (payload, chosenModel) => {
+        const replacement = await options?.onPayload?.(payload, chosenModel);
+        return gatewayPayload(
+          replacement === undefined ? payload : replacement,
+          binding.descriptor?.providerRouting,
+        );
+      };
+    }
     const secret = binding.resolveSecret ? await binding.resolveSecret() : undefined;
     await permit.assertActive();
     if (options?.signal?.aborted) {
@@ -681,7 +761,7 @@ async function admitPiStream(
       ...(secret === undefined ? {} : { apiKey: secret }),
       maxRetries: 0,
     });
-    return relayAdmittedPiStream(stream, permit, model, options?.signal);
+    return relayAdmittedPiStream(stream, permit, model, options?.signal, gateway);
   } catch {
     if (started && permit !== undefined) {
       await permit.markUnknown("transport_unresolved").catch(() => undefined);
@@ -838,6 +918,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               | undefined);
       if (request.continuationRef && (!continuation || continuation.identity !== identity))
         throw new Error("RUNTIME_CONTINUATION_BINDING_CHANGED");
+      if (
+        request.knownToolResult &&
+        (!continuation ||
+          request.knownToolResult.continuationRef !== request.continuationRef ||
+          request.knownToolResult.toolCallId !== continuation.batch.waitingToolCallId)
+      )
+        throw new Error("RUNTIME_KNOWN_RESULT_BATCH_MISMATCH");
       if (continuation) {
         if (
           !Number.isSafeInteger(continuation.turnIndex) ||
@@ -898,13 +985,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               // Pi marks resolved execute() values as success. Use its official
               // result hook to retain protected product details and error truth.
               pi.on("tool_result", (event) => {
-                const details = event.details as { productOutcome?: unknown } | undefined;
+                const details = event.details as
+                  | { productOutcome?: unknown; errorCode?: unknown }
+                  | undefined;
                 if (!suspended && !unknownTool && !replayedResults.delete(event.toolCallId))
                   toolProgress.observe(
                     event.toolName,
                     event.input,
                     toolProgressOutput(descriptorsByName.get(event.toolName), event.content),
                     event.isError || details?.productOutcome === "failed",
+                    descriptorsByName.get(event.toolName)?.definition === "builtin-coding" &&
+                      typeof details?.errorCode === "string"
+                      ? details.errorCode
+                      : undefined,
                   );
                 if (
                   details?.productOutcome === "failed" ||
@@ -969,6 +1062,26 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       let restored: ReturnType<typeof restorePiToolBatch> | undefined;
       if (!getSupportedThinkingLevels(binding.model).includes(request.thinkingLevel ?? "off"))
         throw new Error("PI_THINKING_LEVEL_UNSUPPORTED");
+      const toolCheckpoints = new Map<string, string>();
+      const saveToolCheckpoint = async (invocation: RuntimeToolInvocation) => {
+        const key = `${streamOrdinal}:${invocation.toolCallId}`;
+        const saved = toolCheckpoints.get(key);
+        if (saved) return saved;
+        const active = this.#activeSessions.get(request.runId);
+        if (!active || !this.#dependencies.continuations)
+          throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+        await eventChain;
+        const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
+        const ref = await this.#dependencies.continuations.save(request, {
+          identity,
+          batch,
+          turnIndex,
+          messageSequence,
+          toolProgress: toolProgress.snapshot(),
+        });
+        toolCheckpoints.set(key, ref);
+        return ref;
+      };
       const created = await sessionFactory({
         cwd: this.#dependencies.cwd,
         ...(this.#dependencies.agentDir ? { agentDir: this.#dependencies.agentDir } : {}),
@@ -987,19 +1100,14 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             assertKnown: () => {
               if (suspended || unknownTool) throw new Error("RUNTIME_TOOL_EXECUTION_STOPPED");
             },
+            checkpoint: (invocation) =>
+              this.#dependencies.continuations
+                ? saveToolCheckpoint(invocation)
+                : Promise.resolve(undefined),
             suspend: async (invocation, approval) => {
               const active = this.#activeSessions.get(request.runId);
-              if (!active || !this.#dependencies.continuations)
-                throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
-              await eventChain;
-              const batch = capturePiToolBatch(active, invocation.toolCallId, streamOrdinal);
-              const continuationRef = await this.#dependencies.continuations.save(request, {
-                identity,
-                batch,
-                turnIndex,
-                messageSequence,
-                toolProgress: toolProgress.snapshot(),
-              });
+              if (!active) throw new Error("RUNTIME_CONTINUATION_STORAGE_UNAVAILABLE");
+              const continuationRef = await saveToolCheckpoint(invocation);
               suspended = {
                 type: "runtime.suspended",
                 runId: request.runId,
@@ -1102,7 +1210,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
               : event,
           occurredAt: this.now(),
         };
-        if (event.type === "message_update" && pendingUpdate) {
+        const coalescible =
+          event.type === "message_update" &&
+          !["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "");
+        if (coalescible && pendingUpdate) {
           Object.assign(pendingUpdate, observed);
           return;
         }
@@ -1136,7 +1247,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           failed ||= mapped.failed;
           aborted ||= mapped.aborted;
         });
-        if (event.type === "message_update") pendingUpdate = observed;
+        if (coalescible) pendingUpdate = observed;
       });
 
       try {
@@ -1224,7 +1335,19 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         error instanceof Error && error.message.startsWith("PI_UNKNOWN_EVENT_TYPE:")
           ? "PI_UNKNOWN_EVENT_TYPE"
           : "PI_RUNTIME_ERROR";
-      emit(unknownTool ?? runtimeFailure(request, this.now(), code));
+      emit(
+        unknownTool ??
+          (request.knownToolResult
+            ? {
+                type: "runtime.result_unknown",
+                runId: request.runId,
+                toolCallId: request.knownToolResult.toolCallId,
+                capabilityRef: request.knownToolResult.capabilityRef,
+                externalActionId: request.knownToolResult.jobId,
+                occurredAt: this.now(),
+              }
+            : runtimeFailure(request, this.now(), code)),
+      );
       this.#activeSessions.delete(request.runId);
     }
   }
@@ -1237,6 +1360,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         toolCallId: string,
       ): PiToolBatchContinuation["completedResults"][number] | undefined;
       assertKnown(): void;
+      checkpoint(invocation: RuntimeToolInvocation): Promise<string | undefined>;
       suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
       unknown(
         invocation: RuntimeToolInvocation,
@@ -1285,7 +1409,9 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         description:
           descriptor.definition === "builtin-read"
             ? `${builtin.description}\nHimawari 当前仅接入文本读取请求；目标主机和文件访问上限由产品策略绑定。读取及向当前模型披露分别经产品授权；目录、授权或执行条件不满足时明确返回未完成原因。`
-            : `${builtin.description}\n目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；通过受限 Worker 执行。`,
+            : ["read", "ls", "find", "grep"].includes(descriptor.name)
+              ? `${builtin.description}\n目标主机、目录和执行权限由 Himawari 授权绑定；只读工具在可信主进程内经严格路径检查执行，不新建沙箱。`
+              : `${builtin.description}\n目标主机、目录、执行权限和输出披露由 Himawari 授权绑定；写入和命令通过受限 Worker 执行。`,
         parameters: builtin.parameters,
         ...(builtin.promptSnippet === undefined ? {} : { promptSnippet: builtin.promptSnippet }),
         ...(builtin.promptGuidelines === undefined
@@ -1320,7 +1446,16 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
             details: completed.details,
             isError: completed.isError,
           };
-        const invocation: RuntimeToolInvocation = {
+        const conflictOf =
+          descriptor.definition === "builtin-coding" && ["write", "edit"].includes(descriptor.name)
+            ? previousFileConflict(
+                this.#activeSessions.get(request.runId)?.agent.state.messages ?? [],
+                request.runId,
+                (parameters as Record<string, unknown>)["path"],
+              )
+            : undefined;
+        let invocation: RuntimeToolInvocation = {
+          ...(conflictOf ? { fileConflictOf: conflictOf } : {}),
           runId: request.runId,
           context: {
             threadId: request.threadId,
@@ -1337,33 +1472,76 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           arguments: safeArguments(parameters),
           dataClassification: request.dataClassification,
         };
-        const decision = await this.#dependencies.tools.preflight(invocation);
-        signal?.throwIfAborted();
-        if (!decision.allowed) {
-          return {
-            content: [{ type: "text", text: `Blocked by product policy: ${decision.reasonCode}` }],
-            details: {
-              permissionDecisionRef: decision.permissionDecisionRef,
-              reasonCode: decision.reasonCode,
-              productOutcome: "failed",
-            },
-            isError: true,
-          };
-        }
-        reconciliation.assertKnown();
         let result: Awaited<ReturnType<RuntimeToolPort["execute"]>>;
-        try {
-          result = await this.#dependencies.tools.execute(invocation);
-        } catch {
-          // Once execution was entered, a thrown transport/storage error does not
-          // prove that an external effect was absent. Do not disclose raw errors to Pi.
-          result = {
-            outcome: "result_unknown",
-            resultRef: null,
-            errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
-            externalActionId: null,
-            modelContent: "Tool execution needs reconciliation before continuing.",
-          };
+        const recovery = request.knownToolResult;
+        if (recovery?.toolCallId === toolCallId) {
+          try {
+            if (!this.#dependencies.tools.recoverResult)
+              throw new Error("RUNTIME_KNOWN_RESULT_READER_UNAVAILABLE");
+            result = await this.#dependencies.tools.recoverResult(invocation, recovery);
+          } catch {
+            result = {
+              outcome: "result_unknown",
+              dispatchState: "possibly_sent",
+              resultRef: null,
+              errorCode: "RUNTIME_KNOWN_RESULT_UNAVAILABLE",
+              externalActionId: recovery.jobId,
+              modelContent: "原工具结果仍需核验，未重新执行。",
+            };
+          }
+        } else {
+          const decision = await this.#dependencies.tools.preflight(invocation);
+          signal?.throwIfAborted();
+          if (!decision.allowed) {
+            return {
+              content: [
+                { type: "text", text: `Blocked by product policy: ${decision.reasonCode}` },
+              ],
+              details: {
+                permissionDecisionRef: decision.permissionDecisionRef,
+                reasonCode: decision.reasonCode,
+                productOutcome: "failed",
+                dispatchState: "not_sent",
+              },
+              isError: true,
+            };
+          }
+          reconciliation.assertKnown();
+          // Persist the exact Pi batch before a product tool can enqueue or cause
+          // effects. A failed checkpoint is a known non-execution, not a lost result.
+          try {
+            const continuationRef = await reconciliation.checkpoint(invocation);
+            if (continuationRef && invocation.context)
+              invocation = { ...invocation, context: { ...invocation.context, continuationRef } };
+          } catch {
+            return {
+              content: [{ type: "text", text: "工具未执行：无法保存恢复记录。" }],
+              details: {
+                productOutcome: "failed",
+                dispatchState: "not_sent",
+                errorCode: "RUNTIME_TOOL_CHECKPOINT_FAILED",
+              },
+              isError: true,
+            };
+          }
+          signal?.throwIfAborted();
+          try {
+            result = await this.#dependencies.tools.execute(
+              invocation,
+              ...(signal ? [{ signal }] : []),
+            );
+          } catch {
+            // Once execution was entered, a thrown transport/storage error does not
+            // prove that an external effect was absent. Do not disclose raw errors to Pi.
+            result = {
+              outcome: "result_unknown",
+              dispatchState: "possibly_sent",
+              resultRef: null,
+              errorCode: "RUNTIME_TOOL_EXECUTION_UNRESOLVED",
+              externalActionId: null,
+              modelContent: "Tool execution needs reconciliation before continuing.",
+            };
+          }
         }
         if (result.outcome === "awaiting_approval") {
           try {
@@ -1378,7 +1556,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         return {
           content: [{ type: "text", text: result.modelContent }],
           details: {
+            ...(result.executionTiming ? { executionTiming: result.executionTiming } : {}),
             productOutcome: result.outcome,
+            ...(result.dispatchState ? { dispatchState: result.dispatchState } : {}),
+            productRunId: request.runId,
             resultRef: result.resultRef,
             errorCode: result.errorCode,
             externalActionId: result.externalActionId,
@@ -1435,10 +1616,28 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
       case "message_start":
       case "message_update":
       case "message_end": {
+        // Redact the original graph before adding presentation metadata so
+        // circular references keep the same protected representation.
+        const observation = redactObservation(event.message);
         const payloadRef = await this.#dependencies.projection.capture({
           runId: request.runId,
           kind: "message",
-          value: redactObservation(event.message),
+          value: {
+            ...(observation as Record<string, unknown>),
+            ...(event.type === "message_update" &&
+            ["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "")
+              ? {
+                  thinkingBoundary: {
+                    phase:
+                      event.assistantMessageEvent.type === "thinking_start" ? "started" : "ended",
+                    contentIndex:
+                      "contentIndex" in event.assistantMessageEvent
+                        ? event.assistantMessageEvent.contentIndex
+                        : 0,
+                  },
+                }
+              : {}),
+          },
           dataClassification: request.dataClassification,
         });
         const sequence = nextMessageSequence();

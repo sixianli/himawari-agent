@@ -1,0 +1,27 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts (75 tests | 2 failed | 73 skipped) 43ms
+   × persists a protected Pi batch before entering the product tool: saved 34ms
+   × persists a protected Pi batch before entering the product tool: storage-failed 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > persists a protected Pi batch before entering the product tool: saved
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > persists a protected Pi batch before entering the product tool: storage-failed
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:2850:18
+    2848|     });
+    2849|     const events = await collect(adapter.run({ ...request, modelRef: m…
+    2850|     expect(save).toHaveBeenCalledTimes(1);
+       |                  ^
+    2851|     expect(execute).toHaveBeenCalledTimes(mode === "saved" ? 1 : 0);
+    2852|     if (mode === "saved") expect(snapshots[0]).toMatchObject({ batch: {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 73 skipped (75)
+   Start at  19:07:52
+   Duration  1.70s (transform 153ms, setup 0ms, import 1.56s, tests 43ms, environment 0ms)

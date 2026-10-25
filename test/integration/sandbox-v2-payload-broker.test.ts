@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import {
   type CapabilityInvocationReceiptPort,
   type CapabilityInvocationResultPort,
+  type SandboxCleanupPending,
   type SandboxExecutionJournalPort,
   type SandboxExecutionPreparationPort,
-  type SandboxExecutionVerification,
   SandboxExecutionReconciliationService,
+  type SandboxExecutionVerification,
   SandboxScopeService,
 } from "@himawari-agent/application";
 import {
@@ -26,6 +27,8 @@ import {
   OWNER_ID,
   openSandboxJournal,
   operationsForDatabase,
+  outputObservation,
+  outputPayload,
   SERVICE_AUTHORITY,
   T1,
   T2,
@@ -66,6 +69,61 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   const invoke = (operation: string, value: unknown) =>
     operations.execute(operation, { ownerId: OWNER_ID, agentId: AGENT_ID, input: value });
   const preparations: SandboxExecutionPreparationPort = {
+    assertResultAuthority: async (value) => {
+      invoke("capabilityInvocation.sandboxV2.assertResultAuthority", value);
+    },
+    authorizeReservationResult: async (value) => {
+      invoke("capabilityInvocation.sandboxV2.authorizeReservationResult", value);
+    },
+    rebindQueued: async () => {
+      throw new Error("Queue authority binding is Agent-internal");
+    },
+    listRecoveryCandidates: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.listRecoveryCandidates", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["listRecoveryCandidates"]>
+      >,
+    scheduleRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.scheduleRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["scheduleRecovery"]>
+      >,
+    beginReservationRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.beginReservationRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["beginReservationRecovery"]>
+      >,
+    finishReservationRecovery: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.finishReservationRecovery", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["finishReservationRecovery"]>
+      >,
+    validatePreparation: async (value) => {
+      invoke("capabilityInvocation.sandboxV2.validatePreparation", value);
+    },
+    releaseReservation: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.releaseReservation", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["releaseReservation"]>
+      >,
+    interruptReservation: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.interruptReservation", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["interruptReservation"]>
+      >,
+    listRunningPrograms: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.listRunningPrograms", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["listRunningPrograms"]>
+      >,
+    readRunInventory: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.readRunInventory", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["readRunInventory"]>
+      >,
+    readQueuedByInvocation: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.readQueuedByInvocation", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["readQueuedByInvocation"]>
+      >,
+    enqueue: async (value) =>
+      invoke("capabilityInvocation.sandboxV2.enqueue", value) as Awaited<
+        ReturnType<SandboxExecutionPreparationPort["enqueue"]>
+      >,
+    cancelQueued: async (value) => {
+      invoke("capabilityInvocation.sandboxV2.cancelQueued", value);
+    },
     reserve: async (value) =>
       invoke("capabilityInvocation.sandboxV2.reserve", value) as Awaited<
         ReturnType<SandboxExecutionPreparationPort["reserve"]>
@@ -118,12 +176,19 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     throw new Error("not part of observation boundary");
   };
   const journal: SandboxExecutionJournalPort = {
+    beginRecovery: async (input) => sandboxV2Call(f, "beginRecovery", input),
+    finishRecovery: async (input) => sandboxV2Call(f, "finishRecovery", input),
+    interruptRecovery: async (input) => {
+      sandboxV2Call(f, "interruptRecovery", input);
+    },
     admit: unavailable,
     read: async (value) => sandboxV2Call(f, "read", value),
     listPending: unavailable,
     start: async (value) => sandboxV2Call(f, "start", value),
     append: async (value) => sandboxV2Call(f, "append", value),
     recordOperation: async (value) => sandboxV2Call(f, "recordOperation", value),
+    readResultRecovery: unavailable,
+    importResult: unavailable,
     prepareIntent: unavailable,
     dispatchIntent: unavailable,
     acknowledgeIntent: unavailable,
@@ -148,7 +213,8 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
   let outputWrites = 0;
   let now = T1;
   let beforeVerify = async () => {};
-  let observation: SandboxExecutionVerification | undefined;
+  let observation: SandboxExecutionVerification | SandboxCleanupPending | undefined;
+  let beforeObservation = async () => {};
   let observationReads = 0;
   let externalVerifications = 0;
   const scopeReader = new SandboxScopeService({
@@ -189,6 +255,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
       journal,
       observeVerifiedControl: async () => {
         observationReads++;
+        await beforeObservation();
         if (!observation) throw new Error("observation unavailable");
         return observation;
       },
@@ -223,7 +290,7 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
       },
     },
   });
-  const directory = await mkdtemp(path.join(tmpdir(), "r3-broker-"));
+  const directory = await mkdtemp(path.join(testTemporaryRoot(), "r3-broker-"));
   const credential = { tokenRef: "fixture", tokenValue: "0123456789abcdef0123456789abcdef" };
   const shared = {
     credential,
@@ -285,7 +352,11 @@ async function fixture(reserve = false, newBoot = false, resource = false, obser
     registrations: () => registrations,
     outputWrites: () => outputWrites,
     preparations,
-    observe: (value: SandboxExecutionVerification) => {
+    journal,
+    setBeforeObservation: (hook: () => Promise<void>) => {
+      beforeObservation = hook;
+    },
+    observe: (value: SandboxExecutionVerification | SandboxCleanupPending) => {
       observation = value;
     },
     verificationCounts: () => ({ observationReads, externalVerifications }),
@@ -361,6 +432,245 @@ describe("v2 observation over authenticated UDS and SQLite", () => {
     ).rejects.toThrow();
     expect(f.verificationCounts().externalVerifications).toBe(1);
   });
+  it.each(["process_group_gone", "exit_cleanup_pending"] as const)(
+    "keeps a controlled foreground record unchanged when a control check finds the process %s",
+    async (exit) => {
+      const f = await fixture(false, false, false, true);
+      await f.request({
+        kind: "start",
+        expectedSequence: 1,
+        policyDigest: f.record.facts.environment.policyDigest,
+      });
+      const evidence = {
+        ref: "agent-control-evidence",
+        digest: "a".repeat(64),
+        profileRef: f.record.plan.binding.profileRef,
+        qualificationRef: f.record.plan.binding.qualificationRef,
+        validUntil: T2,
+        subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
+      };
+      const verification = (
+        sequence: number,
+        state: "controlled" | "process_group_gone" | "exit_cleanup_pending" | "unconfirmed",
+      ) => {
+        const { evidence: _evidence, ...unsupervised } = f.record.facts
+          .resource as typeof f.record.facts.resource & { evidence?: unknown };
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...f.record.facts,
+          resource:
+            state === "controlled" || state === "process_group_gone"
+              ? {
+                  ...f.record.facts.resource,
+                  sequence,
+                  supervision: state === "controlled" ? "controlled" : "released",
+                  cleanup: state === "controlled" ? "pending" : "process_group_gone",
+                  evidence,
+                }
+              : {
+                  ...unsupervised,
+                  sequence,
+                  supervision: "lost",
+                  cleanup: "unknown",
+                  reasonCode:
+                    state === "exit_cleanup_pending"
+                      ? "SANDBOX_TASK_EXIT_CLEANUP_PENDING"
+                      : "SANDBOX_CONTROL_UNCONFIRMED",
+                },
+        });
+        return {
+          facts,
+          identity: f.record.plan.identity,
+          environmentId: f.record.plan.environmentId,
+          policyDigest: facts.environment.policyDigest,
+          resourceSequence: sequence,
+          checkedAt: T1,
+          validUntil: T2,
+          evidence: [evidence],
+          outputs: [],
+        };
+      };
+      f.observe(verification(2, "controlled"));
+      const controlled = await f.request({ kind: "observe_control", expectedSequence: 1 });
+      if (controlled.record.phase !== "bound") throw new Error("expected bound execution");
+      f.observe(
+        exit === "exit_cleanup_pending"
+          ? {
+              kind: "cleanup_pending",
+              identity: f.record.plan.identity,
+              environmentId: f.record.plan.environmentId,
+              resourceSequence: 2,
+              observedAt: T1,
+            }
+          : verification(3, exit),
+      );
+      const finished = await f.request({ kind: "observe_control", expectedSequence: 2 });
+      expect(finished.applied).toBe(false);
+      if (finished.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(finished.record.facts.resource.sequence).toBe(2);
+      expect(finished.record.facts.resource.supervision).toBe("controlled");
+      const reread = await f.request({ kind: "read" });
+      if (reread.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(reread.record.facts).toEqual(controlled.record.facts);
+      f.observe(verification(3, "unconfirmed"));
+      const unconfirmed = await f.request({ kind: "observe_control", expectedSequence: 2 });
+      expect(unconfirmed.applied).toBe(true);
+      if (unconfirmed.record.phase !== "bound") throw new Error("expected bound execution");
+      expect(unconfirmed.record.facts.resource).toMatchObject({
+        sequence: 3,
+        supervision: "lost",
+        reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+      });
+    },
+  );
+  it.each(["result", "release"] as const)(
+    "rejects an in-flight control observation overtaken by a durable %s",
+    async (writer) => {
+      const f = await fixture(false, false, false, true);
+      await f.request({
+        kind: "start",
+        expectedSequence: 1,
+        policyDigest: f.record.facts.environment.policyDigest,
+      });
+      let entered!: () => void;
+      let resume!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      f.setBeforeObservation(async () => {
+        entered();
+        await gate;
+      });
+      const evidence = {
+        ref: "agent-control-evidence",
+        digest: "a".repeat(64),
+        profileRef: f.record.plan.binding.profileRef,
+        qualificationRef: f.record.plan.binding.qualificationRef,
+        validUntil: T2,
+        subject: { kind: "local_process", processIdentityRef: "authenticated-host-process" },
+      };
+      const observed = sandboxExecutionFactsSchema.parse({
+        ...f.record.facts,
+        resource: {
+          ...f.record.facts.resource,
+          sequence: 2,
+          supervision: "controlled",
+          cleanup: "pending",
+          evidence,
+        },
+      });
+      f.observe({
+        facts: observed,
+        identity: f.record.plan.identity,
+        environmentId: f.record.plan.environmentId,
+        policyDigest: observed.environment.policyDigest,
+        resourceSequence: 2,
+        checkedAt: T1,
+        validUntil: T2,
+        evidence: [evidence],
+        outputs: [],
+      });
+      const rejection = expect(
+        f.request({ kind: "observe_control", expectedSequence: 1 }),
+      ).rejects.toThrow();
+      await waiting;
+      try {
+        let current = await f.journal.read(f.record.plan.identity);
+        if (!current) throw new Error("missing current execution");
+        const output = { ref: "race-result", digest: "f".repeat(64), byteLength: 0 };
+        if (writer === "result")
+          operationsForDatabase(f.f.database).execute("capabilityInvocationResult.observeOutput", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: outputObservation({
+              payload: outputPayload(output.ref, `sha256:${output.digest}`),
+            }),
+          });
+        for (const stage of writer === "result" ? ["result"] : ["stopping", "released"]) {
+          const resource = { ...current.facts.resource } as Record<string, unknown>;
+          delete resource["reasonCode"];
+          delete resource["evidence"];
+          const facts = sandboxExecutionFactsSchema.parse({
+            ...current.facts,
+            ...(stage === "result"
+              ? {
+                  effect: { kind: "not_applicable" },
+                  result: {
+                    schemaVersion: "sandbox-execution.v2",
+                    identity: current.plan.identity,
+                    environmentId: current.plan.environmentId,
+                    policyDigest: current.facts.environment.policyDigest,
+                    contract: { ref: "fixed-read", version: "1" },
+                    occurredAt: T1,
+                    kind: "result",
+                    output,
+                    completion: { type: "value" },
+                  },
+                }
+              : {
+                  resource: {
+                    ...resource,
+                    sequence: current.facts.resource.sequence + 1,
+                    supervision: stage,
+                    cleanup: stage === "released" ? "confirmed" : "pending",
+                    ...(stage === "released" ? { evidence } : { reasonCode: "TEST_STOP" }),
+                  },
+                }),
+          });
+          const input: Parameters<SandboxExecutionJournalPort["append"]>[0] = {
+            identity: current.plan.identity,
+            expectedSequence: current.facts.resource.sequence,
+            expectedOperationRevision: current.operationRevision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            facts,
+            context: {
+              now: T1,
+              environment: facts.environment,
+              operationContract: current.plan.operationContract,
+              verification: {
+                facts,
+                identity: current.plan.identity,
+                environmentId: current.plan.environmentId,
+                policyDigest: facts.environment.policyDigest,
+                resourceSequence: facts.resource.sequence,
+                checkedAt: T1,
+                validUntil: T2,
+                evidence: [evidence],
+                outputs: stage === "result" ? [output] : [],
+              },
+              currentResourceSequence: facts.resource.sequence,
+              runState: "terminated" as const,
+              currentAuthority: false,
+              currentFence: false,
+              userDisclosureAllowed: false,
+              modelDisclosureAllowed: false,
+              conflictingWorkspaceRisk: false,
+              pendingApprovalOrReconciliation: false,
+              resultAlreadyDelivered: false,
+            },
+          };
+          current = (
+            stage === "result"
+              ? await f.journal.recordOperation(input)
+              : await f.journal.append(input)
+          ).record;
+        }
+        resume();
+        await rejection;
+        expect(await f.journal.read(current.plan.identity)).toEqual(current);
+        expect(current.workspaceBlocked).toBe(writer !== "release");
+        expect(Boolean(current.releaseReceipt)).toBe(writer === "release");
+        expect(current.facts.result?.kind ?? null).toBe(writer === "result" ? "result" : null);
+      } finally {
+        resume();
+        await rejection;
+      }
+    },
+  );
+
   it("reserves before compilation and binds a later digest once over real UDS", async () => {
     const f = await fixture(true);
     expect((await f.request({ kind: "read" })).record.phase).toBe("reserved");

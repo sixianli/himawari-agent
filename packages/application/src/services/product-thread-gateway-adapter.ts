@@ -10,6 +10,8 @@ import {
   type ProductThread,
 } from "@himawari-agent/domain";
 import {
+  type ThreadExecutionChangedEvent,
+  type ThreadExecutionEventsSubscription,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
@@ -28,6 +30,7 @@ import {
   type ThreadRepositoryPort,
 } from "../ports/index.js";
 import type { ClockPort } from "../ports/system.js";
+import type { ThreadExecutionObservation } from "./thread-execution-projection.js";
 import { type ThreadCommandService, threadCommandFingerprint } from "./thread-command-service.js";
 import type { CancelCoordinatedRunInput } from "./run-coordinator.js";
 import type { ThreadDeletionCoordinationService } from "./thread-deletion-coordination-service.js";
@@ -36,6 +39,13 @@ import type { ThreadQueryService } from "./thread-query-service.js";
 
 export interface ProductThreadGatewayAdapterDependencies {
   readonly execution?: {
+    readState?(input: {
+      ownerId: string;
+      agentId: string;
+      threadId: string;
+      runId: string;
+      canCancelRun: boolean;
+    }): Promise<import("@himawari-agent/gateway-contracts").ThreadExecutionState>;
     read(input: {
       ownerId: string;
       agentId: string;
@@ -47,6 +57,23 @@ export interface ProductThreadGatewayAdapterDependencies {
       records: readonly import("@himawari-agent/gateway-contracts").ThreadExecutionRecord[];
       nextSequence: number | null;
     }>;
+    observeRun?(input: {
+      ownerId: string;
+      agentId: string;
+      threadId: string;
+      runId: string;
+      afterSequence: number;
+      known: {
+        readonly resourceRevision: string | null;
+        readonly resourcesPending: boolean;
+      } | null;
+    }): Promise<ThreadExecutionObservation>;
+  };
+  readonly executionEnvironment?: {
+    read(input: {
+      ownerId: string;
+      agentId: string;
+    }): Promise<import("@himawari-agent/gateway-contracts").ThreadExecutionEnvironment>;
   };
   readonly validateModelSelection?: (
     selection: { modelRef: string; thinkingLevel: string },
@@ -64,7 +91,18 @@ export interface ProductThreadGatewayAdapterDependencies {
   readonly clock: ClockPort;
   readonly waitForEvents?: (milliseconds: number) => Promise<void>;
   readonly eventPollMilliseconds?: number;
+  readonly executionPollMilliseconds?: number;
 }
+
+interface WatchedExecutionRun {
+  readonly runRevision: number;
+  readonly token: string;
+  readonly observation: ThreadExecutionObservation;
+  readonly settled: boolean;
+  readonly checkedAt: number;
+}
+
+const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 interface ThreadCommandOutcome {
   readonly receipt: ThreadMutationReceipt;
@@ -260,6 +298,38 @@ export class ProductThreadGatewayAdapter
             snapshotRef,
             generatedAt,
           },
+        });
+      }
+      case "thread.execution_state": {
+        if (!this.#dependencies.execution?.readState)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_STATE_NOT_INSTALLED",
+          );
+        const state = await this.#dependencies.execution.readState({
+          ownerId,
+          agentId,
+          ...query.payload,
+          canCancelRun: !!this.#dependencies.cancelRun,
+        });
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.execution_state_snapshot"),
+          payload: { ...query.payload, state, generatedAt },
+        });
+      }
+      case "thread.execution_environment": {
+        if (!this.#dependencies.executionEnvironment)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_ENVIRONMENT_NOT_INSTALLED",
+          );
+        const environment = await this.#dependencies.executionEnvironment.read({
+          ownerId,
+          agentId,
+        });
+        return parseResult({
+          ...responseEnvelope(query, "snapshot", "thread.execution_environment_snapshot"),
+          payload: { environment, generatedAt },
         });
       }
       case "thread.execution": {
@@ -465,7 +535,7 @@ export class ProductThreadGatewayAdapter
             occurredAt: event.occurredAt,
           },
         });
-        if (parsed.kind !== "event") {
+        if (parsed.type !== "thread.event") {
           throw new ApplicationPortError(
             PORT_ERROR_CODES.INVALID_OPERATION,
             "Thread Gateway event adapter produced an invalid message",
@@ -475,6 +545,110 @@ export class ProductThreadGatewayAdapter
         yield parsed;
       }
       await wait(this.#dependencies.eventPollMilliseconds ?? 1000);
+    }
+  }
+
+  async *watchExecution(input: {
+    readonly authentication: GatewayAuthenticationContext;
+    readonly subscription: ThreadExecutionEventsSubscription;
+    readonly signal?: AbortSignal;
+  }): AsyncIterable<ThreadExecutionChangedEvent> {
+    const observeRun = this.#dependencies.execution?.observeRun?.bind(this.#dependencies.execution);
+    if (!observeRun)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "THREAD_EXECUTION_EVENTS_NOT_INSTALLED",
+      );
+    const ownerId = createOwnerId(input.authentication.ownerId);
+    const agentId = createAgentId(input.subscription.scope.agentId);
+    const threadId = createThreadId(input.subscription.payload.threadId);
+    const wait =
+      this.#dependencies.waitForEvents ??
+      ((milliseconds: number) =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, milliseconds);
+        }));
+    const watched = new Map<string, WatchedExecutionRun>();
+    let sequence = 0;
+    while (!input.signal?.aborted) {
+      const thread = await this.#dependencies.repository.read(ownerId, agentId, threadId);
+      if (!thread || !["active", "archived"].includes(thread.status))
+        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_EXECUTION_NOT_FOUND");
+      const runs = await this.#dependencies.repository.listRuns(ownerId, agentId, threadId);
+      for (const run of runs) {
+        if (input.signal?.aborted) return;
+        const prior = watched.get(run.runId);
+        const revised = !prior || prior.runRevision !== run.revision;
+        const now = Date.parse(this.#dependencies.clock.now());
+        const due =
+          prior?.observation.nextChangeAt !== null &&
+          prior?.observation.nextChangeAt !== undefined &&
+          Date.parse(prior.observation.nextChangeAt) <= now;
+        if (prior && !revised && !due) {
+          if (prior.settled) continue;
+          if (TERMINAL_RUN_STATUSES.has(run.status) && now - prior.checkedAt < 5000) continue;
+        }
+        const observation = await observeRun({
+          ownerId,
+          agentId,
+          threadId,
+          runId: run.runId,
+          afterSequence: prior?.observation.traceSequence ?? 0,
+          known:
+            prior && !due
+              ? {
+                  resourceRevision: prior.observation.resourceRevision,
+                  resourcesPending: prior.observation.resourcesPending,
+                }
+              : null,
+        });
+        const settled =
+          TERMINAL_RUN_STATUSES.has(run.status) &&
+          !observation.resourcesPending &&
+          observation.nextChangeAt === null;
+        const token = threadCommandFingerprint({
+          revision: run.revision,
+          status: run.status,
+          traceSequence: observation.traceSequence,
+          resourceRevision: observation.resourceRevision,
+          checkpointRevision: observation.checkpointRevision,
+        });
+        watched.set(run.runId, {
+          runRevision: run.revision,
+          token,
+          observation,
+          settled,
+          checkedAt: now,
+        });
+        if (prior ? prior.token === token && !due : settled) continue;
+        const observedAt = this.#dependencies.clock.now();
+        const parsed = threadGatewayMessageSchema.parse({
+          schemaVersion: "gateway.thread.v3",
+          kind: "event",
+          type: "thread.execution_changed",
+          messageId: responseId(`execution:${++sequence}`, input.subscription.messageId),
+          correlationId: input.subscription.correlationId,
+          causationId: input.subscription.messageId,
+          scope: input.subscription.scope,
+          authority: input.subscription.authority,
+          actor: { actorType: "system", actorId: "thread-gateway" },
+          payload: {
+            threadId,
+            runId: run.runId,
+            runRevision: run.revision,
+            traceSequence: observation.traceSequence,
+            resourceRevision: observation.resourceRevision,
+            observedAt,
+          },
+        });
+        if (parsed.type !== "thread.execution_changed")
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.INVALID_OPERATION,
+            "Thread execution watcher produced an invalid message",
+          );
+        yield parsed;
+      }
+      await wait(this.#dependencies.executionPollMilliseconds ?? 500);
     }
   }
 

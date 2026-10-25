@@ -1,28 +1,133 @@
 import { createHash } from "node:crypto";
-import type { SandboxExecutionRecord, WorkerExecuteRequest } from "@himawari-agent/application";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Worker, WorkerOptions } from "node:worker_threads";
+import type {
+  ExecutionEnvironmentLifecyclePort,
+  SandboxExecutionRecord,
+  WorkerExecuteRequest,
+} from "@himawari-agent/application";
 import {
   executionV2MessageSchema,
+  PI_FIXED_FILE_CONTRACT,
+  PI_PREPARED_FILE_CONTRACT,
+  PI_WRITE_VERIFIER,
+  piFileRecoveryOperationKey,
   type SandboxOperationBinding,
   sandboxExecutionFactsSchema,
 } from "@himawari-agent/execution-contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { openQualifiedDatabase } from "@himawari-agent/persistence-sqlite";
+import {
+  ConstrainedHostFileSystem,
+  createDirectoryMoveJournal,
+  createPiFilePublicationJournal,
+} from "@himawari-agent/platform-node";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { createProductionSandboxFileRecovery } from "../../apps/agent-service/src/production-sandbox-file-recovery.ts";
 import messages from "../../packages/execution-contracts/test/fixtures/v2/messages.json" with {
   type: "json",
 };
 import { productionSandboxScope } from "../fixtures/production-sandbox-scope.ts";
+import { expectTestRuntimeFile, installTestNodeRuntime } from "../fixtures/node-runtime.ts";
+import { trackPiPreparationDiagnostics } from "../fixtures/pi-preparation-diagnostics.ts";
+
+const preparationWorkers = vi.hoisted(() => ({
+  failWarmConstruction: false,
+  warmConstructionFailures: 0,
+  cold: [] as { worker: Worker; threadId: number; exited: boolean }[],
+  restoreBuiltin: undefined as (() => void) | undefined,
+}));
+
+vi.mock("node:worker_threads", async (original) => {
+  const actual = await original<typeof import("node:worker_threads")>();
+  const url = new URL("../fixtures/pi-preparation-diagnostics.mjs", import.meta.url).href;
+  const { wrapPiPreparationWorker } = await import(url);
+  const { createRequire, syncBuiltinESMExports } = await import("node:module");
+  const builtin = createRequire(import.meta.url)("node:worker_threads") as {
+    Worker: typeof actual.Worker;
+  };
+  const originalWorker = builtin.Worker;
+  const DiagnosticWorker: typeof actual.Worker = wrapPiPreparationWorker(originalWorker);
+  class PreparationWorker extends DiagnosticWorker {
+    constructor(filename: string | URL, options?: WorkerOptions) {
+      const target = filename instanceof URL ? filename.href : filename;
+      const preparation = /\/prepare-file-mutation-worker\.(?:ts|js)(?:\?|$)/.test(target);
+      const prewarm = preparation && options?.workerData?.prewarm === true;
+      if (prewarm && preparationWorkers.failWarmConstruction) {
+        preparationWorkers.warmConstructionFailures += 1;
+        throw new Error("PI_TEST_WARM_CONSTRUCTOR_FAILURE");
+      }
+      super(filename, options);
+      if (preparation && !prewarm) {
+        const record = { worker: this, threadId: this.threadId, exited: false };
+        preparationWorkers.cold.push(record);
+        this.once("exit", () => {
+          record.exited = true;
+        });
+      }
+    }
+  }
+  builtin.Worker = PreparationWorker;
+  syncBuiltinESMExports();
+  preparationWorkers.restoreBuiltin = () => {
+    builtin.Worker = originalWorker;
+    syncBuiltinESMExports();
+  };
+  return { ...actual, Worker: PreparationWorker };
+});
+
+trackPiPreparationDiagnostics(import.meta.url);
 import { sandboxV2Admission } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
   grantHandle,
   OWNER_ID,
+  RUN_ID,
   T1,
   T2,
 } from "../fixtures/sqlite-capability-invocation-fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof productionSandboxScope>>;
 const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => {
-  for (const close of cleanups.splice(0).reverse()) await close();
+let runtimeRoot = fileURLToPath(new URL("../../dist/node-runtime", import.meta.url));
+let installation: Awaited<ReturnType<typeof installTestNodeRuntime>> | undefined;
+beforeAll(async () => {
+  installation = await installTestNodeRuntime();
+  runtimeRoot = installation.runtimeRoot;
+}, 240_000);
+afterAll(async () => {
+  try {
+    await installation?.close();
+  } finally {
+    preparationWorkers.restoreBuiltin?.();
+  }
+});
+const directoryRenameExecutable = () =>
+  path.join(runtimeRoot, "node_modules/@himawari-agent/platform-node/dist/files/rename-native");
+
+it("[R2-D16] reads the directory rename program from the selected runtime", async () => {
+  await expectTestRuntimeFile(directoryRenameExecutable());
+});
+afterEach(async (context) => {
+  try {
+    for (const close of cleanups.splice(0).reverse()) await close();
+  } finally {
+    Object.assign(context.task.meta, {
+      piPreparationColdFallback: {
+        forcedWarmConstructionFailure: preparationWorkers.failWarmConstruction,
+        warmConstructionFailures: preparationWorkers.warmConstructionFailures,
+        coldWorkers: preparationWorkers.cold.map(({ worker, threadId, exited }) => ({
+          threadId,
+          finalThreadId: worker.threadId,
+          exited,
+        })),
+      },
+    });
+    preparationWorkers.failWarmConstruction = false;
+    preparationWorkers.warmConstructionFailures = 0;
+    preparationWorkers.cold = [];
+  }
 });
 const descriptor: SandboxOperationBinding = {
   operation: "read",
@@ -50,9 +155,15 @@ async function fixture(legacyFileRead = false, fileWorkflow = false) {
   cleanups.push(f.close);
   return f;
 }
-async function startParent(f: Fixture, controlled = true): Promise<SandboxExecutionRecord> {
-  const prepared = await f.services.runtime.prepare(f.input, f.call);
-  if (!("reservation" in prepared)) throw new Error("Expected v2 reservation");
+async function startParent(
+  f: Fixture,
+  controlled = true,
+  legacy = false,
+): Promise<SandboxExecutionRecord> {
+  const current = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+  const { preparationProtocol: _protocol, ...oldPlan } = current.plan;
+  const prepared = { ...current, plan: legacy ? oldPlan : current.plan };
   const reserved = await f.services.brokerV2.preparations.reserve({
     ...prepared,
     invocation: f.input,
@@ -210,32 +321,38 @@ describe("production sandbox file and delegation lineage", () => {
       "SANDBOX_PARENT_CHANGED",
     );
   });
-  it("prepares a child with a fresh identity and inherited, bounded authority", async () => {
-    const f = await fixture();
-    const parent = await startParent(f);
-    const child = await f.services.child.prepare(childInput(f), request(f.input.invocationId));
-    expect(child.plan.identity).toMatchObject({
-      invocationId: "child-invocation",
-      toolCallId: "child-invocation",
-      runId: parent.plan.identity.runId,
-      hostId: parent.plan.identity.hostId,
-    });
-    expect(child.plan.identity.jobId).not.toBe(parent.plan.identity.jobId);
-    expect(child.plan.executionLease).toEqual(parent.plan.executionLease);
-    expect(child.plan.resourceCeiling).toEqual(parent.plan.resourceCeiling);
-    expect(child.plan.effectiveDeadlineAt <= parent.plan.effectiveDeadlineAt).toBe(true);
-    const scope = await f.services.child.scopes.read(child.plan, f.input.invocationId);
-    expect(scope.parentToolCallId).toBe(parent.plan.identity.toolCallId);
-    expect(scope.directoryGrant.operations).toEqual(["read"]);
-    expect(scope.networkAuthorizationRef).toBeNull();
-    expect(
-      await f.services.brokerV2.preparations.readAdmissionByInvocation({
-        runId: f.call.runId,
+  it.each([false, true])(
+    "[R2-D4] prepares a child with its own protocol and bounded authority (legacy parent=%s)",
+    async (legacy) => {
+      const f = await fixture();
+      const parent = await startParent(f, true, legacy);
+      const child = await f.services.child.prepare(childInput(f), request(f.input.invocationId));
+      expect(child.plan.identity).toMatchObject({
         invocationId: "child-invocation",
-      }),
-    ).toBeUndefined();
-    expect(await handleUses(f)).toBe(1);
-  });
+        toolCallId: "child-invocation",
+        runId: parent.plan.identity.runId,
+        hostId: parent.plan.identity.hostId,
+      });
+      expect(child.plan).toMatchObject({ preparationProtocol: "launch-or-block.v2" });
+      expect(Object.hasOwn(parent.plan, "preparationProtocol")).toBe(!legacy);
+      expect(child.plan.identity.jobId).not.toBe(parent.plan.identity.jobId);
+      expect(child.plan.executionLease).toEqual(parent.plan.executionLease);
+      expect(child.plan.resourceCeiling).toEqual(parent.plan.resourceCeiling);
+      expect(child.plan.effectiveDeadlineAt <= parent.plan.effectiveDeadlineAt).toBe(true);
+      const scope = await f.services.child.scopes.read(child.plan, f.input.invocationId);
+      expect(scope.parentToolCallId).toBe(parent.plan.identity.toolCallId);
+      if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
+      expect(scope.directoryGrant.operations).toEqual(["read"]);
+      expect(scope.networkAuthorizationRef).toBeNull();
+      expect(
+        await f.services.brokerV2.preparations.readAdmissionByInvocation({
+          runId: f.call.runId,
+          invocationId: "child-invocation",
+        }),
+      ).toBeUndefined();
+      expect(await handleUses(f)).toBe(1);
+    },
+  );
   it.each(["absent", "unknown", "initializing", "expired"])(
     "refuses a child whose parent is %s",
     async (state) => {
@@ -381,13 +498,20 @@ describe("production sandbox protected output and scope verification", () => {
       expect(await f.repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref)).toEqual(payload);
     },
   );
-  it("does not claim all resources released while an admission remains unbound", async () => {
+  it("does not claim all resources released while a legacy admission remains unbound", async () => {
     const f = await fixture();
-    expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: true });
-    const prepared = await f.services.runtime.prepare(f.input, f.call);
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: true,
+    });
+    const current = await f.services.runtime.prepare(f.input, f.call);
+    if (!("reservation" in current)) throw new Error("Expected v2 reservation");
+    const { preparationProtocol: _protocol, ...legacyPlan } = current.plan;
+    const prepared = { ...current, plan: legacyPlan };
     if (!("reservation" in prepared)) throw new Error("Expected reservation");
     await f.services.brokerV2.preparations.reserve({ ...prepared, invocation: f.input });
-    expect(await f.services.resources.stopRun(f.call.runId)).toEqual({ released: false });
+    expect(await f.services.resources.stopRun(f.call.runId, "run_cancelled")).toEqual({
+      released: false,
+    });
     expect(
       (
         await f.services.brokerV2.preparations.readAdmissionByInvocation({
@@ -418,6 +542,35 @@ describe("production sandbox protected output and scope verification", () => {
 });
 
 describe("legacy sandbox parent lineage", () => {
+  it("refuses a delegated child before admission when strict mode is on", async () => {
+    const calls: string[] = [];
+    const refuse = (name: string) => async (): Promise<never> => {
+      calls.push(name);
+      throw new Error("unexpected task environment call");
+    };
+    const lifecycle: ExecutionEnvironmentLifecyclePort = {
+      capabilities: refuse("capabilities"),
+      create: refuse("create"),
+      inspect: refuse("inspect"),
+      stop: refuse("stop"),
+      verifyStopped: refuse("verifyStopped"),
+      destroy: refuse("destroy"),
+    };
+    const f = await productionSandboxScope(descriptor, undefined, {
+      taskEnvironments: { backendRef: "container-test", imageDigest: "b".repeat(64), lifecycle },
+    });
+    cleanups.push(f.close);
+    await expect(
+      f.services.child.prepare(childInput(f), request(f.input.invocationId)),
+    ).rejects.toThrow("SANDBOX_STRICT_MODE_UNAVAILABLE");
+    expect(
+      await f.repository
+        .sandboxJobJournal(OWNER_ID, AGENT_ID)
+        .readByInvocation({ runId: RUN_ID, invocationId: "child-invocation" }),
+    ).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+
   it("admits one legacy parent and bounds child authority without relaunching it", async () => {
     const f = await fixture(true);
     const prepared = await f.services.runtime.prepare(f.input, f.call);
@@ -481,4 +634,610 @@ describe("legacy sandbox parent lineage", () => {
     });
     await expect(f.services.broker.verifyStart(parent.record.plan)).resolves.toBeUndefined();
   });
+});
+
+it("freezes the host file version and rejects changes while waiting", async () => {
+  const f = await productionSandboxScope(
+    { ...descriptor, contract: { ref: "pi-coding-tool", version: "2", kind: "fixed_read" } },
+    undefined,
+    { piParameters: { path: "file.txt" } },
+  );
+  cleanups.push(f.close);
+  await writeFile(path.join(f.host.workspace, "file.txt"), "before");
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("Expected v2 reservation");
+  expect(prepared.workspaces[0]?.file?.name).toBe("file.txt");
+  const scope = await f.services.runtime.scopes.read(prepared.plan, f.call.runId);
+  expect(scope.fileTarget?.before?.contentDigest).toBe(
+    createHash("sha256").update("before").digest("hex"),
+  );
+  await writeFile(path.join(f.host.workspace, "file.txt"), "concurrent modification");
+  await expect(f.services.runtime.scopes.read(prepared.plan, f.call.runId)).rejects.toThrow(
+    "SANDBOX_FILE_VERSION_CHANGED",
+  );
+  const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+  try {
+    expect(
+      database.prepare("SELECT COUNT(*) AS n FROM capability_invocation_receipts").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    database.close();
+  }
+});
+
+describe("fixed file recovery into the original SQLite invocation", () => {
+  it.each([
+    "released",
+    "still-running",
+    "unbound-artifact",
+    "wrong-invocation",
+    "production",
+    "production-directory",
+    "concurrent-before-output",
+    "concurrent-before-write",
+    "concurrent-different-before-output",
+    "concurrent-different-before-write",
+    "revoked-before-output",
+    "revoked-before-write",
+  ])("requires release and bound durable output (%s)", async (scenario) => {
+    const moving = scenario === "production-directory";
+    const parameters = moving
+      ? { path: "reports", destination: "recovered" }
+      : { path: "recovered.txt", content: "candidate" };
+    const targetPath = moving ? "recovered/note.txt" : "recovered.txt";
+    const f = await productionSandboxScope(
+      {
+        ...descriptor,
+        operation: moving ? "move_directory" : "write",
+        directoryOperations: moving ? ["move"] : ["read", "create", "update"],
+        contract: {
+          ...PI_FIXED_FILE_CONTRACT,
+          ...(moving ? { version: "4" } : {}),
+          kind: "verified_effect",
+          verifierRef: moving ? "host-directory-move" : PI_WRITE_VERIFIER.ref,
+          verifierVersion: PI_WRITE_VERIFIER.version,
+          targetRef: moving ? "pi-input:source-destination" : PI_WRITE_VERIFIER.targetRef,
+        },
+      },
+      undefined,
+      {
+        piParameters: parameters,
+        realFileIdentity: true,
+        ...(moving ? { directoryOperations: ["read", "move"] as const } : {}),
+      },
+    );
+    cleanups.push(f.close);
+    if (moving) {
+      await mkdir(path.join(f.host.workspace, "reports"));
+      await writeFile(path.join(f.host.workspace, "reports/note.txt"), "candidate");
+    }
+    let record = await startParent(f, false);
+    const { scope } = await f.services.brokerV2.resolveScope(record.plan);
+    if (scope.schemaVersion !== "sandbox-scope.v1") throw new Error("expected directory scope");
+    const privateDirectory = path.join(f.host.binding.privateRoot, record.plan.identity.jobId);
+    await mkdir(privateDirectory, { mode: 0o700 });
+    const grant = {
+      ...f.f.directoryGrant,
+      canonicalRootId: scope.directoryGrant.canonicalRootId,
+      displayPath: f.host.workspace,
+      operations: ["read", "create", "update"] as const,
+    };
+    const publication = moving
+      ? undefined
+      : createPiFilePublicationJournal({
+          privateDirectory,
+          workspace: f.host.workspace,
+          scope,
+          parametersJson: JSON.stringify({ path: "recovered.txt", content: "candidate" }),
+        });
+    const bytes = Buffer.from("candidate"),
+      digest = createHash("sha256").update(bytes).digest("hex");
+    const platform = new ConstrainedHostFileSystem();
+    if (moving) {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date(T1));
+        await createDirectoryMoveJournal({
+          scope,
+          workspace: f.host.workspace,
+          privateDirectory,
+          directoryRenameExecutable: directoryRenameExecutable(),
+        }).execute();
+      } finally {
+        vi.useRealTimers();
+      }
+    } else {
+      if (!publication) throw new Error("publication missing");
+      await platform.createExclusive(grant, "recovered.txt", bytes, {
+        beforePublish: (proof) =>
+          publication.prepared({
+            publication: proof,
+            relativePath: "recovered.txt",
+            byteLength: bytes.length,
+            contentDigest: digest,
+          }),
+      });
+    }
+    // Preserve the native publication, but omit the Worker result in SQLite.
+    const recoverOutput = vi.fn(async () => {
+      if (!publication) throw new Error("directory recovery must use production composition");
+      const proof = await publication.recover(grant);
+      expect(proof).toMatchObject({ contentDigest: digest });
+      const value = { recovered: proof };
+      const encoded = Buffer.from(JSON.stringify(value));
+      const key =
+        scenario === "wrong-invocation"
+          ? piFileRecoveryOperationKey("another-call")
+          : piFileRecoveryOperationKey(record.plan.identity.invocationId);
+      const saved = await f.persist(key, value);
+      return {
+        ref: scenario === "unbound-artifact" ? "missing-output" : saved.ref,
+        digest: createHash("sha256").update(encoded).digest("hex"),
+        byteLength: encoded.length,
+      };
+    });
+    const supervision = {
+      ref: "release-fixture",
+      digest: "e".repeat(64),
+      qualificationRef: record.plan.binding.qualificationRef,
+      profileRef: record.plan.binding.profileRef,
+      validUntil: T2,
+      subject: { kind: "local_process", processIdentityRef: "test-process" },
+    };
+    const journal = f.repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    if (scenario !== "still-running") {
+      for (const state of ["stopping", "released"] as const) {
+        const resourceState = { ...record.facts.resource } as Record<string, unknown>;
+        delete resourceState["reasonCode"];
+        delete resourceState["evidence"];
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...record.facts,
+          resource: {
+            ...resourceState,
+            sequence: record.facts.resource.sequence + 1,
+            supervision: state,
+            cleanup: state === "released" ? "confirmed" : "pending",
+            ...(state === "released"
+              ? { evidence: supervision }
+              : { reasonCode: "TEST_STOP_REQUESTED" }),
+          },
+        });
+        record = (
+          await journal.append({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            facts,
+            authority: f.input.authority,
+            now: T1,
+            context: {
+              now: T1,
+              environment: record.facts.environment,
+              operationContract: record.plan.operationContract,
+              verification: {
+                facts,
+                identity: record.plan.identity,
+                environmentId: record.plan.environmentId,
+                policyDigest: facts.environment.policyDigest,
+                resourceSequence: facts.resource.sequence,
+                checkedAt: T1,
+                validUntil: T2,
+                outputs: [],
+                evidence: [supervision],
+              },
+              currentResourceSequence: facts.resource.sequence,
+              runState: "terminated",
+              currentAuthority: false,
+              currentFence: false,
+              userDisclosureAllowed: false,
+              modelDisclosureAllowed: false,
+              conflictingWorkspaceRisk: false,
+              pendingApprovalOrReconciliation: false,
+              resultAlreadyDelivered: false,
+            },
+          })
+        ).record;
+      }
+    }
+    if (scenario === "production" || moving) {
+      const delivery = {
+        assertDisclosure: vi.fn(async () => {}),
+        saveReceipt: vi.fn(async () => {}),
+      };
+      const request = {
+        runId: record.plan.identity.runId,
+        invocationId: record.plan.identity.invocationId,
+      };
+      const completed = await f.services.completeToolResult(request, delivery);
+      expect(completed?.outcome).toBe("succeeded");
+      expect(delivery.saveReceipt).toHaveBeenCalledTimes(1);
+      const durable = await journal.read(record.plan.identity);
+      expect(durable?.facts.effect.kind).toBe("verified");
+      const uses = await handleUses(f);
+      await writeFile(path.join(f.host.workspace, targetPath), "later edit");
+      expect(await f.services.completeToolResult(request, delivery)).toEqual(completed);
+      expect(await handleUses(f)).toBe(uses);
+      expect(await readFile(path.join(f.host.workspace, targetPath), "utf8")).toBe("later edit");
+      return;
+    }
+    let competing: SandboxExecutionRecord | undefined;
+    let competingWrite = false;
+    let competingActive = false;
+    const writeCompetitor = async () => {
+      competingWrite = true;
+      competingActive = true;
+      competing = await recover(record);
+      competingActive = false;
+    };
+    const recover = createProductionSandboxFileRecovery({
+      journal: {
+        recordOperation: async (input) => {
+          if (scenario === "revoked-before-write")
+            await f.repository
+              .authorizationStore()
+              .revokeGrant(f.input.authorizationRef ?? "", T1, "test-race");
+          if (
+            scenario.startsWith("concurrent-") &&
+            scenario.endsWith("before-write") &&
+            !competingWrite
+          )
+            await writeCompetitor();
+          return journal.recordOperation(input);
+        },
+      },
+      authority: () => f.input.authority,
+      now: () => T1,
+      recoverOutput: async () => {
+        if (scenario === "revoked-before-output")
+          await f.repository
+            .authorizationStore()
+            .revokeGrant(f.input.authorizationRef ?? "", T1, "test-race");
+        if (
+          scenario.startsWith("concurrent-") &&
+          scenario.endsWith("before-output") &&
+          !competingWrite
+        )
+          await writeCompetitor();
+        return {
+          ...(await recoverOutput()),
+          ...(scenario.includes("different") && competingActive
+            ? { outcome: "conflict" as const }
+            : {}),
+        };
+      },
+      // OS/process observation is the only synthetic evidence here. File records,
+      // publication, encrypted artifacts and journal acceptance are real.
+      verifyFresh: async (current) => {
+        const facts = current.facts;
+        return {
+          facts,
+          identity: current.plan.identity,
+          environmentId: current.plan.environmentId,
+          policyDigest: facts.environment.policyDigest,
+          resourceSequence: facts.resource.sequence,
+          checkedAt: T1,
+          validUntil: T2,
+          outputs: facts.result && facts.result.kind !== "unknown" ? [facts.result.output] : [],
+          evidence: [
+            supervision,
+            ...(facts.effect.kind === "verified" ? [facts.effect.evidence] : []),
+          ],
+        };
+      },
+    });
+    const uses = await handleUses(f);
+    if (scenario.startsWith("concurrent-")) {
+      if (scenario.includes("different"))
+        await expect(recover(record)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+      else expect(await recover(record)).toEqual(competing);
+      expect(competing?.facts.result?.kind).toBe(
+        scenario.includes("different") ? "error" : "result",
+      );
+      const durable = await journal.read(record.plan.identity);
+      expect(durable).toEqual(competing);
+      if (!durable) throw new Error("missing durable result");
+      expect(await recover(durable)).toEqual(competing);
+      expect(recoverOutput).toHaveBeenCalledTimes(2);
+      expect(durable.releaseReceipt).toEqual(record.releaseReceipt);
+      expect(durable.workspaceBlocked).toBe(false);
+    } else if (["unbound-artifact", "wrong-invocation"].includes(scenario)) {
+      await expect(recover(record)).rejects.toThrow("durably bound");
+      expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+    } else {
+      const completed = await recover(record);
+      if (scenario === "still-running") {
+        expect(recoverOutput).not.toHaveBeenCalled();
+        expect(completed.facts.result).toBeNull();
+      } else {
+        expect(completed.facts.result?.kind).toBe("result");
+        expect(completed.facts.effect.kind).toBe("verified");
+        expect(completed.releaseReceipt).toBeDefined();
+        const after = await journal.read(record.plan.identity);
+        expect(after?.operationRevision).toBe(completed.operationRevision);
+        expect(after?.workspaceBlocked).toBe(false);
+        expect(await recover(completed)).toEqual(completed);
+        expect(recoverOutput).toHaveBeenCalledTimes(1);
+        if (scenario.startsWith("revoked-")) {
+          const grants = await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID);
+          expect(grants.find((grant) => grant.id === f.input.authorizationRef)?.revokedAt).toBe(T1);
+          expect((await journal.read(record.plan.identity))?.facts.result).toEqual(
+            completed.facts.result,
+          );
+        }
+      }
+    }
+    expect(await handleUses(f)).toBe(uses);
+    expect(await readFile(path.join(f.host.workspace, targetPath), "utf8")).toBe("candidate");
+  });
+});
+
+describe("prepared file admission", () => {
+  for (const { tool, failWarmConstruction, scenario } of [
+    { tool: "write", failWarmConstruction: false, scenario: "" },
+    { tool: "edit", failWarmConstruction: false, scenario: "" },
+    {
+      tool: "write",
+      failWarmConstruction: true,
+      scenario: " [R2-D19] with failed prewarm construction",
+    },
+    {
+      tool: "edit",
+      failWarmConstruction: true,
+      scenario: " [R2-D19] with failed prewarm construction",
+    },
+  ] as const) {
+    it(`stages concurrent ${tool} requests before occupancy and preserves their frozen candidates${scenario}`, async () => {
+      preparationWorkers.failWarmConstruction = failWarmConstruction;
+      const f = await productionSandboxScope(
+        {
+          ...descriptor,
+          operation: tool,
+          directoryOperations: ["read", "create", "update"],
+          contract: {
+            ...PI_PREPARED_FILE_CONTRACT,
+            kind: "verified_effect",
+            verifierRef: PI_WRITE_VERIFIER.ref,
+            verifierVersion: PI_WRITE_VERIFIER.version,
+            targetRef: PI_WRITE_VERIFIER.targetRef,
+          },
+        },
+        undefined,
+        {
+          resourceCeiling: {
+            maxWallTimeMs: 10000,
+            maxCpuTimeMs: 10000,
+            maxMemoryBytes: 268435456,
+            maxOutputBytes: 65536,
+            maxProgressEvents: 10,
+          },
+          realFileIdentity: true,
+          piParameters:
+            tool === "write"
+              ? { path: "file.txt", content: "candidate" }
+              : { path: "file.txt", edits: [{ oldText: "before", newText: "candidate" }] },
+        },
+      );
+      cleanups.push(f.close);
+      if (failWarmConstruction)
+        expect(preparationWorkers.warmConstructionFailures).toBeGreaterThanOrEqual(1);
+      const filename = path.join(f.host.workspace, "file.txt");
+      await writeFile(filename, "before");
+      const secondCall = { ...f.call, toolCallId: "second-preparation" };
+      const secondId = `runtime-tool:${createHash("sha256")
+        .update(JSON.stringify([secondCall.runId, secondCall.toolCallId]))
+        .digest("hex")}`;
+      const secondInput = {
+        ...f.input,
+        invocationId: secondId,
+        idempotencyKey: secondId,
+        receiptRef: "receipt-second-preparation",
+      };
+      await f.persist(`runtime-tool-intent:${secondId.slice("runtime-tool:".length)}`, {
+        request: {
+          messageId: secondId,
+          causationId: secondCall.runId,
+          payload: { inputRef: secondInput.inputRef, capabilityHandleRef: secondInput.handleRef },
+        },
+      });
+      const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+      try {
+        let ready!: () => void, proceed!: () => void;
+        const arrived = new Promise<void>((resolve) => {
+          ready = resolve;
+        });
+        const barrier = new Promise<void>((resolve) => {
+          proceed = resolve;
+        });
+        const original = ConstrainedHostFileSystem.prototype.stagePublication;
+        let staged = 0;
+        const interception = vi
+          .spyOn(ConstrainedHostFileSystem.prototype, "stagePublication")
+          .mockImplementation(async function (this: ConstrainedHostFileSystem, grant, bytes, mode) {
+            const publication = await original.call(this, grant, bytes, mode);
+            if (++staged <= 2) {
+              if (staged === 2) ready();
+              await barrier;
+            }
+            return publication;
+          });
+        const firstPromise = f.services.runtime.prepare(f.input, f.call);
+        const secondPromise = f.services.runtime.prepare(secondInput, secondCall);
+        const pending = Promise.all([firstPromise, secondPromise]);
+        // Reject on setup failure rather than hiding it behind a barrier timeout.
+        await Promise.race([
+          arrived,
+          pending.then(() => {
+            throw new Error("preparation bypassed barrier");
+          }),
+        ]);
+        expect(
+          database.prepare("SELECT count(*) AS n FROM sandbox_workspace_occupancy").get(),
+        ).toEqual({ n: 0 });
+        expect(
+          database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+        ).toEqual({ n: 0 });
+        expect(await readFile(filename, "utf8")).toBe("before");
+        proceed();
+        const [first, second] = await pending;
+        if (failWarmConstruction) {
+          expect(preparationWorkers.cold).toHaveLength(2);
+          for (const { worker, threadId, exited } of preparationWorkers.cold) {
+            expect(threadId).toBeGreaterThan(0);
+            expect(worker.threadId).toBe(-1);
+            expect(exited).toBe(true);
+          }
+        }
+        interception.mockRestore();
+        if (!("reservation" in first) || !("reservation" in second))
+          throw new Error("expected reservation candidates");
+        const scope = await f.services.runtime.scopes.read(second.plan, f.call.runId);
+        expect(scope.preparedFile).toBeDefined();
+        if (!scope.preparedFile) throw new Error("missing prepared candidate");
+        expect(await readFile(scope.preparedFile.content.identity.canonicalPath, "utf8")).toBe(
+          "candidate",
+        );
+        expect(await f.services.runtime.prepare(secondInput, secondCall)).toEqual(second);
+        await f.services.brokerV2.preparations.reserve({ ...first, invocation: f.input });
+        await expect(
+          f.services.brokerV2.preparations.reserve({ ...second, invocation: secondInput }),
+        ).rejects.toThrow(/Workspace/);
+        await f.services.brokerV2.preparations.enqueue({ ...second, invocation: secondInput });
+        expect(
+          database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+        ).toEqual({ n: 1 });
+        await writeFile(filename, "external change");
+        await expect(f.services.runtime.prepare(secondInput, secondCall)).rejects.toThrow(
+          "SANDBOX_FILE_VERSION_CHANGED",
+        );
+        expect(await readFile(filename, "utf8")).toBe("external change");
+        expect(await readFile(scope.preparedFile.content.identity.canonicalPath, "utf8")).toBe(
+          "candidate",
+        );
+      } finally {
+        vi.restoreAllMocks();
+        database.close();
+      }
+    });
+  }
+});
+
+it.each(["cancelled-before", "revoked-before", "stale-authority", "cancelled-during"])(
+  "does not acquire occupancy or lose candidates when preparation authority changes (%s)",
+  async (scenario) => {
+    const f = await productionSandboxScope(
+      {
+        ...descriptor,
+        operation: "write",
+        directoryOperations: ["read", "create", "update"],
+        contract: {
+          ...PI_PREPARED_FILE_CONTRACT,
+          kind: "verified_effect",
+          verifierRef: PI_WRITE_VERIFIER.ref,
+          verifierVersion: PI_WRITE_VERIFIER.version,
+          targetRef: PI_WRITE_VERIFIER.targetRef,
+        },
+      },
+      undefined,
+      {
+        resourceCeiling: {
+          maxWallTimeMs: 10000,
+          maxCpuTimeMs: 10000,
+          maxMemoryBytes: 268435456,
+          maxOutputBytes: 65536,
+          maxProgressEvents: 10,
+        },
+        realFileIdentity: true,
+        piParameters: { path: "file.txt", content: "candidate" },
+      },
+    );
+    cleanups.push(f.close);
+    const database = openQualifiedDatabase(path.join(f.f.resource.stateRoot, "product.sqlite"));
+    try {
+      const original = ConstrainedHostFileSystem.prototype.stagePublication;
+      const stagedPaths: string[] = [];
+      const intercepted = vi
+        .spyOn(ConstrainedHostFileSystem.prototype, "stagePublication")
+        .mockImplementation(async function (this: ConstrainedHostFileSystem, grant, bytes, mode) {
+          const prepared = await original.call(this, grant, bytes, mode);
+          stagedPaths.push(prepared.identity.canonicalPath);
+          if (scenario === "cancelled-during")
+            database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(f.call.runId);
+          return prepared;
+        });
+      if (scenario === "cancelled-before")
+        database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(f.call.runId);
+      if (scenario === "revoked-before")
+        database
+          .prepare("UPDATE capability_handles SET revoked_at=? WHERE id=?")
+          .run(T1, f.input.handleRef);
+      const input =
+        scenario === "stale-authority"
+          ? { ...f.input, authority: { ...f.input.authority, workerBootId: "stale-boot" } }
+          : f.input;
+      await expect(f.services.runtime.prepare(input, f.call)).rejects.toThrow();
+      if (scenario === "cancelled-during") {
+        expect(stagedPaths).toHaveLength(2);
+        expect(await readFile(stagedPaths[0] as string, "utf8")).toBe("candidate");
+        expect(
+          await f.artifacts().lookup({
+            runId: f.call.runId,
+            purpose: "trace",
+            operationKey: `sandbox-scope:${f.input.invocationId}`,
+          }),
+        ).toBeDefined();
+      } else expect(intercepted).not.toHaveBeenCalled();
+      expect(
+        database.prepare("SELECT count(*) AS n FROM sandbox_workspace_occupancy").get(),
+      ).toEqual({ n: 0 });
+      expect(
+        database.prepare("SELECT count(*) AS n FROM capability_invocation_receipts").get(),
+      ).toEqual({ n: 0 });
+      await expect(readFile(path.join(f.host.workspace, "file.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      vi.restoreAllMocks();
+      database.close();
+    }
+  },
+);
+
+it("freezes three directory resources and rejects a queued path replacement before admission", async () => {
+  const f = await productionSandboxScope(
+    {
+      ...descriptor,
+      operation: "move_directory",
+      directoryOperations: ["move"],
+      contract: {
+        ref: "pi-coding-tool",
+        version: "4",
+        kind: "verified_effect",
+        verifierRef: "host-directory-move",
+        verifierVersion: "1",
+        targetRef: "pi-input:source-destination",
+      },
+    },
+    undefined,
+    {
+      realFileIdentity: true,
+      directoryOperations: ["read", "move"],
+      piParameters: { path: "reports", destination: "archive" },
+    },
+  );
+  cleanups.push(f.close);
+  await mkdir(path.join(f.host.workspace, "reports"));
+  const prepared = await f.services.runtime.prepare(f.input, f.call);
+  if (!("reservation" in prepared)) throw new Error("expected reservation");
+  expect(prepared.workspaces).toHaveLength(3);
+  expect(prepared.reservation.workspaceConflictRefs).toHaveLength(3);
+  await f.services.brokerV2.preparations.enqueue({ ...prepared, invocation: f.input });
+  await rename(path.join(f.host.workspace, "reports"), path.join(f.host.workspace, "old"));
+  await mkdir(path.join(f.host.workspace, "reports"));
+  await expect(f.services.runtime.prepare(f.input, f.call)).rejects.toThrow(
+    "DIRECTORY_MOVE_TARGET_CHANGED",
+  );
+  expect(
+    (await f.services.brokerV2.preparations.readRunInventory({ runId: f.call.runId })).queue[0]
+      ?.status,
+  ).toBe("queued");
 });

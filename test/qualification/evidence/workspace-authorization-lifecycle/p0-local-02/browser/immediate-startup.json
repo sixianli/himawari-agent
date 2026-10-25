@@ -1,0 +1,25 @@
+{
+  "scope": "real browser with isolated HTTP fixture; no production model calls",
+  "cases": [
+    {
+      "width": 1280,
+      "configFailure": false,
+      "passed": true
+    },
+    {
+      "width": 1280,
+      "configFailure": true,
+      "passed": true
+    },
+    {
+      "width": 320,
+      "configFailure": false,
+      "passed": true
+    },
+    {
+      "width": 320,
+      "configFailure": true,
+      "passed": true
+    }
+  ]
+}

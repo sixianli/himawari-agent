@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (25 tests | 1 failed) 128ms
+   × records synchronous resource stop failures during execution interruption 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > records synchronous resource stop failures during execution interruption
+Error: resource stop unavailable
+ ❯ test/integration/run-coordinator.test.ts:1108:17
+    1106|     cancel: vi.fn(async () => { release(); }),
+    1107|   };
+    1108|   const error = new Error("resource stop unavailable");
+       |                 ^
+    1109|   const stopRun = vi.fn(() => { throw error; });
+    1110|   const f = await fixture("interrupt-independent-resource", runtime, u…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 passed (25)
+   Start at  21:54:11
+   Duration  982ms (transform 613ms, setup 0ms, import 743ms, tests 128ms, environment 0ms)

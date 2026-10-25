@@ -1,4 +1,8 @@
 import {
+  executionEnvironmentIdentitySchema,
+  executionEnvironmentLocatorSchema,
+} from "./execution-environment-v1.ts";
+import {
   sandboxExecutionPlanSchema,
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
@@ -28,6 +32,12 @@ import {
 
 export const PAYLOAD_BROKER_V1_SCHEMA_VERSION = "payload-broker.v1" as const;
 
+export const PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES = 2048;
+
+export function payloadBrokerV1BodyBytes(maximumPayloadBytes: number): number {
+  return 4 * Math.ceil(maximumPayloadBytes / 3) + PAYLOAD_BROKER_V1_ENVELOPE_RESERVE_BYTES;
+}
+
 export const PAYLOAD_BROKER_V1_MESSAGE_TYPES = [
   "payload.sandbox.execution",
   "payload.sandbox.execution.result",
@@ -35,6 +45,8 @@ export const PAYLOAD_BROKER_V1_MESSAGE_TYPES = [
   "payload.sandbox.job.result",
   "payload.handshake",
   "payload.handshake.accepted",
+  "payload.invocation.validate",
+  "payload.invocation.validated",
   "payload.input.read",
   "payload.input.read.result",
   "payload.output.write",
@@ -160,6 +172,19 @@ const payloadResponseIdentitySchema = {
   agentServiceInstanceId: machineString,
   agentServiceBootId: machineString,
 } as const;
+
+export const payloadInvocationValidateRequestSchema = object({
+  ...requestEnvelope("payload.invocation.validate"),
+  payload: object(payloadIdentitySchema),
+});
+export const payloadInvocationValidatedSchema = object({
+  ...envelope("response", "payload.invocation.validated"),
+  payload: object(payloadResponseIdentitySchema),
+});
+export type PayloadBrokerInvocationValidateRequest = InferSchema<
+  typeof payloadInvocationValidateRequestSchema
+>;
+export type PayloadBrokerInvocationValidated = InferSchema<typeof payloadInvocationValidatedSchema>;
 
 export const payloadInputReadRequestSchema = object({
   ...requestEnvelope("payload.input.read"),
@@ -302,6 +327,13 @@ const executionWireRecord: Schema<
     return boundExecutionWireShape.parse(value, path);
   },
 };
+export const sandboxTaskEnvironmentBindingSchema = object({
+  identity: executionEnvironmentIdentitySchema,
+  createIntentId: machineString,
+  locator: executionEnvironmentLocatorSchema,
+  stopFence: integer(0),
+});
+export type SandboxTaskEnvironmentBinding = InferSchema<typeof sandboxTaskEnvironmentBindingSchema>;
 const sandboxExecutionResultShape = object({
   ...envelope("response", "payload.sandbox.execution.result"),
   payload: object({
@@ -309,6 +341,7 @@ const sandboxExecutionResultShape = object({
     record: executionWireRecord,
     applied: booleanValue,
     resolvedScope: nullable(resolvedSandboxScopeSchema),
+    environment: nullable(sandboxTaskEnvironmentBindingSchema),
     output: nullable(sandboxResourceOutputPageSchema),
   }),
 });
@@ -316,7 +349,7 @@ export type PayloadBrokerSandboxExecutionResult = InferSchema<typeof sandboxExec
 export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExecutionResult> = {
   parse(value, path = "$") {
     const result = sandboxExecutionResultShape.parse(value, path);
-    const { record, resolvedScope, output } = result.payload;
+    const { record, resolvedScope, environment, output } = result.payload;
     if (record.phase === "bound")
       validateSandboxExecutionFacts(record.plan, record.facts, {
         environment: record.facts.environment,
@@ -348,6 +381,18 @@ export const payloadSandboxExecutionResultSchema: Schema<PayloadBrokerSandboxExe
         resolvedScope.scope.agentId !== record.plan.identity.agentId)
     )
       throw new ContractValidationError(path, "sandbox execution scope mismatch");
+    if (
+      environment &&
+      (!resolvedScope ||
+        environment.identity.role !== "primary" ||
+        environment.identity.ownerId !== record.plan.identity.ownerId ||
+        environment.identity.agentId !== record.plan.identity.agentId ||
+        environment.identity.runId !== record.plan.identity.runId ||
+        environment.identity.hostId !== record.plan.identity.hostId ||
+        environment.locator.backendRef !== record.plan.backendRef ||
+        environment.locator.createIntentId !== environment.createIntentId)
+    )
+      throw new ContractValidationError(path, "sandbox task environment mismatch");
     return result;
   },
 };
@@ -362,6 +407,7 @@ export type PayloadBrokerOutputWriteRequest = InferSchema<typeof payloadOutputWr
 export type PayloadBrokerOutputWriteAccepted = InferSchema<typeof payloadOutputWriteAcceptedSchema>;
 
 export type PayloadBrokerRequest =
+  | PayloadBrokerInvocationValidateRequest
   | PayloadBrokerSandboxExecutionRequest
   | PayloadBrokerSandboxJobRequest
   | PayloadBrokerHandshakeRequest
@@ -369,6 +415,7 @@ export type PayloadBrokerRequest =
   | PayloadBrokerOutputWriteRequest;
 
 export type PayloadBrokerResponse =
+  | PayloadBrokerInvocationValidated
   | PayloadBrokerSandboxExecutionResult
   | PayloadBrokerSandboxJobResult
   | PayloadBrokerHandshakeAccepted
@@ -386,6 +433,10 @@ function parsePayloadBrokerMessage(input: unknown): PayloadBrokerMessage {
     throw new ContractValidationError("$", "expected a payload broker message");
   }
   switch (input.type) {
+    case "payload.invocation.validate":
+      return payloadInvocationValidateRequestSchema.parse(input);
+    case "payload.invocation.validated":
+      return payloadInvocationValidatedSchema.parse(input);
     case "payload.sandbox.execution":
       return payloadSandboxExecutionRequestSchema.parse(input);
     case "payload.sandbox.execution.result":

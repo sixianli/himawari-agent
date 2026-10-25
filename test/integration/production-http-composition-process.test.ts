@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as requestHttp } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +15,8 @@ import {
 import { initializeStateRoot, writeAuthorityFile } from "@himawari-agent/platform-node";
 import { exportJWK, generateKeyPair, type JSONWebKeySet, SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
+import { installTestNodeRuntime, type TestNodeRuntime } from "../fixtures/node-runtime.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const childFixture = path.join(
@@ -35,7 +36,6 @@ const csrfSecret = "11".repeat(32);
 const payloadKey = "22".repeat(32);
 const PROCESS_SETUP_TIMEOUT_MS = 240_000;
 const PROCESS_CLEANUP_TIMEOUT_MS = 30_000;
-const NODE_RUNTIME_INSTALL_TIMEOUT_MS = 180_000;
 const CHILD_EXIT_TIMEOUT_MS = 5_000;
 const PROCESS_REQUEST_TIMEOUT_MS = 10_000;
 const PROCESS_RESPONSE_BODY_MAX_BYTES = 1_048_576;
@@ -44,6 +44,7 @@ const children = new Set<ChildProcessWithoutNullStreams>();
 
 let testRoot = "";
 let runtimePrefix = "";
+let installation: TestNodeRuntime | undefined;
 let stateRoot = "";
 let databasePath = "";
 let staticRoot = "";
@@ -51,17 +52,19 @@ let secretDirectory = "";
 let configurationPath = "";
 let caCertificatePath = "";
 let providerPort = 0;
-let appPort = 0;
 let provider: ReturnType<typeof createHttpsServer> | undefined;
 let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
 let jwks: JSONWebKeySet;
 let providerAvailable = true;
+let dropEmbeddingConnections = false;
+let embeddingCostAvailable = true;
 let providerSubject = subject;
 const providerRequests: Array<{
   readonly path: string;
   readonly cookie: string | undefined;
   readonly assertion: string | undefined;
   readonly accept: string | undefined;
+  body?: Readonly<Record<string, unknown>>;
 }> = [];
 
 type HttpResult = {
@@ -144,27 +147,12 @@ async function createLocalCertificate(root: string): Promise<{
   return { certificatePath: leafPath, keyPath: leafKeyPath, caCertificatePath: caPath };
 }
 
-async function reservePort(): Promise<number> {
-  const server = createNetServer();
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen({ host: "127.0.0.1", port: 0 }, () => resolve());
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Ephemeral listener has no port");
-  const port = address.port;
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-  });
-  return port;
-}
-
 async function listenProvider(certificatePath: string, keyPath: string): Promise<void> {
   const certificate = await readFile(certificatePath);
   const key = await readFile(keyPath);
   provider = createHttpsServer({ cert: certificate, key }, (request, response) => {
     const requestPath = request.url ?? "/";
-    providerRequests.push({
+    const capturedRequest = {
       path: requestPath,
       cookie: typeof request.headers.cookie === "string" ? request.headers.cookie : undefined,
       assertion:
@@ -172,19 +160,25 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
           ? request.headers["cf-access-jwt-assertion"]
           : undefined,
       accept: typeof request.headers.accept === "string" ? request.headers.accept : undefined,
-    });
+    } as (typeof providerRequests)[number];
+    providerRequests.push(capturedRequest);
     if (!providerAvailable) {
       response.writeHead(503, { connection: "close" });
       response.end();
       return;
     }
     if (requestPath === "/v1/embeddings") {
+      if (dropEmbeddingConnections) {
+        request.socket.destroy();
+        return;
+      }
       let body = "";
       request.on("data", (chunk) => {
         body += chunk;
       });
       request.on("end", () => {
         const input = JSON.parse(body);
+        capturedRequest.body = input;
         response.writeHead(200, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
@@ -192,21 +186,37 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
             model: input.model,
             data: [{ object: "embedding", index: 0, embedding: Array(input.dimensions).fill(0.1) }],
             usage: { prompt_tokens: 8, total_tokens: 8 },
+            ...(embeddingCostAvailable
+              ? {
+                  providerMetadata: {
+                    gateway: {
+                      generationId: `embedding-${providerRequests.length}`,
+                      routing: { finalProvider: "deepinfra" },
+                      cost: "0.000033",
+                    },
+                  },
+                }
+              : {}),
           }),
         );
       });
       return;
     }
     if (requestPath === "/v1/chat/completions") {
-      request.resume();
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+      });
       request.on("end", () => {
+        const input = JSON.parse(body);
+        capturedRequest.body = input;
         response.writeHead(200, { "content-type": "text/event-stream" });
         response.write(
           `data: ${JSON.stringify({
             id: "completion-installed",
             object: "chat.completion.chunk",
             created: Math.floor(Date.now() / 1000),
-            model: "installed-primary",
+            model: input.model,
             choices: [
               {
                 index: 0,
@@ -220,8 +230,23 @@ async function listenProvider(certificatePath: string, keyPath: string): Promise
           `data: ${JSON.stringify({
             id: "completion-installed",
             object: "chat.completion.chunk",
-            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+            model: input.model,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  provider_metadata: {
+                    gateway: {
+                      generationId: `generation-${providerRequests.length}`,
+                      routing: { finalProvider: "morph" },
+                      cost: "0.000077",
+                    },
+                  },
+                },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: "0.000077" },
           })}\n\n`,
         );
         response.end("data: [DONE]\n\n");
@@ -279,7 +304,7 @@ function rawConfiguration(): Record<string, unknown> {
     publicMode: true,
     http: {
       listenHost: "127.0.0.1",
-      listenPort: appPort,
+      listenPort: 0,
       staticRoot,
       sessionCookieName: cookieName,
       maximumBodyBytes: 256 * 1024,
@@ -328,25 +353,6 @@ function rawConfiguration(): Record<string, unknown> {
         maxTokens: 1024,
       },
       {
-        ref: "model-fallback",
-        role: "fallback",
-        provider: "deterministic",
-        model: "deterministic-fallback",
-        version: "v1",
-        allowedDataClassifications: ["private"],
-        disclosure: "local_only",
-        secretRef: null,
-        capabilities: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        priority: 2,
-        name: "Production process fallback",
-        api: "openai-completions",
-        reasoning: false,
-        input: ["text"],
-        contextWindow: 8192,
-        maxTokens: 1024,
-      },
-      {
         ref: "model-embedding",
         role: "embedding",
         provider: "deterministic",
@@ -362,7 +368,7 @@ function rawConfiguration(): Record<string, unknown> {
     ],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 16,
     },
@@ -687,8 +693,7 @@ beforeAll(async () => {
   }
   testRoot = await mkdtemp(path.join(os.tmpdir(), "himawari-production-http-process-"));
   cleanupRoots.push(testRoot);
-  runtimePrefix = path.join(testRoot, "prefix");
-  stateRoot = await mkdtemp("/tmp/hma-http-state-");
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-http-state-`);
   cleanupRoots.push(stateRoot);
   staticRoot = path.join(testRoot, "browser");
   secretDirectory = path.join(testRoot, "secrets");
@@ -714,44 +719,21 @@ beforeAll(async () => {
     ],
   };
   await listenProvider(tls.certificatePath, tls.keyPath);
-  appPort = await reservePort();
   await initializeTestDatabase();
   await writeFile(configurationPath, JSON.stringify(rawConfiguration()), { mode: 0o600 });
   await chmod(configurationPath, 0o600);
-  const installStartedAt = Date.now();
-  const install = spawnSync(
-    process.execPath,
-    [
-      path.join(repositoryRoot, "scripts/install-node-runtime.mjs"),
-      "--prefix",
-      runtimePrefix,
-      "--artifact",
-      artifact,
-      "--context",
-      contextFile,
-    ],
-    {
-      cwd: testRoot,
-      encoding: "utf8",
-      timeout: NODE_RUNTIME_INSTALL_TIMEOUT_MS,
-      env: { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
-    },
-  );
-  const installElapsedMs = Date.now() - installStartedAt;
+  installation = await installTestNodeRuntime("PROCESS_HTTP");
+  runtimePrefix = installation.prefix;
   process.stderr.write(
-    `[production-http-process] node runtime install elapsed ${installElapsedMs}ms\n`,
+    `[production-http-process] node runtime install elapsed ${installation.installElapsedMs}ms${
+      installation.shared ? " (shared installation reused read-only)" : ""
+    }\n`,
   );
-  if (install.status !== 0) {
-    throw new Error(
-      `Node runtime install failed after ${installElapsedMs}ms${
-        install.signal ? ` (${install.signal})` : ""
-      }: ${install.stderr || install.stdout || install.error?.message || "unknown error"}`,
-    );
-  }
 }, PROCESS_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
   const cleanupErrors: unknown[] = [];
+  await installation?.close();
   await Promise.all(
     [...children].map(async (child) => {
       try {
@@ -781,7 +763,7 @@ describe("production HTTP composition over a real installed process", { timeout:
     expect(untrustedProvider).toBe(true);
     const token = await signToken();
     let running = await startChild(caCertificatePath);
-    const appAddress = running.address;
+    let appAddress = running.address;
     try {
       expect(new URL(appAddress).hostname).toBe("127.0.0.1");
 
@@ -1014,6 +996,7 @@ describe("production HTTP composition over a real installed process", { timeout:
 
       await stopChild(running.child);
       running = await startChild(caCertificatePath);
+      appAddress = running.address;
       const replay = await httpRequest(appAddress, "/api/gateway/thread/v3/commands", {
         ...jsonRequestBody(submitCommand),
         headers: requestHeaders(
@@ -1126,8 +1109,8 @@ async function writeServiceCapabilitySnapshot() {
   return { snapshotPath: capabilityDeploymentPath, sha256: capabilityDeploymentSha256 };
 }
 
-it("executes authenticated HTTP requests through installed service-main and reads results after restart", async () => {
-  stateRoot = await mkdtemp("/tmp/hma-main-state-");
+async function openInstalledMain() {
+  stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-main-state-`);
   cleanupRoots.push(stateRoot);
   await initializeTestDatabase();
   providerAvailable = true;
@@ -1136,11 +1119,20 @@ it("executes authenticated HTTP requests through installed service-main and read
   const models = raw["modelDescriptors"] as Array<Record<string, unknown>>;
   raw["modelDescriptors"] = models.map((model) => ({
     ...model,
-    provider: "openrouter",
-    model: model["role"] === "embedding" ? "installed-embedding" : `installed-${model["role"]}`,
+    provider: "vercel-ai-gateway",
+    model:
+      model["role"] === "embedding" ? "alibaba/qwen3-embedding-8b" : "deepseek/deepseek-v4.1-flash",
+    cost:
+      model["role"] === "embedding"
+        ? { input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0 }
+        : { input: 0.3, output: 2.4, cacheRead: 0.3, cacheWrite: 0.3 },
+    ...(model["role"] === "embedding"
+      ? { dimensions: 4096 }
+      : { providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" } }),
     disclosure: "trusted_remote",
-    secretRef: "openrouter-api-key",
+    secretRef: "vercel-ai-gateway-api-key",
   }));
+  raw["memory"] = { ...(raw["memory"] as Record<string, unknown>), dimensions: 4096 };
   raw["runPolicy"] = {
     version: "installed-policy-v1",
     systemInstruction: "请用中文回答。",
@@ -1151,12 +1143,21 @@ it("executes authenticated HTTP requests through installed service-main and read
   raw["capabilityDeployment"] = await writeServiceCapabilitySnapshot();
   raw["secretReferences"] = [
     ...(raw["secretReferences"] as object[]),
-    { ref: "openrouter-api-key", version: "v1", purpose: "model-provider-auth", scope: "agent" },
+    {
+      ref: "vercel-ai-gateway-api-key",
+      version: "v1",
+      purpose: "model-provider-auth",
+      scope: "agent",
+    },
     { ref: "worker-process-token", version: "v1", purpose: "worker-auth", scope: "local-services" },
   ];
-  await writeFile(path.join(secretDirectory, "openrouter-api-key.v1"), "local-provider-fixture", {
-    mode: 0o600,
-  });
+  await writeFile(
+    path.join(secretDirectory, "vercel-ai-gateway-api-key.v1"),
+    "local-provider-fixture",
+    {
+      mode: 0o600,
+    },
+  );
   await writeFile(configurationPath, JSON.stringify(raw), { mode: 0o600 });
   const layout = await initializeStateRoot(stateRoot);
   await writeAuthorityFile(layout, {
@@ -1285,26 +1286,7 @@ it("executes authenticated HTTP requests through installed service-main and read
     });
     expect(result.status).toBe(200);
   };
-  await command("thread.create", "installed-main-create", {
-    threadId: "thread-production-main",
-    answerLocale: "zh-CN",
-    resultRef: await upload("installed-main-create-payload", "create"),
-  });
-  const sessionId = (session.body as { session: { id: string } }).session.id;
-  await command("thread.message.submit", "installed-main-submit", {
-    threadId: "thread-production-main",
-    expectedRevision: 1,
-    messageId: "message:installed-main",
-    turnId: "turn:installed-main",
-    runId: "run:installed-main",
-    sessionId,
-    contentRef: await upload("installed-main-content", "你好"),
-    sourceProofRef: "proof:installed-main",
-    dataClassification: "private",
-    occurredAt: new Date().toISOString(),
-    resultRef: await upload("installed-main-submit-payload", "submit"),
-  });
-  const detail = async () => {
+  const query = async (type: string, payload: object) => {
     const config = await httpRequest(running.address, "/api/control-center/v1/config", {
       headers: requestHeaders(token, cookie),
     });
@@ -1316,22 +1298,24 @@ it("executes authenticated HTTP requests through installed service-main and read
     };
     return httpRequest(running.address, "/api/gateway/thread/v3/queries", {
       ...jsonRequestBody({
-        ...envelope("query", "thread.detail"),
+        ...envelope("query", type),
         authority: {
           deploymentId: current.deploymentId,
           authorityEpoch: current.authorityEpoch,
           fencingToken: current.fencingToken,
         },
-        payload: { threadId: "thread-production-main", afterSequence: 0, limit: 100 },
+        payload,
       }),
       headers: requestHeaders(token, cookie),
     });
   };
-  const readAnswer = async (detail: HttpResult) => {
+  const readAnswer = async (detail: HttpResult, runId?: string) => {
     const payload = detail.body as {
-      payload: { messages: Array<{ role: string; contentRef: string }> };
+      payload: { messages: Array<{ role: string; contentRef: string; runId?: string | null }> };
     };
-    const answer = payload.payload.messages.find(({ role }) => role === "agent");
+    const answer = payload.payload.messages.find(
+      (message) => message.role === "agent" && (runId === undefined || message.runId === runId),
+    );
     if (!answer) throw new Error("PERSISTENT_ANSWER_MISSING");
     const browser = await httpRequest(running.address, "/api/control-center/v1/config", {
       headers: requestHeaders(token, cookie),
@@ -1345,6 +1329,120 @@ it("executes authenticated HTTP requests through installed service-main and read
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({ content: "安装后的持久回答" });
   };
+  const submit = async (input: {
+    threadId: string;
+    expectedRevision: number;
+    name: string;
+    runId: string;
+    content: string;
+  }) =>
+    command("thread.message.submit", `${input.name}-submit`, {
+      threadId: input.threadId,
+      expectedRevision: input.expectedRevision,
+      messageId: `message:${input.name}`,
+      turnId: `turn:${input.name}`,
+      runId: input.runId,
+      sessionId: (session.body as { session: { id: string } }).session.id,
+      contentRef: await upload(`${input.name}-content`, input.content),
+      sourceProofRef: `proof:${input.name}`,
+      dataClassification: "private",
+      occurredAt: new Date().toISOString(),
+      resultRef: await upload(`${input.name}-submit-payload`, "submit"),
+    });
+  return {
+    browser,
+    upload,
+    command,
+    query,
+    readAnswer,
+    submit,
+    running: () => running,
+    restart: async () => {
+      await stopChild(running.main);
+      await stopChild(running.worker);
+      running = await start();
+    },
+    stop: async () => {
+      await stopChild(running.main);
+      await stopChild(running.worker);
+    },
+  };
+}
+
+async function waitForRunToLeaveExecution(
+  service: Awaited<ReturnType<typeof openInstalledMain>>,
+  threadId: string,
+  runId: string,
+) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const detail = await service.query("thread.detail", {
+      threadId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(detail.status).toBe(200);
+    const run = (
+      detail.body as { payload: { runs: Array<{ runId: string; status: string }> } }
+    ).payload.runs.find((candidate) => candidate.runId === runId);
+    if (run && !["accepted", "building_context", "running"].includes(run.status))
+      return { detail, run };
+    if (Date.now() >= deadline) return { detail, run };
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+function readRunBilling(database: ReturnType<typeof openQualifiedDatabase>, runId: string) {
+  const identities = database
+    .prepare(
+      "SELECT invocation_id AS invocationId, source, provider, model, status, actual_cost_micros AS actualCostMicros, budget_account_id AS accountId, budget_operation_key AS operationKey FROM model_invocation_identities WHERE run_id = ? ORDER BY invocation_id",
+    )
+    .all(runId) as {
+    invocationId: string;
+    source: string;
+    status: string;
+    actualCostMicros: number;
+    accountId: string;
+    operationKey: string;
+  }[];
+  const allocations = database
+    .prepare(
+      "SELECT account_id AS accountId, operation_key AS operationKey, status, actual_cost_micros AS actualCostMicros FROM model_budget_allocations WHERE account_id IN (SELECT budget_account_id FROM model_invocation_identities WHERE run_id = ?) ORDER BY account_id, operation_key",
+    )
+    .all(runId) as {
+    accountId: string;
+    operationKey: string;
+    status: string;
+    actualCostMicros: number;
+  }[];
+  const accounts = database
+    .prepare(
+      "SELECT account_id AS accountId, spent_cost_micros AS spentCostMicros FROM model_budget_accounts WHERE account_id IN (SELECT budget_account_id FROM model_invocation_identities WHERE run_id = ?) ORDER BY account_id",
+    )
+    .all(runId) as { accountId: string; spentCostMicros: number }[];
+  return { identities, allocations, accounts };
+}
+
+it("[R2-L5] executes authenticated HTTP requests and persists gateway costs after restart", async () => {
+  const service = await openInstalledMain();
+  await service.command("thread.create", "installed-main-create", {
+    threadId: "thread-production-main",
+    answerLocale: "zh-CN",
+    resultRef: await service.upload("installed-main-create-payload", "create"),
+  });
+  await service.submit({
+    threadId: "thread-production-main",
+    expectedRevision: 1,
+    name: "installed-main",
+    runId: "run:installed-main",
+    content: "你好",
+  });
+  const detail = () =>
+    service.query("thread.detail", {
+      threadId: "thread-production-main",
+      afterSequence: 0,
+      limit: 100,
+    });
 
   try {
     let result = await detail();
@@ -1378,30 +1476,289 @@ it("executes authenticated HTTP requests through installed service-main and read
       }
     }
     expect(result.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
-    await readAnswer(result);
-    const ready = await httpRequest(running.address, "/health/ready");
+    await service.readAnswer(result);
+    expect(service.browser.body).toMatchObject({ executionEnvironmentAvailable: true });
+    const environment = await service.query("thread.execution_environment", {});
+    expect(environment.status).toBe(200);
+    expect(environment.body).toMatchObject({
+      type: "thread.execution_environment_snapshot",
+      payload: { environment: { mode: "srt", programs: [], unavailableTools: [] } },
+    });
+    const ready = await httpRequest(service.running().address, "/health/ready");
     expect(ready.status).toBe(200);
     expect(ready.body).toMatchObject({ status: "ready" });
     expect(providerRequests.some(({ path: route }) => route === "/v1/embeddings")).toBe(true);
     expect(providerRequests.some(({ path: route }) => route === "/v1/chat/completions")).toBe(true);
+    const modelCalls = providerRequests.filter(({ path: route }) => route.startsWith("/v1/"));
+    for (const call of modelCalls) {
+      expect(call.body?.["model"]).toBe(
+        call.path === "/v1/embeddings"
+          ? "alibaba/qwen3-embedding-8b"
+          : "deepseek/deepseek-v4.1-flash",
+      );
+      if (call.path === "/v1/chat/completions") {
+        expect(call.body?.["providerOptions"]).toEqual({
+          gateway: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
+        });
+        expect(Number(call.body?.["max_tokens"])).toBeLessThanOrEqual(32768);
+      } else expect(call.body?.["dimensions"]).toBe(4096);
+    }
+    const billingDatabase = openQualifiedDatabase(databasePath);
+    let billingBeforeRestart: ReturnType<typeof readRunBilling>;
+    try {
+      billingBeforeRestart = readRunBilling(billingDatabase, "run:installed-main");
+      const { identities, allocations, accounts } = billingBeforeRestart;
+      const retained = path.resolve(".ci-output/r2-l5-http", path.basename(stateRoot));
+      await mkdir(retained, { recursive: true });
+      await writeFile(
+        path.join(retained, "billing-before-restart.json"),
+        JSON.stringify(billingBeforeRestart, null, 2),
+      );
+      expect(identities.map(({ source }) => source).sort()).toEqual([
+        "agent-stream",
+        "embedding",
+        "model-port",
+      ]);
+      expect(identities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            source: "embedding",
+            provider: "vercel-ai-gateway",
+            model: "alibaba/qwen3-embedding-8b",
+            status: "settled",
+            actualCostMicros: 33,
+          }),
+          ...["agent-stream", "model-port"].map((source) =>
+            expect.objectContaining({
+              source,
+              provider: "vercel-ai-gateway",
+              model: "deepseek/deepseek-v4.1-flash",
+              status: "settled",
+              actualCostMicros: 77,
+            }),
+          ),
+        ]),
+      );
+      expect(modelCalls).toHaveLength(identities.length);
+      expect(allocations).toHaveLength(identities.length);
+      for (const identity of identities) {
+        expect(
+          allocations.filter(
+            (allocation) =>
+              allocation.accountId === identity.accountId &&
+              allocation.operationKey === identity.operationKey,
+          ),
+        ).toEqual([
+          {
+            accountId: identity.accountId,
+            operationKey: identity.operationKey,
+            status: "settled",
+            actualCostMicros: identity.actualCostMicros,
+          },
+        ]);
+      }
+      expect(accounts.map(({ accountId }) => accountId)).toEqual([
+        "run:run:installed-main",
+        "thread-title:run:installed-main",
+      ]);
+      for (const account of accounts) {
+        expect(account.spentCostMicros).toBe(
+          identities
+            .filter(({ accountId }) => accountId === account.accountId)
+            .reduce((sum, row) => sum + row.actualCostMicros, 0),
+        );
+      }
+      expect(accounts.reduce((sum, account) => sum + account.spentCostMicros, 0)).toBe(
+        identities.reduce((sum, row) => sum + row.actualCostMicros, 0),
+      );
+      await writeFile(
+        path.join(retained, "provider-model-requests.json"),
+        JSON.stringify(
+          modelCalls.map(({ path, body }) => ({ path, body })),
+          null,
+          2,
+        ),
+      );
+    } finally {
+      billingDatabase.close();
+    }
     const requestsBeforeRestart = providerRequests.filter(({ path: route }) =>
       route.startsWith("/v1/"),
     ).length;
-    await stopChild(running.main);
-    await stopChild(running.worker);
-    running = await start();
+    await service.restart();
     const restored = await detail();
     expect(restored.body).toMatchObject({ payload: { runs: [{ status: "completed" }] } });
-    await readAnswer(restored);
+    await service.readAnswer(restored);
+    const restoredDatabase = openQualifiedDatabase(databasePath);
+    try {
+      const restoredBilling = readRunBilling(restoredDatabase, "run:installed-main");
+      expect(restoredBilling).toEqual(billingBeforeRestart);
+      await writeFile(
+        path.resolve(
+          ".ci-output/r2-l5-http",
+          path.basename(stateRoot),
+          "billing-after-restart.json",
+        ),
+        JSON.stringify(restoredBilling, null, 2),
+      );
+    } finally {
+      restoredDatabase.close();
+    }
     expect(providerRequests.filter(({ path: route }) => route.startsWith("/v1/")).length).toBe(
       requestsBeforeRestart,
     );
-    await stopChild(running.worker);
-    const unavailable = await httpRequest(running.address, "/health/ready");
+    await stopChild(service.running().worker);
+    const unavailable = await httpRequest(service.running().address, "/health/ready");
     expect(unavailable.status).toBe(503);
     expect(unavailable.body).not.toMatchObject({ status: "ready" });
   } finally {
-    await stopChild(running.main);
-    await stopChild(running.worker);
+    await service.stop();
   }
 }, 90_000);
+
+it.each(["connection loss", "missing cost"] as const)(
+  "[R2-L5] retains one unknown embedding after %s and restart while the service keeps serving",
+  async (failure) => {
+    const service = await openInstalledMain();
+    const threadId = "thread-memory-connection-lost";
+    try {
+      await service.command("thread.create", "memory-lost-create", {
+        threadId,
+        answerLocale: "zh-CN",
+        resultRef: await service.upload("memory-lost-create-payload", "create"),
+      });
+      const generationRequestsBefore = providerRequests.filter(
+        ({ path: route }) => route === "/v1/chat/completions",
+      ).length;
+      const embeddingRequestsBefore = providerRequests.filter(
+        ({ path: route }) => route === "/v1/embeddings",
+      ).length;
+      dropEmbeddingConnections = failure === "connection loss";
+      embeddingCostAvailable = failure !== "missing cost";
+      await service.submit({
+        threadId,
+        expectedRevision: 1,
+        name: "memory-lost-first",
+        runId: "run:memory-lost-first",
+        content: "读取 x.txt 文件内容给我",
+      });
+      const failed = await waitForRunToLeaveExecution(service, threadId, "run:memory-lost-first");
+      dropEmbeddingConnections = false;
+      embeddingCostAvailable = true;
+      expect(failed.run?.status).toBe("failed");
+      expect(providerRequests.filter(({ path: route }) => route === "/v1/embeddings").length).toBe(
+        embeddingRequestsBefore + 1,
+      );
+      expect(service.running().main.exitCode).toBeNull();
+      const ready = await httpRequest(service.running().address, "/health/ready");
+      expect(ready.status).toBe(200);
+      expect(ready.body).toMatchObject({ status: "ready" });
+      expect(
+        providerRequests.filter(({ path: route }) => route === "/v1/chat/completions").length,
+      ).toBe(generationRequestsBefore);
+      const execution = await service.query("thread.execution", {
+        threadId,
+        runId: "run:memory-lost-first",
+        afterSequence: 0,
+        limit: 100,
+      });
+      expect(execution.status).toBe(200);
+      const records = (
+        execution.body as {
+          payload: { records: Array<{ kind: string; phase: string; text: string }> };
+        }
+      ).payload.records;
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          kind: "status",
+          phase: "failed",
+          text: "CONTEXT_MEMORY_UNAVAILABLE",
+        }),
+      );
+      expect(records.some((record) => record.kind === "tool")).toBe(false);
+      const database = openQualifiedDatabase(databasePath);
+      try {
+        expect(
+          database
+            .prepare(
+              "SELECT phase, terminal_status AS terminalStatus, diagnostic_code AS diagnosticCode FROM run_coordination_checkpoints WHERE run_id = ?",
+            )
+            .get("run:memory-lost-first"),
+        ).toEqual({
+          phase: "failed",
+          terminalStatus: "failed",
+          diagnosticCode: "CONTEXT_MEMORY_UNAVAILABLE",
+        });
+        expect(
+          database
+            .prepare(
+              "SELECT source, status, reason_code AS reasonCode FROM model_invocation_identities WHERE run_id = ?",
+            )
+            .all("run:memory-lost-first"),
+        ).toEqual([{ source: "embedding", status: "unknown", reasonCode: "transport_unresolved" }]);
+      } finally {
+        database.close();
+      }
+      const callsBeforeRestart = providerRequests.filter(({ path: route }) =>
+        route.startsWith("/v1/"),
+      ).length;
+      await service.restart();
+      expect(providerRequests.filter(({ path: route }) => route.startsWith("/v1/")).length).toBe(
+        callsBeforeRestart,
+      );
+      const restoredDatabase = openQualifiedDatabase(databasePath);
+      try {
+        const invocation = restoredDatabase
+          .prepare(
+            "SELECT source, status, actual_cost_micros AS actualCostMicros, budget_account_id AS accountId FROM model_invocation_identities WHERE run_id = ?",
+          )
+          .all("run:memory-lost-first");
+        expect(invocation).toEqual([
+          {
+            source: "embedding",
+            status: "unknown",
+            actualCostMicros: null,
+            accountId: "run:run:memory-lost-first",
+          },
+        ]);
+        const account = restoredDatabase
+          .prepare(
+            "SELECT spent_cost_micros AS spentCostMicros, status FROM model_budget_accounts WHERE account_id = ?",
+          )
+          .get("run:run:memory-lost-first");
+        expect(account).toMatchObject({ spentCostMicros: 0, status: "reconcile_required" });
+        const retained = path.resolve(".ci-output/r2-l5-http", path.basename(stateRoot));
+        await mkdir(retained, { recursive: true });
+        await writeFile(
+          path.join(retained, "unknown-after-restart.json"),
+          JSON.stringify({ failure, invocation, account, callsBeforeRestart }, null, 2),
+        );
+      } finally {
+        restoredDatabase.close();
+      }
+
+      const revision = (failed.detail.body as { payload: { thread: { revision: number } } }).payload
+        .thread.revision;
+      await service.submit({
+        threadId,
+        expectedRevision: revision,
+        name: "memory-lost-second",
+        runId: "run:memory-lost-second",
+        content: "再试一次",
+      });
+      const completed = await waitForRunToLeaveExecution(
+        service,
+        threadId,
+        "run:memory-lost-second",
+      );
+      expect(completed.run?.status).toBe("completed");
+      await service.readAnswer(completed.detail, "run:memory-lost-second");
+      expect(service.running().main.exitCode).toBeNull();
+    } finally {
+      dropEmbeddingConnections = false;
+      embeddingCostAvailable = true;
+      await service.stop();
+    }
+  },
+  90_000,
+);

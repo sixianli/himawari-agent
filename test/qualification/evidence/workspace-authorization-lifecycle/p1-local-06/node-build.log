@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 build:node
+> tsc -p tsconfig.node-build.json && node scripts/package-node-runtime.mjs
+
+Relocatable Node runtime written to /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-runtime

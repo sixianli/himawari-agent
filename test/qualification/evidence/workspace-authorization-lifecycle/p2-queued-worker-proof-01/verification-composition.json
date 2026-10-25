@@ -1,0 +1,309 @@
+{
+  "status": "passed-with-existing-global-format-and-lint-errors",
+  "verificationMode": "combined; production inputs unchanged",
+  "baseline": {
+    "path": "../p2-queued-run-restart-01/",
+    "testsPassed": 4024,
+    "filesPassed": 250,
+    "frozenInputsReadBack": 1024,
+    "changedInputs": [
+      "test/fixtures/production-sandbox-scope.ts",
+      "test/integration/production-queued-run-restart.test.ts"
+    ],
+    "newTestFixture": "test/fixtures/queued-live-worker.ts",
+    "productionBuildAndConfigurationChanged": false
+  },
+  "currentInputs": {
+    "test/fixtures/production-sandbox-scope.ts": "2dba12bc4f9f542452faea2d7d03f7df5f4aaf44c6b7ba8e7c9ae317675f1075",
+    "test/integration/production-queued-run-restart.test.ts": "546d2013b9b2afa1e45c0acf0ab516590b1590ee332b78f5120fd6e129a65dc9",
+    "test/fixtures/queued-live-worker.ts": "fbf0ba7af673aea7b680958155ca2ba58398253efa1ebb1015abb14ff27b4ddf"
+  },
+  "results": {
+    "liveMac": {
+      "passed": 1,
+      "unselected": 9,
+      "testDurationMs": 69850,
+      "log": "himawari-queued-live-runtime-10.log"
+    },
+    "defaultFixtureConsumers": {
+      "files": 6,
+      "passed": 85,
+      "log": "himawari-queued-live-consumers-final.log",
+      "finalDelta": "After this run only live stale-request identity, live cleanup assertions and returned live fixture directory changed; final live test covers these changes."
+    },
+    "quota": {
+      "passed": 6,
+      "log": "himawari-queued-live-quota.log"
+    },
+    "countsOverlapBaseline": true
+  },
+  "checks": {
+    "nodeBuild": "passed",
+    "typecheck": "passed",
+    "scopedBiome": "passed",
+    "boundaries": "passed",
+    "v02Coverage": "passed",
+    "v02Invariants": "passed",
+    "secrets": "passed",
+    "ciPolicy": "passed",
+    "strictDocumentation": "passed",
+    "diffCheck": "passed"
+  },
+  "globalChecks": {
+    "format": "blocked by two pre-existing untracked prototype verify.cjs files",
+    "lint": "2 pre-existing noInnerDeclarations errors; 1732 infos"
+  },
+  "limits": [
+    "Faux model",
+    "controlled installation qualification",
+    "owner decision supplied directly to ApprovalService",
+    "execution transport in-process; payload/resource UDS real",
+    "not an OS Agent kill/restart test",
+    "not a gateway/browser acceptance",
+    "macOS only",
+    "unknown resource remains blocked without release receipt"
+  ],
+  "archive": {
+    "path": "raw-logs.tar.gz",
+    "sha256": "284e0dadfd1fded4ce3b7363dbd0e42e6f2403c3283991aed3af6ab079de37ea",
+    "byteReadbackPassed": true,
+    "overwriteRejected": true,
+    "files": [
+      {
+        "name": "himawari-queued-live-boundaries-final.log",
+        "sha256": "38acf89f01a139db6583e68bd61c9f37466aec749cf1116a7527b1561e1b6a80",
+        "bytes": 130
+      },
+      {
+        "name": "himawari-queued-live-build.log",
+        "sha256": "f88fd37f692372065358f3761ca24b6767fe589cb065149a03f9ea4bc731a8a3",
+        "bytes": 230
+      },
+      {
+        "name": "himawari-queued-live-check-final.log",
+        "sha256": "6adc55fd6133c5a3dd9c3dd933664d62604ad6fa50ca05d46d9c3c24673b70d3",
+        "bytes": 27223
+      },
+      {
+        "name": "himawari-queued-live-ci-policy-final.log",
+        "sha256": "1edae37a2d270fcf70715ae37348e9270fdb5d56b2a08732e9efe1305c4635a1",
+        "bytes": 511
+      },
+      {
+        "name": "himawari-queued-live-consumers-final.log",
+        "sha256": "a2443483f2db5f98f15790eff9b4c39593877f840a6b849b2f69d2fbb8a0a974",
+        "bytes": 253
+      },
+      {
+        "name": "himawari-queued-live-consumers.log",
+        "sha256": "8fb94f5fa0b456596aca55c4f92a380678371e9cf094b7cc52a8e7a6c6ea85c4",
+        "bytes": 253
+      },
+      {
+        "name": "himawari-queued-live-control-preflight.log",
+        "sha256": "c6202b1ecd6a298ce8369a7e60f6c9456555b4a2742666c6ff258e9e9390c0b5",
+        "bytes": 100
+      },
+      {
+        "name": "himawari-queued-live-diff-final.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      {
+        "name": "himawari-queued-live-digest.log",
+        "sha256": "bdc39eb14919085e6bd622046df828562e5aeb11d71903764c366566d3326717",
+        "bytes": 952
+      },
+      {
+        "name": "himawari-queued-live-digest2.log",
+        "sha256": "8eeb88084b00ad14868d26337e1f31df1628feb9e4ce9d547efdb0ae4fb9f9cc",
+        "bytes": 88
+      },
+      {
+        "name": "himawari-queued-live-docs-final.log",
+        "sha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+        "bytes": 53
+      },
+      {
+        "name": "himawari-queued-live-first.log",
+        "sha256": "6189eb7dac1003c810c24f13af32f47e8ce885b09c1ca709d4df2210071252f5",
+        "bytes": 250
+      },
+      {
+        "name": "himawari-queued-live-format-final.log",
+        "sha256": "17c87ae271fc71f9541b9b27a7581a15dd0b417c52eba02077b6e61068eeb0a1",
+        "bytes": 43
+      },
+      {
+        "name": "himawari-queued-live-format.log",
+        "sha256": "622510a48f202cf291b273f74489e3d58c2cee8faeb33ceda8d56d7f1a48052c",
+        "bytes": 41
+      },
+      {
+        "name": "himawari-queued-live-format2.log",
+        "sha256": "515f2facded3082753ebdc428bd31296936a80bee7776fd9302190aad197abad",
+        "bytes": 953
+      },
+      {
+        "name": "himawari-queued-live-format3.log",
+        "sha256": "d43af3bcd1e93d036890d5d760829fe37fc5e2638a87ed10ea4e0b5d20227ea4",
+        "bytes": 43
+      },
+      {
+        "name": "himawari-queued-live-format4.log",
+        "sha256": "ced6f081edd3e991733d228d8f65c8d98228947424b6e8e6ce5ac6852a1b4b51",
+        "bytes": 40
+      },
+      {
+        "name": "himawari-queued-live-format5.log",
+        "sha256": "35d110f98dde317fad515aa7083804c62be0adc6d5de044e163a412f8ee266db",
+        "bytes": 39
+      },
+      {
+        "name": "himawari-queued-live-format6.log",
+        "sha256": "5e1955a47d7242aeb9191c26606f43ce55685b26c354221f27a9074730a755ba",
+        "bytes": 43
+      },
+      {
+        "name": "himawari-queued-live-format7.log",
+        "sha256": "41c422be3ced03d14e551028ba002530d21d4b715c8bc15237a30edee5b93981",
+        "bytes": 39
+      },
+      {
+        "name": "himawari-queued-live-lint-errors.log",
+        "sha256": "3ecbf1a6e7a502be4dfbf8051dab1a84707f9e0eb42a6a2c6fa7fd4201fd8daa",
+        "bytes": 4123
+      },
+      {
+        "name": "himawari-queued-live-lint-final.log",
+        "sha256": "548e5af834bca229a3d8db7a1510a379891458e0f0f7139b55d849535fe3cf9f",
+        "bytes": 19174
+      },
+      {
+        "name": "himawari-queued-live-policy-preflight.log",
+        "sha256": "79f6af66c181fd0bbfea258564feec7eb6185179bb5eb7de9bf684ed07f13384",
+        "bytes": 14
+      },
+      {
+        "name": "himawari-queued-live-policy.log",
+        "sha256": "1edae37a2d270fcf70715ae37348e9270fdb5d56b2a08732e9efe1305c4635a1",
+        "bytes": 511
+      },
+      {
+        "name": "himawari-queued-live-quota.log",
+        "sha256": "339b4a4a23fd647c98654f261911dd86a0f74e9340bf1e19ce3ed1a57ef2b594",
+        "bytes": 248
+      },
+      {
+        "name": "himawari-queued-live-runtime-01.log",
+        "sha256": "d5d49445743b20e1e2dca861e0099315e178f3742e69b923b048f6627e87eba0",
+        "bytes": 1501
+      },
+      {
+        "name": "himawari-queued-live-runtime-02.log",
+        "sha256": "fa997517920867e469e95d853621ce5fc151ff1cac4d5ad341bc1a8d2e13b349",
+        "bytes": 8123
+      },
+      {
+        "name": "himawari-queued-live-runtime-03.log",
+        "sha256": "c5c8e23ee8390d1916511d4ee25ec473912e30ab99c42a73d01ac176bfc75478",
+        "bytes": 10946
+      },
+      {
+        "name": "himawari-queued-live-runtime-04.log",
+        "sha256": "d77dba6b24328693eba6392b4df2f16c4b8e6741d95a459dafb5d8ceb7575c48",
+        "bytes": 11222
+      },
+      {
+        "name": "himawari-queued-live-runtime-05.log",
+        "sha256": "c4d8aedf06e955204cfb720082556236d7fda4a79792bb461a4eac8e0d885142",
+        "bytes": 11923
+      },
+      {
+        "name": "himawari-queued-live-runtime-06.log",
+        "sha256": "7cda46fb6176e8b23284fbe6f91a11d5b08b482fd9a124c6d58f5e7d6a6ba5d5",
+        "bytes": 12470
+      },
+      {
+        "name": "himawari-queued-live-runtime-07.log",
+        "sha256": "33b4e28f8fbc93415c7f9c12f496b64366083161e6ce0a33e51f5dafa741f0c2",
+        "bytes": 13166
+      },
+      {
+        "name": "himawari-queued-live-runtime-08.log",
+        "sha256": "ea6c669938dfae7d6e402f01bbef02ea6abfc9159f6df5390d3ac6100c3068dd",
+        "bytes": 5110
+      },
+      {
+        "name": "himawari-queued-live-runtime-09.log",
+        "sha256": "7de5f24353de74471de4365bdb7afa203a381b958fc2a403c44f96054098e92d",
+        "bytes": 17536
+      },
+      {
+        "name": "himawari-queued-live-runtime-10.log",
+        "sha256": "b067966d22cfed144edb0948ff88f88d8e25dd43dc8fc537b6a724ebc930eeb1",
+        "bytes": 263
+      },
+      {
+        "name": "himawari-queued-live-secrets-final.log",
+        "sha256": "dfd017f50d541ae1e0a7ef03195f31e36724eca69f9e3ddc8ad7e5db1e4cc99a",
+        "bytes": 119
+      },
+      {
+        "name": "himawari-queued-live-types-final.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-types.log",
+        "sha256": "66a80b9f73bea68e550b3b19bde22f375878828bc33de43a6ca85fcf7a9b1438",
+        "bytes": 1790
+      },
+      {
+        "name": "himawari-queued-live-types3.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-types4.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-types5.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-types6.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-types7.log",
+        "sha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+        "bytes": 102
+      },
+      {
+        "name": "himawari-queued-live-v0.2-coverage-final.log",
+        "sha256": "1b9451fdb7da719b550f1e9aeb0dbf4e089ce39a1655faba326dc3f13df4a187",
+        "bytes": 171
+      },
+      {
+        "name": "himawari-queued-live-v0.2-invariants-final.log",
+        "sha256": "3deac5aa3fb3af9f4ad7a46395d2086a52957a3131d338f618629bf4759e201b",
+        "bytes": 190
+      },
+      {
+        "name": "himawari-queued-policy-check.mjs",
+        "sha256": "942028152e30e72716f08f74b48634abb5ef095d0226f2dcb2e2131febc066e9",
+        "bytes": 987
+      },
+      {
+        "name": "himawari-queued-control-check.mjs",
+        "sha256": "8bdae5f1beb054708d738f3272c465a1d45ea2e77e0d5c17c772238e45d6e098",
+        "bytes": 1066
+      }
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import type { MessageId } from "./i18n/message-ids.js";
@@ -16,6 +17,8 @@ export function executionFailureMessage(records: readonly ThreadExecutionRecord[
       return "chat.error.authFailed";
     case "PI_MODEL_UNAVAILABLE":
       return "chat.error.unavailable";
+    case "CONTEXT_MEMORY_UNAVAILABLE":
+      return "chat.error.contextMemoryUnavailable";
     default:
       return "chat.error.failed";
   }
@@ -27,6 +30,51 @@ export type RunSummary = Extract<
 >["payload"]["runs"][number];
 export const isTerminalRun = (run: RunSummary) =>
   ["completed", "failed", "cancelled"].includes(run.status);
+
+const authorizationReviewLabels = {
+  "runtime.authorization_review.started": "review.authorizationStarted",
+  "runtime.authorization_review.approved": "review.authorizationApproved",
+  "runtime.authorization_review.denied": "review.authorizationDenied",
+  "runtime.authorization_review.human": "review.authorizationHuman",
+  "runtime.authorization_review.alternative": "review.authorizationAlternative",
+} as const satisfies Readonly<Record<string, MessageId>>;
+
+/** Only persisted host observations, with no inferred end time or human approval. */
+export function authorizationReviewSteps(records: readonly ThreadExecutionRecord[]) {
+  const groups = new Map<
+    string,
+    { first: ThreadExecutionRecord; start?: ThreadExecutionRecord; end?: ThreadExecutionRecord }
+  >();
+  for (const record of [...new Map(records.map((record) => [record.id, record])).values()].sort(
+    (a, b) => a.sequence - b.sequence,
+  )) {
+    if (
+      record.kind !== "status" ||
+      record.phase !== "updated" ||
+      !Object.hasOwn(authorizationReviewLabels, record.name)
+    )
+      continue;
+    const group = groups.get(record.itemId) ?? { first: record };
+    if (record.name === "runtime.authorization_review.started") group.start ??= record;
+    else group.end ??= record;
+    groups.set(record.itemId, group);
+  }
+  return [...groups.entries()].map(([itemId, { first, start, end }]) => {
+    const name = (end ?? start ?? first).name as keyof typeof authorizationReviewLabels;
+    const elapsed =
+      start && end && end.sequence > start.sequence
+        ? Date.parse(end.occurredAt) - Date.parse(start.occurredAt)
+        : NaN;
+    return {
+      id: first.id,
+      itemId,
+      sequence: first.sequence,
+      outcome: name.slice("runtime.authorization_review.".length),
+      label: authorizationReviewLabels[name],
+      elapsed: Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null,
+    };
+  });
+}
 
 /** Connection health is distinct from execution progress; an old observation is not a heartbeat. */
 export function executionActivity(
@@ -42,26 +90,80 @@ export function executionActivity(
     (record) => record.kind === "tool" && record.phase === "started",
   );
   const age = Math.max(0, now - Date.parse(last?.occurredAt ?? run.updatedAt));
+  const review = authorizationReviewSteps(records).at(-1);
+  const reviewing =
+    !isTerminalRun(run) &&
+    review?.outcome === "started" &&
+    !ordered.some(
+      (record) =>
+        record.sequence > review.sequence &&
+        [
+          "runtime.model_started",
+          "runtime.suspended",
+          "runtime.completed",
+          "runtime.failed",
+          "runtime.cancelled",
+          "runtime.result_unknown",
+        ].includes(record.name),
+    );
   const label: MessageId =
     connection !== "connected" && !isTerminalRun(run)
       ? "chat.disconnected"
-      : run.status === "awaiting_approval"
-        ? "runs.status.awaitingApproval"
-        : tool
-          ? "chat.activity.tool"
-          : activity?.name === "runtime.activity.thinking"
-            ? "chat.activity.thinking"
-            : activity?.name === "runtime.activity.text"
-              ? "chat.activity.output"
-              : activity?.name === "runtime.activity.toolCall"
-                ? "chat.activity.preparingTool"
-                : "chat.activity.waitingModel";
+      : run.status === "reconciling_external_result"
+        ? "chat.phase.unresolved"
+        : run.status === "awaiting_approval"
+          ? "runs.status.awaitingApproval"
+          : reviewing
+            ? "review.authorizationChecking"
+            : tool
+              ? "chat.activity.tool"
+              : activity?.name === "runtime.activity.thinking"
+                ? "chat.activity.thinking"
+                : activity?.name === "runtime.activity.text"
+                  ? "chat.activity.output"
+                  : activity?.name === "runtime.activity.toolCall"
+                    ? "chat.activity.preparingTool"
+                    : "chat.activity.waitingModel";
   return {
     label,
     tool: tool?.name ?? "",
     age,
     stale: !isTerminalRun(run) && run.status !== "awaiting_approval" && age >= 15000,
   };
+}
+
+/** Backend outcome markers remain separate from transport/Pi invocation phases. */
+export function executionToolPhase(
+  item: ThreadExecutionRecord,
+  records: readonly ThreadExecutionRecord[],
+  run: RunSummary,
+): MessageId | undefined {
+  const reason = [...records]
+    .filter(
+      (record) => record.itemId === item.itemId && record.name.startsWith("runtime.tool_reason."),
+    )
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
+  const marker = [...records]
+    .filter(
+      (record) => record.itemId === item.itemId && record.name.startsWith("runtime.tool_outcome."),
+    )
+    .sort((a, b) => a.sequence - b.sequence)
+    .at(-1);
+  switch (marker && marker.sequence >= item.sequence ? marker.name : undefined) {
+    case "runtime.tool_outcome.not_dispatched":
+      return "chat.phase.notDispatched";
+    case "runtime.tool_outcome.unresolved":
+      return "chat.phase.unresolved";
+    case "runtime.tool_outcome.preparing":
+      // The Run has ended, but no tool result establishes whether it started or
+      // changed a file. Keep that uncertainty without a perpetual active phase.
+      return isTerminalRun(run) ? "chat.phase.unresolved" : "chat.phase.preparing";
+    default:
+      return item.phase === "failed" && reason && reason.sequence >= item.sequence
+        ? executionStateLabel("failed", reason.name.slice("runtime.tool_reason.".length))
+        : undefined;
+  }
 }
 
 /** A delta notification can be replayed; snapshots have stable event and item identities. */
@@ -173,8 +275,9 @@ export function executionTime(
   };
 }
 export function duration(milliseconds: number): string {
-  const seconds = Math.floor(Math.max(0, milliseconds) / 1000);
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  if (milliseconds > 0 && milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  const seconds = Math.round(Math.max(0, milliseconds) / 100) / 10;
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
 }
 
 /** Only durable, public stage markers; never synthesize reasoning or infer successful steps. */
@@ -190,4 +293,169 @@ export function executionStages(records: readonly ThreadExecutionRecord[]) {
   return [...new Map(records.map((record) => [record.id, record])).values()]
     .filter((record) => record.kind === "status" && executionStageLabels[record.name])
     .sort((a, b) => a.sequence - b.sequence);
+}
+
+/** Never treat request/transport timestamps as host execution time. */
+export function recordedInterval(
+  records: readonly ThreadExecutionRecord[],
+  itemId: string,
+  prefix: string,
+): number | null {
+  const events = records.filter((record) => record.itemId === itemId);
+  const start = events.find((record) => record.name === `${prefix}.started`);
+  const end = events.find((record) => record.name === `${prefix}.ended`);
+  if (!start || !end) return null;
+  const elapsed = Date.parse(end.occurredAt) - Date.parse(start.occurredAt);
+  return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null;
+}
+
+/** Provider thinking-stream boundaries contain no private reasoning text. */
+export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
+  const boundaries = [
+    ...new Map(
+      records
+        .filter((record) => record.name === "runtime.thinking.started")
+        .map((record) => [record.itemId, record]),
+    ).values(),
+  ];
+  if (boundaries.length)
+    return boundaries.map((record) => ({
+      ...record,
+      elapsed: recordedInterval(records, record.itemId, "runtime.thinking"),
+    }));
+  // Older histories only attest that thinking was observed; they do not provide duration.
+  const observations = records.filter((record) => record.name === "runtime.activity.thinking");
+  return observations
+    .filter(
+      (record, index) =>
+        index === 0 ||
+        records.some(
+          (other) =>
+            other.sequence > (observations[index - 1]?.sequence ?? 0) &&
+            other.sequence < record.sequence &&
+            (other.kind === "tool" || other.name === "runtime.activity.text"),
+        ),
+    )
+    .map((record) => ({ ...record, elapsed: null }));
+}
+
+/** Localization only: all phase decisions belong to the backend projection. */
+export function executionStateLabel(
+  phase: ThreadExecutionState["displayPhase"],
+  reasonCode?: string,
+): MessageId {
+  const reasonLabels: Readonly<Record<string, MessageId>> = {
+    RUN_BUILDING_CONTEXT: "chat.activity.buildingContext",
+    RESOURCE_STOP_IN_PROGRESS: "chat.resource.stopping",
+    RESOURCE_CHECK_IN_PROGRESS: "chat.resource.verifying",
+    RESOURCE_QUEUE_WAITING: "chat.resource.queued",
+    RESOURCE_EXECUTION_OBSERVED: "chat.resource.executing",
+    RESOURCE_STOP_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
+    RUN_STOPPED_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
+    EXECUTION_RECORD_DELETED: "chat.resource.recordDeleted",
+    WORKER_ADMISSION_CONFLICT: "chat.reason.admissionConflict",
+    WORKER_AUTHORIZATION_DENIED: "chat.reason.authorizationDenied",
+    WORKER_AUTHORITY_UNAVAILABLE: "chat.reason.authorityUnavailable",
+    WORKER_ADMISSION_RESOURCE_MISSING: "chat.reason.admissionResourceMissing",
+    WORKER_ADMISSION_ALREADY_RECORDED: "chat.reason.admissionAlreadyRecorded",
+    WORKER_OPERATION_UNAVAILABLE: "chat.reason.operationUnavailable",
+    WORKER_ADMISSION_UNAVAILABLE: "chat.reason.admissionUnavailable",
+    WORKER_DEADLINE_EXCEEDED: "chat.reason.deadlineExceeded",
+    RUN_EXECUTION_DEADLINE_EXCEEDED: "chat.reason.runDeadlineExceeded",
+    SANDBOX_TOOL_DEADLINE_EXCEEDED: "chat.reason.toolDeadlineExceeded",
+    SANDBOX_TOOL_NOT_STARTED: "chat.reason.toolNotStarted",
+    WORKER_RESOURCE_CEILING_CHANGED: "chat.reason.resourceCeilingChanged",
+    DIRECTORY_TARGET_CHANGED: "chat.reason.directoryTargetChanged",
+    FILE_VERSION_CONFLICT: "chat.reason.fileVersionConflict",
+    FILE_WRITE_NOT_STARTED: "chat.reason.fileWriteNotStarted",
+    SANDBOX_COMMAND_EFFECT_UNVERIFIED: "chat.reason.commandEffectUnverified",
+    SANDBOX_WRITE_EFFECT_UNVERIFIED: "chat.reason.writeEffectUnverified",
+    SANDBOX_STRICT_MODE_UNAVAILABLE: "chat.reason.strictModeUnavailable",
+  };
+  return (
+    (reasonCode && Object.hasOwn(reasonLabels, reasonCode)
+      ? reasonLabels[reasonCode]
+      : undefined) ??
+    ({
+      preparing: "chat.phase.preparing",
+      awaiting_approval: "runs.status.awaitingApproval",
+      reviewing: "review.authorizationChecking",
+      model_waiting: "chat.activity.waitingModel",
+      model_thinking: "chat.activity.thinking",
+      model_output: "chat.activity.output",
+      completed: "chat.phase.completed",
+      failed: "chat.phase.failed",
+      stopped: "chat.phase.stopped",
+      unresolved: "chat.phase.unresolved",
+      not_dispatched: "chat.phase.notDispatched",
+    }[phase] as MessageId)
+  );
+}
+
+export function executionWaitReason(
+  state: ThreadExecutionState,
+  run: RunSummary,
+  items: readonly Pick<ThreadExecutionRecord, "itemId" | "kind" | "name">[],
+): { id: MessageId; tool: string } | undefined {
+  if (state.displayPhase !== "unresolved") return undefined;
+  const operation = state.operations.find((operation) => operation.displayPhase === "unresolved");
+  const tool = items.find((item) => item.kind === "tool" && item.itemId === operation?.itemId);
+  if (!tool) return undefined;
+  return {
+    id: isTerminalRun(run) ? "chat.waiting.afterTurn" : "chat.waiting.tool",
+    tool: tool.name,
+  };
+}
+
+/** Give the owner a safe follow-up based only on durable execution facts. */
+export function executionNextAction(state: ThreadExecutionState): MessageId | undefined {
+  if (state.displayPhase === "unresolved") {
+    if (state.availableActions.includes("retry_cleanup")) return "chat.nextAction.retryCleanup";
+    if (state.availableActions.includes("stop")) return "chat.nextAction.stop";
+    return "chat.nextAction.unresolved";
+  }
+  if (state.displayPhase === "not_dispatched") return "chat.nextAction.notDispatched";
+  if (state.reasonCode === "RUN_STOPPED_NOT_STRICTLY_CONFIRMED")
+    return "chat.nextAction.stopNotStrictlyConfirmed";
+  if (
+    state.displayPhase === "stopped" &&
+    state.effectSummary.some(
+      (effect) => effect.outcome === "succeeded" || effect.outcome === "failed",
+    )
+  )
+    return "chat.nextAction.stoppedWithResults";
+  if (state.displayPhase === "failed")
+    return state.effectSummary.length === 0
+      ? "chat.nextAction.failedBeforeAnyOperation"
+      : state.effectSummary.some((effect) => effect.outcome === "succeeded")
+        ? "chat.nextAction.partial"
+        : "chat.nextAction.failed";
+  return undefined;
+}
+
+/** The Run ended while suspended for approval and nothing was recorded after the suspension. */
+export function endedAwaitingApproval(
+  item: Pick<ThreadExecutionRecord, "itemId" | "kind" | "output"> & { firstSequence: number },
+  records: readonly ThreadExecutionRecord[],
+  run: RunSummary,
+): boolean {
+  if (!isTerminalRun(run) || item.kind !== "tool" || item.output) return false;
+  if (recordedInterval(records, item.itemId, "runtime.tool_execution") !== null) return false;
+  const later = [...new Map(records.map((record) => [record.id, record])).values()]
+    .filter((record) => record.sequence > item.firstSequence)
+    .sort((a, b) => a.sequence - b.sequence);
+  const suspended = later.findLastIndex(
+    (record) => record.kind === "status" && record.phase === "waiting",
+  );
+  return (
+    suspended >= 0 &&
+    later
+      .slice(suspended + 1)
+      .every(
+        (record) =>
+          record.kind === "status" &&
+          record.phase !== "started" &&
+          !["runtime.tool_intent", "runtime.tool_result"].includes(record.name),
+      )
+  );
 }

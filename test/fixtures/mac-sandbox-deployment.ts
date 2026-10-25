@@ -19,7 +19,7 @@ export async function macSandboxDeployment(
   const base = await realpath(root);
   const workspace = path.join(base, "live-workspace");
   const runtimeRoot = path.join(base, "live-runtime");
-  const privateRoot = path.join(base, "live-private");
+  const privateRoot = path.join(base, "p");
   await Promise.all(
     [workspace, runtimeRoot, privateRoot].map((directory) => mkdir(directory, { mode: 0o700 })),
   );
@@ -67,6 +67,7 @@ proxy_auth=$(printf 'srt:%s' "$proxy_token" | /usr/bin/base64)
 for i in $(/usr/bin/seq 1 100); do
   if /usr/bin/grep -q '200 Connection' "$TMPDIR/network-headers"; then
     printf 'run\\n' >> "$TMPDIR/runs"
+    printf '{"probe":"network-established"}'
     printf 'established' > "$TMPDIR/network-established"
     wait
     exit 0
@@ -148,11 +149,7 @@ exit 21
               "/proc",
               path.resolve(
                 path.dirname(
-                  createRequire(
-                    process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"]
-                      ? path.join(process.env["HIMAWARI_QUALIFY_INSTALLED_RUNTIME"], "package.json")
-                      : import.meta.url,
-                  ).resolve("@anthropic-ai/sandbox-runtime"),
+                  createRequire(import.meta.url).resolve("@anthropic-ai/sandbox-runtime"),
                 ),
                 "../vendor/seccomp",
               ),

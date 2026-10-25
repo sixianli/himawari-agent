@@ -3,11 +3,13 @@ import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
+  type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -46,18 +48,22 @@ describe("file summary qualification configuration", () => {
   it("registers the configured generation models in real Pi without resolving credentials", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
+    const generation = descriptors.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
     const resolve = vi.fn(async () => {
       throw new Error("offline preparation must not read a provider credential");
     });
     const bindings = new ConfiguredPiModelBindingPort({
-      descriptors: descriptors.generation,
+      descriptors: generation,
       secretSource: { productionSuitable: true, resolve },
     });
     try {
-      for (const descriptor of descriptors.generation) {
+      for (const descriptor of generation) {
         const binding = await bindings.resolve(descriptor.ref);
         expect(binding.model.id).toBe(descriptor.model);
-        expect(binding.model.baseUrl).toBe("https://openrouter.ai/api/v1");
+        expect(binding.model.baseUrl).toBe("https://ai-gateway.vercel.sh/v1");
         expect(binding.model.maxTokens).toBe(2048);
       }
       expect(resolve).not.toHaveBeenCalled();
@@ -69,9 +75,13 @@ describe("file summary qualification configuration", () => {
   it("fits two generation reservations and embedding within the proposed shared budget", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
+    const generationDescriptors = descriptors.generation.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    );
     const embedding = embeddingAdmissionDescriptor(config);
     const generation = Math.max(
-      ...descriptors.generation.map(
+      ...generationDescriptors.map(
         (descriptor) => admissionCostForConfiguredPiModel(descriptor).estimatedCostMicros,
       ),
     );
@@ -98,7 +108,7 @@ describe("file summary qualification configuration", () => {
 
   it("passes the candidate embedding identity and dimensions through the production Mem0 adapter", async () => {
     const config = await configuration();
-    const stateRoot = await mkdtemp("/tmp/hma-config-");
+    const stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-config-`);
     const constructed = vi.fn();
     const close = vi.fn();
     const resolve = vi.fn(async () => "offline-fixture-provider-value");
@@ -114,6 +124,7 @@ describe("file summary qualification configuration", () => {
         },
         secretSource: { kind: "macos-keychain", productionSuitable: true, resolve },
         load: async () => ({
+          VectorStoreFactory: { create: () => ({ initialize: async () => {} }) },
           Memory: class {
             constructor(input: unknown) {
               constructed(input);
@@ -129,8 +140,8 @@ describe("file summary qualification configuration", () => {
               provider: "openai",
               config: {
                 apiKey: expect.any(String),
-                baseURL: "https://openrouter.ai/api/v1",
-                model: "qwen/qwen3-embedding-8b",
+                baseURL: "https://ai-gateway.vercel.sh/v1",
+                model: "alibaba/qwen3-embedding-8b",
                 embeddingDims: 4096,
               },
             },
@@ -139,7 +150,7 @@ describe("file summary qualification configuration", () => {
             }),
           }),
         );
-        expect(resolve).toHaveBeenCalledExactlyOnceWith("openrouter-api-key", "v1");
+        expect(resolve).toHaveBeenCalledExactlyOnceWith("vercel-ai-gateway-api-key", "v1");
       } finally {
         await memory.close();
       }

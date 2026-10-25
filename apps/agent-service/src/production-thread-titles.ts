@@ -9,7 +9,6 @@ import {
   assertMachineSecretFree,
 } from "@himawari-agent/application";
 
-/** Titles are derived metadata. They never replace Owner names or hold up the answer stream. */
 export class ProductionThreadTitles {
   readonly #pending = new Map<string, { work: Promise<void>; admitted: Promise<void> }>();
   #stopping = false;
@@ -44,6 +43,9 @@ export class ProductionThreadTitles {
       });
     this.#pending.set(id, { work, admitted });
     return admitted;
+  }
+  async idle(threadId: string | null): Promise<void> {
+    if (threadId) await this.#pending.get(threadId)?.work;
   }
   async stop(): Promise<void> {
     this.#stopping = true;
@@ -86,7 +88,6 @@ export class ProductionThreadTitles {
       throw new Error("THREAD_TITLE_RESPONSE_INVALID");
     assertMachineSecretFree(title);
     await this.options.assertActive();
-    // A concurrent manual rename or deletion wins; re-read before creating derived metadata.
     const current = await this.options.threads.read(ownerId, agentId, threadId);
     if (
       !current ||

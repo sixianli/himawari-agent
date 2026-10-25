@@ -1,0 +1,13 @@
+{
+  "unchanged": {
+    "AGENTS.md": true,
+    "docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md": true,
+    "packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts": true,
+    "packages/application/src/services/sandbox-execution-projection.ts": true,
+    "test/integration/sqlite-sandbox-execution-v2.test.ts": true
+  },
+  "temporaryRegressionRemoved": true,
+  "planLinksExist": true,
+  "explicitAnchorsUniqueAndResolved": true,
+  "navigationClicked": false
+}

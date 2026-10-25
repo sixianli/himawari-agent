@@ -11,8 +11,15 @@ import type {
   ReliableEventRecord,
   ReliableEventSinkPort,
   SessionDeletionRecord,
+  TraceEvent,
 } from "@himawari-agent/application";
-import { PORT_ERROR_CODES, SessionTraceRecorder } from "@himawari-agent/application";
+import {
+  ApplicationPortError,
+  actionIntentFingerprint,
+  type PortErrorCode,
+  PORT_ERROR_CODES,
+  SessionTraceRecorder,
+} from "@himawari-agent/application";
 import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import {
   createAgentId,
@@ -26,8 +33,6 @@ import {
 } from "@himawari-agent/domain";
 import type { StreamEvent } from "@himawari-agent/gateway-contracts";
 import {
-  applyMigrations,
-  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteProductStateRepository,
   type SqliteRecoveryAuthorityScope,
@@ -45,6 +50,8 @@ import {
   traceStorePortConformance,
 } from "@himawari-agent/testing/conformance";
 import { describe, expect, it } from "vitest";
+import { SqliteDurableOperations } from "../../packages/persistence-sqlite/src/sqlite-durable-operations.ts";
+import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-conformance");
@@ -89,8 +96,8 @@ async function seedRepository(
   databasePath: string,
   runStatus: "accepted" | "running" = "accepted",
 ): Promise<void> {
+  await copyMigratedDatabase(databasePath);
   const database = openQualifiedDatabase(databasePath);
-  applyMigrations(database, await loadBundledMigrations());
   database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
   database
     .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
@@ -161,12 +168,33 @@ async function seedRepository(
   database.close();
 }
 
+function seedTraceEvents(databasePath: string, events: readonly TraceEvent[]): void {
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const operations = new SqliteDurableOperations(
+      database,
+      (code, message, details) => {
+        throw new ApplicationPortError(code as PortErrorCode, message, details);
+      },
+      () => undefined,
+    );
+    database.transaction(() => {
+      for (const event of events) operations.execute("trace.append", { event });
+    })();
+  } finally {
+    database.close();
+  }
+}
+
 async function openRepository(
   now = T0,
   runStatus: "accepted" | "running" = "accepted",
+  existingTrace: readonly TraceEvent[] = [],
 ): Promise<RepositoryResource> {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-sqlite-durable-"));
-  await seedRepository(path.join(stateRoot, "product.sqlite"), runStatus);
+  const databasePath = path.join(stateRoot, "product.sqlite");
+  await seedRepository(databasePath, runStatus);
+  seedTraceEvents(databasePath, existingTrace);
   const repository = await SqliteProductStateRepository.open({
     stateRoot,
     minimumFreeBytes: 0,
@@ -209,37 +237,37 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
   it.each([0, 1000, 1001])(
     "records into SQLite after %i events using bounded trace pages",
     async (count) => {
-      const resource = await openRepository();
+      const scope = {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        sessionId: SESSION_ID,
+        threadId: createThreadId("thread-conformance"),
+        runId: RUN_ID,
+        turnId: null,
+        parentEventId: null,
+        causationId: null,
+        correlationId: "correlation-paged-trace",
+        actorId: "agent-service",
+        dataClassification: "private" as const,
+        eventType: "runtime.message",
+      };
+      const existingTrace = Array.from(
+        { length: count },
+        (_, index): TraceEvent => ({
+          ...scope,
+          id: `existing-trace:${index + 1}`,
+          schemaVersion: "trace.v1",
+          sequence: index + 1,
+          occurredAt: T0,
+          recordedAt: T0,
+          payloadRef: null,
+        }),
+      );
+      const resource = await openRepository(T0, "accepted", existingTrace);
       try {
-        const trace = resource.repository.traceStore();
-        const scope = {
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          sessionId: SESSION_ID,
-          threadId: createThreadId("thread-conformance"),
-          runId: RUN_ID,
-          turnId: null,
-          parentEventId: null,
-          causationId: null,
-          correlationId: "correlation-paged-trace",
-          actorId: "agent-service",
-          dataClassification: "private" as const,
-          eventType: "runtime.message",
-        };
-        for (let sequence = 1; sequence <= count; sequence += 1) {
-          await trace.append({
-            ...scope,
-            id: `existing-trace:${sequence}`,
-            schemaVersion: "trace.v1",
-            sequence,
-            occurredAt: T0,
-            recordedAt: T0,
-            payloadRef: null,
-          });
-        }
         const adapters = createReferenceAdapterSet();
         const recorder = new SessionTraceRecorder({
-          trace,
+          trace: resource.repository.traceStore(),
           artifacts: resource.repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
             product: AUTHORITY,
             lease: LEASE,
@@ -360,6 +388,92 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
       await reopened.close();
       await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("arbitrates concurrent approval creation and decisions durably", async () => {
+      const resource = await openRepository(T0, "running");
+      const store = resource.repository.authorizationStore();
+      const action = {
+        id: "intent-concurrent",
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        capabilityRef: "read",
+        operation: "read",
+        resourceRef: "workspace:test",
+        dataClassification: "private" as const,
+        sideEffect: "none" as const,
+        estimatedCostMicros: 0,
+        frequency: { count: 1, intervalMs: null },
+        idempotencyKey: createIdempotencyKey("concurrent"),
+        reversible: true,
+        requestedAt: T0,
+      };
+      const request = {
+        id: "approval-concurrent-a",
+        revision: 1,
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: RUN_ID,
+        intentId: action.id,
+        intentSnapshot: action,
+        semanticSnapshotHash: actionIntentFingerprint(action),
+        status: "pending" as const,
+        deliveryState: "deliverable" as const,
+        requestedAt: T0,
+        expiresAt: T2,
+        decidedAt: null,
+        grantId: null,
+      };
+      const second = resource.repository;
+      try {
+        const results = await Promise.all([
+          store.createApproval(request),
+          second.authorizationStore().createApproval({ ...request, id: "approval-concurrent-b" }),
+        ]);
+        expect(results[0]).toEqual(results[1]);
+        expect(await store.listApprovals(OWNER_ID, AGENT_ID)).toHaveLength(1);
+        await expect(
+          store.createApproval({
+            ...request,
+            id: "approval-cross-thread",
+            intentSnapshot: { ...action, resourceRef: "workspace:other" },
+          }),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+        const decision = {
+          approvalRequestId: results[0].id,
+          expectedRevision: 1,
+          semanticSnapshotHash: request.semanticSnapshotHash,
+          resolution: "denied" as const,
+          decidedAt: T1,
+          grant: null,
+        };
+        const replies = await Promise.all([
+          store.resolveApproval(decision),
+          second.authorizationStore().resolveApproval(decision),
+        ]);
+        expect(replies[0]).toEqual(replies[1]);
+        expect(replies[0]).toMatchObject({ status: "denied", revision: 2 });
+        await expect(
+          store.resolveApproval({ ...decision, resolution: "expired" }),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+        await expect(store.getApproval(results[0].id)).resolves.toEqual(replies[0]);
+      } finally {
+        await resource.repository.close();
+      }
+      const reopened = await SqliteProductStateRepository.open({
+        stateRoot: resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      try {
+        expect(await reopened.authorizationStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([
+          expect.objectContaining({ status: "denied", revision: 2 }),
+        ]);
+      } finally {
+        await reopened.close();
+        await rm(resource.stateRoot, { recursive: true });
+      }
     });
 
     it("atomically resolves a Grant budget race, preserves idempotency, and fences Handle consumption", async () => {
@@ -709,6 +823,178 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       ).toBe(1);
       database.close();
       await rm(resource.stateRoot, { recursive: true });
+    });
+
+    it("[R2-L11] applies capability upgrades, their integrity column, Handle revocation and audit as one transaction", async () => {
+      const resource = await openRepository(T0, "running");
+      const capabilities = resource.repository.capabilityStore(OWNER_ID, AGENT_ID);
+      const refs = ["capability-upgrade-first", "capability-upgrade-second"] as const;
+      const declaration = (ref: string, digit: string) => ({
+        ref,
+        displayName: `Upgrade ${ref}`,
+        version: "1.0.0",
+        source: { type: "builtin" as const, locator: `builtin:${ref}` },
+        integrity: `sha256:${digit.repeat(64)}`,
+        operations: ["read"],
+        permissionRefs: [],
+        isolation: "worker" as const,
+      });
+      const registered = (ref: string) => ({
+        ref,
+        revision: 1,
+        lifecycle: "active" as const,
+        declaration: declaration(ref, "a"),
+        pendingDeclaration: null,
+        permissionExpansion: false,
+        runtimeQualification: null,
+        pendingUpdateAssessment: null,
+        rollbackDeclaration: null,
+        rollbackQualification: null,
+        lastVersionTransition: null,
+        approvalRefs: [],
+        discoveredAt: T0,
+        updatedAt: T0,
+      });
+      for (const ref of refs) {
+        await capabilities.create(registered(ref));
+        const handle: GovernedCapabilityExecutionHandle = {
+          ref: `handle-${ref}`,
+          handleVersion: "capability-handle.v2",
+          revision: 1,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          authorityFence: 1,
+          capabilityRef: ref,
+          capabilityVersion: "1.0.0",
+          authorization: { type: "grant", ref: `grant-${ref}` },
+          authorizationRef: `grant-${ref}`,
+          operations: ["read"],
+          operation: "read",
+          inputRefs: [],
+          delegatedContextRefs: [],
+          secretRefs: [],
+          maxDataClassification: "private",
+          maxUses: 1,
+          uses: 0,
+          maxTotalCostMicros: 0,
+          spentCostMicros: 0,
+          idempotencyKeys: [],
+          issuedAt: T0,
+          expiresAt: T2,
+          revokedAt: null,
+          workerEndedAt: null,
+        };
+        await capabilities.createExecutionHandle(handle);
+      }
+      const applyUpgrades = capabilities.applyCapabilityUpgrades;
+      if (!applyUpgrades) throw new Error("capability upgrades must be atomic");
+      const upgrade = (ref: string, expectedRevision: number, auditId: string) => ({
+        record: {
+          ...registered(ref),
+          revision: 2,
+          declaration: declaration(ref, "b"),
+          rollbackDeclaration: declaration(ref, "a"),
+          updatedAt: T1,
+        },
+        expectedRevision,
+        audit: {
+          id: auditId,
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          action: "owner.capability.upgrade",
+          targetRef: ref,
+          outcome: "completed" as const,
+          occurredAt: T1,
+        },
+      });
+      const [first, second] = refs;
+      const unchanged = async () => {
+        for (const ref of refs) {
+          await expect(capabilities.get(ref)).resolves.toEqual(registered(ref));
+          await expect(capabilities.getExecutionHandle(`handle-${ref}`)).resolves.toMatchObject({
+            revokedAt: null,
+          });
+        }
+      };
+      await expect(
+        applyUpgrades(
+          [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 2, "audit-upgrade-2")],
+          T1,
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+      await unchanged();
+      await expect(
+        applyUpgrades(
+          [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 1, "audit-upgrade-1")],
+          T1,
+        ),
+      ).rejects.toMatchObject({ code: PORT_ERROR_CODES.DUPLICATE });
+      await unchanged();
+      for (const audit of [
+        { targetRef: first },
+        { ownerId: createOwnerId("owner-other") },
+        { agentId: createAgentId("agent-other") },
+      ]) {
+        const misplaced = upgrade(second, 1, "audit-upgrade-2");
+        await expect(
+          applyUpgrades(
+            [
+              upgrade(first, 1, "audit-upgrade-1"),
+              { ...misplaced, audit: { ...misplaced.audit, ...audit } },
+            ],
+            T1,
+          ),
+        ).rejects.toMatchObject({ code: PORT_ERROR_CODES.INVALID_OPERATION });
+        await unchanged();
+      }
+      const applied = [upgrade(first, 1, "audit-upgrade-1"), upgrade(second, 1, "audit-upgrade-2")];
+      await expect(applyUpgrades(applied, T2)).resolves.toEqual(applied.map((item) => item.record));
+      for (const [index, ref] of refs.entries()) {
+        await expect(capabilities.get(ref)).resolves.toEqual(applied[index]?.record);
+        await expect(capabilities.getExecutionHandle(`handle-${ref}`)).resolves.toMatchObject({
+          revokedAt: T2,
+        });
+      }
+      await resource.repository.close();
+      const database = openQualifiedDatabase(path.join(resource.stateRoot, "product.sqlite"));
+      try {
+        expect(
+          database
+            .prepare(
+              "SELECT id, revision, integrity, status FROM capability_declarations WHERE id LIKE 'capability-upgrade-%' ORDER BY id",
+            )
+            .all(),
+        ).toEqual(
+          refs.map((id) => ({
+            id,
+            revision: 2,
+            integrity: `sha256:${"b".repeat(64)}`,
+            status: "active",
+          })),
+        );
+        expect(
+          database
+            .prepare(
+              "SELECT id, target_ref AS targetRef FROM audit_records WHERE action = 'owner.capability.upgrade' ORDER BY id",
+            )
+            .all(),
+        ).toEqual([
+          { id: "audit-upgrade-1", targetRef: first },
+          { id: "audit-upgrade-2", targetRef: second },
+        ]);
+        expect(
+          database
+            .prepare(
+              "SELECT status FROM capability_handles WHERE capability_id LIKE 'capability-upgrade-%'",
+            )
+            .pluck()
+            .all(),
+        ).toEqual(["revoked", "revoked"]);
+      } finally {
+        database.close();
+        await rm(resource.stateRoot, { recursive: true });
+      }
     });
 
     it("persists deletion state across a repository restart", async () => {
@@ -1151,7 +1437,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               afterCursor: "cursor-01",
             },
           })) {
-            // Exhaust the subscription so cursor validation runs.
           }
         })(),
       ).rejects.toMatchObject({ code: "PORT_NOT_FOUND" });

@@ -1,0 +1,24 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/automatic-action-review.unit.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/automatic-action-review.unit.test.ts [ packages/application/test/automatic-action-review.unit.test.ts ]
+Error: Cannot find module '../src/services/automatic-action-review.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/application/test/automatic-action-review.unit.test.ts
+ ❯ packages/application/test/automatic-action-review.unit.test.ts:4:1
+      2| import { createRunId } from '@himawari-agent/domain';
+      3| import type { AutomaticReviewRequest } from '../src/ports/automatic-ac…
+      4| import { parseAutomaticReviewDecision } from '../src/services/automati…
+       | ^
+      5|
+      6| const request: AutomaticReviewRequest = {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  20:08:25
+   Duration  165ms (transform 51ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)

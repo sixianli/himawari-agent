@@ -1,0 +1,325 @@
+
+> himawari-agent@0.0.0 format:check
+> biome format .
+
+docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+
+      1   1 │   // 仅验证静态审核原型，不是产品 E2E 或后台验收。
+      2     │ - const·{·chromium,·expect·}·=·require('@playwright/test');
+      3     │ - const·fs·=·require('node:fs/promises');
+      4     │ - const·path·=·require('node:path');
+      5     │ - const·{·pathToFileURL·}·=·require('node:url');
+          2 │ + const·{·chromium,·expect·}·=·require("@playwright/test");
+          3 │ + const·fs·=·require("node:fs/promises");
+          4 │ + const·path·=·require("node:path");
+          5 │ + const·{·pathToFileURL·}·=·require("node:url");
+      6   6 │
+      7   7 │   (async () => {
+      8     │ - ··const·browser·=·await·chromium.launch({·channel:·'chrome',·headless:·true·});
+          8 │ + ··const·browser·=·await·chromium.launch({·channel:·"chrome",·headless:·true·});
+      9   9 │     const page = await browser.newPage();
+     10  10 │     page.setDefaultTimeout(10000);
+     11     │ - ··const·errors·=·[],·requests·=·[],·checks·=·[];
+     12     │ - ··page.on('pageerror',·e·=>·errors.push(e.message));
+     13     │ - ··page.on('request',·r·=>·{·if·(/^https?:/.test(r.url()))·requests.push(r.url());·});
+         11 │ + ··const·errors·=·[],
+         12 │ + ····requests·=·[],
+         13 │ + ····checks·=·[];
+         14 │ + ··page.on("pageerror",·(e)·=>·errors.push(e.message));
+         15 │ + ··page.on("request",·(r)·=>·{
+         16 │ + ····if·(/^https?:/.test(r.url()))·requests.push(r.url());
+         17 │ + ··});
+     14  18 │     try {
+     15     │ - ····await·page.goto(pathToFileURL(path.join(__dirname,·'index.html')).href);
+     16     │ - ····const·frame·=·page.frameLocator('iframe');
+     17     │ - ····const·titles·=·{approval:'等待你的确认',queued:'等待保存秋雨东京.md',preparing:'正在准备执行',dispatched:'等待工具开始',running:'正在写入文件',verifying:'正在确认文件结果',cleaning:'文件已写入，正在结束操作',success:'已完成',not_executed:'未执行···文件未创建',denied:'未执行···你已拒绝',expired:'未执行···确认已过期',stopping:'正在停止',stopped:'已停止',cancelled:'已取消···未执行',reconciling:'正在核对文件结果',unresolved:'文件结果待确认',partial:'未完成···已产生部分修改',revoked:'文件已生成，后续处理已暂停',staging:'正在准备保存',conflict:'文件已被其他操作修改',isolated:'正在独立环境中检查',candidate:'修改已准备好',search:'正在搜索公开资料',not_published:'未保存···原文件保持不变'};
+         19 │ + ····await·page.goto(pathToFileURL(path.join(__dirname,·"index.html")).href);
+         20 │ + ····const·frame·=·page.frameLocator("iframe");
+         21 │ + ····const·titles·=·{
+         22 │ + ······approval:·"等待你的确认",
+         23 │ + ······queued:·"等待保存秋雨东京.md",
+         24 │ + ······preparing:·"正在准备执行",
+         25 │ + ······dispatched:·"等待工具开始",
+         26 │ + ······running:·"正在写入文件",
+         27 │ + ······verifying:·"正在确认文件结果",
+         28 │ + ······cleaning:·"文件已写入，正在结束操作",
+         29 │ + ······success:·"已完成",
+         30 │ + ······not_executed:·"未执行···文件未创建",
+         31 │ + ······denied:·"未执行···你已拒绝",
+         32 │ + ······expired:·"未执行···确认已过期",
+         33 │ + ······stopping:·"正在停止",
+         34 │ + ······stopped:·"已停止",
+         35 │ + ······cancelled:·"已取消···未执行",
+         36 │ + ······reconciling:·"正在核对文件结果",
+         37 │ + ······unresolved:·"文件结果待确认",
+         38 │ + ······partial:·"未完成···已产生部分修改",
+         39 │ + ······revoked:·"文件已生成，后续处理已暂停",
+         40 │ + ······staging:·"正在准备保存",
+         41 │ + ······conflict:·"文件已被其他操作修改",
+         42 │ + ······isolated:·"正在独立环境中检查",
+         43 │ + ······candidate:·"修改已准备好",
+         44 │ + ······search:·"正在搜索公开资料",
+         45 │ + ······not_published:·"未保存···原文件保持不变",
+         46 │ + ····};
+     18  47 │       async function select(scenario) {
+     19     │ - ······await·frame.locator('#scenario').selectOption(scenario);
+     20     │ - ······await·expect(frame.locator('#status·strong')).toHaveText(titles[scenario]);
+     21     │ - ······await·frame.locator('body').evaluate(()·=>·new·Promise(resolve·=>·requestAnimationFrame(()·=>·requestAnimationFrame(resolve))));
+         48 │ + ······await·frame.locator("#scenario").selectOption(scenario);
+         49 │ + ······await·expect(frame.locator("#status·strong")).toHaveText(titles[scenario]);
+         50 │ + ······await·frame
+         51 │ + ········.locator("body")
+         52 │ + ········.evaluate(
+         53 │ + ··········()·=>
+         54 │ + ············new·Promise((resolve)·=>·requestAnimationFrame(()·=>·requestAnimationFrame(resolve))),
+         55 │ + ········);
+     22  56 │       }
+     23     │ - ····await·expect(frame.locator('#scenario·option')).toHaveCount(24);
+     24     │ - ····const·scenarios·=·await·frame.locator('#scenario·option').evaluateAll(es·=>·es.map(e·=>·e.value));
+         57 │ + ····await·expect(frame.locator("#scenario·option")).toHaveCount(24);
+         58 │ + ····const·scenarios·=·await·frame
+         59 │ + ······.locator("#scenario·option")
+         60 │ + ······.evaluateAll((es)·=>·es.map((e)·=>·e.value));
+     25  61 │       for (const width of [320, 390, 1024, 1440]) {
+     26  62 │         await page.setViewportSize({ width, height: width < 700 ? 844 : 1000 });
+     27     │ - ······for·(const·theme·of·['dark',·'light'])·{
+     28     │ - ········const·current·=·await·frame.locator('html').getAttribute('class');
+     29     │ - ········if·((current·===·'light')·!==·(theme·===·'light'))·await·frame.locator('#theme').click();
+         63 │ + ······for·(const·theme·of·["dark",·"light"])·{
+         64 │ + ········const·current·=·await·frame.locator("html").getAttribute("class");
+         65 │ + ········if·((current·===·"light")·!==·(theme·===·"light"))·await·frame.locator("#theme").click();
+     30  66 │           for (const scenario of scenarios) {
+     31  67 │             await select(scenario);
+     32     │ - ··········await·expect(frame.locator('#status·strong')).not.toBeEmpty();
+     33     │ - ··········const·geometry·=·await·frame.locator('body').evaluate(el·=>·({
+     34     │ - ············viewport:·innerWidth,·scroll:·el.scrollWidth,
+     35     │ - ············transcript:·document.querySelector('.transcript').clientWidth,
+     36     │ - ············transcriptScroll:·document.querySelector('.transcript').scrollWidth,
+         68 │ + ··········await·expect(frame.locator("#status·strong")).not.toBeEmpty();
+         69 │ + ··········const·geometry·=·await·frame.locator("body").evaluate((el)·=>·({
+         70 │ + ············viewport:·innerWidth,
+         71 │ + ············scroll:·el.scrollWidth,
+         72 │ + ············transcript:·document.querySelector(".transcript").clientWidth,
+         73 │ + ············transcriptScroll:·document.querySelector(".transcript").scrollWidth,
+     37  74 │             }));
+     38  75 │             expect(geometry.scroll).toBeLessThanOrEqual(geometry.viewport);
+    ······· │
+     43  80 │         }
+     44  81 │       }
+     45     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     46     │ - ····await·frame.getByRole('button',·{·name:·'允许本次',·exact:·true·}).click();
+     47     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('preparing');
+     48     │ - ····await·select('queued');
+     49     │ - ····await·frame.getByRole('button',·{·name:·'停止等待',·exact:·true·}).click();
+     50     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('cancelled');
+     51     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     52     │ - ····await·frame.getByRole('button',·{·name:·'拒绝',·exact:·true·}).click();
+     53     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('denied');
+     54     │ - ····await·frame.locator('#scenario').selectOption('expired');
+     55     │ - ····await·frame.getByRole('button',·{·name:·'重新确认',·exact:·true·}).click();
+     56     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('approval');
+     57     │ - ····await·frame.locator('#scenario').selectOption('not_executed');
+     58     │ - ····await·frame.getByRole('button',·{·name:·'重试此操作',·exact:·true·}).click();
+     59     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('preparing');
+     60     │ - ····await·frame.locator('#scenario').selectOption('running');
+     61     │ - ····await·frame.getByRole('button',·{·name:·'停止本轮',·exact:·true·}).click();
+     62     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('stopping');
+     63     │ - ····await·expect(frame.locator('#stop')).toBeDisabled();
+     64     │ - ····await·frame.locator('#scenario').selectOption('unresolved');
+     65     │ - ····await·frame.getByRole('button',·{·name:·'检查状态',·exact:·true·}).click();
+     66     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('reconciling');
+     67     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     68     │ - ····await·frame.getByRole('textbox',·{·name:·'消息草稿'·}).fill('断线后仍保留的草稿');
+     69     │ - ····await·frame.locator('#offline').check();
+     70     │ - ····await·expect(frame.locator('#connection')).toBeVisible();
+     71     │ - ····await·expect(frame.getByRole('button',·{·name:·'允许本次',·exact:·true·})).toBeDisabled();
+     72     │ - ····await·expect(frame.locator('#stop')).toBeDisabled();
+     73     │ - ····await·frame.getByRole('button',·{·name:·'重新连接',·exact:·true·}).click();
+     74     │ - ····await·expect(frame.getByRole('textbox',·{·name:·'消息草稿'·})).toHaveValue('断线后仍保留的草稿');
+     75     │ - ····await·expect(frame.getByRole('button',·{·name:·'允许本次',·exact:·true·})).toBeEnabled();
+     76     │ - ····await·frame.locator('#scenario').selectOption('success');
+     77     │ - ····await·frame.locator('.file').click();
+     78     │ - ····await·expect(frame.locator('#dialog')).toBeVisible();
+     79     │ - ····await·page.keyboard.press('Escape');
+     80     │ - ····await·expect(frame.locator('#dialog')).not.toBeVisible();
+     81     │ - ····await·frame.locator('#scenario').selectOption('revoked');
+     82     │ - ····await·expect(frame.locator('.file')).toHaveCount(0);
+     83     │ - ····await·select('conflict');
+     84     │ - ····await·frame.getByRole('button',·{name:'查看差异',·exact:true}).click();
+     85     │ - ····await·expect(frame.locator('#dialog')).toContainText('应用前重新检查授权与目标版本');
+     86     │ - ····await·page.keyboard.press('Escape');
+     87     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('conflict');
+     88     │ - ····await·select('search');
+     89     │ - ····await·expect(frame.locator('.tool')).toHaveText('web_search');
+     90     │ - ····await·expect(frame.locator('.tool-path')).toHaveText('东京今日天气');
+     91     │ - ····for·(const·[scenario,·toolName,·target]·of·[['search','web_search','东京今日天气'],['isolated','bash','运行项目检查']])·{
+         82 │ + ····await·frame.locator("#scenario").selectOption("approval");
+         83 │ + ····await·frame.getByRole("button",·{·name:·"允许本次",·exact:·true·}).click();
+  181 more lines truncated
+
+
+docs/assets/control-center/2026-09-16-state-review/verify.cjs format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+
+      1   1 │   // 仅验证静态审核原型，不是产品 E2E 或后台验收。
+      2     │ - const·{·chromium,·expect·}·=·require('@playwright/test');
+      3     │ - const·fs·=·require('node:fs/promises');
+      4     │ - const·path·=·require('node:path');
+      5     │ - const·{·pathToFileURL·}·=·require('node:url');
+          2 │ + const·{·chromium,·expect·}·=·require("@playwright/test");
+          3 │ + const·fs·=·require("node:fs/promises");
+          4 │ + const·path·=·require("node:path");
+          5 │ + const·{·pathToFileURL·}·=·require("node:url");
+      6   6 │
+      7   7 │   (async () => {
+      8     │ - ··const·browser·=·await·chromium.launch({·channel:·'chrome',·headless:·true·});
+          8 │ + ··const·browser·=·await·chromium.launch({·channel:·"chrome",·headless:·true·});
+      9   9 │     const page = await browser.newPage();
+     10  10 │     page.setDefaultTimeout(10000);
+     11     │ - ··const·errors·=·[],·requests·=·[],·checks·=·[];
+     12     │ - ··page.on('pageerror',·e·=>·errors.push(e.message));
+     13     │ - ··page.on('request',·r·=>·{·if·(/^https?:/.test(r.url()))·requests.push(r.url());·});
+         11 │ + ··const·errors·=·[],
+         12 │ + ····requests·=·[],
+         13 │ + ····checks·=·[];
+         14 │ + ··page.on("pageerror",·(e)·=>·errors.push(e.message));
+         15 │ + ··page.on("request",·(r)·=>·{
+         16 │ + ····if·(/^https?:/.test(r.url()))·requests.push(r.url());
+         17 │ + ··});
+     14  18 │     try {
+     15     │ - ····await·page.goto(pathToFileURL(path.join(__dirname,·'index.html')).href);
+     16     │ - ····const·frame·=·page.frameLocator('iframe');
+     17     │ - ····const·titles·=·{approval:'等待你的确认',queued:'等待工作区可用',preparing:'正在准备执行',dispatched:'等待工具开始',running:'正在写入文件',verifying:'正在确认文件结果',cleaning:'文件已写入，正在结束操作',success:'已完成',not_executed:'未执行···文件未创建',denied:'未执行···你已拒绝',expired:'未执行···确认已过期',stopping:'正在停止',stopped:'已停止',cancelled:'已取消···未执行',reconciling:'正在核对文件结果',unresolved:'文件结果待确认',partial:'未完成···已产生部分修改',revoked:'文件已生成，后续处理已暂停'};
+         19 │ + ····await·page.goto(pathToFileURL(path.join(__dirname,·"index.html")).href);
+         20 │ + ····const·frame·=·page.frameLocator("iframe");
+         21 │ + ····const·titles·=·{
+         22 │ + ······approval:·"等待你的确认",
+         23 │ + ······queued:·"等待工作区可用",
+         24 │ + ······preparing:·"正在准备执行",
+         25 │ + ······dispatched:·"等待工具开始",
+         26 │ + ······running:·"正在写入文件",
+         27 │ + ······verifying:·"正在确认文件结果",
+         28 │ + ······cleaning:·"文件已写入，正在结束操作",
+         29 │ + ······success:·"已完成",
+         30 │ + ······not_executed:·"未执行···文件未创建",
+         31 │ + ······denied:·"未执行···你已拒绝",
+         32 │ + ······expired:·"未执行···确认已过期",
+         33 │ + ······stopping:·"正在停止",
+         34 │ + ······stopped:·"已停止",
+         35 │ + ······cancelled:·"已取消···未执行",
+         36 │ + ······reconciling:·"正在核对文件结果",
+         37 │ + ······unresolved:·"文件结果待确认",
+         38 │ + ······partial:·"未完成···已产生部分修改",
+         39 │ + ······revoked:·"文件已生成，后续处理已暂停",
+         40 │ + ····};
+     18  41 │       async function select(scenario) {
+     19     │ - ······await·frame.locator('#scenario').selectOption(scenario);
+     20     │ - ······await·expect(frame.locator('#status·strong')).toHaveText(titles[scenario]);
+     21     │ - ······await·frame.locator('body').evaluate(()·=>·new·Promise(resolve·=>·requestAnimationFrame(()·=>·requestAnimationFrame(resolve))));
+         42 │ + ······await·frame.locator("#scenario").selectOption(scenario);
+         43 │ + ······await·expect(frame.locator("#status·strong")).toHaveText(titles[scenario]);
+         44 │ + ······await·frame
+         45 │ + ········.locator("body")
+         46 │ + ········.evaluate(
+         47 │ + ··········()·=>
+         48 │ + ············new·Promise((resolve)·=>·requestAnimationFrame(()·=>·requestAnimationFrame(resolve))),
+         49 │ + ········);
+     22  50 │       }
+     23     │ - ····await·expect(frame.locator('#scenario·option')).toHaveCount(18);
+     24     │ - ····const·scenarios·=·await·frame.locator('#scenario·option').evaluateAll(es·=>·es.map(e·=>·e.value));
+         51 │ + ····await·expect(frame.locator("#scenario·option")).toHaveCount(18);
+         52 │ + ····const·scenarios·=·await·frame
+         53 │ + ······.locator("#scenario·option")
+         54 │ + ······.evaluateAll((es)·=>·es.map((e)·=>·e.value));
+     25  55 │       for (const width of [320, 390, 1024, 1440]) {
+     26  56 │         await page.setViewportSize({ width, height: width < 700 ? 844 : 1000 });
+     27     │ - ······for·(const·theme·of·['dark',·'light'])·{
+     28     │ - ········const·current·=·await·frame.locator('html').getAttribute('class');
+     29     │ - ········if·((current·===·'light')·!==·(theme·===·'light'))·await·frame.locator('#theme').click();
+         57 │ + ······for·(const·theme·of·["dark",·"light"])·{
+         58 │ + ········const·current·=·await·frame.locator("html").getAttribute("class");
+         59 │ + ········if·((current·===·"light")·!==·(theme·===·"light"))·await·frame.locator("#theme").click();
+     30  60 │           for (const scenario of scenarios) {
+     31  61 │             await select(scenario);
+     32     │ - ··········await·expect(frame.locator('#status·strong')).not.toBeEmpty();
+     33     │ - ··········const·geometry·=·await·frame.locator('body').evaluate(el·=>·({
+     34     │ - ············viewport:·innerWidth,·scroll:·el.scrollWidth,
+     35     │ - ············transcript:·document.querySelector('.transcript').clientWidth,
+     36     │ - ············transcriptScroll:·document.querySelector('.transcript').scrollWidth,
+         62 │ + ··········await·expect(frame.locator("#status·strong")).not.toBeEmpty();
+         63 │ + ··········const·geometry·=·await·frame.locator("body").evaluate((el)·=>·({
+         64 │ + ············viewport:·innerWidth,
+         65 │ + ············scroll:·el.scrollWidth,
+         66 │ + ············transcript:·document.querySelector(".transcript").clientWidth,
+         67 │ + ············transcriptScroll:·document.querySelector(".transcript").scrollWidth,
+     37  68 │             }));
+     38  69 │             expect(geometry.scroll).toBeLessThanOrEqual(geometry.viewport);
+    ······· │
+     43  74 │         }
+     44  75 │       }
+     45     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     46     │ - ····await·frame.getByRole('button',·{·name:·'允许本次',·exact:·true·}).click();
+     47     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('queued');
+     48     │ - ····await·frame.getByRole('button',·{·name:·'停止等待',·exact:·true·}).click();
+     49     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('cancelled');
+     50     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     51     │ - ····await·frame.getByRole('button',·{·name:·'拒绝',·exact:·true·}).click();
+     52     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('denied');
+     53     │ - ····await·frame.locator('#scenario').selectOption('expired');
+     54     │ - ····await·frame.getByRole('button',·{·name:·'重新确认',·exact:·true·}).click();
+     55     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('approval');
+     56     │ - ····await·frame.locator('#scenario').selectOption('not_executed');
+     57     │ - ····await·frame.getByRole('button',·{·name:·'重试此操作',·exact:·true·}).click();
+     58     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('queued');
+     59     │ - ····await·frame.locator('#scenario').selectOption('running');
+     60     │ - ····await·frame.getByRole('button',·{·name:·'停止本轮',·exact:·true·}).click();
+     61     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('stopping');
+     62     │ - ····await·expect(frame.locator('#stop')).toBeDisabled();
+     63     │ - ····await·frame.locator('#scenario').selectOption('unresolved');
+     64     │ - ····await·frame.getByRole('button',·{·name:·'检查状态',·exact:·true·}).click();
+     65     │ - ····await·expect(frame.locator('#scenario')).toHaveValue('reconciling');
+     66     │ - ····await·frame.locator('#scenario').selectOption('approval');
+     67     │ - ····await·frame.getByRole('textbox',·{·name:·'消息草稿'·}).fill('断线后仍保留的草稿');
+     68     │ - ····await·frame.locator('#offline').check();
+     69     │ - ····await·expect(frame.locator('#connection')).toBeVisible();
+     70     │ - ····await·expect(frame.getByRole('button',·{·name:·'允许本次',·exact:·true·})).toBeDisabled();
+     71     │ - ····await·expect(frame.locator('#stop')).toBeDisabled();
+     72     │ - ····await·frame.getByRole('button',·{·name:·'重新连接',·exact:·true·}).click();
+     73     │ - ····await·expect(frame.getByRole('textbox',·{·name:·'消息草稿'·})).toHaveValue('断线后仍保留的草稿');
+     74     │ - ····await·expect(frame.getByRole('button',·{·name:·'允许本次',·exact:·true·})).toBeEnabled();
+     75     │ - ····await·frame.locator('#scenario').selectOption('success');
+     76     │ - ····await·frame.locator('.file').click();
+     77     │ - ····await·expect(frame.locator('#dialog')).toBeVisible();
+     78     │ - ····await·page.keyboard.press('Escape');
+     79     │ - ····await·expect(frame.locator('#dialog')).not.toBeVisible();
+     80     │ - ····await·frame.locator('#scenario').selectOption('revoked');
+     81     │ - ····await·expect(frame.locator('.file')).toHaveCount(0);
+     82     │ - ····await·frame.getByRole('textbox',·{·name:·'消息草稿'·}).fill('');
+     83     │ - ····await·frame.locator('#theme').click();·//·上面循环最后是浅色，截图改回深色。
+     84     │ - ····await·select('unresolved');
+     85     │ - ····await·page.screenshot({·path:·path.join(__dirname,·'desktop-unresolved.png'),·fullPage:·true·});
+         76 │ + ····await·frame.locator("#scenario").selectOption("approval");
+         77 │ + ····await·frame.getByRole("button",·{·name:·"允许本次",·exact:·true·}).click();
+         78 │ + ····await·expect(frame.locator("#scenario")).toHaveValue("queued");
+         79 │ + ····await·frame.getByRole("button",·{·name:·"停止等待",·exact:·true·}).click();
+         80 │ + ····await·expect(frame.locator("#scenario")).toHaveValue("cancelled");
+         81 │ + ····await·frame.locator("#scenario").selectOption("approval");
+         82 │ + ····await·frame.getByRole("button",·{·name:·"拒绝",·exact:·true·}).click();
+         83 │ + ····await·expect(frame.locator("#scenario")).toHaveValue("denied");
+         84 │ + ····await·frame.locator("#scenario").selectOption("expired");
+         85 │ + ····await·frame.getByRole("button",·{·name:·"重新确认",·exact:·true·}).click();
+         86 │ + ····await·expect(frame.locator("#scenario")).toHaveValue("approval");
+         87 │ + ····await·frame.locator("#scenario").selectOption("not_executed");
+         88 │ + ····await·frame.getByRole("button",·{·name:·"重试此操作",·exact:·true·}).click();
+         89 │ + ····await·expect(frame.locator("#scenario")).toHaveValue("queued");
+  114 more lines truncated
+
+
+Checked 974 files in 1525ms. No fixes applied.
+Found 2 errors.
+format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

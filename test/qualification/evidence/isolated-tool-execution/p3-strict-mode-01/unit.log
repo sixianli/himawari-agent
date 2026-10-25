@@ -1,0 +1,143 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'not_dispatched' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'stopped' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'failed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'failed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'completed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > localizes resource facts without requiring a new wire phase or inferring release 2ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > explains what a stop without strict confirmation leaves running 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > merges replayed out-of-order observations without erasing tool input 3ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > keeps independent tool calls and message snapshots 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > restores elapsed work and approval wait from historical boundaries 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > stops clocks at the persisted terminal update and marks missing clocks unknown 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > shows only known failure messages from replayed execution records 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > excludes approval wait from tool time and keeps the first completed message boundary 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > distinguishes actual thinking, tools, waiting and a stale connection 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > omits successful textless messages but preserves failures and actual text 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > keeps the model request time and arguments separate from tool execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > uses only execution-host timing, never time spent requesting or awaiting approval 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > pairs observed thinking boundaries and keeps legacy observations untimed 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > uses durable admission and unresolved markers independently from Pi tool starts 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > shows the recorded automatic-review source and only complete review intervals 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > prioritizes live review without reviving it after confirmation, cancellation or a later model turn 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > ignores unavailable or malformed review observations 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal cancelled tool in preparation when its result is missing 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal failed tool in preparation when its result is missing 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal completed tool in preparation when its result is missing 0ms
+ ✓ |unit| apps/control-center/test/i18n-runtime.unit.test.ts > control-center i18n runtime > keeps bootstrap loading labels aligned with each locale catalog 42ms
+ ✓ |unit| apps/control-center/test/i18n-runtime.unit.test.ts > control-center i18n runtime > ships the same complete key set and valid ICU messages for all three locales 106ms
+ ✓ |unit| apps/control-center/test/i18n-runtime.unit.test.ts > control-center i18n runtime > executes plural branches and locale-aware number/date formatting 7ms
+ ✓ |unit| apps/control-center/test/i18n-runtime.unit.test.ts > control-center i18n runtime > initializes from browser preference, persists only locally and rejects invalid locale 1ms
+ ✓ |unit| apps/control-center/test/i18n-runtime.unit.test.ts > control-center i18n runtime > expands visible text for pseudo-localization without corrupting ICU arguments 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (WORKER_DEADLINE_EXCEEDED) 10ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (SANDBOX_COMMAND_EFFECT_UNVERIFIED) 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (SANDBOX_STRICT_MODE_UNAVAILABLE) 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (/private/host/token) 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows resource recovery while preserving the successful tool effect 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > ends cancelled cleanup only with complete release evidence, never an empty inventory 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > says a stop was not strictly confirmed when a process-group release ended the Run 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows a deleted execution record without calling the step successful or blocking the Run 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not hide an unrendered resource behind a completed Run or a last successful tool 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not advertise execution when resource observation contradicts a terminal Run 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > keeps an unrendered internal result unknown after every resource has released 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows a cancelled queue as not dispatched only with positive queue and tool evidence 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not claim resource shutdown from a cancelled Run even when every tool returned 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > keeps concurrent unresolved operations when the last tool succeeds and the Run completes 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run completed 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run failed 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run cancelled 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > never treats intent or model tool call as proof that the Worker started 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > preserves authoritative non-dispatch and unknown markers 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > uses actual parallel interval union and no missing or backwards interval 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > changes revision for Run and evidence changes but not rereads or unrelated clock time 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > only requests human attention for an available human action 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects resource changes across the Trace read even when the Run revision is unchanged 2ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > reads all pages so an earlier unresolved tool cannot be hidden by a later success 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > projects a safe product failure reason to the tool row without exposing raw diagnostics 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects a Run revision change instead of mixing old observations with new controls 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects a stalled cursor and a history beyond the finite read budget 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > does not report an unreadable tool result as an empty successful Run 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > passes the active cancellation signal into preparation before Worker dispatch 14ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > classifies pre-dispatch file version changes for read and replays without dispatch 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > classifies pre-dispatch file version changes for write and replays without dispatch 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports a tool refused by strict mode as not dispatched and unavailable in strict mode 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > binds a protected recovery checkpoint before dispatch and preserves it on replay 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports admission refusal as not dispatched and retains a protected diagnostic 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_HANDLE_REVOKED) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_NOT_AUTHORITATIVE) 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_NOT_FOUND) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never sends a late execute after delegation outlives the caller deadline 11ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > intersects configured resources with the qualified capability before dispatch 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports a tightened Worker ceiling as a distinct pre-dispatch reason 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > offers a path request without a Handle and never dispatches it before authorization exists 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > does not mistake model-provided approval fields for execution authority 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > caps Worker execution at the parent Run deadline and rejects expired calls 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses the delegated Worker and reads only an observed result; restart replays without dispatch 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > warns that a failed command may have changed the workspace 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses worker end timing only for settled effects (true) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses worker end timing only for settled effects (false) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rejects expanded input, cross-Run and revoked handles without dispatch 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > admits at most one dispatch when independent executors race 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (unobserved) or resends uncertain work 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (wrong-scope) or resends uncertain work 25ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (hang) or resends uncertain work 26ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (revoke) or resends uncertain work 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > requests stop when authority is withdrawn during a hung event stream: requested 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > requests stop when authority is withdrawn during a hung event stream: unconfirmed 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps an unverified cancellation unknown and never resends it 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: succeeded 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: failed 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: null 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: undefined 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > denies disclosure of a previously successful result after revocation 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rechecks the live receipt before replaying a saved successful result 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > does not disclose output when the Handle is revoked during decryption 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rejects reuse of a call identity with changed arguments 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > exposes management as Pi extension definitions and sends no Worker request for status 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: true 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: false 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: null 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects duplicate exposure references before looking up capabilities 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle ownerId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle agentId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle runId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle revokedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle workerEndedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle expiresAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle issuedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle issuedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle expiresAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle authorityFence changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle capabilityVersion changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle handleVersion changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when the declaration is missing 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects invalid or elapsed execution deadline invalid 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects invalid or elapsed execution deadline 2026-09-06T00:00:00.000Z 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":3} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":"other"} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":"input:tools","extra":true} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects a higher data classification without creating execution artifacts 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not turn authority storage failures into an ordinary permission refusal 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > hides the built-in file reader when disabled 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools"} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools","inputRef":3} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"unexposed","inputRef":"input:tools"} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools","inputRef":"input:tools","extra":true} 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses to promote a foreground Handle into a managed task 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > recovers a persisted sandbox handoff after interruption without executing again 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > delivers a later verified result without resending an unknown operation (success) 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > delivers a later verified result without resending an unknown operation (cancelled) 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > binds a recovered file output to its verified delivery receipt (true) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > binds a recovered file output to its verified delivery receipt (false) 0ms
+
+ Test Files  4 passed (4)
+      Tests  135 passed (135)
+   Start at  02:09:18
+   Duration  1.13s (transform 1.23s, setup 0ms, import 1.55s, tests 311ms, environment 0ms)

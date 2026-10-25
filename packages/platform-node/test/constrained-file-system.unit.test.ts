@@ -1,12 +1,23 @@
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import * as fsPromises from "node:fs/promises";
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   FileOperationService,
-  HostFileReadService,
   type HostDirectoryGrant,
+  HostFileReadService,
   type HostFileStatePort,
   type HostTrashRecord,
   type PermanentDeletionPlan,
@@ -17,7 +28,7 @@ import { ConstrainedHostFileSystem } from "../src/index.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...original, open: vi.fn(original.open) };
+  return { ...original, open: vi.fn(original.open), unlink: vi.fn(original.unlink) };
 });
 
 const roots: string[] = [];
@@ -138,6 +149,294 @@ class CrashAfterEffectPlatform extends ConstrainedHostFileSystem {
 }
 
 describe("ConstrainedHostFileSystem", () => {
+  it("keeps different files simultaneously prepared and exposes only complete published versions", async () => {
+    const { root, grant, platform } = await fixture();
+    const old = "old".repeat(65536),
+      next = "new".repeat(65536);
+    await writeFile(path.join(root, "a.txt"), old);
+    await writeFile(path.join(root, "b.txt"), old);
+    const a = await platform.inspect(grant, "a.txt"),
+      b = await platform.inspect(grant, "b.txt");
+    if (!a || !b) throw new Error("fixture identities missing");
+    let release!: () => void, ready!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    let inFlight = 0;
+    const hooks = {
+      beforePublish: async () => {
+        if (++inFlight === 2) ready();
+        await barrier;
+      },
+    };
+    const writes = [
+      platform.replaceAtomic(grant, "a.txt", a, Buffer.from(next), Buffer.from(old), hooks),
+      platform.replaceAtomic(grant, "b.txt", b, Buffer.from(next), Buffer.from(old), hooks),
+    ];
+    try {
+      await entered;
+      expect(inFlight).toBe(2);
+      expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(old);
+      expect(await readFile(path.join(root, "b.txt"), "utf8")).toBe(old);
+    } finally {
+      release();
+    }
+    let done = false;
+    const completed = Promise.all(writes).finally(() => {
+      done = true;
+    });
+    while (!done) {
+      const observed = await readFile(path.join(root, "a.txt"), "utf8");
+      expect([old, next]).toContain(observed);
+    }
+    await completed;
+    expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(next);
+    expect(await readFile(path.join(root, "b.txt"), "utf8")).toBe(next);
+    await expect(
+      platform.replaceAtomic(grant, "a.txt", a, Buffer.from("stale"), Buffer.from(old)),
+    ).rejects.toThrow("IDENTITY_CHANGED");
+    expect(await readFile(path.join(root, "a.txt"), "utf8")).toBe(next);
+  });
+
+  it("freezes create content before asynchronous filesystem checks", async () => {
+    const { root, grant, platform } = await fixture();
+    const bytes = new TextEncoder().encode("approved");
+    const pending = platform.createExclusive(grant, "frozen.txt", bytes);
+    bytes.fill(120);
+    await pending;
+    expect(await readFile(path.join(root, "frozen.txt"), "utf8")).toBe("approved");
+  });
+
+  it("recovers its private link after interruption between publish and staging cleanup", async () => {
+    const { root, grant, service, state } = await fixture();
+    const candidateBytes = new TextEncoder().encode("complete published bytes");
+    const operation = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "create",
+      relativePath: "interrupted.txt",
+      candidatePayloadRef: "payload:interrupted",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    const input = {
+      operationId: operation.id,
+      expectedHash: operation.canonicalHash,
+      candidateBytes,
+    };
+    const originalUnlink = (
+      await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+    ).unlink;
+    const unlink = vi.spyOn(fsPromises, "unlink").mockImplementation(async (filename) => {
+      if (String(filename).includes("staged-")) throw new Error("fixture crash before unlink");
+      return originalUnlink(filename);
+    });
+    try {
+      await expect(service.executeWrite(input)).rejects.toThrow("fixture crash before unlink");
+    } finally {
+      unlink.mockRestore();
+    }
+    const saved = await state.readPrepared(operation.id);
+    expect(saved?.publication).toBeDefined();
+    if (!saved?.publication) throw new Error("Missing persisted publication evidence");
+    expect((await stat(path.join(root, "interrupted.txt"))).nlink).toBe(2);
+    expect(await readFile(path.join(root, "interrupted.txt"), "utf8")).toBe(
+      "complete published bytes",
+    );
+    expect((await service.executeWrite(input)).status).toBe("verified");
+    expect((await stat(path.join(root, "interrupted.txt"))).nlink).toBe(1);
+    await expect(readFile(saved.publication.identity.canonicalPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("verifies its own completed publication after grant revocation without writing again", async () => {
+    const platform = new CrashAfterEffectPlatform();
+    const { root, grant, service, state } = await fixture(platform);
+    const candidateBytes = new TextEncoder().encode("saved before revoke");
+    const operation = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "create",
+      relativePath: "saved.txt",
+      candidatePayloadRef: "payload:save",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    platform.arm("create");
+    const input = {
+      operationId: operation.id,
+      expectedHash: operation.canonicalHash,
+      candidateBytes,
+    };
+    await expect(service.executeWrite(input)).rejects.toThrow("fixture crash after create");
+    const before = await stat(path.join(root, "saved.txt"));
+    state.grants.set(grant.id, { ...grant, revision: 2, revokedAt: "2026-08-28T20:00:00.000Z" });
+    expect((await service.executeWrite(input)).status).toBe("verified");
+    expect((await stat(path.join(root, "saved.txt"))).ino).toBe(before.ino);
+  });
+
+  it("preserves a competing target created after staging without replacing it", async () => {
+    const { root, grant, platform } = await fixture();
+    await expect(
+      platform.createExclusive(grant, "winner.txt", new TextEncoder().encode("candidate"), {
+        async beforePublish() {
+          await writeFile(path.join(root, "winner.txt"), "other writer");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(path.join(root, "winner.txt"), "utf8")).toBe("other writer");
+  });
+
+  it("retains the staged candidate and leaves the target unchanged when authority is withdrawn", async () => {
+    const { root, grant, platform } = await fixture();
+    let publication: import("@himawari-agent/application").HostFilePublication | undefined;
+    await expect(
+      platform.createExclusive(grant, "cancelled.txt", new TextEncoder().encode("candidate"), {
+        async beforePublish(value) {
+          publication = value;
+        },
+        async assertCurrentAuthority() {
+          throw new Error("fixture cancelled");
+        },
+      }),
+    ).rejects.toThrow("fixture cancelled");
+    await expect(readFile(path.join(root, "cancelled.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(publication).toBeDefined();
+    if (!publication) throw new Error("Missing staged publication evidence");
+    expect(await readFile(publication.identity.canonicalPath, "utf8")).toBe("candidate");
+  });
+
+  it("does not attribute another writer's identical file to an interrupted operation", async () => {
+    class InterruptedCreate extends ConstrainedHostFileSystem {
+      override async createExclusive(
+        ..._input: Parameters<ConstrainedHostFileSystem["createExclusive"]>
+      ): Promise<import("@himawari-agent/application").HostFileIdentity> {
+        throw new Error("fixture before effect");
+      }
+    }
+    const { root, service, grant, state } = await fixture(new InterruptedCreate());
+    const candidateBytes = new TextEncoder().encode("identical content");
+    const prepared = await service.prepareWrite({
+      grantId: grant.id,
+      operation: "create",
+      relativePath: "note.txt",
+      candidatePayloadRef: "payload:candidate",
+      candidateBytes,
+      redactedDiffRef: null,
+      expiresAt: "2026-08-28T20:30:00.000Z",
+    });
+    const input = {
+      operationId: prepared.id,
+      expectedHash: prepared.canonicalHash,
+      candidateBytes,
+    };
+    await expect(service.executeWrite(input)).rejects.toThrow("fixture before effect");
+    await writeFile(path.join(root, "note.txt"), candidateBytes);
+    await expect(service.executeWrite(input)).rejects.toThrow();
+    expect((await state.readPrepared(prepared.id))?.status).not.toBe("verified");
+    expect(await readFile(path.join(root, "note.txt"), "utf8")).toBe("identical content");
+  });
+
+  it("preserves ordinary permission bits when atomically replacing a file", async () => {
+    const { root, platform, grant } = await fixture();
+    await writeFile(path.join(root, "script.sh"), "old");
+    await chmod(path.join(root, "script.sh"), 0o750);
+    const expected = await platform.inspect(grant, "script.sh");
+    if (!expected) throw new Error("fixture missing");
+    await platform.replaceAtomic(
+      grant,
+      "script.sh",
+      expected,
+      new TextEncoder().encode("new"),
+      new TextEncoder().encode("old"),
+    );
+    expect((await stat(path.join(root, "script.sh"))).mode & 0o777).toBe(0o750);
+  });
+
+  it("never exposes partial content at a newly created target", async () => {
+    const { root, grant, platform } = await fixture();
+    const originalOpen = (
+      await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+    ).open;
+    let observeWrite!: () => void;
+    let continueWrite!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      observeWrite = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      continueWrite = resolve;
+    });
+    const open = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "writeFile")
+            return async (bytes: Uint8Array) => {
+              await target.write(bytes.subarray(0, 2), 0, 2, 0);
+              observeWrite();
+              await resume;
+              await target.write(bytes, 0, bytes.length, 0);
+            };
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
+    const create = platform.createExclusive(
+      grant,
+      "complete.txt",
+      new TextEncoder().encode("complete"),
+    );
+    try {
+      await writing;
+      await expect(readFile(path.join(root, "complete.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      continueWrite();
+      await create;
+      open.mockRestore();
+    }
+    expect(await readFile(path.join(root, "complete.txt"), "utf8")).toBe("complete");
+  });
+
+  it("leaves no partial final file when preparing a create fails", async () => {
+    const { root, grant, platform } = await fixture();
+    const originalOpen = (
+      await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+    ).open;
+    const open = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await originalOpen(...args);
+      return new Proxy(handle, {
+        get(target, property) {
+          if (property === "writeFile")
+            return async (bytes: Uint8Array) => {
+              await target.write(bytes.subarray(0, 2), 0, 2, 0);
+              throw new Error("fixture disk write failed");
+            };
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
+    try {
+      await expect(
+        platform.createExclusive(grant, "complete.txt", new TextEncoder().encode("complete")),
+      ).rejects.toThrow("fixture disk write failed");
+    } finally {
+      open.mockRestore();
+    }
+    await expect(readFile(path.join(root, "complete.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("preserves same-inode edits made after write preview", async () => {
     const { root, service, grant, state } = await fixture();
     await writeFile(path.join(root, "note.txt"), "original");
@@ -695,3 +994,45 @@ describe("host file read target resolution", () => {
     await expect(resolver(f).resolve("file.txt")).rejects.toThrow("HOST_ROOT_IDENTITY_CHANGED");
   });
 });
+
+it.each(["current_path", "opened_version"] as const)(
+  "preserves the chosen read contract during atomic replacement: %s",
+  async (consistency) => {
+    const { grant, platform } = await fixture();
+    const target = path.join(grant.displayPath, "atomic-read.txt");
+    await writeFile(target, "complete old version");
+    const expected = await platform.inspect(grant, "atomic-read.txt");
+    if (!expected) throw new Error("fixture file missing");
+    const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    let replaced = false;
+    const openSpy = vi.spyOn(fsPromises, "open").mockImplementation(async (...args) => {
+      const handle = await original.open(...args);
+      if (String(args[0]) === expected.canonicalPath && !replaced) {
+        const read = handle.read.bind(handle);
+        vi.spyOn(handle, "read").mockImplementation(async (...values) => {
+          if (!replaced) {
+            replaced = true;
+            await platform.replaceAtomic(
+              grant,
+              "atomic-read.txt",
+              expected,
+              new TextEncoder().encode("complete new version"),
+              new TextEncoder().encode("complete old version"),
+            );
+          }
+          return read(...values);
+        });
+      }
+      return handle;
+    });
+    try {
+      const reading = platform.read(grant, "atomic-read.txt", 100, expected, consistency);
+      if (consistency === "opened_version")
+        expect(new TextDecoder().decode(await reading)).toBe("complete old version");
+      else await expect(reading).rejects.toThrow("HOST_FILE_CONTENT_CHANGED");
+      expect(await readFile(target, "utf8")).toBe("complete new version");
+    } finally {
+      openSpy.mockRestore();
+    }
+  },
+);

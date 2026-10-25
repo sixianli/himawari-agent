@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,9 +10,6 @@ import type { ControlCenterRuntimeConfiguration } from "../src/gateway-client.js
 import { messages } from "../src/i18n/resources/zh-CN.js";
 import { loadMessageCatalog } from "../src/i18n/runtime.js";
 
-// Parent-app contracts: child query/render behavior is covered independently by
-// component tests; these seams expose whether bootstrap and privacy state reach
-// the correct child. SSE synchronizers, routing, storage and shell remain real.
 const boundary = vi.hoisted(() => ({
   load: vi.fn(),
   refresh: vi.fn(),
@@ -19,7 +17,6 @@ const boundary = vi.hoisted(() => ({
   client: vi.fn(),
   threads: vi.fn(),
   governance: vi.fn(),
-  operations: vi.fn(),
 }));
 vi.mock("../src/gateway-client.js", async (original) => ({
   ...(await original<object>()),
@@ -35,9 +32,6 @@ vi.mock("../src/gateway-client.js", async (original) => ({
 vi.mock("../src/thread-control-center.js", () => ({ useThreadControlCenter: boundary.threads }));
 vi.mock("../src/governance-control-center.js", () => ({
   useGovernanceControlCenter: boundary.governance,
-}));
-vi.mock("../src/operations-control-center.js", () => ({
-  useOperationsControlCenter: boundary.operations,
 }));
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner-app",
@@ -83,6 +77,13 @@ async function click(label: string) {
   await act(async () => button.click());
 }
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("EventSource", Events);
   vi.stubGlobal("fetch", fetcher);
@@ -102,7 +103,6 @@ beforeEach(() => {
   });
   boundary.threads.mockReset().mockImplementation(() => child("threads"));
   boundary.governance.mockReset().mockImplementation(() => child("governance"));
-  boundary.operations.mockReset().mockImplementation(() => child("operations"));
   fetcher
     .mockReset()
     .mockImplementation(async () => new Response(JSON.stringify({ method: "cloudflare-access" })));
@@ -134,11 +134,14 @@ describe("control center application bootstrap and interaction", () => {
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);
     await act(async () => window.dispatchEvent(new Event("online")));
     expect(Events.instances).toHaveLength(4);
-    const previousSignal = boundary.threads.mock.lastCall?.[0].refreshSignal;
+    const previous = boundary.threads.mock.lastCall?.[0];
     await act(async () =>
       window.dispatchEvent(new StorageEvent("storage", { key: THREAD_CURSOR_STORAGE_KEY })),
     );
-    expect(boundary.threads.mock.lastCall?.[0].refreshSignal).toBe(previousSignal + 1);
+    const latest = boundary.threads.mock.lastCall?.[0];
+    expect(latest.refreshSignal).toBe(previous.refreshSignal);
+    expect(latest.threadEventSignal).toBe(previous.threadEventSignal + 1);
+    expect(latest.threadEvents?.current).toEqual([null]);
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => root.render(null));
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);
@@ -225,7 +228,8 @@ describe("control center application bootstrap and interaction", () => {
   });
   it("persists interface language and appearance through the actual shell controls", async () => {
     await render();
-    const locale = container.querySelector<HTMLSelectElement>(
+    await click(messages["settings.title"]);
+    const locale = document.querySelector<HTMLSelectElement>(
       'select[aria-label="' + messages["locale.label"] + '"]',
     );
     if (!locale) throw new Error("missing language selector");
@@ -237,20 +241,30 @@ describe("control center application bootstrap and interaction", () => {
     await act(async () => {
       await loadMessageCatalog("en");
     });
-    await click("☼ Light");
+    expect(document.querySelector<HTMLDialogElement>("dialog")?.open).toBe(true);
+    const theme = document.querySelector<HTMLSelectElement>('select[aria-label="Theme"]');
+    if (!theme) throw new Error("Missing theme setting");
+    await act(async () => {
+      theme.value = "light";
+      theme.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(new ControlCenterBrowserStorage(window.localStorage).readPreferences().theme).toBe(
       "light",
     );
   });
-  it.each(["approvals", "tasks", "settings", "memory", "sessions"])(
-    "routes installed /%s to the correct feature model",
+  it("routes installed /approvals to the governance model", async () => {
+    window.history.replaceState(null, "", "/approvals");
+    await render();
+    expect(text()).toContain("governance content");
+    expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
+  });
+  it.each(["tasks", "settings", "memory", "sessions"])(
+    "explains that /%s has no installed page",
     async (surface) => {
       window.history.replaceState(null, "", `/${surface}`);
       await render();
-      expect(text()).toContain(
-        surface === "approvals" ? "governance content" : "operations content",
-      );
+      expect(text()).toContain(messages["surface.notInstalled.title"]);
       expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
     },
   );
@@ -259,8 +273,7 @@ describe("control center application bootstrap and interaction", () => {
     boundary.load.mockResolvedValue({ ...configuration, installedGatewayV2Operations: [] });
     await render();
     expect(text()).toContain(messages["surface.notInstalled.title"]);
-    expect(text()).not.toContain("operations content");
-    expect(boundary.operations.mock.lastCall?.[0].active).toBe(false);
+    expect(boundary.governance.mock.lastCall?.[0].active).toBe(false);
   });
   it("ignores late bootstrap resolution after the app is unmounted", async () => {
     let resolve!: (value: ControlCenterRuntimeConfiguration) => void;

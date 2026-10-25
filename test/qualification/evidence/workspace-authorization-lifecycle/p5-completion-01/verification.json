@@ -1,0 +1,141 @@
+{
+  "run": "p5-completion-01",
+  "plan": "docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md",
+  "spec": "docs/execution/specs/2026-09-16-workspace-authorization-lifecycle-design.md",
+  "scope": "P5 automatic review: production composition, alternative re-request path, result branches, waiting/race conditions, enablement proposal",
+  "environment": {
+    "platform": "macOS (local)",
+    "model": "controlled test double",
+    "sqlite": "real product state repository",
+    "realProviderCall": false,
+    "productionEnabled": false
+  },
+  "targeted": [
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/production-automatic-review.unit.test.ts",
+      "files": 1,
+      "tests": 3,
+      "failed": 0,
+      "covers": [
+        "unconfigured composition returns undefined",
+        "delegated request reviewed once with protected minimal input and one bounded Grant",
+        "alternative returns DENY with protected suggestionRef and no Grant/Approval"
+      ]
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project integration test/integration/automatic-action-review.test.ts test/integration/authorization-capability-governance.test.ts",
+      "files": 2,
+      "tests": 73,
+      "failed": 0,
+      "covers": [
+        "durable review arbitration, late rejection, alternative suggestionRef",
+        "policy entry: hard deny, existing approval, zero review when covered, alternative re-request, timeout, cancellation"
+      ]
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/application/test/automatic-action-review.unit.test.ts packages/application/test/model-action-reviewer.unit.test.ts packages/application/test/runtime-tool-authorization.unit.test.ts",
+      "files": 3,
+      "tests": 43,
+      "failed": 0,
+      "covers": [
+        "response binding and prompt-injection text retained as data only",
+        "model reviewer identity, disclosure, output bounds and cancellation",
+        "alternative maps to a failed tool result that requires a new request"
+      ]
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project unit packages/platform-node/test/startup-configuration.unit.test.ts",
+      "files": 1,
+      "tests": 37,
+      "failed": 0,
+      "covers": [
+        "strict runPolicy.automaticReview parsing, bounds, unknown fields, generation-model requirement"
+      ]
+    },
+    {
+      "command": "npx vitest run --config vitest.workspace.ts --project node-services apps/agent-service/test/service-orchestration.unit.test.ts apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "files": 2,
+      "tests": 98,
+      "failed": 0,
+      "covers": [
+        "production startup gating and review pass-through to the original authority entry"
+      ]
+    }
+  ],
+  "suites": [
+    {
+      "project": "node-services",
+      "failed": 0
+    },
+    {
+      "project": "browser",
+      "failed": 0
+    },
+    {
+      "project": "admin-cli",
+      "failed": 0
+    },
+    {
+      "project": "tooling",
+      "failed": 11,
+      "filesFailed": 4,
+      "preexisting": true
+    }
+  ],
+  "preexistingEnvironmentFailures": [
+    "test/integration/installable-node-services.test.ts requires HIMAWARI_TEST_ARTIFACT/HIMAWARI_TEST_CONTEXT",
+    "test/integration/production-http-composition-process.test.ts requires HIMAWARI_TEST_ARTIFACT/HIMAWARI_TEST_CONTEXT",
+    "test/tooling 4 files/11 items require .ci-output/tools/installation.json"
+  ],
+  "preexistingFailureEvidence": "Reproduced with the tracked working tree stashed (git stash push -m p5-wip3), so these failures are independent of this batch.",
+  "notVerified": [
+    "real review model/provider identity and recipient",
+    "real token usage and cost",
+    "real disclosure destination review",
+    "production enablement and deployment",
+    "full page-level joint acceptance (P6)"
+  ],
+  "standardLocalCi": {
+    "command": "node scripts/ci/local.mjs --check test --tools .ci-output/tools --output .ci-output/p5-final",
+    "status": "local_passed",
+    "counts": {
+      "files": 258,
+      "executed": 4139,
+      "passed": 4139,
+      "failed": 0,
+      "skipped": 0
+    },
+    "projects": {
+      "unit": {
+        "files": 134,
+        "executed": 1902,
+        "failed": 0
+      },
+      "contracts": {
+        "files": 23,
+        "executed": 349,
+        "failed": 0
+      },
+      "integration": {
+        "files": 88,
+        "executed": 1755,
+        "failed": 0
+      },
+      "e2e": {
+        "files": 1,
+        "executed": 3,
+        "failed": 0
+      },
+      "pi-compat": {
+        "files": 12,
+        "executed": 130,
+        "failed": 0
+      }
+    },
+    "baseSha": "20a7ec27cb25af3bdfbaea68228b21be295e75db",
+    "testedSha": "20a7ec27cb25af3bdfbaea68228b21be295e75db",
+    "artifact": ".ci-output/p5-final/test-macos-arm64/tests/tests.json",
+    "note": "Run after the final source freeze; the tracked working tree was unchanged for its duration."
+  },
+  "nodeServicesVerification": "Covered by the standard local CI run above; the separate node-services invocation also passed before the standard run."
+}

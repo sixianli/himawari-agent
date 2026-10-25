@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/control-center/test/thread-interactions.unit.test.ts (38 tests | 1 failed) 524ms
+     × paginates tool records, preserves their input, and resumes from the last confirmed sequence 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/control-center/test/thread-interactions.unit.test.ts > thread control center interactions > paginates tool records, preserves their input, and resumes from the last confirmed sequence
+ReferenceError: operation is not defined
+ ❯ apps/control-center/src/components/execution-process.tsx:158:19
+    156|             if (!item) return null;
+    157|             const incomplete = ["started", "updated"].includes(item.ph…
+    158|             const phase: MessageId =
+       |                   ^
+    159|               (operation ? executionStateLabel(operation.displayPhase)…
+    160|               executionToolPhase(item, records, run) ??
+ ❯ ExecutionProcess apps/control-center/src/components/execution-process.tsx:131:18
+ ❯ Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:25904:20
+ ❯ renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:7662:22
+ ❯ updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:10166:19
+ ❯ beginWork node_modules/react-dom/cjs/react-dom-client.development.js:11778:18
+ ❯ runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:874:13
+ ❯ performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:17641:22
+ ❯ workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:17469:41
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 202 passed (203)
+   Start at  14:36:09
+   Duration  28.03s (transform 1.39s, setup 0ms, import 1.90s, tests 25.58s, environment 604ms)

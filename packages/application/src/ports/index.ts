@@ -1,5 +1,6 @@
 export * from "./authority-identities.js";
 export * from "./authorization.js";
+export * from "./automatic-action-review.js";
 export * from "./automatic-memory.js";
 export * from "./backup-transfer.js";
 export * from "./built-in-identity.js";
@@ -13,6 +14,8 @@ export * from "./conversation.js";
 export * from "./coordination.js";
 export * from "./delegation.js";
 export * from "./durability.js";
+export * from "./execution-backend.js";
+export * from "./execution-environment.js";
 export * from "./gateway.js";
 export * from "./github.js";
 export * from "./governance.js";
@@ -40,6 +43,7 @@ export * from "./sandbox-execution-journal.js";
 export * from "./system.js";
 export * from "./threads.js";
 export * from "./web.js";
+export * from "./web-providers.js";
 export * from "./workspaces.js";
 
 export * from "./thread-search-projection.js";

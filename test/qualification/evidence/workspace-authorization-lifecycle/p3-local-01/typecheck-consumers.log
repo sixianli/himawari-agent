@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+test/integration/file-publication-recovery.test.ts(26,18): error TS2416: Property 'createExclusive' in type 'InterruptedPublication' is not assignable to the same property in base type 'ConstrainedHostFileSystem'.
+  Type '(grant: import("/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/application/src/ports/host-files", { with: { "resolution-mode": "import" } }).HostDirectoryGrant, relativePath: string, bytes: Uint8Array<...>, hooks?: import("/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/pa...' is not assignable to type '(grant: import("/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/application/src/ports/host-files", { with: { "resolution-mode": "import" } }).HostDirectoryGrant, relativePath: string, bytes: Uint8Array<...>, hooks?: import("/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/pa...'. Two different types with this name exist, but they are unrelated.
+    Type 'Promise<void>' is not assignable to type 'Promise<HostFileIdentity>'.
+      Type 'void' is not assignable to type 'HostFileIdentity'.
+test/integration/file-publication-recovery.test.ts(80,41): error TS2345: Argument of type 'InterruptedPublication' is not assignable to parameter of type 'ConstrainedHostFileSystem'.
+  The types returned by 'createExclusive(...)' are incompatible between these types.
+    Type 'Promise<void>' is not assignable to type 'Promise<HostFileIdentity>'.
+      Type 'void' is not assignable to type 'HostFileIdentity'.

@@ -1,0 +1,424 @@
+packages/application/src/services/thread-execution-projection.ts:40:22 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    38 │       .flatMap((item) => {
+    39 │         const block = object(item);
+  > 40 │         return block["type"] === "text" ? [text(block["text"])] : [];
+       │                      ^^^^^^
+    41 │       })
+    42 │       .join("\n"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     38  38 │         .flatMap((item) => {
+     39  39 │           const block = object(item);
+     40     │ - ········return·block["type"]·===·"text"·?·[text(block["text"])]·:·[];
+         40 │ + ········return·block.type·===·"text"·?·[text(block["text"])]·:·[];
+     41  41 │         })
+     42  42 │         .join("\n"),
+
+
+packages/application/src/services/thread-execution-projection.ts:40:55 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    38 │       .flatMap((item) => {
+    39 │         const block = object(item);
+  > 40 │         return block["type"] === "text" ? [text(block["text"])] : [];
+       │                                                       ^^^^^^
+    41 │       })
+    42 │       .join("\n"),
+
+  i Unsafe fix: Use a literal key instead.
+
+     38  38 │         .flatMap((item) => {
+     39  39 │           const block = object(item);
+     40     │ - ········return·block["type"]·===·"text"·?·[text(block["text"])]·:·[];
+         40 │ + ········return·block["type"]·===·"text"·?·[text(block.text)]·:·[];
+     41  41 │         })
+     42  42 │         .join("\n"),
+
+
+packages/application/src/services/thread-execution-projection.ts:145:70 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    143 │           // Expose stage occurrence only, not private memory text or model context.
+    144 │           records.push({ ...base, phase: "updated" });
+  > 145 │         } else if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
+        │                                                                      ^^^^^^
+    146 │           const message = object(await this.readPayload(event, envelope["payloadRef"]));
+    147 │           records.push({
+
+  i Unsafe fix: Use a literal key instead.
+
+    143 143 │             // Expose stage occurrence only, not private memory text or model context.
+    144 144 │             records.push({ ...base, phase: "updated" });
+    145     │ - ········}·else·if·(event.eventType·===·"runtime.message"·&&·envelope["role"]·===·"assistant")·{
+        145 │ + ········}·else·if·(event.eventType·===·"runtime.message"·&&·envelope.role·===·"assistant")·{
+    146 146 │             const message = object(await this.readPayload(event, envelope["payloadRef"]));
+    147 147 │             records.push({
+
+
+packages/application/src/services/thread-execution-projection.ts:146:73 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    144 │           records.push({ ...base, phase: "updated" });
+    145 │         } else if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
+  > 146 │           const message = object(await this.readPayload(event, envelope["payloadRef"]));
+        │                                                                         ^^^^^^^^^^^^
+    147 │           records.push({
+    148 │             ...base,
+
+  i Unsafe fix: Use a literal key instead.
+
+    144 144 │             records.push({ ...base, phase: "updated" });
+    145 145 │           } else if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
+    146     │ - ··········const·message·=·object(await·this.readPayload(event,·envelope["payloadRef"]));
+        146 │ + ··········const·message·=·object(await·this.readPayload(event,·envelope.payloadRef));
+    147 147 │             records.push({
+    148 148 │               ...base,
+
+
+packages/application/src/services/thread-execution-projection.ts:151:34 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    149 │             itemId: `message:${threadCommandFingerprint({
+    150 │               runId,
+  > 151 │               timestamp: message["timestamp"] ?? "current",
+        │                                  ^^^^^^^^^^^
+    152 │             })
+    153 │               .replace(/[^a-zA-Z0-9]/g, "")
+
+  i Unsafe fix: Use a literal key instead.
+
+    149 149 │               itemId: `message:${threadCommandFingerprint({
+    150 150 │                 runId,
+    151     │ - ··············timestamp:·message["timestamp"]·??·"current",
+        151 │ + ··············timestamp:·message.timestamp·??·"current",
+    152 152 │               })
+    153 153 │                 .replace(/[^a-zA-Z0-9]/g, "")
+
+
+packages/application/src/services/thread-execution-projection.ts:157:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    155 │             kind: "message",
+    156 │             phase:
+  > 157 │               envelope["phase"] !== "ended"
+        │                        ^^^^^^^
+    158 │                 ? "updated"
+    159 │                 : message["stopReason"] === "error"
+
+  i Unsafe fix: Use a literal key instead.
+
+    155 155 │               kind: "message",
+    156 156 │               phase:
+    157     │ - ··············envelope["phase"]·!==·"ended"
+        157 │ + ··············envelope.phase·!==·"ended"
+    158 158 │                   ? "updated"
+    159 159 │                   : message["stopReason"] === "error"
+
+
+packages/application/src/services/thread-execution-projection.ts:159:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    157 │               envelope["phase"] !== "ended"
+    158 │                 ? "updated"
+  > 159 │                 : message["stopReason"] === "error"
+        │                           ^^^^^^^^^^^^
+    160 │                   ? "failed"
+    161 │                   : message["stopReason"] === "aborted"
+
+  i Unsafe fix: Use a literal key instead.
+
+    157 157 │                 envelope["phase"] !== "ended"
+    158 158 │                   ? "updated"
+    159     │ - ················:·message["stopReason"]·===·"error"
+        159 │ + ················:·message.stopReason·===·"error"
+    160 160 │                     ? "failed"
+    161 161 │                     : message["stopReason"] === "aborted"
+
+
+packages/application/src/services/thread-execution-projection.ts:161:29 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    159 │                 : message["stopReason"] === "error"
+    160 │                   ? "failed"
+  > 161 │                   : message["stopReason"] === "aborted"
+        │                             ^^^^^^^^^^^^
+    162 │                     ? "stopped"
+    163 │                     : "completed",
+
+  i Unsafe fix: Use a literal key instead.
+
+    159 159 │                   : message["stopReason"] === "error"
+    160 160 │                     ? "failed"
+    161     │ - ··················:·message["stopReason"]·===·"aborted"
+        161 │ + ··················:·message.stopReason·===·"aborted"
+    162 162 │                       ? "stopped"
+    163 163 │                       : "completed",
+
+
+packages/application/src/services/thread-execution-projection.ts:164:32 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    162 │                     ? "stopped"
+    163 │                     : "completed",
+  > 164 │             name: text(message["model"]),
+        │                                ^^^^^^^
+    165 │             text: text(redactTracePayload(visibleText(message["content"]))),
+    166 │           });
+
+  i Unsafe fix: Use a literal key instead.
+
+    162 162 │                       ? "stopped"
+    163 163 │                       : "completed",
+    164     │ - ············name:·text(message["model"]),
+        164 │ + ············name:·text(message.model),
+    165 165 │               text: text(redactTracePayload(visibleText(message["content"]))),
+    166 166 │             });
+
+
+packages/application/src/services/thread-execution-projection.ts:165:63 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    163 │                     : "completed",
+    164 │             name: text(message["model"]),
+  > 165 │             text: text(redactTracePayload(visibleText(message["content"]))),
+        │                                                               ^^^^^^^^^
+    166 │           });
+    167 │           const content = Array.isArray(message["content"]) ? message["content"] : [];
+
+  i Unsafe fix: Use a literal key instead.
+
+    163 163 │                       : "completed",
+    164 164 │               name: text(message["model"]),
+    165     │ - ············text:·text(redactTracePayload(visibleText(message["content"]))),
+        165 │ + ············text:·text(redactTracePayload(visibleText(message.content))),
+    166 166 │             });
+    167 167 │             const content = Array.isArray(message["content"]) ? message["content"] : [];
+
+
+packages/application/src/services/thread-execution-projection.ts:167:49 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    165 │             text: text(redactTracePayload(visibleText(message["content"]))),
+    166 │           });
+  > 167 │           const content = Array.isArray(message["content"]) ? message["content"] : [];
+        │                                                 ^^^^^^^^^
+    168 │           if (envelope["phase"] === "ended") {
+    169 │             for (const [index, part] of content.entries()) {
+
+  i Unsafe fix: Use a literal key instead.
+
+    165 165 │               text: text(redactTracePayload(visibleText(message["content"]))),
+    166 166 │             });
+    167     │ - ··········const·content·=·Array.isArray(message["content"])·?·message["content"]·:·[];
+        167 │ + ··········const·content·=·Array.isArray(message.content)·?·message["content"]·:·[];
+    168 168 │             if (envelope["phase"] === "ended") {
+    169 169 │               for (const [index, part] of content.entries()) {
+
+
+packages/application/src/services/thread-execution-projection.ts:167:71 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    165 │             text: text(redactTracePayload(visibleText(message["content"]))),
+    166 │           });
+  > 167 │           const content = Array.isArray(message["content"]) ? message["content"] : [];
+        │                                                                       ^^^^^^^^^
+    168 │           if (envelope["phase"] === "ended") {
+    169 │             for (const [index, part] of content.entries()) {
+
+  i Unsafe fix: Use a literal key instead.
+
+    165 165 │               text: text(redactTracePayload(visibleText(message["content"]))),
+    166 166 │             });
+    167     │ - ··········const·content·=·Array.isArray(message["content"])·?·message["content"]·:·[];
+        167 │ + ··········const·content·=·Array.isArray(message["content"])·?·message.content·:·[];
+    168 168 │             if (envelope["phase"] === "ended") {
+    169 169 │               for (const [index, part] of content.entries()) {
+
+
+packages/application/src/services/thread-execution-projection.ts:168:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    166 │           });
+    167 │           const content = Array.isArray(message["content"]) ? message["content"] : [];
+  > 168 │           if (envelope["phase"] === "ended") {
+        │                        ^^^^^^^
+    169 │             for (const [index, part] of content.entries()) {
+    170 │               const call = object(part);
+
+  i Unsafe fix: Use a literal key instead.
+
+    166 166 │             });
+    167 167 │             const content = Array.isArray(message["content"]) ? message["content"] : [];
+    168     │ - ··········if·(envelope["phase"]·===·"ended")·{
+        168 │ + ··········if·(envelope.phase·===·"ended")·{
+    169 169 │               for (const [index, part] of content.entries()) {
+    170 170 │                 const call = object(part);
+
+
+packages/application/src/services/thread-execution-projection.ts:171:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    169 │             for (const [index, part] of content.entries()) {
+    170 │               const call = object(part);
+  > 171 │               if (call["type"] !== "toolCall" || typeof call["id"] !== "string") continue;
+        │                        ^^^^^^
+    172 │               records.push({
+    173 │                 ...base,
+
+  i Unsafe fix: Use a literal key instead.
+
+    169 169 │               for (const [index, part] of content.entries()) {
+    170 170 │                 const call = object(part);
+    171     │ - ··············if·(call["type"]·!==·"toolCall"·||·typeof·call["id"]·!==·"string")·continue;
+        171 │ + ··············if·(call.type·!==·"toolCall"·||·typeof·call["id"]·!==·"string")·continue;
+    172 172 │                 records.push({
+    173 173 │                   ...base,
+
+
+packages/application/src/services/thread-execution-projection.ts:171:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    169 │             for (const [index, part] of content.entries()) {
+    170 │               const call = object(part);
+  > 171 │               if (call["type"] !== "toolCall" || typeof call["id"] !== "string") continue;
+        │                                                              ^^^^
+    172 │               records.push({
+    173 │                 ...base,
+
+  i Unsafe fix: Use a literal key instead.
+
+    169 169 │               for (const [index, part] of content.entries()) {
+    170 170 │                 const call = object(part);
+    171     │ - ··············if·(call["type"]·!==·"toolCall"·||·typeof·call["id"]·!==·"string")·continue;
+        171 │ + ··············if·(call["type"]·!==·"toolCall"·||·typeof·call.id·!==·"string")·continue;
+    172 172 │                 records.push({
+    173 173 │                   ...base,
+
+
+packages/application/src/services/thread-execution-projection.ts:175:41 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    173 │                 ...base,
+    174 │                 id: `${event.id}:call:${index}`,
+  > 175 │                 itemId: identifier(call["id"], event.id),
+        │                                         ^^^^
+    176 │                 kind: "tool",
+    177 │                 phase: "updated",
+
+  i Unsafe fix: Use a literal key instead.
+
+    173 173 │                   ...base,
+    174 174 │                   id: `${event.id}:call:${index}`,
+    175     │ - ················itemId:·identifier(call["id"],·event.id),
+        175 │ + ················itemId:·identifier(call.id,·event.id),
+    176 176 │                   kind: "tool",
+    177 177 │                   phase: "updated",
+
+
+packages/application/src/services/thread-execution-projection.ts:178:33 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    176 │                 kind: "tool",
+    177 │                 phase: "updated",
+  > 178 │                 name: text(call["name"]),
+        │                                 ^^^^^^
+    179 │                 input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+    180 │               });
+
+  i Unsafe fix: Use a literal key instead.
+
+    176 176 │                   kind: "tool",
+    177 177 │                   phase: "updated",
+    178     │ - ················name:·text(call["name"]),
+        178 │ + ················name:·text(call.name),
+    179 179 │                   input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+    180 180 │                 });
+
+
+packages/application/src/services/thread-execution-projection.ts:179:68 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    177 │                 phase: "updated",
+    178 │                 name: text(call["name"]),
+  > 179 │                 input: text(JSON.stringify(redactTracePayload(call["arguments"] ?? {}), null, 2)),
+        │                                                                    ^^^^^^^^^^^
+    180 │               });
+    181 │             }
+
+  i Unsafe fix: Use a literal key instead.
+
+    177 177 │                   phase: "updated",
+    178 178 │                   name: text(call["name"]),
+    179     │ - ················input:·text(JSON.stringify(redactTracePayload(call["arguments"]·??·{}),·null,·2)),
+        179 │ + ················input:·text(JSON.stringify(redactTracePayload(call.arguments·??·{}),·null,·2)),
+    180 180 │                 });
+    181 181 │               }
+
+
+packages/application/src/services/thread-execution-projection.ts:183:43 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    181 │             }
+    182 │           }
+  > 183 │           const boundary = object(message["thinkingBoundary"]);
+        │                                           ^^^^^^^^^^^^^^^^^^
+    184 │           if (
+    185 │             ["started", "ended"].includes(String(boundary["phase"])) &&
+
+  i Unsafe fix: Use a literal key instead.
+
+    181 181 │               }
+    182 182 │             }
+    183     │ - ··········const·boundary·=·object(message["thinkingBoundary"]);
+        183 │ + ··········const·boundary·=·object(message.thinkingBoundary);
+    184 184 │             if (
+    185 185 │               ["started", "ended"].includes(String(boundary["phase"])) &&
+
+
+packages/application/src/services/thread-execution-projection.ts:185:59 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    183 │           const boundary = object(message["thinkingBoundary"]);
+    184 │           if (
+  > 185 │             ["started", "ended"].includes(String(boundary["phase"])) &&
+        │                                                           ^^^^^^^
+    186 │             Number.isSafeInteger(boundary["contentIndex"])
+    187 │           ) {
+
+  i Unsafe fix: Use a literal key instead.
+
+    183 183 │             const boundary = object(message["thinkingBoundary"]);
+    184 184 │             if (
+    185     │ - ············["started",·"ended"].includes(String(boundary["phase"]))·&&
+        185 │ + ············["started",·"ended"].includes(String(boundary.phase))·&&
+    186 186 │               Number.isSafeInteger(boundary["contentIndex"])
+    187 187 │             ) {
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 29.
+Checked 13 files in 145ms. No fixes applied.
+Found 49 infos.

@@ -1,0 +1,65 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (30 tests | 2 failed) 153ms
+   × preserves completed output and enters reconciliation when resource cleanup is pending 6ms
+   × preserves completed output and enters reconciliation when resource cleanup is rejected 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > preserves completed output and enters reconciliation when resource cleanup is pending
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/integration/run-coordinator.test.ts:1297:23
+    1295|       expect(stopRun).toHaveBeenCalledOnce();
+    1296|       await vi.advanceTimersByTimeAsync(30_001);
+    1297|       expect(settled).toBe(true);
+       |                       ^
+    1298|       expect(await result).toMatchObject({
+    1299|         run: { run: { status: "reconciling_external_result" } },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > preserves completed output and enters reconciliation when resource cleanup is rejected
+AssertionError: expected Error: resource transport unavailable to match object { …(2) }
+
+- Expected
++ Received
+
+- {
+-   "checkpoint": {
+-     "diagnosticCode": "RUN_RESOURCE_CLEANUP_UNCONFIRMED",
+-     "output": {
+-       "contentRef": "completed-answer",
+-     },
+-   },
+-   "run": {
+-     "run": {
+-       "status": "reconciling_external_result",
+-     },
+-   },
++ Error {
++   "message": "resource transport unavailable",
+  }
+
+ ❯ test/integration/run-coordinator.test.ts:1298:28
+    1296|       await vi.advanceTimersByTimeAsync(30_001);
+    1297|       expect(settled).toBe(true);
+    1298|       expect(await result).toMatchObject({
+       |                            ^
+    1299|         run: { run: { status: "reconciling_external_result" } },
+    1300|         checkpoint: {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 28 passed (30)
+   Start at  22:44:43
+   Duration  991ms (transform 600ms, setup 0ms, import 736ms, tests 153ms, environment 0ms)

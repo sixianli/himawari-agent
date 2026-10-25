@@ -1,0 +1,28 @@
+{
+  "status": "passed_with_targeted_rerun",
+  "scope": "local implementation with controlled reviewer; production review disabled",
+  "standardCi": "standard-ci-result.json",
+  "originalFullRun": {
+    "executed": 3562,
+    "passed": 3561,
+    "failed": 1,
+    "skipped": 0
+  },
+  "failureClassification": "test fixture used newly supported schema 39 as an unknown future schema; fixture failed before audit assertion",
+  "correction": "construct MAX(schema_migration_ledger.sequence)+1 and preserve unknown-schema rejection assertions",
+  "rerun": {
+    "command": "node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project integration test/integration/workspace-lifecycle-audit.test.ts",
+    "evidence": "audit-schema-green.log",
+    "files": 1,
+    "passed": 10,
+    "failed": 0
+  },
+  "reusedEvidence": "Other test inputs and product runtime code are unchanged. Original CI status remains failed in its immutable record; no second all-green full CI run is claimed.",
+  "notVerified": [
+    "production model/provider integration",
+    "actual disclosure and billing",
+    "automatic-review UI",
+    "Linux platform",
+    "deployment"
+  ]
+}

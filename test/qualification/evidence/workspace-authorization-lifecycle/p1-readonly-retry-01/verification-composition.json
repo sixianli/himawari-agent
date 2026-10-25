@@ -1,0 +1,36 @@
+{
+  "scope": "本地构建与测试组合验证；不是对最终源码再次全套执行",
+  "status": "passed",
+  "baseline": "d20fcbf 加本批未提交输入",
+  "firstStandardTests": {
+    "path": "standard-test-result.json",
+    "passed": 3993,
+    "replacedTests": 34,
+    "retainedPassed": 3959
+  },
+  "finalConsumers": {
+    "path": "proxy-consumers.json",
+    "passed": 35,
+    "files": [
+      "packages/platform-node/test/exa-mcp-transport.unit.test.ts",
+      "packages/platform-node/test/exa-public-search.unit.test.ts",
+      "test/integration/exa-readonly-retry.test.ts"
+    ]
+  },
+  "finalBuild": "standard-build-result.json",
+  "combined": {
+    "passed": 3994,
+    "failed": 0,
+    "skipped": 0
+  },
+  "productionChangeAfterFirstRun": [
+    "packages/platform-node/src/exa-public-search.ts"
+  ],
+  "reuseBasis": "对比首轮结束时与修正后的 Git diff，仅上述实现与其传输测试变化；新增 MCP 集成测试改为真实 CONNECT。共享 fixture、endpoint、Worker、工具链未修改。实际调用方固定 web-search-main 由新标准构建覆盖。",
+  "globalCheck": "npm run check 被两份原有未跟踪原型 verify.cjs 格式错误阻断；本批范围 Biome 通过",
+  "limits": [
+    "本地 HTTP 代替真实 Exa/TLS 服务",
+    "CONNECT 代理使用受控准入拒绝，不等于生产 SRT 与真实 Grant 的搜索联测",
+    "没有生产部署或付费模型调用"
+  ]
+}

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   AuthorityFence,
   ModelBudgetLimits,
+  ModelInvocationBudgetAccount,
   ModelInvocationIdentity,
   ModelInvocationIdentityBeginInput,
   ModelInvocationIdentityBeginResult,
@@ -32,6 +33,7 @@ import { SqliteRunDispatchOperations } from "./sqlite-run-dispatch-operations.ts
 
 const CLASSIFICATIONS = ["public", "private", "sensitive", "restricted"] as const;
 const SOURCES = ["model-port", "agent-stream", "embedding"] as const;
+const BUDGET_ACCOUNTS = ["run", "thread-title"] as const;
 const STATUSES = ["reserved", "started", "unknown", "settled", "released"] as const;
 const UNKNOWN_REASONS = [
   "provider_unresolved",
@@ -94,6 +96,7 @@ interface ParsedEnvelope {
 
 interface ParsedBeginInput extends ModelInvocationIdentityBeginInput {
   readonly executionLease: RunExecutionLeaseClaim;
+  readonly budgetAccount: ModelInvocationBudgetAccount;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -167,6 +170,15 @@ function source(value: unknown, name: string): ModelInvocationSource {
     throw new TypeError(`${name} is not a supported model invocation source`);
   }
   return result as ModelInvocationSource;
+}
+
+function budgetAccount(value: unknown): ModelInvocationBudgetAccount {
+  if (value === undefined) return "run";
+  const result = text(value, "budgetAccount", 32);
+  if (!BUDGET_ACCOUNTS.includes(result as ModelInvocationBudgetAccount)) {
+    throw new TypeError("budgetAccount is not a supported model budget account");
+  }
+  return result as ModelInvocationBudgetAccount;
 }
 
 function unknownReason(
@@ -284,6 +296,7 @@ function parseBegin(input: Record<string, unknown>): ParsedBeginInput {
     ordinal: safeInteger(input["ordinal"], "ordinal", 1),
     estimatedCostMicros: safeInteger(input["estimatedCostMicros"], "estimatedCostMicros"),
     pricing: pricing(input["pricing"], "pricing"),
+    budgetAccount: budgetAccount(input["budgetAccount"]),
     executionLease: parseExecutionLease(input["executionLease"]),
     authority: parseAuthority(input["authority"]),
     authorityLease: parseAuthorityLease(input["authorityLease"]),
@@ -373,7 +386,8 @@ function sameFrozenSemantics(row: IdentityRow, input: ParsedBeginInput): boolean
     row.ordinal === input.ordinal &&
     samePricing(row, input.pricing) &&
     row.pricingFingerprint === pricingFingerprint(input.pricing) &&
-    row.estimatedCostMicros === input.estimatedCostMicros
+    row.estimatedCostMicros === input.estimatedCostMicros &&
+    row.budgetAccountId === `${input.budgetAccount}:${input.runId}`
   );
 }
 
@@ -466,7 +480,7 @@ export class SqliteModelInvocationOperations {
     const operationKey = budgetOperationKey(invocationId);
     const allocation = this.budget.reserveWithinTransaction(scope, {
       parent: {
-        kind: "run",
+        kind: input.budgetAccount,
         runId: input.runId,
         executionLease: input.executionLease,
       },
@@ -577,7 +591,11 @@ export class SqliteModelInvocationOperations {
       return this.fail("PORT_CONFLICT", "Model invocation identity cannot be started");
     }
     this.budget.markStartedWithinTransaction(scope, {
-      parent: { kind: "run", runId: input.runId, executionLease: input.executionLease },
+      parent: {
+        kind: this.budgetAccount(row),
+        runId: input.runId,
+        executionLease: input.executionLease,
+      },
       operationKey: input.budgetOperationKey,
       startedAt: input.at,
     });
@@ -614,7 +632,7 @@ export class SqliteModelInvocationOperations {
       return this.fail("PORT_CONFLICT", "Only a reserved model invocation can be released");
     }
     this.budget.releaseReservedWithinTransaction(scope, {
-      parent: { kind: "run", runId: input.runId },
+      parent: { kind: this.budgetAccount(row), runId: input.runId },
       operationKey: input.budgetOperationKey,
       releasedAt: input.at,
     });
@@ -650,7 +668,7 @@ export class SqliteModelInvocationOperations {
       return this.fail("PORT_CONFLICT", "Only started or unknown model invocations can settle");
     }
     const result = this.budget.settleWithinTransaction(scope, {
-      parent: { kind: "run", runId: input.runId },
+      parent: { kind: this.budgetAccount(row), runId: input.runId },
       operationKey: input.budgetOperationKey,
       actualCostMicros: input.actualCostMicros,
       settledAt: input.at,
@@ -696,7 +714,7 @@ export class SqliteModelInvocationOperations {
         return this.fail("PORT_CONFLICT", "Unknown model invocation reason is immutable");
       }
       this.budget.markUnknownWithinTransaction(scope, {
-        parent: { kind: "run", runId: input.runId },
+        parent: { kind: this.budgetAccount(row), runId: input.runId },
         operationKey: input.budgetOperationKey,
         observedAt: input.at,
         reasonCode: input.reasonCode,
@@ -707,7 +725,7 @@ export class SqliteModelInvocationOperations {
       return this.fail("PORT_CONFLICT", "Only a started model invocation can become unknown");
     }
     this.budget.markUnknownWithinTransaction(scope, {
-      parent: { kind: "run", runId: input.runId },
+      parent: { kind: this.budgetAccount(row), runId: input.runId },
       operationKey: input.budgetOperationKey,
       observedAt: input.at,
       reasonCode: input.reasonCode,
@@ -835,6 +853,11 @@ export class SqliteModelInvocationOperations {
         "Model invocation execution lease is not the frozen claim",
       );
     }
+  }
+
+  private budgetAccount(row: IdentityRow): ModelInvocationBudgetAccount {
+    const account = BUDGET_ACCOUNTS.find((kind) => row.budgetAccountId === `${kind}:${row.runId}`);
+    return account ?? this.fail("PORT_CONFLICT", "Model invocation budget account is inconsistent");
   }
 
   private requireRow(

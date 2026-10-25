@@ -16,6 +16,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65535)
 const now = "2026-08-27T00:00:00.000Z";
 const executionQualification = process.env.HIMAWARI_EXECUTION_FIXTURE === "1";
 const executionRecords = new Map();
+const executionStates = new Map();
+let executionEnvironment;
 const accepted = new Set();
 const acceptedThreadCommands = new Map();
 const acceptedGovernanceCommands = new Map();
@@ -33,6 +35,7 @@ const payloads = new Map([
 ]);
 const threadEvents = [];
 const threadEventClients = new Set();
+const executionEventClients = new Map();
 const threads = new Map([
   [
     "thread-main",
@@ -536,6 +539,26 @@ function threadConflict(request, threadId) {
   };
 }
 
+function writeExecutionChanged(threadId, run) {
+  const clients = executionEventClients.get(threadId);
+  if (!clients?.size) return;
+  cursorSequence += 1;
+  const event = {
+    ...threadEnvelope("event", "thread.execution_changed"),
+    messageId: `execution:thread:${cursorSequence}`,
+    payload: {
+      threadId,
+      runId: run.runId,
+      runRevision: run.revision,
+      traceSequence: (executionRecords.get(run.runId) ?? []).at(-1)?.sequence ?? 0,
+      resourceRevision: null,
+      observedAt: now,
+    },
+  };
+  const wire = `event: thread.execution_changed\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const client of clients) client.write(wire);
+}
+
 function writeThreadEvent(request, threadId, eventType, payloadRef = null) {
   const thread = threads.get(threadId);
   if (!thread) return;
@@ -947,6 +970,13 @@ function handleThreadQuery(message) {
       },
     };
   }
+  if (message.type === "thread.execution_environment" && executionEnvironment) {
+    return {
+      ...common,
+      type: "thread.execution_environment_snapshot",
+      payload: { environment: executionEnvironment, generatedAt: new Date().toISOString() },
+    };
+  }
   if (message.type === "thread.search") {
     return {
       ...common,
@@ -965,6 +995,20 @@ function handleThreadQuery(message) {
   }
   const thread = threads.get(message.payload.threadId);
   if (!thread) return null;
+  if (message.type === "thread.execution_state" && executionQualification) {
+    const state = executionStates.get(message.payload.runId);
+    if (!state) return null;
+    return {
+      ...common,
+      type: "thread.execution_state_snapshot",
+      payload: {
+        threadId: thread.threadId,
+        runId: message.payload.runId,
+        state,
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
   if (message.type === "thread.execution" && executionQualification) {
     const records = executionRecords.get(message.payload.runId) ?? [];
     return {
@@ -1199,6 +1243,9 @@ async function handleRequest(request, response) {
       ...(executionQualification
         ? {
             executionPresentationAvailable: true,
+            executionStateAvailable: executionStates.size > 0,
+            executionEventsAvailable: true,
+            executionEnvironmentAvailable: executionEnvironment !== undefined,
             canCancelRun: true,
             availableModels: [
               {
@@ -1261,6 +1308,50 @@ async function handleRequest(request, response) {
     });
     return;
   }
+  if (executionQualification && url.pathname === "/__fixture/execution-changed") {
+    const input = await body(request);
+    const thread = threads.get(input.threadId);
+    const run = thread?.runs.find((item) => item.runId === input.runId);
+    if (!run) {
+      json(response, 404, {});
+      return;
+    }
+    writeExecutionChanged(thread.threadId, run);
+    json(response, 200, { accepted: true });
+    return;
+  }
+  if (
+    executionQualification &&
+    request.method === "GET" &&
+    url.pathname === "/api/gateway/thread/v3/execution-events"
+  ) {
+    let threadId;
+    try {
+      const subscription = JSON.parse(
+        Buffer.from(url.searchParams.get("subscription") ?? "", "base64url").toString("utf8"),
+      );
+      if (subscription.type !== "thread.execution_events") throw new Error("type");
+      threadId = subscription.payload.threadId;
+    } catch {
+      json(response, 400, { error: { code: "HTTP_GATEWAY_REQUEST_INVALID" } });
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-store",
+      connection: "keep-alive",
+    });
+    response.write(": connected\n\n");
+    const clients = executionEventClients.get(threadId) ?? new Set();
+    clients.add(response);
+    executionEventClients.set(threadId, clients);
+    const timer = setInterval(() => response.write(": heartbeat\n\n"), 1000);
+    request.on("close", () => {
+      clearInterval(timer);
+      clients.delete(response);
+    });
+    return;
+  }
   if (executionQualification && url.pathname === "/__fixture/execution") {
     if (request.method === "GET") {
       json(response, 200, {
@@ -1273,13 +1364,17 @@ async function handleRequest(request, response) {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if ("environment" in input) executionEnvironment = input.environment ?? undefined;
     const thread = threads.get(input.threadId);
     const run = thread?.runs.find((item) => item.runId === input.runId);
     if (!run) {
       json(response, 404, {});
       return;
     }
-    if (input.reset) executionRecords.delete(run.runId);
+    if (input.reset) {
+      executionRecords.delete(run.runId);
+      executionStates.delete(run.runId);
+    }
     if (typeof input.title === "string") {
       const ref = `payload:fixture-title:${thread.threadId}:${thread.titleRevision + 1}`;
       payloads.set(ref, { content: input.title, dataClassification: "private" });
@@ -1299,6 +1394,7 @@ async function handleRequest(request, response) {
       run.revision += 1;
       run.updatedAt = input.occurredAt ?? new Date().toISOString();
     }
+    if (input.state) executionStates.set(run.runId, { ...input.state, runRevision: run.revision });
     if (input.answer) {
       const ref = `payload:fixture-answer:${run.runId}`;
       payloads.set(ref, { content: input.answer, dataClassification: "private" });
@@ -1317,11 +1413,13 @@ async function handleRequest(request, response) {
         committedAt: run.updatedAt,
       });
     }
-    writeThreadEvent(
-      { messageId: "fixture-execution" },
-      thread.threadId,
-      "thread.execution.updated",
-    );
+    if (!input.silent)
+      writeThreadEvent(
+        { messageId: "fixture-execution" },
+        thread.threadId,
+        "thread.execution.updated",
+      );
+    writeExecutionChanged(thread.threadId, run);
     if (input.replay) {
       const event = threadEvents.at(-1);
       for (const client of threadEventClients) client.write(`data: ${JSON.stringify(event)}\n\n`);

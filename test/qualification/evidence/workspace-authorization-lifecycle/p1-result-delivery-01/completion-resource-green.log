@@ -1,0 +1,21 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts (176 tests | 3 failed | 170 skipped) 897ms
+       × persists foreground creator, environment and resource handle in the admission transaction 225ms
+       × persists background creator, environment and resource handle in the admission transaction 186ms
+       × persists service creator, environment and resource handle in the admission transaction 186ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists background creator, environment and resource handle in the admission transaction
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists service creator, environment and resource handle in the admission transaction
+Error: Cannot find module '/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-run-resource-guard.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/sqlite-run-lifecycle-operations.ts
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 3 passed | 170 skipped (176)
+   Start at  17:29:42
+   Duration  2.54s (transform 1.01s, setup 0ms, import 1.54s, tests 897ms, environment 0ms)

@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "passed": true,
+      "liveStateQueries": 5,
+      "realWorker": true,
+      "realSqliteProjection": true,
+      "injectedResourceEvents": 0,
+      "fixtureBoundary": "navigation and gateway transport; no full production authentication or model loop",
+      "reload": true,
+      "sameConversation": true,
+      "attentionMatchesProductionState": true,
+      "noSeparateApprovalLink": true,
+      "effectsSurviveReload": true
+    }
+  ],
+  "scope": "real browser with isolated HTTP fixture; no production model calls"
+}

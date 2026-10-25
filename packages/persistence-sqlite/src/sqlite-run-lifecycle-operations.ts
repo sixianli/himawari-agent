@@ -33,7 +33,14 @@ import {
 } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
-import type { SqliteThreadOperations } from "./sqlite-thread-operations.js";
+import {
+  appendThreadGatewayEventInTransaction,
+  type SqliteThreadOperations,
+} from "./sqlite-thread-operations.ts";
+import {
+  RUN_COMPLETION_RECOVERY_SQL,
+  RUN_RESOURCES_RELEASED_SQL,
+} from "./sqlite-run-resource-guard.ts";
 
 type RunMutationInput = TransitionRunStateInput | RunCompletionInput;
 type RunAuthorityInput = RunMutationInput | RunCancellationInput;
@@ -139,7 +146,14 @@ function completion(value: unknown): RunCompletionInput {
   else if (output["kind"] === "assistant-answer")
     parsed = { kind: "assistant-answer", contentRef: string(output["contentRef"]) };
   else throw new TypeError("Run completion output is invalid");
-  return { ...base, output: parsed, dataClassification: classification(raw["dataClassification"]) };
+  return {
+    ...base,
+    output: parsed,
+    dataClassification: classification(raw["dataClassification"]),
+    ...(raw["recoveryCheckpointRevision"] === undefined
+      ? {}
+      : { recoveryCheckpointRevision: integer(raw["recoveryCheckpointRevision"]) }),
+  };
 }
 
 function commandType(input: RunMutationInput): "run.transition" | "run.complete" {
@@ -161,24 +175,104 @@ function fingerprint(input: RunMutationInput): string {
     .digest("hex")}`;
 }
 
+export function writeRunReceiptInTransaction(
+  database: Database.Database,
+  input: RunMutationInput,
+  authority: ProductAuthorityFence,
+  now: string,
+  revision: number,
+): RunTransitionReceipt {
+  const identity = createHash("sha256")
+    .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
+    .digest("hex");
+  const stateKey = input["runId"];
+  database
+    .prepare(`INSERT INTO command_results
+      (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
+        deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision, committed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      `run-command:${identity}`,
+      input["ownerId"],
+      input["agentId"],
+      input["idempotencyKey"],
+      commandType(input),
+      fingerprint(input),
+      authority.deploymentId,
+      authority.authorityEpoch,
+      authority.fencingToken,
+      stateKey,
+      stateKey,
+      revision,
+      now,
+    );
+  database
+    .prepare(`INSERT INTO reliable_events
+      (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
+    .run(
+      `run-event:${identity}`,
+      input["ownerId"],
+      input["agentId"],
+      input["idempotencyKey"],
+      `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
+      input["payloadRef"],
+      now,
+    );
+  // A Run status is part of the Thread view. Commit its revision and durable
+  // notification with the Run so a waiting approval is visible without polling.
+  if ("nextStatus" in input) {
+    const changedThread = database
+      .prepare(`UPDATE threads
+      SET revision = revision + 1, updated_at = ?
+      WHERE id = (SELECT thread_id FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?)
+        AND owner_id = ? AND agent_id = ?
+      RETURNING id, revision`)
+      .get(now, input.runId, input.ownerId, input.agentId, input.ownerId, input.agentId);
+    if (changedThread !== undefined) {
+      const row = record(changedThread);
+      appendThreadGatewayEventInTransaction(database, {
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        threadId: createThreadId(string(row["id"])),
+        threadRevision: integer(row["revision"]),
+        eventId: `run-event:${identity}`,
+        commandId: `run-command:${identity}`,
+        commandType: `run.${input.nextStatus}`,
+        resultRef: null,
+        committedAt: now,
+        authority,
+      });
+    }
+  }
+  return {
+    replayed: false,
+    commandResult: {
+      ownerId: input["ownerId"],
+      agentId: input["agentId"],
+      idempotencyKey: input["idempotencyKey"],
+      commandType: commandType(input),
+      commandFingerprint: fingerprint(input),
+      stateKey,
+      stateRevision: revision,
+      resultRef: stateKey,
+      committedAt: now,
+    },
+  };
+}
+
 export class SqliteRunLifecycleOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
-  private readonly thread: Pick<
-    SqliteThreadOperations,
-    "commitAssistantMessage" | "appendGatewayEventInTransaction"
-  >;
+  private readonly thread: Pick<SqliteThreadOperations, "commitAssistantMessage">;
   private readonly executionLease: ExecutionLeaseGuardFactory;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
-    thread: Pick<
-      SqliteThreadOperations,
-      "commitAssistantMessage" | "appendGatewayEventInTransaction"
-    >,
+    thread: Pick<SqliteThreadOperations, "commitAssistantMessage">,
     executionLease: ExecutionLeaseGuardFactory,
   ) {
     this.database = database;
@@ -332,7 +426,7 @@ export class SqliteRunLifecycleOperations {
             input.agentId,
             stored.revision,
           );
-        return this.writeReceipt(input, authority, now, revision);
+        return writeRunReceiptInTransaction(this.database, input, authority, now, revision);
       })
       .immediate();
   }
@@ -469,7 +563,7 @@ export class SqliteRunLifecycleOperations {
             runId: input.runId,
           });
         this.writeCancelledCheckpoint(input, now);
-        return this.writeReceipt(mutation, authority, now, revision);
+        return writeRunReceiptInTransaction(this.database, mutation, authority, now, revision);
       })
       .immediate();
   }
@@ -512,91 +606,6 @@ export class SqliteRunLifecycleOperations {
       );
   }
 
-  private writeReceipt(
-    input: RunMutationInput,
-    authority: ProductAuthorityFence,
-    now: string,
-    revision: number,
-  ): RunTransitionReceipt {
-    const identity = createHash("sha256")
-      .update(JSON.stringify([input["ownerId"], input["agentId"], input["idempotencyKey"]]))
-      .digest("hex");
-    const stateKey = input["runId"];
-    this.database
-      .prepare(`INSERT INTO command_results
-        (id, owner_id, agent_id, idempotency_key, command_type, command_fingerprint,
-          deployment_id, authority_epoch, fencing_token, result_ref, state_key, state_revision, committed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(
-        `run-command:${identity}`,
-        input["ownerId"],
-        input["agentId"],
-        input["idempotencyKey"],
-        commandType(input),
-        fingerprint(input),
-        authority.deploymentId,
-        authority.authorityEpoch,
-        authority.fencingToken,
-        stateKey,
-        stateKey,
-        revision,
-        now,
-      );
-    this.database
-      .prepare(`INSERT INTO reliable_events
-        (id, owner_id, agent_id, idempotency_key, topic, payload_ref, publication_state, occurred_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`)
-      .run(
-        `run-event:${identity}`,
-        input["ownerId"],
-        input["agentId"],
-        input["idempotencyKey"],
-        `run.${"nextStatus" in input ? input.nextStatus : "completed"}`,
-        input["payloadRef"],
-        now,
-      );
-    // A Run status is part of the Thread view. Commit its revision and durable
-    // notification with the Run so a waiting approval is visible without polling.
-    if ("nextStatus" in input) {
-      const changedThread = this.database
-        .prepare(`UPDATE threads
-        SET revision = revision + 1, updated_at = ?
-        WHERE id = (SELECT thread_id FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?)
-          AND owner_id = ? AND agent_id = ?
-        RETURNING id, revision`)
-        .get(now, input.runId, input.ownerId, input.agentId, input.ownerId, input.agentId);
-      if (changedThread !== undefined) {
-        const row = record(changedThread);
-        this.thread.appendGatewayEventInTransaction({
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          threadId: createThreadId(string(row["id"])),
-          threadRevision: integer(row["revision"]),
-          eventId: `run-event:${identity}`,
-          commandId: `run-command:${identity}`,
-          commandType: `run.${input.nextStatus}`,
-          resultRef: null,
-          committedAt: now,
-          authority,
-        });
-      }
-    }
-    return {
-      replayed: false,
-      commandResult: {
-        ownerId: input["ownerId"],
-        agentId: input["agentId"],
-        idempotencyKey: input["idempotencyKey"],
-        commandType: commandType(input),
-        commandFingerprint: fingerprint(input),
-        stateKey,
-        stateRevision: revision,
-        resultRef: stateKey,
-        committedAt: now,
-      },
-    };
-  }
-
   private complete(
     input: RunCompletionInput,
     authority: ProductAuthorityFence,
@@ -616,13 +625,45 @@ export class SqliteRunLifecycleOperations {
         this.assertTransition(stored, "completed");
         const pendingResource = this.database
           .prepare(
-            `SELECT 1 FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=?
-           AND json_extract(plan_json, '$.mode') IN ('background','service')
-           AND COALESCE(json_extract(facts_json, '$.resource.supervision'), 'initializing') != 'released' LIMIT 1`,
+            `SELECT 1 FROM runs r WHERE r.owner_id=@ownerId AND r.agent_id=@agentId AND r.id=@runId
+              AND NOT (${RUN_RESOURCES_RELEASED_SQL})`,
           )
-          .get(input.ownerId, input.agentId, input.runId);
+          .get({
+            ownerId: input.ownerId,
+            agentId: input.agentId,
+            runId: input.runId,
+            resourceNow: now,
+          });
         if (pendingResource)
           return this.fail("PORT_CONFLICT", "Run still owns unreleased sandbox resources");
+        if (
+          stored.run.status === "reconciling_external_result" ||
+          input.recoveryCheckpointRevision !== undefined
+        ) {
+          const recoverable = this.database
+            .prepare(
+              `SELECT c.output_kind AS kind,c.final_answer_ref AS contentRef,c.revision AS revision
+              FROM runs r JOIN run_coordination_checkpoints c
+                ON c.run_id=r.id AND c.owner_id=r.owner_id AND c.agent_id=r.agent_id
+              WHERE r.id=@runId AND r.owner_id=@ownerId AND r.agent_id=@agentId
+                AND (${RUN_COMPLETION_RECOVERY_SQL})`,
+            )
+            .get({
+              runId: input.runId,
+              ownerId: input.ownerId,
+              agentId: input.agentId,
+              resourceNow: now,
+            }) as { kind: string; contentRef: string | null; revision: number } | undefined;
+          if (
+            !recoverable ||
+            (input.recoveryCheckpointRevision !== undefined &&
+              recoverable.revision !== input.recoveryCheckpointRevision) ||
+            recoverable.kind !== input.output.kind ||
+            (input.output.kind === "assistant-answer" &&
+              recoverable.contentRef !== input.output.contentRef)
+          )
+            return this.fail("PORT_CONFLICT", "Run completion recovery changed or is not eligible");
+        }
         this.assertPayload(input);
         let dataClassification = input.dataClassification;
         if (input.output.kind === "assistant-answer") {
@@ -723,7 +764,13 @@ export class SqliteRunLifecycleOperations {
             .run(now, input.runId);
         }
         this.assertExecutionLease(input, authority, now);
-        return this.writeReceipt(input, authority, now, stored.revision + 1);
+        return writeRunReceiptInTransaction(
+          this.database,
+          input,
+          authority,
+          now,
+          stored.revision + 1,
+        );
       })
       .immediate();
   }

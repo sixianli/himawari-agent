@@ -18,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
-const CURRENT_SCHEMA_SEQUENCE = 32;
+const CURRENT_SCHEMA_SEQUENCE = 51;
 
 afterEach(async () => {
   await Promise.all(
@@ -138,8 +138,11 @@ describe("immutable SQLite migration engine", () => {
       const before = readMigrationLedger(database);
       const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [29, 30, 31, 32],
-        currentSequence: 32,
+        appliedSequences: [
+          29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+          51,
+        ],
+        currentSequence: 51,
       });
       expect(readMigrationLedger(database).slice(0, 28)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
@@ -151,6 +154,63 @@ describe("immutable SQLite migration engine", () => {
           .pluck()
           .get(),
       ).toBe("'legacy_bound'");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("migrates schema 39 without fabricating reservation stops and refuses the older writer", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 39));
+      const ledger = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+        appliedSequences: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
+        currentSequence: 51,
+      });
+      expect(readMigrationLedger(database).slice(0, 39)).toEqual(ledger);
+      expect(
+        database
+          .prepare(
+            "SELECT dflt_value FROM pragma_table_info('sandbox_execution_records') WHERE name='reservation_stopped_at'",
+          )
+          .pluck()
+          .get(),
+      ).toBeNull();
+      expectMigrationCode(
+        () => assertWritableSchema(database, 39),
+        SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+      );
+      expect(database.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("migrates schema 40 without fabricating release receipts and refuses its writer", async () => {
+    const { databasePath, snapshotPath } = await temporaryDatabase();
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const migrations = await loadBundledMigrations();
+      applyMigrations(database, migrations.slice(0, 40));
+      const before = readMigrationLedger(database);
+      const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+      expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+        appliedSequences: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
+        currentSequence: 51,
+      });
+      expect(readMigrationLedger(database).slice(0, 40)).toEqual(before);
+      expect(
+        database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+      ).toBe(0);
+      expectMigrationCode(
+        () => assertWritableSchema(database, 40),
+        SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+      );
+      expect(database.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();
     }
@@ -256,4 +316,197 @@ describe("immutable SQLite migration engine", () => {
     first.close();
     second.close();
   });
+});
+
+it("preserves schema 43 history and bars writers that cannot read queue authority bindings", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 43));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [44, 45, 46, 47, 48, 49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 43)).toEqual(history);
+    expect(
+      database.prepare("SELECT count(*) FROM sandbox_queue_authority_bindings").pluck().get(),
+    ).toBe(0);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 43),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 44 history and fences writers without queued Pi recovery", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 44));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [45, 46, 47, 48, 49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 44)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 44),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 45 history and fences writers without directory move claims", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 45));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [46, 47, 48, 49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 45)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 45),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 46 history and rejects writers that ignore copy authority and dependencies", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 46));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [47, 48, 49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 46)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 46),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 47 history and fences writers that cannot keep task environment leases", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 47));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [48, 49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 47)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 47),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 48 history and fences writers that cannot read thread title budget accounts", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    applyMigrations(database, migrations.slice(0, 48));
+    const history = readMigrationLedger(database);
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [49, 50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 48)).toEqual(history);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 48),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(
+      database
+        .prepare("SELECT 1 FROM pragma_table_info('model_budget_accounts') WHERE name = ?")
+        .get("title_run_id"),
+    ).toEqual({ 1: 1 });
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+it("preserves schema 49 history and fences writers without administrator reservation receipts", async () => {
+  const { databasePath, snapshotPath } = await temporaryDatabase();
+  const database = openQualifiedDatabase(databasePath);
+  try {
+    const migrations = await loadBundledMigrations();
+    expect(applyMigrations(database, migrations.slice(0, 49))).toEqual({
+      appliedSequences: Array.from({ length: 49 }, (_, index) => index + 1),
+      currentSequence: 49,
+    });
+    const history = readMigrationLedger(database);
+    expect(() => assertWritableSchema(database, 49)).not.toThrow();
+    const snapshot = await createVerifiedMigrationSnapshot(database, snapshotPath);
+    expect(applyMigrations(database, migrations, { snapshot })).toEqual({
+      appliedSequences: [50, 51],
+      currentSequence: 51,
+    });
+    expect(readMigrationLedger(database).slice(0, 49)).toEqual(history);
+    expect(
+      database
+        .prepare(
+          "SELECT key,value FROM schema_metadata WHERE key IN ('current_sequence','minimum_writer_sequence') ORDER BY key",
+        )
+        .all(),
+    ).toEqual([
+      { key: "current_sequence", value: "51" },
+      { key: "minimum_writer_sequence", value: "51" },
+    ]);
+    expectMigrationCode(
+      () => assertWritableSchema(database, 49),
+      SQLITE_MIGRATION_ERROR_CODES.WRITER_TOO_OLD,
+    );
+    expect(() => assertWritableSchema(database, 51)).not.toThrow();
+    expect(
+      database.prepare("SELECT count(*) FROM sandbox_reservation_release_receipts").pluck().get(),
+    ).toBe(0);
+    expect(database.pragma("foreign_key_check")).toEqual([]);
+  } finally {
+    database.close();
+  }
 });

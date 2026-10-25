@@ -43,8 +43,8 @@ function config(stateRoot: string): Record<string, unknown> {
       {
         ref: "model-primary",
         role: "primary",
-        provider: "provider-primary",
-        model: "model-a",
+        provider: "vercel-ai-gateway",
+        model: "deepseek/deepseek-v4.1-flash",
         version: "snapshot-1",
         priority: 1,
         name: "Primary fixture",
@@ -55,44 +55,20 @@ function config(stateRoot: string): Record<string, unknown> {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 8192,
         maxTokens: 1024,
+        providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
         allowedDataClassifications: ["public", "private"],
         disclosure: "trusted_remote",
         secretRef: "provider-primary",
       },
       {
-        ref: "model-fallback",
-        role: "fallback",
-        provider: "provider-fallback",
-        model: "model-b",
-        version: "snapshot-1",
-        priority: 2,
-        name: "Fallback fixture",
-        api: "openai-completions",
-        reasoning: false,
-        input: ["text"],
-        capabilities: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 8192,
-        maxTokens: 1024,
-        allowedDataClassifications: ["private"],
-        disclosure: "external_remote",
-        secretRef: "provider-fallback",
-        providerRouting: {
-          order: ["z-ai"],
-          allow_fallbacks: false,
-          require_parameters: true,
-          data_collection: "deny",
-        },
-      },
-      {
         ref: "model-embedding",
         role: "embedding",
-        provider: "provider-embedding",
-        model: "embed-a",
+        provider: "vercel-ai-gateway",
+        model: "alibaba/qwen3-embedding-8b",
         version: "snapshot-1",
         capabilities: ["embedding"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        dimensions: 1536,
+        dimensions: 4096,
         allowedDataClassifications: ["public", "private", "sensitive", "restricted"],
         disclosure: "trusted_remote",
         secretRef: "provider-embedding",
@@ -100,20 +76,14 @@ function config(stateRoot: string): Record<string, unknown> {
     ],
     memory: {
       adapter: "mem0-oss",
-      version: "3.1.7",
+      version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
-      dimensions: 1536,
+      dimensions: 4096,
     },
     repositoryAllowlistRefs: ["sixianli/himawari-agent"],
     secretReferences: [
       { ref: "payload-kek", version: "v1", purpose: "payload-encryption", scope: "agent" },
       { ref: "provider-primary", version: "v1", purpose: "model-auth", scope: "model-primary" },
-      {
-        ref: "provider-fallback",
-        version: "v1",
-        purpose: "model-auth",
-        scope: "model-fallback",
-      },
       {
         ref: "provider-embedding",
         version: "v1",
@@ -141,6 +111,45 @@ function config(stateRoot: string): Record<string, unknown> {
 }
 
 describe("strict product configuration", () => {
+  it("[R2-L5] accepts one configured primary with the approved gateway routing", () => {
+    const parsed = parseProductConfiguration(
+      config(path.join(tmpdir(), "himawari-gateway-single-primary")),
+      "2026-10-06T00:00:00.000Z",
+    );
+    expect(parsed.modelDescriptors.map(({ role }) => role)).toEqual(["primary", "embedding"]);
+    expect(parsed.modelDescriptors[0]?.providerRouting).toEqual({
+      order: ["runware", "deepinfra", "morph"],
+      sort: "cost",
+    });
+    expect(Object.isFrozen(parsed.modelDescriptors[0]?.providerRouting?.order)).toBe(true);
+  });
+
+  it.each([
+    { name: "unknown sort", change: { providerRouting: { order: ["runware"], sort: "latency" } } },
+    { name: "missing sort", change: { providerRouting: { order: ["runware"] } } },
+    { name: "empty order", change: { providerRouting: { order: [], sort: "cost" } } },
+    {
+      name: "duplicate order",
+      change: { providerRouting: { order: ["runware", "runware"], sort: "cost" } },
+    },
+    {
+      name: "unapproved data policy",
+      change: {
+        providerRouting: { order: ["runware"], sort: "cost", disallowPromptTraining: true },
+      },
+    },
+    { name: "missing routing", change: { providerRouting: undefined } },
+    { name: "extra fallback", change: { role: "fallback" } },
+    { name: "unsupported text model", change: { model: "unsupported-text-model" } },
+    { name: "too many output tokens", change: { maxTokens: 32769 } },
+    { name: "missing gateway credential", change: { secretRef: null } },
+  ])("[R2-L5] refuses $name in a gateway configuration", ({ change }) => {
+    const input = config(path.join(tmpdir(), "himawari-gateway-invalid"));
+    const models = input["modelDescriptors"] as Record<string, unknown>[];
+    input["modelDescriptors"] = [{ ...models[0], ...change }, models[1]];
+    expect(() => parseProductConfiguration(input, "2026-10-06T00:00:00.000Z")).toThrow();
+  });
+
   it("loads a versioned configuration without deriving paths from cwd", async () => {
     const stateRoot = path.join(tmpdir(), "himawari-explicit-state-root");
     const parsed = parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z");
@@ -152,11 +161,9 @@ describe("strict product configuration", () => {
       publicMode: true,
       concurrency: { totalRuns: 8, foregroundReserved: 2 },
     });
-    expect(parsed.modelDescriptors[1]?.providerRouting).toEqual({
-      order: ["z-ai"],
-      allow_fallbacks: false,
-      require_parameters: true,
-      data_collection: "deny",
+    expect(parsed.modelDescriptors[0]?.providerRouting).toEqual({
+      order: ["runware", "deepinfra", "morph"],
+      sort: "cost",
     });
     expect(parsed.modelDescriptors[0]).toMatchObject({
       role: "primary",
@@ -165,10 +172,10 @@ describe("strict product configuration", () => {
       contextWindow: 8192,
       maxTokens: 1024,
     });
-    expect(parsed.modelDescriptors[2]).toMatchObject({
+    expect(parsed.modelDescriptors[1]).toMatchObject({
       role: "embedding",
       capabilities: ["embedding"],
-      dimensions: 1536,
+      dimensions: 4096,
     });
     expect(parsed.stateRoot).not.toBe(process.cwd());
     expect(parsed.capabilityDeployment).toBeUndefined();
@@ -222,6 +229,68 @@ describe("strict product configuration", () => {
     );
   });
 
+  it("accepts an optional task environment backend with pinned images and rejects unsafe shapes", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-task-environment-config");
+    const taskEnvironments = () => ({
+      backendRef: "container-docker:local",
+      dockerExecutable: "/usr/local/bin/docker",
+      dockerHost: "unix:///var/run/docker.sock",
+      image: { reference: "himawari/runner", digest: "b".repeat(64), pin: "image-id" },
+      egressImage: {
+        reference: "docker.io/library/node",
+        digest: "c".repeat(64),
+        pin: "registry-digest",
+      },
+    });
+    const parse = (value: unknown) => {
+      const input = config(stateRoot);
+      input["taskEnvironments"] = value;
+      return parseProductConfiguration(input, "2026-08-27T00:00:00.000Z");
+    };
+    expect(
+      parseProductConfiguration(config(stateRoot), "2026-08-27T00:00:00.000Z"),
+    ).not.toHaveProperty("taskEnvironments");
+    expect(parse(taskEnvironments()).taskEnvironments).toEqual(taskEnvironments());
+    expect(
+      parse({ ...taskEnvironments(), dockerHost: null }).taskEnvironments?.dockerHost,
+    ).toBeNull();
+    const { dockerHost: _omitted, ...withoutDockerHost } = taskEnvironments();
+    expect(parse(withoutDockerHost).taskEnvironments).toEqual({
+      ...withoutDockerHost,
+      dockerHost: null,
+    });
+    for (const required of ["backendRef", "dockerExecutable", "image", "egressImage"]) {
+      const incomplete: Record<string, unknown> = taskEnvironments();
+      delete incomplete[required];
+      expect(() => parse(incomplete)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+      );
+    }
+
+    for (const unknown of [
+      { ...taskEnvironments(), unexpected: true },
+      { ...taskEnvironments(), runnerDigest: "d".repeat(64) },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, unexpected: true } },
+    ])
+      expect(() => parse(unknown)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD }),
+      );
+    for (const invalid of [
+      { ...taskEnvironments(), backendRef: "srt" },
+      { ...taskEnvironments(), dockerExecutable: "docker" },
+      { ...taskEnvironments(), dockerHost: "" },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, digest: "b".repeat(63) } },
+      { ...taskEnvironments(), image: { ...taskEnvironments().image, pin: "tag" } },
+      {
+        ...taskEnvironments(),
+        egressImage: { ...taskEnvironments().egressImage, digest: `sha256:${"c".repeat(64)}` },
+      },
+    ])
+      expect(() => parse(invalid)).toThrowError(
+        expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
+      );
+  });
+
   it("rejects unknown fields recursively and raw machine-secret material", () => {
     const stateRoot = path.join(tmpdir(), "himawari-config-reject");
     expect(() =>
@@ -236,7 +305,9 @@ describe("strict product configuration", () => {
     const invalidModels = invalidRouting["modelDescriptors"] as Record<string, unknown>[];
     invalidRouting["modelDescriptors"] = [
       ...invalidModels.map((entry, index) =>
-        index === 1 ? { ...entry, providerRouting: { order: ["z-ai", "z-ai"] } } : entry,
+        index === 0
+          ? { ...entry, providerRouting: { order: ["runware", "runware"], sort: "cost" } }
+          : entry,
       ),
     ];
     expect(() => parseProductConfiguration(invalidRouting, new Date().toISOString())).toThrowError(
@@ -257,12 +328,12 @@ describe("strict product configuration", () => {
     const insecure = config(stateRoot);
     insecure["publicOrigin"] = "http://agent.example.test";
     expect(() => parseProductConfiguration(insecure, new Date().toISOString())).toThrowError();
-    const missingFallback = config(stateRoot);
-    missingFallback["modelDescriptors"] = (missingFallback["modelDescriptors"] as unknown[]).filter(
-      (entry) => (entry as { role: string }).role !== "fallback",
+    const missingPrimary = config(stateRoot);
+    missingPrimary["modelDescriptors"] = (missingPrimary["modelDescriptors"] as unknown[]).filter(
+      (entry) => (entry as { role: string }).role !== "primary",
     );
     expect(() =>
-      parseProductConfiguration(missingFallback, new Date().toISOString()),
+      parseProductConfiguration(missingPrimary, new Date().toISOString()),
     ).toThrowError();
     const invalidConcurrency = config(stateRoot);
     invalidConcurrency["concurrency"] = {
@@ -281,21 +352,20 @@ describe("strict product configuration", () => {
     expect(() =>
       parseProductConfiguration(mismatchedEmbedding, new Date().toISOString()),
     ).toThrowError();
-    const publicFallback = config(stateRoot);
-    const publicFallbackModels = publicFallback["modelDescriptors"] as Record<string, unknown>[];
-    publicFallback["modelDescriptors"] = publicFallbackModels.map((entry, index) =>
-      index === 1 ? { ...entry, allowedDataClassifications: ["public"] } : entry,
-    );
-    expect(() =>
-      parseProductConfiguration(publicFallback, new Date().toISOString()),
-    ).toThrowError();
+    const extraPrimary = config(stateRoot);
+    const primaryModels = extraPrimary["modelDescriptors"] as Record<string, unknown>[];
+    extraPrimary["modelDescriptors"] = [
+      ...primaryModels,
+      { ...primaryModels[0], ref: "second-primary" },
+    ];
+    expect(() => parseProductConfiguration(extraPrimary, new Date().toISOString())).toThrowError();
     const generationFieldOnEmbedding = config(stateRoot);
     const embeddingModels = generationFieldOnEmbedding["modelDescriptors"] as Record<
       string,
       unknown
     >[];
     generationFieldOnEmbedding["modelDescriptors"] = embeddingModels.map((entry, index) =>
-      index === 2 ? { ...entry, input: ["text"] } : entry,
+      index === 1 ? { ...entry, input: ["text"] } : entry,
     );
     expect(() =>
       parseProductConfiguration(generationFieldOnEmbedding, new Date().toISOString()),
@@ -315,7 +385,7 @@ describe("strict product configuration", () => {
       "modelDescriptors"
     ] as Record<string, unknown>[];
     missingEmbeddingCapability["modelDescriptors"] = missingEmbeddingCapabilityModels.map(
-      (entry, index) => (index === 2 ? { ...entry, capabilities: ["text"] } : entry),
+      (entry, index) => (index === 1 ? { ...entry, capabilities: ["text"] } : entry),
     );
     expect(() =>
       parseProductConfiguration(missingEmbeddingCapability, new Date().toISOString()),
@@ -771,4 +841,295 @@ it("validates the versioned Run policy and rejects inconsistent Memory bounds", 
     allowUntrustedTools: true,
   };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("parses private search without allowing a mixed directory grant", () => {
+  const raw = config("/tmp/config-fixture");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "search",
+    capabilityVersion: "1",
+    maximumBytes: 4096,
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+    publicSearch: route,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.publicSearch,
+  ).toEqual(route);
+  for (const changed of [
+    { ...route, grantId: "directory" },
+    { ...route, scopeSource: "directory" },
+  ]) {
+    raw["runPolicy"] = { ...policy, publicSearch: changed };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("parses ordered web providers and a fetch route without accepting unregistered or secret-only providers", () => {
+  const raw = config("/tmp/config-fixture");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "fetch",
+    capabilityVersion: "1",
+    maximumBytes: 32768,
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  raw["runPolicy"] = {
+    ...policy,
+    publicSearch: { ...route, capabilityRef: "search", providers: ["exa-public"] },
+    publicFetch: route,
+  };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy;
+  expect(parsed?.publicSearch).toEqual({
+    ...route,
+    capabilityRef: "search",
+    providers: ["exa-public"],
+  });
+  expect(parsed?.publicFetch).toEqual(route);
+  for (const providers of [[], ["bing"], ["exa-public", "exa-public"], "exa-public"]) {
+    raw["runPolicy"] = { ...policy, publicFetch: { ...route, providers } };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["runPolicy"] = { ...policy, publicFetch: { ...route, scopeSource: undefined, grantId: "g" } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("requires a configured web-provider secret for each provider that needs one", () => {
+  const raw = config("/tmp/himawari-web-secret-config");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "fetch",
+    capabilityVersion: "1",
+    maximumBytes: 32768,
+    providers: ["exa-public", "deepseek"],
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "deepseek-web", version: "v1", purpose: "web-provider", scope: "agent" },
+  ];
+  raw["runPolicy"] = {
+    ...policy,
+    publicFetch: { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.publicFetch).toEqual(
+    { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  );
+  for (const providerSecrets of [
+    undefined,
+    {},
+    { deepseek: "missing-secret" },
+    { deepseek: "deepseek-web", "exa-public": "deepseek-web" },
+  ]) {
+    raw["runPolicy"] = {
+      ...policy,
+      publicFetch: { ...route, ...(providerSecrets ? { providerSecrets } : {}) },
+    };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "deepseek-web", version: "v1", purpose: "payload-encryption", scope: "agent" },
+  ];
+  raw["runPolicy"] = {
+    ...policy,
+    publicFetch: { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("accepts a dedicated review model and rejects one the router could also select", () => {
+  const raw = config("/tmp/himawari-review-config");
+  const review = {
+    delegationKey: "automatic-review-delegation",
+    configurationVersion: "review-config:1",
+    modelRef: "model-primary",
+    maximumWaitMs: 30_000,
+    maxOutputBytes: 32_768,
+  };
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    automaticReview: review,
+  };
+  raw["runPolicy"] = policy;
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.automaticReview,
+  ).toEqual(review);
+  for (const changed of [
+    { ...review, modelRef: "model-unknown" },
+    { ...review, modelRef: "model-embedding" },
+    { ...review, modelRef: "model-embedding" },
+    { ...review, maximumWaitMs: 0 },
+    { ...review, maximumWaitMs: 300_001 },
+    { ...review, maxOutputBytes: 0 },
+    { ...review, extra: true },
+    { delegationKey: review.delegationKey, configurationVersion: review.configurationVersion },
+  ]) {
+    raw["runPolicy"] = { ...policy, automaticReview: changed };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+});
+
+it("accepts a TypeSafe decision model as the configured reviewer and rejects its invalid shapes", () => {
+  const raw = config("/tmp/himawari-jev-config");
+  const decisionModel = {
+    ref: "model-reviewer",
+    role: "specialist",
+    provider: "typesafe",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+    version: "snapshot-1",
+    priority: 2,
+    name: "Jev reviewer",
+    api: "typesafe-systemone",
+    capabilities: ["text"],
+    cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    allowedDataClassifications: ["private"],
+    disclosure: "external_remote",
+    secretRef: "provider-reviewer",
+  };
+  const descriptors = raw["modelDescriptors"] as Record<string, unknown>[];
+  descriptors.push(decisionModel);
+  (raw["secretReferences"] as Record<string, unknown>[]).push({
+    ref: "provider-reviewer",
+    version: "v1",
+    purpose: "model-auth",
+    scope: "model-reviewer",
+  });
+  const review = {
+    delegationKey: "automatic-review-delegation",
+    configurationVersion: "review-config:1",
+    modelRef: "model-reviewer",
+    maximumWaitMs: 30_000,
+    maxOutputBytes: 32_768,
+  };
+  const policy = {
+    version: "policy-v1",
+    systemInstruction: "可信指令",
+    memoryLimit: 10,
+    maxSelectedMemories: 5,
+    maxMemoryClassification: "private",
+    automaticReview: review,
+  };
+  raw["runPolicy"] = policy;
+  const parsed = parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z");
+  expect(parsed.modelDescriptors.at(-1)).toMatchObject({
+    api: "typesafe-systemone",
+    model: "jev-latest",
+    modelVersion: "jev-1.13.0",
+  });
+  expect(parsed.runPolicy?.automaticReview).toEqual(review);
+
+  raw["runPolicy"] = { ...policy, automaticReview: { ...review, confidenceThreshold: 0.8 } };
+  expect(
+    parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z").runPolicy?.automaticReview,
+  ).toMatchObject({ confidenceThreshold: 0.8 });
+  for (const changed of [
+    { ...review, confidenceThreshold: -0.1 },
+    { ...review, confidenceThreshold: 1.1 },
+    { ...review, confidenceThreshold: 1 },
+    { ...review, confidenceThreshold: 0 },
+  ]) {
+    raw["runPolicy"] = { ...policy, automaticReview: changed };
+    if (changed.confidenceThreshold === 0 || changed.confidenceThreshold === 1) {
+      expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).not.toThrow();
+    } else {
+      expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+    }
+  }
+
+  for (const [mutate, label] of [
+    [
+      (m: Record<string, unknown>) => ({ ...m, cost: { ...(m["cost"] as object), output: 1 } }),
+      "output",
+    ],
+    [(m: Record<string, unknown>) => ({ ...m, reasoning: false }), "reasoning"],
+    [(m: Record<string, unknown>) => ({ ...m, contextWindow: 8192 }), "contextWindow"],
+    [(m: Record<string, unknown>) => ({ ...m, maxTokens: 16 }), "maxTokens"],
+    [(m: Record<string, unknown>) => ({ ...m, input: ["text"] }), "input"],
+  ] as const) {
+    const descriptorsNext = [...descriptors];
+    descriptorsNext[descriptorsNext.length - 1] = mutate(decisionModel);
+    raw["modelDescriptors"] = descriptorsNext;
+    expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+    void label;
+  }
+  raw["modelDescriptors"] = [...descriptors, { ...decisionModel, ref: "second-reviewer" }];
+  expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+  raw["modelDescriptors"] = [...descriptors.slice(0, -1), { ...decisionModel, role: "fallback" }];
+  expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
+});
+
+describe("[R2-T2] coding route approval mode", () => {
+  const AT = "2026-10-13T00:00:00.000Z";
+  function withCoding(approval?: string): Record<string, unknown> {
+    const raw = config(path.join(tmpdir(), "himawari-coding-approval"));
+    raw["runPolicy"] = {
+      version: "policy-v1",
+      systemInstruction: "test",
+      memoryLimit: 10,
+      maxSelectedMemories: 1,
+      maxMemoryClassification: "private",
+      coding: {
+        hostId: "host",
+        workerInstanceId: "worker",
+        grantId: "directory:grant",
+        capabilityRef: "himawari.pi-coding",
+        capabilityVersion: "1.0.0",
+        maximumBytes: 4096,
+        enabledTools: ["read", "write", "edit", "bash", "find", "grep", "ls"],
+        ...(approval === undefined ? {} : { approval }),
+      },
+    };
+    return raw;
+  }
+
+  it("[R2-T2] accepts workspace_auto and ask, and defaults an omitted value to workspace_auto", () => {
+    expect(
+      parseProductConfiguration(withCoding("workspace_auto"), AT).runPolicy?.coding?.approval,
+    ).toBe("workspace_auto");
+    expect(parseProductConfiguration(withCoding("ask"), AT).runPolicy?.coding?.approval).toBe(
+      "ask",
+    );
+    expect(parseProductConfiguration(withCoding(), AT).runPolicy?.coding?.approval).toBe(
+      "workspace_auto",
+    );
+  });
+
+  it("[R2-T2] rejects an unknown approval value and an undeclared coding field", () => {
+    expect(() => parseProductConfiguration(withCoding("maybe"), AT)).toThrow();
+    const raw = withCoding("ask");
+    (raw["runPolicy"] as { coding: Record<string, unknown> }).coding["approval2"] = "ask";
+    expect(() => parseProductConfiguration(raw, AT)).toThrow();
+  });
 });

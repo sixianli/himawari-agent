@@ -1,5 +1,17 @@
+import { createHash } from "node:crypto";
+import { SqliteAutomaticActionReview } from "./sqlite-automatic-action-review.ts";
+import { SqliteAuthorizationReservations } from "./sqlite-authorization-reservations.ts";
+import {
+  approvalMatchesIntent,
+  isApprovalResolutionReplay,
+} from "@himawari-agent/application/action-intent-snapshot";
 import type {
   ApprovalRequest,
+  AutomaticReviewStart,
+  AutomaticReviewRecord,
+  AutomaticReviewFinish,
+  ReserveAuthorizationInput,
+  GovernedGrantRecord,
   AttentionDecisionCommit,
   AttentionDecisionCommitResult,
   AttentionPolicyState,
@@ -11,6 +23,7 @@ import type {
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
   CapabilityRegistryRecord,
+  CapabilityRegistryUpgrade,
   ConsumeGrantInput,
   DeliveryClaim,
   DeliveryRequest,
@@ -321,6 +334,8 @@ export class SqliteDurableOperations {
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
+  private readonly automaticReviews: SqliteAutomaticActionReview;
+  private readonly authorizationReservations: SqliteAuthorizationReservations;
   private readonly runCheckpoints: SqliteRunCheckpointOperations;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations;
   private readonly modelBudget: SqliteModelBudgetOperations;
@@ -332,6 +347,16 @@ export class SqliteDurableOperations {
     assertDiskHeadroom: () => void,
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
+    this.automaticReviews = new SqliteAutomaticActionReview(
+      database,
+      fail,
+      {
+        find: (intentId) => this.findApprovalByIntent(intentId),
+        create: (request) => this.createApproval(request),
+        resolve: (input) => this.resolveApproval(input),
+      },
+      (record) => this.appendAutomaticReviewObservation(record),
+    );
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
@@ -341,11 +366,22 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
+    this.authorizationReservations = new SqliteAuthorizationReservations(
+      database,
+      fail,
+      (id) => this.grantRow(id) as GovernedGrantRecord | undefined,
+      (id) => this.approvalRow(id),
+      (approval) => this.assertApprovalPolicyCurrent(approval),
+      (input, reservationId) => {
+        this.consumeGrant(input, reservationId);
+      },
+    );
     this.capabilityInvocations = new SqliteCapabilityInvocationOperations(
       database,
       fail,
       assertDiskHeadroom,
       this.runPayloadArtifacts,
+      (handle, invocation, now) => this.authorizationReservations.commit(handle, invocation, now),
     );
     this.modelBudget = new SqliteModelBudgetOperations(database, fail, assertDiskHeadroom);
     this.modelInvocations = new SqliteModelInvocationOperations(
@@ -504,6 +540,18 @@ export class SqliteDurableOperations {
         return this.appendAudit((payload as { record: AuditRecord }).record);
       case "audit.listByAgent":
         return this.listAudit(payload as { agentId: string; afterId: string | null });
+      case "automaticReview.readDelegation":
+        return this.automaticReviews.readDelegation(
+          payload as { ownerId: string; agentId: string; key: string },
+        );
+      case "automaticReview.get":
+        return this.automaticReviews.get((payload as { reviewId: string }).reviewId);
+      case "automaticReview.claim":
+        this.assertDiskHeadroom();
+        return this.automaticReviews.claim((payload as { input: AutomaticReviewStart }).input);
+      case "automaticReview.finish":
+        this.assertDiskHeadroom();
+        return this.automaticReviews.finish((payload as { input: AutomaticReviewFinish }).input);
       case "authorization.createApproval":
         return this.createApproval((payload as { request: ApprovalRequest }).request);
       case "authorization.findApprovalByIntent":
@@ -516,6 +564,18 @@ export class SqliteDurableOperations {
         return this.resolveApproval((payload as { input: ResolveApprovalInput }).input);
       case "authorization.listGrants":
         return this.listGrants(payload as { ownerId: string; agentId: string });
+      case "authorization.reservation.get":
+        return this.authorizationReservations.get((payload as { id: string }).id);
+      case "authorization.reserve":
+        this.assertDiskHeadroom();
+        return this.authorizationReservations.reserve(
+          (payload as { input: ReserveAuthorizationInput }).input,
+        );
+      case "authorization.release":
+        this.assertDiskHeadroom();
+        return this.authorizationReservations.release(
+          (payload as { input: { reservationId: string; now: string; reasonCode: string } }).input,
+        );
       case "authorization.consumeGrant":
         return this.consumeGrant((payload as { input: ConsumeGrantInput }).input);
       case "authorization.revokeGrant":
@@ -578,9 +638,19 @@ export class SqliteDurableOperations {
             switchedAt: string;
           },
         );
+      case "capability.applyUpgrades":
+        return this.applyCapabilityUpgrades(
+          payload as {
+            ownerId: string;
+            agentId: string;
+            upgrades: readonly CapabilityRegistryUpgrade[];
+            upgradedAt: string;
+          },
+        );
       case "capability.createHandle":
         return this.createCapabilityHandle(
           (payload as { handle: CapabilityExecutionHandle }).handle,
+          (payload as { options?: { authorizationReservationId: string } }).options,
         );
       case "capability.listRunHandles":
         return this.listRunCapabilityHandles(
@@ -1283,6 +1353,56 @@ export class SqliteDurableOperations {
     return result.changes === 1;
   }
 
+  /** Called inside the review transaction, so authority and its public observation agree. */
+  private appendAutomaticReviewObservation(record: AutomaticReviewRecord): void {
+    const { intent, request, result } = record;
+    const run = this.database
+      .prepare(
+        "SELECT session_id AS sessionId, thread_id AS threadId FROM runs WHERE id=? AND owner_id=? AND agent_id=?",
+      )
+      .get(intent.runId, intent.ownerId, intent.agentId) as
+      | { sessionId: string; threadId: string | null }
+      | undefined;
+    if (!run || run.threadId !== intent.threadId)
+      this.fail("PORT_NOT_AUTHORITATIVE", "Automatic review Run scope changed");
+    const previous = parseRecord<TraceEvent>(
+      this.database
+        .prepare(
+          "SELECT record_json AS recordJson FROM trace_events WHERE run_id=? ORDER BY sequence DESC LIMIT 1",
+        )
+        .get(intent.runId) as JsonRow | undefined,
+    );
+    const stage =
+      result === null
+        ? "started"
+        : result.decision === "approve"
+          ? "approved"
+          : result.decision === "deny"
+            ? "denied"
+            : result.decision;
+    const occurredAt = result?.completedAt ?? record.startedAt;
+    const id = createHash("sha256").update(request.reviewId).digest("hex");
+    this.appendNextTrace({
+      id: `trace:automatic-review:${id}:${stage}`,
+      schemaVersion: "trace.v1",
+      ownerId: intent.ownerId,
+      agentId: intent.agentId,
+      sessionId: run.sessionId as SessionId,
+      threadId: run.threadId as TraceEvent["threadId"],
+      runId: intent.runId,
+      turnId: null,
+      parentEventId: previous?.id ?? null,
+      causationId: request.reviewId,
+      correlationId: previous?.correlationId ?? `run:${intent.runId}`,
+      actorId: "automatic-review-control-plane",
+      dataClassification: intent.dataClassification,
+      eventType: `runtime.authorization_review.${stage}`,
+      payloadRef: null,
+      occurredAt,
+      recordedAt: occurredAt,
+    });
+  }
+
   private appendNextTrace(input: Omit<TraceEvent, "sequence">): TraceEvent {
     return this.database
       .transaction(() => {
@@ -1620,38 +1740,53 @@ export class SqliteDurableOperations {
 
   private createApproval(request: ApprovalRequest): ApprovalRequest {
     this.assertDiskHeadroom();
-    this.assertRunScope(request.runId, request.ownerId, request.agentId);
-    if (this.approvalRow(request.id)) {
-      this.fail("PORT_DUPLICATE", `Approval ${request.id} already exists`, {
-        approvalRequestId: request.id,
-      });
-    }
-    const intentRef = `metadata:approval-intent:${request.id}`;
-    this.ensureMetadataPayload(request.ownerId, request.agentId, intentRef, request.requestedAt);
-    this.database
-      .prepare(
-        `INSERT INTO approval_requests (
+    return this.database
+      .transaction(() => {
+        const existing = this.findApprovalByIntent(request.intentId);
+        if (existing) {
+          if (!approvalMatchesIntent(existing, request.intentSnapshot))
+            this.fail("PORT_CONFLICT", "Approval intent identity changed");
+          return existing;
+        }
+        this.assertRunScope(request.runId, request.ownerId, request.agentId);
+        if (this.approvalRow(request.id)) {
+          this.fail("PORT_DUPLICATE", `Approval ${request.id} already exists`, {
+            approvalRequestId: request.id,
+          });
+        }
+        const intentRef = `metadata:approval-intent:${request.id}`;
+        this.ensureMetadataPayload(
+          request.ownerId,
+          request.agentId,
+          intentRef,
+          request.requestedAt,
+        );
+        this.database
+          .prepare(
+            `INSERT INTO approval_requests (
           id, owner_id, agent_id, run_id, revision, status, risk, intent_ref,
           semantic_snapshot_hash, requested_at, decided_at, record_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        request.id,
-        request.ownerId,
-        request.agentId,
-        request.runId,
-        request.revision,
-        request.status,
-        "finalRisk" in request && typeof request.finalRisk === "string"
-          ? request.finalRisk.toLowerCase()
-          : "low",
-        intentRef,
-        request.semanticSnapshotHash,
-        request.requestedAt,
-        request.decidedAt,
-        JSON.stringify(request),
-      );
-    return request;
+          )
+          .run(
+            request.id,
+            request.ownerId,
+            request.agentId,
+            request.runId,
+            request.revision,
+            request.status,
+            "finalRisk" in request && typeof request.finalRisk === "string"
+              ? request.finalRisk.toLowerCase()
+              : "low",
+            intentRef,
+            request.semanticSnapshotHash,
+            request.requestedAt,
+            request.decidedAt,
+            JSON.stringify(request),
+          );
+        return request;
+      })
+      .immediate();
   }
 
   private findApprovalByIntent(intentId: string): ApprovalRequest | undefined {
@@ -1705,7 +1840,27 @@ export class SqliteDurableOperations {
     const transaction = this.database.transaction(() => {
       const current = this.approvalRow(input.approvalRequestId);
       if (!current) this.fail("PORT_NOT_FOUND", `Approval ${input.approvalRequestId} not found`);
-      if (input.resolution === "approved") this.assertApprovalPolicyCurrent(current);
+      if (
+        isApprovalResolutionReplay(
+          current,
+          input,
+          current.grantId ? this.grantRow(current.grantId) : undefined,
+        )
+      )
+        return current;
+      if (input.resolution === "approved") {
+        this.assertApprovalPolicyCurrent(current);
+        const run = this.database
+          .prepare("SELECT status FROM runs WHERE id=? AND owner_id=? AND agent_id=?")
+          .get(current.runId, current.ownerId, current.agentId) as { status: string } | undefined;
+        if (!run || ["completed", "failed", "cancelled"].includes(run.status))
+          this.fail(
+            "PORT_NOT_AUTHORITATIVE",
+            "A terminal Run cannot acquire new approval authority",
+          );
+        if (input.decidedAt >= current.expiresAt)
+          this.fail("PORT_NOT_AUTHORITATIVE", "Approval expired before durable decision");
+      }
       if (current.revision !== input.expectedRevision || current.status !== "pending") {
         this.fail("PORT_CONFLICT", `Approval ${current.id} cannot be resolved`);
       }
@@ -1781,7 +1936,7 @@ export class SqliteDurableOperations {
     );
   }
 
-  private consumeGrant(input: ConsumeGrantInput): GrantRecord {
+  private consumeGrant(input: ConsumeGrantInput, reservationId?: string): GrantRecord {
     this.assertDiskHeadroom();
     const transaction = this.database.transaction(() => {
       const sourceGrant = this.grantRow(input.grantId);
@@ -1789,16 +1944,40 @@ export class SqliteDurableOperations {
         ? this.approvalRow(sourceGrant.sourceApprovalRequestId)
         : undefined;
       if (sourceApproval) this.assertApprovalPolicyCurrent(sourceApproval);
+      if (
+        !sourceGrant ||
+        sourceGrant.revokedAt !== null ||
+        input.consumedAt < sourceGrant.validFrom ||
+        input.consumedAt >= sourceGrant.expiresAt
+      )
+        this.fail("PORT_NOT_AUTHORITATIVE", "Grant is revoked or expired");
       if (input.usageId) {
         const replay = this.database
-          .prepare("SELECT 1 FROM authorization_usage WHERE id = ? AND grant_id = ?")
-          .get(input.usageId, input.grantId);
+          .prepare(
+            "SELECT grant_id AS grantId, run_id AS runId, operation, cost_micros AS costMicros, intent_id AS intentId FROM authorization_usage WHERE id = ?",
+          )
+          .get(input.usageId) as
+          | {
+              grantId: string;
+              runId: string | null;
+              operation: string;
+              costMicros: number;
+              intentId: string | null;
+            }
+          | undefined;
         if (replay) {
-          const record = this.grantRow(input.grantId);
-          if (!record) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
-          return record;
+          if (
+            replay.grantId !== input.grantId ||
+            replay.runId !== (input.runId ?? null) ||
+            replay.operation !== input.operation ||
+            replay.costMicros !== input.costMicros ||
+            (replay.intentId !== null && replay.intentId !== input.intentId)
+          )
+            this.fail("PORT_CONFLICT", "Authorization usage identity changed");
+          return sourceGrant;
         }
       }
+
       const current = this.grantRow(input.grantId);
       if (!current) this.fail("PORT_NOT_FOUND", `Grant ${input.grantId} not found`);
       if (current.revision !== input.expectedRevision) {
@@ -1808,8 +1987,12 @@ export class SqliteDurableOperations {
         current.revokedAt !== null ||
         input.consumedAt < current.validFrom ||
         input.consumedAt >= current.expiresAt ||
-        current.uses >= current.maxUses ||
-        current.spentCostMicros + input.costMicros > current.maxTotalCostMicros
+        current.uses + this.authorizationReservations.capacity(current.id, reservationId).uses >=
+          current.maxUses ||
+        current.spentCostMicros +
+          this.authorizationReservations.capacity(current.id, reservationId).cost +
+          input.costMicros >
+          current.maxTotalCostMicros
       )
         this.fail("PORT_INVALID_OPERATION", `Grant ${current.id} is not consumable`);
       const consumed: GrantRecord = {
@@ -1822,8 +2005,8 @@ export class SqliteDurableOperations {
       if (input.usageId && input.operation) {
         this.database
           .prepare(
-            `INSERT INTO authorization_usage (id, grant_id, run_id, operation, cost_micros, used_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO authorization_usage (id, grant_id, run_id, operation, cost_micros, used_at, intent_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.usageId,
@@ -1832,6 +2015,7 @@ export class SqliteDurableOperations {
             input.operation,
             input.costMicros,
             input.consumedAt,
+            input.intentId ?? null,
           );
         const usagePayloadRef = `metadata:${input.usageId}`;
         this.ensureMetadataPayload(
@@ -2198,41 +2382,59 @@ export class SqliteDurableOperations {
     return input.record;
   }
 
-  private createCapabilityHandle(handle: CapabilityExecutionHandle): CapabilityExecutionHandle {
+  private createCapabilityHandle(
+    handle: CapabilityExecutionHandle,
+    options?: { authorizationReservationId: string },
+  ): CapabilityExecutionHandle {
     this.assertDiskHeadroom();
-    this.assertRunScope(handle.runId, handle.ownerId, handle.agentId);
-    if (
-      !this.database
-        .prepare(
-          `SELECT 1 FROM capability_declarations
+    return this.database
+      .transaction(() => {
+        if (options) {
+          const existing = this.authorizationReservations.bind(
+            options.authorizationReservationId,
+            handle,
+          );
+          if (existing) return existing;
+        }
+        this.assertRunScope(handle.runId, handle.ownerId, handle.agentId);
+        if (
+          !this.database
+            .prepare(
+              `SELECT 1 FROM capability_declarations
           WHERE id = ? AND owner_id = ? AND agent_id = ?`,
-        )
-        .get(handle.capabilityRef, handle.ownerId, handle.agentId)
-    ) {
-      this.fail(
-        "PORT_INVALID_OPERATION",
-        `Capability ${handle.capabilityRef} is outside the Handle scope`,
-      );
-    }
-    if (this.database.prepare("SELECT 1 FROM capability_handles WHERE id = ?").get(handle.ref)) {
-      this.fail("PORT_DUPLICATE", `Capability handle ${handle.ref} already exists`);
-    }
-    this.database
-      .prepare(
-        `INSERT INTO capability_handles (
+            )
+            .get(handle.capabilityRef, handle.ownerId, handle.agentId)
+        ) {
+          this.fail(
+            "PORT_INVALID_OPERATION",
+            `Capability ${handle.capabilityRef} is outside the Handle scope`,
+          );
+        }
+        if (
+          this.database.prepare("SELECT 1 FROM capability_handles WHERE id = ?").get(handle.ref)
+        ) {
+          this.fail("PORT_DUPLICATE", `Capability handle ${handle.ref} already exists`);
+        }
+        this.database
+          .prepare(
+            `INSERT INTO capability_handles (
           id, capability_id, run_id, authorization_ref, status, expires_at, revoked_at, record_json
         ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
-      )
-      .run(
-        handle.ref,
-        handle.capabilityRef,
-        handle.runId,
-        handle.authorization.ref,
-        handle.expiresAt,
-        handle.revokedAt,
-        JSON.stringify(handle),
-      );
-    return handle;
+          )
+          .run(
+            handle.ref,
+            handle.capabilityRef,
+            handle.runId,
+            handle.authorization.ref,
+            handle.expiresAt,
+            handle.revokedAt,
+            JSON.stringify(handle),
+          );
+        if (options)
+          this.authorizationReservations.bound(options.authorizationReservationId, handle.ref);
+        return handle;
+      })
+      .immediate();
   }
 
   private invalidateCapabilityAuthority(input: {
@@ -2302,6 +2504,43 @@ export class SqliteDurableOperations {
       });
       return saved;
     });
+    return transaction.immediate();
+  }
+
+  private applyCapabilityUpgrades(input: {
+    ownerId: string;
+    agentId: string;
+    upgrades: readonly CapabilityRegistryUpgrade[];
+    upgradedAt: string;
+  }): readonly CapabilityRegistryRecord[] {
+    const transaction = this.database.transaction(() =>
+      input.upgrades.map((upgrade) => {
+        if (
+          upgrade.audit.ownerId !== input.ownerId ||
+          upgrade.audit.agentId !== input.agentId ||
+          upgrade.audit.targetRef !== upgrade.record.ref
+        ) {
+          this.fail(
+            "PORT_INVALID_OPERATION",
+            `Capability upgrade audit for ${upgrade.record.ref} is outside its scope`,
+          );
+        }
+        const saved = this.saveCapability({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          record: upgrade.record,
+          expectedRevision: upgrade.expectedRevision,
+        });
+        this.revokeCapabilityHandlesCore({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          capabilityRef: upgrade.record.ref,
+          revokedAt: input.upgradedAt,
+        });
+        this.appendAudit(upgrade.audit);
+        return saved;
+      }),
+    );
     return transaction.immediate();
   }
 
@@ -2380,16 +2619,26 @@ export class SqliteDurableOperations {
     revokedAt: string;
   }): CapabilityExecutionHandle {
     this.assertDiskHeadroom();
-    const current = this.getCapabilityHandle(input);
-    if (!current) this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
-    if (current.revokedAt !== null) return current;
-    const revoked = { ...current, revokedAt: input.revokedAt };
-    this.database
-      .prepare(
-        "UPDATE capability_handles SET status = 'revoked', revoked_at = ?, record_json = ? WHERE id = ?",
-      )
-      .run(input.revokedAt, JSON.stringify(revoked), input.handleRef);
-    return revoked;
+    return this.database
+      .transaction(() => {
+        const current = this.getCapabilityHandle(input);
+        if (!current) this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
+        if (current.revokedAt !== null) {
+          this.authorizationReservations.releaseUnusedHandle(current.ref, input.revokedAt);
+          return current;
+        }
+        const revoked = { ...current, revokedAt: input.revokedAt };
+        this.database
+          .prepare(
+            "UPDATE capability_handles SET status = 'revoked', revoked_at = ?, record_json = ? WHERE id = ?",
+          )
+          .run(input.revokedAt, JSON.stringify(revoked), input.handleRef);
+        this.authorizationReservations.releaseUnusedHandle(current.ref, input.revokedAt);
+        const result = this.getCapabilityHandle(input);
+        if (!result) this.fail("PORT_NOT_FOUND", "Revoked Handle disappeared");
+        return result;
+      })
+      .immediate();
   }
 
   private consumeCapabilityHandle(_input: unknown): never {
@@ -2439,6 +2688,12 @@ export class SqliteDurableOperations {
           .prepare("UPDATE capability_handles SET status = 'revoked', record_json = ? WHERE id = ?")
           .run(JSON.stringify(ended), current.ref);
       }
+      this.authorizationReservations.releaseRun(
+        input.ownerId,
+        input.agentId,
+        input.runId,
+        input.endedAt,
+      );
       return rows.length;
     });
     return transaction.immediate();

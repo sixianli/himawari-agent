@@ -1,0 +1,258 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/control-center/test/execution-view.unit.test.ts (14 tests | 2 failed) 10ms
+   × shows the recorded automatic-review source and only complete review intervals 3ms
+   × prioritizes live review without reviving it after confirmation, cancellation or a later model turn 3ms
+ ❯ |integration| test/integration/automatic-action-review.test.ts (33 tests | 6 failed) 6925ms
+   × commits replayable, scoped review observations for approve without exposing protected text 188ms
+   × commits replayable, scoped review observations for deny without exposing protected text 185ms
+   × commits replayable, scoped review observations for human without exposing protected text 182ms
+   × commits replayable, scoped review observations for alternative without exposing protected text 176ms
+   × rolls back review state when started observation cannot commit 181ms
+   × rolls back review state when approved observation cannot commit 173ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > commits replayable, scoped review observations for approve without exposing protected text
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > commits replayable, scoped review observations for deny without exposing protected text
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > commits replayable, scoped review observations for human without exposing protected text
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > commits replayable, scoped review observations for alternative without exposing protected text
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   "runtime.authorization_review.started",
+- ]
++ []
+
+ ❯ test/integration/automatic-action-review.test.ts:632:55
+    630|     await f.store().claim(f.start);
+    631|     const started = await f.repository().traceStore().readRun(RUN_ID, …
+    632|     expect(started.map(({ eventType }) => eventType)).toEqual(["runtim…
+       |                                                       ^
+    633|     await f.finish(decision);
+    634|     await f.finish(decision);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > rolls back review state when started observation cannot commit
+AssertionError: promise resolved "{ record: { …(7) }, claimed: true }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "claimed": true,
++   "record": {
++     "delegation": {
++       "key": "review-policy",
++       "revision": 1,
++     },
++     "executionLease": {
++       "authorityEpoch": 1,
++       "authorityFencingToken": 1,
++       "authorityLeaseId": "lease-capability-invocation",
++       "consumerId": "automatic-review-test",
++       "deploymentId": "deployment-capability-invocation",
++       "executionLeaseId": "review-lease",
++       "expectedLeaseRevision": 1,
++       "fencingToken": 1,
++     },
++     "intent": {
++       "actionKind": "READ",
++       "agentId": "agent-capability-invocation",
++       "capabilityRef": "capability-invocation",
++       "capabilityVersion": "1.0.0",
++       "contractVersion": "authorization.v2",
++       "credentialOrAccessChange": false,
++       "dataClassification": "private",
++       "deterministicFacts": [],
++       "disclosure": "none",
++       "estimatedCostMicros": 0,
++       "expiresAt": "2026-09-19T12:31:48.441Z",
++       "finalRisk": "LOW",
++       "frequency": {
++         "count": 1,
++         "intervalMs": null,
++       },
++       "id": "intent-capability-invocation-grant",
++       "idempotencyKey": "intent-capability-invocation-grant",
++       "modelClassification": {
++         "actionKind": "READ",
++         "reasonCode": "read",
++         "suggestedRisk": "LOW",
++       },
++       "operation": "read",
++       "ownerId": "owner-capability-invocation",
++       "recipients": [],
++       "requestedAt": "2026-09-19T12:26:48.441Z",
++       "resourceRef": "resource-capability-invocation",
++       "resourceRefs": [
++         "resource-capability-invocation",
++       ],
++       "reversible": true,
++       "runId": "run-capability-invocation",
++       "sideEffect": "none",
++       "targets": [
++         {
++           "ref": "resource-capability-invocation",
++           "type": "file",
++         },
++       ],
++       "threadId": "thread-capability-invocation",
++     },
++     "request": {
++       "approvalExpiresAt": "2026-09-19T12:31:48.441Z",
++       "configurationVersion": "review-config:1",
++       "deadlineAt": "2026-09-19T12:31:48.441Z",
++       "inputRef": "payload-capability-invocation-trigger",
++       "intentFingerprint": "intent.v2.sha256:98c2b46605da168531a04baf0ccafaf59f39d60d4a4a7a282eaa5509b127f651",
++       "modelRef": "model:test",
++       "policyVersion": "policy:1",
++       "reviewId": "review:one",
++       "runId": "run-capability-invocation",
++       "schemaVersion": "automatic-review.v1",
++     },
++     "result": null,
++     "startedAt": "2026-09-19T12:26:48.445Z",
++     "status": "pending",
++   },
+  }
+
+ ❯ test/integration/automatic-action-review.test.ts:668:76
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > rolls back review state when approved observation cannot commit
+AssertionError: promise resolved "{ request: { …(10) }, …(6) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "delegation": {
++     "key": "review-policy",
++     "revision": 1,
++   },
++   "executionLease": {
++     "authorityEpoch": 1,
++     "authorityFencingToken": 1,
++     "authorityLeaseId": "lease-capability-invocation",
++     "consumerId": "automatic-review-test",
++     "deploymentId": "deployment-capability-invocation",
++     "executionLeaseId": "review-lease",
++     "expectedLeaseRevision": 1,
++     "fencingToken": 1,
++   },
++   "intent": {
++     "actionKind": "READ",
++     "agentId": "agent-capability-invocation",
++     "capabilityRef": "capability-invocation",
++     "capabilityVersion": "1.0.0",
++     "contractVersion": "authorization.v2",
++     "credentialOrAccessChange": false,
++     "dataClassification": "private",
++     "deterministicFacts": [],
++     "disclosure": "none",
++     "estimatedCostMicros": 0,
++     "expiresAt": "2026-09-19T12:31:48.614Z",
++     "finalRisk": "LOW",
++     "frequency": {
++       "count": 1,
++       "intervalMs": null,
++     },
++     "id": "intent-capability-invocation-grant",
++     "idempotencyKey": "intent-capability-invocation-grant",
++     "modelClassification": {
++       "actionKind": "READ",
++       "reasonCode": "read",
++       "suggestedRisk": "LOW",
++     },
++     "operation": "read",
++     "ownerId": "owner-capability-invocation",
++     "recipients": [],
++     "requestedAt": "2026-09-19T12:26:48.614Z",
++     "resourceRef": "resource-capability-invocation",
++     "resourceRefs": [
++       "resource-capability-invocation",
++     ],
++     "reversible": true,
++     "runId": "run-capability-invocation",
++     "sideEffect": "none",
++     "targets": [
++       {
++         "ref": "resource-capability-invocation",
++         "type": "file",
++       },
++     ],
++     "threadId": "thread-capability-invocation",
++   },
++   "request": {
++     "approvalExpiresAt": "2026-09-19T12:31:48.614Z",
++     "configurationVersion": "review-config:1",
++     "deadlineAt": "2026-09-19T12:31:48.614Z",
++     "inputRef": "payload-capability-invocation-trigger",
++     "intentFingerprint": "intent.v2.sha256:133642ca22c4a80cbc497efcb9b43e9939694d06dc4b6d72b9bece22831e1b14",
++     "modelRef": "model:test",
++     "policyVersion": "policy:1",
++     "reviewId": "review:one",
++     "runId": "run-capability-invocation",
++     "schemaVersion": "automatic-review.v1",
++   },
++   "result": {
++     "approvalRequestId": "automatic-approval:review:one",
++     "completedAt": "2026-09-19T12:26:48.620Z",
++     "decision": "approve",
++     "outputRef": "payload-capability-invocation-trigger",
++     "reasonCode": "WITHIN_DELEGATION",
++   },
++   "startedAt": "2026-09-19T12:26:48.617Z",
++   "status": "finished",
+  }
+
+ ❯ test/integration/automatic-action-review.test.ts:668:76
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  |unit| apps/control-center/test/execution-view.unit.test.ts > shows the recorded automatic-review source and only complete review intervals
+TypeError: authorizationReviewSteps is not a function
+ ❯ apps/control-center/test/execution-view.unit.test.ts:237:10
+    235|   const start = record(2, 20, { phase: "updated", itemId: "review:one"…
+    236|   const end = record(3, 23, { phase: "updated", itemId: "review:one", …
+    237|   expect(authorizationReviewSteps([end, start, end])).toEqual([
+       |          ^
+    238|     expect.objectContaining({ itemId: "review:one", sequence: 2, outco…
+    239|   ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  |unit| apps/control-center/test/execution-view.unit.test.ts > prioritizes live review without reviving it after confirmation, cancellation or a later model turn
+AssertionError: expected 'chat.activity.tool' to be 'review.authorizationChecking' // Object.is equality
+
+Expected: "review.authorizationChecking"
+Received: "chat.activity.tool"
+
+ ❯ apps/control-center/test/execution-view.unit.test.ts:249:90
+    247|   const start = record(3, 20, { phase: "updated", itemId: "review:one"…
+    248|   const call = record(2, 15, { kind: "tool", name: "write" });
+    249|   expect(executionActivity([record(1, 10), call, start], run, "connect…
+       |                                                                                          ^
+    250|   expect(executionActivity([start], { ...run, status: "awaiting_approv…
+    251|   expect(executionActivity([start], run, "offline", 22000).label).toBe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  8 failed | 39 passed (47)
+   Start at  21:26:40
+   Duration  8.53s (transform 873ms, setup 0ms, import 1.41s, tests 6.94s, environment 0ms)

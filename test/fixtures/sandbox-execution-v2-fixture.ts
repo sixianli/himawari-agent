@@ -1,5 +1,13 @@
-import type { SandboxExecutionJournalPort } from "@himawari-agent/application";
+import type {
+  SandboxCleanupPending,
+  SandboxExecutionJournalPort,
+  SandboxExecutionRecord,
+  SandboxExecutionVerification,
+  SandboxReconciliationBackend,
+} from "@himawari-agent/application";
 import {
+  type SandboxOperationContract,
+  type SandboxResourceObservation,
   sandboxExecutionFactsSchema,
   sandboxExecutionPlanCandidateV2Schema,
 } from "@himawari-agent/execution-contracts";
@@ -13,6 +21,34 @@ import {
 } from "./sqlite-capability-invocation-fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+export function reconciliationBackend(callbacks: {
+  inspect(
+    record: SandboxExecutionRecord,
+    signal: AbortSignal,
+  ): Promise<SandboxResourceObservation | SandboxCleanupPending>;
+  stop(
+    record: SandboxExecutionRecord,
+    signal: AbortSignal,
+  ): Promise<SandboxResourceObservation | SandboxCleanupPending>;
+}): SandboxReconciliationBackend {
+  return {
+    observe: async (record, action, signal) => {
+      const resource = await callbacks[action](record, signal);
+      return "kind" in resource ? resource : { kind: "observation", resource };
+    },
+  };
+}
+export function verifiedReconciliationBackend(
+  observe: (
+    record: SandboxExecutionRecord,
+    action: "inspect" | "stop",
+    signal: AbortSignal,
+  ) => Promise<SandboxExecutionVerification>,
+): SandboxReconciliationBackend {
+  return {
+    observe: async (...args) => ({ kind: "verified", verification: await observe(...args) }),
+  };
+}
 type Admission = Parameters<SandboxExecutionJournalPort["admit"]>[0];
 export function sandboxV2Admission(
   f: Fixture,
@@ -22,6 +58,11 @@ export function sandboxV2Admission(
     { device: "1", inode: "10" },
   ],
   access: "read" | "write" = "write",
+  operationContract: SandboxOperationContract = {
+    ref: "fixed-read",
+    version: "1",
+    kind: "fixed_read",
+  },
 ): Admission {
   const { semanticFingerprint: _fingerprint, ...v1 } = f.plan;
   const identity = {
@@ -38,7 +79,7 @@ export function sandboxV2Admission(
     mode: "foreground",
     environmentId: `environment${suffix}`,
     backendRef: "srt",
-    operationContract: { ref: "fixed-read", version: "1", kind: "fixed_read" },
+    operationContract,
   });
   const environment = {
     schemaVersion: "sandbox-execution.v2",

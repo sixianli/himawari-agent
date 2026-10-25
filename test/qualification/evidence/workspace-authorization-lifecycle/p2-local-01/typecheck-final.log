@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/persistence-sqlite/src/sqlite-authorization-reservations.ts(99,11): error TS2339: Property 'threadId' does not exist on type '{ status: string; }'.

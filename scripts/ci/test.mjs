@@ -7,6 +7,7 @@ import { resolvePolicySource, validateVitestProjects } from "./check-policy.mjs"
 import { outputPath, verifyContext } from "./context.mjs";
 import { parseArguments, repositoryRoot } from "./contracts.mjs";
 import { execute, sumCounts, vitestCounts } from "./execute.mjs";
+import { testWorkerCount } from "./test-concurrency.mjs";
 import { verifyArtifact } from "./verify-artifact.mjs";
 
 export const parseVitestReport = vitestCounts;
@@ -56,6 +57,7 @@ export async function runTests({
     const json = path.join(destination, `${id}.json`);
     const junit = path.join(destination, `${id}.xml`);
     const log = path.join(destination, `${id}.log`);
+    const expected = policy.testProjects.find((project) => project.id === id);
     const outcome = await execute(
       process.execPath,
       [
@@ -66,7 +68,7 @@ export async function runTests({
         "--project",
         id,
         "--maxWorkers",
-        "1",
+        String(testWorkerCount(expected)),
         "--retry",
         "0",
         "--reporter=json",
@@ -96,7 +98,6 @@ export async function runTests({
     const counts = parseVitestReport(report);
     if (outcome.exitCode === 0 && (counts.failed || counts.skipped))
       throw new Error(`CI_TEST_EXIT_CONTRADICTION:${id}`);
-    const expected = policy.testProjects.find((project) => project.id === id);
     const expectedFiles = trackedFiles
       .filter(
         (filename) =>

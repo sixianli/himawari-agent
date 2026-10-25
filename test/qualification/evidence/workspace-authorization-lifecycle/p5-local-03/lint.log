@@ -1,0 +1,424 @@
+apps/agent-service/src/production-coding-workflow.ts:98:18 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+     96 │   if (
+     97 │     tool === "web_search" &&
+   > 98 │     (typeof args["query"] !== "string" ||
+        │                  ^^^^^^^
+     99 │       !args["query"].trim() ||
+    100 │       Buffer.byteLength(args["query"]) > 4096 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     96  96 │     if (
+     97  97 │       tool === "web_search" &&
+     98     │ - ····(typeof·args["query"]·!==·"string"·||
+         98 │ + ····(typeof·args.query·!==·"string"·||
+     99  99 │         !args["query"].trim() ||
+    100 100 │         Buffer.byteLength(args["query"]) > 4096 ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:99:13 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+     97 │     tool === "web_search" &&
+     98 │     (typeof args["query"] !== "string" ||
+   > 99 │       !args["query"].trim() ||
+        │             ^^^^^^^
+    100 │       Buffer.byteLength(args["query"]) > 4096 ||
+    101 │       scanMachineSecrets(args["query"]).length ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     97  97 │       tool === "web_search" &&
+     98  98 │       (typeof args["query"] !== "string" ||
+     99     │ - ······!args["query"].trim()·||
+         99 │ + ······!args.query.trim()·||
+    100 100 │         Buffer.byteLength(args["query"]) > 4096 ||
+    101 101 │         scanMachineSecrets(args["query"]).length ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:100:30 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+     98 │     (typeof args["query"] !== "string" ||
+     99 │       !args["query"].trim() ||
+  > 100 │       Buffer.byteLength(args["query"]) > 4096 ||
+        │                              ^^^^^^^
+    101 │       scanMachineSecrets(args["query"]).length ||
+    102 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     98  98 │       (typeof args["query"] !== "string" ||
+     99  99 │         !args["query"].trim() ||
+    100     │ - ······Buffer.byteLength(args["query"])·>·4096·||
+        100 │ + ······Buffer.byteLength(args.query)·>·4096·||
+    101 101 │         scanMachineSecrets(args["query"]).length ||
+    102 102 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:101:31 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+     99 │       !args["query"].trim() ||
+    100 │       Buffer.byteLength(args["query"]) > 4096 ||
+  > 101 │       scanMachineSecrets(args["query"]).length ||
+        │                               ^^^^^^^
+    102 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    103 │       (args["limit"] !== undefined &&
+
+  i Unsafe fix: Use a literal key instead.
+
+     99  99 │         !args["query"].trim() ||
+    100 100 │         Buffer.byteLength(args["query"]) > 4096 ||
+    101     │ - ······scanMachineSecrets(args["query"]).length·||
+        101 │ + ······scanMachineSecrets(args.query).length·||
+    102 102 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    103 103 │         (args["limit"] !== undefined &&
+
+
+apps/agent-service/src/production-coding-workflow.ts:103:13 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    101 │       scanMachineSecrets(args["query"]).length ||
+    102 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+  > 103 │       (args["limit"] !== undefined &&
+        │             ^^^^^^^
+    104 │         (!Number.isInteger(args["limit"]) ||
+    105 │           Number(args["limit"]) < 1 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    101 101 │         scanMachineSecrets(args["query"]).length ||
+    102 102 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    103     │ - ······(args["limit"]·!==·undefined·&&
+        103 │ + ······(args.limit·!==·undefined·&&
+    104 104 │           (!Number.isInteger(args["limit"]) ||
+    105 105 │             Number(args["limit"]) < 1 ||
+
+
+apps/agent-service/src/production-coding-workflow.ts:104:33 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    102 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    103 │       (args["limit"] !== undefined &&
+  > 104 │         (!Number.isInteger(args["limit"]) ||
+        │                                 ^^^^^^^
+    105 │           Number(args["limit"]) < 1 ||
+    106 │           Number(args["limit"]) > 10)))
+
+  i Unsafe fix: Use a literal key instead.
+
+    102 102 │         Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    103 103 │         (args["limit"] !== undefined &&
+    104     │ - ········(!Number.isInteger(args["limit"])·||
+        104 │ + ········(!Number.isInteger(args.limit)·||
+    105 105 │             Number(args["limit"]) < 1 ||
+    106 106 │             Number(args["limit"]) > 10)))
+
+
+apps/agent-service/src/production-coding-workflow.ts:105:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    103 │       (args["limit"] !== undefined &&
+    104 │         (!Number.isInteger(args["limit"]) ||
+  > 105 │           Number(args["limit"]) < 1 ||
+        │                       ^^^^^^^
+    106 │           Number(args["limit"]) > 10)))
+    107 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+    103 103 │         (args["limit"] !== undefined &&
+    104 104 │           (!Number.isInteger(args["limit"]) ||
+    105     │ - ··········Number(args["limit"])·<·1·||
+        105 │ + ··········Number(args.limit)·<·1·||
+    106 106 │             Number(args["limit"]) > 10)))
+    107 107 │     )
+
+
+apps/agent-service/src/production-coding-workflow.ts:106:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    104 │         (!Number.isInteger(args["limit"]) ||
+    105 │           Number(args["limit"]) < 1 ||
+  > 106 │           Number(args["limit"]) > 10)))
+        │                       ^^^^^^^
+    107 │   )
+    108 │     return failed("WEB_SEARCH_INPUT_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+    104 104 │           (!Number.isInteger(args["limit"]) ||
+    105 105 │             Number(args["limit"]) < 1 ||
+    106     │ - ··········Number(args["limit"])·>·10)))
+        106 │ + ··········Number(args.limit)·>·10)))
+    107 107 │     )
+    108 108 │       return failed("WEB_SEARCH_INPUT_INVALID");
+
+
+apps/agent-service/src/production-coding-workflow.ts:112:12 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    110 │     if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
+    111 │     const target =
+  > 112 │       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
+        │            ^^^^^^
+    113 │     if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
+    114 │     try {
+
+  i Unsafe fix: Use a literal key instead.
+
+    110 110 │       if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
+    111 111 │       const target =
+    112     │ - ······args["path"]·??·(tool·===·"ls"·||·tool·===·"find"·||·tool·===·"grep"·?·"."·:·undefined);
+        112 │ + ······args.path·??·(tool·===·"ls"·||·tool·===·"find"·||·tool·===·"grep"·?·"."·:·undefined);
+    113 113 │       if (typeof target !== "string") return failed("CODING_PATH_REQUIRED");
+    114 114 │       try {
+
+
+apps/agent-service/src/production-coding-workflow.ts:179:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    177 │       { type: "model", ref: binding.modelIdentity },
+    178 │       ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+  > 179 │       ...(typeof args["path"] === "string" ? [{ type: "file-path", ref: args["path"] }] : []),
+        │                       ^^^^^^
+    180 │     ],
+    181 │     dataClassification: "private",
+
+  i Unsafe fix: Use a literal key instead.
+
+    177 177 │         { type: "model", ref: binding.modelIdentity },
+    178 178 │         ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+    179     │ - ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+        179 │ + ······...(typeof·args.path·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+    180 180 │       ],
+    181 181 │       dataClassification: "private",
+
+
+apps/agent-service/src/production-coding-workflow.ts:179:78 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    177 │       { type: "model", ref: binding.modelIdentity },
+    178 │       ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+  > 179 │       ...(typeof args["path"] === "string" ? [{ type: "file-path", ref: args["path"] }] : []),
+        │                                                                              ^^^^^^
+    180 │     ],
+    181 │     dataClassification: "private",
+
+  i Unsafe fix: Use a literal key instead.
+
+    177 177 │         { type: "model", ref: binding.modelIdentity },
+    178 178 │         ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+    179     │ - ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args["path"]·}]·:·[]),
+        179 │ + ······...(typeof·args["path"]·===·"string"·?·[{·type:·"file-path",·ref:·args.path·}]·:·[]),
+    180 180 │       ],
+    181 181 │       dataClassification: "private",
+
+
+apps/agent-service/src/production-file-read-workflow.ts:108:29 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    106 │       call.capabilityHandleRef !== null ||
+    107 │       call.capabilityRef !== "host.file.read" ||
+  > 108 │       typeof call.arguments["path"] !== "string" ||
+        │                             ^^^^^^
+    109 │       !call.arguments["path"] ||
+    110 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    106 106 │         call.capabilityHandleRef !== null ||
+    107 107 │         call.capabilityRef !== "host.file.read" ||
+    108     │ - ······typeof·call.arguments["path"]·!==·"string"·||
+        108 │ + ······typeof·call.arguments.path·!==·"string"·||
+    109 109 │         !call.arguments["path"] ||
+    110 110 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+
+
+apps/agent-service/src/production-file-read-workflow.ts:109:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    107 │       call.capabilityRef !== "host.file.read" ||
+    108 │       typeof call.arguments["path"] !== "string" ||
+  > 109 │       !call.arguments["path"] ||
+        │                       ^^^^^^
+    110 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    111 │       [call.arguments["offset"], call.arguments["limit"]].some(
+
+  i Unsafe fix: Use a literal key instead.
+
+    107 107 │         call.capabilityRef !== "host.file.read" ||
+    108 108 │         typeof call.arguments["path"] !== "string" ||
+    109     │ - ······!call.arguments["path"]·||
+        109 │ + ······!call.arguments.path·||
+    110 110 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    111 111 │         [call.arguments["offset"], call.arguments["limit"]].some(
+
+
+apps/agent-service/src/production-file-read-workflow.ts:111:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    109 │       !call.arguments["path"] ||
+    110 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+  > 111 │       [call.arguments["offset"], call.arguments["limit"]].some(
+        │                       ^^^^^^^^
+    112 │         (value) =>
+    113 │           value !== undefined &&
+
+  i Unsafe fix: Use a literal key instead.
+
+    109 109 │         !call.arguments["path"] ||
+    110 110 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    111     │ - ······[call.arguments["offset"],·call.arguments["limit"]].some(
+        111 │ + ······[call.arguments.offset,·call.arguments["limit"]].some(
+    112 112 │           (value) =>
+    113 113 │             value !== undefined &&
+
+
+apps/agent-service/src/production-file-read-workflow.ts:111:49 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    109 │       !call.arguments["path"] ||
+    110 │       Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+  > 111 │       [call.arguments["offset"], call.arguments["limit"]].some(
+        │                                                 ^^^^^^^
+    112 │         (value) =>
+    113 │           value !== undefined &&
+
+  i Unsafe fix: Use a literal key instead.
+
+    109 109 │         !call.arguments["path"] ||
+    110 110 │         Object.keys(call.arguments).some((key) => !["path", "offset", "limit"].includes(key)) ||
+    111     │ - ······[call.arguments["offset"],·call.arguments["limit"]].some(
+        111 │ + ······[call.arguments["offset"],·call.arguments.limit].some(
+    112 112 │           (value) =>
+    113 113 │             value !== undefined &&
+
+
+apps/agent-service/src/production-file-read-workflow.ts:133:76 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    131 │     let relativePath: string;
+    132 │     try {
+  > 133 │       relativePath = resolveHostFileReadPath(binding.grant, call.arguments["path"]);
+        │                                                                            ^^^^^^
+    134 │     } catch {
+    135 │       return failure("FILE_READ_PATH_OUTSIDE_SCOPE");
+
+  i Unsafe fix: Use a literal key instead.
+
+    131 131 │       let relativePath: string;
+    132 132 │       try {
+    133     │ - ······relativePath·=·resolveHostFileReadPath(binding.grant,·call.arguments["path"]);
+        133 │ + ······relativePath·=·resolveHostFileReadPath(binding.grant,·call.arguments.path);
+    134 134 │       } catch {
+    135 135 │         return failure("FILE_READ_PATH_OUTSIDE_SCOPE");
+
+
+apps/agent-service/src/production-file-read-workflow.ts:209:50 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    207 │         { type: "directory-grant", ref: binding.grant.id },
+    208 │         { type: "directory-path", ref: binding.grant.displayPath },
+  > 209 │         { type: "file-path", ref: call.arguments["path"] as string },
+        │                                                  ^^^^^^
+    210 │         { type: "file-identity", ref: hash(target) },
+    211 │         ...(disclose ? [{ type: "model", ref: binding.modelIdentity }] : []),
+
+  i Unsafe fix: Use a literal key instead.
+
+    207 207 │           { type: "directory-grant", ref: binding.grant.id },
+    208 208 │           { type: "directory-path", ref: binding.grant.displayPath },
+    209     │ - ········{·type:·"file-path",·ref:·call.arguments["path"]·as·string·},
+        209 │ + ········{·type:·"file-path",·ref:·call.arguments.path·as·string·},
+    210 210 │           { type: "file-identity", ref: hash(target) },
+    211 211 │           ...(disclose ? [{ type: "model", ref: binding.modelIdentity }] : []),
+
+
+apps/agent-service/src/production-file-read-workflow.ts:279:28 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    277 │       workerInstanceId: binding.workerInstanceId,
+    278 │       grant: binding.grant,
+  > 279 │       path: call.arguments["path"],
+        │                            ^^^^^^
+    280 │       maximumBytes: binding.maximumBytes,
+    281 │     };
+
+  i Unsafe fix: Use a literal key instead.
+
+    277 277 │         workerInstanceId: binding.workerInstanceId,
+    278 278 │         grant: binding.grant,
+    279     │ - ······path:·call.arguments["path"],
+        279 │ + ······path:·call.arguments.path,
+    280 280 │         maximumBytes: binding.maximumBytes,
+    281 281 │       };
+
+
+apps/agent-service/src/production-file-read-workflow.ts:297:47 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    295 │       target.canonicalRootId !== binding.grant.canonicalRootId ||
+    296 │       target.authorizationRef !== binding.grant.authorizationRef ||
+  > 297 │       target.requestedPath !== call.arguments["path"] ||
+        │                                               ^^^^^^
+    298 │       target.maximumBytes !== binding.maximumBytes ||
+    299 │       !target.identity ||
+
+  i Unsafe fix: Use a literal key instead.
+
+    295 295 │         target.canonicalRootId !== binding.grant.canonicalRootId ||
+    296 296 │         target.authorizationRef !== binding.grant.authorizationRef ||
+    297     │ - ······target.requestedPath·!==·call.arguments["path"]·||
+        297 │ + ······target.requestedPath·!==·call.arguments.path·||
+    298 298 │         target.maximumBytes !== binding.maximumBytes ||
+    299 299 │         !target.identity ||
+
+
+apps/agent-service/src/production-runtime-tools.ts:295:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    293 │     const args = invocation.arguments;
+    294 │     if (
+  > 295 │       typeof args["capabilityHandleRef"] !== "string" ||
+        │                   ^^^^^^^^^^^^^^^^^^^^^
+    296 │       typeof args["inputRef"] !== "string" ||
+    297 │       Object.keys(args).length !== 2 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     293  293 │       const args = invocation.arguments;
+     294  294 │       if (
+     295      │ - ······typeof·args["capabilityHandleRef"]·!==·"string"·||
+          295 │ + ······typeof·args.capabilityHandleRef·!==·"string"·||
+     296  296 │         typeof args["inputRef"] !== "string" ||
+     297  297 │         Object.keys(args).length !== 2 ||
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 8.
+Checked 11 files in 91ms. No fixes applied.
+Found 28 infos.

@@ -9,6 +9,7 @@ import type {
   PayloadProtectorPort,
   PayloadRecord,
   PayloadStorePort,
+  SandboxCleanupPending,
   SandboxExecutionEvidencePort,
   SandboxExecutionFacts,
   SandboxExecutionJournalPort,
@@ -26,15 +27,18 @@ import type {
 } from "@himawari-agent/execution-contracts";
 import {
   type PayloadBrokerInputReadRequest,
+  type PayloadBrokerInvocationValidateRequest,
   type PayloadBrokerOutputWriteRequest,
   type PayloadBrokerSandboxExecutionRequest,
   type PayloadBrokerSandboxExecutionResult,
   type PayloadBrokerSandboxJobRequest,
   type PayloadBrokerSandboxJobResult,
+  payloadInvocationValidateRequestSchema,
   payloadSandboxExecutionRequestSchema,
   payloadSandboxJobRequestSchema,
   type SandboxExecutionPlanV2,
   type SandboxJobControlBinding,
+  type SandboxPreparationDiagnostic,
 } from "@himawari-agent/execution-contracts";
 import type {
   PayloadBrokerOutputReceipt,
@@ -99,6 +103,15 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly journal: SandboxExecutionJournalPort;
     readonly preparations?: SandboxExecutionPreparationPort;
     /** Verify current scope, Grant and installed host before registering; caller rechecks authority. */
+    readonly recordPreparationDiagnostic?: (
+      plan: SandboxExecutionPlanV2,
+      diagnostic: SandboxPreparationDiagnostic,
+    ) => Promise<void>;
+    readonly registerPreparationControl?: (
+      plan: SandboxExecutionPlanV2,
+      control: SandboxJobControlBinding,
+      policyDigest: string,
+    ) => Promise<boolean>;
     readonly registerControl?: (
       plan: SandboxExecutionPlanV2,
       control: SandboxJobControlBinding,
@@ -106,12 +119,15 @@ export interface ProductionPayloadBrokerHandlerOptions {
     /** Agent-owned observation and proof from one verification; never supplied over UDS. */
     readonly observeVerifiedControl?: (
       record: SandboxExecutionRecord,
-    ) => Promise<SandboxExecutionVerification>;
+    ) => Promise<SandboxExecutionVerification | SandboxCleanupPending>;
     readonly verifyPreparation?: (
       plan: SandboxExecutionPlanV2,
       facts: SandboxExecutionFacts,
     ) => Promise<void>;
     readonly verifyStart: (plan: SandboxExecutionPlanV2) => Promise<void>;
+    readonly resolveEnvironment?: (
+      plan: SandboxExecutionPlanV2,
+    ) => Promise<PayloadBrokerSandboxExecutionResult["payload"]["environment"]>;
     readonly resolveScope: (
       plan: SandboxExecutionPlanV2,
     ) => Promise<NonNullable<PayloadBrokerSandboxExecutionResult["payload"]["resolvedScope"]>>;
@@ -179,6 +195,27 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       throw new TypeError("Payload handler requires an allowed content type");
     }
     this.#options = options;
+  }
+
+  async validateInvocation(value: PayloadBrokerInvocationValidateRequest): Promise<void> {
+    try {
+      const request = payloadInvocationValidateRequestSchema.parse(value);
+      const authority = this.authorityFor(request);
+      const receipt = await this.#options.receipts.read({
+        handleRef: request.payload.handleRef,
+        invocationId: request.payload.invocationId,
+        authority,
+        now: this.#options.clock.now(),
+      });
+      if (!receipt) throw new Error("invocation missing");
+      this.assertReceiptAttempt(receipt, request, authority);
+      if (!sameAuthority(authority, this.authorityFor(request)))
+        throw new Error("authority changed");
+    } catch {
+      throw new ProductionPayloadBrokerHandlerError(
+        PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.AUTHORITY_REJECTED,
+      );
+    }
   }
 
   async sandboxJob(
@@ -266,7 +303,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
   ): Promise<
     Pick<
       PayloadBrokerSandboxExecutionResult["payload"],
-      "record" | "applied" | "resolvedScope" | "output"
+      "record" | "applied" | "resolvedScope" | "environment" | "output"
     >
   > {
     try {
@@ -303,7 +340,13 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           action: control.kind === "stop" ? "stop" : "inspect",
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       const lookup = {
         handleRef: request.payload.handleRef,
@@ -317,6 +360,14 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       const admission = configured.preparations
         ? await configured.preparations.readAdmission(request.payload.identity)
         : undefined;
+      if (
+        admission?.phase === "reserved" &&
+        admission.stopRequestedAt &&
+        ["resolve", "register_preparation_control", "register_control", "bind"].includes(
+          request.payload.command.kind,
+        )
+      )
+        throw new Error("sandbox reservation stopped");
       const bound =
         admission?.phase === "bound"
           ? admission.record
@@ -362,9 +413,11 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       if (
         "resourceRef" in command &&
         command.resourceRef !==
-          (record.phase === "bound"
-            ? record.facts.environment.resourceRef
-            : record.reservation.resourceRef)
+          (command.kind === "append_output" && record.plan.mode === "foreground"
+            ? null
+            : record.phase === "bound"
+              ? record.facts.environment.resourceRef
+              : record.reservation.resourceRef)
       )
         throw new Error("resource mismatch");
       if (
@@ -377,8 +430,28 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       if (command.kind === "resolve") {
         await current(true);
         const resolvedScope = await configured.resolveScope(record.plan);
+        const environment = (await configured.resolveEnvironment?.(record.plan)) ?? null;
         await current(true);
-        return { record, applied: false, resolvedScope, output: null };
+        return { record, applied: false, resolvedScope, environment, output: null };
+      }
+      if (command.kind === "preparation_diagnostic") {
+        if (!configured.recordPreparationDiagnostic)
+          throw new Error("preparation diagnostic unavailable");
+        await current(false);
+        await configured.recordPreparationDiagnostic(record.plan, command.diagnostic);
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
+      }
+      if (command.kind === "register_preparation_control") {
+        if (record.phase !== "reserved" || !configured.registerPreparationControl)
+          throw new Error("preparation control registration unavailable");
+        await current(true);
+        await configured.registerPreparationControl(
+          record.plan,
+          command.control,
+          command.policyDigest,
+        );
+        await current(true);
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "register_control") {
         if (record.phase !== "reserved" || !configured.registerControl)
@@ -386,7 +459,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         await current(true);
         await configured.registerControl(record.plan, command.control);
         await current(true);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "bind") {
         if (!configured.preparations || !configured.verifyPreparation)
@@ -402,13 +475,19 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           now: this.#options.clock.now(),
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       if (record.phase === "reserved") {
         if (command.kind !== "read" && command.kind !== "inspect")
           throw new Error("runtime not bound");
         await current(false);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "start") {
         await current(true);
@@ -421,14 +500,41 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           authority,
           now: this.#options.clock.now(),
         });
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       let observedVerification: SandboxExecutionVerification | undefined;
       if (command.kind === "observe_control") {
         if (!configured.observeVerifiedControl || !bound)
           throw new Error("control observation unavailable");
         await current(false);
-        observedVerification = await configured.observeVerifiedControl(bound);
+        const observed = await configured.observeVerifiedControl(bound);
+        if ("kind" in observed)
+          return {
+            record: wire(bound),
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
+        observedVerification = observed;
+        const observedResource = observedVerification.facts.resource;
+        if (
+          bound.facts.resource.supervision === "controlled" &&
+          observedResource.supervision === "released"
+        )
+          return {
+            record: wire(bound),
+            applied: false,
+            resolvedScope: null,
+            environment: null,
+            output: null,
+          };
         command = {
           kind: "append",
           expectedSequence: command.expectedSequence,
@@ -473,14 +579,20 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           command.kind === "append"
             ? await configured.journal.append(input)
             : await configured.journal.recordOperation(input);
-        return { ...mutation, record: wire(mutation.record), resolvedScope: null, output: null };
+        return {
+          ...mutation,
+          record: wire(mutation.record),
+          resolvedScope: null,
+          environment: null,
+          output: null,
+        };
       }
       if (command.kind === "append_output") {
         if (!bound || !configured.appendOutput) throw new Error("output writer unavailable");
         await current(false);
         await configured.appendOutput(bound, command.chunk);
         await current(false);
-        return { record, applied: true, resolvedScope: null, output: null };
+        return { record, applied: true, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "output") {
         if (!bound || !configured.readOutput) throw new Error("output reader unavailable");
@@ -491,11 +603,11 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           limit: command.limit,
         });
         await current(false);
-        return { record, applied: false, resolvedScope: null, output };
+        return { record, applied: false, resolvedScope: null, environment: null, output };
       }
       if (command.kind === "read" || command.kind === "inspect") {
         await current(false);
-        return { record, applied: false, resolvedScope: null, output: null };
+        return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       // Resource control requires a real supervisor. A journal row is never a
       // successful stop or a source of invented output cursors.
@@ -535,6 +647,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
 
   private authorityFor(
     request:
+      | PayloadBrokerInvocationValidateRequest
       | PayloadBrokerInputReadRequest
       | PayloadBrokerOutputWriteRequest
       | PayloadBrokerSandboxJobRequest
@@ -568,6 +681,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       readonly authority: CapabilityInvocationAuthority;
     },
     request:
+      | PayloadBrokerInvocationValidateRequest
       | PayloadBrokerInputReadRequest
       | PayloadBrokerOutputWriteRequest
       | PayloadBrokerSandboxJobRequest
@@ -639,6 +753,7 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.INPUT_REJECTED,
       );
     }
+    await this.validateInvocation({ ...request, type: "payload.invocation.validate" });
     return new Uint8Array(plaintext);
   }
 

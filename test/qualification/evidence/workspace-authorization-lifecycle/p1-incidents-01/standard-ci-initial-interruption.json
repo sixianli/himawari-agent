@@ -1,0 +1,6 @@
+{
+  "session": 27519,
+  "processGroup": 49634,
+  "exitCode": 143,
+  "reason": "Stopped the owned validation group before editing inputs to reproduce and fix the delayed release acceptance boundary. Logs retained; not a completed validation."
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "path": "projection-final.log",
+    "rawSha256": "68270cc748603a0392a76df2e404aec3920c28af31f77ddede33b7d248bca63e",
+    "displaySha256": "1cdaa03144fe1e07a5ed147697938fd102e31383986edfc57e7d951a4fca0d70"
+  },
+  {
+    "path": "projection-green-01.log",
+    "rawSha256": "f7020fe7ec7c8fa43e49b0f231ec32c04711c510813f64824e26087fe2f673b8",
+    "displaySha256": "3a9501b2296a5f224cb81cd43ba93e6d6627d70a2d01ac78446bf39dbbd472fe"
+  },
+  {
+    "path": "projection-green-02.log",
+    "rawSha256": "94805ce42882ba8173421b4c643063c6b80703c0aedf7debd93ef42aef9edaf3",
+    "displaySha256": "fe2c5acd505fea2f893d1eb31deacfb75aefa3d4b529e9224721c9d87b05d503"
+  },
+  {
+    "path": "projection-red.log",
+    "rawSha256": "147317fef4a8c56459fb9b2e1f5375256592d0d1d23bf6a8ad22c74dd3d5e144",
+    "displaySha256": "f58e545bd963466470011473d315ae3c0f272d0f363d1ca1e90475ef399b4b04"
+  },
+  {
+    "path": "tool-final.log",
+    "rawSha256": "5563ed191c4333c65248c14703b591955bc6e5220ab72d9372910fb1be129bda",
+    "displaySha256": "b91972bc3e80f04a29a7cc5ea299713e15ca1c55ea848bcaff9bd34844906897"
+  },
+  {
+    "path": "tool-green-01.log",
+    "rawSha256": "179548dfcdb9d0f5ebf2b4eddea0d7ce0cc2155a80445e7603413421725d61b7",
+    "displaySha256": "523e4e83674e3a77c13747d0a61ab83a49bbc608e5803e5f08eab9d7fce4a634"
+  },
+  {
+    "path": "tool-green-02.log",
+    "rawSha256": "eb7910f9ae02d7e54bc3fe524832b297e925c18c9eace12c5f4af073ea35afb6",
+    "displaySha256": "66a5de2475e39086008a777352499117f5716195a093593e36dc3ebee20501dc"
+  },
+  {
+    "path": "tool-red.log",
+    "rawSha256": "2e62fbb766cd8ef96f826a666a655cb1bfddd88af183b05a01fda8df85feb01f",
+    "displaySha256": "4b521f4a45a6f14c422c7a78bc48e3df68473e492c9f272f80073055103fc6d8"
+  },
+  {
+    "path": "typecheck-02.log",
+    "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+    "displaySha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+  },
+  {
+    "path": "typecheck-delivery.log",
+    "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+    "displaySha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+  },
+  {
+    "path": "typecheck-final.log",
+    "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+    "displaySha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+  }
+]

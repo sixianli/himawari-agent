@@ -1,0 +1,3 @@
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/hermes-control-center-upgrade-runbook.md
+fingerprint: sha256:ff212b921b730e89c7261ff3213a5cede2c6bd2537a4745013ecfa2a19fd18f5
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

@@ -4,7 +4,14 @@ import { chmod, lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { safeRelativePath, sha256 } from "./contracts.mjs";
 
-export async function digestFile(filename) {
+const SMALL_FILE_BYTES = 1024 * 1024;
+
+export async function digestFile(filename, size) {
+  const bytes = size ?? (await lstat(filename)).size;
+  if (bytes < SMALL_FILE_BYTES)
+    return createHash("sha256")
+      .update(await readFile(filename))
+      .digest("hex");
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(filename)) digest.update(chunk);
   return digest.digest("hex");
@@ -12,6 +19,22 @@ export async function digestFile(filename) {
 
 export async function collectArtifactFiles(root, { normalizeModes = false } = {}) {
   const output = [];
+  const pending = [];
+  let fileFailure;
+  const collectFile = async (filename, name) => {
+    const info = await lstat(filename);
+    const mode = normalizeModes ? (info.mode & 0o111 ? 0o755 : 0o644) : info.mode & 0o777;
+    if (normalizeModes) await chmod(filename, mode);
+    return { path: name, sha256: await digestFile(filename, info.size), bytes: info.size, mode };
+  };
+  const finishFirst = async () => {
+    const outcome = await pending.shift();
+    if (!outcome.ok) {
+      fileFailure = outcome;
+      throw outcome.error;
+    }
+    output.push(outcome.file);
+  };
   const visit = async (directory, prefix = "") => {
     if (normalizeModes) await chmod(directory, 0o755);
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) =>
@@ -22,15 +45,29 @@ export async function collectArtifactFiles(root, { normalizeModes = false } = {}
       const filename = path.join(directory, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`ARTIFACT_LINK_FORBIDDEN:${name}`);
       if (entry.isDirectory()) await visit(filename, name);
+      else if (entry.isFile() && entry.name === ".DS_Store") continue;
       else if (entry.isFile()) {
-        const info = await lstat(filename);
-        const mode = normalizeModes ? (info.mode & 0o111 ? 0o755 : 0o644) : info.mode & 0o777;
-        if (normalizeModes) await chmod(filename, mode);
-        output.push({ path: name, sha256: await digestFile(filename), bytes: info.size, mode });
+        pending.push(
+          collectFile(filename, name).then(
+            (file) => ({ ok: true, file }),
+            (error) => ({ ok: false, error }),
+          ),
+        );
+        if (normalizeModes || pending.length === 16) await finishFirst();
       } else throw new Error(`ARTIFACT_SPECIAL_FILE:${name}`);
     }
   };
-  await visit(root);
+  let traversalFailure;
+  try {
+    await visit(root);
+  } catch (error) {
+    traversalFailure = { error };
+  }
+  const remaining = await Promise.all(pending);
+  fileFailure ??= remaining.find((outcome) => !outcome.ok);
+  if (fileFailure) throw fileFailure.error;
+  if (traversalFailure) throw traversalFailure.error;
+  for (const outcome of remaining) output.push(outcome.file);
   return output.sort((a, b) => a.path.localeCompare(b.path));
 }
 

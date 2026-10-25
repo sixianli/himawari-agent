@@ -1,0 +1,143 @@
+{
+  "rule": "Trailing whitespace and terminal blank lines only; raw local logs retained",
+  "files": [
+    {
+      "path": "authority-transfer-seal.log",
+      "rawPath": "authority-transfer-seal.raw.log",
+      "rawSha256": "6bfd728e04d339699fccf354691f7e501a2616da0ac0a9b88bd0764ba8af80e8",
+      "normalizedSha256": "6bfd728e04d339699fccf354691f7e501a2616da0ac0a9b88bd0764ba8af80e8"
+    },
+    {
+      "path": "backup-restore-seal.log",
+      "rawPath": "backup-restore-seal.raw.log",
+      "rawSha256": "f7b82f03ad86326e2a057a9869ca0e9463c88eda0e195906300e6587d0467c68",
+      "normalizedSha256": "f7b82f03ad86326e2a057a9869ca0e9463c88eda0e195906300e6587d0467c68"
+    },
+    {
+      "path": "boundaries.log",
+      "rawPath": "boundaries.raw.log",
+      "rawSha256": "d0d3de1e693a285e45d6f88f485bda7981a60d554d6d309610d43f70a9660ed0",
+      "normalizedSha256": "d0d3de1e693a285e45d6f88f485bda7981a60d554d6d309610d43f70a9660ed0"
+    },
+    {
+      "path": "browser-build.log",
+      "rawPath": "browser-build.raw.log",
+      "rawSha256": "5fceb12b8a03063fa293df4216b4e6417cef1f32b6baf838f3d4c73d3fe2ccab",
+      "normalizedSha256": "40063b86ce9612e3b80168443650c60007622b3665948b8b46575046c3a9a164"
+    },
+    {
+      "path": "browser-host.log",
+      "rawPath": "browser-host.raw.log",
+      "rawSha256": "6408d9fe34730a9a173c955c45bddd712700dbc075a47bd2d94a89b44ea06ad8",
+      "normalizedSha256": "6408d9fe34730a9a173c955c45bddd712700dbc075a47bd2d94a89b44ea06ad8"
+    },
+    {
+      "path": "browser.log",
+      "rawPath": "browser.raw.log",
+      "rawSha256": "d91517289e2708d2651c5151205db5ebcec3c4e93107be2e6428949ab18348ea",
+      "normalizedSha256": "d91517289e2708d2651c5151205db5ebcec3c4e93107be2e6428949ab18348ea"
+    },
+    {
+      "path": "ci-policy.log",
+      "rawPath": "ci-policy.raw.log",
+      "rawSha256": "617135c7456ab92cea635476c221ef412bae1883b0e04ab2a19d9d5a5172af71",
+      "normalizedSha256": "617135c7456ab92cea635476c221ef412bae1883b0e04ab2a19d9d5a5172af71"
+    },
+    {
+      "path": "coverage.log",
+      "rawPath": "coverage.raw.log",
+      "rawSha256": "f8f5c698f6e1caf46acf657dba7fc98936d3930861382236dbf2a8937d77b9ed",
+      "normalizedSha256": "f8f5c698f6e1caf46acf657dba7fc98936d3930861382236dbf2a8937d77b9ed"
+    },
+    {
+      "path": "docs-final.log",
+      "rawPath": "docs-final.raw.log",
+      "rawSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+      "normalizedSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    {
+      "path": "docs.log",
+      "rawPath": "docs.raw.log",
+      "rawSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878",
+      "normalizedSha256": "8e2ed19d1f719326712ad670641e1d9ec1c4286e65598693f810ffae92c3c878"
+    },
+    {
+      "path": "format.log",
+      "rawPath": "format.raw.log",
+      "rawSha256": "510144063d0a6238198c511dedca554e7d09453d0420d033aaf0d0de46be2851",
+      "normalizedSha256": "510144063d0a6238198c511dedca554e7d09453d0420d033aaf0d0de46be2851"
+    },
+    {
+      "path": "hermes-control-center-upgrade-seal.log",
+      "rawPath": "hermes-control-center-upgrade-seal.raw.log",
+      "rawSha256": "fd03c6d123e651a5fac5a87c11a2443e04ae5245976e863260bed4a961fd6280",
+      "normalizedSha256": "fd03c6d123e651a5fac5a87c11a2443e04ae5245976e863260bed4a961fd6280"
+    },
+    {
+      "path": "install-start-stop-seal.log",
+      "rawPath": "install-start-stop-seal.raw.log",
+      "rawSha256": "96c07caec8f77ac67d6ae8578a081c68b0214ea9a18ce1aa3c3f41f430461ffc",
+      "normalizedSha256": "96c07caec8f77ac67d6ae8578a081c68b0214ea9a18ce1aa3c3f41f430461ffc"
+    },
+    {
+      "path": "invariants.log",
+      "rawPath": "invariants.raw.log",
+      "rawSha256": "682c6222eb554be991da4667ad4791b1f985841095590d95eaed78a3af366d31",
+      "normalizedSha256": "682c6222eb554be991da4667ad4791b1f985841095590d95eaed78a3af366d31"
+    },
+    {
+      "path": "lint.log",
+      "rawPath": "lint.raw.log",
+      "rawSha256": "203b9d2b040d36f41b470a55bb27d522862b91278eefac894145102f27936867",
+      "normalizedSha256": "23f29b7ea34ea9cf6f633062084a4e741f6f83ab93b9812933d44529c10c9f50"
+    },
+    {
+      "path": "review-consumers.log",
+      "rawPath": "review-consumers.raw.log",
+      "rawSha256": "a5a69d7a99f8fdcb7ba00f97516284827954c8cdfc6a90c580f0db817325826b",
+      "normalizedSha256": "a5236cd414244a08d131f247d509e93f25735307bb25c1feaf2cf2908b11ee6c"
+    },
+    {
+      "path": "review-projection-backend.log",
+      "rawPath": "review-projection-backend.raw.log",
+      "rawSha256": "7ca3dd7dacda1e64e527e6f39294bf3a963475adb9fa4eb78c021474ef573631",
+      "normalizedSha256": "a0167635fc4d8b19e1bd28b803b486f6c0763bba4c301726262a5c1979ea42ef"
+    },
+    {
+      "path": "review-projection-red.log",
+      "rawPath": "review-projection-red.raw.log",
+      "rawSha256": "b412269cbf5901cb259a3934dfc4f581a04099549625da211e9cd2b66bf075d3",
+      "normalizedSha256": "7a3825cb760903c8dc04f56c7f32d16217051cf0bd0b4834b19e1f1b38ba2b84"
+    },
+    {
+      "path": "review-thread-scope-red.log",
+      "rawPath": "review-thread-scope-red.raw.log",
+      "rawSha256": "153fc7f34b1547aa48e6f99bce535ecc2205c1093609472a2ce1ce9d6fb62987",
+      "normalizedSha256": "0b0e476484273d89cc32efb8e4a6f81e8308b954f9a92521f691a840dbc513b3"
+    },
+    {
+      "path": "review-view-green.log",
+      "rawPath": "review-view-green.raw.log",
+      "rawSha256": "2949f694a545a7c1238fbafdc6799eb2ff4668c5326ec78e79c49aa08053d7dd",
+      "normalizedSha256": "a7d309e2634ecf9e43ae12e31e89476ca81135780abb0e2d927583edf305700b"
+    },
+    {
+      "path": "secrets.log",
+      "rawPath": "secrets.raw.log",
+      "rawSha256": "d029d212941ffcefd8413c1e629e98e0f9e4386b4caf75ede8451df512dd2258",
+      "normalizedSha256": "d029d212941ffcefd8413c1e629e98e0f9e4386b4caf75ede8451df512dd2258"
+    },
+    {
+      "path": "standard-ci.log",
+      "rawPath": "standard-ci.raw.log",
+      "rawSha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d",
+      "normalizedSha256": "3419683062b7a67f248cdc02d0216268c71174e7209afdd81eafa6067015841d"
+    },
+    {
+      "path": "typecheck.log",
+      "rawPath": "typecheck.raw.log",
+      "rawSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "normalizedSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+$ node packages/runtime-sandbox/scripts/probe-job-host-control.mjs   (default root /tmp/r4-control-*)
+git HEAD: 4e6b073b8e3d4a42c21da357fd5548ea66d9d901
+host: Darwin 27.2.0 arm64; node v22.22.3
+2026-09-25T06:39:55Z
+{"scenario":"stop","stage":"prepare"}
+file:///Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/packages/runtime-sandbox/scripts/probe-job-host-control.mjs:152
+            reject(new Error(`worker exited before binding: ${workerError}`)),
+                   ^
+
+Error: worker exited before binding: file:///Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host.js:287
+        rejectReady(new Error("JOB_HOST_NOT_READY"));
+                    ^
+
+Error: JOB_HOST_NOT_READY
+    at ChildProcess.<anonymous> (file:///Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host.js:287:21)
+    at Object.onceWrapper (node:events:634:26)
+    at ChildProcess.emit (node:events:519:28)
+    at maybeClose (node:internal/child_process:1101:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:304:5)
+
+Node.js v22.22.3
+
+    at ChildProcess.<anonymous> (file:///Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/packages/runtime-sandbox/scripts/probe-job-host-control.mjs:152:20)
+    at Object.onceWrapper (node:events:634:26)
+    at ChildProcess.emit (node:events:531:35)
+    at ChildProcess._handle.onexit (node:internal/child_process:293:12)
+
+Node.js v22.22.3
+exit_code=1

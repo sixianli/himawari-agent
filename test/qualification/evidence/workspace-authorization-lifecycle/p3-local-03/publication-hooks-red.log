@@ -1,0 +1,54 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts (19 tests | 2 failed) 310ms
+     × does not publish when durable preparation fails 32ms
+     × waits for durable write verification before reporting completion 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > does not publish when durable preparation fails
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected:
+Error {
+  "message": "rejected promise",
+}
+
++ Received:
+undefined
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:67:52
+     65|     };
+     66|     const port = await createSandboxedCodingOperations(options);
+     67|     await expect(port.writeFile(file, "new bytes")).rejects.toThrow("J…
+       |                                                    ^
+     68|     expect(calls).toBe(1);
+     69|     expect(await readFile(file, "utf8")).toBe("original");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > waits for durable write verification before reporting completion
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:90:36
+     88|     release();
+     89|     await write;
+     90|     expect(completedBeforeReceipt).toBe(false);
+       |                                    ^
+     91|   });
+     92|   it("pins a fixed file call to its target even within a broader grant…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 17 passed (19)
+   Start at  17:33:29
+   Duration  1.60s (transform 684ms, setup 0ms, import 1.19s, tests 310ms, environment 0ms)

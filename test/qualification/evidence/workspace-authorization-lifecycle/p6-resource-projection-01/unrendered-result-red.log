@@ -1,0 +1,38 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (20 tests | 1 failed) 33ms
+     × keeps an unrendered internal result unknown after every resource has released 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > keeps an unrendered internal result unknown after every resource has released
+AssertionError: expected { runRevision: 3, …(9) } to match object { displayPhase: 'unresolved', …(2) }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "availableActions": [],
+-   "displayPhase": "unresolved",
+-   "reasonCode": "EXECUTION_RESULT_UNCONFIRMED",
++   "displayPhase": "stopped",
++   "reasonCode": "RUN_CANCELLED_RESOURCES_RELEASED",
+  }
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:162:19
+    160|       unresolvedResultItemIds: ["missing-parent"],
+    161|     });
+    162|     expect(state).toMatchObject({ displayPhase: "unresolved", reasonCo…
+       |                   ^
+    163|   });
+    164|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 passed (20)
+   Start at  17:05:25
+   Duration  394ms (transform 196ms, setup 0ms, import 250ms, tests 33ms, environment 0ms)

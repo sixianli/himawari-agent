@@ -1,0 +1,106 @@
+{
+  "sourceBaseCommit": "d840b80eda27aea64222b1810c0875349a2c541f",
+  "recordedAt": "2026-09-19T13:25:03.531273+00:00",
+  "files": [
+    {
+      "path": "apps/agent-service/src/production-payload-broker-handler.ts",
+      "sha256": "d2f18624cbe64fb63b180f3a572e7fa0d03ac2b4096859336eb8aa6d6d4dec60"
+    },
+    {
+      "path": "apps/agent-service/src/production-sandbox-control.ts",
+      "sha256": "6fa59f08a98e59e605334f6a3c593d8012883935d0ffbba3448f5c94fa932711"
+    },
+    {
+      "path": "apps/agent-service/src/production-sandbox-services.ts",
+      "sha256": "23853e1cdc0e33152f4a6142c3758a5a687c0fa0bf5f09127ccf57272635743f"
+    },
+    {
+      "path": "apps/agent-service/src/service-main.ts",
+      "sha256": "e2ae347f12ec2eb5be2e0def32309029061358976ac24f39e3bd23d475311845"
+    },
+    {
+      "path": "apps/agent-service/test/service-orchestration.unit.test.ts",
+      "sha256": "e2a62f04af80ff19dd0665011547659aa78655e17a6f364e4300daa8394bc28c"
+    },
+    {
+      "path": "packages/application/src/ports/sandbox-execution-journal.ts",
+      "sha256": "6e1847cd3cdc824ceee9b371d7ac7e4138e8a2eed06f3b2b740dd49f5b069db3"
+    },
+    {
+      "path": "packages/application/src/services/sandbox-startup-recovery.ts",
+      "sha256": "3fca7ba29224a1608e8e22599f6a6ea7f96f572122a8c61f17a73d511ec7b2ac"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/durable-adapters.ts",
+      "sha256": "471335fd698cad4f8477ab20b115cacb532c3e243cf4e630bd8904e959a86efe"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/migration-engine.ts",
+      "sha256": "869f7b164dd67ec456d8513ef46cca0c6d1f6f9e70c93cfbbd5b81ae5a746713"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts",
+      "sha256": "751be49077b5a1a87c200014600db0f806d3d7466f8df17c6322df2ab2685534"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/migration-engine.contract.test.ts",
+      "sha256": "06d0e53553eee6bfc05e74a5407cde6474a023ecc26ce8179d0d520dc232d16d"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/model-budget-migration.contract.test.ts",
+      "sha256": "a3c5899c9dabdad55a2b39e253e22610a718273bc946fb6b0f56c739089f8d24"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/run-checkpoint-migration.contract.test.ts",
+      "sha256": "496200ffb354e7a054706e1cab326339fa6cc6b5adbf21e1181fc0974d6a5264"
+    },
+    {
+      "path": "scripts/operations/workspace-lifecycle-audit.mjs",
+      "sha256": "cc8a7f63b03b025c67843b8b23617ed9b1a18df638a408a6bfbf8a308f484def"
+    },
+    {
+      "path": "test/integration/installable-node-services.test.ts",
+      "sha256": "c8d4093019ac3e18648cc69e2e74b4c39d15503217a97f90f5c5072fded9a263"
+    },
+    {
+      "path": "test/integration/production-sandbox-scope.test.ts",
+      "sha256": "88cd2d1db09f9c220c75c765010ce8cf1168e916a7f029330438eecd117e2196"
+    },
+    {
+      "path": "test/integration/sandbox-control-evidence.test.ts",
+      "sha256": "d3a4a23013b05435774b0a314490611970bb3c4096ca2ffe451ae548af9be7bc"
+    },
+    {
+      "path": "test/integration/sandbox-execution-preparation.test.ts",
+      "sha256": "0438d15dbb9bf20c0b295a841f7779c27c4341c1ba386e89ce89ea79bbcad6c5"
+    },
+    {
+      "path": "test/integration/sandbox-v2-payload-broker.test.ts",
+      "sha256": "36118967e3e4705e52daf2efb16c5a2fd116e58c3326c69c99040067b8cf5b54"
+    },
+    {
+      "path": "test/integration/sqlite-run-dispatch-lease.test.ts",
+      "sha256": "eb23e2494a612feb8a28153fc52f03c4d7db3203d549d2cd258746d925f3f1c6"
+    },
+    {
+      "path": "test/integration/sqlite-run-payload-artifacts.test.ts",
+      "sha256": "e3cc719cb755e8efcea3796ccb1f80fa40106d9b69d68317ddfd31336c687c19"
+    },
+    {
+      "path": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "sha256": "1f85cc1f7bd346bbc406b774bd63e37225cae8765f7c3beb571e0b008fe9d7eb"
+    },
+    {
+      "path": "test/integration/workspace-lifecycle-audit.test.ts",
+      "sha256": "9698cac6224498cc26a1cd3bbf0b448a314abb459f6d2da0f9bcb1c84b7ec81d"
+    },
+    {
+      "path": "test/qualification/journal-installation-selfcheck.ts",
+      "sha256": "89a86ff420739b915018cc4e01c4e05e780ee543732bb85e486628d20e2c96a9"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/migrations/0040_sandbox_reservation_stop_fence.sql",
+      "sha256": "5530dd899f7b824ee9a55eee3ed5fc8f073e3375e03eefea8580dadf4f7ff722"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "cases": [
+    {
+      "locale": "zh-CN",
+      "width": 1280,
+      "passed": true,
+      "terminalWithoutResult": [
+        "cancelled",
+        "failed",
+        "completed"
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "width": 320,
+      "passed": true,
+      "terminalWithoutResult": [
+        "cancelled",
+        "failed",
+        "completed"
+      ]
+    },
+    {
+      "locale": "ja",
+      "width": 393,
+      "passed": true,
+      "terminalWithoutResult": [
+        "cancelled",
+        "failed",
+        "completed"
+      ]
+    },
+    {
+      "locale": "en",
+      "width": 430,
+      "passed": true,
+      "terminalWithoutResult": [
+        "cancelled",
+        "failed",
+        "completed"
+      ]
+    },
+    {
+      "width": 320,
+      "colorScheme": "light",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 320,
+      "colorScheme": "dark",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 390,
+      "colorScheme": "light",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 390,
+      "colorScheme": "dark",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 1024,
+      "colorScheme": "light",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 1024,
+      "colorScheme": "dark",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 1440,
+      "colorScheme": "light",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    },
+    {
+      "width": 1440,
+      "colorScheme": "dark",
+      "resourceRecovery": true,
+      "backendState": true,
+      "reconnect": true,
+      "noTraceReplay": true,
+      "stopNotStrictlyConfirmed": true,
+      "executionRecordDeleted": true,
+      "strictModeUnavailable": true,
+      "executionEnvironment": true
+    }
+  ],
+  "scope": "real browser with isolated HTTP fixture; no production model calls"
+}

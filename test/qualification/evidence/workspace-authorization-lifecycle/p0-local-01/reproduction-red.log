@@ -1,0 +1,57 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/workspace-authorization-release-reproduction.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"worker","delay":0,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.000Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"worker","delay":11,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.011Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"worker","delay":151,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.151Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"direct","delay":0,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.000Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"direct","delay":11,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.011Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+stdout | test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+{"execution":"direct","delay":151,"expiresAt":"2026-09-04T00:00:02.000Z","ackAt":"2026-09-04T00:00:02.151Z","afterDispatch":{"releasedAt":null},"afterAck":{"releasedAt":null},"pending":[],"conflict":"ApplicationPortError: Workspace remains occupied"}
+
+ ❯ |integration| test/integration/workspace-authorization-release-reproduction.test.ts (8 tests | 6 failed) 1116ms
+     × keeps release after result ACK at evidence expiry %+d ms 189ms
+     × keeps release after result ACK at evidence expiry %+d ms 183ms
+     × keeps release after result ACK at evidence expiry %+d ms 190ms
+     × keeps release after result ACK at evidence expiry %+d ms 72ms
+     × keeps release after result ACK at evidence expiry %+d ms 75ms
+     × keeps release after result ACK at evidence expiry %+d ms 76ms
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 2 passed (8)
+   Start at  17:32:05
+   Duration  2.85s (transform 986ms, setup 0ms, import 1.55s, tests 1.12s, environment 0ms)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (worker) > keeps release after result ACK at evidence expiry %+d ms
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+ FAIL  |integration| test/integration/workspace-authorization-release-reproduction.test.ts > P0 release expiry reproduction (direct) > keeps release after result ACK at evidence expiry %+d ms
+AssertionError: expected null not to be null
+ ❯ test/integration/workspace-authorization-release-reproduction.test.ts:189:46
+    187|       try { call(f, "admit", admission(f, "-next")); } catch (error) {…
+    188|       console.info(JSON.stringify({ execution, delay, expiresAt, ackAt…
+    189|       expect(readOccupancy().releasedAt).not.toBeNull();
+       |                                              ^
+    190|       expect(conflict).toBe("");
+    191|     } finally { await f.close(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯

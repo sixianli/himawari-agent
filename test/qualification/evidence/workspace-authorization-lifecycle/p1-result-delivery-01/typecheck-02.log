@@ -1,0 +1,2 @@
+test/integration/thread-run-lifecycle.test.ts(462,13): error TS2322: Type 'Promise<DeploymentAuthorityState>' is not assignable to type 'Promise<void>'.
+  Type 'DeploymentAuthorityState' is not assignable to type 'void'.

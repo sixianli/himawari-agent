@@ -1,0 +1,14 @@
+import { it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
+
+it("waits for the queue", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 250));
+});
+
+it("waits for the worker", async () => {
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 1_000));
+});
+
+it("waits through the promise timer", async () => {
+  await delay(250);
+});

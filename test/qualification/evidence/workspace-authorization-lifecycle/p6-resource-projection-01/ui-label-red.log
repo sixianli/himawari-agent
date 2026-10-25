@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/control-center/test/execution-view.unit.test.ts (19 tests | 1 failed) 15ms
+     × localizes resource facts without requiring a new wire phase or inferring release 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > localizes resource facts without requiring a new wire phase or inferring release
+AssertionError: expected 'chat.phase.unresolved' to be 'chat.resource.stopping' // Object.is equality
+
+Expected: "chat.resource.stopping"
+Received: "chat.phase.unresolved"
+
+ ❯ apps/control-center/test/execution-view.unit.test.ts:43:76
+     41| describe("durable execution presentation", () => {
+     42|   it("localizes resource facts without requiring a new wire phase or i…
+     43|     expect(executionStateLabel("unresolved", "RESOURCE_STOP_IN_PROGRES…
+       |                                                                            ^
+     44|     expect(executionStateLabel("unresolved", "RESOURCE_CHECK_IN_PROGRE…
+     45|     expect(executionStateLabel("preparing", "RESOURCE_QUEUE_WAITING"))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 18 passed (19)
+   Start at  16:42:07
+   Duration  210ms (transform 53ms, setup 0ms, import 66ms, tests 15ms, environment 0ms)

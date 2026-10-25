@@ -1,0 +1,188 @@
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
+
+export async function prepareProductPathTiming(runtimeRoot: string, destination: string) {
+  const definitions: Array<[string, Record<string, [string, string]>]> = [
+    [
+      "platform-node/capabilities/sandbox-host-verifier",
+      {
+        verifySandboxHost: ['"host.verify"', "input.plan?.identity"],
+        digestSandboxRuntime: ['"runtime.digest"', "null"],
+      },
+    ],
+    [
+      "platform-node/capabilities/artifact-verifier",
+      { digestRegularFile: ['"artifact.digest"', "null"] },
+    ],
+    ["platform-node/payload-protector", { protect: ['"payload.encrypt"', "null"] }],
+    [
+      "persistence-sqlite/sqlite-run-payload-artifact-operations",
+      { execute: ['"sqlite.artifact." + operation', "null"] },
+    ],
+    [
+      "persistence-sqlite/sqlite-sandbox-execution-operations",
+      { execute: ['"sqlite.sandbox." + operation', "raw?.plan?.identity ?? raw?.identity"] },
+    ],
+    [
+      "agent-service/production-sandbox-services",
+      { prepareRuntimeV2: ['"reservation.prepare"', "{runId: call.runId}"] },
+    ],
+    [
+      "agent-service/production-sandbox-control",
+      {
+        registerPreparation: ['"control.register_preparation"', "plan.identity"],
+        register: ['"control.register_ready"', "plan.identity"],
+      },
+    ],
+    [
+      "agent-service/production-sandbox-tool-result",
+      { returned: ['"result.deliver"', "{runId: input.runId}"] },
+    ],
+    [
+      "execution-worker/production-sandbox-execution-v2",
+      {
+        rpc: ['"worker.rpc." + command.kind', "entry.identity"],
+        hostBinding: ['"worker.host_binding"', "plan.identity"],
+      },
+    ],
+    ["runtime-sandbox/job-host", { prepareSandboxJobHost: ['"host.create"', "value"] }],
+    [
+      "runtime-sandbox/job-host-main",
+      {
+        prepare: ['"host.prepare"', "value"],
+        start: ['"host.start"', "request"],
+        finish: ['"host.finish"', "request"],
+      },
+    ],
+  ];
+  if (process.env["HIMAWARI_TEST_TIMING_DETAIL"] === "1")
+    definitions.push(
+      [
+        "execution-worker/production-payload-broker-client",
+        { writeOutput: ['"worker.output.save"', "{runId: request.runId}"] },
+      ],
+      [
+        "agent-service/production-payload-broker-handler",
+        { writeOutputInternal: ['"agent.output.save"', "null"] },
+      ],
+      [
+        "agent-service/production-sandbox-stream",
+        {
+          append: ['"stream.append." + (input.end ? "end" : "data")', "record.plan.identity"],
+          save: [
+            '"stream.save." + (operationKey.startsWith("sandbox-stream-end:") ? "end-index" : "chunk")',
+            "record.plan.identity",
+          ],
+        },
+      ],
+    );
+  if (process.env["HIMAWARI_TEST_TIMING_DIAGNOSTICS"] === "1")
+    definitions.push(
+      [
+        "agent-service/production-payload-broker-handler",
+        {
+          sandboxExecution: [
+            '"agent.sandbox.rpc." + value.payload.command.kind',
+            "value.payload.identity",
+          ],
+        },
+      ],
+      [
+        "application/services/sandbox-scope-service",
+        { resolve: ['"agent.scope.resolve"', "input.identity"] },
+      ],
+      [
+        "application/services/sandbox-execution-reconciliation",
+        { reconcile: ['"agent.reconcile"', "input.identity"] },
+      ],
+    );
+  const manifest: Record<string, { digest: string; source: string }> = {};
+  const inventory: Array<{ module: string; functions: string[] }> = [];
+  for (const [module, names] of definitions) {
+    const [pkg, ...rest] = module.split("/");
+    const filename = path.join(
+      runtimeRoot,
+      "node_modules/@himawari-agent",
+      pkg ?? "",
+      "dist",
+      `${rest.join("/")}.js`,
+    );
+    const source = await readFile(filename, "utf8");
+    const tree = ts.createSourceFile(
+      filename,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    );
+    const edits: Array<{ start: number; end: number; value: string }> = [];
+    const found: string[] = [];
+    const visit = (node: ts.Node) => {
+      const named =
+        ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)
+          ? node.name?.getText(tree)
+          : ts.isArrowFunction(node) && ts.isVariableDeclaration(node.parent)
+            ? node.parent.name.getText(tree)
+            : ts.isArrowFunction(node) &&
+                ts.isReturnStatement(node.parent) &&
+                module === "agent-service/production-sandbox-tool-result"
+              ? "returned"
+              : undefined;
+      const definition = named && names[named];
+      if (definition && "body" in node && node.body && ts.isBlock(node.body as ts.Node)) {
+        const body = node.body as ts.Block;
+        const async =
+          ts.canHaveModifiers(node) &&
+          ts.getModifiers(node)?.some((item) => item.kind === ts.SyntaxKind.AsyncKeyword);
+        let measuredBody = body.getText(tree);
+        if (
+          (module === "agent-service/production-payload-broker-handler" &&
+            named === "sandboxExecution") ||
+          (module === "application/services/sandbox-scope-service" && named === "resolve")
+        ) {
+          const caught = body.statements.find(ts.isTryStatement)?.catchClause;
+          if (!caught || caught.variableDeclaration)
+            throw new Error("PRODUCT_TIMING_CATCH_CHANGED");
+          const begin = caught.getStart(tree) - body.getStart(tree);
+          const end = caught.block.getStart(tree) - body.getStart(tree);
+          measuredBody =
+            measuredBody.slice(0, begin) +
+            "catch (__hmaCaught) " +
+            measuredBody.slice(end, end + 1) +
+            `__hmaRecord({ kind: "caught_error", stage: ${definition[0]}, jobId: (${definition[1]}).jobId, runId: (${definition[1]}).runId, failure: __hmaFailure(__hmaCaught) });` +
+            measuredBody.slice(end + 1);
+        }
+        edits.push({
+          start: body.getStart(tree),
+          end: body.end,
+          value: `{ return __hmaMeasure(${definition[0]}, ${definition[1]}, ${async ? "async " : ""}() => ${measuredBody}); }`,
+        });
+        found.push(named as string);
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(tree);
+    const required = Object.keys(names).filter((name) => name !== "registerPreparation");
+    if (required.some((name) => !found.includes(name)))
+      throw new Error(
+        `PRODUCT_TIMING_TARGET_MISSING:${module}:${required.filter((name) => !found.includes(name)).join(",")}`,
+      );
+    let modified = source;
+    for (const edit of edits.sort((a, b) => b.start - a.start))
+      modified = modified.slice(0, edit.start) + edit.value + modified.slice(edit.end);
+    const helper = new URL("./product-path-timing-runtime.mjs", import.meta.url).href;
+    manifest[pathToFileURL(filename).href] = {
+      digest: createHash("sha256").update(source).digest("hex"),
+      source: `import { measure as __hmaMeasure, failure as __hmaFailure, record as __hmaRecord } from ${JSON.stringify(helper)};\n${modified}`,
+    };
+    inventory.push({ module, functions: found });
+  }
+  await writeFile(destination, JSON.stringify(manifest), { mode: 0o600 });
+  await writeFile(`${destination}.inventory.json`, JSON.stringify(inventory, null, 2), {
+    mode: 0o600,
+  });
+}

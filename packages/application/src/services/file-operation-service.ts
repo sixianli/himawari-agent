@@ -1,12 +1,14 @@
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
+  type FileCopyDependency,
   type HostDirectoryGrant,
   type HostFileDigestPort,
+  type HostFileIdentity,
   type HostFilePlatformPort,
   type HostFileStatePort,
   type HostTrashRecord,
   type PermanentDeletionPlan,
+  PORT_ERROR_CODES,
   type PreparedFileOperation,
 } from "../ports/index.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
@@ -61,9 +63,16 @@ export class FileOperationService {
     readonly relativePath: string;
     readonly candidatePayloadRef: string;
     readonly candidateBytes: Uint8Array;
+    readonly copyDependencies?: readonly FileCopyDependency[];
+    readonly copyAuthority?: PreparedFileOperation["copyAuthority"];
+    readonly expectedBefore?: {
+      readonly identity: HostFileIdentity | null;
+      readonly digest: string | null;
+    };
     readonly redactedDiffRef: string | null;
     readonly expiresAt: string;
   }): Promise<PreparedFileOperation> {
+    input = { ...input, candidateBytes: new Uint8Array(input.candidateBytes) };
     const grant = await this.#usableGrant(input.grantId, input.operation);
     const current = await this.#platform.inspect(grant, input.relativePath);
     if (input.operation === "create" && current)
@@ -72,9 +81,14 @@ export class FileOperationService {
     const previousDigest = current
       ? this.#digest.digest(await this.#platform.read(grant, input.relativePath, 16 * 1024 * 1024))
       : null;
+    assertCopyBaseline(input.expectedBefore, current ?? null, previousDigest);
     const candidateDigest = this.#digest.digest(input.candidateBytes);
     const basis = {
       grantId: grant.id,
+      ...(input.copyDependencies
+        ? { copyDependencies: structuredClone(input.copyDependencies) }
+        : {}),
+      ...(input.copyAuthority ? { copyAuthority: { ...input.copyAuthority } } : {}),
       operation: input.operation,
       relativePath: normalizeRelativePath(input.relativePath),
       destinationRelativePath: null,
@@ -103,7 +117,15 @@ export class FileOperationService {
     readonly operationId: string;
     readonly expectedHash: string;
     readonly candidateBytes: Uint8Array;
+    readonly preparedPublication?: import("../ports/host-files.js").HostFilePublication;
   }): Promise<PreparedFileOperation> {
+    input = {
+      ...input,
+      candidateBytes: new Uint8Array(input.candidateBytes),
+      ...(input.preparedPublication
+        ? { preparedPublication: structuredClone(input.preparedPublication) }
+        : {}),
+    };
     let operation = await this.#requiredPrepared(input.operationId);
     if (
       operation.canonicalHash !== input.expectedHash ||
@@ -112,34 +134,49 @@ export class FileOperationService {
       this.#reject("Prepared file operation changed");
     }
     if (operation.status === "verified") return operation;
-    if (operation.expiresAt <= this.#clock.now()) this.#reject("Prepared file operation expired");
-    const grant = await this.#usableGrant(operation.grantId, operation.operation);
     if (operation.status !== "prepared" && operation.status !== "executing")
       this.#reject("Prepared file operation is not recoverable");
+    if (operation.status === "executing" && operation.publication) {
+      // Historical effect verification and removal of our private staging alias
+      // cannot launch a new write or disclose file content after authority ends.
+      const recoveryGrant = await this.#state.readGrant(operation.grantId);
+      if (!recoveryGrant || recoveryGrant.hostId !== this.#hostId)
+        this.#reject("Publication recovery host is unavailable");
+      const observed = await this.#platform.recoverPublication(
+        recoveryGrant,
+        operation.relativePath,
+        operation.publication,
+      );
+      const currentDigest = this.#digest.digest(
+        await this.#platform.read(
+          recoveryGrant,
+          operation.relativePath,
+          operation.sizeBytes + 1,
+          observed,
+        ),
+      );
+      if (currentDigest !== operation.candidateDigest)
+        this.#conflict("Published file no longer matches this operation");
+      return this.#state.savePrepared(
+        Object.freeze({ ...operation, revision: operation.revision + 1, status: "verified" }),
+        operation.revision,
+      );
+    }
+    if (operation.expiresAt <= this.#clock.now()) this.#reject("Prepared file operation expired");
+    const grant = await this.#usableGrant(operation.grantId, operation.operation);
+    await this.#assertCopyDependencies(operation, grant);
     const storage = await this.#platform.storageObservation(grant);
     if (
       storage.availableBytes <
       operation.sizeBytes + FileOperationService.MINIMUM_WRITE_RESERVE_BYTES
-    ) {
+    )
       this.#reject(
         "Storage reserve reached; write is blocked while read and recovery remain available",
       );
-    }
     const current = await this.#platform.inspect(grant, operation.relativePath);
-    if (
-      operation.status === "executing" &&
-      current?.sizeBytes === operation.sizeBytes &&
-      operation.candidateDigest
-    ) {
-      const currentDigest = this.#digest.digest(
-        await this.#platform.read(grant, operation.relativePath, operation.sizeBytes + 1),
-      );
-      if (currentDigest === operation.candidateDigest) {
-        return this.#state.savePrepared(
-          Object.freeze({ ...operation, revision: operation.revision + 1, status: "verified" }),
-          operation.revision,
-        );
-      }
+    if (!operation.targetIdentity && current) {
+      await this.#invalidate(operation);
+      this.#conflict("Create target exists without this operation's publication evidence");
     }
     if (
       operation.targetIdentity &&
@@ -158,21 +195,65 @@ export class FileOperationService {
       await this.#invalidate(operation);
       this.#conflict("File content changed after prepare");
     }
+    if (
+      input.preparedPublication &&
+      this.#digest.digest(
+        await this.#platform.read(
+          grant,
+          input.preparedPublication.stagedRelativePath,
+          operation.sizeBytes + 1,
+          input.preparedPublication.identity,
+        ),
+      ) !== operation.candidateDigest
+    )
+      this.#reject("Staged copy content changed");
     if (operation.status === "prepared") {
       operation = await this.#state.savePrepared(
         Object.freeze({ ...operation, revision: operation.revision + 1, status: "executing" }),
         operation.revision,
       );
     }
-    const identity = operation.targetIdentity
-      ? await this.#platform.replaceAtomic(
+    const hooks = {
+      assertCurrentAuthority: async () => {
+        const current = await this.#usableGrant(operation.grantId, operation.operation);
+        await this.#assertCopyDependencies(operation, current);
+        if (current.revision !== grant.revision || operation.expiresAt <= this.#clock.now())
+          this.#reject("Prepared file authority changed before publication");
+      },
+      beforePublish: async (publication: import("../ports/host-files.js").HostFilePublication) => {
+        await this.#usableGrant(operation.grantId, operation.operation);
+        if (operation.expiresAt <= this.#clock.now())
+          this.#reject("Prepared file operation expired");
+        operation = await this.#state.savePrepared(
+          Object.freeze({ ...operation, revision: operation.revision + 1, publication }),
+          operation.revision,
+        );
+      },
+    };
+    const identity = input.preparedPublication
+      ? await this.#platform.publishPrepared(
           grant,
           operation.relativePath,
+          input.preparedPublication,
           operation.targetIdentity,
-          input.candidateBytes,
           previousBytes,
+          hooks,
         )
-      : await this.#platform.createExclusive(grant, operation.relativePath, input.candidateBytes);
+      : operation.targetIdentity
+        ? await this.#platform.replaceAtomic(
+            grant,
+            operation.relativePath,
+            operation.targetIdentity,
+            input.candidateBytes,
+            previousBytes,
+            hooks,
+          )
+        : await this.#platform.createExclusive(
+            grant,
+            operation.relativePath,
+            input.candidateBytes,
+            hooks,
+          );
     const verified = await this.#platform.read(
       grant,
       operation.relativePath,
@@ -191,12 +272,71 @@ export class FileOperationService {
     );
   }
 
+  async #assertCopyDependencies(operation: PreparedFileOperation, grant: HostDirectoryGrant) {
+    if (
+      operation.copyAuthority &&
+      (operation.copyAuthority.grantRevision !== grant.revision ||
+        operation.copyAuthority.canonicalRootId !== grant.canonicalRootId)
+    )
+      this.#conflict("Working copy authority changed; prepare again");
+    if (operation.copyDependencies && !grant.operations.includes("read"))
+      this.#reject("Working copy dependency read permission ended");
+    for (const dependency of operation.copyDependencies ?? []) {
+      let expectedIdentity = dependency.identity;
+      let expectedDigest = dependency.digest;
+      if (dependency.priorOperationRef) {
+        const prior = await this.#state.readPrepared(dependency.priorOperationRef);
+        if (
+          !prior ||
+          prior.grantId !== operation.grantId ||
+          (prior.relativePath !== dependency.path &&
+            !(prior.operation === "move" && prior.destinationRelativePath === dependency.path)) ||
+          prior.status !== "verified" ||
+          !["create", "update", "trash", "move"].includes(prior.operation)
+        )
+          this.#conflict("Working copy dependency save is not verified");
+        const removed =
+          prior.operation === "trash" ||
+          (prior.operation === "move" && prior.relativePath === dependency.path);
+        expectedIdentity = removed
+          ? null
+          : prior.operation === "move"
+            ? prior.targetIdentity
+            : (prior.publication?.identity ?? null);
+        expectedDigest = removed
+          ? null
+          : prior.operation === "move"
+            ? prior.previousDigest
+            : prior.candidateDigest;
+        if (!removed && !expectedIdentity)
+          this.#conflict("Working copy dependency publication is unavailable");
+      }
+      const current = await this.#platform.inspect(grant, dependency.path);
+      const bytes = current
+        ? await this.#platform.read(grant, dependency.path, 64 * 1024 * 1024, current)
+        : null;
+      if (
+        (current ? identityKey(current) : null) !==
+          (expectedIdentity ? identityKey(expectedIdentity) : null) ||
+        (current?.mode ?? null) !== (expectedIdentity?.mode ?? null) ||
+        (bytes ? this.#digest.digest(bytes) : null) !== expectedDigest
+      )
+        this.#conflict("Working copy dependency changed; regenerate before saving");
+    }
+  }
+
   async prepareMove(input: {
     readonly operationId?: string;
     readonly grantId: string;
     readonly sourceRelativePath: string;
     readonly destinationRelativePath: string;
     readonly expiresAt: string;
+    readonly copyDependencies?: readonly FileCopyDependency[];
+    readonly copyAuthority?: PreparedFileOperation["copyAuthority"];
+    readonly expectedBefore?: {
+      readonly identity: HostFileIdentity | null;
+      readonly digest: string | null;
+    };
   }): Promise<PreparedFileOperation> {
     const grant = await this.#usableGrant(input.grantId, "move");
     const sourceRelativePath = normalizeRelativePath(input.sourceRelativePath);
@@ -207,8 +347,13 @@ export class FileOperationService {
     const previousDigest = this.#digest.digest(
       await this.#platform.read(grant, sourceRelativePath, 16 * 1024 * 1024),
     );
+    assertCopyBaseline(input.expectedBefore, source, previousDigest);
     const basis = {
       grantId: grant.id,
+      ...(input.copyDependencies
+        ? { copyDependencies: structuredClone(input.copyDependencies) }
+        : {}),
+      ...(input.copyAuthority ? { copyAuthority: { ...input.copyAuthority } } : {}),
       operation: "move" as const,
       relativePath: sourceRelativePath,
       destinationRelativePath,
@@ -270,10 +415,17 @@ export class FileOperationService {
         operation.revision,
       );
     }
+    await this.#assertCopyDependencies(operation, grant);
     if (!source || identityKey(source) !== identityKey(operation.targetIdentity)) {
       await this.#invalidate(operation);
       this.#conflict("Move source identity changed after prepare");
     }
+    if (
+      this.#digest.digest(
+        await this.#platform.read(grant, operation.relativePath, 16 * 1024 * 1024, source),
+      ) !== previousDigest
+    )
+      this.#conflict("Move source content changed after prepare");
     if (destination) {
       await this.#invalidate(operation);
       this.#conflict("Move destination appeared after prepare");
@@ -311,6 +463,12 @@ export class FileOperationService {
     readonly grantId: string;
     readonly relativePath: string;
     readonly expiresAt: string;
+    readonly copyDependencies?: readonly FileCopyDependency[];
+    readonly copyAuthority?: PreparedFileOperation["copyAuthority"];
+    readonly expectedBefore?: {
+      readonly identity: HostFileIdentity | null;
+      readonly digest: string | null;
+    };
   }): Promise<PreparedFileOperation> {
     const grant = await this.#usableGrant(input.grantId, "trash");
     const relativePath = normalizeRelativePath(input.relativePath);
@@ -318,8 +476,13 @@ export class FileOperationService {
     const previousDigest = this.#digest.digest(
       await this.#platform.read(grant, relativePath, 16 * 1024 * 1024),
     );
+    assertCopyBaseline(input.expectedBefore, identity, previousDigest);
     const basis = {
       grantId: grant.id,
+      ...(input.copyDependencies
+        ? { copyDependencies: structuredClone(input.copyDependencies) }
+        : {}),
+      ...(input.copyAuthority ? { copyAuthority: { ...input.copyAuthority } } : {}),
       operation: "trash" as const,
       relativePath,
       destinationRelativePath: null,
@@ -369,12 +532,24 @@ export class FileOperationService {
     const previousDigest = operation.previousDigest;
     const grant = await this.#usableGrant(operation.grantId, "trash");
     const current = await this.#platform.inspect(grant, operation.relativePath);
+    // An absent source in an executing operation is historical recovery. The
+    // platform must verify the operation-owned Trash inode; no new removal runs.
+    if (current) await this.#assertCopyDependencies(operation, grant);
     if (
       operation.status === "prepared" &&
       (!current || identityKey(current) !== identityKey(operation.targetIdentity))
     ) {
       await this.#invalidate(operation);
       this.#conflict("Trash target identity changed after prepare");
+    }
+    if (
+      current &&
+      this.#digest.digest(
+        await this.#platform.read(grant, operation.relativePath, 16 * 1024 * 1024, current),
+      ) !== previousDigest
+    ) {
+      await this.#invalidate(operation);
+      this.#conflict("Trash target content changed after prepare");
     }
     if (operation.status === "prepared") {
       operation = await this.#state.savePrepared(
@@ -388,6 +563,17 @@ export class FileOperationService {
       targetIdentity,
       operation.id,
     );
+    const retainedIdentity = await this.#requiredIdentity(grant, trashed.trashRelativePath);
+    if (identityKey(retainedIdentity) !== identityKey(targetIdentity))
+      this.#conflict("Trash identity no longer matches this operation");
+    const retained = await this.#platform.read(
+      grant,
+      trashed.trashRelativePath,
+      16 * 1024 * 1024,
+      retainedIdentity,
+    );
+    if (this.#digest.digest(retained) !== previousDigest)
+      this.#conflict("Trash content no longer matches this operation");
     const record: HostTrashRecord = Object.freeze({
       id: recordId,
       hostId: this.#hostId,
@@ -710,4 +896,19 @@ export function normalizeRelativePath(value: string): string {
 
 export function identityKey(identity: { readonly device: string; readonly inode: string }): string {
   return `${identity.device}:${identity.inode}`;
+}
+
+function assertCopyBaseline(
+  expected:
+    | { readonly identity: HostFileIdentity | null; readonly digest: string | null }
+    | undefined,
+  current: HostFileIdentity | null,
+  digest: string | null,
+) {
+  if (!expected) return;
+  if (expected.digest !== digest || JSON.stringify(expected.identity) !== JSON.stringify(current))
+    throw new ApplicationPortError(
+      PORT_ERROR_CODES.CONFLICT,
+      "Working copy baseline changed; regenerate before saving",
+    );
 }

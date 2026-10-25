@@ -35,7 +35,10 @@ export interface ModelInvocationAdmissionInput {
   readonly estimatedCostMicros: number;
   /** Frozen descriptor pricing, expressed in USD per million tokens. */
   readonly pricing: ModelInvocationPricing;
+  readonly budgetAccount?: ModelInvocationBudgetAccount;
 }
+
+export type ModelInvocationBudgetAccount = "run" | "thread-title";
 
 export interface ModelInvocationPricing {
   readonly input: number;
@@ -50,6 +53,7 @@ export interface ModelInvocationUsage {
   readonly outputTokens: number;
   readonly cacheReadTokens: number;
   readonly cacheWriteTokens: number;
+  readonly reportedCostMicros?: number;
 }
 
 export type ModelInvocationUnknownReason =
@@ -68,7 +72,6 @@ export interface ModelInvocationPermit {
    * without changing their execution history.
    */
   releaseReserved(): Promise<void>;
-  /** Settle from verified usage and the frozen descriptor price captured at begin. */
   settle(usage: ModelInvocationUsage): Promise<void>;
   /** Preserve uncertainty when a started stream has no trusted terminal usage. */
   markUnknown(reasonCode: ModelInvocationUnknownReason): Promise<void>;
