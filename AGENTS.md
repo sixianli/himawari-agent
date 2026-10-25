@@ -4,6 +4,10 @@
 
 Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode.
 
+## Owner's Global Instructions and Skills
+
+The owner's global instructions are copied into [.claude/rules/owner-global-instructions.md](.claude/rules/owner-global-instructions.md). Claude Code loads that file on its own; any other agent whose session did not load the owner's global instructions from the owner's machine, such as a cloud session, reads it before starting work. The owner's skills are copied under `.claude/skills/`; [.claude/rules/owner-skills.md](.claude/rules/owner-skills.md) lists them and says how to use a copy when the Skill tool does not list that skill.
+
 ## Documentation Governance
 
 This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`.

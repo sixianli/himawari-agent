@@ -1,6 +1,12 @@
 # 仓库内的 Claude skill
 
-这里放的是 Andy 在自己 Mac 上的 Claude Code 里启用的 skill（给 Claude 的一套做事说明，每个目录一个，入口是 `SKILL.md`）。Claude Code 打开这个仓库时会自动加载 `.claude/skills/` 下的 skill，所以云端会话也能用到和本机相同的做法。
+这里放的是 Andy 在自己 Mac 上的 Claude Code 里启用的 skill（给 Claude 的一套做事说明，每个目录一个，入口是 `SKILL.md`）。
+
+云端怎么用到它们：
+
+- claude.ai 项目里的云端线程（也就是 Projects 里每个任务开出的云端会话）不会加载仓库里 `.claude/skills/` 下的 skill，只会读仓库根目录的 `CLAUDE.md`、`.claude/CLAUDE.md` 和 `.claude/rules/`（[官方说明](https://code.claude.com/docs/en/claude-projects#what-threads-pick-up-from-your-repositories)）。所以 [`.claude/rules/owner-skills.md`](../rules/owner-skills.md) 列出了每个 skill 的名字和用途，并要求线程在任务对得上时用 Read 工具读对应的 `SKILL.md` 照做。
+- 其他会话（Mac 上在本仓库里打开的会话、不属于项目的云端会话）会按 Claude Code 的规则直接加载这里的 skill。Mac 上 `~/.claude/skills/` 里有同名 skill 时，用的是本机那份（[官方说明](https://code.claude.com/docs/en/skills)：个人目录优先于项目目录）。
+- 另一条官方路子是把 skill 上传到 claude.ai 账号里启用，云端线程就会像内置 skill 一样自动加载；这需要 Andy 自己在 claude.ai 的 skill 设置里操作。
 
 这些目录是快照，不是源头。改 skill 请到源头改，再按下面的步骤重新复制，不要直接改这里。
 
@@ -34,11 +40,12 @@
 rsync -aL --delete --exclude 'tests/verification/' --exclude '__pycache__/' --exclude '.DS_Store' --exclude '.ruff_cache/' --exclude 'FEEDBACK.md' --exclude '*.before-*' --exclude '*.pyc' --exclude 'synced/' --exclude 'hermes-ssh/' --exclude 'README.md' --exclude '.claude/' ~/.claude/skills/ .claude/skills/
 ```
 
-复制后重做上面“快照与源头的差别”里的改写，并把“来源”表里的提交号换成 `sixianli/agent-skills` 当时的提交。
+复制后重做上面“快照与源头的差别”里的改写，并把“来源”表里的提交号换成 `sixianli/agent-skills` 当时的提交。增加、删除 skill 或某个 skill 的 `description` 变了时，同步改 [`.claude/rules/owner-skills.md`](../rules/owner-skills.md) 里的表。
 
 ## 在云端会话里的限制
 
 - `codex-orchestration`、`opencode-orchestration`、`codebuddy-orchestration` 需要本机装好的 Codex、opencode、CodeBuddy 命令行工具，云端没有这些工具时用不了。
 - `long-task-planning` 在本机还靠 `~/.claude/settings.json` 里的会话启动钩子（每次会话开始时自动运行的命令）提示进行中的任务；云端没有这个钩子，需要按 `SKILL.md` 手动运行 `scripts/longtask.py`。
 - `siblog-blog-workflow` 默认 SiBlog 博客仓库在 `~/DoNotDeleteThis/documents/sxl_code_work_space/SiBlog`，`x-auto-post` 的定时发布依赖 macOS 的 launchd（系统自带的定时任务服务），两者在云端都只能用到写稿部分。
-- 全局说明里写的 `~/.claude/skills/<名字>/...` 路径在云端不存在，对应文件在本目录 `.claude/skills/<名字>/...`。
+- skill 里写的 `~/.claude/skills/<名字>/...` 路径在云端不存在，对应文件在本目录 `.claude/skills/<名字>/...`。
+- Andy 的两份全局指令（`~/.agents/AGENTS.md` 和 `~/.claude/CLAUDE.md`）合并后放在 [`.claude/rules/owner-global-instructions.md`](../rules/owner-global-instructions.md)，云端线程启动时会自动读到。本机这两份改了以后，要同步改那份文件。
