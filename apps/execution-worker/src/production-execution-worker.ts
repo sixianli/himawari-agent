@@ -64,7 +64,8 @@ export interface ProductionExecutionWorkerOptions {
   readonly sandboxV2?: Pick<
     ProductionSandboxExecutionV2,
     "execute" | "handles" | "cancel" | "reconcile" | "shutdown"
-  >;
+  > &
+    Partial<Pick<ProductionSandboxExecutionV2, "prewarmSrtEnvironment">>;
   readonly workerInstanceId: string;
   readonly workerBootId: string;
   readonly bootTokenRef: string;
@@ -83,7 +84,6 @@ export interface ProductionExecutionWorkerOptions {
   };
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
-  /** Host composition gate; an unready dependency must never be reported ready. */
   readonly readiness?: () => {
     readonly live: boolean;
     readonly ready: boolean;
@@ -529,8 +529,6 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     void operation.finally(() => this.active.delete(operation)).catch(() => {});
   }
 
-  /** Emitted by the execution host after admission, before worker processing starts.
-   * Queueing, transport and owner approval happen outside this interval. */
   private recordExecutionStart(request: ExecuteRequest): void {
     const event = executionV2MessageSchema.parse({
       schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
@@ -802,7 +800,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     try {
       outcome = {
         outcome: "succeeded",
-        result: await environmentOperation(backend, request),
+        result: await environmentOperation(backend, request, this.options.sandboxV2),
         errorCode: null,
       };
     } catch (error) {
@@ -1298,6 +1296,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
 async function environmentOperation(
   backend: ExecutionEnvironmentLifecyclePort,
   request: EnvironmentOperationRequest,
+  sandbox: Partial<Pick<ProductionSandboxExecutionV2, "prewarmSrtEnvironment">> | undefined,
 ): Promise<unknown> {
   const { payload } = request;
   switch (payload.operation) {
@@ -1337,5 +1336,10 @@ async function environmentOperation(
         locator: payload.locator,
       });
       return { destroyed: true };
+    case "prewarm":
+      if (!sandbox?.prewarmSrtEnvironment)
+        throw new Error(PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED);
+      sandbox.prewarmSrtEnvironment(payload);
+      return { accepted: true };
   }
 }

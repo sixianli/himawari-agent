@@ -31,6 +31,7 @@ date: "2026-10-13"
 - [2026-10-22 补充：常驻路径准备失败带上宿主诊断](#resident-preparation-diagnostic)
 - [2026-10-22 补充：常驻命令到期限时稳定记成期限超时](#resident-deadline-settlement)
 - [2026-10-22 补充：服务关闭打断的资源核查在下次启动后再做一次](#interrupted-recovery-retry)
+- [2026-10-25 补充：Run 开始时预热常驻会话，审批前后复用同一环境](#resident-prewarm)
 - [关联文档](#references)
 
 <a id="context"></a>
@@ -233,6 +234,19 @@ D-56：候选 `51f8b927` 的完整第 4 层里，`[R2-T11][R2-S2] keeps an offli
 - **被中断等于没有结论**：资源恢复调度把 `SANDBOX_RECONCILIATION_INTERRUPTED` 和 `SANDBOX_PREVIOUS_BOOT_UNKNOWN` 一样当作初始原因：`bound` 记录（任何后端）的上一次核查以它结束时，下一次扫描立即重新排定一次，动作仍按 Run 状态决定。这个原因只在资源恢复循环被中止时产生：服务正常关闭，或派发循环失败（`#failClosed`，随后也会触发服务关闭）；循环被中止后本次运行不再扫描，所以实际效果是下次启动后再核查一次，不会在同一次运行里反复重试。数据库里记下的原因保持原样，不改写成 `SANDBOX_PREVIOUS_BOOT_UNKNOWN`。
 - **不变的部分**：再次核查的结果按原有规则处理：停止未确认时按 D-53 退避重试；兜底原因 `SANDBOX_RECONCILIATION_UNCONFIRMED`、身份、证据、权限错误仍暂停；整个核查到期 `SANDBOX_RECONCILIATION_TIMED_OUT` 对 `bound` 记录仍暂停，是否放宽和是否给重试设总时长上限一起记在 [BL-20261021-008](../backlog/BL-20261021-008-重-启-后-上-一-个-worker-实.md)。工作区占用在拿到释放证明前一直保持，不重放原工具。D-55 与本缺陷无关：Worker 被杀时命令已经结算，Job Host 处在空闲阶段，不经过 D-55 的延后分支。
 - **方案比较**：DeepSeek V4.1 Flash 的独立诊断（`.ci-output/handoff/2026-10-22-l4-s19-diagnosis-oc-stop.md`）给出同一条链条，建议启动恢复把这类原因改写成 `SANDBOX_PREVIOUS_BOOT_UNKNOWN`，或让任务环境的 `bound` 记录复用预约阶段的整组可重试原因；采用它的诊断，修法改为在做排期决定的地方承认中断原因，原因记录保持真实，范围只到已证实的中断原因。
+
+<a id="resident-prewarm"></a>
+
+## 2026-10-25 补充：Run 开始时预热常驻会话，审批前后复用同一环境
+
+2026-10-24 真实使用复盘第 2 项（[BL-20261024-006](../backlog/BL-20261024-006-first-tool-call-cold-start.md)）：Hermes 上连跑 10 个新 Run，第一次工具调用中位数 3.3 秒，其中约 3.07 秒是新开常驻会话；同一 Run 里后面的调用也常常重新建环境，每次又是约 3 秒。所有者 2026-10-25 在计时报告里选定：不改安全设计，Run 开始就预热（方案 1），缩短沙箱里 Node 程序的启动（方案 3，runner 打包，已在上一次提交完成），并修好同一 Run 内的复用。本段只记录方案 1 和复用修复，不改动[决定](#decision)。
+
+- **同一 Run 重新认领租约不再换环境**：Run 等待审批时释放执行租约，审批后重新认领，新租约的编号（`executionLeaseId`）和修订号（`expectedLeaseRevision`）都会变。原来复用键包含整份租约，于是每次审批后键都变，旧环境按“revocation”停掉、新环境重新冷启动，这就是同一 Run 里“也常常重新建环境”的原因。现在复用键里的执行权限只取不随重新认领变化的部分：权威租约编号和围栏令牌、部署编号、权威代次、围栏令牌和消费者编号（`apps/agent-service/src/production-task-environments.ts` 的 `srtEnvironmentPolicyDigest`）。这些任何一项变了（例如 Agent 换代或失去权威），仍先停旧环境再建新环境；授权的编号、版本、操作、根目录、授权记录和期限，允许域名，线程，模型，运行时、runner 摘要和资格记录也照旧在键里。每次调用仍按当前租约做完整的准入和授权检查，复用的只是沙箱进程，不是授权。
+- **Run 开始时预热**：Agent 每次派发 Run（包括审批后的续跑）时，在调用模型之前、不等待结果地发起一次预热（`apps/agent-service/src/production-run-composition.ts` 调用 `production-sandbox-services.ts` 的 `prewarmEnvironment`）。只在下面几条都成立时才预热：配置了编码路由；Linux 上启用了 SRT 常驻环境；Run 有执行期限；路由启用的工具里有前台、无网络、目标来自授权（`grant_targets`）、走 SRT 的 `bash` 或合同版本 1 的 `write`/`edit`；路由指定的目录授权存在、属于本机、未撤销、未过期，且包含这个工具声明的目录操作。预热用和真实调用相同的输入算复用键并获取本轮主环境（授权取路由的授权，允许域名为空，环境期限取 Run 期限和授权期限中较早的一个），环境就绪后给 Worker 发新的环境操作 `prewarm`。
+- **Worker 预热的会话与真实调用一致**：Worker 收到 `prewarm` 后立即答复“已接受”，在后台按安装绑定先启动命令会话、再启动文件写入会话（`apps/execution-worker/src/production-sandbox-execution-v2.ts` 的 `prewarmSrtEnvironment`）。会话请求由真实调用共用的同一段代码生成：作业编号、私有目录、可写与否（按工具声明的目录操作）、只读工具链、受保护路径（命令会话另外保护 `.himawari-recovery`）、允许域名（空）、runner 参数都相同，所以真实调用到达时策略摘要一致，直接用已经就绪的会话；不一致时按既有规则以 `SRT_POLICY_CHANGED` 停掉环境，不会带着不同策略继续。网络工具（`grant_targets` 网络）、后台和服务模式、其他后端不预热。预热只启动空闲的 runner，不执行任何模型或用户给出的命令；会话的沙箱范围就是这个工具调用本来会得到的范围。
+- **失败不影响 Run**：预热的每一步失败都只写诊断，不改变 Run：Agent 写 `sandbox.srt_prewarm.requested` 或 `sandbox.srt_prewarm.failed`，Worker 写 `sandbox.srt_prewarm.finished`（列出启动了哪些会话）或 `sandbox.srt_prewarm.failed`（带原因码）。会话没启动成功时，环境按既有规则记为失败，下一次真实调用获取环境时检查发现不能复用，停掉旧环境、新建环境，退回原来的冷启动。Run 结束时预热出的环境和其他任务环境一样由 `stopRun` 停止和释放。审批后续跑时的预热，复用键不变，环境和会话都已存在，只多一次环境检查。
+- **代价**：启用编码路由的每个 Run 都会多启动最多两个空闲 runner，即使这一轮没有用工具；它们在 Run 结束时停止。环境一建立就登记工作区租约（`execution_environment_leases`），所以工作区从 Run 开始就归这个 Run，而不是从第一次工具调用开始：两个 Run 同时进行时，另一个 Run 对同一目录的调用要排队到这个 Run 结束，即使这个 Run 一直没有用工具。原来只要两个 Run 都用了工具，也是同样的排队，预热把这段时间提前到了 Run 开始。工作区已被别的 Run 占用时，预热在获取环境这一步就被拒绝，只记一条预热失败，不排队、不占用。部署时 Agent 和 Worker 必须一起更新：旧 Worker 不认识 `prewarm`，会以请求无效拒绝，Agent 只记一条预热失败。
+- **验证**：单元测试覆盖复用键（重新认领租约不变；权威代次、权威租约、围栏令牌、部署、授权版本、授权期限变化都会换环境）和 Worker 预热（会话请求与真实调用一致、不该预热的工具不预热、失败只记日志、未知根目录和其他后端被拒绝）。真实 SRT 的集成测试 `[R2-P2] prewarms the resident runner at Run start so the first bash call reuses it` 断言预热后第一次 bash 只启动过一个会话、常驻 runner 是同一个进程、环境未轮换，并打印第一次调用耗时；它只在装有运行时的 Linux 上运行（Hermes 第 3–4 层）。
 
 <a id="references"></a>
 

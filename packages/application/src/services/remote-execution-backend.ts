@@ -84,6 +84,10 @@ export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort
     );
   }
 
+  prewarm(input: PayloadOf<"prewarm">) {
+    return this.send("prewarm", input, input.identity, null);
+  }
+
   private async send<TOperation extends EnvironmentOperation>(
     operation: TOperation,
     fields: PayloadOf<TOperation>,

@@ -10,6 +10,7 @@ import {
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
+  type RuntimeRequest,
   RemoteExecutionBackend,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
@@ -93,7 +94,10 @@ import {
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
-import { createProductionSandboxServices } from "./production-sandbox-services.js";
+import {
+  createProductionSandboxServices,
+  type ProductionTaskEnvironments,
+} from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 
@@ -149,6 +153,49 @@ function productionClock(): ClockPort {
 
 function productionIds(): IdGeneratorPort {
   return Object.freeze({ next: (namespace: string) => `${namespace}:${randomUUID()}` });
+}
+
+type SandboxEnvironmentPrewarm = NonNullable<
+  Awaited<ReturnType<typeof createProductionSandboxServices>>
+>["prewarmEnvironment"];
+
+function sandboxEnvironmentPrewarm(
+  sandbox: { readonly prewarmEnvironment: SandboxEnvironmentPrewarm },
+  route: Parameters<SandboxEnvironmentPrewarm>[1],
+  output: NodeJS.WritableStream,
+): (request: RuntimeRequest) => void {
+  return (request) => {
+    const started = performance.now();
+    void sandbox.prewarmEnvironment(request, route).then(
+      (requested) =>
+        writeServiceDiagnostic(output, {
+          component: "agent-service",
+          event: "sandbox.srt_prewarm.requested",
+          runId: request.runId,
+          requested,
+          durationMs: Math.round(performance.now() - started),
+        }),
+      (error: unknown) =>
+        writeServiceDiagnostic(output, {
+          component: "agent-service",
+          event: "sandbox.srt_prewarm.failed",
+          runId: request.runId,
+          code: stableErrorCode(error),
+          durationMs: Math.round(performance.now() - started),
+        }),
+    );
+  };
+}
+
+function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionTaskEnvironments {
+  return {
+    backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+    session: "srt",
+    guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
+    inspectBeforeReuse: true,
+    lifecycle,
+    prewarm: (input) => lifecycle.prewarm(input),
+  };
 }
 
 function configuredEmbedding(configuration: ProductConfiguration) {
@@ -765,12 +812,8 @@ export async function runAgentService(
             },
           }
         : {
-            srtTaskEnvironments: {
-              backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
-              session: "srt",
-              guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
-              inspectBeforeReuse: true,
-              lifecycle: new RemoteExecutionBackend({
+            srtTaskEnvironments: srtTaskEnvironmentRoute(
+              new RemoteExecutionBackend({
                 backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
                 transport: {
                   request: (message) => {
@@ -791,7 +834,7 @@ export async function runAgentService(
                 resultTimeoutMs: configuration.deadlines.runMs,
                 pollIntervalMs: 100,
               }),
-            },
+            ),
           }),
       configuration,
       repository,
@@ -1075,6 +1118,15 @@ export async function runAgentService(
               resources: sandboxServices.resources,
               recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
               prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
+              ...(configuration.runPolicy?.coding
+                ? {
+                    prewarmSandboxEnvironment: sandboxEnvironmentPrewarm(
+                      sandboxServices,
+                      configuration.runPolicy.coding,
+                      errorOutput,
+                    ),
+                  }
+                : {}),
             }
           : {}),
         configuration,

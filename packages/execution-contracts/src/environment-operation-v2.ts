@@ -26,6 +26,7 @@ export const ENVIRONMENT_OPERATIONS = [
   "stop",
   "verifyStopped",
   "destroy",
+  "prewarm",
 ] as const;
 export type EnvironmentOperation = (typeof ENVIRONMENT_OPERATIONS)[number];
 
@@ -71,6 +72,16 @@ const requestBranches = {
   stop: object({ operation: literal("stop"), ...stopTarget, ...requestFields }),
   verifyStopped: object({ operation: literal("verifyStopped"), ...stopTarget, ...requestFields }),
   destroy: object({ operation: literal("destroy"), ...target, ...requestFields }),
+  prewarm: object({
+    operation: literal("prewarm"),
+    identity: executionEnvironmentIdentitySchema,
+    createIntentId: machineString,
+    locator: executionEnvironmentLocatorSchema,
+    capabilityRef: machineString,
+    capabilityVersion: machineString,
+    canonicalRootId: machineString,
+    ...requestFields,
+  }),
 } as const;
 
 const resultSchemas = {
@@ -84,10 +95,15 @@ const resultSchemas = {
   stop: object({ accepted }),
   verifyStopped: executionEnvironmentStopProofSchema,
   destroy: object({ destroyed: booleanValue }),
+  prewarm: object({ accepted }),
 } as const satisfies Record<EnvironmentOperation, Schema<unknown>>;
 
 export type EnvironmentOperationRequestPayload = InferSchema<
   (typeof requestBranches)[keyof typeof requestBranches]
+>;
+export type EnvironmentPrewarmRequest = Extract<
+  EnvironmentOperationRequestPayload,
+  { readonly operation: "prewarm" }
 >;
 export type EnvironmentOperationResults = {
   readonly [TOperation in EnvironmentOperation]: InferSchema<(typeof resultSchemas)[TOperation]>;

@@ -67,6 +67,7 @@ export interface ProductionRunCompositionOptions {
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
+  readonly prewarmSandboxEnvironment?: (request: RuntimeRequest) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -77,7 +78,6 @@ export interface ProductionRunCompositionOptions {
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
 }
 
-/** One scoped composition owns dispatch, product context, Pi and durable completion. */
 export function createProductionRunComposition(options: ProductionRunCompositionOptions) {
   const { configuration, repository, authority, clock, ids, protector } = options;
   const { ownerId, agentId } = configuration;
@@ -211,8 +211,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     agentDir: options.agentDir,
     admission,
     now: () => clock.now(),
-    // Each slot is scoped to a durable Run. The identity ledger prevents replay
-    // of settled or uncertain physical streams after process restart.
     logicalSlot: (_request, ordinal) => `agent-stream:${ordinal}`,
   });
   const titles = options.generateTitle
@@ -256,6 +254,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
       await options.prepareQueuedSandboxExecutions?.(request);
+      options.prewarmSandboxEnvironment?.(request);
       let requested = false;
       let titleAdmission: Promise<void> | undefined;
       for await (const event of runtime.run(request)) {
@@ -263,7 +262,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
           requested = true;
           titleAdmission = titles?.start(request);
         }
-        // The coordinator stops consuming at these events and then releases the Run lease.
         if (
           ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
         )

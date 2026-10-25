@@ -11,6 +11,7 @@ import {
 import {
   type ExecutionAdmissionPeerBinding,
   type ExecutionEnvironmentIdentity,
+  type EnvironmentPrewarmRequest,
   type ExecutionEnvironmentLocator,
   type ExecutionV2Request,
   executionV2MessageSchema,
@@ -26,6 +27,7 @@ import {
   SANDBOX_HOST_COMPLETION_CONTRADICTED,
   SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
   SANDBOX_TOOL_NOT_STARTED,
+  SRT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   piCodingToolNameSchema,
   piContainerRunnerInputSchema,
@@ -67,6 +69,7 @@ import {
 import {
   type SrtTaskEnvironmentBackend,
   type SrtTaskEnvironmentSession,
+  type SrtTaskEnvironmentSessionKind,
   srtTaskEnvironmentJobId,
 } from "./production-srt-task-environment-backend.js";
 
@@ -123,6 +126,7 @@ interface Options {
 const COMPLETION_RECORD_ATTEMPTS = 5;
 const RECOVERY_SETTLE_WAIT_MS = 35000;
 const RECOVERY_POLL_MS = 250;
+const SRT_PREWARM_SESSIONS = ["command", "file_write"] as const;
 const CONTAINER_TOOLS = new Set(["read", "bash", "find", "grep", "ls"]);
 const HOST_PUBLICATION_CONTRACTS: ReadonlyMap<string, readonly string[]> = new Map([
   [PI_PREPARED_FILE_CONTRACT.version, ["write", "edit"]],
@@ -192,22 +196,39 @@ export class ProductionSandboxExecutionV2 {
     entry.supervision = this.run(entry).then((result) => entry.acknowledge?.(result));
     return entry.completion;
   }
-  private async hostBinding(plan: SandboxExecutionPlanV2) {
+  private hostBinding(plan: SandboxExecutionPlanV2) {
+    return this.capabilityBinding(
+      {
+        capabilityRef: plan.capabilityRef,
+        capabilityVersion: plan.capabilityVersion,
+        hostId: plan.identity.hostId,
+      },
+      plan,
+    );
+  }
+  private async capabilityBinding(
+    target: {
+      readonly capabilityRef: string;
+      readonly capabilityVersion: string;
+      readonly hostId: string;
+    },
+    plan?: SandboxExecutionPlanV2,
+  ) {
     const deployment = this.options.configuration.capabilityDeployment;
     if (!deployment) throw new Error("SANDBOX_DEPLOYMENT_UNAVAILABLE");
     const loaded = await revalidateCapabilityDeploymentSnapshot(await this.admitted);
     const entry = loaded.snapshot.capabilities.find(
       (item) =>
-        item.manifest.ref === plan.capabilityRef &&
-        item.manifest.version === plan.capabilityVersion,
+        item.manifest.ref === target.capabilityRef &&
+        item.manifest.version === target.capabilityVersion,
     );
     if (!entry || entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_UNAVAILABLE");
     await verifySandboxHost({
       binding: entry.binding.value,
       qualification: entry.qualification.sandbox,
-      hostId: plan.identity.hostId,
-      plan,
+      hostId: target.hostId,
+      ...(plan ? { plan } : {}),
     });
     return entry.binding.value;
   }
@@ -1204,6 +1225,127 @@ export class ProductionSandboxExecutionV2 {
     });
     return this.unknown(entry);
   }
+  prewarmSrtEnvironment(request: EnvironmentPrewarmRequest): void {
+    const environments = this.options.srtEnvironments;
+    if (!environments || this.closed || request.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF)
+      throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
+    const started = performance.now();
+    const log = (event: string, fields: object) =>
+      console.error(
+        JSON.stringify({
+          event,
+          runId: request.identity.runId,
+          environmentId: request.identity.environmentId,
+          ...fields,
+          totalMs: Math.round(performance.now() - started),
+          at: new Date().toISOString(),
+        }),
+      );
+    void this.prewarm(request, environments).then(
+      (sessions) => log("sandbox.srt_prewarm.finished", { sessions }),
+      (error: unknown) =>
+        log("sandbox.srt_prewarm.failed", {
+          reasonCode: error instanceof Error ? error.message : "SRT_PREWARM_FAILED",
+        }),
+    );
+  }
+  private async prewarm(
+    request: EnvironmentPrewarmRequest,
+    environments: Pick<SrtTaskEnvironmentBackend, "session">,
+  ) {
+    const binding = await this.capabilityBinding({
+      capabilityRef: request.capabilityRef,
+      capabilityVersion: request.capabilityVersion,
+      hostId: request.identity.hostId,
+    });
+    const root = binding.roots.find((item) => item.canonicalRootId === request.canonicalRootId);
+    if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
+    const sessions: string[] = [];
+    for (const kind of SRT_PREWARM_SESSIONS) {
+      const descriptor = binding.operationBindings?.find(
+        (item) =>
+          item.backendRef === SRT_BACKEND_REF &&
+          item.scopeSource === "grant_targets" &&
+          item.network === "disabled" &&
+          srtTaskEnvironmentSession({
+            mode: item.mode,
+            operation: item.operation,
+            operationContract: item.contract,
+          }) === kind,
+      );
+      if (!descriptor || this.closed) continue;
+      const { request: sessionRequest } = await this.srtSessionRequest({
+        binding,
+        workspace: root.canonicalPath,
+        environment: request,
+        kind,
+        writable: descriptor.directoryOperations.some((operation) => operation !== "read"),
+        allowedDomains: [],
+      });
+      await environments.session({
+        target: {
+          identity: request.identity,
+          createIntentId: request.createIntentId,
+          locator: request.locator,
+        },
+        kind,
+        request: sessionRequest,
+      });
+      sessions.push(kind);
+    }
+    return sessions;
+  }
+  private async srtSessionRequest(input: {
+    readonly binding: Awaited<ReturnType<ProductionSandboxExecutionV2["capabilityBinding"]>>;
+    readonly workspace: string;
+    readonly environment: {
+      readonly identity: ExecutionEnvironmentIdentity;
+      readonly locator: ExecutionEnvironmentLocator;
+    };
+    readonly kind: SrtTaskEnvironmentSessionKind;
+    readonly writable: boolean;
+    readonly allowedDomains: readonly string[];
+  }) {
+    const { binding, workspace, environment, kind } = input;
+    const jobId = srtTaskEnvironmentJobId(environment.identity.environmentId, kind);
+    const { policy, compiled } = await prepareJobPolicy({
+      workspace,
+      privateRoot: binding.privateRoot,
+      jobId,
+      writable: input.writable,
+      readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
+      protectedPaths: [
+        ...binding.protectedPaths,
+        ...[
+          ".env",
+          ".git",
+          ".himawari-trash",
+          ...(kind === "file_write" ? [] : [".himawari-recovery"]),
+        ].map((name) => path.join(workspace, name)),
+      ],
+      allowedDomains: input.allowedDomains,
+    });
+    return {
+      policy,
+      compiled,
+      request: {
+        jobId,
+        attemptId: `${kind}-${environment.locator.runtimeEnvironmentId.slice(0, 24)}`,
+        policy,
+        policyDigest: compiled.policyDigest,
+        executable: binding.executable.path,
+        args: [
+          binding.runner.path,
+          binding.hostId,
+          this.options.peer.workerInstanceId,
+          PI_RESIDENT_RUNNER_FLAG,
+          binding.runtimeRoot,
+        ],
+        maxOutputBytes: binding.maximumResourceCeiling.maxOutputBytes,
+        cleanupTimeoutMs: 5000,
+      },
+    };
+  }
   private async runInSrtEnvironment(
     entry: Entry,
     initial: Extract<Record, { phase: "reserved" }>,
@@ -1245,21 +1387,12 @@ export class ProductionSandboxExecutionV2 {
     const root = await resolveSandboxWorkspaceRoot({ binding, scope });
     if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
     timing.mark("workspace_root");
-    const { policy, compiled } = await prepareJobPolicy({
+    const { policy, compiled, request } = await this.srtSessionRequest({
+      binding,
       workspace: root.canonicalPath,
-      privateRoot: binding.privateRoot,
-      jobId: srtTaskEnvironmentJobId(environment.identity.environmentId, kind),
+      environment,
+      kind,
       writable: scope.directoryGrant.operations.some((operation) => operation !== "read"),
-      readOnlyToolchainPaths: [binding.runtimeRoot, ...binding.readOnlyToolchainPaths],
-      protectedPaths: [
-        ...binding.protectedPaths,
-        ...[
-          ".env",
-          ".git",
-          ".himawari-trash",
-          ...(kind === "file_write" ? [] : [".himawari-recovery"]),
-        ].map((name) => path.join(root.canonicalPath, name)),
-      ],
       allowedDomains: resolvedScope.allowedDomains,
     });
     timing.mark("job_policy");
@@ -1291,22 +1424,7 @@ export class ProductionSandboxExecutionV2 {
         locator: environment.locator,
       },
       kind,
-      request: {
-        jobId: srtTaskEnvironmentJobId(environment.identity.environmentId, kind),
-        attemptId: `${kind}-${environment.locator.runtimeEnvironmentId.slice(0, 24)}`,
-        policy,
-        policyDigest: compiled.policyDigest,
-        executable: binding.executable.path,
-        args: [
-          binding.runner.path,
-          binding.hostId,
-          this.options.peer.workerInstanceId,
-          PI_RESIDENT_RUNNER_FLAG,
-          binding.runtimeRoot,
-        ],
-        maxOutputBytes: binding.maximumResourceCeiling.maxOutputBytes,
-        cleanupTimeoutMs: 5000,
-      },
+      request,
     });
     timing.mark("session");
     const facts = sandboxExecutionFactsSchema.parse(
