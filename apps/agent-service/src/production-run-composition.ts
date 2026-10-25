@@ -46,6 +46,10 @@ import {
   ProductionMemoryEpisodes,
   type ProductionMemoryEpisodesOptions,
 } from "./production-memory-episodes.js";
+import {
+  ProductionMemoryConsolidation,
+  type ProductionMemoryConsolidationOptions,
+} from "./production-memory-consolidation.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -69,6 +73,10 @@ export interface ProductionRunCompositionOptions {
     readonly episodes?: Pick<
       ProductionMemoryEpisodesOptions,
       "service" | "embedWithin" | "onFailure"
+    >;
+    readonly consolidation?: Pick<
+      ProductionMemoryConsolidationOptions,
+      "service" | "search" | "embedWithin" | "onResult" | "onFailure"
     >;
   };
   readonly recoverMissingToolResult?: (
@@ -365,6 +373,16 @@ export function createProductionRunComposition(options: ProductionRunComposition
         onFailure: memoryEpisodeOptions.onFailure,
       })
     : undefined;
+  const memoryConsolidationOptions = memoryCaptureOptions?.consolidation;
+  const memoryConsolidation = memoryConsolidationOptions
+    ? new ProductionMemoryConsolidation({
+        ...memoryConsolidationOptions,
+        assertActive: () => authority.assertActive(),
+        generate: (request, prompt, onAdmitted, purpose) =>
+          auxiliaryMemoryGeneration(request, prompt, onAdmitted, purpose),
+        now: () => options.clock.now(),
+      })
+    : undefined;
   async function auxiliaryMemoryGeneration(
     request: RuntimeRequest,
     prompt: string,
@@ -416,7 +434,8 @@ export function createProductionRunComposition(options: ProductionRunComposition
           if (memoryCapture)
             memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve())
               .then(() => memoryCapture.start(request))
-              .then(() => memoryEpisodes?.start(request));
+              .then(() => memoryEpisodes?.start(request))
+              .then(() => memoryConsolidation?.start(request));
         }
         if (event.type === "runtime.compaction_proposed" && memoryEpisodes)
           void memoryEpisodes.recordCompaction(request, event.proposalRef);
@@ -501,5 +520,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     titles,
     memoryCapture,
     memoryEpisodes,
+    memoryConsolidation,
   });
 }

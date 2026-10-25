@@ -259,6 +259,7 @@ beforeEach(() => {
     "capabilityInvocationResultPort",
     "memoryIndex",
     "memoryEpisodes",
+    "memoryConsolidation",
     "threadRepository",
   ])
     repository[key] = vi.fn(() => ({}));

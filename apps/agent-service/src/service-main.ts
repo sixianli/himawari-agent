@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
   ModelInvocationAdmissionResolver,
@@ -23,7 +23,7 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
-import { MemoryEpisodeService } from "@himawari-agent/memory-engine";
+import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
@@ -519,6 +519,7 @@ export async function runAgentService(
         await runs?.titles?.stop();
         await runs?.memoryCapture?.stop();
         await runs?.memoryEpisodes?.stop();
+        await runs?.memoryConsolidation?.stop();
       }
     },
   });
@@ -1245,6 +1246,53 @@ export async function runAgentService(
           },
           operation,
         );
+      const consolidationPayloads = repository.payloadStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
+      const consolidationJobs = repository.memoryProjectionJobs();
+      const memoryConsolidation =
+        memoryComposition && episodeProtector && durableMemory
+          ? new MemoryConsolidationService({
+              store: repository.memoryConsolidation(),
+              state: repository.productMemoryState(),
+              memory: durableMemory,
+              generationFor: async (memoryId) =>
+                (await consolidationJobs.listByMemory(memoryId)).at(-1)?.generationId,
+              readText: async (record) => {
+                const payload = await consolidationPayloads.get(record.contentRef);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    payload,
+                  }),
+                );
+              },
+              storeText: async (input) => {
+                const ref = `memory-content:${createHash("sha256").update(input.key).digest("hex")}`;
+                if (await consolidationPayloads.get(ref)) return ref;
+                await consolidationPayloads.put(
+                  await episodeProtector.protect({
+                    ownerId: input.ownerId,
+                    agentId: input.agentId,
+                    ref,
+                    contentType: "text/plain",
+                    dataClassification: input.dataClassification,
+                    plaintext: new TextEncoder().encode(input.text),
+                    createdAt: input.createdAt,
+                  }),
+                );
+                return ref;
+              },
+              now: () => clock.now(),
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+            })
+          : undefined;
+      const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
       runs = createProductionRunComposition({
         ...(modelComposition.composition.generateTitle
@@ -1271,6 +1319,35 @@ export async function runAgentService(
                           writeServiceDiagnostic(errorOutput, {
                             component: "agent-service",
                             event: "memory-episode.failed",
+                            code: stableErrorCode(error),
+                          }),
+                      },
+                    }
+                  : {}),
+                ...(memoryConsolidation
+                  ? {
+                      consolidation: {
+                        service: memoryConsolidation,
+                        search: (request, query, limit) =>
+                          consolidationProjection.search({
+                            ownerId: request.ownerId,
+                            agentId: request.agentId,
+                            query,
+                            limit,
+                          }),
+                        embedWithin: (request, slot, operation) =>
+                          embedWithin(request, slot, operation),
+                        onResult: (result) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-consolidation.completed",
+                            modelCalled: result.modelCalled,
+                            changes: result.changes.length,
+                          }),
+                        onFailure: (error) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-consolidation.failed",
                             code: stableErrorCode(error),
                           }),
                       },
