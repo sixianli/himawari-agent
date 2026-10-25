@@ -22,12 +22,12 @@ export interface ProbeRequest {
   retryAfter: string | null;
 }
 
-/** Test-only outbound guard. Reservations survive failed requests and cannot fund retries. */
 export function boundedAiGatewayFetch(
   configuration: ProductConfiguration,
   send: typeof globalThis.fetch,
   signal: AbortSignal,
   priorReservationMicros = 0,
+  probeLimitMicros = 1_000_000,
 ) {
   const requests: ProbeRequest[] = [];
   if (!Number.isSafeInteger(priorReservationMicros) || priorReservationMicros < 0) {
@@ -92,7 +92,7 @@ export function boundedAiGatewayFetch(
     if (requests.filter((request) => request.kind === kind).length >= 3) {
       throw new Error("PROBE_CALL_LIMIT");
     }
-    if (reserved + cost > Math.min(1_000_000, configuration.budgets.globalCostMicros)) {
+    if (reserved + cost > probeLimitMicros) {
       throw new Error("PROBE_BUDGET_LIMIT");
     }
     reserved += cost;

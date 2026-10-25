@@ -84,11 +84,6 @@ function configuration(stateRoot: string) {
     },
     repositoryAllowlistRefs: [],
     secretReferences: [],
-    budgets: {
-      globalCostMicros: 0,
-      perRunCostMicros: 0,
-      perClassificationCostMicros: { public: 0, private: 0, sensitive: 0, restricted: 0 },
-    },
     concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
     deadlines: { runMs: 1_000, workerRequestMs: 1_000, providerRequestMs: 1_000 },
   };

@@ -63,28 +63,10 @@ const RECOVERY_SCOPE: SqliteRecoveryAuthorityScope = {
   },
 };
 const LIMITS: BackgroundAdmissionLimits = {
-  globalCostMicros: 10_000,
-  perRunCostMicros: 1_000,
-  perClassificationCostMicros: {
-    public: 10_000,
-    private: 10_000,
-    sensitive: 10_000,
-    restricted: 10_000,
-  },
   totalRuns: 4,
   foregroundReserved: 0,
   perCategory: { monitor: 4 },
 };
-const MODEL_LIMITS = {
-  accountCostMicros: 1_000,
-  globalCostMicros: 10_000,
-  perClassificationCostMicros: {
-    public: 10_000,
-    private: 10_000,
-    sensitive: 10_000,
-    restricted: 10_000,
-  },
-} as const;
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -231,9 +213,6 @@ async function fixture() {
   return { databasePath, repository };
 }
 
-// Run the same persistence contracts both through the production Worker transport
-// and directly against the SQL operation layer. The latter makes its business
-// branches observable to Vitest without treating Worker coverage as collected.
 describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (execution) => {
   useSqliteContractExecution(execution);
 
@@ -339,7 +318,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 25,
-          limits: MODEL_LIMITS,
           reservedAt: NOW,
         });
         await budget.markStarted({
@@ -546,7 +524,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
-    it("draws child allocations from an admitted occurrence without double counting", async () => {
+    it("draws child allocations from an admitted occurrence and extends past its estimate", async () => {
       const resource = await fixture();
       try {
         const state = resource.repository.backgroundWorkState();
@@ -580,23 +558,12 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           workLeaseId: claimed.workLease.id,
           workLeaseHolderId: claimed.workLease.holderId,
         };
-        const limits = {
-          accountCostMicros: 1_000,
-          globalCostMicros: 10_000,
-          perClassificationCostMicros: {
-            public: 10_000,
-            private: 10_000,
-            sensitive: 10_000,
-            restricted: 10_000,
-          },
-        } as const;
         const first = await budget.reserve({
           parent: activeParent,
           operationKey: "child-budget-1",
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 40,
-          limits,
           reservedAt: NOW,
         });
         const second = await budget.reserve({
@@ -605,22 +572,25 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 60,
-          limits,
           reservedAt: NOW,
         });
         expect(first.account.reservedCostMicros).toBe(created.estimatedCostMicros);
         expect(second.account.reservedCostMicros).toBe(created.estimatedCostMicros);
-        await expect(
-          budget.reserve({
-            parent: activeParent,
-            operationKey: "child-budget-over-cap",
-            modelRef: "approved-model-v1",
-            dataClassification: "private",
-            estimatedCostMicros: 1,
-            limits,
-            reservedAt: NOW,
-          }),
-        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        const beyondEstimate = await budget.reserve({
+          parent: activeParent,
+          operationKey: "child-budget-beyond-estimate",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: 1,
+          reservedAt: NOW,
+        });
+        expect(beyondEstimate.account.reservedCostMicros).toBe(created.estimatedCostMicros + 1);
+        const released = await budget.releaseReserved({
+          parent: { kind: "occurrence", occurrenceId: claimed.id },
+          operationKey: beyondEstimate.allocation.operationKey,
+          releasedAt: NOW,
+        });
+        expect(released.account.reservedCostMicros).toBe(created.estimatedCostMicros);
 
         await budget.markStarted({
           parent: activeParent,
@@ -656,7 +626,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         });
         expect(reconciled.account.reservedCostMicros).toBe(0);
         expect(reconciled.account.spentCostMicros).toBe(100);
-        expect(reconciled.account.status).toBe("over_budget");
+        expect(reconciled.account.status).toBe("active");
 
         const closed = await state.settleOccurrence({
           occurrenceId: claimed.id,
@@ -676,76 +646,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           parent: { kind: "occurrence", occurrenceId: claimed.id },
           limit: 10,
         });
-        expect(finalized?.account.status).toBe("over_budget");
-      } finally {
-        await resource.repository.close();
-      }
-    });
-
-    it("applies one global and classification budget across background and foreground parents", async () => {
-      const resource = await fixture();
-      try {
-        const state = resource.repository.backgroundWorkState();
-        const created = await state.createOccurrence(occurrence());
-        await state.reserveAdmission({
-          occurrenceId: created.id,
-          expectedRevision: created.revision,
-          runId: RUN_ID,
-          authority: AUTHORITY,
-          limits: {
-            ...LIMITS,
-            globalCostMicros: 100,
-            perRunCostMicros: 100,
-            perClassificationCostMicros: {
-              ...LIMITS.perClassificationCostMicros,
-              private: 100,
-            },
-          },
-          admittedAt: NOW,
-        });
-        const dispatch = resource.repository.runDispatch(
-          OWNER_ID,
-          AGENT_ID,
-          AUTHORITY,
-          { leaseId: AUTHORITY_LEASE_ID, fencingToken: 1 },
-          "model-budget-global-consumer",
-        );
-        const claimed = await dispatch.claim({
-          runId: RUN_ID,
-          expectedRunRevision: 1,
-          expectedLeaseRevision: 0,
-          executionLeaseId: createRunExecutionLeaseId("execution-model-budget-global"),
-          claimedAt: NOW,
-          expiresAt: FAR_FUTURE,
-        });
-        const budget = resource.repository.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
-          leaseId: AUTHORITY_LEASE_ID,
-          fencingToken: 1,
-        });
-        await expect(
-          budget.reserve({
-            parent: {
-              kind: "run",
-              runId: RUN_ID,
-              executionLease: claimFromRunExecutionLease(claimed),
-            },
-            operationKey: "foreground-over-background-budget",
-            modelRef: "approved-model-v1",
-            dataClassification: "private",
-            estimatedCostMicros: 1,
-            limits: {
-              accountCostMicros: 100,
-              globalCostMicros: 100,
-              perClassificationCostMicros: {
-                public: 10_000,
-                private: 100,
-                sensitive: 10_000,
-                restricted: 10_000,
-              },
-            },
-            reservedAt: NOW,
-          }),
-        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+        expect(finalized?.account.status).toBe("active");
       } finally {
         await resource.repository.close();
       }
@@ -794,7 +695,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             modelRef: "approved-model-v1",
             dataClassification: "private",
             estimatedCostMicros: 1,
-            limits: MODEL_LIMITS,
             reservedAt: NOW,
           }),
         ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
@@ -878,7 +778,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 1,
-          limits: MODEL_LIMITS,
           reservedAt: NOW,
         });
         const created = await reverse.repository
@@ -899,7 +798,7 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       }
     });
 
-    it("keeps an over-budget account sticky after later allocations settle", async () => {
+    it("never caps Run allocations by cost and keeps an overrun account usable", async () => {
       const resource = await fixture();
       try {
         const dispatch = resource.repository.runDispatch(
@@ -923,23 +822,13 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           fencingToken: 1,
         });
         const parent = { kind: "run" as const, runId: RUN_ID, executionLease };
-        const limits = {
-          accountCostMicros: 1_000,
-          globalCostMicros: 10_000,
-          perClassificationCostMicros: {
-            public: 10_000,
-            private: 10_000,
-            sensitive: 10_000,
-            restricted: 10_000,
-          },
-        } as const;
+        const large = 1_000_000_000_000;
         const first = await budget.reserve({
           parent,
           operationKey: "overrun-first",
           modelRef: "approved-model-v1",
           dataClassification: "private",
-          estimatedCostMicros: 10,
-          limits,
+          estimatedCostMicros: large,
           reservedAt: NOW,
         });
         const second = await budget.reserve({
@@ -947,10 +836,10 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           operationKey: "overrun-second",
           modelRef: "approved-model-v1",
           dataClassification: "private",
-          estimatedCostMicros: 10,
-          limits,
+          estimatedCostMicros: large,
           reservedAt: NOW,
         });
+        expect(second.account.reservedCostMicros).toBe(2 * large);
         await budget.markStarted({
           parent,
           operationKey: first.allocation.operationKey,
@@ -965,30 +854,74 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
         const overrun = await budget.settle({
           parent: { kind: "run", runId: RUN_ID },
           operationKey: first.allocation.operationKey,
-          actualCostMicros: 20,
+          actualCostMicros: 3 * large,
           settledAt: LATER,
         });
-        expect(overrun.account.status).toBe("over_budget");
+        expect(overrun.account.status).toBe("active");
         const later = await budget.settle({
           parent: { kind: "run", runId: RUN_ID },
           operationKey: second.allocation.operationKey,
           actualCostMicros: 5,
           settledAt: LATER,
         });
-        expect(later.account.status).toBe("over_budget");
+        expect(later.account.status).toBe("active");
         expect(later.account.reservedCostMicros).toBe(0);
-        expect(later.account.spentCostMicros).toBe(25);
-        await expect(
-          budget.reserve({
+        expect(later.account.spentCostMicros).toBe(3 * large + 5);
+        const afterOverrun = await budget.reserve({
+          parent,
+          operationKey: "overrun-after-settlement",
+          modelRef: "approved-model-v1",
+          dataClassification: "private",
+          estimatedCostMicros: large,
+          reservedAt: LATER,
+        });
+        expect(afterOverrun.allocation.status).toBe("reserved");
+        await budget.releaseReserved({
+          parent: { kind: "run", runId: RUN_ID },
+          operationKey: afterOverrun.allocation.operationKey,
+          releasedAt: LATER,
+        });
+        await resource.repository.close();
+        const database = openQualifiedDatabase(resource.databasePath);
+        database
+          .prepare("UPDATE model_budget_accounts SET status = 'over_budget' WHERE run_id = ?")
+          .run(RUN_ID);
+        database.close();
+        const restarted = await SqliteProductStateRepository.open({
+          stateRoot: path.dirname(resource.databasePath),
+          databasePath: resource.databasePath,
+          minimumFreeBytes: 0,
+          now: () => NOW,
+        });
+        try {
+          const restartedBudget = restarted.modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY, {
+            leaseId: AUTHORITY_LEASE_ID,
+            fencingToken: 1,
+          });
+          const legacy = await restartedBudget.reserve({
             parent,
-            operationKey: "overrun-after-settlement",
+            operationKey: "legacy-over-budget-account",
             modelRef: "approved-model-v1",
             dataClassification: "private",
             estimatedCostMicros: 1,
-            limits,
             reservedAt: LATER,
-          }),
-        ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          });
+          expect(legacy.allocation.status).toBe("reserved");
+          await restartedBudget.markStarted({
+            parent,
+            operationKey: legacy.allocation.operationKey,
+            startedAt: LATER,
+          });
+          const settled = await restartedBudget.settle({
+            parent: { kind: "run", runId: RUN_ID },
+            operationKey: legacy.allocation.operationKey,
+            actualCostMicros: 2,
+            settledAt: LATER,
+          });
+          expect(settled.account.status).toBe("active");
+        } finally {
+          await restarted.close();
+        }
       } finally {
         await resource.repository.close();
       }
@@ -1031,16 +964,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             modelRef: "approved-model-v1",
             dataClassification: "private",
             estimatedCostMicros: 1,
-            limits: {
-              accountCostMicros: 1_000,
-              globalCostMicros: 10_000,
-              perClassificationCostMicros: {
-                public: 10_000,
-                private: 10_000,
-                sensitive: 10_000,
-                restricted: 10_000,
-              },
-            },
             reservedAt: NOW,
           }),
         ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
@@ -1082,16 +1005,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             modelRef: "approved-model-v1",
             dataClassification: "private",
             estimatedCostMicros: 1,
-            limits: {
-              accountCostMicros: 1_000,
-              globalCostMicros: 10_000,
-              perClassificationCostMicros: {
-                public: 10_000,
-                private: 10_000,
-                sensitive: 10_000,
-                restricted: 10_000,
-              },
-            },
             reservedAt: LATER,
           }),
         ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
@@ -1129,16 +1042,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 50,
-          limits: {
-            accountCostMicros: 1_000,
-            globalCostMicros: 10_000,
-            perClassificationCostMicros: {
-              public: 10_000,
-              private: 10_000,
-              sensitive: 10_000,
-              restricted: 10_000,
-            },
-          },
           reservedAt: NOW,
         });
         const startedAllocation = await budget.reserve({
@@ -1147,16 +1050,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 30,
-          limits: {
-            accountCostMicros: 1_000,
-            globalCostMicros: 10_000,
-            perClassificationCostMicros: {
-              public: 10_000,
-              private: 10_000,
-              sensitive: 10_000,
-              restricted: 10_000,
-            },
-          },
           reservedAt: NOW,
         });
         await budget.markStarted({
@@ -1261,16 +1154,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: "approved-model-v1",
           dataClassification: "private" as const,
           estimatedCostMicros: 100,
-          limits: {
-            accountCostMicros: 1_000,
-            globalCostMicros: 10_000,
-            perClassificationCostMicros: {
-              public: 10_000,
-              private: 10_000,
-              sensitive: 10_000,
-              restricted: 10_000,
-            },
-          },
           reservedAt: NOW,
         };
         const reserved = await budget.reserve(reserveInput);
@@ -1450,7 +1333,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           dispatch,
           invocations,
           clock: { now: () => NOW },
-          limits: MODEL_LIMITS,
           registry: [descriptor],
         });
 
@@ -1524,7 +1406,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
       executionLease,
       authority: AUTHORITY,
       authorityLease: { leaseId: AUTHORITY_LEASE_ID, fencingToken: AUTHORITY.fencingToken },
-      limits: MODEL_LIMITS,
       reservedAt: NOW,
       ...overrides,
     };
@@ -1602,7 +1483,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
             dispatch: state.dispatch,
             invocations: state.identity,
             clock: { now: () => NOW },
-            limits: MODEL_LIMITS,
             registry: [descriptor],
           });
           const first = await admission.begin(request);
@@ -1670,7 +1550,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
               executionLease: state.claim,
               authority: AUTHORITY,
               authorityLease,
-              limits: MODEL_LIMITS,
               reservedAt: NOW,
             });
             expect(replay).toMatchObject({
@@ -1817,7 +1696,6 @@ describe.each(["worker", "direct"] as const)("SQLite budget contracts (%s)", (ex
           modelRef: input.modelRef,
           dataClassification: input.dataClassification,
           estimatedCostMicros: input.estimatedCostMicros,
-          limits: input.limits,
           reservedAt: input.reservedAt,
         });
 

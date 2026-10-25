@@ -80,16 +80,6 @@ export function createAiGatewayLiveConfiguration(stateRoot: string) {
           scope: "model",
         },
       ],
-      budgets: {
-        globalCostMicros: AI_GATEWAY_LIVE_BUDGET_MICROS,
-        perRunCostMicros: AI_GATEWAY_LIVE_BUDGET_MICROS,
-        perClassificationCostMicros: {
-          public: AI_GATEWAY_LIVE_BUDGET_MICROS,
-          private: AI_GATEWAY_LIVE_BUDGET_MICROS,
-          sensitive: 0,
-          restricted: 0,
-        },
-      },
       concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
       deadlines: { runMs: 300_000, workerRequestMs: 30_000, providerRequestMs: 120_000 },
     },

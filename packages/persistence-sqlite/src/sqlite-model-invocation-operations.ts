@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
   AuthorityFence,
-  ModelBudgetLimits,
   ModelInvocationBudgetAccount,
   ModelInvocationIdentity,
   ModelInvocationIdentityBeginInput,
@@ -202,24 +201,6 @@ function pricing(value: unknown, name: string): ModelInvocationPricing {
   });
 }
 
-function limits(value: unknown): ModelBudgetLimits {
-  const row = record(value, "limits");
-  const classes = record(row["perClassificationCostMicros"], "limits.perClassificationCostMicros");
-  return Object.freeze({
-    accountCostMicros: safeInteger(row["accountCostMicros"], "limits.accountCostMicros"),
-    globalCostMicros: safeInteger(row["globalCostMicros"], "limits.globalCostMicros"),
-    perClassificationCostMicros: Object.freeze({
-      public: safeInteger(classes["public"], "limits.perClassificationCostMicros.public"),
-      private: safeInteger(classes["private"], "limits.perClassificationCostMicros.private"),
-      sensitive: safeInteger(classes["sensitive"], "limits.perClassificationCostMicros.sensitive"),
-      restricted: safeInteger(
-        classes["restricted"],
-        "limits.perClassificationCostMicros.restricted",
-      ),
-    }),
-  });
-}
-
 function parseAuthority(value: unknown): ProductAuthorityFence {
   const row = record(value, "authority");
   return Object.freeze({
@@ -300,7 +281,6 @@ function parseBegin(input: Record<string, unknown>): ParsedBeginInput {
     executionLease: parseExecutionLease(input["executionLease"]),
     authority: parseAuthority(input["authority"]),
     authorityLease: parseAuthorityLease(input["authorityLease"]),
-    limits: limits(input["limits"]),
     reservedAt: instant(input["reservedAt"], "reservedAt"),
   };
 }
@@ -488,7 +468,6 @@ export class SqliteModelInvocationOperations {
       modelRef: input.modelRef,
       dataClassification: input.dataClassification,
       estimatedCostMicros: input.estimatedCostMicros,
-      limits: input.limits,
       reservedAt: input.reservedAt,
     });
     if (allocation.replayed) {

@@ -3,7 +3,6 @@ import {
   ApplicationPortError,
   type ClockPort,
   type DataClassification,
-  type ModelBudgetLimits,
   type ModelDescriptor,
   type ModelInvocationAdmissionInput,
   type ModelInvocationAdmissionPort,
@@ -40,7 +39,6 @@ export interface ModelInvocationAdmissionServiceDependencies {
   readonly dispatch: RunDispatchPort;
   readonly invocations: ModelInvocationIdentityPort;
   readonly clock: ClockPort;
-  readonly limits: ModelBudgetLimits;
   readonly registry: readonly ModelInvocationAdmissionDescriptor[];
 }
 
@@ -246,44 +244,6 @@ function freezeDescriptor(
   return Object.freeze({ descriptor, pricing, estimatedCostMicros });
 }
 
-function freezeLimits(input: ModelBudgetLimits): ModelBudgetLimits {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    throw invalid("limits must be an object", { field: "limits" });
-  }
-  if (
-    input.perClassificationCostMicros === null ||
-    typeof input.perClassificationCostMicros !== "object" ||
-    Array.isArray(input.perClassificationCostMicros)
-  ) {
-    throw invalid("limits.perClassificationCostMicros must be an object", {
-      field: "limits.perClassificationCostMicros",
-    });
-  }
-  const perClassificationCostMicros: Record<DataClassification, number> = {
-    public: safeNonNegativeInteger(
-      input.perClassificationCostMicros.public,
-      "limits.perClassificationCostMicros.public",
-    ),
-    private: safeNonNegativeInteger(
-      input.perClassificationCostMicros.private,
-      "limits.perClassificationCostMicros.private",
-    ),
-    sensitive: safeNonNegativeInteger(
-      input.perClassificationCostMicros.sensitive,
-      "limits.perClassificationCostMicros.sensitive",
-    ),
-    restricted: safeNonNegativeInteger(
-      input.perClassificationCostMicros.restricted,
-      "limits.perClassificationCostMicros.restricted",
-    ),
-  };
-  return Object.freeze({
-    accountCostMicros: safeNonNegativeInteger(input.accountCostMicros, "limits.accountCostMicros"),
-    globalCostMicros: safeNonNegativeInteger(input.globalCostMicros, "limits.globalCostMicros"),
-    perClassificationCostMicros: Object.freeze(perClassificationCostMicros),
-  });
-}
-
 function freezeClaim(input: RunExecutionLeaseClaim): RunExecutionLeaseClaim {
   nonEmptyText(input.executionLeaseId, "executionLease.executionLeaseId", 128);
   safeNonNegativeInteger(input.expectedLeaseRevision, "executionLease.expectedLeaseRevision");
@@ -406,7 +366,6 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
   readonly #dispatch: RunDispatchPort;
   readonly #invocations: ModelInvocationIdentityPort;
   readonly #clock: ClockPort;
-  readonly #limits: ModelBudgetLimits;
   readonly #registry: readonly BoundDescriptor[];
 
   constructor(dependencies: ModelInvocationAdmissionServiceDependencies) {
@@ -420,7 +379,6 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
     this.#dispatch = dependencies.dispatch;
     this.#invocations = dependencies.invocations;
     this.#clock = dependencies.clock;
-    this.#limits = freezeLimits(dependencies.limits);
     const registry = dependencies.registry.map(freezeDescriptor);
     if (new Set(registry.map(({ descriptor }) => descriptor.ref)).size !== registry.length) {
       throw invalid("Model invocation registry contains duplicate model refs");
@@ -448,7 +406,6 @@ export class ModelInvocationAdmissionService implements ModelInvocationAdmission
       source: input.source,
       ordinal: input.ordinal,
       estimatedCostMicros: descriptor.estimatedCostMicros,
-      limits: this.#limits,
       pricing: descriptor.pricing,
       budgetAccount: input.budgetAccount ?? "run",
       reservedAt,

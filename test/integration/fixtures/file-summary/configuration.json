@@ -71,16 +71,6 @@
       "scope": "model"
     }
   ],
-  "budgets": {
-    "globalCostMicros": 1000000,
-    "perRunCostMicros": 1000000,
-    "perClassificationCostMicros": {
-      "public": 1000000,
-      "private": 1000000,
-      "sensitive": 0,
-      "restricted": 0
-    }
-  },
   "concurrency": {
     "totalRuns": 1,
     "foregroundReserved": 1,

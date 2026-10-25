@@ -399,24 +399,6 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   return Object.freeze(descriptor);
 }
 
-function parseCostMap(value: unknown) {
-  const input = record(value, "budgets.perClassificationCostMicros");
-  rejectUnknown(input, CLASSIFICATIONS, "budgets.perClassificationCostMicros");
-  return Object.freeze(
-    Object.fromEntries(
-      CLASSIFICATIONS.map((classification) => [
-        classification,
-        integer(
-          input[classification],
-          `budgets.perClassificationCostMicros.${classification}`,
-          0,
-          Number.MAX_SAFE_INTEGER,
-        ),
-      ]),
-    ) as Record<DataClassification, number>,
-  );
-}
-
 function parseNumberMap(value: unknown, field: string): Readonly<Record<string, number>> {
   const input = record(value, field);
   const result: Record<string, number> = {};
@@ -1013,7 +995,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "memory",
       "repositoryAllowlistRefs",
       "secretReferences",
-      "budgets",
       "concurrency",
       "deadlines",
     ],
@@ -1178,12 +1159,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     }
   }
 
-  const budgets = record(input["budgets"], "configuration.budgets");
-  rejectUnknown(
-    budgets,
-    ["globalCostMicros", "perRunCostMicros", "perClassificationCostMicros"],
-    "configuration.budgets",
-  );
   const concurrency = record(input["concurrency"], "configuration.concurrency");
   rejectUnknown(
     concurrency,
@@ -1250,21 +1225,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.repositoryAllowlistRefs",
     ),
     secretReferences,
-    budgets: Object.freeze({
-      globalCostMicros: integer(
-        budgets["globalCostMicros"],
-        "configuration.budgets.globalCostMicros",
-        0,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      perRunCostMicros: integer(
-        budgets["perRunCostMicros"],
-        "configuration.budgets.perRunCostMicros",
-        0,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      perClassificationCostMicros: parseCostMap(budgets["perClassificationCostMicros"]),
-    }),
     concurrency: Object.freeze({
       totalRuns,
       foregroundReserved,

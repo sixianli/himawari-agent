@@ -525,16 +525,6 @@ describe.each(["worker", "direct"] as const)(
             dataClassification: "private" as const,
             estimatedCostMicros: 60,
             reservedAt: T0,
-            limits: {
-              accountCostMicros: 100,
-              globalCostMicros: 100,
-              perClassificationCostMicros: {
-                public: 100,
-                private: 100,
-                sensitive: 100,
-                restricted: 100,
-              },
-            },
           };
           await expect(
             budget.reserve({ ...input, parent: { ...parent, claimedBy: "stale-worker" } }),
@@ -543,9 +533,17 @@ describe.each(["worker", "direct"] as const)(
             "classification mismatch",
           );
           expect((await budget.reserve(input)).replayed).toBe(false);
-          await expect(budget.reserve({ ...input, operationKey: "embedding:two" })).rejects.toThrow(
-            "budget limit",
-          );
+          const second = await budget.reserve({
+            ...input,
+            operationKey: "embedding:two",
+            estimatedCostMicros: 1_000_000_000_000,
+          });
+          expect(second.allocation.status).toBe("reserved");
+          await budget.releaseReserved({
+            parent,
+            operationKey: second.allocation.operationKey,
+            releasedAt: T0,
+          });
           await expect(
             budget.markStarted({
               parent: { ...parent, attemptCount: parent.attemptCount + 1 },

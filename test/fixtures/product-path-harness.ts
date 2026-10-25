@@ -963,16 +963,6 @@ export async function installProductPath(options: {
         scope: "local-services",
       },
     ],
-    budgets: {
-      globalCostMicros: 1_000_000,
-      perRunCostMicros: 100_000,
-      perClassificationCostMicros: {
-        public: 100_000,
-        private: 100_000,
-        sensitive: 0,
-        restricted: 0,
-      },
-    },
     concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
     deadlines: { runMs: 900_000, workerRequestMs: 300_000, providerRequestMs: 120_000 },
     capabilityDeployment,

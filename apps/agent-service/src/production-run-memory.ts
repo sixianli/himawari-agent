@@ -43,7 +43,6 @@ export function embeddingAdmissionDescriptor(
   };
 }
 
-/** Keep Mem0's embedding SDK and vector search while governing every physical request. */
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
@@ -108,16 +107,9 @@ export function createProductionRunMemory(options: {
           modelRef: descriptor.ref,
           dataClassification: classification,
           estimatedCostMicros: descriptor.estimatedCostMicros,
-          limits: {
-            accountCostMicros: options.configuration.budgets.perRunCostMicros,
-            globalCostMicros: options.configuration.budgets.globalCostMicros,
-            perClassificationCostMicros: options.configuration.budgets.perClassificationCostMicros,
-          },
           reservedAt: options.now(),
         });
       let admitted = await reserve();
-      // A released reservation proves no physical request started. Reuse the
-      // stable next slot after a crash; never step over an uncertain/settled call.
       for (
         let sequence = 2;
         admitted.allocation.status === "released" && sequence <= 32;

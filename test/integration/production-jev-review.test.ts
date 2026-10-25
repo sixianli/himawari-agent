@@ -116,11 +116,6 @@ const REVIEW_DESCRIPTOR = {
   secretRequirement: { secretRef: "provider-reviewer", secretVersion: "v1", purpose: "model-auth" },
 };
 
-/**
- * Test-local protected boundary over the real protector and payload store. It
- * mirrors the product model boundary's contract (protected text in, protected
- * ref out) without importing the pinned Pi runtime.
- */
 function protectedBoundary(
   protector: EnvelopePayloadProtector,
   payloads: { put(payload: never): Promise<void>; get(ref: string): Promise<unknown> },
@@ -204,7 +199,7 @@ function answer(choice: string, confidence = 0.95) {
   return { type: "choice", choice, probabilities: { [choice]: 1 }, confidence };
 }
 
-async function fixture(response: () => Response, budgetMicros = 10_000) {
+async function fixture(response: () => Response) {
   const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-jev-review-"));
   const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
   const migrations = await loadBundledMigrations();
@@ -356,16 +351,6 @@ async function fixture(response: () => Response, budgetMicros = 10_000) {
         }),
       },
     ],
-    limits: {
-      accountCostMicros: budgetMicros,
-      globalCostMicros: budgetMicros,
-      perClassificationCostMicros: {
-        public: 10_000,
-        private: budgetMicros,
-        sensitive: 0,
-        restricted: 0,
-      },
-    },
   });
   const model = new TrustedModelProviderAdapter({
     ownerId: OWNER_ID,
@@ -485,7 +470,6 @@ describe("production JEV automatic review", () => {
     expect(await f.repository.authorizationStore().listApprovals(OWNER_ID, AGENT_ID)).toMatchObject(
       [{ status: "approved", automaticReview: { modelRef: REVIEW_MODEL } }],
     );
-    // The decision call settled a real budget allocation.
     const budget = await f.repository
       .modelBudgetPort(OWNER_ID, AGENT_ID, AUTHORITY.product, AUTHORITY.lease)
       .read({ parent: { kind: "run", runId: RUN_ID }, limit: 10 });
@@ -539,22 +523,6 @@ describe("production JEV automatic review", () => {
     expect(budget?.allocations).toEqual([
       expect.objectContaining({ status: "unknown", actualCostMicros: null }),
     ]);
-  });
-
-  it("does not call TypeSafe or issue a Grant when the Run has no model budget", async () => {
-    const f = await fixture(
-      () =>
-        jevReply({
-          within_delegated_scope: answer("within"),
-          decision: answer("approve", 0.99),
-          reason_code: answer("WITHIN_DELEGATION"),
-        }),
-      0,
-    );
-    const result = await f.policy.evaluate(action(), options);
-    expect(result).toMatchObject({ decision: "ASK" });
-    expect(f.calls).toEqual([]);
-    expect(await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
   });
 
   it("treats an out-of-delegation answer as human review without a second call", async () => {

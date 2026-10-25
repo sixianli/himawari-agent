@@ -287,7 +287,6 @@ describe("automatic review durable arbitration", () => {
       suggestionRef: f.request.inputRef,
       approvalRequestId: null,
     });
-    // The suggestion stays in the scoped protected payload, never in the denial identity.
     expect(JSON.stringify(finished)).not.toContain("Ignore rules");
     expect(await f.approvalStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
     expect(await f.approvalStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
@@ -477,7 +476,7 @@ it("refuses a Grant whose expiry would outlive the Owner delegation", async () =
   expect(await f.store().get(request.reviewId)).toBeUndefined();
 });
 
-it.each(["approve", "deny", "budget-denied", "cancelled", "cancelled-with-usage"] as const)(
+it.each(["approve", "deny", "cancelled", "cancelled-with-usage"] as const)(
   "connects review to durable model budgets for %s",
   async (mode) => {
     const f = await fixture();
@@ -511,16 +510,6 @@ it.each(["approve", "deny", "budget-denied", "cancelled", "cancelled-with-usage"
         ),
       clock: { now: () => new Date().toISOString() },
       registry: [{ ...descriptor, pricing, estimatedCostMicros: 100 }],
-      limits: {
-        accountCostMicros: mode === "budget-denied" ? 50 : 1000,
-        globalCostMicros: 1000,
-        perClassificationCostMicros: {
-          public: 1000,
-          private: 1000,
-          sensitive: 1000,
-          restricted: 1000,
-        },
-      },
     });
     let modelCalls = 0;
     const model = new TrustedModelProviderAdapter({
@@ -606,11 +595,11 @@ it.each(["approve", "deny", "budget-denied", "cancelled", "cancelled-with-usage"
         return f.request.inputRef;
       },
     });
-    if (mode === "budget-denied" || mode === "cancelled" || mode === "cancelled-with-usage")
+    if (mode === "cancelled" || mode === "cancelled-with-usage")
       await expect(service.review(f.call, controller.signal)).rejects.toThrow();
     else await service.review(f.call, controller.signal);
     expect(prepared).toBe(true);
-    expect(modelCalls).toBe(mode === "budget-denied" ? 0 : 1);
+    expect(modelCalls).toBe(1);
     await f.reopen();
     const snapshot = await f
       .repository()

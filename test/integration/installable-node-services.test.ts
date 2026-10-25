@@ -106,11 +106,6 @@ function configuration(publicMode = false) {
         scope: "agent",
       },
     ],
-    budgets: {
-      globalCostMicros: 0,
-      perRunCostMicros: 0,
-      perClassificationCostMicros: { public: 0, private: 0, sensitive: 0, restricted: 0 },
-    },
     concurrency: { totalRuns: 2, foregroundReserved: 1, perCategory: {} },
     deadlines: { runMs: 30_000, workerRequestMs: 2_000, providerRequestMs: 2_000 },
     capabilityDeployment: {
@@ -448,7 +443,6 @@ function lastJson(output: string): Record<string, unknown> & { readonly packageR
   return JSON.parse(output.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
 }
 
-// Lifecycle cases include four readiness phases, CLI processes, shutdown and recovery.
 describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
   it("installs a source-independent production runtime without testing adapters", async () => {
     expect(
