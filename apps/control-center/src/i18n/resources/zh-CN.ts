@@ -180,7 +180,6 @@ export const messages = {
   "chat.environment.srtMeaning":
     "工具在本机的进程级沙箱（SRT）里运行，限制它能碰到的文件和网络。停止只保证工具的进程组已结束，离开进程组的程序可能仍在运行。",
   "chat.environment.strictMeaning": "每个工具都在本轮对话专用的容器里运行。",
-  "chat.environment.fixed": "模式由安装配置决定，页面上不能切换。",
   "chat.environment.programs": "仍在运行的程序",
   "chat.environment.noPrograms": "没有正在运行的程序。",
   "chat.environment.kind.background": "后台任务",
@@ -189,14 +188,11 @@ export const messages = {
   "chat.environment.openThread": "打开所属对话：{title}",
   "chat.environment.otherThread": "不在当前列表中的对话",
   "chat.environment.unavailable": "严格模式下不可用的工具",
-  "chat.environment.toolAvailability": "工具可用情况",
   "chat.environment.reason.SANDBOX_OPERATION_SRT_ONLY": "只能在进程级沙箱（SRT）里运行",
   "chat.environment.reason.SANDBOX_BINDING_SRT_ONLY": "安装声明没有逐项写明可在容器里运行",
   "chat.environment.strictNote":
     "工具内部再发起的子任务也不可用。调用这些工具时，对应步骤会显示“严格模式下不可用”，不会改用其他方式执行。",
-  "chat.environment.noneUnavailable": "默认模式下没有因为模式而不可用的工具。",
   "chat.environment.threadRunning": "有后台程序在运行",
-  "chat.environment.readFailed": "暂时读不到执行环境，请稍后再打开。",
   "chat.phase.unresolved": "结果未确认",
   "chat.phase.preparing": "正在准备",
   "chat.phase.started": "执行中",

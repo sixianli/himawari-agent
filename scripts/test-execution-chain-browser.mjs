@@ -677,7 +677,6 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         for (const text of [
           "当前模式",
           "每个工具都在本轮对话专用的容器里运行。",
-          "模式由安装配置决定，页面上不能切换。",
           "仍在运行的程序",
           "服务",
           "后台任务",
@@ -701,23 +700,38 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await page.getByRole("button", { name: "打开所属对话：研究记录" }).click();
         await expect(page).toHaveURL(/\/threads\/thread-research/);
         await expect(page.getByRole("dialog", { name: "执行环境" })).toHaveCount(0);
-        await send({ environment: { mode: "srt", programs: [], unavailableTools: [] } });
+        await send({
+          environment: {
+            mode: "srt",
+            programs: [
+              {
+                threadId: "thread-research",
+                kind: "background",
+                toolName: "bash",
+                startedAt: "2026-09-20T03:13:00.000Z",
+              },
+            ],
+            unavailableTools: [],
+          },
+        });
         await page.getByRole("button", { name: "严格模式 · 2 个后台程序在运行" }).click();
-        const idleLine = page.getByRole("button", { name: "默认模式 · 没有后台程序在运行" });
-        await expect(idleLine).toHaveAttribute("aria-expanded", "true");
-        const idlePanel = page.getByRole("dialog", { name: "执行环境" });
+        const defaultLine = page.getByRole("button", { name: "1 个后台程序在运行" });
+        await expect(defaultLine).toHaveAttribute("aria-expanded", "true");
+        const defaultPanel = page.getByRole("dialog", { name: "执行环境" });
         for (const text of [
+          "仍在运行的程序",
+          "后台任务",
           "工具在本机的进程级沙箱（SRT）里运行",
           "停止只保证工具的进程组已结束",
-          "没有正在运行的程序。",
-          "默认模式下没有因为模式而不可用的工具。",
         ])
-          await expect(idlePanel).toContainText(text);
-        if (width >= 1024) await expect(runningMarkers).toHaveCount(0);
+          await expect(defaultPanel).toContainText(text);
+        await expect(defaultPanel).not.toContainText("工具可用情况");
+        await page.keyboard.press("Escape");
+        await send({ environment: { mode: "srt", programs: [], unavailableTools: [] } });
         await page.reload();
-        await expect(
-          page.getByRole("button", { name: "默认模式 · 没有后台程序在运行" }),
-        ).toBeVisible();
+        await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
+        await expect(page.locator(".environment-line")).toHaveCount(0);
+        if (width >= 1024) await expect(runningMarkers).toHaveCount(0);
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-environment-default.png`),
         });
