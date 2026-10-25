@@ -23,6 +23,7 @@ import type {
   BackgroundOccurrenceSettlement,
   CapabilityExecutionHandle,
   CapabilityRegistryRecord,
+  CapabilityRegistryRegistration,
   CapabilityRegistryUpgrade,
   ConsumeGrantInput,
   DeliveryClaim,
@@ -645,6 +646,7 @@ export class SqliteDurableOperations {
             agentId: string;
             upgrades: readonly CapabilityRegistryUpgrade[];
             upgradedAt: string;
+            registrations?: readonly CapabilityRegistryRegistration[];
           },
         );
       case "capability.createHandle":
@@ -2512,9 +2514,10 @@ export class SqliteDurableOperations {
     agentId: string;
     upgrades: readonly CapabilityRegistryUpgrade[];
     upgradedAt: string;
+    registrations?: readonly CapabilityRegistryRegistration[];
   }): readonly CapabilityRegistryRecord[] {
-    const transaction = this.database.transaction(() =>
-      input.upgrades.map((upgrade) => {
+    const transaction = this.database.transaction(() => [
+      ...input.upgrades.map((upgrade) => {
         if (
           upgrade.audit.ownerId !== input.ownerId ||
           upgrade.audit.agentId !== input.agentId ||
@@ -2540,7 +2543,26 @@ export class SqliteDurableOperations {
         this.appendAudit(upgrade.audit);
         return saved;
       }),
-    );
+      ...(input.registrations ?? []).map((registration) => {
+        if (
+          registration.audit.ownerId !== input.ownerId ||
+          registration.audit.agentId !== input.agentId ||
+          registration.audit.targetRef !== registration.record.ref
+        ) {
+          this.fail(
+            "PORT_INVALID_OPERATION",
+            `Capability registration audit for ${registration.record.ref} is outside its scope`,
+          );
+        }
+        const created = this.createCapability({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          record: registration.record,
+        });
+        this.appendAudit(registration.audit);
+        return created;
+      }),
+    ]);
     return transaction.immediate();
   }
 

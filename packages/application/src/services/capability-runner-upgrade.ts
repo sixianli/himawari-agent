@@ -23,11 +23,27 @@ export interface CapabilityRunnerUpgrade {
   readonly qualification: CapabilityRuntimeQualification;
   readonly fromRuntimeRoot: string | null;
   readonly toRuntimeRoot: string | null;
+  readonly scopeChanges?: CapabilityScopeChanges;
+}
+
+export interface CapabilityScopeChanges {
+  readonly expansions: readonly string[];
+  readonly contractions: readonly string[];
+}
+
+export interface CapabilityRegistration {
+  readonly manifest: CapabilityManifest;
+  readonly qualification: CapabilityRuntimeQualification;
 }
 
 export type CapabilityRunnerUpgradeDecision =
   | { readonly kind: "current"; readonly ref: string }
   | { readonly kind: "upgrade"; readonly ref: string; readonly upgrade: CapabilityRunnerUpgrade }
+  | {
+      readonly kind: "register";
+      readonly ref: string;
+      readonly registration: CapabilityRegistration;
+    }
   | { readonly kind: "review_required"; readonly ref: string }
   | { readonly kind: "not_registered"; readonly ref: string };
 
@@ -56,6 +72,47 @@ function installationIndependent(manifest: CapabilityManifest): unknown {
       manifest.runtime.kind === "program"
         ? { ...manifest.runtime, argv: manifest.runtime.argv.slice(2) }
         : manifest.runtime,
+  };
+}
+
+function scopeIndependent(manifest: CapabilityManifest): unknown {
+  const independent = installationIndependent(manifest) as CapabilityManifest;
+  return {
+    ...independent,
+    scopes: { ...independent.scopes, network: null, secrets: null },
+    runtime:
+      independent.runtime.kind === "program"
+        ? { ...independent.runtime, network: null }
+        : independent.runtime,
+  };
+}
+
+function scopeLists(manifest: CapabilityManifest): ReadonlyMap<string, readonly string[]> {
+  return new Map([
+    ["network", manifest.scopes.network],
+    ["secret", manifest.scopes.secrets],
+    ["runtime-network", manifest.runtime.kind === "program" ? manifest.runtime.network : []],
+  ]);
+}
+
+function scopeChanges(
+  previous: CapabilityManifest,
+  next: CapabilityManifest,
+): CapabilityScopeChanges {
+  const added = (
+    from: ReadonlyMap<string, readonly string[]>,
+    to: ReadonlyMap<string, readonly string[]>,
+  ) =>
+    [...to].flatMap(([label, values]) =>
+      values
+        .filter((value) => !from.get(label)?.includes(value))
+        .map((value) => `${label}:${value}`),
+    );
+  const before = scopeLists(previous);
+  const after = scopeLists(next);
+  return {
+    expansions: [...new Set(added(before, after))].sort(),
+    contractions: [...new Set(added(after, before))].sort(),
   };
 }
 
@@ -97,9 +154,20 @@ function previousRuntimeRoot(
   return { root };
 }
 
-function decide(candidate: CapabilityRunnerUpgradeCandidate): CapabilityRunnerUpgradeDecision {
+function decide(
+  candidate: CapabilityRunnerUpgradeCandidate,
+  reviewed: boolean,
+): CapabilityRunnerUpgradeDecision {
   const ref = candidate.manifest.ref;
-  if (!candidate.prior) return { kind: "not_registered", ref };
+  if (!candidate.prior) {
+    if (!reviewed) return { kind: "not_registered", ref };
+    validateCapabilityManifest(candidate.manifest);
+    return {
+      kind: "register",
+      ref,
+      registration: { manifest: candidate.manifest, qualification: candidate.qualification },
+    };
+  }
   const previous = registeredManifest(candidate.prior);
   if (!previous) return { kind: "review_required", ref };
   validateCapabilityManifest(candidate.manifest);
@@ -109,12 +177,15 @@ function decide(candidate: CapabilityRunnerUpgradeCandidate): CapabilityRunnerUp
   )
     return { kind: "current", ref };
   const installation = previousRuntimeRoot(previous, candidate.manifest, candidate.runtimeRoot);
-  if (
-    !installation ||
-    canonicalAuthorizationSnapshot(installationIndependent(previous)) !==
-      canonicalAuthorizationSnapshot(installationIndependent(candidate.manifest))
-  )
-    return { kind: "review_required", ref };
+  if (!installation) return { kind: "review_required", ref };
+  const sameDeclaration =
+    canonicalAuthorizationSnapshot(installationIndependent(previous)) ===
+    canonicalAuthorizationSnapshot(installationIndependent(candidate.manifest));
+  const onlyScopesChanged =
+    reviewed &&
+    canonicalAuthorizationSnapshot(scopeIndependent(previous)) ===
+      canonicalAuthorizationSnapshot(scopeIndependent(candidate.manifest));
+  if (!sameDeclaration && !onlyScopesChanged) return { kind: "review_required", ref };
   return {
     kind: "upgrade",
     ref,
@@ -124,6 +195,7 @@ function decide(candidate: CapabilityRunnerUpgradeCandidate): CapabilityRunnerUp
       qualification: candidate.qualification,
       fromRuntimeRoot: installation.root,
       toRuntimeRoot: candidate.runtimeRoot,
+      ...(sameDeclaration ? {} : { scopeChanges: scopeChanges(previous, candidate.manifest) }),
     },
   };
 }
@@ -133,8 +205,13 @@ export function planCapabilityRunnerUpgrade(input: {
   readonly agentId: string;
   readonly deploymentId: string;
   readonly candidates: readonly CapabilityRunnerUpgradeCandidate[];
+  readonly reviewed?: boolean;
 }): CapabilityRunnerUpgradePlan {
-  const decisions = input.candidates.map(decide);
+  const reviewed = input.reviewed === true;
+  const decisions = input.candidates.map((candidate) => decide(candidate, reviewed));
+  const registrations = decisions.flatMap((decision) =>
+    decision.kind === "register" ? [decision.registration] : [],
+  );
   const upgrades = decisions.flatMap((decision) =>
     decision.kind === "upgrade" ? [decision.upgrade] : [],
   );
@@ -150,7 +227,18 @@ export function planCapabilityRunnerUpgrade(input: {
         priorRecordSha256: digest(upgrade.prior),
         declaration: withoutHealthTime(upgrade.manifest),
         qualification: { ...upgrade.qualification, checkedAt: null },
+        ...(upgrade.scopeChanges ? { scopeChanges: upgrade.scopeChanges } : {}),
       })),
+      ...(reviewed
+        ? {
+            reviewed: true,
+            registrations: registrations.map((registration) => ({
+              ref: registration.manifest.ref,
+              declaration: withoutHealthTime(registration.manifest),
+              qualification: { ...registration.qualification, checkedAt: null },
+            })),
+          }
+        : {}),
     })}`,
     decisions,
   };
