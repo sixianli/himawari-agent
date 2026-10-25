@@ -285,7 +285,6 @@ describe("ProductionRuntimeTools", () => {
     const result = await (await exposed(f)).execute(invocation);
     expect(result).toMatchObject({ outcome: "failed", errorCode: "WORKER_DEADLINE_EXCEEDED" });
     resume();
-    // Flush the admitted continuation, then independently inspect sent requests.
     await new Promise((resolve) => setImmediate(resolve));
     expect(f.request.mock.calls.map(([message]) => message.type)).toEqual(["work.delegate"]);
   });
@@ -346,7 +345,6 @@ describe("ProductionRuntimeTools", () => {
       allowed: false,
       reasonCode: "FILE_READ_AUTHORIZATION_UNAVAILABLE",
     });
-    // Calling execute directly must not bypass preflight.
     await expect(tool.execute(call)).rejects.toThrow();
     expect(f.request).not.toHaveBeenCalled();
     expect(f.artifacts.size).toBe(0);
@@ -413,7 +411,7 @@ describe("ProductionRuntimeTools", () => {
     expect(await (await exposed(f)).execute(invocation)).toEqual(result);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
-  it("warns that a failed command may have changed the workspace", async () => {
+  it("tells the model a failed command's workspace effect is unverified", async () => {
     const f = fixture();
     const completeSandboxToolResult = vi.fn<
       NonNullable<ProductionRuntimeToolsOptions["completeSandboxToolResult"]>
@@ -435,7 +433,7 @@ describe("ProductionRuntimeTools", () => {
       dispatchState: "accepted",
       outcome: "failed",
       errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
-      modelContent: expect.stringContaining("命令可能已修改工作区文件"),
+      modelContent: expect.stringContaining("没有核验这条命令是否改动了工作区"),
     });
     expect(
       f.request.mock.calls.filter(([message]) => message.type === "work.execute"),
@@ -712,7 +710,6 @@ describe("ProductionRuntimeTools", () => {
       const result = await tool.execute(invocation);
       expect(result.outcome).toBe(verified ?? "result_unknown");
       expect(completeSandboxToolResult).toHaveBeenCalledOnce();
-      // cancelledAt is a notification time, never the actual execution end.
       expect(result).not.toHaveProperty("executionTiming");
       expect(f.request).toHaveBeenCalledTimes(2);
     },
@@ -984,7 +981,6 @@ it("recovers a persisted sandbox handoff after interruption without executing ag
   const tool = new ProductionRuntimeTools({ ...f.options, completeSandboxToolResult });
   await tool.listAuthorized(invocation.runId, [invocation.capabilityHandleRef]);
   expect((await tool.execute(invocation)).outcome).toBe("succeeded");
-  // Simulate interruption after the protected handoff but before runtime result persistence.
   const resultKey = [...f.artifacts.keys()].find((key) => key.startsWith("runtime-tool-result:"));
   if (!resultKey) throw new Error("missing result fixture");
   f.artifacts.delete(resultKey);
@@ -1265,8 +1261,8 @@ describe("[R2-T14] failed command output for the model", () => {
       expect(rest).toEqual(original);
       expect(effectNotice).toContain("命令执行失败");
       expect(effectNotice).toContain(status);
-      expect(effectNotice).toContain("命令可能已修改工作区文件");
-      expect(effectNotice).toContain("请先检查工作区");
+      expect(effectNotice).toContain("没有核验这条命令是否改动了工作区");
+      expect(effectNotice).toContain("继续前先检查目标文件");
     },
   );
 
@@ -1294,7 +1290,7 @@ describe("[R2-T14] failed command output for the model", () => {
       errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
       resultRef: null,
     });
-    expect(result.modelContent).toContain("命令可能已修改工作区文件");
+    expect(result.modelContent).toContain("没有核验这条命令是否改动了工作区");
     expect(result.modelContent).not.toContain("R2T14-OUT");
     expect(result.modelContent).not.toContain("伪造");
   });

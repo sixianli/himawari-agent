@@ -182,7 +182,7 @@ export const messages = {
   "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
   "chat.reason.fileWriteNotStarted": "The file operation failed; the file was not changed",
   "chat.reason.commandEffectUnverified":
-    "The command failed; it may have changed workspace files, and those effects are unverified",
+    "The command failed; its effect on the workspace was not verified",
   "chat.reason.writeEffectUnverified":
     "The file operation failed; the file may have changed, and the effect is unverified",
   "chat.reason.strictModeUnavailable": "Unavailable in strict mode",

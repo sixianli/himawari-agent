@@ -35,6 +35,14 @@ export interface ProductionTaskEnvironments {
   readonly session?: "container" | "srt";
   readonly guarantees?: ExecutionBackendCapabilities["guarantees"];
   readonly inspectBeforeReuse?: boolean;
+  readonly prewarm?: (input: {
+    readonly identity: ExecutionEnvironmentRecord["identity"];
+    readonly createIntentId: string;
+    readonly locator: NonNullable<ExecutionEnvironmentRecord["locator"]>;
+    readonly capabilityRef: string;
+    readonly capabilityVersion: string;
+    readonly canonicalRootId: string;
+  }) => Promise<unknown>;
 }
 
 export interface ProductionSrtTaskEnvironmentAcquireInput {
@@ -44,7 +52,12 @@ export interface ProductionSrtTaskEnvironmentAcquireInput {
   readonly claims: readonly SandboxWorkspaceClaim[];
   readonly binding: SandboxHostBinding;
   readonly allowedDomains: readonly string[];
-  readonly plan: SandboxExecutionPlanCandidateV2;
+  readonly plan: {
+    readonly executionLease: SandboxExecutionPlanCandidateV2["executionLease"];
+    readonly identity: Pick<SandboxExecutionPlanCandidateV2["identity"], "threadId" | "jobId">;
+    readonly modelRef: string;
+    readonly binding: Pick<SandboxExecutionPlanCandidateV2["binding"], "qualificationRef">;
+  };
   readonly deadlineAt: string;
 }
 
@@ -63,6 +76,44 @@ function retryableStopFailure(error: unknown): boolean {
     (error instanceof ExecutionEnvironmentError && error.code === "EXECUTION_STOP_UNCONFIRMED") ||
     (error instanceof ApplicationPortError && error.code === "PORT_CONFLICT")
   );
+}
+
+export function srtEnvironmentPolicyDigest(
+  input: Pick<ProductionSrtTaskEnvironmentAcquireInput, "grant" | "binding" | "allowedDomains"> & {
+    readonly plan: Pick<
+      ProductionSrtTaskEnvironmentAcquireInput["plan"],
+      "executionLease" | "identity" | "modelRef" | "binding"
+    >;
+    readonly envelope: unknown;
+  },
+): string {
+  const lease = input.plan.executionLease;
+  return digest({
+    profileRef: input.binding.profileRef,
+    envelope: input.envelope,
+    grant: {
+      id: input.grant.id,
+      revision: input.grant.revision,
+      operations: input.grant.operations,
+      canonicalRootId: input.grant.canonicalRootId,
+      authorizationRef: input.grant.authorizationRef,
+      expiresAt: input.grant.expiresAt,
+    },
+    allowedDomains: [...input.allowedDomains].sort(),
+    executionAuthority: {
+      authorityLeaseId: lease.authorityLeaseId,
+      authorityFencingToken: lease.authorityFencingToken,
+      deploymentId: lease.deploymentId,
+      authorityEpoch: lease.authorityEpoch,
+      fencingToken: lease.fencingToken,
+      consumerId: lease.consumerId,
+    },
+    threadId: input.plan.identity.threadId,
+    modelRef: input.plan.modelRef,
+    runtimeDigest: input.binding.runtimeDigest,
+    runnerDigest: input.binding.runner.sha256,
+    qualificationRef: input.plan.binding.qualificationRef,
+  });
 }
 
 export function createProductionTaskEnvironments(options: {
@@ -210,6 +261,36 @@ export function createProductionTaskEnvironments(options: {
     return evidence;
   };
 
+  const acquireSrt = async (
+    input: ProductionSrtTaskEnvironmentAcquireInput,
+  ): Promise<ExecutionEnvironmentRecord> => {
+    const { envelope, leases } = environmentScope(input);
+    const policyDigest = srtEnvironmentPolicyDigest({ ...input, envelope });
+    const next = {
+      runId: input.runId,
+      hostId: input.hostId,
+      envelope,
+      leases,
+      policyDigest,
+      imageDigest: hexDigest(input.binding.runtimeDigest),
+      runnerDigest: hexDigest(input.binding.runner.sha256),
+      deadlineAt: input.deadlineAt,
+      requestJobId: input.plan.identity.jobId,
+    };
+    const existing = await primaryForRun(input.runId);
+    if (existing && (existing.state === "ready" || existing.state === "running")) {
+      const expired = Date.parse(existing.deadlineAt) <= Date.parse(clock.now());
+      if (expired || existing.locator?.effectivePolicyDigest !== policyDigest)
+        return coordinator.rotate({
+          environmentId: existing.identity.environmentId,
+          reason: expired ? "expiry" : "revocation",
+          stoppedResourceRefs: [],
+          ...next,
+        });
+    }
+    return coordinator.acquire(next);
+  };
+
   return {
     backendRef: configuration.backendRef,
 
@@ -235,52 +316,36 @@ export function createProductionTaskEnvironments(options: {
       });
     },
 
-    async acquireSrt(
-      input: ProductionSrtTaskEnvironmentAcquireInput,
-    ): Promise<ExecutionEnvironmentRecord> {
-      const { envelope, leases } = environmentScope(input);
-      const policyDigest = digest({
-        profileRef: input.binding.profileRef,
-        envelope,
-        grant: {
-          id: input.grant.id,
-          revision: input.grant.revision,
-          operations: input.grant.operations,
-          canonicalRootId: input.grant.canonicalRootId,
-          authorizationRef: input.grant.authorizationRef,
-          expiresAt: input.grant.expiresAt,
-        },
-        allowedDomains: [...input.allowedDomains].sort(),
-        executionLease: input.plan.executionLease,
-        threadId: input.plan.identity.threadId,
-        modelRef: input.plan.modelRef,
-        runtimeDigest: input.binding.runtimeDigest,
-        runnerDigest: input.binding.runner.sha256,
-        qualificationRef: input.plan.binding.qualificationRef,
-      });
-      const next = {
-        runId: input.runId,
-        hostId: input.hostId,
-        envelope,
-        leases,
-        policyDigest,
-        imageDigest: hexDigest(input.binding.runtimeDigest),
-        runnerDigest: hexDigest(input.binding.runner.sha256),
-        deadlineAt: input.deadlineAt,
-        requestJobId: input.plan.identity.jobId,
-      };
+    acquireSrt,
+
+    async prewarmSrt(
+      input: ProductionSrtTaskEnvironmentAcquireInput & {
+        readonly capabilityRef: string;
+        readonly capabilityVersion: string;
+      },
+    ): Promise<boolean> {
+      if (!srt || !configuration.prewarm) return false;
       const existing = await primaryForRun(input.runId);
-      if (existing && (existing.state === "ready" || existing.state === "running")) {
-        const expired = Date.parse(existing.deadlineAt) <= Date.parse(clock.now());
-        if (expired || existing.locator?.effectivePolicyDigest !== policyDigest)
-          return coordinator.rotate({
-            environmentId: existing.identity.environmentId,
-            reason: expired ? "expiry" : "revocation",
-            stoppedResourceRefs: [],
-            ...next,
-          });
-      }
-      return coordinator.acquire(next);
+      let record: ExecutionEnvironmentRecord;
+      if (!existing) record = await acquireSrt(input);
+      else if (
+        (existing.state === "ready" || existing.state === "running") &&
+        Date.parse(existing.deadlineAt) > Date.parse(clock.now()) &&
+        existing.locator?.effectivePolicyDigest ===
+          srtEnvironmentPolicyDigest({ ...input, envelope: environmentScope(input).envelope })
+      )
+        record = existing;
+      else return false;
+      if (!record.locator || (record.state !== "ready" && record.state !== "running")) return false;
+      await configuration.prewarm({
+        identity: record.identity,
+        createIntentId: record.createIntentId,
+        locator: record.locator,
+        capabilityRef: input.capabilityRef,
+        capabilityVersion: input.capabilityVersion,
+        canonicalRootId: input.grant.canonicalRootId,
+      });
+      return true;
     },
 
     async binding(plan: SandboxExecutionPlanV2): Promise<SandboxTaskEnvironmentBinding | null> {

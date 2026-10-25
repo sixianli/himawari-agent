@@ -4085,7 +4085,18 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
-  it("names a process-group release a stop without strict confirmation", async () => {
+  it.each([
+    [
+      "a process-group release a stop without strict confirmation",
+      {},
+      "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+    ],
+    [
+      "a PID-namespace-wide sweep a confirmed release",
+      { cleanupScope: "pid_namespace" },
+      "RESOURCE_RELEASE_CONFIRMED",
+    ],
+  ])("names %s", async (_label, scope, reasonCode) => {
     const f = await openSandboxJournal();
     try {
       let record = start(f);
@@ -4096,7 +4107,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         record,
         sandboxExecutionFactsSchema.parse({
           ...released,
-          resource: { ...released.resource, cleanup: "process_group_gone" },
+          resource: { ...released.resource, cleanup: "process_group_gone", ...scope },
         }),
       );
       expect(record.releaseReceipt?.acceptedAt).toBe(T1);
@@ -4123,10 +4134,30 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           {
             itemId: `tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`,
             phase: "released",
-            reasonCode: "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+            reasonCode,
           },
         ],
       });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    ["on a strictly confirmed release", { cleanup: "confirmed", cleanupScope: "pid_namespace" }],
+    ["with an unknown value", { cleanup: "process_group_gone", cleanupScope: "process_tree" }],
+  ])("refuses a cleanup scope %s", async (_label, fields) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "stopping"));
+      const released = resource(record, "released");
+      expect(() =>
+        sandboxExecutionFactsSchema.parse({
+          ...released,
+          resource: { ...released.resource, ...fields },
+        }),
+      ).toThrow();
     } finally {
       await f.close();
     }

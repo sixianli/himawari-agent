@@ -22,6 +22,7 @@ import {
   type GetThreadSnapshotQuery,
   type RunSnapshot,
   type StreamEvent,
+  type ThreadExecutionChangedEvent,
   type ThreadGatewayEvent,
   type ThreadGatewayRequestResult,
   type ThreadSnapshot,
@@ -831,7 +832,6 @@ describe("HTTP Gateway contract and security boundary", () => {
     "opens an idle %s stream before its first heartbeat",
     async (kind) => {
       const idle = async function* () {
-        // No domain event is available during the connection handshake.
         await new Promise((resolve) => setTimeout(resolve, 700));
       };
       const request = async () => {
@@ -1063,6 +1063,105 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(stream.body).toContain("id: thread-cursor:02");
     expect(requests).toEqual(["thread.list", "thread.create"]);
     expect(subscriptions).toEqual(["thread-cursor:01"]);
+  });
+
+  it("streams Thread execution changes as named hints and ends an unreadable Thread", async () => {
+    const watched: string[] = [];
+    const base = {
+      schemaVersion: "gateway.thread.v3",
+      messageId: "message:thread-execution",
+      correlationId: "correlation-01",
+      causationId: null,
+      scope: { ownerId: "owner-01", agentId: "agent-01" },
+      authority: { deploymentId: "deployment-01", authorityEpoch: 1, fencingToken: 1 },
+      actor: { actorType: "owner", actorId: "owner-01" },
+    } as const;
+    const threadGateway: AgentThreadGatewayPort = {
+      request: async () => {
+        throw new Error("unused");
+      },
+      async *subscribe() {},
+      async *watchExecution(_authentication, subscription) {
+        watched.push(subscription.payload.threadId);
+        if (subscription.payload.threadId === "thread-missing")
+          throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "THREAD_EXECUTION_NOT_FOUND");
+        yield threadGatewayMessageSchema.parse({
+          ...subscription,
+          kind: "event",
+          type: "thread.execution_changed",
+          messageId: "execution:1:message",
+          actor: { actorType: "system", actorId: "thread-gateway" },
+          payload: {
+            threadId: subscription.payload.threadId,
+            runId: "run-01",
+            runRevision: 2,
+            traceSequence: 5,
+            resourceRevision: null,
+            observedAt: NOW,
+          },
+        }) as ThreadExecutionChangedEvent;
+      },
+    };
+    const encoded = (threadId: string, type = "thread.execution_events") =>
+      Buffer.from(
+        JSON.stringify({ ...base, kind: "subscription", type, payload: { threadId } }),
+      ).toString("base64url");
+    const configured = createFixture(undefined, threadGateway, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+        executionEventsAvailable: true,
+      },
+    }).app;
+    const headers = { host: "agent.example.test", "cf-access-jwt-assertion": "assertion-01" };
+    const stream = await configured.inject({
+      method: "GET",
+      url: `/api/gateway/thread/v3/execution-events?subscription=${encoded("thread-01")}`,
+      headers,
+    });
+    expect(stream.statusCode).toBe(200);
+    expect(stream.headers["content-type"]).toContain("text/event-stream");
+    expect(stream.body).toContain(": connected\n\n");
+    expect(stream.body).toContain("event: thread.execution_changed\n");
+    expect(stream.body).not.toContain("id: ");
+    expect(stream.body).toContain('"traceSequence":5');
+    const missing = await configured.inject({
+      method: "GET",
+      url: `/api/gateway/thread/v3/execution-events?subscription=${encoded("thread-missing")}`,
+      headers,
+    });
+    expect(missing.body).toContain("event: thread.execution_unavailable\n");
+    const wrongType = await configured.inject({
+      method: "GET",
+      url: `/api/gateway/thread/v3/execution-events?subscription=${Buffer.from(
+        JSON.stringify({
+          ...base,
+          kind: "subscription",
+          type: "thread.events",
+          payload: { afterCursor: null },
+        }),
+      ).toString("base64url")}`,
+      headers,
+    });
+    expect(wrongType.statusCode).toBe(400);
+    expect(watched).toEqual(["thread-01", "thread-missing"]);
+    const configuration = await configured.inject({
+      method: "GET",
+      url: "/api/control-center/v1/config",
+      headers,
+    });
+    expect(configuration.json()).toMatchObject({ executionEventsAvailable: true });
+    const unconfigured = createFixture(undefined, threadGateway).app;
+    const absent = await unconfigured.inject({
+      method: "GET",
+      url: `/api/gateway/thread/v3/execution-events?subscription=${encoded("thread-01")}`,
+      headers,
+    });
+    expect(absent.statusCode).not.toBe(200);
+    await configured.close();
+    await unconfigured.close();
   });
 
   it("keeps browser plaintext behind authenticated scoped Payload and search boundaries", async () => {

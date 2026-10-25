@@ -121,13 +121,10 @@ export interface ProductionHttpCompositionOptions {
   };
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
-  /** Core owns the authority lifecycle and supplies the current product fence. */
   readonly authority: () => ProductAuthorityFence;
   readonly executionAuthority?: () => import("@himawari-agent/application").AuthorityFence;
   readonly secretSources: ProductionHttpCompositionSecretSources;
-  /** Test-only local JWKS boundary; production defaults to the fixed HTTPS endpoint. */
   readonly jwksFetcher?: JwksFetcher;
-  /** Test-only local get-identity boundary; production uses the fixed provider endpoint. */
   readonly identityFetcher?: CloudflareAccessIdentityFetcher;
   readonly now?: () => Date;
   readonly createSessionId?: ProductSessionAuthenticationServiceOptions["createSessionId"];
@@ -500,6 +497,7 @@ function routeOptions(
     browserConfiguration: {
       executionPresentationAvailable: true,
       executionStateAvailable: true,
+      executionEventsAvailable: true,
       executionEnvironmentAvailable,
       canCancelRun,
       availableModels: modelCatalog ?? [],
@@ -529,11 +527,6 @@ function routeOptions(
   };
 }
 
-/**
- * Build the production HTTP boundary around the durable identity and Thread
- * v3 stores. Core remains the owner of authority lifecycle and of the worker
- * dispatch path; this factory intentionally does not invent either one.
- */
 export async function createProductionHttpComposition(
   options: ProductionHttpCompositionOptions,
 ): Promise<ProductionHttpComposition> {

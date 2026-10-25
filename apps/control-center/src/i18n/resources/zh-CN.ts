@@ -168,7 +168,7 @@ export const messages = {
   "chat.reason.directoryTargetChanged": "目录位置或目标已变化",
   "chat.reason.fileVersionConflict": "文件版本已变化，候选未发布",
   "chat.reason.fileWriteNotStarted": "文件操作没有成功，文件没有被修改",
-  "chat.reason.commandEffectUnverified": "命令执行失败；工作区文件可能已变化，具体效果尚未核验",
+  "chat.reason.commandEffectUnverified": "命令执行失败，未核验对工作区的影响",
   "chat.reason.writeEffectUnverified": "文件操作失败；文件可能已被修改，具体效果尚未核验",
   "chat.reason.strictModeUnavailable": "严格模式下不可用",
   "chat.environment.title": "执行环境",

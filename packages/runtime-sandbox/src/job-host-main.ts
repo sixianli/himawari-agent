@@ -24,7 +24,11 @@ import {
   parseJobHostRun,
   parseJobHostSessionRequest,
 } from "./job-host-protocol.ts";
-import { captureLinuxNamespace, type LinuxNamespaceIdentity } from "./linux-namespace.ts";
+import {
+  captureLinuxNamespace,
+  type LinuxNamespaceIdentity,
+  readLinuxNamespaceState,
+} from "./linux-namespace.ts";
 import { startLinuxHostGuardian } from "./linux-host-guardian.ts";
 import { openNetworkEgress } from "./network-egress.ts";
 import { stopProcessGroup } from "./process-group.ts";
@@ -154,11 +158,14 @@ function stepsSnapshot() {
 function sendHeartbeat() {
   send({ type: "heartbeat", steps: stepsSnapshot() });
 }
+function closeStage(now: number) {
+  const open = steps.at(-1);
+  if (open && open.elapsedMs === null) open.elapsedMs = Math.max(0, now - open.startedMs);
+}
 function enterStage(stage: JobHostDiagnostic["stage"]) {
   failureStage = stage;
   const now = sinceStart();
-  const open = steps.at(-1);
-  if (open && open.elapsedMs === null) open.elapsedMs = Math.max(0, now - open.startedMs);
+  closeStage(now);
   if (steps.length < 16) steps.push({ stage, startedMs: now, elapsedMs: null });
   sendHeartbeat();
 }
@@ -497,6 +504,8 @@ async function prepare(value: unknown, controlValue: unknown, session: boolean) 
       await finish();
       return;
     }
+    closeStage(sinceStart());
+    sendHeartbeat();
   }
   phase = "ready";
   send({
@@ -993,6 +1002,13 @@ function settleCommand(command: SessionCommand): Promise<void> {
         ? await residentSweep(runner, Math.min(1000, request?.cleanupTimeoutMs ?? 1000))
         : { commandTreeGone: command.residentSequence === null, infrastructureIntact: false };
     const intact = sweep.infrastructureIntact && runner !== undefined && !runner.exited;
+    const namespace = linuxNamespace;
+    const namespaceSwept =
+      process.platform === "linux" &&
+      namespace !== null &&
+      sweep.commandTreeGone &&
+      intact &&
+      (await readLinuxNamespaceState(namespace)) === "alive";
     const commandReason: JobHostCommandReport["reason"] =
       command.cause ??
       (phase === "stopping" ? (reason as JobHostCommandReport["reason"]) : "exited");
@@ -1007,6 +1023,7 @@ function settleCommand(command: SessionCommand): Promise<void> {
       stdioClosed: command.closed,
       processGroupGone: sweep.commandTreeGone,
       namespace: intact ? "resident_intact" : "unknown",
+      namespaceSwept,
       cleanedUp: sweep.commandTreeGone,
     };
     const { sequence: runSequence, ...fields } = report;

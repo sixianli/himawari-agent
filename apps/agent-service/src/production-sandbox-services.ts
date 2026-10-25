@@ -100,14 +100,11 @@ import {
 
 export type { ProductionTaskEnvironments } from "./production-task-environments.js";
 
-// Job directory names encode the full digest compactly: SRT appends Unix socket
-// names below them. External reconciliation IDs retain their separate contract.
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
+const PREWARM_WAIT_MS = 10_000;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
-/** Composition only: existing grants, protected Run artifacts and the existing
- * job journal retain authority. Neither inventory nor this factory issues it. */
 export async function createProductionSandboxServices(options: {
   readonly configuration: Pick<
     ProductConfiguration,
@@ -164,9 +161,6 @@ export async function createProductionSandboxServices(options: {
   if (hostIds.size !== 1) throw new Error("SANDBOX_HOST_BINDING_AMBIGUOUS");
   const hostId = [...hostIds][0];
   if (!hostId) throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
-  // Complete the first installation audit in this Agent process before readiness.
-  // Worker verification uses a separate process and cannot warm this cache.
-  // Per-invocation plan, authority and host checks remain in resolve below.
   for (const entry of sandboxEntries) {
     if (entry.binding.kind !== "sandbox" || !entry.qualification.sandbox)
       throw new Error("SANDBOX_HOST_BINDING_UNAVAILABLE");
@@ -726,8 +720,6 @@ export async function createProductionSandboxServices(options: {
       invocationId: input.invocationId,
     });
     if (existing) {
-      // The reservation is immutable. A replay returns its original admission;
-      // reserve will never project a second executable Worker request.
       const plan = existing.phase === "reserved" ? existing.plan : existing.record.plan;
       const { semanticFingerprint: _fingerprint, ...candidate } = plan;
       const workspaces =
@@ -762,8 +754,6 @@ export async function createProductionSandboxServices(options: {
         }) !== canonicalAuthorizationSnapshot(queued.invocation)
       )
         throw new Error("SANDBOX_QUEUED_REQUEST_CHANGED");
-      // Reuse the approved target baseline and original deadline. Reconstructing
-      // them from the current file would silently authorize a changed object.
       await resolve(queued.plan);
       return {
         ...(queued.recovery ? { recovery: queued.recovery } : {}),
@@ -1150,6 +1140,7 @@ export async function createProductionSandboxServices(options: {
       workspaces: resolved.workspaceClaims,
     };
   };
+  const prewarming = new Map<string, Promise<boolean>>();
   const acquireResidentEnvironment = async (prepared: {
     readonly plan: SandboxExecutionPlanCandidateV2;
     readonly environmentDeadlineAt?: string;
@@ -1157,6 +1148,17 @@ export async function createProductionSandboxServices(options: {
     const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
     if (plan.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF) return;
     if (!srtEnvironments) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    const prewarm = prewarming.get(plan.identity.runId);
+    if (prewarm) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        prewarm.catch(() => false),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, PREWARM_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
     const resolved = await resolve(plan);
     const { intent } = await resolveSandboxActionGrant({
@@ -1582,9 +1584,6 @@ export async function createProductionSandboxServices(options: {
     const effectEvidence: { ref: string; digest: string }[] = [];
     const outputs: { ref: string; digest: string; byteLength: number }[] = [];
     if (facts.result && facts.result.kind !== "unknown") {
-      // A retained result is already bound by the journal to its immutable
-      // invocation artifact. Reconciliation under a new boot may authenticate
-      // these same bytes without adopting the old Worker's execution authority.
       const previous = await repository
         .sandboxExecutionJournal(configuration.ownerId, configuration.agentId)
         .read(plan.identity);
@@ -1781,8 +1780,6 @@ export async function createProductionSandboxServices(options: {
         operationKey: piFileRecoveryOperationKey(plan.identity.invocationId),
       };
       const retained = await artifacts().lookup(key);
-      // An accepted recovery artifact survives later user edits and service boots.
-      // The immutable bytes are verified again by verifyOutput before journal CAS.
       if (retained) {
         const value = await readJson(retained.payloadRef);
         const bytes = Buffer.from(JSON.stringify(value));
@@ -2225,8 +2222,6 @@ export async function createProductionSandboxServices(options: {
         return "kind" in observed ? observed : { kind: "verified", verification: observed };
       },
     },
-    // Reconciliation verifies installed runtime bytes on the host as well as process facts.
-    // Use the existing bounded maximum so mechanical-disk verification can finish.
     timeoutMs: 30000,
     now: () => clock.now(),
     onReleased: settleUnknownTaskEnvironmentResult,
@@ -2460,8 +2455,6 @@ export async function createProductionSandboxServices(options: {
           (request.executionDeadlineAt && plan.effectiveDeadlineAt > request.executionDeadlineAt)
         )
           throw new Error("SANDBOX_QUEUE_RUN_CONTEXT_CHANGED");
-        // Resolve the original protected scope and target against current grants.
-        // Rebuilding a scope from today's target would silently change the approval.
         await resolve(plan);
         await preparations.rebindQueued({
           ...(queued.recovery ? { recovery: queued.recovery } : {}),
@@ -2479,6 +2472,115 @@ export async function createProductionSandboxServices(options: {
           },
           expectedBindingRevision: queued.bindingRevision,
         });
+      }
+    },
+    prewarmEnvironment: async (
+      request: Pick<
+        RuntimeRequest,
+        "runId" | "threadId" | "executionLease" | "modelRef" | "executionDeadlineAt"
+      >,
+      route: Pick<
+        NonNullable<NonNullable<ProductConfiguration["runPolicy"]>["coding"]>,
+        "hostId" | "grantId" | "capabilityRef" | "capabilityVersion" | "enabledTools"
+      >,
+    ): Promise<boolean> => {
+      const pending = prewarming.get(request.runId);
+      if (pending) return pending;
+      const started = (async (): Promise<boolean> => {
+        if (!srtEnvironments || !request.executionDeadlineAt || route.hostId !== hostId)
+          return false;
+        const { binding, qualification } = await entryFor(
+          route.capabilityRef,
+          route.capabilityVersion,
+        );
+        const descriptor = binding.operationBindings?.find(
+          (item) =>
+            route.enabledTools.some((tool) => tool === item.operation) &&
+            item.backendRef === SRT_BACKEND_REF &&
+            item.scopeSource === "grant_targets" &&
+            item.network === "disabled" &&
+            srtTaskEnvironmentSession({
+              mode: item.mode,
+              operation: item.operation,
+              operationContract: item.contract,
+            }) !== null,
+        );
+        if (!descriptor) return false;
+        const grant = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(route.grantId),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined;
+        if (
+          !grant ||
+          grant.id !== route.grantId ||
+          grant.hostId !== hostId ||
+          grant.revokedAt !== null ||
+          grant.expiresAt <= clock.now() ||
+          descriptor.directoryOperations.some(
+            (operation) => !grant.operations.some((allowed) => allowed === operation),
+          )
+        )
+          return false;
+        const claim = await resolveSandboxWorkspaceClaim({
+          binding,
+          scope: sandboxScopeSchema.parse({
+            schemaVersion: "sandbox-scope.v1",
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
+            threadId: request.threadId,
+            runId: request.runId,
+            toolCallId: `environment-prewarm:${hash(request.runId)}`,
+            parentToolCallId: null,
+            parentRequestId: request.runId,
+            hostId,
+            handleRef: `environment-prewarm:${hash(request.runId)}`,
+            inputRef: `environment-prewarm:${hash(request.runId)}`,
+            operation: descriptor.operation,
+            authorizationRef: grant.authorizationRef,
+            modelRef: request.modelRef,
+            profileRef: binding.profileRef,
+            directoryGrant: {
+              ref: grant.id,
+              revision: grant.revision,
+              canonicalRootId: grant.canonicalRootId,
+              authorizationRef: grant.authorizationRef,
+              operations: descriptor.directoryOperations,
+            },
+            networkAuthorizationRef: null,
+            expiresAt: grant.expiresAt,
+          }),
+        });
+        return srtEnvironments.prewarmSrt({
+          runId: request.runId,
+          hostId,
+          grant,
+          claims: [claim],
+          binding,
+          allowedDomains: [],
+          plan: {
+            executionLease: request.executionLease,
+            identity: {
+              threadId: request.threadId,
+              jobId: jobId(["environment-prewarm", request.runId]),
+            },
+            modelRef: request.modelRef,
+            binding: { qualificationRef: qualification.qualificationRef },
+          },
+          deadlineAt: new Date(
+            Math.min(Date.parse(request.executionDeadlineAt), Date.parse(grant.expiresAt)),
+          ).toISOString(),
+          capabilityRef: route.capabilityRef,
+          capabilityVersion: route.capabilityVersion,
+        });
+      })();
+      prewarming.set(request.runId, started);
+      try {
+        return await started;
+      } finally {
+        if (prewarming.get(request.runId) === started) prewarming.delete(request.runId);
       }
     },
     maximumResourceCeiling: async (capabilityRef: string, capabilityVersion: string) => {
@@ -2517,8 +2619,6 @@ export async function createProductionSandboxServices(options: {
           for (let admission of page) {
             const plan = admission.phase === "bound" ? admission.record.plan : admission.plan;
             if (plan.identity.runId !== runId) continue;
-            // Enumerate and stop every owned admission before waiting for any
-            // cleanup result, including admissions on later pages.
             stops.push(
               (async () => {
                 if (admission.phase === "reserved") {
@@ -2539,7 +2639,6 @@ export async function createProductionSandboxServices(options: {
                           : plan.backendRef !== SRT_BACKEND_REF
                             ? environments
                             : undefined;
-                      // Stop only the original registered host; missing binding remains unknown.
                       if (!taskEnvironment)
                         await control.stopPreparation(plan, undefined, admission.stopRequestedAt);
                       if (!admission.stopRequestedAt) throw new Error("SANDBOX_STOP_FENCE_MISSING");

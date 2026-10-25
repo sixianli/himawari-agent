@@ -40,15 +40,10 @@ export interface SandboxToolDelivery {
     readonly executionLease: SandboxExecutionRecord["plan"]["executionLease"];
     readonly deadlineAt: string;
   };
-  /** Recheck the original Handle, Run, authority, Grant and model disclosure. */
   assertDisclosure(): Promise<void>;
-  /** A protected receipt for this handoff, separate from the returned tool result. */
   saveReceipt(value: SandboxToolCompletion): Promise<void>;
 }
 
-/** A nonzero shell exit is a known command failure, but it does not prove that
- * the command left the workspace unchanged. Preserve that distinction for Pi
- * and the durable execution projection. */
 export function sandboxCommandEffectReason(input: {
   readonly operationKind: SandboxOperationContract["kind"];
   readonly result: SandboxOperationResult | null;
@@ -109,7 +104,7 @@ export function failedCommandModelContent(
   const status =
     commandExitCode === null ? "命令没有正常结束" : `命令以退出码 ${envelopeExitCode} 结束`;
   return JSON.stringify({
-    effectNotice: `命令执行失败：${status}。这不代表工作区没有变化，命令可能已修改工作区文件，具体效果尚未核验；请先检查工作区再决定下一步。`,
+    effectNotice: `命令执行失败：${status}。Himawari 没有核验这条命令是否改动了工作区；如果它会写入文件，继续前先检查目标文件。`,
     ...fields,
   });
 }
@@ -130,9 +125,6 @@ function awaitingRecovery(record: SandboxExecutionRecord) {
   return supervision === "lost" || supervision === "reconciling";
 }
 
-/** Worker completion is a notification. Only the Agent's existing verified
- * projection and durable continuation intents can hand a foreground result to Pi.
- */
 export function createProductionSandboxToolResult(options: {
   preparations: Pick<SandboxExecutionPreparationPort, "readAdmissionByInvocation"> &
     Partial<Pick<SandboxExecutionPreparationPort, "authorizeReservationResult">>;
@@ -289,7 +281,6 @@ export function createProductionSandboxToolResult(options: {
     if (!prepared) return undefined;
     const { result, projection, context, intent } = prepared;
     await delivery.assertDisclosure();
-    // A repeated handoff retries only the immutable receipt, never executable work.
     await options.journal.dispatchIntent(intent());
     try {
       await delivery.assertDisclosure();

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,9 +10,6 @@ import type { ControlCenterRuntimeConfiguration } from "../src/gateway-client.js
 import { messages } from "../src/i18n/resources/zh-CN.js";
 import { loadMessageCatalog } from "../src/i18n/runtime.js";
 
-// Parent-app contracts: child query/render behavior is covered independently by
-// component tests; these seams expose whether bootstrap and privacy state reach
-// the correct child. SSE synchronizers, routing, storage and shell remain real.
 const boundary = vi.hoisted(() => ({
   load: vi.fn(),
   refresh: vi.fn(),
@@ -141,11 +139,14 @@ describe("control center application bootstrap and interaction", () => {
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);
     await act(async () => window.dispatchEvent(new Event("online")));
     expect(Events.instances).toHaveLength(4);
-    const previousSignal = boundary.threads.mock.lastCall?.[0].refreshSignal;
+    const previous = boundary.threads.mock.lastCall?.[0];
     await act(async () =>
       window.dispatchEvent(new StorageEvent("storage", { key: THREAD_CURSOR_STORAGE_KEY })),
     );
-    expect(boundary.threads.mock.lastCall?.[0].refreshSignal).toBe(previousSignal + 1);
+    const latest = boundary.threads.mock.lastCall?.[0];
+    expect(latest.refreshSignal).toBe(previous.refreshSignal);
+    expect(latest.threadEventSignal).toBe(previous.threadEventSignal + 1);
+    expect(latest.threadEvents?.current).toEqual([null]);
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => root.render(null));
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);

@@ -8,7 +8,7 @@ const report = () => ({
   profile: "chromium",
   browserVersion: "140.0",
   locales: ["zh-CN", "en", "ja"],
-  keyboard: ["visible-focus", "settings-tabs-roving"],
+  keyboard: ["visible-focus", "settings-keyboard-navigation"],
   axeViolations: 0,
   keyboardFocus: { visible: true, accessibleName: "Navigation" },
   journeys: ["chat"],

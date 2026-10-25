@@ -6,8 +6,6 @@ import { pathToFileURL } from "node:url";
 import { chromium, expect, webkit } from "@playwright/test";
 import { qualifyAuthorizationFeedback } from "./test-authorization-feedback-browser.mjs";
 
-// Reuse the product HTTP fixture; configure the real composer with the controls
-// installed in production. Mock only the gateway boundary, never layout or DOM.
 export async function qualifyMobileComposer(browser, baseUrl, output) {
   const results = [];
   for (const locale of ["ja", "zh-CN", "en"]) {
@@ -66,7 +64,7 @@ export async function qualifyMobileComposer(browser, baseUrl, output) {
               revision: 1,
               enabled: true,
               available: true,
-              recipient: "https://mcp.exa.ai",
+              recipients: ["https://mcp.exa.ai"],
               generatedAt: "2026-09-14T00:00:00.000Z",
             },
           },

@@ -22,6 +22,8 @@ import {
   gatewayMessageSchema,
   gatewayV2MessageSchema,
   type StreamEvent,
+  type ThreadExecutionChangedEvent,
+  type ThreadExecutionEventsSubscription,
   type ThreadGatewayCommand,
   type ThreadGatewayEvent,
   type ThreadGatewayQuery,
@@ -79,7 +81,6 @@ export interface HttpGatewayMetricsPort {
 }
 
 export interface HttpGatewayServerOptions {
-  /** Optional legacy v1 gateway; absent routes are intentionally not registered. */
   readonly gateway?: AgentGatewayPort;
   readonly gatewayV2?: AgentGatewayV2Port;
   readonly threadGateway?: AgentThreadGatewayPort;
@@ -87,7 +88,6 @@ export interface HttpGatewayServerOptions {
   readonly payloadRead?: HttpGatewayPayloadReadPort;
   readonly threadSearch?: HttpGatewayThreadSearchPort;
   readonly authentication: HttpGatewayAuthenticationPort;
-  /** Optional low-risk configuration projection of a currently valid proof. */
   readonly recentAuthentication?: RecentAuthenticationGuardPort;
   readonly csrf: HttpGatewayCsrfPort;
   readonly publicOrigin: string;
@@ -101,6 +101,7 @@ export interface HttpGatewayServerOptions {
   readonly browserConfiguration?: {
     readonly executionPresentationAvailable?: boolean;
     readonly executionStateAvailable?: boolean;
+    readonly executionEventsAvailable?: boolean;
     readonly executionEnvironmentAvailable?: boolean;
     readonly canCancelRun?: boolean;
     readonly availableModels?: readonly {
@@ -290,7 +291,20 @@ function parseThreadSubscription(encoded: unknown): ThreadGatewaySubscription {
     throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
   }
   const parsed = threadGatewayMessageSchema.parseJson(decoded);
-  if (parsed.kind !== "subscription") {
+  if (parsed.type !== "thread.events") {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.METHOD_INVALID, 400);
+  }
+  return parsed;
+}
+
+function parseThreadExecutionSubscription(encoded: unknown): ThreadExecutionEventsSubscription {
+  if (typeof encoded !== "string" || encoded.length === 0 || encoded.length > 8192) {
+    throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.REQUEST_INVALID, 400);
+  }
+  const parsed = threadGatewayMessageSchema.parseJson(
+    Buffer.from(encoded, "base64url").toString("utf8"),
+  );
+  if (parsed.type !== "thread.execution_events") {
     throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.METHOD_INVALID, 400);
   }
   return parsed;
@@ -414,8 +428,6 @@ async function* streamGatewayV2Events(input: {
   readonly heartbeatMilliseconds: number;
   readonly signal: AbortSignal;
 }): AsyncGenerator<string> {
-  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
-  // This SSE comment contains no data and does not bypass subscription authorization.
   yield ": connected\n\n";
   const iterator = input.gateway
     .subscribe(input.authentication, input.afterCursor, input.signal)
@@ -489,8 +501,6 @@ async function* streamThreadGatewayEvents(input: {
   readonly subscription: ThreadGatewaySubscription;
   readonly heartbeatMilliseconds: number;
 }): AsyncGenerator<string> {
-  // HTTP authentication has passed. Flush the transport without waiting for a domain event.
-  // This SSE comment contains no data and does not bypass subscription authorization.
   yield ": connected\n\n";
   const controller = new AbortController();
   const iterator = input.gateway
@@ -545,6 +555,70 @@ async function* streamThreadGatewayEvents(input: {
       if (result.value.done) return;
       const event = result.value.value;
       yield serializeSse({ event: "message", id: event.payload.cursor, data: event });
+      pending = iterator.next();
+    }
+  } finally {
+    controller.abort();
+    void pending.catch(() => undefined);
+    void iterator.return?.().catch(() => undefined);
+  }
+}
+
+async function* streamThreadExecutionEvents(input: {
+  readonly revalidate: () => Promise<void>;
+  readonly watch: NonNullable<AgentThreadGatewayPort["watchExecution"]>;
+  readonly authentication: GatewayAuthenticationContext;
+  readonly subscription: ThreadExecutionEventsSubscription;
+  readonly heartbeatMilliseconds: number;
+}): AsyncGenerator<string> {
+  yield ": connected\n\n";
+  const controller = new AbortController();
+  const iterator = input
+    .watch(input.authentication, input.subscription, controller.signal)
+    [Symbol.asyncIterator]();
+  let pending = iterator.next();
+  try {
+    while (true) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result:
+        | { readonly kind: "item"; readonly value: IteratorResult<ThreadExecutionChangedEvent> }
+        | { readonly kind: "heartbeat" };
+      try {
+        result = await Promise.race([
+          pending.then((value) => ({ kind: "item" as const, value })),
+          new Promise<{ readonly kind: "heartbeat" }>((resolve) => {
+            timer = setTimeout(() => resolve({ kind: "heartbeat" }), input.heartbeatMilliseconds);
+          }),
+        ]);
+      } catch (error) {
+        if (error instanceof ApplicationPortError) {
+          yield error.code === PORT_ERROR_CODES.NOT_FOUND
+            ? serializeSse({
+                event: "thread.execution_unavailable",
+                data: { code: error.code },
+              })
+            : serializeSse({ event: "gateway.stream_error", data: { code: error.code } });
+          return;
+        }
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+      try {
+        await input.revalidate();
+      } catch {
+        yield serializeSse({
+          event: "gateway.stream_error",
+          data: { code: "IDENTITY_SESSION_INVALID" },
+        });
+        return;
+      }
+      if (result.kind === "heartbeat") {
+        yield ": heartbeat\n\n";
+        continue;
+      }
+      if (result.value.done) return;
+      yield serializeSse({ event: "thread.execution_changed", data: result.value.value });
       pending = iterator.next();
     }
   } finally {
@@ -727,6 +801,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         recentAuthenticationRef,
         executionPresentationAvailable: configuration.executionPresentationAvailable ?? false,
         executionStateAvailable: configuration.executionStateAvailable ?? false,
+        executionEventsAvailable: configuration.executionEventsAvailable ?? false,
         executionEnvironmentAvailable: configuration.executionEnvironmentAvailable ?? false,
         canCancelRun: configuration.canCancelRun ?? false,
         availableModels: configuration.availableModels ?? [],
@@ -946,6 +1021,35 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
         return reply.send(stream);
       },
     );
+
+    const watchExecution = threadGateway.watchExecution?.bind(threadGateway);
+    if (watchExecution && options.browserConfiguration?.executionEventsAvailable) {
+      app.get<{ Querystring: { readonly subscription?: string } }>(
+        "/api/gateway/thread/v3/execution-events",
+        async (request, reply) => {
+          assertPublicHost(request, publicOrigin);
+          const authentication = await authenticate(request, options);
+          const subscription = parseThreadExecutionSubscription(request.query.subscription);
+          const stream = Readable.from(
+            streamThreadExecutionEvents({
+              watch: watchExecution,
+              authentication,
+              subscription,
+              heartbeatMilliseconds,
+              revalidate: () =>
+                options.authentication.revalidate?.(authentication) ?? Promise.resolve(),
+            }),
+          );
+          setSecurityHeaders(reply);
+          reply
+            .header("cache-control", "no-cache, no-store")
+            .header("connection", "keep-alive")
+            .header("x-accel-buffering", "no")
+            .type(SSE_CONTENT_TYPE);
+          return reply.send(stream);
+        },
+      );
+    }
   }
 
   if (options.payloadAdmission) {

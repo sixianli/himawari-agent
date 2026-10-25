@@ -1461,14 +1461,13 @@ async function runProbe(input) {
     const finalSession = finalResident[0]?.state?.sessions?.command;
     const residentIdentities = new Set();
     for (const match of finalResident) {
-      for (const session of Object.values(match.state?.sessions ?? {})) {
-        if (
-          session &&
-          Number.isSafeInteger(session.residentGroup) &&
-          typeof session.residentStartToken === "string"
-        )
-          residentIdentities.add(`${session.residentGroup}:${session.residentStartToken}`);
-      }
+      const session = match.state?.sessions?.command;
+      if (
+        session &&
+        Number.isSafeInteger(session.residentGroup) &&
+        typeof session.residentStartToken === "string"
+      )
+        residentIdentities.add(`${session.residentGroup}:${session.residentStartToken}`);
     }
     report.originalHostReplay = {
       environmentRows: finalPrimary.length,

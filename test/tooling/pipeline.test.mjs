@@ -71,7 +71,7 @@ const browserReport = (engine) => ({
   profile: engine,
   browserVersion: "123.0",
   locales: ["zh-CN", "en", "ja"],
-  keyboard: ["visible-focus", "settings-tabs-roving"],
+  keyboard: ["visible-focus", "settings-keyboard-navigation"],
   axeViolations: 0,
   keyboardFocus: { visible: true, accessibleName: "Settings" },
   journeys: ["workspace"],

@@ -11,7 +11,10 @@ import type {
 import type { SandboxExecutionRunInventory } from "../ports/sandbox-execution-journal.js";
 import type { ThreadRepositoryPort } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
-import { readThreadExecutionResources } from "./thread-execution-resources.js";
+import {
+  nextThreadExecutionResourceChangeAt,
+  readThreadExecutionResources,
+} from "./thread-execution-resources.js";
 import { projectThreadExecutionState } from "./thread-execution-state.js";
 import { redactTracePayload } from "./trace-redaction.js";
 
@@ -57,7 +60,6 @@ function identifier(value: unknown, fallback: string, prefix = "tool"): string {
 }
 function visibleText(value: unknown): string {
   if (!Array.isArray(value)) return "";
-  // Reasoning blocks, signatures, images and provider metadata are never display text.
   return text(
     value
       .flatMap((item) => {
@@ -76,6 +78,14 @@ function isExecutionChangedDuringRead(error: unknown): boolean {
   );
 }
 
+export interface ThreadExecutionObservation {
+  readonly traceSequence: number;
+  readonly checkpointRevision: string | null;
+  readonly resourceRevision: string | null;
+  readonly resourcesPending: boolean;
+  readonly nextChangeAt: string | null;
+}
+
 interface ThreadExecutionResourceReader {
   readonly readInventory: (input: {
     ownerId: string;
@@ -86,7 +96,6 @@ interface ThreadExecutionResourceReader {
   readonly digest: (bytes: Uint8Array) => string;
 }
 
-/** Owner-scoped presentation of existing durable observations, never arbitrary Trace JSON. */
 export class ThreadExecutionProjection {
   private readonly dependencies: {
     readonly threads: ThreadRepositoryPort;
@@ -159,8 +168,6 @@ export class ThreadExecutionProjection {
         output: "",
         occurredAt: event.occurredAt,
       };
-      // Host-authored review observations carry no model text or protected input.
-      // Keep them as updated markers: they are not Run start/end timing boundaries.
       if (
         event.actorId === "automatic-review-control-plane" &&
         event.payloadRef === null &&
@@ -187,7 +194,6 @@ export class ThreadExecutionProjection {
             "runtime.turn_started",
           ].includes(event.eventType)
         ) {
-          // Expose stage occurrence only, not private memory text or model context.
           records.push({ ...base, phase: "updated" });
         } else if (event.eventType === "runtime.message" && envelope["role"] === "assistant") {
           const message = object(await this.readPayload(event, envelope["payloadRef"]));
@@ -253,8 +259,6 @@ export class ThreadExecutionProjection {
               id: `${event.id}:activity`,
               phase: "updated",
               name: `runtime.activity.${String(activity)}`,
-              // Report the observed activity only. Raw reasoning and signatures
-              // remain in the protected payload, outside the display projection.
               text: content.some((part) => object(part)["type"] === "thinking")
                 ? "thinking_observed"
                 : "",
@@ -267,8 +271,6 @@ export class ThreadExecutionProjection {
           const tool = object(await this.readPayload(event, envelope["payloadRef"]));
           const ended = event.eventType === "runtime.tool_result";
           const result = object(tool["result"]);
-          // Older Pi captures can report isError=false for a resolved product
-          // failure. Retained product error evidence must not become success.
           const details = object(result["details"]);
           const productError = text(details["errorCode"]);
           const productOutcome = text(details["productOutcome"]);
@@ -290,8 +292,6 @@ export class ThreadExecutionProjection {
             ["RUNTIME_TOOL_EXECUTION_UNRESOLVED", "WORKER_RESULT_RECONCILIATION_REQUIRED"].includes(
               productError,
             );
-          // Unknown or contradictory effects outrank an admission code. A missing
-          // Pi error flag never turns a retained product failure into success.
           const failed =
             tool["isError"] === true ||
             productOutcome === "failed" ||
@@ -400,7 +400,6 @@ export class ThreadExecutionProjection {
           });
         }
       } catch {
-        // Preserve the event identity without disclosing raw errors or claiming empty success.
         records.push(base);
       }
     }
@@ -430,6 +429,81 @@ export class ThreadExecutionProjection {
     );
   }
 
+  async observeRun(input: {
+    ownerId: string;
+    agentId: string;
+    threadId: string;
+    runId: string;
+    afterSequence: number;
+    known: { readonly resourceRevision: string | null; readonly resourcesPending: boolean } | null;
+  }): Promise<ThreadExecutionObservation> {
+    const ownerId = createOwnerId(input.ownerId),
+      agentId = createAgentId(input.agentId),
+      threadId = createThreadId(input.threadId),
+      runId = createRunId(input.runId);
+    let traceSequence = input.afterSequence;
+    for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
+      const events = await this.dependencies.trace.readRun(runId, traceSequence, 1000);
+      for (const event of events) {
+        if (
+          event.ownerId !== ownerId ||
+          event.agentId !== agentId ||
+          event.threadId !== threadId ||
+          event.runId !== runId
+        )
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_SCOPE_MISMATCH",
+          );
+        if (event.sequence <= traceSequence)
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "THREAD_EXECUTION_PAGE_NOT_ADVANCING",
+          );
+        traceSequence = event.sequence;
+      }
+      if (events.length < 1000) break;
+    }
+    const checkpoint = await this.dependencies.checkpoints?.read(runId);
+    const checkpointRevision = checkpoint ? threadCommandFingerprint(checkpoint) : null;
+    const resourceReader = this.dependencies.resources;
+    if (!resourceReader)
+      return {
+        traceSequence,
+        checkpointRevision,
+        resourceRevision: null,
+        resourcesPending: false,
+        nextChangeAt: null,
+      };
+    const inventory = await resourceReader.readInventory({ ownerId, agentId, runId });
+    const resourceRevision = threadCommandFingerprint(inventory);
+    const now = resourceReader.now();
+    const resourcesPending =
+      input.known && input.known.resourceRevision === resourceRevision
+        ? input.known.resourcesPending
+        : (
+            await readThreadExecutionResources({
+              ownerId,
+              agentId,
+              threadId,
+              runId,
+              inventory,
+              now,
+              payloads: this.dependencies.payloads(ownerId, agentId),
+              protector: this.dependencies.protector,
+              digest: resourceReader.digest,
+              itemId: (toolCallId) => identifier(toolCallId, toolCallId),
+            })
+          ).pendingResources;
+    return {
+      traceSequence,
+      checkpointRevision,
+      resourceRevision,
+      resourcesPending,
+      nextChangeAt: nextThreadExecutionResourceChangeAt(inventory, now),
+    };
+  }
+
   private async readConsistentState(input: {
     ownerId: string;
     agentId: string;
@@ -451,7 +525,6 @@ export class ThreadExecutionProjection {
     const resourceRevision = inventory ? threadCommandFingerprint(inventory) : null;
     const records: ThreadExecutionRecord[] = [];
     let afterSequence = 0;
-    // Never return an aggregate of only the last page or a silently truncated history.
     for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
       const page = await this.read({ ...input, afterSequence, limit: 1000 });
       records.push(...page.records);

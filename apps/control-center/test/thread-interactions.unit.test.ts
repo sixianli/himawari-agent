@@ -20,6 +20,65 @@ import {
 } from "../src/thread-control-center.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
+class FakeEventSource {
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  closed = false;
+  readonly listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
+  readonly url: string;
+  constructor(url: string) {
+    this.url = url;
+  }
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+  open() {
+    this.onopen?.(new Event("open"));
+  }
+  emit(type: string, data: unknown) {
+    for (const listener of this.listeners.get(type) ?? [])
+      listener(new MessageEvent(type, { data: JSON.stringify(data) }));
+  }
+  fail() {
+    this.onerror?.(new Event("error"));
+  }
+  close() {
+    this.closed = true;
+  }
+}
+function stubEventSource(sources: FakeEventSource[]) {
+  vi.stubGlobal(
+    "EventSource",
+    class extends FakeEventSource {
+      constructor(url: string) {
+        super(url);
+        sources.push(this);
+      }
+    },
+  );
+}
+function executionChanged(runId: string, runRevision: number, traceSequence: number) {
+  return {
+    schemaVersion: "gateway.thread.v3",
+    kind: "event",
+    type: "thread.execution_changed",
+    messageId: `execution:${runId}:${traceSequence}`,
+    correlationId: "subscription-ui",
+    causationId: null,
+    scope: { ownerId: "owner-ui", agentId: "agent-ui" },
+    authority: { deploymentId: "deployment-ui", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "system", actorId: "thread-gateway" },
+    payload: {
+      threadId: "thread-ui",
+      runId,
+      runRevision,
+      traceSequence,
+      resourceRevision: null,
+      observedAt: "2026-09-14T00:00:00.000Z",
+    },
+  };
+}
 const NOW = "2026-09-14T00:00:00Z";
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner-ui",
@@ -495,24 +554,45 @@ describe("thread control center interactions", () => {
     expect(container.querySelector(".execution-next-action")?.textContent).toContain(
       messages["chat.nextAction.notDispatched"],
     );
+    const sources: FakeEventSource[] = [];
+    stubEventSource(sources);
+    options = {
+      ...options,
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEventsAvailable: true,
+      },
+    };
+    await render();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    expect(source.url).toContain("/api/gateway/thread/v3/execution-events?subscription=");
+    await act(async () => {
+      source.open();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const idle = query.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(query).toHaveBeenCalledTimes(idle);
     state = { ...state, revision: "state-3", reasonCode: "RESOURCE_EXECUTION_OBSERVED" };
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2100);
+      source.emit("thread.execution_changed", executionChanged("run-ui", 3, 1));
+      await vi.advanceTimersByTimeAsync(100);
     });
     expect(container.querySelector(".process-result")?.textContent).toContain(
       messages["chat.resource.executing"],
     );
-    visibility.mockReturnValue("hidden");
-    const requests = query.mock.calls.length;
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4000);
-    });
-    expect(query).toHaveBeenCalledTimes(requests);
-    visibility.mockRestore();
+    expect(query.mock.calls.slice(idle).map(([request]) => request.type)).toEqual([
+      "thread.execution",
+      "thread.execution_state",
+    ]);
     expect(mutate).not.toHaveBeenCalled();
   });
 
@@ -1944,4 +2024,223 @@ it("keeps an explicit search from being superseded by an already scheduled list 
   expect(query.mock.calls.filter(([request]) => request.type === "thread.search")).toHaveLength(1);
   expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(1);
   expect(container.querySelectorAll(".thread-row")).toHaveLength(2);
+});
+
+describe("pushed conversation updates", () => {
+  const message = (sequence: number) => ({
+    messageId: `message-${sequence}`,
+    sequence,
+    role: "agent" as const,
+    contentRef: `content-${sequence}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${sequence}`,
+    runId: null,
+    committedAt: NOW,
+  });
+  const executionState = (runRevision: number, revision: string): ThreadExecutionState => ({
+    runRevision,
+    revision,
+    lastObservedAt: NOW,
+    displayPhase: statePhase,
+    reasonCode: "RUN_COMPLETED",
+    availableActions: [],
+    needsAttention: false,
+    timing: { executionMilliseconds: null, reviewMilliseconds: null },
+    operations: [],
+    effectSummary: [],
+  });
+  let sources: FakeEventSource[];
+  let queue: (string | null)[];
+  let signal: number;
+  let statePhase: ThreadExecutionState["displayPhase"];
+
+  beforeEach(() => {
+    statePhase = "completed";
+    sources = [];
+    queue = [];
+    signal = 0;
+    stubEventSource(sources);
+    runs = [{ runId: "run-1", revision: 4, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [message(1), message(2)];
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, abort) => {
+      if (request.type === "thread.detail")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.detail_snapshot",
+          payload: {
+            thread: { ...thread, threadId: request.payload.threadId },
+            messages: threadMessages.filter(
+              (item) => item.sequence > request.payload.afterSequence,
+            ),
+            runs,
+            nextSequence: null,
+          },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: request.payload.runId,
+            records: [],
+            nextSequence: null,
+            generatedAt: NOW,
+          },
+        };
+      if (request.type === "thread.execution_state") {
+        const run = runs.find((item) => item.runId === request.payload.runId);
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: request.payload.runId,
+            state: executionState(run?.revision ?? 1, `state-${run?.revision ?? 1}`),
+            generatedAt: NOW,
+          },
+        };
+      }
+      return original?.(request, abort);
+    });
+    options = {
+      ...options,
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEventsAvailable: true,
+      },
+      threadEvents: { current: queue },
+    };
+  });
+
+  async function settle(milliseconds = 100) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(milliseconds);
+    });
+  }
+  async function threadEvent(threadId: string | null) {
+    queue.push(threadId);
+    options = { ...options, threadEventSignal: ++signal };
+    await render();
+    await settle();
+  }
+  const requested = (from: number) =>
+    query.mock.calls.slice(from).map(([request]) => ({
+      type: request.type,
+      payload: request.payload,
+    }));
+
+  it("reads nothing while an opened conversation is idle", async () => {
+    await render();
+    await settle();
+    sources.at(-1)?.open();
+    await settle();
+    const idle = query.mock.calls.length;
+    await settle(30_000);
+    expect(query).toHaveBeenCalledTimes(idle);
+  });
+
+  it("reads only new messages of the opened conversation and only the list for another one", async () => {
+    await render();
+    await settle();
+    let from = query.mock.calls.length;
+    await threadEvent("thread-other");
+    expect(requested(from).map(({ type }) => type)).toEqual(["thread.list"]);
+    threadMessages = [message(1), message(2), message(3)];
+    runs = [
+      ...runs,
+      { runId: "run-2", revision: 1, status: "running", createdAt: NOW, updatedAt: NOW },
+    ];
+    from = query.mock.calls.length;
+    await threadEvent("thread-ui");
+    const reads = requested(from);
+    expect(reads.map(({ type }) => type)).toEqual([
+      "thread.list",
+      "thread.detail",
+      "thread.execution",
+      "thread.execution_state",
+    ]);
+    expect(reads[1]?.payload).toMatchObject({ threadId: "thread-ui", afterSequence: 2 });
+    expect(reads[2]?.payload).toMatchObject({ runId: "run-2" });
+  });
+
+  it("opens the execution stream only while a Run of the conversation is live", async () => {
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(0);
+    runs = [{ ...runs[0], revision: 5, status: "running" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    const live = sources.filter((source) => source.url.includes("execution-events"));
+    expect(live).toHaveLength(1);
+    runs = [{ ...runs[0], revision: 6, status: "completed" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    expect(live[0]?.closed).toBe(true);
+  });
+
+  it("keeps the execution stream open while a finished Run still has an unresolved result", async () => {
+    statePhase = "unresolved";
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(1);
+  });
+
+  it("re-reads the conversation when an execution event carries a newer Run revision", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    source.open();
+    await settle();
+    runs = [{ ...runs[0], revision: 5 } as Detail["payload"]["runs"][number]];
+    const from = query.mock.calls.length;
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 5, 9));
+    });
+    await settle();
+    const types = requested(from).map(({ type }) => type);
+    expect(types).toContain("thread.detail");
+    expect(types.filter((type) => type === "thread.execution_state").length).toBeGreaterThan(0);
+  });
+
+  it("catches up every Run after the execution stream reconnects", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const first = sources.at(-1);
+    if (!first) throw new Error("Missing execution stream");
+    first.open();
+    await settle();
+    first.fail();
+    expect(first.closed).toBe(true);
+    await settle(300);
+    const second = sources.at(-1);
+    expect(second).not.toBe(first);
+    const from = query.mock.calls.length;
+    second?.open();
+    await settle();
+    expect(requested(from).map(({ type }) => type)).toEqual([
+      "thread.execution",
+      "thread.execution_state",
+    ]);
+  });
+
+  it("closes the execution stream when the conversation changes", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const first = sources.at(-1);
+    options = { ...options, route: { ...options.route, objectId: "thread-other" } };
+    await render();
+    await settle();
+    expect(first?.closed).toBe(true);
+    expect(sources.at(-1)?.url).not.toBe(first?.url);
+  });
 });

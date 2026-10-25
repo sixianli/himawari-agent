@@ -92,7 +92,7 @@ TE-01 已做的局部修复继续保留：只有操作版本发生变化且资�
 - 重复停止：不启动原工具；同一有效恢复的 stop 只发送一次，之后只观察。新恢复仍核验同一宿主。
 - Agent 重启：原 running 由启动恢复接管，按原身份重新观察，不能重放工具；无需保存 JavaScript 计时器。
 - 控制连接错误、身份变化、无资格或权限错误：结束为相应失败，不按“正常收尾”等待。可信原 Host 为僵尸或已消失、同组回收尚在进行时，可使用已有 pending；Host 组零成员前不能报告释放。规则见[Linux Host 组清理](2026-09-24-isolated-tool-execution-design.md#linux-host-group)。
-- `process_group_gone`：继续按 ADR 0033 释放并标明未经严格确认；不把脱离进程组的后代纳入本次新增保证。
+- `process_group_gone`：继续按 ADR 0033 释放并标明未经严格确认；不把脱离进程组的后代纳入本次新增保证。2026-10-24 起，带 `cleanupScope: "pid_namespace"` 的 Linux 常驻释放按 [ADR 0072](../../adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md#decision) 显示为已释放。
 - 结果交付超过 35 秒、文件结果恢复竞争、模型消费跨重启：继续在审计计划中验证，本提案不提前保证已解决。
 
 ## 取舍与范围

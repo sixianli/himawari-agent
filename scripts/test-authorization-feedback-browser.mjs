@@ -3,8 +3,6 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect } from "@playwright/test";
 
-// Exercise the built application. Only HTTP responses at the existing gateway
-// boundary are controlled; component state and DOM interactions remain real.
 export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
   const results = [];
   for (const width of [393, 1280]) {
@@ -86,7 +84,7 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
               revision: 1,
               enabled: false,
               available: true,
-              recipient: "https://mcp.exa.ai",
+              recipients: ["https://mcp.exa.ai"],
               generatedAt: "2026-09-14T00:00:00.000Z",
             },
           },
@@ -127,10 +125,6 @@ export async function qualifyAuthorizationFeedback(browser, baseUrl, output) {
       ).toBeDisabled();
       const failedReads = searchReads;
       failSearchRead = false;
-      // Control browser connectivity events at the environment boundary. On
-      // headless Linux WebKit, setOffline(false) can still emit offline because
-      // navigator.onLine follows the host OS hint. Keep the application mounted
-      // so this checks its actual reconnect and stale-error recovery path.
       await page.evaluate(() => window.dispatchEvent(new Event("offline")));
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "offline");
       await page.evaluate(() => window.dispatchEvent(new Event("online")));

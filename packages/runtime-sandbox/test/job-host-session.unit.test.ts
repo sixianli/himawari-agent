@@ -108,6 +108,7 @@ function commandResult(
     stdioClosed: true,
     processGroupGone: true,
     namespace: "resident_intact",
+    namespaceSwept: false,
     cleanedUp: true,
     ...overrides,
   });
@@ -132,6 +133,20 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
     expect(() => session.run(runInput("one"), async () => {})).toThrow("JOB_HOST_RUN_NOT_ALLOWED");
     process.emit("close");
     await session.ready.catch(() => {});
+    await session.result;
+  });
+
+  it("hands the host's latest preparation steps to the caller once ready", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    const steps = [
+      { stage: "dependencies", startedMs: 3, elapsedMs: 40 },
+      { stage: "launch", startedMs: 43, elapsedMs: null },
+    ];
+    process.emitMessage({ type: "heartbeat", steps });
+    ready(process);
+    expect(await session.ready).toEqual({ residentProcessId: 4321, hostSteps: steps });
+    process.emit("close");
     await session.result;
   });
 
@@ -165,6 +180,7 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
       stdioClosed: true,
       processGroupGone: true,
       namespace: "resident_intact",
+      namespaceSwept: false,
       cleanedUp: true,
       settled: true,
       stdout: expect.any(Uint8Array),
@@ -342,6 +358,36 @@ describe("[R2-P2] Worker-side Job Host session client", () => {
     started(process, "one", 4322);
     expect(cancelled(process)).toBe(true);
     expect(await run.result).toMatchObject({ settled: false });
+    process.emit("close");
+    await session.result;
+  });
+
+  it("passes on a namespace-wide sweep reported with a gone command tree", async () => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    const run = session.run(runInput("one"), async () => {});
+    started(process, "one");
+    commandResult(process, "one", 1, { namespaceSwept: true });
+    expect(await run.result).toMatchObject({ settled: true, namespaceSwept: true });
+    process.emit("close");
+    await session.result;
+  });
+
+  it.each([
+    ["missing", { namespaceSwept: undefined }],
+    ["claimed while the command tree remains", { namespaceSwept: true, processGroupGone: false }],
+  ])("closes the session when the namespace sweep flag is %s", async (_label, overrides) => {
+    const process = child();
+    const session = prepareSandboxJobSession(request());
+    ready(process);
+    await session.ready;
+    const run = session.run(runInput("one"), async () => {});
+    started(process, "one");
+    commandResult(process, "one", 1, overrides);
+    expect(cancelled(process)).toBe(true);
+    expect(await run.result).toMatchObject({ settled: false, namespaceSwept: false });
     process.emit("close");
     await session.result;
   });

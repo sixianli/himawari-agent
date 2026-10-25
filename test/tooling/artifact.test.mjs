@@ -558,8 +558,6 @@ describe("same-artifact verification", () => {
         path.join(payload, "runtime/runtime-manifest.json"),
         JSON.stringify({ entrypoints: {}, externalDependencyClosure: {} }),
       );
-    // Match the packager after inserting new files; umask must not replace the
-    // intended payload rejection with an unrelated noncanonical-mode error.
     record.files = (await collectArtifactFiles(payload, { normalizeModes: true })).filter(
       (file) => file.path !== "artifact-record.json",
     );
@@ -567,7 +565,7 @@ describe("same-artifact verification", () => {
     await writeFile(path.join(payload, "artifact-record.json"), JSON.stringify(record));
     await expect(verifyExtractedArtifact(payload, { context })).rejects.toThrow(code);
   });
-  it("packages nested import-only dependencies and rejects missing mandatory dependencies", async () => {
+  it("packages nested import-only dependencies, bundles the Pi runner and rejects missing mandatory dependencies", async () => {
     const temporary = await mkdtemp(path.join(os.tmpdir(), "himawari-closure-test-"));
     directories.push(temporary);
     const roots = [
@@ -598,13 +596,24 @@ describe("same-artifact verification", () => {
         path.join(temporary, relative, "package.json"),
         JSON.stringify({
           ...original,
-          dependencies: relative === "apps/admin-cli" ? { "outer-fixture": "1.0.0" } : {},
+          dependencies: ["apps/admin-cli", "apps/agent-service"].includes(relative)
+            ? { "outer-fixture": "1.0.0" }
+            : {},
         }),
       );
       const compiled = path.join(temporary, "compiled", relative, "src");
       await mkdir(compiled, { recursive: true });
       await writeFile(path.join(compiled, "main.js"), "export {}; ");
     }
+    const runnerSource = path.join(
+      temporary,
+      "compiled/apps/agent-service/src/capability-programs/pi-coding-main.js",
+    );
+    await mkdir(path.dirname(runnerSource), { recursive: true });
+    await writeFile(
+      runnerSource,
+      'process.env.FIXTURE_ORDER = "configured";\nconst { read } = await import("outer-fixture");\nprocess.stdout.write(read());\n',
+    );
     const nativeSource = "packages/platform-node/src/files/rename-native.c";
     await mkdir(path.join(temporary, path.dirname(nativeSource)), { recursive: true });
     await cp(path.join(repositoryRoot, nativeSource), path.join(temporary, nativeSource));
@@ -631,7 +640,10 @@ describe("same-artifact verification", () => {
         exports: { ".": { import: "./index.js" } },
       }),
     );
-    await writeFile(path.join(outer, "index.js"), "import 'inner-fixture';");
+    await writeFile(
+      path.join(outer, "index.js"),
+      "import { value } from 'inner-fixture';\nconst seen = process.env.FIXTURE_ORDER;\nexport const read = () => seen + ':' + value;\nexport const unused = () => 'unused-fixture-export';\n",
+    );
     await writeFile(path.join(inner, "index.js"), "export const value = 1;");
     await chmod(outer, 0o775);
     await chmod(path.join(outer, "index.js"), 0o775);
@@ -645,6 +657,21 @@ describe("same-artifact verification", () => {
     expect(
       (await lstat(path.join(output, "node_modules/outer-fixture/index.js"))).mode & 0o777,
     ).toBe(0o755);
+    const programs = path.join(
+      output,
+      "node_modules/@himawari-agent/agent-service/dist/capability-programs",
+    );
+    const runner = await readFile(path.join(programs, "pi-coding-main.js"), "utf8");
+    expect(runner).not.toContain("outer-fixture");
+    expect(runner).not.toContain("unused-fixture-export");
+    expect(existsSync(path.join(output, ".pi-runner-bundle"))).toBe(false);
+    expect(
+      spawnSync(process.execPath, [path.join(programs, "pi-coding-main.js")], {
+        cwd: os.tmpdir(),
+        encoding: "utf8",
+      }).stdout,
+    ).toBe("configured:1");
+    expect((await lstat(path.join(programs, "rename-native"))).mode & 0o111).not.toBe(0);
     const manifest = JSON.parse(await readFile(path.join(output, "runtime-manifest.json"), "utf8"));
     expect(
       manifest.externalDependencyClosure["outer-fixture/node_modules/inner-fixture"].version,

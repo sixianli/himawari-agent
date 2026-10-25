@@ -4,9 +4,6 @@ import path from "node:path";
 import { chromium, expect } from "@playwright/test";
 import { qualifyExecutionChainFixture } from "../../scripts/test-execution-chain-browser.mjs";
 
-/** Existing HTTP fixture supplies navigation/authentication only. Execution-state
- * queries read the live production projection/SQLite during the real Worker run.
- * No fixture trace or resource transition is injected after authority withdrawal. */
 export async function qualifySandboxBrowser(run, output) {
   const browser = await chromium.launch({ channel: "chrome" });
   let result;
@@ -24,9 +21,12 @@ export async function qualifySandboxBrowser(run, output) {
       let queries = 0;
       let runningQueries = 0;
       let contextClosed = false;
+      let hints = 0;
+      let hintTimer;
       const close = async () => {
         if (contextClosed) return;
         contextClosed = true;
+        clearInterval(hintTimer);
         await context.unrouteAll({ behavior: "wait" });
         await context.close();
       };
@@ -35,8 +35,6 @@ export async function qualifySandboxBrowser(run, output) {
           const message = route.request().postDataJSON();
           if (!["thread.execution_state", "thread.detail"].includes(message.type) || !readState)
             return route.continue();
-          // Preserve the fixture's transport envelope; only the actual production
-          // projection supplies the state, including revisions and available actions.
           const response = await route.fetch();
           const envelope = await response.json();
           const state = await readState();
@@ -44,8 +42,6 @@ export async function qualifySandboxBrowser(run, output) {
             envelope.payload.state = state;
             queries++;
           } else {
-            // The fixture's navigation Run points at this live probe Run. Preserve
-            // the actual revision so the browser's consistency check stays active.
             envelope.payload.runs = envelope.payload.runs.map((run) =>
               run.runId === "run-01" ? { ...run, revision: state.runRevision } : run,
             );
@@ -86,6 +82,19 @@ export async function qualifySandboxBrowser(run, output) {
               assert.equal(response.ok(), true);
               await page.goto(`${baseUrl}/threads/thread-main`);
               await expect(page.locator(".turn-activity output")).toContainText("正在执行");
+              let announced = lastState.revision;
+              hintTimer = setInterval(() => {
+                void readState()
+                  .then(async (state) => {
+                    if (contextClosed || state.revision === announced) return;
+                    announced = state.revision;
+                    hints++;
+                    await page.request.post(`${baseUrl}/__fixture/execution-changed`, {
+                      data: { threadId: "thread-main", runId: "run-01" },
+                    });
+                  })
+                  .catch(() => {});
+              }, 500);
               runningQueries = queries;
               await expect(page.locator('a[aria-current="page"]')).toHaveCount(1);
               await expect(page.locator('a[aria-current="page"] .thread-attention')).toHaveCount(
@@ -104,7 +113,7 @@ export async function qualifySandboxBrowser(run, output) {
               await expect(page.locator(".turn-activity .run-indicator")).toHaveCount(0);
               assert.ok(
                 queries > runningQueries,
-                "browser must query changed durable state without an event",
+                "browser must read changed durable state after a pushed change hint",
               );
               assert.equal(new URL(page.url()).pathname, "/threads/thread-main");
               assert.equal(lastState.displayPhase, "unresolved");
@@ -136,6 +145,7 @@ export async function qualifySandboxBrowser(run, output) {
             realWorker: true,
             realSqliteProjection: true,
             injectedResourceEvents: 0,
+            executionChangeHints: hints,
             fixtureBoundary:
               "navigation and gateway transport; no full production authentication or model loop",
             reload: true,

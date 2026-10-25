@@ -315,6 +315,7 @@ async function srtHarness(options: {
       guarantees: SRT_TASK_ENVIRONMENT_GUARANTEES,
       inspectBeforeReuse: true,
       lifecycle,
+      prewarm: (input) => lifecycle.prewarm(input),
     },
   });
   cleanups.push(f.close);
@@ -676,6 +677,75 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
     expect(primaries[0]?.backendRef).toBe(SRT_TASK_ENVIRONMENT_BACKEND_REF);
   });
 
+  it("[R2-P2] prewarms the resident runner at Run start so the first bash call reuses it, and never replaces an existing environment", async () => {
+    const ctx = await srtHarness({
+      bindings: [{ binding: bashBinding, parameters: { command: "echo warm" } }],
+    });
+    const grant = ctx.f.f.directoryGrant;
+    const context = ctx.f.call.context;
+    if (!context || !ctx.f.call.executionDeadlineAt) throw new Error("call context required");
+    const route = {
+      hostId: grant.hostId,
+      grantId: grant.id,
+      capabilityRef: ctx.f.input.capabilityRef,
+      capabilityVersion: ctx.f.input.capabilityVersion,
+      enabledTools: ["bash" as const],
+    };
+    expect(
+      await ctx.f.services.prewarmEnvironment(
+        {
+          runId: RUN_ID,
+          threadId: context.threadId,
+          executionLease: context.executionLease,
+          modelRef: context.modelRef,
+          executionDeadlineAt: ctx.f.call.executionDeadlineAt,
+        },
+        route,
+      ),
+    ).toBe(true);
+    const warmed = await residentIdentity(await waitFor(() => ctx.sessions[0]));
+    const call = makeCalls(ctx);
+    const prepared = await call();
+    const began = Date.now();
+    await dispatch(ctx, prepared);
+    const firstCallMs = Date.now() - began;
+    const result = await readPiResult(ctx, prepared);
+    expect(result?.parsed.isError).not.toBe(true);
+    expect(result?.text).toContain("warm");
+    expect(ctx.prepareCalls).toHaveLength(1);
+    expect(await residentIdentity(residentSession(ctx))).toEqual(warmed);
+    const primaries = await primaryEnvironment(ctx);
+    expect(primaries).toHaveLength(1);
+    expect(primaries[0]?.rotationReason).toBe("initial");
+    expect(
+      await ctx.f.services.prewarmEnvironment(
+        {
+          runId: RUN_ID,
+          threadId: context.threadId,
+          executionLease: { ...context.executionLease, expectedLeaseRevision: 7 },
+          modelRef: context.modelRef,
+          executionDeadlineAt: ctx.f.call.executionDeadlineAt,
+        },
+        route,
+      ),
+    ).toBe(true);
+    expect(ctx.prepareCalls).toHaveLength(1);
+    expect(
+      await ctx.f.services.prewarmEnvironment(
+        {
+          runId: RUN_ID,
+          threadId: context.threadId,
+          executionLease: { ...context.executionLease, authorityEpoch: 99 },
+          modelRef: context.modelRef,
+          executionDeadlineAt: ctx.f.call.executionDeadlineAt,
+        },
+        route,
+      ),
+    ).toBe(false);
+    expect(await primaryEnvironment(ctx)).toHaveLength(1);
+    console.log(`[R2-P2] prewarmed first bash call duration(ms)=${firstCallMs}`);
+  });
+
   it("[R2-P2] reports a bash that reaches its own deadline as deadline exceeded and holds the workspace", async () => {
     const ctx = await srtHarness({
       bindings: [
@@ -866,6 +936,11 @@ describe("[R2-P2] SRT resident task environment through the real Agent entry", (
 
     const secondResult = await readPiResult(ctx, second);
     expect(secondResult?.text).not.toContain("sleep 600");
+    expect((await readRecord(ctx, first))?.facts.resource).toMatchObject({
+      supervision: "released",
+      cleanup: "process_group_gone",
+      cleanupScope: "pid_namespace",
+    });
     const leftovers = await waitFor(async () => {
       const found = await processesWith("sleep 600");
       return found.length === 0 ? [] : undefined;
