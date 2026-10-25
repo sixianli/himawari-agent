@@ -14,6 +14,7 @@ import type {
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
@@ -886,6 +887,16 @@ export class SqliteDurableAdapters {
         this.context.write("memoryIndex.clearScope", { ownerId, agentId }),
       search: (input) => this.context.read("memoryIndex.search", input),
       listUnindexed: (input) => this.context.read("memoryIndex.listUnindexed", input),
+    });
+  }
+
+  memoryEpisodes(): MemoryEpisodeStorePort {
+    return Object.freeze<MemoryEpisodeStorePort>({
+      upsert: (document) => this.context.write("memoryEpisode.upsert", { document }),
+      search: (input) => this.context.read("memoryEpisode.search", input),
+      listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
+      attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
+      listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
     });
   }
 

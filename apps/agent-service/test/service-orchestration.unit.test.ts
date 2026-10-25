@@ -258,6 +258,8 @@ beforeEach(() => {
     "capabilityInvocationReceiptPort",
     "capabilityInvocationResultPort",
     "memoryIndex",
+    "memoryEpisodes",
+    "threadRepository",
   ])
     repository[key] = vi.fn(() => ({}));
   boundary.open.mockResolvedValue(repository);

@@ -3,3 +3,4 @@ export * from "./fusion.js";
 export * from "./hybrid-memory-provider.js";
 export * from "./segmentation.js";
 export * from "./time-scope.js";
+export * from "./episodes.js";

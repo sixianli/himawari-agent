@@ -23,6 +23,7 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import { MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
@@ -440,6 +441,15 @@ export async function runAgentService(
   let runInterruption: Promise<void> | undefined;
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
+  let runMemoryEpisodes: MemoryEpisodeService | undefined;
+  let runEmbedWithin:
+    | (<T>(
+        request: RuntimeRequest,
+        slot: string,
+        operation: () => Promise<T>,
+        dataClassification?: RuntimeRequest["dataClassification"],
+      ) => Promise<T>)
+    | undefined;
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
@@ -515,6 +525,7 @@ export async function runAgentService(
       } finally {
         await runs?.titles?.stop();
         await runs?.memoryCapture?.stop();
+        await runs?.memoryEpisodes?.stop();
       }
     },
   });
@@ -1132,6 +1143,68 @@ export async function runAgentService(
         admission,
       });
       governedMemory = memory;
+      const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
+      const episodeProtector = protector;
+      const memoryEpisodes =
+        memoryComposition && episodeProtector
+          ? new MemoryEpisodeService({
+              store: repository.memoryEpisodes(),
+              threads: repository.threadRepository(),
+              readText: async ({ ownerId, agentId, ref }) => {
+                const payload = await episodePayloads.get(ref);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({ ownerId, agentId, payload }),
+                );
+              },
+              storeText: async (input) => {
+                if (await episodePayloads.get(input.ref)) return;
+                await episodePayloads.put(
+                  await episodeProtector.protect({
+                    ownerId: input.ownerId,
+                    agentId: input.agentId,
+                    ref: input.ref,
+                    contentType: "text/plain",
+                    dataClassification: input.dataClassification,
+                    plaintext: new TextEncoder().encode(input.text),
+                    createdAt: input.createdAt,
+                  }),
+                );
+              },
+              embedder: memoryComposition.projection.embedder,
+              ...(memoryComposition.projection.queryInstruction
+                ? { queryInstruction: memoryComposition.projection.queryInstruction }
+                : {}),
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+              now: () => clock.now(),
+            })
+          : undefined;
+      const embedWithin = <T>(
+        request: RuntimeRequest,
+        slot: string,
+        operation: () => Promise<T>,
+        dataClassification: RuntimeRequest["dataClassification"] = "private",
+      ) =>
+        memory.embedWithin(
+          {
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            runId: request.runId,
+            executionLease: request.executionLease,
+            deadlineAt:
+              request.executionDeadlineAt ??
+              new Date(
+                Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+              ).toISOString(),
+            dataClassification,
+            slot,
+          },
+          operation,
+        );
+      runMemoryEpisodes = memoryEpisodes;
+      runEmbedWithin = embedWithin;
       runs = createProductionRunComposition({
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }
@@ -1147,11 +1220,26 @@ export async function runAgentService(
               memoryCapture: {
                 product: durableMemory,
                 approvals: repository.sensitiveMemoryApprovals(),
-                generate: (request, prompt, gate) => {
+                ...(memoryEpisodes
+                  ? {
+                      episodes: {
+                        service: memoryEpisodes,
+                        embedWithin: (request, slot, operation) =>
+                          embedWithin(request, slot, operation),
+                        onFailure: (error) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-episode.failed",
+                            code: stableErrorCode(error),
+                          }),
+                      },
+                    }
+                  : {}),
+                generate: (request, prompt, gate, purpose = "memory-capture") => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
-                    invocationId: `memory-capture:${request.runId}`,
+                    invocationId: `${purpose}:${request.runId}`,
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     requestTimeoutMs: 45000,

@@ -473,7 +473,8 @@ export class SqliteDurableOperations {
       operation.startsWith("memory.") ||
       operation.startsWith("memoryJob.") ||
       operation.startsWith("memoryApproval.") ||
-      operation.startsWith("memoryIndex.")
+      operation.startsWith("memoryIndex.") ||
+      operation.startsWith("memoryEpisode.")
     ) {
       return this.memory.execute(operation, payload);
     }

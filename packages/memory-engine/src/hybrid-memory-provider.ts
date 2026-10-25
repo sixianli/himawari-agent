@@ -53,6 +53,14 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     return this.#options.embedder;
   }
 
+  get queryInstruction(): string | undefined {
+    return this.#options.queryInstruction;
+  }
+
+  get timeZone(): string | undefined {
+    return this.#options.timeZone;
+  }
+
   get embeddableClassifications(): readonly DataClassification[] {
     return this.#options.embeddableClassifications;
   }

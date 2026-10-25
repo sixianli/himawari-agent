@@ -54,6 +54,20 @@ export const governanceMessages = [
         sourceThreadId: "thread-01",
         sourceRefs: ["payload-01"],
         updatedAt: "2026-09-11T00:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
+      },
+    ],
+    profile: [
+      {
+        kind: "preference",
+        lines: [
+          {
+            memoryId: "memory-01",
+            text: "主人最喜欢的颜色是蓝色",
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+        ],
       },
     ],
     pending: [

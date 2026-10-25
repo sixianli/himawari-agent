@@ -1,0 +1,275 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createAgentId, createOwnerId, createThreadId } from "@himawari-agent/domain";
+import {
+  type Embedder,
+  indexTerms,
+  MemoryEpisodeService,
+  parseTimeScope,
+} from "@himawari-agent/memory-engine";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { afterEach, describe, expect, it } from "vitest";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+const OWNER_ID = createOwnerId("owner-memory-episodes");
+const AGENT_ID = createAgentId("agent-memory-episodes");
+const THREAD_ID = createThreadId("thread-memory-episodes");
+const SENSITIVE_THREAD_ID = createThreadId("thread-memory-episodes-sensitive");
+const DIMENSIONS = 16;
+const MESSAGES = [
+  [
+    THREAD_ID,
+    1,
+    "owner",
+    "private",
+    "2026-10-23T03:00:00.000Z",
+    "今晚和老周在新宿吃烤肉，聊了他换工作的事",
+  ],
+  [THREAD_ID, 2, "agent", "private", "2026-10-23T03:00:05.000Z", "好的，祝你们吃得开心。"],
+  [THREAD_ID, 3, "owner", "private", "2026-10-25T02:00:00.000Z", "帮我查一下明天的天气"],
+  [SENSITIVE_THREAD_ID, 1, "owner", "sensitive", "2026-10-22T03:00:00.000Z", "我的血压最近有点高"],
+] as const;
+
+class TermEmbedder implements Embedder {
+  readonly model = "fixture-term-embedding";
+  readonly dimensions = DIMENSIONS;
+  fail = false;
+
+  async embed(text: string): Promise<Float32Array> {
+    if (this.fail) throw new Error("fixture embedding outage");
+    const vector = new Float32Array(DIMENSIONS);
+    for (const term of indexTerms(text)) {
+      let hash = 0;
+      for (const character of term) hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
+      vector[hash % DIMENSIONS] = (vector[hash % DIMENSIONS] ?? 0) + 1;
+    }
+    const norm = Math.hypot(...vector) || 1;
+    return vector.map((value) => value / norm);
+  }
+}
+
+describe.each(["worker", "direct"] as const)("memory episodes through %s", (execution) => {
+  useSqliteContractExecution(execution);
+  const directories: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  async function fixture(now: { value: string }) {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-episodes-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    applyMigrations(database, await loadBundledMigrations());
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    for (const thread of [THREAD_ID, SENSITIVE_THREAD_ID])
+      database
+        .prepare(
+          `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+          VALUES (?, ?, ?, 1, 'open', ?, ?)`,
+        )
+        .run(thread, OWNER_ID, AGENT_ID, "2026-10-22T00:00:00.000Z", "2026-10-22T00:00:00.000Z");
+    const insertPayload = database.prepare(
+      `INSERT INTO payloads (
+        ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+        encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+      ) VALUES (?, ?, ?, ?, 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+        'active', '2026-10-22T00:00:00.000Z', 'text/plain')`,
+    );
+    const texts = new Map<string, string>();
+    for (const [thread, sequence, role, classification, committedAt, text] of MESSAGES) {
+      const ref = `payload-${thread}-${sequence}`;
+      texts.set(ref, text);
+      insertPayload.run(ref, OWNER_ID, AGENT_ID, classification, `sha256:${ref}`);
+      database
+        .prepare(
+          `INSERT INTO thread_messages (
+            id, owner_id, agent_id, thread_id, revision, sequence, role, content_ref,
+            classification, committed_at
+          ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          `message-${thread}-${sequence}`,
+          OWNER_ID,
+          AGENT_ID,
+          thread,
+          sequence,
+          role,
+          ref,
+          classification,
+          committedAt,
+        );
+    }
+    database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => now.value,
+    });
+    const embedder = new TermEmbedder();
+    const prompts: string[] = [];
+    const service = new MemoryEpisodeService({
+      store: repository.memoryEpisodes(),
+      threads: repository.threadRepository(),
+      readText: async ({ ref }) => texts.get(ref),
+      storeText: async (input) => {
+        const directory = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+        try {
+          directory
+            .prepare(
+              `INSERT OR IGNORE INTO payloads (
+                ref, owner_id, agent_id, classification, storage_kind, ciphertext, content_digest,
+                encryption_algorithm, key_ref, lifecycle_state, created_at, content_type
+              ) VALUES (?, ?, ?, ?, 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+                'active', ?, 'text/plain')`,
+            )
+            .run(
+              input.ref,
+              input.ownerId,
+              input.agentId,
+              input.dataClassification,
+              `sha256:${input.ref}`,
+              input.createdAt,
+            );
+        } finally {
+          directory.close();
+        }
+        texts.set(input.ref, input.text);
+      },
+      embedder,
+      timeZone: "Asia/Tokyo",
+      now: () => now.value,
+    });
+    const summarize = (prompt: string) => {
+      prompts.push(prompt);
+      return Promise.resolve("主人晚上和老周在新宿吃烤肉，聊到老周换工作的事。");
+    };
+    return { repository, service, embedder, prompts, summarize };
+  }
+
+  it("summarizes closed days once, skips the live day and keeps sensitive talk out of the prompt", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      const due = await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+      expect(
+        due.map(({ threadId, day, firstSequence, lastSequence }) => [
+          threadId,
+          day,
+          firstSequence,
+          lastSequence,
+        ]),
+      ).toEqual([
+        [SENSITIVE_THREAD_ID, "2026-10-22", 1, 1],
+        [THREAD_ID, "2026-10-23", 1, 2],
+      ]);
+      expect(due[0]?.lines).toEqual([]);
+      for (const segment of due) await resource.service.summarize(segment, resource.summarize);
+      expect(resource.prompts).toHaveLength(1);
+      expect(resource.prompts[0]).toContain("新宿吃烤肉");
+      expect(resource.prompts[0]).not.toContain("血压");
+      expect(
+        await resource.service.dueSegments({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 5 }),
+      ).toEqual([]);
+      now.value = "2026-10-25T05:00:00.000Z";
+      expect(
+        (
+          await resource.service.dueSegments({ ownerId: OWNER_ID, agentId: AGENT_ID, limit: 5 })
+        ).map(({ firstSequence, day }) => [day, firstSequence]),
+      ).toEqual([["2026-10-25", 3]]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("finds an episode by meaning and words inside the asked window only", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      for (const segment of await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      }))
+        await resource.service.summarize(segment, resource.summarize);
+      const ask = (query: string) =>
+        resource.service.search({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          query,
+          scope: parseTimeScope(query, now.value, "Asia/Tokyo"),
+          allowedClassifications: ["public", "private"],
+          limit: 3,
+        });
+      const found = await ask("前天晚上我和谁吃烤肉了？");
+      expect(found.map(({ episode }) => episode.day)).toEqual(["2026-10-23"]);
+      expect(found[0]?.text).toContain("老周");
+      expect(await ask("上个月我和谁吃烤肉了？")).toEqual([]);
+      expect((await ask("我血压怎么样")).map(({ text }) => text).join("")).not.toContain("血压");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+
+  it("stores a summary without a vector when embedding fails and backfills it later", async () => {
+    const now = { value: "2026-10-25T02:30:00.000Z" };
+    const resource = await fixture(now);
+    try {
+      resource.embedder.fail = true;
+      const [, segment] = await resource.service.dueSegments({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        limit: 5,
+      });
+      if (!segment) throw new Error("segment");
+      await resource.service.summarize(segment, resource.summarize);
+      resource.embedder.fail = false;
+      expect(
+        await resource.service.backfillEmbeddings({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          limit: 5,
+        }),
+      ).toBe(1);
+      expect(
+        await resource.service.backfillEmbeddings({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          limit: 5,
+        }),
+      ).toBe(0);
+      await resource.service.recordCompaction({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId: THREAD_ID,
+        sequence: 3,
+        summary: "主人让 Himawari 查明天东京的天气。",
+        dataClassification: "private",
+      });
+      const found = await resource.service.search({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        query: "天气",
+        scope: null,
+        allowedClassifications: ["private"],
+        limit: 3,
+      });
+      expect(found.map(({ episode }) => episode.source)).toContain("compaction");
+    } finally {
+      await resource.repository.close();
+    }
+  });
+});
