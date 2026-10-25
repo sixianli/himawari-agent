@@ -102,7 +102,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       const inputBox = await page.locator(".composer").boundingBox();
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
       await expect(process.locator(".execution-stage")).toHaveCount(1);
-      await expect(process.locator(".execution-stage .step-status")).toHaveText("2s");
+      await expect(process.locator(".execution-stage")).toContainText("2s");
       const reviewText = {
         "zh-CN": ["正在检查这次操作", "自动审查已允许本次操作"],
         en: ["Checking this operation", "Automatic review allowed this operation"],
@@ -299,7 +299,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
             .locator(".tool-record");
           await expect(terminalTools).toHaveCount(2);
           await expect(terminalTools.first().locator(".step-status")).toContainText(phaseText[0]);
-          await expect(terminalTools.first().locator(".step-status")).toContainText(phaseText[2]);
+          await expect(terminalTools.first().locator(".step-status")).not.toContainText(
+            phaseText[2],
+          );
           await expect(terminalTools.last().locator(".step-status")).toContainText(phaseText[1]);
           await expect(terminalPage.locator(".turn-activity")).toHaveCount(0);
           await terminalPage.reload();

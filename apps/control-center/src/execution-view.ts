@@ -432,3 +432,30 @@ export function executionNextAction(state: ThreadExecutionState): MessageId | un
         : "chat.nextAction.failed";
   return undefined;
 }
+
+/** The Run ended while suspended for approval and nothing was recorded after the suspension. */
+export function endedAwaitingApproval(
+  item: Pick<ThreadExecutionRecord, "itemId" | "kind" | "output"> & { firstSequence: number },
+  records: readonly ThreadExecutionRecord[],
+  run: RunSummary,
+): boolean {
+  if (!isTerminalRun(run) || item.kind !== "tool" || item.output) return false;
+  if (recordedInterval(records, item.itemId, "runtime.tool_execution") !== null) return false;
+  const later = [...new Map(records.map((record) => [record.id, record])).values()]
+    .filter((record) => record.sequence > item.firstSequence)
+    .sort((a, b) => a.sequence - b.sequence);
+  const suspended = later.findLastIndex(
+    (record) => record.kind === "status" && record.phase === "waiting",
+  );
+  return (
+    suspended >= 0 &&
+    later
+      .slice(suspended + 1)
+      .every(
+        (record) =>
+          record.kind === "status" &&
+          record.phase !== "started" &&
+          !["runtime.tool_intent", "runtime.tool_result"].includes(record.name),
+      )
+  );
+}
