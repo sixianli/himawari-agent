@@ -8,6 +8,7 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
+import { gatewayEmbeddingUsage } from "@himawari-agent/memory-engine";
 import {
   MacOsKeychainProviderSecretSource,
   parseProductConfiguration,
@@ -16,14 +17,14 @@ import {
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
+import { inMemoryMemoryIndex } from "@himawari-agent/testing";
 import { expect } from "vitest";
-import { gatewayEmbeddingUsage } from "@himawari-agent/memory-mem0";
+import { createProductionMemoryCompositionFromConfiguration } from "../../../apps/agent-service/src/production-memory-composition.js";
+import { resolveConfiguredModelDescriptorSet } from "../../../apps/agent-service/src/production-model-composition.js";
 import {
   gatewayPayload,
   observeGatewayFetch,
 } from "../../../packages/runtime-pi/src/gateway-observation.js";
-import { createProductionMemoryCompositionFromConfiguration } from "../../../apps/agent-service/src/production-memory-composition.js";
-import { resolveConfiguredModelDescriptorSet } from "../../../apps/agent-service/src/production-model-composition.js";
 import { boundedAiGatewayFetch, record } from "./file-summary-network.js";
 
 const fixture = new URL("./file-summary/", import.meta.url);
@@ -199,12 +200,7 @@ export async function qualifyFileSummary() {
     }
     if (phase !== "generation") {
       if (!content) content = await readFile(new URL("project-brief.txt", fixture), "utf8");
-      const shims = await import("openai/_shims/registry");
-      const nodeRuntime = await import("openai/_shims/node-runtime");
-      if (shims.kind !== undefined) throw new Error("PROBE_MEM0_SHIMS_ALREADY_LOADED");
-      const sdkRuntime = nodeRuntime.getRuntime();
-      embeddingFetch = sdkRuntime.fetch as typeof globalThis.fetch;
-      shims.setShims({ ...sdkRuntime, fetch: guard.fetch }, { auto: false });
+      embeddingFetch = globalThis.fetch;
       memory = await createProductionMemoryCompositionFromConfiguration({
         configuration: {
           ...configuration,
@@ -212,9 +208,11 @@ export async function qualifyFileSummary() {
           memory: { ...configuration.memory, storagePath: `${stateRoot}/data/memory` },
         },
         secretSource: source,
+        index: inMemoryMemoryIndex(),
+        fetch: guard.fetch,
       });
       let embeddingOperation = "upsert";
-      memory.projection.bindEmbeddingBoundary(async (request, send) => {
+      memory.bindEmbeddingBoundary(async (request, send) => {
         const result = await send({ timeoutMs: 120_000, signal });
         if (request.dimensions !== configuration.memory.dimensions)
           throw new Error("PROBE_EMBEDDING_DIMENSIONS_MISMATCH");

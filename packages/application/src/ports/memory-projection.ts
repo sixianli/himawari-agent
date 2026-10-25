@@ -7,6 +7,41 @@ import type {
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
 
+export const MEMORY_CATEGORIES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+
+export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
+
+export interface ProductMemoryAttributes {
+  readonly category: MemoryCategory;
+  readonly importancePermille: number;
+  readonly entities: readonly string[];
+  readonly validFrom: string | null;
+  readonly validTo: string | null;
+  readonly supersededBy: MemoryId | null;
+  readonly evidenceVerified: boolean;
+}
+
+export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
+  category: "other",
+  importancePermille: 500,
+  entities: Object.freeze([]),
+  validFrom: null,
+  validTo: null,
+  supersededBy: null,
+  evidenceVerified: false,
+});
+
 export interface ProductMemoryRecord {
   readonly id: MemoryId;
   readonly ownerId: OwnerId;
@@ -23,6 +58,8 @@ export interface ProductMemoryRecord {
   readonly providerRecordId: string | null;
   readonly lastUsedAt: string | null;
   readonly updatedAt: string;
+  readonly attributes?: ProductMemoryAttributes;
+  readonly useCount?: number;
 }
 
 export interface MemoryProjectionJob {
@@ -110,6 +147,64 @@ export interface MemoryProviderProjectionPort {
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }
 
+export interface MemoryIndexEmbedding {
+  readonly model: string;
+  readonly dimensions: number;
+  readonly vector: Float32Array;
+}
+
+export interface MemoryIndexDocument {
+  readonly memoryId: MemoryId;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly revision: number;
+  readonly terms: readonly string[];
+  readonly embedding: MemoryIndexEmbedding | null;
+  readonly indexedAt: string;
+}
+
+export interface MemoryIndexCandidate {
+  readonly memoryId: MemoryId;
+  readonly revision: number;
+  readonly importancePermille: number;
+  readonly confidencePermille: number;
+  readonly updatedAt: string;
+  readonly lastUsedAt: string | null;
+  readonly signal: number;
+}
+
+export interface MemoryIndexSearchResult {
+  readonly vector: readonly MemoryIndexCandidate[];
+  readonly lexical: readonly MemoryIndexCandidate[];
+  readonly entity: readonly MemoryIndexCandidate[];
+  readonly vectorEngine: "sqlite-vec" | "javascript" | "none";
+}
+
+export interface MemoryIndexStorePort {
+  upsert(document: MemoryIndexDocument): Promise<void>;
+  delete(memoryId: MemoryId): Promise<void>;
+  clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
+  search(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly embedding: MemoryIndexEmbedding | null;
+    readonly terms: readonly string[];
+    readonly queryText: string;
+    readonly limit: number;
+    readonly minimumSimilarity: number;
+    readonly now: string;
+  }): Promise<MemoryIndexSearchResult>;
+  listUnindexed(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly model: string;
+    readonly dimensions: number;
+    readonly embeddableClassifications: readonly DataClassification[];
+    readonly afterMemoryId: MemoryId | null;
+    readonly limit: number;
+  }): Promise<readonly MemoryId[]>;
+}
+
 export interface MemoryContentPort {
   readText(ref: PayloadRef): Promise<string>;
 }
@@ -119,7 +214,7 @@ export type ProductMemoryProposal =
       readonly decision: "create";
       readonly memory: Omit<
         ProductMemoryRecord,
-        "revision" | "status" | "providerRecordId" | "lastUsedAt" | "updatedAt"
+        "revision" | "status" | "providerRecordId" | "lastUsedAt" | "updatedAt" | "useCount"
       >;
     }
   | {
@@ -131,6 +226,7 @@ export type ProductMemoryProposal =
       readonly inference: boolean;
       readonly confidencePermille: number;
       readonly policyVersion: string;
+      readonly attributes?: ProductMemoryAttributes;
     }
   | {
       readonly decision: "unchanged";

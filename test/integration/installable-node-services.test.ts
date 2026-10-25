@@ -74,7 +74,7 @@ function configuration(publicMode = false) {
       },
     ],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 16,
@@ -490,7 +490,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 51,
+      schemaSequence: 52,
       quickCheck: "ok",
     });
 

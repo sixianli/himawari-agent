@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ClockPort,
   ContextFormationService,
@@ -8,6 +9,7 @@ import {
   type ModelInvocationAdmissionPort,
   type ModelInvocationAdmissionResolver,
   ModelInvocationAdmissionService,
+  OwnerProfileService,
   type PayloadProtectorPort,
   type ProductConfiguration,
   RunCoordinator,
@@ -151,7 +153,39 @@ export function createProductionRunComposition(options: ProductionRunComposition
       return found;
     },
   };
+  const profileText = new Map<string, string>();
+  const profile = new OwnerProfileService({
+    state: repository.productMemoryState(),
+    readText: async (record) => {
+      const cached = profileText.get(record.contentRef);
+      if (cached !== undefined) return cached;
+      const payload = await payloads.get(record.contentRef);
+      if (!payload || payload.contentType !== "text/plain") return undefined;
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+        await protector.unprotect({ ownerId, agentId, payload }),
+      );
+      if (profileText.size >= 2000) profileText.clear();
+      profileText.set(record.contentRef, text);
+      return text;
+    },
+    storeText: async (input) => {
+      if (await payloads.get(input.ref)) return;
+      await payloads.put(
+        await protector.protect({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          ref: input.ref,
+          contentType: "text/plain",
+          dataClassification: input.dataClassification,
+          plaintext: new TextEncoder().encode(input.text),
+          createdAt: clock.now(),
+        }),
+      );
+    },
+    digest: (text) => createHash("sha256").update(text).digest("hex"),
+  });
   const context = new ContextFormationService({
+    profile,
     memory,
     trace,
     artifacts,

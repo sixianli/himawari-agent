@@ -17,7 +17,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
-import { gatewayEmbeddingUsage, type Mem0ProjectionAdapter } from "@himawari-agent/memory-mem0";
+import { type EmbeddingBoundary, gatewayEmbeddingUsage } from "@himawari-agent/memory-engine";
 
 export function embeddingAdmissionDescriptor(
   configuration: ProductConfiguration,
@@ -43,11 +43,12 @@ export function embeddingAdmissionDescriptor(
   };
 }
 
-/** Keep Mem0's embedding SDK and vector search while governing every physical request. */
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
-  readonly projection: Pick<Mem0ProjectionAdapter, "bindEmbeddingBoundary">;
+  readonly projection: {
+    bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
+  };
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly admission: ModelInvocationAdmissionResolver;
   readonly budget: ModelBudgetPort;

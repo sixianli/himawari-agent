@@ -305,6 +305,7 @@ async function createDefaultMemoryComposition(
   return createProductionMemoryCompositionFromConfiguration({
     configuration: context.configuration,
     secretSource: sources.provider,
+    index: context.repository.memoryIndex(),
   });
 }
 
@@ -998,6 +999,23 @@ export async function runAgentService(
         now: () => clock.now(),
       });
       durableMemory = memory;
+      const memoryIndex = repository.memoryIndex();
+      const embedder = memoryComposition.projection.embedder;
+      let afterMemoryId: Parameters<typeof memoryIndex.listUnindexed>[0]["afterMemoryId"] = null;
+      while (embedder) {
+        const unindexed = await memoryIndex.listUnindexed({
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+          model: embedder.model,
+          dimensions: embedder.dimensions,
+          embeddableClassifications: memoryComposition.projection.embeddableClassifications,
+          afterMemoryId,
+          limit: 500,
+        });
+        if (unindexed.length === 0) break;
+        await memory.requeueProjection(unindexed);
+        afterMemoryId = unindexed.at(-1) ?? null;
+      }
       memoryWorker = new ProductionMemoryWorker({
         service: memory,
         assertActive: async () => {
@@ -1094,7 +1112,7 @@ export async function runAgentService(
       const memory = createProductionRunMemory({
         configuration,
         memory: durableMemory,
-        projection: memoryComposition.projection,
+        projection: memoryComposition,
         budget: repository.modelBudgetPort(
           configuration.ownerId,
           configuration.agentId,
@@ -1369,7 +1387,9 @@ export async function runAgentService(
       pendingDeliveries: recovery.pendingDeliveryRequestIds.length,
       modelPath: modelComposition === undefined ? "deterministic-descriptor-only" : "pi-production",
       memoryPath:
-        memoryComposition === undefined ? "deterministic-descriptor-only" : "mem0-production",
+        memoryComposition === undefined
+          ? "deterministic-descriptor-only"
+          : "memory-engine-production",
       embeddingDescriptorRef: modelComposition?.descriptors.embedding.ref ?? embedding.ref,
       embeddingProvider:
         memoryComposition?.descriptor.provider ??

@@ -87,16 +87,10 @@ export async function build({
         "--no-global-search-paths",
         "--input-type=module",
         "-e",
-        "await import('mem0ai/oss'); await import('@earendil-works/pi-coding-agent');",
+        "import {createRequire} from 'node:module';const require=createRequire(process.cwd()+'/runtime-manifest.json');const Database=require('better-sqlite3');const {load}=await import('sqlite-vec');const db=new Database(':memory:');load(db);db.prepare('SELECT vec_version()').get();db.close();await import('@earendil-works/pi-coding-agent');",
       ],
       runtimeRoot,
-      {
-        ...process.env,
-        NODE_PATH: "",
-        NODE_OPTIONS: "",
-        MEM0_TELEMETRY: "false",
-        MEM0_TELEMETRY_SAMPLE_RATE: "0",
-      },
+      { ...process.env, NODE_PATH: "", NODE_OPTIONS: "" },
     );
     checks.push("packaged-provider-imports");
     await collectArtifactFiles(payload, { normalizeModes: true });

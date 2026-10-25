@@ -306,7 +306,7 @@ describe("production memory capture", () => {
   it("queues a sensitive Memory with its topic and commits it once the Owner approves", async () => {
     const context = await setup(
       "我对青霉素过敏，最近在吃降压药。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人对青霉素过敏","classification":"sensitive","topic":"health","confidence":950},{"kind":"durable_fact","decision":"create","text":"主人在吃降压药","classification":"sensitive","topic":"health","confidence":950}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人对青霉素过敏","classification":"sensitive","topic":"health","confidence":950,"quote":"我对青霉素过敏，最近在吃降压药"},{"kind":"durable_fact","decision":"create","text":"主人在吃降压药","classification":"sensitive","topic":"health","confidence":950,"quote":"我对青霉素过敏，最近在吃降压药"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
@@ -336,7 +336,7 @@ describe("production memory capture", () => {
   it("drops a rejected sensitive Memory", async () => {
     const context = await setup(
       "我月薪三万。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人月薪三万","classification":"sensitive","topic":"finance","confidence":950,"quote":"我月薪三万"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
@@ -358,10 +358,10 @@ describe("production memory capture", () => {
     expect(await overview(context.control)).toMatchObject({ memories: [], pending: [] });
   });
 
-  it("lets the Owner correct and delete a Memory and keeps Mem0 in step", async () => {
+  it("lets the Owner correct and delete a Memory and keeps the memory index in step", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
@@ -389,7 +389,7 @@ describe("production memory capture", () => {
   it("stores an Owner fact as active long-term Memory and projects it", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
-      '```json\n{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"inference":false,"explicit":true},{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人好像喜欢海","classification":"private","confidence":900,"inference":true,"explicit":false}]}\n```',
+      '```json\n{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"inference":false,"explicit":true,"category":"preference","importance":600,"entities":[],"quote":"我最喜欢的颜色是蓝色"},{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人好像喜欢海","classification":"private","confidence":900,"inference":true,"explicit":false,"quote":"我最喜欢的颜色是蓝色"}]}\n```',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
@@ -402,6 +402,15 @@ describe("production memory capture", () => {
       dataClassification: "private",
       sourceThreadId: THREAD_ID,
       confidencePermille: 950,
+      attributes: {
+        category: "preference",
+        importancePermille: 600,
+        entities: [],
+        validFrom: null,
+        validTo: null,
+        supersededBy: null,
+        evidenceVerified: true,
+      },
     });
     expect(context.audits.map(({ outcome }) => outcome)).toEqual([
       "explicitly_approved",
@@ -416,7 +425,7 @@ describe("production memory capture", () => {
   it("captures each Run once and offers existing memories for updates", async () => {
     const context = await setup(
       "我改主意了，现在最喜欢绿色。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是绿色","classification":"private","confidence":900}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是绿色","classification":"private","confidence":900,"quote":"我改主意了，现在最喜欢绿色"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.start(context.request);
@@ -425,6 +434,23 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(1);
+  });
+
+  it("drops a memory whose quote is not in the Owner's message", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人住在杭州","classification":"private","confidence":950,"quote":"我住在杭州西湖边上"},{"kind":"durable_fact","decision":"create","text":"主人有一只猫","classification":"private","confidence":950}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    expect(context.audits.map(({ outcome }) => outcome)).toEqual([
+      "evidence_unverified",
+      "evidence_unverified",
+    ]);
+    expect(
+      await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
+    ).toHaveLength(0);
   });
 
   it("reports an invalid model response without writing Memory", async () => {
@@ -440,7 +466,7 @@ describe("production memory capture", () => {
   it("updates a recalled memory using the previous answer as context", async () => {
     const context = await setup(
       "我最喜欢的颜色是蓝色。",
-      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950}]}',
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"quote":"我最喜欢的颜色是蓝色"}]}',
     );
     await context.capture.start(context.request);
     await context.capture.stop();
@@ -459,6 +485,7 @@ describe("production memory capture", () => {
             text: "主人最喜欢的颜色是绿色",
             classification: "private",
             confidence: 950,
+            quote: "绿色",
           },
         ],
       }),

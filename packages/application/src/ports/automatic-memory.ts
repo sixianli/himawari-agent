@@ -7,7 +7,11 @@ import type {
   ThreadId,
 } from "@himawari-agent/domain";
 import type { DataClassification, PayloadRef } from "./common.js";
-import type { ProductMemoryProposal, ProductMemoryRecord } from "./memory-projection.js";
+import type {
+  ProductMemoryAttributes,
+  ProductMemoryProposal,
+  ProductMemoryRecord,
+} from "./memory-projection.js";
 
 export type ExtractedMemoryKind =
   | "durable_fact"
@@ -26,6 +30,7 @@ export interface ExtractedMemoryCandidate {
   readonly inference: boolean;
   readonly sourceRefs: readonly string[];
   readonly sensitiveTopic?: SensitiveMemoryTopic;
+  readonly attributes?: ProductMemoryAttributes;
 }
 
 export interface IncrementalMemoryExtractionPort {
@@ -131,6 +136,7 @@ export interface MemoryExtractionAuditRecord {
     | "candidate_secret_excluded"
     | "restricted_excluded"
     | "extraction_failed"
+    | "evidence_unverified"
     | "transient_ignored"
     | "confidence_below_threshold"
     | "approval_requested"

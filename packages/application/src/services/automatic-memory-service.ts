@@ -342,6 +342,7 @@ export class AutomaticMemoryService {
           inference: candidate.inference,
           confidencePermille: candidate.confidencePermille,
           policyVersion: input.policyVersion,
+          ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
         },
       };
     } else {
@@ -360,6 +361,7 @@ export class AutomaticMemoryService {
         inference: candidate.inference,
         confidencePermille: candidate.confidencePermille,
         policyVersion: input.policyVersion,
+        ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
       };
     }
     return (await this.options.product.applyProposal(proposal, input.generationId)).id;

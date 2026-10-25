@@ -55,7 +55,12 @@ export interface ProductContextSystemPolicyRef {
   readonly kind: "policy" | "answer-locale";
 }
 
-export type ProductContextBlockKind = "thread-summary" | "memory" | "capability-summary";
+export type ProductContextBlockKind =
+  | "thread-summary"
+  | "owner-rules"
+  | "owner-profile"
+  | "memory"
+  | "capability-summary";
 
 export interface ProductContextBlock {
   readonly kind: ProductContextBlockKind;

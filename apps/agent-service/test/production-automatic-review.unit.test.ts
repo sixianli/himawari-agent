@@ -199,7 +199,7 @@ function configuration(configured: boolean): ProductConfiguration {
         cost: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
       },
     ],
-    memory: { adapter: "mem0-oss", version: "1", storagePath: "/unused", dimensions: 16 },
+    memory: { adapter: "himawari-sqlite", version: "1", storagePath: "/unused", dimensions: 16 },
     repositoryAllowlistRefs: [],
     secretReferences: [],
     budgets: {

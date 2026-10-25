@@ -1,0 +1,151 @@
+import {
+  ApplicationPortError,
+  type DataClassification,
+  type MemoryIndexStorePort,
+  type MemoryProviderHit,
+  type MemoryProviderProjectionPort,
+  PORT_ERROR_CODES,
+  type ProductMemoryRecord,
+} from "@himawari-agent/application";
+import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import type { Embedder } from "./embedding.js";
+import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
+import { indexTerms, queryTerms } from "./segmentation.js";
+
+export const MEMORY_INDEX_RECORD_PREFIX = "memory-index:" as const;
+const LEXICAL_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
+const CANDIDATES_PER_SIGNAL = 50;
+
+export interface HybridMemoryProviderOptions {
+  readonly index: MemoryIndexStorePort;
+  readonly embedder: Embedder | null;
+  readonly embeddableClassifications: readonly DataClassification[];
+  readonly now: () => string;
+  readonly minimumSimilarity?: number;
+  readonly weights?: FusionWeights;
+  readonly onVectorFailure?: (error: unknown) => void;
+}
+
+export function memoryIndexRecordId(memoryId: MemoryId): string {
+  return `${MEMORY_INDEX_RECORD_PREFIX}${memoryId}`;
+}
+
+function memoryIdFromRecord(providerRecordId: string): MemoryId | null {
+  return providerRecordId.startsWith(MEMORY_INDEX_RECORD_PREFIX)
+    ? (providerRecordId.slice(MEMORY_INDEX_RECORD_PREFIX.length) as MemoryId)
+    : null;
+}
+
+export class HybridMemoryProvider implements MemoryProviderProjectionPort {
+  readonly #options: HybridMemoryProviderOptions;
+  readonly #embeddable: ReadonlySet<DataClassification>;
+
+  constructor(options: HybridMemoryProviderOptions) {
+    this.#options = options;
+    this.#embeddable = new Set(options.embeddableClassifications);
+  }
+
+  get embedder(): Embedder | null {
+    return this.#options.embedder;
+  }
+
+  get embeddableClassifications(): readonly DataClassification[] {
+    return this.#options.embeddableClassifications;
+  }
+
+  async upsert(input: {
+    readonly memory: ProductMemoryRecord;
+    readonly content: string;
+  }): Promise<string> {
+    if (input.content.trim().length === 0)
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_CONTENT_EMPTY");
+    const { memory } = input;
+    const terms = LEXICAL_CLASSIFICATIONS.has(memory.dataClassification)
+      ? indexTerms([input.content, ...(memory.attributes?.entities ?? [])].join("\n"))
+      : [];
+    const base = {
+      memoryId: memory.id,
+      ownerId: memory.ownerId,
+      agentId: memory.agentId,
+      revision: memory.revision,
+      terms,
+    };
+    const embedder = this.#options.embedder;
+    let embedding = null;
+    if (embedder && this.#embeddable.has(memory.dataClassification)) {
+      try {
+        embedding = {
+          model: embedder.model,
+          dimensions: embedder.dimensions,
+          vector: await embedder.embed(input.content),
+        };
+      } catch (error) {
+        await this.#options.index.upsert({
+          ...base,
+          embedding: null,
+          indexedAt: this.#options.now(),
+        });
+        throw error;
+      }
+    }
+    await this.#options.index.upsert({ ...base, embedding, indexedAt: this.#options.now() });
+    return memoryIndexRecordId(memory.id);
+  }
+
+  async delete(providerRecordId: string): Promise<void> {
+    const memoryId = memoryIdFromRecord(providerRecordId);
+    if (memoryId) await this.#options.index.delete(memoryId);
+  }
+
+  async search(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly query: string;
+    readonly limit: number;
+  }): Promise<readonly MemoryProviderHit[]> {
+    if (input.query.trim().length === 0)
+      throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
+    if (!Number.isSafeInteger(input.limit) || input.limit < 0 || input.limit > 1000)
+      throw new RangeError("limit must be an integer between 0 and 1000");
+    if (input.limit === 0) return [];
+    const embedder = this.#options.embedder;
+    let embedding = null;
+    if (embedder) {
+      try {
+        embedding = {
+          model: embedder.model,
+          dimensions: embedder.dimensions,
+          vector: await embedder.embed(input.query),
+        };
+      } catch (error) {
+        this.#options.onVectorFailure?.(error);
+      }
+    }
+    const now = this.#options.now();
+    const result = await this.#options.index.search({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      embedding,
+      terms: queryTerms(input.query),
+      queryText: input.query,
+      limit: Math.min(200, Math.max(CANDIDATES_PER_SIGNAL, input.limit)),
+      minimumSimilarity: this.#options.minimumSimilarity ?? 0,
+      now,
+    });
+    return fuseCandidates(result, {
+      now,
+      limit: input.limit,
+      weights: this.#options.weights ?? DEFAULT_FUSION_WEIGHTS,
+    }).map(({ memoryId, score }) =>
+      Object.freeze({
+        providerRecordId: memoryIndexRecordId(memoryId),
+        productMemoryId: memoryId,
+        score,
+      }),
+    );
+  }
+
+  clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void> {
+    return this.#options.index.clearScope(ownerId, agentId);
+  }
+}

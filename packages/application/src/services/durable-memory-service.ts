@@ -138,6 +138,7 @@ export class DurableMemoryService {
           inference: proposal.inference,
           confidencePermille: proposal.confidencePermille,
           policyVersion: proposal.policyVersion,
+          ...(proposal.attributes ? { attributes: proposal.attributes } : {}),
         },
         updatedAt,
       ),
@@ -272,6 +273,19 @@ export class DurableMemoryService {
       if (batch.length === 0) return completed;
       if (batch.some(({ status }) => status !== "completed")) return completed;
     }
+  }
+
+  async requeueProjection(memoryIds: readonly MemoryId[]): Promise<number> {
+    let requeued = 0;
+    for (const memoryId of memoryIds) {
+      const memory = await this.options.state.read(memoryId);
+      if (!memory || memory.status !== "active") continue;
+      const generationId = (await this.options.jobs.listByMemory(memoryId)).at(-1)?.generationId;
+      if (!generationId) continue;
+      await this.proposeProjection(memory, "upsert", generationId, true);
+      requeued += 1;
+    }
+    return requeued;
   }
 
   private async deactivate(

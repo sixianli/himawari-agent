@@ -434,6 +434,13 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0051_srt_task_environment_release.sql",
   },
+  {
+    sequence: 52,
+    name: "memory_engine",
+    changeSet: "memory-engine",
+    phase: "expand" as const,
+    file: "0052_memory_engine.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

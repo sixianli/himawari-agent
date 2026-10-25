@@ -1,43 +1,37 @@
 import type {
   ConfiguredEmbeddingModelDescriptor,
-  ConfiguredCompletionsGenerationModelDescriptor,
+  MemoryIndexStorePort,
   ProductConfiguration,
 } from "@himawari-agent/application";
 import {
-  createAiGatewayMem0ProjectionAdapter,
-  type Mem0Loader,
-  type Mem0ProjectionAdapter,
-} from "@himawari-agent/memory-mem0";
+  AI_GATEWAY_BASE_URL,
+  type EmbeddingBoundary,
+  GatewayEmbedder,
+  HybridMemoryProvider,
+} from "@himawari-agent/memory-engine";
 import {
   assertProductionSecretSource,
   type HostProviderSecretSource,
 } from "@himawari-agent/platform-node";
 import {
-  resolveConfiguredSecretRequirement,
-  resolveConfiguredModelDescriptorSet,
   type ProductionEmbeddingModelDescriptor,
+  resolveConfiguredModelDescriptorSet,
+  resolveConfiguredSecretRequirement,
 } from "./production-model-composition.js";
 
 export interface ProductionMemoryCompositionOptions {
   readonly configuration: ProductConfiguration;
   readonly secretSource: HostProviderSecretSource;
-  readonly load?: Mem0Loader;
+  readonly index: MemoryIndexStorePort;
+  readonly fetch?: typeof fetch;
+  readonly onVectorFailure?: (error: unknown) => void;
 }
 
 export interface ProductionMemoryComposition {
   readonly descriptor: ProductionEmbeddingModelDescriptor;
-  readonly projection: Mem0ProjectionAdapter;
+  readonly projection: HybridMemoryProvider;
+  bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
   close(): Promise<void>;
-}
-
-function primaryDescriptor(
-  configuration: ProductConfiguration,
-): ConfiguredCompletionsGenerationModelDescriptor {
-  const descriptor = configuration.modelDescriptors.find(({ role }) => role === "primary");
-  if (!descriptor || descriptor.role !== "primary") {
-    throw new Error("MEM0_PRIMARY_DESCRIPTOR_MISSING");
-  }
-  return descriptor;
 }
 
 function embeddingDescriptor(
@@ -45,49 +39,54 @@ function embeddingDescriptor(
 ): ConfiguredEmbeddingModelDescriptor {
   const descriptor = configuration.modelDescriptors.find(({ role }) => role === "embedding");
   if (!descriptor || descriptor.role !== "embedding") {
-    throw new Error("MEM0_EMBEDDING_DESCRIPTOR_MISSING");
+    throw new Error("MEMORY_EMBEDDING_DESCRIPTOR_MISSING");
   }
   return descriptor;
 }
 
-/**
- * Build the production Mem0 projection from the same strict model identity
- * that the Pi composition consumes for generation. Mem0 owns the
- * OpenAI-compatible embedding implementation; this adapter only translates
- * product descriptors and resolves the already-declared host secret.
- */
 export async function createProductionMemoryCompositionFromConfiguration(
   options: ProductionMemoryCompositionOptions,
 ): Promise<ProductionMemoryComposition> {
   assertProductionSecretSource(options.secretSource);
-  const primary = primaryDescriptor(options.configuration);
   const embedding = embeddingDescriptor(options.configuration);
-  const primarySecret = resolveConfiguredSecretRequirement(
-    options.configuration,
-    primary.secretRef,
-  );
-  const embeddingSecret = resolveConfiguredSecretRequirement(
-    options.configuration,
-    embedding.secretRef,
-  );
-  if (!primarySecret || !embeddingSecret) {
-    throw new Error("MEM0_PROVIDER_SECRET_REQUIRED");
-  }
-
-  const descriptor = resolveConfiguredModelDescriptorSet(options.configuration).embedding;
-  const projection = await createAiGatewayMem0ProjectionAdapter({
-    stateRoot: options.configuration.stateRoot,
-    memory: options.configuration.memory,
-    llm: primary,
-    embedding,
-    llmSecret: primarySecret,
-    embeddingSecret,
-    secretSource: options.secretSource,
-    ...(options.load === undefined ? {} : { load: options.load }),
+  if (embedding.provider !== "vercel-ai-gateway")
+    throw new TypeError("MEMORY_EMBEDDING_PROVIDER_UNSUPPORTED");
+  if (!embedding.capabilities.includes("embedding"))
+    throw new TypeError("MEMORY_EMBEDDING_CAPABILITY_REQUIRED");
+  if (embedding.dimensions !== options.configuration.memory.dimensions)
+    throw new TypeError("MEMORY_EMBEDDING_DIMENSIONS_MISMATCH");
+  const secret = resolveConfiguredSecretRequirement(options.configuration, embedding.secretRef);
+  if (!secret) throw new Error("MEMORY_PROVIDER_SECRET_REQUIRED");
+  if (!options.secretSource.productionSuitable)
+    throw new TypeError("MEMORY_UNSAFE_PROVIDER_SECRET_SOURCE");
+  let apiKey: Promise<string> | undefined;
+  const embedder = new GatewayEmbedder({
+    baseUrl: AI_GATEWAY_BASE_URL,
+    model: embedding.model,
+    dimensions: embedding.dimensions,
+    apiKey: () => {
+      apiKey ??= options.secretSource
+        .resolve(secret.secretRef, secret.secretVersion)
+        .then((value) => {
+          if (value.trim().length === 0) throw new Error("MEMORY_PROVIDER_SECRET_EMPTY");
+          return value;
+        });
+      return apiKey;
+    },
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
+  const projection = new HybridMemoryProvider({
+    index: options.index,
+    embedder,
+    embeddableClassifications: embedding.allowedDataClassifications,
+    now: () => new Date().toISOString(),
+    ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
   });
   return Object.freeze({
-    descriptor,
+    descriptor: resolveConfiguredModelDescriptorSet(options.configuration).embedding,
     projection,
-    close: () => projection.close(),
+    bindEmbeddingBoundary: (boundary: EmbeddingBoundary, timeoutMs: number) =>
+      embedder.bindBoundary(boundary, timeoutMs),
+    close: async () => {},
   });
 }

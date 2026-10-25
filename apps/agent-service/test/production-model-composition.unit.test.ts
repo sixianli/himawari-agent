@@ -1,38 +1,41 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
 
-import { ModelInvocationAdmissionService } from "@himawari-agent/application";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type {
   MemorySearchRequest,
   ModelInvocationPermit,
   RunExecutionSource,
 } from "@himawari-agent/application";
-
-import type { Mem0EmbeddingBoundary, Mem0EmbeddingResponse } from "@himawari-agent/memory-mem0";
-import {
-  embeddingAdmissionDescriptor,
-  createProductionRunMemory,
-} from "../src/production-run-memory.js";
-import {
-  configuredWorkspaceRoot,
-  createProductionRunPolicy,
-  runCapabilityNotice,
-} from "../src/production-run-policy.js";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { ModelInvocationAdmissionService } from "@himawari-agent/application";
+import type { EmbeddingBoundary, EmbeddingResponse } from "@himawari-agent/memory-engine";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import type {
   ConfiguredPiModelDescriptor,
   PiModelRuntime,
   PiModelRuntimeFactory,
 } from "@himawari-agent/runtime-pi";
-import { createReferenceAdapterSet, type ReferenceAdapterSet } from "@himawari-agent/testing";
+import {
+  createReferenceAdapterSet,
+  inMemoryMemoryIndex,
+  type ReferenceAdapterSet,
+} from "@himawari-agent/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import {
   createProductionModelComposition,
   resolveConfiguredModelDescriptorSet,
 } from "../src/production-model-composition.js";
+import {
+  createProductionRunMemory,
+  embeddingAdmissionDescriptor,
+} from "../src/production-run-memory.js";
+import {
+  configuredWorkspaceRoot,
+  createProductionRunPolicy,
+  runCapabilityNotice,
+} from "../src/production-run-policy.js";
 
 let temporaryDirectory: string;
 
@@ -171,7 +174,7 @@ function selectedEmbeddingConfiguration(stateRoot: string) {
         },
       ],
       memory: {
-        adapter: "mem0-oss",
+        adapter: "himawari-sqlite",
         version: "3.3.1",
         storagePath: `${stateRoot}/data/memory`,
         dimensions: 4096,
@@ -308,7 +311,7 @@ describe("production model composition", () => {
           },
         ],
         memory: {
-          adapter: "mem0-oss",
+          adapter: "himawari-sqlite",
           version: "3.3.1",
           storagePath: `${stateRoot}/data/memory`,
           dimensions: 4096,
@@ -442,7 +445,7 @@ describe("production model composition", () => {
     );
   });
 
-  it("[R2-L5] composes the selected 4096-dimensional Qwen embedding through Mem0", async () => {
+  it("[R2-L5] composes the selected 4096-dimensional Qwen embedding through the memory engine", async () => {
     const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
     const resolvedSecrets: string[] = [];
     const composition = await createProductionMemoryCompositionFromConfiguration({
@@ -455,16 +458,22 @@ describe("production model composition", () => {
           return "fixture-provider-value";
         },
       },
-      load: async () => ({
-        VectorStoreFactory: { create: () => ({ initialize: async () => undefined }) },
-        Memory: class {
-          readonly configuration: Readonly<Record<string, unknown>>;
-
-          constructor(configuration: Readonly<Record<string, unknown>>) {
-            this.configuration = configuration;
-          }
-        } as never,
-      }),
+      index: inMemoryMemoryIndex(),
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            model: "alibaba/qwen3-embedding-8b",
+            data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 0.5) }],
+            usage: { prompt_tokens: 3, total_tokens: 3 },
+          }),
+        ),
+    });
+    composition.bindEmbeddingBoundary((_request, send) => send(), 1000);
+    await composition.projection.search({
+      ownerId: configuration.ownerId,
+      agentId: configuration.agentId,
+      query: "蓝色",
+      limit: 3,
     });
 
     expect(composition.descriptor).toMatchObject({
@@ -619,7 +628,7 @@ describe("Run capability notice", () => {
 
 it("propagates Run cancellation and remaining deadline to embedding and retains uncertain spend", async () => {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
-  let boundary: Mem0EmbeddingBoundary | undefined;
+  let boundary: EmbeddingBoundary | undefined;
   const controller = new AbortController();
   const now = "2026-09-06T00:00:00.000Z";
   const permit: ModelInvocationPermit = {
@@ -684,7 +693,7 @@ it("propagates Run cancellation and remaining deadline to embedding and retains 
 
 it("retries only unstarted projection reservations and never repeats an uncertain provider request", async () => {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
-  let boundary: Mem0EmbeddingBoundary | undefined;
+  let boundary: EmbeddingBoundary | undefined;
   const reserve = vi
     .fn()
     .mockResolvedValueOnce({ replayed: true, allocation: { status: "released" } })
@@ -898,7 +907,7 @@ it.each([false, true])(
 
 function embeddingAccountingFixture(mode: "query" | "projection", response: unknown) {
   const configuration = selectedEmbeddingConfiguration(temporaryDirectory);
-  let boundary: Mem0EmbeddingBoundary | undefined;
+  let boundary: EmbeddingBoundary | undefined;
   const controller = new AbortController();
   const time = { now: "2026-10-06T00:00:00.000Z" };
   const permit = {
@@ -915,7 +924,7 @@ function embeddingAccountingFixture(mode: "query" | "projection", response: unkn
     settle: vi.fn(async () => undefined),
     markUnknown: vi.fn(async () => undefined),
   };
-  const send = vi.fn(async () => response as Mem0EmbeddingResponse);
+  const send = vi.fn(async () => response as EmbeddingResponse);
   const request: MemorySearchRequest = {
     ownerId: configuration.ownerId,
     agentId: configuration.agentId,

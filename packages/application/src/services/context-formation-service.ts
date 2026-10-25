@@ -29,6 +29,7 @@ import type { PayloadProtectorPort, PayloadStorePort } from "../ports/observabil
 import type { RunPayloadArtifactPort } from "../ports/run-payload-artifacts.js";
 import type { ClockPort, IdGeneratorPort } from "../ports/system.js";
 import type { ThreadContextSnapshot, ThreadRepositoryPort } from "../ports/threads.js";
+import type { OwnerProfile, OwnerProfilePort } from "./owner-profile-service.js";
 import { isRuntimeHistoryReference } from "./runtime-history-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
 
@@ -120,6 +121,7 @@ export interface ContextFormationServiceDependencies {
   readonly ids: IdGeneratorPort;
   readonly threads?: Pick<ThreadRepositoryPort, "readContextSnapshot">;
   readonly threadSummaries?: Pick<ThreadDistillationStatePort, "latestSummary">;
+  readonly profile?: OwnerProfilePort;
 }
 
 export interface ContextFormationPort {
@@ -222,6 +224,19 @@ export class ContextFormationService implements ContextFormationPort {
       },
     });
 
+    const profile: OwnerProfile = this.dependencies.profile
+      ? await this.dependencies.profile.compose({
+          ownerId: request.ownerId,
+          agentId: request.agentId,
+          maxClassification:
+            CLASSIFICATION_RANK[request.maxMemoryClassification] <
+            CLASSIFICATION_RANK[request.dataClassification]
+              ? request.maxMemoryClassification
+              : request.dataClassification,
+          now: this.dependencies.clock.now(),
+        })
+      : { blocks: [], memoryIds: [] };
+    const profileMemoryIds = new Set<string>(profile.memoryIds);
     const candidates = [
       ...(await this.dependencies.memory.search({
         runId: request.runId,
@@ -256,6 +271,7 @@ export class ContextFormationService implements ContextFormationPort {
 
     const allowed = candidates.filter(
       (candidate) =>
+        !profileMemoryIds.has(candidate.id) &&
         CLASSIFICATION_RANK[candidate.dataClassification] <=
           CLASSIFICATION_RANK[request.maxMemoryClassification] &&
         CLASSIFICATION_RANK[candidate.dataClassification] <=
@@ -304,6 +320,7 @@ export class ContextFormationService implements ContextFormationPort {
       request.trigger.payloadRef,
       ...request.policies.map(({ payloadRef }) => payloadRef),
       ...(request.answerLocalePolicy ? [request.answerLocalePolicy.payloadRef] : []),
+      ...profile.blocks.map(({ payloadRef }) => payloadRef),
       ...selected.map(({ contentRef }) => contentRef),
       ...request.capabilities.map(({ summaryRef }) => summaryRef),
     ]);
@@ -314,6 +331,7 @@ export class ContextFormationService implements ContextFormationPort {
       runtimeHistory: snapshot?.runtimeHistory,
       allowedSummary,
       selected,
+      profile,
     });
     const contextPayloadRef = this.dependencies.ids.next("payload");
     const protectedContext = await this.dependencies.protector.protect({
@@ -375,6 +393,12 @@ export class ContextFormationService implements ContextFormationPort {
         trigger: request.trigger,
         policies: request.policies,
         answerLocalePolicy: request.answerLocalePolicy ?? null,
+        ownerProfile: profile.blocks.map(({ kind, ref, payloadRef, memoryIds }) => ({
+          kind,
+          ref,
+          payloadRef,
+          memoryIds,
+        })),
         selectedMemories: selected.map(({ id, contentRef, sourceRef }) => ({
           id,
           contentRef,
@@ -517,6 +541,7 @@ export class ContextFormationService implements ContextFormationPort {
     readonly runtimeHistory?: ProductContextEnvelopeV1["runtimeHistory"];
     readonly allowedSummary: ThreadSummaryRecord | undefined;
     readonly selected: readonly SelectedMemory[];
+    readonly profile?: OwnerProfile;
   }): ProductContextEnvelopeV1 {
     const { request, selectedHistory, allowedSummary, selected } = input;
     const history = selectedHistory.map((message) => ({
@@ -544,6 +569,12 @@ export class ContextFormationService implements ContextFormationPort {
         : []),
     ];
     const contextBlocks: ProductContextBlock[] = [
+      ...(input.profile?.blocks ?? []).map(({ kind, ref, payloadRef, dataClassification }) => ({
+        kind,
+        ref,
+        payloadRef,
+        dataClassification,
+      })),
       ...(allowedSummary
         ? [
             {
@@ -716,6 +747,8 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
       return (
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
+          item["kind"] === "owner-rules" ||
+          item["kind"] === "owner-profile" ||
           item["kind"] === "capability-summary") &&
         isNonEmptyText(item["ref"]) &&
         isNonEmptyText(item["payloadRef"]) &&

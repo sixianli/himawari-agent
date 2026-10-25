@@ -76,7 +76,7 @@ import type {
 import type Database from "better-sqlite3";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
-import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
+import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
@@ -345,6 +345,7 @@ export class SqliteDurableOperations {
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    vectorEngine: SqliteVectorEngine = "javascript",
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
     this.automaticReviews = new SqliteAutomaticActionReview(
@@ -390,7 +391,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       this.modelBudget,
     );
-    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
+    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom, vectorEngine);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
       readonly ownerId: string;
@@ -470,7 +471,8 @@ export class SqliteDurableOperations {
     if (
       operation.startsWith("memory.") ||
       operation.startsWith("memoryJob.") ||
-      operation.startsWith("memoryApproval.")
+      operation.startsWith("memoryApproval.") ||
+      operation.startsWith("memoryIndex.")
     ) {
       return this.memory.execute(operation, payload);
     }

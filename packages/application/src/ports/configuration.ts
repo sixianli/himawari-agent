@@ -68,7 +68,7 @@ export type ConfiguredModelDescriptor =
   | ConfiguredEmbeddingModelDescriptor;
 
 export interface ConfiguredMemoryDescriptor {
-  readonly adapter: "mem0-oss";
+  readonly adapter: "himawari-sqlite";
   readonly version: string;
   readonly storagePath: string;
   readonly dimensions: number;

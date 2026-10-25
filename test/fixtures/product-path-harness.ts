@@ -940,7 +940,7 @@ export async function installProductPath(options: {
       },
     ],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 4096,
