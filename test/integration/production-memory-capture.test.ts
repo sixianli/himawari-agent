@@ -328,8 +328,16 @@ describe("production memory capture", () => {
       "主人每天早上吃一次降压药",
     ]);
     expect(
-      after.memories.every(({ dataClassification }) => dataClassification === "sensitive"),
-    ).toBe(true);
+      after.memories.map(({ dataClassification, topic }) => [dataClassification, topic]),
+    ).toEqual([
+      ["private", "health"],
+      ["private", "health"],
+    ]);
+    await context.memory.runProjectionBatch(5);
+    expect(context.provider.upserts.map(({ content }) => content).sort()).toEqual([
+      "主人对青霉素过敏",
+      "主人每天早上吃一次降压药",
+    ]);
     expect(context.audits.map(({ outcome }) => outcome)).toContain("approval_committed");
   });
 

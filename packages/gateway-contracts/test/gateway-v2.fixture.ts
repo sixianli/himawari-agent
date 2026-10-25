@@ -49,6 +49,7 @@ export const governanceMessages = [
         revision: 1,
         text: "主人最喜欢的颜色是蓝色",
         dataClassification: "private",
+        topic: null,
         inference: false,
         sourceThreadId: "thread-01",
         sourceRefs: ["payload-01"],

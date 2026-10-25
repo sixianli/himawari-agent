@@ -227,6 +227,7 @@ const memoryOverviewSnapshotSchema = object({
         revision: integer(1),
         text: boundedString(2000),
         dataClassification: classificationSchema,
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         inference: booleanValue,
         sourceThreadId: nullable(machineString),
         sourceRefs: array(boundedString(512)),

@@ -8,7 +8,7 @@ import {
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
 import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
-import type { Embedder } from "./embedding.js";
+import { type Embedder, instructedQuery } from "./embedding.js";
 import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
 import { indexTerms, queryTerms } from "./segmentation.js";
 
@@ -24,6 +24,7 @@ export interface HybridMemoryProviderOptions {
   readonly minimumSimilarity?: number;
   readonly weights?: FusionWeights;
   readonly onVectorFailure?: (error: unknown) => void;
+  readonly queryInstruction?: string;
 }
 
 export function memoryIndexRecordId(memoryId: MemoryId): string {
@@ -115,7 +116,11 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
         embedding = {
           model: embedder.model,
           dimensions: embedder.dimensions,
-          vector: await embedder.embed(input.query),
+          vector: await embedder.embed(
+            this.#options.queryInstruction === undefined
+              ? input.query
+              : instructedQuery(this.#options.queryInstruction, input.query),
+          ),
         };
       } catch (error) {
         this.#options.onVectorFailure?.(error);

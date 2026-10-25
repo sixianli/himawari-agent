@@ -5,6 +5,7 @@ ALTER TABLE memory_records ADD COLUMN valid_to TEXT;
 ALTER TABLE memory_records ADD COLUMN superseded_by TEXT REFERENCES memory_records(id) ON DELETE SET NULL;
 ALTER TABLE memory_records ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0);
 ALTER TABLE memory_records ADD COLUMN evidence_verified INTEGER NOT NULL DEFAULT 0 CHECK (evidence_verified IN (0, 1));
+ALTER TABLE memory_records ADD COLUMN sensitive_topic TEXT CHECK (sensitive_topic IS NULL OR sensitive_topic IN ('health', 'finance', 'beliefs', 'intimacy', 'third_party', 'location', 'legal', 'other'));
 
 CREATE TABLE memory_entities (
   memory_id TEXT NOT NULL REFERENCES memory_records(id) ON DELETE CASCADE,

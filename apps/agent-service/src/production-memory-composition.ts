@@ -8,6 +8,8 @@ import {
   type EmbeddingBoundary,
   GatewayEmbedder,
   HybridMemoryProvider,
+  QWEN3_EMBEDDING_8B_MODEL,
+  QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
 import {
   assertProductionSecretSource,
@@ -79,6 +81,9 @@ export async function createProductionMemoryCompositionFromConfiguration(
     index: options.index,
     embedder,
     embeddableClassifications: embedding.allowedDataClassifications,
+    ...(embedding.model === QWEN3_EMBEDDING_8B_MODEL
+      ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION }
+      : {}),
     now: () => new Date().toISOString(),
     ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
   });

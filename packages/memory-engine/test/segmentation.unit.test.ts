@@ -22,7 +22,7 @@ describe("Chinese memory segmentation", () => {
 
   it("drops stopwords and the owner placeholder from queries", () => {
     expect(queryTerms("我女儿今年多大了？")).toEqual(["女儿", "今年", "多大"]);
-    expect(queryTerms("主人是谁")).toEqual(["谁"]);
+    expect(queryTerms("主人是谁")).toEqual([]);
   });
 
   it("lowercases Latin words and normalizes full-width characters", () => {

@@ -113,6 +113,7 @@ export class ProductionMemoryControl {
         revision: memory.revision,
         text,
         dataClassification: memory.dataClassification,
+        topic: memory.attributes?.sensitiveTopic ?? null,
         inference: memory.inference,
         sourceThreadId: memory.sourceThreadId,
         sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= 512),

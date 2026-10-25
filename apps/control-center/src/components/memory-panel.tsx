@@ -160,7 +160,9 @@ function MemoryRow({
         <>
           <p className="memory-text">{item.text}</p>
           <small className="setting-description">
-            {item.dataClassification === "sensitive" ? `${message("memory.sensitive")} · ` : ""}
+            {item.dataClassification === "sensitive" || item.topic
+              ? `${message("memory.sensitive")} · `
+              : ""}
             {item.inference ? `${message("memory.inferred")} · ` : ""}
             {new Date(item.updatedAt).toLocaleDateString()}
           </small>

@@ -41,6 +41,7 @@ interface MemoryRow {
   readonly supersededBy: string | null;
   readonly useCount: number;
   readonly evidenceVerified: number;
+  readonly sensitiveTopic: string | null;
 }
 
 interface IndexCandidateRow {
@@ -67,6 +68,16 @@ const CATEGORIES = new Set<string>([
   "event",
   "other",
 ] satisfies MemoryCategory[]);
+const SENSITIVE_TOPICS = new Set<string>([
+  "health",
+  "finance",
+  "beliefs",
+  "intimacy",
+  "third_party",
+  "location",
+  "legal",
+  "other",
+]);
 const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
   category: "other",
   importancePermille: 500,
@@ -159,7 +170,7 @@ const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revis
   provider_record_id AS providerRecordId, last_used_at AS lastUsedAt, updated_at AS updatedAt,
   category, importance_permille AS importancePermille, valid_from AS validFrom,
   valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
-  evidence_verified AS evidenceVerified
+  evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic
   FROM memory_records`;
 
 const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
@@ -360,6 +371,13 @@ export class SqliteMemoryOperations {
         validTo: row.validTo,
         supersededBy: row.supersededBy as MemoryId | null,
         evidenceVerified: row.evidenceVerified === 1,
+        ...(row.sensitiveTopic
+          ? {
+              sensitiveTopic: row.sensitiveTopic as NonNullable<
+                ProductMemoryAttributes["sensitiveTopic"]
+              >,
+            }
+          : {}),
       }),
       useCount: row.useCount,
     });
@@ -474,6 +492,7 @@ export class SqliteMemoryOperations {
       !validMemoryTime(attributes.validFrom) ||
       !validMemoryTime(attributes.validTo) ||
       attributes.supersededBy === memory.id ||
+      !(attributes.sensitiveTopic == null || SENSITIVE_TOPICS.has(attributes.sensitiveTopic)) ||
       attributes.entities.length > MAXIMUM_ENTITIES ||
       attributes.entities.some((name) => {
         const normalized = normalizedEntity(name);
@@ -558,8 +577,8 @@ export class SqliteMemoryOperations {
               id, owner_id, agent_id, revision, status, content_ref, classification,
               source_thread_id, inference, confidence_permille, policy_version,
               provider_record_id, last_used_at, updated_at, category, importance_permille,
-              valid_from, valid_to, superseded_by, evidence_verified
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -582,6 +601,7 @@ export class SqliteMemoryOperations {
             attributes.validTo,
             attributes.supersededBy,
             attributes.evidenceVerified ? 1 : 0,
+            attributes.sensitiveTopic ?? null,
           );
       } else {
         if (
@@ -600,7 +620,7 @@ export class SqliteMemoryOperations {
               classification = ?, source_thread_id = ?, inference = ?, confidence_permille = ?,
               policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?,
               category = ?, importance_permille = ?, valid_from = ?, valid_to = ?,
-              superseded_by = ?, evidence_verified = ?
+              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?
             WHERE id = ?`,
           )
           .run(
@@ -621,6 +641,7 @@ export class SqliteMemoryOperations {
             attributes.validTo,
             attributes.supersededBy,
             attributes.evidenceVerified ? 1 : 0,
+            attributes.sensitiveTopic ?? null,
             input.memory.id,
           );
       }

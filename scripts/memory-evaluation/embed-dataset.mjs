@@ -11,6 +11,8 @@ const MODEL = "alibaba/qwen3-embedding-8b";
 const KEYCHAIN_SERVICE = "himawari-provider.vercel-ai-gateway-api-key.v1";
 const KEYCHAIN_ACCOUNT = "himawari-agent";
 const CONCURRENCY = 4;
+const QUERY_INSTRUCTION =
+  "Given a question from the owner of a personal assistant, retrieve the remembered facts about the owner that help answer it";
 
 async function apiKey() {
   const fromEnvironment = process.env["AI_GATEWAY_API_KEY"];
@@ -80,6 +82,7 @@ async function main() {
     ...new Set([
       ...dataset.memories.map(({ text }) => text),
       ...dataset.questions.map(({ query }) => query),
+      ...dataset.questions.map(({ query }) => `Instruct: ${QUERY_INSTRUCTION}\nQuery:${query}`),
     ]),
   ];
   const key = await apiKey();

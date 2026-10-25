@@ -5,6 +5,7 @@ import type {
   OwnerId,
   ThreadId,
 } from "@himawari-agent/domain";
+import type { SensitiveMemoryTopic } from "./automatic-memory.js";
 import type { DataClassification, PayloadRef } from "./common.js";
 
 export const MEMORY_CATEGORIES = [
@@ -30,6 +31,7 @@ export interface ProductMemoryAttributes {
   readonly validTo: string | null;
   readonly supersededBy: MemoryId | null;
   readonly evidenceVerified: boolean;
+  readonly sensitiveTopic?: SensitiveMemoryTopic | null;
 }
 
 export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({

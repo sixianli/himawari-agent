@@ -10,7 +10,13 @@ import {
   createOwnerId,
   createThreadId,
 } from "@himawari-agent/domain";
-import { type Embedder, HybridMemoryProvider, indexTerms } from "@himawari-agent/memory-engine";
+import {
+  type Embedder,
+  HybridMemoryProvider,
+  indexTerms,
+  instructedQuery,
+  QWEN3_MEMORY_QUERY_INSTRUCTION,
+} from "@himawari-agent/memory-engine";
 import {
   applyMigrations,
   loadBundledMigrations,
@@ -250,11 +256,17 @@ describe("memory retrieval evaluation", () => {
         dataset.memories.map((memory) => [`payload-${memory.id}`, memory.text]),
       );
       let clock = dataset.now;
+      const instructed =
+        vectors !== null &&
+        dataset.questions.every(({ query }) =>
+          vectors.has(instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query)),
+        );
       const provider = new HybridMemoryProvider({
         index: repository.memoryIndex(),
         embedder,
         embeddableClassifications: ["public", "private"],
         now: () => dataset.now,
+        ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
       });
       const service = new DurableMemoryService({
         state: repository.productMemoryState(),
@@ -340,6 +352,7 @@ describe("memory retrieval evaluation", () => {
       }
       return {
         mode: vectors ? "qwen3-embedding-8b" : "term-hash",
+        queryInstruction: instructed,
         dimensions,
         engine: score(engine),
         baseline: score(baseline),

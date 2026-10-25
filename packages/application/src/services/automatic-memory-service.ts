@@ -1,6 +1,7 @@
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import {
   ApplicationPortError,
+  DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type ApprovedMemoryContentPort,
   type ExtractedMemoryCandidate,
@@ -242,7 +243,19 @@ export class AutomaticMemoryService {
         interactive: resolved.deliveryState === "deliverable",
         explicitRememberCandidateOrdinal: null,
       },
-      { ...candidate, text },
+      {
+        ...candidate,
+        text,
+        dataClassification:
+          candidate.dataClassification === "sensitive" &&
+          (request.sourceClassification === "public" || request.sourceClassification === "private")
+            ? "private"
+            : candidate.dataClassification,
+        attributes: {
+          ...(candidate.attributes ?? DEFAULT_MEMORY_ATTRIBUTES),
+          sensitiveTopic: candidate.sensitiveTopic ?? "other",
+        },
+      },
       request.candidateOrdinal,
       request.productMemoryId,
     );
