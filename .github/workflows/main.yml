@@ -5,6 +5,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
 concurrency:
   group: main-confirmation-${{ github.run_id }}
   cancel-in-progress: false

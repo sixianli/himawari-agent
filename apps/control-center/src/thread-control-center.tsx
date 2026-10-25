@@ -140,7 +140,6 @@ export function useThreadControlCenter(
   const [preview, setPreview] = useState<ContentPreviewValue | null>(null);
   const [pendingThreadIds, setPendingThreadIds] = useState<readonly string[]>([]);
   const [environment, setEnvironment] = useState<ThreadExecutionEnvironment>();
-  const [environmentFailed, setEnvironmentFailed] = useState(false);
   const listPages = useRef(1);
   const [collection, setCollection] = useState<ThreadCollectionSnapshot>();
   const [searchResults, setSearchResults] = useState<ThreadCollectionSnapshot>();
@@ -275,10 +274,7 @@ export function useThreadControlCenter(
       if (snapshot.type !== "thread.execution_environment_snapshot")
         throw new Error("THREAD_EXECUTION_ENVIRONMENT_INVALID");
       setEnvironment(snapshot.payload.environment);
-      setEnvironmentFailed(false);
-    } catch {
-      setEnvironmentFailed(true);
-    }
+    } catch {}
   }, [client, configuration]);
 
   const scheduleRefresh = useCallback((threadId?: string | null, delay = 80) => {
@@ -1232,7 +1228,6 @@ export function useThreadControlCenter(
             configuration?.executionEnvironmentAvailable ? (
               <ExecutionEnvironmentLine
                 environment={environment}
-                failed={environmentFailed}
                 threadTitle={(threadId) => {
                   const thread = [...threadItems, ...(searchResults?.payload.threads ?? [])].find(
                     (item) => item.threadId === threadId,

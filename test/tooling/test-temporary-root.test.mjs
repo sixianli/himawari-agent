@@ -23,8 +23,8 @@ afterEach(() => {
 });
 
 describe("shared test temporary root", () => {
-  it("preserves the short /tmp default instead of the operating system temporary directory", () => {
-    expect(testTemporaryRoot({})).toBe("/tmp");
+  it("defaults to the canonical /tmp instead of the operating system temporary directory", () => {
+    expect(testTemporaryRoot({})).toBe(realpathSync("/tmp"));
   });
 
   it.each(["", "relative/path"])("rejects a non-absolute root: %s", (value) => {

@@ -1,5 +1,7 @@
 # Test and Production Hosts
 
+While `DELIVERY_MODE` says `fast`, [Delivery Mode](delivery-mode.md#fast-mode) replaces the operation-packet, acceptance-exception, and per-deployment authorization rules below; the host boundaries stay.
+
 The rules are in [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md), which keeps every host rule of [ADR 0056](../../docs/adr/0056-cloud-server-also-test-host.md); the step-by-step procedure (connection, directory layout, scratch root, run mode, monitoring, cleanup) is the [test host operations Runbook](../../docs/runbooks/test-host-operations-runbook.md). The earlier moves between hosts and the one-time acceptance exceptions for the first three production deployments (G51, G65, G75) are recorded in the superseded ADRs 0041-0047 and 0049-0052 and are history, not standing permissions. The hard boundaries:
 
 - Never run Himawari tests on the user's MacBook: no builds, `npm run check`, `npm test`, any Vitest project, or product-path qualification. Use the MacBook only for editing, review, and commits; stop any such process found running there.
