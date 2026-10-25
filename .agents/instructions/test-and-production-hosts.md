@@ -1,6 +1,6 @@
 # Test and Production Hosts
 
-While `DELIVERY_MODE` says `fast`, [Delivery Mode](delivery-mode.md#fast-mode) replaces the operation-packet, acceptance-exception, and per-deployment authorization rules below; the host boundaries stay.
+While `DELIVERY_MODE` says `fast`, [Delivery Mode](delivery-mode.md#fast-mode) replaces the operation-packet, acceptance-exception, and per-deployment authorization rules below, and its production access rule ([ADR 0074](../../docs/adr/0074-claude-runs-production-deployments.md)) lifts the ban on root and production accounts, `/opt/himawari`, `/etc/himawari`, `/var/lib/himawari` and the production service for deployment, rollback and diagnosis only; test runs still never use them, and the other host boundaries stay.
 
 The rules are in [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md), which keeps every host rule of [ADR 0056](../../docs/adr/0056-cloud-server-also-test-host.md); the step-by-step procedure (connection, directory layout, scratch root, run mode, monitoring, cleanup) is the [test host operations Runbook](../../docs/runbooks/test-host-operations-runbook.md). The earlier moves between hosts and the one-time acceptance exceptions for the first three production deployments (G51, G65, G75) are recorded in the superseded ADRs 0041-0047 and 0049-0052 and are history, not standing permissions. The hard boundaries:
 

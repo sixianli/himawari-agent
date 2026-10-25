@@ -254,6 +254,18 @@ async function installation() {
     cli("capabilities", "upgrade-plan", "--config", deployment.configPath);
   const upgrade = async (deployment: { configPath: string }, planDigest: string) =>
     cli("capabilities", "upgrade", "--config", deployment.configPath, "--confirm", planDigest);
+  const reviewedPlan = async (deployment: { configPath: string }) =>
+    cli("capabilities", "upgrade-plan", "--config", deployment.configPath, "--reviewed");
+  const reviewedUpgrade = async (deployment: { configPath: string }, planDigest: string) =>
+    cli(
+      "capabilities",
+      "upgrade",
+      "--config",
+      deployment.configPath,
+      "--confirm",
+      planDigest,
+      "--reviewed",
+    );
   const readback = () => {
     const database = openQualifiedDatabase(path.join(stateRoot, "data", "product.sqlite"));
     try {
@@ -281,7 +293,17 @@ async function installation() {
       database.close();
     }
   };
-  return { root, ownerId: source.ownerId, snapshot, register, plan, upgrade, readback };
+  return {
+    root,
+    ownerId: source.ownerId,
+    snapshot,
+    register,
+    plan,
+    upgrade,
+    reviewedPlan,
+    reviewedUpgrade,
+    readback,
+  };
 }
 
 const base = () => Date.now() - 120_000;
@@ -639,5 +661,222 @@ describe("[R2-L11] owner-confirmed capability runner upgrade", () => {
       { action: "owner.capability.upgrade", targetRef: "pi", outcome: "completed" },
       { action: "owner.capability.upgrade", targetRef: "exa", outcome: "completed" },
     ]);
+  });
+});
+
+const PROVIDER_HOST = "api.provider.test:443";
+
+function withProvider(manifest: Json): void {
+  const scopes = manifest["scopes"] as Json & { network: string[]; secrets: string[] };
+  const runtime = manifest["runtime"] as Json & { network: string[] };
+  Object.assign(manifest, {
+    scopes: {
+      ...scopes,
+      network: [...scopes.network, PROVIDER_HOST],
+      secrets: [...scopes.secrets, "provider-web"],
+    },
+    runtime: { ...runtime, network: [...runtime.network, PROVIDER_HOST] },
+  });
+}
+
+function seventh(start: number, exa: Partial<Capability> = {}): Capability[] {
+  return [
+    ...fifth(start, {}, { runtimeRoot: RELEASE_5, change: withProvider, ...exa }),
+    {
+      ref: "fetch",
+      runtimeRoot: RELEASE_5,
+      runner: "4".repeat(64),
+      checkedAt: at(60_000, start),
+      change: withProvider,
+    },
+  ];
+}
+
+describe("owner-reviewed capability plan with registrations and scope changes", () => {
+  it("registers a new capability and widens an existing one in one confirmed plan", async () => {
+    const start = base();
+    const state = await installation();
+    await state.register(await state.snapshot(fourth(start)));
+    const before = state.readback();
+    const candidate = await state.snapshot(seventh(start));
+
+    expect(await state.plan(candidate)).toMatchObject({
+      code: 1,
+      error: "ADMIN_CAPABILITY_NOT_REGISTERED",
+    });
+    const planned = await state.reviewedPlan(candidate);
+    expect(planned.output).toEqual({
+      snapshotDigest: candidate.sha256,
+      planDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      upgrades: [
+        expect.objectContaining({ ref: "pi", toRuntimeRoot: RELEASE_5 }),
+        {
+          ref: "exa",
+          version: "1.0.0",
+          fromIntegrity: `sha256:${EXA}`,
+          toIntegrity: `sha256:${EXA}`,
+          fromRuntimeRoot: RELEASE_4,
+          toRuntimeRoot: RELEASE_5,
+          scopeChanges: {
+            expansions: [
+              `network:${PROVIDER_HOST}`,
+              `runtime-network:${PROVIDER_HOST}`,
+              "secret:provider-web",
+            ],
+            contractions: [],
+          },
+        },
+      ],
+      registrations: [
+        {
+          ref: "fetch",
+          version: "1.0.0",
+          integrity: `sha256:${"4".repeat(64)}`,
+          operations: ["execute"],
+          network: [PROVIDER_HOST],
+          secrets: ["provider-web"],
+        },
+      ],
+      current: [],
+    });
+    expect(state.readback()).toEqual(before);
+
+    const planDigest = String(planned.output?.["planDigest"]);
+    expect(await state.upgrade(candidate, planDigest)).toMatchObject({
+      code: 1,
+      error: "ADMIN_CAPABILITY_NOT_REGISTERED",
+    });
+    expect(await state.reviewedUpgrade(candidate, planDigest)).toEqual({
+      code: 0,
+      output: {
+        snapshotDigest: candidate.sha256,
+        planDigest,
+        upgraded: ["pi", "exa"],
+        registered: ["fetch"],
+        current: [],
+      },
+      error: undefined,
+    });
+    const after = state.readback();
+    expect(
+      after.capabilities.map(({ id, revision, status }) => ({ id, revision, status })),
+    ).toEqual([
+      { id: "exa", revision: 2, status: "active" },
+      { id: "fetch", revision: 1, status: "active" },
+      { id: "pi", revision: 2, status: "active" },
+    ]);
+    const entries = candidate.entries as Json[];
+    expect(after.capabilities[0]?.record["declaration"]).toEqual(entries[1]?.["manifest"]);
+    expect(after.capabilities[1]?.record["declaration"]).toEqual(entries[2]?.["manifest"]);
+    expect(after.audit).toEqual([
+      ...before.audit,
+      { action: "owner.capability.upgrade", targetRef: "pi", outcome: "completed" },
+      { action: "owner.capability.scope_upgrade", targetRef: "exa", outcome: "completed" },
+      { action: "owner.capability.register", targetRef: "fetch", outcome: "completed" },
+    ]);
+
+    const replanned = await state.reviewedPlan(candidate);
+    expect(replanned.output).toMatchObject({
+      upgrades: [],
+      registrations: [],
+      current: ["pi", "exa", "fetch"],
+    });
+    expect(await state.register(candidate)).toMatchObject({
+      code: 0,
+      output: { created: [], existing: 3 },
+    });
+  });
+
+  it("keeps the default plan unchanged and binds the confirmation to the reviewed mode", async () => {
+    const start = base();
+    const state = await installation();
+    await state.register(await state.snapshot(fourth(start)));
+    const runnerOnly = await state.snapshot(fifth(start));
+    const plain = await state.plan(runnerOnly);
+    const reviewed = await state.reviewedPlan(runnerOnly);
+    expect(reviewed.output).toEqual({
+      ...plain.output,
+      planDigest: expect.any(String),
+      registrations: [],
+    });
+    expect(reviewed.output?.["planDigest"]).not.toBe(plain.output?.["planDigest"]);
+    const before = state.readback();
+    expect(await state.upgrade(runnerOnly, String(reviewed.output?.["planDigest"]))).toMatchObject({
+      code: 1,
+      error: "ADMIN_CAPABILITY_PLAN_MISMATCH",
+    });
+    expect(
+      await state.reviewedUpgrade(runnerOnly, String(plain.output?.["planDigest"])),
+    ).toMatchObject({ code: 1, error: "ADMIN_CAPABILITY_PLAN_MISMATCH" });
+    expect(state.readback()).toEqual(before);
+
+    const widened = await state.snapshot(fifth(start, {}, { change: withProvider }));
+    expect(await state.plan(widened)).toMatchObject({
+      code: 1,
+      error: "ADMIN_CAPABILITY_REVIEW_REQUIRED",
+    });
+    for (const args of [
+      ["capabilities", "upgrade-plan", "--reviewed", "--config", widened.configPath],
+      ["capabilities", "upgrade-plan", "--config", widened.configPath, "--reviewed", "--reviewed"],
+      [
+        "capabilities",
+        "register",
+        "--config",
+        widened.configPath,
+        "--confirm",
+        widened.sha256,
+        "--reviewed",
+      ],
+    ]) {
+      expect(await cli(...args)).toMatchObject({
+        code: 1,
+        error: "ADMIN_CAPABILITIES_INPUT_INVALID",
+      });
+    }
+    expect(state.readback()).toEqual(before);
+  });
+
+  it.each<[string, (manifest: Json) => void]>([
+    ["display name", (manifest) => Object.assign(manifest, { displayName: "Renamed" })],
+    ["operations", (manifest) => Object.assign(manifest, { operations: ["execute", "write"] })],
+    [
+      "data scope",
+      (manifest) =>
+        Object.assign(manifest, {
+          scopes: {
+            ...(manifest["scopes"] as Json),
+            dataClassifications: ["private", "sensitive"],
+          },
+        }),
+    ],
+    [
+      "environment",
+      (manifest) =>
+        Object.assign(manifest, {
+          runtime: { ...(manifest["runtime"] as Json), environmentKeys: ["HOME"] },
+        }),
+    ],
+  ])("still requires a new review in reviewed mode when the %s changes", async (_field, change) => {
+    const start = base();
+    const state = await installation();
+    await state.register(await state.snapshot(fourth(start)));
+    const before = state.readback();
+    const candidate = await state.snapshot(
+      fifth(
+        start,
+        {},
+        {
+          change: (manifest) => {
+            withProvider(manifest);
+            change(manifest);
+          },
+        },
+      ),
+    );
+    expect(await state.reviewedPlan(candidate)).toMatchObject({
+      code: 1,
+      error: "ADMIN_CAPABILITY_REVIEW_REQUIRED",
+    });
+    expect(state.readback()).toEqual(before);
   });
 });

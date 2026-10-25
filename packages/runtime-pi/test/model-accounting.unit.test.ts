@@ -28,7 +28,7 @@ const model: Model<Api> = {
   reasoning: false,
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 1024,
+  contextWindow: 65536,
   maxTokens: 128,
 };
 const now = "2026-09-14T00:00:00.000Z";
