@@ -1,6 +1,5 @@
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
-import type { GatewayV2Query, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
@@ -8,42 +7,30 @@ import {
   type ControlCenterSurfaceInventoryEntry,
   isSurfaceInstalled,
 } from "./app/control-center-inventory.js";
-import {
-  type ControlCenterRouteState,
-  routeForSurface,
-  useControlCenterRouter,
-} from "./app/router.js";
+import { routeForSurface, useControlCenterRouter } from "./app/router.js";
 import {
   ControlCenterBrowserStorage,
   type ControlCenterPreferences,
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
-import {
-  ActionButton,
-  AppLink,
-  Banner,
-  RiskIndicator,
-  SemanticList,
-  StatusRegion,
-  Tabs,
-} from "./components/index.js";
+import { ActionButton, Banner } from "./components/index.js";
 import {
   createBrowserSession,
   GatewayClient,
   loadRuntimeConfiguration,
   refreshRuntimeConfiguration,
-  type MutationStatus,
 } from "./gateway-client.js";
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
+import { useMemory } from "./memory.js";
+import { MemorySettings, MemoryTurnNote } from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
   ControlCenterIntlProvider,
   useControlCenterIntl,
 } from "./i18n/runtime.js";
-import { useOperationsControlCenter } from "./operations-control-center.js";
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
@@ -69,51 +56,6 @@ const titleIds: Readonly<Record<SurfaceId, MessageId>> = {
   suggestions: "suggestions.title",
   workers: "workers.title",
 };
-
-function statusMessageId(status: MutationStatus | null): MessageId {
-  switch (status) {
-    case "pending":
-      return "mutation.pending";
-    case "accepted":
-      return "mutation.accepted";
-    case "replayed":
-      return "mutation.replayed";
-    case "rejected":
-      return "mutation.rejected";
-    case "expired":
-      return "mutation.expired";
-    default:
-      return "mutation.none";
-  }
-}
-
-function queryForSurface(
-  surfaceId: SurfaceId,
-  _configuration: RuntimeConfiguration,
-  _route: ControlCenterRouteState,
-): GatewayV2Query | null {
-  switch (surfaceId) {
-    case "threads":
-      return null;
-    case "approvals":
-      return null;
-    case "tasks":
-    case "inbox-digest":
-    case "memory":
-    case "trace":
-    case "sessions-devices":
-    case "health-deployment":
-    case "host-workspaces":
-    case "suggestions":
-    case "reflection":
-    case "workers":
-    case "improvements":
-    case "capabilities-adapters":
-    case "authorizations-grants":
-    case "settings":
-      return null;
-  }
-}
 
 function surfaceInventory(surfaceId: SurfaceId): ControlCenterSurfaceInventoryEntry {
   const surface = CONTROL_CENTER_SURFACE_INVENTORY.find((candidate) => candidate.id === surfaceId);
@@ -199,7 +141,6 @@ function LocalizedControlCenterApp({
   const [signingIn, setSigningIn] = useState(false);
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [client, setClient] = useState<GatewayClient>();
-  const [snapshot, setSnapshot] = useState<GatewayV2Snapshot>();
   const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
   const [threadRefreshSignal, setThreadRefreshSignal] = useState(0);
   const [threadEventSignal, setThreadEventSignal] = useState(0);
@@ -210,15 +151,7 @@ function LocalizedControlCenterApp({
   const [threadConnection, setThreadConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
-  const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [mutationStatus, setMutationStatus] = useState<MutationStatus | null>(null);
-  const [selectedRef, setSelectedRef] = useState(route.objectId ?? "");
-  const [settingsTab, setSettingsTab] = useState("language");
-
-  useEffect(() => {
-    setSelectedRef(route.objectId ?? "");
-  }, [route]);
 
   useEffect(() => {
     void bootstrapRevision;
@@ -285,9 +218,6 @@ function LocalizedControlCenterApp({
   };
 
   const clearPrivateViewState = useCallback(() => {
-    setSnapshot(undefined);
-    setSelectedRef("");
-    setMutationStatus(null);
     setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
     setAuthenticationRequired(true);
     setConfiguration(undefined);
@@ -358,36 +288,20 @@ function LocalizedControlCenterApp({
     };
   }, [configuration, storage, clearPrivateViewState]);
 
-  const refresh = useCallback(async () => {
-    if (!client || !configuration) return;
-    const query = queryForSurface(route.surfaceId, configuration, route);
-    setRequestError(null);
-    setSnapshot(undefined);
-    if (!query) return;
-    setLoading(true);
-    try {
-      setSnapshot(await client.query(query));
-    } catch (error) {
-      const status =
-        error && typeof error === "object" && "status" in error
-          ? (error as { readonly status?: unknown }).status
-          : null;
-      if (status === 401) {
-        clearPrivateViewState();
-      } else {
-        setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [clearPrivateViewState, client, configuration, route]);
-
-  useEffect(() => {
-    void gatewayRefreshSignal;
-    void refresh();
-  }, [gatewayRefreshSignal, refresh]);
-
+  const memory = useMemory({
+    client,
+    configuration,
+    connected: connection !== "offline",
+    refreshSignal: gatewayRefreshSignal + threadRefreshSignal,
+  });
   const threadModel = useThreadControlCenter({
+    ...(memory
+      ? {
+          renderMemory: (ownerRefs: readonly string[]) => (
+            <MemoryTurnNote ownerRefs={ownerRefs} memory={memory} message={message} />
+          ),
+        }
+      : {}),
     active: route.surfaceId === "threads",
     client,
     configuration,
@@ -418,213 +332,21 @@ function LocalizedControlCenterApp({
     storage,
     onUnauthorized: clearPrivateViewState,
   });
-  const operationsSurface = route.surfaceId !== "threads" && !governanceSurface;
-  const operationsModel = useOperationsControlCenter({
-    active: operationsSurface && surfaceInstalled && route.surfaceId !== "health-deployment",
-    client,
-    configuration,
-    connection,
-    message,
-    navigate,
-    refreshSignal: gatewayRefreshSignal,
-    route,
-    storage,
-    onUnauthorized: clearPrivateViewState,
-  });
-
-  const itemRefs =
-    snapshot?.kind === "snapshot" && snapshot.type === "collection.snapshot"
-      ? snapshot.payload.itemRefs
-      : [];
-
-  const selectReference = (reference: string) => {
-    setSelectedRef(reference);
-    navigate({ ...route, objectId: reference, view: "details" });
-  };
-
-  const genericList = (
-    <>
-      <p>{message("objects.count", { count: itemRefs.length })}</p>
-      <SemanticList
-        empty={loading ? message("state.loading") : message("common.noRecords")}
-        getId={(reference) => reference}
-        items={itemRefs}
-        label={message("common.currentRecords")}
-        renderItem={(reference) => (
-          <AppLink
-            current={reference === selectedRef}
-            href={`#${encodeURIComponent(reference)}`}
-            onClick={(event) => {
-              event.preventDefault();
-              selectReference(reference);
-            }}
-          >
-            <code>{reference}</code>
-          </AppLink>
-        )}
-      />
-    </>
-  );
-
-  const genericDetails = (
-    <div className="object-details">
-      <dl>
-        <div>
-          <dt>{message("common.selectedRecord")}</dt>
-          <dd>
-            <code>{selectedRef || "—"}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>{message("common.status")}</dt>
-          <dd>{surface.contractStatus}</dd>
-        </div>
-        <div>
-          <dt>{message("common.source")}</dt>
-          <dd>
-            <code>{surface.sourceSpec}</code>
-          </dd>
-        </div>
-      </dl>
-      {surface.blockers.length > 0 ? (
-        <ul>
-          {surface.blockers.map((blocker) => (
-            <li key={blocker}>
-              <code>{blocker}</code>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-
-  const blockedNotice =
-    surface.integrationPolicy === "allowed" ? null : (
-      <Banner title={message("surface.blocked.title")} tone="warning">
-        <p>{message("surface.blocked.description", { count: surface.blockers.length })}</p>
-        <RiskIndicator label={message("common.blocked")} level="medium" />
-      </Banner>
-    );
-
-  const genericContent = (
-    <>
-      <div className="panel-heading">
-        <p className="eyebrow">{message("common.status")}</p>
-        <ActionButton onClick={() => void refresh()} variant="secondary">
-          {message("common.refresh")}
-        </ActionButton>
-      </div>
-      {match.kind === "not_found" ? (
-        <Banner title={message("state.error")} tone="danger">
-          <code>CONTROL_CENTER_ROUTE_NOT_FOUND:{match.pathname}</code>
-        </Banner>
-      ) : null}
-      {requestError ? (
-        <Banner title={message("error.currentUnavailable")} tone="danger">
-          <code>{requestError}</code>
-        </Banner>
-      ) : null}
-      {connection === "offline" ? (
-        <Banner title={message("state.offline")} tone="warning">
-          <code>CONTROL_CENTER_OFFLINE</code>
-        </Banner>
-      ) : null}
-      {blockedNotice}
-      <StatusRegion className="mutation-status">
-        {message("mutation.label")}: {message(statusMessageId(mutationStatus))}
-      </StatusRegion>
-
-      {route.surfaceId === "tasks" ? (
-        <section aria-labelledby="github-disclosure-title" className="disclosure-preview">
-          <h3 id="github-disclosure-title">{message("tasks.disclosureTitle")}</h3>
-          <p>{message("tasks.disclosureDescription")}</p>
-          <dl className="health-grid">
-            <div>
-              <dt>{message("tasks.primaryProvider")}</dt>
-              <dd>{configuration?.primaryModel?.provider ?? message("common.notConfigured")}</dd>
-            </div>
-            <div>
-              <dt>{message("tasks.primaryModelVersion")}</dt>
-              <dd>
-                {configuration?.primaryModel
-                  ? `${configuration.primaryModel.model} / ${configuration.primaryModel.version}`
-                  : message("common.notConfigured")}
-              </dd>
-            </div>
-            <div>
-              <dt>{message("tasks.repositoryScope")}</dt>
-              <dd>
-                {configuration?.repositoryAllowlistRefs?.join(", ") ||
-                  message("common.notConfigured")}
-              </dd>
-            </div>
-            <div>
-              <dt>{message("tasks.classifications")}</dt>
-              <dd>
-                {configuration?.disclosedDataClassifications?.join(", ") ||
-                  message("common.notConfigured")}
-              </dd>
-            </div>
-          </dl>
-        </section>
-      ) : null}
-
-      {route.surfaceId === "settings" ? (
-        <Tabs
-          activeId={settingsTab}
-          label={message("settings.tabsLabel")}
-          onChange={setSettingsTab}
-          tabs={[
-            {
-              id: "language",
-              label: message("settings.language"),
-              panel: <p>{message("settings.languageHelp")}</p>,
-            },
-            {
-              id: "models",
-              label: message("settings.modelsBudgets"),
-              panel: <p>{message("settings.contractPending")}</p>,
-            },
-            {
-              id: "attention",
-              label: message("settings.attentionDigest"),
-              panel: <p>{message("settings.contractPending")}</p>,
-            },
-            {
-              id: "integrations",
-              label: message("settings.integrations"),
-              panel: <p>{message("settings.contractPending")}</p>,
-            },
-          ]}
-        />
-      ) : null}
-
-      {snapshot?.type === "health.snapshot" ? (
-        <dl className="health-grid">
-          <div>
-            <dt>{message("health.service")}</dt>
-            <dd>{message(snapshot.payload.live ? "health.live" : "health.unavailable")}</dd>
-          </div>
-          <div>
-            <dt>{message("health.admission")}</dt>
-            <dd>{message(snapshot.payload.ready ? "health.ready" : "health.notReady")}</dd>
-          </div>
-          <div>
-            <dt>{message("health.state")}</dt>
-            <dd>{snapshot.payload.status}</dd>
-          </div>
-          <div>
-            <dt>{message("health.host")}</dt>
-            <dd>{snapshot.payload.activeHost}</dd>
-          </div>
-        </dl>
-      ) : null}
-    </>
-  );
 
   return (
     <ControlCenterShell
       settingsData={threadModel.settingsData}
+      settingsMemory={
+        memory ? (
+          <MemorySettings
+            memory={memory}
+            message={message}
+            onOpenThread={(threadId) =>
+              navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
+            }
+          />
+        ) : undefined
+      }
       settingsTools={
         client &&
         configuration?.installedGatewayV2Operations?.includes("search.authorization.set") ? (
@@ -686,10 +408,10 @@ function LocalizedControlCenterApp({
           threadModel.content
         ) : governanceSurface ? (
           governanceModel.content
-        ) : operationsSurface ? (
-          operationsModel.content
         ) : (
-          genericContent
+          <Banner title={message("surface.notInstalled.title")} tone="warning">
+            <p>{message("surface.notInstalled.description")}</p>
+          </Banner>
         )
       }
       details={
@@ -699,19 +421,9 @@ function LocalizedControlCenterApp({
             ? threadModel.details
             : governanceSurface
               ? governanceModel.details
-              : operationsSurface
-                ? operationsModel.details
-                : genericDetails
+              : null
       }
-      list={
-        route.surfaceId === "threads"
-          ? threadModel.list
-          : governanceSurface
-            ? governanceModel.list
-            : operationsSurface
-              ? operationsModel.list
-              : genericList
-      }
+      list={governanceSurface ? governanceModel.list : threadModel.list}
       locale={locale}
       onLocaleChange={onLocaleChange}
       onNavigate={navigate}

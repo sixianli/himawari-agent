@@ -37,12 +37,6 @@ import {
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
 
-/**
- * Embeddings are deliberately not represented as a Pi ModelDescriptor. Pi
- * Mono's published runtime exposes generation models, not an embedding
- * runtime, so this product-owned descriptor is passed to the Memory adapter
- * separately and cannot accidentally enter the generation router.
- */
 export interface ProductionEmbeddingModelDescriptor {
   readonly ref: string;
   readonly provider: string;
@@ -61,10 +55,6 @@ export interface ProductionModelDescriptorSet {
   readonly embedding: ProductionEmbeddingModelDescriptor;
 }
 
-/**
- * A composition descriptor keeps its configured shape so the composition can pick
- * the transport from `api`; the Pi descriptor adds the runtime binding.
- */
 export type ProductionGenerationDescriptor =
   | ConfiguredPiModelDescriptor
   | ProductionTypeSafeDescriptor;
@@ -94,7 +84,6 @@ export interface ProductionModelCompositionOptions {
   readonly maxOutputTokens?: number;
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
-  /** Resolves a gate bound to the current Run lease; omitted means fail closed. */
   readonly admission?: ModelInvocationAdmissionResolver;
 }
 
@@ -105,11 +94,24 @@ export interface ProductionModelComposition {
     prompt: string,
     admission: ModelInvocationAdmissionPort,
   ): Promise<string>;
+  generateText?(
+    request: RuntimeRequest,
+    prompt: string,
+    admission: ModelInvocationAdmissionPort,
+    options: AuxiliaryTextOptions,
+  ): Promise<string>;
   readonly piModels: PiModelBindingPort;
-  /** Pi transport observations remain available for generation qualification. */
   readonly transport: PiModelTransport;
   readonly payloadBoundary: ProtectedPiModelPayloadBoundary;
   close(): Promise<void>;
+}
+
+export interface AuxiliaryTextOptions {
+  readonly invocationId: string;
+  readonly maxOutputTokens: number;
+  readonly reasoningOutputTokens: number;
+  readonly requestTimeoutMs: number;
+  readonly errorPrefix: string;
 }
 
 export interface ProductionModelCompositionFromConfigurationOptions
@@ -120,9 +122,7 @@ export interface ProductionModelCompositionFromConfigurationOptions
 export interface ProductionConfiguredModelComposition {
   readonly descriptors: ProductionModelDescriptorSet;
   readonly composition: ProductionModelComposition;
-  /** Revocable secret handles owned by this composition; cleared on close. */
   readonly handles: SecretPort;
-  /** The same host provider secret source the run model uses. */
   readonly secretSource: HostProviderSecretSource;
 }
 
@@ -200,11 +200,6 @@ function piGenerationDescriptor(
   });
 }
 
-/**
- * A decision model has no Pi runtime binding: it keeps the configured provider,
- * model alias and optional reported version, and is reached by the TypeSafe
- * transport. Its credential requirement is resolved exactly like Pi's.
- */
 function typeSafeGenerationDescriptor(
   configuration: ProductConfiguration,
   descriptor: ConfiguredTypeSafeGenerationModelDescriptor,
@@ -229,10 +224,6 @@ function typeSafeGenerationDescriptor(
   });
 }
 
-/**
- * Resolve the strict product configuration into one canonical generation
- * binding for Pi and one independent embedding identity for Memory.
- */
 export function resolveConfiguredModelDescriptorSet(
   configuration: ProductConfiguration,
 ): ProductionModelDescriptorSet {
@@ -249,8 +240,6 @@ export function resolveConfiguredModelDescriptorSet(
   if (configuration.memory.dimensions !== embedding.dimensions) {
     throw new Error("MODEL_EMBEDDING_DIMENSIONS_MISMATCH");
   }
-  // Only OpenAI-compatible descriptors carry a Pi runtime binding; a decision
-  // endpoint such as TypeSafe is reached by its own transport instead.
   if (primary.api !== "openai-completions") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
@@ -285,12 +274,6 @@ export function createProductionModelCompositionFromConfiguration(
   });
 }
 
-/**
- * One governed model port, several protocols: the Pi transport answers
- * OpenAI-compatible descriptors and the TypeSafe transport answers decision
- * descriptors. Selection is purely declarative from the frozen descriptor, so a
- * request can never change protocol mid-flight.
- */
 function modelTransportFor(
   options: ProductionModelCompositionOptions,
   payloadBoundary: ProtectedPiModelPayloadBoundary,
@@ -394,91 +377,107 @@ export function createProductionModelComposition(
       ) {
         throw new Error("MODEL_DESCRIPTOR_BINDING_MISMATCH");
       }
-      // A decision endpoint reserves on input tokens only; Pi models reserve on
-      // the frozen context window and output ceiling.
       return configured.api === "typesafe-systemone"
         ? TypeSafeJevTransport.estimatedAdmissionCost(configured)
         : admissionCostForConfiguredPiModel(configured);
     },
   });
+  const generateText = async (
+    request: RuntimeRequest,
+    prompt: string,
+    gate: ModelInvocationAdmissionPort,
+    text: AuxiliaryTextOptions,
+  ): Promise<string> => {
+    const descriptor = options.descriptors.find((item) => item.ref === request.modelRef);
+    if (
+      descriptor?.api !== "openai-completions" ||
+      !descriptor.allowedDataClassifications.includes(request.dataClassification)
+    )
+      throw new Error(`${text.errorPrefix}_DISCLOSURE_DENIED`);
+    const invocationId = text.invocationId;
+    const inputRef = await payloadBoundary.writeText({
+      invocationId,
+      sequence: 0,
+      dataClassification: request.dataClassification,
+      content: prompt,
+      occurredAt: options.clock.now(),
+    });
+    const auxiliaryTransport = new PiModelTransport({
+      models: piModels,
+      payloads: payloadBoundary,
+      clock: options.clock,
+      maxOutputTokens: Math.min(
+        descriptor.maxTokens,
+        descriptor.reasoningRequired ? text.reasoningOutputTokens : text.maxOutputTokens,
+      ),
+      requestTimeoutMs: Math.min(
+        options.requestTimeoutMs ?? text.requestTimeoutMs,
+        text.requestTimeoutMs,
+      ),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
+    const auxiliaryModel = new TrustedModelProviderAdapter({
+      ownerId: options.ownerId,
+      agentId: options.agentId,
+      descriptors: [descriptor],
+      handles: options.handles,
+      secretSource: options.secretSource,
+      transport: auxiliaryTransport,
+      clock: options.clock,
+      admission: async () => gate,
+      admissionCost: () => admissionCostForConfiguredPiModel(descriptor),
+    });
+    const handle = descriptor.secretRequirement
+      ? await options.handles.issueHandle({
+          ownerId: options.ownerId,
+          agentId: options.agentId,
+          runId: request.runId,
+          ...descriptor.secretRequirement,
+          scopeRef: invocationId,
+          expiresAt: new Date(
+            Date.parse(options.clock.now()) + text.requestTimeoutMs + 10000,
+          ).toISOString(),
+        })
+      : undefined;
+    let output = "";
+    let completed = false;
+    try {
+      for await (const event of auxiliaryModel.invoke({
+        invocationId,
+        runId: request.runId,
+        modelRef: request.modelRef,
+        inputRef,
+        dataClassification: request.dataClassification,
+        allowedDisclosureRef: request.systemInstructionRef,
+        secretHandleRefs: handle ? [handle.ref] : [],
+        correlationId: request.correlationId,
+      })) {
+        if (event.type === "model.output")
+          output += await payloadBoundary.readText(event.payloadRef);
+        if (event.type === "model.completed") completed = true;
+        if (event.type === "model.failed") throw new Error(event.errorCode);
+      }
+      if (!completed) throw new Error(`${text.errorPrefix}_RESPONSE_INCOMPLETE`);
+      return output;
+    } finally {
+      if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
+    }
+  };
+
   return Object.freeze({
     model,
     piModels,
     transport: transport.pi,
     payloadBoundary,
-    generateTitle: async (
-      request: RuntimeRequest,
-      prompt: string,
-      gate: ModelInvocationAdmissionPort,
-    ) => {
-      const descriptor = options.descriptors.find((item) => item.ref === request.modelRef);
-      if (
-        descriptor?.api !== "openai-completions" ||
-        !descriptor.allowedDataClassifications.includes(request.dataClassification)
-      )
-        throw new Error("THREAD_TITLE_DISCLOSURE_DENIED");
-      const invocationId = `thread-title:${request.runId}`;
-      const inputRef = await payloadBoundary.writeText({
-        invocationId,
-        sequence: 0,
-        dataClassification: request.dataClassification,
-        content: prompt,
-        occurredAt: options.clock.now(),
-      });
-      const titleTransport = new PiModelTransport({
-        models: piModels,
-        payloads: payloadBoundary,
-        clock: options.clock,
-        // Required reasoning shares the output allowance with the visible title.
-        maxOutputTokens: Math.min(descriptor.maxTokens, descriptor.reasoningRequired ? 1024 : 128),
-        requestTimeoutMs: Math.min(options.requestTimeoutMs ?? 20000, 20000),
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-      });
-      const titleModel = new TrustedModelProviderAdapter({
-        ownerId: options.ownerId,
-        agentId: options.agentId,
-        descriptors: [descriptor],
-        handles: options.handles,
-        secretSource: options.secretSource,
-        transport: titleTransport,
-        clock: options.clock,
-        admission: async () => gate,
-        admissionCost: () => admissionCostForConfiguredPiModel(descriptor),
-      });
-      const handle = descriptor.secretRequirement
-        ? await options.handles.issueHandle({
-            ownerId: options.ownerId,
-            agentId: options.agentId,
-            runId: request.runId,
-            ...descriptor.secretRequirement,
-            scopeRef: invocationId,
-            expiresAt: new Date(Date.parse(options.clock.now()) + 30000).toISOString(),
-          })
-        : undefined;
-      let output = "";
-      let completed = false;
-      try {
-        for await (const event of titleModel.invoke({
-          invocationId,
-          runId: request.runId,
-          modelRef: request.modelRef,
-          inputRef,
-          dataClassification: request.dataClassification,
-          allowedDisclosureRef: request.systemInstructionRef,
-          secretHandleRefs: handle ? [handle.ref] : [],
-          correlationId: request.correlationId,
-        })) {
-          if (event.type === "model.output")
-            output += await payloadBoundary.readText(event.payloadRef);
-          if (event.type === "model.completed") completed = true;
-          if (event.type === "model.failed") throw new Error(event.errorCode);
-        }
-        if (!completed) throw new Error("THREAD_TITLE_RESPONSE_INCOMPLETE");
-        return output;
-      } finally {
-        if (handle) await options.handles.revokeHandle(handle.ref, options.clock.now());
-      }
-    },
+    generateTitle: (request: RuntimeRequest, prompt: string, gate: ModelInvocationAdmissionPort) =>
+      generateText(request, prompt, gate, {
+        invocationId: `thread-title:${request.runId}`,
+        maxOutputTokens: 128,
+        reasoningOutputTokens: 1024,
+        requestTimeoutMs: 20000,
+        errorPrefix: "THREAD_TITLE",
+      }),
+    generateText,
     close: () => piModels.close(),
   });
 }
