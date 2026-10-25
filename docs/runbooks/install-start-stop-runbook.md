@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:186961709262a483b32edc67e88ed42296d2fb7947e07172d2617c69d828088a"
+contract_sha256: "sha256:fe9e0e31262f59e1bce16831053fbb08b472fb1bb4498fd1e0d32d78f22de98c"
 supersedes: ""
 superseded_by: ""
 date: "2026-08-27"
@@ -471,7 +471,7 @@ Mem0运行时精确锁定`3.3.1`，保留既有`vectors.sqlite`及`history.sqlit
 
 启用文件读取时，`runPolicy.fileRead` 必须引用当前 Worker instance、目标 hostId、既有目录 Grant 和匹配的 Capability 版本。能力 program 的固定 argv 应指向安装树中 agent-service 包的 `dist/capability-programs/host-file-read-main.js` 并携带 hostId/workerInstanceId；该入口由 Worker 隔离后端启动，不能在 Agent Service 内执行。Manifest 声明 inspect/read/disclose，后者仅用于授权。配置、程序存在或打包成功均不创建动作授权，也不替代本机能力隔离资格。
 
-项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId；在 SRT 常驻环境里，Job Host 启动它时再加上 `--resident <runtimeRoot>`（`runtimeRoot` 是运行时安装目录的绝对路径），让它作为常驻 runner 接收后续命令，其他多出来的参数一律以 `PI_RUNNER_IDENTITY_INVALID` 拒绝；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
+项目七工具使用独立的 `dist/capability-programs/pi-coding-main.js`，固定 argv 仍是 hostId/workerInstanceId。2026-10-25 起，`scripts/package-node-runtime.mjs` 打包时用 rolldown 把这个入口和它用到的代码合并成同目录下的 `pi-coding-main.js` 加几个 `pi-coding-main-<摘要>.js` 分块，第三方依赖里没用到的部分不再加载，runner 从启动到就绪由约 1.2 秒降到约 0.2 秒（云端容器实测）；Pi 本体仍在设置好离线变量和工具目录之后才加载。同目录另放一份 `rename-native`，与 `platform-node` 里的同名程序相同。因为依赖的代码都合进了 `pi-coding-main.js`，任何依赖变化都会改变它的字节和摘要，每次部署须按[能力升级](hermes-control-center-upgrade-runbook.md#capability-upgrade)两步命令更新登记，资格和绑定里的 runner 摘要也随之更新；在 SRT 常驻环境里，Job Host 启动它时再加上 `--resident <runtimeRoot>`（`runtimeRoot` 是运行时安装目录的绝对路径），让它作为常驻 runner 接收后续命令，其他多出来的参数一律以 `PI_RUNNER_IDENTITY_INVALID` 拒绝；安装 operationBindings 显式声明 `pi-coding-tool` 版本 `1`，只读工具采用 fixed_read，bash 采用 command，write/edit 采用带 verifier 的 verified_effect。scope 必须是 authorized-project.v1，仍复用 Grant targets 和原准入通道。该入口不能替代 host-readonly.v1 的 inspect/read 审批。工具目录不会因为文件存在而自动向模型开放能力。
 
 在计算 runtimeDigest 和主机资格之前准备 `runtimeRoot/pi-tools/bin/bash`、`rg`、`fd`：必须为适合目标 OS、可实际执行的普通文件，不接受符号链接。Pi 工具自己（`bash` 工具的外壳程序、`grep` 用的 `rg`、`find` 用的 `fd`）只从这个固定目录取得，`PI_OFFLINE=1`，缺依赖明确失败；这些文件计入 runtimeDigest，新增二进制会改变 runtimeDigest，须重新取得当前主机资格。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`（见 [ADR 0055](../adr/0055-bash-uses-system-commands-in-sandbox.md)），所以 `ls`、`cat`、`git`、`python3` 这类系统程序可用，而固定目录在最前，`bash`、`rg`、`fd` 仍用安装包里核验过的那一份。系统程序随服务器系统升级变化，不计入 runtimeDigest，Himawari 不核验它们的版本和摘要；某个系统程序能否在沙箱里实际运行由只读放行列表决定（当前放行 `/usr/bin`、`/usr/lib`、`/lib`、`/lib64` 等，`/usr/local/bin` 不在放行列表里，放在那里的程序预期运行不了）。不要直接复制 macOS 平台签名的系统 Bash 并假定副本能运行；须验证实际安装文件及其签名/加载依赖。不能以工具运行触发隐式下载。
 

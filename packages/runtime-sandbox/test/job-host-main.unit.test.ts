@@ -1322,6 +1322,20 @@ describe("[R2-P2] Job Host session mode", () => {
     });
   });
 
+  it("[R2-P2] reports the finished runner launch time in the last heartbeat before ready", async () => {
+    await openSession();
+    await readyRunner();
+    const ready = sent.findIndex((item) => item["type"] === "ready");
+    expect(sent[ready - 1]?.["type"]).toBe("heartbeat");
+    const steps = sent[ready - 1]?.["steps"] as Array<{
+      stage: string;
+      startedMs: number;
+      elapsedMs: number | null;
+    }>;
+    expect(steps.at(-1)?.stage).toBe("launch");
+    expect(steps.every((step) => Number.isSafeInteger(step.elapsedMs))).toBe(true);
+  });
+
   it("[R2-P2] fails preparation when the runner exits before announcing ready", async () => {
     await openSession();
     task.emit("exit", 1, null);

@@ -158,11 +158,14 @@ function stepsSnapshot() {
 function sendHeartbeat() {
   send({ type: "heartbeat", steps: stepsSnapshot() });
 }
+function closeStage(now: number) {
+  const open = steps.at(-1);
+  if (open && open.elapsedMs === null) open.elapsedMs = Math.max(0, now - open.startedMs);
+}
 function enterStage(stage: JobHostDiagnostic["stage"]) {
   failureStage = stage;
   const now = sinceStart();
-  const open = steps.at(-1);
-  if (open && open.elapsedMs === null) open.elapsedMs = Math.max(0, now - open.startedMs);
+  closeStage(now);
   if (steps.length < 16) steps.push({ stage, startedMs: now, elapsedMs: null });
   sendHeartbeat();
 }
@@ -501,6 +504,8 @@ async function prepare(value: unknown, controlValue: unknown, session: boolean) 
       await finish();
       return;
     }
+    closeStage(sinceStart());
+    sendHeartbeat();
   }
   phase = "ready";
   send({
