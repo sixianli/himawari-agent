@@ -57,6 +57,11 @@ import {
   type ProductionManagedTasks,
 } from "./production-managed-tasks.js";
 import {
+  MEMORY_RECALL_CAPABILITY_REF,
+  type ProductionMemoryRecall,
+  memoryRecallDescriptor,
+} from "./production-memory-recall.js";
+import {
   SANDBOX_TOOL_RESULT_LOST,
   SANDBOX_TOOL_RESULT_LOST_MESSAGE,
 } from "./production-sandbox-lost-result-recovery.js";
@@ -274,6 +279,7 @@ export interface ProductionRuntimeToolsOptions {
   readonly fileReadEnabled?: boolean;
   readonly sandbox?: ProductionRuntimeSandbox;
   readonly managedTasks?: ProductionManagedTasks;
+  readonly memoryRecall?: Pick<ProductionMemoryRecall, "recall">;
   readonly taskHandle?: (handle: GovernedCapabilityExecutionHandle) => Promise<boolean>;
   readonly fileRead?: ProductionFileReadServices;
   readonly ownerId: RuntimeRequest["ownerId"];
@@ -466,6 +472,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
           },
         });
     }
+    if (this.#options.memoryRecall) descriptors.push(memoryRecallDescriptor());
     this.#exposed.set(runId, new Set(refs));
     return descriptors;
   }
@@ -499,6 +506,68 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       MANAGED_TASK_ACTIONS.some((action) => invocation.capabilityRef === `execution.task.${action}`)
     );
   }
+  #isMemoryRecall(invocation: RuntimeToolInvocation) {
+    return (
+      invocation.capabilityHandleRef === null &&
+      invocation.capabilityRef === MEMORY_RECALL_CAPABILITY_REF
+    );
+  }
+  async #recall(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult> {
+    await this.#options.assertRunActive(invocation.runId);
+    const recall = this.#options.memoryRecall;
+    if (!this.#exposed.has(invocation.runId) || !recall) reject();
+    const key = digest([invocation.runId, invocation.toolCallId]);
+    const fingerprint = digest(executionIdentity(invocation));
+    const claimed = await this.#writeJson(invocation, `runtime-tool-intent:${key}`, {
+      fingerprint,
+      recall: true,
+    });
+    const intent = (await this.#readJson(claimed.ref)) as {
+      fingerprint?: string;
+      recall?: boolean;
+    };
+    if (intent.fingerprint !== fingerprint || intent.recall !== true)
+      throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
+    const resultKey = `runtime-tool-result:${key}`;
+    const previous = await this.#options.artifacts.lookup({
+      runId: invocation.runId,
+      purpose: "trace",
+      operationKey: resultKey,
+    });
+    if (previous) return (await this.#readJson(previous.payloadRef)) as RuntimeToolExecutionResult;
+    let result: RuntimeToolExecutionResult;
+    try {
+      const value = await recall.recall(invocation);
+      const saved = await this.#writeJson(invocation, `runtime-tool-output:${key}`, value);
+      result = {
+        dispatchState: "accepted",
+        outcome: "succeeded",
+        resultRef: saved.ref,
+        errorCode: null,
+        externalActionId: null,
+        modelContent: JSON.stringify(value),
+      };
+    } catch (error) {
+      await this.#options.assertRunActive(invocation.runId);
+      const errorCode =
+        error instanceof Error && error.message === "MEMORY_RECALL_INPUT_INVALID"
+          ? "MEMORY_RECALL_INPUT_INVALID"
+          : "MEMORY_RECALL_UNAVAILABLE";
+      result = {
+        dispatchState: "accepted",
+        outcome: "failed",
+        resultRef: null,
+        errorCode,
+        externalActionId: null,
+        modelContent: JSON.stringify({
+          error: errorCode,
+          note: "记忆暂时查不到。不要编造，告诉主人现在查不了记忆。",
+        }),
+      };
+    }
+    const committed = await this.#writeJson(invocation, resultKey, result);
+    return (await this.#readJson(committed.ref)) as RuntimeToolExecutionResult;
+  }
   #codingTool(call: RuntimeToolInvocation) {
     if (
       this.#options.publicSearch &&
@@ -524,6 +593,14 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         allowed: this.#exposed.has(invocation.runId) && this.#options.managedTasks !== undefined,
         permissionDecisionRef: `task-management:${digest([invocation.runId, invocation.toolCallId])}`,
         reasonCode: "TASK_RESOURCE_AUTHORITY_REQUIRED",
+      };
+    }
+    if (this.#isMemoryRecall(invocation)) {
+      await this.#options.assertRunActive(invocation.runId);
+      return {
+        allowed: this.#exposed.has(invocation.runId) && this.#options.memoryRecall !== undefined,
+        permissionDecisionRef: `memory-recall:${digest([invocation.runId, invocation.toolCallId])}`,
+        reasonCode: "MEMORY_RECALL_OWNER_SCOPE",
       };
     }
     if (invocation.capabilityHandleRef === null) {
@@ -839,6 +916,7 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
         throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "Tool call identity changed");
       return this.#options.managedTasks.execute(invocation);
     }
+    if (this.#isMemoryRecall(invocation)) return this.#recall(invocation);
     return this.#executeCanonical(invocation, signal);
   }
   #executeCanonical(

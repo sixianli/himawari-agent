@@ -94,6 +94,7 @@ import {
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
+import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -442,14 +443,6 @@ export async function runAgentService(
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
-  let runEmbedWithin:
-    | (<T>(
-        request: RuntimeRequest,
-        slot: string,
-        operation: () => Promise<T>,
-        dataClassification?: RuntimeRequest["dataClassification"],
-      ) => Promise<T>)
-    | undefined;
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
@@ -1071,7 +1064,56 @@ export async function runAgentService(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
+      const recallProjection = memoryComposition.projection;
+      const recallProtector = protector;
+      const memoryRecall = new ProductionMemoryRecall({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        provider: { search: (input) => recallProjection.search(input) },
+        state: repository.productMemoryState(),
+        episodes: {
+          search: (input) =>
+            runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
+        },
+        readText: async (record) => {
+          const payload = await payloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+        },
+        embedWithin: (invocation, slot, operation) => {
+          const memory = governedMemory;
+          const executionLease = invocation.context?.executionLease;
+          if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
+          return memory.embedWithin(
+            {
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              runId: invocation.runId,
+              executionLease,
+              deadlineAt:
+                invocation.executionDeadlineAt ??
+                new Date(
+                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+                ).toISOString(),
+              dataClassification: invocation.dataClassification,
+              slot: `${slot}:${invocation.toolCallId}`,
+            },
+            operation,
+          );
+        },
+        now: () => clock.now(),
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+      });
       const tools = new ProductionRuntimeTools({
+        memoryRecall,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1204,7 +1246,6 @@ export async function runAgentService(
           operation,
         );
       runMemoryEpisodes = memoryEpisodes;
-      runEmbedWithin = embedWithin;
       runs = createProductionRunComposition({
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }

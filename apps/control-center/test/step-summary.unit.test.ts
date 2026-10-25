@@ -33,6 +33,7 @@ const run: RunSummary = {
 describe("plain-language step summaries", () => {
   it.each([
     ["web_search", '{"query":"Tokyo weather"}', "step.search", "Tokyo weather"],
+    ["recall", '{"query":"最喜欢的颜色"}', "step.recall", "最喜欢的颜色"],
     [
       "web_fetch",
       '{"url":"https://weather.example.com/tokyo"}',

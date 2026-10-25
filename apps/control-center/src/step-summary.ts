@@ -2,6 +2,7 @@ import type { MessageId } from "./i18n/message-ids.js";
 
 type StepKind =
   | "search"
+  | "recall"
   | "fetch"
   | "read"
   | "write"
@@ -20,6 +21,7 @@ type StepKind =
 const kinds: Readonly<Record<string, StepKind>> = {
   web_search: "search",
   web_fetch: "fetch",
+  recall: "recall",
   read: "read",
   write: "write",
   edit: "edit",
@@ -65,7 +67,7 @@ export function toolStepSummary(name: string, input: string): { id: MessageId; t
   const kind = stepKind(name);
   const args = argumentsOf(input);
   const target =
-    kind === "search"
+    kind === "search" || kind === "recall"
       ? field(args, "query")
       : kind === "fetch"
         ? hostName(field(args, "url"))

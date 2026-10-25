@@ -84,6 +84,7 @@ export const MESSAGE_IDS = [
   "chat.error.failed",
   "chat.toolCount",
   "step.search",
+  "step.recall",
   "step.fetch",
   "step.read",
   "step.write",

@@ -104,6 +104,7 @@ export const messages = {
     "この実行は失敗しました。保存済みのメッセージと実行記録は引き続き確認できます。",
   "chat.toolCount": "{count} ステップ",
   "step.search": "ウェブ検索",
+  "step.recall": "記憶を確認",
   "step.fetch": "ウェブページ表示",
   "step.read": "ファイル読み込み",
   "step.write": "ファイル書き込み",

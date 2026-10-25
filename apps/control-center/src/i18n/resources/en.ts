@@ -100,6 +100,7 @@ export const messages = {
   "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
   "chat.toolCount": "{count} steps",
   "step.search": "Searching the web",
+  "step.recall": "Checking memory",
   "step.fetch": "Opening a web page",
   "step.read": "Reading a file",
   "step.write": "Writing a file",

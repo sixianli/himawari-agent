@@ -93,6 +93,7 @@ export const messages = {
   "chat.error.failed": "本轮执行失败。已保存的消息和过程记录仍可查看。",
   "chat.toolCount": "执行 {count} 步",
   "step.search": "搜索网页",
+  "step.recall": "翻看记忆",
   "step.fetch": "打开网页",
   "step.read": "读取文件",
   "step.write": "写入文件",
