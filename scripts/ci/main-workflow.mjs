@@ -10,7 +10,8 @@ export function validateMainWorkflow(source, lock) {
   const w = document.toJS({ maxAliasCount: 0 });
   assert(JSON.stringify(w.on) === JSON.stringify({ push: { branches: ["main"] } }), "events");
   assert(
-    JSON.stringify(w.permissions) === JSON.stringify({ contents: "read", actions: "read", "pull-requests": "read" }),
+    JSON.stringify(w.permissions) ===
+      JSON.stringify({ contents: "read", actions: "read", "pull-requests": "read" }),
     "permissions",
   );
   assert(
