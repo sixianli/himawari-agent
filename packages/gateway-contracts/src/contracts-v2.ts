@@ -214,6 +214,14 @@ export const MEMORY_SENSITIVE_TOPICS = [
   "legal",
   "other",
 ] as const;
+export const MEMORY_PROFILE_KINDS = [
+  "rules",
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+] as const;
 const memoryOverviewQuerySchema = object({
   ...envelope("query", "memory.overview.read"),
   payload: object({}),
@@ -232,6 +240,20 @@ const memoryOverviewSnapshotSchema = object({
         sourceThreadId: nullable(machineString),
         sourceRefs: array(boundedString(512)),
         updatedAt: timestamp,
+        supersededBy: nullable(machineString),
+        validTo: nullable(boundedString(32)),
+      }),
+    ),
+    profile: array(
+      object({
+        kind: enumeration(MEMORY_PROFILE_KINDS),
+        lines: array(
+          object({
+            memoryId: machineString,
+            text: boundedString(2000),
+            updatedAt: timestamp,
+          }),
+        ),
       }),
     ),
     pending: array(
@@ -346,7 +368,7 @@ export const setGitHubMonitorStateCommandSchema = object({
 
 const memoryMutationPayloadSchema = object({
   memoryId: machineString,
-  action: enumeration(["correct", "archive", "delete"]),
+  action: enumeration(["correct", "archive", "delete", "restore"]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
 });

@@ -31,6 +31,7 @@ export interface ExtractedMemoryCandidate {
   readonly sourceRefs: readonly string[];
   readonly sensitiveTopic?: SensitiveMemoryTopic;
   readonly attributes?: ProductMemoryAttributes;
+  readonly supersedes?: MemoryId | null;
 }
 
 export interface IncrementalMemoryExtractionPort {

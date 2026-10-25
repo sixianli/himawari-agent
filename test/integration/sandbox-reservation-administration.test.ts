@@ -719,8 +719,8 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       error: "",
       result: {
         command: "db.migrate",
-        currentSequence: 52,
-        appliedSequences: [50, 51, 52],
+        currentSequence: 53,
+        appliedSequences: [50, 51, 52, 53],
         snapshotPath: expect.any(String),
       },
     });
@@ -752,10 +752,10 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     withDatabase(f, (database) => {
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
-      ).toBe(52);
+      ).toBe(53);
       expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
-        { key: "current_sequence", value: "52" },
-        { key: "minimum_writer_sequence", value: "52" },
+        { key: "current_sequence", value: "53" },
+        { key: "minimum_writer_sequence", value: "53" },
       ]);
     });
     const listed = await inspect(f);
@@ -841,7 +841,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const f = await fixture();
     const listed = await inspect(f);
     withDatabase(f, (database) =>
-      database.exec(`UPDATE schema_metadata SET value='53'
+      database.exec(`UPDATE schema_metadata SET value='54'
       WHERE key IN ('current_sequence','minimum_writer_sequence')`),
     );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED");
@@ -1395,7 +1395,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
             .pluck()
             .get(),
         ),
-      ).toBe(52);
+      ).toBe(53);
       expect(
         database
           .prepare(`SELECT 1 FROM runs r WHERE id=@runId AND (${RUN_RESOURCES_RELEASED_SQL})`)
@@ -1406,7 +1406,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const audit = auditWorkspaceLifecycle(f);
     expect(audit).toMatchObject({
       mode: "read_only",
-      schemaSequence: 52,
+      schemaSequence: 53,
       liveHostVerified: false,
       repairEligible: false,
     });
@@ -1605,7 +1605,7 @@ describe.each([
     expect(snapshot(f)).toEqual(disposed);
   });
 
-  it.each([49, 51, 52] as const)(
+  it.each([49, 51, 52, 53] as const)(
     "allows a permanently accepted automatic release in Schema %s without changing history",
     async (schemaSequence) => {
       const f = await fixture(schemaSequence === 49 ? { schemaSequence } : {});
@@ -1622,7 +1622,7 @@ describe.each([
     },
   );
 
-  it.each([49, 51, 52] as const)(
+  it.each([49, 51, 52, 53] as const)(
     "still blocks a mixed released and unresolved reservation set in Schema %s",
     async (schemaSequence) => {
       const f = await fixture({

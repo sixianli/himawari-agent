@@ -21,6 +21,7 @@ export interface MemoryModel {
   ) => Promise<boolean>;
   readonly correct: (item: MemoryItem, text: string) => Promise<boolean>;
   readonly remove: (item: MemoryItem) => Promise<boolean>;
+  readonly restore: (item: MemoryItem) => Promise<boolean>;
 }
 
 export function useMemory(input: {
@@ -112,6 +113,22 @@ export function useMemory(input: {
             {
               memoryId: item.memoryId,
               action: "delete",
+              expectedRevision: item.revision,
+              contentRef: null,
+            },
+            { risk: "medium" },
+          ),
+        ),
+      ),
+    restore: (item) =>
+      run(() =>
+        client.mutate(
+          commandMessage(
+            configuration,
+            "memory.mutate",
+            {
+              memoryId: item.memoryId,
+              action: "restore",
               expectedRevision: item.revision,
               contentRef: null,
             },

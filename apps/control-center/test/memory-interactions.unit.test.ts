@@ -77,6 +77,8 @@ beforeEach(() => {
         sourceThreadId: "thread-1",
         sourceRefs: ["payload-1"],
         updatedAt: "2026-10-25T12:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
       },
       {
         memoryId: "memory-city",
@@ -88,8 +90,11 @@ beforeEach(() => {
         sourceThreadId: "thread-2",
         sourceRefs: ["payload-9"],
         updatedAt: "2026-10-24T12:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
       },
     ],
+    profile: [],
     pending: [
       {
         requestId: "approval-health",
@@ -225,5 +230,54 @@ describe("memory approval and management", () => {
     await act(async () => root.render(h(Hidden)));
     expect(container.textContent).toBe("");
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("shows the Owner profile, the correction history and restores an earlier version", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        ...overview.memories,
+        {
+          memoryId: "memory-city-old",
+          revision: 2,
+          text: "主人住在北京",
+          dataClassification: "private",
+          topic: null,
+          inference: false,
+          sourceThreadId: "thread-3",
+          sourceRefs: ["payload-3"],
+          updatedAt: "2026-10-24T12:00:00.000Z",
+          supersededBy: "memory-city",
+          validTo: "2026-10-24T12:00:00.000Z",
+        },
+      ],
+      profile: [
+        {
+          kind: "identity",
+          lines: [
+            {
+              memoryId: "memory-city",
+              text: "主人住在上海",
+              updatedAt: "2026-10-24T12:00:00.000Z",
+            },
+          ],
+        },
+      ],
+    };
+    await render();
+    const profile = document.querySelector("#settings .memory-profile")?.textContent ?? "";
+    expect(profile).toContain("主人档案");
+    expect(profile).toContain("身份");
+    expect(profile).toContain("主人住在上海");
+    const list = document.querySelector("#settings .memory-list")?.textContent ?? "";
+    expect(list).toContain("更正历史（1）");
+    expect(document.querySelector("#settings")?.textContent).toContain("共 2 条");
+    await act(async () => button("#settings .memory-history", "恢复这条").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "memory-city-old", action: "restore", contentRef: null },
+    });
+    await act(async () => button("#settings .memory-profile", "编辑").click());
+    expect(document.querySelector("#settings .memory-profile textarea")).not.toBeNull();
   });
 });

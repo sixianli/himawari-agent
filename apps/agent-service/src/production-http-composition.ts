@@ -16,6 +16,7 @@ import {
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
   type OwnerIdentityStatePort,
+  OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
@@ -126,7 +127,10 @@ export interface ProductionHttpCompositionOptions {
     readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
   };
   readonly memory?: {
-    readonly service: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete">;
+    readonly service: Pick<
+      DurableMemoryService,
+      "applyProposal" | "correct" | "delete" | "restore"
+    >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly configuration: ProductConfiguration;
@@ -825,6 +829,7 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memoryPayloads = repository.payloadStore(ownerId, agentId);
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -832,7 +837,19 @@ export async function createProductionHttpComposition(
         jobs: repository.memoryProjectionJobs(),
         approvals: repository.sensitiveMemoryApprovals(),
         memory: options.memory.service,
-        payloads: repository.payloadStore(ownerId, agentId),
+        profile: new OwnerProfileService({
+          state: repository.productMemoryState(),
+          readText: async (record) => {
+            const payload = await memoryPayloads.get(record.contentRef);
+            if (!payload || payload.contentType !== "text/plain") return undefined;
+            return new TextDecoder("utf-8", { fatal: true }).decode(
+              await payloadProtector.unprotect({ ownerId, agentId, payload }),
+            );
+          },
+          storeText: async () => {},
+          digest: (text) => createHash("sha256").update(text).digest("hex"),
+        }),
+        payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
         onAudit: options.memory.onAudit,

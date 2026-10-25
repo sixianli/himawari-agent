@@ -85,6 +85,9 @@ export async function createProductionMemoryCompositionFromConfiguration(
       ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION }
       : {}),
     now: () => new Date().toISOString(),
+    ...(options.configuration.runPolicy?.timeZone
+      ? { timeZone: options.configuration.runPolicy.timeZone }
+      : {}),
     ...(options.onVectorFailure === undefined ? {} : { onVectorFailure: options.onVectorFailure }),
   });
   return Object.freeze({

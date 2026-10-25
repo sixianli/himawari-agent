@@ -62,6 +62,7 @@ export interface ProductMemoryRecord {
   readonly updatedAt: string;
   readonly attributes?: ProductMemoryAttributes;
   readonly useCount?: number;
+  readonly recordedAt?: string;
 }
 
 export interface MemoryProjectionJob {
@@ -134,6 +135,12 @@ export interface MemoryProviderHit {
   readonly score: number;
 }
 
+export interface MemoryTimeScope {
+  readonly includeHistory: boolean;
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
 export interface MemoryProviderProjectionPort {
   upsert(input: {
     readonly memory: ProductMemoryRecord;
@@ -145,6 +152,7 @@ export interface MemoryProviderProjectionPort {
     readonly agentId: AgentId;
     readonly query: string;
     readonly limit: number;
+    readonly scope?: MemoryTimeScope;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
 }
@@ -173,6 +181,9 @@ export interface MemoryIndexCandidate {
   readonly updatedAt: string;
   readonly lastUsedAt: string | null;
   readonly signal: number;
+  readonly startsAt: string;
+  readonly endsAt: string | null;
+  readonly current: boolean;
 }
 
 export interface MemoryIndexSearchResult {
@@ -195,6 +206,7 @@ export interface MemoryIndexStorePort {
     readonly limit: number;
     readonly minimumSimilarity: number;
     readonly now: string;
+    readonly includeHistory?: boolean;
   }): Promise<MemoryIndexSearchResult>;
   listUnindexed(input: {
     readonly ownerId: OwnerId;
@@ -216,8 +228,15 @@ export type ProductMemoryProposal =
       readonly decision: "create";
       readonly memory: Omit<
         ProductMemoryRecord,
-        "revision" | "status" | "providerRecordId" | "lastUsedAt" | "updatedAt" | "useCount"
+        | "revision"
+        | "status"
+        | "providerRecordId"
+        | "lastUsedAt"
+        | "updatedAt"
+        | "useCount"
+        | "recordedAt"
       >;
+      readonly supersedes?: MemoryId | null;
     }
   | {
       readonly decision: "update" | "merge";

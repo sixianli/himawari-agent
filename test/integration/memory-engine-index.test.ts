@@ -142,7 +142,11 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
         `sha256:${memory.id}`,
         T0,
       );
-    for (const ref of ["payload-query", "payload-memory-engine-daughter-v2"])
+    for (const ref of [
+      "payload-query",
+      "payload-memory-engine-daughter-v2",
+      "payload-memory-engine-coffee-v2",
+    ])
       insertPayload.run(ref, OWNER_ID, AGENT_ID, "private", `sha256:${ref}`, T0);
     database
       .prepare(
@@ -383,6 +387,64 @@ describe.each(["worker", "direct"] as const)("memory engine index through %s", (
           limit: 50,
         }),
       ).toEqual([]);
+    } finally {
+      await resource.repository.close();
+    }
+  });
+  it("keeps a superseded fact as history, recalls it only when asked about the past and restores it", async () => {
+    const resource = await fixture();
+    try {
+      resource.content.values.set("payload-memory-engine-coffee-v2", "主人现在早上改喝燕麦拿铁");
+      const replacement = await resource.service.applyProposal(
+        {
+          decision: "create",
+          memory: {
+            id: createMemoryId("memory-engine-coffee-v2"),
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            contentRef: "payload-memory-engine-coffee-v2",
+            dataClassification: "private",
+            sourceThreadId: THREAD_ID,
+            sourceRefs: ["message-coffee-v2"],
+            inference: false,
+            confidencePermille: 1000,
+            policyVersion: "memory-policy-v1",
+            attributes: {
+              category: "preference",
+              importancePermille: 600,
+              entities: [],
+              validFrom: null,
+              validTo: null,
+              supersededBy: null,
+              evidenceVerified: true,
+            },
+          },
+          supersedes: createMemoryId("memory-engine-coffee"),
+        },
+        GENERATION_ID,
+      );
+      await resource.service.runProjectionBatch(20);
+      const old = await resource.repository
+        .productMemoryState()
+        .read(createMemoryId("memory-engine-coffee"));
+      expect(old?.attributes).toMatchObject({ supersededBy: replacement.id, validTo: T0 });
+      expect(old?.recordedAt).toBe(T0);
+      expect(await search(resource, "我早上喝什么咖啡")).toEqual(
+        expect.arrayContaining([replacement.id]),
+      );
+      expect(await search(resource, "我早上喝什么咖啡")).not.toContain("memory-engine-coffee");
+      expect(await search(resource, "我以前早上喝什么咖啡")).toEqual(
+        expect.arrayContaining([replacement.id, "memory-engine-coffee"]),
+      );
+      await resource.service.restore(createMemoryId("memory-engine-coffee"), GENERATION_ID);
+      await resource.service.runProjectionBatch(20);
+      const state = resource.repository.productMemoryState();
+      expect((await state.read(createMemoryId("memory-engine-coffee")))?.attributes).toMatchObject({
+        supersededBy: null,
+        validTo: null,
+      });
+      expect((await state.read(replacement.id))?.status).toBe("archived");
+      expect(await search(resource, "我早上喝什么咖啡")).toContain("memory-engine-coffee");
     } finally {
       await resource.repository.close();
     }

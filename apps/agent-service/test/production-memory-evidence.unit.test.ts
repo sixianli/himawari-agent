@@ -73,4 +73,46 @@ describe("memory evidence from the Owner's own words", () => {
       evidenceVerified: true,
     });
   });
+  it("turns a changed fact into a new memory that supersedes the old one", () => {
+    const parsed = parseMemoryCandidates({
+      output: JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "supersede",
+            existingMemoryId: "memory-phone",
+            text: "主人现在用 Pixel 9",
+            classification: "private",
+            confidence: 950,
+            category: "preference",
+            importance: 500,
+            entities: ["Pixel 9"],
+            validFrom: null,
+            quote: "我已经换成 Pixel 9 了",
+          },
+          {
+            kind: "durable_fact",
+            decision: "supersede",
+            existingMemoryId: "memory-unknown",
+            text: "主人现在住在杭州",
+            classification: "private",
+            confidence: 950,
+            quote: "我已经换成 Pixel 9 了",
+          },
+        ],
+      }),
+      sourceRef: "payload-owner",
+      sourceClassification: "private",
+      existingIds: new Set(["memory-phone"]),
+      ownerMessage: "我已经换成 Pixel 9 了",
+    });
+    expect(parsed.candidates).toHaveLength(2);
+    expect(parsed.candidates[0]).toMatchObject({
+      decision: "create",
+      existingMemoryId: null,
+      supersedes: "memory-phone",
+    });
+    expect(parsed.candidates[1]).toMatchObject({ decision: "create", existingMemoryId: null });
+    expect(parsed.candidates[1]).not.toHaveProperty("supersedes");
+  });
 });

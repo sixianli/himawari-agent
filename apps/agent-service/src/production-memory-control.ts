@@ -6,6 +6,7 @@ import {
   type DurableMemoryService,
   type MemoryExtractionAuditRecord,
   type MemoryProjectionJobStatePort,
+  type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
   type ProductConfiguration,
@@ -48,7 +49,8 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
-    readonly memory: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete">;
+    readonly memory: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete" | "restore">;
+    readonly profile?: Pick<OwnerProfileService, "outline">;
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -118,8 +120,38 @@ export class ProductionMemoryControl {
         sourceThreadId: memory.sourceThreadId,
         sourceRefs: memory.sourceRefs.filter((ref) => ref.length <= 512),
         updatedAt: memory.updatedAt,
+        supersededBy: memory.attributes?.supersededBy ?? null,
+        validTo: memory.attributes?.validTo ?? null,
       });
     }
+    const outline = await this.options.profile?.outline({
+      ownerId,
+      agentId,
+      maxClassification: "private",
+      now: this.options.clock.now(),
+    });
+    const lines = (items: readonly { memoryId: string; text: string; updatedAt: string }[]) =>
+      items.map(({ memoryId, text, updatedAt }) => ({
+        memoryId,
+        text: singleLine(text),
+        updatedAt,
+      }));
+    const profile: OverviewSnapshot["payload"]["profile"][number][] = outline
+      ? [
+          ...(outline.rules.length
+            ? [{ kind: "rules" as const, lines: lines(outline.rules) }]
+            : []),
+          ...outline.sections.flatMap(({ category, lines: items }) =>
+            category === "identity" ||
+            category === "preference" ||
+            category === "relationship" ||
+            category === "goal" ||
+            category === "project"
+              ? [{ kind: category, lines: lines(items) }]
+              : [],
+          ),
+        ]
+      : [];
     const candidates = protectedMemoryCandidates(this.options);
     const pending: OverviewSnapshot["payload"]["pending"][number][] = [];
     for (const request of await this.options.approvals.listPending(ownerId, null)) {
@@ -140,7 +172,7 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.overview.snapshot",
-      payload: { memories, pending, generatedAt: this.options.clock.now() },
+      payload: { memories, profile, pending, generatedAt: this.options.clock.now() },
     } as GatewayV2Snapshot;
   }
 
@@ -192,6 +224,10 @@ export class ProductionMemoryControl {
           sourceRef: contentRef,
           generationId,
         });
+        return { resultRef: saved.id, replayed: false };
+      }
+      if (action === "restore") {
+        const saved = await this.options.memory.restore(current.id, generationId);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "delete") {

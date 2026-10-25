@@ -1,4 +1,8 @@
-import type { MemoryIndexCandidate, MemoryIndexSearchResult } from "@himawari-agent/application";
+import type {
+  MemoryIndexCandidate,
+  MemoryIndexSearchResult,
+  MemoryTimeScope,
+} from "@himawari-agent/application";
 import type { MemoryId } from "@himawari-agent/domain";
 
 export interface FusionWeights {
@@ -10,6 +14,7 @@ export interface FusionWeights {
   readonly confidence: number;
   readonly recency: number;
   readonly recencyHalfLifeDays: number;
+  readonly timeWindow: number;
 }
 
 export const DEFAULT_FUSION_WEIGHTS: FusionWeights = Object.freeze({
@@ -21,6 +26,7 @@ export const DEFAULT_FUSION_WEIGHTS: FusionWeights = Object.freeze({
   confidence: 0.1,
   recency: 0.1,
   recencyHalfLifeDays: 90,
+  timeWindow: 0.5,
 });
 
 export interface FusedHit {
@@ -42,9 +48,31 @@ function recency(candidate: MemoryIndexCandidate, now: number, halfLifeDays: num
   return 0.5 ** (ageDays / halfLifeDays);
 }
 
+export function overlapsWindow(
+  candidate: Pick<MemoryIndexCandidate, "startsAt" | "endsAt">,
+  scope: MemoryTimeScope | null | undefined,
+): boolean {
+  if (!scope || scope.from === null || scope.to === null) return false;
+  const starts = Date.parse(
+    candidate.startsAt.length === 10 ? `${candidate.startsAt}T00:00:00.000Z` : candidate.startsAt,
+  );
+  const ends =
+    candidate.endsAt === null
+      ? Number.POSITIVE_INFINITY
+      : Date.parse(
+          candidate.endsAt.length === 10 ? `${candidate.endsAt}T00:00:00.000Z` : candidate.endsAt,
+        );
+  return starts <= Date.parse(scope.to) && ends >= Date.parse(scope.from);
+}
+
 export function fuseCandidates(
   result: MemoryIndexSearchResult,
-  input: { readonly now: string; readonly limit: number; readonly weights?: FusionWeights },
+  input: {
+    readonly now: string;
+    readonly limit: number;
+    readonly weights?: FusionWeights;
+    readonly scope?: MemoryTimeScope | null;
+  },
 ): FusedHit[] {
   const weights = input.weights ?? DEFAULT_FUSION_WEIGHTS;
   const now = Date.parse(input.now);
@@ -74,7 +102,8 @@ export function fuseCandidates(
         1 +
         weights.importance * (candidate.importancePermille / 1000 - 0.5) +
         weights.confidence * (candidate.confidencePermille / 1000 - 0.5) +
-        weights.recency * recency(candidate, now, weights.recencyHalfLifeDays);
+        weights.recency * recency(candidate, now, weights.recencyHalfLifeDays) +
+        (overlapsWindow(candidate, input.scope) ? weights.timeWindow : 0);
       return Object.freeze({
         memoryId,
         score: rrf * boost,

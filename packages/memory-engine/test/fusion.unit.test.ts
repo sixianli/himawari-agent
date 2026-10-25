@@ -17,6 +17,9 @@ function candidate(
     updatedAt: now,
     lastUsedAt: null,
     signal: 1,
+    startsAt: now,
+    endsAt: null,
+    current: true,
     ...overrides,
   };
 }
@@ -62,5 +65,33 @@ describe("reciprocal rank fusion", () => {
       { now, limit: 2 },
     );
     expect(hits).toHaveLength(2);
+  });
+
+  it("boosts a memory whose validity overlaps the asked time window", () => {
+    const hits = fuseCandidates(
+      {
+        vector: [
+          candidate("tokyo", { startsAt: "2026-05-01T00:00:00.000Z" }),
+          candidate("osaka", {
+            startsAt: "2025-01-01T00:00:00.000Z",
+            endsAt: "2025-12-31T00:00:00.000Z",
+            current: false,
+          }),
+        ],
+        lexical: [],
+        entity: [],
+        vectorEngine: "javascript",
+      },
+      {
+        now,
+        limit: 2,
+        scope: {
+          includeHistory: true,
+          from: "2025-03-01T00:00:00.000Z",
+          to: "2025-03-31T23:59:59.999Z",
+        },
+      },
+    );
+    expect(hits.map(({ memoryId }) => memoryId)).toEqual(["osaka", "tokyo"]);
   });
 });

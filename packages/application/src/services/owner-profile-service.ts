@@ -37,6 +37,21 @@ export interface OwnerProfile {
   readonly memoryIds: readonly MemoryId[];
 }
 
+export interface OwnerProfileLine {
+  readonly memoryId: MemoryId;
+  readonly text: string;
+  readonly updatedAt: string;
+}
+
+export interface OwnerProfileOutline {
+  readonly rules: readonly OwnerProfileLine[];
+  readonly sections: readonly {
+    readonly category: MemoryCategory;
+    readonly title: string;
+    readonly lines: readonly OwnerProfileLine[];
+  }[];
+}
+
 export interface OwnerProfilePort {
   compose(input: {
     readonly ownerId: OwnerId;
@@ -81,12 +96,31 @@ export class OwnerProfileService implements OwnerProfilePort {
     this.#options = options;
   }
 
-  async compose(input: {
+  async outline(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
     readonly maxClassification: DataClassification;
     readonly now: string;
-  }): Promise<OwnerProfile> {
+  }): Promise<OwnerProfileOutline> {
+    const { rules, sections } = await this.#select(input);
+    const line = ({ memory, text }: { memory: ProductMemoryRecord; text: string }) =>
+      Object.freeze({ memoryId: memory.id, text, updatedAt: memory.updatedAt });
+    return Object.freeze({
+      rules: Object.freeze(rules.map(line)),
+      sections: Object.freeze(
+        sections.map(({ category, title, lines }) =>
+          Object.freeze({ category, title, lines: Object.freeze(lines.map(line)) }),
+        ),
+      ),
+    });
+  }
+
+  async #select(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }) {
     const ceiling = Math.min(
       CLASSIFICATION_RANK[input.maxClassification],
       CLASSIFICATION_RANK.private,
@@ -110,8 +144,11 @@ export class OwnerProfileService implements OwnerProfilePort {
       return lines;
     };
     const rules = await take(eligible.filter((memory) => memory.attributes?.category === "rule"));
-    const sections: { title: string; lines: { memory: ProductMemoryRecord; text: string }[] }[] =
-      [];
+    const sections: {
+      category: MemoryCategory;
+      title: string;
+      lines: { memory: ProductMemoryRecord; text: string }[];
+    }[] = [];
     const profileCandidates = eligible.filter(
       (memory) => (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE,
     );
@@ -124,8 +161,18 @@ export class OwnerProfileService implements OwnerProfilePort {
       const lines = chosen
         .filter(({ memory }) => memory.attributes?.category === category)
         .sort((left, right) => byImportance(left.memory, right.memory));
-      if (lines.length > 0) sections.push({ title, lines });
+      if (lines.length > 0) sections.push({ category, title, lines });
     }
+    return { rules, sections };
+  }
+
+  async compose(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }): Promise<OwnerProfile> {
+    const { rules, sections } = await this.#select(input);
     const blocks: OwnerProfileBlock[] = [];
     if (rules.length > 0)
       blocks.push(

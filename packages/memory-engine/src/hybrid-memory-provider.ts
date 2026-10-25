@@ -4,6 +4,7 @@ import {
   type MemoryIndexStorePort,
   type MemoryProviderHit,
   type MemoryProviderProjectionPort,
+  type MemoryTimeScope,
   PORT_ERROR_CODES,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
@@ -11,6 +12,7 @@ import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import { type Embedder, instructedQuery } from "./embedding.js";
 import { DEFAULT_FUSION_WEIGHTS, type FusionWeights, fuseCandidates } from "./fusion.js";
 import { indexTerms, queryTerms } from "./segmentation.js";
+import { parseTimeScope } from "./time-scope.js";
 
 export const MEMORY_INDEX_RECORD_PREFIX = "memory-index:" as const;
 const LEXICAL_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
@@ -25,6 +27,7 @@ export interface HybridMemoryProviderOptions {
   readonly weights?: FusionWeights;
   readonly onVectorFailure?: (error: unknown) => void;
   readonly queryInstruction?: string;
+  readonly timeZone?: string;
 }
 
 export function memoryIndexRecordId(memoryId: MemoryId): string {
@@ -103,6 +106,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
     readonly agentId: AgentId;
     readonly query: string;
     readonly limit: number;
+    readonly scope?: MemoryTimeScope;
   }): Promise<readonly MemoryProviderHit[]> {
     if (input.query.trim().length === 0)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "MEMORY_QUERY_EMPTY");
@@ -127,6 +131,7 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       }
     }
     const now = this.#options.now();
+    const scope = input.scope ?? parseTimeScope(input.query, now, this.#options.timeZone);
     const result = await this.#options.index.search({
       ownerId: input.ownerId,
       agentId: input.agentId,
@@ -136,11 +141,13 @@ export class HybridMemoryProvider implements MemoryProviderProjectionPort {
       limit: Math.min(200, Math.max(CANDIDATES_PER_SIGNAL, input.limit)),
       minimumSimilarity: this.#options.minimumSimilarity ?? 0,
       now,
+      includeHistory: scope?.includeHistory === true,
     });
     return fuseCandidates(result, {
       now,
       limit: input.limit,
       weights: this.#options.weights ?? DEFAULT_FUSION_WEIGHTS,
+      scope,
     }).map(({ memoryId, score }) =>
       Object.freeze({
         providerRecordId: memoryIndexRecordId(memoryId),

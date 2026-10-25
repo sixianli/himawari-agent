@@ -357,6 +357,7 @@ export class AutomaticMemoryService {
           policyVersion: input.policyVersion,
           ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
         },
+        ...(candidate.supersedes ? { supersedes: candidate.supersedes } : {}),
       };
     } else {
       if (!candidate.existingMemoryId) {

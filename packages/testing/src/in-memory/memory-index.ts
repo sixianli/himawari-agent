@@ -16,6 +16,9 @@ export function inMemoryMemoryIndex(): MemoryIndexStorePort & {
     updatedAt: document.indexedAt,
     lastUsedAt: null,
     signal,
+    startsAt: document.indexedAt,
+    endsAt: null,
+    current: true,
   });
   return {
     documents,

@@ -42,6 +42,7 @@ interface MemoryRow {
   readonly useCount: number;
   readonly evidenceVerified: number;
   readonly sensitiveTopic: string | null;
+  readonly recordedAt: string | null;
 }
 
 interface IndexCandidateRow {
@@ -52,6 +53,9 @@ interface IndexCandidateRow {
   readonly updatedAt: string;
   readonly lastUsedAt: string | null;
   readonly signal: number;
+  readonly startsAt: string;
+  readonly endsAt: string | null;
+  readonly current: number;
 }
 
 export type SqliteVectorEngine = "sqlite-vec" | "javascript";
@@ -170,15 +174,19 @@ const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revis
   provider_record_id AS providerRecordId, last_used_at AS lastUsedAt, updated_at AS updatedAt,
   category, importance_permille AS importancePermille, valid_from AS validFrom,
   valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
-  evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic
+  evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic,
+  recorded_at AS recordedAt
   FROM memory_records`;
 
 const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
   m.importance_permille AS importancePermille, m.confidence_permille AS confidencePermille,
-  m.updated_at AS updatedAt, m.last_used_at AS lastUsedAt`;
+  m.updated_at AS updatedAt, m.last_used_at AS lastUsedAt,
+  COALESCE(m.valid_from, m.recorded_at, m.updated_at) AS startsAt, m.valid_to AS endsAt,
+  CASE WHEN m.valid_to IS NULL OR m.valid_to > @now THEN 1 ELSE 0 END AS current`;
 
 const indexScope = `m.owner_id = @ownerId AND m.agent_id = @agentId AND m.status = 'active'
-  AND i.memory_revision = m.revision AND (m.valid_to IS NULL OR m.valid_to > @now)`;
+  AND i.memory_revision = m.revision
+  AND (@includeHistory = 1 OR m.valid_to IS NULL OR m.valid_to > @now)`;
 
 const projectionJobSelect = `SELECT id, memory_id AS memoryId,
   memory_revision AS memoryRevision, generation_id AS generationId, operation, status,
@@ -317,6 +325,7 @@ export class SqliteMemoryOperations {
             limit: number;
             minimumSimilarity: number;
             now: string;
+            includeHistory?: boolean;
           },
         );
       case "memoryIndex.listUnindexed":
@@ -363,6 +372,7 @@ export class SqliteMemoryOperations {
       providerRecordId: row.providerRecordId,
       lastUsedAt: row.lastUsedAt,
       updatedAt: row.updatedAt,
+      recordedAt: row.recordedAt ?? row.updatedAt,
       attributes: Object.freeze({
         category: row.category,
         importancePermille: row.importancePermille,
@@ -577,8 +587,9 @@ export class SqliteMemoryOperations {
               id, owner_id, agent_id, revision, status, content_ref, classification,
               source_thread_id, inference, confidence_permille, policy_version,
               provider_record_id, last_used_at, updated_at, category, importance_permille,
-              valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic,
+              recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -602,6 +613,7 @@ export class SqliteMemoryOperations {
             attributes.supersededBy,
             attributes.evidenceVerified ? 1 : 0,
             attributes.sensitiveTopic ?? null,
+            input.memory.updatedAt,
           );
       } else {
         if (
@@ -784,6 +796,9 @@ export class SqliteMemoryOperations {
       updatedAt: row.updatedAt,
       lastUsedAt: row.lastUsedAt,
       signal: row.signal,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      current: row.current === 1,
     });
   }
 
@@ -796,6 +811,7 @@ export class SqliteMemoryOperations {
     limit: number;
     minimumSimilarity: number;
     now: string;
+    includeHistory?: boolean;
   }): MemoryIndexSearchResult {
     if (
       !Number.isSafeInteger(input.limit) ||
@@ -806,7 +822,12 @@ export class SqliteMemoryOperations {
     ) {
       this.fail("PORT_INVALID_OPERATION", "Memory index search input is invalid");
     }
-    const scope = { ownerId: input.ownerId, agentId: input.agentId, now: input.now };
+    const scope = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      now: input.now,
+      includeHistory: input.includeHistory === true ? 1 : 0,
+    };
     let vector: MemoryIndexCandidate[] = [];
     let vectorEngine: MemoryIndexSearchResult["vectorEngine"] = "none";
     if (input.embedding) {

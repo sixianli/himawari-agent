@@ -1176,12 +1176,16 @@ body {
   gap: 8px;
   margin-top: 8px;
 }
-.memory-saved summary {
+.memory-saved summary,
+.memory-profile summary,
+.memory-history summary {
   cursor: pointer;
   font-size: 12px;
   color: var(--text-muted);
 }
 .memory-saved ul,
+.memory-profile ul,
+.memory-history ul,
 .memory-list {
   list-style: none;
   padding: 0;
@@ -1217,4 +1221,26 @@ body {
 }
 .memory-search {
   margin: 12px 0 4px;
+}
+.memory-profile {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.memory-profile h5 {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.memory-profile li,
+.memory-history li {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+.memory-new {
+  color: var(--accent, inherit);
+}
+.memory-history s {
+  color: var(--text-muted);
 }

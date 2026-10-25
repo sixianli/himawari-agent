@@ -134,13 +134,103 @@ export function MemoryTurnNote({
   );
 }
 
+const RECENT_MS = 7 * 86_400_000;
+const day = (value: string) => new Date(value).toLocaleDateString();
+
+function MemoryProfile({ memory, message }: { memory: MemoryModel; message: Message }) {
+  const overview = memory.overview;
+  const [editing, setEditing] = useState<string | null>(null);
+  if (!overview?.profile.length) return null;
+  const items = new Map(overview.memories.map((item) => [item.memoryId, item]));
+  const now = Date.now();
+  return (
+    <details className="memory-profile" open>
+      <summary>{message("memory.profileTitle")}</summary>
+      {overview.profile.map((section) => (
+        <section key={section.kind}>
+          <h5>{message(`memory.profile.${section.kind}`)}</h5>
+          <ul>
+            {section.lines.map((line) => {
+              const item = items.get(line.memoryId);
+              return (
+                <li key={line.memoryId}>
+                  {editing === line.memoryId && item ? (
+                    <TextEditor
+                      initial={item.text}
+                      busy={memory.busy}
+                      message={message}
+                      onCancel={() => setEditing(null)}
+                      onSave={(text) =>
+                        void memory.correct(item, text).then((ok) => ok && setEditing(null))
+                      }
+                    />
+                  ) : (
+                    <>
+                      {line.text}
+                      {now - new Date(line.updatedAt).valueOf() < RECENT_MS ? (
+                        <small className="memory-new"> {message("memory.recent")}</small>
+                      ) : null}
+                      {item ? (
+                        <ActionButton variant="quiet" onClick={() => setEditing(line.memoryId)}>
+                          {message("memory.editAction")}
+                        </ActionButton>
+                      ) : null}
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      <p className="settings-note">{message("memory.profileNote")}</p>
+    </details>
+  );
+}
+
+function MemoryHistory({
+  items,
+  memory,
+  message,
+}: {
+  items: readonly MemoryItem[];
+  memory: MemoryModel;
+  message: Message;
+}) {
+  if (!items.length) return null;
+  return (
+    <details className="memory-history">
+      <summary>{message("memory.history", { count: items.length })}</summary>
+      <ul>
+        {items.map((item) => (
+          <li key={item.memoryId}>
+            <s>{item.text}</s>
+            {item.validTo ? (
+              <small> {message("memory.until", { date: day(item.validTo) })}</small>
+            ) : null}
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.restore(item)}
+            >
+              {message("memory.restore")}
+            </ActionButton>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function MemoryRow({
   item,
+  history,
   memory,
   message,
   onOpenThread,
 }: {
   item: MemoryItem;
+  history: readonly MemoryItem[];
   memory: MemoryModel;
   message: Message;
   onOpenThread: (threadId: string) => void;
@@ -164,8 +254,10 @@ function MemoryRow({
               ? `${message("memory.sensitive")} · `
               : ""}
             {item.inference ? `${message("memory.inferred")} · ` : ""}
-            {new Date(item.updatedAt).toLocaleDateString()}
+            {day(item.updatedAt)}
+            {item.validTo ? ` · ${message("memory.until", { date: day(item.validTo) })}` : ""}
           </small>
+          <MemoryHistory items={history} memory={memory} message={message} />
           {mode === "delete" ? (
             <div className="actions" role="alert">
               <span>{message("memory.deleteConfirm")}</span>
@@ -217,8 +309,14 @@ export function MemorySettings({
   if (!memory) return <p>{message("common.notConfigured")}</p>;
   const overview = memory.overview;
   const needle = search.trim().toLowerCase();
-  const memories =
-    overview?.memories.filter((item) => !needle || item.text.toLowerCase().includes(needle)) ?? [];
+  const all = overview?.memories ?? [];
+  const history = new Map<string, MemoryItem[]>();
+  for (const item of all) {
+    if (!item.supersededBy) continue;
+    history.set(item.supersededBy, [...(history.get(item.supersededBy) ?? []), item]);
+  }
+  const live = all.filter((item) => !item.supersededBy);
+  const memories = live.filter((item) => !needle || item.text.toLowerCase().includes(needle));
   return (
     <section className="memory-settings">
       <h3>{message("review.settings.memory")}</h3>
@@ -236,6 +334,7 @@ export function MemorySettings({
           ))}
         </>
       ) : null}
+      <MemoryProfile memory={memory} message={message} />
       <input
         type="search"
         className="memory-search"
@@ -252,6 +351,7 @@ export function MemorySettings({
             <MemoryRow
               key={`${item.memoryId}:${item.revision}`}
               item={item}
+              history={history.get(item.memoryId) ?? []}
               memory={memory}
               message={message}
               onOpenThread={onOpenThread}
@@ -263,10 +363,8 @@ export function MemorySettings({
           {needle ? message("common.noRecords") : message("memory.empty")}
         </p>
       )}
-      {overview?.memories.length ? (
-        <p className="settings-note">
-          {message("memory.count", { count: overview.memories.length })}
-        </p>
+      {live.length ? (
+        <p className="settings-note">{message("memory.count", { count: live.length })}</p>
       ) : null}
       <p className="settings-note">{message("memory.note")}</p>
     </section>
