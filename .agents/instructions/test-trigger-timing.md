@@ -1,5 +1,7 @@
 # Test Trigger Timing
 
+While `DELIVERY_MODE` says `fast`, [Delivery Mode](delivery-mode.md#fast-mode) replaces Layers 0-4 and the `Layer-0-tests:` lines below with its basic checks.
+
 The current rules are in [ADR 0057](../../docs/adr/0057-batch-layers-one-two-for-small-defects.md#batch-layers). Run each layer on the host given in [Test and Production Hosts](test-and-production-hosts.md). These rules take precedence over any per-defect full-test requirement in task briefs written before 2026-09-29.
 
 - Layer 0, targeted tests (the reproducing test and directly related test files): run before changing production code to show the failure, then after every change. The directly related files are at least every file `python3 "$(git rev-parse --git-common-dir)/hooks/check-layer0-tests.py" derive` lists for the change (add files, never drop one); a commit that changes product source under `apps/*/src/` or `packages/*/src/` declares each Layer 0 file on its own `Layer-0-tests: <path>` line, or `Layer-0-tests: none` when nothing is listed, and the shared `commit-msg` and `pre-push` hooks refuse it otherwise. Merge commits are skipped by the hooks (they print `L0_RELATED_TESTS_SKIPPED_MERGE`); a merge whose conflict resolution changes product source still carries the declaration lines, checked in review ([ADR 0066](../../docs/adr/0066-layer0-related-tests-declared.md)).
