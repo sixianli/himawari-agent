@@ -954,6 +954,18 @@ export class ProductionSandboxExecutionV2 {
       const systemCode =
         hostDiagnostic?.systemCode ??
         (error && typeof error === "object" && "code" in error ? error.code : "UNKNOWN");
+      console.error(
+        JSON.stringify({
+          event: "sandbox.preparation.error",
+          runId: entry.identity.runId,
+          stage,
+          reason:
+            error instanceof Error
+              ? error.message.replace(/[^A-Za-z0-9_ .:-]/g, "_").slice(0, 120)
+              : "UNKNOWN",
+          at: new Date().toISOString(),
+        }),
+      );
       const diagnostic = {
         stage,
         reasonCode:
