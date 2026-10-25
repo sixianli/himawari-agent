@@ -24,6 +24,7 @@ import type {
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
 import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
+import { isTerminalRun } from "./execution-view.js";
 
 import { listPendingRunApprovals } from "./run-approval.js";
 import { RunApprovalCard } from "./components/run-approval-card.js";
@@ -567,8 +568,9 @@ export function useThreadControlCenter(
         setExecution,
         setExecutionStates,
       );
+      if (epoch !== refreshSequence.current) scheduleExecution(runs.map((run) => run.runId));
     } catch {
-      if (epoch !== refreshSequence.current) return;
+      if (epoch !== refreshSequence.current) return scheduleExecution(runs.map((run) => run.runId));
       fullRefreshRequested.current = true;
       scheduleRefresh();
     } finally {
@@ -583,13 +585,18 @@ export function useThreadControlCenter(
   );
 
   const offline = connection === "offline";
+  const executionLive =
+    detail?.payload.runs.some(
+      (run) => !isTerminalRun(run) || executionStates[run.runId]?.displayPhase === "unresolved",
+    ) ?? false;
   useEffect(() => {
     if (
       !active ||
       !configuration?.executionEventsAvailable ||
       !selectedThreadId ||
       shownDetailThreadId !== selectedThreadId ||
-      offline
+      offline ||
+      !executionLive
     )
       return;
     const synchronizer = new ThreadExecutionSynchronizer({
@@ -609,6 +616,7 @@ export function useThreadControlCenter(
   }, [
     active,
     configuration,
+    executionLive,
     offline,
     onUnauthorized,
     scheduleExecution,

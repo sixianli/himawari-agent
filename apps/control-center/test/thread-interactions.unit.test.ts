@@ -2042,7 +2042,7 @@ describe("pushed conversation updates", () => {
     runRevision,
     revision,
     lastObservedAt: NOW,
-    displayPhase: "completed",
+    displayPhase: statePhase,
     reasonCode: "RUN_COMPLETED",
     availableActions: [],
     needsAttention: false,
@@ -2053,8 +2053,10 @@ describe("pushed conversation updates", () => {
   let sources: FakeEventSource[];
   let queue: (string | null)[];
   let signal: number;
+  let statePhase: ThreadExecutionState["displayPhase"];
 
   beforeEach(() => {
+    statePhase = "completed";
     sources = [];
     queue = [];
     signal = 0;
@@ -2169,7 +2171,28 @@ describe("pushed conversation updates", () => {
     expect(reads[2]?.payload).toMatchObject({ runId: "run-2" });
   });
 
+  it("opens the execution stream only while a Run of the conversation is live", async () => {
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(0);
+    runs = [{ ...runs[0], revision: 5, status: "running" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    const live = sources.filter((source) => source.url.includes("execution-events"));
+    expect(live).toHaveLength(1);
+    runs = [{ ...runs[0], revision: 6, status: "completed" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    expect(live[0]?.closed).toBe(true);
+  });
+
+  it("keeps the execution stream open while a finished Run still has an unresolved result", async () => {
+    statePhase = "unresolved";
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(1);
+  });
+
   it("re-reads the conversation when an execution event carries a newer Run revision", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
     await render();
     await settle();
     const source = sources.at(-1);
@@ -2188,6 +2211,7 @@ describe("pushed conversation updates", () => {
   });
 
   it("catches up every Run after the execution stream reconnects", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
     await render();
     await settle();
     const first = sources.at(-1);
@@ -2209,6 +2233,7 @@ describe("pushed conversation updates", () => {
   });
 
   it("closes the execution stream when the conversation changes", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
     await render();
     await settle();
     const first = sources.at(-1);
