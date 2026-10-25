@@ -81,7 +81,7 @@ export function ChatHistory({
         }}
       >
         {!groups.size ? <p className="chat-empty">{message("threads.messagesEmpty")}</p> : null}
-        {[...groups].map(([key, group], index) => {
+        {[...groups].map(([key, group]) => {
           const records = group.run ? (execution[group.run.runId] ?? []) : [];
           const actualModel = records.findLast(
             (item) => item.kind === "message" && item.name,
@@ -111,9 +111,6 @@ export function ChatHistory({
                     <HimawariBrand />
                     <strong>Himawari</strong>
                     {actualModel ? <span className="turn-model">{actualModel}</span> : null}
-                    <span className="turn-number">
-                      {message("chat.turn", { number: index + 1 })}
-                    </span>
                   </header>
                   {group.run ? (
                     <ExecutionProcess
