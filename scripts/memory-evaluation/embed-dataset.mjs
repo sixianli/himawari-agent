@@ -83,6 +83,7 @@ async function main() {
       ...dataset.memories.map(({ text }) => text),
       ...dataset.questions.map(({ query }) => query),
       ...dataset.questions.map(({ query }) => `Instruct: ${QUERY_INSTRUCTION}\nQuery:${query}`),
+      ...(dataset.episodes ?? []).map(({ day, text }) => `${day}\n${text}`),
     ]),
   ];
   const key = await apiKey();

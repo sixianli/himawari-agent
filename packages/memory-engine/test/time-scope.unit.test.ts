@@ -30,6 +30,17 @@ describe("time scope parsing", () => {
     });
   });
 
+  it("keeps ended facts for a window that has already begun", () => {
+    expect(parseTimeScope("这个月初我去首尔干什么", now, "Asia/Tokyo")).toMatchObject({
+      includeHistory: true,
+      from: "2026-09-30T15:00:00.000Z",
+      to: "2026-10-31T14:59:59.999Z",
+    });
+    expect(parseTimeScope("今年夏天我早上做什么运动", now, "Asia/Tokyo")).toMatchObject({
+      includeHistory: true,
+    });
+  });
+
   it("asks for history without a window when the Owner says 以前", () => {
     expect(parseTimeScope("我以前用什么手机？", now, "Asia/Tokyo")).toEqual({
       includeHistory: true,

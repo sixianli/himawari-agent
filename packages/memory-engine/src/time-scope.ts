@@ -273,7 +273,7 @@ export function parseTimeScope(
   const resolved = window as readonly [number, number] | null;
   if (!resolved && !history) return null;
   return Object.freeze({
-    includeHistory: history !== null || (resolved !== null && resolved[1] < instant),
+    includeHistory: history !== null || (resolved !== null && resolved[0] < instant),
     from: resolved ? new Date(resolved[0]).toISOString() : null,
     to: resolved ? new Date(resolved[1]).toISOString() : null,
     matched: Object.freeze(matched),

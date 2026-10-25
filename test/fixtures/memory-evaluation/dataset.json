@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "now": "2026-10-25T12:00:00.000Z",
   "memories": [
     {
@@ -630,7 +630,8 @@
       "entities": ["燕麦拿铁"],
       "updatedAt": "2026-09-12T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m100"
     },
     {
       "id": "m102",
@@ -650,7 +651,8 @@
       "entities": ["iPhone 17 Pro"],
       "updatedAt": "2026-10-01T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m102"
     },
     {
       "id": "m104",
@@ -670,7 +672,8 @@
       "entities": ["Himawari", "Claude Opus"],
       "updatedAt": "2026-10-10T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m104"
     },
     {
       "id": "m106",
@@ -690,7 +693,8 @@
       "entities": ["羽毛球"],
       "updatedAt": "2026-09-18T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m106"
     },
     {
       "id": "m108",
@@ -710,7 +714,8 @@
       "entities": ["小葵", "铃木"],
       "updatedAt": "2026-10-18T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m108"
     },
     {
       "id": "m110",
@@ -730,7 +735,8 @@
       "entities": [],
       "updatedAt": "2026-08-25T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m110"
     },
     {
       "id": "m112",
@@ -750,7 +756,8 @@
       "entities": ["Himawari", "Qwen3-Embedding-8B"],
       "updatedAt": "2026-09-30T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m112"
     },
     {
       "id": "m114",
@@ -770,7 +777,8 @@
       "entities": [],
       "updatedAt": "2026-09-22T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m114"
     },
     {
       "id": "m116",
@@ -790,7 +798,8 @@
       "entities": [],
       "updatedAt": "2026-10-05T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m116"
     },
     {
       "id": "m118",
@@ -810,7 +819,8 @@
       "entities": ["团子"],
       "updatedAt": "2026-10-12T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m118"
     },
     {
       "id": "m120",
@@ -830,7 +840,8 @@
       "entities": ["特斯拉", "Model Y"],
       "updatedAt": "2026-08-28T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m120"
     },
     {
       "id": "m122",
@@ -850,7 +861,8 @@
       "entities": ["Himawari", "React"],
       "updatedAt": "2026-07-05T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m122"
     },
     {
       "id": "m124",
@@ -870,7 +882,8 @@
       "entities": ["Cindy"],
       "updatedAt": "2026-08-30T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m124"
     },
     {
       "id": "m126",
@@ -890,7 +903,8 @@
       "entities": [],
       "updatedAt": "2026-09-02T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m126"
     },
     {
       "id": "m128",
@@ -910,7 +924,8 @@
       "entities": ["老周"],
       "updatedAt": "2026-09-08T09:00:00.000Z",
       "validFrom": null,
-      "validTo": null
+      "validTo": null,
+      "supersedes": "m128"
     },
     {
       "id": "m140",
@@ -2253,6 +2268,308 @@
       "query": "我爸爸住在上海吗？",
       "relevant": ["m014"],
       "stale": []
+    },
+    {
+      "id": "q200",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前早上喝什么咖啡？",
+      "relevant": ["m100"],
+      "stale": []
+    },
+    {
+      "id": "q201",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前用的什么手机？",
+      "relevant": ["m102"],
+      "stale": []
+    },
+    {
+      "id": "q202",
+      "ability": "history",
+      "phase": 2,
+      "query": "Himawari 以前的主力模型是什么？",
+      "relevant": ["m104"],
+      "stale": []
+    },
+    {
+      "id": "q203",
+      "ability": "history",
+      "phase": 2,
+      "query": "小葵之前的钢琴老师是谁？",
+      "relevant": ["m108"],
+      "stale": []
+    },
+    {
+      "id": "q204",
+      "ability": "history",
+      "phase": 2,
+      "query": "我原来怎么去上班？",
+      "relevant": ["m110"],
+      "stale": []
+    },
+    {
+      "id": "q205",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前多重？",
+      "relevant": ["m116"],
+      "stale": []
+    },
+    {
+      "id": "q206",
+      "ability": "history",
+      "phase": 2,
+      "query": "我之前开什么车？",
+      "relevant": ["m120"],
+      "stale": []
+    },
+    {
+      "id": "q207",
+      "ability": "history",
+      "phase": 2,
+      "query": "Himawari 前端以前用什么框架？",
+      "relevant": ["m122"],
+      "stale": []
+    },
+    {
+      "id": "q208",
+      "ability": "history",
+      "phase": 2,
+      "query": "Cindy 之前在哪工作？",
+      "relevant": ["m124"],
+      "stale": []
+    },
+    {
+      "id": "q209",
+      "ability": "history",
+      "phase": 2,
+      "query": "老周以前在哪上班？",
+      "relevant": ["m128"],
+      "stale": []
+    },
+    {
+      "id": "q210",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "九月中旬我去哪出差了？",
+      "relevant": ["m140"],
+      "stale": []
+    },
+    {
+      "id": "q211",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "八月小葵在干什么？",
+      "relevant": ["m142"],
+      "stale": []
+    },
+    {
+      "id": "q212",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "七月我住在哪里？",
+      "relevant": ["m145"],
+      "stale": []
+    },
+    {
+      "id": "q213",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "十月初我生了什么病？",
+      "relevant": ["m143"],
+      "stale": []
+    },
+    {
+      "id": "q214",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "六月我去京都干什么？",
+      "relevant": ["m150"],
+      "stale": []
+    },
+    {
+      "id": "q215",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "今年夏天我早上做什么运动？",
+      "relevant": ["m147"],
+      "stale": []
+    },
+    {
+      "id": "q216",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "四月我在戒什么？",
+      "relevant": ["m152"],
+      "stale": []
+    },
+    {
+      "id": "q217",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "这个月上旬团子怎么了？",
+      "relevant": ["m146"],
+      "stale": []
+    },
+    {
+      "id": "q218",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "这个月初我去首尔干什么？",
+      "relevant": ["m141"],
+      "stale": []
+    },
+    {
+      "id": "q219",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "5 月我用什么手机？",
+      "relevant": ["m102"],
+      "stale": ["m103"]
+    },
+    {
+      "id": "q220",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "五月份我开什么车？",
+      "relevant": ["m120"],
+      "stale": ["m121"]
+    },
+    {
+      "id": "q221",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "五月我每天写代码到几点？",
+      "relevant": ["m126"],
+      "stale": ["m127"]
+    },
+    {
+      "id": "q230",
+      "ability": "episode",
+      "phase": 2,
+      "query": "前天晚上我和谁吃饭了？",
+      "relevant": ["e01"],
+      "stale": []
+    },
+    {
+      "id": "q231",
+      "ability": "episode",
+      "phase": 2,
+      "query": "昨天我们排查了什么问题？",
+      "relevant": ["e02"],
+      "stale": []
+    },
+    {
+      "id": "q232",
+      "ability": "episode",
+      "phase": 2,
+      "query": "上周六小葵去上了什么课？",
+      "relevant": ["e03"],
+      "stale": []
+    },
+    {
+      "id": "q233",
+      "ability": "episode",
+      "phase": 2,
+      "query": "十月十号团子去医院查了什么？",
+      "relevant": ["e04"],
+      "stale": []
+    },
+    {
+      "id": "q234",
+      "ability": "episode",
+      "phase": 2,
+      "query": "九月中旬出差时我和客户谈了什么？",
+      "relevant": ["e05"],
+      "stale": []
+    },
+    {
+      "id": "q235",
+      "ability": "episode",
+      "phase": 2,
+      "query": "三周前我们讨论过记忆系统的什么方案？",
+      "relevant": ["e06"],
+      "stale": []
+    },
+    {
+      "id": "q236",
+      "ability": "episode",
+      "phase": 2,
+      "query": "八月我们一家去哪玩了？",
+      "relevant": ["e07"],
+      "stale": []
+    },
+    {
+      "id": "q237",
+      "ability": "episode",
+      "phase": 2,
+      "query": "这周一我让你帮忙写什么？",
+      "relevant": ["e08"],
+      "stale": []
+    }
+  ],
+  "episodes": [
+    {
+      "id": "e01",
+      "day": "2026-10-23",
+      "text": "主人晚上和老周在新宿吃烤肉，老周说想投一家做 AI 记忆的初创公司。"
+    },
+    {
+      "id": "e02",
+      "day": "2026-10-24",
+      "text": "主人和 Himawari 一起排查联网搜索卡住的问题，最后发现是授权确认互相拖慢。"
+    },
+    {
+      "id": "e03",
+      "day": "2026-10-17",
+      "text": "主人带小葵去上铃木老师的第一节钢琴课，小葵很喜欢新老师。"
+    },
+    {
+      "id": "e04",
+      "day": "2026-10-10",
+      "text": "主人带团子去宠物医院复查，医生说肾脏指标好转，可以继续吃处方粮。"
+    },
+    {
+      "id": "e05",
+      "day": "2026-09-16",
+      "text": "主人在大阪出差，和客户谈了 Himawari 的演示安排和试用时间。"
+    },
+    {
+      "id": "e06",
+      "day": "2026-10-01",
+      "text": "主人和 Himawari 讨论记忆系统是用 SQLite 自研还是继续用 Mem0，倾向自研。"
+    },
+    {
+      "id": "e07",
+      "day": "2026-08-15",
+      "text": "主人和太太 Cindy 带小葵去镰仓看海，在海边吃了 shirasu 盖饭。"
+    },
+    {
+      "id": "e08",
+      "day": "2026-10-19",
+      "text": "主人让 Himawari 帮忙起草给投资人演示的提纲。"
+    },
+    {
+      "id": "e09",
+      "day": "2026-10-22",
+      "text": "主人问东京明天的天气，Himawari 说会下雨，提醒带伞。"
+    },
+    {
+      "id": "e10",
+      "day": "2026-09-02",
+      "text": "主人和老周约好周末一起打羽毛球。"
+    },
+    {
+      "id": "e11",
+      "day": "2026-10-12",
+      "text": "主人和 Himawari 讨论团子换处方湿粮后一天喂几顿。"
+    },
+    {
+      "id": "e12",
+      "day": "2026-08-20",
+      "text": "主人和 Himawari 讨论把 Himawari 的前端从 Vue 迁到 React。"
     }
   ]
 }

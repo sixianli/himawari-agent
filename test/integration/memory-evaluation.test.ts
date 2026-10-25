@@ -15,6 +15,8 @@ import {
   HybridMemoryProvider,
   indexTerms,
   instructedQuery,
+  MemoryEpisodeService,
+  parseTimeScope,
   QWEN3_MEMORY_QUERY_INSTRUCTION,
 } from "@himawari-agent/memory-engine";
 import {
@@ -44,6 +46,7 @@ interface DatasetMemory {
   readonly updatedAt: string;
   readonly validFrom: string | null;
   readonly validTo: string | null;
+  readonly supersedes?: string;
 }
 
 interface DatasetQuestion {
@@ -52,12 +55,20 @@ interface DatasetQuestion {
   readonly query: string;
   readonly relevant: readonly string[];
   readonly stale: readonly string[];
+  readonly phase?: number;
+}
+
+interface DatasetEpisode {
+  readonly id: string;
+  readonly day: string;
+  readonly text: string;
 }
 
 interface Dataset {
   readonly now: string;
   readonly memories: readonly DatasetMemory[];
   readonly questions: readonly DatasetQuestion[];
+  readonly episodes: readonly DatasetEpisode[];
 }
 
 interface AbilityScore {
@@ -70,7 +81,12 @@ interface AbilityScore {
 const dataset = JSON.parse(
   readFileSync(path.join(FIXTURE_ROOT, "dataset.json"), "utf8"),
 ) as Dataset;
-const ABILITIES = [...new Set(dataset.questions.map(({ ability }) => ability))];
+const TIME_ZONE = "Asia/Tokyo";
+const PHASE_ONE_QUESTIONS = dataset.questions.filter(({ phase }) => phase === undefined);
+const PHASE_TWO_QUESTIONS = dataset.questions.filter(({ phase }) => phase === 2);
+const ABILITIES = [...new Set(PHASE_ONE_QUESTIONS.map(({ ability }) => ability))];
+const PHASE_TWO_ABILITIES = [...new Set(PHASE_TWO_QUESTIONS.map(({ ability }) => ability))];
+const PRESENT_SCOPE = Object.freeze({ includeHistory: false, from: null, to: null });
 
 function float32(half: number): number {
   const sign = half & 0x8000 ? -1 : 1;
@@ -79,6 +95,17 @@ function float32(half: number): number {
   if (exponent === 0) return sign * 2 ** -14 * (fraction / 1024);
   if (exponent === 31) return fraction ? Number.NaN : sign * Number.POSITIVE_INFINITY;
   return sign * 2 ** (exponent - 15) * (1 + fraction / 1024);
+}
+
+function requiredTexts(questions: readonly DatasetQuestion[], episodes: boolean): string[] {
+  return [
+    ...dataset.memories.map(({ text }) => text),
+    ...questions.flatMap(({ query }) => [
+      query,
+      instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query),
+    ]),
+    ...(episodes ? dataset.episodes.map(({ day, text }) => `${day}\n${text}`) : []),
+  ];
 }
 
 function cachedVectors(dimensions: number): ReadonlyMap<string, Float32Array> | null {
@@ -143,10 +170,13 @@ function mean(values: readonly number[]): number | null {
     : Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(4));
 }
 
-function score(rankings: ReadonlyMap<string, readonly string[]>): Record<string, AbilityScore> {
+function score(
+  rankings: ReadonlyMap<string, readonly string[]>,
+  questionSet: readonly DatasetQuestion[] = PHASE_ONE_QUESTIONS,
+): Record<string, AbilityScore> {
   return Object.fromEntries(
-    ABILITIES.map((ability) => {
-      const questions = dataset.questions.filter((question) => question.ability === ability);
+    [...new Set(questionSet.map(({ ability }) => ability))].map((ability) => {
+      const questions = questionSet.filter((question) => question.ability === ability);
       const recall: number[] = [];
       const reciprocal: number[] = [];
       const staleFree: number[] = [];
@@ -196,10 +226,15 @@ describe("memory retrieval evaluation", () => {
     await writeFile(path.join(REPORT_ROOT, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   });
 
-  async function evaluate(dimensions: number, vectors: ReadonlyMap<string, Float32Array> | null) {
+  async function prepare(
+    dimensions: number,
+    vectors: ReadonlyMap<string, Float32Array> | null,
+    options: { readonly supersession: boolean; readonly episodes: boolean },
+  ) {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-memory-evaluation-"));
     directories.push(stateRoot);
-    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    const databasePath = path.join(stateRoot, "product.sqlite");
+    const database = openQualifiedDatabase(databasePath);
     applyMigrations(database, await loadBundledMigrations());
     database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
     database
@@ -250,94 +285,161 @@ describe("memory retrieval evaluation", () => {
       minimumFreeBytes: 0,
       now: () => dataset.now,
     });
-    try {
-      const embedder = new EvaluationEmbedder(dimensions, vectors);
-      const texts = new Map(
-        dataset.memories.map((memory) => [`payload-${memory.id}`, memory.text]),
+    const embedder = new EvaluationEmbedder(dimensions, vectors);
+    const texts = new Map(dataset.memories.map((memory) => [`payload-${memory.id}`, memory.text]));
+    let clock = dataset.now;
+    const instructed =
+      vectors !== null &&
+      (options.episodes ? PHASE_TWO_QUESTIONS : PHASE_ONE_QUESTIONS).every(({ query }) =>
+        vectors.has(instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query)),
       );
-      let clock = dataset.now;
-      const instructed =
-        vectors !== null &&
-        dataset.questions.every(({ query }) =>
-          vectors.has(instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, query)),
-        );
-      const provider = new HybridMemoryProvider({
-        index: repository.memoryIndex(),
-        embedder,
-        embeddableClassifications: ["public", "private"],
-        now: () => dataset.now,
-        ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
-      });
-      const service = new DurableMemoryService({
-        state: repository.productMemoryState(),
-        jobs: repository.memoryProjectionJobs(),
-        provider,
-        content: {
-          readText: async (ref) => {
-            const text = texts.get(ref);
-            if (text === undefined) throw new Error(`EVALUATION_CONTENT_MISSING:${ref}`);
-            return text;
-          },
+    const provider = new HybridMemoryProvider({
+      index: repository.memoryIndex(),
+      embedder,
+      embeddableClassifications: ["public", "private"],
+      now: () => dataset.now,
+      timeZone: TIME_ZONE,
+      ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
+    });
+    const service = new DurableMemoryService({
+      state: repository.productMemoryState(),
+      jobs: repository.memoryProjectionJobs(),
+      provider,
+      content: {
+        readText: async (ref) => {
+          const text = texts.get(ref);
+          if (text === undefined) throw new Error(`EVALUATION_CONTENT_MISSING:${ref}`);
+          return text;
         },
-        workerId: "memory-evaluation",
-        now: () => clock,
-        maximumProjectionAttempts: 1,
-        projectionLeaseMs: 60_000,
-      });
-      for (const memory of [...dataset.memories].sort((left, right) =>
-        left.updatedAt.localeCompare(right.updatedAt),
-      )) {
-        clock = memory.updatedAt;
-        await service.applyProposal(
-          {
-            decision: "create",
-            memory: {
-              id: createMemoryId(memory.id),
-              ownerId: OWNER_ID,
-              agentId: AGENT_ID,
-              contentRef: `payload-${memory.id}`,
-              dataClassification: "private",
-              sourceThreadId: THREAD_ID,
-              sourceRefs: [`message-${memory.id}`],
-              inference: false,
-              confidencePermille: 950,
-              policyVersion: "memory-capture:v2",
-              attributes: {
-                category: memory.category,
-                importancePermille: memory.importance,
-                entities: memory.entities,
-                validFrom: memory.validFrom,
-                validTo: memory.validTo,
-                supersededBy: null,
-                evidenceVerified: true,
-              },
+      },
+      workerId: "memory-evaluation",
+      now: () => clock,
+      maximumProjectionAttempts: 1,
+      projectionLeaseMs: 60_000,
+    });
+    for (const memory of [...dataset.memories].sort((left, right) =>
+      left.updatedAt.localeCompare(right.updatedAt),
+    )) {
+      clock = memory.updatedAt;
+      await service.applyProposal(
+        {
+          decision: "create",
+          memory: {
+            id: createMemoryId(memory.id),
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            contentRef: `payload-${memory.id}`,
+            dataClassification: "private",
+            sourceThreadId: THREAD_ID,
+            sourceRefs: [`message-${memory.id}`],
+            inference: false,
+            confidencePermille: 950,
+            policyVersion: "memory-capture:v3",
+            attributes: {
+              category: memory.category,
+              importancePermille: memory.importance,
+              entities: memory.entities,
+              validFrom: memory.validFrom,
+              validTo: memory.validTo,
+              supersededBy: null,
+              evidenceVerified: true,
             },
           },
-          GENERATION_ID,
+          ...(options.supersession && memory.supersedes
+            ? { supersedes: createMemoryId(memory.supersedes) }
+            : {}),
+        },
+        GENERATION_ID,
+      );
+    }
+    clock = dataset.now;
+    while ((await service.runProjectionBatch(100)).length > 0);
+    const episodeIds = new Map<string, string>();
+    const episodes = options.episodes
+      ? new MemoryEpisodeService({
+          store: repository.memoryEpisodes(),
+          threads: repository.threadRepository(),
+          readText: async ({ ref }) => texts.get(ref),
+          storeText: async (input) => {
+            const connection = openQualifiedDatabase(databasePath);
+            try {
+              connection
+                .prepare(
+                  `INSERT OR IGNORE INTO payloads (
+                    ref, owner_id, agent_id, classification, storage_kind, ciphertext,
+                    content_digest, encryption_algorithm, key_ref, lifecycle_state, created_at,
+                    content_type
+                  ) VALUES (?, ?, ?, ?, 'sqlite_blob', X'00', ?, 'fixture', 'fixture-key',
+                    'active', ?, 'text/plain')`,
+                )
+                .run(
+                  input.ref,
+                  input.ownerId,
+                  input.agentId,
+                  input.dataClassification,
+                  `sha256:${input.ref}`,
+                  input.createdAt,
+                );
+            } finally {
+              connection.close();
+            }
+            texts.set(input.ref, input.text);
+          },
+          embedder,
+          timeZone: TIME_ZONE,
+          now: () => dataset.now,
+          ...(instructed ? { queryInstruction: QWEN3_MEMORY_QUERY_INSTRUCTION } : {}),
+        })
+      : null;
+    if (episodes)
+      for (const [index, episode] of dataset.episodes.entries()) {
+        const at = `${episode.day}T03:00:00.000Z`;
+        const saved = await episodes.summarize(
+          {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            threadId: THREAD_ID,
+            day: episode.day,
+            firstSequence: index + 1,
+            lastSequence: index + 1,
+            startedAt: at,
+            endedAt: at,
+            lines: [{ role: "owner", text: episode.text, committedAt: at }],
+          },
+          async () => episode.text,
         );
+        episodeIds.set(saved.id, episode.id);
       }
-      clock = dataset.now;
-      while ((await service.runProjectionBatch(100)).length > 0);
+    return { repository, embedder, provider, episodes, episodeIds, instructed };
+  }
+
+  async function evaluate(dimensions: number, vectors: ReadonlyMap<string, Float32Array> | null) {
+    const current = await prepare(dimensions, vectors, { supersession: true, episodes: false });
+    const phaseOne = await prepare(dimensions, vectors, { supersession: false, episodes: false });
+    try {
       const memoryVectors = await Promise.all(
         dataset.memories.map(async (memory) => ({
           id: memory.id,
-          vector: await embedder.embed(memory.text),
+          vector: await current.embedder.embed(memory.text),
         })),
       );
       const engine = new Map<string, readonly string[]>();
+      const previous = new Map<string, readonly string[]>();
       const baseline = new Map<string, readonly string[]>();
-      for (const question of dataset.questions) {
-        const hits = await provider.search({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          query: question.query,
-          limit: TOP_K,
-        });
-        engine.set(
-          question.id,
-          hits.map(({ productMemoryId }) => productMemoryId),
-        );
-        const query = await embedder.embed(question.query);
+      for (const question of PHASE_ONE_QUESTIONS) {
+        const search = (resource: typeof current, scope?: typeof PRESENT_SCOPE) =>
+          resource.provider
+            .search({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              query: question.query,
+              limit: TOP_K,
+              ...(scope ? { scope } : {}),
+            })
+            .then((hits) => hits.map(({ productMemoryId }) => productMemoryId as string));
+        engine.set(question.id, await search(current));
+        previous.set(question.id, await search(phaseOne, PRESENT_SCOPE));
+        const query = await current.embedder.embed(question.query);
         baseline.set(
           question.id,
           memoryVectors
@@ -352,19 +454,79 @@ describe("memory retrieval evaluation", () => {
       }
       return {
         mode: vectors ? "qwen3-embedding-8b" : "term-hash",
-        queryInstruction: instructed,
+        queryInstruction: current.instructed,
         dimensions,
         engine: score(engine),
+        phaseOne: score(previous),
         baseline: score(baseline),
         rankings: Object.fromEntries(
-          dataset.questions.map(({ id }) => [
+          PHASE_ONE_QUESTIONS.map(({ id }) => [
             id,
-            { engine: engine.get(id), baseline: baseline.get(id) },
+            { engine: engine.get(id), phaseOne: previous.get(id), baseline: baseline.get(id) },
           ]),
         ),
       };
     } finally {
-      await repository.close();
+      await current.repository.close();
+      await phaseOne.repository.close();
+    }
+  }
+
+  async function evaluatePhaseTwo(
+    dimensions: number,
+    vectors: ReadonlyMap<string, Float32Array> | null,
+  ) {
+    const current = await prepare(dimensions, vectors, { supersession: true, episodes: true });
+    const phaseOne = await prepare(dimensions, vectors, { supersession: false, episodes: false });
+    try {
+      const engine = new Map<string, readonly string[]>();
+      const previous = new Map<string, readonly string[]>();
+      for (const question of PHASE_TWO_QUESTIONS) {
+        if (question.ability === "episode") {
+          const hits = await current.episodes?.search({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            query: question.query,
+            scope: parseTimeScope(question.query, dataset.now, TIME_ZONE),
+            allowedClassifications: ["public", "private"],
+            limit: TOP_K,
+          });
+          engine.set(
+            question.id,
+            (hits ?? []).map(({ episode }) => current.episodeIds.get(episode.id) ?? episode.id),
+          );
+          previous.set(question.id, []);
+          continue;
+        }
+        const search = (resource: typeof current, scope?: typeof PRESENT_SCOPE) =>
+          resource.provider
+            .search({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              query: question.query,
+              limit: TOP_K,
+              ...(scope ? { scope } : {}),
+            })
+            .then((hits) => hits.map(({ productMemoryId }) => productMemoryId as string));
+        engine.set(question.id, await search(current));
+        previous.set(question.id, await search(phaseOne, PRESENT_SCOPE));
+      }
+      return {
+        mode: vectors ? "qwen3-embedding-8b" : "term-hash",
+        queryInstruction: current.instructed,
+        dimensions,
+        engine: score(engine, PHASE_TWO_QUESTIONS),
+        phaseOne: score(previous, PHASE_TWO_QUESTIONS),
+        rankings: Object.fromEntries(
+          PHASE_TWO_QUESTIONS.map(({ id }) => [
+            id,
+            { engine: engine.get(id), phaseOne: previous.get(id) },
+          ]),
+        ),
+      };
+    } finally {
+      await current.repository.close();
+      await phaseOne.repository.close();
     }
   }
 
@@ -381,28 +543,44 @@ describe("memory retrieval evaluation", () => {
     }
   }
 
-  it("covers five abilities with labelled memories", () => {
-    expect(ABILITIES.sort()).toEqual([
+  function completeVectors(dimensions: number, texts: readonly string[]) {
+    const vectors = cachedVectors(dimensions);
+    return vectors && texts.every((text) => vectors.has(text)) ? vectors : null;
+  }
+
+  it("covers the labelled abilities of both phases", () => {
+    expect([...ABILITIES].sort()).toEqual([
       "abstention",
       "extraction",
       "knowledge_update",
       "multi_session",
       "temporal",
     ]);
+    expect([...PHASE_TWO_ABILITIES].sort()).toEqual(["episode", "history", "time_window"]);
     expect(dataset.memories.length).toBeGreaterThanOrEqual(150);
-    expect(dataset.questions.length).toBeGreaterThanOrEqual(100);
+    expect(PHASE_ONE_QUESTIONS.length).toBeGreaterThanOrEqual(100);
+    expect(PHASE_TWO_QUESTIONS.length).toBeGreaterThanOrEqual(30);
+    const memories = new Set(dataset.memories.map(({ id }) => id));
+    const episodes = new Set(dataset.episodes.map(({ id }) => id));
+    for (const question of dataset.questions)
+      for (const id of [...question.relevant, ...question.stale])
+        expect(memories.has(id) || episodes.has(id), `${question.id} ${id}`).toBe(true);
   });
 
-  it("does not fall below the Mem0 baseline in any ability", async () => {
+  it("does not fall below the Mem0 baseline in any ability and corrections stop stale answers", async () => {
     const results = [];
     for (const dimensions of [4096, 1024]) {
-      const vectors = cachedVectors(dimensions);
+      const vectors = completeVectors(dimensions, requiredTexts(PHASE_ONE_QUESTIONS, false));
       if (vectors) results.push(await evaluate(dimensions, vectors));
     }
     if (results.length === 0) results.push(await evaluate(HASH_DIMENSIONS, null));
     for (const result of results) {
       report[`${result.mode}-${result.dimensions}`] = result;
       assertNotBelowBaseline(result);
+      const engine = result.engine["knowledge_update"];
+      const previous = result.phaseOne["knowledge_update"];
+      expect(engine?.staleFree ?? 0).toBeGreaterThanOrEqual((previous?.staleFree ?? 0) + 0.1);
+      expect(engine?.recallAt5 ?? 0).toBeGreaterThanOrEqual(previous?.recallAt5 ?? 0);
     }
     const full = results.find(({ dimensions }) => dimensions === 4096);
     const reduced = results.find(({ dimensions }) => dimensions === 1024);
@@ -413,5 +591,33 @@ describe("memory retrieval evaluation", () => {
             (reduced.engine[ability]?.[metric] ?? 0) >= (full.engine[ability]?.[metric] ?? 0),
         ),
       );
-  });
+  }, 120_000);
+
+  it("answers history, time-window and past-conversation questions that phase one could not", async () => {
+    const results = [];
+    for (const dimensions of [4096, 1024]) {
+      const vectors = completeVectors(dimensions, requiredTexts(PHASE_TWO_QUESTIONS, true));
+      if (vectors) results.push(await evaluatePhaseTwo(dimensions, vectors));
+    }
+    report["phaseTwoRealEmbeddings"] = results.length > 0;
+    if (results.length === 0) results.push(await evaluatePhaseTwo(HASH_DIMENSIONS, null));
+    for (const result of results) {
+      report[`phase-two-${result.mode}-${result.dimensions}`] = result;
+      const label = `${result.mode}/${result.dimensions}`;
+      const window = result.engine["time_window"];
+      const windowBefore = result.phaseOne["time_window"];
+      expect(window?.recallAt5 ?? 0, `${label} time_window`).toBeGreaterThanOrEqual(
+        (windowBefore?.recallAt5 ?? 0) + 0.3,
+      );
+      expect(window?.staleFree ?? 0, `${label} time_window stale`).toBeGreaterThanOrEqual(
+        windowBefore?.staleFree ?? 0,
+      );
+      expect(result.engine["history"]?.recallAt5 ?? 0, `${label} history`).toBeGreaterThanOrEqual(
+        result.phaseOne["history"]?.recallAt5 ?? 0,
+      );
+      expect(result.engine["episode"]?.recallAt5 ?? 0, `${label} episode`).toBeGreaterThanOrEqual(
+        0.75,
+      );
+    }
+  }, 120_000);
 });
