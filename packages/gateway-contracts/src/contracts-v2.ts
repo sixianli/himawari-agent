@@ -23,6 +23,9 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
+  "memory.overview.read",
+  "memory.overview.snapshot",
+  "memory.approval.respond",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -198,6 +201,57 @@ const searchAuthorizationSnapshotSchema = object({
     available: booleanValue,
     recipients: searchRecipientsSchema,
     generatedAt: timestamp,
+  }),
+});
+
+export const MEMORY_SENSITIVE_TOPICS = [
+  "health",
+  "finance",
+  "beliefs",
+  "intimacy",
+  "third_party",
+  "location",
+  "legal",
+  "other",
+] as const;
+const memoryOverviewQuerySchema = object({
+  ...envelope("query", "memory.overview.read"),
+  payload: object({}),
+});
+const memoryOverviewSnapshotSchema = object({
+  ...envelope("snapshot", "memory.overview.snapshot"),
+  payload: object({
+    memories: array(
+      object({
+        memoryId: machineString,
+        revision: integer(1),
+        text: boundedString(2000),
+        dataClassification: classificationSchema,
+        inference: booleanValue,
+        sourceThreadId: nullable(machineString),
+        sourceRefs: array(boundedString(512)),
+        updatedAt: timestamp,
+      }),
+    ),
+    pending: array(
+      object({
+        requestId: machineString,
+        threadId: machineString,
+        sourceRef: boundedString(512),
+        text: boundedString(2000),
+        topic: enumeration(MEMORY_SENSITIVE_TOPICS),
+        requestedAt: timestamp,
+      }),
+    ),
+    generatedAt: timestamp,
+  }),
+});
+const memoryApprovalRespondCommandSchema = object({
+  ...commandEnvelope("memory.approval.respond"),
+  payload: object({
+    requestId: machineString,
+    resolution: enumeration(["approved", "edited", "rejected"]),
+    editedText: nullable(boundedString(500)),
   }),
 });
 
@@ -1315,6 +1369,9 @@ const schemasByType = {
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
+  "memory.overview.read": memoryOverviewQuerySchema,
+  "memory.overview.snapshot": memoryOverviewSnapshotSchema,
+  "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

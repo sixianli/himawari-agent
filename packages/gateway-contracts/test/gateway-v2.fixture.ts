@@ -41,6 +41,37 @@ export const governanceMessages = [
     recipients: ["https://mcp.exa.ai"],
     generatedAt: "2026-09-11T00:00:00.000Z",
   }),
+  fixture("query", "memory.overview.read", {}),
+  fixture("snapshot", "memory.overview.snapshot", {
+    memories: [
+      {
+        memoryId: "memory-01",
+        revision: 1,
+        text: "主人最喜欢的颜色是蓝色",
+        dataClassification: "private",
+        inference: false,
+        sourceThreadId: "thread-01",
+        sourceRefs: ["payload-01"],
+        updatedAt: "2026-09-11T00:00:00.000Z",
+      },
+    ],
+    pending: [
+      {
+        requestId: "memory-approval-01",
+        threadId: "thread-01",
+        sourceRef: "payload-02",
+        text: "主人对青霉素过敏",
+        topic: "health",
+        requestedAt: "2026-09-11T00:00:00.000Z",
+      },
+    ],
+    generatedAt: "2026-09-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.approval.respond", {
+    requestId: "memory-approval-01",
+    resolution: "approved",
+    editedText: null,
+  }),
   fixture("command", "grant.revoke", {
     grantId: "grant-01",
     expectedRevision: 2,

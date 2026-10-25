@@ -1199,7 +1199,19 @@ export async function runAgentService(
         onFailure: ({ phase, error }) => failRuntime(error, phase),
       });
       const configuredPiModels = modelComposition.composition.piModels;
+      const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
+        memory: {
+          service: activeDurableMemory,
+          onAudit: (record) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "memory-capture.audit",
+              outcome: record.outcome,
+              candidateOrdinal: record.candidateOrdinal ?? -1,
+              classification: record.classification,
+            }),
+        },
         modelCatalog: await Promise.all(
           modelComposition.descriptors.generation
             .filter(
