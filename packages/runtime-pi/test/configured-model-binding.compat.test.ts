@@ -1,4 +1,5 @@
 // biome-ignore-all lint/complexity/useLiteralKeys: fake Pi SDK records are intentionally untrusted
+import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConfiguredPiModelBindingPort,
@@ -148,12 +149,7 @@ describe("ConfiguredPiModelBindingPort", () => {
       runtimeFactory: { create: async () => runtime as unknown as PiModelRuntime },
     });
     const primary = await binding.resolve(PRIMARY_REF);
-    expect(getPiModelPresentation(primary).thinkingLevels).toEqual([
-      "minimal",
-      "low",
-      "medium",
-      "high",
-    ]);
+    expect(getPiModelPresentation(primary).thinkingLevels).toEqual(["low", "high", "max"]);
     await binding.close();
     const plain = new ConfiguredPiModelBindingPort({
       descriptors: descriptors(),
@@ -164,6 +160,40 @@ describe("ConfiguredPiModelBindingPort", () => {
       "off",
     ]);
     await plain.close();
+  });
+
+  it("offers only the reasoning efforts DeepSeek V4.1 Flash really distinguishes", async () => {
+    const binding = new ConfiguredPiModelBindingPort({
+      descriptors: [modelDescriptor("primary", { reasoning: true })],
+      secretSource: { productionSuitable: true, resolve: async () => SECRET },
+    });
+    const primary = await binding.resolve(PRIMARY_REF);
+    expect(getPiModelPresentation(primary).thinkingLevels).toEqual(["off", "low", "high", "max"]);
+    const payloads: unknown[] = [];
+    for (const level of ["off", "low", "high", "max"] as const) {
+      const stream = streamSimple(
+        primary.model as Parameters<typeof streamSimple>[0],
+        { messages: [{ role: "user", content: "ping", timestamp: 0 }] },
+        {
+          apiKey: SECRET,
+          ...(level === "off" ? {} : { reasoning: level }),
+          onPayload: (payload) => {
+            payloads.push(payload);
+            throw new Error("PAYLOAD_CAPTURED");
+          },
+        },
+      );
+      for await (const event of stream) {
+        if (event.type === "done" || event.type === "error") break;
+      }
+    }
+    expect(payloads.map((payload) => (payload as Record<string, unknown>)["reasoning"])).toEqual([
+      { effort: "none" },
+      { effort: "low" },
+      { effort: "high" },
+      { effort: "max" },
+    ]);
+    await binding.close();
   });
 
   it("registers exactly the closed model set and defers the shared secret", async () => {

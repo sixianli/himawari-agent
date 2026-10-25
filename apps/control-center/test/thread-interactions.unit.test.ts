@@ -867,7 +867,7 @@ describe("thread control center interactions", () => {
       [...container.querySelectorAll(".environment-line > button")].map(
         (button) => button.textContent,
       ),
-    ).toEqual(["默认模式 · 没有后台程序在运行⌄"]);
+    ).toEqual([]);
     expect(container.textContent).not.toContain("没有程序在运行");
 
     runs = [{ runId: "run-ui", revision: 8, status: "failed", createdAt: NOW, updatedAt: NOW }];
