@@ -85,6 +85,10 @@ export class ProductionPayloadBrokerHandlerError extends Error {
 }
 
 export interface ProductionPayloadBrokerHandlerOptions {
+  readonly onSandboxExecutionRejected?: (detail: {
+    readonly command: string;
+    readonly reason: string;
+  }) => void;
   /** Host binding comes from trusted composition, never the request. */
   readonly sandboxJobs?: {
     readonly hostId: string;
@@ -107,6 +111,7 @@ export interface ProductionPayloadBrokerHandlerOptions {
       plan: SandboxExecutionPlanV2,
       diagnostic: SandboxPreparationDiagnostic,
     ) => Promise<void>;
+    readonly interruptFailedPreparation?: (plan: SandboxExecutionPlanV2) => Promise<void>;
     readonly registerPreparationControl?: (
       plan: SandboxExecutionPlanV2,
       control: SandboxJobControlBinding,
@@ -439,6 +444,9 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
           throw new Error("preparation diagnostic unavailable");
         await current(false);
         await configured.recordPreparationDiagnostic(record.plan, command.diagnostic);
+        try {
+          await configured.interruptFailedPreparation?.(record.plan);
+        } catch {}
         return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
       if (command.kind === "register_preparation_control") {
@@ -612,7 +620,18 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
       // Resource control requires a real supervisor. A journal row is never a
       // successful stop or a source of invented output cursors.
       throw new Error("resource supervisor unavailable");
-    } catch {
+    } catch (error) {
+      try {
+        const command = (value as { payload?: { command?: { kind?: unknown } } }).payload?.command
+          ?.kind;
+        this.#options.onSandboxExecutionRejected?.({
+          command: typeof command === "string" ? command.slice(0, 64) : "unknown",
+          reason:
+            error instanceof Error
+              ? error.message.replace(/[^A-Za-z0-9_ .:-]/g, "_").slice(0, 120)
+              : "UNKNOWN",
+        });
+      } catch {}
       throw new ProductionPayloadBrokerHandlerError(
         PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.SANDBOX_JOB_REJECTED,
       );

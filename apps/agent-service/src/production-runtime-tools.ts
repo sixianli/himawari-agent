@@ -31,6 +31,7 @@ import {
   webProviderChain,
   type WebProviderId,
 } from "@himawari-agent/application";
+import { isSandboxReservationNeverStarted } from "@himawari-agent/application/sandbox-execution-projection";
 import {
   EXECUTION_V2_SCHEMA_VERSION,
   type ExecutionAdmissionPeerBinding,
@@ -764,6 +765,34 @@ export class ProductionRuntimeTools implements RuntimeToolPort {
       },
     };
     const coding = this.#codingTool(invocation);
+    const known = await this.#options.sandbox?.preparations?.readAdmissionByInvocation?.({
+      runId: invocation.runId,
+      invocationId: recovery.invocationId,
+    });
+    if (
+      coding &&
+      known?.phase === "reserved" &&
+      !known.workspaceBlocked &&
+      isSandboxReservationNeverStarted(known.plan, known.releaseReceipt?.verification)
+    ) {
+      const saved = (await recovering.save("handle", undefined)).value as
+        | { handle?: GovernedCapabilityExecutionHandle; inputRef?: unknown }
+        | undefined;
+      if (
+        !saved?.handle ||
+        typeof saved.inputRef !== "string" ||
+        saved.handle.ref !== known.plan.handleRef ||
+        saved.inputRef !== known.plan.inputRef
+      )
+        reject();
+      return receive({
+        ...invocation,
+        toolCallId: `file-phase:${digest([key, coding])}`,
+        capabilityRef: saved.handle.capabilityRef,
+        capabilityHandleRef: saved.handle.ref,
+        arguments: { inputRef: saved.inputRef },
+      });
+    }
     const result = coding
       ? await executeProductionCodingRequest(invocation, coding, readOnlyServices, recovering)
       : await new ProductionFileReadWorkflow(readOnlyServices).execute(invocation, recovering);

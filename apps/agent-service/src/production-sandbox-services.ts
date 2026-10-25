@@ -2722,6 +2722,17 @@ export async function createProductionSandboxServices(options: {
           ? readForegroundOutput(record, query)
           : stream.output(record, query),
       recordPreparationDiagnostic: control.recordPreparationDiagnostic,
+      interruptFailedPreparation: async (plan: SandboxExecutionPlanV2) => {
+        if (plan.backendRef !== SRT_BACKEND_REF || plan.mode !== "foreground") return;
+        const admission = await preparations.readAdmission(plan.identity);
+        if (admission?.phase !== "reserved" || admission.stopRequestedAt) return;
+        await preparations.interruptReservation({
+          identity: plan.identity,
+          authority: options.authority(),
+          now: clock.now(),
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        });
+      },
       registerPreparationControl: control.registerPreparation,
       registerControl: control.register,
       observeVerifiedControl: (record: Parameters<typeof refreshObservation>[0]) =>

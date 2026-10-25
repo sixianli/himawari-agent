@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:66785bc580c8a5d632900bc80db5fb1c3726c6d392297efd8c06fedd5aa9f2f3"
+contract_sha256: "sha256:03631ee8669d678ed6bc28929df65cc0cd79a8073e486adf537cdab51467dce4"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -328,6 +328,8 @@ Pi 编码工具程序 `pi-coding-main.js` 的字节改变而版本号不变时�
 2. 所有者核对列表无误后，运行 `capabilities upgrade --config <同一路径> --confirm <planDigest>`。摘要对得上才写入，所有能力在同一个数据库事务里完成：登记记录的 `revision`（修订号）加 1，换成新声明和新资格，旧声明和旧资格存为回滚值；撤销该能力尚未用完的执行 Handle（每次工具调用前签发的一次性执行授权）；每项写一条 `owner.capability.upgrade` 审计。任何一项失败则全部不写。
 
 只允许这些差异：程序摘要（`integrity`、`artifact.digest`）、来源位置 `source.locator`、审核时间 `reviewedAt`、健康检查时间，以及 `runtime.argv` 前两项（解释器和 runner 的路径）里安装目录前缀的变化。新路径必须位于快照绑定的 `runtimeRoot` 之下，旧前缀从旧路径推出，两项推出的前缀必须相同。名称、版本、操作、数据或网络范围、签名者、其余命令参数、环境变量等任何其他变化都报 `ADMIN_CAPABILITY_REVIEW_REQUIRED`，须按新能力重新审核；快照里有从未登记或已停用的能力，分别报 `ADMIN_CAPABILITY_NOT_REGISTERED` 和 `ADMIN_CAPABILITY_REVIEW_REQUIRED`；确认摘要与当前计划不符报 `ADMIN_CAPABILITY_PLAN_MISMATCH`，不写入。
+
+2026-10-25 起两步命令都可在末尾加 `--reviewed`，用于所有者已批准的扩权部署（例如给联网搜索加需要密钥的供应商、新开读网页）。这时计划还接受两类变化：快照里从未登记的能力列进 `registrations`（名称、版本、程序摘要、操作、网络和密钥范围），确认后与升级在同一个数据库事务里登记，审计为 `owner.capability.register`；已登记能力只有网络范围（`scopes.network`、`runtime.network`）和密钥范围（`scopes.secrets`）变化时照常升级，计划里该项带 `scopeChanges`（逐项列出增加和减少的范围），审计为 `owner.capability.scope_upgrade`。其他变化仍报 `ADMIN_CAPABILITY_REVIEW_REQUIRED`。带不带 `--reviewed` 算出的确认摘要不同，第二步必须与第一步用同一模式；不加时行为和输出与以前相同。
 
 确认摘要绑定部署身份、每项的旧记录（修订号和完整内容的摘要）、新声明和新资格，但不含健康检查时间，所以只是重新做了健康检查不会让所有者看过的摘要失效；声明或资格的其他内容变了，摘要就会变，须重新运行第 1 步再确认。快照资格的 5 分钟有效期不变，两步都要在启动准备后 5 分钟内完成，超时报 `CAPABILITY_DEPLOYMENT_QUALIFICATION_STALE`，重新准备即可。升级完成后再运行第 1 步应得到空的 `upgrades`；第二步重复执行是空操作；`capabilities register` 对同一快照返回已存在。之后切换脚本恢复“runner 等于登记值”的严格检查。判断“无需改动”只比较声明：声明除健康检查时间外完全相同的能力归入 `current`，即使快照里的资格（例如证据摘要）变了，也不会写入新资格，登记里仍是旧资格。
 

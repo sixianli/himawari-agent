@@ -5253,6 +5253,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "preparation-failed",
     "preparation-unreleased",
     "preparation-coding",
+    "preparation-coding-denied",
     "preparation-new-boot",
     "preparation-cancelled",
     "preparation-expired",
@@ -6039,7 +6040,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             "changed-capability",
             "coding-denied",
             "stale-handle",
-          ].includes(variant)
+          ].includes(variant) &&
+          !preparation
         ) {
           expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 0, unknown: 1 });
           expect(
