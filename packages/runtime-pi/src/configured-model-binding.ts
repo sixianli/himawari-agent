@@ -1,4 +1,9 @@
-import { type Api, InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
+import {
+  type Api,
+  InMemoryCredentialStore,
+  type Model,
+  type ThinkingLevelMap,
+} from "@earendil-works/pi-ai";
 import type {
   CreateModelRuntimeOptions,
   ModelRuntime,
@@ -15,6 +20,25 @@ import type { PiModelBinding, PiModelBindingPort } from "./pi-runtime-adapter.js
 
 const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
 
+const MODEL_THINKING_LEVEL_MAPS: Readonly<Record<string, ThinkingLevelMap>> = Object.freeze({
+  "deepseek/deepseek-v4.1-flash": Object.freeze({
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    max: "max",
+  }),
+});
+
+function thinkingLevelMap(descriptor: ConfiguredPiModelDescriptor): ThinkingLevelMap | undefined {
+  if (!descriptor.reasoning) return undefined;
+  const map: ThinkingLevelMap = {
+    ...MODEL_THINKING_LEVEL_MAPS[descriptor.model],
+    ...(descriptor.reasoningRequired ? { off: null } : {}),
+  };
+  return Object.keys(map).length === 0 ? undefined : map;
+}
+
 export interface PiModelCost {
   readonly input: number;
   readonly output: number;
@@ -27,11 +51,6 @@ export interface PiModelAdmissionCost {
   readonly estimatedCostMicros: number;
 }
 
-/**
- * The single product-owned descriptor for a model that is executable through
- * Pi. Product policy fields and Pi runtime fields live on one immutable
- * identity so no paired descriptor can drift.
- */
 export interface ConfiguredPiModelDescriptor extends ModelDescriptor {
   readonly provider: "vercel-ai-gateway";
   readonly routingClass: "primary";
@@ -189,12 +208,6 @@ function validateDescriptor(descriptor: ConfiguredPiModelDescriptor, index: numb
   if (descriptor.baseUrl !== undefined) assertBaseUrl(descriptor.baseUrl);
 }
 
-/**
- * Convert one immutable product descriptor into the conservative reservation
- * used by the application admission gate. The estimate is intentionally an
- * upper bound over the configured context and output limits; terminal billing
- * still uses provider-reported usage.
- */
 export function admissionCostForConfiguredPiModel(
   descriptor: ConfiguredPiModelDescriptor,
 ): PiModelAdmissionCost {
@@ -216,13 +229,14 @@ function providerModelConfig(
   descriptor: ConfiguredPiModelDescriptor,
   baseUrl: string,
 ): ProviderModelConfig {
+  const levelMap = thinkingLevelMap(descriptor);
   return {
     id: descriptor.model,
     name: descriptor.name,
     api: descriptor.api,
     baseUrl,
     reasoning: descriptor.reasoning,
-    ...(descriptor.reasoningRequired ? { thinkingLevelMap: { off: null } } : {}),
+    ...(levelMap === undefined ? {} : { thinkingLevelMap: levelMap }),
     input: [...descriptor.input],
     cost: { ...descriptor.cost },
     contextWindow: descriptor.contextWindow,
@@ -292,8 +306,6 @@ export class ConfiguredPiModelBindingPort implements PiModelBindingPort {
     await this.#initialization?.catch(() => undefined);
     this.#runtime = undefined;
     this.#initialization = undefined;
-    // Provider credentials are request-scoped and are never installed in the
-    // shared Pi runtime, so closing the runtime has no credential cleanup step.
   }
 
   private async runtime(): Promise<ModelRuntime> {

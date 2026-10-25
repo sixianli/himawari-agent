@@ -53,13 +53,14 @@ export const messages = {
   "review.effort.high": "High",
   "review.effort.xhigh": "Very high",
   "review.effort.max": "Maximum",
-  "review.effortDescription.off": "For clear, straightforward tasks.",
+  "review.effortDescription.off": "Answers directly without reasoning; fastest.",
   "review.effortDescription.minimal": "For clear, straightforward tasks.",
   "review.effortDescription.low": "For clear, straightforward tasks.",
   "review.effortDescription.medium": "Balances response speed and reasoning depth.",
   "review.effortDescription.high": "More reasoning for complex tasks; may take longer.",
   "review.effortDescription.xhigh": "More reasoning for complex tasks; may take longer.",
-  "review.effortDescription.max": "More reasoning for complex tasks; may take longer.",
+  "review.effortDescription.max":
+    "Most reasoning for the hardest tasks; slowest and most expensive.",
 
   "layout.hideList": "Hide sidebar",
   "nav.manage": "Manage",

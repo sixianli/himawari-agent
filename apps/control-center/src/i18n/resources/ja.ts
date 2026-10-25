@@ -53,7 +53,7 @@ export const messages = {
   "review.effort.high": "高",
   "review.effort.xhigh": "非常に高",
   "review.effort.max": "最大",
-  "review.effortDescription.off": "明確で直接的なタスク向け。",
+  "review.effortDescription.off": "推論せずに直接回答します。最速です。",
   "review.effortDescription.minimal": "明確で直接的なタスク向け。",
   "review.effortDescription.low": "明確で直接的なタスク向け。",
   "review.effortDescription.medium": "応答速度と推論の深さのバランス。",
@@ -62,7 +62,7 @@ export const messages = {
   "review.effortDescription.xhigh":
     "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
   "review.effortDescription.max":
-    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
+    "最も難しいタスク向けに最大限推論します。時間と費用が最もかかります。",
 
   "layout.hideList": "サイドバーを閉じる",
   "nav.manage": "管理",
