@@ -19,7 +19,7 @@ export function browserCounts(report, engine) {
     throw new Error("CI_BROWSER_IDENTITY_OR_STATUS_INVALID");
   for (const [key, expected] of [
     ["locales", ["zh-CN", "en", "ja"]],
-    ["keyboard", ["visible-focus", "settings-tabs-roving"]],
+    ["keyboard", ["visible-focus", "settings-keyboard-navigation"]],
   ]) {
     if (JSON.stringify(report[key]) !== JSON.stringify(expected))
       throw new Error(`CI_BROWSER_COVERAGE_MISSING:${key}`);
