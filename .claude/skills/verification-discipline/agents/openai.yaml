@@ -1,0 +1,6 @@
+interface:
+  display_name: "Verification Discipline"
+  short_description: "Test-first, E2E-first verification rules"
+  default_prompt: "Use $verification-discipline before implementing or fixing anything: plan the tests, reproduce the bug, run the narrow tests, then the full suite, and keep the evidence."
+policy:
+  allow_implicit_invocation: true

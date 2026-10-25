@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["done", "partial", "blocked"] },
+    "summary": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "commands_run": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cmd": { "type": "string" },
+          "exit_code": { "type": "integer" }
+        },
+        "required": ["cmd", "exit_code"]
+      }
+    },
+    "acceptance_passed": { "type": "boolean" },
+    "open_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["status", "summary", "files_changed", "commands_run", "acceptance_passed", "open_issues"]
+}

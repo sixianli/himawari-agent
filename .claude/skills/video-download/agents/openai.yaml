@@ -1,0 +1,6 @@
+interface:
+  display_name: "Video Download"
+  short_description: "Download and verify the highest available video resolution"
+  default_prompt: "Use $video-download to save the highest available resolution video from this URL and give me its verified local path."
+policy:
+  allow_implicit_invocation: true

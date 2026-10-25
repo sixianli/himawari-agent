@@ -1,0 +1,5 @@
+{
+  "name": "readable-output",
+  "displayName": "Readable Output",
+  "description": "The readable-output skill, plus Claude Code hooks that catch English prose in replies that must be Chinese."
+}
