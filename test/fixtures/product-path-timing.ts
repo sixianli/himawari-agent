@@ -144,15 +144,15 @@ export async function prepareProductPathTiming(runtimeRoot: string, destination:
           (module === "application/services/sandbox-scope-service" && named === "resolve")
         ) {
           const caught = body.statements.find(ts.isTryStatement)?.catchClause;
-          if (!caught || caught.variableDeclaration)
-            throw new Error("PRODUCT_TIMING_CATCH_CHANGED");
+          if (!caught) throw new Error("PRODUCT_TIMING_CATCH_CHANGED");
+          const caughtName = caught.variableDeclaration?.name.getText(tree) ?? "__hmaCaught";
           const begin = caught.getStart(tree) - body.getStart(tree);
           const end = caught.block.getStart(tree) - body.getStart(tree);
           measuredBody =
             measuredBody.slice(0, begin) +
-            "catch (__hmaCaught) " +
+            `catch (${caughtName}) ` +
             measuredBody.slice(end, end + 1) +
-            `__hmaRecord({ kind: "caught_error", stage: ${definition[0]}, jobId: (${definition[1]}).jobId, runId: (${definition[1]}).runId, failure: __hmaFailure(__hmaCaught) });` +
+            `__hmaRecord({ kind: "caught_error", stage: ${definition[0]}, jobId: (${definition[1]}).jobId, runId: (${definition[1]}).runId, failure: __hmaFailure(${caughtName}) });` +
             measuredBody.slice(end + 1);
         }
         edits.push({

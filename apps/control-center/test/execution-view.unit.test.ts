@@ -275,6 +275,9 @@ it("shows only known failure messages from replayed execution records", () => {
   expect(executionFailureMessage([{ ...failed, text: "CONTEXT_MEMORY_UNAVAILABLE" }])).toBe(
     "chat.error.contextMemoryUnavailable",
   );
+  expect(executionFailureMessage([{ ...failed, text: "PI_CONTEXT_WINDOW_EXHAUSTED" }])).toBe(
+    "chat.error.contextWindowExhausted",
+  );
 });
 
 it("excludes approval wait from tool time and keeps the first completed message boundary", () => {

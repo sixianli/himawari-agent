@@ -88,6 +88,8 @@ export const messages = {
   "chat.error.unavailable": "模型服务暂不可用。请稍后重试。",
   "chat.error.contextMemoryUnavailable":
     "查找相关记忆时，连接模型服务失败。本轮没有调用对话模型，也没有执行任何工具。",
+  "chat.error.contextWindowExhausted":
+    "这段对话已用完模型可用的上下文长度，模型无法继续回答。请新开对话继续；已完成的工具步骤会保留。",
   "chat.error.failed": "本轮执行失败。已保存的消息和过程记录仍可查看。",
   "chat.toolCount": "执行 {count} 步",
   "step.search": "搜索网页",

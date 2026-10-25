@@ -15,6 +15,7 @@ import {
   createAssistantMessageEventStream,
   getSupportedThinkingLevels,
 } from "@earendil-works/pi-ai";
+import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 import {
   type AgentSession,
   type AgentSessionEvent,
@@ -268,7 +269,11 @@ function toolProgressOutput(
 }
 
 /** Pi preserves HTTP failures as status-prefixed messages; expose only product categories. */
+const PI_CONTEXT_WINDOW_EXHAUSTED = "PI_CONTEXT_WINDOW_EXHAUSTED";
+const MIN_CONTEXT_ANSWER_TOKENS = 512;
+
 function modelFailureCode(errorMessage: string | undefined): string {
+  if (errorMessage === PI_CONTEXT_WINDOW_EXHAUSTED) return PI_CONTEXT_WINDOW_EXHAUSTED;
   const status = /^(\d{3})(?:\s|:)/.exec(errorMessage ?? "")?.[1];
   if (status === "429") return "PI_MODEL_RATE_LIMITED";
   if (status === "401" || status === "403") return "PI_MODEL_AUTH_FAILED";
@@ -660,6 +665,12 @@ async function admitPiStream(
     return reservationReleased;
   };
   try {
+    const desiredMaxTokens = options?.maxTokens ?? model.maxTokens;
+    if (
+      clampMaxTokensToContext(model, context, desiredMaxTokens) <
+      Math.min(desiredMaxTokens, MIN_CONTEXT_ANSWER_TOKENS)
+    )
+      return failedPiStream(model, PI_CONTEXT_WINDOW_EXHAUSTED);
     const gate = await resolver?.({
       ownerId: request.ownerId,
       agentId: request.agentId,
@@ -1286,7 +1297,17 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           (finalAssistant.stopReason !== "stop" ||
             finalAssistant.content.some((part) => part.type === "toolCall"))
         ) {
-          emit(runtimeFailure(request, this.now(), "PI_FINAL_ANSWER_INCOMPLETE"));
+          emit(
+            runtimeFailure(
+              request,
+              this.now(),
+              finalAssistant.stopReason === "length" &&
+                (finalAssistant.usage?.output ?? MIN_CONTEXT_ANSWER_TOKENS) <
+                  MIN_CONTEXT_ANSWER_TOKENS
+                ? PI_CONTEXT_WINDOW_EXHAUSTED
+                : "PI_FINAL_ANSWER_INCOMPLETE",
+            ),
+          );
           return;
         }
         const text =

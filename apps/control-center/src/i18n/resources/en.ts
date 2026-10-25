@@ -95,6 +95,8 @@ export const messages = {
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
   "chat.error.contextMemoryUnavailable":
     "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
+  "chat.error.contextWindowExhausted":
+    "This conversation used up the model's available context, so the model could not continue answering. Start a new conversation to continue; completed tool steps are kept.",
   "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
   "chat.toolCount": "{count} steps",
   "step.search": "Searching the web",

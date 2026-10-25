@@ -147,7 +147,7 @@ const ADMISSION_MODEL: Model<Api> = {
   reasoning: false,
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 1024,
+  contextWindow: 16384,
   maxTokens: 128,
 };
 
@@ -692,6 +692,45 @@ describe("Pi stream admission accounting", () => {
     expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
   });
 
+  it("fails with a context window code instead of requesting a clamped one-token answer", async () => {
+    const observedTerminals: string[] = [];
+    let providerCalls = 0;
+    const permit: ModelInvocationPermit = {
+      assertActive: async () => {
+        throw new Error("admission must not run");
+      },
+      markStarted: async () => {
+        throw new Error("markStarted must not run");
+      },
+      releaseReserved: async () => {
+        throw new Error("release must not run");
+      },
+      settle: async () => {
+        throw new Error("settle must not run");
+      },
+      markUnknown: async () => {
+        throw new Error("unknown must not run");
+      },
+    };
+    const adapter = createAdmissionAdapter(
+      permit,
+      () => {
+        providerCalls += 1;
+        return successfulOriginal();
+      },
+      observedTerminals,
+      { ...ADMISSION_MODEL, contextWindow: 4096 },
+    );
+
+    const events = await collect(adapter.run(request));
+    expect(providerCalls).toBe(0);
+    expect(observedTerminals).toEqual(["error"]);
+    expect(events.at(-1)).toMatchObject({
+      type: "runtime.failed",
+      errorCode: "PI_CONTEXT_WINDOW_EXHAUSTED",
+    });
+  });
+
   it("releases a reservation when the Pi stream is already aborted before start", async () => {
     const observedTerminals: string[] = [];
     const controller = new AbortController();
@@ -878,27 +917,47 @@ describe("Pi Agent Runtime adapter compatibility", () => {
 
   it.each([
     { stopReason: "length", text: "truncated", code: "PI_FINAL_ANSWER_INCOMPLETE" },
+    {
+      stopReason: "length",
+      text: "truncated",
+      usage: { output: 2048 },
+      code: "PI_FINAL_ANSWER_INCOMPLETE",
+    },
+    {
+      stopReason: "length",
+      text: "x",
+      usage: { output: 1 },
+      code: "PI_CONTEXT_WINDOW_EXHAUSTED",
+    },
     { stopReason: "toolUse", text: "pending tool", code: "PI_FINAL_ANSWER_INCOMPLETE" },
     { stopReason: "stop", text: "   ", code: "PI_FINAL_ANSWER_EMPTY" },
-  ])("fails incomplete final output: $stopReason $text", async ({ stopReason, text, code }) => {
-    const projection = new RecordingProjection();
-    const adapter = createAdapter(
-      projection,
-      new RecordingRuntimeTools(),
-      fakeSessionFactory((emit) => {
-        emit({
-          type: "message_end",
-          message: { role: "assistant", stopReason, content: [{ type: "text", text }] },
-        });
-        emit({ type: "agent_settled" });
-      }),
-    );
-    expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
-      type: "runtime.failed",
-      errorCode: code,
-    });
-    expect(projection.finalAnswers).toEqual([]);
-  });
+  ])(
+    "fails incomplete final output: $stopReason $text",
+    async ({ stopReason, text, usage, code }) => {
+      const projection = new RecordingProjection();
+      const adapter = createAdapter(
+        projection,
+        new RecordingRuntimeTools(),
+        fakeSessionFactory((emit) => {
+          emit({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              stopReason,
+              content: [{ type: "text", text }],
+              ...(usage ? { usage } : {}),
+            },
+          });
+          emit({ type: "agent_settled" });
+        }),
+      );
+      expect((await collect(adapter.run(request))).at(-1)).toMatchObject({
+        type: "runtime.failed",
+        errorCode: code,
+      });
+      expect(projection.finalAnswers).toEqual([]);
+    },
+  );
 
   it("captures final plain text separately and excludes machine secrets across text parts", async () => {
     const projection = new RecordingProjection();

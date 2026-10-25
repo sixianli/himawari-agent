@@ -1,4 +1,3 @@
-import type { RunCheckpointStore } from "../ports/run-checkpoints.js";
 import { createAgentId, createOwnerId, createRunId, createThreadId } from "@himawari-agent/domain";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
 import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
@@ -8,6 +7,7 @@ import type {
   TraceEvent,
   TraceStorePort,
 } from "../ports/observability.js";
+import type { RunCheckpointStore } from "../ports/run-checkpoints.js";
 import type { SandboxExecutionRunInventory } from "../ports/sandbox-execution-journal.js";
 import type { ThreadRepositoryPort } from "../ports/threads.js";
 import { threadCommandFingerprint } from "./thread-command-service.js";
@@ -392,6 +392,7 @@ export class ThreadExecutionProjection {
                       "PI_MODEL_AUTH_FAILED",
                       "PI_MODEL_UNAVAILABLE",
                       "CONTEXT_MEMORY_UNAVAILABLE",
+                      "PI_CONTEXT_WINDOW_EXHAUSTED",
                     ].includes(text(envelope["errorCode"]))
                       ? text(envelope["errorCode"])
                       : "RUNTIME_EXECUTION_FAILED",
