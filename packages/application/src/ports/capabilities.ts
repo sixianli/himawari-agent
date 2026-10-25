@@ -298,12 +298,18 @@ export interface CapabilityRegistryStorePort {
   applyCapabilityUpgrades?(
     upgrades: readonly CapabilityRegistryUpgrade[],
     upgradedAt: string,
+    registrations?: readonly CapabilityRegistryRegistration[],
   ): Promise<readonly CapabilityRegistryRecord[]>;
 }
 
 export interface CapabilityRegistryUpgrade {
   readonly record: CapabilityRegistryRecord;
   readonly expectedRevision: number;
+  readonly audit: AuditRecord;
+}
+
+export interface CapabilityRegistryRegistration {
+  readonly record: CapabilityRegistryRecord;
   readonly audit: AuditRecord;
 }
 

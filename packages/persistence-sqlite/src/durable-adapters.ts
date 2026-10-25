@@ -403,12 +403,13 @@ export class SqliteDurableAdapters {
           expectedRevision,
           switchedAt,
         }),
-      applyCapabilityUpgrades: (upgrades, upgradedAt) =>
+      applyCapabilityUpgrades: (upgrades, upgradedAt, registrations = []) =>
         this.context.write("capability.applyUpgrades", {
           ownerId,
           agentId,
           upgrades,
           upgradedAt,
+          registrations,
         }),
       createExecutionHandle: (handle, options) =>
         this.context.write("capability.createHandle", { handle, options }),

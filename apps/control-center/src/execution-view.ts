@@ -19,6 +19,8 @@ export function executionFailureMessage(records: readonly ThreadExecutionRecord[
       return "chat.error.unavailable";
     case "CONTEXT_MEMORY_UNAVAILABLE":
       return "chat.error.contextMemoryUnavailable";
+    case "PI_CONTEXT_WINDOW_EXHAUSTED":
+      return "chat.error.contextWindowExhausted";
     default:
       return "chat.error.failed";
   }

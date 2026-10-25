@@ -862,6 +862,13 @@ export async function runAgentService(
       trustedPeerBinding: () => peerBinding,
     });
     const payloadHandler = new ProductionPayloadBrokerHandler({
+      onSandboxExecutionRejected: (detail) =>
+        writeServiceDiagnostic(errorOutput, {
+          component: "agent-service",
+          event: "sandbox.broker_command.rejected",
+          command: detail.command,
+          reason: detail.reason,
+        }),
       ...(sandboxServices
         ? { sandboxJobs: sandboxServices.broker, sandboxExecutions: sandboxServices.brokerV2 }
         : {}),

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
+  type CapabilityRegistryRegistration,
   type CapabilityRegistryUpgrade,
   type CapabilityRunnerUpgradePlan,
   planCapabilityRunnerUpgrade,
@@ -27,15 +28,17 @@ export async function runCapabilitiesCommand(args: readonly string[]): Promise<u
     args[4] === "--confirm"
   )
     return register(args[3], args[5]);
-  if (args[1] === "upgrade-plan" && args.length === 4 && args[2] === "--config")
-    return upgrade(args[3], undefined);
+  const reviewed = args.at(-1) === "--reviewed";
+  const command = reviewed ? args.slice(0, -1) : args;
+  if (command[1] === "upgrade-plan" && command.length === 4 && command[2] === "--config")
+    return upgrade(command[3], undefined, reviewed);
   if (
-    args[1] === "upgrade" &&
-    args.length === 6 &&
-    args[2] === "--config" &&
-    args[4] === "--confirm"
+    command[1] === "upgrade" &&
+    command.length === 6 &&
+    command[2] === "--config" &&
+    command[4] === "--confirm"
   )
-    return upgrade(args[3], args[5]);
+    return upgrade(command[3], command[5], reviewed);
   throw invalid();
 }
 
@@ -115,7 +118,11 @@ async function register(configPath: string | undefined, confirmation: string | u
   });
 }
 
-async function upgrade(configPath: string | undefined, confirmation: string | undefined) {
+async function upgrade(
+  configPath: string | undefined,
+  confirmation: string | undefined,
+  reviewed: boolean,
+) {
   const { config, loaded } = await deployment(configPath, () => true);
   return withActiveDeployment(config, async (repo) => {
     const store = repo.capabilityStore(config.ownerId, config.agentId);
@@ -131,6 +138,7 @@ async function upgrade(configPath: string | undefined, confirmation: string | un
           runtimeRoot: entry.binding.kind === "sandbox" ? entry.binding.value.runtimeRoot : null,
         })),
       ),
+      reviewed,
     });
     if (plan.decisions.some((decision) => decision.kind === "not_registered"))
       throw new Error("ADMIN_CAPABILITY_NOT_REGISTERED");
@@ -139,9 +147,29 @@ async function upgrade(configPath: string | undefined, confirmation: string | un
     const current = plan.decisions.flatMap((decision) =>
       decision.kind === "current" ? [decision.ref] : [],
     );
-    if (confirmation === undefined) return planOutput(loaded.snapshotDigest, plan, current);
+    if (confirmation === undefined)
+      return planOutput(loaded.snapshotDigest, plan, current, reviewed);
     if (confirmation !== plan.planDigest) throw new Error("ADMIN_CAPABILITY_PLAN_MISMATCH");
     const upgradedAt = new Date().toISOString();
+    const registrations: CapabilityRegistryRegistration[] = plan.decisions.flatMap((decision) => {
+      if (decision.kind !== "register") return [];
+      const record = loaded.records.find((candidate) => candidate?.ref === decision.ref);
+      if (!record) throw new Error("ADMIN_CAPABILITY_REVIEW_REQUIRED");
+      return [
+        {
+          record,
+          audit: {
+            id: `installation-capability:${randomUUID()}`,
+            ownerId: config.ownerId,
+            agentId: config.agentId,
+            action: "owner.capability.register",
+            targetRef: decision.ref,
+            outcome: "completed",
+            occurredAt: upgradedAt,
+          },
+        },
+      ];
+    });
     const upgrades: CapabilityRegistryUpgrade[] = plan.decisions.flatMap((decision) =>
       decision.kind === "upgrade"
         ? [
@@ -152,7 +180,9 @@ async function upgrade(configPath: string | undefined, confirmation: string | un
                 id: `installation-capability:${randomUUID()}`,
                 ownerId: config.ownerId,
                 agentId: config.agentId,
-                action: "owner.capability.upgrade",
+                action: decision.upgrade.scopeChanges
+                  ? "owner.capability.scope_upgrade"
+                  : "owner.capability.upgrade",
                 targetRef: decision.ref,
                 outcome: "completed",
                 occurredAt: upgradedAt,
@@ -161,14 +191,15 @@ async function upgrade(configPath: string | undefined, confirmation: string | un
           ]
         : [],
     );
-    if (upgrades.length > 0) {
+    if (upgrades.length > 0 || registrations.length > 0) {
       if (!store.applyCapabilityUpgrades) throw new Error("ADMIN_CAPABILITY_UPGRADE_UNAVAILABLE");
-      await store.applyCapabilityUpgrades(upgrades, upgradedAt);
+      await store.applyCapabilityUpgrades(upgrades, upgradedAt, registrations);
     }
     return {
       snapshotDigest: loaded.snapshotDigest,
       planDigest: plan.planDigest,
       upgraded: upgrades.map((entry) => entry.record.ref),
+      ...(reviewed ? { registered: registrations.map((entry) => entry.record.ref) } : {}),
       current,
     };
   });
@@ -178,6 +209,7 @@ function planOutput(
   snapshotDigest: string,
   plan: CapabilityRunnerUpgradePlan,
   current: readonly string[],
+  reviewed: boolean,
 ) {
   return {
     snapshotDigest,
@@ -192,10 +224,31 @@ function planOutput(
               toIntegrity: decision.upgrade.manifest.integrity,
               fromRuntimeRoot: decision.upgrade.fromRuntimeRoot,
               toRuntimeRoot: decision.upgrade.toRuntimeRoot,
+              ...(decision.upgrade.scopeChanges
+                ? { scopeChanges: decision.upgrade.scopeChanges }
+                : {}),
             },
           ]
         : [],
     ),
+    ...(reviewed
+      ? {
+          registrations: plan.decisions.flatMap((decision) =>
+            decision.kind === "register"
+              ? [
+                  {
+                    ref: decision.ref,
+                    version: decision.registration.manifest.version,
+                    integrity: decision.registration.manifest.integrity,
+                    operations: decision.registration.manifest.operations,
+                    network: decision.registration.manifest.scopes.network,
+                    secrets: decision.registration.manifest.scopes.secrets,
+                  },
+                ]
+              : [],
+          ),
+        }
+      : {}),
     current,
   };
 }

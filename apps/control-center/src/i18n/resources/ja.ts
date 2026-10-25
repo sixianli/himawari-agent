@@ -98,6 +98,8 @@ export const messages = {
   "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
   "chat.error.contextMemoryUnavailable":
     "関連する記憶の検索中にモデルサービスへの接続に失敗しました。このターンでは対話モデルを呼び出しておらず、ツールも実行していません。",
+  "chat.error.contextWindowExhausted":
+    "この会話でモデルが使えるコンテキストを使い切ったため、回答を続けられませんでした。新しい会話で続けてください。完了したツール操作は保持されます。",
   "chat.error.failed":
     "この実行は失敗しました。保存済みのメッセージと実行記録は引き続き確認できます。",
   "chat.toolCount": "{count} ステップ",
