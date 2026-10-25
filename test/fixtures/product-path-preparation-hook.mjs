@@ -39,7 +39,9 @@ cp.fork = (file, args, options) => {
     );
   const fault = process.env.HIMAWARI_TEST_PREPARATION_FAILURE;
   if (fault && String(file).endsWith("/job-host-main.js") && existsSync(fault)) {
-    renameSync(fault, `${fault}.consumed`);
+    const remaining = Number.parseInt(readFileSync(fault, "utf8"), 10);
+    if (remaining > 1) writeFileSync(fault, String(remaining - 1));
+    else renameSync(fault, `${fault}.consumed`);
     const holdFinal = finalGate && existsSync(finalGate);
     if (holdFinal) {
       renameSync(finalGate, `${finalGate}.consumed`);

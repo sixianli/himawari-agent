@@ -102,6 +102,7 @@ export type { ProductionTaskEnvironments } from "./production-task-environments.
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const jobId = (value: unknown) => `j${Buffer.from(hash(value), "hex").toString("base64url")}`;
+const PREWARM_WAIT_MS = 10_000;
 const bytesHash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 export async function createProductionSandboxServices(options: {
@@ -1139,6 +1140,7 @@ export async function createProductionSandboxServices(options: {
       workspaces: resolved.workspaceClaims,
     };
   };
+  const prewarming = new Map<string, Promise<boolean>>();
   const acquireResidentEnvironment = async (prepared: {
     readonly plan: SandboxExecutionPlanCandidateV2;
     readonly environmentDeadlineAt?: string;
@@ -1146,6 +1148,17 @@ export async function createProductionSandboxServices(options: {
     const plan = sandboxExecutionPlanCandidateV2Schema.parse(prepared.plan);
     if (plan.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF) return;
     if (!srtEnvironments) throw new Error("SANDBOX_TASK_ENVIRONMENT_UNAVAILABLE");
+    const prewarm = prewarming.get(plan.identity.runId);
+    if (prewarm) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        prewarm.catch(() => false),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, PREWARM_WAIT_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
     const resolved = await resolve(plan);
     const { intent } = await resolveSandboxActionGrant({
@@ -2471,93 +2484,104 @@ export async function createProductionSandboxServices(options: {
         "hostId" | "grantId" | "capabilityRef" | "capabilityVersion" | "enabledTools"
       >,
     ): Promise<boolean> => {
-      if (!srtEnvironments || !request.executionDeadlineAt || route.hostId !== hostId) return false;
-      const { binding, qualification } = await entryFor(
-        route.capabilityRef,
-        route.capabilityVersion,
-      );
-      const descriptor = binding.operationBindings?.find(
-        (item) =>
-          route.enabledTools.some((tool) => tool === item.operation) &&
-          item.backendRef === SRT_BACKEND_REF &&
-          item.scopeSource === "grant_targets" &&
-          item.network === "disabled" &&
-          srtTaskEnvironmentSession({
-            mode: item.mode,
-            operation: item.operation,
-            operationContract: item.contract,
-          }) !== null,
-      );
-      if (!descriptor) return false;
-      const grant = (
-        await repository.readScopedState(
-          configuration.ownerId,
-          configuration.agentId,
-          hostDirectoryGrantStateKey(route.grantId),
+      const pending = prewarming.get(request.runId);
+      if (pending) return pending;
+      const started = (async (): Promise<boolean> => {
+        if (!srtEnvironments || !request.executionDeadlineAt || route.hostId !== hostId)
+          return false;
+        const { binding, qualification } = await entryFor(
+          route.capabilityRef,
+          route.capabilityVersion,
+        );
+        const descriptor = binding.operationBindings?.find(
+          (item) =>
+            route.enabledTools.some((tool) => tool === item.operation) &&
+            item.backendRef === SRT_BACKEND_REF &&
+            item.scopeSource === "grant_targets" &&
+            item.network === "disabled" &&
+            srtTaskEnvironmentSession({
+              mode: item.mode,
+              operation: item.operation,
+              operationContract: item.contract,
+            }) !== null,
+        );
+        if (!descriptor) return false;
+        const grant = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            hostDirectoryGrantStateKey(route.grantId),
+          )
+        )?.value as unknown as HostDirectoryGrant | undefined;
+        if (
+          !grant ||
+          grant.id !== route.grantId ||
+          grant.hostId !== hostId ||
+          grant.revokedAt !== null ||
+          grant.expiresAt <= clock.now() ||
+          descriptor.directoryOperations.some(
+            (operation) => !grant.operations.some((allowed) => allowed === operation),
+          )
         )
-      )?.value as unknown as HostDirectoryGrant | undefined;
-      if (
-        !grant ||
-        grant.id !== route.grantId ||
-        grant.hostId !== hostId ||
-        grant.revokedAt !== null ||
-        grant.expiresAt <= clock.now() ||
-        descriptor.directoryOperations.some(
-          (operation) => !grant.operations.some((allowed) => allowed === operation),
-        )
-      )
-        return false;
-      const claim = await resolveSandboxWorkspaceClaim({
-        binding,
-        scope: sandboxScopeSchema.parse({
-          schemaVersion: "sandbox-scope.v1",
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          threadId: request.threadId,
-          runId: request.runId,
-          toolCallId: `environment-prewarm:${hash(request.runId)}`,
-          parentToolCallId: null,
-          parentRequestId: request.runId,
-          hostId,
-          handleRef: `environment-prewarm:${hash(request.runId)}`,
-          inputRef: `environment-prewarm:${hash(request.runId)}`,
-          operation: descriptor.operation,
-          authorizationRef: grant.authorizationRef,
-          modelRef: request.modelRef,
-          profileRef: binding.profileRef,
-          directoryGrant: {
-            ref: grant.id,
-            revision: grant.revision,
-            canonicalRootId: grant.canonicalRootId,
-            authorizationRef: grant.authorizationRef,
-            operations: descriptor.directoryOperations,
-          },
-          networkAuthorizationRef: null,
-          expiresAt: grant.expiresAt,
-        }),
-      });
-      return srtEnvironments.prewarmSrt({
-        runId: request.runId,
-        hostId,
-        grant,
-        claims: [claim],
-        binding,
-        allowedDomains: [],
-        plan: {
-          executionLease: request.executionLease,
-          identity: {
+          return false;
+        const claim = await resolveSandboxWorkspaceClaim({
+          binding,
+          scope: sandboxScopeSchema.parse({
+            schemaVersion: "sandbox-scope.v1",
+            ownerId: configuration.ownerId,
+            agentId: configuration.agentId,
             threadId: request.threadId,
-            jobId: jobId(["environment-prewarm", request.runId]),
+            runId: request.runId,
+            toolCallId: `environment-prewarm:${hash(request.runId)}`,
+            parentToolCallId: null,
+            parentRequestId: request.runId,
+            hostId,
+            handleRef: `environment-prewarm:${hash(request.runId)}`,
+            inputRef: `environment-prewarm:${hash(request.runId)}`,
+            operation: descriptor.operation,
+            authorizationRef: grant.authorizationRef,
+            modelRef: request.modelRef,
+            profileRef: binding.profileRef,
+            directoryGrant: {
+              ref: grant.id,
+              revision: grant.revision,
+              canonicalRootId: grant.canonicalRootId,
+              authorizationRef: grant.authorizationRef,
+              operations: descriptor.directoryOperations,
+            },
+            networkAuthorizationRef: null,
+            expiresAt: grant.expiresAt,
+          }),
+        });
+        return srtEnvironments.prewarmSrt({
+          runId: request.runId,
+          hostId,
+          grant,
+          claims: [claim],
+          binding,
+          allowedDomains: [],
+          plan: {
+            executionLease: request.executionLease,
+            identity: {
+              threadId: request.threadId,
+              jobId: jobId(["environment-prewarm", request.runId]),
+            },
+            modelRef: request.modelRef,
+            binding: { qualificationRef: qualification.qualificationRef },
           },
-          modelRef: request.modelRef,
-          binding: { qualificationRef: qualification.qualificationRef },
-        },
-        deadlineAt: new Date(
-          Math.min(Date.parse(request.executionDeadlineAt), Date.parse(grant.expiresAt)),
-        ).toISOString(),
-        capabilityRef: route.capabilityRef,
-        capabilityVersion: route.capabilityVersion,
-      });
+          deadlineAt: new Date(
+            Math.min(Date.parse(request.executionDeadlineAt), Date.parse(grant.expiresAt)),
+          ).toISOString(),
+          capabilityRef: route.capabilityRef,
+          capabilityVersion: route.capabilityVersion,
+        });
+      })();
+      prewarming.set(request.runId, started);
+      try {
+        return await started;
+      } finally {
+        if (prewarming.get(request.runId) === started) prewarming.delete(request.runId);
+      }
     },
     maximumResourceCeiling: async (capabilityRef: string, capabilityVersion: string) => {
       if (!sandboxEntries.some((entry) => entry.manifest.ref === capabilityRef)) return undefined;

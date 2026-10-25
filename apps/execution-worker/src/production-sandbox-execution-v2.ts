@@ -1238,7 +1238,7 @@ export class ProductionSandboxExecutionV2 {
     });
     return this.unknown(entry);
   }
-  prewarmSrtEnvironment(request: EnvironmentPrewarmRequest): void {
+  prewarmSrtEnvironment(request: EnvironmentPrewarmRequest): Promise<void> {
     const environments = this.options.srtEnvironments;
     if (!environments || this.closed || request.backendRef !== SRT_TASK_ENVIRONMENT_BACKEND_REF)
       throw new Error("SANDBOX_ENVIRONMENT_UNAVAILABLE");
@@ -1254,7 +1254,7 @@ export class ProductionSandboxExecutionV2 {
           at: new Date().toISOString(),
         }),
       );
-    void this.prewarm(request, environments).then(
+    return this.prewarm(request, environments).then(
       (sessions) => log("sandbox.srt_prewarm.finished", { sessions }),
       (error: unknown) =>
         log("sandbox.srt_prewarm.failed", {

@@ -689,6 +689,7 @@ async function expectSingleResidentExecution(runId: string, jobId: string) {
   expect(resident).toHaveLength(1);
   const identities = resident
     .flatMap((environment) => environment.sessions)
+    .filter((session) => session.kind === "command")
     .map((session) => ({
       processId: session.residentProcessId,
       startToken: session.residentStartToken,
@@ -3281,7 +3282,7 @@ productDescribe(
         const before = new Set(executionReadback().map((record) => record.jobId));
         const file = path.join(installation.workspace, "hello.txt");
         await writeFile(file, "原文件必须保持不变");
-        await installation.armPreparationFailure();
+        await installation.armPreparationFailure(process.platform === "linux" ? 2 : 1);
         const text = "准备失败验证：请用命令写入 hello.txt";
         await uiExpect(await sendToolRequest(text)).toContainText("工具未启动");
         await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {

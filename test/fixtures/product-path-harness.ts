@@ -308,7 +308,7 @@ export interface ProductPathInstallation {
   crash(): Promise<void>;
   crashWorker(): Promise<void>;
   armDeliveryCrash(): Promise<void>;
-  armPreparationFailure(): Promise<void>;
+  armPreparationFailure(count?: number): Promise<void>;
   armPreparationFinalHold(): Promise<void>;
   preparationFinalHold(): Promise<{
     pid: number;
@@ -1323,8 +1323,11 @@ export async function installProductPath(options: {
           throw error;
         },
       ),
-    armPreparationFailure: async () => {
-      await writeFile(serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE, "armed");
+    armPreparationFailure: async (count = 1) => {
+      await writeFile(
+        serviceEnv.HIMAWARI_TEST_PREPARATION_FAILURE,
+        count > 1 ? String(count) : "armed",
+      );
     },
     armPreparationFinalHold: async () => {
       const gate = serviceEnv.HIMAWARI_TEST_PREPARATION_FINAL_GATE;

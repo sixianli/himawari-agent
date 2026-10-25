@@ -325,7 +325,17 @@ export function createProductionTaskEnvironments(options: {
       },
     ): Promise<boolean> {
       if (!srt || !configuration.prewarm) return false;
-      const record = await acquireSrt(input);
+      const existing = await primaryForRun(input.runId);
+      let record: ExecutionEnvironmentRecord;
+      if (!existing) record = await acquireSrt(input);
+      else if (
+        (existing.state === "ready" || existing.state === "running") &&
+        Date.parse(existing.deadlineAt) > Date.parse(clock.now()) &&
+        existing.locator?.effectivePolicyDigest ===
+          srtEnvironmentPolicyDigest({ ...input, envelope: environmentScope(input).envelope })
+      )
+        record = existing;
+      else return false;
       if (!record.locator || (record.state !== "ready" && record.state !== "running")) return false;
       await configuration.prewarm({
         identity: record.identity,

@@ -1339,7 +1339,7 @@ async function environmentOperation(
     case "prewarm":
       if (!sandbox?.prewarmSrtEnvironment)
         throw new Error(PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED);
-      sandbox.prewarmSrtEnvironment(payload);
+      await sandbox.prewarmSrtEnvironment(payload);
       return { accepted: true };
   }
 }
