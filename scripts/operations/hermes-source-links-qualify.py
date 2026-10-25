@@ -194,7 +194,6 @@ def main():
   report=reader['observe'](R/'state/data/product.sqlite');report['files']=reader['file_facts']()
   configuration=json.loads((R/'config/production.json').read_text())
   assert configuration['ownerId']==reader['OWNER'] and configuration['agentId']==reader['AGENT']
-  report['configuredModelBudget']={key:configuration['budgets'][key] for key in ('globalCostMicros','perRunCostMicros','perClassificationCostMicros')}
   publish('e2e-observation.json',report)
   subprocess.run(['systemd-run','--unit=himawari-source-links-live-observer','--property=RuntimeMaxSec=3700','/usr/bin/python3','-I',Q/'hermes-source-links-observer.py'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
   status('candidate_qualified_live_service_unchanged',True)

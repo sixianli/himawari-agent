@@ -93,7 +93,6 @@ def main():
         report['files'] = file_facts()
         configuration=json.loads((ROOT/'config/production.json').read_text())
         assert configuration['ownerId']==OWNER and configuration['agentId']==AGENT
-        report['configuredModelBudget']={key:configuration['budgets'][key] for key in ('globalCostMicros','perRunCostMicros','perClassificationCostMicros')}
         with tempfile.NamedTemporaryFile(mode='w', dir=OUTPUT, delete=False) as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
             f.write('\n')

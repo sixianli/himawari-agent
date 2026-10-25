@@ -1,12 +1,10 @@
 import type {
-  BackgroundAdmissionLimits,
   BackgroundOccurrenceSettlement,
   ModelBudgetAccount,
   ModelBudgetAccountParent,
   ModelBudgetActiveParent,
   ModelBudgetAllocation,
   ModelBudgetFinalizeInput,
-  ModelBudgetLimits,
   ModelBudgetMarkStartedInput,
   ModelBudgetOperationResult,
   ModelBudgetReadInput,
@@ -273,76 +271,17 @@ export class SqliteModelBudgetOperations {
     }
   }
 
-  reserveOccurrenceWithinTransaction(input: {
-    readonly occurrence: BackgroundOccurrence;
-    readonly limits: BackgroundAdmissionLimits;
-  }): {
+  reserveOccurrenceWithinTransaction(input: { readonly occurrence: BackgroundOccurrence }): {
     readonly reservedCostMicros: number;
     readonly spentCostMicros: number;
-    readonly reasonCode:
-      | "GLOBAL_BUDGET_EXHAUSTED"
-      | "CLASSIFICATION_BUDGET_EXHAUSTED"
-      | "RUN_BUDGET_EXCEEDED"
-      | null;
   } {
     this.requireTransaction("Budget occurrence reservation");
     const account = this.ensureOccurrenceAccountWithinTransaction({ occurrence: input.occurrence });
-    const limits = this.parseLegacyLimits(input.limits);
     if (account.status === "reconcile_required") {
-      return {
-        reservedCostMicros: account.reservedCostMicros,
-        spentCostMicros: account.spentCostMicros,
-        reasonCode: "RUN_BUDGET_EXCEEDED",
-      };
-    }
-    if (account.status === "over_budget") {
-      return {
-        reservedCostMicros: account.reservedCostMicros,
-        spentCostMicros: account.spentCostMicros,
-        reasonCode: "RUN_BUDGET_EXCEEDED",
-      };
-    }
-    const nextTotal = addCost(
-      addCost(account.reservedCostMicros, account.spentCostMicros, "Run budget", this.fail),
-      input.occurrence.estimatedCostMicros,
-      "Run budget",
-      this.fail,
-    );
-    if (nextTotal > limits.accountCostMicros) {
-      return {
-        reservedCostMicros: account.reservedCostMicros,
-        spentCostMicros: account.spentCostMicros,
-        reasonCode: "RUN_BUDGET_EXCEEDED",
-      };
-    }
-    const usage = this.readUsage(input.occurrence.ownerId, input.occurrence.agentId);
-    const globalNext = addCost(
-      usage.global,
-      input.occurrence.estimatedCostMicros,
-      "Global budget",
-      this.fail,
-    );
-    if (globalNext > limits.globalCostMicros) {
-      return {
-        reservedCostMicros: account.reservedCostMicros,
-        spentCostMicros: account.spentCostMicros,
-        reasonCode: "GLOBAL_BUDGET_EXHAUSTED",
-      };
-    }
-    const occurrenceClassification = input.occurrence.dataClassification as ModelClassification;
-    const classificationLimit = limits.perClassificationCostMicros[occurrenceClassification];
-    const classificationNext = addCost(
-      usage.byClassification[occurrenceClassification],
-      input.occurrence.estimatedCostMicros,
-      "Classification budget",
-      this.fail,
-    );
-    if (classificationNext > classificationLimit) {
-      return {
-        reservedCostMicros: account.reservedCostMicros,
-        spentCostMicros: account.spentCostMicros,
-        reasonCode: "CLASSIFICATION_BUDGET_EXHAUSTED",
-      };
+      return this.fail(
+        "PORT_CONFLICT",
+        "Occurrence budget account requires reconciliation before admission",
+      );
     }
     const reserved = addCost(
       account.reservedCostMicros,
@@ -354,7 +293,6 @@ export class SqliteModelBudgetOperations {
     return {
       reservedCostMicros: reserved,
       spentCostMicros: account.spentCostMicros,
-      reasonCode: null,
     };
   }
 
@@ -401,10 +339,7 @@ export class SqliteModelBudgetOperations {
       "Spent budget",
       this.fail,
     );
-    const overBudget =
-      account.status === "over_budget" ||
-      input.settlement.spentCostMicros > input.occurrence.reservedCostMicros;
-    this.updateAccount(account, reserved, spent, overBudget ? "over_budget" : "active");
+    this.updateAccount(account, reserved, spent, "active");
     return { reservedCostMicros: reserved, spentCostMicros: spent };
   }
 
@@ -557,16 +492,9 @@ export class SqliteModelBudgetOperations {
       existingAccount ??
       this.insertAccount(scope.ownerId, scope.agentId, input.parent, input.dataClassification);
     this.assertAccountClassification(account, input.dataClassification);
-    if (account.status !== "active") {
+    if (account.status === "reconcile_required") {
       return this.fail("PORT_CONFLICT", "Budget account is not available for a new allocation");
     }
-    const limits = input.limits;
-    const accountTotal = addCost(
-      account.reservedCostMicros,
-      account.spentCostMicros,
-      "Account budget",
-      this.fail,
-    );
     let nextReserved: number;
     if (input.parent.kind === "occurrence") {
       const outstanding = this.outstandingChildReservation(
@@ -574,40 +502,11 @@ export class SqliteModelBudgetOperations {
         scope.agentId,
         account.accountId,
       );
-      const available = subtractCost(
+      nextReserved = Math.max(
         account.reservedCostMicros,
-        outstanding,
-        "Occurrence budget",
-        this.fail,
+        addCost(outstanding, input.estimatedCostMicros, "Occurrence budget", this.fail),
       );
-      if (input.estimatedCostMicros > available) {
-        return this.fail("PORT_CONFLICT", "Occurrence budget reservation is exhausted");
-      }
-      nextReserved = account.reservedCostMicros;
     } else {
-      if (
-        addCost(accountTotal, input.estimatedCostMicros, "Account budget", this.fail) >
-        limits.accountCostMicros
-      ) {
-        return this.fail("PORT_CONFLICT", "Run budget limit is exhausted");
-      }
-      const usage = this.readUsage(scope.ownerId, scope.agentId);
-      if (
-        addCost(usage.global, input.estimatedCostMicros, "Global budget", this.fail) >
-        limits.globalCostMicros
-      ) {
-        return this.fail("PORT_CONFLICT", "Global model budget is exhausted");
-      }
-      if (
-        addCost(
-          usage.byClassification[input.dataClassification],
-          input.estimatedCostMicros,
-          "Classification budget",
-          this.fail,
-        ) > limits.perClassificationCostMicros[input.dataClassification]
-      ) {
-        return this.fail("PORT_CONFLICT", "Classification model budget is exhausted");
-      }
       nextReserved = addCost(
         account.reservedCostMicros,
         input.estimatedCostMicros,
@@ -672,7 +571,7 @@ export class SqliteModelBudgetOperations {
       return this.fail("PORT_CONFLICT", "Model budget allocation cannot be started");
     }
     this.assertParent(scope, parent, input.startedAt, true);
-    if (account.status !== "active")
+    if (account.status === "reconcile_required")
       return this.fail("PORT_CONFLICT", "Budget account is not active");
     this.database
       .prepare(
@@ -726,14 +625,9 @@ export class SqliteModelBudgetOperations {
       "Spent budget",
       this.fail,
     );
-    const status =
-      account.status === "over_budget"
-        ? "over_budget"
-        : input.actualCostMicros > allocation.estimatedCostMicros
-          ? "over_budget"
-          : this.remainingUnknown(id, scope, input.operationKey)
-            ? "reconcile_required"
-            : "active";
+    const status = this.remainingUnknown(id, scope, input.operationKey)
+      ? "reconcile_required"
+      : "active";
     const updatedAccount = this.updateAccount(account, reserved, spent, status);
     this.database
       .prepare(
@@ -789,7 +683,7 @@ export class SqliteModelBudgetOperations {
       account,
       account.reservedCostMicros,
       account.spentCostMicros,
-      account.status === "over_budget" ? "over_budget" : "reconcile_required",
+      "reconcile_required",
     );
     this.database
       .prepare(
@@ -919,12 +813,7 @@ export class SqliteModelBudgetOperations {
         envelope.scope.ownerId,
         envelope.scope.agentId,
       );
-      const status =
-        account.status === "over_budget"
-          ? "over_budget"
-          : childState.open || childState.unknown
-            ? "reconcile_required"
-            : "active";
+      const status = childState.open || childState.unknown ? "reconcile_required" : "active";
       const updated = this.updateAccount(account, outstanding, account.spentCostMicros, status);
       return this.toAccount(updated);
     });
@@ -1012,30 +901,12 @@ export class SqliteModelBudgetOperations {
   private parseReserve(
     input: Record<string, unknown>,
   ): ModelBudgetReserveInput & { parent: ParsedParent } {
-    const limits = record(input["limits"], "limits");
-    const classLimits = record(
-      limits["perClassificationCostMicros"],
-      "perClassificationCostMicros",
-    );
     return {
       parent: this.parseParent(input["parent"]),
       operationKey: text(input["operationKey"], "operationKey"),
       modelRef: text(input["modelRef"], "modelRef", 256),
       dataClassification: classification(input["dataClassification"], "dataClassification"),
       estimatedCostMicros: safeInteger(input["estimatedCostMicros"], "estimatedCostMicros"),
-      limits: {
-        accountCostMicros: safeInteger(limits["accountCostMicros"], "accountCostMicros"),
-        globalCostMicros: safeInteger(limits["globalCostMicros"], "globalCostMicros"),
-        perClassificationCostMicros: {
-          public: safeInteger(classLimits["public"], "perClassificationCostMicros.public"),
-          private: safeInteger(classLimits["private"], "perClassificationCostMicros.private"),
-          sensitive: safeInteger(classLimits["sensitive"], "perClassificationCostMicros.sensitive"),
-          restricted: safeInteger(
-            classLimits["restricted"],
-            "perClassificationCostMicros.restricted",
-          ),
-        },
-      },
       reservedAt: instant(input["reservedAt"], "reservedAt"),
     };
   }
@@ -1096,19 +967,6 @@ export class SqliteModelBudgetOperations {
     return {
       parent,
       finalizedAt: instant(input["finalizedAt"], "finalizedAt"),
-    };
-  }
-
-  private parseLegacyLimits(input: BackgroundAdmissionLimits): ModelBudgetLimits {
-    return {
-      accountCostMicros: safeInteger(input.perRunCostMicros, "perRunCostMicros"),
-      globalCostMicros: safeInteger(input.globalCostMicros, "globalCostMicros"),
-      perClassificationCostMicros: {
-        public: safeInteger(input.perClassificationCostMicros.public, "public budget"),
-        private: safeInteger(input.perClassificationCostMicros.private, "private budget"),
-        sensitive: safeInteger(input.perClassificationCostMicros.sensitive, "sensitive budget"),
-        restricted: safeInteger(input.perClassificationCostMicros.restricted, "restricted budget"),
-      },
     };
   }
 
@@ -1470,43 +1328,6 @@ export class SqliteModelBudgetOperations {
       settledAt: row["settledAt"] === null ? null : instant(row["settledAt"], "settledAt"),
       reasonCode: reason as AllocationRow["reasonCode"],
     };
-  }
-
-  private readUsage(
-    ownerId: string,
-    agentId: string,
-  ): {
-    readonly global: number;
-    readonly byClassification: Record<ModelClassification, number>;
-  } {
-    const result: Record<ModelClassification, number> = {
-      public: 0,
-      private: 0,
-      sensitive: 0,
-      restricted: 0,
-    };
-    let global = 0;
-    const rows = this.database
-      .prepare(
-        `SELECT data_classification AS dataClassification,
-          reserved_cost_micros AS reservedCostMicros,
-          spent_cost_micros AS spentCostMicros
-         FROM model_budget_accounts WHERE owner_id = ? AND agent_id = ?`,
-      )
-      .all(ownerId, agentId);
-    for (const value of rows) {
-      const row = record(value, "budget usage row");
-      const kind = classification(row["dataClassification"], "dataClassification");
-      const total = addCost(
-        safeInteger(row["reservedCostMicros"], "reservedCostMicros"),
-        safeInteger(row["spentCostMicros"], "spentCostMicros"),
-        "Budget usage",
-        this.fail,
-      );
-      global = addCost(global, total, "Global budget usage", this.fail);
-      result[kind] = addCost(result[kind], total, "Classification budget usage", this.fail);
-    }
-    return { global, byClassification: result };
   }
 
   private childAllocationState(

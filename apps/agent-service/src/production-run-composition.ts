@@ -91,7 +91,7 @@ export interface ProductionRunCompositionOptions {
   };
   readonly configuration: Pick<
     ProductConfiguration,
-    "ownerId" | "agentId" | "budgets" | "concurrency" | "deadlines"
+    "ownerId" | "agentId" | "concurrency" | "deadlines"
   >;
   readonly repository: SqliteProductStateRepository;
   readonly authority: Pick<
@@ -137,11 +137,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
       invocations: repository.modelInvocationIdentityPort(ownerId, agentId, fence, lease),
       clock,
       registry: options.modelRegistry,
-      limits: {
-        accountCostMicros: configuration.budgets.perRunCostMicros,
-        globalCostMicros: configuration.budgets.globalCostMicros,
-        perClassificationCostMicros: configuration.budgets.perClassificationCostMicros,
-      },
     });
   };
   const trace = new SessionTraceRecorder({

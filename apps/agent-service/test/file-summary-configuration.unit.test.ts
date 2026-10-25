@@ -74,7 +74,7 @@ describe("file summary qualification configuration", () => {
     }
   });
 
-  it("fits two generation reservations and embedding within the proposed shared budget", async () => {
+  it("prices generation and embedding reservations for usage accounting", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
     const generationDescriptors = descriptors.generation.filter(
@@ -88,10 +88,8 @@ describe("file summary qualification configuration", () => {
       ),
     );
     expect(embedding.estimatedCostMicros).toBeGreaterThan(0);
-    expect(2 * generation + embedding.estimatedCostMicros).toBeLessThan(
-      config.budgets.perRunCostMicros,
-    );
-    expect(config.budgets.perRunCostMicros).toBeLessThanOrEqual(config.budgets.globalCostMicros);
+    expect(generation).toBeGreaterThan(0);
+    expect("budgets" in config).toBe(false);
     expect(embedding.secretRequirement).toEqual(descriptors.generation[0]?.secretRequirement);
     expect(descriptors.embedding.dimensions).toBe(config.memory.dimensions);
     expect(config.memory.storagePath.startsWith(`${config.stateRoot}/`)).toBe(true);

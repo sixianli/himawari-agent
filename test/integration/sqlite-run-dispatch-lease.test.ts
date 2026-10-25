@@ -1094,23 +1094,12 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           runId: resource.runId,
           executionLease: claimFromRunExecutionLease(claimed),
         };
-        const limits = {
-          accountCostMicros: 1_000,
-          globalCostMicros: 10_000,
-          perClassificationCostMicros: {
-            public: 10_000,
-            private: 10_000,
-            sensitive: 10_000,
-            restricted: 10_000,
-          },
-        } as const;
         const reserved = await budget.reserve({
           parent,
           operationKey: "budget-reconcile-call",
           modelRef: "approved-model-v1",
           dataClassification: "private",
           estimatedCostMicros: 10,
-          limits,
           reservedAt: NOW,
         });
         await budget.markStarted({

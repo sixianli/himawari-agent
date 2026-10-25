@@ -188,16 +188,6 @@ function selectedEmbeddingConfiguration(stateRoot: string) {
           scope: "model",
         },
       ],
-      budgets: {
-        globalCostMicros: 1_000_000,
-        perRunCostMicros: 1_000_000,
-        perClassificationCostMicros: {
-          public: 1_000_000,
-          private: 1_000_000,
-          sensitive: 0,
-          restricted: 0,
-        },
-      },
       concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
       deadlines: { runMs: 1000, workerRequestMs: 1000, providerRequestMs: 1000 },
     },
@@ -331,11 +321,6 @@ describe("production model composition", () => {
             scope: "embedding",
           },
         ],
-        budgets: {
-          globalCostMicros: 0,
-          perRunCostMicros: 0,
-          perClassificationCostMicros: { public: 0, private: 0, sensitive: 0, restricted: 0 },
-        },
         concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
         deadlines: { runMs: 1000, workerRequestMs: 1000, providerRequestMs: 1000 },
       },
@@ -782,11 +767,6 @@ it("accepts the production embedding descriptor in the real invocation registry"
         dispatch: {} as never,
         invocations: {} as never,
         clock: { now: () => "2026-09-06T00:00:00.000Z" },
-        limits: {
-          accountCostMicros: configuration.budgets.perRunCostMicros,
-          globalCostMicros: configuration.budgets.globalCostMicros,
-          perClassificationCostMicros: configuration.budgets.perClassificationCostMicros,
-        },
         registry: [embeddingAdmissionDescriptor(configuration)],
       }),
   ).not.toThrow();

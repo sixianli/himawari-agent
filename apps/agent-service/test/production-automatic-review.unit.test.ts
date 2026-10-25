@@ -28,7 +28,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createProductionAutomaticReview } from "../src/production-automatic-review.js";
 
-// The app layer owns no identifier constructors; branded values are plain strings here.
 const OWNER_ID = "owner-review-wiring" as GovernedActionIntent["ownerId"];
 const AGENT_ID = "agent-review-wiring" as GovernedActionIntent["agentId"];
 const RUN_ID = "run-review-wiring" as GovernedActionIntent["runId"];
@@ -42,10 +41,6 @@ const EXECUTION_LEASE_ID = "execution-lease-review-wiring" as Parameters<
 >[0]["executionLeaseId"];
 const INPUT_REF = "payload-review-wiring-input";
 const DELEGATION_KEY = "automatic-review-delegation";
-/** The durable review transaction uses the repository's real writer clock while the
- * product policy clock is injected. The policy clock starts far enough after wall time
- * that loaded runs still observe "now is inside the committed Grant window"; the whole
- * review then has to fit inside the remaining approval window. */
 const WALL_NOW = Date.now();
 const NOW = new Date(WALL_NOW + 30_000).toISOString();
 const EXPIRES_AT = new Date(WALL_NOW + 300_000).toISOString();
@@ -202,11 +197,6 @@ function configuration(configured: boolean): ProductConfiguration {
     memory: { adapter: "himawari-sqlite", version: "1", storagePath: "/unused", dimensions: 16 },
     repositoryAllowlistRefs: [],
     secretReferences: [],
-    budgets: {
-      globalCostMicros: 1000,
-      perRunCostMicros: 1000,
-      perClassificationCostMicros: { public: 1000, private: 1000, sensitive: 0, restricted: 0 },
-    },
     concurrency: { totalRuns: 1, foregroundReserved: 0, perCategory: {} },
     deadlines: { runMs: 1000, workerRequestMs: 1000, providerRequestMs: 1000 },
     loadedAt: NOW,
@@ -259,7 +249,6 @@ async function fixture() {
     ids: { next: (scope: string) => `${scope}:handle:${++identifier}` },
     clock: { now: () => NOW },
   });
-  /** Keys and the input payload are written through the real protector, not raw SQL. */
   await repository.payloadStore(OWNER_ID, AGENT_ID).put(
     await protector.protect({
       ownerId: OWNER_ID,
@@ -271,7 +260,6 @@ async function fixture() {
       createdAt: NOW,
     }),
   );
-  /** The Run, its trigger and its message are created through the real admission path. */
   const commands = new ThreadCommandService({
     repository: repository.threadRepository(),
     clock: { now: () => NOW },
@@ -300,8 +288,6 @@ async function fixture() {
     resultRef: INPUT_REF,
   });
   await repository.close();
-  // Admission seeds the Run as accepted and the Thread at revision 0; the shared
-  // review observation writer joins the live Run and advances the Thread itself.
   {
     const writable = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
     writable
@@ -430,7 +416,6 @@ function reviewerResponse(
     configurationVersion: "review-config:1",
     modelRef: REVIEW_MODEL,
     reasonCode: "WITHIN_DELEGATION",
-    // Approvals carry a calibrated confidence above the configured 0.8 boundary.
     ...(decision === "alternative"
       ? { decision, suggestion: "改为只读取目标文件，不做写入。" }
       : decision === "approve"
@@ -545,8 +530,6 @@ describe("production automatic review composition", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ modelRef: REVIEW_MODEL });
     expect(inputs).toHaveLength(1);
-    // Only the frozen host summary is disclosed: identity, versions, the operation
-    // and target kinds. Never file contents, local paths, credentials or recipients.
     const disclosedText = inputs[0];
     if (disclosedText === undefined) throw new Error("review input was not prepared");
     const disclosed = JSON.parse(disclosedText) as Record<string, unknown>;
@@ -593,7 +576,6 @@ describe("production automatic review composition", () => {
       },
     ]);
     expect(result).toMatchObject({ decision: "ALLOW", basis: { type: "grant" } });
-    // Review allocates no executable invocation; the Grant stays unconsumed here.
     expect(grant.uses).toBe(0);
   });
 
@@ -668,7 +650,6 @@ describe("production automatic review composition", () => {
     });
     expect(await f.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID)).toEqual([]);
     expect(await f.repository.authorizationStore().listApprovals(OWNER_ID, AGENT_ID)).toEqual([]);
-    // The untrusted suggestion stays in its protected payload, out of the denial object.
     expect(JSON.stringify(result)).not.toContain("改为只读取目标文件");
   });
 });

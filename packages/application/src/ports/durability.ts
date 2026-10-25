@@ -8,7 +8,6 @@ import type {
   OccurrenceId,
   OwnerId,
   ProductAuthorityFence,
-  ProductDataClassification,
   RunId,
 } from "@himawari-agent/domain";
 
@@ -62,9 +61,6 @@ export interface BackgroundWorkStatePort {
 }
 
 export interface BackgroundAdmissionLimits {
-  readonly globalCostMicros: number;
-  readonly perRunCostMicros: number;
-  readonly perClassificationCostMicros: Readonly<Record<ProductDataClassification, number>>;
   readonly totalRuns: number;
   readonly foregroundReserved: number;
   readonly perCategory: Readonly<Record<string, number>>;
@@ -83,7 +79,6 @@ export interface BackgroundAdmissionResult {
   readonly occurrence: BackgroundOccurrence;
   readonly outcome:
     | "admitted"
-    | "budget_blocked"
     | "capacity_blocked"
     | "deadline_exceeded"
     | "blocked"
@@ -93,9 +88,6 @@ export interface BackgroundAdmissionResult {
     | "ADMITTED"
     | "ALREADY_ADMITTED"
     | "JOB_ALREADY_ACTIVE"
-    | "GLOBAL_BUDGET_EXHAUSTED"
-    | "CLASSIFICATION_BUDGET_EXHAUSTED"
-    | "RUN_BUDGET_EXCEEDED"
     | "TOTAL_CAPACITY_EXHAUSTED"
     | "FOREGROUND_CAPACITY_RESERVED"
     | "CATEGORY_CAPACITY_EXHAUSTED"

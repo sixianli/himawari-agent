@@ -12,8 +12,6 @@ import { SqliteModelBudgetOperations } from "../../packages/persistence-sqlite/s
 import { SqliteModelInvocationOperations } from "../../packages/persistence-sqlite/src/sqlite-model-invocation-operations.ts";
 import { SqliteRunDispatchOperations } from "../../packages/persistence-sqlite/src/sqlite-run-dispatch-operations.ts";
 
-// Malformed IPC values must be rejected before a database operation begins.
-// Real persistence, leases and budget accounting are exercised by integration tests.
 let database: Database.Database;
 let disk: ReturnType<typeof vi.fn<() => void>>;
 const fail = (code: string, message: string): never => {
@@ -83,16 +81,6 @@ function reserve() {
     dataClassification: "private",
     estimatedCostMicros: 10,
     reservedAt: T0,
-    limits: {
-      accountCostMicros: 100,
-      globalCostMicros: 1000,
-      perClassificationCostMicros: {
-        public: 1000,
-        private: 1000,
-        sensitive: 1000,
-        restricted: 1000,
-      },
-    },
   });
 }
 describe("model budget IPC validation", () => {
@@ -113,11 +101,6 @@ describe("model budget IPC validation", () => {
     ["input.estimatedCostMicros", -1, "estimatedCostMicros"],
     ["input.estimatedCostMicros", 1.5, "estimatedCostMicros"],
     ["input.estimatedCostMicros", Number.MAX_SAFE_INTEGER + 1, "estimatedCostMicros"],
-    ["input.limits", null, "limits"],
-    ["input.limits.perClassificationCostMicros", [], "perClassificationCostMicros"],
-    ["input.limits.accountCostMicros", -1, "accountCostMicros"],
-    ["input.limits.globalCostMicros", "100", "globalCostMicros"],
-    ["input.limits.perClassificationCostMicros.restricted", -1, "restricted"],
     ["input.reservedAt", "2026-09-14", "reservedAt"],
     ["input.reservedAt", "invalid", "reservedAt"],
   ])("rejects malformed reservation %s without touching state", (field, value, label) => {
@@ -273,10 +256,6 @@ describe("model invocation durable boundary parsing", () => {
     ["input.authority", null, "authority"],
     ["input.authority.fencingToken", 0, "fencingToken"],
     ["input.authorityLease", null, "authorityLease"],
-    ["input.limits", null, "limits"],
-    ["input.limits.perClassificationCostMicros", null, "perClassificationCostMicros"],
-    ["input.limits.globalCostMicros", -1, "globalCostMicros"],
-    ["input.limits.perClassificationCostMicros.private", -1, "private"],
     ["input.reservedAt", "invalid", "reservedAt"],
     ["input.reservedAt", "2026-09-14", "reservedAt"],
   ])("rejects invalid model identity %s before writing a reservation", (field, value, label) => {

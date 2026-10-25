@@ -74,12 +74,6 @@ export interface ConfiguredMemoryDescriptor {
   readonly dimensions: number;
 }
 
-export interface BudgetConfiguration {
-  readonly globalCostMicros: number;
-  readonly perRunCostMicros: number;
-  readonly perClassificationCostMicros: Readonly<Record<DataClassification, number>>;
-}
-
 export interface ConcurrencyConfiguration {
   readonly totalRuns: number;
   readonly foregroundReserved: number;
@@ -244,7 +238,6 @@ export interface ProductConfiguration {
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];
   readonly secretReferences: readonly SecretReferenceDescriptor[];
-  readonly budgets: BudgetConfiguration;
   readonly concurrency: ConcurrencyConfiguration;
   readonly deadlines: DeadlineConfiguration;
   readonly loadedAt: string;

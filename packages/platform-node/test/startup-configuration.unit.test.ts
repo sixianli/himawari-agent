@@ -91,16 +91,6 @@ function config(stateRoot: string): Record<string, unknown> {
         scope: "model-embedding",
       },
     ],
-    budgets: {
-      globalCostMicros: 10_000_000,
-      perRunCostMicros: 100_000,
-      perClassificationCostMicros: {
-        public: 100_000,
-        private: 100_000,
-        sensitive: 50_000,
-        restricted: 0,
-      },
-    },
     concurrency: {
       totalRuns: 8,
       foregroundReserved: 2,
@@ -289,6 +279,35 @@ describe("strict product configuration", () => {
       expect(() => parse(invalid)).toThrowError(
         expect.objectContaining({ code: CONFIGURATION_ERROR_CODES.INVALID_VALUE }),
       );
+  });
+
+  it("accepts no model cost budgets and rejects the removed budgets section", () => {
+    const stateRoot = path.join(tmpdir(), "himawari-config-budgets");
+    const parsed = parseProductConfiguration(config(stateRoot), new Date().toISOString());
+    expect("budgets" in parsed).toBe(false);
+    expect(() =>
+      parseProductConfiguration(
+        {
+          ...config(stateRoot),
+          budgets: {
+            globalCostMicros: 1_000_000,
+            perRunCostMicros: 100_000,
+            perClassificationCostMicros: {
+              public: 1_000_000,
+              private: 100_000,
+              sensitive: 0,
+              restricted: 0,
+            },
+          },
+        },
+        new Date().toISOString(),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: CONFIGURATION_ERROR_CODES.UNKNOWN_FIELD,
+        details: { field: "configuration.budgets" },
+      }),
+    );
   });
 
   it("rejects unknown fields recursively and raw machine-secret material", () => {
