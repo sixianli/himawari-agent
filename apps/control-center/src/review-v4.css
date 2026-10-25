@@ -766,6 +766,13 @@
   border-radius: 4px;
   flex: none;
 }
+.step-summary {
+  font-size: 13px;
+  flex: none;
+}
+.step-tool {
+  margin: 0 0 4px;
+}
 .step-status {
   margin-left: auto;
   white-space: nowrap;
@@ -1036,9 +1043,6 @@ body {
 .settings-nav .action-button {
   min-height: 38px;
   line-height: 20.8px;
-}
-.turn-number {
-  margin-left: auto;
 }
 .brand-heading .himawari-brand {
   font-weight: 500;
