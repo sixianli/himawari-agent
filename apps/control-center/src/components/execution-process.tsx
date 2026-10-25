@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   authorizationReviewSteps,
   duration,
+  endedAwaitingApproval,
   executionActivity,
   executionFailureMessage,
   executionItems,
@@ -20,6 +21,7 @@ import {
   thinkingSteps,
 } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { toolStepSummary } from "../step-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ActionButton } from "./primitives.js";
@@ -35,16 +37,6 @@ function statusId(run: RunSummary): MessageId {
     }[run.status as "building_context" | "awaiting_approval" | "reconciling_external_result"] ??
     run.status;
   return `runs.status.${key}` as MessageId;
-}
-function preview(input: string) {
-  try {
-    const value = JSON.parse(input);
-    for (const key of ["query", "queryText", "search_query", "path", "command", "url"])
-      if (typeof value?.[key] === "string") return value[key] as string;
-  } catch {
-    /* Truncated or legacy input remains available in the detail. */
-  }
-  return "";
 }
 function RecordedTime({ at }: { at: string }) {
   return (
@@ -116,6 +108,11 @@ export function ExecutionProcess({
       ? "chat.recordUnavailable"
       : undefined;
   const nextAction = state ? executionNextAction(state) : undefined;
+  const activeTool = items.findLast((item) => item.kind === "tool" && item.phase === "started");
+  const activeSummary =
+    !stateLabel && activity.label === "chat.activity.tool" && activeTool
+      ? toolStepSummary(activeTool.name, activeTool.input)
+      : undefined;
   const waitReason = state ? executionWaitReason(state, run, items) : undefined;
   return (
     <>
@@ -129,7 +126,11 @@ export function ExecutionProcess({
             <span className={`run-indicator run-${run.status}`} />
           ) : null}
           <output>
-            <strong>{message(stateLabel ?? activity.label, { tool: activity.tool })}</strong>
+            <strong>
+              {activeSummary
+                ? message("step.active", { step: message(activeSummary.id) })
+                : message(stateLabel ?? activity.label, { tool: activity.tool })}
+            </strong>
           </output>
           {waitReason ? (
             <p className="turn-wait-reason">{message(waitReason.id, { tool: waitReason.tool })}</p>
@@ -178,11 +179,11 @@ export function ExecutionProcess({
                   <span className="step-marker" aria-hidden="true" />
                   <ToolIcon name="" review />
                   <span>{message(review.label)}</span>
-                  <span className="step-status" title={message("review.authorizationTiming")}>
-                    {review.elapsed === null
-                      ? message("chat.unknownTime")
-                      : duration(review.elapsed)}
-                  </span>
+                  {review.elapsed === null ? null : (
+                    <span className="step-status" title={message("review.authorizationTiming")}>
+                      {duration(review.elapsed)}
+                    </span>
+                  )}
                 </li>
               );
             if (stage)
@@ -190,9 +191,10 @@ export function ExecutionProcess({
                 <li className="execution-stage" key={stage.id}>
                   <span className="step-marker" aria-hidden="true" />
                   <ToolIcon name="" thinking />
-                  <span>{message("review.thinkingObserved")}</span>
-                  <span className="step-status" title={message("review.thinkingTiming")}>
-                    {stage.elapsed === null ? message("chat.unknownTime") : duration(stage.elapsed)}
+                  <span>
+                    {stage.elapsed === null
+                      ? message("step.thinking")
+                      : message("step.thinkingFor", { time: duration(stage.elapsed) })}
                   </span>
                 </li>
               );
@@ -201,20 +203,24 @@ export function ExecutionProcess({
               (operation) => operation.itemId === item.itemId,
             );
             const incomplete = ["started", "updated"].includes(item.phase);
-            const phase: MessageId =
-              (operation
-                ? executionStateLabel(operation.displayPhase, operation.reasonCode)
-                : stateAvailable
-                  ? "chat.recordUnavailable"
-                  : undefined) ??
-              executionToolPhase(item, records, run) ??
-              (isTerminalRun(run) && incomplete
-                ? run.status === "cancelled" && item.kind === "message"
-                  ? "chat.phase.stopped"
-                  : "chat.recordUnavailable"
-                : item.kind === "tool" && item.phase === "updated"
-                  ? "chat.callRequested"
-                  : (`chat.phase.${item.phase}` as MessageId));
+            const phase: MessageId = endedAwaitingApproval(item, records, run)
+              ? "chat.phase.expiredAwaitingApproval"
+              : run.status === "awaiting_approval" && incomplete
+                ? "runs.status.awaitingApproval"
+                : ((operation
+                    ? executionStateLabel(operation.displayPhase, operation.reasonCode)
+                    : stateAvailable
+                      ? "chat.recordUnavailable"
+                      : undefined) ??
+                  executionToolPhase(item, records, run) ??
+                  (isTerminalRun(run) && incomplete
+                    ? run.status === "cancelled" && item.kind === "message"
+                      ? "chat.phase.stopped"
+                      : "chat.recordUnavailable"
+                    : item.kind === "tool" && item.phase === "updated"
+                      ? "chat.callRequested"
+                      : (`chat.phase.${item.phase}` as MessageId)));
+            const summary = toolStepSummary(item.name, item.input);
             const effect = state?.effectSummary.find((effect) => effect.itemId === item.itemId);
             const retainedEffect: MessageId | undefined = operation?.reasonCode.startsWith(
               "RESOURCE_",
@@ -228,7 +234,6 @@ export function ExecutionProcess({
             const elapsed = operation
               ? operation.executionMilliseconds
               : recordedInterval(records, item.itemId, "runtime.tool_execution");
-            const hint = item.kind === "tool" ? item.text || preview(item.input) : item.text;
             return (
               <li
                 key={item.itemId}
@@ -238,19 +243,24 @@ export function ExecutionProcess({
                 <details className="tool-record">
                   <summary>
                     <ToolIcon name={item.name} />
-                    <span className="step-name">
-                      {item.kind === "tool" ? item.name : message("chat.responseText")}
+                    <span className="step-summary">
+                      {item.kind === "tool" ? message(summary.id) : message("chat.responseText")}
                     </span>
-                    {hint ? <span className="step-preview">{hint}</span> : null}
+                    {item.kind === "tool" && summary.target ? (
+                      <span className="step-preview">{summary.target}</span>
+                    ) : null}
                     <span className="step-status" title={message("review.workerTiming")}>
                       {retainedEffect ? `${message(retainedEffect)} · ` : ""}
                       {message(phase)}
-                      {` · ${elapsed !== null ? duration(elapsed) : message("chat.unknownTime")}`}
+                      {elapsed !== null ? ` · ${duration(elapsed)}` : ""}
                     </span>
                   </summary>
                   <div className="step-detail">
                     {item.kind === "tool" ? (
                       <>
+                        <p className="step-tool">
+                          <span className="step-name">{item.name}</span>
+                        </p>
                         <ol className="call-lifecycle" aria-label={message("chat.callLifecycle")}>
                           {item.requestedAt ? (
                             <li>
