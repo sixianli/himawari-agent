@@ -127,7 +127,7 @@ describe("GitHub 审批读取边界", () => {
 
 it("CI 仅向需要读取审批的步骤提供现有只读令牌", () => {
   const workflow = parse(readFileSync(".github/workflows/ci.yml", "utf8"));
-  expect(workflow.permissions).toEqual({ contents: "read" });
+  expect(workflow.permissions).toEqual({ contents: "read", "pull-requests": "read" });
   expect(workflow.env?.HIMAWARI_CI_GITHUB_TOKEN).toBeUndefined();
   let readers = 0;
   for (const job of Object.values(workflow.jobs)) {
