@@ -6,6 +6,8 @@ import type {
   CancelCoordinatedRunInput,
   ThreadCreateInput,
   ThreadGatewayInboundMessage,
+  DurableMemoryService,
+  MemoryExtractionAuditRecord,
 } from "@himawari-agent/application";
 import {
   AgentThreadGatewayService,
@@ -71,6 +73,10 @@ import {
   createProductionWorkspaceCopies,
   PRODUCTION_COPY_OPERATIONS,
 } from "./production-workspace-copies.js";
+import {
+  PRODUCTION_MEMORY_OPERATIONS,
+  ProductionMemoryControl,
+} from "./production-memory-control.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -118,6 +124,10 @@ export interface ProductionHttpCompositionOptions {
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
     readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
+  };
+  readonly memory?: {
+    readonly service: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete">;
+    readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -475,6 +485,7 @@ function routeOptions(
   canCancelRun: boolean,
   workspaceCopiesAvailable: boolean,
   executionEnvironmentAvailable: boolean,
+  memoryAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -504,6 +515,7 @@ function routeOptions(
       installedGatewayV2Operations: [
         ...PRODUCTION_APPROVAL_OPERATIONS,
         ...(workspaceCopiesAvailable ? PRODUCTION_COPY_OPERATIONS : []),
+        ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -813,6 +825,19 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memoryControl = options.memory
+    ? new ProductionMemoryControl({
+        configuration,
+        state: repository.productMemoryState(),
+        jobs: repository.memoryProjectionJobs(),
+        approvals: repository.sensitiveMemoryApprovals(),
+        memory: options.memory.service,
+        payloads: repository.payloadStore(ownerId, agentId),
+        protector: payloadProtector,
+        clock: { now: clock },
+        onAudit: options.memory.onAudit,
+      })
+    : undefined;
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -822,6 +847,7 @@ export async function createProductionHttpComposition(
     authority: options.authority,
     ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
+    ...(memoryControl ? { memoryControl } : {}),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(
@@ -839,6 +865,7 @@ export async function createProductionHttpComposition(
       Boolean(options.cancelRun),
       Boolean(workspaceCopies),
       Boolean(options.executionEnvironment),
+      Boolean(memoryControl),
     ),
     gatewayV2,
     threadSearch,

@@ -74,6 +74,7 @@ export interface ThreadControlCenterOptions {
   readonly route: ControlCenterRouteState;
   readonly storage: ControlCenterBrowserStorage;
   readonly onUnauthorized: () => void;
+  readonly renderMemory?: (ownerRefs: readonly string[]) => ReactNode;
 }
 
 export interface ThreadControlCenterModel {
@@ -1159,6 +1160,7 @@ export function useThreadControlCenter(
               executionStateAvailable={configuration?.executionStateAvailable}
               onPreview={setPreview}
               connection={connection}
+              renderMemory={options.renderMemory}
               renderApproval={(runId, records) =>
                 client && configuration ? (
                   <RunApprovalCard

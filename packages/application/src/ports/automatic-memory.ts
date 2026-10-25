@@ -25,6 +25,7 @@ export interface ExtractedMemoryCandidate {
   readonly confidencePermille: number;
   readonly inference: boolean;
   readonly sourceRefs: readonly string[];
+  readonly sensitiveTopic?: SensitiveMemoryTopic;
 }
 
 export interface IncrementalMemoryExtractionPort {
@@ -93,8 +94,29 @@ export interface SensitiveMemoryApprovalStatePort {
   }): Promise<SensitiveMemoryApprovalRequest>;
   listPending(
     ownerId: OwnerId,
-    threadId: ThreadId,
+    threadId: ThreadId | null,
   ): Promise<readonly SensitiveMemoryApprovalRequest[]>;
+}
+
+export const SENSITIVE_MEMORY_TOPICS = [
+  "health",
+  "finance",
+  "beliefs",
+  "intimacy",
+  "third_party",
+  "location",
+  "legal",
+  "other",
+] as const;
+
+export type SensitiveMemoryTopic = (typeof SENSITIVE_MEMORY_TOPICS)[number];
+
+export interface SensitiveMemoryCandidatePort {
+  store(input: {
+    readonly request: SensitiveMemoryApprovalRequest;
+    readonly candidate: ExtractedMemoryCandidate;
+  }): Promise<void>;
+  read(request: SensitiveMemoryApprovalRequest): Promise<ExtractedMemoryCandidate | undefined>;
 }
 
 export interface MemoryExtractionAuditRecord {
@@ -107,6 +129,7 @@ export interface MemoryExtractionAuditRecord {
   readonly outcome:
     | "source_secret_excluded"
     | "candidate_secret_excluded"
+    | "restricted_excluded"
     | "extraction_failed"
     | "transient_ignored"
     | "confidence_below_threshold"

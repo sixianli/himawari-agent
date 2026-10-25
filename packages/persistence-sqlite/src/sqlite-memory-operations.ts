@@ -188,7 +188,9 @@ export class SqliteMemoryOperations {
       case "memoryApproval.markCommitted":
         return this.markApprovalCommitted(payload as { requestId: string; committedAt: string });
       case "memoryApproval.listPending":
-        return this.listPendingApprovals(payload as { ownerId: OwnerId; threadId: ThreadId });
+        return this.listPendingApprovals(
+          payload as { ownerId: OwnerId; threadId: ThreadId | null },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory operation ${operation}`);
     }
@@ -894,14 +896,23 @@ export class SqliteMemoryOperations {
 
   private listPendingApprovals(input: {
     ownerId: OwnerId;
-    threadId: ThreadId;
+    threadId: ThreadId | null;
   }): readonly SensitiveMemoryApprovalRequest[] {
-    const rows = this.database
-      .prepare(
-        `${memoryApprovalSelect} WHERE owner_id = ? AND thread_id = ? AND status = 'pending'
-        ORDER BY requested_at, candidate_ordinal`,
-      )
-      .all(input.ownerId, input.threadId) as MemoryApprovalRow[];
+    const rows = (
+      input.threadId === null
+        ? this.database
+            .prepare(
+              `${memoryApprovalSelect} WHERE owner_id = ? AND status = 'pending'
+              ORDER BY requested_at, candidate_ordinal`,
+            )
+            .all(input.ownerId)
+        : this.database
+            .prepare(
+              `${memoryApprovalSelect} WHERE owner_id = ? AND thread_id = ? AND status = 'pending'
+              ORDER BY requested_at, candidate_ordinal`,
+            )
+            .all(input.ownerId, input.threadId)
+    ) as MemoryApprovalRow[];
     return rows.map((row) => this.approvalFromRow(row));
   }
 }

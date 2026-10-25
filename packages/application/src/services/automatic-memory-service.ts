@@ -11,6 +11,7 @@ import {
   type ProductMemoryProposal,
   type SensitiveMemoryApprovalRequest,
   type SensitiveMemoryApprovalStatePort,
+  type SensitiveMemoryCandidatePort,
 } from "../ports/index.js";
 import { scanMachineSecrets } from "./machine-secret-exclusion.js";
 
@@ -19,6 +20,7 @@ export interface AutomaticMemoryServiceOptions {
   readonly product: IncrementalMemoryProductPort;
   readonly content: ApprovedMemoryContentPort;
   readonly approvals: SensitiveMemoryApprovalStatePort;
+  readonly candidates?: SensitiveMemoryCandidatePort;
   readonly audit: MemoryExtractionAuditPort;
   readonly readSourceText: (sourceRef: string) => Promise<string>;
   readonly now: () => string;
@@ -106,6 +108,11 @@ export class AutomaticMemoryService {
       if (candidateFindings.length > 0) {
         excludedCandidateOrdinals.push(candidateOrdinal);
         await this.audit(input, candidateOrdinal, "candidate_secret_excluded", candidateFindings);
+        continue;
+      }
+      if (candidate.dataClassification === "restricted") {
+        excludedCandidateOrdinals.push(candidateOrdinal);
+        await this.audit(input, candidateOrdinal, "restricted_excluded", []);
         continue;
       }
       if (candidate.kind === "transient") {
@@ -197,14 +204,17 @@ export class AutomaticMemoryService {
         "Approved Memory source now contains machine-secret material",
       );
     }
-    const candidates = await this.options.extraction.extract({
-      sourceText,
-      sourceRef: request.sourceRef,
-      sourceClassification: request.sourceClassification,
-      policyVersion: request.policyVersion,
-      modelDescriptorRef: request.modelDescriptorRef,
-    });
-    const candidate = candidates[request.candidateOrdinal];
+    const candidate = this.options.candidates
+      ? await this.options.candidates.read(request)
+      : (
+          await this.options.extraction.extract({
+            sourceText,
+            sourceRef: request.sourceRef,
+            sourceClassification: request.sourceClassification,
+            policyVersion: request.policyVersion,
+            modelDescriptorRef: request.modelDescriptorRef,
+          })
+        )[request.candidateOrdinal];
     if (!candidate || !isSensitive(candidate)) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.CONFLICT,
@@ -261,7 +271,7 @@ export class AutomaticMemoryService {
     },
     candidateOrdinal: number,
   ): Promise<SensitiveMemoryApprovalRequest> {
-    return this.options.approvals.create({
+    const request = await this.options.approvals.create({
       id: this.options.approvalIdFor(input.generationId, candidateOrdinal),
       ownerId: input.ownerId,
       agentId: input.agentId,
@@ -285,6 +295,8 @@ export class AutomaticMemoryService {
       decidedAt: null,
       committedAt: null,
     });
+    await this.options.candidates?.store({ request, candidate });
+    return request;
   }
 
   private async commitCandidate(
