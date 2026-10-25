@@ -1,10 +1,16 @@
 # Himawari Agent Project Instructions
 
+## Delivery Mode
+
+Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode.
+
 ## Documentation Governance
 
 This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`.
 
 ## Code and Documentation Consistency
+
+In fast mode this section is suspended; see [Delivery Mode](#delivery-mode).
 
 The user asked on 2026-09-29 that code and documentation never drift apart. Documentation drift already happened once: commit `51fe7f6` changed `apps/control-center/src` without resealing `docs/runbooks/hermes-control-center-upgrade-runbook.md`, and strict validation failed from then on.
 
