@@ -36,6 +36,10 @@ import {
   ProductionMemoryCapture,
   type ProductionMemoryCaptureOptions,
 } from "./production-memory-capture.js";
+
+type ProductionMemoryCaptureRecall = NonNullable<
+  ReturnType<NonNullable<ProductionMemoryCaptureOptions["relevantMemoryIds"]>>
+>[number];
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -129,8 +133,26 @@ export function createProductionRunComposition(options: ProductionRunComposition
     clock,
     ids,
   });
+  const recalled = new Map<string, readonly ProductionMemoryCaptureRecall[]>();
+  const memory: Pick<MemoryPort, "search"> = {
+    search: async (request) => {
+      const found = await options.memory.search(request);
+      if (options.memoryCapture && request.runId) {
+        recalled.delete(request.runId);
+        recalled.set(
+          request.runId,
+          found.map(({ id }) => id as ProductionMemoryCaptureRecall),
+        );
+        if (recalled.size > 200) {
+          const oldest = recalled.keys().next().value;
+          if (oldest !== undefined) recalled.delete(oldest);
+        }
+      }
+      return found;
+    },
+  };
   const context = new ContextFormationService({
-    memory: options.memory,
+    memory,
     trace,
     artifacts,
     payloads,
@@ -271,6 +293,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         threads: repository.threadRepository(),
         generations: repository.threadDistillationState(),
         state: repository.productMemoryState(),
+        relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
         payloads,
