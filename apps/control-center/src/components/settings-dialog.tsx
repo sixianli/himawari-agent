@@ -15,6 +15,8 @@ export function SettingsDialog({
   onPreferencesChange,
   tools,
   data,
+  memory,
+  initialTab = "general",
 }: {
   open: boolean;
   onClose: () => void;
@@ -24,12 +26,14 @@ export function SettingsDialog({
   onPreferencesChange: (preferences: ControlCenterPreferences) => void;
   tools?: ReactNode;
   data?: ReactNode;
+  memory?: ReactNode;
+  initialTab?: string;
 }) {
   const { message } = useControlCenterIntl();
-  const [tab, setTab] = useState("general");
+  const [tab, setTab] = useState(initialTab);
   useEffect(() => {
-    if (open) setTab("general");
-  }, [open]);
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
   return (
     <ModalDialog
       open={open}
@@ -39,7 +43,10 @@ export function SettingsDialog({
     >
       <div className="settings-body">
         <nav className="settings-nav" aria-label={message("settings.tabsLabel")}>
-          {(["general", "tools", "data"] as const).map((id) => (
+          {(memory
+            ? (["general", "tools", "memory", "data"] as const)
+            : (["general", "tools", "data"] as const)
+          ).map((id) => (
             <ActionButton
               key={id}
               variant="quiet"
@@ -114,6 +121,8 @@ export function SettingsDialog({
             </>
           ) : tab === "tools" ? (
             tools
+          ) : tab === "memory" ? (
+            memory
           ) : (
             <>
               {data}

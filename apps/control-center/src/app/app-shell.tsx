@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
+import { OPEN_MEMORY_SETTINGS } from "../components/memory-panel.js";
 import { SettingsDialog } from "../components/settings-dialog.js";
 import { SidebarIcon } from "../components/sidebar-icon.js";
 import { HimawariBrand } from "../components/brand.js";
@@ -17,6 +18,7 @@ export interface ControlCenterShellProps {
   readonly details: ReactNode;
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
+  readonly settingsMemory?: ReactNode;
   readonly list: ReactNode;
   readonly locale: ControlCenterUiLocale;
   readonly onLocaleChange: (locale: ControlCenterUiLocale) => void;
@@ -37,6 +39,7 @@ export function ControlCenterShell({
   details,
   settingsTools,
   settingsData,
+  settingsMemory,
   list,
   locale,
   onLocaleChange,
@@ -61,6 +64,15 @@ export function ControlCenterShell({
     setSidebarCollapsed(collapsed);
   };
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("general");
+  useEffect(() => {
+    const open = () => {
+      setSettingsTab("memory");
+      setSettingsOpen(true);
+    };
+    window.addEventListener(OPEN_MEMORY_SETTINGS, open);
+    return () => window.removeEventListener(OPEN_MEMORY_SETTINGS, open);
+  }, []);
   useEffect(() => {
     void route.objectId;
     setSettingsOpen(false);
@@ -146,7 +158,10 @@ export function ControlCenterShell({
             <ActionButton
               aria-label={message("settings.title")}
               variant="quiet"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsTab("general");
+                setSettingsOpen(true);
+              }}
             >
               <SidebarIcon name="settings" />
             </ActionButton>
@@ -172,6 +187,8 @@ export function ControlCenterShell({
         onPreferencesChange={onPreferencesChange}
         tools={settingsTools}
         data={settingsData}
+        memory={settingsMemory}
+        initialTab={settingsTab}
       />
     </div>
   );

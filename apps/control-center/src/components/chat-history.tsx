@@ -27,6 +27,7 @@ export function ChatHistory({
   onCleanup,
   onPreview,
   renderApproval,
+  renderMemory,
 }: {
   readonly detail: Detail;
   readonly contentByRef: Readonly<Record<string, string>>;
@@ -36,6 +37,7 @@ export function ChatHistory({
   readonly connection: string;
   readonly message: Message;
   readonly renderApproval: (runId: string, records: readonly ThreadExecutionRecord[]) => ReactNode;
+  readonly renderMemory?: ((ownerRefs: readonly string[]) => ReactNode) | undefined;
   readonly onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
   readonly onFork: (turnId: string, sequence: number) => void;
@@ -151,6 +153,11 @@ export function ChatHistory({
                       <AssistantMarkdown text={partial} />
                     </>
                   ) : null}
+                  {renderMemory?.(
+                    group.messages
+                      .filter((item) => item.role === "owner")
+                      .map((item) => item.contentRef),
+                  )}
                   <div className="message-actions">
                     {onCleanup &&
                     group.run &&

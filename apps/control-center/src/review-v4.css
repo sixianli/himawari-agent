@@ -1171,3 +1171,50 @@ body {
     padding: 24px 19px;
   }
 }
+.memory-turn {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.memory-saved summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.memory-saved ul,
+.memory-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+.memory-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.memory-text {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.memory-row .actions,
+.memory-approval .actions,
+.memory-editor .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.memory-editor textarea,
+.memory-search {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+}
+.memory-search {
+  margin: 12px 0 4px;
+}

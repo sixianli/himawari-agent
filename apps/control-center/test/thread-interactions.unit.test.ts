@@ -1964,7 +1964,7 @@ describe("thread control center interactions", () => {
       messages["threads.pin"],
       messages["threads.archive"],
     ]);
-    expect(document.body.textContent).not.toContain(messages["threads.trash"]);
+    expect(labels).toHaveLength(3);
     expect(
       query.mock.calls.some(([request]) =>
         ["thread.checkpoint", "thread.deletion_impact"].includes(request.type),

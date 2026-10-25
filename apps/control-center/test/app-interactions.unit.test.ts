@@ -17,7 +17,6 @@ const boundary = vi.hoisted(() => ({
   client: vi.fn(),
   threads: vi.fn(),
   governance: vi.fn(),
-  operations: vi.fn(),
 }));
 vi.mock("../src/gateway-client.js", async (original) => ({
   ...(await original<object>()),
@@ -33,9 +32,6 @@ vi.mock("../src/gateway-client.js", async (original) => ({
 vi.mock("../src/thread-control-center.js", () => ({ useThreadControlCenter: boundary.threads }));
 vi.mock("../src/governance-control-center.js", () => ({
   useGovernanceControlCenter: boundary.governance,
-}));
-vi.mock("../src/operations-control-center.js", () => ({
-  useOperationsControlCenter: boundary.operations,
 }));
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner-app",
@@ -107,7 +103,6 @@ beforeEach(() => {
   });
   boundary.threads.mockReset().mockImplementation(() => child("threads"));
   boundary.governance.mockReset().mockImplementation(() => child("governance"));
-  boundary.operations.mockReset().mockImplementation(() => child("operations"));
   fetcher
     .mockReset()
     .mockImplementation(async () => new Response(JSON.stringify({ method: "cloudflare-access" })));
@@ -258,14 +253,18 @@ describe("control center application bootstrap and interaction", () => {
       "light",
     );
   });
-  it.each(["approvals", "tasks", "settings", "memory", "sessions"])(
-    "routes installed /%s to the correct feature model",
+  it("routes installed /approvals to the governance model", async () => {
+    window.history.replaceState(null, "", "/approvals");
+    await render();
+    expect(text()).toContain("governance content");
+    expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
+  });
+  it.each(["tasks", "settings", "memory", "sessions"])(
+    "explains that /%s has no installed page",
     async (surface) => {
       window.history.replaceState(null, "", `/${surface}`);
       await render();
-      expect(text()).toContain(
-        surface === "approvals" ? "governance content" : "operations content",
-      );
+      expect(text()).toContain(messages["surface.notInstalled.title"]);
       expect(boundary.threads.mock.lastCall?.[0].active).toBe(false);
     },
   );
@@ -274,8 +273,7 @@ describe("control center application bootstrap and interaction", () => {
     boundary.load.mockResolvedValue({ ...configuration, installedGatewayV2Operations: [] });
     await render();
     expect(text()).toContain(messages["surface.notInstalled.title"]);
-    expect(text()).not.toContain("operations content");
-    expect(boundary.operations.mock.lastCall?.[0].active).toBe(false);
+    expect(boundary.governance.mock.lastCall?.[0].active).toBe(false);
   });
   it("ignores late bootstrap resolution after the app is unmounted", async () => {
     let resolve!: (value: ControlCenterRuntimeConfiguration) => void;
