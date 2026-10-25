@@ -10,11 +10,15 @@ import {
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
   type ProductConfiguration,
+  type RunPolicyConfiguration,
+  type WebProviderId,
 } from "@himawari-agent/application";
 import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
-
+import type {
+  ProductionFileReadServices,
+  WebProviderSecretBinding,
+} from "./production-file-read-workflow.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { createProductionHostReadOnly } from "./production-host-read.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
@@ -71,6 +75,19 @@ export function createProductionFileReadServices(options: {
     configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
       ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
       : undefined;
+  const providerSecretBindings = (
+    secrets: NonNullable<NonNullable<RunPolicyConfiguration["publicSearch"]>["providerSecrets"]>,
+  ): readonly WebProviderSecretBinding[] =>
+    Object.entries(secrets).map(([provider, secretRef]) => {
+      const reference = configuration.secretReferences.find(({ ref }) => ref === secretRef);
+      if (!reference) throw new Error("WEB_PROVIDER_SECRET_UNAVAILABLE");
+      return {
+        provider: provider as WebProviderId,
+        secretRef: reference.ref,
+        secretVersion: reference.version,
+        purpose: reference.purpose,
+      };
+    });
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
     ...(webMemory ? { webMemory } : {}),
@@ -140,6 +157,9 @@ export function createProductionFileReadServices(options: {
         modelRef: context.modelRef,
         modelIdentity: configuredModelDisclosureIdentity(model),
         ...("providers" in route && route.providers ? { providers: route.providers } : {}),
+        ...("providerSecrets" in route && route.providerSecrets
+          ? { providerSecrets: providerSecretBindings(route.providerSecrets) }
+          : {}),
       };
       if ("scopeSource" in route && route.scopeSource === "private_temp") {
         if (

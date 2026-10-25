@@ -330,6 +330,38 @@ it("discloses a configured provider chain to every provider and freezes it into 
     providers: ["exa-public", "deepseek"],
   });
 });
+it("grants only the configured provider secret by name and keeps its value out of the program input", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: null,
+    providers: ["deepseek", "exa-public"],
+    providerSecrets: [
+      {
+        provider: "deepseek",
+        secretRef: "deepseek-web",
+        secretVersion: "v1",
+        purpose: "web-provider",
+      },
+    ],
+  });
+  const issue = vi.fn(async (_input: { secretRefs: unknown }) => ({ ref: "handle:search" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_search", arguments: { query: "Tokyo forecast" } },
+    "web_search",
+    services,
+    f.ctx,
+  );
+  expect(issue.mock.calls[0]?.[0].secretRefs).toEqual([
+    { secretRef: "deepseek-web", secretVersion: "v1", purpose: "web-provider" },
+  ]);
+  expect(f.values.get("input")).toEqual({
+    query: "Tokyo forecast",
+    providers: ["deepseek", "exa-public"],
+    secretRefs: { deepseek: "deepseek-web" },
+  });
+});
 it("fetches a public page through the provider with the configured size and no model-chosen fields", async () => {
   const f = fixture();
   f.services.binding = async () => ({ ...f.binding, grant: null });

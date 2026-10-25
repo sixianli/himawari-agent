@@ -412,17 +412,26 @@ export async function executeProductionCodingRequest(
       return hit;
     }
   }
+  const providerSecrets = webTool(tool) ? (binding.providerSecrets ?? []) : [];
+  const secretNames = providerSecrets.length
+    ? {
+        secretRefs: Object.fromEntries(
+          providerSecrets.map(({ provider, secretRef }) => [provider, secretRef]),
+        ),
+      }
+    : {};
   if (!saved) {
     const ordered = memory ? memory.order(providers) : binding.providers;
     const input = await ctx.save(
       "input",
       tool === "web_search"
-        ? { ...args, ...(ordered ? { providers: ordered } : {}) }
+        ? { ...args, ...(ordered ? { providers: ordered } : {}), ...secretNames }
         : tool === "web_fetch"
           ? {
               url: args["url"],
               maximumBytes: binding.maximumBytes,
               ...(ordered ? { providers: ordered } : {}),
+              ...secretNames,
             }
           : args,
     );
@@ -437,7 +446,11 @@ export async function executeProductionCodingRequest(
       permission,
       inputRefs: [input.ref],
       delegatedContextRefs: [],
-      secretRefs: [],
+      secretRefs: providerSecrets.map(({ secretRef, secretVersion, purpose }) => ({
+        secretRef,
+        secretVersion,
+        purpose,
+      })),
       maxUses: 1,
       maxTotalCostMicros: 0,
       expiresAt: frozen.expiresAt,

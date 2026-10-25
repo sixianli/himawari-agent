@@ -175,12 +175,17 @@ export interface FileReadRouteConfiguration {
 export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
   | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
-) & { readonly providers?: readonly WebProviderId[] };
+) &
+  WebProviderRouteConfiguration;
+
+export interface WebProviderRouteConfiguration {
+  readonly providers?: readonly WebProviderId[];
+  readonly providerSecrets?: Readonly<Partial<Record<WebProviderId, string>>>;
+}
 
 export type PublicFetchRouteConfiguration = Omit<FileReadRouteConfiguration, "grantId"> & {
   readonly scopeSource: "private_temp";
-  readonly providers?: readonly WebProviderId[];
-};
+} & WebProviderRouteConfiguration;
 
 export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
   readonly enabledTools: readonly (

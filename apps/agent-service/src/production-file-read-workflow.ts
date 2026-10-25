@@ -38,6 +38,13 @@ export interface FileReadBinding {
   readonly modelRef: string;
   readonly modelIdentity: string;
   readonly providers?: readonly WebProviderId[];
+  readonly providerSecrets?: readonly WebProviderSecretBinding[];
+}
+export interface WebProviderSecretBinding {
+  readonly provider: WebProviderId;
+  readonly secretRef: string;
+  readonly secretVersion: string;
+  readonly purpose: string;
 }
 export type CodingBinding =
   | FileReadBinding

@@ -749,10 +749,49 @@ function parseWebProviders(value: unknown, field: string): readonly WebProviderI
     !value.every(isWebProviderId)
   )
     throw invalid(field, "must list distinct registered web providers in fallback order");
-  const secretProvider = value.find((id) => WEB_PROVIDERS[id].requiresSecret);
-  if (secretProvider !== undefined)
-    throw invalid(field, `${secretProvider} needs sandbox secret delivery, which is not installed`);
   return Object.freeze([...value]);
+}
+
+function parseWebProviderSecrets(
+  value: unknown,
+  providers: readonly WebProviderId[] | undefined,
+  field: string,
+): Readonly<Partial<Record<WebProviderId, string>>> | undefined {
+  const needed = (providers ?? []).filter((id) => WEB_PROVIDERS[id].requiresSecret);
+  if (value === undefined) {
+    if (needed.length) throw invalid(field, `must name the secret for ${needed.join(", ")}`);
+    return undefined;
+  }
+  const input = record(value, field);
+  rejectUnknown(input, needed, field);
+  if (needed.some((id) => input[id] === undefined))
+    throw invalid(field, `must name the secret for ${needed.join(", ")}`);
+  return Object.freeze(
+    Object.fromEntries(needed.map((id) => [id, safeReference(input[id], `${field}.${id}`)])),
+  );
+}
+
+export const WEB_PROVIDER_SECRET_PURPOSE = "web-provider";
+
+function assertWebProviderSecretReferences(
+  runPolicy: RunPolicyConfiguration | undefined,
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+): void {
+  for (const [name, route] of [
+    ["publicSearch", runPolicy?.publicSearch],
+    ["publicFetch", runPolicy?.publicFetch],
+  ] as const)
+    for (const [id, ref] of Object.entries(route?.providerSecrets ?? {}))
+      assertIdentitySecretReference(
+        secretReferences,
+        ref ?? null,
+        WEB_PROVIDER_SECRET_PURPOSE,
+        `configuration.runPolicy.${name}.providerSecrets.${id}`,
+      );
 }
 
 function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string) {
@@ -766,11 +805,17 @@ function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string)
       "capabilityVersion",
       "maximumBytes",
       "providers",
+      "providerSecrets",
     ],
     field,
   );
   if (input["scopeSource"] !== "private_temp") throw invalid(field, "requires private_temp scope");
   const providers = parseWebProviders(input["providers"], `${field}.providers`);
+  const providerSecrets = parseWebProviderSecrets(
+    input["providerSecrets"],
+    providers,
+    `${field}.providerSecrets`,
+  );
   return Object.freeze({
     scopeSource: "private_temp" as const,
     hostId: safeReference(input["hostId"], `${field}.hostId`),
@@ -779,6 +824,7 @@ function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string)
     capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
     maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
     ...(providers === undefined ? {} : { providers }),
+    ...(providerSecrets === undefined ? {} : { providerSecrets }),
   });
 }
 
@@ -788,10 +834,15 @@ function parsePublicSearchRoute(
   const field = "configuration.runPolicy.publicSearch";
   const input = record(value, field);
   if (input["scopeSource"] === undefined) {
-    const { providers, ...route } = input;
+    const { providers, providerSecrets, ...route } = input;
     const parsed = parseFileReadRoute(route);
     const chain = parseWebProviders(providers, `${field}.providers`);
-    return chain === undefined ? parsed : Object.freeze({ ...parsed, providers: chain });
+    const secrets = parseWebProviderSecrets(providerSecrets, chain, `${field}.providerSecrets`);
+    return Object.freeze({
+      ...parsed,
+      ...(chain === undefined ? {} : { providers: chain }),
+      ...(secrets === undefined ? {} : { providerSecrets: secrets }),
+    });
   }
   return parsePrivateTempWebRoute(input, field);
 }
@@ -1159,6 +1210,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   );
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
+  assertWebProviderSecretReferences(runPolicy, secretReferences);
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);

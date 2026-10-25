@@ -903,17 +903,64 @@ it("parses ordered web providers and a fetch route without accepting unregistere
     providers: ["exa-public"],
   });
   expect(parsed?.publicFetch).toEqual(route);
-  for (const providers of [
-    [],
-    ["bing"],
-    ["exa-public", "exa-public"],
-    ["deepseek"],
-    "exa-public",
-  ]) {
+  for (const providers of [[], ["bing"], ["exa-public", "exa-public"], "exa-public"]) {
     raw["runPolicy"] = { ...policy, publicFetch: { ...route, providers } };
     expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
   }
   raw["runPolicy"] = { ...policy, publicFetch: { ...route, scopeSource: undefined, grantId: "g" } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
+it("requires a configured web-provider secret for each provider that needs one", () => {
+  const raw = config("/tmp/himawari-web-secret-config");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "fetch",
+    capabilityVersion: "1",
+    maximumBytes: 32768,
+    providers: ["exa-public", "deepseek"],
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "deepseek-web", version: "v1", purpose: "web-provider", scope: "agent" },
+  ];
+  raw["runPolicy"] = {
+    ...policy,
+    publicFetch: { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.publicFetch).toEqual(
+    { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  );
+  for (const providerSecrets of [
+    undefined,
+    {},
+    { deepseek: "missing-secret" },
+    { deepseek: "deepseek-web", "exa-public": "deepseek-web" },
+  ]) {
+    raw["runPolicy"] = {
+      ...policy,
+      publicFetch: { ...route, ...(providerSecrets ? { providerSecrets } : {}) },
+    };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "deepseek-web", version: "v1", purpose: "payload-encryption", scope: "agent" },
+  ];
+  raw["runPolicy"] = {
+    ...policy,
+    publicFetch: { ...route, providerSecrets: { deepseek: "deepseek-web" } },
+  };
   expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });
 
