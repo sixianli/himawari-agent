@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type {
   ModelInvocationAdmissionResolver,
@@ -23,6 +23,7 @@ import {
   SRT_TASK_ENVIRONMENT_BACKEND_REF,
   SRT_TASK_ENVIRONMENT_GUARANTEES,
 } from "@himawari-agent/execution-contracts";
+import { MemoryConsolidationService, MemoryEpisodeService } from "@himawari-agent/memory-engine";
 import {
   inspectDeploymentAuthorityReadOnly,
   openQualifiedDatabase,
@@ -93,6 +94,7 @@ import {
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
+import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -305,6 +307,7 @@ async function createDefaultMemoryComposition(
   return createProductionMemoryCompositionFromConfiguration({
     configuration: context.configuration,
     secretSource: sources.provider,
+    index: context.repository.memoryIndex(),
   });
 }
 
@@ -439,6 +442,7 @@ export async function runAgentService(
   let runInterruption: Promise<void> | undefined;
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
+  let runMemoryEpisodes: MemoryEpisodeService | undefined;
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
@@ -514,6 +518,8 @@ export async function runAgentService(
       } finally {
         await runs?.titles?.stop();
         await runs?.memoryCapture?.stop();
+        await runs?.memoryEpisodes?.stop();
+        await runs?.memoryConsolidation?.stop();
       }
     },
   });
@@ -1005,6 +1011,23 @@ export async function runAgentService(
         now: () => clock.now(),
       });
       durableMemory = memory;
+      const memoryIndex = repository.memoryIndex();
+      const embedder = memoryComposition.projection.embedder;
+      let afterMemoryId: Parameters<typeof memoryIndex.listUnindexed>[0]["afterMemoryId"] = null;
+      while (embedder) {
+        const unindexed = await memoryIndex.listUnindexed({
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+          model: embedder.model,
+          dimensions: embedder.dimensions,
+          embeddableClassifications: memoryComposition.projection.embeddableClassifications,
+          afterMemoryId,
+          limit: 500,
+        });
+        if (unindexed.length === 0) break;
+        await memory.requeueProjection(unindexed);
+        afterMemoryId = unindexed.at(-1) ?? null;
+      }
       memoryWorker = new ProductionMemoryWorker({
         service: memory,
         assertActive: async () => {
@@ -1042,7 +1065,56 @@ export async function runAgentService(
         publicMode: true,
         additionalRequired: ["run-dispatch", "memory-consumer"],
       });
+      const recallProjection = memoryComposition.projection;
+      const recallProtector = protector;
+      const memoryRecall = new ProductionMemoryRecall({
+        ownerId: configuration.ownerId,
+        agentId: configuration.agentId,
+        provider: { search: (input) => recallProjection.search(input) },
+        state: repository.productMemoryState(),
+        episodes: {
+          search: (input) =>
+            runMemoryEpisodes ? runMemoryEpisodes.search(input) : Promise.resolve([]),
+        },
+        readText: async (record) => {
+          const payload = await payloads.get(record.contentRef);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await recallProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+        },
+        embedWithin: (invocation, slot, operation) => {
+          const memory = governedMemory;
+          const executionLease = invocation.context?.executionLease;
+          if (!memory || !executionLease) throw new Error("MEMORY_RECALL_NOT_READY");
+          return memory.embedWithin(
+            {
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              runId: invocation.runId,
+              executionLease,
+              deadlineAt:
+                invocation.executionDeadlineAt ??
+                new Date(
+                  Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+                ).toISOString(),
+              dataClassification: invocation.dataClassification,
+              slot: `${slot}:${invocation.toolCallId}`,
+            },
+            operation,
+          );
+        },
+        now: () => clock.now(),
+        ...(configuration.runPolicy?.timeZone
+          ? { timeZone: configuration.runPolicy.timeZone }
+          : {}),
+      });
       const tools = new ProductionRuntimeTools({
+        memoryRecall,
         fileReadEnabled: configuration.runPolicy?.fileRead !== undefined,
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
@@ -1101,7 +1173,7 @@ export async function runAgentService(
       const memory = createProductionRunMemory({
         configuration,
         memory: durableMemory,
-        projection: memoryComposition.projection,
+        projection: memoryComposition,
         budget: repository.modelBudgetPort(
           configuration.ownerId,
           configuration.agentId,
@@ -1114,6 +1186,114 @@ export async function runAgentService(
         admission,
       });
       governedMemory = memory;
+      const episodePayloads = repository.payloadStore(configuration.ownerId, configuration.agentId);
+      const episodeProtector = protector;
+      const memoryEpisodes =
+        memoryComposition && episodeProtector
+          ? new MemoryEpisodeService({
+              store: repository.memoryEpisodes(),
+              threads: repository.threadRepository(),
+              readText: async ({ ownerId, agentId, ref }) => {
+                const payload = await episodePayloads.get(ref);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({ ownerId, agentId, payload }),
+                );
+              },
+              storeText: async (input) => {
+                if (await episodePayloads.get(input.ref)) return;
+                await episodePayloads.put(
+                  await episodeProtector.protect({
+                    ownerId: input.ownerId,
+                    agentId: input.agentId,
+                    ref: input.ref,
+                    contentType: "text/plain",
+                    dataClassification: input.dataClassification,
+                    plaintext: new TextEncoder().encode(input.text),
+                    createdAt: input.createdAt,
+                  }),
+                );
+              },
+              embedder: memoryComposition.projection.embedder,
+              ...(memoryComposition.projection.queryInstruction
+                ? { queryInstruction: memoryComposition.projection.queryInstruction }
+                : {}),
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+              now: () => clock.now(),
+            })
+          : undefined;
+      const embedWithin = <T>(
+        request: RuntimeRequest,
+        slot: string,
+        operation: () => Promise<T>,
+        dataClassification: RuntimeRequest["dataClassification"] = "private",
+      ) =>
+        memory.embedWithin(
+          {
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            runId: request.runId,
+            executionLease: request.executionLease,
+            deadlineAt:
+              request.executionDeadlineAt ??
+              new Date(
+                Date.parse(clock.now()) + configuration.deadlines.providerRequestMs,
+              ).toISOString(),
+            dataClassification,
+            slot,
+          },
+          operation,
+        );
+      const consolidationPayloads = repository.payloadStore(
+        configuration.ownerId,
+        configuration.agentId,
+      );
+      const consolidationJobs = repository.memoryProjectionJobs();
+      const memoryConsolidation =
+        memoryComposition && episodeProtector && durableMemory
+          ? new MemoryConsolidationService({
+              store: repository.memoryConsolidation(),
+              state: repository.productMemoryState(),
+              memory: durableMemory,
+              generationFor: async (memoryId) =>
+                (await consolidationJobs.listByMemory(memoryId)).at(-1)?.generationId,
+              readText: async (record) => {
+                const payload = await consolidationPayloads.get(record.contentRef);
+                if (!payload || payload.contentType !== "text/plain") return undefined;
+                return new TextDecoder("utf-8", { fatal: true }).decode(
+                  await episodeProtector.unprotect({
+                    ownerId: configuration.ownerId,
+                    agentId: configuration.agentId,
+                    payload,
+                  }),
+                );
+              },
+              storeText: async (input) => {
+                const ref = `memory-content:${createHash("sha256").update(input.key).digest("hex")}`;
+                if (await consolidationPayloads.get(ref)) return ref;
+                await consolidationPayloads.put(
+                  await episodeProtector.protect({
+                    ownerId: input.ownerId,
+                    agentId: input.agentId,
+                    ref,
+                    contentType: "text/plain",
+                    dataClassification: input.dataClassification,
+                    plaintext: new TextEncoder().encode(input.text),
+                    createdAt: input.createdAt,
+                  }),
+                );
+                return ref;
+              },
+              now: () => clock.now(),
+              ...(configuration.runPolicy?.timeZone
+                ? { timeZone: configuration.runPolicy.timeZone }
+                : {}),
+            })
+          : undefined;
+      const consolidationProjection = memoryComposition.projection;
+      runMemoryEpisodes = memoryEpisodes;
       runs = createProductionRunComposition({
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }
@@ -1129,11 +1309,58 @@ export async function runAgentService(
               memoryCapture: {
                 product: durableMemory,
                 approvals: repository.sensitiveMemoryApprovals(),
-                generate: (request, prompt, gate) => {
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
+                ...(memoryEpisodes
+                  ? {
+                      episodes: {
+                        service: memoryEpisodes,
+                        embedWithin: (request, slot, operation) =>
+                          embedWithin(request, slot, operation),
+                        onFailure: (error) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-episode.failed",
+                            code: stableErrorCode(error),
+                          }),
+                      },
+                    }
+                  : {}),
+                ...(memoryConsolidation
+                  ? {
+                      consolidation: {
+                        service: memoryConsolidation,
+                        search: (request, query, limit) =>
+                          consolidationProjection.search({
+                            ownerId: request.ownerId,
+                            agentId: request.agentId,
+                            query,
+                            limit,
+                          }),
+                        embedWithin: (request, slot, operation) =>
+                          embedWithin(request, slot, operation),
+                        onResult: (result) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-consolidation.completed",
+                            modelCalled: result.modelCalled,
+                            changes: result.changes.length,
+                          }),
+                        onFailure: (error) =>
+                          writeServiceDiagnostic(errorOutput, {
+                            component: "agent-service",
+                            event: "memory-consolidation.failed",
+                            code: stableErrorCode(error),
+                          }),
+                      },
+                    }
+                  : {}),
+                generate: (request, prompt, gate, purpose = "memory-capture") => {
                   const generateText = modelComposition?.composition.generateText;
                   if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
                   return generateText(request, prompt, gate, {
-                    invocationId: `memory-capture:${request.runId}`,
+                    invocationId: `${purpose}:${request.runId}`,
                     maxOutputTokens: 1024,
                     reasoningOutputTokens: 4096,
                     requestTimeoutMs: 45000,
@@ -1376,7 +1603,9 @@ export async function runAgentService(
       pendingDeliveries: recovery.pendingDeliveryRequestIds.length,
       modelPath: modelComposition === undefined ? "deterministic-descriptor-only" : "pi-production",
       memoryPath:
-        memoryComposition === undefined ? "deterministic-descriptor-only" : "mem0-production",
+        memoryComposition === undefined
+          ? "deterministic-descriptor-only"
+          : "memory-engine-production",
       embeddingDescriptorRef: modelComposition?.descriptors.embedding.ref ?? embedding.ref,
       embeddingProvider:
         memoryComposition?.descriptor.provider ??

@@ -518,7 +518,7 @@ async function transferAdapter(parsed: ParsedAdminCommand) {
     productVersion: "0.0.0",
     adapterVersions: [
       "persistence-sqlite@0.0.0",
-      `memory-mem0@${configuration.memory.version}`,
+      `memory-engine@${configuration.memory.version}`,
       "runtime-pi@0.0.0",
     ],
     memoryVersion: configuration.memory.version,

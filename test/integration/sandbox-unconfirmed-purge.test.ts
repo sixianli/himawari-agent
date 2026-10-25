@@ -109,7 +109,7 @@ function configuration(stateRoot: string) {
     publicMode: false,
     modelDescriptors: [model("model-primary", "primary"), model("model-embedding", "embedding")],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 1536,

@@ -257,6 +257,10 @@ beforeEach(() => {
     "sandboxExecutionPreparations",
     "capabilityInvocationReceiptPort",
     "capabilityInvocationResultPort",
+    "memoryIndex",
+    "memoryEpisodes",
+    "memoryConsolidation",
+    "threadRepository",
   ])
     repository[key] = vi.fn(() => ({}));
   boundary.open.mockResolvedValue(repository);
@@ -662,7 +666,8 @@ function web() {
   ])
     repository[key] = vi.fn(() => port);
   const memory = {
-    projection: { bindEmbeddingBoundary: vi.fn() },
+    projection: {},
+    bindEmbeddingBoundary: vi.fn(),
     descriptor: configuration.modelDescriptors[1],
     close: vi.fn(async () => {
       boundary.events.push("memory.close");

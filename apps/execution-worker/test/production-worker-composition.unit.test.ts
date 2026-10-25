@@ -220,7 +220,7 @@ function configuration(
     publicMode: false,
     modelDescriptors: [],
     memory: {
-      adapter: "mem0-oss" as const,
+      adapter: "himawari-sqlite" as const,
       version: "fixture",
       storagePath: path.join(root, "data", "memory"),
       dimensions: 1,

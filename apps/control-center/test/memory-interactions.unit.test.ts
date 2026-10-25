@@ -3,6 +3,7 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MemoryReminders,
   MemorySettings,
   MemoryTurnNote,
   OPEN_MEMORY_SETTINGS,
@@ -46,6 +47,7 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     null,
     h("div", { id: "turn" }, h(MemoryTurnNote, { ownerRefs, memory, message })),
     h("div", { id: "settings" }, h(MemorySettings, { memory, message, onOpenThread: opened })),
+    h("div", { id: "reminders" }, h(MemoryReminders, { memory, message })),
   );
 }
 
@@ -72,22 +74,31 @@ beforeEach(() => {
         revision: 2,
         text: "主人最喜欢的颜色是蓝色",
         dataClassification: "private",
+        topic: null,
         inference: false,
         sourceThreadId: "thread-1",
         sourceRefs: ["payload-1"],
         updatedAt: "2026-10-25T12:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
+        tentative: false,
       },
       {
         memoryId: "memory-city",
         revision: 1,
         text: "主人住在上海",
         dataClassification: "private",
+        topic: null,
         inference: false,
         sourceThreadId: "thread-2",
         sourceRefs: ["payload-9"],
         updatedAt: "2026-10-24T12:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
+        tentative: false,
       },
     ],
+    profile: [],
     pending: [
       {
         requestId: "approval-health",
@@ -98,6 +109,8 @@ beforeEach(() => {
         requestedAt: "2026-10-25T12:00:00.000Z",
       },
     ],
+    tidyUps: [],
+    reminders: [],
     generatedAt: "2026-10-25T12:00:00.000Z",
   };
   query.mockImplementation(async (request) => ({
@@ -223,5 +236,132 @@ describe("memory approval and management", () => {
     await act(async () => root.render(h(Hidden)));
     expect(container.textContent).toBe("");
     expect(query).not.toHaveBeenCalled();
+  });
+
+  it("shows the Owner profile, the correction history and restores an earlier version", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        ...overview.memories,
+        {
+          memoryId: "memory-city-old",
+          revision: 2,
+          text: "主人住在北京",
+          dataClassification: "private",
+          topic: null,
+          inference: false,
+          sourceThreadId: "thread-3",
+          sourceRefs: ["payload-3"],
+          updatedAt: "2026-10-24T12:00:00.000Z",
+          supersededBy: "memory-city",
+          validTo: "2026-10-24T12:00:00.000Z",
+          tentative: false,
+        },
+      ],
+      profile: [
+        {
+          kind: "identity",
+          lines: [
+            {
+              memoryId: "memory-city",
+              text: "主人住在上海",
+              updatedAt: "2026-10-24T12:00:00.000Z",
+            },
+          ],
+        },
+      ],
+    };
+    await render();
+    const profile = document.querySelector("#settings .memory-profile")?.textContent ?? "";
+    expect(profile).toContain("主人档案");
+    expect(profile).toContain("身份");
+    expect(profile).toContain("主人住在上海");
+    const list = document.querySelector("#settings .memory-list")?.textContent ?? "";
+    expect(list).toContain("更正历史（1）");
+    expect(document.querySelector("#settings")?.textContent).toContain("共 2 条");
+    await act(async () => button("#settings .memory-history", "恢复这条").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "memory-city-old", action: "restore", contentRef: null },
+    });
+    await act(async () => button("#settings .memory-profile", "编辑").click());
+    expect(document.querySelector("#settings .memory-profile textarea")).not.toBeNull();
+  });
+
+  it("asks the Owner to confirm guesses and undoes a tidy-up change", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        ...overview.memories,
+        {
+          memoryId: "memory-guess",
+          revision: 1,
+          text: "主人在为半程马拉松坚持晨跑",
+          dataClassification: "private",
+          topic: null,
+          inference: true,
+          sourceThreadId: "thread-1",
+          sourceRefs: ["payload-1"],
+          updatedAt: "2026-10-25T12:00:00.000Z",
+          supersededBy: null,
+          validTo: null,
+          tentative: true,
+        },
+      ],
+      tidyUps: [
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c1",
+          action: "merge",
+          text: "主人的女儿叫小葵",
+          relatedText: "主人的女儿名叫小葵",
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    const settings = document.querySelector("#settings")?.textContent ?? "";
+    expect(settings).toContain("待你确认：1 条");
+    expect(settings).toContain("共 2 条");
+    await act(async () => button("#settings", "确认").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "memory-guess", action: "confirm", contentRef: null },
+    });
+    expect(document.querySelector("#settings .memory-tidy")?.textContent).toContain(
+      "合并重复： 主人的女儿叫小葵",
+    );
+    await act(async () => button("#settings .memory-tidy", "撤销").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.tidy.undo",
+      payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
+    });
+  });
+
+  it("shows a due reminder and lets the Owner dismiss or snooze it", async () => {
+    overview = {
+      ...overview,
+      reminders: [
+        {
+          reminderId: "reminder:memory-report",
+          text: "主人周五下午三点要交季度报告",
+          dueAt: "2026-10-30T07:00:00.000Z",
+          remindAt: "2026-10-30T06:00:00.000Z",
+        },
+      ],
+    };
+    await render();
+    const reminders = document.querySelector("#reminders")?.textContent ?? "";
+    expect(reminders).toContain("主人周五下午三点要交季度报告");
+    await act(async () => button("#reminders", "一小时后再提醒").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-report", action: "snooze" },
+    });
+    await act(async () => button("#reminders", "知道了").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-report", action: "dismiss" },
+    });
   });
 });

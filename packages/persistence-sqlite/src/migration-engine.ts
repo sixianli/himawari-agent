@@ -434,6 +434,34 @@ const bundledMigrationFiles = [
     phase: "contract" as const,
     file: "0051_srt_task_environment_release.sql",
   },
+  {
+    sequence: 52,
+    name: "memory_engine",
+    changeSet: "memory-engine",
+    phase: "expand" as const,
+    file: "0052_memory_engine.sql",
+  },
+  {
+    sequence: 53,
+    name: "memory_episodes",
+    changeSet: "memory-episodes",
+    phase: "expand" as const,
+    file: "0053_memory_episodes.sql",
+  },
+  {
+    sequence: 54,
+    name: "memory_consolidation",
+    changeSet: "memory-consolidation",
+    phase: "expand" as const,
+    file: "0054_memory_consolidation.sql",
+  },
+  {
+    sequence: 55,
+    name: "memory_reminders",
+    changeSet: "memory-reminders",
+    phase: "expand" as const,
+    file: "0055_memory_reminders.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

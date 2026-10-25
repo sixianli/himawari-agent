@@ -1,0 +1,2575 @@
+{
+  "version": 2,
+  "now": "2026-10-25T12:00:00.000Z",
+  "memories": [
+    {
+      "id": "m001",
+      "text": "主人叫 Andy，中文名李思贤",
+      "category": "identity",
+      "importance": 950,
+      "entities": ["Andy", "李思贤"],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m002",
+      "text": "主人住在日本东京的目黑区",
+      "category": "identity",
+      "importance": 850,
+      "entities": ["东京", "目黑区"],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m003",
+      "text": "主人是一名软件工程师，正在独立开发个人智能体 Himawari",
+      "category": "identity",
+      "importance": 900,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-05-03T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m004",
+      "text": "主人的母语是中文，日语可以日常交流",
+      "category": "identity",
+      "importance": 700,
+      "entities": [],
+      "updatedAt": "2026-05-04T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m005",
+      "text": "主人 1990 年出生，属马",
+      "category": "identity",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-05-06T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m006",
+      "text": "主人毕业于浙江大学计算机系",
+      "category": "identity",
+      "importance": 650,
+      "entities": ["浙江大学"],
+      "updatedAt": "2026-05-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m007",
+      "text": "主人老家在浙江杭州",
+      "category": "identity",
+      "importance": 700,
+      "entities": ["杭州"],
+      "updatedAt": "2026-05-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m008",
+      "text": "主人用的电脑是 MacBook Air",
+      "category": "identity",
+      "importance": 500,
+      "entities": ["MacBook Air"],
+      "updatedAt": "2026-05-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m010",
+      "text": "主人的女儿叫小葵，2020 年出生",
+      "category": "relationship",
+      "importance": 950,
+      "entities": ["小葵"],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m011",
+      "text": "主人的太太叫 Cindy，在一家设计公司做产品经理",
+      "category": "relationship",
+      "importance": 900,
+      "entities": ["Cindy"],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m012",
+      "text": "主人的妈妈住在杭州，生日是 3 月 5 日",
+      "category": "relationship",
+      "importance": 850,
+      "entities": ["杭州"],
+      "updatedAt": "2026-05-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m013",
+      "text": "主人的爸爸退休前是中学物理老师",
+      "category": "relationship",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-05-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m014",
+      "text": "主人有一个弟弟叫思远，在上海做律师",
+      "category": "relationship",
+      "importance": 700,
+      "entities": ["思远", "上海"],
+      "updatedAt": "2026-05-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m015",
+      "text": "主人的好朋友老周是做投资的，经常给 Himawari 提建议",
+      "category": "relationship",
+      "importance": 700,
+      "entities": ["老周", "Himawari"],
+      "updatedAt": "2026-06-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m016",
+      "text": "小葵在东京的一所国际学校上一年级",
+      "category": "relationship",
+      "importance": 800,
+      "entities": ["小葵", "东京"],
+      "updatedAt": "2026-09-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m017",
+      "text": "小葵对花生过敏",
+      "category": "relationship",
+      "importance": 900,
+      "entities": ["小葵", "花生"],
+      "updatedAt": "2026-05-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m018",
+      "text": "主人养了一只橘猫，名字叫团子",
+      "category": "relationship",
+      "importance": 650,
+      "entities": ["团子"],
+      "updatedAt": "2026-05-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m019",
+      "text": "Cindy 的生日是 11 月 18 日",
+      "category": "relationship",
+      "importance": 850,
+      "entities": ["Cindy"],
+      "updatedAt": "2026-06-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m020",
+      "text": "主人的合作者 James 负责 Himawari 的服务器运维",
+      "category": "relationship",
+      "importance": 750,
+      "entities": ["James", "Himawari"],
+      "updatedAt": "2026-07-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m030",
+      "text": "主人早上喝美式咖啡，不加糖不加奶",
+      "category": "preference",
+      "importance": 600,
+      "entities": ["美式咖啡"],
+      "updatedAt": "2026-05-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m031",
+      "text": "主人喜欢吃辣，最爱川菜和湘菜",
+      "category": "preference",
+      "importance": 550,
+      "entities": ["川菜", "湘菜"],
+      "updatedAt": "2026-05-09T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m032",
+      "text": "主人不吃香菜",
+      "category": "preference",
+      "importance": 600,
+      "entities": ["香菜"],
+      "updatedAt": "2026-05-09T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m033",
+      "text": "主人最喜欢的颜色是蓝色",
+      "category": "preference",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-05-11T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m034",
+      "text": "主人喜欢跑步，每周跑三次，每次五公里左右",
+      "category": "preference",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m035",
+      "text": "主人喜欢听后摇滚，最喜欢的乐队是 Mogwai",
+      "category": "preference",
+      "importance": 450,
+      "entities": ["Mogwai"],
+      "updatedAt": "2026-05-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m036",
+      "text": "主人看书偏爱科幻小说，最喜欢刘慈欣的《三体》",
+      "category": "preference",
+      "importance": 500,
+      "entities": ["刘慈欣", "三体"],
+      "updatedAt": "2026-05-19T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m037",
+      "text": "主人用 Vim 写代码，键位习惯不想改",
+      "category": "preference",
+      "importance": 550,
+      "entities": ["Vim"],
+      "updatedAt": "2026-05-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m038",
+      "text": "主人出差喜欢住离车站近的商务酒店",
+      "category": "preference",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-06-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m039",
+      "text": "主人坐飞机喜欢靠过道的座位",
+      "category": "preference",
+      "importance": 550,
+      "entities": [],
+      "updatedAt": "2026-06-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m040",
+      "text": "主人周末喜欢带小葵去公园骑自行车",
+      "category": "preference",
+      "importance": 550,
+      "entities": ["小葵"],
+      "updatedAt": "2026-06-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m041",
+      "text": "主人喝酒只喝一点清酒",
+      "category": "preference",
+      "importance": 400,
+      "entities": ["清酒"],
+      "updatedAt": "2026-06-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m042",
+      "text": "主人喜欢用 TypeScript，不太喜欢 Java",
+      "category": "preference",
+      "importance": 550,
+      "entities": ["TypeScript", "Java"],
+      "updatedAt": "2026-06-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m043",
+      "text": "主人晚上十一点前睡觉，早上六点半起床",
+      "category": "preference",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-06-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m044",
+      "text": "主人不喜欢开视频会议，更喜欢文字沟通",
+      "category": "preference",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-07-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m050",
+      "text": "回答主人一律使用简体中文",
+      "category": "rule",
+      "importance": 950,
+      "entities": [],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m051",
+      "text": "给主人的操作步骤必须先核实官方文档",
+      "category": "rule",
+      "importance": 900,
+      "entities": [],
+      "updatedAt": "2026-06-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m052",
+      "text": "主人不希望界面上出现写死的假数据",
+      "category": "rule",
+      "importance": 850,
+      "entities": [],
+      "updatedAt": "2026-07-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m053",
+      "text": "回复要先给结论，再给理由",
+      "category": "rule",
+      "importance": 800,
+      "entities": [],
+      "updatedAt": "2026-07-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m054",
+      "text": "涉及主人设备或账号状态的说法要先查证再说",
+      "category": "rule",
+      "importance": 850,
+      "entities": [],
+      "updatedAt": "2026-09-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m055",
+      "text": "主人说听一下是让 Himawari 听，不是让它停下",
+      "category": "rule",
+      "importance": 700,
+      "entities": [],
+      "updatedAt": "2026-08-03T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m060",
+      "text": "主人的目标是年底前把 Himawari 做成能给投资人演示的完整产品",
+      "category": "goal",
+      "importance": 950,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-09-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m061",
+      "text": "主人想在三年内带全家去冰岛看极光",
+      "category": "goal",
+      "importance": 600,
+      "entities": ["冰岛"],
+      "updatedAt": "2026-06-30T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m062",
+      "text": "主人计划明年考取日本的驾照",
+      "category": "goal",
+      "importance": 550,
+      "entities": [],
+      "updatedAt": "2026-07-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m063",
+      "text": "主人想把日语提高到 N1 水平",
+      "category": "goal",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-08-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m064",
+      "text": "Himawari 的生产服务器在 Contabo，测试机叫 Hermes",
+      "category": "project",
+      "importance": 800,
+      "entities": ["Himawari", "Contabo", "Hermes"],
+      "updatedAt": "2026-08-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m065",
+      "text": "Himawari 的记忆系统正在从 Mem0 换成自研引擎",
+      "category": "project",
+      "importance": 850,
+      "entities": ["Himawari", "Mem0"],
+      "updatedAt": "2026-10-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m066",
+      "text": "Himawari 的语音功能用的是流式语音识别",
+      "category": "project",
+      "importance": 650,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-08-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m067",
+      "text": "主人在给 Himawari 做手机端，用 React Native",
+      "category": "project",
+      "importance": 700,
+      "entities": ["Himawari", "React Native"],
+      "updatedAt": "2026-09-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m068",
+      "text": "主人在写一本关于个人智能体的技术博客系列",
+      "category": "project",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-07-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m069",
+      "text": "主人每个月在 GitHub Actions 上的免费额度是 3000 分钟",
+      "category": "project",
+      "importance": 500,
+      "entities": ["GitHub Actions"],
+      "updatedAt": "2026-10-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m080",
+      "text": "主人 2026 年 7 月带全家去北海道旅行了一周",
+      "category": "event",
+      "importance": 500,
+      "entities": ["北海道"],
+      "updatedAt": "2026-07-28T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m081",
+      "text": "主人 2026 年 9 月在 TypeScript 大会上做了一个演讲",
+      "category": "event",
+      "importance": 600,
+      "entities": ["TypeScript"],
+      "updatedAt": "2026-09-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m082",
+      "text": "小葵 9 月开始学钢琴，每周六上课",
+      "category": "event",
+      "importance": 650,
+      "entities": ["小葵"],
+      "updatedAt": "2026-09-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m083",
+      "text": "主人 8 月份体检时血压偏高，医生让少吃盐",
+      "category": "event",
+      "importance": 700,
+      "entities": [],
+      "updatedAt": "2026-08-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m084",
+      "text": "主人的牙医预约在 11 月 3 日下午两点",
+      "category": "event",
+      "importance": 650,
+      "entities": [],
+      "updatedAt": "2026-10-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-11-04"
+    },
+    {
+      "id": "m085",
+      "text": "团子 6 月份做了绝育手术",
+      "category": "event",
+      "importance": 400,
+      "entities": ["团子"],
+      "updatedAt": "2026-06-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m086",
+      "text": "主人和老周约好 11 月中旬一起去京都",
+      "category": "event",
+      "importance": 600,
+      "entities": ["老周", "京都"],
+      "updatedAt": "2026-10-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-11-30"
+    },
+    {
+      "id": "m090",
+      "text": "主人对青霉素过敏",
+      "category": "health",
+      "importance": 950,
+      "entities": ["青霉素"],
+      "updatedAt": "2026-05-30T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m091",
+      "text": "主人在吃降压药，每天早上一片",
+      "category": "health",
+      "importance": 850,
+      "entities": [],
+      "updatedAt": "2026-08-16T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m092",
+      "text": "主人每月房租 28 万日元",
+      "category": "finance",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-06-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m093",
+      "text": "主人的主要开销账户在三井住友银行",
+      "category": "finance",
+      "importance": 500,
+      "entities": ["三井住友银行"],
+      "updatedAt": "2026-06-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m100",
+      "text": "主人每天早上喝拿铁",
+      "category": "preference",
+      "importance": 600,
+      "entities": ["拿铁"],
+      "updatedAt": "2026-05-03T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m101",
+      "text": "主人改喝燕麦拿铁了，不再喝普通拿铁",
+      "category": "preference",
+      "importance": 600,
+      "entities": ["燕麦拿铁"],
+      "updatedAt": "2026-09-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m100"
+    },
+    {
+      "id": "m102",
+      "text": "主人用的手机是 iPhone 13",
+      "category": "identity",
+      "importance": 500,
+      "entities": ["iPhone 13"],
+      "updatedAt": "2026-05-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m103",
+      "text": "主人换了新手机 iPhone 17 Pro",
+      "category": "identity",
+      "importance": 500,
+      "entities": ["iPhone 17 Pro"],
+      "updatedAt": "2026-10-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m102"
+    },
+    {
+      "id": "m104",
+      "text": "Himawari 的主力模型是 Claude Sonnet",
+      "category": "project",
+      "importance": 700,
+      "entities": ["Himawari", "Claude Sonnet"],
+      "updatedAt": "2026-06-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m105",
+      "text": "Himawari 的主力模型换成了 Claude Opus",
+      "category": "project",
+      "importance": 750,
+      "entities": ["Himawari", "Claude Opus"],
+      "updatedAt": "2026-10-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m104"
+    },
+    {
+      "id": "m106",
+      "text": "主人每周游泳两次",
+      "category": "preference",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-05-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m107",
+      "text": "主人最近不游泳了，改成每周打两次羽毛球",
+      "category": "preference",
+      "importance": 550,
+      "entities": ["羽毛球"],
+      "updatedAt": "2026-09-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m106"
+    },
+    {
+      "id": "m108",
+      "text": "小葵的钢琴老师是田中老师",
+      "category": "relationship",
+      "importance": 500,
+      "entities": ["小葵", "田中"],
+      "updatedAt": "2026-09-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m109",
+      "text": "小葵换了钢琴老师，现在是铃木老师",
+      "category": "relationship",
+      "importance": 550,
+      "entities": ["小葵", "铃木"],
+      "updatedAt": "2026-10-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m108"
+    },
+    {
+      "id": "m110",
+      "text": "主人上班坐东急东横线",
+      "category": "preference",
+      "importance": 450,
+      "entities": ["东急东横线"],
+      "updatedAt": "2026-05-06T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m111",
+      "text": "主人现在在家办公，不再通勤",
+      "category": "preference",
+      "importance": 550,
+      "entities": [],
+      "updatedAt": "2026-08-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m110"
+    },
+    {
+      "id": "m112",
+      "text": "Himawari 的嵌入模型维度是 1536",
+      "category": "project",
+      "importance": 600,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-05-28T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m113",
+      "text": "Himawari 的嵌入模型换成了 Qwen3-Embedding-8B，维度 4096",
+      "category": "project",
+      "importance": 700,
+      "entities": ["Himawari", "Qwen3-Embedding-8B"],
+      "updatedAt": "2026-09-30T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m112"
+    },
+    {
+      "id": "m114",
+      "text": "主人每天睡前看半小时手机",
+      "category": "preference",
+      "importance": 400,
+      "entities": [],
+      "updatedAt": "2026-05-16T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m115",
+      "text": "主人睡前改成看纸质书，不看手机了",
+      "category": "preference",
+      "importance": 450,
+      "entities": [],
+      "updatedAt": "2026-09-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m114"
+    },
+    {
+      "id": "m116",
+      "text": "主人的体重是 78 公斤",
+      "category": "health",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-05-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m117",
+      "text": "主人减肥成功，体重降到 72 公斤",
+      "category": "health",
+      "importance": 550,
+      "entities": [],
+      "updatedAt": "2026-10-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m116"
+    },
+    {
+      "id": "m118",
+      "text": "团子每天吃两顿干粮",
+      "category": "relationship",
+      "importance": 400,
+      "entities": ["团子"],
+      "updatedAt": "2026-05-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m119",
+      "text": "团子改吃处方湿粮，一天三顿",
+      "category": "relationship",
+      "importance": 450,
+      "entities": ["团子"],
+      "updatedAt": "2026-10-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m118"
+    },
+    {
+      "id": "m120",
+      "text": "主人的车是丰田卡罗拉",
+      "category": "identity",
+      "importance": 450,
+      "entities": ["丰田卡罗拉"],
+      "updatedAt": "2026-05-07T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m121",
+      "text": "主人把车换成了特斯拉 Model Y",
+      "category": "identity",
+      "importance": 500,
+      "entities": ["特斯拉", "Model Y"],
+      "updatedAt": "2026-08-28T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m120"
+    },
+    {
+      "id": "m122",
+      "text": "Himawari 的前端用 Vue 写",
+      "category": "project",
+      "importance": 600,
+      "entities": ["Himawari", "Vue"],
+      "updatedAt": "2026-05-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m123",
+      "text": "Himawari 的前端已经改用 React",
+      "category": "project",
+      "importance": 650,
+      "entities": ["Himawari", "React"],
+      "updatedAt": "2026-07-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m122"
+    },
+    {
+      "id": "m124",
+      "text": "Cindy 在一家广告公司上班",
+      "category": "relationship",
+      "importance": 600,
+      "entities": ["Cindy"],
+      "updatedAt": "2026-05-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m125",
+      "text": "Cindy 跳槽去了一家设计公司做产品经理",
+      "category": "relationship",
+      "importance": 650,
+      "entities": ["Cindy"],
+      "updatedAt": "2026-08-30T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m124"
+    },
+    {
+      "id": "m126",
+      "text": "主人每天写代码到凌晨一点",
+      "category": "preference",
+      "importance": 450,
+      "entities": [],
+      "updatedAt": "2026-05-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m127",
+      "text": "主人现在晚上十一点前一定停下写代码去睡觉",
+      "category": "preference",
+      "importance": 550,
+      "entities": [],
+      "updatedAt": "2026-09-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m126"
+    },
+    {
+      "id": "m128",
+      "text": "老周在一家银行工作",
+      "category": "relationship",
+      "importance": 500,
+      "entities": ["老周"],
+      "updatedAt": "2026-05-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m129",
+      "text": "老周离开银行，自己做天使投资了",
+      "category": "relationship",
+      "importance": 550,
+      "entities": ["老周"],
+      "updatedAt": "2026-09-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null,
+      "supersedes": "m128"
+    },
+    {
+      "id": "m140",
+      "text": "主人这周在大阪出差",
+      "category": "event",
+      "importance": 500,
+      "entities": ["大阪"],
+      "updatedAt": "2026-09-14T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-09-19"
+    },
+    {
+      "id": "m141",
+      "text": "主人下周要去首尔参加会议",
+      "category": "event",
+      "importance": 550,
+      "entities": ["首尔"],
+      "updatedAt": "2026-10-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-10-12"
+    },
+    {
+      "id": "m142",
+      "text": "小葵这个月在放暑假",
+      "category": "event",
+      "importance": 500,
+      "entities": ["小葵"],
+      "updatedAt": "2026-08-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-08-31"
+    },
+    {
+      "id": "m143",
+      "text": "主人这周感冒了，在家休息",
+      "category": "health",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-10-06T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-10-11"
+    },
+    {
+      "id": "m144",
+      "text": "主人这个月在做 Himawari 的第七次上线",
+      "category": "project",
+      "importance": 600,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-10-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-10-31"
+    },
+    {
+      "id": "m145",
+      "text": "主人临时住在杭州老家陪妈妈",
+      "category": "event",
+      "importance": 550,
+      "entities": ["杭州"],
+      "updatedAt": "2026-07-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-07-24"
+    },
+    {
+      "id": "m146",
+      "text": "团子这几天在宠物医院住院",
+      "category": "event",
+      "importance": 500,
+      "entities": ["团子"],
+      "updatedAt": "2026-10-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-10-13"
+    },
+    {
+      "id": "m147",
+      "text": "主人今年夏天每天早上去游泳",
+      "category": "preference",
+      "importance": 450,
+      "entities": [],
+      "updatedAt": "2026-07-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-08-31"
+    },
+    {
+      "id": "m148",
+      "text": "主人这季度的工作重点是记忆系统",
+      "category": "project",
+      "importance": 700,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-10-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-12-31"
+    },
+    {
+      "id": "m149",
+      "text": "主人 10 月 30 日要参加小葵学校的家长会",
+      "category": "event",
+      "importance": 650,
+      "entities": ["小葵"],
+      "updatedAt": "2026-10-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-10-31"
+    },
+    {
+      "id": "m150",
+      "text": "主人这周在京都参加 TypeScript 研讨会",
+      "category": "event",
+      "importance": 500,
+      "entities": ["京都", "TypeScript"],
+      "updatedAt": "2026-06-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-06-13"
+    },
+    {
+      "id": "m151",
+      "text": "Himawari 的 CI 本月额度用完了，11 月 1 日恢复",
+      "category": "project",
+      "importance": 600,
+      "entities": ["Himawari"],
+      "updatedAt": "2026-10-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-11-01"
+    },
+    {
+      "id": "m152",
+      "text": "主人这个月在戒咖啡",
+      "category": "preference",
+      "importance": 500,
+      "entities": [],
+      "updatedAt": "2026-04-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2026-04-30"
+    },
+    {
+      "id": "m153",
+      "text": "主人这段时间每天吃降压药前量血压",
+      "category": "health",
+      "importance": 600,
+      "entities": [],
+      "updatedAt": "2026-08-16T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": "2027-02-16"
+    },
+    {
+      "id": "m200",
+      "text": "主人觉得东京的冬天比杭州的好过",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m201",
+      "text": "主人每个月去一次理发店",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m202",
+      "text": "主人最喜欢的电影是《星际穿越》",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-03T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m203",
+      "text": "主人不喜欢太甜的蛋糕",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-04T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m204",
+      "text": "主人的书桌上有一盆绿萝",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m205",
+      "text": "主人用 1Password 管理密码",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-06T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m206",
+      "text": "主人习惯用番茄工作法，每段二十五分钟",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-07T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m207",
+      "text": "主人喜欢在咖啡馆写博客",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m208",
+      "text": "主人会弹一点吉他",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-09T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m209",
+      "text": "主人小时候学过围棋",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m210",
+      "text": "主人喜欢看 NBA，支持勇士队",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-11T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m211",
+      "text": "主人家里用的是戴森吸尘器",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m212",
+      "text": "主人每年春天会去看樱花",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-13T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m213",
+      "text": "主人觉得 Rust 很有意思但还没深入学",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-14T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m214",
+      "text": "主人的键盘是 HHKB",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m215",
+      "text": "主人喜欢喝乌龙茶",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-16T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m216",
+      "text": "主人每天会写日记",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-17T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m217",
+      "text": "主人不太喜欢吃生鱼片",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m218",
+      "text": "主人家的阳台种了番茄和薄荷",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-19T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m219",
+      "text": "主人喜欢的作家还有特德·姜",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m220",
+      "text": "主人的显示器是 27 寸 4K",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-21T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m221",
+      "text": "主人觉得自己不擅长做饭",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m222",
+      "text": "主人周日晚上会做下一周的计划",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-23T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m223",
+      "text": "主人喜欢去书店闲逛",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-24T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m224",
+      "text": "主人用 Notion 记笔记",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-25T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m225",
+      "text": "主人喜欢看纪录片，尤其是自然类",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-26T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m226",
+      "text": "主人不喜欢下雨天出门",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-27T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m227",
+      "text": "主人觉得日本的便利店很方便",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-01T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m228",
+      "text": "主人曾经在杭州的一家电商公司工作了五年",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-02T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m229",
+      "text": "主人 2019 年搬到东京",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-03T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m230",
+      "text": "主人喜欢玩塞尔达传说",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-04T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m231",
+      "text": "主人喜欢吃拉面，常去一兰",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-05T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m232",
+      "text": "主人每天走一万步",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-06T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m233",
+      "text": "主人家的冰箱里常备酸奶",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-07T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m234",
+      "text": "主人觉得开源社区很重要",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-08T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m235",
+      "text": "主人订阅了 Hacker News 的每日邮件",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-09T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m236",
+      "text": "主人喜欢在周五晚上看电影",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-10T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m237",
+      "text": "主人不喝碳酸饮料",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-11T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m238",
+      "text": "主人觉得写测试很重要",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-12T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m239",
+      "text": "主人家附近有一个大公园",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-13T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m240",
+      "text": "主人喜欢用机械键盘的茶轴",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-14T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m241",
+      "text": "主人每年会给妈妈寄一次日本的护肤品",
+      "category": "relationship",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-15T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m242",
+      "text": "主人的手表是 Apple Watch",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-16T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m243",
+      "text": "主人喜欢夏天去海边",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-17T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m244",
+      "text": "主人觉得早起效率最高",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-18T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m245",
+      "text": "主人家里有一台投影仪",
+      "category": "other",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-05-19T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m246",
+      "text": "主人小时候想当宇航员",
+      "category": "identity",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-06-20T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m247",
+      "text": "主人常用的搜索引擎是 Kagi",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-07-21T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m248",
+      "text": "主人喜欢喝冰水",
+      "category": "preference",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-08-22T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    },
+    {
+      "id": "m249",
+      "text": "主人对猫毛不过敏",
+      "category": "health",
+      "importance": 350,
+      "entities": [],
+      "updatedAt": "2026-09-23T09:00:00.000Z",
+      "validFrom": null,
+      "validTo": null
+    }
+  ],
+  "questions": [
+    {
+      "id": "q001",
+      "ability": "extraction",
+      "query": "我叫什么名字？",
+      "relevant": ["m001"],
+      "stale": []
+    },
+    {
+      "id": "q002",
+      "ability": "extraction",
+      "query": "我现在住哪个区？",
+      "relevant": ["m002"],
+      "stale": []
+    },
+    {
+      "id": "q003",
+      "ability": "extraction",
+      "query": "我是做什么工作的？",
+      "relevant": ["m003"],
+      "stale": []
+    },
+    {
+      "id": "q004",
+      "ability": "extraction",
+      "query": "我女儿几岁了？",
+      "relevant": ["m010"],
+      "stale": []
+    },
+    {
+      "id": "q005",
+      "ability": "extraction",
+      "query": "我老婆在哪工作？",
+      "relevant": ["m011"],
+      "stale": []
+    },
+    {
+      "id": "q006",
+      "ability": "extraction",
+      "query": "我妈妈生日是哪天？",
+      "relevant": ["m012"],
+      "stale": []
+    },
+    {
+      "id": "q007",
+      "ability": "extraction",
+      "query": "我弟弟是干什么的？",
+      "relevant": ["m014"],
+      "stale": []
+    },
+    {
+      "id": "q008",
+      "ability": "extraction",
+      "query": "女儿对什么东西过敏？",
+      "relevant": ["m017"],
+      "stale": []
+    },
+    {
+      "id": "q009",
+      "ability": "extraction",
+      "query": "我家猫叫什么？",
+      "relevant": ["m018"],
+      "stale": []
+    },
+    {
+      "id": "q010",
+      "ability": "extraction",
+      "query": "我有什么不吃的东西吗？",
+      "relevant": ["m032"],
+      "stale": []
+    },
+    {
+      "id": "q011",
+      "ability": "extraction",
+      "query": "我平时多久跑一次步？",
+      "relevant": ["m034"],
+      "stale": []
+    },
+    {
+      "id": "q012",
+      "ability": "extraction",
+      "query": "我喜欢什么乐队？",
+      "relevant": ["m035"],
+      "stale": []
+    },
+    {
+      "id": "q013",
+      "ability": "extraction",
+      "query": "推荐本书给我，我爱看什么类型？",
+      "relevant": ["m036"],
+      "stale": []
+    },
+    {
+      "id": "q014",
+      "ability": "extraction",
+      "query": "帮我订机票，座位怎么选？",
+      "relevant": ["m039"],
+      "stale": []
+    },
+    {
+      "id": "q015",
+      "ability": "extraction",
+      "query": "我平时几点睡觉？",
+      "relevant": ["m043"],
+      "stale": []
+    },
+    {
+      "id": "q016",
+      "ability": "extraction",
+      "query": "我对什么药过敏？",
+      "relevant": ["m090"],
+      "stale": []
+    },
+    {
+      "id": "q017",
+      "ability": "extraction",
+      "query": "Himawari 的测试机叫什么？",
+      "relevant": ["m064"],
+      "stale": []
+    },
+    {
+      "id": "q018",
+      "ability": "extraction",
+      "query": "谁负责服务器运维？",
+      "relevant": ["m020"],
+      "stale": []
+    },
+    {
+      "id": "q019",
+      "ability": "extraction",
+      "query": "我哪年出生的？",
+      "relevant": ["m005"],
+      "stale": []
+    },
+    {
+      "id": "q020",
+      "ability": "extraction",
+      "query": "我大学在哪里读的？",
+      "relevant": ["m006"],
+      "stale": []
+    },
+    {
+      "id": "q021",
+      "ability": "extraction",
+      "query": "我的牙医预约是什么时候？",
+      "relevant": ["m084"],
+      "stale": []
+    },
+    {
+      "id": "q022",
+      "ability": "extraction",
+      "query": "我体检查出了什么问题？",
+      "relevant": ["m083"],
+      "stale": []
+    },
+    {
+      "id": "q023",
+      "ability": "extraction",
+      "query": "手机端用什么框架开发？",
+      "relevant": ["m067"],
+      "stale": []
+    },
+    {
+      "id": "q024",
+      "ability": "extraction",
+      "query": "我太太生日是几月几号？",
+      "relevant": ["m019"],
+      "stale": []
+    },
+    {
+      "id": "q025",
+      "ability": "extraction",
+      "query": "我老家在哪？",
+      "relevant": ["m007"],
+      "stale": []
+    },
+    {
+      "id": "q026",
+      "ability": "extraction",
+      "query": "开会我更喜欢什么方式？",
+      "relevant": ["m044"],
+      "stale": []
+    },
+    {
+      "id": "q027",
+      "ability": "extraction",
+      "query": "我喝酒吗？",
+      "relevant": ["m041"],
+      "stale": []
+    },
+    {
+      "id": "q028",
+      "ability": "extraction",
+      "query": "女儿在哪上学？",
+      "relevant": ["m016"],
+      "stale": []
+    },
+    {
+      "id": "q029",
+      "ability": "extraction",
+      "query": "我房租多少钱？",
+      "relevant": ["m092"],
+      "stale": []
+    },
+    {
+      "id": "q030",
+      "ability": "extraction",
+      "query": "我爸爸以前做什么？",
+      "relevant": ["m013"],
+      "stale": []
+    },
+    {
+      "id": "q040",
+      "ability": "multi_session",
+      "query": "给我家人准备礼物，家里都有谁？",
+      "relevant": ["m010", "m011", "m018"],
+      "stale": []
+    },
+    {
+      "id": "q041",
+      "ability": "multi_session",
+      "query": "帮我规划去杭州看妈妈的行程，要注意什么？",
+      "relevant": ["m012", "m007"],
+      "stale": []
+    },
+    {
+      "id": "q042",
+      "ability": "multi_session",
+      "query": "小葵最近在学什么，她有什么需要特别注意的？",
+      "relevant": ["m082", "m017"],
+      "stale": []
+    },
+    {
+      "id": "q043",
+      "ability": "multi_session",
+      "query": "Himawari 的服务器和运维情况是怎样的？",
+      "relevant": ["m064", "m020"],
+      "stale": []
+    },
+    {
+      "id": "q044",
+      "ability": "multi_session",
+      "query": "我有哪些健康方面需要注意的？",
+      "relevant": ["m090", "m083", "m091"],
+      "stale": []
+    },
+    {
+      "id": "q045",
+      "ability": "multi_session",
+      "query": "我和老周有什么安排，他是做什么的？",
+      "relevant": ["m086", "m015"],
+      "stale": []
+    },
+    {
+      "id": "q046",
+      "ability": "multi_session",
+      "query": "根据我的口味推荐一家餐厅",
+      "relevant": ["m031", "m032"],
+      "stale": []
+    },
+    {
+      "id": "q047",
+      "ability": "multi_session",
+      "query": "我出差订酒店和机票有什么偏好？",
+      "relevant": ["m038", "m039"],
+      "stale": []
+    },
+    {
+      "id": "q048",
+      "ability": "multi_session",
+      "query": "帮我安排周末带女儿的活动",
+      "relevant": ["m040", "m082"],
+      "stale": []
+    },
+    {
+      "id": "q049",
+      "ability": "multi_session",
+      "query": "我今年有哪些长期目标？",
+      "relevant": ["m060", "m061", "m062", "m063"],
+      "stale": []
+    },
+    {
+      "id": "q050",
+      "ability": "multi_session",
+      "query": "11 月份我有哪些重要的日子？",
+      "relevant": ["m019", "m084", "m086"],
+      "stale": []
+    },
+    {
+      "id": "q051",
+      "ability": "multi_session",
+      "query": "小葵的基本情况说一下",
+      "relevant": ["m010", "m016", "m017"],
+      "stale": []
+    },
+    {
+      "id": "q052",
+      "ability": "multi_session",
+      "query": "Himawari 现在用了哪些技术？",
+      "relevant": ["m066", "m067", "m113"],
+      "stale": []
+    },
+    {
+      "id": "q053",
+      "ability": "multi_session",
+      "query": "我的作息习惯是怎样的？",
+      "relevant": ["m043", "m030"],
+      "stale": []
+    },
+    {
+      "id": "q054",
+      "ability": "multi_session",
+      "query": "写代码相关的偏好有哪些？",
+      "relevant": ["m037", "m042"],
+      "stale": []
+    },
+    {
+      "id": "q055",
+      "ability": "multi_session",
+      "query": "我家里人分别住在哪里？",
+      "relevant": ["m012", "m014", "m002"],
+      "stale": []
+    },
+    {
+      "id": "q056",
+      "ability": "multi_session",
+      "query": "我在日本生活多久了，住哪？",
+      "relevant": ["m002", "m229"],
+      "stale": []
+    },
+    {
+      "id": "q057",
+      "ability": "multi_session",
+      "query": "团子最近的健康情况？",
+      "relevant": ["m085", "m119"],
+      "stale": []
+    },
+    {
+      "id": "q058",
+      "ability": "multi_session",
+      "query": "我的运动习惯是什么？",
+      "relevant": ["m034", "m107"],
+      "stale": []
+    },
+    {
+      "id": "q059",
+      "ability": "multi_session",
+      "query": "给 Cindy 准备生日惊喜要知道什么？",
+      "relevant": ["m019", "m125"],
+      "stale": []
+    },
+    {
+      "id": "q070",
+      "ability": "knowledge_update",
+      "query": "我早上喝什么咖啡？",
+      "relevant": ["m101"],
+      "stale": ["m100"]
+    },
+    {
+      "id": "q071",
+      "ability": "knowledge_update",
+      "query": "我现在用什么手机？",
+      "relevant": ["m103"],
+      "stale": ["m102"]
+    },
+    {
+      "id": "q072",
+      "ability": "knowledge_update",
+      "query": "Himawari 现在主力模型是哪个？",
+      "relevant": ["m105"],
+      "stale": ["m104"]
+    },
+    {
+      "id": "q073",
+      "ability": "knowledge_update",
+      "query": "我现在还游泳吗？",
+      "relevant": ["m107"],
+      "stale": ["m106"]
+    },
+    {
+      "id": "q074",
+      "ability": "knowledge_update",
+      "query": "小葵的钢琴老师是谁？",
+      "relevant": ["m109"],
+      "stale": ["m108"]
+    },
+    {
+      "id": "q075",
+      "ability": "knowledge_update",
+      "query": "我怎么去上班？",
+      "relevant": ["m111"],
+      "stale": ["m110"]
+    },
+    {
+      "id": "q076",
+      "ability": "knowledge_update",
+      "query": "Himawari 的嵌入维度是多少？",
+      "relevant": ["m113"],
+      "stale": ["m112"]
+    },
+    {
+      "id": "q077",
+      "ability": "knowledge_update",
+      "query": "我睡前一般做什么？",
+      "relevant": ["m115"],
+      "stale": ["m114"]
+    },
+    {
+      "id": "q078",
+      "ability": "knowledge_update",
+      "query": "我现在多重？",
+      "relevant": ["m117"],
+      "stale": ["m116"]
+    },
+    {
+      "id": "q079",
+      "ability": "knowledge_update",
+      "query": "团子一天吃几顿？",
+      "relevant": ["m119"],
+      "stale": ["m118"]
+    },
+    {
+      "id": "q080",
+      "ability": "knowledge_update",
+      "query": "我开什么车？",
+      "relevant": ["m121"],
+      "stale": ["m120"]
+    },
+    {
+      "id": "q081",
+      "ability": "knowledge_update",
+      "query": "Himawari 前端用什么框架？",
+      "relevant": ["m123"],
+      "stale": ["m122"]
+    },
+    {
+      "id": "q082",
+      "ability": "knowledge_update",
+      "query": "Cindy 现在在哪家公司？",
+      "relevant": ["m125"],
+      "stale": ["m124"]
+    },
+    {
+      "id": "q083",
+      "ability": "knowledge_update",
+      "query": "我一般写代码写到几点？",
+      "relevant": ["m127"],
+      "stale": ["m126"]
+    },
+    {
+      "id": "q084",
+      "ability": "knowledge_update",
+      "query": "老周现在在做什么？",
+      "relevant": ["m129"],
+      "stale": ["m128"]
+    },
+    {
+      "id": "q085",
+      "ability": "knowledge_update",
+      "query": "我现在喝普通拿铁吗？",
+      "relevant": ["m101"],
+      "stale": ["m100"]
+    },
+    {
+      "id": "q086",
+      "ability": "knowledge_update",
+      "query": "我还坐东横线吗？",
+      "relevant": ["m111"],
+      "stale": ["m110"]
+    },
+    {
+      "id": "q087",
+      "ability": "knowledge_update",
+      "query": "我还用 iPhone 13 吗？",
+      "relevant": ["m103"],
+      "stale": ["m102"]
+    },
+    {
+      "id": "q088",
+      "ability": "knowledge_update",
+      "query": "我太太是做广告的吗？",
+      "relevant": ["m125"],
+      "stale": ["m124"]
+    },
+    {
+      "id": "q089",
+      "ability": "knowledge_update",
+      "query": "我最近打什么球？",
+      "relevant": ["m107"],
+      "stale": ["m106"]
+    },
+    {
+      "id": "q100",
+      "ability": "temporal",
+      "query": "我现在在出差吗？",
+      "relevant": [],
+      "stale": ["m140", "m141", "m150"]
+    },
+    {
+      "id": "q101",
+      "ability": "temporal",
+      "query": "小葵现在放假吗？",
+      "relevant": [],
+      "stale": ["m142"]
+    },
+    {
+      "id": "q102",
+      "ability": "temporal",
+      "query": "我身体最近怎么样？",
+      "relevant": ["m083", "m091"],
+      "stale": ["m143"]
+    },
+    {
+      "id": "q103",
+      "ability": "temporal",
+      "query": "我这个月在忙什么？",
+      "relevant": ["m144", "m148"],
+      "stale": []
+    },
+    {
+      "id": "q104",
+      "ability": "temporal",
+      "query": "我现在住在哪里？",
+      "relevant": ["m002"],
+      "stale": ["m145"]
+    },
+    {
+      "id": "q105",
+      "ability": "temporal",
+      "query": "团子现在在哪？",
+      "relevant": [],
+      "stale": ["m146"]
+    },
+    {
+      "id": "q106",
+      "ability": "temporal",
+      "query": "我现在每天早上去游泳吗？",
+      "relevant": ["m107"],
+      "stale": ["m147"]
+    },
+    {
+      "id": "q107",
+      "ability": "temporal",
+      "query": "最近有什么学校活动要参加？",
+      "relevant": ["m149"],
+      "stale": []
+    },
+    {
+      "id": "q108",
+      "ability": "temporal",
+      "query": "CI 现在能用吗？",
+      "relevant": ["m151"],
+      "stale": []
+    },
+    {
+      "id": "q109",
+      "ability": "temporal",
+      "query": "我现在还喝咖啡吗？",
+      "relevant": ["m030", "m101"],
+      "stale": ["m152"]
+    },
+    {
+      "id": "q110",
+      "ability": "temporal",
+      "query": "我量血压的习惯？",
+      "relevant": ["m153"],
+      "stale": []
+    },
+    {
+      "id": "q111",
+      "ability": "temporal",
+      "query": "我下周要去首尔吗？",
+      "relevant": [],
+      "stale": ["m141"]
+    },
+    {
+      "id": "q112",
+      "ability": "temporal",
+      "query": "我最近要去京都吗？",
+      "relevant": ["m086"],
+      "stale": ["m150"]
+    },
+    {
+      "id": "q113",
+      "ability": "temporal",
+      "query": "我在大阪吗？",
+      "relevant": [],
+      "stale": ["m140"]
+    },
+    {
+      "id": "q114",
+      "ability": "temporal",
+      "query": "我感冒好了吗？",
+      "relevant": [],
+      "stale": ["m143"]
+    },
+    {
+      "id": "q120",
+      "ability": "abstention",
+      "query": "我儿子叫什么名字？",
+      "relevant": ["m010"],
+      "stale": []
+    },
+    {
+      "id": "q121",
+      "ability": "abstention",
+      "query": "我妹妹住在哪？",
+      "relevant": ["m014"],
+      "stale": []
+    },
+    {
+      "id": "q122",
+      "ability": "abstention",
+      "query": "我家狗叫什么？",
+      "relevant": ["m018"],
+      "stale": []
+    },
+    {
+      "id": "q123",
+      "ability": "abstention",
+      "query": "我对海鲜过敏吗？",
+      "relevant": ["m017", "m090"],
+      "stale": []
+    },
+    {
+      "id": "q124",
+      "ability": "abstention",
+      "query": "我的护照号码是多少？",
+      "relevant": [],
+      "stale": []
+    },
+    {
+      "id": "q125",
+      "ability": "abstention",
+      "query": "我爷爷叫什么？",
+      "relevant": ["m013"],
+      "stale": []
+    },
+    {
+      "id": "q126",
+      "ability": "abstention",
+      "query": "我喜欢什么足球队？",
+      "relevant": [],
+      "stale": []
+    },
+    {
+      "id": "q127",
+      "ability": "abstention",
+      "query": "我在北京有房子吗？",
+      "relevant": [],
+      "stale": []
+    },
+    {
+      "id": "q128",
+      "ability": "abstention",
+      "query": "Himawari 用的数据库是 MySQL 吗？",
+      "relevant": [],
+      "stale": []
+    },
+    {
+      "id": "q129",
+      "ability": "abstention",
+      "query": "我女儿学小提琴吗？",
+      "relevant": ["m082"],
+      "stale": []
+    },
+    {
+      "id": "q130",
+      "ability": "abstention",
+      "query": "我会说韩语吗？",
+      "relevant": ["m004"],
+      "stale": []
+    },
+    {
+      "id": "q131",
+      "ability": "abstention",
+      "query": "我老婆生日是 5 月吗？",
+      "relevant": ["m019"],
+      "stale": []
+    },
+    {
+      "id": "q132",
+      "ability": "abstention",
+      "query": "我上个月去了巴黎吗？",
+      "relevant": [],
+      "stale": []
+    },
+    {
+      "id": "q133",
+      "ability": "abstention",
+      "query": "我养了几只狗？",
+      "relevant": ["m018"],
+      "stale": []
+    },
+    {
+      "id": "q134",
+      "ability": "abstention",
+      "query": "我爸爸住在上海吗？",
+      "relevant": ["m014"],
+      "stale": []
+    },
+    {
+      "id": "q200",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前早上喝什么咖啡？",
+      "relevant": ["m100"],
+      "stale": []
+    },
+    {
+      "id": "q201",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前用的什么手机？",
+      "relevant": ["m102"],
+      "stale": []
+    },
+    {
+      "id": "q202",
+      "ability": "history",
+      "phase": 2,
+      "query": "Himawari 以前的主力模型是什么？",
+      "relevant": ["m104"],
+      "stale": []
+    },
+    {
+      "id": "q203",
+      "ability": "history",
+      "phase": 2,
+      "query": "小葵之前的钢琴老师是谁？",
+      "relevant": ["m108"],
+      "stale": []
+    },
+    {
+      "id": "q204",
+      "ability": "history",
+      "phase": 2,
+      "query": "我原来怎么去上班？",
+      "relevant": ["m110"],
+      "stale": []
+    },
+    {
+      "id": "q205",
+      "ability": "history",
+      "phase": 2,
+      "query": "我以前多重？",
+      "relevant": ["m116"],
+      "stale": []
+    },
+    {
+      "id": "q206",
+      "ability": "history",
+      "phase": 2,
+      "query": "我之前开什么车？",
+      "relevant": ["m120"],
+      "stale": []
+    },
+    {
+      "id": "q207",
+      "ability": "history",
+      "phase": 2,
+      "query": "Himawari 前端以前用什么框架？",
+      "relevant": ["m122"],
+      "stale": []
+    },
+    {
+      "id": "q208",
+      "ability": "history",
+      "phase": 2,
+      "query": "Cindy 之前在哪工作？",
+      "relevant": ["m124"],
+      "stale": []
+    },
+    {
+      "id": "q209",
+      "ability": "history",
+      "phase": 2,
+      "query": "老周以前在哪上班？",
+      "relevant": ["m128"],
+      "stale": []
+    },
+    {
+      "id": "q210",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "九月中旬我去哪出差了？",
+      "relevant": ["m140"],
+      "stale": []
+    },
+    {
+      "id": "q211",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "八月小葵在干什么？",
+      "relevant": ["m142"],
+      "stale": []
+    },
+    {
+      "id": "q212",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "七月我住在哪里？",
+      "relevant": ["m145"],
+      "stale": []
+    },
+    {
+      "id": "q213",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "十月初我生了什么病？",
+      "relevant": ["m143"],
+      "stale": []
+    },
+    {
+      "id": "q214",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "六月我去京都干什么？",
+      "relevant": ["m150"],
+      "stale": []
+    },
+    {
+      "id": "q215",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "今年夏天我早上做什么运动？",
+      "relevant": ["m147"],
+      "stale": []
+    },
+    {
+      "id": "q216",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "四月我在戒什么？",
+      "relevant": ["m152"],
+      "stale": []
+    },
+    {
+      "id": "q217",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "这个月上旬团子怎么了？",
+      "relevant": ["m146"],
+      "stale": []
+    },
+    {
+      "id": "q218",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "这个月初我去首尔干什么？",
+      "relevant": ["m141"],
+      "stale": []
+    },
+    {
+      "id": "q219",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "5 月我用什么手机？",
+      "relevant": ["m102"],
+      "stale": ["m103"]
+    },
+    {
+      "id": "q220",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "五月份我开什么车？",
+      "relevant": ["m120"],
+      "stale": ["m121"]
+    },
+    {
+      "id": "q221",
+      "ability": "time_window",
+      "phase": 2,
+      "query": "五月我每天写代码到几点？",
+      "relevant": ["m126"],
+      "stale": ["m127"]
+    },
+    {
+      "id": "q230",
+      "ability": "episode",
+      "phase": 2,
+      "query": "前天晚上我和谁吃饭了？",
+      "relevant": ["e01"],
+      "stale": []
+    },
+    {
+      "id": "q231",
+      "ability": "episode",
+      "phase": 2,
+      "query": "昨天我们排查了什么问题？",
+      "relevant": ["e02"],
+      "stale": []
+    },
+    {
+      "id": "q232",
+      "ability": "episode",
+      "phase": 2,
+      "query": "上周六小葵去上了什么课？",
+      "relevant": ["e03"],
+      "stale": []
+    },
+    {
+      "id": "q233",
+      "ability": "episode",
+      "phase": 2,
+      "query": "十月十号团子去医院查了什么？",
+      "relevant": ["e04"],
+      "stale": []
+    },
+    {
+      "id": "q234",
+      "ability": "episode",
+      "phase": 2,
+      "query": "九月中旬出差时我和客户谈了什么？",
+      "relevant": ["e05"],
+      "stale": []
+    },
+    {
+      "id": "q235",
+      "ability": "episode",
+      "phase": 2,
+      "query": "三周前我们讨论过记忆系统的什么方案？",
+      "relevant": ["e06"],
+      "stale": []
+    },
+    {
+      "id": "q236",
+      "ability": "episode",
+      "phase": 2,
+      "query": "八月我们一家去哪玩了？",
+      "relevant": ["e07"],
+      "stale": []
+    },
+    {
+      "id": "q237",
+      "ability": "episode",
+      "phase": 2,
+      "query": "这周一我让你帮忙写什么？",
+      "relevant": ["e08"],
+      "stale": []
+    }
+  ],
+  "episodes": [
+    {
+      "id": "e01",
+      "day": "2026-10-23",
+      "text": "主人晚上和老周在新宿吃烤肉，老周说想投一家做 AI 记忆的初创公司。"
+    },
+    {
+      "id": "e02",
+      "day": "2026-10-24",
+      "text": "主人和 Himawari 一起排查联网搜索卡住的问题，最后发现是授权确认互相拖慢。"
+    },
+    {
+      "id": "e03",
+      "day": "2026-10-17",
+      "text": "主人带小葵去上铃木老师的第一节钢琴课，小葵很喜欢新老师。"
+    },
+    {
+      "id": "e04",
+      "day": "2026-10-10",
+      "text": "主人带团子去宠物医院复查，医生说肾脏指标好转，可以继续吃处方粮。"
+    },
+    {
+      "id": "e05",
+      "day": "2026-09-16",
+      "text": "主人在大阪出差，和客户谈了 Himawari 的演示安排和试用时间。"
+    },
+    {
+      "id": "e06",
+      "day": "2026-10-01",
+      "text": "主人和 Himawari 讨论记忆系统是用 SQLite 自研还是继续用 Mem0，倾向自研。"
+    },
+    {
+      "id": "e07",
+      "day": "2026-08-15",
+      "text": "主人和太太 Cindy 带小葵去镰仓看海，在海边吃了 shirasu 盖饭。"
+    },
+    {
+      "id": "e08",
+      "day": "2026-10-19",
+      "text": "主人让 Himawari 帮忙起草给投资人演示的提纲。"
+    },
+    {
+      "id": "e09",
+      "day": "2026-10-22",
+      "text": "主人问东京明天的天气，Himawari 说会下雨，提醒带伞。"
+    },
+    {
+      "id": "e10",
+      "day": "2026-09-02",
+      "text": "主人和老周约好周末一起打羽毛球。"
+    },
+    {
+      "id": "e11",
+      "day": "2026-10-12",
+      "text": "主人和 Himawari 讨论团子换处方湿粮后一天喂几顿。"
+    },
+    {
+      "id": "e12",
+      "day": "2026-08-20",
+      "text": "主人和 Himawari 讨论把 Himawari 的前端从 Vue 迁到 React。"
+    }
+  ]
+}

@@ -71,7 +71,7 @@ function configuration(stateRoot: string) {
       },
     ],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "fixture",
       storagePath: path.join(stateRoot, "data", "memory"),
       dimensions: 1,

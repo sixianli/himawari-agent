@@ -677,6 +677,9 @@ function isContextEnvelope(value: unknown): value is ProductContextEnvelopeV1 {
       return (
         (item["kind"] === "thread-summary" ||
           item["kind"] === "memory" ||
+          item["kind"] === "owner-rules" ||
+          item["kind"] === "owner-profile" ||
+          item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary") &&
         nonEmpty(item["ref"]) &&
         nonEmpty(item["payloadRef"]) &&

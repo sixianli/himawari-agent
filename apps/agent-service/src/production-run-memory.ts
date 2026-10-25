@@ -17,7 +17,7 @@ import {
   type ProductConfiguration,
   type ProductMemoryRecord,
 } from "@himawari-agent/application";
-import { gatewayEmbeddingUsage, type Mem0ProjectionAdapter } from "@himawari-agent/memory-mem0";
+import { type EmbeddingBoundary, gatewayEmbeddingUsage } from "@himawari-agent/memory-engine";
 
 export function embeddingAdmissionDescriptor(
   configuration: ProductConfiguration,
@@ -43,18 +43,33 @@ export function embeddingAdmissionDescriptor(
   };
 }
 
-/** Keep Mem0's embedding SDK and vector search while governing every physical request. */
+export interface RunEmbeddingContext {
+  readonly ownerId: MemorySearchRequest["ownerId"];
+  readonly agentId: MemorySearchRequest["agentId"];
+  readonly runId: NonNullable<MemorySearchRequest["runId"]>;
+  readonly executionLease: NonNullable<MemorySearchRequest["executionLease"]>;
+  readonly deadlineAt: string;
+  readonly dataClassification: NonNullable<MemorySearchRequest["dataClassification"]>;
+  readonly signal?: AbortSignal;
+  readonly slot: string;
+}
+
 export function createProductionRunMemory(options: {
   readonly configuration: ProductConfiguration;
   readonly memory: Pick<DurableMemoryService, "search">;
-  readonly projection: Pick<Mem0ProjectionAdapter, "bindEmbeddingBoundary">;
+  readonly projection: {
+    bindEmbeddingBoundary(boundary: EmbeddingBoundary, timeoutMs: number): void;
+  };
   readonly payloads: Pick<PayloadStorePort, "get">;
   readonly admission: ModelInvocationAdmissionResolver;
   readonly budget: ModelBudgetPort;
   readonly assertActive: () => Promise<void>;
   readonly now: () => string;
-}): Pick<MemoryPort, "search"> & { project: NonNullable<DurableMemoryServiceOptions["project"]> } {
-  const scope = new AsyncLocalStorage<MemorySearchRequest>();
+}): Pick<MemoryPort, "search"> & {
+  project: NonNullable<DurableMemoryServiceOptions["project"]>;
+  embedWithin: <T>(context: RunEmbeddingContext, operation: () => Promise<T>) => Promise<T>;
+} {
+  const scope = new AsyncLocalStorage<MemorySearchRequest & { readonly embeddingSlot?: string }>();
   const providerFailedSearches = new WeakSet<MemorySearchRequest>();
   const projectionScope = new AsyncLocalStorage<{
     job: MemoryProjectionJob;
@@ -167,7 +182,7 @@ export function createProductionRunMemory(options: {
         model: descriptor.model,
         modelVersion: descriptor.version,
         dataClassification: classification,
-        logicalSlot: "context-memory-search:v1",
+        logicalSlot: context.embeddingSlot ?? "context-memory-search:v1",
         source: "embedding",
         ordinal: 1,
         estimatedCostMicros: descriptor.estimatedCostMicros,
@@ -221,6 +236,23 @@ export function createProductionRunMemory(options: {
   }, options.configuration.deadlines.providerRequestMs);
   return {
     project: (job, memory, operation) => projectionScope.run({ job, memory }, operation),
+    embedWithin: (context, operation) =>
+      scope.run(
+        {
+          ownerId: context.ownerId,
+          agentId: context.agentId,
+          runId: context.runId,
+          executionLease: context.executionLease,
+          deadlineAt: context.deadlineAt,
+          dataClassification: context.dataClassification,
+          ...(context.signal ? { signal: context.signal } : {}),
+          queryRef: "",
+          queryTerms: [],
+          limit: 0,
+          embeddingSlot: context.slot,
+        },
+        operation,
+      ),
     search: async (request) => {
       if (
         request.ownerId !== options.configuration.ownerId ||

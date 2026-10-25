@@ -19,7 +19,7 @@ const internalRoots = [
   "packages/execution-contracts",
   "packages/gateway-contracts",
   "packages/integration-github",
-  "packages/memory-mem0",
+  "packages/memory-engine",
   "packages/persistence-sqlite",
   "packages/platform-node",
   "packages/runtime-pi",

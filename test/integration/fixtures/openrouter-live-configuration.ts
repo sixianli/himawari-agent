@@ -1,10 +1,10 @@
 import {
-  MEM0_AI_GATEWAY_BASE_URL,
+  AI_GATEWAY_BASE_URL,
   QWEN3_EMBEDDING_8B_COST,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
   QWEN3_EMBEDDING_8B_MODEL,
   QWEN3_EMBEDDING_8B_VERSION,
-} from "@himawari-agent/memory-mem0";
+} from "@himawari-agent/memory-engine";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 
 export const AI_GATEWAY_LIVE_BUDGET_USD = 1;
@@ -66,7 +66,7 @@ export function createAiGatewayLiveConfiguration(stateRoot: string) {
         },
       ],
       memory: {
-        adapter: "mem0-oss",
+        adapter: "himawari-sqlite",
         version: "3.3.1",
         storagePath: `${stateRoot}/data/memory`,
         dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
@@ -97,4 +97,4 @@ export function createAiGatewayLiveConfiguration(stateRoot: string) {
   );
 }
 
-export { MEM0_AI_GATEWAY_BASE_URL };
+export { AI_GATEWAY_BASE_URL };

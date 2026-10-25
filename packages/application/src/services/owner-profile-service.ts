@@ -1,0 +1,297 @@
+import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
+import type {
+  DataClassification,
+  MemoryCategory,
+  MemoryReminderStorePort,
+  PayloadRef,
+  ProductMemoryRecord,
+  ProductMemoryStatePort,
+} from "../ports/index.js";
+
+export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
+const AGENDA_CHARACTER_BUDGET = 800;
+const AGENDA_HORIZON_MS = 7 * 24 * 3_600_000;
+const AGENDA_LIMIT = 10;
+const PROFILE_MINIMUM_IMPORTANCE = 600;
+const PROFILE_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
+const CLASSIFICATION_RANK: Record<DataClassification, number> = {
+  public: 0,
+  private: 1,
+  sensitive: 2,
+  restricted: 3,
+};
+const PROFILE_SECTIONS: readonly (readonly [MemoryCategory, string])[] = [
+  ["identity", "身份"],
+  ["preference", "偏好"],
+  ["relationship", "人际关系"],
+  ["goal", "长期目标"],
+  ["project", "进行中的事"],
+];
+
+export interface OwnerProfileBlock {
+  readonly kind: "owner-rules" | "owner-profile" | "owner-agenda";
+  readonly ref: string;
+  readonly payloadRef: PayloadRef;
+  readonly dataClassification: DataClassification;
+  readonly memoryIds: readonly MemoryId[];
+}
+
+export interface OwnerProfile {
+  readonly blocks: readonly OwnerProfileBlock[];
+  readonly memoryIds: readonly MemoryId[];
+}
+
+export interface OwnerProfileLine {
+  readonly memoryId: MemoryId;
+  readonly text: string;
+  readonly updatedAt: string;
+}
+
+export interface OwnerProfileOutline {
+  readonly rules: readonly OwnerProfileLine[];
+  readonly sections: readonly {
+    readonly category: MemoryCategory;
+    readonly title: string;
+    readonly lines: readonly OwnerProfileLine[];
+  }[];
+}
+
+export interface OwnerProfilePort {
+  compose(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }): Promise<OwnerProfile>;
+}
+
+export interface OwnerProfileServiceOptions {
+  readonly state: Pick<ProductMemoryStatePort, "listActive">;
+  readonly readText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
+  readonly storeText: (input: {
+    readonly ref: PayloadRef;
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly text: string;
+    readonly dataClassification: DataClassification;
+  }) => Promise<void>;
+  readonly digest: (text: string) => string;
+  readonly characterBudget?: number;
+  readonly reminders?: Pick<MemoryReminderStorePort, "listUpcoming">;
+  readonly timeZone?: string;
+}
+
+function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
+  const attributes = memory.attributes;
+  if (!attributes) return false;
+  if (attributes.supersededBy !== null || attributes.tentative === true) return false;
+  return attributes.validTo === null || attributes.validTo > now;
+}
+
+function byImportance(left: ProductMemoryRecord, right: ProductMemoryRecord): number {
+  return (
+    (right.attributes?.importancePermille ?? 0) - (left.attributes?.importancePermille ?? 0) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+export class OwnerProfileService implements OwnerProfilePort {
+  readonly #options: OwnerProfileServiceOptions;
+
+  constructor(options: OwnerProfileServiceOptions) {
+    this.#options = options;
+  }
+
+  async outline(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }): Promise<OwnerProfileOutline> {
+    const { rules, sections } = await this.#select(input);
+    const line = ({ memory, text }: { memory: ProductMemoryRecord; text: string }) =>
+      Object.freeze({ memoryId: memory.id, text, updatedAt: memory.updatedAt });
+    return Object.freeze({
+      rules: Object.freeze(rules.map(line)),
+      sections: Object.freeze(
+        sections.map(({ category, title, lines }) =>
+          Object.freeze({ category, title, lines: Object.freeze(lines.map(line)) }),
+        ),
+      ),
+    });
+  }
+
+  async #select(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }) {
+    const ceiling = Math.min(
+      CLASSIFICATION_RANK[input.maxClassification],
+      CLASSIFICATION_RANK.private,
+    );
+    const eligible = (await this.#options.state.listActive(input.ownerId, input.agentId)).filter(
+      (memory) =>
+        memory.status === "active" &&
+        PROFILE_CLASSIFICATIONS.has(memory.dataClassification) &&
+        CLASSIFICATION_RANK[memory.dataClassification] <= ceiling &&
+        currentlyValid(memory, input.now),
+    );
+    let remaining = this.#options.characterBudget ?? OWNER_PROFILE_CHARACTER_BUDGET;
+    const take = async (memories: readonly ProductMemoryRecord[]) => {
+      const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+      for (const memory of [...memories].sort(byImportance)) {
+        const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
+        if (!text || text.length + 3 > remaining) continue;
+        remaining -= text.length + 3;
+        lines.push({ memory, text });
+      }
+      return lines;
+    };
+    const rules = await take(eligible.filter((memory) => memory.attributes?.category === "rule"));
+    const sections: {
+      category: MemoryCategory;
+      title: string;
+      lines: { memory: ProductMemoryRecord; text: string }[];
+    }[] = [];
+    const profileCandidates = eligible.filter(
+      (memory) => (memory.attributes?.importancePermille ?? 0) >= PROFILE_MINIMUM_IMPORTANCE,
+    );
+    const chosen = await take(
+      profileCandidates.filter((memory) =>
+        PROFILE_SECTIONS.some(([category]) => memory.attributes?.category === category),
+      ),
+    );
+    for (const [category, title] of PROFILE_SECTIONS) {
+      const lines = chosen
+        .filter(({ memory }) => memory.attributes?.category === category)
+        .sort((left, right) => byImportance(left.memory, right.memory));
+      if (lines.length > 0) sections.push({ category, title, lines });
+    }
+    return { rules, sections, eligible };
+  }
+
+  async #agenda(
+    input: { readonly ownerId: OwnerId; readonly agentId: AgentId; readonly now: string },
+    eligible: readonly ProductMemoryRecord[],
+  ) {
+    const reminders = this.#options.reminders;
+    if (!reminders) return [];
+    const memories = new Map(eligible.map((memory) => [memory.id, memory]));
+    const upcoming = await reminders.listUpcoming({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      from: input.now,
+      to: new Date(Date.parse(input.now) + AGENDA_HORIZON_MS).toISOString(),
+      limit: AGENDA_LIMIT,
+    });
+    const format = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: this.#options.timeZone ?? "UTC",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    let remaining = AGENDA_CHARACTER_BUDGET;
+    const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+    for (const reminder of upcoming) {
+      const memory = memories.get(reminder.memoryId);
+      if (!memory) continue;
+      const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
+      if (!text) continue;
+      const line = `${format.format(new Date(reminder.dueAt))}：${text}`;
+      if (line.length + 3 > remaining) continue;
+      remaining -= line.length + 3;
+      lines.push({ memory, text: line });
+    }
+    return lines;
+  }
+
+  async compose(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly maxClassification: DataClassification;
+    readonly now: string;
+  }): Promise<OwnerProfile> {
+    const { rules, sections, eligible } = await this.#select(input);
+    const agenda = await this.#agenda(input, eligible);
+    const blocks: OwnerProfileBlock[] = [];
+    if (rules.length > 0)
+      blocks.push(
+        await this.#block(
+          input,
+          "owner-rules",
+          [
+            "主人对 Himawari 的要求（主人亲口说过的，回答时遵守）：",
+            ...rules.map(({ text }) => `- ${text}`),
+          ].join("\n"),
+          rules.map(({ memory }) => memory),
+        ),
+      );
+    if (sections.length > 0)
+      blocks.push(
+        await this.#block(
+          input,
+          "owner-profile",
+          [
+            "主人档案（由已确认的长期记忆整理）：",
+            ...sections.flatMap(({ title, lines }) => [
+              `${title}：`,
+              ...lines.map(({ text }) => `- ${text}`),
+            ]),
+          ].join("\n"),
+          sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),
+        ),
+      );
+    if (agenda.length > 0)
+      blocks.push(
+        await this.#block(
+          input,
+          "owner-agenda",
+          [
+            `主人接下来 7 天的安排（时间为主人当地时间，${this.#options.timeZone ?? "UTC"}）：`,
+            ...agenda.map(({ text }) => `- ${text}`),
+          ].join("\n"),
+          agenda.map(({ memory }) => memory),
+        ),
+      );
+    return Object.freeze({
+      blocks: Object.freeze(blocks),
+      memoryIds: Object.freeze(blocks.flatMap(({ memoryIds }) => memoryIds)),
+    });
+  }
+
+  async #block(
+    input: { readonly ownerId: OwnerId; readonly agentId: AgentId },
+    kind: OwnerProfileBlock["kind"],
+    text: string,
+    memories: readonly ProductMemoryRecord[],
+  ): Promise<OwnerProfileBlock> {
+    const dataClassification = memories.some(
+      ({ dataClassification }) => dataClassification === "private",
+    )
+      ? "private"
+      : "public";
+    const digest = this.#options.digest(
+      JSON.stringify([kind, input.ownerId, input.agentId, dataClassification, text]),
+    );
+    const payloadRef = `${kind}:${digest}`;
+    await this.#options.storeText({
+      ref: payloadRef,
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      text,
+      dataClassification,
+    });
+    return Object.freeze({
+      kind,
+      ref: `${kind}:${input.agentId}`,
+      payloadRef,
+      dataClassification,
+      memoryIds: Object.freeze(memories.map(({ id }) => id)),
+    });
+  }
+}

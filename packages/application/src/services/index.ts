@@ -36,6 +36,7 @@ export { usdCostsEqual, usdCostToMicros } from "./model-cost.js";
 export * from "./model-action-reviewer.js";
 export * from "./model-invocation-admission-service.js";
 export * from "./model-router-service.js";
+export * from "./owner-profile-service.js";
 export * from "./permission-service.js";
 export * from "./product-thread-gateway-adapter.js";
 export * from "./recent-authentication-service.js";

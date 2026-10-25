@@ -155,7 +155,7 @@ function rawConfiguration(paths: Awaited<ReturnType<typeof fixture>>): Record<st
       },
     ],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(paths.stateRoot, "data", "memory"),
       dimensions: 1536,

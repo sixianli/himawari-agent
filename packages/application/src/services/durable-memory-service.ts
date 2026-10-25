@@ -1,11 +1,14 @@
 import {
   ApplicationPortError,
+  DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type DataClassification,
   type MemoryContentPort,
   type MemoryProjectionJob,
   type MemoryProjectionJobStatePort,
   type MemoryProviderProjectionPort,
+  type MemoryTimeScope,
+  type ProductMemoryAttributes,
   type ProductMemoryProposal,
   type ProductMemoryRecord,
   type ProductMemorySearchResult,
@@ -79,7 +82,13 @@ export class DurableMemoryService {
     generationId: MemoryGenerationId,
   ): Promise<ProductMemoryRecord> {
     if (proposal.decision === "unchanged") {
-      return requireRecord(await this.options.state.read(proposal.memoryId), proposal.memoryId);
+      const current = requireRecord(
+        await this.options.state.read(proposal.memoryId),
+        proposal.memoryId,
+      );
+      return current.status === "active" && current.attributes?.tentative === true
+        ? this.confirm(current.id, generationId)
+        : current;
     }
     const updatedAt = this.options.now();
     if (proposal.decision === "create") {
@@ -115,6 +124,7 @@ export class DurableMemoryService {
         updatedAt,
       });
       const saved = await this.saveWithProjection(record, null, "upsert", generationId);
+      if (proposal.supersedes) await this.supersede(proposal.supersedes, saved, generationId);
       return saved;
     }
     const current = requireRecord(
@@ -138,6 +148,14 @@ export class DurableMemoryService {
           inference: proposal.inference,
           confidencePermille: proposal.confidencePermille,
           policyVersion: proposal.policyVersion,
+          ...(proposal.attributes || current.attributes?.tentative
+            ? {
+                attributes: {
+                  ...(proposal.attributes ?? current.attributes ?? DEFAULT_MEMORY_ATTRIBUTES),
+                  tentative: false,
+                },
+              }
+            : {}),
         },
         updatedAt,
       ),
@@ -179,6 +197,99 @@ export class DurableMemoryService {
     return saved;
   }
 
+  async restore(
+    memoryId: MemoryId,
+    generationId: MemoryGenerationId,
+  ): Promise<ProductMemoryRecord> {
+    const current = requireRecord(await this.options.state.read(memoryId), memoryId);
+    const attributes = current.attributes;
+    if (current.status !== "active" || !attributes || attributes.supersededBy === null)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Memory ${memoryId} is not superseded`,
+      );
+    const replacement = await this.options.state.read(attributes.supersededBy);
+    if (replacement?.status === "active")
+      await this.deactivate(replacement.id, "archived", generationId);
+    return this.saveWithProjection(
+      nextRecord(
+        current,
+        { attributes: { ...attributes, supersededBy: null, validTo: null } },
+        this.options.now(),
+      ),
+      current.revision,
+      "upsert",
+      generationId,
+    );
+  }
+
+  async confirm(
+    memoryId: MemoryId,
+    generationId: MemoryGenerationId,
+  ): Promise<ProductMemoryRecord> {
+    const current = requireRecord(await this.options.state.read(memoryId), memoryId);
+    if (current.status !== "active" || current.attributes?.tentative !== true)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Memory ${memoryId} is not waiting for confirmation`,
+      );
+    return this.saveWithProjection(
+      nextRecord(
+        current,
+        { attributes: { ...current.attributes, tentative: false } },
+        this.options.now(),
+      ),
+      current.revision,
+      "upsert",
+      generationId,
+    );
+  }
+
+  async revise(input: {
+    readonly memoryId: MemoryId;
+    readonly expectedRevision: number;
+    readonly status?: "active" | "archived";
+    readonly attributes?: Partial<ProductMemoryAttributes>;
+    readonly generationId: MemoryGenerationId;
+  }): Promise<ProductMemoryRecord> {
+    const current = requireRecord(await this.options.state.read(input.memoryId), input.memoryId);
+    if (current.revision !== input.expectedRevision)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.CONFLICT,
+        `Memory ${input.memoryId} changed since it was read`,
+        { memoryId: input.memoryId },
+      );
+    const status = input.status ?? current.status;
+    if (
+      (current.status !== "active" && current.status !== "archived") ||
+      (status !== "active" && status !== "archived")
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Memory ${input.memoryId} cannot be revised from ${current.status}`,
+      );
+    return this.saveWithProjection(
+      nextRecord(
+        current,
+        {
+          status,
+          ...(input.attributes
+            ? {
+                attributes: {
+                  ...(current.attributes ?? DEFAULT_MEMORY_ATTRIBUTES),
+                  ...input.attributes,
+                },
+              }
+            : {}),
+        },
+        this.options.now(),
+      ),
+      current.revision,
+      status === "active" ? "upsert" : "delete",
+      input.generationId,
+    );
+  }
+
   archive(memoryId: MemoryId, generationId: MemoryGenerationId): Promise<ProductMemoryRecord> {
     return this.deactivate(memoryId, "archived", generationId);
   }
@@ -192,6 +303,7 @@ export class DurableMemoryService {
     readonly agentId: AgentId;
     readonly queryRef: string;
     readonly policy: MemorySearchPolicy;
+    readonly scope?: MemoryTimeScope;
   }): Promise<readonly ProductMemorySearchResult[]> {
     const query = await this.options.content.readText(input.queryRef);
     const providerHits = await this.options.provider.search({
@@ -199,6 +311,7 @@ export class DurableMemoryService {
       agentId: input.agentId,
       query,
       limit: Math.min(1000, Math.max(input.policy.limit * 4, input.policy.limit)),
+      ...(input.scope ? { scope: input.scope } : {}),
     });
     const productRecords = await this.options.state.readMany({
       ownerId: input.ownerId,
@@ -272,6 +385,57 @@ export class DurableMemoryService {
       if (batch.length === 0) return completed;
       if (batch.some(({ status }) => status !== "completed")) return completed;
     }
+  }
+
+  async requeueProjection(memoryIds: readonly MemoryId[]): Promise<number> {
+    let requeued = 0;
+    for (const memoryId of memoryIds) {
+      const memory = await this.options.state.read(memoryId);
+      if (!memory || memory.status !== "active") continue;
+      const generationId = (await this.options.jobs.listByMemory(memoryId)).at(-1)?.generationId;
+      if (!generationId) continue;
+      await this.proposeProjection(memory, "upsert", generationId, true);
+      requeued += 1;
+    }
+    return requeued;
+  }
+
+  private async supersede(
+    memoryId: MemoryId,
+    replacement: ProductMemoryRecord,
+    generationId: MemoryGenerationId,
+  ): Promise<void> {
+    const current = await this.options.state.read(memoryId);
+    if (
+      !current ||
+      current.id === replacement.id ||
+      current.status !== "active" ||
+      current.ownerId !== replacement.ownerId ||
+      current.agentId !== replacement.agentId ||
+      (current.attributes?.supersededBy ?? null) !== null
+    )
+      return;
+    const attributes = current.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
+    const endedAt = replacement.attributes?.validFrom ?? replacement.updatedAt;
+    await this.saveWithProjection(
+      nextRecord(
+        current,
+        {
+          attributes: {
+            ...attributes,
+            supersededBy: replacement.id,
+            validTo:
+              attributes.validTo !== null && attributes.validTo < endedAt
+                ? attributes.validTo
+                : endedAt,
+          },
+        },
+        replacement.updatedAt,
+      ),
+      current.revision,
+      "upsert",
+      generationId,
+    );
   }
 
   private async deactivate(

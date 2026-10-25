@@ -28,6 +28,7 @@ import {
   type SqliteRecoveryAuthorityScope,
 } from "./sqlite-durable-operations.ts";
 import type { SqliteWorkerConfiguration } from "./sqlite-execution-context.js";
+import { loadVectorExtension } from "./sqlite-vector-extension.ts";
 
 interface WorkerRequest {
   readonly id: number;
@@ -642,6 +643,7 @@ const durableOperations = new SqliteDurableOperations(
   database,
   applicationFailure,
   assertDiskHeadroom,
+  loadVectorExtension(database),
 );
 
 function currentAuthority(input: CommitStateAndEventsInput, now: string): AuthorityRow {

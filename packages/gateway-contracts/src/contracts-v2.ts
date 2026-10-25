@@ -26,6 +26,8 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
+  "memory.tidy.undo",
+  "memory.reminder.respond",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -214,6 +216,14 @@ export const MEMORY_SENSITIVE_TOPICS = [
   "legal",
   "other",
 ] as const;
+export const MEMORY_PROFILE_KINDS = [
+  "rules",
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+] as const;
 const memoryOverviewQuerySchema = object({
   ...envelope("query", "memory.overview.read"),
   payload: object({}),
@@ -227,10 +237,44 @@ const memoryOverviewSnapshotSchema = object({
         revision: integer(1),
         text: boundedString(2000),
         dataClassification: classificationSchema,
+        topic: nullable(enumeration(MEMORY_SENSITIVE_TOPICS)),
         inference: booleanValue,
         sourceThreadId: nullable(machineString),
         sourceRefs: array(boundedString(512)),
         updatedAt: timestamp,
+        supersededBy: nullable(machineString),
+        validTo: nullable(boundedString(32)),
+        tentative: booleanValue,
+      }),
+    ),
+    tidyUps: array(
+      object({
+        changeId: machineString,
+        action: enumeration(["merge", "supersede", "archive", "reflect"]),
+        text: boundedString(2000),
+        relatedText: nullable(boundedString(2000)),
+        createdAt: timestamp,
+        undone: booleanValue,
+      }),
+    ),
+    reminders: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        remindAt: timestamp,
+      }),
+    ),
+    profile: array(
+      object({
+        kind: enumeration(MEMORY_PROFILE_KINDS),
+        lines: array(
+          object({
+            memoryId: machineString,
+            text: boundedString(2000),
+            updatedAt: timestamp,
+          }),
+        ),
       }),
     ),
     pending: array(
@@ -244,6 +288,17 @@ const memoryOverviewSnapshotSchema = object({
       }),
     ),
     generatedAt: timestamp,
+  }),
+});
+const memoryTidyUndoCommandSchema = object({
+  ...commandEnvelope("memory.tidy.undo"),
+  payload: object({ changeId: machineString }),
+});
+const memoryReminderRespondCommandSchema = object({
+  ...commandEnvelope("memory.reminder.respond"),
+  payload: object({
+    reminderId: machineString,
+    action: enumeration(["dismiss", "snooze"]),
   }),
 });
 const memoryApprovalRespondCommandSchema = object({
@@ -345,7 +400,7 @@ export const setGitHubMonitorStateCommandSchema = object({
 
 const memoryMutationPayloadSchema = object({
   memoryId: machineString,
-  action: enumeration(["correct", "archive", "delete"]),
+  action: enumeration(["correct", "archive", "delete", "restore", "confirm"]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
 });
@@ -1372,6 +1427,8 @@ const schemasByType = {
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
+  "memory.tidy.undo": memoryTidyUndoCommandSchema,
+  "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

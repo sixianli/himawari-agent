@@ -5,7 +5,45 @@ import type {
   OwnerId,
   ThreadId,
 } from "@himawari-agent/domain";
+import type { SensitiveMemoryTopic } from "./automatic-memory.js";
 import type { DataClassification, PayloadRef } from "./common.js";
+
+export const MEMORY_CATEGORIES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+
+export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
+
+export interface ProductMemoryAttributes {
+  readonly category: MemoryCategory;
+  readonly importancePermille: number;
+  readonly entities: readonly string[];
+  readonly validFrom: string | null;
+  readonly validTo: string | null;
+  readonly supersededBy: MemoryId | null;
+  readonly evidenceVerified: boolean;
+  readonly sensitiveTopic?: SensitiveMemoryTopic | null;
+  readonly tentative?: boolean;
+}
+
+export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
+  category: "other",
+  importancePermille: 500,
+  entities: Object.freeze([]),
+  validFrom: null,
+  validTo: null,
+  supersededBy: null,
+  evidenceVerified: false,
+});
 
 export interface ProductMemoryRecord {
   readonly id: MemoryId;
@@ -23,6 +61,9 @@ export interface ProductMemoryRecord {
   readonly providerRecordId: string | null;
   readonly lastUsedAt: string | null;
   readonly updatedAt: string;
+  readonly attributes?: ProductMemoryAttributes;
+  readonly useCount?: number;
+  readonly recordedAt?: string;
 }
 
 export interface MemoryProjectionJob {
@@ -95,6 +136,12 @@ export interface MemoryProviderHit {
   readonly score: number;
 }
 
+export interface MemoryTimeScope {
+  readonly includeHistory: boolean;
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
 export interface MemoryProviderProjectionPort {
   upsert(input: {
     readonly memory: ProductMemoryRecord;
@@ -106,8 +153,71 @@ export interface MemoryProviderProjectionPort {
     readonly agentId: AgentId;
     readonly query: string;
     readonly limit: number;
+    readonly scope?: MemoryTimeScope;
   }): Promise<readonly MemoryProviderHit[]>;
   clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
+}
+
+export interface MemoryIndexEmbedding {
+  readonly model: string;
+  readonly dimensions: number;
+  readonly vector: Float32Array;
+}
+
+export interface MemoryIndexDocument {
+  readonly memoryId: MemoryId;
+  readonly ownerId: OwnerId;
+  readonly agentId: AgentId;
+  readonly revision: number;
+  readonly terms: readonly string[];
+  readonly embedding: MemoryIndexEmbedding | null;
+  readonly indexedAt: string;
+}
+
+export interface MemoryIndexCandidate {
+  readonly memoryId: MemoryId;
+  readonly revision: number;
+  readonly importancePermille: number;
+  readonly confidencePermille: number;
+  readonly updatedAt: string;
+  readonly lastUsedAt: string | null;
+  readonly signal: number;
+  readonly startsAt: string;
+  readonly endsAt: string | null;
+  readonly current: boolean;
+}
+
+export interface MemoryIndexSearchResult {
+  readonly vector: readonly MemoryIndexCandidate[];
+  readonly lexical: readonly MemoryIndexCandidate[];
+  readonly entity: readonly MemoryIndexCandidate[];
+  readonly vectorEngine: "sqlite-vec" | "javascript" | "none";
+}
+
+export interface MemoryIndexStorePort {
+  upsert(document: MemoryIndexDocument): Promise<void>;
+  delete(memoryId: MemoryId): Promise<void>;
+  clearScope(ownerId: OwnerId, agentId: AgentId): Promise<void>;
+  search(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly embedding: MemoryIndexEmbedding | null;
+    readonly terms: readonly string[];
+    readonly queryText: string;
+    readonly limit: number;
+    readonly minimumSimilarity: number;
+    readonly now: string;
+    readonly includeHistory?: boolean;
+  }): Promise<MemoryIndexSearchResult>;
+  listUnindexed(input: {
+    readonly ownerId: OwnerId;
+    readonly agentId: AgentId;
+    readonly model: string;
+    readonly dimensions: number;
+    readonly embeddableClassifications: readonly DataClassification[];
+    readonly afterMemoryId: MemoryId | null;
+    readonly limit: number;
+  }): Promise<readonly MemoryId[]>;
 }
 
 export interface MemoryContentPort {
@@ -119,8 +229,15 @@ export type ProductMemoryProposal =
       readonly decision: "create";
       readonly memory: Omit<
         ProductMemoryRecord,
-        "revision" | "status" | "providerRecordId" | "lastUsedAt" | "updatedAt"
+        | "revision"
+        | "status"
+        | "providerRecordId"
+        | "lastUsedAt"
+        | "updatedAt"
+        | "useCount"
+        | "recordedAt"
       >;
+      readonly supersedes?: MemoryId | null;
     }
   | {
       readonly decision: "update" | "merge";
@@ -131,6 +248,7 @@ export type ProductMemoryProposal =
       readonly inference: boolean;
       readonly confidencePermille: number;
       readonly policyVersion: string;
+      readonly attributes?: ProductMemoryAttributes;
     }
   | {
       readonly decision: "unchanged";

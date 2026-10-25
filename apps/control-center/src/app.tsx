@@ -24,7 +24,7 @@ import {
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
 import { useMemory } from "./memory.js";
-import { MemorySettings, MemoryTurnNote } from "./components/memory-panel.js";
+import { MemoryReminders, MemorySettings, MemoryTurnNote } from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
@@ -405,7 +405,10 @@ function LocalizedControlCenterApp({
         ) : route.surfaceId === "health-deployment" && client ? (
           <HealthControlCenter client={client} onUnauthorized={clearPrivateViewState} />
         ) : route.surfaceId === "threads" ? (
-          threadModel.content
+          <>
+            {memory ? <MemoryReminders memory={memory} message={message} /> : null}
+            {threadModel.content}
+          </>
         ) : governanceSurface ? (
           governanceModel.content
         ) : (
