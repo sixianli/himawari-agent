@@ -180,7 +180,7 @@ function requireReadPermissions(permissions, label, root = false) {
   );
   assert(
     Object.entries(permissions).every(
-      ([key, value]) => ["contents", "actions"].includes(key) && value === "read",
+      ([key, value]) => ["contents", "actions", "pull-requests"].includes(key) && value === "read",
     ),
     `${label}: write or unknown permissions`,
   );
