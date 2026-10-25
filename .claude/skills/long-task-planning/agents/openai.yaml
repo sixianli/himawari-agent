@@ -1,0 +1,6 @@
+interface:
+  display_name: "Long Task Planning"
+  short_description: "Keep a long task's goal, plan and done state from drifting"
+  default_prompt: "Use $long-task-planning to pick light or full mode, keep my goals verbatim in goal.md, plan batches in items.json and plan.md, record test, command and review evidence, and report progress only from longtask.py status."
+policy:
+  allow_implicit_invocation: true

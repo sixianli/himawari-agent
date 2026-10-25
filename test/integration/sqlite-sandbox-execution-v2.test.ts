@@ -2945,7 +2945,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
           28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-          50, 51,
+          50, 51, 52, 53, 54, 55,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -5233,7 +5233,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     "loss-expired",
     "loss-coding-competing",
     "loss-coding-denied",
-    "loss-coding-budget",
     "batch",
     "coding",
     "coding-denied",
@@ -5684,16 +5683,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             agentId: AGENT_ID,
             concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
             deadlines: { runMs: 120000, workerRequestMs: 10000, providerRequestMs: 10000 },
-            budgets: {
-              globalCostMicros: 100,
-              perRunCostMicros: variant === "coding-budget" && calls > 0 ? 0 : 100,
-              perClassificationCostMicros: {
-                public: 100,
-                private: 100,
-                sensitive: 0,
-                restricted: 0,
-              },
-            },
           },
           authority: {
             authorityFence: () => authority.product,
@@ -6013,26 +6002,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               make("second-recovery").dispatcher.pump(),
             ])
           : [await make("restarted-consumer").dispatcher.pump()];
-        if (variant === "coding-budget") {
-          expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
-          expect(
-            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
-              ?.run.status,
-          ).toBe("failed");
-          expect(model.observed).toHaveLength(1);
-          expect(calls).toBe(1);
-          expect(request).not.toHaveBeenCalled();
-          if (!record) throw new Error("Lost result fixture missing");
-          const persisted = await repository
-            .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
-            .read(record.plan.identity);
-          expect(persisted?.facts.result).toMatchObject({
-            kind: "error",
-            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
-          });
-          expect(persisted?.releaseReceipt).toEqual(record.releaseReceipt);
-          return;
-        }
         if (
           [
             "changed-model",

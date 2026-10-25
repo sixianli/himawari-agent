@@ -57,7 +57,7 @@
     }
   ],
   "memory": {
-    "adapter": "mem0-oss",
+    "adapter": "himawari-sqlite",
     "version": "3.3.1",
     "storagePath": "/tmp/hma-file-loop/data/memory",
     "dimensions": 4096
@@ -71,16 +71,6 @@
       "scope": "model"
     }
   ],
-  "budgets": {
-    "globalCostMicros": 1000000,
-    "perRunCostMicros": 1000000,
-    "perClassificationCostMicros": {
-      "public": 1000000,
-      "private": 1000000,
-      "sensitive": 0,
-      "restricted": 0
-    }
-  },
   "concurrency": {
     "totalRuns": 1,
     "foregroundReserved": 1,

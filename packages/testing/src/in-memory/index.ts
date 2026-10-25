@@ -4,6 +4,7 @@ export * from "./coordination.js";
 export * from "./gateway.js";
 export * from "./governance.js";
 export * from "./intelligence.js";
+export * from "./memory-index.js";
 export * from "./observability.js";
 export * from "./persistence.js";
 export * from "./run-checkpoints.js";

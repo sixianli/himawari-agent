@@ -2487,13 +2487,12 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
   });
 
   it.each([
-    { budget: 100, unknown: false, denied: false },
-    { budget: 100, unknown: false, denied: true },
-    { budget: 0, unknown: false, denied: false },
-    { budget: 100, unknown: true, denied: false },
+    { unknown: false, denied: false },
+    { unknown: false, denied: true },
+    { unknown: true, denied: false },
   ])(
-    "executes persistent dispatch through the real Pi loop ($budget, unknown=$unknown, denied=$denied)",
-    async ({ budget, unknown, denied }) => {
+    "executes persistent dispatch through the real Pi loop (unknown=$unknown, denied=$denied)",
+    async ({ unknown, denied }) => {
       const { createFauxModelFixture } = await import(
         "../../packages/runtime-pi/test/faux-model-fixture.js"
       );
@@ -2567,7 +2566,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       const generateTitle = vi.fn(
         async (request: RuntimeRequest, _prompt: string, gate: ModelInvocationAdmissionPort) => {
           onTitleRequested();
-          if (budget > 0) await titleAdmissionGate;
+          await titleAdmissionGate;
           const admittedTitle = await gate.begin({
             modelRef: model.descriptor.ref,
             provider: model.descriptor.provider,
@@ -2604,16 +2603,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           agentId,
           concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
           deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
-          budgets: {
-            globalCostMicros: budget,
-            perRunCostMicros: budget,
-            perClassificationCostMicros: {
-              public: budget,
-              private: budget,
-              sensitive: 0,
-              restricted: 0,
-            },
-          },
         },
         repository: setup.repository,
         authority: {
@@ -2687,60 +2676,43 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       let prematurelySettled = false;
       const pumped = await (async () => {
         try {
-          if (budget > 0) {
-            // Observe the actual request, not a one-second deadline for SQLite and Pi startup.
-            await Promise.race([
-              titleRequested,
-              pumping.then(() => {
-                throw new Error("Run settled without requesting its title");
-              }),
-            ]);
-            expect(generateTitle).toHaveBeenCalledTimes(1);
-            await new Promise<void>((resolve) => setImmediate(resolve));
-            prematurelySettled = settledBeforeTitleAdmission;
-          }
+          await Promise.race([
+            titleRequested,
+            pumping.then(() => {
+              throw new Error("Run settled without requesting its title");
+            }),
+          ]);
+          expect(generateTitle).toHaveBeenCalledTimes(1);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          prematurelySettled = settledBeforeTitleAdmission;
           allowTitleAdmission();
           return await pumping;
         } finally {
-          // Also drain held work after a failed assertion before fixture teardown closes SQLite.
           allowTitleAdmission();
           releaseTitle?.();
           await pumping;
           await composed.titles?.stop();
         }
       })();
-      if (budget > 0) {
-        expect(prematurelySettled).toBe(false);
-        expect(titleFailure).not.toHaveBeenCalled();
-        expect(generateTitle).toHaveBeenCalledTimes(1);
-        expect(
-          await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
-        ).toMatchObject({ titleSource: "automatic" });
-        const runId = admitted.message.runId;
-        if (!runId || !titleOperationKey) throw new Error("Missing title budget identity");
-        const budgets = setup.repository.modelBudgetPort(ownerId, agentId, authority, lease);
-        await expect(
-          budgets.read({ parent: { kind: "thread-title", runId }, limit: 10 }),
-        ).resolves.toMatchObject({
-          account: { status: "active", reservedCostMicros: 0 },
-          allocations: [{ operationKey: titleOperationKey, status: "settled" }],
-        });
-        const runBudget = await budgets.read({ parent: { kind: "run", runId }, limit: 100 });
-        expect(runBudget?.allocations.map(({ operationKey }) => operationKey)).not.toContain(
-          titleOperationKey,
-        );
-      } else {
-        expect(generateTitle).toHaveBeenCalledTimes(1);
-        expect(titleFailure).toHaveBeenCalledWith(
-          expect.objectContaining({
-            code: PORT_ERROR_CODES.CONFLICT,
-            message: "Run budget limit is exhausted",
-          }),
-        );
-        expect(
-          await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
-        ).toMatchObject({ titleRef: null });
-      }
+      expect(prematurelySettled).toBe(false);
+      expect(titleFailure).not.toHaveBeenCalled();
+      expect(generateTitle).toHaveBeenCalledTimes(1);
+      expect(
+        await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
+      ).toMatchObject({ titleSource: "automatic" });
+      const runId = admitted.message.runId;
+      if (!runId || !titleOperationKey) throw new Error("Missing title budget identity");
+      const budgets = setup.repository.modelBudgetPort(ownerId, agentId, authority, lease);
+      await expect(
+        budgets.read({ parent: { kind: "thread-title", runId }, limit: 10 }),
+      ).resolves.toMatchObject({
+        account: { status: "active", reservedCostMicros: 0 },
+        allocations: [{ operationKey: titleOperationKey, status: "settled" }],
+      });
+      const runBudget = await budgets.read({ parent: { kind: "run", runId }, limit: 100 });
+      expect(runBudget?.allocations.map(({ operationKey }) => operationKey)).not.toContain(
+        titleOperationKey,
+      );
       expect(pumped).toMatchObject({
         claimed: 1,
         settled: unknown ? 0 : 1,
@@ -2761,7 +2733,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         await composed.dispatcher.pump();
         expect(model.observed).toHaveLength(1);
         expect(toolCalls).toBe(1);
-      } else if (budget > 0) {
+      } else {
         expect(model.observed).toHaveLength(denied ? 2 : 1);
         expect(JSON.stringify(model.observed)).toContain("请回答本次请求。");
         expect(answer?.runId).toBe(admitted.message.runId);
@@ -2794,7 +2766,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect(
           new TextDecoder().decode(await setup.protector.unprotect({ ownerId, agentId, payload })),
         ).toBe("这是 Pi 执行后持久保存的回答。");
-        // Destroy the runtime/projection objects, then form a new Run from SQLite.
         await composed.loop.stop(1000);
         const nextModel = await createFauxModelFixture("这是新问题的回答。");
         const nextPrompt = "现在的天气怎么样？只处理本轮请求。";
@@ -2872,13 +2843,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         } finally {
           database.close();
         }
-      } else {
-        expect(model.observed).toHaveLength(0);
-        expect(answer).toBeUndefined();
-        if (!admitted.message.runId) throw new Error("Missing admitted Pi Run");
-        await expect(setup.runs.readRun(admitted.message.runId)).resolves.toMatchObject({
-          run: { status: "failed" },
-        });
       }
       if (unknown) {
         const db = openQualifiedDatabase(setup.databasePath);
@@ -3243,7 +3207,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     await expect(
       projection.readState({ ...query, ownerId: "other-owner", canCancelRun: true }),
     ).rejects.toThrow("THREAD_EXECUTION_NOT_FOUND");
-    // Re-reading persisted history must preserve the same conclusion and sequence.
     expect(await projection.read(query)).toEqual(page);
   });
 
@@ -3566,7 +3529,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       "../../apps/agent-service/src/production-thread-titles.js"
     );
     const payloads = setup.repository.payloadStore(ownerId, agentId);
-    // Admit protected Owner text through the same command used by HTTP.
     await payloads.put(
       await setup.protector.protect({
         ownerId,
@@ -3681,11 +3643,6 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         agentId,
         concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
         deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
-        budgets: {
-          globalCostMicros: 100,
-          perRunCostMicros: 100,
-          perClassificationCostMicros: { public: 100, private: 100, sensitive: 0, restricted: 0 },
-        },
       },
       repository: setup.repository,
       authority: {

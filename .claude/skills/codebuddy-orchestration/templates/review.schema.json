@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["done", "partial", "blocked"] },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string" },
+          "lines": { "type": "string" },
+          "severity": { "type": "string", "enum": ["high", "medium", "low"] },
+          "problem": { "type": "string" },
+          "evidence": { "type": "string" },
+          "suggestion": { "type": "string" }
+        },
+        "required": ["file", "severity", "problem", "evidence"]
+      }
+    },
+    "commands_run": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cmd": { "type": "string" },
+          "exit_code": { "type": "integer" }
+        },
+        "required": ["cmd", "exit_code"]
+      }
+    },
+    "open_issues": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["status", "summary", "findings", "commands_run", "open_issues"]
+}

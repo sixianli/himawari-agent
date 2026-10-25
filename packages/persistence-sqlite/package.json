@@ -11,7 +11,8 @@
     "@himawari-agent/domain": "0.0.0",
     "@himawari-agent/execution-contracts": "0.0.0",
     "@himawari-agent/gateway-contracts": "0.0.0",
-    "better-sqlite3": "12.11.1"
+    "better-sqlite3": "12.11.1",
+    "sqlite-vec": "0.1.9"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0"

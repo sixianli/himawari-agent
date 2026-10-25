@@ -11,14 +11,15 @@ import {
   QWEN3_EMBEDDING_8B_COST,
   QWEN3_EMBEDDING_8B_DIMENSIONS,
   QWEN3_EMBEDDING_8B_MODEL,
-} from "@himawari-agent/memory-mem0";
+} from "@himawari-agent/memory-engine";
 import { MacOsKeychainProviderSecretSource } from "@himawari-agent/platform-node";
+import { inMemoryMemoryIndex } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../../apps/agent-service/src/production-memory-composition.js";
 import {
-  createAiGatewayLiveConfiguration,
-  MEM0_AI_GATEWAY_BASE_URL,
+  AI_GATEWAY_BASE_URL,
   AI_GATEWAY_LIVE_BUDGET_USD,
+  createAiGatewayLiveConfiguration,
 } from "./fixtures/openrouter-live-configuration.js";
 
 interface LiveEnvironment {
@@ -55,7 +56,7 @@ afterEach(async () => {
 });
 
 describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () => {
-  it("uses Mem0's OpenAI-compatible embedder with 4096 dimensions", async () => {
+  it("embeds through the product Gateway embedder with 4096 dimensions", async () => {
     const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-live-embedding-"));
     roots.push(stateRoot);
     const calls: Array<{
@@ -67,13 +68,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
       readonly totalTokens: number | null;
       readonly ok: boolean;
     }> = [];
-    const openAiShims = await import("openai/_shims/registry");
-    const openAiNodeRuntime = await import("openai/_shims/node-runtime");
-    if (openAiShims.kind !== undefined) {
-      throw new Error(`OPENAI_SHIMS_ALREADY_INITIALIZED:${openAiShims.kind}`);
-    }
-    const runtime = openAiNodeRuntime.getRuntime();
-    const originalFetch = runtime.fetch as typeof globalThis.fetch;
+    const originalFetch = globalThis.fetch;
     let observe = true;
     const observedFetch: typeof globalThis.fetch = async (input, init) => {
       const url =
@@ -110,7 +105,6 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
       }
       return response;
     };
-    openAiShims.setShims({ ...runtime, fetch: observedFetch }, { auto: false });
 
     let composition:
       | Awaited<ReturnType<typeof createProductionMemoryCompositionFromConfiguration>>
@@ -122,7 +116,10 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
           servicePrefix: "himawari-provider",
           account: "himawari-agent",
         }),
+        index: inMemoryMemoryIndex(),
+        fetch: observedFetch,
       });
+      composition.bindEmbeddingBoundary((_request, send) => send(), 60_000);
       const memory = {
         id: createMemoryId("memory-live-embedding"),
         ownerId: createOwnerId("owner-live-embedding"),
@@ -157,7 +154,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
       observe = false;
     }
 
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(2);
     expect(calls.every((call) => call.ok)).toBe(true);
     expect(calls.every((call) => call.requestModel === QWEN3_EMBEDDING_8B_MODEL)).toBe(true);
     expect(calls.every((call) => call.requestedDimensions === QWEN3_EMBEDDING_8B_DIMENSIONS)).toBe(
@@ -181,7 +178,7 @@ describe.skipIf(!LIVE_ENABLED)("AI Gateway Qwen3 Embedding 8B live smoke", () =>
     if (environment.HIMAWARI_LIVE_EMBEDDING_PRINT_EVIDENCE === "1") {
       process.stdout.write(
         `${JSON.stringify({
-          endpoint: `${MEM0_AI_GATEWAY_BASE_URL}/embeddings`,
+          endpoint: `${AI_GATEWAY_BASE_URL}/embeddings`,
           model: QWEN3_EMBEDDING_8B_MODEL,
           dimensions: QWEN3_EMBEDDING_8B_DIMENSIONS,
           calls,

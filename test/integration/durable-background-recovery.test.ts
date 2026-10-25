@@ -77,14 +77,6 @@ describe.each(["worker", "direct"] as const)(
     }
 
     const LIMITS: BackgroundAdmissionLimits = {
-      globalCostMicros: 10_000,
-      perRunCostMicros: 1_000,
-      perClassificationCostMicros: {
-        public: 10_000,
-        private: 10_000,
-        sensitive: 5_000,
-        restricted: 1_000,
-      },
       totalRuns: 4,
       foregroundReserved: 1,
       perCategory: { monitor: 3, foreground: 2 },
@@ -381,27 +373,51 @@ describe.each(["worker", "direct"] as const)(
         await rm(resource.stateRoot, { recursive: true });
       });
 
-      it("enforces persistent hard budgets, category capacity, and foreground reservation", async () => {
+      it("admits background work whose estimate exceeds every former cost budget", async () => {
         const resource = await setup();
         const state = resource.repository.backgroundWorkState();
         const service = new DurableBackgroundWorkService({ state, triggers: triggerService([]) });
-        for (const id of ["job-budget", "job-background-a", "job-background-b", "job-foreground"]) {
-          await addJob(resource.repository, id, id === "job-foreground" ? "foreground" : "monitor");
-        }
-        const budget = await service.dispatch(
+        await addJob(resource.repository, "job-expensive");
+        const expensive = await service.dispatch(
           dispatchInput(
-            occurrence({ id: "occurrence-budget", jobId: "job-budget", estimatedCostMicros: 101 }),
-            {
-              ...LIMITS,
-              globalCostMicros: 100,
-              perRunCostMicros: 100,
-              perClassificationCostMicros: {
-                ...LIMITS.perClassificationCostMicros,
-                private: 100,
-              },
-            },
+            occurrence({
+              id: "occurrence-expensive",
+              jobId: "job-expensive",
+              estimatedCostMicros: 1_000_000_000_000,
+            }),
           ),
         );
+        expect(expensive).toMatchObject({ outcome: "admitted", reasonCode: "ADMITTED" });
+        const claimed = await service.claim({
+          occurrenceId: expensive.occurrence.id,
+          expectedRevision: expensive.occurrence.revision,
+          authority: AUTHORITY,
+          leaseId: "lease-expensive",
+          holderId: "worker-a",
+          claimedAt: T0,
+          expiresAt: T2,
+        });
+        const settled = await service.settle(
+          settlement(claimed, {
+            outcome: "completed",
+            spentCostMicros: 2_000_000_000_000,
+            errorCode: null,
+            failureClass: null,
+          }),
+        );
+        expect(settled).toMatchObject({ status: "completed", lastErrorCode: null });
+
+        await resource.repository.close();
+        await rm(resource.stateRoot, { recursive: true });
+      });
+
+      it("enforces category capacity and foreground reservation", async () => {
+        const resource = await setup();
+        const state = resource.repository.backgroundWorkState();
+        const service = new DurableBackgroundWorkService({ state, triggers: triggerService([]) });
+        for (const id of ["job-background-a", "job-background-b", "job-foreground"]) {
+          await addJob(resource.repository, id, id === "job-foreground" ? "foreground" : "monitor");
+        }
         const capacityLimits = {
           ...LIMITS,
           totalRuns: 2,
@@ -432,17 +448,12 @@ describe.each(["worker", "direct"] as const)(
           ),
         );
 
-        expect(budget).toMatchObject({
-          outcome: "budget_blocked",
-          reasonCode: "RUN_BUDGET_EXCEEDED",
-        });
         expect(backgroundA.outcome).toBe("admitted");
         expect(backgroundB).toMatchObject({
           outcome: "capacity_blocked",
           reasonCode: "FOREGROUND_CAPACITY_RESERVED",
         });
         expect(foreground.outcome).toBe("admitted");
-        expect((await state.readOccurrence(budget.occurrence.id))?.status).toBe("budget_blocked");
 
         await resource.repository.close();
         await rm(resource.stateRoot, { recursive: true });

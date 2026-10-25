@@ -1,19 +1,10 @@
 import type { AgentId, OwnerId, ProductAuthorityFence, RunId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
-import type { ModelBudgetLimits } from "./model-budget.js";
 import type { AuthorityFence } from "./persistence.js";
 import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
-/** Product paths that can cause a physical provider request. */
 export type ModelInvocationSource = "model-port" | "agent-stream" | "embedding";
 
-/**
- * Execution identity captured by Core when it creates an admission gate.
- *
- * The lease claim is intentionally carried by the gate rather than reconstructed
- * from RuntimeRequest.budget or an invocation request. The gate implementation
- * must re-check this identity and cancellation at each lifecycle transition.
- */
 export interface ModelInvocationExecutionContext {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
@@ -27,13 +18,10 @@ export interface ModelInvocationAdmissionInput {
   readonly model: string;
   readonly modelVersion: string | null;
   readonly dataClassification: DataClassification;
-  /** Stable logical slot; never derive this from prompt text or an in-memory ordinal. */
   readonly logicalSlot: string;
   readonly source: ModelInvocationSource;
-  /** 1-based ordinal for physical streams within the source execution. */
   readonly ordinal: number;
   readonly estimatedCostMicros: number;
-  /** Frozen descriptor pricing, expressed in USD per million tokens. */
   readonly pricing: ModelInvocationPricing;
   readonly budgetAccount?: ModelInvocationBudgetAccount;
 }
@@ -48,7 +36,6 @@ export interface ModelInvocationPricing {
 }
 
 export interface ModelInvocationUsage {
-  /** Total provider prompt tokens, including cacheReadTokens/cacheWriteTokens. */
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cacheReadTokens: number;
@@ -62,18 +49,10 @@ export type ModelInvocationUnknownReason =
   | "cancel_unresolved";
 
 export interface ModelInvocationPermit {
-  /** Re-check authority, active lease and cancellation before secret access. */
   assertActive(): Promise<void>;
-  /** Mark the allocation started immediately before entering the Pi stream. */
   markStarted(): Promise<void>;
-  /**
-   * Release a reservation when the provider stream has not started.
-   * Implementations must make started/unknown/settled allocations fail closed
-   * without changing their execution history.
-   */
   releaseReserved(): Promise<void>;
   settle(usage: ModelInvocationUsage): Promise<void>;
-  /** Preserve uncertainty when a started stream has no trusted terminal usage. */
   markUnknown(reasonCode: ModelInvocationUnknownReason): Promise<void>;
 }
 
@@ -88,11 +67,8 @@ export interface ModelInvocationIdentity {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
-  /** Stable logical slot selected by the Core checkpoint owner. */
   readonly logicalSlot: string;
-  /** Durable per-slot physical attempt sequence, starting at one. */
   readonly sequence: number;
-  /** Stable identity for this physical attempt. */
   readonly invocationId: string;
   readonly modelRef: string;
   readonly provider: string;
@@ -106,7 +82,6 @@ export interface ModelInvocationIdentity {
   readonly estimatedCostMicros: number;
   readonly budgetAccountId: string;
   readonly budgetOperationKey: string;
-  /** Product authority and execution claim frozen at first reservation. */
   readonly authority: ProductAuthorityFence;
   readonly authorityLease: AuthorityFence;
   readonly executionLease: RunExecutionLeaseClaim;
@@ -142,7 +117,6 @@ export interface ModelInvocationIdentityBeginInput extends ModelInvocationAdmiss
   readonly executionLease: RunExecutionLeaseClaim;
   readonly authority: ProductAuthorityFence;
   readonly authorityLease: AuthorityFence;
-  readonly limits: ModelBudgetLimits;
   readonly reservedAt: string;
 }
 
@@ -198,10 +172,6 @@ export type ModelInvocationAdmissionResult =
       readonly details?: Readonly<Record<string, string>>;
     };
 
-/**
- * A gate is created by the execution owner from a typed lease claim. Its
- * context is immutable so a caller cannot select a different Run after reserve.
- */
 export interface ModelInvocationAdmissionPort {
   readonly context: ModelInvocationExecutionContext;
   begin(input: ModelInvocationAdmissionInput): Promise<ModelInvocationAdmissionResult>;
@@ -211,6 +181,5 @@ export type ModelInvocationAdmissionResolver = (scope: {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
   readonly runId: RunId;
-  /** Present for AgentRuntime calls; ModelPort callers have no runtime lease field. */
   readonly executionLease?: RunExecutionLeaseClaim;
 }) => ModelInvocationAdmissionPort | undefined | Promise<ModelInvocationAdmissionPort | undefined>;

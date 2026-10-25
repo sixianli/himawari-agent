@@ -155,7 +155,7 @@ function rawConfiguration(paths: Awaited<ReturnType<typeof fixture>>): Record<st
       },
     ],
     memory: {
-      adapter: "mem0-oss",
+      adapter: "himawari-sqlite",
       version: "3.3.1",
       storagePath: path.join(paths.stateRoot, "data", "memory"),
       dimensions: 1536,
@@ -166,16 +166,6 @@ function rawConfiguration(paths: Awaited<ReturnType<typeof fixture>>): Record<st
       { ref: "identity-bootstrap", version: "v1", purpose: "identity-bootstrap", scope: "agent" },
       { ref: "identity-csrf", version: "v1", purpose: "identity-csrf", scope: "agent" },
     ],
-    budgets: {
-      globalCostMicros: 1_000_000,
-      perRunCostMicros: 100_000,
-      perClassificationCostMicros: {
-        public: 100_000,
-        private: 100_000,
-        sensitive: 0,
-        restricted: 0,
-      },
-    },
     concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
     deadlines: { runMs: 60_000, workerRequestMs: 5_000, providerRequestMs: 5_000 },
   };

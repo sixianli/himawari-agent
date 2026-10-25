@@ -335,7 +335,8 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     if (descriptor.provider === "vercel-ai-gateway") {
       if (descriptor.model !== "alibaba/qwen3-embedding-8b")
         throw invalid(`${field}.model`, "must be alibaba/qwen3-embedding-8b");
-      if (descriptor.dimensions !== 4096) throw invalid(`${field}.dimensions`, "must be 4096");
+      if (descriptor.dimensions !== 4096 && descriptor.dimensions !== 1024)
+        throw invalid(`${field}.dimensions`, "must be 4096 or 1024");
       if (descriptor.secretRef === null)
         throw invalid(`${field}.secretRef`, "is required for AI Gateway");
     }
@@ -397,24 +398,6 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       throw invalid(`${field}.providerRouting`, "is required for AI Gateway");
   }
   return Object.freeze(descriptor);
-}
-
-function parseCostMap(value: unknown) {
-  const input = record(value, "budgets.perClassificationCostMicros");
-  rejectUnknown(input, CLASSIFICATIONS, "budgets.perClassificationCostMicros");
-  return Object.freeze(
-    Object.fromEntries(
-      CLASSIFICATIONS.map((classification) => [
-        classification,
-        integer(
-          input[classification],
-          `budgets.perClassificationCostMicros.${classification}`,
-          0,
-          Number.MAX_SAFE_INTEGER,
-        ),
-      ]),
-    ) as Record<DataClassification, number>,
-  );
 }
 
 function parseNumberMap(value: unknown, field: string): Readonly<Record<string, number>> {
@@ -1013,7 +996,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "memory",
       "repositoryAllowlistRefs",
       "secretReferences",
-      "budgets",
       "concurrency",
       "deadlines",
     ],
@@ -1098,7 +1080,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ["adapter", "version", "storagePath", "dimensions"],
     "configuration.memory",
   );
-  if (memory["adapter"] !== "mem0-oss")
+  if (memory["adapter"] !== "himawari-sqlite" && memory["adapter"] !== "mem0-oss")
     throw invalid("configuration.memory.adapter", "is unsupported");
   const memoryPath = absolutePath(memory["storagePath"], "configuration.memory.storagePath");
   if (!memoryPath.startsWith(`${stateRoot}${path.sep}`)) {
@@ -1178,12 +1160,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     }
   }
 
-  const budgets = record(input["budgets"], "configuration.budgets");
-  rejectUnknown(
-    budgets,
-    ["globalCostMicros", "perRunCostMicros", "perClassificationCostMicros"],
-    "configuration.budgets",
-  );
   const concurrency = record(input["concurrency"], "configuration.concurrency");
   rejectUnknown(
     concurrency,
@@ -1240,7 +1216,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ...(identity === undefined ? {} : { identity }),
     modelDescriptors,
     memory: Object.freeze({
-      adapter: "mem0-oss" as const,
+      adapter: "himawari-sqlite" as const,
       version: safeReference(memory["version"], "configuration.memory.version"),
       storagePath: memoryPath,
       dimensions: memoryDimensions,
@@ -1250,21 +1226,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "configuration.repositoryAllowlistRefs",
     ),
     secretReferences,
-    budgets: Object.freeze({
-      globalCostMicros: integer(
-        budgets["globalCostMicros"],
-        "configuration.budgets.globalCostMicros",
-        0,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      perRunCostMicros: integer(
-        budgets["perRunCostMicros"],
-        "configuration.budgets.perRunCostMicros",
-        0,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      perClassificationCostMicros: parseCostMap(budgets["perClassificationCostMicros"]),
-    }),
     concurrency: Object.freeze({
       totalRuns,
       foregroundReserved,

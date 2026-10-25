@@ -77,7 +77,9 @@ import type {
 import type Database from "better-sqlite3";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
-import { SqliteMemoryOperations } from "./sqlite-memory-operations.ts";
+import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
+import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
 import { SqliteRunCheckpointOperations } from "./sqlite-run-checkpoint-operations.ts";
@@ -332,6 +334,8 @@ export class SqliteDurableOperations {
   private readonly checkpoint: SqliteCheckpointOperations;
   private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
+  private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
+  private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
@@ -346,6 +350,7 @@ export class SqliteDurableOperations {
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    vectorEngine: SqliteVectorEngine = "javascript",
   ) {
     this.builtInIdentity = new SqliteBuiltInIdentityOperations(database, fail, assertDiskHeadroom);
     this.automaticReviews = new SqliteAutomaticActionReview(
@@ -391,7 +396,13 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
       this.modelBudget,
     );
-    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom);
+    this.memory = new SqliteMemoryOperations(database, fail, assertDiskHeadroom, vectorEngine);
+    this.memoryConsolidation = new SqliteMemoryConsolidationOperations(
+      database,
+      fail,
+      assertDiskHeadroom,
+    );
+    this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
       readonly ownerId: string;
@@ -471,10 +482,16 @@ export class SqliteDurableOperations {
     if (
       operation.startsWith("memory.") ||
       operation.startsWith("memoryJob.") ||
-      operation.startsWith("memoryApproval.")
+      operation.startsWith("memoryApproval.") ||
+      operation.startsWith("memoryIndex.") ||
+      operation.startsWith("memoryEpisode.")
     ) {
       return this.memory.execute(operation, payload);
     }
+    if (operation.startsWith("memoryConsolidation."))
+      return this.memoryConsolidation.execute(operation, payload);
+    if (operation.startsWith("memoryReminder."))
+      return this.memoryReminders.execute(operation, payload);
     switch (operation) {
       case "event.append":
         return this.appendEvent(
@@ -1355,7 +1372,6 @@ export class SqliteDurableOperations {
     return result.changes === 1;
   }
 
-  /** Called inside the review transaction, so authority and its public observation agree. */
   private appendAutomaticReviewObservation(record: AutomaticReviewRecord): void {
     const { intent, request, result } = record;
     const run = this.database
@@ -1500,8 +1516,6 @@ export class SqliteDurableOperations {
           event.recordedAt,
           JSON.stringify(event),
         );
-      // The notification and durable observation commit together. The existing
-      // Thread cursor is the sole browser reconnect position; no parallel stream.
       if (
         event.threadId &&
         (event.eventType.startsWith("runtime.") ||
@@ -3000,8 +3014,6 @@ export class SqliteDurableOperations {
       revision: row.revision,
       installationRef: row.installationRef,
       repositoryRef: row.repositoryRef,
-      // The protected payload is intentionally opaque to SQLite. Callers use this
-      // reference as the durable event-configuration binding.
       enabledEventRefs: [row.enabledEventsRef],
       authorizationRef: row.authorizationRef,
       status: row.status,
@@ -4051,18 +4063,7 @@ export class SqliteDurableOperations {
         Number.isSafeInteger(limits.foregroundReserved) &&
         limits.foregroundReserved >= 0 &&
         limits.foregroundReserved <= limits.totalRuns;
-      const budgets = [
-        limits.globalCostMicros,
-        limits.perRunCostMicros,
-        limits.perClassificationCostMicros.public,
-        limits.perClassificationCostMicros.private,
-        limits.perClassificationCostMicros.sensitive,
-        limits.perClassificationCostMicros.restricted,
-      ];
-      if (
-        !positiveCapacity ||
-        !budgets.every((value) => Number.isSafeInteger(value) && value >= 0)
-      ) {
+      if (!positiveCapacity) {
         this.fail("PORT_INVALID_OPERATION", "Background admission limits are invalid");
       }
       let reasonCode: BackgroundAdmissionResult["reasonCode"] | null = null;
@@ -4130,22 +4131,13 @@ export class SqliteDurableOperations {
         ? {
             reservedCostMicros: current.reservedCostMicros,
             spentCostMicros: current.spentCostMicros,
-            reasonCode: null,
           }
-        : this.modelBudget.reserveOccurrenceWithinTransaction({
-            occurrence: current,
-            limits,
-          });
-      reasonCode = reasonCode ?? budget.reasonCode;
+        : this.modelBudget.reserveOccurrenceWithinTransaction({ occurrence: current });
 
-      const blockedByBudget =
-        reasonCode === "RUN_BUDGET_EXCEEDED" ||
-        reasonCode === "GLOBAL_BUDGET_EXHAUSTED" ||
-        reasonCode === "CLASSIFICATION_BUDGET_EXHAUSTED";
       const stored: BackgroundOccurrence = {
         ...current,
         revision: current.revision + 1,
-        status: reasonCode ? (blockedByBudget ? "budget_blocked" : "capacity_blocked") : "admitted",
+        status: reasonCode ? "capacity_blocked" : "admitted",
         authority: input.authority,
         runId: input.runId,
         reservedCostMicros: budget.reservedCostMicros,
@@ -4156,11 +4148,7 @@ export class SqliteDurableOperations {
       this.writeOccurrence(stored);
       const result: BackgroundAdmissionResult = {
         occurrence: stored,
-        outcome: reasonCode
-          ? blockedByBudget
-            ? ("budget_blocked" as const)
-            : ("capacity_blocked" as const)
-          : ("admitted" as const),
+        outcome: reasonCode ? ("capacity_blocked" as const) : ("admitted" as const),
         reasonCode: reasonCode ?? "ADMITTED",
       };
       return result;
@@ -4252,7 +4240,7 @@ export class SqliteDurableOperations {
       let status: BackgroundOccurrence["status"];
       let nextRetryAt: string | null = null;
       let errorCode = input.errorCode;
-      if (input.outcome === "completed" && input.spentCostMicros <= current.reservedCostMicros) {
+      if (input.outcome === "completed") {
         status = "completed";
         errorCode = null;
       } else if (input.outcome === "model_blocked") {
@@ -4261,9 +4249,6 @@ export class SqliteDurableOperations {
       } else if (input.outcome === "external_result_unknown") {
         status = "retry_wait";
         errorCode = input.errorCode ?? "EXTERNAL_RESULT_UNKNOWN";
-      } else if (input.spentCostMicros > current.reservedCostMicros) {
-        status = "failed_terminal";
-        errorCode = "RUN_BUDGET_EXCEEDED";
       } else if (input.failureClass === "credential") {
         status = "blocked_credentials";
       } else if (input.failureClass === "authorization") {

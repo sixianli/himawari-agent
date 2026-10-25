@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/check_chinese_reply.py", "record", "--state-dir", "${CLAUDE_PLUGIN_DATA}/reply-language"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/check_chinese_reply.py", "batch", "--state-dir", "${CLAUDE_PLUGIN_DATA}/reply-language"],
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/check_chinese_reply.py", "stop", "--state-dir", "${CLAUDE_PLUGIN_DATA}/reply-language"],
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/check_chinese_reply.py", "ask", "--state-dir", "${CLAUDE_PLUGIN_DATA}/reply-language"],
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,15 +1,17 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { instructedQuery, QWEN3_MEMORY_QUERY_INSTRUCTION } from "@himawari-agent/memory-engine";
 import { parseProductConfiguration } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
   ConfiguredPiModelBindingPort,
   type ConfiguredPiModelDescriptor,
 } from "@himawari-agent/runtime-pi";
+import { inMemoryMemoryIndex } from "@himawari-agent/testing";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 import { describe, expect, it, vi } from "vitest";
 import { createProductionMemoryCompositionFromConfiguration } from "../src/production-memory-composition.js";
 import { resolveConfiguredModelDescriptorSet } from "../src/production-model-composition.js";
 import { embeddingAdmissionDescriptor } from "../src/production-run-memory.js";
-import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 const fixture = new URL("../../../test/integration/fixtures/file-summary/", import.meta.url);
 
@@ -72,7 +74,7 @@ describe("file summary qualification configuration", () => {
     }
   });
 
-  it("fits two generation reservations and embedding within the proposed shared budget", async () => {
+  it("prices generation and embedding reservations for usage accounting", async () => {
     const config = await configuration();
     const descriptors = resolveConfiguredModelDescriptorSet(config);
     const generationDescriptors = descriptors.generation.filter(
@@ -86,10 +88,8 @@ describe("file summary qualification configuration", () => {
       ),
     );
     expect(embedding.estimatedCostMicros).toBeGreaterThan(0);
-    expect(2 * generation + embedding.estimatedCostMicros).toBeLessThan(
-      config.budgets.perRunCostMicros,
-    );
-    expect(config.budgets.perRunCostMicros).toBeLessThanOrEqual(config.budgets.globalCostMicros);
+    expect(generation).toBeGreaterThan(0);
+    expect("budgets" in config).toBe(false);
     expect(embedding.secretRequirement).toEqual(descriptors.generation[0]?.secretRequirement);
     expect(descriptors.embedding.dimensions).toBe(config.memory.dimensions);
     expect(config.memory.storagePath.startsWith(`${config.stateRoot}/`)).toBe(true);
@@ -106,15 +106,11 @@ describe("file summary qualification configuration", () => {
     ).toThrow("MODEL_EMBEDDING_DIMENSIONS_MISMATCH");
   });
 
-  it("passes the candidate embedding identity and dimensions through the production Mem0 adapter", async () => {
+  it("passes the candidate embedding identity and dimensions through the production memory engine", async () => {
     const config = await configuration();
     const stateRoot = await mkdtemp(`${testTemporaryRoot()}/hma-config-`);
-    const constructed = vi.fn();
-    const close = vi.fn();
     const resolve = vi.fn(async () => "offline-fixture-provider-value");
-    for (const name of ["MEM0_DIR", "MEM0_TELEMETRY", "MEM0_TELEMETRY_SAMPLE_RATE"]) {
-      vi.stubEnv(name, process.env[name]);
-    }
+    const requests: { url: string; authorized: boolean; body: unknown }[] = [];
     try {
       const memory = await createProductionMemoryCompositionFromConfiguration({
         configuration: {
@@ -123,40 +119,46 @@ describe("file summary qualification configuration", () => {
           memory: { ...config.memory, storagePath: `${stateRoot}/data/memory` },
         },
         secretSource: { kind: "macos-keychain", productionSuitable: true, resolve },
-        load: async () => ({
-          VectorStoreFactory: { create: () => ({ initialize: async () => {} }) },
-          Memory: class {
-            constructor(input: unknown) {
-              constructed(input);
-            }
-            close = close;
-          } as never,
-        }),
-      });
-      try {
-        expect(constructed).toHaveBeenCalledWith(
-          expect.objectContaining({
-            embedder: {
-              provider: "openai",
-              config: {
-                apiKey: expect.any(String),
-                baseURL: "https://ai-gateway.vercel.sh/v1",
-                model: "alibaba/qwen3-embedding-8b",
-                embeddingDims: 4096,
-              },
-            },
-            vectorStore: expect.objectContaining({
-              config: expect.objectContaining({ dimension: 4096 }),
+        index: inMemoryMemoryIndex(),
+        fetch: async (input, init) => {
+          requests.push({
+            url: String(input),
+            authorized:
+              new Headers(init?.headers).get("authorization") ===
+              ["Bearer", "offline-fixture-provider-value"].join(" "),
+            body: JSON.parse(String(init?.body)),
+          });
+          return new Response(
+            JSON.stringify({
+              model: "alibaba/qwen3-embedding-8b",
+              data: [{ index: 0, embedding: Array.from({ length: 4096 }, () => 1) }],
+              usage: { prompt_tokens: 1, total_tokens: 1 },
             }),
-          }),
-        );
-        expect(resolve).toHaveBeenCalledExactlyOnceWith("vercel-ai-gateway-api-key", "v1");
-      } finally {
-        await memory.close();
-      }
-      expect(close).toHaveBeenCalledOnce();
+          );
+        },
+      });
+      memory.bindEmbeddingBoundary((_request, send) => send(), 1000);
+      await memory.projection.search({
+        ownerId: config.ownerId,
+        agentId: config.agentId,
+        query: "图书角",
+        limit: 1,
+      });
+      expect(requests).toEqual([
+        {
+          url: "https://ai-gateway.vercel.sh/v1/embeddings",
+          authorized: true,
+          body: {
+            model: "alibaba/qwen3-embedding-8b",
+            input: instructedQuery(QWEN3_MEMORY_QUERY_INSTRUCTION, "图书角"),
+            dimensions: 4096,
+            encoding_format: "float",
+          },
+        },
+      ]);
+      expect(resolve).toHaveBeenCalledExactlyOnceWith("vercel-ai-gateway-api-key", "v1");
+      await memory.close();
     } finally {
-      vi.unstubAllEnvs();
       await rm(stateRoot, { recursive: true, force: true });
     }
   });

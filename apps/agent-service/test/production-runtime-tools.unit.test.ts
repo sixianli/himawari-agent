@@ -1295,3 +1295,52 @@ describe("[R2-T14] failed command output for the model", () => {
     expect(result.modelContent).not.toContain("伪造");
   });
 });
+
+it("answers recall from owner memory, replays the saved result and reports failures to the model", async () => {
+  const f = fixture();
+  const recall = vi.fn(async () => ({ memories: [{ text: "主人最喜欢蓝色", current: true }] }));
+  const tools = new ProductionRuntimeTools({ ...f.options, memoryRecall: { recall } });
+  const definitions = await tools.listAuthorized(invocation.runId, [
+    invocation.capabilityHandleRef,
+  ]);
+  expect(definitions.map((definition) => definition.name)).toContain("recall");
+  const call = {
+    ...invocation,
+    capabilityRef: "memory.recall",
+    capabilityHandleRef: null,
+    arguments: { query: "我最喜欢什么颜色" },
+  };
+  expect((await tools.preflight(call)).allowed).toBe(true);
+  const first = await tools.execute(call);
+  expect(first.outcome).toBe("succeeded");
+  expect(first.modelContent).toContain("蓝色");
+  expect(await tools.execute(call)).toEqual(first);
+  expect(recall).toHaveBeenCalledTimes(1);
+  expect(f.request).not.toHaveBeenCalled();
+  await expect(tools.execute({ ...call, arguments: { query: "别的" } })).rejects.toThrow(
+    "identity",
+  );
+  recall.mockRejectedValueOnce(new Error("EMBEDDING_DEADLINE_EXCEEDED"));
+  const failed = await tools.execute({ ...call, toolCallId: "recall-failed" });
+  expect(failed).toMatchObject({ outcome: "failed", errorCode: "MEMORY_RECALL_UNAVAILABLE" });
+  expect(failed.modelContent).toContain("不要编造");
+});
+
+it("does not offer recall when memory is not configured", async () => {
+  const f = fixture();
+  const tools = f.tool();
+  const definitions = await tools.listAuthorized(invocation.runId, [
+    invocation.capabilityHandleRef,
+  ]);
+  expect(definitions.map((definition) => definition.name)).not.toContain("recall");
+  expect(
+    (
+      await tools.preflight({
+        ...invocation,
+        capabilityRef: "memory.recall",
+        capabilityHandleRef: null,
+        arguments: { query: "颜色" },
+      })
+    ).allowed,
+  ).toBe(false);
+});

@@ -89,7 +89,6 @@ export default defineConfig({
           environment: "node",
           include: [
             "packages/persistence-sqlite/**/*.unit.test.ts",
-            "packages/memory-mem0/**/*.unit.test.ts",
             "packages/integration-github/**/*.unit.test.ts",
           ],
           name: "workspace-scaffolds",

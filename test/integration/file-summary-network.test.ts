@@ -50,14 +50,10 @@ it("retains failed request reservations and refuses a fourth generation call", a
   expect(guard.requests.every((item) => item.status === null)).toBe(true);
 });
 
-it("enforces the configured budget before sending and refuses redirects", async () => {
+it("enforces the probe spending limit before sending and refuses redirects", async () => {
   const send = vi.fn<typeof globalThis.fetch>(async () => new Response());
   const controller = new AbortController();
-  const guard = boundedAiGatewayFetch(
-    { ...configuration, budgets: { ...configuration.budgets, globalCostMicros: 319488 } },
-    send,
-    controller.signal,
-  );
+  const guard = boundedAiGatewayFetch(configuration, send, controller.signal, 0, 319488);
   await guard.fetch(endpoint, request());
   expect(send.mock.calls[0]?.[1]).toMatchObject({ redirect: "error" });
   await expect(guard.fetch(endpoint, request())).rejects.toThrow("PROBE_BUDGET_LIMIT");

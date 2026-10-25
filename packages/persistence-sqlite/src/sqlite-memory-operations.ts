@@ -1,5 +1,16 @@
 import type {
+  MemoryCategory,
+  MemoryEpisode,
+  MemoryEpisodeCandidate,
+  MemoryEpisodeDocument,
+  MemoryEpisodeSearchResult,
+  MemoryEpisodeThreadWatermark,
+  MemoryIndexCandidate,
+  MemoryIndexDocument,
+  MemoryIndexEmbedding,
+  MemoryIndexSearchResult,
   MemoryProjectionJob,
+  ProductMemoryAttributes,
   ProductMemoryRecord,
   SensitiveMemoryApprovalRequest,
 } from "@himawari-agent/application";
@@ -28,6 +39,129 @@ interface MemoryRow {
   readonly providerRecordId: string | null;
   readonly lastUsedAt: string | null;
   readonly updatedAt: string;
+  readonly category: ProductMemoryAttributes["category"];
+  readonly importancePermille: number;
+  readonly validFrom: string | null;
+  readonly validTo: string | null;
+  readonly supersededBy: string | null;
+  readonly useCount: number;
+  readonly evidenceVerified: number;
+  readonly sensitiveTopic: string | null;
+  readonly recordedAt: string | null;
+  readonly tentative: number;
+}
+
+interface IndexCandidateRow {
+  readonly memoryId: string;
+  readonly revision: number;
+  readonly importancePermille: number;
+  readonly confidencePermille: number;
+  readonly updatedAt: string;
+  readonly lastUsedAt: string | null;
+  readonly signal: number;
+  readonly startsAt: string;
+  readonly endsAt: string | null;
+  readonly current: number;
+}
+
+interface EpisodeRow {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly threadId: string;
+  readonly day: string;
+  readonly source: MemoryEpisode["source"];
+  readonly contentRef: string;
+  readonly classification: MemoryEpisode["dataClassification"];
+  readonly firstSequence: number;
+  readonly lastSequence: number;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly createdAt: string;
+}
+
+const episodeColumns = `e.id AS id, e.owner_id AS ownerId, e.agent_id AS agentId,
+  e.thread_id AS threadId, e.day AS day, e.source AS source, e.content_ref AS contentRef,
+  e.classification AS classification, e.first_sequence AS firstSequence,
+  e.last_sequence AS lastSequence, e.started_at AS startedAt, e.ended_at AS endedAt,
+  e.created_at AS createdAt`;
+
+const episodeScope = `e.owner_id = @ownerId AND e.agent_id = @agentId
+  AND e.classification IN (SELECT value FROM json_each(@classifications))
+  AND (@from IS NULL OR e.ended_at >= @from) AND (@to IS NULL OR e.started_at <= @to)`;
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+export type SqliteVectorEngine = "sqlite-vec" | "javascript";
+
+const CATEGORIES = new Set<string>([
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+  "health",
+  "finance",
+  "event",
+  "other",
+] satisfies MemoryCategory[]);
+const SENSITIVE_TOPICS = new Set<string>([
+  "health",
+  "finance",
+  "beliefs",
+  "intimacy",
+  "third_party",
+  "location",
+  "legal",
+  "other",
+]);
+const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
+  category: "other",
+  importancePermille: 500,
+  entities: Object.freeze([]),
+  validFrom: null,
+  validTo: null,
+  supersededBy: null,
+  evidenceVerified: false,
+});
+const INDEXED_ENTITY_CLASSIFICATIONS = new Set(["public", "private"]);
+const CLASSIFICATIONS = new Set(["public", "private", "sensitive", "restricted"]);
+const MAXIMUM_ENTITIES = 16;
+const MAXIMUM_INDEX_TERMS = 512;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function validMemoryTime(value: string | null): boolean {
+  if (value === null) return true;
+  if (DATE_ONLY.test(value)) return !Number.isNaN(new Date(`${value}T00:00:00.000Z`).valueOf());
+  return validIsoTimestamp(value);
+}
+
+function normalizedEntity(name: string): string {
+  return name.normalize("NFKC").trim().toLowerCase();
+}
+
+function ftsQuery(terms: readonly string[]): string | null {
+  const unique = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))];
+  if (unique.length === 0) return null;
+  return unique
+    .slice(0, 64)
+    .map((term) => `"${term.replaceAll('"', '""')}"`)
+    .join(" OR ");
+}
+
+function vectorBlob(embedding: MemoryIndexEmbedding): Buffer {
+  return Buffer.from(
+    embedding.vector.buffer,
+    embedding.vector.byteOffset,
+    embedding.vector.byteLength,
+  );
+}
+
+function blobVector(blob: Uint8Array, dimensions: number): Float32Array {
+  const copy = new Uint8Array(blob.byteLength);
+  copy.set(blob);
+  return new Float32Array(copy.buffer, 0, dimensions);
 }
 
 interface ProjectionJobRow {
@@ -71,8 +205,23 @@ interface MemoryApprovalRow {
 const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revision, status,
   content_ref AS contentRef, classification, source_thread_id AS sourceThreadId,
   inference, confidence_permille AS confidencePermille, policy_version AS policyVersion,
-  provider_record_id AS providerRecordId, last_used_at AS lastUsedAt, updated_at AS updatedAt
+  provider_record_id AS providerRecordId, last_used_at AS lastUsedAt, updated_at AS updatedAt,
+  category, importance_permille AS importancePermille, valid_from AS validFrom,
+  valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
+  evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic,
+  recorded_at AS recordedAt, tentative
   FROM memory_records`;
+
+const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
+  m.importance_permille AS importancePermille, m.confidence_permille AS confidencePermille,
+  m.updated_at AS updatedAt, m.last_used_at AS lastUsedAt,
+  COALESCE(m.valid_from, m.recorded_at, m.updated_at) AS startsAt, m.valid_to AS endsAt,
+  CASE WHEN m.valid_to IS NULL OR m.valid_to > @now THEN 1 ELSE 0 END AS current`;
+
+const indexScope = `m.owner_id = @ownerId AND m.agent_id = @agentId AND m.status = 'active'
+  AND i.memory_revision = m.revision
+  AND m.tentative = 0
+  AND (@includeHistory = 1 OR m.valid_to IS NULL OR m.valid_to > @now)`;
 
 const projectionJobSelect = `SELECT id, memory_id AS memoryId,
   memory_revision AS memoryRevision, generation_id AS generationId, operation, status,
@@ -99,15 +248,18 @@ export class SqliteMemoryOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
+  private readonly vectorEngine: SqliteVectorEngine;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
+    vectorEngine: SqliteVectorEngine = "javascript",
   ) {
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
+    this.vectorEngine = vectorEngine;
   }
 
   execute(operation: string, payload: unknown): unknown {
@@ -191,6 +343,71 @@ export class SqliteMemoryOperations {
         return this.listPendingApprovals(
           payload as { ownerId: OwnerId; threadId: ThreadId | null },
         );
+      case "memoryIndex.upsert":
+        return this.upsertIndex((payload as { document: MemoryIndexDocument }).document);
+      case "memoryIndex.delete":
+        return this.deleteIndex((payload as { memoryId: MemoryId }).memoryId);
+      case "memoryIndex.clearScope":
+        return this.clearIndexScope(payload as { ownerId: OwnerId; agentId: AgentId });
+      case "memoryIndex.search":
+        return this.searchIndex(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            embedding: MemoryIndexEmbedding | null;
+            terms: readonly string[];
+            queryText: string;
+            limit: number;
+            minimumSimilarity: number;
+            now: string;
+            includeHistory?: boolean;
+          },
+        );
+      case "memoryEpisode.upsert":
+        return this.upsertEpisode((payload as { document: MemoryEpisodeDocument }).document);
+      case "memoryEpisode.search":
+        return this.searchEpisodes(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            embedding: MemoryIndexEmbedding | null;
+            terms: readonly string[];
+            allowedClassifications: readonly string[];
+            from: string | null;
+            to: string | null;
+            limit: number;
+          },
+        );
+      case "memoryEpisode.listUnembedded":
+        return this.listUnembedded(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            model: string;
+            dimensions: number;
+            limit: number;
+          },
+        );
+      case "memoryEpisode.attachEmbedding":
+        return this.attachEpisodeEmbedding(
+          payload as { episodeId: string; embedding: MemoryIndexEmbedding },
+        );
+      case "memoryEpisode.listUnsummarized":
+        return this.listUnsummarized(
+          payload as { ownerId: OwnerId; agentId: AgentId; limit: number },
+        );
+      case "memoryIndex.listUnindexed":
+        return this.listUnindexed(
+          payload as {
+            ownerId: OwnerId;
+            agentId: AgentId;
+            model: string;
+            dimensions: number;
+            embeddableClassifications: readonly string[];
+            afterMemoryId: MemoryId | null;
+            limit: number;
+          },
+        );
       default:
         return this.fail("PORT_INVALID_OPERATION", `Unknown Memory operation ${operation}`);
     }
@@ -223,7 +440,33 @@ export class SqliteMemoryOperations {
       providerRecordId: row.providerRecordId,
       lastUsedAt: row.lastUsedAt,
       updatedAt: row.updatedAt,
+      recordedAt: row.recordedAt ?? row.updatedAt,
+      attributes: Object.freeze({
+        category: row.category,
+        importancePermille: row.importancePermille,
+        entities: Object.freeze(this.entities(row.id as MemoryId)),
+        validFrom: row.validFrom,
+        validTo: row.validTo,
+        supersededBy: row.supersededBy as MemoryId | null,
+        evidenceVerified: row.evidenceVerified === 1,
+        ...(row.sensitiveTopic
+          ? {
+              sensitiveTopic: row.sensitiveTopic as NonNullable<
+                ProductMemoryAttributes["sensitiveTopic"]
+              >,
+            }
+          : {}),
+        ...(row.tentative === 1 ? { tentative: true } : {}),
+      }),
+      useCount: row.useCount,
     });
+  }
+
+  private entities(memoryId: MemoryId): string[] {
+    return this.database
+      .prepare("SELECT name FROM memory_entities WHERE memory_id = ? ORDER BY name")
+      .pluck()
+      .all(memoryId) as string[];
   }
 
   private jobFromRow(row: ProjectionJobRow): MemoryProjectionJob {
@@ -319,6 +562,24 @@ export class SqliteMemoryOperations {
     ) {
       this.fail("PORT_INVALID_OPERATION", `Memory ${memory.id} has an invalid shape`);
     }
+    const attributes = memory.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
+    if (
+      !CATEGORIES.has(attributes.category) ||
+      !Number.isSafeInteger(attributes.importancePermille) ||
+      attributes.importancePermille < 0 ||
+      attributes.importancePermille > 1000 ||
+      !validMemoryTime(attributes.validFrom) ||
+      !validMemoryTime(attributes.validTo) ||
+      attributes.supersededBy === memory.id ||
+      !(attributes.sensitiveTopic == null || SENSITIVE_TOPICS.has(attributes.sensitiveTopic)) ||
+      attributes.entities.length > MAXIMUM_ENTITIES ||
+      attributes.entities.some((name) => {
+        const normalized = normalizedEntity(name);
+        return normalized.length === 0 || normalized.length > 64;
+      })
+    ) {
+      this.fail("PORT_INVALID_OPERATION", `Memory ${memory.id} has invalid attributes`);
+    }
   }
 
   private validTransition(
@@ -329,7 +590,8 @@ export class SqliteMemoryOperations {
     if (current === "active") {
       return ["archived", "trashed", "deletion_pending"].includes(next);
     }
-    if (current === "archived" || current === "trashed") return next === "deletion_pending";
+    if (current === "archived") return next === "deletion_pending" || next === "active";
+    if (current === "trashed") return next === "deletion_pending";
     return current === "deletion_pending" && next === "deleted_verified";
   }
 
@@ -362,6 +624,7 @@ export class SqliteMemoryOperations {
   }): ProductMemoryRecord {
     this.assertDiskHeadroom();
     this.assertMemoryShape(input.memory);
+    const attributes = input.memory.attributes ?? DEFAULT_MEMORY_ATTRIBUTES;
     const transaction = this.database.transaction(() => {
       const current = this.read(input.memory.id);
       const payload = this.database
@@ -393,8 +656,10 @@ export class SqliteMemoryOperations {
             `INSERT INTO memory_records (
               id, owner_id, agent_id, revision, status, content_ref, classification,
               source_thread_id, inference, confidence_permille, policy_version,
-              provider_record_id, last_used_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              provider_record_id, last_used_at, updated_at, category, importance_permille,
+              valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic,
+              recorded_at, tentative
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -411,6 +676,15 @@ export class SqliteMemoryOperations {
             input.memory.providerRecordId,
             input.memory.lastUsedAt,
             input.memory.updatedAt,
+            attributes.category,
+            attributes.importancePermille,
+            attributes.validFrom,
+            attributes.validTo,
+            attributes.supersededBy,
+            attributes.evidenceVerified ? 1 : 0,
+            attributes.sensitiveTopic ?? null,
+            input.memory.updatedAt,
+            attributes.tentative === true ? 1 : 0,
           );
       } else {
         if (
@@ -427,7 +701,9 @@ export class SqliteMemoryOperations {
           .prepare(
             `UPDATE memory_records SET revision = ?, status = ?, content_ref = ?,
               classification = ?, source_thread_id = ?, inference = ?, confidence_permille = ?,
-              policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?
+              policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?,
+              category = ?, importance_permille = ?, valid_from = ?, valid_to = ?,
+              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?, tentative = ?
             WHERE id = ?`,
           )
           .run(
@@ -442,8 +718,24 @@ export class SqliteMemoryOperations {
             input.memory.providerRecordId,
             input.memory.lastUsedAt,
             input.memory.updatedAt,
+            attributes.category,
+            attributes.importancePermille,
+            attributes.validFrom,
+            attributes.validTo,
+            attributes.supersededBy,
+            attributes.evidenceVerified ? 1 : 0,
+            attributes.sensitiveTopic ?? null,
+            attributes.tentative === true ? 1 : 0,
             input.memory.id,
           );
+      }
+      this.database.prepare("DELETE FROM memory_entities WHERE memory_id = ?").run(input.memory.id);
+      if (INDEXED_ENTITY_CLASSIFICATIONS.has(input.memory.dataClassification)) {
+        const insertEntity = this.database.prepare(
+          "INSERT INTO memory_entities (memory_id, name) VALUES (?, ?) ON CONFLICT DO NOTHING",
+        );
+        for (const name of new Set(attributes.entities.map(normalizedEntity)))
+          insertEntity.run(input.memory.id, name);
       }
       const insertSource = this.database.prepare(
         `INSERT INTO memory_provenance (memory_id, source_type, source_id, source_deleted)
@@ -477,13 +769,531 @@ export class SqliteMemoryOperations {
     if (input.memoryIds.length === 0) return;
     this.assertDiskHeadroom();
     const statement = this.database.prepare(
-      "UPDATE memory_records SET last_used_at = ? WHERE id = ? AND status = 'active'",
+      "UPDATE memory_records SET last_used_at = ?, use_count = use_count + 1 WHERE id = ? AND status = 'active'",
     );
     this.database
       .transaction(() => {
         for (const memoryId of new Set(input.memoryIds)) statement.run(input.usedAt, memoryId);
       })
       .immediate();
+  }
+
+  private upsertIndex(document: MemoryIndexDocument): void {
+    this.assertDiskHeadroom();
+    if (
+      !Number.isSafeInteger(document.revision) ||
+      document.revision < 1 ||
+      !validIsoTimestamp(document.indexedAt) ||
+      document.terms.length > MAXIMUM_INDEX_TERMS ||
+      document.terms.some((term) => term.length === 0 || term.length > 64) ||
+      (document.embedding !== null &&
+        (!Number.isSafeInteger(document.embedding.dimensions) ||
+          document.embedding.dimensions < 1 ||
+          document.embedding.vector.length !== document.embedding.dimensions ||
+          document.embedding.model.length === 0 ||
+          !document.embedding.vector.every(Number.isFinite)))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", `Memory index document ${document.memoryId} is invalid`);
+    }
+    this.database
+      .transaction(() => {
+        const memory = this.read(document.memoryId);
+        if (
+          !memory ||
+          memory.ownerId !== document.ownerId ||
+          memory.agentId !== document.agentId ||
+          memory.status !== "active" ||
+          memory.revision !== document.revision
+        ) {
+          this.fail("PORT_CONFLICT", `Memory index targets a stale Memory ${document.memoryId}`);
+        }
+        this.database
+          .prepare("DELETE FROM memory_search_index WHERE memory_id = ?")
+          .run(document.memoryId);
+        const inserted = this.database
+          .prepare(
+            `INSERT INTO memory_search_index (
+              memory_id, owner_id, agent_id, memory_revision, embedding_model,
+              embedding_dimensions, embedding, indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            document.memoryId,
+            document.ownerId,
+            document.agentId,
+            document.revision,
+            document.embedding?.model ?? null,
+            document.embedding?.dimensions ?? null,
+            document.embedding ? vectorBlob(document.embedding) : null,
+            document.indexedAt,
+          );
+        if (
+          document.terms.length > 0 &&
+          INDEXED_ENTITY_CLASSIFICATIONS.has(memory.dataClassification)
+        )
+          this.database
+            .prepare("INSERT INTO memory_search_terms (rowid, terms) VALUES (?, ?)")
+            .run(inserted.lastInsertRowid, document.terms.join(" "));
+      })
+      .immediate();
+  }
+
+  private deleteIndex(memoryId: MemoryId): void {
+    this.database
+      .transaction(() => {
+        this.database.prepare("DELETE FROM memory_search_index WHERE memory_id = ?").run(memoryId);
+        if (
+          this.database
+            .prepare("SELECT 1 FROM memory_search_index WHERE memory_id = ?")
+            .get(memoryId)
+        ) {
+          this.fail("PORT_CONFLICT", `Memory index remains after delete ${memoryId}`);
+        }
+      })
+      .immediate();
+  }
+
+  private clearIndexScope(input: { ownerId: OwnerId; agentId: AgentId }): void {
+    this.database
+      .prepare("DELETE FROM memory_search_index WHERE owner_id = ? AND agent_id = ?")
+      .run(input.ownerId, input.agentId);
+  }
+
+  private indexCandidate(row: IndexCandidateRow): MemoryIndexCandidate {
+    return Object.freeze({
+      memoryId: row.memoryId as MemoryId,
+      revision: row.revision,
+      importancePermille: row.importancePermille,
+      confidencePermille: row.confidencePermille,
+      updatedAt: row.updatedAt,
+      lastUsedAt: row.lastUsedAt,
+      signal: row.signal,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      current: row.current === 1,
+    });
+  }
+
+  private searchIndex(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    embedding: MemoryIndexEmbedding | null;
+    terms: readonly string[];
+    queryText: string;
+    limit: number;
+    minimumSimilarity: number;
+    now: string;
+    includeHistory?: boolean;
+  }): MemoryIndexSearchResult {
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 200 ||
+      !validIsoTimestamp(input.now) ||
+      !Number.isFinite(input.minimumSimilarity)
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory index search input is invalid");
+    }
+    const scope = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      now: input.now,
+      includeHistory: input.includeHistory === true ? 1 : 0,
+    };
+    let vector: MemoryIndexCandidate[] = [];
+    let vectorEngine: MemoryIndexSearchResult["vectorEngine"] = "none";
+    if (input.embedding) {
+      const embedding = input.embedding;
+      const vectorScope = {
+        ...scope,
+        model: embedding.model,
+        dimensions: embedding.dimensions,
+        limit: input.limit,
+      };
+      if (this.vectorEngine === "sqlite-vec") {
+        vectorEngine = "sqlite-vec";
+        vector = (
+          this.database
+            .prepare(
+              `SELECT ${indexCandidateColumns},
+                1 - vec_distance_cosine(i.embedding, @query) AS signal
+              FROM memory_search_index i JOIN memory_records m ON m.id = i.memory_id
+              WHERE ${indexScope} AND i.embedding_model = @model
+                AND i.embedding_dimensions = @dimensions
+              ORDER BY signal DESC, m.id LIMIT @limit`,
+            )
+            .all({ ...vectorScope, query: vectorBlob(embedding) }) as IndexCandidateRow[]
+        ).map((row) => this.indexCandidate(row));
+      } else {
+        vectorEngine = "javascript";
+        const query = embedding.vector;
+        const queryNorm = Math.sqrt(query.reduce((sum, value) => sum + value * value, 0));
+        const rows = this.database
+          .prepare(
+            `SELECT ${indexCandidateColumns}, i.embedding AS embedding
+            FROM memory_search_index i JOIN memory_records m ON m.id = i.memory_id
+            WHERE ${indexScope} AND i.embedding_model = @model
+              AND i.embedding_dimensions = @dimensions`,
+          )
+          .all(vectorScope) as (Omit<IndexCandidateRow, "signal"> & { embedding: Uint8Array })[];
+        vector = rows
+          .map(({ embedding: blob, ...row }) => {
+            const values = blobVector(blob, embedding.dimensions);
+            let dot = 0;
+            let norm = 0;
+            for (let index = 0; index < values.length; index += 1) {
+              const value = values[index] ?? 0;
+              dot += value * (query[index] ?? 0);
+              norm += value * value;
+            }
+            const signal = norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / queryNorm;
+            return this.indexCandidate({ ...row, signal });
+          })
+          .sort(
+            (left, right) =>
+              right.signal - left.signal || left.memoryId.localeCompare(right.memoryId),
+          )
+          .slice(0, input.limit);
+      }
+      vector = vector.filter(({ signal }) => signal >= input.minimumSimilarity);
+    }
+    const match = ftsQuery(input.terms);
+    const lexical = match
+      ? (
+          this.database
+            .prepare(
+              `SELECT ${indexCandidateColumns}, -bm25(memory_search_terms) AS signal
+              FROM memory_search_terms
+              JOIN memory_search_index i ON i.rowid = memory_search_terms.rowid
+              JOIN memory_records m ON m.id = i.memory_id
+              WHERE memory_search_terms MATCH @match AND ${indexScope}
+              ORDER BY bm25(memory_search_terms), m.id LIMIT @limit`,
+            )
+            .all({ ...scope, match, limit: input.limit }) as IndexCandidateRow[]
+        ).map((row) => this.indexCandidate(row))
+      : [];
+    const queryText = input.queryText.normalize("NFKC").toLowerCase();
+    const entity =
+      queryText.trim().length === 0
+        ? []
+        : (
+            this.database
+              .prepare(
+                `SELECT ${indexCandidateColumns}, COUNT(*) AS signal
+                FROM memory_entities e
+                JOIN memory_records m ON m.id = e.memory_id
+                JOIN memory_search_index i ON i.memory_id = m.id
+                WHERE instr(@queryText, e.name) > 0 AND ${indexScope}
+                GROUP BY m.id ORDER BY signal DESC, m.id LIMIT @limit`,
+              )
+              .all({ ...scope, queryText, limit: input.limit }) as IndexCandidateRow[]
+          ).map((row) => this.indexCandidate(row));
+    return Object.freeze({
+      vector: Object.freeze(vector),
+      lexical: Object.freeze(lexical),
+      entity: Object.freeze(entity),
+      vectorEngine,
+    });
+  }
+
+  private upsertEpisode(document: MemoryEpisodeDocument): void {
+    this.assertDiskHeadroom();
+    if (
+      document.id.length === 0 ||
+      !DAY.test(document.day) ||
+      !["day_summary", "compaction"].includes(document.source) ||
+      !CLASSIFICATIONS.has(document.dataClassification) ||
+      !Number.isSafeInteger(document.firstSequence) ||
+      !Number.isSafeInteger(document.lastSequence) ||
+      document.firstSequence < 1 ||
+      document.lastSequence < document.firstSequence ||
+      !validIsoTimestamp(document.startedAt) ||
+      !validIsoTimestamp(document.endedAt) ||
+      !validIsoTimestamp(document.createdAt) ||
+      document.terms.length > MAXIMUM_INDEX_TERMS ||
+      document.terms.some((term) => term.length === 0 || term.length > 64) ||
+      (document.embedding !== null &&
+        (document.embedding.vector.length !== document.embedding.dimensions ||
+          document.embedding.model.length === 0 ||
+          !document.embedding.vector.every(Number.isFinite)))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", `Memory episode ${document.id} is invalid`);
+    }
+    this.database
+      .transaction(() => {
+        const payload = this.database
+          .prepare(
+            `SELECT classification FROM payloads WHERE ref = ? AND owner_id = ? AND agent_id = ?
+            AND lifecycle_state = 'active'`,
+          )
+          .get(document.contentRef, document.ownerId, document.agentId) as
+          | { readonly classification: string }
+          | undefined;
+        if (!payload || payload.classification !== document.dataClassification)
+          this.fail("PORT_NOT_FOUND", `Memory episode Payload ${document.contentRef} not found`);
+        const thread = this.database
+          .prepare("SELECT 1 FROM threads WHERE id = ? AND owner_id = ? AND agent_id = ?")
+          .get(document.threadId, document.ownerId, document.agentId);
+        if (!thread) this.fail("PORT_NOT_FOUND", "Memory episode Thread not found");
+        this.database.prepare("DELETE FROM memory_episodes WHERE id = ?").run(document.id);
+        const inserted = this.database
+          .prepare(
+            `INSERT INTO memory_episodes (
+              id, owner_id, agent_id, thread_id, day, source, content_ref, classification,
+              first_sequence, last_sequence, started_at, ended_at, created_at,
+              embedding_model, embedding_dimensions, embedding
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            document.id,
+            document.ownerId,
+            document.agentId,
+            document.threadId,
+            document.day,
+            document.source,
+            document.contentRef,
+            document.dataClassification,
+            document.firstSequence,
+            document.lastSequence,
+            document.startedAt,
+            document.endedAt,
+            document.createdAt,
+            document.embedding?.model ?? null,
+            document.embedding?.dimensions ?? null,
+            document.embedding ? vectorBlob(document.embedding) : null,
+          );
+        if (
+          document.terms.length > 0 &&
+          INDEXED_ENTITY_CLASSIFICATIONS.has(document.dataClassification)
+        )
+          this.database
+            .prepare("INSERT INTO memory_episode_terms (rowid, terms) VALUES (?, ?)")
+            .run(inserted.lastInsertRowid, document.terms.join(" "));
+      })
+      .immediate();
+  }
+
+  private episodeFromRow(row: EpisodeRow): MemoryEpisode {
+    return Object.freeze({
+      id: row.id,
+      ownerId: row.ownerId as OwnerId,
+      agentId: row.agentId as AgentId,
+      threadId: row.threadId as ThreadId,
+      day: row.day,
+      source: row.source,
+      contentRef: row.contentRef,
+      dataClassification: row.classification,
+      firstSequence: row.firstSequence,
+      lastSequence: row.lastSequence,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      createdAt: row.createdAt,
+    });
+  }
+
+  private searchEpisodes(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    embedding: MemoryIndexEmbedding | null;
+    terms: readonly string[];
+    allowedClassifications: readonly string[];
+    from: string | null;
+    to: string | null;
+    limit: number;
+  }): MemoryEpisodeSearchResult {
+    if (
+      !Number.isSafeInteger(input.limit) ||
+      input.limit < 1 ||
+      input.limit > 200 ||
+      !Array.isArray(input.allowedClassifications) ||
+      input.allowedClassifications.some((value) => !CLASSIFICATIONS.has(value)) ||
+      (input.from !== null && !validIsoTimestamp(input.from)) ||
+      (input.to !== null && !validIsoTimestamp(input.to))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory episode search input is invalid");
+    }
+    const scope = {
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      classifications: JSON.stringify(input.allowedClassifications),
+      from: input.from,
+      to: input.to,
+      limit: input.limit,
+    };
+    const candidate = (row: EpisodeRow & { signal: number }): MemoryEpisodeCandidate =>
+      Object.freeze({ episode: this.episodeFromRow(row), signal: row.signal });
+    let vector: MemoryEpisodeCandidate[] = [];
+    if (input.embedding) {
+      const embedding = input.embedding;
+      const vectorScope = { ...scope, model: embedding.model, dimensions: embedding.dimensions };
+      if (this.vectorEngine === "sqlite-vec") {
+        vector = (
+          this.database
+            .prepare(
+              `SELECT ${episodeColumns}, 1 - vec_distance_cosine(e.embedding, @query) AS signal
+              FROM memory_episodes e
+              WHERE ${episodeScope} AND e.embedding_model = @model
+                AND e.embedding_dimensions = @dimensions
+              ORDER BY signal DESC, e.id LIMIT @limit`,
+            )
+            .all({ ...vectorScope, query: vectorBlob(embedding) }) as (EpisodeRow & {
+            signal: number;
+          })[]
+        ).map(candidate);
+      } else {
+        const query = embedding.vector;
+        const queryNorm = Math.sqrt(query.reduce((sum, value) => sum + value * value, 0));
+        const rows = this.database
+          .prepare(
+            `SELECT ${episodeColumns}, e.embedding AS embedding FROM memory_episodes e
+            WHERE ${episodeScope} AND e.embedding_model = @model
+              AND e.embedding_dimensions = @dimensions`,
+          )
+          .all(vectorScope) as (EpisodeRow & { embedding: Uint8Array })[];
+        vector = rows
+          .map(({ embedding: blob, ...row }) => {
+            const values = blobVector(blob, embedding.dimensions);
+            let dot = 0;
+            let norm = 0;
+            for (let index = 0; index < values.length; index += 1) {
+              const value = values[index] ?? 0;
+              dot += value * (query[index] ?? 0);
+              norm += value * value;
+            }
+            const signal = norm === 0 || queryNorm === 0 ? 0 : dot / Math.sqrt(norm) / queryNorm;
+            return candidate({ ...row, signal });
+          })
+          .sort(
+            (left, right) =>
+              right.signal - left.signal || left.episode.id.localeCompare(right.episode.id),
+          )
+          .slice(0, input.limit);
+      }
+    }
+    const match = ftsQuery(input.terms);
+    const lexical = match
+      ? (
+          this.database
+            .prepare(
+              `SELECT ${episodeColumns}, -bm25(memory_episode_terms) AS signal
+              FROM memory_episode_terms
+              JOIN memory_episodes e ON e.rowid = memory_episode_terms.rowid
+              WHERE memory_episode_terms MATCH @match AND ${episodeScope}
+              ORDER BY bm25(memory_episode_terms), e.id LIMIT @limit`,
+            )
+            .all({ ...scope, match }) as (EpisodeRow & { signal: number })[]
+        ).map(candidate)
+      : [];
+    return Object.freeze({ vector: Object.freeze(vector), lexical: Object.freeze(lexical) });
+  }
+
+  private listUnembedded(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    model: string;
+    dimensions: number;
+    limit: number;
+  }): readonly MemoryEpisode[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      this.fail("PORT_INVALID_OPERATION", "Memory episode listing limit must be between 1 and 100");
+    }
+    return (
+      this.database
+        .prepare(
+          `SELECT ${episodeColumns} FROM memory_episodes e
+          JOIN memory_episode_terms t ON t.rowid = e.rowid
+          WHERE e.owner_id = @ownerId AND e.agent_id = @agentId
+            AND (e.embedding_model IS NULL OR e.embedding_model != @model
+              OR e.embedding_dimensions != @dimensions)
+          ORDER BY e.created_at, e.id LIMIT @limit`,
+        )
+        .all(input) as EpisodeRow[]
+    ).map((row) => this.episodeFromRow(row));
+  }
+
+  private attachEpisodeEmbedding(input: {
+    episodeId: string;
+    embedding: MemoryIndexEmbedding;
+  }): void {
+    this.assertDiskHeadroom();
+    if (
+      input.embedding.vector.length !== input.embedding.dimensions ||
+      input.embedding.model.length === 0 ||
+      !input.embedding.vector.every(Number.isFinite)
+    )
+      this.fail("PORT_INVALID_OPERATION", "Memory episode embedding is invalid");
+    this.database
+      .prepare(
+        `UPDATE memory_episodes SET embedding_model = ?, embedding_dimensions = ?, embedding = ?
+        WHERE id = ?`,
+      )
+      .run(
+        input.embedding.model,
+        input.embedding.dimensions,
+        vectorBlob(input.embedding),
+        input.episodeId,
+      );
+  }
+
+  private listUnsummarized(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    limit: number;
+  }): readonly MemoryEpisodeThreadWatermark[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      this.fail("PORT_INVALID_OPERATION", "Memory episode listing limit must be between 1 and 100");
+    }
+    return this.database
+      .prepare(
+        `SELECT t.id AS threadId,
+          COALESCE((SELECT max(e.last_sequence) FROM memory_episodes e
+            WHERE e.thread_id = t.id AND e.source = 'day_summary'), 0) AS summarizedThrough,
+          m.last_sequence AS lastSequence, m.last_committed_at AS lastCommittedAt
+        FROM threads t
+        JOIN (SELECT thread_id, max(sequence) AS last_sequence,
+            max(committed_at) AS last_committed_at
+          FROM thread_messages WHERE owner_id = @ownerId AND agent_id = @agentId
+          GROUP BY thread_id) m ON m.thread_id = t.id
+        WHERE t.owner_id = @ownerId AND t.agent_id = @agentId AND t.status = 'open'
+          AND m.last_sequence > summarizedThrough
+        ORDER BY m.last_committed_at, t.id LIMIT @limit`,
+      )
+      .all(input) as MemoryEpisodeThreadWatermark[];
+  }
+
+  private listUnindexed(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    model: string;
+    dimensions: number;
+    embeddableClassifications: readonly string[];
+    afterMemoryId: MemoryId | null;
+    limit: number;
+  }): readonly MemoryId[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000) {
+      this.fail("PORT_INVALID_OPERATION", "Memory index listing limit must be between 1 and 1000");
+    }
+    if (
+      !Array.isArray(input.embeddableClassifications) ||
+      input.embeddableClassifications.some((value) => !CLASSIFICATIONS.has(value))
+    ) {
+      this.fail("PORT_INVALID_OPERATION", "Memory index classifications are invalid");
+    }
+    const { embeddableClassifications, ...query } = input;
+    return this.database
+      .prepare(
+        `SELECT m.id FROM memory_records m
+        LEFT JOIN memory_search_index i ON i.memory_id = m.id
+        WHERE m.owner_id = @ownerId AND m.agent_id = @agentId AND m.status = 'active'
+          AND (@afterMemoryId IS NULL OR m.id > @afterMemoryId)
+          AND (i.memory_id IS NULL OR i.memory_revision != m.revision
+            OR (m.classification IN (SELECT value FROM json_each(@embeddable))
+              AND (i.embedding_model IS NULL OR i.embedding_model != @model
+                OR i.embedding_dimensions != @dimensions)))
+        ORDER BY m.id LIMIT @limit`,
+      )
+      .pluck()
+      .all({ ...query, embeddable: JSON.stringify(embeddableClassifications) }) as MemoryId[];
   }
 
   private readJob(jobId: string): MemoryProjectionJob | undefined {
@@ -533,7 +1343,10 @@ export class SqliteMemoryOperations {
         | ProjectionJobRow
         | undefined;
       if (duplicate) {
-        if (input.requeueCompleted && duplicate.status === "completed") {
+        if (
+          input.requeueCompleted &&
+          (duplicate.status === "completed" || duplicate.status === "failed_terminal")
+        ) {
           this.database
             .prepare(
               `UPDATE memory_projection_jobs SET status = 'pending', attempt_count = 0,

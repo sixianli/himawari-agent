@@ -49,10 +49,26 @@ export const governanceMessages = [
         revision: 1,
         text: "主人最喜欢的颜色是蓝色",
         dataClassification: "private",
+        topic: null,
         inference: false,
         sourceThreadId: "thread-01",
         sourceRefs: ["payload-01"],
         updatedAt: "2026-09-11T00:00:00.000Z",
+        supersededBy: null,
+        validTo: null,
+        tentative: false,
+      },
+    ],
+    profile: [
+      {
+        kind: "preference",
+        lines: [
+          {
+            memoryId: "memory-01",
+            text: "主人最喜欢的颜色是蓝色",
+            updatedAt: "2026-09-11T00:00:00.000Z",
+          },
+        ],
       },
     ],
     pending: [
@@ -65,7 +81,32 @@ export const governanceMessages = [
         requestedAt: "2026-09-11T00:00:00.000Z",
       },
     ],
+    tidyUps: [
+      {
+        changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+        action: "merge",
+        text: "主人的女儿叫小葵",
+        relatedText: "主人的女儿名叫小葵",
+        createdAt: "2026-09-11T00:00:00.000Z",
+        undone: false,
+      },
+    ],
+    reminders: [
+      {
+        reminderId: "reminder:memory-01",
+        text: "主人周五下午三点要交季度报告",
+        dueAt: "2026-09-12T07:00:00.000Z",
+        remindAt: "2026-09-12T06:00:00.000Z",
+      },
+    ],
     generatedAt: "2026-09-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.tidy.undo", {
+    changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+  }),
+  fixture("command", "memory.reminder.respond", {
+    reminderId: "reminder:memory-01",
+    action: "dismiss",
   }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",

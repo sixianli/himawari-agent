@@ -14,6 +14,10 @@ import type {
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  MemoryConsolidationStorePort,
+  MemoryEpisodeStorePort,
+  MemoryReminderStorePort,
+  MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
   ModelInvocationIdentityPort,
@@ -874,6 +878,50 @@ export class SqliteDurableAdapters {
       listActive: (ownerId, agentId) =>
         this.context.read("memory.listActive", { ownerId, agentId }),
       markUsed: (memoryIds, usedAt) => this.context.write("memory.markUsed", { memoryIds, usedAt }),
+    });
+  }
+
+  memoryIndex(): MemoryIndexStorePort {
+    return Object.freeze<MemoryIndexStorePort>({
+      upsert: (document) => this.context.write("memoryIndex.upsert", { document }),
+      delete: (memoryId) => this.context.write("memoryIndex.delete", { memoryId }),
+      clearScope: (ownerId, agentId) =>
+        this.context.write("memoryIndex.clearScope", { ownerId, agentId }),
+      search: (input) => this.context.read("memoryIndex.search", input),
+      listUnindexed: (input) => this.context.read("memoryIndex.listUnindexed", input),
+    });
+  }
+
+  memoryConsolidation(): MemoryConsolidationStorePort {
+    return Object.freeze<MemoryConsolidationStorePort>({
+      begin: (run) => this.context.write("memoryConsolidation.begin", { run }),
+      lastCompleted: (ownerId, agentId) =>
+        this.context.read("memoryConsolidation.lastCompleted", { ownerId, agentId }),
+      finish: (input) => this.context.write("memoryConsolidation.finish", input),
+      recordChange: (change) => this.context.write("memoryConsolidation.recordChange", { change }),
+      listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
+      readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
+      markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
+    });
+  }
+
+  memoryReminders(): MemoryReminderStorePort {
+    return Object.freeze<MemoryReminderStorePort>({
+      schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
+      listDue: (input) => this.context.read("memoryReminder.listDue", input),
+      listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
+      read: (id) => this.context.read("memoryReminder.read", { id }),
+      update: (input) => this.context.write("memoryReminder.update", input),
+    });
+  }
+
+  memoryEpisodes(): MemoryEpisodeStorePort {
+    return Object.freeze<MemoryEpisodeStorePort>({
+      upsert: (document) => this.context.write("memoryEpisode.upsert", { document }),
+      search: (input) => this.context.read("memoryEpisode.search", input),
+      listUnembedded: (input) => this.context.read("memoryEpisode.listUnembedded", input),
+      attachEmbedding: (input) => this.context.write("memoryEpisode.attachEmbedding", input),
+      listUnsummarized: (input) => this.context.read("memoryEpisode.listUnsummarized", input),
     });
   }
 

@@ -767,6 +767,12 @@ export class SqliteGovernedDeletionAdapter {
         database
           .prepare("UPDATE memory_records SET source_thread_id = NULL WHERE source_thread_id = ?")
           .run(objectId);
+        payloadRefs.push(
+          ...this.#values(database, "SELECT content_ref FROM memory_episodes WHERE thread_id = ?", [
+            objectId,
+          ]),
+        );
+        database.prepare("DELETE FROM memory_episodes WHERE thread_id = ?").run(objectId);
         this.#detachThreadTasks(database, objectId);
         database.prepare("DELETE FROM runs WHERE thread_id = ?").run(objectId);
         if (triggerIds.length > 0) {

@@ -814,7 +814,7 @@ async function runProbe(input) {
           },
         ],
         memory: {
-          adapter: "mem0-oss",
+          adapter: "himawari-sqlite",
           version: "3.3.1",
           storagePath: path.join(stateRoot, "data/memory"),
           dimensions: 4096,
@@ -836,16 +836,6 @@ async function runProbe(input) {
             scope: "local-services",
           },
         ],
-        budgets: {
-          globalCostMicros: 1000000,
-          perRunCostMicros: 100000,
-          perClassificationCostMicros: {
-            public: 100000,
-            private: 100000,
-            sensitive: 0,
-            restricted: 0,
-          },
-        },
         concurrency: { totalRuns: 4, foregroundReserved: 1, perCategory: { foreground: 2 } },
         deadlines: { runMs: 900000, workerRequestMs: 300000, providerRequestMs: 120000 },
         capabilityDeployment: {

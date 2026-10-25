@@ -68,16 +68,10 @@ export type ConfiguredModelDescriptor =
   | ConfiguredEmbeddingModelDescriptor;
 
 export interface ConfiguredMemoryDescriptor {
-  readonly adapter: "mem0-oss";
+  readonly adapter: "himawari-sqlite";
   readonly version: string;
   readonly storagePath: string;
   readonly dimensions: number;
-}
-
-export interface BudgetConfiguration {
-  readonly globalCostMicros: number;
-  readonly perRunCostMicros: number;
-  readonly perClassificationCostMicros: Readonly<Record<DataClassification, number>>;
 }
 
 export interface ConcurrencyConfiguration {
@@ -244,7 +238,6 @@ export interface ProductConfiguration {
   readonly memory: ConfiguredMemoryDescriptor;
   readonly repositoryAllowlistRefs: readonly string[];
   readonly secretReferences: readonly SecretReferenceDescriptor[];
-  readonly budgets: BudgetConfiguration;
   readonly concurrency: ConcurrencyConfiguration;
   readonly deadlines: DeadlineConfiguration;
   readonly loadedAt: string;

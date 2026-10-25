@@ -1,0 +1,6 @@
+interface:
+  display_name: "中文活人感写作"
+  short_description: "去除机器腔，保留事实与作者声音，让中文文章读起来自然具体。"
+  default_prompt: "使用 $human-writing-zh 改写下面的文章，保留事实、条件、引用和作者立场，只输出成稿。"
+policy:
+  allow_implicit_invocation: true

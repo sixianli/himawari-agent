@@ -1,6 +1,7 @@
 import type { MemoryGenerationId, MemoryId } from "@himawari-agent/domain";
 import {
   ApplicationPortError,
+  DEFAULT_MEMORY_ATTRIBUTES,
   PORT_ERROR_CODES,
   type ApprovedMemoryContentPort,
   type ExtractedMemoryCandidate,
@@ -27,6 +28,12 @@ export interface AutomaticMemoryServiceOptions {
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
   readonly approvalIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => string;
   readonly automaticConfidencePermille?: number;
+  readonly onCommitted?: (input: {
+    readonly candidate: ExtractedMemoryCandidate;
+    readonly memoryId: MemoryId;
+    readonly ownerId: CommittedRunMemoryInput["ownerId"];
+    readonly agentId: CommittedRunMemoryInput["agentId"];
+  }) => Promise<void>;
 }
 
 export interface CommittedRunMemoryInput {
@@ -242,7 +249,19 @@ export class AutomaticMemoryService {
         interactive: resolved.deliveryState === "deliverable",
         explicitRememberCandidateOrdinal: null,
       },
-      { ...candidate, text },
+      {
+        ...candidate,
+        text,
+        dataClassification:
+          candidate.dataClassification === "sensitive" &&
+          (request.sourceClassification === "public" || request.sourceClassification === "private")
+            ? "private"
+            : candidate.dataClassification,
+        attributes: {
+          ...(candidate.attributes ?? DEFAULT_MEMORY_ATTRIBUTES),
+          sensitiveTopic: candidate.sensitiveTopic ?? "other",
+        },
+      },
       request.candidateOrdinal,
       request.productMemoryId,
     );
@@ -342,7 +361,9 @@ export class AutomaticMemoryService {
           inference: candidate.inference,
           confidencePermille: candidate.confidencePermille,
           policyVersion: input.policyVersion,
+          ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
         },
+        ...(candidate.supersedes ? { supersedes: candidate.supersedes } : {}),
       };
     } else {
       if (!candidate.existingMemoryId) {
@@ -360,9 +381,17 @@ export class AutomaticMemoryService {
         inference: candidate.inference,
         confidencePermille: candidate.confidencePermille,
         policyVersion: input.policyVersion,
+        ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
       };
     }
-    return (await this.options.product.applyProposal(proposal, input.generationId)).id;
+    const memoryId = (await this.options.product.applyProposal(proposal, input.generationId)).id;
+    await this.options.onCommitted?.({
+      candidate,
+      memoryId,
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+    });
+    return memoryId;
   }
 
   private audit(

@@ -1,3 +1,4 @@
+import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
@@ -16,6 +17,7 @@ import {
   type GatewayAuthenticationContext,
   type GatewayV2InboundMessage,
   type OwnerIdentityStatePort,
+  OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
   PORT_ERROR_CODES,
@@ -126,7 +128,10 @@ export interface ProductionHttpCompositionOptions {
     readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
   };
   readonly memory?: {
-    readonly service: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete">;
+    readonly service: Pick<
+      DurableMemoryService,
+      "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "revise"
+    >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
   readonly configuration: ProductConfiguration;
@@ -825,6 +830,22 @@ export async function createProductionHttpComposition(
         clock: { now: clock },
       })
     : undefined;
+  const memoryPayloads = repository.payloadStore(ownerId, agentId);
+  const memoryJobs = repository.memoryProjectionJobs();
+  const memoryTidyUp = options.memory
+    ? new MemoryConsolidationService({
+        store: repository.memoryConsolidation(),
+        state: repository.productMemoryState(),
+        memory: options.memory.service,
+        generationFor: async (memoryId) =>
+          (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+        readText: async () => undefined,
+        storeText: async () => {
+          throw new Error("MEMORY_CONSOLIDATION_WRITE_UNAVAILABLE");
+        },
+        now: clock,
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -832,7 +853,24 @@ export async function createProductionHttpComposition(
         jobs: repository.memoryProjectionJobs(),
         approvals: repository.sensitiveMemoryApprovals(),
         memory: options.memory.service,
-        payloads: repository.payloadStore(ownerId, agentId),
+        profile: new OwnerProfileService({
+          state: repository.productMemoryState(),
+          readText: async (record) => {
+            const payload = await memoryPayloads.get(record.contentRef);
+            if (!payload || payload.contentType !== "text/plain") return undefined;
+            return new TextDecoder("utf-8", { fatal: true }).decode(
+              await payloadProtector.unprotect({ ownerId, agentId, payload }),
+            );
+          },
+          storeText: async () => {},
+          digest: (text) => createHash("sha256").update(text).digest("hex"),
+        }),
+        consolidation: {
+          store: repository.memoryConsolidation(),
+          undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
+        },
+        reminders: repository.memoryReminders(),
+        payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
         onAudit: options.memory.onAudit,

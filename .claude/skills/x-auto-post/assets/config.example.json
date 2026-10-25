@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "enabled": false,
+  "topics": [],
+  "language": "zh-CN",
+  "voice": "使用 human-writing-zh 写出自然、具体的中文；按素材和读者调整语气，给出有依据的观点，不虚构亲历，不套固定钩子和金句",
+  "state_dir": "~/Library/Application Support/x-auto-post",
+  "account": {
+    "organization_id": "",
+    "channel_id": "",
+    "handle": ""
+  },
+  "schedule": {
+    "timezone": "Asia/Shanghai",
+    "weekdays": [0, 1, 2, 3, 4, 5, 6],
+    "times": [],
+    "lead_minutes": 30
+  },
+  "credentials": {
+    "token_file": "~/Library/Application Support/x-auto-post/buffer-token"
+  },
+  "agent": {
+    "provider": "codex",
+    "executable": "",
+    "timeout_seconds": 600
+  },
+  "notifications": true,
+  "api_limits": {
+    "fifteen_minutes": 100,
+    "day": 250,
+    "thirty_days": 3000
+  }
+}

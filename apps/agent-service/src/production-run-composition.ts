@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ClockPort,
   ContextFormationService,
@@ -8,6 +9,7 @@ import {
   type ModelInvocationAdmissionPort,
   type ModelInvocationAdmissionResolver,
   ModelInvocationAdmissionService,
+  OwnerProfileService,
   type PayloadProtectorPort,
   type ProductConfiguration,
   RunCoordinator,
@@ -40,6 +42,14 @@ import {
 type ProductionMemoryCaptureRecall = NonNullable<
   ReturnType<NonNullable<ProductionMemoryCaptureOptions["relevantMemoryIds"]>>
 >[number];
+import {
+  ProductionMemoryEpisodes,
+  type ProductionMemoryEpisodesOptions,
+} from "./production-memory-episodes.js";
+import {
+  ProductionMemoryConsolidation,
+  type ProductionMemoryConsolidationOptions,
+} from "./production-memory-consolidation.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -52,13 +62,22 @@ export interface ProductionRunCompositionOptions {
   readonly onTitleFailure?: (error: unknown) => void;
   readonly memoryCapture?: Pick<
     ProductionMemoryCaptureOptions,
-    "product" | "approvals" | "onAudit" | "onFailure"
+    "product" | "approvals" | "onAudit" | "onFailure" | "timeZone"
   > & {
     readonly generate: (
       request: RuntimeRequest,
       prompt: string,
       admission: ModelInvocationAdmissionPort,
+      purpose?: string,
     ) => Promise<string>;
+    readonly episodes?: Pick<
+      ProductionMemoryEpisodesOptions,
+      "service" | "embedWithin" | "onFailure"
+    >;
+    readonly consolidation?: Pick<
+      ProductionMemoryConsolidationOptions,
+      "service" | "search" | "embedWithin" | "onResult" | "onFailure"
+    >;
   };
   readonly recoverMissingToolResult?: (
     record: SandboxExecutionRecord,
@@ -72,7 +91,7 @@ export interface ProductionRunCompositionOptions {
   };
   readonly configuration: Pick<
     ProductConfiguration,
-    "ownerId" | "agentId" | "budgets" | "concurrency" | "deadlines"
+    "ownerId" | "agentId" | "concurrency" | "deadlines"
   >;
   readonly repository: SqliteProductStateRepository;
   readonly authority: Pick<
@@ -118,11 +137,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
       invocations: repository.modelInvocationIdentityPort(ownerId, agentId, fence, lease),
       clock,
       registry: options.modelRegistry,
-      limits: {
-        accountCostMicros: configuration.budgets.perRunCostMicros,
-        globalCostMicros: configuration.budgets.globalCostMicros,
-        perClassificationCostMicros: configuration.budgets.perClassificationCostMicros,
-      },
     });
   };
   const trace = new SessionTraceRecorder({
@@ -151,7 +165,41 @@ export function createProductionRunComposition(options: ProductionRunComposition
       return found;
     },
   };
+  const profileText = new Map<string, string>();
+  const profile = new OwnerProfileService({
+    state: repository.productMemoryState(),
+    readText: async (record) => {
+      const cached = profileText.get(record.contentRef);
+      if (cached !== undefined) return cached;
+      const payload = await payloads.get(record.contentRef);
+      if (!payload || payload.contentType !== "text/plain") return undefined;
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+        await protector.unprotect({ ownerId, agentId, payload }),
+      );
+      if (profileText.size >= 2000) profileText.clear();
+      profileText.set(record.contentRef, text);
+      return text;
+    },
+    storeText: async (input) => {
+      if (await payloads.get(input.ref)) return;
+      await payloads.put(
+        await protector.protect({
+          ownerId: input.ownerId,
+          agentId: input.agentId,
+          ref: input.ref,
+          contentType: "text/plain",
+          dataClassification: input.dataClassification,
+          plaintext: new TextEncoder().encode(input.text),
+          createdAt: clock.now(),
+        }),
+      );
+    },
+    digest: (text) => createHash("sha256").update(text).digest("hex"),
+    reminders: repository.memoryReminders(),
+    ...(options.memoryCapture?.timeZone ? { timeZone: options.memoryCapture.timeZone } : {}),
+  });
   const context = new ContextFormationService({
+    profile,
     memory,
     trace,
     artifacts,
@@ -296,39 +344,80 @@ export function createProductionRunComposition(options: ProductionRunComposition
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
+        reminders: repository.memoryReminders(),
+        ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
         payloads,
         protector,
         clock,
         assertActive: () => authority.assertActive(),
-        generate: async (request, prompt, onAdmitted) => {
-          const gate = await admission(request);
-          if (!gate) throw new Error("MEMORY_CAPTURE_ADMISSION_UNAVAILABLE");
-          return memoryCaptureOptions.generate(request, prompt, {
-            context: gate.context,
-            begin: async (input) => {
-              const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
-              if (result.disposition !== "fresh") return result;
-              const { permit } = result;
-              return {
-                ...result,
-                permit: {
-                  assertActive: () => permit.assertActive(),
-                  releaseReserved: () => permit.releaseReserved(),
-                  settle: (usage) => permit.settle(usage),
-                  markUnknown: (reason) => permit.markUnknown(reason),
-                  markStarted: async () => {
-                    await permit.markStarted();
-                    onAdmitted();
-                  },
-                },
-              };
-            },
-          });
-        },
+        generate: (request, prompt, onAdmitted) =>
+          auxiliaryMemoryGeneration(request, prompt, onAdmitted, "memory-capture"),
         onAudit: memoryCaptureOptions.onAudit,
         onFailure: memoryCaptureOptions.onFailure,
       })
     : undefined;
+  const memoryEpisodeOptions = memoryCaptureOptions?.episodes;
+  const memoryEpisodes = memoryEpisodeOptions
+    ? new ProductionMemoryEpisodes({
+        service: memoryEpisodeOptions.service,
+        threads: repository.threadRepository(),
+        payloads,
+        protector,
+        assertActive: () => authority.assertActive(),
+        generate: (request, prompt, onAdmitted, purpose) =>
+          auxiliaryMemoryGeneration(request, prompt, onAdmitted, purpose),
+        ...(memoryEpisodeOptions.embedWithin
+          ? { embedWithin: memoryEpisodeOptions.embedWithin }
+          : {}),
+        onFailure: memoryEpisodeOptions.onFailure,
+      })
+    : undefined;
+  const memoryConsolidationOptions = memoryCaptureOptions?.consolidation;
+  const memoryConsolidation = memoryConsolidationOptions
+    ? new ProductionMemoryConsolidation({
+        ...memoryConsolidationOptions,
+        assertActive: () => authority.assertActive(),
+        generate: (request, prompt, onAdmitted, purpose) =>
+          auxiliaryMemoryGeneration(request, prompt, onAdmitted, purpose),
+        now: () => options.clock.now(),
+      })
+    : undefined;
+  async function auxiliaryMemoryGeneration(
+    request: RuntimeRequest,
+    prompt: string,
+    onAdmitted: () => void,
+    purpose: string,
+  ): Promise<string> {
+    if (!memoryCaptureOptions) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
+    const gate = await admission(request);
+    if (!gate) throw new Error("MEMORY_CAPTURE_ADMISSION_UNAVAILABLE");
+    return memoryCaptureOptions.generate(
+      request,
+      prompt,
+      {
+        context: gate.context,
+        begin: async (input) => {
+          const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
+          if (result.disposition !== "fresh") return result;
+          const { permit } = result;
+          return {
+            ...result,
+            permit: {
+              assertActive: () => permit.assertActive(),
+              releaseReserved: () => permit.releaseReserved(),
+              settle: (usage) => permit.settle(usage),
+              markUnknown: (reason) => permit.markUnknown(reason),
+              markStarted: async () => {
+                await permit.markStarted();
+                onAdmitted();
+              },
+            },
+          };
+        },
+      },
+      purpose,
+    );
+  }
   const titledRuntime = {
     cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
@@ -342,10 +431,13 @@ export function createProductionRunComposition(options: ProductionRunComposition
           requested = true;
           titleAdmission = titles?.start(request);
           if (memoryCapture)
-            memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve()).then(() =>
-              memoryCapture.start(request),
-            );
+            memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve())
+              .then(() => memoryCapture.start(request))
+              .then(() => memoryEpisodes?.start(request))
+              .then(() => memoryConsolidation?.start(request));
         }
+        if (event.type === "runtime.compaction_proposed" && memoryEpisodes)
+          void memoryEpisodes.recordCompaction(request, event.proposalRef);
         if (
           ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
         ) {
@@ -426,5 +518,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
     loop,
     titles,
     memoryCapture,
+    memoryEpisodes,
+    memoryConsolidation,
   });
 }

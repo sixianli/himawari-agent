@@ -6,7 +6,6 @@ import type {
   ProductDataClassification,
   RunId,
 } from "@himawari-agent/domain";
-import type { DataClassification } from "./common.js";
 import type { AuthorityFence } from "./persistence.js";
 import type { RunExecutionLeaseClaim } from "./run-dispatch.js";
 
@@ -46,12 +45,6 @@ export interface ModelBudgetScope {
   readonly authorityLease: AuthorityFence;
 }
 
-export interface ModelBudgetLimits {
-  readonly accountCostMicros: number;
-  readonly globalCostMicros: number;
-  readonly perClassificationCostMicros: Readonly<Record<DataClassification, number>>;
-}
-
 export interface ModelBudgetAllocationIdentity {
   readonly parent: ModelBudgetAccountParent;
   readonly operationKey: string;
@@ -63,7 +56,6 @@ export interface ModelBudgetReserveInput {
   readonly modelRef: string;
   readonly dataClassification: ProductDataClassification;
   readonly estimatedCostMicros: number;
-  readonly limits: ModelBudgetLimits;
   readonly reservedAt: string;
 }
 
@@ -83,13 +75,6 @@ export interface ModelBudgetUnknownInput extends ModelBudgetAllocationIdentity {
   readonly reasonCode: "provider_unresolved" | "transport_unresolved" | "cancel_unresolved";
 }
 
-/**
- * Releases a reservation that never entered the provider stream.
- *
- * This operation is deliberately separate from unknown/settled accounting:
- * once a provider may have started, the allocation must remain started or
- * unknown so that an external side effect cannot be hidden as a cancellation.
- */
 export interface ModelBudgetReleaseReservedInput extends ModelBudgetAllocationIdentity {
   readonly releasedAt: string;
 }

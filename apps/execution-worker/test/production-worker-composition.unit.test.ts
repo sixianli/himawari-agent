@@ -220,18 +220,13 @@ function configuration(
     publicMode: false,
     modelDescriptors: [],
     memory: {
-      adapter: "mem0-oss" as const,
+      adapter: "himawari-sqlite" as const,
       version: "fixture",
       storagePath: path.join(root, "data", "memory"),
       dimensions: 1,
     },
     repositoryAllowlistRefs: [],
     secretReferences: [],
-    budgets: {
-      globalCostMicros: 0,
-      perRunCostMicros: 0,
-      perClassificationCostMicros: { public: 0, private: 0, sensitive: 0, restricted: 0 },
-    },
     concurrency: { totalRuns: 1, foregroundReserved: 0, perCategory: {} },
     deadlines: { runMs: 10_000, workerRequestMs: 1_000, providerRequestMs: 1_000 },
     loadedAt: NOW,
@@ -743,7 +738,6 @@ describe("production Worker composition", () => {
         },
       },
     ]);
-    // The real host verifier must still reject the deliberately mismatched host.
     await expect(
       createProductionWorkerComposition({
         configuration: configuration(root, deployment),

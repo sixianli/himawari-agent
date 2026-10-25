@@ -56,17 +56,6 @@ const DESCRIPTOR: ModelInvocationAdmissionDescriptor = {
   estimatedCostMicros: 100,
 };
 
-const LIMITS = {
-  accountCostMicros: 10_000,
-  globalCostMicros: 100_000,
-  perClassificationCostMicros: {
-    public: 100_000,
-    private: 100_000,
-    sensitive: 100_000,
-    restricted: 100_000,
-  },
-} as const;
-
 const CLAIM: RunExecutionLeaseClaim = {
   executionLeaseId: EXECUTION_LEASE_ID,
   expectedLeaseRevision: 1,
@@ -275,7 +264,6 @@ function serviceFixture(descriptor: ModelInvocationAdmissionDescriptor = DESCRIP
     dispatch,
     invocations,
     clock: { now: () => currentTime },
-    limits: LIMITS,
     registry: [descriptor],
   });
   return {
@@ -451,7 +439,6 @@ describe("ModelInvocationAdmissionService", () => {
           dispatch: fixture.dispatch,
           invocations: fixture.invocations,
           clock: { now: () => NOW },
-          limits: LIMITS,
           registry: [{ ...DESCRIPTOR, pricing: { ...PRICING, input: Number.NaN } }],
         }),
     ).toThrowError(

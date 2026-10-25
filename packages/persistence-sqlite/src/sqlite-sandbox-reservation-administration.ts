@@ -300,12 +300,12 @@ export class SqliteSandboxReservationAdministration {
     const declared = Number(metadata.find((row) => row.key === "current_sequence")?.value);
     const minimum = Number(metadata.find((row) => row.key === "minimum_writer_sequence")?.value);
     if (
-      ![49, 50, 51].includes(current) ||
+      ![49, 50, 51, 52, 53, 54, 55].includes(current) ||
       ledger.length !== current ||
       ledger.some((row, index) => row.sequence !== index + 1) ||
       declared !== current ||
       minimum !== current ||
-      (writing && current !== 51)
+      (writing && current !== 55)
     )
       fail(SANDBOX_RESERVATION_ADMIN_ERROR_CODES.SCHEMA_UNSUPPORTED);
     return current;

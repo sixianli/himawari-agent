@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist", "!!.ci-output"]
+    "includes": ["**", "!!**/dist", "!!.ci-output", "!!.claude/skills"]
   },
   "formatter": {
     "enabled": true,
@@ -17,7 +17,10 @@
   },
   "overrides": [
     {
-      "includes": ["test/qualification/evidence/**"],
+      "includes": [
+        "test/qualification/evidence/**",
+        "test/fixtures/memory-evaluation/embeddings-*.json"
+      ],
       "formatter": {
         "enabled": false
       }

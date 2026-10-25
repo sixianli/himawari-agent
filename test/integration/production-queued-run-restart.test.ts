@@ -472,11 +472,6 @@ it.each([
           agentId: AGENT_ID,
           concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
           deadlines: { runMs: 300000, workerRequestMs: 10000, providerRequestMs: 10000 },
-          budgets: {
-            globalCostMicros: 100,
-            perRunCostMicros: 100,
-            perClassificationCostMicros: { public: 100, private: 100, sensitive: 0, restricted: 0 },
-          },
         },
         authority: {
           authorityFence: () => authority.product,
@@ -545,7 +540,6 @@ it.each([
         },
       });
       running = first.coordinator.execute(input);
-      // The original Pi call must have reached the real queue before loss of the owner.
       await Promise.race([
         queued,
         running.then(async (result) => {
@@ -869,7 +863,6 @@ it.each([
           if (!candidate) throw new Error("LIVE_CANDIDATE_NOT_RETAINED");
           expect(await readFile(candidate.content.identity.canonicalPath, "utf8")).toBe("queued");
         }
-        // macOS best-effort termination cannot prove an arbitrary command's full tree stopped.
         expect(record?.workspaceBlocked).toBe(process.platform === "darwin" && !fixedCompletion);
         expect(Boolean(record?.releaseReceipt)).toBe(
           process.platform !== "darwin" || fixedCompletion,
@@ -930,7 +923,6 @@ it.each([
           }),
         );
       }
-      // Worker cancellation is intentionally unknown: it may not trigger a second execution.
       expect(result?.run.status).toBe(
         fixedCompletion ? "completed" : "reconciling_external_result",
       );
