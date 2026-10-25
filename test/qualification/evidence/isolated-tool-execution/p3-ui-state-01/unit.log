@@ -1,0 +1,63 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'unresolved' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'not_dispatched' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'stopped' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'failed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'failed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > shows a safe next action for 'completed' execution 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > localizes resource facts without requiring a new wire phase or inferring release 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > explains what a stop without strict confirmation leaves running 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > merges replayed out-of-order observations without erasing tool input 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > keeps independent tool calls and message snapshots 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > restores elapsed work and approval wait from historical boundaries 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > durable execution presentation > stops clocks at the persisted terminal update and marks missing clocks unknown 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > shows only known failure messages from replayed execution records 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > excludes approval wait from tool time and keeps the first completed message boundary 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > distinguishes actual thinking, tools, waiting and a stale connection 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > omits successful textless messages but preserves failures and actual text 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > keeps the model request time and arguments separate from tool execution 1ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > uses only execution-host timing, never time spent requesting or awaiting approval 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > pairs observed thinking boundaries and keeps legacy observations untimed 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > uses durable admission and unresolved markers independently from Pi tool starts 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > shows the recorded automatic-review source and only complete review intervals 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > prioritizes live review without reviving it after confirmation, cancellation or a later model turn 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > ignores unavailable or malformed review observations 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal cancelled tool in preparation when its result is missing 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal failed tool in preparation when its result is missing 0ms
+ ✓ |unit| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal completed tool in preparation when its result is missing 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (WORKER_DEADLINE_EXCEEDED) 13ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (SANDBOX_COMMAND_EFFECT_UNVERIFIED) 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > projects only allowlisted tool failure reasons (/private/host/token) 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows resource recovery while preserving the successful tool effect 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > ends cancelled cleanup only with complete release evidence, never an empty inventory 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > says a stop was not strictly confirmed when a process-group release ended the Run 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows a deleted execution record without calling the step successful or blocking the Run 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not hide an unrendered resource behind a completed Run or a last successful tool 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not advertise execution when resource observation contradicts a terminal Run 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > keeps an unrendered internal result unknown after every resource has released 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows a cancelled queue as not dispatched only with positive queue and tool evidence 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not claim resource shutdown from a cancelled Run even when every tool returned 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > keeps concurrent unresolved operations when the last tool succeeds and the Run completes 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run completed 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run failed 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > retains successful side effects after Run cancelled 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > never treats intent or model tool call as proof that the Worker started 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > preserves authoritative non-dispatch and unknown markers 0ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > uses actual parallel interval union and no missing or backwards interval 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > changes revision for Run and evidence changes but not rereads or unrelated clock time 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > only requests human attention for an available human action 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects resource changes across the Trace read even when the Run revision is unchanged 3ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > reads all pages so an earlier unresolved tool cannot be hidden by a later success 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > projects a safe product failure reason to the tool row without exposing raw diagnostics 3ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects a Run revision change instead of mixing old observations with new controls 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > rejects a stalled cursor and a history beyond the finite read budget 1ms
+ ✓ |unit| packages/application/test/thread-execution-state.unit.test.ts > execution state history read boundary > does not report an unreadable tool result as an empty successful Run 0ms
+
+ Test Files  2 passed (2)
+      Tests  55 passed (55)
+   Start at  00:40:45
+   Duration  653ms (transform 474ms, setup 0ms, import 581ms, tests 43ms, environment 0ms)

@@ -55,6 +55,7 @@ export interface SecretResolutionRecord {
 
 function modelUsage(
   event: Extract<ModelInvocationEvent, { readonly type: "model.completed" }>,
+  provider: string,
 ): ModelInvocationUsage | undefined {
   const inputTokens = event.inputTokens;
   const outputTokens = event.outputTokens;
@@ -75,7 +76,17 @@ function modelUsage(
   ) {
     return undefined;
   }
-  return Object.freeze({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
+  const gateway = provider === "vercel-ai-gateway";
+  if (gateway && (!Number.isSafeInteger(event.costMicros) || event.costMicros < 0)) {
+    return undefined;
+  }
+  return Object.freeze({
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    ...(gateway ? { reportedCostMicros: event.costMicros } : {}),
+  });
 }
 
 export class TrustedModelProviderAdapter implements ModelPort {
@@ -91,6 +102,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
   }
 
   async *invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent> {
+    request.signal?.throwIfAborted();
     assertMachineSecretFree(JSON.stringify(request));
     const descriptor = this.dependencies.descriptors.find(({ ref }) => ref === request.modelRef);
     if (!descriptor) {
@@ -141,6 +153,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
     };
     let secretValues: readonly string[];
     try {
+      request.signal?.throwIfAborted();
       const admission = await gate.begin({
         modelRef: descriptor.ref,
         provider: descriptor.provider,
@@ -163,9 +176,12 @@ export class TrustedModelProviderAdapter implements ModelPort {
         );
       }
       permit = admission.permit;
+      request.signal?.throwIfAborted();
       await permit.assertActive();
+      request.signal?.throwIfAborted();
       secretValues = await this.resolveSecrets(descriptor, request);
       await permit.assertActive();
+      request.signal?.throwIfAborted();
       await permit.markStarted();
       started = true;
     } catch (error) {
@@ -195,6 +211,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
       settled = true;
     };
     try {
+      request.signal?.throwIfAborted();
       for await (const event of this.dependencies.transport.invoke({
         descriptor,
         request,
@@ -209,7 +226,7 @@ export class TrustedModelProviderAdapter implements ModelPort {
           );
         }
         if (event.type === "model.completed") {
-          const usage = modelUsage(event);
+          const usage = modelUsage(event, descriptor.provider);
           if (usage === undefined) {
             await markUnknown("provider_unresolved");
             yield Object.freeze({
@@ -235,13 +252,15 @@ export class TrustedModelProviderAdapter implements ModelPort {
             settled = true;
           }
         } else if (event.type === "model.failed") {
-          await markUnknown("provider_unresolved");
+          await markUnknown(request.signal?.aborted ? "cancel_unresolved" : "provider_unresolved");
         }
         yield Object.freeze({ ...event, invocationId: request.invocationId });
         if (event.type === "model.completed" || event.type === "model.failed") break;
       }
     } catch (error) {
-      await markUnknown("transport_unresolved").catch(() => undefined);
+      await markUnknown(
+        request.signal?.aborted ? "cancel_unresolved" : "transport_unresolved",
+      ).catch(() => undefined);
       if (error instanceof ApplicationPortError) throw error;
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
@@ -249,7 +268,9 @@ export class TrustedModelProviderAdapter implements ModelPort {
         { invocationId: request.invocationId, modelRef: request.modelRef },
       );
     } finally {
-      await markUnknown("transport_unresolved").catch(() => undefined);
+      await markUnknown(
+        request.signal?.aborted ? "cancel_unresolved" : "transport_unresolved",
+      ).catch(() => undefined);
     }
   }
 

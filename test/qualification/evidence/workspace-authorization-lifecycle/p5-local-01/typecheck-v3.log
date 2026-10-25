@@ -1,0 +1,9 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/application/src/services/automatic-action-review.ts(39,15): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+packages/persistence-sqlite/src/sqlite-automatic-action-review.ts(15,5): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+packages/persistence-sqlite/src/sqlite-automatic-action-review.ts(16,5): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+packages/persistence-sqlite/src/sqlite-automatic-action-review.ts(17,5): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+packages/persistence-sqlite/src/sqlite-automatic-action-review.ts(22,5): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.

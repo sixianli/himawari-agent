@@ -1,0 +1,11 @@
+{"scenario":"stop","stage":"first-inspect"}
+file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-build/apps/agent-service/src/production-sandbox-control.js:232
+            const { binding } = await options.admit(plan);
+                                              ^
+
+TypeError: options.admit is not a function
+    at Object.register (file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/dist/node-build/apps/agent-service/src/production-sandbox-control.js:232:47)
+    at file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/runtime-sandbox/scripts/probe-job-host-control.mjs:232:23
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v22.22.3

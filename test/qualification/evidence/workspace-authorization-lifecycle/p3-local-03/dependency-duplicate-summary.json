@@ -1,0 +1,12 @@
+{
+  "observedAt": "2026-09-19T09:11:09.985Z",
+  "duplicates": 35702,
+  "canonicalAlsoMatchesPriorBuild": 28718,
+  "nonIdentical": [
+    "node_modules/.package-lock 2.json",
+    "node_modules/better-sqlite3/build/Release/better_sqlite3 3.node"
+  ],
+  "manifest": ".ci-output/workspace-lifecycle-dependency-quarantine-20260919/inventory.json",
+  "action": "moved to reversible quarantine; canonical files unchanged",
+  "quarantine": ".ci-output/workspace-lifecycle-dependency-quarantine-20260919"
+}

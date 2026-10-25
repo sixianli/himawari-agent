@@ -2,6 +2,7 @@ import type { AgentId, OwnerId, RunId } from "@himawari-agent/domain";
 import type { SandboxRuntimeQualification } from "@himawari-agent/execution-contracts";
 import type { PermissionAllowDecision } from "./authorization.js";
 import type { DataClassification, PayloadRef } from "./common.js";
+import type { AuditRecord } from "./observability.js";
 
 export interface CapabilityDescriptor {
   readonly ref: string;
@@ -69,6 +70,15 @@ export type CapabilityInvocationEvent =
       readonly reasonCode: string;
       readonly occurredAt: string;
     };
+
+/** Current Agent-owned permission for an already admitted invocation. A successful
+ * check is not a reusable grant and does not consume another use. */
+export interface CapabilityInvocationAuthorityPort {
+  assertCurrent(input: {
+    readonly handleRef: string;
+    readonly invocationId: string;
+  }): Promise<void>;
+}
 
 export interface CapabilityPort {
   list(): Promise<readonly CapabilityDescriptor[]>;
@@ -285,6 +295,16 @@ export interface CapabilityRegistryStorePort {
     expectedRevision: number,
     switchedAt: string,
   ): Promise<CapabilityRegistryRecord>;
+  applyCapabilityUpgrades?(
+    upgrades: readonly CapabilityRegistryUpgrade[],
+    upgradedAt: string,
+  ): Promise<readonly CapabilityRegistryRecord[]>;
+}
+
+export interface CapabilityRegistryUpgrade {
+  readonly record: CapabilityRegistryRecord;
+  readonly expectedRevision: number;
+  readonly audit: AuditRecord;
 }
 
 export interface CapabilitySecretReference {
@@ -342,7 +362,10 @@ export interface ConsumeCapabilityExecutionHandleInput {
 export interface CapabilityExecutionHandleStorePort {
   /** Enumerate only persisted handles belonging to this Run; consumers revalidate before use. */
   listRunExecutionHandles?(runId: RunId, at: string): Promise<readonly CapabilityExecutionHandle[]>;
-  createExecutionHandle(handle: CapabilityExecutionHandle): Promise<CapabilityExecutionHandle>;
+  createExecutionHandle(
+    handle: CapabilityExecutionHandle,
+    options?: { readonly authorizationReservationId: string },
+  ): Promise<CapabilityExecutionHandle>;
   getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
   revokeExecutionHandle(handleRef: string, revokedAt: string): Promise<CapabilityExecutionHandle>;
   consumeExecutionHandle?(

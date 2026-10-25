@@ -1,5 +1,3 @@
-import { createIdempotencyKey } from "@himawari-agent/domain";
-import { threadCommandFingerprint } from "./thread-command-service.js";
 import type {
   AgentId,
   IdempotencyKey,
@@ -8,6 +6,7 @@ import type {
   RunId,
   RunStatus,
 } from "@himawari-agent/domain";
+import { createIdempotencyKey } from "@himawari-agent/domain";
 import type {
   AgentRuntimePort,
   AuthorityFence,
@@ -26,9 +25,14 @@ import type {
   WorkerRunPort,
   WorkerRunRequest,
 } from "../ports/index.js";
-import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/index.js";
+import {
+  ApplicationPortError,
+  CONTEXT_MEMORY_UNAVAILABLE,
+  PORT_ERROR_CODES,
+} from "../ports/index.js";
 import type { ContextFormationPort, ContextFormationRequest } from "./context-formation-service.js";
 import type { SessionTraceRecorder } from "./session-trace-recorder.js";
+import { threadCommandFingerprint } from "./thread-command-service.js";
 
 export interface RunTransitionCommand {
   readonly idempotencyKey: IdempotencyKey;
@@ -122,7 +126,9 @@ export class RunExecutionInterruptedError extends Error {
 }
 
 export interface RunCoordinatorDependencies {
-  readonly resources?: { stopRun(runId: RunId): Promise<{ released: boolean }> };
+  readonly resources?: {
+    stopRun(runId: RunId, reason: "run_finished" | "run_cancelled"): Promise<{ released: boolean }>;
+  };
   readonly clock?: ClockPort;
   readonly runs: RunLifecyclePort;
   readonly checkpoints: RunCheckpointStore;
@@ -164,6 +170,10 @@ interface ExecutionAttempt {
   readonly cancelledWorkerRunIds: Set<string>;
 }
 
+// Risk-reduction waiting is separate from the Run's execution deadline. A
+// timeout reports unknown cleanup; it never releases claims or proves exit.
+const CLEANUP_WAIT_LIMIT_MS = 30_000;
+
 export class RunCoordinator {
   private readonly dependencies: RunCoordinatorDependencies;
   private readonly activeWorkers = new Map<RunId, Set<string>>();
@@ -175,12 +185,37 @@ export class RunCoordinator {
   }
 
   async execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    if (input.runtime.knownToolResult) throw new Error("KNOWN_RESULT_REQUIRES_RECOVERY_ENTRY");
+    return this.executeOwned(input, false);
+  }
+
+  async resumeToolResult(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    const saved = await this.readCheckpoint(input.runId);
+    const run = await this.requireRun(input.runId);
+    if (
+      !input.runtime.knownToolResult ||
+      input.runtime.knownToolResult.continuationRef !== input.runtime.continuationRef ||
+      run.run.status !== "running" ||
+      saved?.checkpoint.phase !== "runtime_running" ||
+      saved.checkpoint.diagnosticCode !== "RUNTIME_TOOL_RESULT_UNKNOWN" ||
+      saved.checkpoint.terminalStatus !== null ||
+      saved.checkpoint.output !== null ||
+      saved.checkpoint.contextRef === null
+    )
+      throw new Error("KNOWN_RESULT_RECOVERY_CHECKPOINT_CHANGED");
+    return this.executeOwned(input, true);
+  }
+
+  private async executeOwned(
+    input: ExecuteCoordinatedRunInput,
+    knownResultRecovery: boolean,
+  ): Promise<CoordinatedRunResult> {
     this.assertScope(input);
     const expiredWait = await this.finishExpiredApprovalWait(input);
     if (expiredWait) return expiredWait;
     const attempt = this.beginExecutionAttempt(input);
     try {
-      return await this.executeAttempt(input, attempt);
+      return await this.executeAttempt(input, attempt, knownResultRecovery);
     } finally {
       clearTimeout(attempt.deadlineTimer);
       if (attempt.interruption) await attempt.interruption;
@@ -244,38 +279,38 @@ export class RunCoordinator {
     }
     attempt.interrupted = Object.freeze({ ...input });
     attempt.cancellation.abort();
-    const cancellations: Promise<void>[] = [];
+    const cancellations: Promise<unknown>[] = [];
     const failures: ExecutionInterruptionFailure[] = [];
     const workerRunIds = [...attempt.activeWorkerRunIds];
     if (attempt.runtimeActive && !attempt.runtimeCancellationIssued) {
       attempt.runtimeCancellationIssued = true;
       cancellations.push(
-        Promise.resolve()
-          .then(() => this.dependencies.runtime.cancel(input.runId))
-          .catch((error: unknown) => {
+        this.requestCleanup(() => this.dependencies.runtime.cancel(input.runId)).catch(
+          (error: unknown) => {
             failures.push({ target: "runtime", error });
-          }),
+          },
+        ),
       );
     }
     for (const workerRunId of workerRunIds) {
       if (attempt.cancelledWorkerRunIds.has(workerRunId)) continue;
       attempt.cancelledWorkerRunIds.add(workerRunId);
       cancellations.push(
-        Promise.resolve()
-          .then(() => this.requireWorkers().cancel(workerRunId, input.reasonCode))
-          .catch((error: unknown) => {
-            failures.push({ target: "worker", workerRunId, error });
-          }),
+        this.requestCleanup(() =>
+          this.requireWorkers().cancel(workerRunId, input.reasonCode),
+        ).catch((error: unknown) => {
+          failures.push({ target: "worker", workerRunId, error });
+        }),
       );
     }
-    if (this.dependencies.resources)
+    const resources = this.dependencies.resources;
+    if (resources)
       cancellations.push(
-        this.dependencies.resources
-          .stopRun(input.runId)
-          .then(() => undefined)
-          .catch((error: unknown) => {
+        this.requestCleanup(() => resources.stopRun(input.runId, "run_cancelled")).catch(
+          (error: unknown) => {
             failures.push({ target: "resource", error });
-          }),
+          },
+        ),
       );
     attempt.interruption = Promise.all(cancellations).then(() => {
       attempt.interruptionResult = Object.freeze({
@@ -375,6 +410,7 @@ export class RunCoordinator {
   private async executeAttempt(
     input: ExecuteCoordinatedRunInput,
     attempt: ExecutionAttempt,
+    knownResultRecovery = false,
   ): Promise<CoordinatedRunResult> {
     const initialCheckpoint = await this.readCheckpoint(input.runId);
     this.assertExecutionActive(attempt);
@@ -400,9 +436,12 @@ export class RunCoordinator {
     if (isTerminalStatus(storedRun.run.status)) {
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
+    const queuedToolBatch = storedCheckpoint.queuedToolBatch;
     const interrupted =
       storedCheckpoint.checkpoint.phase === "runtime_running" &&
-      storedCheckpoint.checkpoint.terminalStatus === null;
+      storedCheckpoint.checkpoint.terminalStatus === null &&
+      !queuedToolBatch &&
+      !knownResultRecovery;
     const missingOutput =
       storedCheckpoint.checkpoint.terminalStatus === "completed" &&
       storedCheckpoint.checkpoint.output === null;
@@ -432,21 +471,59 @@ export class RunCoordinator {
       this.assertExecutionActive(attempt);
     }
 
-    if (storedCheckpoint.checkpoint.contextRef === null) {
-      const formed = await this.dependencies.context.form({
-        ...input.context,
-        signal: attempt.cancellation.signal,
-        ...(input.executionDeadlineAt === undefined
-          ? {}
-          : { deadlineAt: input.executionDeadlineAt }),
-      });
+    if (
+      storedCheckpoint.checkpoint.contextRef === null &&
+      storedCheckpoint.checkpoint.terminalStatus === null
+    ) {
+      const formed = await this.dependencies.context
+        .form({
+          ...input.context,
+          signal: attempt.cancellation.signal,
+          ...(input.executionDeadlineAt === undefined
+            ? {}
+            : { deadlineAt: input.executionDeadlineAt }),
+        })
+        .catch((error: unknown) => {
+          if (
+            error instanceof ApplicationPortError &&
+            error.code === PORT_ERROR_CODES.PROVIDER_FAILURE &&
+            error.message === CONTEXT_MEMORY_UNAVAILABLE &&
+            !attempt.cancellation.signal.aborted
+          )
+            return undefined;
+          throw error;
+        });
       this.assertExecutionActive(attempt);
-      storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
-        ...storedCheckpoint.checkpoint,
-        phase: "context_formed",
-        contextRef: formed.contextEnvelopeRef,
-        lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
-      });
+      if (formed) {
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: "context_formed",
+          contextRef: formed.contextEnvelopeRef,
+          lastTraceEventId: formed.traceEventIds.at(-1) ?? null,
+        });
+      } else {
+        const failure = await this.dependencies.trace.record({
+          ...this.traceScope(input),
+          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
+          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          eventType: "runtime.failed",
+          payload: {
+            type: "runtime.failed",
+            runId: input.runId,
+            errorCode: CONTEXT_MEMORY_UNAVAILABLE,
+            occurredAt: new Date(this.executionNow()).toISOString(),
+          },
+        });
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          phase: "runtime_settled",
+          lastTraceEventId: failure.event.id,
+          terminalStatus: "failed",
+          output: null,
+          diagnosticCode: CONTEXT_MEMORY_UNAVAILABLE,
+        });
+      }
       this.assertExecutionActive(attempt);
     }
 
@@ -476,7 +553,7 @@ export class RunCoordinator {
 
     this.assertExecutionActive(attempt);
     const workerOutcome =
-      storedCheckpoint.checkpoint.terminalStatus === null
+      storedCheckpoint.checkpoint.terminalStatus === null && !knownResultRecovery
         ? await this.runWorkers(input, storedRun, storedCheckpoint, attempt)
         : { run: storedRun, checkpoint: storedCheckpoint };
     this.assertExecutionActive(attempt);
@@ -496,7 +573,16 @@ export class RunCoordinator {
         phase: "runtime_running",
       });
       this.assertExecutionActive(attempt);
-      const terminal = await this.runRuntime(input, storedCheckpoint, attempt);
+      const terminal = await this.runRuntime(
+        queuedToolBatch
+          ? {
+              ...input,
+              runtime: { ...input.runtime, continuationRef: queuedToolBatch.continuationRef },
+            }
+          : input,
+        storedCheckpoint,
+        attempt,
+      );
       this.assertExecutionActive(attempt);
       storedCheckpoint = terminal.checkpoint;
     }
@@ -523,7 +609,36 @@ export class RunCoordinator {
         { runId: input.runId },
       );
     }
-    const resources = await this.dependencies.resources?.stopRun(input.runId);
+    const resourcePort = this.dependencies.resources;
+    let resources: { readonly released: boolean } | undefined;
+    if (resourcePort) {
+      try {
+        resources = await this.requestCleanup(() =>
+          resourcePort.stopRun(input.runId, "run_finished"),
+        );
+      } catch (error: unknown) {
+        this.assertExecutionActive(attempt);
+        const recorded = await this.dependencies.trace.record({
+          ...this.traceScope(input),
+          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
+          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          eventType: "runtime.resource_cleanup_unconfirmed",
+          payload: {
+            reasonCode:
+              error instanceof Error && error.message === "RUN_CLEANUP_TIMEOUT"
+                ? "RUN_CLEANUP_TIMEOUT"
+                : "RUN_RESOURCE_CLEANUP_REJECTED",
+          },
+        });
+        this.assertExecutionActive(attempt);
+        storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
+          ...storedCheckpoint.checkpoint,
+          lastTraceEventId: recorded.event.id,
+        });
+        resources = { released: false };
+      }
+    }
+    this.assertExecutionActive(attempt);
     if (terminalStatus === "completed" && resources?.released === false) {
       storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
         ...storedCheckpoint.checkpoint,
@@ -531,46 +646,13 @@ export class RunCoordinator {
         terminalStatus: null,
         diagnosticCode: "RUN_RESOURCE_CLEANUP_UNCONFIRMED",
       });
+      this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, "reconciling_external_result");
+      this.assertExecutionActive(attempt);
       return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
     }
     if (terminalStatus === "completed") {
-      const output = storedCheckpoint.checkpoint.output;
-      if (!output)
-        throw new ApplicationPortError(
-          PORT_ERROR_CODES.INVALID_OPERATION,
-          "Runtime completion output is missing",
-        );
-      const latest = await this.requireRun(input.runId);
-      this.assertExecutionActive(attempt);
-      if (!isTerminalStatus(latest.run.status)) {
-        const classifications = ["public", "private", "sensitive", "restricted"] as const;
-        const dataClassification =
-          classifications[
-            Math.max(
-              classifications.indexOf(input.runtime.dataClassification),
-              classifications.indexOf(input.context.dataClassification),
-            )
-          ];
-        if (!dataClassification)
-          throw new ApplicationPortError(
-            PORT_ERROR_CODES.INVALID_OPERATION,
-            "Invalid completion classification",
-          );
-        await this.dependencies.runs.completeRun({
-          ...input.commands.completed,
-          ownerId: input.ownerId,
-          agentId: input.agentId,
-          runId: input.runId,
-          authority: input.authority,
-          expectedRevision: latest.revision,
-          output,
-          dataClassification,
-          executionLease: input.executionLease,
-        });
-      }
-      this.assertExecutionActive(attempt);
-      storedRun = await this.requireRun(input.runId);
+      storedRun = await this.commitCompletedOutput(input, storedCheckpoint, attempt);
     } else {
       this.assertExecutionActive(attempt);
       storedRun = await this.transition(input, storedRun, terminalStatus);
@@ -596,6 +678,123 @@ export class RunCoordinator {
     return this.result(storedRun, storedCheckpoint.checkpoint, resumed);
   }
 
+  private async commitCompletedOutput(
+    input: ExecuteCoordinatedRunInput,
+    storedCheckpoint: StoredRunCheckpoint,
+    attempt: ExecutionAttempt,
+    recoveryCheckpointRevision?: number,
+  ): Promise<StoredRun> {
+    const output = storedCheckpoint.checkpoint.output;
+    if (!output)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        "Runtime completion output is missing",
+      );
+    const latest = await this.requireRun(input.runId);
+    this.assertExecutionActive(attempt);
+    if (!isTerminalStatus(latest.run.status)) {
+      const classifications = ["public", "private", "sensitive", "restricted"] as const;
+      const dataClassification =
+        classifications[
+          Math.max(
+            classifications.indexOf(input.runtime.dataClassification),
+            classifications.indexOf(input.context.dataClassification),
+          )
+        ];
+      if (!dataClassification)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "Invalid completion classification",
+        );
+      await this.dependencies.runs.completeRun({
+        ...input.commands.completed,
+        ownerId: input.ownerId,
+        agentId: input.agentId,
+        runId: input.runId,
+        authority: input.authority,
+        expectedRevision: latest.revision,
+        output,
+        dataClassification,
+        executionLease: input.executionLease,
+        ...(recoveryCheckpointRevision === undefined ? {} : { recoveryCheckpointRevision }),
+      });
+    }
+    this.assertExecutionActive(attempt);
+    return this.requireRun(input.runId);
+  }
+
+  /** Deliver only a previously completed runtime output. This never forms
+   * context, runs Pi/Workers, or extends the original execution deadline.
+   * Current lease and resource checks still fence the final durable commit.
+   */
+  async recoverCompleted(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult> {
+    this.assertScope(input);
+    const { executionDeadlineAt: _executionDeadlineAt, ...delivery } = input;
+    const attempt = this.beginExecutionAttempt(delivery);
+    try {
+      const checkpoint = await this.readCheckpoint(input.runId);
+      const run = await this.requireRun(input.runId);
+      this.assertExecutionActive(attempt);
+      if (
+        run.run.ownerId !== input.ownerId ||
+        run.run.agentId !== input.agentId ||
+        run.run.sessionId !== input.runtime.sessionId ||
+        (run.run.threadId ?? null) !== input.runtime.threadId
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Completion recovery scope mismatch",
+        );
+      if (isTerminalStatus(run.run.status))
+        return this.result(run, checkpoint?.checkpoint ?? defaultCheckpoint(), true);
+      if (
+        !checkpoint ||
+        !["running", "reconciling_external_result"].includes(run.run.status) ||
+        !(
+          (checkpoint.checkpoint.phase === "runtime_settled" &&
+            checkpoint.checkpoint.terminalStatus === "completed") ||
+          (checkpoint.checkpoint.phase === "reconciling_external_result" &&
+            checkpoint.checkpoint.diagnosticCode === "RUN_RESOURCE_CLEANUP_UNCONFIRMED" &&
+            (checkpoint.checkpoint.terminalStatus === null ||
+              checkpoint.checkpoint.terminalStatus === "completed"))
+        ) ||
+        checkpoint.checkpoint.output === null
+      )
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "RUN_COMPLETION_RECOVERY_NOT_ELIGIBLE",
+        );
+      // The lifecycle writer checks every durable resource in the same
+      // transaction as the answer. Recovery must not start another cleanup loop.
+      const current = await this.readCheckpoint(input.runId);
+      this.assertExecutionActive(attempt);
+      if (!current || current.revision !== checkpoint.revision)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.CONFLICT,
+          "RUN_COMPLETION_RECOVERY_CHANGED",
+        );
+      const completed = await this.commitCompletedOutput(
+        input,
+        checkpoint,
+        attempt,
+        checkpoint.revision,
+      );
+      this.assertExecutionActive(attempt);
+      if (completed.run.status !== "completed")
+        return this.result(completed, checkpoint.checkpoint, true);
+      const saved = await this.saveCheckpoint(input, checkpoint, {
+        ...checkpoint.checkpoint,
+        phase: "completed",
+        terminalStatus: "completed",
+      });
+      return this.result(completed, saved.checkpoint, true);
+    } finally {
+      clearTimeout(attempt.deadlineTimer);
+      if (attempt.interruption) await attempt.interruption;
+      this.endExecutionAttempt(attempt);
+    }
+  }
+
   async cancel(input: CancelCoordinatedRunInput): Promise<StoredRun> {
     const existing = await this.requireRun(input.runId);
     if (existing.run.ownerId !== input.ownerId || existing.run.agentId !== input.agentId)
@@ -607,7 +806,10 @@ export class RunCoordinator {
       // Cancellation is terminal for model execution, but cleanup may need a
       // later attempt after the original supervisor finishes. Never restart it.
       if (existing.run.status === "cancelled" || existing.run.status === "failed")
-        await this.dependencies.resources?.stopRun(input.runId);
+        await this.cancelExecutionTargets(
+          input,
+          this.executionAttempts.get(input.runId)?.runtimeActive === true,
+        );
       return existing;
     }
     await this.dependencies.runs.cancelRun({
@@ -624,12 +826,53 @@ export class RunCoordinator {
     if (storedRun.run.status !== "cancelled") return storedRun;
     this.cancelledRuns.add(input.runId);
     this.executionAttempts.get(input.runId)?.cancellation.abort();
-    await this.dependencies.runtime.cancel(input.runId);
-    await this.dependencies.resources?.stopRun(input.runId);
-    for (const workerRunId of this.activeWorkers.get(input.runId) ?? []) {
-      await this.requireWorkers().cancel(workerRunId, input.reasonCode);
-    }
+    await this.cancelExecutionTargets(input, true);
     return storedRun;
+  }
+
+  private requestCleanup<T>(stop: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("RUN_CLEANUP_TIMEOUT")),
+        CLEANUP_WAIT_LIMIT_MS,
+      );
+      // Retain handlers after timeout so a late rejection is observed. A late
+      // success cannot rewrite the already-returned uncertainty or restart work.
+      Promise.resolve()
+        .then(stop)
+        .then(
+          (result) => {
+            clearTimeout(timer);
+            resolve(result);
+          },
+          (error: unknown) => {
+            clearTimeout(timer);
+            reject(error);
+          },
+        );
+    });
+  }
+
+  private async cancelExecutionTargets(
+    input: Pick<CancelCoordinatedRunInput, "runId" | "reasonCode">,
+    cancelRuntime: boolean,
+  ): Promise<void> {
+    // Capture active workers before cancellation can finish their iterators.
+    // Every stop must be issued even when another target rejects or is still
+    // waiting. A committed cancellation is not evidence of resource release.
+    const resources = this.dependencies.resources;
+    const stops: (() => Promise<unknown>)[] = [
+      ...(cancelRuntime ? [() => this.dependencies.runtime.cancel(input.runId)] : []),
+      ...(resources ? [() => resources.stopRun(input.runId, "run_cancelled")] : []),
+      ...[...(this.activeWorkers.get(input.runId) ?? [])].map(
+        (workerRunId) => () => this.requireWorkers().cancel(workerRunId, input.reasonCode),
+      ),
+    ];
+    const results = await Promise.allSettled(stops.map((stop) => this.requestCleanup(stop)));
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length) throw new AggregateError(failures, "Run cancellation cleanup incomplete");
   }
 
   private async runWorkers(
@@ -801,7 +1044,7 @@ export class RunCoordinator {
     let observed = initialCheckpoint.checkpoint.runtimeEventCount;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
-      ...(storedCheckpoint.checkpoint.suspension
+      ...(!input.runtime.knownToolResult && storedCheckpoint.checkpoint.suspension
         ? { continuationRef: storedCheckpoint.checkpoint.suspension.continuationRef }
         : {}),
       executionLease: input.executionLease,
@@ -886,7 +1129,9 @@ export class RunCoordinator {
             ? "RUNTIME_FINAL_ANSWER_INVALID"
             : event.type === "runtime.failed"
               ? event.errorCode
-              : null,
+              : input.runtime.knownToolResult && !terminalStatus
+                ? "RUNTIME_TOOL_RESULT_UNKNOWN"
+                : null,
         });
         this.assertExecutionActive(attempt);
         if (terminalStatus) break;
@@ -1002,8 +1247,11 @@ export class RunCoordinator {
         command = input.commands.running;
         break;
     }
-    if (continuationRef) {
+    if (continuationRef || input.runtime.knownToolResult) {
       const fingerprint = threadCommandFingerprint({
+        ...(input.runtime.knownToolResult
+          ? { recoveryLease: input.executionLease.executionLeaseId }
+          : {}),
         runId: input.runId,
         continuationRef,
         nextStatus,

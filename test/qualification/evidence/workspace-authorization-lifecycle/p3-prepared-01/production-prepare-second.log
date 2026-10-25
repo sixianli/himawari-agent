@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/production-sandbox-lineage.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  31 passed (31)
+   Start at  00:54:54
+   Duration  18.97s (transform 1.00s, setup 0ms, import 2.75s, tests 16.13s, environment 0ms)

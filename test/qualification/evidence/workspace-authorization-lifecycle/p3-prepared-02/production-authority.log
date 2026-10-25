@@ -1,0 +1,55 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.4611250000016298,"at":"2026-09-19T16:34:42.318Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":0.3520840000019234,"at":"2026-09-19T16:34:42.319Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":10.101125000001048,"at":"2026-09-19T16:34:42.328Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":0.3242920000011509,"at":"2026-09-19T16:34:42.329Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.0766250000015134,"at":"2026-09-19T16:34:44.805Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":0.47145799999998417,"at":"2026-09-19T16:34:44.806Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.7257089999984601,"at":"2026-09-19T16:34:44.809Z"}
+
+stderr | test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":0.3839169999992009,"at":"2026-09-19T16:34:44.810Z"}
+
+ ❯ |integration| test/integration/production-sandbox-lineage.test.ts (35 tests | 2 failed) 31037ms
+     × stages concurrent write requests before occupancy and preserves their frozen candidates 2597ms
+     × stages concurrent edit requests before occupancy and preserves their frozen candidates 2448ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent write requests before occupancy and preserves their frozen candidates
+ FAIL  |integration| test/integration/production-sandbox-lineage.test.ts > prepared file admission > stages concurrent edit requests before occupancy and preserves their frozen candidates
+Error: SANDBOX_HOST_PLAN_CHANGED
+ ❯ verifySandboxHost packages/platform-node/src/capabilities/sandbox-host-verifier.ts:146:11
+    144|       ))
+    145|   )
+    146|     throw new Error("SANDBOX_HOST_PLAN_CHANGED");
+       |           ^
+    147|   await checkedPath(binding.privateRoot, true);
+    148|   for (const root of binding.roots) {
+ ❯ apps/agent-service/src/production-sandbox-services.ts:290:7
+ ❯ timed apps/agent-service/src/production-sandbox-services.ts:273:22
+ ❯ resolve apps/agent-service/src/production-sandbox-services.ts:289:11
+ ❯ prepareRuntimeV2 apps/agent-service/src/production-sandbox-services.ts:797:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 44 passed (46)
+   Start at  01:34:12
+   Duration  40.92s (transform 2.33s, setup 0ms, import 6.31s, tests 34.13s, environment 0ms)

@@ -1,0 +1,38 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts (40 tests | 1 failed) 195ms
+   × verifies durable file conflict after restart before new approval: known 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts > verifies durable file conflict after restart before new approval: known
+AssertionError: expected { …(4) } to match object { …(4) }
+
+- Expected
++ Received
+
+  {
+    "depth": 1,
+-   "intentId": "coding:9b691f1a4afe95dd036206080ab825ee7bed20f48f5d685cddb4176ac7afe6f9",
+-   "previousIntentId": "coding:6a31557ab04327484e1fc129c1b9bfe883b929070ecd033902ac678312791235",
++   "intentId": "coding:6a31557ab04327484e1fc129c1b9bfe883b929070ecd033902ac678312791235",
++   "previousIntentId": "coding:9b691f1a4afe95dd036206080ab825ee7bed20f48f5d685cddb4176ac7afe6f9",
+    "previousToolCallId": "call:tools",
+  }
+
+ ❯ apps/agent-service/test/production-file-read-workflow.unit.test.ts:801:70
+    799|     const payload = f.payloads.get(lineageArtifact.payloadRef);
+    800|     if (!payload) throw new Error("lineage payload missing");
+    801|     expect(JSON.parse(new TextDecoder().decode(payload.ciphertext))).t…
+       |                                                                      ^
+    802|       previousToolCallId: call.toolCallId,
+    803|       previousIntentId: approvals[0]?.intentId,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 115 passed (116)
+   Start at  02:13:25
+   Duration  2.77s (transform 2.11s, setup 0ms, import 4.08s, tests 319ms, environment 0ms)

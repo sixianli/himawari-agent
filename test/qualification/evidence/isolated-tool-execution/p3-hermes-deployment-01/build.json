@@ -1,0 +1,10 @@
+{
+  "sourceCommit": "c71adbd5f23a88834512ad26112f587d6fa993b9",
+  "sourceArchiveSha256": "146d4d71d63f9529be601e77d312069c559086dea6031c836191ac4e6bc94f4a",
+  "sourceManifestSha256": "71c7fadcf0c087e55645eaaf90c900332d6c97da2cf63d19cd06b7ed46580373",
+  "preparationSha256": "79fa8e674469a83e33328bc1b5336bcd2af6a7d570f93a75c4691df7faeda54f",
+  "runtimeDigest": "f103d99f4dbb9871ee32b820a7e820b8229c84bda5dd0fbf827fd1cfa17b9031",
+  "buildPassed": true,
+  "networkDuringBuild": "none_private_network",
+  "failedAttempts": 2
+}

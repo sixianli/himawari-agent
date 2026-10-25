@@ -19,6 +19,10 @@ const MESSAGE_PATH = "/execution/v2/messages";
 const EVENTS_PATH = "/execution/v2/events";
 const JSON_CONTENT_TYPE = "application/json";
 const NDJSON_CONTENT_TYPE = "application/x-ndjson";
+const EVENTS_PAGINATION_HEADER = "x-himawari-events-pagination";
+const EVENTS_PAGE_HEADER = "x-himawari-events-page";
+const EVENTS_NEXT_CURSOR_HEADER = "x-himawari-events-next-cursor";
+const EVENTS_PAGINATION_VERSION = "1";
 
 export const EXECUTION_UDS_ERROR_CODES = Object.freeze({
   AUTHENTICATION_FAILED: "EXECUTION_UDS_AUTHENTICATION_FAILED",
@@ -220,16 +224,45 @@ export class ExecutionUdsServer {
         return;
       }
       if (request.method === "GET" && url.pathname === EVENTS_PATH) {
+        if (request.headers[EVENTS_PAGINATION_HEADER] !== EVENTS_PAGINATION_VERSION) {
+          throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.REQUEST_FAILED, 400);
+        }
         const afterCursor = url.searchParams.get("afterCursor");
+        const lines: string[] = [];
+        const seen = new Set(afterCursor === null ? [] : [afterCursor]);
+        let bytes = 0;
+        let nextCursor: string | undefined;
+        let more = false;
+        for await (const input of this.options.transport.events(afterCursor)) {
+          const event = assertEventMessage(input);
+          const line = `${executionV2MessageSchema.serialize(event)}\n`;
+          const length = Buffer.byteLength(line);
+          if (length > this.options.maximumBodyBytes) {
+            throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.BODY_TOO_LARGE, 413);
+          }
+          if (seen.has(event.payload.cursor)) {
+            throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.CURSOR_INVALID, 502);
+          }
+          if (bytes + length > this.options.maximumBodyBytes) {
+            more = true;
+            break;
+          }
+          seen.add(event.payload.cursor);
+          lines.push(line);
+          bytes += length;
+          nextCursor = event.payload.cursor;
+        }
         response.writeHead(200, {
           "cache-control": "no-store",
           "content-type": NDJSON_CONTENT_TYPE,
           "x-content-type-options": "nosniff",
+          [EVENTS_PAGINATION_HEADER]: EVENTS_PAGINATION_VERSION,
+          [EVENTS_PAGE_HEADER]: more ? "more" : "complete",
+          ...(nextCursor === undefined
+            ? {}
+            : { [EVENTS_NEXT_CURSOR_HEADER]: encodeURIComponent(nextCursor) }),
         });
-        for await (const event of this.options.transport.events(afterCursor)) {
-          response.write(`${executionV2MessageSchema.serialize(event)}\n`);
-        }
-        response.end();
+        response.end(lines.join(""));
         return;
       }
       response.writeHead(404, { "cache-control": "no-store" });
@@ -247,6 +280,7 @@ export class ExecutionUdsServer {
 }
 
 interface RawHttpResponse {
+  readonly headers: import("node:http").IncomingHttpHeaders;
   readonly statusCode: number;
   readonly contentType: string | undefined;
   readonly body: string;
@@ -315,23 +349,86 @@ export class ExecutionUdsClient implements ExecutionTransportPort {
     return envelope.message === null ? null : assertResponseMessage(envelope.message);
   }
 
-  async *events(afterCursor: string | null): AsyncIterable<ExecutionV2Event> {
-    const query = afterCursor === null ? "" : `?afterCursor=${encodeURIComponent(afterCursor)}`;
-    const raw = await this.send({ method: "GET", path: `${EVENTS_PATH}${query}` });
-    if (raw.statusCode !== 200) this.throwRemote(raw);
-    if (raw.contentType?.split(";", 1)[0] !== NDJSON_CONTENT_TYPE) {
-      throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
-    }
-    const seen = new Set<string>();
-    for (const line of raw.body.split("\n")) {
-      if (line.length === 0) continue;
-      const event = assertEventMessage(JSON.parse(line) as unknown);
-      const cursor = "cursor" in event.payload ? event.payload.cursor : null;
-      if (cursor !== null && seen.has(cursor)) {
+  events(afterCursor: string | null): AsyncIterable<ExecutionV2Event> {
+    return {
+      [Symbol.asyncIterator]: () => {
+        const controller = new AbortController();
+        const iterator = this.readEventPages(afterCursor, controller.signal);
+        return {
+          next: () => iterator.next(),
+          return: () => {
+            controller.abort();
+            return iterator.return();
+          },
+          throw: (error: unknown) => {
+            controller.abort();
+            return iterator.throw(error);
+          },
+        };
+      },
+    };
+  }
+
+  private async *readEventPages(
+    afterCursor: string | null,
+    signal: AbortSignal,
+  ): AsyncGenerator<ExecutionV2Event, void> {
+    const deadline = performance.now() + this.options.requestTimeoutMs;
+    const seen = new Set<string>(afterCursor === null ? [] : [afterCursor]);
+    let cursor = afterCursor;
+    while (true) {
+      signal.throwIfAborted();
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) {
+        throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED, 504);
+      }
+      const query = cursor === null ? "" : `?afterCursor=${encodeURIComponent(cursor)}`;
+      const raw = await this.send({
+        method: "GET",
+        path: `${EVENTS_PATH}${query}`,
+        headers: { [EVENTS_PAGINATION_HEADER]: EVENTS_PAGINATION_VERSION },
+        signal,
+        requestTimeoutMs: remaining,
+      });
+      if (raw.statusCode !== 200) this.throwRemote(raw);
+      const page = raw.headers[EVENTS_PAGE_HEADER];
+      if (
+        raw.contentType?.split(";", 1)[0] !== NDJSON_CONTENT_TYPE ||
+        raw.headers[EVENTS_PAGINATION_HEADER] !== EVENTS_PAGINATION_VERSION ||
+        (page !== "more" && page !== "complete")
+      ) {
+        throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.INVALID_RESPONSE, 502);
+      }
+      const events = raw.body
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => assertEventMessage(JSON.parse(line) as unknown));
+      for (const event of events) {
+        if (seen.has(event.payload.cursor)) {
+          throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.CURSOR_INVALID, 502);
+        }
+        seen.add(event.payload.cursor);
+      }
+      const lastCursor = events.at(-1)?.payload.cursor;
+      const nextCursor = raw.headers[EVENTS_NEXT_CURSOR_HEADER];
+      if (lastCursor === undefined) {
+        if (page === "more" || nextCursor !== undefined) {
+          throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.CURSOR_INVALID, 502);
+        }
+        return;
+      }
+      if (nextCursor !== encodeURIComponent(lastCursor)) {
         throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.CURSOR_INVALID, 502);
       }
-      if (cursor !== null) seen.add(cursor);
-      yield event;
+      for (const event of events) {
+        signal.throwIfAborted();
+        if (performance.now() >= deadline) {
+          throw new ExecutionUdsError(EXECUTION_UDS_ERROR_CODES.DEADLINE_EXCEEDED, 504);
+        }
+        yield event;
+      }
+      if (page === "complete") return;
+      cursor = lastCursor;
     }
   }
 
@@ -343,17 +440,26 @@ export class ExecutionUdsClient implements ExecutionTransportPort {
     readonly method: "GET" | "POST";
     readonly path: string;
     readonly body?: string;
+    readonly headers?: Readonly<Record<string, string>>;
+    readonly signal?: AbortSignal;
+    readonly requestTimeoutMs?: number;
   }): Promise<RawHttpResponse> {
     try {
       const inputRequest = {
         method: input.method,
         path: input.path,
         contentType: JSON_CONTENT_TYPE,
+        ...(input.headers === undefined ? {} : { headers: input.headers }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        ...(input.requestTimeoutMs === undefined
+          ? {}
+          : { requestTimeoutMs: input.requestTimeoutMs }),
         ...(input.body === undefined ? {} : { body: Buffer.from(input.body) }),
       } as const;
       const response = await this.uds.request(inputRequest);
       return {
         statusCode: response.statusCode,
+        headers: response.headers,
         contentType: response.contentType,
         body: response.body.toString("utf8"),
       };

@@ -208,9 +208,19 @@
         "test/integration/scale-qualification.test.ts",
         "test/integration/thread-scale-qualification.test.ts",
         "test/integration/openrouter-generation-live.test.ts",
-        "test/integration/openrouter-embedding-live.test.ts"
+        "test/integration/openrouter-embedding-live.test.ts",
+        "test/integration/container-execution-backend-qualification.test.ts",
+        "test/integration/container-runtime-restart-qualification.test.ts",
+        "test/integration/container-browser-qualification.test.ts",
+        "test/integration/container-pi-runner-qualification.test.ts",
+        "test/integration/product-path-browser.test.ts"
       ],
-      "fileParallelism": false
+      "fileParallelism": true,
+      "workerLimits": {
+        "maximum": 3,
+        "cpusPerWorker": 1,
+        "memoryMiBPerWorker": 2048
+      }
     },
     {
       "id": "e2e",
@@ -259,6 +269,41 @@
       "project": "qualification-embedding-live",
       "reason": "真实向量 provider 需要单独凭据与授权",
       "allowedModifiers": ["skipIf"]
+    },
+    {
+      "path": "test/integration/container-execution-backend-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container",
+      "reason": "真实容器运行时的资格验证依赖显式 opt-in 与可用的 Docker 兼容运行时",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-runtime-restart-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-restart",
+      "reason": "重启容器运行时会中断同一台机器上的其他容器，只能单独 opt-in 并由调用方给出重启命令",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-browser-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-browser",
+      "reason": "真实浏览器测试样例需要单独构建的浏览器镜像和联网出口，只能单独 opt-in",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/container-pi-runner-qualification.test.ts",
+      "kind": "qualification",
+      "project": "qualification-container-runner",
+      "reason": "容器内 Pi runner 需要已构建的 runtime 和本机构建的 runner 镜像，只能单独 opt-in",
+      "allowedModifiers": ["skip"]
+    },
+    {
+      "path": "test/integration/product-path-browser.test.ts",
+      "kind": "qualification",
+      "project": "qualification-product-path",
+      "reason": "产品路径浏览器 E2E 需要已构建的安装包、本机 Chrome 和沙箱运行时，单次运行十几分钟，只能单独 opt-in",
+      "allowedModifiers": ["skip"]
     },
     {
       "path": "test/fixtures/durable-phase-child.test.ts",

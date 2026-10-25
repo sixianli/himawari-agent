@@ -1,5 +1,6 @@
 import type {
   CapabilityExecutionHandle,
+  ExecutionEnvironmentLifecyclePort,
   ExecutionTransportPort,
   ExecutionWorkerEvent,
   ExecutionWorkerService,
@@ -63,7 +64,8 @@ export interface ProductionExecutionWorkerOptions {
   readonly sandboxV2?: Pick<
     ProductionSandboxExecutionV2,
     "execute" | "handles" | "cancel" | "reconcile" | "shutdown"
-  >;
+  > &
+    Partial<Pick<ProductionSandboxExecutionV2, "prewarmSrtEnvironment">>;
   readonly workerInstanceId: string;
   readonly workerBootId: string;
   readonly bootTokenRef: string;
@@ -74,6 +76,7 @@ export interface ProductionExecutionWorkerOptions {
   readonly adapters: readonly RegisteredWorkerAdapter[];
   readonly hostOperations?: RegisteredHostOperationAdapter;
   readonly subtasks?: RegisteredWorkerSubtaskAdapter;
+  readonly environments?: ReadonlyMap<string, ExecutionEnvironmentLifecyclePort>;
   readonly delegations?: {
     accept(handle: DelegatedCapabilityHandleV2): unknown;
     getExecutionHandle(handleRef: string): Promise<CapabilityExecutionHandle | undefined>;
@@ -81,7 +84,6 @@ export interface ProductionExecutionWorkerOptions {
   };
   readonly now: () => string;
   readonly nextId: (scope: string) => string;
-  /** Host composition gate; an unready dependency must never be reported ready. */
   readonly readiness?: () => {
     readonly live: boolean;
     readonly ready: boolean;
@@ -97,6 +99,10 @@ type CancelRequest = Extract<ExecutionV2Request, { type: "work.cancel" }>;
 type ReconcileRequest = Extract<ExecutionV2Request, { type: "work.reconcile" }>;
 type HostOperationRequest = Extract<ExecutionV2Request, { type: "host.operation.execute" }>;
 type WorkerSubtaskRequest = Extract<ExecutionV2Request, { type: "worker.subtask.execute" }>;
+type EnvironmentOperationRequest = Extract<
+  ExecutionV2Request,
+  { type: "environment.operation.execute" }
+>;
 
 type SubtaskCapabilityInput = Parameters<WorkerSubtaskExecutionContext["executeCapability"]>[0];
 
@@ -239,6 +245,18 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       }
       if (this.isReplay(parsed)) return null;
       this.track(this.executeHostOperation(parsed));
+      return null;
+    }
+    if (parsed.type === "environment.operation.execute") {
+      if (this.isReplay(parsed, false)) return null;
+      this.assertDeadline(parsed.payload.deadlineAt);
+      const environments = this.options.environments?.get(parsed.payload.backendRef);
+      if (!environments)
+        throw new ProductionExecutionWorkerError(
+          PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+        );
+      if (this.isReplay(parsed)) return null;
+      this.track(this.executeEnvironmentOperation(parsed, environments));
       return null;
     }
     if (parsed.type === "worker.subtask.execute") {
@@ -511,6 +529,32 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     void operation.finally(() => this.active.delete(operation)).catch(() => {});
   }
 
+  private recordExecutionStart(request: ExecuteRequest): void {
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "work.progress",
+      messageId: this.options.nextId("execution-start"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        requestId: request.messageId,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(request.messageId),
+        occurredAt: this.options.now(),
+        stage: "worker.execution.started",
+        progressPermille: 0,
+        payloadRef: null,
+      },
+    });
+    if (event.kind !== "event") throw new Error("WORKER_START_EVENT_INVALID");
+    this.eventsByCursor.push(event);
+  }
+
   private async executeSandbox(request: ExecuteRequest): Promise<void> {
     const identity = request.payload.sandboxExecution?.identity ?? request.payload.sandboxJob;
     if (!identity) throw new Error("SANDBOX_JOB_REQUIRED");
@@ -519,6 +563,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
         ? this.options.sandboxV2
         : this.options.sandbox;
       if (!sandbox) throw new Error("SANDBOX_SUPERVISOR_UNAVAILABLE");
+      this.recordExecutionStart(request);
       const result = await sandbox.execute(request);
       this.appendSandboxResult(request, result);
     } catch {
@@ -560,6 +605,7 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
   }
 
   private async execute(request: ExecuteRequest): Promise<void> {
+    this.recordExecutionStart(request);
     const v1Request = {
       schemaVersion: EXECUTION_SCHEMA_VERSION,
       kind: "request" as const,
@@ -744,6 +790,44 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
       if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
       this.eventsByCursor.push(event);
     }
+  }
+
+  private async executeEnvironmentOperation(
+    request: EnvironmentOperationRequest,
+    backend: ExecutionEnvironmentLifecyclePort,
+  ): Promise<void> {
+    let outcome: { outcome: "succeeded" | "failed"; result: unknown; errorCode: string | null };
+    try {
+      outcome = {
+        outcome: "succeeded",
+        result: await environmentOperation(backend, request, this.options.sandboxV2),
+        errorCode: null,
+      };
+    } catch (error) {
+      outcome = { outcome: "failed", result: null, errorCode: errorCode(error) };
+    }
+    const event = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "event",
+      type: "environment.operation.result",
+      messageId: this.options.nextId("environment-operation-result"),
+      correlationId: request.correlationId,
+      causationId: request.messageId,
+      dataClassification: request.dataClassification,
+      risk: request.risk,
+      authorizationRef: request.authorizationRef,
+      scope: request.scope,
+      payload: {
+        requestId: request.messageId,
+        operation: request.payload.operation,
+        cursor: this.nextCursor(),
+        sequence: this.nextSequence(request.messageId),
+        ...outcome,
+        completedAt: this.options.now(),
+      },
+    });
+    if (event.kind !== "event") throw new TypeError("Worker produced a non-event message");
+    this.eventsByCursor.push(event);
   }
 
   private async executeSubtask(request: WorkerSubtaskRequest): Promise<void> {
@@ -1206,5 +1290,56 @@ export class ProductionExecutionWorker implements ExecutionTransportPort {
     const sequence = (this.sequenceByRequest.get(requestId) ?? 0) + 1;
     this.sequenceByRequest.set(requestId, sequence);
     return sequence;
+  }
+}
+
+async function environmentOperation(
+  backend: ExecutionEnvironmentLifecyclePort,
+  request: EnvironmentOperationRequest,
+  sandbox: Partial<Pick<ProductionSandboxExecutionV2, "prewarmSrtEnvironment">> | undefined,
+): Promise<unknown> {
+  const { payload } = request;
+  switch (payload.operation) {
+    case "capabilities":
+      return backend.capabilities();
+    case "create":
+      return backend.create({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        envelope: payload.envelope,
+        policyDigest: payload.policyDigest,
+        imageDigest: payload.imageDigest,
+        runnerDigest: payload.runnerDigest,
+        deadlineAt: payload.environmentDeadlineAt,
+      });
+    case "inspect":
+      return backend.inspect({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+      });
+    case "stop":
+    case "verifyStopped": {
+      const request = {
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+        stopIntentId: payload.stopIntentId,
+        stopFence: payload.stopFence,
+      };
+      return payload.operation === "stop" ? backend.stop(request) : backend.verifyStopped(request);
+    }
+    case "destroy":
+      await backend.destroy({
+        identity: payload.identity,
+        createIntentId: payload.createIntentId,
+        locator: payload.locator,
+      });
+      return { destroyed: true };
+    case "prewarm":
+      if (!sandbox?.prewarmSrtEnvironment)
+        throw new Error(PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED);
+      await sandbox.prewarmSrtEnvironment(payload);
+      return { accepted: true };
   }
 }

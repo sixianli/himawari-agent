@@ -1,0 +1,60 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/pi-tool-progress-guard.compat.test.ts (6 tests | 1 failed | 5 skipped) 6ms
+   × bounds file conflicts across changing content, intervening reads, and approval restoration 5ms
+ ❯ |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts (77 tests | 1 failed | 76 skipped) 53ms
+   × links regenerated file calls through native Pi history and stops changing-content conflicts 52ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > links regenerated file calls through native Pi history and stops changing-content conflicts
+AssertionError: expected [ undefined, undefined, …(2) ] to deeply equal [ undefined, 'file-conflict-0', …(2) ]
+
+- Expected
++ Received
+
+  [
+    undefined,
+-   "file-conflict-0",
+-   "file-conflict-1",
+-   "file-conflict-2",
++   undefined,
++   undefined,
++   undefined,
+  ]
+
+ ❯ packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:3009:53
+    3007|   const writes = tools.execute.mock.calls.map(([call]) => call)
+    3008|     .filter((call) => call.capabilityRef === "coding.write");
+    3009|   expect(writes.map((call) => call.fileConflictOf)).toEqual([
+       |                                                     ^
+    3010|     undefined, "file-conflict-0", "file-conflict-1", "file-conflict-2",
+    3011|   ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-tool-progress-guard.compat.test.ts > bounds file conflicts across changing content, intervening reads, and approval restoration
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ packages/runtime-pi/test/pi-tool-progress-guard.compat.test.ts:54:27
+     52|     guard.observe("read", { path: "note", offset: i }, `latest ${i}`, …
+     53|     guard = new PiToolProgressGuard(guard.snapshot());
+     54|     expect(guard.blocked).toBe(i === 3);
+       |                           ^
+     55|   }
+     56| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 81 skipped (83)
+   Start at  02:07:06
+   Duration  1.73s (transform 236ms, setup 0ms, import 1.66s, tests 58ms, environment 0ms)

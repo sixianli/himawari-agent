@@ -1,0 +1,163 @@
+import {
+  EXECUTION_V2_SCHEMA_VERSION,
+  type EnvironmentOperation,
+  type EnvironmentOperationRequestPayload,
+  type EnvironmentOperationResults,
+  type ExecutionEnvironmentIdentity,
+  type ExecutionV2Request,
+  executionV2MessageSchema,
+} from "@himawari-agent/execution-contracts";
+import type { ExecutionTransportPort } from "../ports/coordination.js";
+import type { ExecutionEnvironmentLifecyclePort } from "../ports/execution-backend.js";
+
+export class RemoteExecutionBackendError extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    super(code);
+    this.name = "RemoteExecutionBackendError";
+    this.code = code;
+  }
+}
+
+export interface RemoteExecutionBackendOptions {
+  readonly transport: ExecutionTransportPort;
+  readonly backendRef: string;
+  readonly ownerId: string;
+  readonly agentId: string;
+  readonly authority: () => {
+    readonly deploymentId: string;
+    readonly authorityEpoch: number;
+    readonly fencingToken: number;
+  };
+  readonly nextId: (scope: string) => string;
+  readonly now: () => string;
+  readonly requestTimeoutMs: number;
+  readonly resultTimeoutMs: number;
+  readonly pollIntervalMs: number;
+}
+
+type EnvironmentRequest = Extract<ExecutionV2Request, { type: "environment.operation.execute" }>;
+type PayloadOf<TOperation extends EnvironmentOperation> = Omit<
+  Extract<EnvironmentOperationRequestPayload, { readonly operation: TOperation }>,
+  "operation" | "backendRef" | "requestedAt" | "deadlineAt"
+>;
+
+export class RemoteExecutionBackend implements ExecutionEnvironmentLifecyclePort {
+  private readonly options: RemoteExecutionBackendOptions;
+
+  constructor(options: RemoteExecutionBackendOptions) {
+    this.options = options;
+  }
+
+  capabilities() {
+    return this.send("capabilities", {}, null, null);
+  }
+
+  create(input: Parameters<ExecutionEnvironmentLifecyclePort["create"]>[0]) {
+    const { deadlineAt, ...rest } = input;
+    return this.send(
+      "create",
+      { ...rest, environmentDeadlineAt: deadlineAt },
+      input.identity,
+      `environment-create:${input.identity.environmentId}:${input.createIntentId}`,
+    );
+  }
+
+  inspect(input: Parameters<ExecutionEnvironmentLifecyclePort["inspect"]>[0]) {
+    return this.send("inspect", input, input.identity, null);
+  }
+
+  stop(input: Parameters<ExecutionEnvironmentLifecyclePort["stop"]>[0]) {
+    return this.send("stop", input, input.identity, null);
+  }
+
+  verifyStopped(input: Parameters<ExecutionEnvironmentLifecyclePort["verifyStopped"]>[0]) {
+    return this.send("verifyStopped", input, input.identity, null);
+  }
+
+  async destroy(input: Parameters<ExecutionEnvironmentLifecyclePort["destroy"]>[0]) {
+    await this.send(
+      "destroy",
+      input,
+      input.identity,
+      `environment-destroy:${input.identity.environmentId}:${input.createIntentId}`,
+    );
+  }
+
+  prewarm(input: PayloadOf<"prewarm">) {
+    return this.send("prewarm", input, input.identity, null);
+  }
+
+  private async send<TOperation extends EnvironmentOperation>(
+    operation: TOperation,
+    fields: PayloadOf<TOperation>,
+    identity: ExecutionEnvironmentIdentity | null,
+    stateChangeKey: string | null,
+  ): Promise<EnvironmentOperationResults[TOperation]> {
+    const requestedAt = this.options.now();
+    const messageId = stateChangeKey ?? this.options.nextId(`environment-${operation}`);
+    const parsed = executionV2MessageSchema.parse({
+      schemaVersion: EXECUTION_V2_SCHEMA_VERSION,
+      kind: "request",
+      type: "environment.operation.execute",
+      messageId,
+      correlationId: identity ? `environment:${identity.environmentId}` : messageId,
+      causationId: null,
+      dataClassification: "private",
+      risk: "medium",
+      authorizationRef: null,
+      scope: {
+        ...this.options.authority(),
+        ownerId: this.options.ownerId,
+        agentId: this.options.agentId,
+        runId: identity?.runId ?? null,
+        workerRunId: identity ? `environment:${identity.environmentId}` : null,
+      },
+      idempotencyKey: messageId,
+      payload: {
+        operation,
+        ...fields,
+        backendRef: this.options.backendRef,
+        requestedAt,
+        deadlineAt: new Date(Date.parse(requestedAt) + this.options.requestTimeoutMs).toISOString(),
+      },
+    });
+    if (parsed.kind !== "request" || parsed.type !== "environment.operation.execute")
+      throw new RemoteExecutionBackendError("EXECUTION_ENVIRONMENT_REQUEST_INVALID");
+    await this.options.transport.request(parsed);
+    return (await this.result(parsed)) as EnvironmentOperationResults[TOperation];
+  }
+
+  private async result(request: EnvironmentRequest): Promise<unknown> {
+    const scope = JSON.stringify(request.scope);
+    const deadline = Date.now() + this.options.resultTimeoutMs;
+    let cursor: string | null = null;
+    while (Date.now() < deadline) {
+      try {
+        for await (const event of this.options.transport.events(cursor)) {
+          cursor = event.payload.cursor;
+          if (
+            event.type !== "environment.operation.result" ||
+            event.payload.requestId !== request.messageId ||
+            event.causationId !== request.messageId ||
+            event.correlationId !== request.correlationId ||
+            event.payload.operation !== request.payload.operation ||
+            JSON.stringify(event.scope) !== scope
+          )
+            continue;
+          if (event.payload.outcome === "succeeded") return event.payload.result;
+          throw new RemoteExecutionBackendError(
+            event.payload.outcome === "failed" && event.payload.errorCode
+              ? event.payload.errorCode
+              : "EXECUTION_ENVIRONMENT_RESULT_UNKNOWN",
+          );
+        }
+      } catch (error) {
+        if (error instanceof RemoteExecutionBackendError) throw error;
+        throw new RemoteExecutionBackendError("EXECUTION_ENVIRONMENT_RESULT_UNKNOWN");
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.options.pollIntervalMs));
+    }
+    throw new RemoteExecutionBackendError("EXECUTION_ENVIRONMENT_RESULT_UNKNOWN");
+  }
+}

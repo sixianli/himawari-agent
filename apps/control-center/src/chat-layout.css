@@ -1,4 +1,3 @@
-/* Brand and chat follow v1; sidebar hierarchy follows the September 13 refinement. */
 [hidden] {
   /* biome-ignore lint/complexity/noImportantStyles: The HTML hidden state must override component display rules. */
   display: none !important;
@@ -114,9 +113,6 @@
   margin-right: 8px;
   gap: 5px;
 }
-.connection .connection-label {
-  color: var(--text-muted);
-}
 .workspace-layout {
   align-items: stretch;
   background: var(--background);
@@ -166,96 +162,10 @@
 .details-pane .panel-heading {
   margin-bottom: 20px;
 }
-.sidebar-footer {
-  flex-shrink: 0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  margin-top: 12px;
-}
-.sidebar-management {
-  flex: 1;
-  min-width: 0;
-}
-.sidebar-management > summary,
-.thread-search-disclosure > summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  padding: 8px 12px;
-  border-radius: 9px;
-  color: var(--nav-text);
-  cursor: pointer;
-  list-style: none;
-}
-.sidebar-management > summary::-webkit-details-marker,
-.thread-search-disclosure > summary::-webkit-details-marker {
-  display: none;
-}
-.sidebar-management > summary:hover,
-.thread-search-disclosure > summary:hover {
-  background: var(--surface-muted);
-}
 .sidebar-icon {
   flex-shrink: 0;
   color: var(--text-muted);
 }
-.primary-nav {
-  display: grid;
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 30;
-  max-height: min(65dvh, 540px);
-  overflow: auto;
-  gap: 4px;
-  margin: 0;
-  padding: 8px;
-  background: var(--sidebar);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 30px #0004;
-}
-.primary-nav .app-link {
-  display: flex;
-  min-height: 40px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--nav-text);
-  font-size: 13px;
-  font-weight: 400;
-}
-.primary-nav .app-link[aria-current="page"],
-.primary-nav .app-link:hover {
-  background: var(--surface-muted);
-  color: var(--text);
-  box-shadow: none;
-}
-.unavailable-surfaces > summary {
-  padding: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 12px;
-}
-.locale-control {
-  display: block;
-  max-width: 112px;
-}
-.locale-control select {
-  min-height: 44px;
-  padding: 4px 6px;
-  font-size: 12px;
-  background: transparent;
-  border-color: transparent;
-}
-/* Route announcements focus a non-interactive heading, not an editable title. */
 .page-heading h1:focus {
   outline: none;
 }
@@ -361,11 +271,6 @@
 .action-button-quiet:hover:not(:disabled) {
   background: var(--surface-muted);
 }
-.interface-details {
-  margin-top: 24px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
 .thread-sidebar-actions {
   padding-bottom: 16px;
 }
@@ -390,9 +295,6 @@
 .thread-sidebar-actions > .app-link:hover {
   background: var(--surface-muted);
 }
-.thread-search-disclosure > summary {
-  font-size: 14px;
-}
 .thread-search {
   display: flex;
   gap: 4px;
@@ -408,29 +310,6 @@
 .thread-search .action-button {
   padding: 8px;
   min-height: 40px;
-}
-.thread-collection-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 8px 6px;
-}
-.thread-collection-heading select {
-  width: auto;
-  min-height: 36px;
-  padding: 4px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
-  border-color: transparent;
-}
-.thread-collection-heading .action-button {
-  padding: 6px;
-  min-height: 36px;
-}
-.thread-collection-heading .sidebar-icon {
-  width: 16px;
-  height: 16px;
 }
 .thread-group {
   margin-bottom: 20px;
@@ -503,6 +382,7 @@
   display: flex;
 }
 .thread-content {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -518,23 +398,6 @@
 .thread-content > .status-region {
   font-size: 11px;
   padding: 0 20px;
-}
-.thread-heading {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: 10px max(24px, calc((100% - 720px) / 2));
-  gap: 12px;
-}
-.thread-heading h2 {
-  font-size: 13px;
-  margin: 0;
-  font-weight: 500;
-}
-.thread-heading .action-button {
-  margin-left: auto;
-  min-height: 32px;
-  font-size: 12px;
 }
 .chat-scroll {
   flex: 1;
@@ -676,19 +539,6 @@
 .turn-process > summary {
   cursor: pointer;
   padding: 8px 0;
-}
-.turn-process .process-record {
-  padding: 8px 0 8px 16px;
-  border-left: 1px solid var(--border);
-}
-.process-record summary {
-  cursor: pointer;
-}
-.process-record pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 320px;
-  overflow: auto;
 }
 .composer {
   position: relative;
@@ -872,13 +722,6 @@
   .connection {
     margin: 0 3px;
   }
-  .connection .connection-label {
-    position: absolute;
-    clip-path: inset(50%);
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-  }
   .appearance-panel {
     position: fixed;
     top: 62px;
@@ -887,9 +730,6 @@
   }
   .chat-scroll {
     padding: 20px 14px;
-  }
-  .thread-heading {
-    padding: 8px 14px;
   }
   .thread-message-owner {
     max-width: 94%;
@@ -931,9 +771,6 @@
   background: var(--background);
   padding: 0;
 }
-.thread-content > .thread-heading {
-  border: 0;
-}
 .thread-message-owner .message-actions {
   display: none;
 }
@@ -966,25 +803,13 @@
 .action-button-secondary {
   border-color: var(--border);
 }
-.composer-tools .model-selection,
-.execution-mode {
+.composer-tools .model-selection {
   font-size: 12px;
 }
 
 .composer-tools .model-selection {
   display: flex;
   align-items: center;
-}
-.turn-process-body {
-  border-left: 1px solid var(--border);
-  padding: 0 0 0 14px;
-  margin-left: 5px;
-}
-.turn-process .turn-process-body p {
-  margin: 8px 0;
-}
-.process-time {
-  float: right;
 }
 .run-indicator {
   display: inline-block;
@@ -1114,21 +939,6 @@
 .model-panel [aria-pressed="true"] > span:last-child {
   color: var(--primary);
 }
-.depth-choices {
-  display: flex;
-  flex-wrap: wrap;
-  background: var(--surface-muted);
-  border-radius: 6px;
-  padding: 3px;
-}
-.depth-choices .action-button {
-  flex: 1;
-  min-width: 50px;
-}
-.depth-choices [aria-pressed="true"] {
-  box-shadow: inset 0 0 0 1px var(--primary);
-  background: var(--input);
-}
 .model-panel p {
   border-top: 1px solid var(--border);
   padding-top: 12px;
@@ -1151,10 +961,7 @@
 
 @media (max-width: 700px) {
   .app-shell .action-button,
-  .app-shell summary,
-  .thread-collection-heading select,
-  .thread-collection-heading .action-button,
-  .app-shell .primary-nav a {
+  .app-shell summary {
     min-height: 44px;
   }
   .composer-tools button {
@@ -1233,9 +1040,6 @@
 .search-authorization > summary svg {
   width: 14px;
   height: 14px;
-}
-.search-authorization-status {
-  font-weight: 500;
 }
 .search-authorization-panel {
   position: absolute;
@@ -1337,8 +1141,28 @@
   display: block;
   margin: 0 0 4px;
 }
+.thread-content > .thread-load-feedback {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 6px 6px 6px 14px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px #0004;
+  font-size: 12px;
+}
+.thread-content > .thread-load-feedback .thread-load-message {
+  margin: 0;
+}
 
-/* Compact, chronological execution steps from the confirmed chat prototype. */
 .turn-process > summary,
 .tool-record > summary {
   display: flex;
@@ -1449,14 +1273,6 @@
 .step-empty,
 .tool-description {
   color: var(--text-muted);
-}
-.process-metadata {
-  margin: 8px 0 16px 22px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-.process-metadata summary {
-  cursor: pointer;
 }
 .tool-failed > .step-marker {
   background: var(--danger);

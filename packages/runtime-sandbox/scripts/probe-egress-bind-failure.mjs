@@ -67,6 +67,9 @@ try {
       cleanupTimeoutMs: 2000,
     },
     path.join(root, "control"),
+    async () => {
+      /* Explicit probe authority; no production Grant claim. */
+    },
   );
   let rejected = false;
   try {

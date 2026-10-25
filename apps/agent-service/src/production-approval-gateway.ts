@@ -14,11 +14,13 @@ import {
   type GatewayV2AccessPolicyPort,
   type ProductConfiguration,
   type RecentAuthenticationGuardPort,
+  type GatewayV2ControlPlanePort,
 } from "@himawari-agent/application";
 type ProductAuthorityFence = ThreadCreateInput["authority"];
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
 
 export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.list",
@@ -38,6 +40,7 @@ export function createProductionApprovalGateway(options: {
   readonly recentAuthentication: RecentAuthenticationGuardPort;
   readonly clock: ClockPort;
   readonly authority: () => ProductAuthorityFence;
+  readonly workspaceCopies?: GatewayV2ControlPlanePort;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -153,6 +156,8 @@ export function createProductionApprovalGateway(options: {
           authentication.subjectId !== command.actor.actorId
         )
           return unsupported();
+        if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
+          return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
       },
     },
@@ -167,7 +172,10 @@ export function createProductionApprovalGateway(options: {
     recentAuthentication: options.recentAuthentication,
   });
   return new AgentGatewayV2Service({
-    installedOperations: PRODUCTION_APPROVAL_OPERATIONS,
+    installedOperations: [
+      ...PRODUCTION_APPROVAL_OPERATIONS,
+      ...(options.workspaceCopies ? PRODUCTION_COPY_OPERATIONS : []),
+    ],
     reads,
     controlPlane,
     access: {

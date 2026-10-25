@@ -1,8 +1,8 @@
 import path from "node:path";
+import type { SandboxHostFailureDetail } from "@himawari-agent/execution-contracts";
 import type { SandboxPolicyInput } from "./policy.ts";
 import type { ResourceLimits, ResourceObservation } from "./resource-observer.ts";
 
-/** Infrastructure probe input; product inventory/Grant parsing stays outside this package. */
 export interface JobHostReadinessProbe {
   readonly kind: "unix_http";
   readonly ref: string;
@@ -35,7 +35,6 @@ function parseReadiness(value: unknown): JobHostReadinessProbe {
   return probe;
 }
 
-/** Trusted Worker-to-Job-Host IPC; not a model tool or authority grant. */
 export interface JobHostRequest {
   readonly jobId: string;
   readonly attemptId: string;
@@ -43,7 +42,6 @@ export interface JobHostRequest {
   readonly policyDigest: string;
   readonly executable: string;
   readonly args: readonly string[];
-  /** Authorized task bytes only, bounded and encoded for private Job Host IPC. */
   readonly stdinBase64?: string;
   readonly resourceLimits?: ResourceLimits;
   readonly readiness?: JobHostReadinessProbe;
@@ -123,8 +121,8 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
     typeof policy !== "object" ||
     Array.isArray(policy) ||
     !("workspace" in policy) ||
-    typeof policy.workspace !== "string" ||
-    !path.isAbsolute(policy.workspace) ||
+    (policy.workspace !== null &&
+      (typeof policy.workspace !== "string" || !path.isAbsolute(policy.workspace))) ||
     !("privateDirectory" in policy) ||
     typeof policy.privateDirectory !== "string" ||
     !path.isAbsolute(policy.privateDirectory)
@@ -163,13 +161,185 @@ export function parseJobHostRequest(value: unknown): JobHostRequest {
   return structuredClone(value) as JobHostRequest;
 }
 
-/** Quote argv elements without granting shell interpretation to their contents. */
+export function parseJobHostSessionRequest(value: unknown): JobHostRequest {
+  const request = parseJobHostRequest(value);
+  if ("stdinBase64" in request || "resourceLimits" in request || "readiness" in request)
+    throw new Error("JOB_HOST_SESSION_MODE_INVALID");
+  return request;
+}
+
+export interface JobHostRun {
+  readonly attemptId: string;
+  readonly sequence: number;
+  readonly policyDigest: string;
+  readonly deadlineAt: string;
+  readonly maxOutputBytes: number;
+  readonly inputBase64: string;
+  readonly resourceLimits: ResourceLimits;
+}
+
+const RUN_KEYS = [
+  "attemptId",
+  "sequence",
+  "policyDigest",
+  "deadlineAt",
+  "maxOutputBytes",
+  "inputBase64",
+  "resourceLimits",
+];
+
+export function parseJobHostRun(
+  value: unknown,
+  session: Pick<JobHostRequest, "policyDigest" | "deadlineAt" | "maxOutputBytes">,
+  previousSequence: number,
+): JobHostRun {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("JOB_HOST_RUN_INVALID");
+  const run = value as Record<string, unknown>;
+  if (
+    Object.keys(run).length !== RUN_KEYS.length ||
+    RUN_KEYS.some((key) => !(key in run)) ||
+    typeof run["attemptId"] !== "string" ||
+    !/^[A-Za-z0-9_.:-]{1,200}$/.test(run["attemptId"]) ||
+    run["sequence"] !== previousSequence + 1 ||
+    run["policyDigest"] !== session.policyDigest
+  )
+    throw new Error("JOB_HOST_RUN_INVALID");
+  const deadline = run["deadlineAt"];
+  if (
+    typeof deadline !== "string" ||
+    !Number.isFinite(Date.parse(deadline)) ||
+    new Date(deadline).toISOString() !== deadline ||
+    Date.parse(deadline) <= Date.now() ||
+    Date.parse(deadline) > Date.parse(session.deadlineAt)
+  )
+    throw new Error("JOB_HOST_DEADLINE_INVALID");
+  const maxOutputBytes = run["maxOutputBytes"];
+  if (
+    typeof maxOutputBytes !== "number" ||
+    !Number.isSafeInteger(maxOutputBytes) ||
+    maxOutputBytes < 1 ||
+    maxOutputBytes > session.maxOutputBytes
+  )
+    throw new Error("JOB_HOST_LIMIT_INVALID");
+  const input = run["inputBase64"];
+  if (
+    typeof input !== "string" ||
+    input.length > 65536 ||
+    Buffer.from(input, "base64").toString("base64") !== input ||
+    Buffer.from(input, "base64").byteLength > 49152
+  )
+    throw new Error("JOB_HOST_STDIN_INVALID");
+  const limits = run["resourceLimits"];
+  if (
+    !limits ||
+    typeof limits !== "object" ||
+    Array.isArray(limits) ||
+    Object.keys(limits).length !== 2 ||
+    !["maxCpuTimeMs", "maxMemoryBytes"].every((key) => {
+      const limit = (limits as Record<string, unknown>)[key];
+      return typeof limit === "number" && Number.isSafeInteger(limit) && limit > 0;
+    })
+  )
+    throw new Error("JOB_HOST_RESOURCE_LIMIT_INVALID");
+  return Object.freeze({
+    attemptId: run["attemptId"],
+    sequence: previousSequence + 1,
+    policyDigest: session.policyDigest,
+    deadlineAt: deadline,
+    maxOutputBytes,
+    inputBase64: input,
+    resourceLimits: Object.freeze({
+      maxCpuTimeMs: (limits as ResourceLimits).maxCpuTimeMs,
+      maxMemoryBytes: (limits as ResourceLimits).maxMemoryBytes,
+    }),
+  });
+}
+
+export const JOB_HOST_NAMESPACE_STATES = [
+  "resident_intact",
+  "alive",
+  "unknown",
+  "not_applicable",
+] as const;
+export type JobHostNamespaceState = (typeof JOB_HOST_NAMESPACE_STATES)[number];
+export interface JobHostCommandReport {
+  readonly attemptId: string;
+  readonly sequence: number;
+  readonly reason: JobHostResult["reason"];
+  readonly exitCode: number | null;
+  readonly resources: ResourceObservation | null;
+  readonly taskStarted: boolean;
+  readonly taskProcessExited: boolean;
+  readonly stdioClosed: boolean;
+  readonly processGroupGone: boolean;
+  readonly namespace: JobHostNamespaceState;
+  readonly namespaceSwept: boolean;
+  readonly cleanedUp: boolean;
+}
+export interface JobHostCommandOutcome extends JobHostCommandReport {
+  readonly settled: boolean;
+  readonly stdout: Uint8Array;
+  readonly stderr: Uint8Array;
+}
+
+export function jobHostCommandSettled(
+  outcome: Pick<
+    JobHostCommandReport,
+    "taskProcessExited" | "stdioClosed" | "processGroupGone" | "cleanedUp" | "namespace"
+  >,
+): boolean {
+  return (
+    outcome.taskProcessExited &&
+    outcome.stdioClosed &&
+    outcome.processGroupGone &&
+    outcome.cleanedUp &&
+    outcome.namespace === "resident_intact"
+  );
+}
+
 export function quoteJobArgument(argument: string): string {
   if (argument.includes("\0")) throw new Error("JOB_HOST_ARGS_INVALID");
   return `'${argument.replaceAll("'", `'"'"'`)}'`;
 }
 
+export const JOB_HOST_STARTUP_WINDOW_MS = 10_000;
+
+export const JOB_HOST_NAMESPACE_GATE_WINDOW_MS = 10_000;
+
+export const JOB_HOST_FAILURE_STAGES = [
+  "request",
+  "policy",
+  "control",
+  "resource_snapshot",
+  "dependencies",
+  "network",
+  "sdk_initialize",
+  "launch",
+] as const;
+export const JOB_HOST_SYSTEM_CODES = [
+  "UNKNOWN",
+  "EACCES",
+  "EPERM",
+  "ENOENT",
+  "EIO",
+  "ENOSPC",
+  "EMFILE",
+  "ENFILE",
+  "ENOMEM",
+  "EAGAIN",
+  "EADDRINUSE",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EINVAL",
+] as const;
+export interface JobHostDiagnostic {
+  readonly detail?: SandboxHostFailureDetail;
+  readonly stage: (typeof JOB_HOST_FAILURE_STAGES)[number];
+  readonly systemCode: (typeof JOB_HOST_SYSTEM_CODES)[number];
+}
 export interface JobHostResult {
+  readonly diagnostic?: JobHostDiagnostic;
   readonly network?: {
     readonly deniedTargets: number;
     readonly deniedAddresses: number;
@@ -194,12 +364,9 @@ export interface JobHostResult {
   readonly taskProcessExited: boolean;
   readonly stdioClosed: boolean;
   readonly srtReset: boolean;
-  /** Process/group exit is not evidence that detached descendants are gone. */
-  readonly taskTreeCleanup: "not_started" | "unknown";
+  readonly taskTreeCleanup: "not_started" | "process_group_gone" | "unknown";
 }
 
-/** Authenticated only while attached to the original owned fork/IPC channel.
- * This is not a kernel task-tree identity and cannot be reconstructed from a PID. */
 export interface JobHostSupervision {
   readonly protocolVersion: "job-host.v2";
   readonly sessionId: string;

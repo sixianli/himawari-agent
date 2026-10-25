@@ -1,0 +1,11 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-sandbox-services.ts(594,7): error TS2322: Type 'HostDirectoryGrant | null' is not assignable to type 'HostDirectoryGrant | undefined'.
+  Type 'null' is not assignable to type 'HostDirectoryGrant | undefined'.
+apps/agent-service/src/production-sandbox-services.ts(755,22): error TS18047: 'file.grant' is possibly 'null'.
+apps/agent-service/src/production-sandbox-services.ts(776,16): error TS18047: 'file.grant' is possibly 'null'.
+apps/agent-service/src/production-sandbox-services.ts(777,21): error TS18047: 'file.grant' is possibly 'null'.
+apps/agent-service/src/production-sandbox-services.ts(778,28): error TS18047: 'file.grant' is possibly 'null'.
+apps/agent-service/src/production-sandbox-services.ts(779,29): error TS18047: 'file.grant' is possibly 'null'.

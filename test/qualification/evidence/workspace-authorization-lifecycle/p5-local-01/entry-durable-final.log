@@ -1,0 +1,112 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/automatic-action-review.test.ts (22 tests | 1 failed) 6995ms
+   × accepts a renewed lease for the same execution, but never the stale lease revision 239ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/automatic-action-review.test.ts > accepts a renewed lease for the same execution, but never the stale lease revision
+AssertionError: promise resolved "{ request: { …(10) }, …(6) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "delegation": {
++     "key": "review-policy",
++     "revision": 1,
++   },
++   "executionLease": {
++     "authorityEpoch": 1,
++     "authorityFencingToken": 1,
++     "authorityLeaseId": "lease-capability-invocation",
++     "consumerId": "automatic-review-test",
++     "deploymentId": "deployment-capability-invocation",
++     "executionLeaseId": "review-lease",
++     "expectedLeaseRevision": 1,
++     "fencingToken": 1,
++   },
++   "intent": {
++     "actionKind": "READ",
++     "agentId": "agent-capability-invocation",
++     "capabilityRef": "capability-invocation",
++     "capabilityVersion": "1.0.0",
++     "contractVersion": "authorization.v2",
++     "credentialOrAccessChange": false,
++     "dataClassification": "private",
++     "deterministicFacts": [],
++     "disclosure": "none",
++     "estimatedCostMicros": 0,
++     "expiresAt": "2026-09-19T11:29:42.916Z",
++     "finalRisk": "LOW",
++     "frequency": {
++       "count": 1,
++       "intervalMs": null,
++     },
++     "id": "intent-capability-invocation-grant",
++     "idempotencyKey": "intent-capability-invocation-grant",
++     "modelClassification": {
++       "actionKind": "READ",
++       "reasonCode": "read",
++       "suggestedRisk": "LOW",
++     },
++     "operation": "read",
++     "ownerId": "owner-capability-invocation",
++     "recipients": [],
++     "requestedAt": "2026-09-19T11:24:42.916Z",
++     "resourceRef": "resource-capability-invocation",
++     "resourceRefs": [
++       "resource-capability-invocation",
++     ],
++     "reversible": true,
++     "runId": "run-capability-invocation",
++     "sideEffect": "none",
++     "targets": [
++       {
++         "ref": "resource-capability-invocation",
++         "type": "file",
++       },
++     ],
++     "threadId": "thread-capability-invocation",
++   },
++   "request": {
++     "approvalExpiresAt": "2026-09-19T11:29:42.916Z",
++     "configurationVersion": "review-config:1",
++     "deadlineAt": "2026-09-19T11:29:42.916Z",
++     "inputRef": "payload-capability-invocation-trigger",
++     "intentFingerprint": "intent.v2.sha256:058528d0f13a53a609db7e0da4e1fdf067a3d1554e97c350c73fb901fac5ec44",
++     "modelRef": "model:test",
++     "policyVersion": "policy:1",
++     "reviewId": "review:one",
++     "runId": "run-capability-invocation",
++     "schemaVersion": "automatic-review.v1",
++   },
++   "result": {
++     "approvalRequestId": "automatic-approval:review:one",
++     "completedAt": "2026-09-19T11:24:42.921Z",
++     "decision": "approve",
++     "outputRef": "payload-capability-invocation-trigger",
++     "reasonCode": "WITHIN_DELEGATION",
++   },
++   "startedAt": "2026-09-19T11:24:42.918Z",
++   "status": "finished",
+  }
+
+ ❯ test/integration/automatic-action-review.test.ts:421:27
+    419|     }),
+    420|   );
+    421|   await expect(f.finish()).rejects.toThrow();
+       |                           ^
+    422|   expect(
+    423|     await f
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 55 passed (56)
+   Start at  20:24:34
+   Duration  9.29s (transform 1.20s, setup 0ms, import 1.98s, tests 7.04s, environment 0ms)

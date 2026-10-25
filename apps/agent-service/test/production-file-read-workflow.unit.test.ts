@@ -1,13 +1,14 @@
 import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   ApprovalService,
-  hostDirectoryGrantStateKey,
+  type AutomaticActionReviewPort,
   type CapabilityManifest,
   type GovernedActionIntent,
   type GovernedGrantRecord,
   type HostDirectoryGrant,
+  hostDirectoryGrantStateKey,
   type RuntimeToolInvocation,
 } from "@himawari-agent/application";
 import {
@@ -21,14 +22,19 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeHostFileReadCapability } from "../src/capability-programs/host-file-read.js";
 import { createProductionFileReadServices } from "../src/production-file-read-services.js";
+import {
+  type FileReadBinding,
+  type FileReadExecutionContext,
+  ProductionFileReadWorkflow,
+} from "../src/production-file-read-workflow.js";
 import { ProductionRuntimeTools } from "../src/production-runtime-tools.js";
-import { runtimeToolFixture, invocation, now } from "./runtime-tools.fixture.js";
+import { invocation, now, runtimeToolFixture } from "./runtime-tools.fixture.js";
 
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function fixture() {
+async function fixture(automaticReview?: AutomaticActionReviewPort, coding = false) {
   const base = runtimeToolFixture(10_000);
   const root = await mkdtemp(path.join(tmpdir(), "file-workflow-"));
   roots.push(root);
@@ -41,7 +47,7 @@ async function fixture() {
     hostId: "mac:test",
     canonicalRootId: `${rootIdentity.device}:${rootIdentity.inode}`,
     displayPath: root,
-    operations: ["read"],
+    operations: coding ? ["read", "create", "update"] : ["read"],
     dataClassification: "private",
     disclosure: "model",
     pathPolicy: "same_filesystem_no_links",
@@ -76,14 +82,19 @@ async function fixture() {
     ...config,
     ownerId: base.options.ownerId,
     agentId: base.options.agentId,
-    runPolicy: { ...config.runPolicy, fileRead: route },
+    runPolicy: {
+      ...config.runPolicy,
+      fileRead: route,
+      ...(coding ? { coding: { ...route, enabledTools: ["read", "write", "edit"] as const } } : {}),
+    },
   };
-  const capabilities = new InMemoryCapabilityRegistryStore();
+  const store = new InMemoryAuthorizationStore();
+  const capabilities = new InMemoryCapabilityRegistryStore(undefined, store);
   const manifest: CapabilityManifest = {
     ...base.capability.declaration,
     ref: route.capabilityRef,
     manifestVersion: "capability.v2",
-    operations: ["inspect", "read", "disclose"],
+    operations: coding ? ["read", "write", "edit"] : ["inspect", "read", "disclose"],
     sourceIdentity: "test",
     artifact: {
       digest: "test",
@@ -115,7 +126,6 @@ async function fixture() {
     },
   };
   await capabilities.create({ ...base.capability, ref: manifest.ref, declaration: manifest });
-  const store = new InMemoryAuthorizationStore();
   let at = now;
   const clock = { now: () => at };
   const call: RuntimeToolInvocation = {
@@ -165,9 +175,10 @@ async function fixture() {
     authority: base.options.authority,
     clock,
     ids: base.options.ids,
+    ...(automaticReview ? { automaticReview } : {}),
   });
   const approvals = new ApprovalService({ store, clock });
-  const permitted = new Set(["inspect", "read", "disclose"]);
+  const permitted = new Set(coding ? ["read", "write", "edit"] : ["inspect", "read", "disclose"]);
   const intents: GovernedActionIntent[] = [];
   const authorize = services.authorize;
   const respond = async (intent: GovernedActionIntent, approvalId: string) => {
@@ -187,7 +198,7 @@ async function fixture() {
         resourcePrefixes: [],
         resourceIdentities: intent.resourceRefs,
         maxDataClassification: intent.dataClassification,
-        sideEffects: ["none"],
+        sideEffects: [intent.sideEffect],
         maxCostMicrosPerUse: 0,
         maxFrequency: { count: 1, intervalMs: null },
         disclosure: intent.disclosure,
@@ -212,12 +223,12 @@ async function fixture() {
       response: { decision: "approved", grant: approved, recentAuthenticationRef: null },
     });
   };
-  services.authorize = async (intent) => {
+  services.authorize = async (intent, signal) => {
     intents.push(intent);
-    let decision = await authorize(intent);
+    let decision = await authorize(intent, signal);
     if (decision.decision === "ASK" && permitted.has(intent.operation)) {
       await respond(intent, decision.approvalRequest.id);
-      decision = await authorize(intent);
+      decision = await authorize(intent, signal);
     }
     return decision;
   };
@@ -240,6 +251,7 @@ async function fixture() {
     ...base.options,
     clock,
     fileRead: services,
+    ...(coding ? { coding: configuration.runPolicy.coding } : {}),
     capabilities,
     ceiling: { ...base.options.ceiling, maxOutputBytes: 4096 },
   };
@@ -281,6 +293,35 @@ async function fixture() {
 }
 
 describe("production file read workflow through the Worker transport", () => {
+  it("binds both private phases to the original model tool checkpoint", async () => {
+    const f = await fixture();
+    if (!f.call.context) throw new Error("trusted context missing");
+    const call = {
+      ...f.call,
+      context: { ...f.call.context, continuationRef: "checkpoint:read-tool" },
+    };
+    expect((await (await f.open()).execute(call)).outcome).toBe("succeeded");
+    const phases = [...f.artifacts.values()].filter((value) =>
+      value.operationKey.startsWith("runtime-tool-intent:"),
+    );
+    expect(phases).toHaveLength(2);
+    for (const artifact of phases) {
+      const payload = await f.options.payloads.get(artifact.payloadRef);
+      if (!payload) throw new Error("payload missing");
+      const bytes = await f.options.protector.unprotect({
+        ownerId: artifact.ownerId,
+        agentId: artifact.agentId,
+        payload,
+      });
+      expect(JSON.parse(new TextDecoder().decode(bytes)).recovery).toEqual({
+        version: "tool-batch-recovery.v1",
+        continuationRef: "checkpoint:read-tool",
+        toolCallId: call.toolCallId,
+      });
+    }
+    expect(JSON.stringify(f.executeRequests())).not.toContain("checkpoint:read-tool");
+  });
+
   it("issues separate single-use credentials and feeds real Pi read output back; restart replays both stages", async () => {
     const f = await fixture();
     const tool = await f.open();
@@ -319,7 +360,9 @@ describe("production file read workflow through the Worker transport", () => {
     expect(f.intents.find(({ operation }) => operation === "disclose")).toMatchObject({
       disclosure: "named_recipients",
       finalRisk: "HIGH",
-      recipients: [expect.stringContaining("model:openrouter:")],
+      recipients: [
+        expect.stringContaining("model:vercel-ai-gateway:deepseek/deepseek-v4.1-flash:"),
+      ],
     });
     expect(f.assertHeld).toHaveBeenCalled();
   });
@@ -543,8 +586,8 @@ describe("production file read workflow through the Worker transport", () => {
   it("stops at a cancelled Run between phases", async () => {
     const f = await fixture();
     const authorize = f.services.authorize;
-    f.services.authorize = async (intent) => {
-      const decision = await authorize(intent);
+    f.services.authorize = async (intent, signal) => {
+      const decision = await authorize(intent, signal);
       if (intent.operation === "read")
         vi.mocked(f.options.assertRunActive).mockRejectedValue(new Error("RUN_NOT_ACTIVE"));
       return decision;
@@ -647,4 +690,210 @@ describe("production file read workflow through the Worker transport", () => {
     expect(result.modelContent).not.toContain("蓝鹭 731");
     expect(result.resultRef).toBeNull();
   });
+});
+
+it("passes optional review through the production authority entry before any file dispatch", async () => {
+  const review = vi.fn(async () => undefined);
+  const f = await fixture({ maximumWaitMs: 1000, review });
+  f.permitted.clear();
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  expect(review).toHaveBeenCalledTimes(1);
+  expect(review.mock.calls[0]).toMatchObject([
+    { policyVersion: "file-read.v1", intent: { operation: "inspect" } },
+    expect.any(AbortSignal),
+  ]);
+  expect(f.executeRequests()).toEqual([]);
+  expect(await f.approvals()).toHaveLength(1);
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  expect(review).toHaveBeenCalledTimes(1);
+});
+
+it("cancels production authorization review before opening confirmation or dispatching a file tool", async () => {
+  const controller = new AbortController();
+  let forwarded = false;
+  const f = await fixture({
+    maximumWaitMs: 1000,
+    review: async (_input, signal) => {
+      controller.abort();
+      forwarded = signal.aborted;
+      return undefined;
+    },
+  });
+  f.permitted.clear();
+  expect(await (await f.open()).execute(f.call, { signal: controller.signal })).toMatchObject({
+    outcome: "failed",
+    errorCode: "action_cancelled",
+    resultRef: null,
+  });
+  expect(forwarded).toBe(true);
+  expect(await f.approvals()).toEqual([]);
+  expect(await f.store.listGrants(f.options.ownerId, f.options.agentId)).toEqual([]);
+  expect(f.executeRequests()).toEqual([]);
+});
+
+it.each(["known", "missing-diagnostic", "possibly-sent"])(
+  "verifies durable file conflict after restart before new approval: %s",
+  async (mode) => {
+    const f = await fixture(undefined, true);
+    const call = {
+      ...f.call,
+      capabilityRef: "file:test.write",
+      arguments: { path: "note.txt", content: "mine" },
+    };
+    const unused = async (): Promise<never> => {
+      throw new Error("unexpected reservation");
+    };
+    const prepare = vi.fn(async (): Promise<never> => {
+      throw new Error("SANDBOX_FILE_VERSION_CHANGED");
+    });
+    const open = async () => {
+      const tool = new ProductionRuntimeTools({
+        ...f.options,
+        sandbox: { journal: { admit: unused }, scopes: { read: unused }, prepare },
+      });
+      await tool.listAuthorized(call.runId, []);
+      return tool;
+    };
+    const before = await readFile(path.join(f.root, "note.txt"), "utf8");
+    const first = await (await open()).execute(call);
+    const firstApproval = (await f.approvals())[0];
+    if (!firstApproval) throw new Error("first approval missing");
+    expect(first).toMatchObject({ outcome: "failed", errorCode: "FILE_VERSION_CONFLICT" });
+    expect(f.request).not.toHaveBeenCalled();
+    expect(await (await open()).execute(call)).toEqual(first);
+    expect(prepare).toHaveBeenCalledOnce();
+    f.permitted.delete("write");
+    const regenerated = {
+      ...call,
+      toolCallId: "regenerated",
+      fileConflictOf: call.toolCallId,
+      arguments: { path: "note.txt", content: `${before}mine` },
+    };
+    if (mode !== "known") {
+      const diagnostic = [...f.artifacts.values()].find((item) =>
+        item.operationKey.startsWith("runtime-tool-diagnostic:"),
+      );
+      if (!diagnostic) throw new Error("diagnostic missing");
+      if (mode === "missing-diagnostic") f.artifacts.delete(diagnostic.operationKey);
+      else {
+        const payload = f.payloads.get(diagnostic.payloadRef);
+        if (!payload) throw new Error("diagnostic payload missing");
+        const changed = {
+          ...JSON.parse(new TextDecoder().decode(payload.ciphertext)),
+          stage: "possibly_sent",
+        };
+        f.payloads.set(payload.ref, {
+          ...payload,
+          ciphertext: new TextEncoder().encode(JSON.stringify(changed)),
+        });
+      }
+      expect(await (await open()).execute(regenerated)).toMatchObject({
+        errorCode: "CODING_CONFLICT_REGENERATION_BLOCKED",
+      });
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(await f.approvals()).toHaveLength(1);
+      return;
+    }
+    expect(await (await open()).execute(regenerated)).toMatchObject({
+      outcome: "awaiting_approval",
+    });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(await readFile(path.join(f.root, "note.txt"), "utf8")).toBe(before);
+    const approvals = await f.approvals();
+    expect(approvals).toHaveLength(2);
+    expect(approvals[0]?.intentId).not.toBe(approvals[1]?.intentId);
+    const lineageArtifact = [...f.artifacts.values()].find((item) =>
+      item.operationKey.endsWith(":conflict-lineage"),
+    );
+    if (!lineageArtifact) throw new Error("lineage missing");
+    const payload = f.payloads.get(lineageArtifact.payloadRef);
+    if (!payload) throw new Error("lineage payload missing");
+    expect(JSON.parse(new TextDecoder().decode(payload.ciphertext))).toMatchObject({
+      previousToolCallId: call.toolCallId,
+      previousIntentId: firstApproval.intentId,
+      intentId: approvals.find((approval) => approval.id !== firstApproval.id)?.intentId,
+      depth: 1,
+    });
+    f.permitted.add("write");
+    expect(await (await open()).execute(regenerated)).toMatchObject({
+      errorCode: "FILE_VERSION_CONFLICT",
+    });
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(f.request).not.toHaveBeenCalled();
+  },
+);
+
+it("restores a known private inspection only after outer queue proof and validates its target", async () => {
+  const f = await fixture();
+  f.permitted.delete("read");
+  expect(await (await f.open()).execute(f.call)).toMatchObject({ outcome: "awaiting_approval" });
+  const values = new Map<string, unknown>();
+  let inspection: import("@himawari-agent/application").RuntimeToolExecutionResult | undefined;
+  for (const artifact of f.artifacts.values()) {
+    const payload = f.payloads.get(artifact.payloadRef);
+    if (!payload) continue;
+    const value = JSON.parse(new TextDecoder().decode(payload.ciphertext));
+    if (artifact.operationKey.startsWith("runtime-file-read:")) {
+      const suffix = artifact.operationKey.split(":").slice(2).join(":");
+      values.set(suffix, value);
+    }
+    if (artifact.operationKey.startsWith("runtime-tool-result:")) inspection = value;
+  }
+  if (!inspection || !f.call.context) throw new Error("inspection missing");
+  const frozen = values.get("context") as { binding: FileReadBinding };
+  const phase = vi.fn(async (..._args: Parameters<FileReadExecutionContext["phase"]>) => ({
+    outcome: "succeeded" as const,
+    resultRef: null,
+    errorCode: null,
+    externalActionId: null,
+    modelContent: "read result",
+  }));
+  const restoreInspection = vi.fn(async () => inspection);
+  const ctx: FileReadExecutionContext = {
+    ownerId: f.options.ownerId,
+    agentId: f.options.agentId,
+    now: () => now,
+    authorityFence: () => 2,
+    workerInstanceId: () => frozen.binding.workerInstanceId,
+    assertActive: async () => {},
+    canResumeAuthority: async () => true,
+    restoreInspection,
+    load: async (key) => values.get(key),
+    save: async (key, value) => {
+      if (!values.has(key)) values.set(key, value);
+      return { ref: `recovery:${key}`, value: values.get(key) };
+    },
+    phase,
+  };
+  f.permitted.add("read");
+  const services = { ...f.services, binding: async () => frozen.binding };
+  const workflow = new ProductionFileReadWorkflow(services);
+  const resumed = {
+    ...f.call,
+    context: {
+      ...f.call.context,
+      continuationRef: "original-queue",
+      executionLease: {
+        ...f.call.context.executionLease,
+        fencingToken: 2,
+        authorityFencingToken: 2,
+      },
+    },
+  };
+  expect(await workflow.execute(resumed, ctx)).toMatchObject({ outcome: "succeeded" });
+  expect(phase).toHaveBeenCalledTimes(1);
+  expect(phase.mock.calls[0]?.[1]).toBe("read");
+  if (inspection.outcome !== "succeeded") throw new Error("Expected completed inspection");
+  const target = JSON.parse(inspection.modelContent);
+  inspection = {
+    ...inspection,
+    modelContent: JSON.stringify({ ...target, relativePath: "different.txt" }),
+  };
+  expect(await workflow.execute(resumed, ctx)).toMatchObject({
+    errorCode: "FILE_READ_TARGET_INVALID",
+  });
+  expect(phase).toHaveBeenCalledTimes(1);
+  expect(
+    await workflow.execute({ ...resumed, arguments: { path: "different.txt" } }, ctx),
+  ).toMatchObject({ errorCode: "FILE_READ_CONTEXT_CHANGED" });
 });

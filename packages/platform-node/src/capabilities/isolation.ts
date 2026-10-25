@@ -11,6 +11,7 @@ import type {
   CapabilityRuntimeQualifierPort,
   ClockPort,
 } from "@himawari-agent/application";
+import { waitForProcessOutput } from "../process-output.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -329,48 +330,34 @@ export class LinuxBubblewrapIsolationBackend implements SandboxedProcessIsolatio
 
   async qualify(manifest: CapabilityManifest): Promise<CapabilityRuntimeQualification> {
     const now = this.#clock.now();
+    const identity = "linux-bubblewrap-0.11.2+prlimit";
     if (manifest.runtime.kind !== "program" && manifest.runtime.kind !== "mcp") {
       return qualification(manifest, this.#platform, now, {
-        identity: "linux-bubblewrap-0.11.2+prlimit",
+        identity,
         ready: false,
         reasons: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_KIND_UNSUPPORTED],
       });
     }
+    const declarationReasons =
+      manifest.isolation !== "sandbox"
+        ? [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH]
+        : manifest.scopes.network.length > 0
+          ? [CAPABILITY_ISOLATION_ERROR_CODES.NETWORK_SCOPE_UNENFORCEABLE]
+          : manifest.scopes.secrets.length > 0
+            ? [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH]
+            : await this.bindingReasons(manifest, await this.#bindings.resolveProcess(manifest));
+    if (declarationReasons.length > 0) {
+      return qualification(manifest, this.#platform, now, {
+        identity,
+        ready: false,
+        reasons: declarationReasons,
+      });
+    }
     const probe = await this.probe();
-    if (!probe.ready) {
-      return qualification(manifest, this.#platform, now, {
-        identity: probe.identity,
-        ready: false,
-        reasons: probe.reasonCodes,
-      });
-    }
-    if (manifest.isolation !== "sandbox") {
-      return qualification(manifest, this.#platform, now, {
-        identity: probe.identity,
-        ready: false,
-        reasons: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
-      });
-    }
-    if (manifest.scopes.network.length > 0) {
-      return qualification(manifest, this.#platform, now, {
-        identity: probe.identity,
-        ready: false,
-        reasons: [CAPABILITY_ISOLATION_ERROR_CODES.NETWORK_SCOPE_UNENFORCEABLE],
-      });
-    }
-    if (manifest.scopes.secrets.length > 0) {
-      return qualification(manifest, this.#platform, now, {
-        identity: probe.identity,
-        ready: false,
-        reasons: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
-      });
-    }
-    const binding = await this.#bindings.resolveProcess(manifest);
-    const reasons = await this.bindingReasons(manifest, binding);
     return qualification(manifest, this.#platform, now, {
       identity: probe.identity,
-      ready: reasons.length === 0,
-      reasons,
+      ready: probe.ready,
+      reasons: probe.reasonCodes,
     });
   }
 
@@ -867,6 +854,7 @@ export async function runSandboxedProcess(
   let outputLimitExceeded = false;
   let timedOut = false;
   let terminal = false;
+  const interruption = new AbortController();
 
   const killGroup = (terminationSignal: NodeJS.Signals): void => {
     if (!child.pid || terminal) return;
@@ -897,21 +885,26 @@ export async function runSandboxedProcess(
   timeout.unref();
   const force = setTimeout(
     () => {
-      if (timedOut || outputLimitExceeded || signal?.aborted) killGroup("SIGKILL");
+      if (timedOut || outputLimitExceeded || signal?.aborted) {
+        killGroup("SIGKILL");
+        interruption.abort();
+      }
     },
     Math.min(launch.ceiling.maxWallTimeMs + 250, 60_000),
   );
   force.unref();
-  if (stdin) child.stdin.end(stdin);
-  else child.stdin.end();
   try {
     const result = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
       (resolve, reject) => {
-        child.once("error", reject);
-        child.once("exit", (exitCode, exitSignal) => {
-          terminal = true;
-          resolve({ exitCode, signal: exitSignal });
+        void waitForProcessOutput(child, interruption.signal).then(
+          ({ exitCode, signal }) => resolve({ exitCode, signal }),
+          reject,
+        );
+        child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+          if (error.code !== "EPIPE") reject(error);
         });
+        if (stdin) child.stdin.end(stdin);
+        else child.stdin.end();
       },
     );
     return Object.freeze({

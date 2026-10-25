@@ -1,0 +1,47 @@
+{
+  "platform": "darwin",
+  "node": "v22.22.3",
+  "productionQualified": false,
+  "ownedTemporaryFilesRemoved": true,
+  "reports": [
+    {
+      "mode": "read",
+      "reason": "exited",
+      "elapsedMs": 1238,
+      "policyDigest": "51342a91eb0961544392d47bacbba837afc96bcc5346bce853c07441f8d4e353",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":null,\"cwd\":\"/private/tmp/p4-fcjwwK/read/workspace\",\"read\":\"allowed\",\"write\":\"EPERM\",\"outsideRead\":\"EPERM\",\"outsideWrite\":\"EPERM\",\"symlinkRead\":\"EPERM\",\"symlinkWrite\":\"EPERM\",\"childRead\":\"EPERM\",\"network\":\"EPERM\"}\n",
+      "stderr": "",
+      "hostNetworkNamespace": null,
+      "hostListenerPositiveControl": true,
+      "passed": true
+    },
+    {
+      "mode": "write",
+      "reason": "exited",
+      "elapsedMs": 360,
+      "policyDigest": "953057c830188e61cd67750ede50d812567fa64098555f1d312dafb7c471a87a",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":null,\"cwd\":\"/private/tmp/p4-fcjwwK/write/workspace\",\"read\":\"allowed\",\"write\":\"allowed\",\"outsideRead\":\"EPERM\",\"outsideWrite\":\"EPERM\",\"symlinkRead\":\"EPERM\",\"symlinkWrite\":\"EPERM\",\"childRead\":\"EPERM\",\"network\":\"EPERM\"}\n",
+      "stderr": "",
+      "hostNetworkNamespace": null,
+      "hostListenerPositiveControl": true,
+      "passed": true
+    },
+    {
+      "mode": "private",
+      "reason": "exited",
+      "elapsedMs": 364,
+      "policyDigest": "aa470bcfe4a45b8cca2a492dd167cf762fe8cde71902f9148e2ab5d2495aac28",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":null,\"cwd\":\"/private/tmp/p4-fcjwwK/private/private\",\"read\":\"EPERM\",\"write\":\"EPERM\",\"outsideRead\":\"EPERM\",\"outsideWrite\":\"EPERM\",\"symlinkRead\":\"EPERM\",\"symlinkWrite\":\"EPERM\",\"childRead\":\"EPERM\",\"network\":\"EPERM\"}\n",
+      "stderr": "",
+      "hostNetworkNamespace": null,
+      "hostListenerPositiveControl": true,
+      "passed": true
+    }
+  ]
+}

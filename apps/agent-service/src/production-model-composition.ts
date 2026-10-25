@@ -1,25 +1,28 @@
 import type {
   ClockPort,
   ConfiguredEmbeddingModelDescriptor,
-  ConfiguredGenerationModelDescriptor,
+  ConfiguredCompletionsGenerationModelDescriptor,
+  ConfiguredTypeSafeGenerationModelDescriptor,
   IdGeneratorPort,
   ModelCostDescriptor,
   ModelDescriptor,
-  ModelInvocationAdmissionResolver,
   ModelInvocationAdmissionPort,
-  RuntimeRequest,
+  ModelInvocationAdmissionResolver,
   ModelPort,
   ModelSecretRequirement,
   PayloadProtectionRequest,
   PayloadProtectorPort,
   PayloadStorePort,
   ProductConfiguration,
+  RuntimeRequest,
   SecretPort,
 } from "@himawari-agent/application";
 import {
   assertProductionSecretSource,
   type HostProviderSecretSource,
   TrustedModelProviderAdapter,
+  type TrustedModelTransport,
+  TypeSafeJevTransport,
 } from "@himawari-agent/platform-node";
 import {
   admissionCostForConfiguredPiModel,
@@ -54,14 +57,32 @@ export interface ProductionEmbeddingModelDescriptor {
 }
 
 export interface ProductionModelDescriptorSet {
-  readonly generation: readonly ConfiguredPiModelDescriptor[];
+  readonly generation: readonly ProductionGenerationDescriptor[];
   readonly embedding: ProductionEmbeddingModelDescriptor;
+}
+
+/**
+ * A composition descriptor keeps its configured shape so the composition can pick
+ * the transport from `api`; the Pi descriptor adds the runtime binding.
+ */
+export type ProductionGenerationDescriptor =
+  | ConfiguredPiModelDescriptor
+  | ProductionTypeSafeDescriptor;
+
+export interface ProductionTypeSafeDescriptor extends ModelDescriptor {
+  readonly provider: string;
+  readonly routingClass: "specialist";
+  readonly secretRequirement: ModelSecretRequirement;
+  readonly name: string;
+  readonly api: "typesafe-systemone";
+  readonly modelVersion?: string;
+  readonly cost: ModelCostDescriptor;
 }
 
 export interface ProductionModelCompositionOptions {
   readonly ownerId: OwnerId;
   readonly agentId: AgentId;
-  readonly descriptors: readonly ConfiguredPiModelDescriptor[];
+  readonly descriptors: readonly ProductionGenerationDescriptor[];
   readonly handles: SecretPort;
   readonly secretSource: HostProviderSecretSource;
   readonly payloads: PayloadStorePort;
@@ -73,8 +94,6 @@ export interface ProductionModelCompositionOptions {
   readonly maxOutputTokens?: number;
   readonly requestTimeoutMs?: number;
   readonly temperature?: number;
-  readonly siteUrl?: string;
-  readonly appName?: string;
   /** Resolves a gate bound to the current Run lease; omitted means fail closed. */
   readonly admission?: ModelInvocationAdmissionResolver;
 }
@@ -87,6 +106,7 @@ export interface ProductionModelComposition {
     admission: ModelInvocationAdmissionPort,
   ): Promise<string>;
   readonly piModels: PiModelBindingPort;
+  /** Pi transport observations remain available for generation qualification. */
   readonly transport: PiModelTransport;
   readonly payloadBoundary: ProtectedPiModelPayloadBoundary;
   close(): Promise<void>;
@@ -100,6 +120,10 @@ export interface ProductionModelCompositionFromConfigurationOptions
 export interface ProductionConfiguredModelComposition {
   readonly descriptors: ProductionModelDescriptorSet;
   readonly composition: ProductionModelComposition;
+  /** Revocable secret handles owned by this composition; cleared on close. */
+  readonly handles: SecretPort;
+  /** The same host provider secret source the run model uses. */
+  readonly secretSource: HostProviderSecretSource;
 }
 
 export function resolveConfiguredSecretRequirement(
@@ -140,16 +164,17 @@ function embeddingDescriptor(
 
 function piGenerationDescriptor(
   configuration: ProductConfiguration,
-  descriptor: ConfiguredGenerationModelDescriptor,
+  descriptor: ConfiguredCompletionsGenerationModelDescriptor,
 ): ConfiguredPiModelDescriptor {
-  if (descriptor.provider !== "openrouter") {
+  if (descriptor.provider !== "vercel-ai-gateway") {
     throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
   const secretRequirement = resolveConfiguredSecretRequirement(configuration, descriptor.secretRef);
   if (secretRequirement === null) throw new Error("MODEL_PI_SECRET_REQUIRED");
+  if (descriptor.providerRouting === undefined) throw new Error("MODEL_PI_ROUTING_REQUIRED");
   return Object.freeze({
     ref: descriptor.ref,
-    provider: "openrouter",
+    provider: "vercel-ai-gateway",
     model: descriptor.model,
     version: descriptor.version,
     routingClass: descriptor.role,
@@ -158,9 +183,10 @@ function piGenerationDescriptor(
     capabilities: Object.freeze([...descriptor.capabilities]),
     allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
     secretRequirement,
-    ...(descriptor.providerRouting === undefined
-      ? {}
-      : { providerRouting: Object.freeze({ ...descriptor.providerRouting }) }),
+    providerRouting: Object.freeze({
+      order: Object.freeze([...descriptor.providerRouting.order]),
+      sort: descriptor.providerRouting.sort,
+    }),
     name: descriptor.name,
     api: descriptor.api,
     reasoning: descriptor.reasoning,
@@ -175,27 +201,67 @@ function piGenerationDescriptor(
 }
 
 /**
+ * A decision model has no Pi runtime binding: it keeps the configured provider,
+ * model alias and optional reported version, and is reached by the TypeSafe
+ * transport. Its credential requirement is resolved exactly like Pi's.
+ */
+function typeSafeGenerationDescriptor(
+  configuration: ProductConfiguration,
+  descriptor: ConfiguredTypeSafeGenerationModelDescriptor,
+): ProductionTypeSafeDescriptor {
+  const secretRequirement = resolveConfiguredSecretRequirement(configuration, descriptor.secretRef);
+  if (secretRequirement === null) throw new Error("MODEL_TYPESAFE_SECRET_REQUIRED");
+  return Object.freeze({
+    ref: descriptor.ref,
+    provider: descriptor.provider,
+    model: descriptor.model,
+    version: descriptor.modelVersion ?? descriptor.version,
+    routingClass: descriptor.role,
+    priority: descriptor.priority,
+    disclosure: descriptor.disclosure,
+    capabilities: Object.freeze([...descriptor.capabilities]),
+    allowedDataClassifications: Object.freeze([...descriptor.allowedDataClassifications]),
+    secretRequirement,
+    name: descriptor.name,
+    api: "typesafe-systemone",
+    ...(descriptor.modelVersion === undefined ? {} : { modelVersion: descriptor.modelVersion }),
+    cost: Object.freeze({ ...descriptor.cost }),
+  });
+}
+
+/**
  * Resolve the strict product configuration into one canonical generation
  * binding for Pi and one independent embedding identity for Memory.
  */
 export function resolveConfiguredModelDescriptorSet(
   configuration: ProductConfiguration,
 ): ProductionModelDescriptorSet {
-  const primary = configuration.modelDescriptors.find(({ role }) => role === "primary");
-  const fallback = configuration.modelDescriptors.find(({ role }) => role === "fallback");
-  const embedding = configuration.modelDescriptors.find(({ role }) => role === "embedding");
-  if (!primary || !fallback || !embedding) throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
+  const primary = configuration.modelDescriptors.find(
+    (descriptor): descriptor is ConfiguredCompletionsGenerationModelDescriptor =>
+      descriptor.role === "primary",
+  );
+  const embedding = configuration.modelDescriptors.find(
+    (descriptor): descriptor is ConfiguredEmbeddingModelDescriptor =>
+      descriptor.role === "embedding",
+  );
+  if (!primary || !embedding) throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
   if (embedding.role !== "embedding") throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
   if (configuration.memory.dimensions !== embedding.dimensions) {
     throw new Error("MODEL_EMBEDDING_DIMENSIONS_MISMATCH");
   }
-  if (primary.role === "embedding" || fallback.role === "embedding") {
-    throw new Error("MODEL_DESCRIPTOR_SET_INCOMPLETE");
+  // Only OpenAI-compatible descriptors carry a Pi runtime binding; a decision
+  // endpoint such as TypeSafe is reached by its own transport instead.
+  if (primary.api !== "openai-completions") {
+    throw new Error("MODEL_PI_PROVIDER_UNSUPPORTED");
   }
+  const specialist = configuration.modelDescriptors.find(
+    (descriptor): descriptor is ConfiguredTypeSafeGenerationModelDescriptor =>
+      descriptor.role === "specialist",
+  );
   return Object.freeze({
     generation: Object.freeze([
       piGenerationDescriptor(configuration, primary),
-      piGenerationDescriptor(configuration, fallback),
+      ...(specialist ? [typeSafeGenerationDescriptor(configuration, specialist)] : []),
     ]),
     embedding: embeddingDescriptor(configuration, embedding),
   });
@@ -211,7 +277,78 @@ export function createProductionModelCompositionFromConfiguration(
     ...options,
     descriptors: descriptors.generation,
   });
-  return Object.freeze({ descriptors, composition });
+  return Object.freeze({
+    descriptors,
+    composition,
+    handles: options.handles,
+    secretSource: options.secretSource,
+  });
+}
+
+/**
+ * One governed model port, several protocols: the Pi transport answers
+ * OpenAI-compatible descriptors and the TypeSafe transport answers decision
+ * descriptors. Selection is purely declarative from the frozen descriptor, so a
+ * request can never change protocol mid-flight.
+ */
+function modelTransportFor(
+  options: ProductionModelCompositionOptions,
+  payloadBoundary: ProtectedPiModelPayloadBoundary,
+): { readonly trusted: TrustedModelTransport; readonly pi: PiModelTransport } {
+  const piOnly = options.descriptors.filter(
+    (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+      descriptor.api === "openai-completions",
+  );
+  const piTransport = new PiModelTransport({
+    models: new ConfiguredPiModelBindingPort({
+      descriptors: piOnly,
+      secretSource: options.secretSource,
+      ...(options.runtimeFactory === undefined ? {} : { runtimeFactory: options.runtimeFactory }),
+    }),
+    payloads: payloadBoundary,
+    clock: options.clock,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.maxOutputTokens === undefined ? {} : { maxOutputTokens: options.maxOutputTokens }),
+    ...(options.requestTimeoutMs === undefined
+      ? {}
+      : { requestTimeoutMs: options.requestTimeoutMs }),
+    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+  });
+  const configuredByRef = new Map(
+    options.descriptors.map((descriptor) => [descriptor.ref, descriptor]),
+  );
+  const typeSafeTransport = new TypeSafeJevTransport({
+    secrets: options.secretSource,
+    payloads: payloadBoundary,
+    clock: options.clock,
+    pricingFor: (descriptor) => {
+      const configured = configuredByRef.get(descriptor.ref);
+      if (
+        configured?.api !== "typesafe-systemone" ||
+        configured.provider !== descriptor.provider ||
+        configured.model !== descriptor.model ||
+        configured.version !== descriptor.version
+      )
+        throw new Error("MODEL_DESCRIPTOR_BINDING_MISMATCH");
+      return configured.cost;
+    },
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.requestTimeoutMs === undefined
+      ? {}
+      : { requestTimeoutMs: options.requestTimeoutMs }),
+  });
+  return {
+    pi: piTransport,
+    trusted: {
+      invoke: (input) => {
+        const configured = configuredByRef.get(input.descriptor.ref);
+        if (!configured) throw new Error("MODEL_DESCRIPTOR_BINDING_MISMATCH");
+        return configured.api === "typesafe-systemone"
+          ? typeSafeTransport.invoke(input)
+          : piTransport.invoke(input);
+      },
+    },
+  };
 }
 
 export function createProductionModelComposition(
@@ -219,7 +356,10 @@ export function createProductionModelComposition(
 ): ProductionModelComposition {
   assertProductionSecretSource(options.secretSource);
   const piModels = new ConfiguredPiModelBindingPort({
-    descriptors: options.descriptors,
+    descriptors: options.descriptors.filter(
+      (descriptor): descriptor is ConfiguredPiModelDescriptor =>
+        descriptor.api === "openai-completions",
+    ),
     secretSource: options.secretSource,
     ...(options.runtimeFactory === undefined ? {} : { runtimeFactory: options.runtimeFactory }),
   });
@@ -231,19 +371,7 @@ export function createProductionModelComposition(
     ids: options.ids,
     clock: options.clock,
   });
-  const transport = new PiModelTransport({
-    models: piModels,
-    payloads: payloadBoundary,
-    clock: options.clock,
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-    ...(options.maxOutputTokens === undefined ? {} : { maxOutputTokens: options.maxOutputTokens }),
-    ...(options.requestTimeoutMs === undefined
-      ? {}
-      : { requestTimeoutMs: options.requestTimeoutMs }),
-    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
-    ...(options.siteUrl === undefined ? {} : { siteUrl: options.siteUrl }),
-    ...(options.appName === undefined ? {} : { appName: options.appName }),
-  });
+  const transport = modelTransportFor(options, payloadBoundary);
   const configuredByRef = new Map(
     options.descriptors.map((descriptor) => [descriptor.ref, descriptor]),
   );
@@ -253,7 +381,7 @@ export function createProductionModelComposition(
     descriptors: options.descriptors,
     handles: options.handles,
     secretSource: options.secretSource,
-    transport,
+    transport: transport.trusted,
     clock: options.clock,
     ...(options.admission === undefined ? {} : { admission: options.admission }),
     admissionCost: (descriptor: ModelDescriptor) => {
@@ -266,13 +394,17 @@ export function createProductionModelComposition(
       ) {
         throw new Error("MODEL_DESCRIPTOR_BINDING_MISMATCH");
       }
-      return admissionCostForConfiguredPiModel(configured);
+      // A decision endpoint reserves on input tokens only; Pi models reserve on
+      // the frozen context window and output ceiling.
+      return configured.api === "typesafe-systemone"
+        ? TypeSafeJevTransport.estimatedAdmissionCost(configured)
+        : admissionCostForConfiguredPiModel(configured);
     },
   });
   return Object.freeze({
     model,
     piModels,
-    transport,
+    transport: transport.pi,
     payloadBoundary,
     generateTitle: async (
       request: RuntimeRequest,
@@ -280,7 +412,10 @@ export function createProductionModelComposition(
       gate: ModelInvocationAdmissionPort,
     ) => {
       const descriptor = options.descriptors.find((item) => item.ref === request.modelRef);
-      if (!descriptor?.allowedDataClassifications.includes(request.dataClassification))
+      if (
+        descriptor?.api !== "openai-completions" ||
+        !descriptor.allowedDataClassifications.includes(request.dataClassification)
+      )
         throw new Error("THREAD_TITLE_DISCLOSURE_DENIED");
       const invocationId = `thread-title:${request.runId}`;
       const inputRef = await payloadBoundary.writeText({

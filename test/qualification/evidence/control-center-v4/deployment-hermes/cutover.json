@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "deploymentComplete": true,
+  "schemaSequence": 32,
+  "historyReimported": false,
+  "runtimeDigest": "fa74f6a8e5fd245027887dc6b9fc92227a90bf1d7e3b817fe4e01591a82ca005",
+  "receiptDigest": "99b8bf35991511b21bc34d1763fe273ce5960a2c0bb4826fda60ad09f9a13bef",
+  "ready": [
+    "agent",
+    "worker"
+  ],
+  "runtimeUid": 998,
+  "backupId": "before-v4-0600b29-2026-09-16",
+  "modelCalls": 0,
+  "realModelAcceptance": "not_run_no_model_calls",
+  "sourceCommit": "0600b2958432a4592a52e5c01cf92794a7af7121",
+  "startupVerification": true,
+  "physicalPrefix": "/opt/himawari/releases/2026-09-16-v4-0600b29",
+  "memoryRetrievalUnchanged": true,
+  "capabilityDeclarationsUnchanged": true
+}

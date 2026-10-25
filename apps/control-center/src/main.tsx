@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ControlCenterApp } from "./app.js";
 import "./styles.css";
 import "./chat-layout.css";
+import "./review-v4.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 

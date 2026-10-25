@@ -1,0 +1,14 @@
+{
+  "source": ".ci-output/local-1789808336413/test-macos-arm64/tests/unit.json",
+  "tests": 1706,
+  "failed": 1,
+  "failures": [
+    {
+      "file": "/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/apps/agent-service/test/pi-coding-program.unit.test.ts",
+      "name": "installed Pi coding program boundary rejects multiple write proofs instead of presenting ambiguous provenance",
+      "failureMessages": [
+        "AssertionError: expected undefined to be 1 // Object.is equality\n    at failed (/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/apps/agent-service/test/pi-coding-program.unit.test.ts:78:37)\n    at /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/apps/agent-service/test/pi-coding-program.unit.test.ts:272:5\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20"
+      ]
+    }
+  ]
+}

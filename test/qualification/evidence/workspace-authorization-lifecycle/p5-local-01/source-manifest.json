@@ -1,0 +1,114 @@
+{
+  "sourceBaseCommit": "58c6598465fc747447e14196bb3474c4cccb13d3",
+  "recordedAt": "2026-09-19T11:39:07.142289+00:00",
+  "files": [
+    {
+      "path": "packages/application/package.json",
+      "sha256": "03f5798d6ca9ca36d167f4cdfe97629550d2f7b4cdfa3456860141255a6622ba"
+    },
+    {
+      "path": "packages/application/src/ports/authorization.ts",
+      "sha256": "35062269305b1f875c752caee1038da6e7d21ec98469983fdb9d27c9181a91e1"
+    },
+    {
+      "path": "packages/application/src/ports/index.ts",
+      "sha256": "0f95fdf43ae74fde7fe1f81b273d3994341510698c67e0094705009710b8962d"
+    },
+    {
+      "path": "packages/application/src/services/action-policy-service.ts",
+      "sha256": "d6389b5f4d5fd168f696ed0c59aa750d84ecc46f15088e3f0cf2e8f75cd3d29e"
+    },
+    {
+      "path": "packages/application/src/services/index.ts",
+      "sha256": "824e2cca04a9bf68caaf1e9b6c9ea0300d2dbae79a78ce7a2629593bc9ed46a4"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/durable-adapters.ts",
+      "sha256": "d840f8c451f650a145e00283398c4715c4ad6b7abca1546ca83d72ef24bb3663"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/migration-engine.ts",
+      "sha256": "0e67324a1eb2abd0eeda7908adb3db40bc69682bc0390e934713afbe61a7031a"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/product-state-repository.ts",
+      "sha256": "acf79e95fe54a14219aa9986bfdd39fcb609dfb105e8ef8777a05746fb051ffe"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/schema-catalog.ts",
+      "sha256": "f2c9398e70418adb6c2c54af7801a0b5e4190b06af90bd0661afc7018d5cad49"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-durable-operations.ts",
+      "sha256": "e7bc3dd9b225bafdb5ab3500dcced23dc5fdd08e1f19a17d00cada10cfb168e3"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/migration-engine.contract.test.ts",
+      "sha256": "b3d1d11b1c5a2761a9bc47bf80cb24650c5b9d29d2d57b74cfcb31dcfe9237ef"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/model-budget-migration.contract.test.ts",
+      "sha256": "62c6414231575f6e747115691264cb9cca533d0d386f3d3da20185e5266bdd40"
+    },
+    {
+      "path": "packages/persistence-sqlite/test/run-checkpoint-migration.contract.test.ts",
+      "sha256": "b0b019a8fd64cfab5e12071cdd4d5635bbb40b271b06b154861164573eec8675"
+    },
+    {
+      "path": "scripts/operations/workspace-lifecycle-audit.mjs",
+      "sha256": "acfb4e04e8eb0b683e7265af70e1dc76242524aa6b6b99ca176bcf581568ee34"
+    },
+    {
+      "path": "test/integration/authorization-capability-governance.test.ts",
+      "sha256": "1d8940432a670147c9a3cf32a57fee04bcd39e17204bf87c7dd4623e74fc514c"
+    },
+    {
+      "path": "test/integration/installable-node-services.test.ts",
+      "sha256": "364f0e368f8209679e700e48fa634f2b9c0b56a80cec354934a3295103bfa91d"
+    },
+    {
+      "path": "test/integration/sqlite-run-dispatch-lease.test.ts",
+      "sha256": "526a6b87151b5d8f0b42e2320fca21abec71eeafb9875eb33c7c555c866e62a3"
+    },
+    {
+      "path": "test/integration/sqlite-run-payload-artifacts.test.ts",
+      "sha256": "bfdd78d5170c026bb7fc9e2941e5de1065831581eceae0ff790309c568a9d939"
+    },
+    {
+      "path": "test/integration/sqlite-sandbox-execution-v2.test.ts",
+      "sha256": "2e41eb6204b574dc4640bb300a68e111b32ac22581b85ec2510f5eb604b2c125"
+    },
+    {
+      "path": "test/integration/workspace-lifecycle-audit.test.ts",
+      "sha256": "9e1a054a72281c2d62e1321b1f456da44127938a9854b545f5ec3f947c7784bc"
+    },
+    {
+      "path": "packages/application/src/ports/automatic-action-review.ts",
+      "sha256": "14176d85419bf985828f4475d5f8f3a6207089d82fb7295aa0671c10134a5e5d"
+    },
+    {
+      "path": "packages/application/src/services/automatic-action-review.ts",
+      "sha256": "a8f35dadfb5938f39ccccf53e29cf490ea842cd3d157f0e30a6226a569dec143"
+    },
+    {
+      "path": "packages/application/src/services/automatic-action-review-contract.ts",
+      "sha256": "96da45267e3b36a168c7906cc9e14ef3d8e123e559246036e3f149329638a705"
+    },
+    {
+      "path": "packages/application/test/automatic-action-review.unit.test.ts",
+      "sha256": "f6a8e1b43454432e2def6874211f2c221964f4fa4b58bbc6ee4bb9017a95468c"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/migrations/0039_automatic_action_reviews.sql",
+      "sha256": "f561381daeabd866b254840afae05bcaeb519f94f9efbf1f6b4c09a58956ae7d"
+    },
+    {
+      "path": "packages/persistence-sqlite/src/sqlite-automatic-action-review.ts",
+      "sha256": "b0186c903f48da1d3211e0beb7cc1a40c1038879fc2d1c2376721d3f14fe9bd2"
+    },
+    {
+      "path": "test/integration/automatic-action-review.test.ts",
+      "sha256": "cf4ab662fd4414200975ff8391cc695da34172bd25df0a4ec443f42cfd5eddb0"
+    }
+  ]
+}

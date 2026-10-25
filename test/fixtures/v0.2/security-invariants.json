@@ -9,6 +9,7 @@
     "GET /api/gateway/v1/events",
     "GET /api/gateway/v2/events",
     "GET /api/gateway/thread/v3/events",
+    "GET /api/gateway/thread/v3/execution-events",
     "GET /api/health/v1/dependencies",
     "GET /api/metrics/v1",
     "GET /assets/*",
@@ -43,14 +44,21 @@
   "requiredGuards": [
     {
       "path": "packages/platform-node/src/strict-configuration.ts",
-      "all": ["[\"primary\", \"fallback\", \"embedding\"]", "must contain exactly one ${role}"]
+      "all": [
+        "[\"primary\", \"specialist\", \"embedding\"]",
+        "for (const role of [\"primary\", \"embedding\"] as const)",
+        "must contain exactly one ${role}",
+        "must contain at most one specialist"
+      ]
     },
     {
       "path": "apps/agent-service/src/production-model-composition.ts",
       "all": [
         "descriptors: descriptors.generation",
         "piGenerationDescriptor(configuration, primary)",
-        "piGenerationDescriptor(configuration, fallback)"
+        "typeSafeGenerationDescriptor(configuration, specialist)",
+        "MODEL_PI_SECRET_REQUIRED",
+        "MODEL_PI_ROUTING_REQUIRED"
       ]
     },
     {

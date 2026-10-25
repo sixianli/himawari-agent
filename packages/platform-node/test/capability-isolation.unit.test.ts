@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { CapabilityManifest } from "@himawari-agent/application";
@@ -232,7 +233,10 @@ describe("capability process isolation", () => {
     const fixture = await backendFixture();
     const hostFile = path.join(fixture.binding.filesystem[0]?.hostPath ?? "/missing", "input.txt");
     const runtimeFile = path.join(fixture.binding.runtimeRoot, "workspace", "input.txt");
-    await Promise.all([writeFile(hostFile, "fixture input\n"), writeFile(runtimeFile, "target\n")]);
+    await Promise.all([
+      writeFile(hostFile, "fixture input\n", { mode: 0o600 }),
+      writeFile(runtimeFile, "target\n", { mode: 0o600 }),
+    ]);
     const mcpManifest: CapabilityManifest = {
       ...programManifest(),
       scopes: {
@@ -373,6 +377,20 @@ describe("capability process isolation", () => {
     },
   );
 
+  it("reports the exit of a process that stops before reading its whole input", async () => {
+    const result = await runSandboxedProcess(
+      {
+        command: "/bin/sh",
+        args: ["-c", "exit 3"],
+        cwd: "/",
+        environment: {},
+        ceiling: { ...CEILING, maxWallTimeMs: 10_000 },
+      },
+      new Uint8Array(4 * 1024 * 1024),
+    );
+    expect(result).toMatchObject({ exitCode: 3, timedOut: false, outputLimitExceeded: false });
+  });
+
   it("enforces wall time when supervising the sandbox process group", async () => {
     const timedOut = await runSandboxedProcess(
       {
@@ -471,6 +489,21 @@ describe("frozen sandbox launch boundary", () => {
       });
     },
   );
+  it("reports an unsafe helper even when the host namespace probe also fails", async () => {
+    const { backend, binding } = await backendFixture();
+    await writeFile(path.join(binding.runtimeRoot, "bin/prlimit"), "");
+    await writeFile(
+      path.join(path.dirname(binding.runtimeRoot), "bwrap"),
+      "#!/bin/sh\n" +
+        'if [ "$1" = "--version" ]; then echo \'bubblewrap 0.11.2\'; exit 0; fi\n' +
+        "exit 1\n",
+      { mode: 0o700 },
+    );
+    await expect(backend.qualify(programManifest())).resolves.toMatchObject({
+      productionSuitable: false,
+      reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.RUNTIME_ROOT_UNSAFE],
+    });
+  });
   it("refuses host filesystem access with group write permissions", async () => {
     const { backend, binding } = await backendFixture();
     const filesystem = binding.filesystem[0];
@@ -493,4 +526,173 @@ describe("frozen sandbox launch boundary", () => {
       reasonCodes: [CAPABILITY_ISOLATION_ERROR_CODES.PROCESS_BINDING_MISMATCH],
     });
   });
+});
+
+async function inheritedProgramFixture(mode: "tail" | "continuous" | "slow-start") {
+  const root = await mkdtemp(path.join(os.tmpdir(), "b6-output-"));
+  roots.push(root);
+  const marker = `B6_OUTPUT_${path.basename(root)}`;
+  const childFile = path.join(root, "child.sh");
+  const readyFile = path.join(root, "ready.json");
+  const countFile = path.join(root, "written-lines.txt");
+  const parentFile = path.join(root, "parent.sh");
+  await writeFile(countFile, "");
+  await writeFile(
+    childFile,
+    `
+parent="$1"
+${mode === "slow-start" ? "sleep 0.5" : ""}
+printf '{"pid":%s,"parent":%s}' "$$" "$parent" > ./ready.json
+while kill -0 "$parent" 2>/dev/null; do sleep 0.002; done
+${
+  mode === "tail"
+    ? `sleep 0.05
+printf 'child-tail\\n'
+printf 'stderr-tail\\n' >&2`
+    : `while :; do
+  printf 'more-output\\n'
+  printf 'parent-exited\\n' >> ./written-lines.txt
+  sleep ${mode === "slow-start" ? "0.06" : "0.02"}
+done`
+}
+`,
+  );
+  await writeFile(
+    parentFile,
+    `
+printf 'parent-start\\n'
+/bin/sh ./child.sh "$$" "$1" &
+while [ ! -f ./ready.json ]; do sleep 0.002; done
+exit 7
+`,
+  );
+  const processes = () =>
+    execFileSync("/bin/ps", ["-axo", "pid=,ppid=,pgid=,command="], { encoding: "utf8" })
+      .split("\n")
+      .flatMap((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+        return match
+          ? [
+              {
+                pid: Number(match[1]),
+                ppid: Number(match[2]),
+                pgid: Number(match[3]),
+                command: match[4] ?? "",
+              },
+            ]
+          : [];
+      });
+  const identity = async () =>
+    JSON.parse(await readFile(readyFile, "utf8")) as { pid: number; parent: number };
+  return {
+    launch: {
+      command: "/bin/sh",
+      args: [parentFile, marker],
+      cwd: root,
+      environment: {},
+      ceiling: { ...CEILING },
+    },
+    async expectCompleteOutput(stdout: Uint8Array) {
+      const confirmed = (await readFile(countFile, "utf8")).split("parent-exited\n").length - 1;
+      const output = new TextDecoder().decode(stdout);
+      const received = output.split("more-output\n").length - 1;
+      expect(confirmed).toBeGreaterThan(0);
+      expect(output).toBe(`parent-start\n${"more-output\n".repeat(received)}`);
+      expect(received).toBeGreaterThanOrEqual(confirmed);
+      expect(received).toBeLessThanOrEqual(confirmed + 1);
+    },
+    async parentExited() {
+      const known = await identity().catch(() => undefined);
+      if (!known) return false;
+      const rows = processes();
+      const child = rows.find((row) => row.pid === known.pid);
+      expect(child?.command).toContain(marker);
+      expect(child?.pgid).toBe(known.parent);
+      return !rows.some((row) => row.pid === known.parent);
+    },
+    async childGone() {
+      const known = await identity();
+      return !processes().some((row) => row.pid === known.pid && row.command.includes(marker));
+    },
+    async cleanup() {
+      const known = await identity().catch(() => undefined);
+      if (!known) return;
+      const child = processes().find(
+        (row) => row.pid === known.pid && row.command.includes(marker),
+      );
+      if (child) process.kill(child.pid, "SIGKILL");
+      await expect.poll(() => this.childGone(), { timeout: 1000 }).toBe(true);
+    },
+  };
+}
+
+describe("program output after the parent exits", () => {
+  it("[R2-D20] preserves deadline with delayed child startup after the parent exits", async () => {
+    const fixture = await inheritedProgramFixture("slow-start");
+    try {
+      const result = await runSandboxedProcess(fixture.launch, null);
+      expect(result).toMatchObject({
+        exitCode: 7,
+        timedOut: true,
+        outputLimitExceeded: false,
+      });
+      await fixture.expectCompleteOutput(result.stdout);
+      await expect.poll(() => fixture.childGone(), { timeout: 1000 }).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it("collects delayed stdout and stderr from the original process group", async () => {
+    const fixture = await inheritedProgramFixture("tail");
+    try {
+      const result = await runSandboxedProcess(fixture.launch, null);
+      expect(result).toMatchObject({
+        exitCode: 7,
+        signal: null,
+        timedOut: false,
+        outputLimitExceeded: false,
+      });
+      expect(new TextDecoder().decode(result.stdout)).toBe("parent-start\nchild-tail\n");
+      expect(new TextDecoder().decode(result.stderr)).toBe("stderr-tail\n");
+      expect(await fixture.childGone()).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(["deadline", "output-limit", "cancel"] as const)(
+    "preserves %s after the parent exits",
+    async (mode) => {
+      const fixture = await inheritedProgramFixture("continuous");
+      const controller = new AbortController();
+      const running = runSandboxedProcess(
+        {
+          ...fixture.launch,
+          ceiling: { ...CEILING, maxOutputBytes: mode === "output-limit" ? 64 : 4096 },
+        },
+        null,
+        controller.signal,
+      );
+      try {
+        if (mode === "cancel") {
+          await expect.poll(() => fixture.parentExited(), { timeout: 1000 }).toBe(true);
+          controller.abort();
+        }
+        const result = await running;
+        expect(result).toMatchObject({
+          exitCode: 7,
+          timedOut: mode === "deadline",
+          outputLimitExceeded: mode === "output-limit",
+        });
+        if (mode === "deadline") await fixture.expectCompleteOutput(result.stdout);
+        if (mode === "output-limit")
+          expect(result.stdout.byteLength + result.stderr.byteLength).toBeLessThanOrEqual(64);
+        await expect.poll(() => fixture.childGone(), { timeout: 1000 }).toBe(true);
+      } finally {
+        await fixture.cleanup();
+        await running;
+      }
+    },
+  );
 });

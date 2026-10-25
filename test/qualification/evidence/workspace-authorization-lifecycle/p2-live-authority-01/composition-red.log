@@ -1,0 +1,26 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/execution-worker/test/production-worker-composition.unit.test.ts (6 tests | 1 failed | 5 skipped) 13ms
+     × executes an admitted governed delegation through the production composition 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/execution-worker/test/production-worker-composition.unit.test.ts > production Worker composition > executes an admitted governed delegation through the production composition
+ApplicationPortError: Execution request invocation:composition cannot revalidate its governed Handle
+ ❯ ExecutionWorkerService.consumeGovernedHandle packages/application/src/services/execution-worker-service.ts:351:13
+    349|       governed.authorizationRef === undefined
+    350|     ) {
+    351|       throw new ApplicationPortError(
+       |             ^
+    352|         PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    353|         `Execution request ${request.messageId} cannot revalidate its …
+ ❯ ExecutionWorkerService.execute packages/application/src/services/execution-worker-service.ts:82:16
+ ❯ apps/execution-worker/test/production-worker-composition.unit.test.ts:275:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 skipped (6)
+   Start at  18:41:16
+   Duration  2.30s (transform 1.11s, setup 0ms, import 2.17s, tests 13ms, environment 0ms)

@@ -1,0 +1,48 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (32 tests | 2 failed | 28 skipped) 1067ms
+     × prioritizes an explicit stop over inspect without duplicating an active stop 412ms
+     × prioritizes an explicit stop over inspect without duplicating an active stop 122ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > prioritizes an explicit stop over inspect without duplicating an active stop
+ApplicationPortError: Recovery already running
+ ❯ SqliteExecutionContext.receive packages/persistence-sqlite/src/sqlite-execution-context.ts:109:9
+    107|     if (error.kind === "application") {
+    108|       operation.reject(
+    109|         new ApplicationPortError(error.code as PortErrorCode, error.me…
+       |         ^
+    110|       );
+    111|       return;
+ ❯ Worker.<anonymous> packages/persistence-sqlite/src/sqlite-execution-context.ts:50:60
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > prioritizes an explicit stop over inspect without duplicating an active stop
+ApplicationPortError: Recovery already running
+ ❯ SqliteSandboxRecoveryOperations.fail test/integration/sqlite-contract-execution.fixture.ts:43:17
+     41|         database,
+     42|         (code, message, details) => {
+     43|           throw new ApplicationPortError(code as PortErrorCode, messag…
+       |                 ^
+     44|         },
+     45|         () => undefined,
+ ❯ SqliteSandboxRecoveryOperations.mutate packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts:61:21
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:364:74
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteSandboxExecutionOperations.execute packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:450:8
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:515:39
+ ❯ SqliteDurableOperations.execute packages/persistence-sqlite/src/sqlite-durable-operations.ts:458:41
+ ❯ Object.request test/integration/sqlite-contract-execution.fixture.ts:60:29
+ ❯ SqliteProductStateRepository.writeRequest packages/persistence-sqlite/src/product-state-repository.ts:546:33
+ ❯ Object.write packages/persistence-sqlite/src/product-state-repository.ts:164:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed | 28 skipped (32)
+   Start at  13:23:57
+   Duration  2.93s (transform 1.13s, setup 0ms, import 1.76s, tests 1.07s, environment 0ms)

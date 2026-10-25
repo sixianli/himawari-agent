@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 test:integration
+> vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts test/integration/sandbox-execution-v2.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  2 passed (2)
+      Tests  122 passed (122)
+   Start at  18:08:40
+   Duration  16.70s (transform 1.21s, setup 0ms, import 1.89s, tests 14.49s, environment 0ms)

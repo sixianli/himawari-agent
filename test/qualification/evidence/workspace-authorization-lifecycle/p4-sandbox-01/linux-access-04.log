@@ -1,0 +1,47 @@
+{
+  "platform": "linux",
+  "node": "v22.22.3",
+  "productionQualified": false,
+  "ownedTemporaryFilesRemoved": true,
+  "reports": [
+    {
+      "mode": "read",
+      "reason": "exited",
+      "elapsedMs": 1144,
+      "policyDigest": "eb82c27dc6cc4bdd6ae108cb2d7d037a36310a34ece7e74a7b4e64ec0ab1ee37",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":\"net:[4026533327]\",\"cwd\":\"/data/himawari-p4-20260921-01/tmp/p4-RdWESj/read/workspace\",\"read\":\"allowed\",\"write\":\"EROFS\",\"outsideRead\":\"ENOENT\",\"outsideWrite\":\"ENOENT\",\"symlinkRead\":\"ENOENT\",\"symlinkWrite\":\"ENOENT\",\"childRead\":\"ENOENT\",\"network\":\"ECONNREFUSED\"}\n",
+      "stderr": "",
+      "hostNetworkNamespace": "net:[4026531840]",
+      "hostListenerPositiveControl": true,
+      "passed": true
+    },
+    {
+      "mode": "write",
+      "reason": "exited",
+      "elapsedMs": 1115,
+      "policyDigest": "b7fc7cfff49601df3c30fd411bd9d3a5351b77a75dda49e065335484a35c3ffd",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":\"net:[4026533327]\",\"cwd\":\"/data/himawari-p4-20260921-01/tmp/p4-RdWESj/write/workspace\",\"read\":\"allowed\",\"write\":\"allowed\",\"outsideRead\":\"ENOENT\",\"outsideWrite\":\"ENOENT\",\"symlinkRead\":\"ENOENT\",\"symlinkWrite\":\"ENOENT\",\"childRead\":\"ENOENT\",\"network\":\"ECONNREFUSED\"}\n",
+      "stderr": "",
+      "hostNetworkNamespace": "net:[4026531840]",
+      "hostListenerPositiveControl": true,
+      "passed": true
+    },
+    {
+      "mode": "private",
+      "reason": "exited",
+      "elapsedMs": 1210,
+      "policyDigest": "c65238f8628e3dfb5fa3d1fc6cc23dda28c92f8bfb0bbb48933db59471b718bd",
+      "exitCode": 0,
+      "taskTreeCleanup": "unknown",
+      "stdout": "{\"networkNamespace\":\"net:[4026533327]\",\"cwd\":\"/data/himawari-p4-20260921-01/tmp/p4-RdWESj/private/private\",\"read\":\"ENOENT\",\"write\":\"ENOENT\",\"outsideRead\":\"ENOENT\",\"outsideWrite\":\"ENOENT\",\"symlinkRead\":\"ENOENT\",\"symlinkWrite\":\"ENOENT\",\"childRead\":\"ENOENT\",\"network\":\"ECONNREFUSED\"}\n",
+      "stderr": "/bin/bash: /data/himawari-p4-20260921-01/tmp/p4-RdWESj/private/private/.bashrc: Permission denied\n/bin/bash: /data/himawari-p4-20260921-01/tmp/p4-RdWESj/private/private/.bashrc: Permission denied\n",
+      "hostNetworkNamespace": "net:[4026531840]",
+      "hostListenerPositiveControl": true,
+      "passed": true
+    }
+  ]
+}

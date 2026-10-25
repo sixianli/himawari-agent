@@ -1,0 +1,5 @@
+
+> himawari-agent@0.0.0 check:v0.2-invariants
+> node scripts/check-v0.2-invariants.mjs
+
+{"status":"passed","errors":[],"scannedSourceFiles":360,"scannedPackageFiles":27,"reviewedRoutes":20}

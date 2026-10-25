@@ -1,0 +1,51 @@
+test/integration/authorization-capability-governance.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+
+    1385 1385 │     });
+    1386 1386 │     expect(
+    1387      │ - ····await·f
+    1388      │ - ······.service([])
+    1389      │ - ······.evaluate(intent({·id:·"approval-creation-race"·}),·{
+    1390      │ - ········uiAvailable:·true,
+    1391      │ - ········approvalExpiresAt:·T1,
+    1392      │ - ······}),
+         1387 │ + ····await·f.service([]).evaluate(intent({·id:·"approval-creation-race"·}),·{
+         1388 │ + ······uiAvailable:·true,
+         1389 │ + ······approvalExpiresAt:·T1,
+         1390 │ + ····}),
+    1393 1391 │     ).toMatchObject({ decision: "DENY", reasonCode: "approval_denied" });
+    1394 1392 │   });
+
+
+test/integration/automatic-action-review.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+
+    421 421 │     expect(renewal).toEqual(f.lease);
+    422 422 │     await expect(
+    423     │ - ····f
+    424     │ - ······.store()
+    425     │ - ······.finish({
+    426     │ - ········reviewId:·f.request.reviewId,
+    427     │ - ········decision:·f.response(),
+    428     │ - ········outputRef:·f.request.inputRef,
+    429     │ - ········executionLease:·{·...renewal,·expectedLeaseRevision:·renewal.expectedLeaseRevision·+·1·},
+    430     │ - ········completedAt:·f.now,
+    431     │ - ······}),
+        423 │ + ····f.store().finish({
+        424 │ + ······reviewId:·f.request.reviewId,
+        425 │ + ······decision:·f.response(),
+        426 │ + ······outputRef:·f.request.inputRef,
+        427 │ + ······executionLease:·{·...renewal,·expectedLeaseRevision:·renewal.expectedLeaseRevision·+·1·},
+        428 │ + ······completedAt:·f.now,
+        429 │ + ····}),
+    432 430 │     ).rejects.toThrow();
+    433 431 │     expect(
+
+
+Checked 26 files in 42ms. No fixes applied.
+Found 2 errors.
+format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

@@ -27,6 +27,7 @@ import {
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
+  readThreadExecutionEnvironment,
 } from "@himawari-agent/application";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
@@ -60,11 +61,16 @@ import {
   registerIdentityAuthenticationRoutes,
   SessionBoundCsrfService,
 } from "@himawari-agent/platform-node";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance } from "fastify";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
+import {
+  createProductionWorkspaceCopies,
+  PRODUCTION_COPY_OPERATIONS,
+} from "./production-workspace-copies.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -109,15 +115,16 @@ export interface ProductionHttpCompositionOptions {
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
   readonly health?: RuntimeHealthModel;
+  readonly executionEnvironment?: {
+    readonly mode: ThreadExecutionEnvironment["mode"];
+    readonly unavailableTools: () => Promise<ThreadExecutionEnvironment["unavailableTools"]>;
+  };
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
-  /** Core owns the authority lifecycle and supplies the current product fence. */
   readonly authority: () => ProductAuthorityFence;
   readonly executionAuthority?: () => import("@himawari-agent/application").AuthorityFence;
   readonly secretSources: ProductionHttpCompositionSecretSources;
-  /** Test-only local JWKS boundary; production defaults to the fixed HTTPS endpoint. */
   readonly jwksFetcher?: JwksFetcher;
-  /** Test-only local get-identity boundary; production uses the fixed provider endpoint. */
   readonly identityFetcher?: CloudflareAccessIdentityFetcher;
   readonly now?: () => Date;
   readonly createSessionId?: ProductSessionAuthenticationServiceOptions["createSessionId"];
@@ -186,7 +193,7 @@ function assertProductionConfiguration(configuration: ProductConfiguration): voi
   if (
     (http.listenHost !== "127.0.0.1" && http.listenHost !== "::1") ||
     !Number.isSafeInteger(http.listenPort) ||
-    http.listenPort < 1 ||
+    http.listenPort < 0 ||
     http.listenPort > 65_535 ||
     !Number.isSafeInteger(http.maximumBodyBytes) ||
     http.maximumBodyBytes < 1 ||
@@ -466,6 +473,8 @@ function routeOptions(
   authority: ProductAuthorityFence,
   modelCatalog: ProductionHttpCompositionOptions["modelCatalog"],
   canCancelRun: boolean,
+  workspaceCopiesAvailable: boolean,
+  executionEnvironmentAvailable: boolean,
 ): HttpGatewayServerOptions {
   const http = configuration.http;
   if (!http || !configuration.identity) {
@@ -487,9 +496,15 @@ function routeOptions(
     metrics,
     browserConfiguration: {
       executionPresentationAvailable: true,
+      executionStateAvailable: true,
+      executionEventsAvailable: true,
+      executionEnvironmentAvailable,
       canCancelRun,
       availableModels: modelCatalog ?? [],
-      installedGatewayV2Operations: PRODUCTION_APPROVAL_OPERATIONS,
+      installedGatewayV2Operations: [
+        ...PRODUCTION_APPROVAL_OPERATIONS,
+        ...(workspaceCopiesAvailable ? PRODUCTION_COPY_OPERATIONS : []),
+      ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
       authorityEpoch: authority.authorityEpoch,
@@ -512,11 +527,6 @@ function routeOptions(
   };
 }
 
-/**
- * Build the production HTTP boundary around the durable identity and Thread
- * v3 stores. Core remains the owner of authority lifecycle and of the worker
- * dispatch path; this factory intentionally does not invent either one.
- */
 export async function createProductionHttpComposition(
   options: ProductionHttpCompositionOptions,
 ): Promise<ProductionHttpComposition> {
@@ -685,6 +695,7 @@ export async function createProductionHttpComposition(
     authority: () => authorityForConfiguration(configuration, options.authority()),
     recentAuthentication,
   });
+  const environment = options.executionEnvironment;
   const threadAdapter = new ProductThreadGatewayAdapter({
     validateModelSelection: (selection, classification) => {
       const model = options.modelCatalog?.find((entry) => entry.ref === selection.modelRef);
@@ -704,10 +715,43 @@ export async function createProductionHttpComposition(
     ...(options.cancelRun ? { cancelRun: options.cancelRun } : {}),
     execution: new ThreadExecutionProjection({
       threads,
+      checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
       trace: repository.traceStore(),
       payloads: () => repository.payloadStore(ownerId, agentId),
       protector: payloadProtector,
+      resources: {
+        readInventory: async (scope) => {
+          if (scope.ownerId !== ownerId || scope.agentId !== agentId)
+            throw new ApplicationPortError(
+              PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+              "THREAD_EXECUTION_RESOURCE_SCOPE_MISMATCH",
+            );
+          return repository
+            .sandboxExecutionPreparations(ownerId, agentId)
+            .readRunInventory({ runId: scope.runId });
+        },
+        now: clock,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      },
     }),
+    ...(environment
+      ? {
+          executionEnvironment: {
+            read: async (scope: { ownerId: string; agentId: string }) => {
+              if (scope.ownerId !== ownerId || scope.agentId !== agentId)
+                throw new ApplicationPortError(
+                  PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+                  "THREAD_EXECUTION_ENVIRONMENT_SCOPE_MISMATCH",
+                );
+              return readThreadExecutionEnvironment({
+                programs: repository.sandboxExecutionPreparations(ownerId, agentId),
+                mode: environment.mode,
+                unavailableTools: environment.unavailableTools,
+              });
+            },
+          },
+        }
+      : {}),
     repository: threads,
     checkpoints: repository.threadDistillationState(),
     commands: threadCommands,
@@ -760,6 +804,15 @@ export async function createProductionHttpComposition(
   });
   const health = options.health ?? new RuntimeHealthModel({ publicMode: true, now: clock });
   const metrics = new RuntimeMetricsRegistry({ now: clock });
+  const workspaceCopies = options.executionAuthority
+    ? await createProductionWorkspaceCopies({
+        configuration,
+        repository,
+        protector: payloadProtector,
+        authority: options.executionAuthority,
+        clock: { now: clock },
+      })
+    : undefined;
   const gatewayV2 = createProductionApprovalGateway({
     configuration,
     repository,
@@ -767,6 +820,7 @@ export async function createProductionHttpComposition(
     recentAuthentication,
     clock: { now: clock },
     authority: options.authority,
+    ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
   });
   const app = buildHttpGatewayServer({
@@ -783,6 +837,8 @@ export async function createProductionHttpComposition(
       authority,
       options.modelCatalog,
       Boolean(options.cancelRun),
+      Boolean(workspaceCopies),
+      Boolean(options.executionEnvironment),
     ),
     gatewayV2,
     threadSearch,

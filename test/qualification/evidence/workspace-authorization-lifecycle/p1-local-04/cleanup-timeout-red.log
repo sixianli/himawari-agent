@@ -1,0 +1,54 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (28 tests | 3 failed) 128ms
+   × bounds a pending runtime cancellation without pretending cleanup finished 6ms
+   × bounds a pending resource cancellation without pretending cleanup finished 1ms
+   × bounds execution interruption when the runtime stop never responds 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > bounds a pending runtime cancellation without pretending cleanup finished
+ FAIL  |integration| test/integration/run-coordinator.test.ts > bounds a pending resource cancellation without pretending cleanup finished
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/integration/run-coordinator.test.ts:1187:23
+    1185|       expect(settled).toBe(false);
+    1186|       await vi.advanceTimersByTimeAsync(30_001);
+    1187|       expect(settled).toBe(true);
+       |                       ^
+    1188|       expect(await result).toMatchObject({ errors: [new Error("RUN_CLE…
+    1189|       expect((await f.runs.readRun(f.input.runId))?.run.status).toBe("…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > bounds execution interruption when the runtime stop never responds
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/integration/run-coordinator.test.ts:1244:21
+    1242|     expect(stopRun).toHaveBeenCalledOnce();
+    1243|     await vi.advanceTimersByTimeAsync(30_001);
+    1244|     expect(settled).toBe(true);
+       |                     ^
+    1245|     expect(await result).toMatchObject({
+    1246|       failures: [{ target: "runtime", error: new Error("RUN_CLEANUP_TI…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 25 passed (28)
+   Start at  22:42:45
+   Duration  1.06s (transform 642ms, setup 0ms, import 800ms, tests 128ms, environment 0ms)

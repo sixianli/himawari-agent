@@ -1,0 +1,30 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts (77 tests | 2 failed) 532ms
+     × uses only the Pi write definition in the Agent and dispatches through the product port 3ms
+     × uses only the Pi edit definition in the Agent and dispatches through the product port 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > Pi Agent Runtime adapter compatibility > uses only the Pi write definition in the Agent and dispatches through the product port
+ FAIL  |pi-compat| packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts > Pi Agent Runtime adapter compatibility > uses only the Pi edit definition in the Agent and dispatches through the product port
+AssertionError: expected "vi.fn()" to be called with arguments: [ ObjectContaining{…} ]
+
+Number of calls: 0
+
+ ❯ packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts:1275:29
+    1273|       );
+    1274|       await collect(adapter.run({ ...request, capabilityHandleRefs: []…
+    1275|       expect(tools.execute).toHaveBeenCalledWith(
+       |                             ^
+    1276|         expect.objectContaining({ toolCallId: "project-call", capabili…
+    1277|       );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 81 passed (83)
+   Start at  02:08:11
+   Duration  2.34s (transform 409ms, setup 0ms, import 1.83s, tests 539ms, environment 1ms)

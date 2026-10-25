@@ -99,10 +99,14 @@ export function nullable<TValue>(schema: Schema<TValue>): Schema<TValue | null> 
   };
 }
 
-export function array<TValue>(schema: Schema<TValue>): Schema<readonly TValue[]> {
+export function array<TValue>(
+  schema: Schema<TValue>,
+  maximumLength = Number.MAX_SAFE_INTEGER,
+): Schema<readonly TValue[]> {
   return {
     parse(input, path = "$") {
       if (!Array.isArray(input)) fail(path, "expected an array");
+      if (input.length > maximumLength) fail(path, `expected at most ${maximumLength} items`);
       return Object.freeze(input.map((value, index) => schema.parse(value, `${path}[${index}]`)));
     },
   };

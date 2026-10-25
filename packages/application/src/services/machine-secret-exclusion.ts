@@ -53,6 +53,12 @@ export function scanMachineSecrets(input: string): readonly MachineSecretFinding
   return Object.freeze(findings);
 }
 
+const PRIVATE_KEY_BOUNDARY = /-----(?:BEGIN|END) (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
+
+export function containsToolOutputSecret(input: string): boolean {
+  return scanMachineSecrets(input).length > 0 || PRIVATE_KEY_BOUNDARY.test(input);
+}
+
 export function redactMachineSecrets(input: string): string {
   let result = input;
   for (const rule of RULES) result = result.replace(rule.pattern, REDACTED);

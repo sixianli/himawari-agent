@@ -1,0 +1,41 @@
+RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (46 tests | 6 failed) 10995ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, grant) 311ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, handle) 321ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, capability) 321ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, grant) 114ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, handle) 109ms
+     × schedules original-resource stop for withdrawn authority (reserved=true, capability) 97ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > schedules original-resource stop for withdrawn authority (reserved=true, capability)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, grant)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, handle)
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > schedules original-resource stop for withdrawn authority (reserved=true, capability)
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected:
+true
+
++ Received:
+undefined
+
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:183:42
+    181|         const admission = await f.preparations.readAdmission(f.identit…
+    182|         const record = admission?.phase === "bound" ? admission.record…
+    183|         expect(record?.workspaceBlocked).toBe(true);
+       |                                          ^
+    184|         expect(record?.releaseReceipt).toBeUndefined();
+    185|         if (reserved) expect(admission).toMatchObject({ stopRequestedA…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 40 passed (46)
+   Start at  18:50:16
+   Duration  12.77s (transform 1.12s, setup 0ms, import 1.66s, tests 10.99s, environment 0ms)

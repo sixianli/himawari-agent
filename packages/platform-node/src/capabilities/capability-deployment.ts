@@ -1066,6 +1066,66 @@ function validateEndpointBinding(
   }
 }
 
+function assertSandboxPrivateRoot(
+  privateRoot: string,
+  platform: CapabilityRuntimeQualification["platform"],
+  field: string,
+): void {
+  const privateRootBytes = Buffer.byteLength(privateRoot);
+  const jobDirectoryName = `j${createHash("sha256").digest("base64url")}`;
+  const maximumProcessId = platform === "linux" ? 4194304 : 99998;
+  const initialMuxSequence = 0;
+  const platformSocketBytes = platform === "linux" ? 107 : 103;
+  const sockets = [
+    {
+      name: "SRT mux socket",
+      path: path.posix.join(
+        privateRoot,
+        jobDirectoryName,
+        `srt-mux-${maximumProcessId}-${initialMuxSequence.toString(36)}.sock`,
+      ),
+      maximumBytes: platformSocketBytes,
+    },
+    {
+      name: "Job Host control socket",
+      path: path.posix.join(privateRoot, `control-${"0".repeat(20)}`, "control.sock"),
+      maximumBytes: 100,
+    },
+  ];
+  if (platform === "linux") {
+    sockets.push(
+      {
+        name: "SRT HTTP bridge socket",
+        path: path.posix.join(privateRoot, jobDirectoryName, `claude-http-${"0".repeat(16)}.sock`),
+        maximumBytes: platformSocketBytes,
+      },
+      {
+        name: "SRT network socket",
+        path: path.posix.join(privateRoot, jobDirectoryName, `claude-socks-${"0".repeat(16)}.sock`),
+        maximumBytes: platformSocketBytes,
+      },
+    );
+  }
+  const limitingSocket = sockets
+    .map((socket) => {
+      const socketBytes = Buffer.byteLength(socket.path);
+      return {
+        ...socket,
+        socketBytes,
+        maximumPrivateRootBytes: socket.maximumBytes - (socketBytes - privateRootBytes),
+      };
+    })
+    .reduce((tightest, socket) =>
+      socket.maximumPrivateRootBytes < tightest.maximumPrivateRootBytes ? socket : tightest,
+    );
+  if (privateRootBytes <= limitingSocket.maximumPrivateRootBytes) return;
+  throw new CapabilityDeploymentError(
+    CAPABILITY_DEPLOYMENT_ERROR_CODES.INVALID_VALUE,
+    `Sandbox privateRoot is ${privateRootBytes} UTF-8 bytes; maximum ${limitingSocket.maximumPrivateRootBytes} (${platform} ${limitingSocket.name} is ${limitingSocket.socketBytes} bytes; maximum ${limitingSocket.maximumBytes})`,
+    { field },
+  );
+}
+
 function parseEntry(
   value: unknown,
   platform: CapabilityRuntimeQualification["platform"],
@@ -1088,6 +1148,11 @@ function parseEntry(
   const binding = parseBinding(input["binding"], manifest, `${field}.binding`);
   const sandbox = qualification.sandbox;
   if (binding.kind === "sandbox") {
+    assertSandboxPrivateRoot(
+      binding.value.privateRoot,
+      platform,
+      `${field}.binding.value.privateRoot`,
+    );
     if (
       !sandbox ||
       sandbox.hostId !== binding.value.hostId ||

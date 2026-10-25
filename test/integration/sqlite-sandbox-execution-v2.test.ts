@@ -1,31 +1,66 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   type RunExecutionLeaseClaim,
+  type RuntimeToolInvocation,
+  ExecutionEnvironmentError,
   recoverSandboxExecutionsAtStartup,
+  type SandboxExecutionAdmissionRecord,
   type SandboxExecutionJournalPort,
   type SandboxExecutionProjectionContext,
   SandboxExecutionReconciliationService,
+  SessionTraceRecorder,
+  ThreadExecutionProjection,
   type SandboxExecutionRecord,
+  type SandboxExecutionRunInventory,
 } from "@himawari-agent/application";
-import { createIdempotencyKey, createRunId } from "@himawari-agent/domain";
 import {
+  createIdempotencyKey,
+  createRunExecutionLeaseId,
+  createRunId,
+  createThreadId,
+} from "@himawari-agent/domain";
+import {
+  type ExecutionV2Request,
   type SandboxExecutionFacts,
+  type SandboxOperationContract,
+  SANDBOX_EXECUTION_BACKEND_REFS,
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxExecutionFactsSchema,
+  sandboxExecutionScopeSchema,
   sandboxExecutionPlanCandidateV2Schema,
 } from "@himawari-agent/execution-contracts";
 import {
   applyMigrations,
+  assertWritableSchema,
   createVerifiedMigrationSnapshot,
   loadBundledMigrations,
   openQualifiedDatabase,
   readMigrationLedger,
   SqliteProductStateRepository,
+  SqliteRunDispatchOperations,
+  SqliteUnconfirmedSandboxPurge,
 } from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { SANDBOX_RESERVATION_NEVER_STARTED_SQL } from "../../packages/persistence-sqlite/src/sqlite-sandbox-reservation-never-started.ts";
 import { describe, expect, it, vi } from "vitest";
+import { ProductionRunDispatchLoop } from "../../apps/agent-service/src/production-run-dispatch-loop.ts";
+import { createProductionRunComposition } from "../../apps/agent-service/src/production-run-composition.ts";
+import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.ts";
 import { createProductionSandboxToolResult } from "../../apps/agent-service/src/production-sandbox-tool-result.ts";
+import { createProductionWorkerParentBindingRegistry } from "../../apps/agent-service/src/production-worker-parent-binding-registry.ts";
+import { readThreadExecutionEnvironment } from "../../packages/application/src/services/thread-execution-environment.ts";
+import { readThreadExecutionResources } from "../../packages/application/src/services/thread-execution-resources.ts";
+import { createFauxModelFixture } from "../../packages/runtime-pi/test/faux-model-fixture.ts";
 import {
   sandboxV2Admission as admission,
   sandboxV2Call as call,
+  reconciliationBackend,
+  verifiedReconciliationBackend,
 } from "../fixtures/sandbox-execution-v2-fixture.ts";
 import {
   AGENT_ID,
@@ -41,6 +76,23 @@ import {
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 type Fixture = Awaited<ReturnType<typeof openSandboxJournal>>;
+const execFile = promisify(execFileCallback);
+async function retainD3Readback(execution: string, name: string, value: unknown) {
+  const parent = path.join(process.cwd(), ".ci-output/r2-d3");
+  await mkdir(parent, { recursive: true });
+  const directory = await mkdtemp(path.join(parent, `sqlite-${execution}-`));
+  await writeFile(path.join(directory, `${name}.json`), JSON.stringify(value, null, 2));
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {
+    throw new Error("deferred not initialized");
+  };
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
 const evidence = { ref: "supervision-evidence", digest: "e".repeat(64) };
 function context(
   record: SandboxExecutionRecord,
@@ -88,6 +140,23 @@ function append(
     context: context(record, facts),
   }).record;
 }
+function freshObservation(
+  record: SandboxExecutionRecord,
+  facts: SandboxExecutionFacts,
+  now: string,
+) {
+  const proof = context(record, facts);
+  if (!proof.verification) throw new Error("test verification missing");
+  return {
+    identity: record.plan.identity,
+    expectedSequence: record.facts.resource.sequence,
+    expectedOperationRevision: record.operationRevision,
+    facts,
+    authority: SERVICE_AUTHORITY,
+    now,
+    context: { ...proof, now, verification: { ...proof.verification, checkedAt: now } },
+  };
+}
 function resource(
   record: SandboxExecutionRecord,
   state: "controlled" | "stopping" | "lost" | "reconciling" | "released",
@@ -121,6 +190,12 @@ function resource(
       cleanup: state === "released" ? "confirmed" : state === "lost" ? "unknown" : "pending",
     },
   });
+}
+function readRunInventory(f: Fixture, runId: string) {
+  return operationsForDatabase(f.database).execute(
+    "capabilityInvocation.sandboxV2.readRunInventory",
+    { ownerId: OWNER_ID, agentId: AGENT_ID, input: { runId } },
+  ) as SandboxExecutionRunInventory;
 }
 function start(f: Fixture, a = admission(f)) {
   const record = call(f, "admit", a).record;
@@ -156,10 +231,1695 @@ function result(f: Fixture, record: SandboxExecutionRecord) {
     },
   });
 }
+async function assertCompletionBlocked(f: Fixture, plan: ReturnType<typeof admission>["plan"]) {
+  f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(plan.identity.runId);
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  try {
+    const runs = reopened.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product);
+    await expect(
+      runs.completeRun({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: createRunId(plan.identity.runId),
+        expectedRevision: 1,
+        idempotencyKey: createIdempotencyKey("r6-completion"),
+        commandFingerprint: "r6-completion",
+        authority: SERVICE_AUTHORITY.lease,
+        executionLease: plan.executionLease as RunExecutionLeaseClaim,
+        payloadRef: "payload-capability-invocation-trigger",
+        output: { kind: "no-answer" },
+        dataClassification: "private",
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Run still owns unreleased sandbox resources",
+    });
+    await expect(runs.readRun(createRunId(plan.identity.runId))).resolves.toMatchObject({
+      revision: 1,
+      run: { status: "running" },
+    });
+  } finally {
+    await reopened.close();
+  }
+}
 describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", (execution) => {
+  it.each(["normal", "deadline"] as const)(
+    "preserves the first durable result in a deadline race: %s",
+    async (first) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const normal = result(f, record);
+        if (normal.result?.kind !== "result") throw new Error("missing normal result");
+        const { completion: _completion, ...fields } = normal.result;
+        const deadline = sandboxExecutionFactsSchema.parse({
+          ...record.facts,
+          result: {
+            ...fields,
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+            termination: { type: "failure" },
+          },
+        });
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const write = (facts: SandboxExecutionFacts) =>
+          journal.recordOperation({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            facts,
+            context: context(record, facts),
+          });
+        const winner = first === "normal" ? normal : deadline;
+        const late = first === "normal" ? deadline : normal;
+        await write(winner);
+        await expect(write(late)).rejects.toThrow();
+        const current = await journal.read(record.plan.identity);
+        expect(current?.facts.result).toEqual(winner.result);
+        expect(current?.operationRevision).toBe(record.operationRevision + 1);
+        expect(current?.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "exited",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "cancelled",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: false,
+      recoverable: false,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "exited",
+      exitCode: 0,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: false,
+      expired: false,
+    },
+    {
+      reasonCode: "deadline",
+      exitCode: null,
+      taskProcessExited: true,
+      recoverable: true,
+      signatureValid: true,
+      expired: true,
+    },
+  ] as const)(
+    "recovers only exited deadline stream evidence: $reasonCode/$taskProcessExited/$signatureValid/$expired",
+    async ({ recoverable, signatureValid, expired, ...termination }) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        const candidate = admission(f);
+        const toolDeadline = new Date(Date.parse(T1) + 500).toISOString();
+        let record = start(f, {
+          ...candidate,
+          invocation: { ...candidate.invocation, deadlineAt: toolDeadline },
+          plan: { ...candidate.plan, effectiveDeadlineAt: toolDeadline },
+          facts: {
+            ...candidate.facts,
+            environment: { ...candidate.facts.environment, deadlineAt: toolDeadline },
+          },
+        });
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const { createProductionSandboxStream } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        let next = 0;
+        const stream = createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          artifacts: () => opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+          clock: { now: () => T1 },
+          ids: { next: () => `deadline-stream-${++next}` },
+        });
+        const bytes = Buffer.from("partial output before timeout");
+        await stream.append(record, {
+          index: 0,
+          offset: 0,
+          bytesBase64: bytes.toString("base64"),
+          end: true,
+          termination,
+        });
+        if (termination.reasonCode === "cancelled")
+          await expect(stream.recover(record)).resolves.toBeNull();
+        else if (recoverable)
+          await expect(stream.recover(record)).resolves.toMatchObject({ termination, bytes });
+        else
+          await expect(stream.recover(record)).rejects.toThrow(
+            "SANDBOX_STREAM_TERMINATION_INVALID",
+          );
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const info = await journal.readResultRecovery({
+          identity: record.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+        });
+        const artifacts = opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY);
+        await artifacts.commit({
+          runId: createRunId(record.plan.identity.runId),
+          purpose: "trace",
+          operationKey: `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`,
+          payload: await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "agent-proof-control",
+            dataClassification: "restricted",
+            contentType: "application/json",
+            plaintext: Buffer.from("{}"),
+            createdAt: T1,
+          }),
+        });
+        const readRecovery = vi.fn(
+          async (_input: Parameters<typeof journal.readResultRecovery>[0]) => info,
+        );
+        const importResult = vi.fn(async (_input: Parameters<typeof journal.importResult>[0]) => ({
+          record,
+          applied: true,
+        }));
+        const { createProductionSandboxStreamResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream-result-recovery.ts"
+        );
+        const recover = createProductionSandboxStreamResultRecovery({
+          journal: { read: journal.read, readResultRecovery: readRecovery, importResult },
+          authority: () => SERVICE_AUTHORITY,
+          now: () =>
+            expired
+              ? T2
+              : termination.reasonCode === "exited" && termination.exitCode === 0
+                ? T1
+                : new Date(Date.parse(toolDeadline) + 1).toISOString(),
+          stream,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          nextRef: () => "agent-recovered-output",
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          requiresControlArtifact: () => true,
+          verifyExited: async () => {
+            if (!signatureValid) throw new Error("JOB_HOST_CONTROL_EVIDENCE_INVALID");
+            return true;
+          },
+          facts: async () => record.facts,
+        });
+        if ((!recoverable && termination.reasonCode !== "cancelled") || !signatureValid)
+          await expect(recover(record)).rejects.toThrow();
+        else await recover(record);
+        if (recoverable && signatureValid && !expired && termination.reasonCode === "deadline") {
+          expect(readRecovery).toHaveBeenCalledWith(
+            expect.objectContaining({ recoveryPurpose: "deadline_failure" }),
+          );
+          expect(importResult).toHaveBeenCalledWith(
+            expect.objectContaining({
+              recoveryPurpose: "deadline_failure",
+              facts: expect.objectContaining({
+                result: expect.objectContaining({
+                  kind: "error",
+                  reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                }),
+              }),
+              source: expect.objectContaining({
+                controlArtifact: expect.objectContaining({ payloadRef: "agent-proof-control" }),
+              }),
+            }),
+          );
+        } else {
+          for (const args of readRecovery.mock.calls)
+            expect(args[0]).not.toHaveProperty("recoveryPurpose");
+          for (const args of importResult.mock.calls)
+            expect(args[0]).not.toHaveProperty("recoveryPurpose");
+          if (!recoverable || !signatureValid || expired)
+            expect(importResult).not.toHaveBeenCalled();
+        }
+        expect(
+          (await opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID).read(record.plan.identity))
+            ?.facts.result,
+        ).toBeNull();
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    ...["cancelled", "output_limit", "resource_limit", "host_failure"].flatMap((reasonCode) =>
+      [null, 0, 1].map((exitCode) => ({
+        reasonCode,
+        exitCode,
+        taskProcessExited: true,
+        corruption: "none",
+        error: null,
+      })),
+    ),
+    ...["cancelled", "output_limit", "resource_limit", "host_failure", "exited", "deadline"].map(
+      (reasonCode) => ({
+        reasonCode,
+        exitCode: reasonCode === "exited" ? 0 : null,
+        taskProcessExited: false,
+        corruption: "none",
+        error: "SANDBOX_STREAM_TERMINATION_INVALID",
+      }),
+    ),
+    ...[
+      { reasonCode: "unrecognized", exitCode: null },
+      { reasonCode: "exited", exitCode: null },
+      { reasonCode: "deadline", exitCode: 0 },
+    ].map((termination) => ({
+      ...termination,
+      taskProcessExited: true,
+      corruption: "none",
+      error: "SANDBOX_STREAM_TERMINATION_INVALID",
+    })),
+    ...[
+      ["missing", "SANDBOX_STREAM_CHUNK_MISSING"],
+      ["digest", "SANDBOX_STREAM_ARTIFACT_CHANGED"],
+      ["binding", "SANDBOX_STREAM_CHUNK_MISSING"],
+      ["offset", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["index", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["end", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["base64", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["empty", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+      ["terminal", "SANDBOX_STREAM_SEQUENCE_INVALID"],
+    ].map(([corruption, error]) => ({
+      reasonCode: "host_failure",
+      exitCode: null,
+      taskProcessExited: true,
+      corruption,
+      error,
+    })),
+  ])(
+    "keeps valid unrecoverable streams unknown in the Agent loop: $reasonCode/$exitCode/$taskProcessExited/$corruption",
+    async ({ corruption, error, ...termination }) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      let loop: ProductionRunDispatchLoop | undefined;
+      try {
+        let record = start(f);
+        record = append(
+          f,
+          record,
+          sandboxExecutionFactsSchema.parse({
+            ...record.facts,
+            result: {
+              schemaVersion: "sandbox-execution.v2",
+              identity: record.plan.identity,
+              environmentId: record.plan.environmentId,
+              policyDigest: record.facts.environment.policyDigest,
+              contract: { ref: "fixed-read", version: "1" },
+              occurredAt: T1,
+              kind: "unknown",
+              reasonCode: "SANDBOX_EXIT_UNKNOWN",
+            },
+          }),
+          true,
+        );
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        repository = opened;
+        const { createProductionSandboxStream } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream.ts"
+        );
+        const { createProductionSandboxStreamResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-stream-result-recovery.ts"
+        );
+        let next = 0;
+        const artifacts = opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY);
+        const stream = createProductionSandboxStream({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          artifacts: () => artifacts,
+          clock: { now: () => T1 },
+          ids: { next: () => `unrecoverable-stream-${++next}` },
+        });
+        const prefix = { index: 0, offset: 0, bytesBase64: "YWJj", end: false };
+        const terminal = { index: 1, offset: 3, bytesBase64: "", end: true, termination };
+        await stream.append(record, prefix);
+        if (!termination.taskProcessExited && termination.exitCode !== null) {
+          await expect(stream.append(record, terminal)).rejects.toThrow(
+            "termination requires a final output chunk",
+          );
+          return;
+        }
+        await stream.append(record, terminal);
+        const hash = (value: unknown) =>
+          createHash("sha256").update(JSON.stringify(value)).digest("hex");
+        const binding = hash([
+          record.plan.identity,
+          record.plan.semanticFingerprint,
+          record.facts.environment,
+        ]);
+        const chunkKey = `sandbox-stream-chunk:${hash([binding, 0])}`;
+        if (corruption === "missing")
+          f.database
+            .prepare("DELETE FROM run_payload_artifacts WHERE operation_key=?")
+            .run(chunkKey);
+        if (corruption === "digest")
+          f.database
+            .prepare("UPDATE run_payload_artifacts SET content_digest=? WHERE operation_key=?")
+            .run(`sha256:${"0".repeat(64)}`, chunkKey);
+        if (corruption === "binding")
+          f.database
+            .prepare("UPDATE run_payload_artifacts SET operation_key=? WHERE operation_key=?")
+            .run(`sandbox-stream-chunk:${hash(["other-binding", 0])}`, chunkKey);
+        const changed =
+          corruption === "offset"
+            ? { ...prefix, offset: 1 }
+            : corruption === "index"
+              ? { ...prefix, index: 1 }
+              : corruption === "end"
+                ? { ...prefix, end: true, termination }
+                : corruption === "base64"
+                  ? { ...prefix, bytesBase64: "YWJ=" }
+                  : corruption === "empty"
+                    ? { ...prefix, bytesBase64: "" }
+                    : corruption === "terminal"
+                      ? { ...terminal, termination: { ...termination, exitCode: 1 } }
+                      : null;
+        if (changed) {
+          const payload = await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "corrupted-stream",
+            dataClassification: "restricted",
+            contentType: "application/json",
+            plaintext: Buffer.from(JSON.stringify(changed)),
+            createdAt: T1,
+          });
+          await artifacts.commit({
+            runId: createRunId(record.plan.identity.runId),
+            purpose: "trace",
+            operationKey: "corrupted-stream-fixture",
+            payload,
+          });
+          f.database
+            .prepare(
+              "UPDATE run_payload_artifacts SET payload_ref=?,content_digest=? WHERE operation_key=?",
+            )
+            .run(
+              payload.ref,
+              payload.contentDigest,
+              corruption === "terminal" ? `sandbox-stream-end:${binding}` : chunkKey,
+            );
+        }
+        const journal = opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const importResult = vi.fn(journal.importResult);
+        const readResultRecovery = vi.fn(journal.readResultRecovery);
+        const facts = vi.fn(async () => record.facts);
+        const recover = createProductionSandboxStreamResultRecovery({
+          journal: { read: journal.read, readResultRecovery, importResult },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          stream,
+          payloads: opened.payloadStore(OWNER_ID, AGENT_ID),
+          protector: f.protector,
+          nextRef: () => "must-not-import-output",
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          requiresControlArtifact: () => true,
+          verifyExited: async () => true,
+          facts,
+        });
+        const before = await journal.read(record.plan.identity);
+        const payloadCount = () =>
+          f.database.prepare("SELECT COUNT(*) AS count FROM payloads").get();
+        const beforePayloads = payloadCount();
+        const onFailure = vi.fn();
+        let recoveries = 0;
+        loop = new ProductionRunDispatchLoop({
+          dispatcher: {
+            pump: async () => {
+              const recovered = await recover(record);
+              expect(recovered).toEqual(before);
+              recoveries++;
+            },
+            drain: async () => ({ drained: true, inFlight: 0 }),
+          },
+          fallbackScanIntervalMs: 60_000,
+          onFailure,
+        });
+        if (error) {
+          await expect(loop.start()).rejects.toThrow(error);
+          expect(loop.state).toBe("failed");
+          expect(onFailure).toHaveBeenCalledTimes(1);
+          expect(loop.wakeup()).toBe(false);
+        } else {
+          await expect(loop.start()).resolves.toBeUndefined();
+          expect(loop.state).toBe("running");
+          expect(loop.wakeup()).toBe(true);
+          await expect.poll(() => recoveries).toBe(2);
+          expect(loop.failure).toBeUndefined();
+          expect(onFailure).not.toHaveBeenCalled();
+        }
+        expect(await journal.read(record.plan.identity)).toEqual(before);
+        expect(before?.facts.result).toMatchObject({
+          kind: "unknown",
+          reasonCode: "SANDBOX_EXIT_UNKNOWN",
+        });
+        expect(payloadCount()).toEqual(beforePayloads);
+        expect(importResult).not.toHaveBeenCalled();
+        expect(readResultRecovery).not.toHaveBeenCalled();
+        expect(facts).not.toHaveBeenCalled();
+      } finally {
+        await loop?.stop(1000);
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "none",
+    "record",
+    "queue-queued",
+    "queue-admitted",
+    "queue-cancelled",
+    "deleted-pending",
+    "deleted-incomplete",
+    "deleted-verified",
+    "deleted-unattributed",
+    "deleted-empty",
+    "deleted-whitespace",
+    "deleted-numeric",
+    "deleted-invalid",
+    "deleted-too-long",
+    "deleted-nul-tail",
+    "deleted-nul-middle",
+    "legacy-pending",
+    "legacy-released",
+  ] as const)(
+    "[R2-D3] proves resource absence from canonical SQLite rows rather than empty display arrays: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        const runId = f.scope.runId;
+        if (scenario === "record") start(f);
+        if (scenario.startsWith("queue-")) {
+          const a = admission(f);
+          operationsForDatabase(f.database).execute("capabilityInvocation.sandboxV2.enqueue", {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: {
+              plan: a.plan,
+              invocation: a.invocation,
+              workspaces: a.workspaces,
+              reservation: {
+                schemaVersion: "sandbox-preparation.v1",
+                identity: a.plan.identity,
+                environmentId: a.plan.environmentId,
+                resourceRef: null,
+                mode: a.plan.mode,
+                workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                sequence: 1,
+                createdAt: a.plan.requestedAt,
+              },
+            },
+          });
+          f.database
+            .prepare("UPDATE sandbox_admission_queue SET status=? WHERE run_id=?")
+            .run(scenario.slice(6), runId);
+        }
+        if (scenario.startsWith("deleted-")) {
+          let record = start(f);
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+          f.database
+            .prepare("DELETE FROM sandbox_execution_records WHERE job_id=?")
+            .run(record.plan.identity.jobId);
+          const unattributed = [
+            "deleted-unattributed",
+            "deleted-empty",
+            "deleted-whitespace",
+            "deleted-numeric",
+            "deleted-invalid",
+            "deleted-too-long",
+            "deleted-nul-tail",
+            "deleted-nul-middle",
+          ].includes(scenario);
+          const status = unattributed ? "pending" : scenario.slice(8);
+          const locators = {
+            "deleted-empty": "",
+            "deleted-whitespace": "   ",
+            "deleted-numeric": 42,
+            "deleted-invalid": "invalid/run",
+            "deleted-too-long": "r".repeat(129),
+            "deleted-nul-tail": "valid\u0000",
+            "deleted-nul-middle": "valid\u0000/invalid",
+          };
+          const locator = locators[scenario as keyof typeof locators];
+          const persisted =
+            scenario === "deleted-unattributed"
+              ? {}
+              : unattributed
+                ? {
+                    plan: { ...record.plan, identity: { ...record.plan.identity, runId: locator } },
+                  }
+                : { plan: record.plan };
+          f.database
+            .prepare(
+              "INSERT INTO deletion_tombstones(id,owner_id,agent_id,object_type,object_id,status,requested_at,purge_deadline_at,record_json) VALUES('d3-deleted',?,?,'sandbox_execution',?,?,?,?,?)",
+            )
+            .run(
+              OWNER_ID,
+              AGENT_ID,
+              record.plan.identity.jobId,
+              status,
+              T1,
+              T2,
+              JSON.stringify(persisted),
+            );
+        }
+        if (scenario.startsWith("legacy")) {
+          f.prepare();
+          if (scenario === "legacy-released")
+            f.database.prepare("UPDATE sandbox_legacy_occupancy SET released_at=?").run(T1);
+        }
+        const inventory = readRunInventory(f, runId);
+        await retainD3Readback(execution, scenario, {
+          inventory,
+          canonicalRecords: f.database
+            .prepare("SELECT job_id,run_id FROM sandbox_execution_records WHERE run_id=?")
+            .all(runId),
+          admissions: f.database
+            .prepare("SELECT job_id,run_id,status FROM sandbox_admission_queue WHERE run_id=?")
+            .all(runId),
+          deleted: f.database
+            .prepare(
+              "SELECT object_id,status,record_json FROM deletion_tombstones WHERE object_type='sandbox_execution'",
+            )
+            .all(),
+          legacy: f.database.prepare("SELECT * FROM sandbox_legacy_occupancy").all(),
+        });
+        expect(inventory).toMatchObject({
+          sandboxResourcesAbsent: ["none", "legacy-released"].includes(scenario),
+        });
+        if (scenario === "queue-cancelled")
+          expect(inventory.queue).toMatchObject([{ status: "cancelled" }]);
+        if (
+          scenario === "deleted-pending" ||
+          scenario === "deleted-incomplete" ||
+          scenario === "deleted-unattributed" ||
+          scenario === "deleted-empty" ||
+          scenario === "deleted-whitespace" ||
+          scenario === "deleted-numeric" ||
+          scenario === "deleted-invalid" ||
+          scenario === "deleted-too-long" ||
+          scenario === "deleted-nul-tail" ||
+          scenario === "deleted-nul-middle"
+        ) {
+          expect(inventory.admissions).toEqual([]);
+          expect(inventory.queue).toEqual([]);
+          expect(inventory.deletedPlans).toEqual([]);
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("[R2-D3] keeps a deadline Run unresolved when a real sandbox row is omitted from display inventory", async () => {
+    const f = await openSandboxJournal(false, [], true);
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      const record = start(f);
+      const runId = createRunId(record.plan.identity.runId);
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("D3_THREAD_MISSING");
+      repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T2,
+      });
+      const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+      await payloads.put(
+        await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: "d3-counterexample-tool",
+          dataClassification: "private",
+          contentType: "application/json",
+          createdAt: T1,
+          plaintext: Buffer.from(
+            JSON.stringify({
+              toolCallId: "d3-hidden-call",
+              toolName: "uncertain_tool",
+              arguments: {},
+            }),
+          ),
+        }),
+      );
+      const adapters = createReferenceAdapterSet();
+      const recorder = new SessionTraceRecorder({
+        trace: repository.traceStore(),
+        artifacts: repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+        protector: f.protector,
+        audit: repository.auditLedger(),
+        clock: { now: () => T1 },
+        ids: adapters.ids,
+      });
+      const storedRun = await repository
+        .runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product)
+        .readRun(runId);
+      if (!storedRun) throw new Error("D3_RUN_MISSING");
+      await recorder.record({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId,
+        sessionId: storedRun.run.sessionId,
+        threadId: createThreadId(threadId),
+        turnId: null,
+        parentEventId: null,
+        correlationId: "d3-counterexample",
+        causationId: null,
+        actorId: "d3-test",
+        dataClassification: "private",
+        eventType: "runtime.tool_intent",
+        payload: {
+          type: "runtime.tool_intent",
+          runId,
+          payloadRef: "d3-counterexample-tool",
+          occurredAt: T1,
+        },
+      });
+      f.database
+        .prepare("UPDATE runs SET status='failed',revision=revision+1 WHERE id=?")
+        .run(runId);
+      f.database
+        .prepare(
+          "INSERT INTO run_coordination_checkpoints(run_id,owner_id,agent_id,revision,phase,runtime_event_count,terminal_status,diagnostic_code,updated_at) VALUES(?,?,?,1,'failed',1,'failed','RUN_EXECUTION_DEADLINE_EXCEEDED',?) ON CONFLICT(run_id) DO UPDATE SET phase='failed',terminal_status='failed',output_kind=NULL,diagnostic_code='RUN_EXECUTION_DEADLINE_EXCEEDED',revision=revision+1",
+        )
+        .run(runId, OWNER_ID, AGENT_ID, T2);
+      const projection = new ThreadExecutionProjection({
+        threads: repository.threadRepository(),
+        checkpoints: repository.runCheckpointStore(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product),
+        trace: repository.traceStore(),
+        payloads: () => payloads,
+        protector: f.protector,
+        resources: {
+          readInventory: async () => ({
+            ...readRunInventory(f, runId),
+            admissions: [],
+            queue: [],
+            deletedPlans: [],
+          }),
+          now: () => T2,
+          digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        },
+      });
+      const state = await projection.readState({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId,
+        canCancelRun: true,
+      });
+      await retainD3Readback(execution, "hidden-resource", {
+        inventory: readRunInventory(f, runId),
+        state,
+        storedRun: f.database.prepare("SELECT status,revision FROM runs WHERE id=?").get(runId),
+      });
+      expect(state).toMatchObject({
+        displayPhase: "unresolved",
+        availableActions: ["retry_cleanup"],
+        effectSummary: [{ outcome: "unknown" }],
+      });
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
+
+  it.each([
+    "released",
+    "standalone",
+    "before-deadline",
+    "unreleased",
+    "missing-receipt",
+    "occupancy",
+    "barrier",
+    "queued",
+    "reserved",
+    "environment",
+    "live-lease",
+    "run-revision",
+    "checkpoint-revision",
+    "lease-revision",
+    "input-ref",
+    "input-digest",
+    "deadline-changed",
+    "revoked-authority",
+    "cancelled",
+    "completed",
+    "failed",
+    "rollback",
+    "rollback-command",
+    "rollback-event",
+    "rollback-thread",
+    "rollback-gateway",
+    "budget-unknown",
+  ] as const)("settles an expired unknown Run without dispatching: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      let record = start(f);
+      if (scenario !== "unreleased") {
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+      }
+      const runId = createRunId(record.plan.identity.runId);
+      let now = T1;
+      const opened = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      repository = opened;
+      if (scenario === "queued" || scenario === "reserved") {
+        const a = admission(f, "-pending");
+        operationsForDatabase(f.database).execute(
+          `capabilityInvocation.sandboxV2.${scenario === "queued" ? "enqueue" : "reserve"}`,
+          {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            input: {
+              plan: a.plan,
+              invocation: a.invocation,
+              workspaces: a.workspaces,
+              reservation: {
+                schemaVersion: "sandbox-preparation.v1",
+                identity: a.plan.identity,
+                environmentId: a.plan.environmentId,
+                resourceRef: null,
+                mode: a.plan.mode,
+                workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                sequence: 1,
+                createdAt: a.plan.requestedAt,
+              },
+            },
+          },
+        );
+      }
+      if (scenario === "environment")
+        await opened.executionEnvironmentStore(OWNER_ID, AGENT_ID).reserve({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          runId,
+          hostId: record.plan.identity.hostId,
+          role: "primary",
+          rotationReason: "initial",
+          backendRef: "fake-container",
+          envelope: {
+            schemaVersion: "execution-envelope.v1",
+            directories: [],
+            network: [],
+            resources: {
+              cpuMillicores: 1000,
+              memoryBytes: 536870912,
+              maxProcesses: 128,
+              privateStorageBytes: 268435456,
+            },
+          },
+          policyDigest: "a".repeat(64),
+          imageDigest: "b".repeat(64),
+          runnerDigest: "c".repeat(64),
+          deadlineAt: T2,
+          leases: [],
+          ids: {
+            executionJobId: "expiry-environment-job",
+            environmentId: "expiry-environment",
+            createIntentId: "expiry-environment-create",
+          },
+        });
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "expired-run-input",
+        dataClassification: "private",
+        contentType: "application/json",
+        createdAt: T1,
+        plaintext: Buffer.from(
+          JSON.stringify({ version: "run-execution-input.v2", deadlineAt: T2 }),
+        ),
+      });
+      await opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY).commit({
+        runId,
+        purpose: "context",
+        operationKey: "run-execution-input:v1",
+        payload,
+      });
+      f.database
+        .prepare("UPDATE runs SET status='reconciling_external_result', revision=10 WHERE id=?")
+        .run(runId);
+      f.database
+        .prepare(`INSERT INTO run_coordination_checkpoints
+        (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+        VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+        .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+      f.database
+        .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+        .run(T1, runId);
+      now = scenario === "before-deadline" ? T1 : T2;
+      const leaseExpiresAt = new Date(Date.parse(T2) + 30_000).toISOString();
+      if (scenario === "missing-receipt")
+        f.database.prepare("DELETE FROM sandbox_release_receipts").run();
+      if (scenario === "occupancy")
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_occupancy(job_id,scope_ref,host_id,claim_json) SELECT job_id,scope_ref || '-late',host_id,claim_json FROM sandbox_workspace_occupancy LIMIT 1",
+          )
+          .run();
+      if (scenario === "barrier")
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_barriers(job_id,barrier_id,kind,reason_code,created_at) VALUES(?,'late-barrier','control_unacknowledged','TEST_UNCONFIRMED',?)",
+          )
+          .run(record.plan.identity.jobId, T1);
+      if (scenario === "live-lease")
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=NULL, expires_at=?")
+          .run(leaseExpiresAt);
+      if (scenario === "revoked-authority")
+        f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+      if (["cancelled", "completed", "failed"].includes(scenario)) {
+        f.database.prepare("UPDATE runs SET status=?").run(scenario);
+        f.database
+          .prepare("UPDATE run_coordination_checkpoints SET phase=?,terminal_status=?")
+          .run(scenario, scenario);
+      }
+      if (scenario === "rollback")
+        f.database.exec(
+          "CREATE TRIGGER fail_expiry BEFORE UPDATE ON run_coordination_checkpoints BEGIN SELECT RAISE(ABORT, 'expiry-checkpoint-failed'); END",
+        );
+      const failedNotification = {
+        "rollback-command": "INSERT ON command_results",
+        "rollback-event": "INSERT ON reliable_events",
+        "rollback-thread": "UPDATE ON threads",
+        "rollback-gateway": "INSERT ON thread_gateway_events",
+      };
+      if (scenario in failedNotification)
+        f.database.exec(
+          `CREATE TRIGGER fail_expiry_notification BEFORE ${failedNotification[scenario as keyof typeof failedNotification]} BEGIN SELECT RAISE(ABORT, 'expiry-notification-failed'); END`,
+        );
+      if (scenario === "budget-unknown")
+        f.database
+          .prepare(
+            "INSERT INTO model_budget_accounts(owner_id,agent_id,account_id,parent_kind,run_id,data_classification,reserved_cost_micros,spent_cost_micros,status,revision) VALUES(?,?,?,'run',?,'private',1,0,'reconcile_required',1) ON CONFLICT(owner_id,agent_id,account_id) DO UPDATE SET status='reconcile_required'",
+          )
+          .run(OWNER_ID, AGENT_ID, `run:${runId}`, runId);
+      const state = () => ({
+        run: f.database.prepare("SELECT status,revision FROM runs WHERE id=?").get(runId),
+        thread: f.database
+          .prepare("SELECT id,revision,updated_at AS updatedAt FROM threads WHERE id=?")
+          .get(record.plan.identity.threadId) as {
+          id: string;
+          revision: number;
+          updatedAt: string;
+        },
+        commands: f.database
+          .prepare("SELECT * FROM command_results WHERE state_key=? ORDER BY id")
+          .all(runId),
+        events: f.database
+          .prepare(
+            "SELECT * FROM reliable_events WHERE owner_id=? AND agent_id=? AND topic='run.failed' ORDER BY id",
+          )
+          .all(OWNER_ID, AGENT_ID),
+        gatewayEvents: f.database
+          .prepare("SELECT * FROM thread_gateway_events WHERE thread_id=? ORDER BY cursor_sequence")
+          .all(record.plan.identity.threadId),
+        checkpoint: f.database
+          .prepare(
+            "SELECT phase,terminal_status,revision,diagnostic_code,context_ref FROM run_coordination_checkpoints WHERE run_id=?",
+          )
+          .get(runId),
+        lease: f.database.prepare("SELECT * FROM run_execution_leases WHERE run_id=?").get(runId),
+        journal: call(f, "read", record.plan.identity),
+        intents: f.database
+          .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents")
+          .get(),
+      });
+      const before = state();
+      const recovery =
+        scenario === "standalone"
+          ? new SqliteRunDispatchOperations(
+              f.database,
+              {
+                ownerId: OWNER_ID,
+                agentId: AGENT_ID,
+                authority: SERVICE_AUTHORITY.product,
+                authorityLease: SERVICE_AUTHORITY.lease,
+                consumerId: "expiry-consumer",
+              },
+              (_code, message) => {
+                throw new Error(message);
+              },
+            )
+          : opened.runReconciliation(
+              OWNER_ID,
+              AGENT_ID,
+              SERVICE_AUTHORITY.product,
+              SERVICE_AUTHORITY.lease,
+              "expiry-consumer",
+            );
+      const input = {
+        runId,
+        expectedRunRevision: scenario === "run-revision" ? 9 : 10,
+        expectedCheckpointRevision: scenario === "checkpoint-revision" ? 0 : 1,
+        expectedLeaseRevision: scenario === "lease-revision" ? 0 : 1,
+        executionLeaseId: createRunExecutionLeaseId("expiry-only-lease"),
+        frozenInputRef: scenario === "input-ref" ? "missing" : payload.ref,
+        frozenInputDigest:
+          scenario === "input-digest" ? `sha256:${"0".repeat(64)}` : payload.contentDigest,
+        originalDeadlineAt: scenario === "deadline-changed" ? T1 : T2,
+        at: now,
+        leaseExpiresAt,
+      };
+      if (["released", "standalone", "budget-unknown"].includes(scenario)) {
+        const dispatch = opened.runDispatch(
+          OWNER_ID,
+          AGENT_ID,
+          SERVICE_AUTHORITY.product,
+          SERVICE_AUTHORITY.lease,
+          "expiry-consumer",
+        );
+        expect(await dispatch.listReconciliationRequired({ now, limit: 10 })).toEqual([
+          expect.objectContaining({ runId, action: "reconcile" }),
+        ]);
+        expect(await dispatch.listClaimable({ now, limit: 10 })).toEqual([]);
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: true });
+        const after = state();
+        expect(after.run).toEqual({ status: "failed", revision: 11 });
+        expect(after.checkpoint).toMatchObject({
+          phase: "failed",
+          terminal_status: "failed",
+          revision: 2,
+          diagnostic_code: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+          context_ref: "payload-capability-invocation-trigger",
+        });
+        expect(after.lease).toMatchObject({
+          consumer_id: "expiry-consumer",
+          execution_lease_id: "expiry-only-lease",
+          released_at: now,
+        });
+        expect(after.journal).toEqual(before.journal);
+        expect(after.intents).toEqual(before.intents);
+        expect.soft(after.thread).toEqual({
+          ...before.thread,
+          revision: before.thread.revision + 1,
+          updatedAt: now,
+        });
+        expect.soft(after.commands).toHaveLength(before.commands.length + 1);
+        expect.soft(after.events).toHaveLength(before.events.length + 1);
+        expect.soft(after.gatewayEvents).toHaveLength(before.gatewayEvents.length + 1);
+        const command = after.commands.find(
+          (entry) =>
+            !before.commands.some((previous) => JSON.stringify(previous) === JSON.stringify(entry)),
+        ) as { id: string; idempotency_key: string } | undefined;
+        expect.soft(command).toMatchObject({
+          id: expect.any(String),
+          idempotency_key: expect.stringMatching(/^.+$/),
+          command_type: "run.transition",
+          state_key: runId,
+          state_revision: 11,
+          committed_at: now,
+        });
+        const event = after.events.find(
+          (entry) =>
+            !before.events.some((previous) => JSON.stringify(previous) === JSON.stringify(entry)),
+        ) as { id: string } | undefined;
+        expect.soft(event).toMatchObject({
+          id: expect.any(String),
+          idempotency_key: command?.idempotency_key,
+          topic: "run.failed",
+          publication_state: "pending",
+          payload_ref: payload.ref,
+          occurred_at: now,
+        });
+        expect.soft(after.gatewayEvents.at(-1)).toMatchObject({
+          event_id: event?.id,
+          event_type: "run.failed",
+          causation_command_id: command?.id,
+          thread_revision: before.thread.revision + 1,
+          occurred_at: now,
+        });
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
+        expect(state()).toEqual(after);
+      } else if (["cancelled", "completed", "failed"].includes(scenario)) {
+        await expect(recovery.settleExpired(input)).resolves.toEqual({ settled: false });
+        expect(state()).toEqual(before);
+      } else {
+        await expect(recovery.settleExpired(input)).rejects.toThrow();
+        expect(state()).toEqual(before);
+      }
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
+
+  it.each(["ordinary", "deadline-purpose-only"] as const)(
+    "requires durable deadline proof for recovery metadata: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const input = {
+          identity: record.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          ...(scenario === "deadline-purpose-only"
+            ? { recoveryPurpose: "deadline_failure" as const }
+            : {}),
+        };
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        if (scenario === "ordinary")
+          await expect(journal.readResultRecovery(input)).resolves.toMatchObject({
+            receipt: { receiptRef: record.plan.identity.receiptRef },
+          });
+        else
+          await expect(journal.readResultRecovery(input)).rejects.toMatchObject({
+            code: "PORT_NOT_AUTHORITATIVE",
+          });
+        expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "fresh",
+    "deadline-purpose-only",
+    "deadline-valid",
+    "deadline-repeat",
+    "deadline-run-before",
+    "deadline-run-after",
+    "deadline-no-purpose",
+    "deadline-no-end",
+    "deadline-no-control",
+    "deadline-no-release",
+    "deadline-control-ref",
+    "deadline-control-digest",
+    "deadline-end-ref",
+    "deadline-end-digest",
+    "deadline-success",
+    "deadline-revoked",
+    "deadline-cancelled",
+    "deadline-authority-expired",
+    "deadline-control-inactive",
+    "deadline-end-inactive",
+    "deadline-other-error",
+    "deadline-handle-expired",
+    "deadline-known-winner",
+    "reuse",
+    "competing",
+    "cancelled",
+    "expired",
+    "revoked",
+    "source-removed",
+    "wrong-sequence",
+    "wrong-classification",
+    "wrong-digest",
+    "worker/import/lost",
+    "worker/lost/import",
+    "import/worker/lost",
+    "import/lost/worker",
+    "lost/worker/import",
+    "lost/import/worker",
+  ] as const)("atomically imports protected foreground stream output: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    let repository: SqliteProductStateRepository | undefined;
+    try {
+      const deadlineRecovery =
+        scenario.startsWith("deadline-") && scenario !== "deadline-purpose-only";
+      const toolDeadline = new Date(Date.parse(T1) + 500).toISOString();
+      const recoveryNow =
+        scenario === "deadline-run-after"
+          ? T2
+          : scenario === "deadline-run-before"
+            ? new Date(Date.parse(T2) - 1).toISOString()
+            : new Date(Date.parse(toolDeadline) + 1).toISOString();
+      const candidate = admission(f);
+      const prepared = deadlineRecovery
+        ? {
+            ...candidate,
+            invocation: { ...candidate.invocation, deadlineAt: toolDeadline },
+            plan: { ...candidate.plan, effectiveDeadlineAt: toolDeadline },
+            facts: {
+              ...candidate.facts,
+              environment: { ...candidate.facts.environment, deadlineAt: toolDeadline },
+            },
+          }
+        : candidate;
+      let record = start(f, prepared);
+      record = append(f, record, resource(record, "stopping"));
+      if (scenario !== "deadline-no-release")
+        record = append(f, record, resource(record, "released"));
+      const opened = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => T1,
+      });
+      repository = opened;
+      let authority = SERVICE_AUTHORITY;
+      const bytes = Buffer.from("原始输出🌻");
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "import-original",
+        dataClassification: "private",
+        contentType: "application/octet-stream",
+        plaintext: bytes,
+        createdAt: T1,
+      });
+      if (scenario === "reuse")
+        await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+          handleRef: record.plan.handleRef,
+          invocationId: record.plan.identity.invocationId,
+          authority,
+          now: T1,
+          payload,
+          plaintextByteLength: bytes.length,
+        });
+      let next = 0;
+      const { createProductionSandboxStream } = await import(
+        "../../apps/agent-service/src/production-sandbox-stream.ts"
+      );
+      const stream = createProductionSandboxStream({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+        protector: f.protector,
+        artifacts: () => opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority),
+        clock: { now: () => T1 },
+        ids: { next: () => `stream-${++next}` },
+      });
+      await stream.append(record, {
+        index: 0,
+        offset: 0,
+        bytesBase64: bytes.toString("base64"),
+        end: true,
+        termination: deadlineRecovery
+          ? { exitCode: null, reasonCode: "deadline", taskProcessExited: true }
+          : { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+      });
+      const saved = await stream.recover(record);
+      if (!saved?.source.artifacts[0]) throw new Error("missing stream");
+      const controlKey = `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`;
+      let controlArtifact:
+        | { operationKey: string; payloadRef: string; contentDigest: string }
+        | undefined;
+      if (deadlineRecovery && scenario !== "deadline-no-control") {
+        const controlPayload = await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: "deadline-control",
+          dataClassification: "restricted",
+          contentType: "application/json",
+          plaintext: Buffer.from(JSON.stringify({ identity: record.plan.identity })),
+          createdAt: T1,
+        });
+        const artifact = await opened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority).commit({
+          runId: createRunId(record.plan.identity.runId),
+          purpose: "trace",
+          operationKey: controlKey,
+          payload: controlPayload,
+        });
+        controlArtifact = {
+          operationKey: controlKey,
+          payloadRef: artifact.artifact.payloadRef,
+          contentDigest: artifact.artifact.contentDigest,
+        };
+      }
+      const facts = sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect: { kind: "not_applicable" },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: record.facts.environment.policyDigest,
+          contract: { ref: "fixed-read", version: "1" },
+          occurredAt: deadlineRecovery ? recoveryNow : T1,
+          ...(deadlineRecovery && scenario !== "deadline-success"
+            ? {
+                kind: "error",
+                reasonCode:
+                  scenario === "deadline-other-error"
+                    ? "SANDBOX_TOOL_RESULT_LOST"
+                    : "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                termination: { type: "failure" },
+              }
+            : { kind: "result", completion: { type: "value" } }),
+          output: { ref: payload.ref, digest: saved.source.digest, byteLength: bytes.length },
+        },
+      });
+      const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      const writeWorker = async (workerFacts = facts) => {
+        await opened.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+          handleRef: record.plan.handleRef,
+          invocationId: record.plan.identity.invocationId,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          payload,
+          plaintextByteLength: bytes.length,
+        });
+        return journal.recordOperation({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          expectedOperationRevision: record.operationRevision,
+          facts: workerFacts,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          context: context(record, workerFacts),
+        });
+      };
+      if (scenario.startsWith("worker/")) await writeWorker();
+      let knownWinner: SandboxExecutionRecord | undefined;
+      if (scenario === "deadline-known-winner") {
+        const workerFacts = sandboxExecutionFactsSchema.parse({
+          ...facts,
+          result: {
+            schemaVersion: "sandbox-execution.v2",
+            identity: record.plan.identity,
+            environmentId: record.plan.environmentId,
+            policyDigest: record.facts.environment.policyDigest,
+            contract: { ref: "fixed-read", version: "1" },
+            occurredAt: T1,
+            kind: "result",
+            completion: { type: "value" },
+            output: { ref: payload.ref, digest: saved.source.digest, byteLength: bytes.length },
+          },
+        });
+        knownWinner = (await writeWorker(workerFacts)).record;
+      }
+      authority = {
+        ...SERVICE_AUTHORITY,
+        product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+        lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+      };
+      f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+      f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+      if (!deadlineRecovery) {
+        const originalInfo = await journal.readResultRecovery({
+          identity: record.plan.identity,
+          authority,
+          now: T1,
+        });
+        expect(originalInfo.receipt.dataClassification).toBe("private");
+        if (scenario === "reuse") expect(originalInfo.output?.payloadRef).toBe(payload.ref);
+      }
+      if (scenario === "deadline-no-end")
+        f.database
+          .prepare(
+            "DELETE FROM run_payload_artifacts WHERE operation_key LIKE 'sandbox-stream-end:%'",
+          )
+          .run();
+      if (scenario === "deadline-control-inactive" || scenario === "deadline-end-inactive")
+        f.database
+          .prepare("UPDATE payloads SET lifecycle_state='trashed' WHERE ref=?")
+          .run(
+            scenario === "deadline-control-inactive"
+              ? controlArtifact?.payloadRef
+              : saved.source.artifacts.at(-1)?.payloadRef,
+          );
+      if (scenario === "deadline-handle-expired")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET expires_at=?,record_json=json_set(record_json,'$.expiresAt',?)",
+          )
+          .run(T1, T1);
+      if (scenario === "deadline-revoked")
+        f.database.prepare("UPDATE capability_handles SET revoked_at=?").run(T1);
+      if (scenario === "deadline-cancelled")
+        f.database.prepare("UPDATE runs SET status='cancelled'").run();
+      if (scenario === "deadline-authority-expired")
+        f.database.prepare("UPDATE authority_leases SET expires_at=?").run(T1);
+      if (scenario === "cancelled") f.database.prepare("UPDATE runs SET status='cancelled'").run();
+      if (scenario === "revoked")
+        f.database.prepare("UPDATE capability_handles SET revoked_at=?").run(T1);
+      if (scenario === "source-removed")
+        f.database
+          .prepare("DELETE FROM run_payload_artifacts WHERE payload_ref=?")
+          .run(saved.source.artifacts[0].payloadRef);
+      const input = {
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence + (scenario === "wrong-sequence" ? 1 : 0),
+        expectedOperationRevision: record.operationRevision,
+        authority,
+        now: deadlineRecovery
+          ? recoveryNow
+          : scenario === "expired"
+            ? record.plan.originalDeadlineAt
+            : T1,
+        ...((deadlineRecovery && scenario !== "deadline-no-purpose") ||
+        scenario === "deadline-purpose-only"
+          ? { recoveryPurpose: "deadline_failure" as const }
+          : {}),
+        facts,
+        context: { ...context(record, facts), releaseReceipt: record.releaseReceipt ?? null },
+        payload:
+          scenario === "wrong-classification"
+            ? { ...payload, dataClassification: "public" as const }
+            : payload,
+        source:
+          scenario === "wrong-digest"
+            ? { ...saved.source, digest: "0".repeat(64) }
+            : {
+                ...saved.source,
+                artifacts: saved.source.artifacts.map((artifact, index) =>
+                  index === saved.source.artifacts.length - 1
+                    ? {
+                        ...artifact,
+                        ...(scenario === "deadline-end-ref" ? { payloadRef: "replaced-end" } : {}),
+                        ...(scenario === "deadline-end-digest"
+                          ? { contentDigest: `sha256:${"0".repeat(64)}` }
+                          : {}),
+                      }
+                    : artifact,
+                ),
+                ...(controlArtifact
+                  ? {
+                      controlArtifact: {
+                        ...controlArtifact,
+                        ...(scenario === "deadline-control-ref"
+                          ? { payloadRef: "replaced-control" }
+                          : {}),
+                        ...(scenario === "deadline-control-digest"
+                          ? { contentDigest: `sha256:${"0".repeat(64)}` }
+                          : {}),
+                      },
+                    }
+                  : {}),
+              },
+      };
+      if (knownWinner) {
+        const imported = await journal.importResult(input);
+        expect(imported).toEqual({ record: knownWinner, applied: false });
+        expect(await journal.read(record.plan.identity)).toEqual(knownWinner);
+        expect(knownWinner.facts.result?.kind).toBe("result");
+        expect(
+          f.database.prepare("SELECT COUNT(*) AS count FROM sandbox_operation_observations").get(),
+        ).toEqual({ count: 1 });
+      } else if (scenario.includes("/")) {
+        const { createProductionSandboxLostResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+        );
+        const lost = createProductionSandboxLostResultRecovery({
+          journal,
+          authority: () => authority,
+          now: () => T1,
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          verifyExited: async () => true,
+          saveOutput: async () => {
+            const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+            const payload = await f.protector.protect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              ref: "lost-race-output",
+              dataClassification: "public",
+              contentType: "text/plain",
+              plaintext: bytes,
+              createdAt: T1,
+            });
+            const output = await opened
+              .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+              .commit({
+                runId: createRunId(record.plan.identity.runId),
+                purpose: "trace",
+                operationKey: `sandbox-tool-result-lost:${record.plan.identity.invocationId}`,
+                payload,
+              });
+            return {
+              ref: output.ref,
+              digest: createHash("sha256").update(bytes).digest("hex"),
+              byteLength: bytes.length,
+            };
+          },
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("missing proof");
+            return proof;
+          },
+        });
+        for (const [index, writer] of scenario.split("/").entries()) {
+          if (writer === "worker" && index > 0)
+            await expect(writeWorker()).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+          if (writer === "import") await journal.importResult(input);
+          if (writer === "lost") await lost(record);
+        }
+        const winner = await journal.read(record.plan.identity);
+        expect(winner?.operationRevision).toBe(1);
+        expect(winner?.releaseReceipt).toEqual(record.releaseReceipt);
+        if (scenario.startsWith("lost/"))
+          expect(winner?.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+          });
+        else expect(winner?.facts.result).toEqual(facts.result);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+      } else if (
+        [
+          "fresh",
+          "reuse",
+          "competing",
+          "deadline-valid",
+          "deadline-repeat",
+          "deadline-run-before",
+        ].includes(scenario)
+      ) {
+        if (deadlineRecovery)
+          await expect(
+            journal.readResultRecovery({
+              identity: record.plan.identity,
+              authority,
+              now: recoveryNow,
+              recoveryPurpose: "deadline_failure",
+            } as Parameters<typeof journal.readResultRecovery>[0]),
+          ).resolves.toMatchObject({ receipt: { receiptRef: record.plan.identity.receiptRef } });
+        if (scenario === "competing" || scenario === "deadline-repeat") {
+          const attempts = await Promise.allSettled([
+            journal.importResult(input),
+            journal.importResult(input),
+          ]);
+          expect(attempts.some((attempt) => attempt.status === "fulfilled")).toBe(true);
+        } else await journal.importResult(input);
+        const current = await journal.read(record.plan.identity);
+        expect(current?.facts.result).toEqual(facts.result);
+        expect(current?.operationRevision).toBe(1);
+        expect(current?.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE purpose='worker_result'",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM sandbox_operation_observations WHERE json_extract(operation_json,'$.result.kind') IN ('result','error')",
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+        const protectedOutput = await repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref);
+        if (!protectedOutput) throw new Error("missing imported output");
+        expect(
+          Buffer.from(
+            await f.protector.unprotect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              payload: protectedOutput,
+            }),
+          ),
+        ).toEqual(bytes);
+      } else {
+        await expect(journal.importResult(input)).rejects.toThrow();
+        expect((await journal.read(record.plan.identity))?.facts.result).toBeNull();
+        expect(
+          f.database
+            .prepare(
+              "SELECT COUNT(*) AS count FROM run_payload_artifacts WHERE purpose='worker_result'",
+            )
+            .get(),
+        ).toEqual({ count: 0 });
+        expect(await repository.payloadStore(OWNER_ID, AGENT_ID).get(payload.ref)).toBeUndefined();
+      }
+    } finally {
+      await repository?.close();
+      await f.close();
+    }
+  });
   useSqliteContractExecution(execution);
 
   describe("R2 SQLite durable execution resources", () => {
+    it.each([-1, 0, 11, 151])(
+      "keeps release after result ACK at evidence expiry %i ms",
+      async (delay) => {
+        const f = await openSandboxJournal();
+        try {
+          let record = start(f);
+          record = append(f, record, result(f, record), true);
+          record = append(f, record, resource(record, "stopping"));
+          const facts = resource(record, "released");
+          if (facts.resource.supervision !== "released") throw new Error("release required");
+          const expiresAt = new Date(Date.parse(T1) + 1000).toISOString();
+          const released = {
+            ...facts,
+            resource: {
+              ...facts.resource,
+              evidence: { ...facts.resource.evidence, validUntil: expiresAt },
+            },
+          };
+          record = append(f, record, released);
+          const readOccupancy = () =>
+            f.database
+              .prepare(
+                "SELECT released_at AS releasedAt FROM sandbox_workspace_occupancy WHERE job_id=?",
+              )
+              .get(record.plan.identity.jobId) as { releasedAt: string | null };
+          expect(readOccupancy().releasedAt).toBe(T1);
+          const request = {
+            identity: record.plan.identity,
+            intentId: "p0-delivery",
+            kind: "tool_result" as const,
+            expectedSequence: record.facts.resource.sequence,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            context: context(record, record.facts),
+          };
+          call(f, "prepareIntent", request);
+          expect(call(f, "dispatchIntent", request).applied).toBe(true);
+          const afterDispatch = readOccupancy();
+          expect(afterDispatch.releasedAt).toBe(T1);
+          const ackAt = new Date(Date.parse(expiresAt) + delay).toISOString();
+          call(f, "acknowledgeIntent", {
+            identity: request.identity,
+            intentId: request.intentId,
+            authority: SERVICE_AUTHORITY,
+            now: ackAt,
+            context: request.context,
+          });
+          call(f, "acknowledgeIntent", {
+            identity: request.identity,
+            intentId: request.intentId,
+            authority: SERVICE_AUTHORITY,
+            now: ackAt,
+            context: request.context,
+          });
+          const current = call(f, "read", request.identity) as SandboxExecutionRecord;
+          expect(current.facts.resource.supervision).toBe("released");
+          expect(current.facts.resource.cleanup).toBe("confirmed");
+          expect(
+            f.database
+              .prepare(
+                "SELECT count(*) AS count FROM sandbox_execution_intents WHERE acknowledged_at IS NULL",
+              )
+              .get(),
+          ).toEqual({ count: 0 });
+          const pending = call(f, "listPending", { afterJobId: null, limit: 10 });
+          let conflict = "";
+          try {
+            call(f, "admit", admission(f, "-next"));
+          } catch (error) {
+            conflict = String(error);
+          }
+          expect(pending).toEqual([]);
+          expect(readOccupancy().releasedAt).toBe(T1);
+          expect(conflict).toBe("");
+        } finally {
+          await f.close();
+        }
+      },
+    );
     it("atomically consumes once, rejects changed replay and persists a single starting winner", async () => {
       const f = await openSandboxJournal();
       try {
@@ -229,7 +1989,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           "read",
         );
         expect(() => call(f, "admit", nested)).toThrow("occupied");
-        const alias = admission(f, "-next"); // Root labels cannot bypass filesystem identity.
+        const alias = admission(f, "-next");
         expect(() =>
           call(f, "admit", {
             ...alias,
@@ -307,7 +2067,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         let record = start(f);
         record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
-        expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+        expect(record.releaseReceipt?.acceptedAt).toBe(T1);
         const sequence = record.facts.resource.sequence;
         const previous = record;
         const observed = result(f, record);
@@ -321,7 +2081,348 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await f.close();
       }
     });
-    it("restores occupancy if late effect evidence becomes uncertain after release", async () => {
+    it.each([0, 1])(
+      "protects a fresh contradictory resource observation at +%sms without revoking release",
+      async (offset) => {
+        const f = await openSandboxJournal();
+        try {
+          let record = start(f);
+          record = append(f, record, result(f, record), true);
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+          const released = structuredClone(record);
+          const now = new Date(Date.parse(T1) + offset).toISOString();
+          const facts = resource(record, "controlled");
+          const observed = { ...facts, resource: { ...facts.resource, occurredAt: now } };
+          const input = freshObservation(record, observed, now);
+          record = call(f, "append", input).record;
+          expect(record.facts).toEqual(released.facts);
+          expect(record.releaseReceipt).toEqual(released.releaseReceipt);
+          expect(record.workspaceBlocked).toBe(true);
+          expect(record.recovery).toMatchObject({
+            status: "unresolved",
+            owner: SERVICE_AUTHORITY.agentServiceBootId,
+            reasonCode: "SANDBOX_RELEASE_CONTRADICTED",
+          });
+          expect(() =>
+            call(f, "prepareIntent", {
+              identity: record.plan.identity,
+              intentId: "after-incident",
+              kind: "continue",
+              expectedSequence: record.facts.resource.sequence,
+              authority: SERVICE_AUTHORITY,
+              now,
+              context: context(record, record.facts),
+            }),
+          ).toThrow("Resource incident remains unresolved");
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_workspace_barriers SET resolved_at=? WHERE job_id=?")
+              .run(now, record.plan.identity.jobId),
+          ).toThrow("Resource incident evidence is immutable");
+          expect(call(f, "append", input).applied).toBe(false);
+          expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+          expect(
+            call(
+              f,
+              "admit",
+              admission(f, "-unrelated", [
+                { device: "1", inode: "1" },
+                { device: "1", inode: "90" },
+              ]),
+            ).applied,
+          ).toBe(true);
+
+          expect(
+            f.database
+              .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ released_at: T1 });
+          expect(
+            f.database
+              .prepare(
+                "SELECT kind,reason_code FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL",
+              )
+              .all(record.plan.identity.jobId),
+          ).toEqual([
+            { kind: "resource_contradiction", reason_code: "SANDBOX_RELEASE_CONTRADICTED" },
+          ]);
+        } finally {
+          await f.close();
+        }
+      },
+    );
+    it("records verified new risk after the original execution permission expires", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const now = new Date(Date.parse(T2) + 1).toISOString();
+        const until = new Date(Date.parse(T2) + 1000).toISOString();
+        const risk = resource(record, "controlled");
+        if (risk.resource.supervision !== "controlled") throw new Error("test state");
+        const facts = {
+          ...risk,
+          resource: {
+            ...risk.resource,
+            occurredAt: now,
+            evidence: { ...risk.resource.evidence, validUntil: until },
+          },
+        };
+        const input = freshObservation(record, facts, now);
+        const protectedRecord = call(f, "append", {
+          ...input,
+          context: {
+            ...input.context,
+            verification: { ...input.context.verification, validUntil: until },
+          },
+        }).record;
+        expect(protectedRecord.workspaceBlocked).toBe(true);
+        expect(protectedRecord.facts).toEqual(record.facts);
+        expect(protectedRecord.releaseReceipt).toEqual(record.releaseReceipt);
+        expect(() =>
+          call(f, "start", {
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            policyDigest: record.facts.environment.policyDigest,
+            authority: SERVICE_AUTHORITY,
+            now,
+          }),
+        ).toThrow();
+      } finally {
+        await f.close();
+      }
+    });
+    it("protects contradiction observed after release even when receipt acceptance was delayed", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        const at = (ms: number) => new Date(Date.parse(T1) + ms).toISOString();
+        record = call(
+          f,
+          "append",
+          freshObservation(record, resource(record, "released"), at(10)),
+        ).record;
+        expect(record.releaseReceipt?.acceptedAt).toBe(at(10));
+        const risk = resource(record, "controlled");
+        const facts = { ...risk, resource: { ...risk.resource, occurredAt: at(5) } };
+        const updated = call(f, "append", freshObservation(record, facts, at(11))).record;
+        expect(updated.workspaceBlocked).toBe(true);
+        expect(updated.facts).toEqual(record.facts);
+        expect(updated.releaseReceipt).toEqual(record.releaseReceipt);
+      } finally {
+        await f.close();
+      }
+    });
+    it("keeps an incident across reopen and only clears it with newer stop evidence", async () => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const receipt = record.releaseReceipt;
+        const at = (ms: number) => new Date(Date.parse(T1) + ms).toISOString();
+        const risk = resource(record, "controlled");
+        const request = freshObservation(
+          record,
+          { ...risk, resource: { ...risk.resource, occurredAt: at(1) } },
+          at(1),
+        );
+        record = call(f, "append", request).record;
+        f.database.close();
+        const repo = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        try {
+          const journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+          expect(await journal.read(record.plan.identity)).toMatchObject({
+            workspaceBlocked: true,
+            releaseReceipt: receipt,
+          });
+          await expect(journal.admit(admission(f, "-next"))).rejects.toThrow("occupied");
+          expect(await journal.listPending({ afterJobId: null, limit: 10 })).toHaveLength(1);
+          const oldStop = resource(record, "released");
+          record = (await journal.append(freshObservation(record, oldStop, at(2)))).record;
+          expect(record.workspaceBlocked).toBe(true);
+          const service = new SandboxExecutionReconciliationService({
+            hostId: record.plan.identity.hostId,
+            journal,
+            timeoutMs: 100,
+            now: () => at(3),
+            evidence: {
+              verify: async ({ plan, facts, now }) =>
+                freshObservation({ ...record, plan }, facts, now).context.verification,
+            },
+            backend: reconciliationBackend({
+              inspect: async () => {
+                throw new Error("stop required");
+              },
+              stop: async (current) => {
+                const stopped = resource(current, "released");
+                return { ...stopped.resource, occurredAt: at(3) };
+              },
+            }),
+          });
+          record = (
+            await service.reconcile({
+              identity: record.plan.identity,
+              expectedSequence: record.facts.resource.sequence,
+              authority: SERVICE_AUTHORITY,
+              action: "stop",
+            })
+          ).record;
+          expect(record.recovery?.status).toBe("resolved");
+          expect(record.workspaceBlocked).toBe(false);
+          expect(record.releaseReceipt).toEqual(receipt);
+          expect((await journal.admit(admission(f, "-next"))).applied).toBe(true);
+        } finally {
+          await repo.close();
+        }
+      } finally {
+        await f.close();
+      }
+    });
+    it.each([
+      "missing-proof",
+      "expired-proof",
+      "wrong-subject",
+      "stale",
+      "future",
+      "changed-effect",
+    ] as const)("does not create a resource incident from %s evidence", async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const now = new Date(Date.parse(T1) + 1).toISOString();
+        const risk = resource(record, "controlled");
+        if (risk.resource.supervision !== "controlled") throw new Error("test state");
+        const facts = {
+          ...risk,
+          ...(scenario === "changed-effect" ? { effect: { kind: "not_applicable" as const } } : {}),
+          resource: {
+            ...risk.resource,
+            occurredAt:
+              scenario === "stale"
+                ? new Date(Date.parse(T1) - 1).toISOString()
+                : scenario === "future"
+                  ? T2
+                  : now,
+            evidence: {
+              ...risk.resource.evidence,
+              ...(scenario === "wrong-subject"
+                ? {
+                    subject: {
+                      kind: "local_process" as const,
+                      processIdentityRef: "other-process",
+                    },
+                  }
+                : {}),
+            },
+          },
+        };
+        const input = freshObservation(record, facts, now);
+        const verification =
+          scenario === "missing-proof"
+            ? null
+            : {
+                ...input.context.verification,
+                ...(scenario === "expired-proof" ? { validUntil: now } : {}),
+              };
+        expect(() =>
+          call(f, "append", { ...input, context: { ...input.context, verification } }),
+        ).toThrow();
+        expect(call(f, "read", record.plan.identity)).toEqual(record);
+        expect(call(f, "admit", admission(f, "-next")).applied).toBe(true);
+      } finally {
+        await f.close();
+      }
+    });
+    it("preserves schema 41 protections and release facts when adding resource incidents", async () => {
+      const f = await openSandboxJournal();
+      let old: ReturnType<typeof openQualifiedDatabase> | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        f.database
+          .prepare(
+            "INSERT INTO sandbox_workspace_barriers(job_id,barrier_id,kind,reason_code,created_at) VALUES(?,'intent:legacy','control_unacknowledged','SANDBOX_CONTROL_ACK_PENDING',?)",
+          )
+          .run(record.plan.identity.jobId, T1);
+        const migrations = await loadBundledMigrations();
+        old = openQualifiedDatabase(path.join(f.resource.stateRoot, "schema41.sqlite"));
+        applyMigrations(old, migrations.slice(0, 41));
+        old.pragma("foreign_keys = OFF");
+        const tables = old
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='schema_migrations'",
+          )
+          .all() as { name: string }[];
+        for (const { name } of tables) {
+          if ((old.prepare(`SELECT count(*) FROM "${name}"`).pluck().get() as number) > 0) continue;
+          const columns = (
+            old.prepare(`PRAGMA table_info("${name}")`).all() as { name: string }[]
+          ).map((c) => c.name);
+          for (const row of f.database.prepare(`SELECT * FROM "${name}"`).all() as Record<
+            string,
+            unknown
+          >[]) {
+            old
+              .prepare(
+                `INSERT INTO "${name}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})`,
+              )
+              .run(...columns.map((c) => row[c]));
+          }
+        }
+        old.pragma("foreign_keys = ON");
+        const receipts = old.prepare("SELECT * FROM sandbox_release_receipts").all();
+        const claims = old.prepare("SELECT * FROM sandbox_workspace_occupancy").all();
+        const barriers = old.prepare("SELECT * FROM sandbox_workspace_barriers").all();
+        const before = readMigrationLedger(old);
+        const snapshot = await createVerifiedMigrationSnapshot(
+          old,
+          path.join(f.resource.stateRoot, "schema41-snapshot.sqlite"),
+        );
+        expect(applyMigrations(old, migrations.slice(0, 42), { snapshot })).toEqual({
+          appliedSequences: [42],
+          currentSequence: 42,
+        });
+        expect(readMigrationLedger(old).slice(0, 41)).toEqual(before);
+        expect(old.prepare("SELECT * FROM sandbox_release_receipts").all()).toEqual(receipts);
+        expect(old.prepare("SELECT * FROM sandbox_workspace_occupancy").all()).toEqual(claims);
+        expect(
+          old
+            .prepare(
+              "SELECT job_id,barrier_id,kind,reason_code,created_at,resolved_at FROM sandbox_workspace_barriers",
+            )
+            .all(),
+        ).toEqual(barriers);
+        expect(
+          old
+            .prepare(
+              "SELECT count(*) FROM sandbox_workspace_barriers WHERE kind='resource_contradiction'",
+            )
+            .pluck()
+            .get(),
+        ).toBe(0);
+        expect(old.pragma("foreign_key_check")).toEqual([]);
+        expect(() => assertWritableSchema(old as NonNullable<typeof old>, 41)).toThrow();
+        expect(() =>
+          old
+            ?.prepare("DELETE FROM sandbox_execution_records WHERE job_id=?")
+            .run(record.plan.identity.jobId),
+        ).toThrow("Unresolved sandbox barrier");
+      } finally {
+        old?.close();
+        await f.close();
+      }
+    });
+    it("does not turn generic effect uncertainty into a new workspace lock", async () => {
       const f = await openSandboxJournal();
       try {
         let record = start(f);
@@ -334,8 +2435,20 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           { ...record.facts, effect: { kind: "unknown", reasonCode: "late_evidence" } },
           true,
         );
+        expect(
+          f.database
+            .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+            .get(record.plan.identity.jobId),
+        ).toEqual({ released_at: T1 });
+        expect(
+          f.database
+            .prepare(
+              "SELECT kind, reason_code FROM sandbox_workspace_barriers WHERE job_id=? AND resolved_at IS NULL",
+            )
+            .all(record.plan.identity.jobId),
+        ).toEqual([]);
         expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
-        expect(() => call(f, "admit", admission(f, "-next"))).toThrow("occupied");
+        expect(call(f, "admit", admission(f, "-next")).applied).toBe(true);
       } finally {
         await f.close();
       }
@@ -453,36 +2566,41 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         await consumed.close();
       }
     });
-    it.each(["background", "service"] as const)(
+    it.each(["foreground", "background", "service"] as const)(
       "persists %s creator, environment and resource handle in the admission transaction",
       async (mode) => {
         const f = await openSandboxJournal();
         try {
           const a = admission(f);
           const contract =
-            mode === "background"
-              ? { ref: "task-create", version: "1", kind: "task_start" }
-              : {
-                  ref: "service-create",
-                  version: "1",
-                  kind: "service_start",
-                  readinessProbeRef: "ready",
-                };
+            mode === "foreground"
+              ? a.plan.operationContract
+              : mode === "background"
+                ? { ref: "task-create", version: "1", kind: "task_start" }
+                : {
+                    ref: "service-create",
+                    version: "1",
+                    kind: "service_start",
+                    readinessProbeRef: "ready",
+                  };
           const plan = sandboxExecutionPlanCandidateV2Schema.parse({
             ...a.plan,
             mode,
             operationContract: contract,
           });
+          const resourceRef = mode === "foreground" ? null : "resource";
           const facts = sandboxExecutionFactsSchema.parse({
             ...a.facts,
-            environment: { ...a.facts.environment, mode, resourceRef: "resource" },
+            environment: { ...a.facts.environment, mode, resourceRef },
             resource: {
               ...a.facts.resource,
-              resourceRef: "resource",
+              resourceRef,
               status:
-                mode === "background"
-                  ? { kind: "task", state: "starting" }
-                  : { kind: "service", readiness: "starting" },
+                mode === "foreground"
+                  ? { kind: "foreground" }
+                  : mode === "background"
+                    ? { kind: "task", state: "starting" }
+                    : { kind: "service", readiness: "starting" },
             },
           });
           const record = call(f, "admit", { ...a, plan, facts }).record;
@@ -495,45 +2613,59 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               .get(),
           ).toEqual({
             environment_id: plan.environmentId,
-            resource_ref: "resource",
+            resource_ref: resourceRef,
             invocation_id: plan.identity.invocationId,
           });
           expect(call(f, "admit", { ...a, plan, facts }).applied).toBe(false);
-          // Exercise the SQLite completion transaction independently of RunCoordinator:
-          // a resource admitted after its last enumeration must still block completion.
-          f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(plan.identity.runId);
-          const reopened = await SqliteProductStateRepository.open({
-            stateRoot: f.resource.stateRoot,
-            minimumFreeBytes: 0,
-            now: () => T1,
-          });
-          try {
-            const runs = reopened.runLifecycle(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY.product);
-            await expect(
-              runs.completeRun({
+          await assertCompletionBlocked(f, plan);
+        } finally {
+          await f.close();
+        }
+      },
+    );
+    it.each(["queued", "reserved", "released-incident"] as const)(
+      "blocks final completion with %s resources in the same transaction",
+      async (phase) => {
+        const f = await openSandboxJournal();
+        try {
+          const a = admission(f);
+          if (phase === "released-incident") {
+            let record = start(f, a);
+            record = append(f, record, resource(record, "stopping"));
+            record = append(f, record, resource(record, "released"));
+            const receipt = record.releaseReceipt;
+            record = call(
+              f,
+              "append",
+              freshObservation(record, resource(record, "controlled"), T1),
+            ).record;
+            expect(record.releaseReceipt).toEqual(receipt);
+            expect(record.workspaceBlocked).toBe(true);
+          } else {
+            operationsForDatabase(f.database).execute(
+              `capabilityInvocation.sandboxV2.${phase === "queued" ? "enqueue" : "reserve"}`,
+              {
                 ownerId: OWNER_ID,
                 agentId: AGENT_ID,
-                runId: createRunId(plan.identity.runId),
-                expectedRevision: 1,
-                idempotencyKey: createIdempotencyKey("r6-completion"),
-                commandFingerprint: "r6-completion",
-                authority: SERVICE_AUTHORITY.lease,
-                executionLease: plan.executionLease as RunExecutionLeaseClaim,
-                payloadRef: "payload-capability-invocation-trigger",
-                output: { kind: "no-answer" },
-                dataClassification: "private",
-              }),
-            ).rejects.toMatchObject({
-              code: "PORT_CONFLICT",
-              message: "Run still owns unreleased sandbox resources",
-            });
-            await expect(runs.readRun(createRunId(plan.identity.runId))).resolves.toMatchObject({
-              revision: 1,
-              run: { status: "running" },
-            });
-          } finally {
-            await reopened.close();
+                input: {
+                  plan: a.plan,
+                  invocation: a.invocation,
+                  workspaces: a.workspaces,
+                  reservation: {
+                    schemaVersion: "sandbox-preparation.v1",
+                    identity: a.plan.identity,
+                    environmentId: a.plan.environmentId,
+                    resourceRef: null,
+                    mode: a.plan.mode,
+                    workspaceConflictRefs: a.workspaces.map((item) => item.ref),
+                    sequence: 1,
+                    createdAt: a.plan.requestedAt,
+                  },
+                },
+              },
+            );
           }
+          await assertCompletionBlocked(f, a.plan);
         } finally {
           await f.close();
         }
@@ -766,7 +2898,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         const migrations = await loadBundledMigrations();
         old = openQualifiedDatabase(path.join(f.resource.stateRoot, "legacy.sqlite"));
         applyMigrations(old, migrations.slice(0, 27));
-        // Copy only this test's seeded data into the actual old schema; never drop a migration.
         old.pragma("foreign_keys = OFF");
         const tables = old
           .prepare(
@@ -813,7 +2944,8 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           path.join(f.resource.stateRoot, "legacy-snapshot.sqlite"),
         );
         expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          28, 29, 30, 31, 32,
+          28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+          50, 51,
         ]);
         expect(readMigrationLedger(old).slice(0, 27)).toEqual(ledger);
         expect(old.prepare("SELECT * FROM sandbox_jobs").all()).toEqual(before);
@@ -844,8 +2976,6 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     });
   });
 
-  // Characterizes the R1/R2 contract conflict found while composing R3. This is
-  // negative evidence, not an acceptance test for the proposed preparation protocol.
   it("records why current v2 cannot bind a policy first compiled after admission", async () => {
     const f = await openSandboxJournal();
     try {
@@ -902,6 +3032,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         let journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
         expect(
           await recoverSandboxExecutionsAtStartup({
+            preparations: repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
             journal,
             authority: () => recoveryAuthority,
             now: () => T1,
@@ -932,6 +3063,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         journal = repo.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
         expect(
           await recoverSandboxExecutionsAtStartup({
+            preparations: repo.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
             journal,
             authority: () => recoveryAuthority,
             now: () => T1,
@@ -946,7 +3078,13 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     }
   });
 
-  for (const scenario of ["verified", "untrusted", "timeout", "concurrent"] as const) {
+  for (const scenario of [
+    "verified",
+    "untrusted",
+    "timeout",
+    "evidence-timeout",
+    "concurrent",
+  ] as const) {
     it(`reconciliation ${scenario} preserves operation facts and only releases verified risk`, async () => {
       const f = await openSandboxJournal();
       try {
@@ -959,17 +3097,21 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
           journal: {
             read: async (identity) => call(f, "read", identity),
             append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
           },
           now: () => T1,
-          timeoutMs: scenario === "timeout" ? 10 : 1000,
+          timeoutMs: scenario.endsWith("timeout") ? 10 : 1000,
           evidence: {
             verify: async ({ facts }) => {
+              if (scenario === "evidence-timeout")
+                await new Promise((resolve) => setTimeout(resolve, 30));
               const proof = context(record, facts).verification;
               if (!proof) throw new Error("missing fixture proof");
               return scenario === "untrusted" ? { ...proof, evidence: [] } : proof;
             },
           },
-          backend: {
+          backend: reconciliationBackend({
             inspect: async () => {
               throw new Error("unused");
             },
@@ -981,7 +3123,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
               }
               return resource(current, "released").resource;
             },
-          },
+          }),
         });
         const request = {
           identity: record.plan.identity,
@@ -1002,7 +3144,7 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
         expect(final?.facts.resource.supervision).toBe(released ? "released" : "lost");
         if (released) expect(call(f, "admit", admission(f, "-after-reconcile")).applied).toBe(true);
         else expect(() => call(f, "admit", admission(f, "-after-reconcile"))).toThrow("occupied");
-        if (scenario === "timeout") {
+        if (scenario.endsWith("timeout")) {
           await new Promise((resolve) => setTimeout(resolve, 40));
           expect(call(f, "read", record.plan.identity)?.facts.resource).toEqual(
             final?.facts.resource,
@@ -1014,18 +3156,1235 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     });
   }
 
-  // Actual SQLite intents and output bindings; platform verification is synthetic.
-  it.each(["deliver", "cancel-before-dispatch", "receipt-fails", "expired-proof"] as const)(
-    "Agent foreground result handoff: %s",
+  it.each(["lost", "released"] as const)(
+    "ignores late %s observations after recovery timeout without verification or writes",
+    async (state) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        const pending = deferred<ReturnType<typeof resource>["resource"]>();
+        const entered = deferred<SandboxExecutionRecord>();
+        const verify = vi.fn(async ({ facts }: { facts: SandboxExecutionFacts }) => {
+          const proof = context(record, facts).verification;
+          if (!proof) throw new Error("fixture proof missing");
+          return proof;
+        });
+        const writes = vi.fn(async (input: Parameters<SandboxExecutionJournalPort["append"]>[0]) =>
+          call(f, "append", input),
+        );
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: writes,
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: { verify },
+          now: () => T1,
+          timeoutMs: 10,
+          backend: reconciliationBackend({
+            inspect: async (current) => {
+              entered.resolve(current);
+              return pending.promise;
+            },
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        const request = service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const current = await entered.promise;
+        await vi.advanceTimersByTimeAsync(10);
+        const finished = await request;
+        expect(finished.record.recovery).toMatchObject({
+          status: "unresolved",
+          reasonCode: "SANDBOX_RECONCILIATION_TIMED_OUT",
+        });
+        const count = writes.mock.calls.length;
+        pending.resolve(resource(current, state).resource);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(writes).toHaveBeenCalledTimes(count);
+        expect(verify).not.toHaveBeenCalled();
+        expect(call(f, "read", record.plan.identity)).toEqual(finished.record);
+        expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+      } finally {
+        vi.useRealTimers();
+        await f.close();
+      }
+    },
+  );
+
+  it("fences recovery writes when another attempt takes ownership before the SQL transaction", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      let now = T1;
+      let successor: SandboxExecutionRecord | undefined;
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: async (input) => {
+            if (input.facts.resource.supervision === "released") {
+              now = new Date(Date.parse(T1) + 1000).toISOString();
+              call(f, "beginRecovery", {
+                identity: record.plan.identity,
+                expectedSequence: input.expectedSequence,
+                authority: SERVICE_AUTHORITY,
+                now,
+                action: "inspect",
+                deadlineAt: new Date(Date.parse(now) + 1000).toISOString(),
+              });
+              successor = call(f, "read", record.plan.identity);
+            }
+            return call(f, "append", input);
+          },
+          beginRecovery: async (input) => call(f, "beginRecovery", input),
+          finishRecovery: async (input) => call(f, "finishRecovery", input),
+        },
+        evidence: {
+          verify: async ({ facts }) => {
+            const proof = context(record, facts).verification;
+            if (!proof) throw new Error("fixture proof missing");
+            return proof;
+          },
+        },
+        now: () => now,
+        timeoutMs: 1000,
+        backend: reconciliationBackend({
+          inspect: async (current) => resource(current, "released").resource,
+          stop: async () => {
+            throw new Error("unexpected stop");
+          },
+        }),
+      });
+      const outcome = await Promise.allSettled([
+        service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ]);
+      expect(successor?.recovery).toMatchObject({ status: "running", attempts: 2 });
+      expect(call(f, "read", record.plan.identity)).toEqual(successor);
+      expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+      expect(outcome[0]).toMatchObject({
+        status: "rejected",
+        reason: { message: "SANDBOX_RECONCILIATION_OWNERSHIP_CHANGED" },
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    ["SANDBOX_CONTROL_DIRECTORY_CHANGED", "SANDBOX_CONTROL_DIRECTORY_CHANGED"],
+    ["SANDBOX_CONTROL_IDENTITY_CHANGED", "SANDBOX_CONTROL_IDENTITY_CHANGED"],
+    ["SANDBOX_CONTROL_BINDING_UNAVAILABLE", "SANDBOX_CONTROL_BINDING_UNAVAILABLE"],
+    ["SANDBOX_CONTROL_EVIDENCE_CHANGED", "SANDBOX_CONTROL_EVIDENCE_CHANGED"],
+    ["SANDBOX_HOST_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"],
+    ["private backend diagnostic", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+    ["SANDBOX_PRIVATE_SECRET", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+    ["EACCES", "SANDBOX_RECONCILIATION_PERMISSION_DENIED"],
+    ["EPERM", "SANDBOX_RECONCILIATION_PERMISSION_DENIED"],
+    ["ECONNREFUSED", "SANDBOX_SUPERVISOR_UNAVAILABLE"],
+    ["ETIMEDOUT", "SANDBOX_CONTROL_TIMED_OUT"],
+    ["JOB_HOST_CONTROL_TIMEOUT", "SANDBOX_CONTROL_TIMED_OUT"],
+    ["JOB_HOST_CONTROL_EVIDENCE_INVALID", "SANDBOX_CONTROL_EVIDENCE_INVALID"],
+    ["EXECUTION_STOP_UNCONFIRMED", "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED"],
+    ["lost:SANDBOX_CONTROL_UNCONFIRMED", "SANDBOX_CONTROL_UNCONFIRMED"],
+    ["lost:SANDBOX_HOST_UNAVAILABLE", "SANDBOX_HOST_UNAVAILABLE"],
+    ["lost:SANDBOX_PRIVATE_SECRET", "SANDBOX_RECONCILIATION_UNCONFIRMED"],
+  ])("retains safe bounded recovery failure %s", async (message, expected) => {
+    const f = await openSandboxJournal();
+    try {
+      const record = start(f);
+      const inspect = vi.fn(async (current: SandboxExecutionRecord) => {
+        if (message.startsWith("lost:")) {
+          return { ...resource(current, "lost").resource, reasonCode: message.slice(5) };
+        }
+        if (["EACCES", "EPERM", "ECONNREFUSED", "ETIMEDOUT"].includes(message))
+          throw Object.assign(new Error("private path and diagnostic"), { code: message });
+        throw new Error(message);
+      });
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: async (input) => call(f, "append", input),
+          beginRecovery: async (input) => call(f, "beginRecovery", input),
+          finishRecovery: async (input) => call(f, "finishRecovery", input),
+        },
+        evidence: {
+          verify: async () => {
+            throw new Error("unexpected verification");
+          },
+        },
+        now: () => T1,
+        timeoutMs: 1000,
+        backend: reconciliationBackend({ inspect, stop: inspect }),
+      });
+      await service.reconcile({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        authority: SERVICE_AUTHORITY,
+        action: "inspect",
+      });
+      const persisted = call(f, "read", record.plan.identity);
+      expect(persisted?.recovery).toMatchObject({
+        status: "unresolved",
+        reasonCode: expected,
+        attempts: 1,
+        finishedAt: T1,
+      });
+      expect(persisted?.facts.resource).toMatchObject({
+        supervision: "lost",
+        reasonCode: expected,
+      });
+      expect(inspect).toHaveBeenCalledTimes(1);
+      expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["preparation-deadline", "concurrent-result", "concurrent-release"] as const)(
+    "finishes bounded recovery using current durable facts: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        let now = T1;
+        let concurrent: SandboxExecutionRecord | undefined;
+        const inspect = vi.fn(async (current: SandboxExecutionRecord) => {
+          concurrent = append(f, current, result(f, current), true);
+          if (scenario === "concurrent-release")
+            concurrent = append(f, concurrent, resource(concurrent, "released"));
+          throw new Error("private backend diagnostic must not become a reason code");
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => {
+              const mutation = call(f, "append", input);
+              if (scenario === "preparation-deadline")
+                now = new Date(Date.parse(T1) + 1000).toISOString();
+              return mutation;
+            },
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => now,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({ inspect, stop: inspect }),
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(finished.record.recovery?.status).toBe(
+          scenario === "concurrent-release" ? "resolved" : "unresolved",
+        );
+        if (scenario === "preparation-deadline") {
+          expect(inspect).not.toHaveBeenCalled();
+          expect(finished.record.recovery?.reasonCode).toBe("SANDBOX_RECONCILIATION_TIMED_OUT");
+        } else {
+          expect(finished.record.facts.result).toEqual(concurrent?.facts.result);
+          expect(finished.record.facts.effect).toEqual(concurrent?.facts.effect);
+          expect(finished.record.recovery?.reasonCode).not.toContain("private");
+        }
+        if (scenario === "concurrent-release") {
+          expect(finished.record.releaseReceipt).toEqual(concurrent?.releaseReceipt);
+          expect(finished.record.recovery?.reasonCode).toBe("SANDBOX_RECONCILIATION_CONFIRMED");
+          expect(call(f, "admit", admission(f, "-released")).applied).toBe(true);
+        } else {
+          expect(() => call(f, "admit", admission(f, "-still-blocked"))).toThrow("occupied");
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("rejects stale reconcile after concurrent release without changing the accepted result", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      const staleSequence = record.facts.resource.sequence;
+      record = append(f, record, resource(record, "reconciling"));
+      record = append(f, record, resource(record, "released"));
+      const unreachable = vi.fn(async (): Promise<never> => {
+        throw new Error("released execution must not be inspected or stopped");
+      });
+      const service = new SandboxExecutionReconciliationService({
+        hostId: record.plan.identity.hostId,
+        journal: {
+          read: async (identity) => call(f, "read", identity),
+          append: unreachable,
+          beginRecovery: unreachable,
+          finishRecovery: unreachable,
+        },
+        evidence: { verify: unreachable },
+        backend: reconciliationBackend({ inspect: unreachable, stop: unreachable }),
+        now: () => T1,
+        timeoutMs: 1000,
+      });
+      await expect(
+        service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: staleSequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ).rejects.toThrow("SANDBOX_RECONCILIATION_SEQUENCE_CHANGED");
+      expect(call(f, "read", record.plan.identity)).toEqual(record);
+      expect(
+        await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        }),
+      ).toEqual({ record, applied: false });
+      expect(unreachable).not.toHaveBeenCalled();
+      expect(call(f, "admit", admission(f, "-after-stale-reconcile")).applied).toBe(true);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["before-finish", "after-finish"] as const)(
+    "preserves a file result written around the recovery finish transaction: %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        let completed: SandboxExecutionRecord | undefined;
+        const writeResult = () => {
+          const current = call(f, "read", record.plan.identity);
+          if (!current) throw new Error("missing current record");
+          completed = append(f, current, result(f, current), true);
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => {
+              if (window === "before-finish") writeResult();
+              const finished = call(f, "finishRecovery", input);
+              if (window === "after-finish") writeResult();
+              return finished;
+            },
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async (current) => resource(current, "released").resource,
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(completed).toBeDefined();
+        expect(finished.record.facts.result).toEqual(completed?.facts.result);
+        expect(finished.record.operationRevision).toBe(completed?.operationRevision);
+        expect(finished.record.recovery?.status).toBe("resolved");
+        expect(finished.record.releaseReceipt).toEqual(completed?.releaseReceipt);
+        expect(finished.record.workspaceBlocked).toBe(false);
+        expect(call(f, "read", record.plan.identity)).toEqual(finished.record);
+        expect(call(f, "admit", admission(f, "-after-finish-race")).applied).toBe(true);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["backend-observation", "proof-verification"] as const)(
+    "accepts verified cleanup when operation completion races with %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      const entered = deferred<SandboxExecutionRecord>();
+      const resume = deferred<void>();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              if (window === "proof-verification") {
+                entered.resolve(call(f, "read", record.plan.identity) as SandboxExecutionRecord);
+                await resume.promise;
+              }
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async (current) => {
+              if (window === "backend-observation") {
+                entered.resolve(current);
+                await resume.promise;
+              }
+              return resource(current, "released").resource;
+            },
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        const recovery = service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const observed = await entered.promise;
+        const completed = append(f, observed, result(f, observed), true);
+        resume.resolve();
+        const finished = await recovery;
+        expect(finished.record.facts.result).toEqual(completed.facts.result);
+        expect(finished.record.recovery?.status).toBe("resolved");
+        expect(finished.record.facts.resource.supervision).toBe("released");
+        expect(finished.record.workspaceBlocked).toBe(false);
+        expect(call(f, "admit", admission(f, "-after-race")).applied).toBe(true);
+      } finally {
+        resume.resolve();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["released", "timeout", "abort", "wrong-identity", "stale", "lost"] as const)(
+    "settles cleanup observation within the original recovery: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      const controller = new AbortController();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "lost"));
+        const actions: string[] = [];
+        let now = T1;
+        const observe = async (current: SandboxExecutionRecord, action: string) => {
+          actions.push(action);
+          if (scenario === "lost")
+            return {
+              ...resource(current, "lost").resource,
+              reasonCode: "SANDBOX_CONTROL_UNCONFIRMED",
+            };
+          if (actions.length > 1 && scenario === "released")
+            return resource(current, "released").resource;
+          if (scenario === "abort") controller.abort();
+          if (scenario === "timeout") now = new Date(Date.parse(T1) + 1000).toISOString();
+          return {
+            kind: "cleanup_pending",
+            identity:
+              scenario === "wrong-identity"
+                ? { ...current.plan.identity, jobId: "other" }
+                : current.plan.identity,
+            environmentId: current.plan.environmentId,
+            resourceSequence: current.facts.resource.sequence,
+            observedAt: scenario === "stale" ? "2000-01-01T00:00:00.000Z" : now,
+          } as const;
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          now: () => now,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: (current) => observe(current, "inspect"),
+            stop: (current) => observe(current, "stop"),
+          }),
+        });
+        const finished = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "stop",
+          signal: controller.signal,
+        });
+        expect(finished.record.facts.result).toEqual(record.facts.result);
+        expect(actions.filter((action) => action === "stop")).toHaveLength(1);
+        expect(finished.record.recovery?.attempts).toBe(1);
+        expect(finished.record.recovery?.deadlineAt).toBe(
+          new Date(Date.parse(T1) + 1000).toISOString(),
+        );
+        if (scenario === "released") {
+          expect(finished.record.recovery?.status).toBe("resolved");
+          expect(finished.record.facts.resource.supervision).toBe("released");
+          expect(finished.record.workspaceBlocked).toBe(false);
+          expect(actions).toContain("inspect");
+        } else {
+          expect(finished.record.recovery?.status).toBe("unresolved");
+          expect(finished.record.workspaceBlocked).toBe(true);
+          expect(actions).toEqual(["stop"]);
+          if (scenario === "timeout" || scenario === "abort")
+            expect(finished.record.recovery?.reasonCode).toBe(
+              scenario === "timeout"
+                ? "SANDBOX_RECONCILIATION_TIMED_OUT"
+                : "SANDBOX_RECONCILIATION_INTERRUPTED",
+            );
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["revision", "owner", "finished", "deadline"] as const)(
+    "rejects stale recovery proof through the repository port: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "lost"));
+        f.database.close();
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        let journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const recovery = await journal.beginRecovery({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          action: "inspect",
+          deadlineAt: new Date(Date.parse(T1) + 1000).toISOString(),
+        });
+        if (scenario === "finished")
+          await journal.finishRecovery({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedRecoveryRevision: recovery.revision,
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            reasonCode: "SANDBOX_RECONCILIATION_UNCONFIRMED",
+          });
+        const before = await journal.read(record.plan.identity);
+        const facts = resource(record, "released");
+        await expect(
+          journal.append({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            expectedRecoveryRevision:
+              scenario === "revision" ? recovery.revision + 1 : recovery.revision,
+            authority:
+              scenario === "owner"
+                ? { ...SERVICE_AUTHORITY, agentServiceBootId: "other-recovery" }
+                : SERVICE_AUTHORITY,
+            now: scenario === "deadline" ? recovery.deadlineAt : T1,
+            facts,
+            context: context(record, facts),
+          }),
+        ).rejects.toThrow(
+          scenario === "deadline" ? "Recovery deadline elapsed" : "Recovery ownership changed",
+        );
+        await repository.close();
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+        });
+        journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        expect(await journal.read(record.plan.identity)).toEqual(before);
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["fresh", "expired", "changed"] as const)(
+    "commits a single host observation with %s proof without repeating verification",
     async (scenario) => {
       const f = await openSandboxJournal();
       try {
         let record = start(f);
         record = append(f, record, result(f, record), true);
         record = append(f, record, resource(record, "lost"));
-        record = append(f, record, resource(record, "reconciling"));
+        const repeated = vi.fn(async () => {
+          throw new Error("must not repeat host audit");
+        });
+        const observeVerified = vi.fn(async (current: SandboxExecutionRecord) => {
+          const facts = resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing fixture proof");
+          return scenario === "expired"
+            ? { ...proof, validUntil: T1 }
+            : scenario === "changed"
+              ? { ...proof, facts: { ...facts, result: null } }
+              : proof;
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: { verify: repeated },
+          backend: verifiedReconciliationBackend(observeVerified),
+        });
+        const reconciled = await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        expect(observeVerified).toHaveBeenCalledTimes(1);
+        expect(repeated).not.toHaveBeenCalled();
+        expect(reconciled.record.workspaceBlocked).toBe(scenario !== "fresh");
+        expect(reconciled.record.facts.result).toEqual(record.facts.result);
+        expect(Boolean(reconciled.record.releaseReceipt)).toBe(scenario === "fresh");
+        expect(call(f, "read", record.plan.identity)).toEqual(reconciled.record);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["verified", "expired", "unavailable"] as const)(
+    "recovers legacy released occupancy with %s evidence",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
         record = append(f, record, resource(record, "released"));
+        const trigger = f.database
+          .prepare("SELECT sql FROM sqlite_master WHERE name='sandbox_occupancy_release_monotonic'")
+          .pluck()
+          .get() as string;
+        f.database.exec("DROP TRIGGER sandbox_occupancy_release_monotonic");
+        f.database
+          .prepare("DELETE FROM sandbox_release_receipts WHERE job_id=?")
+          .run(record.plan.identity.jobId);
+        f.database
+          .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
+          .run(record.plan.identity.jobId);
+        f.database.exec(trigger);
+        expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+        const journal = {
+          read: async (identity: SandboxExecutionRecord["plan"]["identity"]) =>
+            call(f, "read", identity),
+          append: async (input: Parameters<SandboxExecutionJournalPort["append"]>[0]) =>
+            call(f, "append", input),
+          beginRecovery: async (
+            input: Parameters<SandboxExecutionJournalPort["beginRecovery"]>[0],
+          ) => call(f, "beginRecovery", input),
+          finishRecovery: async (
+            input: Parameters<SandboxExecutionJournalPort["finishRecovery"]>[0],
+          ) => call(f, "finishRecovery", input),
+        };
+        const backend = {
+          inspect: vi.fn(
+            async (current: SandboxExecutionRecord) => resource(current, "released").resource,
+          ),
+          stop: vi.fn(async () => {
+            throw new Error("must not stop released resource");
+          }),
+        };
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal,
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("fixture proof");
+              return scenario === "expired" ? { ...proof, validUntil: T1 } : proof;
+            },
+          },
+          ...(scenario === "unavailable" ? {} : { backend: reconciliationBackend(backend) }),
+        });
+        await service.reconcile({
+          identity: record.plan.identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        const final = call(f, "read", record.plan.identity);
+        expect(final?.facts.resource.supervision).toBe("released");
+        expect(final?.facts.result).toEqual(record.facts.result);
+        expect(final?.recovery).toMatchObject({
+          status: scenario === "verified" ? "resolved" : "unresolved",
+          attempts: 1,
+          owner: SERVICE_AUTHORITY.agentServiceBootId,
+          finishedAt: T1,
+        });
+        expect(backend.stop).not.toHaveBeenCalled();
+        if (scenario === "verified") {
+          expect(final?.releaseReceipt?.acceptedAt).toBe(T1);
+          expect(call(f, "admit", admission(f, "-recovered")).applied).toBe(true);
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_workspace_occupancy SET released_at=NULL WHERE job_id=?")
+              .run(record.plan.identity.jobId),
+          ).toThrow("cannot be revoked");
+          expect(() =>
+            f.database
+              .prepare("UPDATE sandbox_release_receipts SET accepted_at=? WHERE job_id=?")
+              .run(T2, record.plan.identity.jobId),
+          ).toThrow("immutable");
+        } else {
+          expect(final?.releaseReceipt).toBeUndefined();
+          expect(() => call(f, "admit", admission(f, "-protected"))).toThrow("occupied");
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it("keeps missing result delivery visible after accepting permanent resource release", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      record = append(f, record, resource(record, "reconciling"));
+      record = append(f, record, resource(record, "released"));
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const projection = await readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId: record.plan.identity.runId,
+        now: T2,
+        inventory: {
+          admissions: [{ phase: "bound", record }],
+          queue: [],
+          legacyResourcesPending: false,
+          deletedPlans: [],
+          taskEnvironmentCalls: [],
+          executionLease: null,
+        },
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        itemId: (id) => `tool:${id}`,
+      });
+      expect(projection).toMatchObject({
+        allReleased: true,
+        pendingResources: false,
+        phase: null,
+        unresolvedResultItemIds: [`tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`],
+        operations: [{ phase: "released", reasonCode: "RESOURCE_RELEASE_CONFIRMED" }],
+      });
+      expect(call(f, "read", record.plan.identity)?.releaseReceipt).toEqual(record.releaseReceipt);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("lists started background and service programs until their release is recorded", async () => {
+    const f = await openSandboxJournal();
+    try {
+      f.database
+        .prepare("UPDATE capability_handles SET record_json=json_set(record_json,'$.maxUses',10)")
+        .run();
+      const longRunning = (suffix: string, mode: "background" | "service") => {
+        const a = admission(f, suffix, undefined, "read");
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...a.plan,
+          mode,
+          operationContract:
+            mode === "background"
+              ? { ref: "task-create", version: "1", kind: "task_start" }
+              : {
+                  ref: "service-create",
+                  version: "1",
+                  kind: "service_start",
+                  readinessProbeRef: "ready",
+                },
+        });
+        const resourceRef = `resource${suffix}`;
+        const facts = sandboxExecutionFactsSchema.parse({
+          ...a.facts,
+          environment: { ...a.facts.environment, mode, resourceRef },
+          resource: {
+            ...a.facts.resource,
+            resourceRef,
+            status:
+              mode === "background"
+                ? { kind: "task", state: "starting" }
+                : { kind: "service", readiness: "starting" },
+          },
+        });
+        return { ...a, plan, facts };
+      };
+      const releasedAs = (
+        record: SandboxExecutionRecord,
+        cleanup: "confirmed" | "process_group_gone",
+      ) => {
+        const stopping = append(f, record, resource(record, "stopping"));
+        const released = resource(stopping, "released");
+        return append(
+          f,
+          stopping,
+          sandboxExecutionFactsSchema.parse({
+            ...released,
+            resource: {
+              ...released.resource,
+              cleanup,
+              status:
+                record.plan.mode === "background"
+                  ? { kind: "task", state: "exited" }
+                  : { kind: "service", readiness: "unavailable" },
+            },
+          }),
+        );
+      };
+      const startedAs = (
+        suffix: string,
+        mode: "background" | "service",
+        state: "controlled" | "stopping" | "lost",
+      ) => {
+        const record = start(f, longRunning(suffix, mode));
+        return append(f, record, resource(record, state));
+      };
+      releasedAs(start(f, longRunning("-d-confirmed", "background")), "confirmed");
+      releasedAs(start(f, longRunning("-e-group-gone", "service")), "process_group_gone");
+      const foreground = start(f, admission(f, "-f-foreground", undefined, "read"));
+      append(f, foreground, resource(foreground, "controlled"));
+      call(f, "admit", longRunning("-g-not-started", "background"));
+      const running = startedAs("-a-task", "background", "controlled");
+      const stoppingService = startedAs("-b-service", "service", "stopping");
+      const lostTask = startedAs("-c-lost", "background", "lost");
+
+      const list = (afterJobId: string | null, limit: number) =>
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.listRunningPrograms",
+          { ownerId: OWNER_ID, agentId: AGENT_ID, input: { afterJobId, limit } },
+        ) as SandboxExecutionRecord[];
+      const jobIds = (records: readonly SandboxExecutionRecord[]) =>
+        records.map((record) => record.plan.identity.jobId);
+      expect(jobIds(list(null, 100))).toEqual(["job-a-task", "job-b-service", "job-c-lost"]);
+      expect(list(null, 100)).toEqual([running, stoppingService, lostTask]);
+      expect(jobIds(list(null, 1))).toEqual(["job-a-task"]);
+      expect(jobIds(list("job-a-task", 1))).toEqual(["job-b-service"]);
+      expect(jobIds(list("job-c-lost", 100))).toEqual([]);
+      for (const input of [
+        { afterJobId: null, limit: 0 },
+        { afterJobId: null, limit: 101 },
+        { afterJobId: "", limit: 1 },
+      ])
+        expect(() =>
+          operationsForDatabase(f.database).execute(
+            "capabilityInvocation.sandboxV2.listRunningPrograms",
+            { ownerId: OWNER_ID, agentId: AGENT_ID, input },
+          ),
+        ).toThrow();
+      expect(
+        operationsForDatabase(f.database).execute(
+          "capabilityInvocation.sandboxV2.listRunningPrograms",
+          { ownerId: OWNER_ID, agentId: "agent-other", input: { afterJobId: null, limit: 100 } },
+        ),
+      ).toEqual([]);
+
+      const environment = await readThreadExecutionEnvironment({
+        programs: {
+          listRunningPrograms: async (input) => list(input.afterJobId, input.limit),
+        },
+        mode: "strict",
+        unavailableTools: async () => [
+          { toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" },
+        ],
+        pageSize: 2,
+      });
+      expect(environment).toEqual({
+        mode: "strict",
+        programs: [running, stoppingService, lostTask].map((record) => ({
+          threadId: record.plan.identity.threadId,
+          kind: record.plan.mode,
+          toolName: record.plan.operation,
+          startedAt: record.startedAt,
+        })),
+        unavailableTools: [{ toolName: "bash", reasonCode: "SANDBOX_OPERATION_SRT_ONLY" }],
+      });
+      await expect(
+        readThreadExecutionEnvironment({
+          programs: {
+            listRunningPrograms: async (input) => list(input.afterJobId, input.limit),
+          },
+          mode: "srt",
+          unavailableTools: async () => [],
+          pageSize: 1,
+          maximumPrograms: 2,
+        }),
+      ).rejects.toThrow("THREAD_EXECUTION_ENVIRONMENT_LIMIT");
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    [
+      "a process-group release a stop without strict confirmation",
+      {},
+      "RESOURCE_STOP_NOT_STRICTLY_CONFIRMED",
+    ],
+    [
+      "a PID-namespace-wide sweep a confirmed release",
+      { cleanupScope: "pid_namespace" },
+      "RESOURCE_RELEASE_CONFIRMED",
+    ],
+  ])("names %s", async (_label, scope, reasonCode) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "stopping"));
+      const released = resource(record, "released");
+      record = append(
+        f,
+        record,
+        sandboxExecutionFactsSchema.parse({
+          ...released,
+          resource: { ...released.resource, cleanup: "process_group_gone", ...scope },
+        }),
+      );
+      expect(record.releaseReceipt?.acceptedAt).toBe(T1);
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const inventory = readRunInventory(f, record.plan.identity.runId);
+      const projection = await readThreadExecutionResources({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        threadId,
+        runId: record.plan.identity.runId,
+        now: T2,
+        inventory,
+        payloads: { get: async () => f.scopePayload },
+        protector: f.protector,
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+        itemId: (id) => `tool:${id}`,
+      });
+      expect(projection).toMatchObject({
+        allReleased: true,
+        pendingResources: false,
+        phase: null,
+        operations: [
+          {
+            itemId: `tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`,
+            phase: "released",
+            reasonCode,
+          },
+        ],
+      });
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    ["on a strictly confirmed release", { cleanup: "confirmed", cleanupScope: "pid_namespace" }],
+    ["with an unknown value", { cleanup: "process_group_gone", cleanupScope: "process_tree" }],
+  ])("refuses a cleanup scope %s", async (_label, fields) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "stopping"));
+      const released = resource(record, "released");
+      expect(() =>
+        sandboxExecutionFactsSchema.parse({
+          ...released,
+          resource: { ...released.resource, ...fields },
+        }),
+      ).toThrow();
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("shows an owner-purged unconfirmed record as deleted without blocking its Run", async () => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, resource(record, "lost"));
+      const threadId = record.plan.identity.threadId;
+      if (!threadId) throw new Error("expected thread");
+      const runId = record.plan.identity.runId;
+      const project = (inventory: SandboxExecutionRunInventory) =>
+        readThreadExecutionResources({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          threadId,
+          runId,
+          now: T2,
+          inventory,
+          payloads: { get: async () => f.scopePayload },
+          protector: f.protector,
+          digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+          itemId: (id) => `tool:${id}`,
+        });
+      expect(await project(readRunInventory(f, runId))).toMatchObject({
+        allReleased: false,
+        pendingResources: true,
+        phase: "unresolved",
+      });
+      const purge = new SqliteUnconfirmedSandboxPurge({
+        databasePath: path.join(f.resource.stateRoot, "product.sqlite"),
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        now: () => T1,
+      });
+      const listed = purge.list();
+      expect(listed.records.map((entry) => entry.jobId)).toEqual([record.plan.identity.jobId]);
+      purge.purge(listed.digest);
+
+      const inventory = readRunInventory(f, runId);
+      expect(inventory).toEqual({
+        sandboxResourcesAbsent: false,
+        admissions: [],
+        queue: [],
+        legacyResourcesPending: false,
+        deletedPlans: [record.plan],
+        taskEnvironmentCalls: [],
+        executionLease: { expiresAt: T2, releasedAt: null },
+      });
+      const itemId = `tool:${f.scope.parentToolCallId ?? f.scope.toolCallId}`;
+      expect(await project(inventory)).toEqual(
+        expect.objectContaining({
+          allReleased: true,
+          pendingResources: false,
+          phase: null,
+          unresolvedResultItemIds: [],
+          operations: [
+            {
+              itemId,
+              phase: "record_deleted",
+              reasonCode: "EXECUTION_RECORD_DELETED",
+              lastObservedAt: null,
+            },
+          ],
+        }),
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each([
+    "deliver",
+    "retained-release",
+    "cancel-before-dispatch",
+    "receipt-fails",
+    "expired-proof",
+  ] as const)("Agent foreground result handoff: %s", async (scenario) => {
+    const f = await openSandboxJournal();
+    try {
+      let record = start(f);
+      record = append(f, record, result(f, record), true);
+      record = append(f, record, resource(record, "lost"));
+      record = append(f, record, resource(record, "reconciling"));
+      const releasedFacts = resource(record, "released");
+      if (releasedFacts.resource.supervision !== "released") throw new Error("fixture");
+      record = append(f, record, {
+        ...releasedFacts,
+        resource: {
+          ...releasedFacts.resource,
+          evidence: {
+            ...releasedFacts.resource.evidence,
+            validUntil: new Date(Date.parse(T1) + 1).toISOString(),
+          },
+        },
+      });
+      const identity = record.plan.identity;
+      const journal = Object.fromEntries(
+        [
+          "read",
+          "append",
+          "prepareIntent",
+          "dispatchIntent",
+          "acknowledgeIntent",
+          "observeIntent",
+        ].map((name) => [
+          name,
+          async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+        ]),
+      ) as unknown as SandboxExecutionJournalPort;
+      const complete = createProductionSandboxToolResult({
+        journal,
+        preparations: {
+          readAdmissionByInvocation: async () => ({
+            phase: "bound",
+            record: call(f, "read", identity) as SandboxExecutionRecord,
+          }),
+        },
+        authority: () => SERVICE_AUTHORITY,
+        now: () =>
+          scenario === "expired-proof"
+            ? T2
+            : scenario === "retained-release"
+              ? new Date(Date.parse(T1) + 151).toISOString()
+              : T1,
+        verifyFresh: async (current) => {
+          const facts = current.releaseReceipt ? current.facts : resource(current, "released");
+          const proof = context(current, facts).verification;
+          if (!proof) throw new Error("missing synthetic evidence");
+          return proof;
+        },
+      });
+      let checks = 0;
+      const receipt = vi.fn(async () => {
+        if (scenario === "receipt-fails" && receipt.mock.calls.length === 1)
+          throw new Error("receipt unavailable");
+      });
+      const delivery = {
+        assertDisclosure: async () => {
+          if (++checks === 3 && scenario === "cancel-before-dispatch")
+            f.database.prepare("UPDATE runs SET status='cancelled' WHERE id=?").run(identity.runId);
+        },
+        saveReceipt: receipt,
+      };
+      const request = { runId: identity.runId, invocationId: identity.invocationId };
+      if (scenario === "deliver" || scenario === "retained-release") {
+        expect(await complete(request, delivery)).toMatchObject({
+          outcome: "succeeded",
+          outputRef: "output",
+        });
+        expect(receipt).toHaveBeenCalledTimes(1);
+        expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+        if (scenario === "retained-release") {
+          expect(await complete(request, delivery)).toMatchObject({
+            outcome: "succeeded",
+            outputRef: "output",
+          });
+          expect(call(f, "read", identity)?.facts.resource.sequence).toBe(
+            record.facts.resource.sequence,
+          );
+        } else expect(await complete(request, delivery)).toMatchObject({ outcome: "succeeded" });
+        expect(
+          f.database
+            .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+            .get(identity.jobId),
+        ).toEqual({ released_at: T1 });
+        expect(receipt).toHaveBeenCalledTimes(2);
+      } else if (scenario === "expired-proof") {
+        expect(await complete(request, delivery)).toBeUndefined();
+        expect(receipt).not.toHaveBeenCalled();
+      } else {
+        await expect(complete(request, delivery)).rejects.toThrow();
+        if (scenario === "cancel-before-dispatch") expect(receipt).not.toHaveBeenCalled();
+        else expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+        if (scenario === "receipt-fails") {
+          expect(await complete(request, delivery)).toMatchObject({ outcome: "succeeded" });
+          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+          expect(receipt).toHaveBeenCalledTimes(2);
+        }
+      }
+    } finally {
+      await f.close();
+    }
+  });
+
+  it.each(["released", "unresolved"] as const)(
+    "Agent foreground result handoff started while background recovery is %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "lost"));
         const identity = record.plan.identity;
+        const lostSequence = record.facts.resource.sequence;
+        const recovery = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (current) => call(f, "read", current),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          backend: reconciliationBackend({
+            inspect: async (current) => {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              if (scenario === "unresolved") throw new Error("SANDBOX_CONTROL_UNCONFIRMED");
+              return resource(current, "released").resource;
+            },
+            stop: async () => {
+              throw new Error("unused");
+            },
+          }),
+        });
+        let recovered: Promise<unknown> = Promise.resolve();
+        const freshChecks: number[] = [];
         const journal = Object.fromEntries(
           [
             "read",
@@ -1048,44 +4407,50 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             }),
           },
           authority: () => SERVICE_AUTHORITY,
-          now: () => (scenario === "expired-proof" ? T2 : T1),
+          now: () => T1,
           verifyFresh: async (current) => {
-            const facts = resource(current, "released");
-            const proof = context(current, facts).verification;
+            freshChecks.push(current.facts.resource.sequence);
+            if (current.releaseReceipt) {
+              const proof = context(current, current.facts).verification;
+              if (!proof) throw new Error("missing synthetic evidence");
+              return proof;
+            }
+            await recovered.catch(() => undefined);
+            const proof = context(current, resource(current, "released")).verification;
             if (!proof) throw new Error("missing synthetic evidence");
             return proof;
           },
         });
-        let checks = 0;
-        const receipt = vi.fn(async () => {
-          if (scenario === "receipt-fails") throw new Error("receipt unavailable");
+        const receipt = vi.fn(async () => {});
+        const delivered = complete(
+          { runId: identity.runId, invocationId: identity.invocationId },
+          { assertDisclosure: async () => {}, saveReceipt: receipt },
+        );
+        recovered = recovery.reconcile({
+          identity,
+          expectedSequence: lostSequence,
+          authority: { ...SERVICE_AUTHORITY, workerBootId: "background-recovery" },
+          action: "inspect",
         });
-        const delivery = {
-          assertDisclosure: async () => {
-            if (++checks === 3 && scenario === "cancel-before-dispatch")
-              f.database
-                .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
-                .run(identity.runId);
-          },
-          saveReceipt: receipt,
-        };
-        const request = { runId: identity.runId, invocationId: identity.invocationId };
-        if (scenario === "deliver") {
-          expect(await complete(request, delivery)).toMatchObject({
-            outcome: "succeeded",
-            outputRef: "output",
-          });
+        const outcome = await delivered;
+        await recovered.catch(() => undefined);
+        const pending = call(f, "listPending", { afterJobId: null, limit: 10 }) as unknown[];
+        const final = call(f, "read", identity) as SandboxExecutionRecord;
+        expect(final.facts.result).toEqual(record.facts.result);
+        expect(final.facts.resource.sequence).toBe(lostSequence + 2);
+        if (scenario === "released") {
+          expect(outcome).toMatchObject({ outcome: "succeeded", outputRef: "output" });
           expect(receipt).toHaveBeenCalledTimes(1);
-          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
-          await expect(complete(request, delivery)).rejects.toThrow();
-          expect(receipt).toHaveBeenCalledTimes(1);
-        } else if (scenario === "expired-proof") {
-          expect(await complete(request, delivery)).toBeUndefined();
-          expect(receipt).not.toHaveBeenCalled();
+          expect(pending).toEqual([]);
+          expect(final.facts.resource.supervision).toBe("released");
+          expect(freshChecks).toEqual([lostSequence + 2]);
         } else {
-          await expect(complete(request, delivery)).rejects.toThrow();
-          if (scenario === "cancel-before-dispatch") expect(receipt).not.toHaveBeenCalled();
-          else expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toHaveLength(1);
+          expect(outcome).toBeUndefined();
+          expect(receipt).not.toHaveBeenCalled();
+          expect(pending).toEqual([final]);
+          expect(final.facts.resource.supervision).toBe("lost");
+          expect(final.recovery?.status).toBe("unresolved");
+          expect(freshChecks).toEqual([]);
         }
       } finally {
         await f.close();
@@ -1093,8 +4458,2051 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
     },
   );
 
+  it.each([
+    "known-released",
+    "known-unreleased",
+    "unknown-released",
+    "lost-candidate",
+    "stream-candidate",
+    "cancelled",
+  ] as const)(
+    "discovers a known sandbox result for a stranded Run without executable replay: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        if (!["unknown-released", "lost-candidate", "stream-candidate"].includes(scenario))
+          record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        if (scenario !== "known-unreleased")
+          record = append(f, record, resource(record, "released"));
+        const runId = createRunId(record.plan.identity.runId);
+        f.database
+          .prepare("UPDATE runs SET status=? WHERE id=?")
+          .run(scenario === "cancelled" ? "cancelled" : "reconciling_external_result", runId);
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        f.database
+          .prepare(`INSERT INTO run_coordination_checkpoints
+          (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+          VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+          .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+        const authority =
+          scenario === "lost-candidate"
+            ? {
+                ...SERVICE_AUTHORITY,
+                product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+                lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+              }
+            : SERVICE_AUTHORITY;
+        if (scenario === "lost-candidate") {
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+        }
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        try {
+          if (scenario === "stream-candidate") {
+            const { createProductionSandboxStream } = await import(
+              "../../apps/agent-service/src/production-sandbox-stream.ts"
+            );
+            let next = 0;
+            const stream = createProductionSandboxStream({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+              protector: f.protector,
+              artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority),
+              clock: { now: () => T1 },
+              ids: { next: () => `discovery-stream-${++next}` },
+            });
+            await stream.append(record, {
+              index: 0,
+              offset: 0,
+              bytesBase64: Buffer.from("原始结果").toString("base64"),
+              end: true,
+              termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+            });
+          }
+          const dispatch = reopened.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            authority.product,
+            authority.lease,
+            "recovery-consumer",
+          );
+          const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
+          expect(candidates).toEqual(
+            ["known-released", "lost-candidate", "stream-candidate"].includes(scenario)
+              ? [expect.objectContaining({ runId, action: "resume_tool_result" })]
+              : [],
+          );
+        } finally {
+          await reopened.close();
+        }
+        const current = call(f, "read", record.plan.identity);
+        expect(current).toEqual(record);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "valid",
+    "checkpoint-changed",
+    "operation-changed",
+    "resource-changed",
+    "expired",
+    "cancelled",
+  ] as const)(
+    "claims a known result only against its current durable versions: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const runId = createRunId(record.plan.identity.runId);
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(runId);
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        f.database
+          .prepare(`INSERT INTO run_coordination_checkpoints
+          (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+          VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+          .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+        const reopened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        try {
+          const dispatch = reopened.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            SERVICE_AUTHORITY.product,
+            SERVICE_AUTHORITY.lease,
+            "result-recovery",
+          );
+          const candidate = (await dispatch.listClaimable({ now: T1, limit: 10 }))[0];
+          if (!candidate) throw new Error("Missing recovery candidate");
+          const recovery = {
+            jobId: record.plan.identity.jobId,
+            invocationId: record.plan.identity.invocationId,
+            semanticFingerprint: record.plan.semanticFingerprint,
+            checkpointRevision: 1,
+            operationRevision: record.operationRevision,
+            resourceSequence: record.facts.resource.sequence,
+            completedStreamOrdinal: 1,
+            deadlineAt: scenario === "expired" ? T1 : T2,
+          };
+          if (scenario === "checkpoint-changed")
+            f.database
+              .prepare("UPDATE run_coordination_checkpoints SET revision=revision+1 WHERE run_id=?")
+              .run(runId);
+          if (scenario === "operation-changed")
+            f.database
+              .prepare(
+                "UPDATE sandbox_execution_records SET operation_revision=operation_revision+1 WHERE job_id=?",
+              )
+              .run(recovery.jobId);
+          if (scenario === "resource-changed")
+            f.database
+              .prepare("UPDATE sandbox_execution_records SET sequence=sequence+1 WHERE job_id=?")
+              .run(recovery.jobId);
+          if (scenario === "cancelled")
+            f.database
+              .prepare("UPDATE runs SET status='cancelled',revision=revision+1 WHERE id=?")
+              .run(runId);
+          const claim = {
+            runId,
+            expectedRunRevision: candidate.runRevision,
+            expectedLeaseRevision: candidate.leaseRevision,
+            executionLeaseId: createRunExecutionLeaseId("known-result-lease"),
+            claimedAt: T1,
+            expiresAt: T2,
+            toolResultRecovery: recovery,
+          };
+          if (scenario === "valid") {
+            await expect(dispatch.claim(claim)).resolves.toMatchObject({ replayed: false });
+            expect(f.database.prepare("SELECT status FROM runs WHERE id=?").get(runId)).toEqual({
+              status: "running",
+            });
+            expect(
+              f.database
+                .prepare(
+                  "SELECT phase,diagnostic_code FROM run_coordination_checkpoints WHERE run_id=?",
+                )
+                .get(runId),
+            ).toEqual({ phase: "runtime_running", diagnostic_code: "RUNTIME_TOOL_RESULT_UNKNOWN" });
+            const rival = reopened.runDispatch(
+              OWNER_ID,
+              AGENT_ID,
+              SERVICE_AUTHORITY.product,
+              SERVICE_AUTHORITY.lease,
+              "result-rival",
+            );
+            await expect(
+              rival.claim({
+                ...claim,
+                executionLeaseId: createRunExecutionLeaseId("rival-result-lease"),
+              }),
+            ).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          } else {
+            await expect(dispatch.claim(claim)).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+            expect(
+              f.database
+                .prepare("SELECT released_at FROM run_execution_leases WHERE run_id=?")
+                .get(runId),
+            ).toEqual({ released_at: T1 });
+          }
+        } finally {
+          await reopened.close();
+        }
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "valid",
+    "window-edge",
+    "extended-window",
+    "run-deadline",
+    "shorter-window",
+    "shorter-edge",
+    "grant-revoked",
+    "grant-expired",
+    "handle-revoked",
+    "handle-expired",
+    "run-cancelled",
+    "authority",
+    "lease",
+    "missing",
+    "fingerprint",
+    "capability-disabled",
+  ] as const)("checks result disclosure authority in a read snapshot: %s", async (scenario) => {
+    const f = await openSandboxJournal(false, ["example.com:443"]);
+    const at = (offset: number) => new Date(Date.parse(T1) + offset).toISOString();
+    const original = admission(f);
+    const candidate = {
+      ...original,
+      invocation: { ...original.invocation, deadlineAt: at(10000) },
+      plan: {
+        ...original.plan,
+        effectiveDeadlineAt: at(10000),
+        originalDeadlineAt: scenario === "run-deadline" ? at(30000) : T2,
+      },
+      facts: {
+        ...original.facts,
+        environment: { ...original.facts.environment, deadlineAt: at(10000) },
+      },
+    };
+    const current = start(f, candidate);
+    const now = at(
+      scenario === "window-edge" || scenario === "extended-window"
+        ? 45000
+        : scenario === "run-deadline"
+          ? 30000
+          : scenario === "valid"
+            ? 44999
+            : 11000,
+    );
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => now,
+    });
+    try {
+      const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+      if (scenario === "grant-revoked")
+        await repository
+          .authorizationStore()
+          .revokeGrant(current.plan.authorizationRef ?? "", now, "B1_TEST");
+      if (scenario === "handle-revoked")
+        await repository
+          .capabilityStore(OWNER_ID, AGENT_ID)
+          .revokeExecutionHandle(current.plan.handleRef, now);
+      if (scenario === "grant-expired")
+        f.database
+          .prepare("UPDATE grants SET record_json=json_set(record_json,'$.expiresAt',?) WHERE id=?")
+          .run(now, current.plan.authorizationRef);
+      if (scenario === "handle-expired")
+        f.database
+          .prepare(
+            "UPDATE capability_handles SET expires_at=?,record_json=json_set(record_json,'$.expiresAt',?) WHERE id=?",
+          )
+          .run(now, now, current.plan.handleRef);
+      if (scenario === "run-cancelled")
+        f.database
+          .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
+          .run(current.plan.identity.runId);
+      if (scenario === "fingerprint")
+        f.database
+          .prepare(
+            "UPDATE sandbox_execution_records SET plan_json=json_set(plan_json,'$.semanticFingerprint',?) WHERE job_id=?",
+          )
+          .run(`sha256:${"0".repeat(64)}`, current.plan.identity.jobId);
+      if (scenario === "capability-disabled")
+        f.database
+          .prepare("UPDATE capability_declarations SET status='disabled' WHERE id=?")
+          .run(current.plan.capabilityRef);
+      const input = {
+        identity: {
+          ...current.plan.identity,
+          ...(scenario === "missing" ? { jobId: "missing" } : {}),
+        },
+        authority:
+          scenario === "authority"
+            ? { ...SERVICE_AUTHORITY, product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 } }
+            : SERVICE_AUTHORITY,
+        executionLease: {
+          ...current.plan.executionLease,
+          ...(scenario === "lease" ? { expectedLeaseRevision: 2 } : {}),
+        },
+        replyDeadlineAt:
+          scenario === "shorter-window"
+            ? at(12000)
+            : scenario === "shorter-edge" || scenario === "window-edge"
+              ? now
+              : T2,
+        now,
+      };
+      const before = f.database.pragma("data_version", { simple: true });
+      const check = () => preparations.assertResultAuthority(input);
+      if (scenario === "valid" || scenario === "shorter-window") {
+        expect(current.releaseReceipt).toBeUndefined();
+        await expect(check()).resolves.toBeUndefined();
+        await expect(check()).resolves.toBeUndefined();
+      } else
+        await expect(check()).rejects.toMatchObject({
+          code:
+            scenario === "missing"
+              ? "PORT_NOT_FOUND"
+              : expect.stringMatching(/^PORT_(NOT_AUTHORITATIVE|HANDLE_REVOKED)$/),
+        });
+      expect(f.database.pragma("data_version", { simple: true })).toBe(before);
+    } finally {
+      await repository.close();
+      await f.close();
+    }
+  });
+
+  it.each(
+    ["success", "deadline"].flatMap((outcome) =>
+      ["before", "after"].flatMap((timing) =>
+        ["grant", "handle", "none"].flatMap((revocation) =>
+          (revocation === "none"
+            ? ["after-intent"]
+            : ["before-intent", "after-intent", ...(outcome === "success" ? ["after-decrypt"] : [])]
+          ).map((window) => ({ outcome, timing, revocation, window })),
+        ),
+      ),
+    ),
+  )(
+    "keeps foreground result disclosure live across expiry: $outcome/$timing/$revocation/$window",
+    async ({ outcome, timing, revocation, window }) => {
+      const f = await openSandboxJournal(false, ["example.com:443"]);
+      let now = T1;
+      f.database.prepare("UPDATE runs SET revision=1 WHERE id=?").run(f.plan.identity.runId);
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      try {
+        const authority = SERVICE_AUTHORITY;
+        const peer = { ...authority.product, ...authority };
+        const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const capabilities = repository.capabilityStore(OWNER_ID, AGENT_ID);
+        const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
+        const callInput: RuntimeToolInvocation = {
+          runId: createRunId(f.plan.identity.runId),
+          toolCallId: "foreground-revocation",
+          capabilityRef: f.plan.capabilityRef,
+          capabilityHandleRef: f.plan.handleRef,
+          arguments: { inputRef: f.plan.inputRef },
+          dataClassification: "private",
+          executionDeadlineAt: T2,
+          context: {
+            threadId: createThreadId(f.scope.threadId),
+            modelRef: f.scope.modelRef,
+            executionLease: f.plan.executionLease as RunExecutionLeaseClaim,
+          },
+        };
+        let record: SandboxExecutionRecord | undefined;
+        let candidate: ReturnType<typeof admission> | undefined;
+        let sent: Extract<ExecutionV2Request, { type: "work.execute" }> | undefined;
+        let dispatched = false;
+        let revoked = false;
+        let recoveryEnabled = false;
+        const fixtureErrors: unknown[] = [];
+        const revoke = async () => {
+          if (revoked || revocation === "none") return;
+          if (revocation === "grant")
+            await repository
+              .authorizationStore()
+              .revokeGrant(f.plan.authorizationRef ?? "", now, "B1_TEST");
+          else await capabilities.revokeExecutionHandle(f.plan.handleRef, now);
+          revoked = true;
+        };
+        const complete = createProductionSandboxToolResult({
+          preparations,
+          journal: {
+            ...journal,
+            dispatchIntent: async (input) => {
+              const result = await journal.dispatchIntent(input);
+              dispatched = true;
+              if (window === "after-intent") await revoke();
+              return result;
+            },
+          },
+          authority: () => authority,
+          now: () => now,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("Missing fixture verification");
+            return { ...proof, checkedAt: now };
+          },
+        });
+        const tools = new ProductionRuntimeTools({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities,
+          invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          artifacts,
+          payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+          protector: {
+            protect: (input) => f.protector.protect(input),
+            unprotect: async (input) => {
+              const bytes = await f.protector.unprotect(input);
+              if (window === "after-decrypt" && input.payload.ref === "b1-output") await revoke();
+              return bytes;
+            },
+          },
+          authority: () => authority,
+          peer: () => peer,
+          parents: createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer })
+            .writer,
+          assertRunActive: async () => {
+            const run = await repository
+              .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+              .readRun(callInput.runId);
+            if (run?.run.status !== "running") throw new Error("RUN_NOT_ACTIVE");
+          },
+          ceiling: { ...f.plan.resourceCeiling, maxWallTimeMs: 10_000 },
+          clock: { now: () => now },
+          ids: createReferenceAdapterSet({ clock: { now: () => now } }).ids,
+          fileReadEnabled: false,
+          sandbox: {
+            journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            preparations,
+            scopes: { read: async () => sandboxExecutionScopeSchema.parse(f.scope) },
+            prepare: async (input) => {
+              const original = admission(f);
+              const plan = {
+                ...original.plan,
+                identity: {
+                  ...original.plan.identity,
+                  receiptRef: input.receiptRef,
+                  invocationId: input.invocationId,
+                },
+                requestedAt: input.requestedAt,
+                effectiveDeadlineAt: input.deadlineAt,
+                resourceCeiling: input.resourceCeiling,
+              };
+              candidate = {
+                ...original,
+                plan,
+                facts: {
+                  ...original.facts,
+                  environment: {
+                    ...original.facts.environment,
+                    creator: plan.identity,
+                    deadlineAt: plan.effectiveDeadlineAt,
+                  },
+                  resource: { ...original.facts.resource, creator: plan.identity },
+                },
+              };
+              return {
+                plan,
+                workspaces: original.workspaces,
+                reservation: {
+                  schemaVersion: "sandbox-preparation.v1",
+                  identity: plan.identity,
+                  environmentId: plan.environmentId,
+                  resourceRef: null,
+                  mode: "foreground",
+                  workspaceConflictRefs: original.workspaces.map((item) => item.ref),
+                  sequence: 1,
+                  createdAt: T1,
+                },
+              };
+            },
+          },
+          completeSandboxToolResult: async (input, delivery) => {
+            recoveryEnabled = delivery.resultRecovery !== undefined;
+            return complete(input, delivery);
+          },
+          transport: {
+            request: async (message) => {
+              if (message.type === "work.delegate")
+                return {
+                  ...message,
+                  kind: "response",
+                  type: "work.delegate.accepted",
+                  messageId: "accepted",
+                  causationId: message.messageId,
+                  payload: {
+                    handleRef: message.payload.handle.ref,
+                    workerBootId: authority.workerBootId,
+                    acceptedAt: T1,
+                  },
+                };
+              if (message.type !== "work.execute") return null;
+              try {
+                if (!candidate) throw new Error("Missing prepared candidate");
+                sent = message;
+                record = (
+                  await preparations.bindAndStart({
+                    identity: candidate.plan.identity,
+                    expectedSequence: 1,
+                    facts: {
+                      ...candidate.facts,
+                      resource: { ...candidate.facts.resource, sequence: 2 },
+                    },
+                    authority,
+                    now: T1,
+                  })
+                ).record;
+                const plaintext = Buffer.from(outcome === "success" ? "B1_PRIVATE_RESULT" : "");
+                const payload = await f.protector.protect({
+                  ownerId: OWNER_ID,
+                  agentId: AGENT_ID,
+                  ref: "b1-output",
+                  dataClassification: "private",
+                  contentType: "text/plain",
+                  plaintext,
+                  createdAt: T1,
+                });
+                await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+                  payload,
+                  handleRef: f.plan.handleRef,
+                  invocationId: message.messageId,
+                  authority,
+                  now: T1,
+                  plaintextByteLength: plaintext.byteLength,
+                });
+                record = append(
+                  f,
+                  record,
+                  sandboxExecutionFactsSchema.parse({
+                    ...record.facts,
+                    effect: { kind: "not_applicable" },
+                    result: {
+                      schemaVersion: "sandbox-execution.v2",
+                      identity: record.plan.identity,
+                      environmentId: record.plan.environmentId,
+                      policyDigest: record.facts.environment.policyDigest,
+                      contract: { ref: "fixed-read", version: "1" },
+                      occurredAt: T1,
+                      output: {
+                        ref: payload.ref,
+                        digest: createHash("sha256").update(plaintext).digest("hex"),
+                        byteLength: plaintext.byteLength,
+                      },
+                      ...(outcome === "success"
+                        ? { kind: "result", completion: { type: "value" } }
+                        : {
+                            kind: "error",
+                            reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                            termination: { type: "failure" },
+                          }),
+                    },
+                  }),
+                  true,
+                );
+                record = append(f, record, resource(record, "stopping"));
+                record = append(f, record, resource(record, "released"));
+              } catch (error) {
+                fixtureErrors.push(error);
+                throw error;
+              }
+              return null;
+            },
+            async *events() {
+              if (!sent) throw new Error("No executed request");
+              now = new Date(Date.parse(T1) + (timing === "after" ? 11_000 : 500)).toISOString();
+              if (window === "before-intent") await revoke();
+              yield {
+                ...sent,
+                kind: "event",
+                type: "work.result",
+                messageId: "b1-result",
+                causationId: sent.messageId,
+                payload: {
+                  requestId: sent.messageId,
+                  cursor: "1",
+                  sequence: 1,
+                  completedAt: T1,
+                  outcome: outcome === "success" ? "succeeded" : "failed",
+                  outputRef: outcome === "success" ? "b1-output" : null,
+                  errorCode: outcome === "success" ? null : "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+                  externalActionId: null,
+                },
+              };
+            },
+          },
+        });
+        await tools.listAuthorized(callInput.runId, [f.plan.handleRef]);
+        const delivered = await tools.execute(callInput);
+        expect(fixtureErrors).toEqual([]);
+        if (!sent || !record) throw new Error("Missing completed invocation");
+        expect(record.releaseReceipt).toBeDefined();
+        expect(Date.parse(now) >= Date.parse(sent.payload.deadlineAt)).toBe(timing === "after");
+        expect(Date.parse(now)).toBeLessThan(Date.parse(T2));
+        expect(revoked).toBe(revocation !== "none");
+        if (window !== "before-intent") {
+          expect(recoveryEnabled).toBe(true);
+          expect(dispatched).toBe(true);
+          expect(
+            f.database
+              .prepare("SELECT dispatched_at FROM sandbox_execution_intents WHERE job_id=?")
+              .get(record?.plan.identity.jobId),
+          ).toEqual({ dispatched_at: now });
+        }
+        if (revocation !== "none") {
+          expect.soft(delivered.modelContent).not.toContain("B1_PRIVATE_RESULT");
+          expect.soft(delivered.errorCode).not.toBe("SANDBOX_TOOL_DEADLINE_EXCEEDED");
+          expect(delivered).toMatchObject({ outcome: "result_unknown", resultRef: null });
+        } else if (outcome === "success") {
+          expect(delivered).toMatchObject({
+            outcome: "succeeded",
+            modelContent: "B1_PRIVATE_RESULT",
+          });
+        } else {
+          expect(delivered).toMatchObject({
+            outcome: "failed",
+            resultRef: null,
+            errorCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+          });
+        }
+      } finally {
+        await repository.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "new-boot",
+    "expired-tool",
+    "prepared",
+    "dispatched",
+    "stale-lease",
+    "revoked",
+    "continue-denied",
+    "missing-deadline",
+    "expired-run",
+    "pending-control",
+  ] as const)(
+    "reads a released result under current authority without adopting old execution rights: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      try {
+        let admitted = admission(f);
+        if (scenario === "expired-tool") {
+          const deadline = new Date(Date.parse(T1) + 500).toISOString();
+          admitted = {
+            ...admitted,
+            plan: { ...admitted.plan, effectiveDeadlineAt: deadline },
+            facts: {
+              ...admitted.facts,
+              environment: { ...admitted.facts.environment, deadlineAt: deadline },
+            },
+          };
+        }
+        let record = start(f, admitted);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const intent = {
+          identity: record.plan.identity,
+          intentId: "recovery-result-intent",
+          kind: "tool_result" as const,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          context: context(record, record.facts),
+        };
+        if (["prepared", "dispatched"].includes(scenario)) call(f, "prepareIntent", intent);
+        if (scenario === "dispatched") call(f, "dispatchIntent", intent);
+        if (scenario === "revoked")
+          f.database
+            .prepare(
+              "UPDATE capability_handles SET revoked_at=?, record_json=json_set(record_json,'$.revokedAt',?) WHERE id=?",
+            )
+            .run(T1, T1, record.plan.handleRef);
+        if (scenario === "pending-control")
+          f.database
+            .prepare(
+              "INSERT INTO sandbox_execution_intents(intent_id,job_id,kind,sequence,operation_revision,authority_json,created_at,dispatched_at) VALUES(?,?,?,?,?,?,?,?)",
+            )
+            .run(
+              "pending-control",
+              record.plan.identity.jobId,
+              "continue",
+              record.facts.resource.sequence,
+              record.operationRevision,
+              JSON.stringify(SERVICE_AUTHORITY),
+              T1,
+              T1,
+            );
+        const recovery = {
+          ...intent,
+          now: scenario === "expired-tool" ? new Date(Date.parse(T1) + 1000).toISOString() : T1,
+          context: {
+            ...intent.context,
+            ...(scenario === "missing-deadline"
+              ? {}
+              : { resultDeliveryDeadlineAt: scenario === "expired-run" ? T1 : T2 }),
+          },
+          authority: {
+            ...SERVICE_AUTHORITY,
+            agentServiceBootId: "restarted-agent",
+            workerBootId: "restarted-worker",
+          },
+          resultRecoveryLease: {
+            ...record.plan.executionLease,
+            ...(scenario === "stale-lease" ? { expectedLeaseRevision: 999 } : {}),
+          },
+          ...(scenario === "continue-denied" ? { kind: "continue" as const } : {}),
+        };
+        const stored = f.database
+          .prepare("SELECT record_json FROM capability_invocation_receipts WHERE receipt_ref=?")
+          .get(record.plan.identity.receiptRef);
+        if (
+          [
+            "stale-lease",
+            "revoked",
+            "continue-denied",
+            "missing-deadline",
+            "expired-run",
+            "pending-control",
+          ].includes(scenario)
+        ) {
+          expect(() => call(f, "prepareIntent", recovery)).toThrow();
+        } else {
+          expect(() => call(f, "prepareIntent", recovery)).not.toThrow();
+          expect(() => call(f, "dispatchIntent", recovery)).not.toThrow();
+          expect(
+            f.database
+              .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ count: 1 });
+        }
+        expect(
+          f.database
+            .prepare("SELECT record_json FROM capability_invocation_receipts WHERE receipt_ref=?")
+            .get(record.plan.identity.receiptRef),
+        ).toEqual(stored);
+        expect(call(f, "read", record.plan.identity)).toEqual(record);
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each([
+    "late",
+    "loss-stale-handle",
+    "loss-coding",
+    "loss-cancelled",
+    "loss-expired",
+    "loss-coding-competing",
+    "loss-coding-denied",
+    "loss-coding-budget",
+    "batch",
+    "coding",
+    "coding-denied",
+    "new-boot",
+    "changed-model",
+    "changed-tools",
+    "changed-capability",
+    "cancelled",
+    "expired",
+    "missing-continuation",
+    "model-unknown",
+    "competing",
+    "claim-crash",
+    "receipt-crash",
+    "original-crash",
+    "old-suspension",
+    "preparation-failed",
+    "preparation-unreleased",
+    "preparation-coding",
+    "preparation-new-boot",
+    "preparation-cancelled",
+    "preparation-expired",
+    "preparation-model-unknown",
+    "preparation-sealed",
+    "preparation-sealed-new-boot",
+    "preparation-sealed-expired",
+    "preparation-sealed-cancelled",
+    "preparation-sealed-model-unknown",
+  ] as const)(
+    "resumes the production Run and Pi from a late SQLite result without dispatching its tool again: %s",
+    async (scenario) => {
+      const variant = scenario.replace(/^(preparation|loss)-/, "").replace(/^sealed-/, "");
+      const sealed = scenario.startsWith("preparation-sealed");
+      let authority = SERVICE_AUTHORITY;
+      let now = T1;
+      let failAfterReceipt = false;
+      const f = await openSandboxJournal(false, [], true);
+      const repository = await SqliteProductStateRepository.open({
+        stateRoot: f.resource.stateRoot,
+        minimumFreeBytes: 0,
+        now: () => now,
+      });
+      const hash = (value: unknown) =>
+        createHash("sha256")
+          .update(
+            JSON.stringify(value, (_key, entry) =>
+              entry && typeof entry === "object" && !Array.isArray(entry)
+                ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)))
+                : entry,
+            ),
+          )
+          .digest("hex");
+      const clock = { now: () => now };
+      const adapters = createReferenceAdapterSet({ clock });
+      const runId = createRunId(f.plan.identity.runId);
+      const toolCallId = "late-original-call";
+      const preparation = scenario.startsWith("preparation-");
+      const lost = scenario.startsWith("loss-");
+      const coding = variant.startsWith("coding");
+      const parentKey = hash([runId, toolCallId]);
+      const childToolCallId = coding ? `file-phase:${hash([parentKey, "read"])}` : toolCallId;
+      const key = hash([runId, childToolCallId]);
+      const invocationId = `runtime-tool:${key}`;
+      const handleRef = f.plan.handleRef;
+      const originalTool = {
+        name: coding ? "read" : `authorized_${hash(handleRef).slice(0, 24)}`,
+        id: toolCallId,
+        arguments: coding ? { path: "original.txt" } : { inputRef: f.plan.inputRef },
+      };
+      const codingBinding = {
+        workerInstanceId: authority.workerInstanceId,
+        revision: 1,
+        hostId: f.plan.identity.hostId,
+        grant: { ...f.directoryGrant, disclosure: "model" as const },
+        capabilityRef: f.plan.capabilityRef,
+        capabilityVersion: f.plan.capabilityVersion,
+        maximumBytes: 4096,
+        threadId: f.plan.identity.threadId ?? "",
+        modelRef: "model-fixture",
+        modelIdentity: "fixture-local-model",
+      };
+      const model = await createFauxModelFixture(
+        "已收到迟到结果",
+        scenario === "batch"
+          ? [
+              { name: "local_probe", id: "probe-before", arguments: {} },
+              originalTool,
+              { name: "local_probe", id: "probe-after", arguments: {} },
+            ]
+          : originalTool,
+      );
+      const probes: string[] = [];
+      const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
+      let record: SandboxExecutionRecord | undefined;
+      let reservation: Extract<SandboxExecutionAdmissionRecord, { phase: "reserved" }> | undefined;
+      let calls = 0;
+      let fixtureFailure: unknown;
+      const request = vi.fn(async () => {
+        throw new Error("ORIGINAL_TOOL_MUST_NOT_RESTART");
+      });
+      const complete = createProductionSandboxToolResult({
+        preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+        journal: repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+        authority: () => authority,
+        now: clock.now,
+        verifyFresh: async (current) => {
+          const proof = context(current, current.facts).verification;
+          if (!proof) throw new Error("Fixture host proof missing");
+          return proof;
+        },
+      });
+      const make = (instanceId: string) => {
+        const artifacts = repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority);
+        const peer = { ...authority.product, ...authority };
+        const tools = new ProductionRuntimeTools({
+          ...(coding
+            ? {
+                coding: {
+                  ...codingBinding,
+                  grantId: codingBinding.grant.id,
+                  enabledTools: ["read" as const],
+                },
+                fileRead: {
+                  binding: async () => codingBinding,
+                  issue: async (): Promise<never> => {
+                    throw new Error("RECOVERY_CANNOT_ISSUE_HANDLE");
+                  },
+                  authorize: async () =>
+                    variant === "coding-denied"
+                      ? {
+                          decision: "DENY" as const,
+                          reasonCode: "CURRENT_DISCLOSURE_DENIED",
+                          alternativesAllowed: false,
+                        }
+                      : {
+                          decision: "ALLOW" as const,
+                          basis: { type: "policy" as const, ref: "fixture-permission" },
+                          executionScope: {
+                            capabilityRef: f.plan.capabilityRef,
+                            operations: ["read"],
+                            exactResourceRef: null,
+                            resourcePrefixes: [],
+                            maxDataClassification: "private" as const,
+                            sideEffects: ["none" as const],
+                            maxCostMicrosPerUse: 0,
+                            maxFrequency: { count: 1, intervalMs: null },
+                          },
+                        },
+                },
+              }
+            : {}),
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          capabilities: repository.capabilityStore(OWNER_ID, AGENT_ID),
+          invocations: repository.capabilityInvocationReceiptPort(OWNER_ID, AGENT_ID),
+          results: repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID),
+          artifacts,
+          payloads,
+          protector: f.protector,
+          completeSandboxToolResult: (input, delivery) =>
+            complete(input, {
+              ...delivery,
+              saveReceipt: async (value) => {
+                await delivery.saveReceipt(value);
+                if (failAfterReceipt) {
+                  failAfterReceipt = false;
+                  throw new Error("TEST_CRASH_AFTER_RESULT_RECEIPT");
+                }
+              },
+            }),
+          sandbox: {
+            journal: repository.sandboxJobJournal(OWNER_ID, AGENT_ID),
+            scopes: {
+              read: async () => {
+                throw new Error("RECOVERY_CANNOT_PREPARE_SCOPE");
+              },
+            },
+            preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+            prepare: async () => {
+              throw new Error("RECOVERY_CANNOT_PREPARE_EXECUTION");
+            },
+          },
+          authority: () => authority,
+          peer: () => peer,
+          parents: createProductionWorkerParentBindingRegistry({ trustedPeerBinding: () => peer })
+            .writer,
+          assertRunActive: async () => {
+            const stored = await repository
+              .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+              .readRun(runId);
+            if (stored?.run.status !== "running") throw new Error("RUN_NOT_ACTIVE");
+          },
+          ceiling: f.plan.resourceCeiling,
+          clock,
+          ids: adapters.ids,
+          fileReadEnabled: false,
+          transport: { request, async *events() {} },
+        });
+        if (scenario === "batch") {
+          const list = tools.listAuthorized.bind(tools);
+          tools.listAuthorized = async (...args) => [
+            ...(await list(...args)),
+            {
+              name: "local_probe",
+              capabilityRef: "fixture.probe",
+              capabilityHandleRef: null,
+              description: "pure local probe",
+              parameters: { type: "object", properties: {} },
+            },
+          ];
+          const preflight = tools.preflight.bind(tools);
+          tools.preflight = async (call) =>
+            call.capabilityRef === "fixture.probe"
+              ? { allowed: true, permissionDecisionRef: "fixture-probe", reasonCode: "pure-read" }
+              : preflight(call);
+        }
+        if (scenario === "changed-capability") {
+          const recover = tools.recoverResult.bind(tools);
+          tools.recoverResult = (call, binding) =>
+            recover(call, { ...binding, capabilityRef: "unrelated-capability" });
+        }
+        if (scenario === "changed-tools") {
+          const list = tools.listAuthorized.bind(tools);
+          tools.listAuthorized = async (...args) => {
+            const descriptors = await list(...args);
+            return calls > 0 ? [] : descriptors;
+          };
+        }
+        const execute = tools.execute.bind(tools);
+        tools.execute = async (invocation: RuntimeToolInvocation, options) => {
+          if (invocation.capabilityRef === "fixture.probe") {
+            probes.push(invocation.toolCallId);
+            return {
+              outcome: "succeeded",
+              resultRef: null,
+              errorCode: null,
+              externalActionId: null,
+              modelContent: "probe result",
+            };
+          }
+          calls++;
+          const executing = coding
+            ? {
+                ...invocation,
+                toolCallId: childToolCallId,
+                capabilityRef: f.plan.capabilityRef,
+                capabilityHandleRef: handleRef,
+                arguments: { inputRef: f.plan.inputRef },
+              }
+            : invocation;
+          if (!record && !reservation) {
+            const admitted = admission(f);
+            const original = {
+              ...admitted,
+              invocation: { ...admitted.invocation, invocationId, idempotencyKey: invocationId },
+              plan: {
+                ...admitted.plan,
+                identity: { ...admitted.plan.identity, invocationId },
+                ...(sealed ? { preparationProtocol: "register-before-host.v1" as const } : {}),
+              },
+            };
+            const bound = {
+              ...original,
+              facts: {
+                ...original.facts,
+                environment: {
+                  ...original.facts.environment,
+                  creator: original.plan.identity,
+                },
+                resource: { ...original.facts.resource, creator: original.plan.identity },
+              },
+            };
+            try {
+              if (preparation) {
+                const result = await repository
+                  .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
+                  .reserve({
+                    ...original,
+                    reservation: {
+                      schemaVersion: "sandbox-preparation.v1",
+                      identity: original.plan.identity,
+                      environmentId: original.plan.environmentId,
+                      resourceRef: null,
+                      mode: "foreground",
+                      workspaceConflictRefs: original.workspaces.map((item) => item.ref),
+                      sequence: 1,
+                      createdAt: T1,
+                    },
+                  });
+                if (result.admission.phase !== "reserved")
+                  throw new Error("Expected unbound fixture");
+                reservation = result.admission;
+              } else record = start(f, bound);
+            } catch (error) {
+              fixtureFailure = error;
+              throw error;
+            }
+            const executionLease = invocation.context?.executionLease;
+            if (!executionLease || !invocation.context?.continuationRef)
+              throw new Error("Original continuation missing");
+            const {
+              executionLease: _lease,
+              continuationRef: _ref,
+              ...contextScope
+            } = invocation.context;
+            const semantic = {
+              ...executing,
+              context: {
+                ...contextScope,
+                authority: {
+                  deploymentId: executionLease.deploymentId,
+                  authorityEpoch: executionLease.authorityEpoch,
+                  fencingToken: executionLease.fencingToken,
+                },
+              },
+            };
+            if (coding) {
+              const persist = async (suffix: string, value: unknown) =>
+                artifacts.commit({
+                  runId,
+                  purpose: "trace",
+                  operationKey: `runtime-file-read:${parentKey}:${suffix}`,
+                  payload: await f.protector.protect({
+                    ownerId: OWNER_ID,
+                    agentId: AGENT_ID,
+                    ref: `coding-recovery-${suffix}`,
+                    dataClassification: "private",
+                    contentType: "application/json",
+                    createdAt: T1,
+                    plaintext: Buffer.from(JSON.stringify(value)),
+                  }),
+                });
+              const handle = await repository
+                .capabilityStore(OWNER_ID, AGENT_ID)
+                .getExecutionHandle(handleRef);
+              await persist("context", {
+                call: { ...invocation, context: semantic.context },
+                binding: codingBinding,
+                tool: "read",
+                authorityFence: authority.product.fencingToken,
+                requestedAt: T1,
+                expiresAt: invocation.executionDeadlineAt,
+              });
+              await persist("handle", { handle, inputRef: f.plan.inputRef });
+            }
+            await artifacts.commit({
+              runId,
+              purpose: "trace",
+              operationKey: `runtime-tool-intent:${key}`,
+              payload: await f.protector.protect({
+                ownerId: OWNER_ID,
+                agentId: AGENT_ID,
+                ref: "late-original-intent",
+                dataClassification: "private",
+                contentType: "application/json",
+                createdAt: T1,
+                plaintext: Buffer.from(
+                  JSON.stringify({
+                    fingerprint: hash(semantic),
+                    recovery: {
+                      version: "tool-batch-recovery.v1",
+                      continuationRef: invocation.context.continuationRef,
+                      toolCallId,
+                    },
+                    request: {
+                      schemaVersion: "execution.v2",
+                      kind: "request",
+                      type: "work.execute",
+                      messageId: invocationId,
+                      correlationId: `run:${runId}`,
+                      causationId: runId,
+                      dataClassification: "private",
+                      risk: "high",
+                      authorizationRef: original.invocation.authorizationRef,
+                      scope: original.invocation.requestScope,
+                      idempotencyKey: invocationId,
+                      payload: {
+                        capabilityId: original.invocation.capabilityRef,
+                        capabilityVersion: original.invocation.capabilityVersion,
+                        operation: original.invocation.operation,
+                        inputRef: original.invocation.inputRef,
+                        capabilityHandleRef: handleRef,
+                        delegatedContextRefs: [],
+                        secretRefs: [],
+                        resourceCeiling: original.invocation.resourceCeiling,
+                        requestedAt: T1,
+                        deadlineAt: T2,
+                      },
+                    },
+                  }),
+                ),
+              }),
+            });
+          }
+          return execute(executing, options);
+        };
+        return createProductionRunComposition({
+          ...(lost
+            ? {
+                recoverMissingToolResult: async (current: SandboxExecutionRecord) => {
+                  const { createProductionSandboxLostResultRecovery } = await import(
+                    "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+                  );
+                  return createProductionSandboxLostResultRecovery({
+                    journal: repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+                    authority: () => authority,
+                    now: clock.now,
+                    recoverableBackend: async (value) => value.plan.backendRef === "srt",
+                    verifyExited: async () => true,
+                    verifyFresh: async (value) => {
+                      const proof = context(value, value.facts).verification;
+                      if (!proof) throw new Error("Fixture proof missing");
+                      return proof;
+                    },
+                    saveOutput: async (value) => {
+                      const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+                      const payload = await f.protector.protect({
+                        ownerId: OWNER_ID,
+                        agentId: AGENT_ID,
+                        ref: "recovered-loss",
+                        dataClassification: "private",
+                        contentType: "text/plain",
+                        plaintext: bytes,
+                        createdAt: now,
+                      });
+                      const saved = await repository
+                        .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+                        .commit({
+                          runId,
+                          purpose: "trace",
+                          operationKey: `sandbox-tool-result-lost:${value.plan.identity.invocationId}`,
+                          payload,
+                        });
+                      return {
+                        ref: saved.ref,
+                        digest: createHash("sha256").update(bytes).digest("hex"),
+                        byteLength: bytes.length,
+                      };
+                    },
+                  })(current);
+                },
+              }
+            : {}),
+          repository,
+          configuration: {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+            deadlines: { runMs: 120000, workerRequestMs: 10000, providerRequestMs: 10000 },
+            budgets: {
+              globalCostMicros: 100,
+              perRunCostMicros: variant === "coding-budget" && calls > 0 ? 0 : 100,
+              perClassificationCostMicros: {
+                public: 100,
+                private: 100,
+                sensitive: 0,
+                restricted: 0,
+              },
+            },
+          },
+          authority: {
+            authorityFence: () => authority.product,
+            authorityLease: () => authority.lease,
+            assertActive: async () => {},
+            isAccepting: () => true,
+          },
+          models: {
+            resolve: async (ref) => ({
+              ...(await model.models.resolve(model.descriptor.ref)),
+              descriptor: {
+                ...model.descriptor,
+                ref,
+                ...(scenario === "changed-model" && calls > 0
+                  ? { version: "changed-provider" }
+                  : {}),
+              },
+            }),
+          },
+          modelRegistry: [{ ...model.descriptor, ref: "model-fixture" }],
+          protector: f.protector,
+          memory: adapters.memory,
+          tools,
+          policy: async () => ({
+            modelRef: "model-fixture",
+            systemInstructionRef: "restart-prompt",
+            policyVersion: "late-result-policy",
+            policies: [],
+            capabilities: [],
+            capabilityHandleRefs: coding ? [] : [handleRef],
+            maxMemoryClassification: "private",
+            memoryLimit: 1,
+            maxSelectedMemories: 0,
+          }),
+          clock,
+          ids: adapters.ids,
+          instanceId,
+          cwd: f.resource.stateRoot,
+          agentDir: path.join(f.resource.stateRoot, "pi-agent"),
+          onFailure: () => {},
+        });
+      };
+      try {
+        const first = make("sandbox-consumer");
+        const lease = await repository
+          .runDispatch(OWNER_ID, AGENT_ID, authority.product, authority.lease, "sandbox-consumer")
+          .assertHeld({
+            runId,
+            executionLeaseId: createRunExecutionLeaseId(f.plan.executionLease.executionLeaseId),
+            expectedLeaseRevision: f.plan.executionLease.expectedLeaseRevision,
+            at: T1,
+          });
+        const stored = await repository
+          .runLifecycle(OWNER_ID, AGENT_ID, authority.product)
+          .readRun(runId);
+        if (!stored) throw new Error("Run missing");
+        const input = await first.input.create({
+          lease,
+          candidate: {
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            runId,
+            sessionId: stored.run.sessionId,
+            threadId: stored.run.threadId ?? null,
+            triggerId: stored.run.triggerId,
+            runRevision: stored.revision,
+            leaseRevision: lease.revision,
+            runStatus: "running",
+            checkpointPhase: null,
+            action: "resume",
+          },
+        });
+        const attempted = await first.coordinator.execute(input);
+        expect(attempted.run.run.status, JSON.stringify(attempted)).toBe(
+          "reconciling_external_result",
+        );
+        expect(calls).toBe(1);
+        if (!record && !reservation)
+          throw new Error(`Original job missing: ${String(fixtureFailure)}`);
+        if (reservation && variant !== "unreleased") {
+          const preparations = repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+          await preparations.interruptReservation({
+            identity: reservation.plan.identity,
+            authority,
+            now: T1,
+            reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+          });
+          let sealedEvidence: { ref: string; digest: string } | undefined;
+          if (sealed) {
+            const plaintext = Buffer.from(
+              JSON.stringify({
+                version: "sandbox-preparation-sealed.v1",
+                identity: reservation.plan.identity,
+                fingerprint: reservation.plan.semanticFingerprint,
+                environmentId: reservation.plan.environmentId,
+                executionLease: reservation.plan.executionLease,
+                stopRequestedAt: T1,
+              }),
+            );
+            const payload = await f.protector.protect({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              ref: "sealed-preparation",
+              dataClassification: "restricted",
+              contentType: "application/json",
+              plaintext,
+              createdAt: T1,
+            });
+            const saved = await repository
+              .runPayloadArtifactPort(OWNER_ID, AGENT_ID, {
+                product: authority.product,
+                lease: authority.lease,
+              })
+              .commit({
+                runId,
+                purpose: "trace",
+                payload,
+                operationKey: `sandbox-control:${createHash("sha256").update(JSON.stringify(reservation.plan.identity)).digest("hex")}:preparation`,
+              });
+            sealedEvidence = {
+              ref: saved.ref,
+              digest: createHash("sha256").update(plaintext).digest("hex"),
+            };
+          }
+          await preparations.releaseReservation({
+            identity: reservation.plan.identity,
+            authority,
+            now: T1,
+            verification: {
+              schemaVersion: "sandbox-reservation-release.v1",
+              basis: sealed ? "preparation_not_authorized" : "host_never_started",
+              identity: reservation.plan.identity,
+              environmentId: reservation.plan.environmentId,
+              semanticFingerprint: reservation.plan.semanticFingerprint,
+              stopRequestedAt: T1,
+              checkedAt: T1,
+              validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+              processIdentityRef: "job-host-process:original",
+              controlSessionId: "11111111-1111-4111-8111-111111111111",
+              evidence: sealedEvidence ?? {
+                ref: "authenticated-never-started",
+                digest: "a".repeat(64),
+              },
+            },
+          });
+        }
+        const bytes = Buffer.from("来自原工具的已核验结果");
+        const output = {
+          ref: "late-output",
+          digest: createHash("sha256").update(bytes).digest("hex"),
+          byteLength: bytes.byteLength,
+        };
+        const payload = await f.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: output.ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: bytes,
+          createdAt: T1,
+        });
+        if (record) {
+          if (!lost) {
+            await repository.capabilityInvocationResultPort(OWNER_ID, AGENT_ID).observeOutput({
+              payload,
+              handleRef,
+              authority,
+              now: T1,
+              invocationId,
+              plaintextByteLength: bytes.byteLength,
+            });
+            record = append(
+              f,
+              record,
+              sandboxExecutionFactsSchema.parse({
+                ...record.facts,
+                effect: { kind: "not_applicable" },
+                result: {
+                  schemaVersion: "sandbox-execution.v2",
+                  identity: record.plan.identity,
+                  environmentId: record.plan.environmentId,
+                  policyDigest: record.facts.environment.policyDigest,
+                  contract: { ref: "fixed-read", version: "1" },
+                  occurredAt: T1,
+                  kind: "result",
+                  output,
+                  completion: { type: "value" },
+                },
+              }),
+              true,
+            );
+          }
+          record = append(f, record, resource(record, "stopping"));
+          record = append(f, record, resource(record, "released"));
+        }
+        f.database
+          .prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?")
+          .run(T1, runId);
+        if (scenario === "old-suspension")
+          f.database
+            .prepare("UPDATE run_coordination_checkpoints SET suspension_json=? WHERE run_id=?")
+            .run(
+              JSON.stringify({
+                version: "runtime-suspension.v1",
+                executionDeadlineAt: input.executionDeadlineAt,
+                continuationRef: output.ref,
+                approval: {
+                  approvalRequestId: "previous-approval",
+                  semanticSnapshotHash: "previous-snapshot",
+                  expiresAt: input.executionDeadlineAt,
+                },
+              }),
+              runId,
+            );
+        if (scenario === "original-crash") {
+          f.database
+            .prepare("UPDATE runs SET status='running',revision=revision+1 WHERE id=?")
+            .run(runId);
+          f.database
+            .prepare(
+              "UPDATE run_coordination_checkpoints SET phase='runtime_running',diagnostic_code=NULL,revision=revision+1 WHERE run_id=?",
+            )
+            .run(runId);
+          f.database
+            .prepare(
+              "DELETE FROM trace_events WHERE run_id=? AND event_type='runtime.result_unknown'",
+            )
+            .run(runId);
+        }
+        if (lost) {
+          authority = {
+            ...authority,
+            product: { ...authority.product, fencingToken: 2 },
+            lease: { ...authority.lease, fencingToken: 2 },
+            agentServiceBootId: "replacement-agent",
+            workerBootId: "replacement-worker",
+          };
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+        }
+        if (variant === "new-boot")
+          authority = {
+            ...authority,
+            agentServiceBootId: "new-agent-boot",
+            workerBootId: "new-worker-boot",
+          };
+        if (variant === "cancelled")
+          f.database
+            .prepare("UPDATE runs SET status='cancelled',revision=revision+1 WHERE id=?")
+            .run(runId);
+        if (variant === "expired") now = new Date(Date.parse(T1) + 121000).toISOString();
+        if (scenario === "missing-continuation")
+          f.database
+            .prepare(
+              "DELETE FROM run_payload_artifacts WHERE run_id=? AND operation_key LIKE 'runtime-continuation:%'",
+            )
+            .run(runId);
+        if (variant === "model-unknown")
+          f.database
+            .prepare(
+              "UPDATE model_invocation_identities SET status='unknown',reason_code='provider_unresolved',observed_at=?,actual_cost_micros=NULL,settled_at=NULL WHERE run_id=?",
+            )
+            .run(T1, runId);
+        if (scenario === "claim-crash") {
+          const port = repository.runDispatch(
+            OWNER_ID,
+            AGENT_ID,
+            authority.product,
+            authority.lease,
+            "crashed-recovery",
+          );
+          const candidate = (await port.listClaimable({ now, limit: 1 }))[0];
+          const checkpoint = await repository
+            .runCheckpointStore(OWNER_ID, AGENT_ID, authority.product)
+            .read(runId);
+          if (!candidate || !checkpoint || !input.executionDeadlineAt || !record)
+            throw new Error("Recovery proof missing");
+          await port.claim({
+            runId,
+            expectedRunRevision: candidate.runRevision,
+            expectedLeaseRevision: candidate.leaseRevision,
+            executionLeaseId: createRunExecutionLeaseId("crashed-result-lease"),
+            claimedAt: now,
+            expiresAt: new Date(Date.parse(now) + 30000).toISOString(),
+            toolResultRecovery: {
+              jobId: record.plan.identity.jobId,
+              invocationId,
+              semanticFingerprint: record.plan.semanticFingerprint,
+              checkpointRevision: checkpoint.revision,
+              operationRevision: record.operationRevision,
+              resourceSequence: record.facts.resource.sequence,
+              completedStreamOrdinal: 1,
+              deadlineAt: input.executionDeadlineAt,
+            },
+          });
+          now = new Date(Date.parse(now) + 31000).toISOString();
+        }
+        if (scenario === "receipt-crash") {
+          failAfterReceipt = true;
+          expect(await make("interrupted-delivery").dispatcher.pump()).toMatchObject({
+            claimed: 1,
+            settled: 0,
+            unknown: 1,
+          });
+          expect(model.observed).toHaveLength(1);
+        }
+        if (variant === "stale-handle") {
+          const originalHandle = await repository
+            .capabilityStore(OWNER_ID, AGENT_ID)
+            .getExecutionHandle(handleRef);
+          expect(originalHandle).toMatchObject({ authorityFence: 1 });
+          expect(authority.product.fencingToken).toBe(2);
+        }
+        const outcomes = ["competing", "coding-competing"].includes(variant)
+          ? await Promise.all([
+              make("first-recovery").dispatcher.pump(),
+              make("second-recovery").dispatcher.pump(),
+            ])
+          : [await make("restarted-consumer").dispatcher.pump()];
+        if (variant === "coding-budget") {
+          expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 1, unknown: 0 });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("failed");
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          if (!record) throw new Error("Lost result fixture missing");
+          const persisted = await repository
+            .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+            .read(record.plan.identity);
+          expect(persisted?.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+          });
+          expect(persisted?.releaseReceipt).toEqual(record.releaseReceipt);
+          return;
+        }
+        if (
+          [
+            "changed-model",
+            "changed-tools",
+            "changed-capability",
+            "coding-denied",
+            "stale-handle",
+          ].includes(variant)
+        ) {
+          expect(outcomes[0]).toMatchObject({ claimed: 1, settled: 0, unknown: 1 });
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe("reconciling_external_result");
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          return;
+        }
+        if (
+          ["cancelled", "expired", "missing-continuation", "model-unknown", "unreleased"].includes(
+            variant,
+          )
+        ) {
+          expect(outcomes[0]).toMatchObject({ claimed: 0, settled: 0 });
+          expect(model.observed).toHaveLength(1);
+          expect(calls).toBe(1);
+          expect(request).not.toHaveBeenCalled();
+          expect(
+            (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))
+              ?.run.status,
+          ).toBe(variant === "cancelled" ? "cancelled" : "reconciling_external_result");
+          return;
+        }
+        expect(
+          outcomes.reduce((sum, result) => sum + result.settled, 0),
+          JSON.stringify(outcomes),
+        ).toBe(1);
+        expect(
+          (await repository.runLifecycle(OWNER_ID, AGENT_ID, authority.product).readRun(runId))?.run
+            .status,
+        ).toBe("completed");
+        expect(calls).toBe(1);
+        expect(request).not.toHaveBeenCalled();
+        expect(model.observed).toHaveLength(2);
+        expect(JSON.stringify(model.observed.at(-1))).toContain(
+          lost
+            ? "SANDBOX_TOOL_RESULT_LOST"
+            : preparation
+              ? "SANDBOX_TOOL_NOT_STARTED"
+              : "来自原工具的已核验结果",
+        );
+        if (lost) {
+          if (!record) throw new Error("Lost result fixture missing");
+          expect(JSON.stringify(model.observed.at(-1))).toContain(
+            "它可能已经产生了效果，是否重做请先确认",
+          );
+          expect(
+            f.database
+              .prepare(
+                "SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=? AND kind='tool_result'",
+              )
+              .get(record.plan.identity.jobId),
+          ).toEqual({ count: 1 });
+          expect(
+            (
+              await repository
+                .sandboxExecutionJournal(OWNER_ID, AGENT_ID)
+                .read(record.plan.identity)
+            )?.releaseReceipt,
+          ).toEqual(record.releaseReceipt);
+        }
+        if (reservation) {
+          expect(JSON.stringify(model.observed.at(-1))).toContain("工具未启动");
+          const original = await repository
+            .sandboxExecutionPreparations(OWNER_ID, AGENT_ID)
+            .readAdmission(reservation.plan.identity);
+          expect(original).toMatchObject({
+            phase: "reserved",
+            releaseReceipt: {
+              verification: { basis: sealed ? "preparation_not_authorized" : "host_never_started" },
+            },
+          });
+          expect(
+            f.database
+              .prepare("SELECT started_at FROM sandbox_execution_records WHERE job_id=?")
+              .get(reservation.plan.identity.jobId),
+          ).toEqual({ started_at: null });
+          expect(
+            f.database
+              .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_intents WHERE job_id=?")
+              .get(reservation.plan.identity.jobId),
+          ).toEqual({ count: 0 });
+        }
+        if (scenario === "batch") {
+          expect(probes).toEqual(["probe-before", "probe-after"]);
+          const sent = model.observed.at(-1) as {
+            messages: { role: string; toolCallId?: string }[];
+          };
+          expect(
+            sent.messages
+              .filter((message) => message.role === "toolResult")
+              .map((message) => message.toolCallId),
+          ).toEqual(["probe-before", toolCallId, "probe-after"]);
+        }
+      } finally {
+        await repository.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["before-read", "during-recovery"] as const)(
+    "delivers the immutable winner when result recovery races with completion: %s",
+    async (window) => {
+      const f = await openSandboxJournal();
+      try {
+        let record = start(f);
+        record = append(f, record, resource(record, "stopping"));
+        record = append(f, record, resource(record, "released"));
+        const original = record;
+        const known = result(f, record);
+        if (window === "before-read") record = append(f, record, known, true);
+        const journal = Object.fromEntries(
+          [
+            "read",
+            "append",
+            "prepareIntent",
+            "dispatchIntent",
+            "acknowledgeIntent",
+            "observeIntent",
+          ].map((name) => [
+            name,
+            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+          ]),
+        ) as unknown as SandboxExecutionJournalPort;
+        const recoverResult = vi.fn(async (current: SandboxExecutionRecord) => {
+          record = append(f, current, known, true);
+          const stale = sandboxExecutionFactsSchema.parse({
+            ...known,
+            result: { ...known.result, occurredAt: new Date(Date.parse(T1) + 1).toISOString() },
+          });
+          return append(f, current, stale, true);
+        });
+        const complete = createProductionSandboxToolResult({
+          journal,
+          preparations: {
+            readAdmissionByInvocation: async () => ({
+              phase: "bound",
+              record: call(f, "read", record.plan.identity) as SandboxExecutionRecord,
+            }),
+          },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          recoverResult,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("missing fixture proof");
+            return proof;
+          },
+        });
+        const saveReceipt = vi.fn(async () => {});
+        const completed = await complete(
+          { runId: record.plan.identity.runId, invocationId: record.plan.identity.invocationId },
+          {
+            assertDisclosure: async () => {},
+            saveReceipt,
+          },
+        );
+        expect(completed).toMatchObject({ outcome: "succeeded", outputRef: "output" });
+        expect(recoverResult).toHaveBeenCalledTimes(window === "before-read" ? 0 : 1);
+        expect(saveReceipt).toHaveBeenCalledTimes(1);
+        const durable = call(f, "read", record.plan.identity);
+        expect(durable?.facts.result).toEqual(known.result);
+        expect(durable?.operationRevision).toBe(original.operationRevision + 1);
+        expect(durable?.releaseReceipt).toEqual(original.releaseReceipt);
+        expect(durable?.workspaceBlocked).toBe(false);
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS n FROM sandbox_execution_intents WHERE dispatched_at IS NOT NULL AND acknowledged_at IS NOT NULL",
+            )
+            .get(),
+        ).toEqual({ n: 1 });
+      } finally {
+        await f.close();
+      }
+    },
+  );
+
+  it.each(["released", "unresolved", "cancelled"] as const)(
+    "refreshes a foreground handoff overtaken during verification: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      const entered = deferred<void>();
+      const resume = deferred<void>();
+      try {
+        let record = start(f);
+        record = append(f, record, result(f, record), true);
+        record = append(f, record, resource(record, "stopping"));
+        const identity = record.plan.identity;
+        const journal = Object.fromEntries(
+          [
+            "read",
+            "append",
+            "prepareIntent",
+            "dispatchIntent",
+            "acknowledgeIntent",
+            "observeIntent",
+          ].map((name) => [
+            name,
+            async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+          ]),
+        ) as unknown as SandboxExecutionJournalPort;
+        let checks = 0;
+        const complete = createProductionSandboxToolResult({
+          journal,
+          preparations: {
+            readAdmissionByInvocation: async () => ({
+              phase: "bound",
+              record: call(f, "read", identity) as SandboxExecutionRecord,
+            }),
+          },
+          authority: () => SERVICE_AUTHORITY,
+          now: () => T1,
+          verifyFresh: async (current) => {
+            if (++checks === 1) {
+              entered.resolve();
+              await resume.promise;
+            }
+            const proof = context(
+              current,
+              current.releaseReceipt ? current.facts : resource(current, "released"),
+            ).verification;
+            if (!proof) throw new Error("missing fixture proof");
+            return proof;
+          },
+        });
+        const receipt = vi.fn(async () => {});
+        const delivered = complete(
+          { runId: identity.runId, invocationId: identity.invocationId },
+          {
+            assertDisclosure: async () => {
+              if (scenario === "cancelled" && checks > 0) throw new Error("disclosure cancelled");
+            },
+            saveReceipt: receipt,
+          },
+        );
+        const outcome = delivered.then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+        await entered.promise;
+        const recovery = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (value) => call(f, "read", value),
+            append: async (value) => call(f, "append", value),
+            beginRecovery: async (value) => call(f, "beginRecovery", value),
+            finishRecovery: async (value) => call(f, "finishRecovery", value),
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          evidence: {
+            verify: async ({ facts }) => {
+              const proof = context(record, facts).verification;
+              if (!proof) throw new Error("missing fixture proof");
+              return proof;
+            },
+          },
+          backend: reconciliationBackend({
+            inspect: async (current) =>
+              resource(current, scenario === "unresolved" ? "lost" : "released").resource,
+            stop: async () => {
+              throw new Error("unexpected stop");
+            },
+          }),
+        });
+        await recovery.reconcile({
+          identity,
+          expectedSequence: record.facts.resource.sequence,
+          authority: SERVICE_AUTHORITY,
+          action: "inspect",
+        });
+        resume.resolve();
+        if (scenario === "released") {
+          expect(await outcome).toMatchObject({
+            value: { outcome: "succeeded", outputRef: "output" },
+          });
+          expect(receipt).toHaveBeenCalledTimes(1);
+          expect(checks).toBe(2);
+          expect(call(f, "listPending", { afterJobId: null, limit: 10 })).toEqual([]);
+        } else {
+          if (scenario === "unresolved") expect(await outcome).toEqual({ value: undefined });
+          else expect(await outcome).toMatchObject({ error: expect.any(Error) });
+          expect(receipt).not.toHaveBeenCalled();
+        }
+      } finally {
+        resume.resolve();
+        await f.close();
+      }
+    },
+  );
+
+  async function completeFailedExecution(
+    f: Awaited<ReturnType<typeof openSandboxJournal>>,
+    suffix: string,
+    operationContract: SandboxOperationContract,
+    effect: SandboxExecutionFacts["effect"],
+    failure: Readonly<Record<string, unknown>>,
+  ) {
+    const record = start(f, admission(f, suffix, undefined, "write", operationContract));
+    const output = { ref: `output${suffix}`, digest: "f".repeat(64), byteLength: 0 };
+    const observedOutput = operationsForDatabase(f.database).execute(
+      "capabilityInvocationResult.observeOutput",
+      {
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        input: outputObservation({
+          invocationId: record.plan.identity.invocationId,
+          payload: outputPayload(output.ref, `sha256:${output.digest}`),
+        }),
+      },
+    ) as { artifact?: Record<string, unknown> };
+    expect(observedOutput.artifact).toMatchObject({
+      runId: record.plan.identity.runId,
+      purpose: "worker_result",
+      operationKey: `capability-output:${record.plan.identity.invocationId}`,
+      payloadRef: output.ref,
+      contentDigest: `sha256:${output.digest}`,
+    });
+    const failed = sandboxExecutionFactsSchema.parse({
+      ...record.facts,
+      effect,
+      result: {
+        schemaVersion: "sandbox-execution.v2",
+        identity: record.plan.identity,
+        environmentId: record.plan.environmentId,
+        policyDigest: record.facts.environment.policyDigest,
+        contract: { ref: operationContract.ref, version: operationContract.version },
+        occurredAt: T1,
+        kind: "error",
+        output,
+        ...failure,
+      },
+    });
+    let settled = append(f, record, failed, true);
+    settled = append(f, settled, resource(settled, "stopping"));
+    settled = append(f, settled, resource(settled, "released"));
+    const journal = Object.fromEntries(
+      [
+        "read",
+        "append",
+        "prepareIntent",
+        "dispatchIntent",
+        "acknowledgeIntent",
+        "observeIntent",
+      ].map((name) => [
+        name,
+        async (input: never) => call(f, name as keyof SandboxExecutionJournalPort, input),
+      ]),
+    ) as unknown as SandboxExecutionJournalPort;
+    const complete = createProductionSandboxToolResult({
+      journal,
+      preparations: {
+        readAdmissionByInvocation: async () => ({
+          phase: "bound",
+          record: call(f, "read", settled.plan.identity) as SandboxExecutionRecord,
+        }),
+      },
+      authority: () => SERVICE_AUTHORITY,
+      now: () => T1,
+      verifyFresh: async (current) => {
+        const facts = current.releaseReceipt ? current.facts : resource(current, "released");
+        const proof = context(current, facts).verification;
+        if (!proof) throw new Error("missing synthetic evidence");
+        return proof;
+      },
+    });
+    const receipt = vi.fn(async (_value: unknown) => {});
+    const completion = await complete(
+      { runId: settled.plan.identity.runId, invocationId: settled.plan.identity.invocationId },
+      { assertDisclosure: async () => {}, saveReceipt: receipt },
+    );
+    return { completion, receipt, output };
+  }
+
+  it("retains a failed command as a known failure with unverified file effects", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const workspace = path.join(f.resource.stateRoot, "workspace");
+      const changedFile = path.join(workspace, "partial-output.txt");
+      await mkdir(workspace, { recursive: true });
+      const command = await execFile(
+        "/bin/sh",
+        ["-c", 'printf "partial" > "$1"; exit 7', "sh", changedFile],
+        { cwd: workspace },
+      ).catch((error: unknown) => error as NodeJS.ErrnoException);
+      expect(command).toMatchObject({ code: 7 });
+      expect(await readFile(changedFile, "utf8")).toBe("partial");
+
+      const { completion, receipt, output } = await completeFailedExecution(
+        f,
+        "-failed-command",
+        { ref: "shell", version: "1", kind: "command" },
+        { kind: "not_asserted" },
+        { reasonCode: "exit_failed", termination: { type: "exit", exitCode: 7 } },
+      );
+      const expected = {
+        outcome: "failed",
+        outputRef: output.ref,
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+        processExitCode: 7,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("[R2-T14] hands the Worker's stored nonzero command exit and its output to the model", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const { completion, receipt, output } = await completeFailedExecution(
+        f,
+        "-failed-command-result",
+        { ref: "shell", version: "1", kind: "command" },
+        { kind: "not_asserted" },
+        { kind: "result", completion: { type: "exit", exitCode: 3 } },
+      );
+      const expected = {
+        outcome: "failed",
+        outputRef: output.ref,
+        errorCode: "SANDBOX_COMMAND_EFFECT_UNVERIFIED",
+        externalActionId: null,
+        processExitCode: 3,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("hands a failed read-only tool's own error output to the model", async () => {
+    const f = await openSandboxJournal();
+    try {
+      const { completion, receipt, output } = await completeFailedExecution(
+        f,
+        "-failed-read",
+        { ref: "fixed-read", version: "1", kind: "fixed_read" },
+        { kind: "not_applicable" },
+        { reasonCode: "SANDBOX_OPERATION_FAILED", termination: { type: "failure" } },
+      );
+      const expected = {
+        outcome: "failed",
+        outputRef: output.ref,
+        errorCode: "SANDBOX_OPERATION_FAILED",
+        externalActionId: null,
+      };
+      expect(completion).toEqual(expected);
+      expect(receipt).toHaveBeenCalledExactlyOnceWith(expected);
+    } finally {
+      await f.close();
+    }
+  });
+
   it.each(["subject", "metrics", "revive"])(
-    "released proof renewal rejects changed %s",
+    "preserves release safety when observing changed %s",
     async (change) => {
       const f = await openSandboxJournal();
       try {
@@ -1122,10 +6530,1644 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
             ...(change === "revive" ? { supervision: "controlled", cleanup: "pending" } : {}),
           },
         });
-        expect(() => append(f, record, changed)).toThrow();
+        if (change === "revive") {
+          const protectedRecord = append(f, record, changed);
+          expect(protectedRecord.facts).toEqual(record.facts);
+          expect(protectedRecord.releaseReceipt).toEqual(record.releaseReceipt);
+          expect(protectedRecord.workspaceBlocked).toBe(true);
+          expect(() => call(f, "admit", admission(f, "-after-risk"))).toThrow("occupied");
+          expect(
+            f.database
+              .prepare("SELECT released_at FROM sandbox_workspace_occupancy WHERE job_id=?")
+              .get(record.plan.identity.jobId),
+          ).toEqual({ released_at: T1 });
+        } else expect(() => append(f, record, changed)).toThrow();
       } finally {
         await f.close();
       }
     },
   );
+  it.each([
+    "lost",
+    "original-first",
+    "loss-first",
+    "competing",
+    "same-fence",
+    "unreleased",
+    "unsigned",
+    "not-exited",
+  ] as const)(
+    "settles a released lost result with SQLite operation ordering: %s",
+    async (scenario) => {
+      const f = await openSandboxJournal();
+      let repository: SqliteProductStateRepository | undefined;
+      try {
+        let record = start(f);
+        const original = result(f, record);
+        record = append(f, record, resource(record, "stopping"));
+        if (scenario !== "unreleased") record = append(f, record, resource(record, "released"));
+        const release = record.releaseReceipt;
+        let authority = SERVICE_AUTHORITY;
+        if (scenario !== "same-fence") {
+          authority = {
+            ...SERVICE_AUTHORITY,
+            product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+            lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+          };
+          f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+          f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+        }
+        repository = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const journal = repository.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        const writeOriginal = async () =>
+          journal.recordOperation({
+            identity: record.plan.identity,
+            expectedSequence: record.facts.resource.sequence,
+            expectedOperationRevision: record.operationRevision,
+            facts: { ...original, resource: record.facts.resource },
+            authority,
+            now: T1,
+            context: context(record, { ...original, resource: record.facts.resource }),
+          });
+        const saveOutput = vi.fn(async () => {
+          const bytes = Buffer.from("SANDBOX_TOOL_RESULT_LOST");
+          const payload = await f.protector.protect({
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            ref: "lost-result-payload",
+            dataClassification: "private",
+            contentType: "text/plain",
+            plaintext: bytes,
+            createdAt: T1,
+          });
+          if (!repository) throw new Error("Fixture repository missing");
+          const saved = await repository
+            .runPayloadArtifactPort(OWNER_ID, AGENT_ID, authority)
+            .commit({
+              runId: createRunId(record.plan.identity.runId),
+              purpose: "trace",
+              operationKey: `sandbox-tool-result-lost:${record.plan.identity.invocationId}`,
+              payload,
+            });
+          return {
+            ref: saved.ref,
+            digest: createHash("sha256").update(bytes).digest("hex"),
+            byteLength: bytes.length,
+          };
+        });
+        let raced = false;
+        const { createProductionSandboxLostResultRecovery } = await import(
+          "../../apps/agent-service/src/production-sandbox-lost-result-recovery.ts"
+        );
+        const recover = createProductionSandboxLostResultRecovery({
+          journal,
+          authority: () => authority,
+          now: () => T1,
+          recoverableBackend: async (current) => current.plan.backendRef === "srt",
+          verifyExited: async () => {
+            if (scenario === "original-first" && !raced) {
+              raced = true;
+              await writeOriginal();
+            }
+            return !["unsigned", "not-exited"].includes(scenario);
+          },
+          saveOutput,
+          verifyFresh: async (current) => {
+            const proof = context(current, current.facts).verification;
+            if (!proof) throw new Error("Fixture proof missing");
+            return proof;
+          },
+        });
+        if (scenario === "competing") await Promise.all([recover(record), recover(record)]);
+        else await recover(record);
+        const current = await journal.read(record.plan.identity);
+        if (!current) throw new Error("Missing recovered record");
+        expect(current.releaseReceipt).toEqual(release);
+        expect(current.facts.resource).toEqual(record.facts.resource);
+        if (["same-fence", "unreleased", "unsigned", "not-exited"].includes(scenario)) {
+          expect(current.facts.result).toBeNull();
+          expect(saveOutput).not.toHaveBeenCalled();
+        } else if (scenario === "original-first") {
+          expect(current.facts.result).toEqual(original.result);
+          expect(current.operationRevision).toBe(1);
+        } else {
+          expect(current.facts.result).toMatchObject({
+            kind: "error",
+            reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+            termination: { type: "failure" },
+          });
+          expect(current.facts.effect).toEqual(record.facts.effect);
+          expect(current.operationRevision).toBe(1);
+          const threadId = current.plan.identity.threadId;
+          if (!threadId) throw new Error("Fixture thread missing");
+          expect(
+            await readThreadExecutionResources({
+              ownerId: OWNER_ID,
+              agentId: AGENT_ID,
+              threadId,
+              runId: current.plan.identity.runId,
+              now: T1,
+              inventory: {
+                admissions: [{ phase: "bound", record: current }],
+                queue: [],
+                legacyResourcesPending: false,
+                deletedPlans: [],
+                taskEnvironmentCalls: [],
+                executionLease: null,
+              },
+              payloads: { get: async () => f.scopePayload },
+              protector: f.protector,
+              digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+              itemId: (id) => `tool:${id}`,
+            }),
+          ).toMatchObject({
+            allReleased: true,
+            pendingResources: false,
+            unresolvedResultItemIds: [],
+          });
+          await expect(
+            journal.recordOperation({
+              identity: record.plan.identity,
+              expectedSequence: current.facts.resource.sequence,
+              expectedOperationRevision: current.operationRevision,
+              facts: { ...original, resource: current.facts.resource },
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              context: context(current, { ...original, resource: current.facts.resource }),
+            }),
+          ).rejects.toMatchObject({ code: "PORT_NOT_AUTHORITATIVE" });
+          await expect(writeOriginal()).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          record = current;
+          await expect(writeOriginal()).rejects.toMatchObject({ code: "PORT_CONFLICT" });
+          expect((await recover(current)).facts.result).toEqual(current.facts.result);
+          const complete = createProductionSandboxToolResult({
+            journal,
+            preparations: repository.sandboxExecutionPreparations(OWNER_ID, AGENT_ID),
+            authority: () => authority,
+            now: () => T1,
+            verifyFresh: async (value) => {
+              const proof = context(value, value.facts).verification;
+              if (!proof) throw new Error("Fixture proof missing");
+              return proof;
+            },
+          });
+          f.database
+            .prepare("UPDATE runs SET status='cancelled' WHERE id=?")
+            .run(record.plan.identity.runId);
+          const receipt = vi.fn(async () => {});
+          await expect(
+            complete(
+              {
+                runId: record.plan.identity.runId,
+                invocationId: record.plan.identity.invocationId,
+              },
+              {
+                assertDisclosure: async () => {
+                  throw new Error("cancelled");
+                },
+                saveReceipt: receipt,
+              },
+            ),
+          ).rejects.toThrow("cancelled");
+          expect(receipt).not.toHaveBeenCalled();
+        }
+      } finally {
+        await repository?.close();
+        await f.close();
+      }
+    },
+  );
+});
+
+const R2P2_BACKEND = "srt-task-environment";
+const R2P2_ENVIRONMENT = "environment-r2p2";
+const R2P2_EXECUTION_JOB = "execution-job-r2p2";
+const R2P2_RUNTIME_INSTANCE = "r2p2-daemon";
+const R2P2_RUNTIME_ENVIRONMENT = "c".repeat(64);
+const R2P2_CREATE_INTENT = "r2p2-environment-create";
+const R2P2_POLICY_DIGEST = "e".repeat(64);
+
+function residentTaskEnvironmentShare(f: Fixture) {
+  const base = admission(f);
+  const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+    ...base.plan,
+    backendRef: R2P2_BACKEND,
+  });
+  const supervisor = {
+    supervisorId: R2P2_RUNTIME_ENVIRONMENT,
+    bootId: R2P2_RUNTIME_INSTANCE,
+    epoch: 1,
+  };
+  const facts = sandboxExecutionFactsSchema.parse({
+    schemaVersion: "sandbox-execution.v2",
+    environment: {
+      schemaVersion: "sandbox-execution.v2",
+      kind: "container",
+      environmentId: plan.environmentId,
+      resourceRef: null,
+      creator: plan.identity,
+      mode: plan.mode,
+      backendRef: R2P2_BACKEND,
+      authorizationRef: plan.authorizationRef,
+      scopeDigest: plan.binding.scopeDigest,
+      policyDigest: R2P2_POLICY_DIGEST,
+      deadlineAt: plan.effectiveDeadlineAt,
+      supervisor,
+      workspaceConflictRefs: ["workspace"],
+      taskEnvironmentId: R2P2_ENVIRONMENT,
+      executionJobId: R2P2_EXECUTION_JOB,
+      environmentGeneration: 1,
+      runtimeInstanceId: R2P2_RUNTIME_INSTANCE,
+      runtimeEnvironmentId: R2P2_RUNTIME_ENVIRONMENT,
+      createIntentId: R2P2_CREATE_INTENT,
+      stopFence: 0,
+    },
+    result: null,
+    effect: { kind: "unknown", reasonCode: "SANDBOX_NOT_STARTED" },
+    resource: {
+      schemaVersion: "sandbox-execution.v2",
+      environmentId: plan.environmentId,
+      creator: plan.identity,
+      policyDigest: R2P2_POLICY_DIGEST,
+      scopeDigest: plan.binding.scopeDigest,
+      sequence: 1,
+      occurredAt: T1,
+      supervisor,
+      resourceRef: null,
+      status: { kind: "foreground" },
+      metrics: null,
+      supervision: "initializing",
+      cleanup: "pending",
+    },
+  });
+  return { ...base, plan, facts };
+}
+
+function residentReleased(record: SandboxExecutionRecord): SandboxExecutionFacts {
+  const old = record.facts.resource;
+  const common = old as typeof old & { evidence?: unknown; reasonCode?: string };
+  const {
+    supervision: _supervision,
+    cleanup: _cleanup,
+    evidence: _evidence,
+    reasonCode: _reasonCode,
+    ...rest
+  } = common;
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    resource: {
+      ...rest,
+      sequence: old.sequence + 1,
+      occurredAt: T1,
+      supervision: "released",
+      cleanup: "process_group_gone",
+      evidence: {
+        ...evidence,
+        qualificationRef: record.plan.binding.qualificationRef,
+        profileRef: record.plan.binding.profileRef,
+        validUntil: T2,
+        subject: { kind: "task_environment", environmentId: R2P2_ENVIRONMENT },
+      },
+    },
+  });
+}
+
+function seedResidentEnvironment(f: Fixture, runId: string, released: boolean) {
+  f.database
+    .prepare(`INSERT INTO execution_jobs
+      (execution_job_id,owner_id,agent_id,run_id,host_id,created_at)
+      VALUES (?,?,?,?,?,?)`)
+    .run(R2P2_EXECUTION_JOB, OWNER_ID, AGENT_ID, runId, "sandbox-host", T1);
+  f.database
+    .prepare(`INSERT INTO execution_environments
+      (environment_id,execution_job_id,role,generation,state,rotation_reason,backend_ref,
+       envelope_json,envelope_digest,policy_digest,image_digest,runner_digest,deadline_at,
+       create_intent_id,created_at,updated_at)
+      VALUES (?,?,'primary',1,?,'initial',?,'{}',?,?,?,?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      R2P2_EXECUTION_JOB,
+      released ? "released" : "reserved",
+      R2P2_BACKEND,
+      "a".repeat(64),
+      R2P2_POLICY_DIGEST,
+      "b".repeat(64),
+      "c".repeat(64),
+      T2,
+      R2P2_CREATE_INTENT,
+      T1,
+      T1,
+    );
+  if (!released) return;
+  f.database
+    .prepare(`INSERT INTO execution_environment_stop_intents
+      (environment_id,stop_fence,stop_intent_id,reason,stopped_resource_refs_json,requested_at,acknowledged_at,authority_json)
+      VALUES (?,1,?,'run_cancelled','[]',?,?,?)`)
+    .run(R2P2_ENVIRONMENT, "r2p2-stop-intent", T1, T1, JSON.stringify(SERVICE_AUTHORITY));
+  f.database
+    .prepare(`INSERT INTO execution_environment_release_receipts
+      (environment_id,basis,stop_fence,accepted_at,proof_json,authority_json)
+      VALUES (?,'process_group_gone',1,?,?,?)`)
+    .run(R2P2_ENVIRONMENT, T1, JSON.stringify({}), JSON.stringify(SERVICE_AUTHORITY));
+}
+
+async function strandedResidentRun(environmentReleased: boolean, effectiveDeadlineAt = T2) {
+  const f = await openSandboxJournal();
+  const share = residentTaskEnvironmentShare(f);
+  const plan =
+    effectiveDeadlineAt === T2
+      ? share.plan
+      : sandboxExecutionPlanCandidateV2Schema.parse({ ...share.plan, effectiveDeadlineAt });
+  const firstFacts =
+    effectiveDeadlineAt === T2
+      ? share.facts
+      : sandboxExecutionFactsSchema.parse({
+          ...share.facts,
+          environment: { ...share.facts.environment, deadlineAt: effectiveDeadlineAt },
+        });
+  let record = start(f, { ...share, plan, facts: firstFacts });
+  record = append(f, record, resource(record, "stopping"));
+  record = append(f, record, residentReleased(record));
+  const runId = createRunId(record.plan.identity.runId);
+  f.database.prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?").run(runId);
+  f.database.prepare("UPDATE run_execution_leases SET released_at=? WHERE run_id=?").run(T1, runId);
+  f.database
+    .prepare(`INSERT INTO run_coordination_checkpoints
+      (run_id,owner_id,agent_id,revision,phase,context_ref,runtime_event_count,diagnostic_code,updated_at)
+      VALUES (?,?,?,1,'reconciling_external_result',?,1,'RUNTIME_TOOL_RESULT_UNKNOWN',?)`)
+    .run(runId, OWNER_ID, AGENT_ID, "payload-capability-invocation-trigger", T1);
+  seedResidentEnvironment(f, runId, environmentReleased);
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  const { createProductionSandboxStream } = await import(
+    "../../apps/agent-service/src/production-sandbox-stream.ts"
+  );
+  let next = 0;
+  const stream = createProductionSandboxStream({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+    protector: f.protector,
+    artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+    clock: { now: () => T1 },
+    ids: { next: () => `resident-claim-${++next}` },
+  });
+  await stream.append(record, {
+    index: 0,
+    offset: 0,
+    bytesBase64: Buffer.from("resident-stream-output").toString("base64"),
+    end: true,
+    termination: { exitCode: 0, reasonCode: "exited", taskProcessExited: true },
+  });
+  return { f, reopened, runId, record, stream };
+}
+
+function linkResidentEnvironmentCall(f: Fixture, record: SandboxExecutionRecord) {
+  f.database
+    .prepare(`INSERT INTO execution_environment_calls
+      (environment_id,invocation_id,receipt_ref,claims_json,linked_at)
+      VALUES (?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      record.plan.identity.invocationId,
+      record.plan.identity.receiptRef,
+      "[]",
+      T1,
+    );
+}
+
+function replaceResidentReleaseBasis(f: Fixture, basis: string) {
+  const receipt = f.database
+    .prepare(
+      "SELECT stop_fence AS stopFence, accepted_at AS acceptedAt, authority_json AS authorityJson FROM execution_environment_release_receipts WHERE environment_id=?",
+    )
+    .get(R2P2_ENVIRONMENT) as
+    | { stopFence: number; acceptedAt: string; authorityJson: string }
+    | undefined;
+  if (!receipt) throw new Error("missing resident environment release receipt");
+  f.database
+    .prepare("DELETE FROM execution_environment_release_receipts WHERE environment_id=?")
+    .run(R2P2_ENVIRONMENT);
+  f.database
+    .prepare(`INSERT INTO execution_environment_release_receipts
+      (environment_id,basis,stop_fence,accepted_at,proof_json,authority_json)
+      VALUES (?,?,?,?,?,?)`)
+    .run(
+      R2P2_ENVIRONMENT,
+      basis,
+      receipt.stopFence,
+      receipt.acceptedAt,
+      basis === "create_not_dispatched" ? null : JSON.stringify({}),
+      receipt.authorityJson,
+    );
+}
+
+function supersedeResidentAuthority(f: Fixture) {
+  f.database.prepare("UPDATE deployments SET fencing_token=2").run();
+  f.database.prepare("UPDATE authority_leases SET fencing_token=2").run();
+  return {
+    ...SERVICE_AUTHORITY,
+    product: { ...SERVICE_AUTHORITY.product, fencingToken: 2 },
+    lease: { ...SERVICE_AUTHORITY.lease, fencingToken: 2 },
+  };
+}
+
+function lostResidentResult(record: SandboxExecutionRecord) {
+  return sandboxExecutionFactsSchema.parse({
+    ...record.facts,
+    effect: { kind: "unknown", reasonCode: "SANDBOX_TOOL_RESULT_LOST" },
+    result: {
+      schemaVersion: "sandbox-execution.v2",
+      identity: record.plan.identity,
+      environmentId: record.plan.environmentId,
+      policyDigest: record.facts.environment.policyDigest,
+      contract: {
+        ref: record.plan.operationContract.ref,
+        version: record.plan.operationContract.version,
+      },
+      occurredAt: T1,
+      kind: "error",
+      reasonCode: "SANDBOX_TOOL_RESULT_LOST",
+      termination: { type: "failure" },
+      output: { ref: "resident-lost-output", digest: "a".repeat(64), byteLength: 11 },
+    },
+  });
+}
+
+it("[R2-P2] refuses to import a resident task environment's foreground result while its environment is unreleased", async () => {
+  const { f, reopened, record } = await strandedResidentRun(false);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.importResult({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        facts: record.facts,
+        context: context(record, record.facts),
+        payload: outputPayload(),
+        source: { binding: "", digest: "a".repeat(64), byteLength: 11, artifacts: [] },
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses to record a resident task environment's lost tool result while its environment is unreleased", async () => {
+  const { f, reopened, record } = await strandedResidentRun(false);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const authority = supersedeResidentAuthority(f);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    const facts = lostResidentResult(record);
+    await expect(
+      journal.recordOperation({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        facts,
+        authority,
+        now: T1,
+        context: context(record, facts),
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Lost result recovery is not authorized",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] passes a released resident environment's lost-result authorization once its release is confirmed and the call is recorded", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const authority = supersedeResidentAuthority(f);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const facts = lostResidentResult(record);
+    await expect(
+      journal.recordOperation({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        facts,
+        authority,
+        now: T1,
+        context: context(record, facts),
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Output is not durably bound to invocation",
+    });
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses a released resident environment's result recovery when its release basis never dispatched the call", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    replaceResidentReleaseBasis(f, "create_not_dispatched");
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses a released resident environment's result recovery while its environment call record is missing", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    const before = await journal.read(record.plan.identity);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).rejects.toMatchObject({
+      code: "PORT_NOT_AUTHORITATIVE",
+      message: "Foreground result recovery is unavailable",
+    });
+    expect(await journal.read(record.plan.identity)).toEqual(before);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] permits a released resident environment's result recovery once its release is confirmed and the call is recorded", async () => {
+  const { f, reopened, record } = await strandedResidentRun(true);
+  try {
+    linkResidentEnvironmentCall(f, record);
+    const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+    await expect(
+      journal.readResultRecovery({
+        identity: record.plan.identity,
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+      }),
+    ).resolves.toMatchObject({ receipt: { receiptRef: record.plan.identity.receiptRef } });
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] claims a resident task environment's stream-recoverable tool result once its environment is released", async () => {
+  const { f, reopened, runId } = await strandedResidentRun(true);
+  try {
+    const dispatch = reopened.runDispatch(
+      OWNER_ID,
+      AGENT_ID,
+      SERVICE_AUTHORITY.product,
+      SERVICE_AUTHORITY.lease,
+      "resident-claim",
+    );
+    const candidates = await dispatch.listClaimable({ now: T1, limit: 10 });
+    expect(candidates).toEqual([expect.objectContaining({ runId, action: "resume_tool_result" })]);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] refuses to claim a resident task environment's tool result while its environment is unreleased", async () => {
+  const { f, reopened } = await strandedResidentRun(false);
+  try {
+    const dispatch = reopened.runDispatch(
+      OWNER_ID,
+      AGENT_ID,
+      SERVICE_AUTHORITY.product,
+      SERVICE_AUTHORITY.lease,
+      "resident-claim-blocked",
+    );
+    expect(await dispatch.listClaimable({ now: T1, limit: 10 })).toEqual([]);
+  } finally {
+    await reopened.close();
+    await f.close();
+  }
+});
+
+const PARITY_CASES = {
+  [SRT_BACKEND_REF]: "one_shot_srt",
+  [SRT_TASK_ENVIRONMENT_BACKEND_REF]: "task_environment",
+} as const;
+
+async function parityStream(reopened: SqliteProductStateRepository, f: Fixture) {
+  const { createProductionSandboxStream } = await import(
+    "../../apps/agent-service/src/production-sandbox-stream.ts"
+  );
+  let next = 0;
+  return createProductionSandboxStream({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    payloads: reopened.payloadStore(OWNER_ID, AGENT_ID),
+    protector: f.protector,
+    artifacts: () => reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY),
+    clock: { now: () => T1 },
+    ids: { next: () => `parity-stream-${++next}` },
+  });
+}
+
+async function commitParityArtifact(
+  reopened: SqliteProductStateRepository,
+  f: Fixture,
+  record: SandboxExecutionRecord,
+  operationKey: string,
+) {
+  const name = createHash("sha256").update(operationKey).digest("hex").slice(0, 16);
+  const payload = await f.protector.protect({
+    ownerId: OWNER_ID,
+    agentId: AGENT_ID,
+    ref: `parity-artifact-${name}`,
+    dataClassification: "restricted",
+    contentType: "application/json",
+    plaintext: new TextEncoder().encode(JSON.stringify({ operationKey })),
+    createdAt: T1,
+  });
+  return reopened.runPayloadArtifactPort(OWNER_ID, AGENT_ID, SERVICE_AUTHORITY).commit({
+    runId: createRunId(record.plan.identity.runId),
+    purpose: "trace",
+    operationKey,
+    payload,
+  });
+}
+
+const PARITY_DEADLINE_AT = new Date(Date.parse(T1) + 250).toISOString();
+const PARITY_RECOVERY_NOW = new Date(Date.parse(T1) + 500).toISOString();
+
+async function strandedOneShotDeadlineRun() {
+  const f = await openSandboxJournal();
+  const base = admission(f);
+  const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+    ...base.plan,
+    effectiveDeadlineAt: PARITY_DEADLINE_AT,
+  });
+  const facts = sandboxExecutionFactsSchema.parse({
+    ...base.facts,
+    environment: { ...base.facts.environment, deadlineAt: PARITY_DEADLINE_AT },
+  });
+  let record = start(f, { ...base, plan, facts });
+  record = append(f, record, resource(record, "stopping"));
+  record = append(f, record, resource(record, "released"));
+  const reopened = await SqliteProductStateRepository.open({
+    stateRoot: f.resource.stateRoot,
+    minimumFreeBytes: 0,
+    now: () => T1,
+  });
+  const controlKey = `sandbox-control:${createHash("sha256").update(JSON.stringify(record.plan.identity)).digest("hex")}`;
+  await commitParityArtifact(reopened, f, record, controlKey);
+  record = call(f, "read", record.plan.identity) as SandboxExecutionRecord;
+  const stream = await parityStream(reopened, f);
+  await stream.append(record, {
+    index: 0,
+    offset: 0,
+    bytesBase64: Buffer.from("parity-deadline-output").toString("base64"),
+    end: true,
+    termination: { exitCode: null, reasonCode: "deadline", taskProcessExited: true },
+  });
+  return { f, reopened, record, stream };
+}
+
+describe("[R2-P2] sandbox backend parity", () => {
+  it("[R2-P2] keeps the parity table aligned with every named product backend", () => {
+    expect(Object.keys(PARITY_CASES).sort()).toEqual([...SANDBOX_EXECUTION_BACKEND_REFS].sort());
+  });
+
+  it.each([
+    [
+      SRT_BACKEND_REF,
+      "EXECUTION_STOP_UNCONFIRMED",
+      "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED",
+      [],
+    ],
+    [
+      SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      "EXECUTION_STOP_UNCONFIRMED",
+      "SANDBOX_TASK_ENVIRONMENT_STOP_UNCONFIRMED",
+      [1000, 2000, 4000],
+    ],
+    [
+      SRT_TASK_ENVIRONMENT_BACKEND_REF,
+      "private backend diagnostic",
+      "SANDBOX_RECONCILIATION_UNCONFIRMED",
+      [],
+    ],
+  ] as const)(
+    "[R2-P2] schedules a bound %s stop again after %s only when its task environment stop is unconfirmed",
+    async (backendRef, failure, reasonCode, delays) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        const record = start(
+          f,
+          backendRef === SRT_BACKEND_REF ? admission(f) : residentTaskEnvironmentShare(f),
+        );
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(record.plan.identity.runId);
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        let clock = T1;
+        const stop = vi.fn(async () => {
+          throw failure === "EXECUTION_STOP_UNCONFIRMED"
+            ? new ExecutionEnvironmentError(failure)
+            : new Error(failure);
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: record.plan.identity.hostId,
+          journal: {
+            read: async (identity) => call(f, "read", identity),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => clock,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async () => {
+              throw new Error("unexpected inspect");
+            },
+            stop,
+          }),
+        });
+        const current = () => call(f, "read", record.plan.identity) as SandboxExecutionRecord;
+        const schedule = () =>
+          preparations.scheduleRecovery({
+            identity: record.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: clock,
+            expectedSequence: current().facts.resource.sequence,
+            expectedRecoveryRevision: current().recovery?.revision ?? 0,
+          });
+        let scheduled = await schedule();
+        expect(scheduled).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: 0,
+        });
+        const reconcile = (expectedRecoveryRevision: number) =>
+          service.reconcile({
+            identity: record.plan.identity,
+            expectedSequence: current().facts.resource.sequence,
+            authority: SERVICE_AUTHORITY,
+            action: "stop",
+            expectedRecoveryRevision,
+          });
+        const attempts = delays.length === 0 ? [null] : delays;
+        for (const [index, delay] of attempts.entries()) {
+          if (!scheduled) throw new Error("scheduled recovery missing");
+          await reconcile(scheduled.revision);
+          const failed = current().recovery;
+          expect(failed).toMatchObject({
+            status: "unresolved",
+            action: "stop",
+            reasonCode,
+            attempts: index + 1,
+            finishedAt: clock,
+          });
+          const retry = await schedule();
+          if (delay === null) {
+            expect(retry).toBeUndefined();
+            expect(current().recovery).toEqual(failed);
+            continue;
+          }
+          const retryAt = new Date(Date.parse(clock) + delay).toISOString();
+          expect(retry).toMatchObject({
+            status: "scheduled",
+            action: "stop",
+            attempts: index + 1,
+            nextAttemptAt: retryAt,
+          });
+          if (!retry) throw new Error("retry schedule missing");
+          clock = new Date(Date.parse(retryAt) - 1).toISOString();
+          await expect(reconcile(retry.revision)).rejects.toThrow("Scheduled recovery changed");
+          expect(current().recovery).toEqual(retry);
+          scheduled = retry;
+          clock = retryAt;
+        }
+        expect(stop).toHaveBeenCalledTimes(attempts.length);
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS activeClaims FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(record.plan.identity.jobId),
+        ).toEqual({ activeClaims: 1 });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([SRT_BACKEND_REF, SRT_TASK_ENVIRONMENT_BACKEND_REF] as const)(
+    "[R2-P2] schedules a bound %s stop again after the next start when a service shutdown interrupted it",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        const record = start(
+          f,
+          backendRef === SRT_BACKEND_REF ? admission(f) : residentTaskEnvironmentShare(f),
+        );
+        const identity = record.plan.identity;
+        f.database
+          .prepare("UPDATE runs SET status='reconciling_external_result' WHERE id=?")
+          .run(identity.runId);
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        let reached!: () => void;
+        const entered = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+        let stopCalls = 0;
+        const stop = vi.fn(async (_record: SandboxExecutionRecord, signal: AbortSignal) => {
+          stopCalls += 1;
+          if (stopCalls > 1) throw new Error("private backend diagnostic");
+          reached();
+          await new Promise<void>((resolve) => {
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw new Error("late host response");
+        });
+        const service = new SandboxExecutionReconciliationService({
+          hostId: identity.hostId,
+          journal: {
+            read: async (value) => call(f, "read", value),
+            append: async (input) => call(f, "append", input),
+            beginRecovery: async (input) => call(f, "beginRecovery", input),
+            finishRecovery: async (input) => call(f, "finishRecovery", input),
+          },
+          evidence: {
+            verify: async () => {
+              throw new Error("unexpected verification");
+            },
+          },
+          now: () => T1,
+          timeoutMs: 1000,
+          backend: reconciliationBackend({
+            inspect: async () => {
+              throw new Error("unexpected inspect");
+            },
+            stop,
+          }),
+        });
+        const current = () => call(f, "read", identity) as SandboxExecutionRecord;
+        const schedule = (authority: typeof SERVICE_AUTHORITY) =>
+          preparations.scheduleRecovery({
+            identity,
+            authority,
+            now: T1,
+            expectedSequence: current().facts.resource.sequence,
+            expectedRecoveryRevision: current().recovery?.revision ?? 0,
+          });
+        const reconcile = (
+          authority: typeof SERVICE_AUTHORITY,
+          expectedRecoveryRevision: number,
+          signal?: AbortSignal,
+        ) =>
+          service.reconcile({
+            identity,
+            expectedSequence: current().facts.resource.sequence,
+            authority,
+            action: "stop",
+            expectedRecoveryRevision,
+            ...(signal ? { signal } : {}),
+          });
+        const first = await schedule(SERVICE_AUTHORITY);
+        if (!first) throw new Error("scheduled recovery missing");
+        const shutdown = new AbortController();
+        const interrupted = reconcile(SERVICE_AUTHORITY, first.revision, shutdown.signal);
+        await entered;
+        shutdown.abort();
+        await interrupted;
+        const paused = current().recovery;
+        expect(paused).toMatchObject({
+          status: "unresolved",
+          action: "stop",
+          attempts: 1,
+          reasonCode: "SANDBOX_RECONCILIATION_INTERRUPTED",
+        });
+        const restarted = {
+          ...SERVICE_AUTHORITY,
+          agentServiceBootId: "restarted-agent-boot",
+          workerBootId: "restarted-worker-boot",
+        };
+        await recoverSandboxExecutionsAtStartup({
+          preparations,
+          journal: opened.sandboxExecutionJournal(OWNER_ID, AGENT_ID),
+          authority: () => restarted,
+          now: () => T1,
+        });
+        expect(current().recovery).toEqual(paused);
+        const retry = await schedule(restarted);
+        expect(retry).toMatchObject({
+          status: "scheduled",
+          action: "stop",
+          attempts: 1,
+          owner: restarted.agentServiceBootId,
+          nextAttemptAt: T1,
+        });
+        if (!retry) throw new Error("retry schedule missing");
+        await reconcile(restarted, retry.revision);
+        expect(stop).toHaveBeenCalledTimes(2);
+        expect(current().recovery).toMatchObject({
+          status: "unresolved",
+          action: "stop",
+          attempts: 2,
+          reasonCode: "SANDBOX_RECONCILIATION_UNCONFIRMED",
+        });
+        expect(await schedule(restarted)).toBeUndefined();
+        expect(
+          f.database
+            .prepare(
+              "SELECT count(*) AS activeClaims FROM sandbox_workspace_occupancy WHERE job_id=? AND released_at IS NULL",
+            )
+            .get(identity.jobId),
+        ).toEqual({ activeClaims: 1 });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
+  const neverBoundCandidate = (
+    f: Awaited<ReturnType<typeof openSandboxJournal>>,
+    suffix: string,
+    backendRef: string,
+  ) => {
+    const request = admission(f, suffix);
+    const plan = sandboxExecutionPlanCandidateV2Schema.parse({ ...request.plan, backendRef });
+    return {
+      request,
+      plan,
+      candidate: {
+        plan,
+        reservation: {
+          schemaVersion: "sandbox-preparation.v1" as const,
+          identity: plan.identity,
+          environmentId: plan.environmentId,
+          resourceRef: null,
+          mode: plan.mode,
+          workspaceConflictRefs: request.workspaces.map((item) => item.ref),
+          sequence: 1,
+          createdAt: plan.requestedAt,
+        },
+        workspaces: request.workspaces,
+        invocation: request.invocation,
+      },
+    };
+  };
+
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
+    "[R2-P2] releases a %s reservation that never bound and re-admits its workspace",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const first = neverBoundCandidate(f, `-parity-never-bound-${backendRef}`, backendRef);
+        const second = neverBoundCandidate(f, `-parity-never-bound-next-${backendRef}`, backendRef);
+        const claim = first.request.workspaces[0];
+        if (!claim) throw new Error("workspace claim required");
+        const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+        if (backendRef !== SRT_BACKEND_REF)
+          await store.reserve({
+            authority: SERVICE_AUTHORITY,
+            now: T1,
+            runId: first.plan.identity.runId,
+            hostId: first.plan.identity.hostId,
+            role: "primary",
+            rotationReason: "initial",
+            backendRef,
+            envelope: {
+              schemaVersion: "execution-envelope.v1" as const,
+              directories: [
+                {
+                  hostId: claim.hostId,
+                  grantRef: "grant-parity-never-bound",
+                  canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+                  access: claim.access as "read" | "write",
+                  source: {
+                    authorizationRef: "authorization-parity-never-bound",
+                    decidedBy: "user" as const,
+                    delegationListRef: null,
+                    expiresAt: T2,
+                  },
+                },
+              ],
+              network: [],
+              resources: {
+                cpuMillicores: 1000,
+                memoryBytes: 536870912,
+                maxProcesses: 128,
+                privateStorageBytes: 268435456,
+              },
+            },
+            policyDigest: "a".repeat(64),
+            imageDigest: "b".repeat(64),
+            runnerDigest: "c".repeat(64),
+            deadlineAt: T2,
+            leases: [claim],
+            ids: {
+              executionJobId: `execution-job-parity-never-bound-${backendRef}`,
+              environmentId: `environment-parity-never-bound-${backendRef}`,
+              createIntentId: `create-parity-never-bound-${backendRef}`,
+            },
+            requestJobId: first.plan.identity.jobId,
+          });
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.reserve(first.candidate)).toMatchObject({ applied: true });
+        const interrupted = await preparations.interruptReservation({
+          identity: first.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          reasonCode: "SANDBOX_UNBOUND_ENVIRONMENT_UNKNOWN",
+        });
+        if (interrupted.admission.phase !== "reserved" || !interrupted.admission.stopRequestedAt)
+          throw new Error("fenced reservation missing");
+        const base = {
+          schemaVersion: "sandbox-reservation-release.v1" as const,
+          identity: interrupted.admission.plan.identity,
+          environmentId: interrupted.admission.plan.environmentId,
+          semanticFingerprint: interrupted.admission.plan.semanticFingerprint,
+          stopRequestedAt: interrupted.admission.stopRequestedAt,
+          checkedAt: T1,
+          validUntil: new Date(Date.parse(T1) + 1000).toISOString(),
+          evidence: { ref: "reservation-fence:parity-never-bound", digest: "e".repeat(64) },
+        };
+        const verification =
+          backendRef === SRT_BACKEND_REF
+            ? {
+                ...base,
+                basis: "host_never_started" as const,
+                processIdentityRef: "job-host-process:parity-never-bound",
+                controlSessionId: "00000000-0000-4000-8000-000000000000",
+              }
+            : { ...base, basis: "task_environment_bind_fenced" as const };
+        const released = await preparations.releaseReservation({
+          identity: first.plan.identity,
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          verification,
+        });
+        expect(released).toMatchObject({
+          applied: true,
+          admission: {
+            phase: "reserved",
+            workspaceBlocked: false,
+            releaseReceipt: { verification: { basis: verification.basis } },
+          },
+        });
+        const matched = (
+          f.database
+            .prepare(
+              `SELECT ${SANDBOX_RESERVATION_NEVER_STARTED_SQL} AS matched
+               FROM (SELECT ? AS verification_json) reservation, (SELECT ? AS plan_json) result`,
+            )
+            .get(JSON.stringify(verification), JSON.stringify(interrupted.admission.plan)) as {
+            matched: number | null;
+          }
+        ).matched;
+        expect(matched).toBe(1);
+        expect(await preparations.reserve(second.candidate)).toMatchObject({ applied: true });
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
+    "[R2-P2] queues a %s request behind another Run's unconfirmed workspace occupancy",
+    async (backendRef) => {
+      const f = await openSandboxJournal();
+      let opened: SqliteProductStateRepository | undefined;
+      try {
+        opened = await SqliteProductStateRepository.open({
+          stateRoot: f.resource.stateRoot,
+          minimumFreeBytes: 0,
+          now: () => T1,
+        });
+        const request = admission(f, `-parity-occupancy-${backendRef}`);
+        const claim = request.workspaces[0];
+        if (!claim) throw new Error("workspace claim required");
+        const plan = sandboxExecutionPlanCandidateV2Schema.parse({
+          ...request.plan,
+          backendRef,
+        });
+        const hostId = plan.identity.hostId;
+        const envelope = {
+          schemaVersion: "execution-envelope.v1" as const,
+          directories: [
+            {
+              hostId: claim.hostId,
+              grantRef: "grant-parity-occupancy",
+              canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+              access: claim.access as "read" | "write",
+              source: {
+                authorizationRef: "authorization-parity-occupancy",
+                decidedBy: "user" as const,
+                delegationListRef: null,
+                expiresAt: T2,
+              },
+            },
+          ],
+          network: [],
+          resources: {
+            cpuMillicores: 1000,
+            memoryBytes: 536870912,
+            maxProcesses: 128,
+            privateStorageBytes: 268435456,
+          },
+        };
+        const occupyingRun = "run-parity-occupancy-other";
+        f.database
+          .prepare(`INSERT INTO triggers (
+            id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+            source_id, payload_ref, source_proof_ref, occurred_at
+          ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, 'user_message', 'fixture-source',
+            'payload-capability-invocation-trigger', 'fixture-proof', ?)`)
+          .run(`${occupyingRun}-trigger`, OWNER_ID, AGENT_ID, `${occupyingRun}-message`, T1);
+        f.database
+          .prepare(`INSERT INTO runs (
+            id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+            status, created_at, updated_at
+          ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, ?, 1, 'running', ?, ?)`)
+          .run(
+            occupyingRun,
+            OWNER_ID,
+            AGENT_ID,
+            `${occupyingRun}-session`,
+            `${occupyingRun}-trigger`,
+            T1,
+            T1,
+          );
+        const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+        const occupied = await store.reserve({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          runId: occupyingRun,
+          hostId,
+          role: "primary",
+          rotationReason: "initial",
+          backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
+          envelope,
+          policyDigest: "a".repeat(64),
+          imageDigest: "b".repeat(64),
+          runnerDigest: "c".repeat(64),
+          deadlineAt: T2,
+          leases: [claim],
+          ids: {
+            executionJobId: "execution-job-parity-occupancy-other",
+            environmentId: "environment-parity-occupancy-other",
+            createIntentId: "create-parity-occupancy-other",
+          },
+        });
+        const candidate = {
+          plan,
+          reservation: {
+            schemaVersion: "sandbox-preparation.v1" as const,
+            identity: plan.identity,
+            environmentId: plan.environmentId,
+            resourceRef: null,
+            mode: plan.mode,
+            workspaceConflictRefs: request.workspaces.map((item) => item.ref),
+            sequence: 1,
+            createdAt: plan.requestedAt,
+          },
+          workspaces: request.workspaces,
+          invocation: request.invocation,
+        };
+        const preparations = opened.sandboxExecutionPreparations(OWNER_ID, AGENT_ID);
+        expect(await preparations.enqueue(candidate)).toMatchObject({ status: "queued" });
+        const admit = async () => {
+          if (backendRef !== SRT_BACKEND_REF)
+            await store.reserve({
+              authority: SERVICE_AUTHORITY,
+              now: T1,
+              runId: plan.identity.runId,
+              hostId,
+              role: "primary",
+              rotationReason: "initial",
+              backendRef,
+              envelope,
+              policyDigest: "a".repeat(64),
+              imageDigest: "b".repeat(64),
+              runnerDigest: "c".repeat(64),
+              deadlineAt: T2,
+              leases: [claim],
+              ids: {
+                executionJobId: `execution-job-parity-occupancy-${backendRef}`,
+                environmentId: `environment-parity-occupancy-${backendRef}`,
+                createIntentId: `create-parity-occupancy-${backendRef}`,
+              },
+              requestJobId: plan.identity.jobId,
+            });
+          return preparations.reserve(candidate);
+        };
+        await expect(admit()).rejects.toMatchObject({
+          code: "PORT_CONFLICT",
+          details: { reasonCode: "WORKSPACE_OCCUPIED" },
+        });
+        const occupiedEnvironmentId = occupied.record.identity.environmentId;
+        await store.requestStop({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          environmentId: occupiedEnvironmentId,
+          stopIntentId: `${occupiedEnvironmentId}-stop`,
+          reason: "run_cancelled",
+          stoppedResourceRefs: [],
+        });
+        await store.acceptRelease({
+          authority: SERVICE_AUTHORITY,
+          now: T1,
+          environmentId: occupiedEnvironmentId,
+          proof: { basis: "create_not_dispatched" },
+        });
+        const admitted = await admit();
+        expect(admitted.applied).toBe(true);
+        if (admitted.admission.phase !== "reserved") throw new Error("expected reserved");
+        expect(admitted.admission.plan.identity.jobId).toBe(plan.identity.jobId);
+      } finally {
+        await opened?.close();
+        await f.close();
+      }
+    },
+  );
+
+  it.each([...SANDBOX_EXECUTION_BACKEND_REFS])(
+    "[R2-P2] authorizes deadline result recovery for %s from its own persisted evidence",
+    async (backendRef) => {
+      const run =
+        backendRef === SRT_BACKEND_REF
+          ? await strandedOneShotDeadlineRun()
+          : await strandedResidentRun(true, PARITY_DEADLINE_AT);
+      const { f, reopened, record } = run;
+      try {
+        if (backendRef !== SRT_BACKEND_REF) linkResidentEnvironmentCall(f, record);
+        const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+        await expect(
+          journal.readResultRecovery({
+            identity: record.plan.identity,
+            authority: SERVICE_AUTHORITY,
+            now: PARITY_RECOVERY_NOW,
+            recoveryPurpose: "deadline_failure",
+          }),
+        ).resolves.toMatchObject({
+          receipt: { receiptRef: record.plan.identity.receiptRef },
+        });
+      } finally {
+        await reopened.close();
+        await f.close();
+      }
+    },
+  );
+
+  it("[R2-P2] imports a resident task environment's deadline failure from its release evidence", async () => {
+    const { f, reopened, record, stream } = await strandedResidentRun(true, PARITY_DEADLINE_AT);
+    try {
+      linkResidentEnvironmentCall(f, record);
+      const saved = await stream.recover(record);
+      if (!saved) throw new Error("missing resident stream");
+      const payload = await f.protector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "resident-deadline-output",
+        dataClassification: "private",
+        contentType: "application/octet-stream",
+        plaintext: saved.bytes,
+        createdAt: T1,
+      });
+      const facts = sandboxExecutionFactsSchema.parse({
+        ...record.facts,
+        effect: { kind: "not_applicable" },
+        result: {
+          schemaVersion: "sandbox-execution.v2",
+          identity: record.plan.identity,
+          environmentId: record.plan.environmentId,
+          policyDigest: record.facts.environment.policyDigest,
+          contract: {
+            ref: record.plan.operationContract.ref,
+            version: record.plan.operationContract.version,
+          },
+          occurredAt: PARITY_RECOVERY_NOW,
+          kind: "error",
+          reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+          termination: { type: "failure" },
+          output: {
+            ref: payload.ref,
+            digest: saved.source.digest,
+            byteLength: saved.source.byteLength,
+          },
+        },
+      });
+      const journal = reopened.sandboxExecutionJournal(OWNER_ID, AGENT_ID);
+      const imported = await journal.importResult({
+        identity: record.plan.identity,
+        expectedSequence: record.facts.resource.sequence,
+        expectedOperationRevision: record.operationRevision,
+        authority: SERVICE_AUTHORITY,
+        now: PARITY_RECOVERY_NOW,
+        recoveryPurpose: "deadline_failure",
+        facts,
+        context: { ...context(record, facts), releaseReceipt: record.releaseReceipt ?? null },
+        payload,
+        source: saved.source,
+      });
+      expect(imported.record.facts.result).toMatchObject({
+        kind: "error",
+        reasonCode: "SANDBOX_TOOL_DEADLINE_EXCEEDED",
+      });
+    } finally {
+      await reopened.close();
+      await f.close();
+    }
+  });
+});
+
+function residentQueueEnvelope(claim: {
+  readonly hostId: string;
+  readonly canonicalRootId?: string;
+  readonly access: string;
+}) {
+  return {
+    schemaVersion: "execution-envelope.v1" as const,
+    directories: [
+      {
+        hostId: claim.hostId,
+        grantRef: "grant-resident-queue",
+        canonicalRootId: claim.canonicalRootId ?? "root-fixture",
+        access: claim.access as "read" | "write",
+        source: {
+          authorizationRef: "authorization-resident-queue",
+          decidedBy: "user" as const,
+          delegationListRef: null,
+          expiresAt: T2,
+        },
+      },
+    ],
+    network: [],
+    resources: {
+      cpuMillicores: 1000,
+      memoryBytes: 536870912,
+      maxProcesses: 128,
+      privateStorageBytes: 268435456,
+    },
+  };
+}
+
+function seedQueueRun(f: Fixture, runId: string) {
+  f.database
+    .prepare(`INSERT INTO triggers (
+      id, owner_id, agent_id, thread_id, idempotency_key, source_type,
+      source_id, payload_ref, source_proof_ref, occurred_at
+    ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, 'user_message', 'fixture-source',
+      'payload-capability-invocation-trigger', 'fixture-proof', ?)`)
+    .run(`${runId}-trigger`, OWNER_ID, AGENT_ID, `${runId}-message`, T1);
+  f.database
+    .prepare(`INSERT INTO runs (
+      id, owner_id, agent_id, thread_id, session_id, trigger_id, revision,
+      status, created_at, updated_at
+    ) VALUES (?, ?, ?, 'thread-capability-invocation', ?, ?, 1, 'running', ?, ?)`)
+    .run(runId, OWNER_ID, AGENT_ID, `${runId}-session`, `${runId}-trigger`, T1, T1);
+}
+
+function seedQueuedWorkspaceRequest(
+  f: Fixture,
+  input: {
+    readonly jobId: string;
+    readonly runId: string;
+    readonly hostId: string;
+    readonly handleRef: string;
+    readonly claim: unknown;
+  },
+) {
+  f.database
+    .prepare(`INSERT INTO sandbox_admission_queue
+      (job_id, owner_id, agent_id, run_id, host_id, handle_ref, deadline_at, status,
+       request_json, claims_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', '{}', ?)`)
+    .run(
+      input.jobId,
+      OWNER_ID,
+      AGENT_ID,
+      input.runId,
+      input.hostId,
+      input.handleRef,
+      T2,
+      JSON.stringify([input.claim]),
+    );
+}
+
+it("[R2-P2] keeps a resident environment behind earlier queued workspace requests", async () => {
+  const f = await openSandboxJournal();
+  let opened: SqliteProductStateRepository | undefined;
+  try {
+    opened = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const share = admission(f, "-resident-queue");
+    const claim = share.workspaces[0];
+    if (!claim) throw new Error("workspace claim required");
+    const hostId = share.plan.identity.hostId;
+    const earlier = "run-resident-queue-earlier";
+    const later = "run-resident-queue-later";
+    seedQueueRun(f, earlier);
+    seedQueueRun(f, later);
+    seedQueuedWorkspaceRequest(f, {
+      jobId: "job-resident-queue-earlier",
+      runId: earlier,
+      hostId,
+      handleRef: share.plan.handleRef,
+      claim,
+    });
+    seedQueuedWorkspaceRequest(f, {
+      jobId: "job-resident-queue-later",
+      runId: later,
+      hostId,
+      handleRef: share.plan.handleRef,
+      claim,
+    });
+    const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    let counter = 0;
+    const reserve = (runId: string, requestJobId: string) =>
+      store.reserve({
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        runId,
+        hostId,
+        role: "primary",
+        rotationReason: "initial",
+        backendRef: R2P2_BACKEND,
+        envelope: residentQueueEnvelope(claim),
+        policyDigest: "a".repeat(64),
+        imageDigest: "b".repeat(64),
+        runnerDigest: "c".repeat(64),
+        deadlineAt: T2,
+        leases: [claim],
+        ids: {
+          executionJobId: `execution-job-resident-queue-${++counter}`,
+          environmentId: `environment-resident-queue-${counter}`,
+          createIntentId: `create-resident-queue-${counter}`,
+        },
+        requestJobId,
+      });
+    await expect(reserve(later, "job-resident-queue-later")).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      message: "Workspace has an earlier conflicting request",
+    });
+    const earlierOutcome = await reserve(earlier, "job-resident-queue-earlier").then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    if (!earlierOutcome.ok)
+      throw new Error(
+        `the earlier Run was refused while only its own queued row existed: ${String(
+          earlierOutcome.error,
+        )}`,
+      );
+    const first = earlierOutcome.value;
+    expect(first.applied).toBe(true);
+    expect(first.record.identity.runId).toBe(earlier);
+    f.database
+      .prepare("UPDATE sandbox_admission_queue SET status='admitted' WHERE job_id=?")
+      .run("job-resident-queue-earlier");
+    await expect(reserve(later, "job-resident-queue-later")).rejects.toMatchObject({
+      code: "PORT_CONFLICT",
+      details: { reasonCode: "WORKSPACE_OCCUPIED" },
+    });
+    const earlierEnvironment = first.record.identity.environmentId;
+    await store.requestStop({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: earlierEnvironment,
+      stopIntentId: `${earlierEnvironment}-stop`,
+      reason: "run_cancelled",
+      stoppedResourceRefs: [],
+    });
+    await store.acceptRelease({
+      authority: SERVICE_AUTHORITY,
+      now: T1,
+      environmentId: earlierEnvironment,
+      proof: { basis: "create_not_dispatched" },
+    });
+    const second = await reserve(later, "job-resident-queue-later");
+    expect(second.applied).toBe(true);
+    expect(second.record.identity.runId).toBe(later);
+  } finally {
+    await opened?.close();
+    await f.close();
+  }
+});
+
+it("[R2-P2] keeps a resident environment with its own Run when its sandbox reservation has not committed", async () => {
+  const f = await openSandboxJournal();
+  let opened: SqliteProductStateRepository | undefined;
+  try {
+    opened = await SqliteProductStateRepository.open({
+      stateRoot: f.resource.stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T1,
+    });
+    const share = admission(f, "-resident-keep");
+    const claim = share.workspaces[0];
+    if (!claim) throw new Error("workspace claim required");
+    const runId = createRunId(share.plan.identity.runId);
+    const store = opened.executionEnvironmentStore(OWNER_ID, AGENT_ID);
+    let counter = 0;
+    const reserve = () =>
+      store.reserve({
+        authority: SERVICE_AUTHORITY,
+        now: T1,
+        runId,
+        hostId: share.plan.identity.hostId,
+        role: "primary",
+        rotationReason: "initial",
+        backendRef: R2P2_BACKEND,
+        envelope: residentQueueEnvelope(claim),
+        policyDigest: "a".repeat(64),
+        imageDigest: "b".repeat(64),
+        runnerDigest: "c".repeat(64),
+        deadlineAt: T2,
+        leases: [claim],
+        ids: {
+          executionJobId: `execution-job-resident-keep-${++counter}`,
+          environmentId: `environment-resident-keep-${counter}`,
+          createIntentId: `create-resident-keep-${counter}`,
+        },
+        requestJobId: share.plan.identity.jobId,
+      });
+    const first = await reserve();
+    expect(first.applied).toBe(true);
+    const reused = await reserve();
+    expect(reused.applied).toBe(false);
+    expect(reused.record.identity.environmentId).toBe(first.record.identity.environmentId);
+    expect(reused.record.leases.map((lease) => lease.ref)).toEqual([claim.ref]);
+    expect(reused.record.leases[0]?.canonicalRootId).toBe(claim.canonicalRootId);
+    const readRun = await store.readRun(runId);
+    expect(readRun?.environments).toHaveLength(1);
+    expect(readRun?.environments[0]?.state).toBe("reserved");
+  } finally {
+    await opened?.close();
+    await f.close();
+  }
 });

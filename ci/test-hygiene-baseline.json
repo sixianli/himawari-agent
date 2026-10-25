@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "mode": "report",
+  "entries": [
+    {
+      "path": "apps/agent-service/test/pi-coding-program.unit.test.ts",
+      "kind": "module-reset",
+      "count": 1
+    },
+    {
+      "path": "apps/agent-service/test/production-package-entry.unit.test.ts",
+      "kind": "production-source-read",
+      "count": 1
+    },
+    {
+      "path": "apps/agent-service/test/web-search-program.unit.test.ts",
+      "kind": "module-reset",
+      "count": 1
+    },
+    {
+      "path": "packages/persistence-sqlite/test/sqlite-worker-protocol.unit.test.ts",
+      "kind": "module-reset",
+      "count": 1
+    },
+    {
+      "path": "packages/platform-node/test/execution-uds-transport.contract.test.ts",
+      "kind": "real-wait",
+      "count": 2
+    },
+    {
+      "path": "packages/platform-node/test/git-workspace-adapter.unit.test.ts",
+      "kind": "real-wait",
+      "count": 1
+    },
+    {
+      "path": "packages/platform-node/test/http-gateway-server.contract.test.ts",
+      "kind": "real-wait",
+      "count": 2
+    },
+    {
+      "path": "packages/platform-node/test/sandbox-runtime-digest-worker.unit.test.ts",
+      "kind": "module-reset",
+      "count": 3
+    },
+    {
+      "path": "packages/runtime-sandbox/test/job-host-main.unit.test.ts",
+      "kind": "module-reset",
+      "count": 1
+    },
+    {
+      "path": "test/integration/container-browser-qualification.test.ts",
+      "kind": "real-wait",
+      "count": 4
+    },
+    {
+      "path": "test/integration/container-execution-backend-qualification.test.ts",
+      "kind": "real-wait",
+      "count": 5
+    },
+    {
+      "path": "test/integration/container-runtime-restart-qualification.test.ts",
+      "kind": "real-wait",
+      "count": 1
+    },
+    {
+      "path": "test/integration/durable-phase-process-recovery.test.ts",
+      "kind": "real-wait",
+      "count": 1
+    },
+    {
+      "path": "test/integration/execution-worker-process.test.ts",
+      "kind": "real-wait",
+      "count": 2
+    },
+    {
+      "path": "test/integration/production-approval-subscription.test.ts",
+      "kind": "real-wait",
+      "count": 1
+    },
+    {
+      "path": "test/integration/production-http-composition-process.test.ts",
+      "kind": "real-wait",
+      "count": 3
+    },
+    {
+      "path": "test/integration/production-srt-task-environment.test.ts",
+      "kind": "real-wait",
+      "count": 6
+    },
+    {
+      "path": "test/integration/thread-run-lifecycle.test.ts",
+      "kind": "real-wait",
+      "count": 1
+    },
+    {
+      "path": "test/tooling/gate-lifecycle.test.mjs",
+      "kind": "module-reset",
+      "count": 1
+    },
+    {
+      "path": "test/tooling/resources.test.mjs",
+      "kind": "module-reset",
+      "count": 2
+    }
+  ]
+}

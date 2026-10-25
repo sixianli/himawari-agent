@@ -293,6 +293,31 @@ describe("治理原始来源闭包", () => {
     expect(verifyGovernance(fixture()).files).toBe(5);
   });
 
+  it("忽略访达在快照各层写入的 .DS_Store", () => {
+    const directory = fixture();
+    for (const folder of ["", "scripts", "references"])
+      writeFileSync(join(directory, "tools/document-governance", folder, ".DS_Store"), "Finder");
+    expect(verifyGovernance(directory).files).toBe(5);
+  });
+
+  it.each([
+    ["名字相近的文件", "scripts/DS_Store"],
+    ["名为 .DS_Store 的目录里的文件", "scripts/.DS_Store/extra.py"],
+    ["其他未登记文件", "scripts/extra.py"],
+  ])("%s仍算未登记文件", (_kind, name) => {
+    const directory = fixture();
+    const path = join(directory, "tools/document-governance", name);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "unregistered");
+    expect(() => verifyGovernance(directory)).toThrow("治理快照包含未登记文件");
+  });
+
+  it("名为 .DS_Store 的符号链接仍被拒绝", () => {
+    const directory = fixture();
+    symlinkSync("/etc/hosts", join(directory, "tools/document-governance/scripts/.DS_Store"));
+    expect(() => verifyGovernance(directory)).toThrow("治理目录不接受符号链接");
+  });
+
   it("缺少任一导入模块则失败", () => {
     const directory = fixture();
     rmSync(join(directory, "tools/document-governance/scripts/runbook.py"));

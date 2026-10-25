@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
+import { sandboxHostFailureDetailSchema } from "@himawari-agent/execution-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type JobHostRequest,
@@ -64,6 +65,73 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("Job Host admission and observation", () => {
+  it.each([false, true])(
+    "freezes task stdout before host close and rejects a contradictory final result: %s",
+    async (contradictory) => {
+      const process = child();
+      const host = prepareSandboxJobHost(request());
+      process.emitMessage({
+        type: "ready",
+        jobId: "job",
+        attemptId: "attempt",
+        policyDigest: "a".repeat(64),
+      });
+      await host.ready;
+      host.start();
+      process.emitMessage({
+        type: "started",
+        pid: 4321,
+        taskIdentityRef: "sandbox-process:22222222-2222-2222-2222-222222222222",
+        taskStartedAt: new Date().toISOString(),
+      });
+      process.emitMessage({
+        type: "output",
+        channel: "stdout",
+        bytes: Buffer.from("original").toString("base64"),
+      });
+      process.emitMessage({
+        type: "output",
+        channel: "stderr",
+        bytes: Buffer.from("stderr").toString("base64"),
+      });
+      process.emitMessage({
+        type: "completed",
+        exitCode: 0,
+        reason: "exited",
+        taskProcessExited: true,
+        stdioClosed: true,
+      });
+      expect(await host.completed).toEqual({
+        exitCode: 0,
+        reasonCode: "exited",
+        taskProcessExited: true,
+      });
+      expect(Buffer.from(host.readOutput(0, 16, "stdout").bytes).toString()).toBe("original");
+      expect(host.readOutput(0, 16, "stdout").end).toBe(true);
+      let closed = false;
+      void host.result.then(() => {
+        closed = true;
+      });
+      await Promise.resolve();
+      expect(closed).toBe(false);
+      process.emitMessage({
+        type: "result",
+        exitCode: contradictory ? 1 : 0,
+        reason: "exited",
+        taskStarted: true,
+        taskProcessExited: true,
+        stdioClosed: true,
+        srtReset: true,
+        taskProcessGroupGone: true,
+      });
+      process.emit("close");
+      expect(await host.result).toMatchObject(
+        contradictory
+          ? { reason: "host_failure", exitCode: null }
+          : { reason: "exited", exitCode: 0 },
+      );
+    },
+  );
   it("separates task acknowledgement from preparation and reads bounded output without restarting", async () => {
     const process = child();
     const input = request();
@@ -270,6 +338,39 @@ it("returns observed resource usage without converting it into cleanup confirmat
   });
 });
 
+it.each([
+  [true, true, "process_group_gone"],
+  [true, false, "unknown"],
+  [false, true, "unknown"],
+] as const)(
+  "reports the task group gone only from a started task's own completion: started %s, group gone %s",
+  async (started, groupGone, cleanup) => {
+    const process = child();
+    const input = request();
+    const host = prepareSandboxJobHost(input);
+    process.emitMessage({
+      type: "ready",
+      jobId: "job",
+      attemptId: "attempt",
+      policyDigest: input.policyDigest,
+    });
+    await host.ready;
+    if (started) host.start();
+    process.emitMessage({
+      type: "result",
+      reason: "exited",
+      resources: null,
+      taskStarted: started,
+      taskProcessExited: started,
+      stdioClosed: true,
+      srtReset: true,
+      taskProcessGroupGone: groupGone,
+    });
+    process.emit("close");
+    expect((await host.result).taskTreeCleanup).toBe(started ? cleanup : "not_started");
+  },
+);
+
 it("expires supervision and rejects replaced boot identities without granting a new start", async () => {
   vi.useFakeTimers();
   const process = child();
@@ -326,6 +427,7 @@ it("renews the Worker lease while attached and stops renewing after completion",
   vi.useFakeTimers();
   const process = child();
   const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps: [] });
   await vi.advanceTimersByTimeAsync(500);
   const heartbeats = process.send.mock.calls.filter(([message]) => message.type === "heartbeat");
   expect(heartbeats.length).toBe(2);
@@ -352,4 +454,397 @@ it("does not renew supervision from a delayed message", async () => {
   expect(() => host.start()).toThrow();
   process.emit("close");
   await host.result;
+});
+
+it("requires current authority for each original network check and never caches success", async () => {
+  const worker = child();
+  const input = request();
+  const authority = vi
+    .fn()
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error("revoked"));
+  const host = prepareSandboxJobHost(
+    { ...input, policy: { ...input.policy, allowedDomains: ["example.com:443"] } },
+    undefined,
+    authority,
+  );
+  worker.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  worker.emitMessage({ type: "authority_check", checkId: 1 });
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 1, allowed: true }),
+      expect.any(Function),
+    ),
+  );
+  worker.emitMessage({ type: "authority_check", checkId: 2 });
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 2, allowed: false }),
+      expect.any(Function),
+    ),
+  );
+  expect(authority).toHaveBeenCalledTimes(2);
+  worker.emit("close");
+  await host.result;
+});
+
+it("rejects network-enabled preparation without a current authority callback before forking", () => {
+  const input = request();
+  const calls = fork.mock.calls.length;
+  expect(() =>
+    prepareSandboxJobHost({
+      ...input,
+      policy: { ...input.policy, allowedDomains: ["example.com:443"] },
+    }),
+  ).toThrow("JOB_HOST_NETWORK_AUTHORITY_REQUIRED");
+  expect(fork.mock.calls.length).toBe(calls);
+});
+
+it("does not authorize a late successful check after cancellation", async () => {
+  const worker = child();
+  const input = request();
+  let allow!: () => void;
+  const authority = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        allow = resolve;
+      }),
+  );
+  const host = prepareSandboxJobHost(
+    { ...input, policy: { ...input.policy, allowedDomains: ["example.com:443"] } },
+    undefined,
+    authority,
+  );
+  worker.emitMessage({
+    type: "ready",
+    jobId: input.jobId,
+    attemptId: input.attemptId,
+    policyDigest: input.policyDigest,
+  });
+  await host.ready;
+  host.start();
+  worker.emitMessage({ type: "authority_check", checkId: 1 });
+  expect(authority).toHaveBeenCalledTimes(1);
+  host.cancel();
+  allow();
+  await vi.waitFor(() =>
+    expect(worker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "authority_result", checkId: 1, allowed: false }),
+      expect.any(Function),
+    ),
+  );
+  expect(
+    worker.send.mock.calls.filter(([m]) => m.type === "authority_result" && m.allowed),
+  ).toEqual([]);
+  worker.emit("close");
+  expect((await host.result).taskTreeCleanup).toBe("unknown");
+});
+
+it("retains only bounded infrastructure failure stages outside tool output", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "diagnostic", stage: "sdk_initialize", systemCode: "EIO" });
+  process.emitMessage({ type: "diagnostic", stage: "secret-content", systemCode: "private-value" });
+  process.emit("close");
+  const result = await host.result;
+  expect(result.diagnostic).toEqual({ stage: "sdk_initialize", systemCode: "EIO" });
+  expect(result.stdout.byteLength).toBe(0);
+  expect(result.stderr.byteLength).toBe(0);
+});
+
+it("preserves authenticated failure detail and rejects unbounded private fields", async () => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  const detail = {
+    code: "JOB_HOST_WORKER_LEASE_INVALID",
+    command: "heartbeat",
+    phase: "ready",
+    elapsedMs: 2500,
+    messageAgeMs: 1600,
+    deadlineRemainingMs: 5000,
+    expectedSequence: 3,
+    receivedSequence: 3,
+    text: null,
+    steps: [
+      { stage: "sdk_initialize", startedMs: 40, elapsedMs: 900 },
+      { stage: "launch", startedMs: 940, elapsedMs: null },
+    ],
+  };
+  process.emitMessage({ type: "diagnostic", stage: "launch", systemCode: "UNKNOWN", detail });
+  process.emitMessage({
+    type: "diagnostic",
+    stage: "launch",
+    systemCode: "UNKNOWN",
+    detail: { ...detail, code: "private-error" },
+  });
+  process.emit("close");
+  expect((await host.result).diagnostic).toEqual({
+    stage: "launch",
+    systemCode: "UNKNOWN",
+    detail,
+  });
+});
+
+it("retains the parent heartbeat expiry as the first private failure", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps: [] });
+  await vi.advanceTimersByTimeAsync(1750);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "request",
+    systemCode: "UNKNOWN",
+    detail: {
+      code: "JOB_HOST_HEARTBEAT_EXPIRED",
+      command: "heartbeat",
+      phase: "preparing",
+      receivedSequence: null,
+    },
+  });
+});
+
+it("[R2-D23] gives a silent new Job Host the startup window before the original lease applies", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(process.send.mock.calls.map(([message]) => message.type)).toEqual(["prepare"]);
+  process.emitMessage({ type: "heartbeat", steps: [] });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(process.send.mock.calls.filter(([message]) => message.type === "heartbeat").length).toBe(
+    2,
+  );
+  await vi.advanceTimersByTimeAsync(1250);
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    detail: { code: "JOB_HOST_HEARTBEAT_EXPIRED", phase: "preparing", expectedSequence: 2 },
+  });
+});
+
+it("[R2-D23] classifies a Job Host that never reports as a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(9900);
+  expect(process.send.mock.calls.some(([message]) => message.type === "cancel")).toBe(false);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "request",
+    systemCode: "UNKNOWN",
+    detail: {
+      code: "JOB_HOST_STARTUP_TIMEOUT",
+      phase: "preparing",
+      expectedSequence: 1,
+      receivedSequence: null,
+    },
+  });
+});
+
+it("[R2-D23] keeps a caller cancellation during startup instead of a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  host.cancel();
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(
+    process.send.mock.calls
+      .filter(([message]) => message.type === "cancel")
+      .map(([message]) => message.reason),
+  ).toEqual(["cancelled"]);
+  process.emit("close");
+  await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+  expect((await host.result).diagnostic).toBeUndefined();
+});
+
+it("[R2-D23] keeps a first-message authentication failure instead of a startup timeout", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 60000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(2000);
+  process.emitMessage({
+    type: "heartbeat",
+    steps: [],
+    sessionId: "00000000-0000-4000-8000-000000000000",
+  });
+  await vi.advanceTimersByTimeAsync(9000);
+  expect(
+    process.send.mock.calls
+      .filter(([message]) => message.type === "cancel")
+      .map(([message]) => message.reason),
+  ).toEqual(["host_failure"]);
+  process.emit("close");
+  await expect(host.ready).rejects.toThrow("JOB_HOST_NOT_READY");
+  expect((await host.result).diagnostic).toBeUndefined();
+});
+
+it("[R2-D23] keeps the task deadline when it ends before the startup window", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost({
+    ...request(),
+    deadlineAt: new Date(Date.now() + 3000).toISOString(),
+  });
+  await vi.advanceTimersByTimeAsync(3250);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    detail: { code: "JOB_HOST_EXECUTION_DEADLINE" },
+  });
+});
+
+it("[R2-L7] reports the last step the Job Host announced before it went silent", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  const steps = [
+    { stage: "dependencies", startedMs: 30, elapsedMs: 400 },
+    { stage: "policy", startedMs: 430, elapsedMs: null },
+  ];
+  process.emitMessage({ type: "heartbeat", steps });
+  await vi.advanceTimersByTimeAsync(1750);
+  process.emit("close");
+  expect((await host.result).diagnostic).toMatchObject({
+    stage: "policy",
+    detail: { code: "JOB_HOST_HEARTBEAT_EXPIRED", phase: "preparing", steps },
+  });
+});
+
+it.each([
+  ["missing", undefined],
+  ["unknown stage", [{ stage: "private-stage", startedMs: 1, elapsedMs: null }]],
+  ["extra field", [{ stage: "policy", startedMs: 1, elapsedMs: null, path: "/private" }]],
+  [
+    "too many steps",
+    Array.from({ length: 17 }, () => ({ stage: "policy", startedMs: 1, elapsedMs: 1 })),
+  ],
+])("[R2-L7] stops a Job Host whose heartbeat steps are %s", async (_name, steps) => {
+  const process = child();
+  const host = prepareSandboxJobHost(request());
+  process.emitMessage({ type: "heartbeat", steps });
+  expect(
+    process.send.mock.calls.some(
+      ([message]) => message.type === "cancel" && message.reason === "host_failure",
+    ),
+  ).toBe(true);
+  process.emit("close");
+  expect(JSON.stringify((await host.result).diagnostic ?? null)).not.toContain("private");
+});
+
+describe("Job Host deadline classification", () => {
+  it.each([
+    {
+      name: "task deadline before the preparation limit",
+      deadlineMs: 1000,
+      elapsedMs: 1001,
+      code: "JOB_HOST_EXECUTION_DEADLINE",
+      reason: "deadline",
+    },
+    {
+      name: "preparation limit before the task deadline",
+      deadlineMs: 45000,
+      elapsedMs: 30001,
+      code: "JOB_HOST_PREPARATION_TIMEOUT",
+      reason: "host_failure",
+    },
+    {
+      name: "task deadline equal to the preparation limit",
+      deadlineMs: 30000,
+      elapsedMs: 30001,
+      code: "JOB_HOST_EXECUTION_DEADLINE",
+      reason: "deadline",
+    },
+  ])("classifies $name despite clock movement between timer registrations", async (scenario) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T00:00:00.000Z"));
+    const schedule = globalThis.setTimeout;
+    let firstTimeout = true;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+      const timer = schedule(callback, milliseconds, ...args);
+      if (firstTimeout) {
+        firstTimeout = false;
+        vi.setSystemTime(Date.now() + 1);
+      }
+      return timer;
+    });
+    const process = child();
+    const input = {
+      ...request(),
+      deadlineAt: new Date(Date.now() + scenario.deadlineMs).toISOString(),
+    };
+    const host = prepareSandboxJobHost(input);
+    const heartbeat = setInterval(() => process.emitMessage({ type: "heartbeat", steps: [] }), 100);
+    await vi.advanceTimersByTimeAsync(scenario.elapsedMs);
+    const cancellations = process.send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "cancel");
+    process.emitMessage({ type: "result", reason: cancellations[0]?.reason, taskStarted: false });
+    process.emit("exit");
+    process.emit("close");
+    clearInterval(heartbeat);
+    const result = await host.result;
+    expect(result.diagnostic?.detail?.code).toBe(scenario.code);
+    expect(cancellations.map((message) => message.reason)).toEqual([scenario.reason]);
+    expect(result.reason).toBe(scenario.reason);
+    expect(result.taskStarted).toBe(false);
+    expect(process.send.mock.calls.some(([message]) => message.type === "start")).toBe(false);
+    expect(() => host.start()).toThrow();
+  });
+
+  it.each(["cancelled", "closed"] as const)(
+    "does not classify queued timeout callbacks after the host is %s",
+    async (state) => {
+      vi.useFakeTimers();
+      const callbacks: Array<() => void> = [];
+      const schedule = globalThis.setTimeout;
+      vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, milliseconds, ...args) => {
+        callbacks.push(() => callback(...args));
+        return schedule(callback, milliseconds, ...args);
+      });
+      const classify = vi.spyOn(sandboxHostFailureDetailSchema, "parse");
+      const process = child();
+      const host = prepareSandboxJobHost(request());
+      const queuedCallbacks = [...callbacks];
+      if (state === "cancelled") host.cancel();
+      else process.emit("close");
+      for (const callback of queuedCallbacks) callback();
+      if (state === "cancelled") process.emit("close");
+      const result = await host.result;
+      expect(classify).not.toHaveBeenCalled();
+      expect(result.diagnostic).toBeUndefined();
+      expect(process.send.mock.calls.filter(([message]) => message.type === "cancel")).toHaveLength(
+        state === "cancelled" ? 1 : 0,
+      );
+    },
+  );
 });

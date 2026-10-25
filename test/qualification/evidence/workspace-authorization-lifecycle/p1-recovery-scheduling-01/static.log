@@ -1,0 +1,40 @@
+
+> himawari-agent@0.0.0 check:boundaries
+> node scripts/check-boundaries.mjs
+
+Dependency boundary check passed for 16 workspaces.
+
+> himawari-agent@0.0.0 check:v0.2-coverage
+> node scripts/check-v0.2-coverage.mjs
+
+v0.2 coverage check passed for 79 requirements, 53 acceptance IDs, and 10 Specs/Plans.
+
+> himawari-agent@0.0.0 check:v0.2-invariants
+> node scripts/check-v0.2-invariants.mjs
+
+{"status":"passed","errors":[],"scannedSourceFiles":357,"scannedPackageFiles":27,"reviewedRoutes":20}
+
+> himawari-agent@0.0.0 check:secrets
+> node scripts/scan-machine-secrets.mjs
+
+{"status":"passed","scannedFiles":2635}
+
+> himawari-agent@0.0.0 check:ci-policy
+> node scripts/ci/check-policy.mjs
+
+{
+  "status": "passed",
+  "baseSha": "5f7a415c6533f3335cb5eb9ffcbb9c13cae18cd1",
+  "initialization": false,
+  "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "files": 291,
+  "projects": {
+    "unit": 129,
+    "contracts": 23,
+    "integration": 79,
+    "e2e": 1,
+    "pi-compat": 12,
+    "tooling": 38
+  }
+}

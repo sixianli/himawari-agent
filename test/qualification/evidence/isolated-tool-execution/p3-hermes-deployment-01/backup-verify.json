@@ -1,0 +1,20 @@
+{
+  "outputSchemaVersion": 1,
+  "command": "backup.verify",
+  "backupId": "before-c71adbd-2026-09-27",
+  "ownerId": "owner-james-26b80231-cdeb-4ad9-bb02-850541005fff",
+  "agentId": "agent-himawari-626217e1-dcd6-464f-9758-72c5b5b638b3",
+  "deploymentId": "deployment-hermes-9e8dc197-146e-4465-bbd1-4246eb2fc96f",
+  "schemaVersion": "32",
+  "authorityEpoch": 1,
+  "manifestRef": "recovery-point:before-c71adbd-2026-09-27:manifest:v1",
+  "digest": "sha256:ff0fb3ecdae6a9c5d954187b000582252c11797428772e77f4f312c039df0919",
+  "verifiedAt": "2026-09-27T09:36:06.526Z",
+  "createdAt": "2026-09-27T09:36:04.461Z",
+  "retainUntil": "2026-10-27T09:36:04.461Z",
+  "fileCount": 1,
+  "payloadCount": 14880,
+  "outboxRowCount": 709,
+  "fullIntegrityCheck": "ok",
+  "quickIntegrityCheck": "ok"
+}

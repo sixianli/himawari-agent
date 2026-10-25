@@ -1,0 +1,57 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/governance-control-center.test.ts (17 tests | 2 failed) 53ms
+     × acknowledges the same approval decision from another device without a second grant 19ms
+     × paginates a stable approval list and rejects an unknown cursor 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/governance-control-center.test.ts > S4 Task 11 governance Control Center boundary > acknowledges the same approval decision from another device without a second grant
+ApplicationPortError: Approval approval-governance-ui cannot be resolved from its current revision
+ ❯ InMemoryAuthorizationStore.resolveApproval packages/testing/src/in-memory/authorization.ts:96:13
+     94|       return frozenCopy(current);
+     95|     if (current.revision !== input.expectedRevision || current.status …
+     96|       throw new ApplicationPortError(
+       |             ^
+     97|         PORT_ERROR_CODES.CONFLICT,
+     98|         `Approval ${current.id} cannot be resolved from its current re…
+ ❯ ApprovalService.respond packages/application/src/services/approval-service.ts:46:38
+ ❯ GovernanceGatewayV2ControlPlane.#respondApproval packages/application/src/services/governance-gateway-adapter.ts:806:22
+ ❯ GovernanceGatewayV2ControlPlane.execute packages/application/src/services/governance-gateway-adapter.ts:600:23
+ ❯ test/integration/governance-control-center.test.ts:338:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/governance-control-center.test.ts > governance recovery and read boundaries > paginates a stable approval list and rejects an unknown cursor
+AssertionError: expected { schemaVersion: 'gateway.v2', …(12) } to match object { payload: { …(2) } }
+(22 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "payload": {
+      "itemRefs": [
+        "approval-governance-ui",
+      ],
+-     "nextCursor": "approval-governance-ui",
++     "nextCursor": null,
+    },
+  }
+
+ ❯ test/integration/governance-control-center.test.ts:801:7
+    799|         query("approval.list", "page-one", { status: null, afterCursor…
+    800|       ),
+    801|     ).toMatchObject({ payload: { itemRefs: [setup.approval.id], nextCu…
+       |       ^
+    802|     expect(
+    803|       await setup.reads.query(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 15 passed (17)
+   Start at  19:11:05
+   Duration  795ms (transform 530ms, setup 0ms, import 649ms, tests 53ms, environment 0ms)

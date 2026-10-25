@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts (13 tests | 1 failed) 4242ms
+   × v2 lifecycle: pi-fixed-without-target 207ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts > v2 lifecycle: pi-fixed-without-target
+AssertionError: expected "vi.fn()" to be called at least once
+ ❯ test/integration/sandbox-v2-worker-lifecycle.test.ts:385:23
+    383|     expect(facts.resource).toMatchObject({ supervision: "lost", cleanu…
+    384|   }
+    385|   expect(host.cancel).toHaveBeenCalled();
+       |                       ^
+    386|   await worker.shutdown();
+    387| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 passed (13)
+   Start at  20:58:46
+   Duration  5.70s (transform 869ms, setup 0ms, import 1.37s, tests 4.24s, environment 0ms)

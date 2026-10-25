@@ -373,8 +373,18 @@ describe("operations page user contracts", () => {
     expect(button.disabled).toBe(true);
     expect(mutate).not.toHaveBeenCalled();
   });
+  it("[R2-U5] reports a failed reflection change as rejected, never as still submitting", async () => {
+    detail = snapshot("reflection.snapshot");
+    mutate.mockRejectedValueOnce({ status: 503 });
+    await render({ route: { ...input.route, surfaceId: "reflection" } });
+    await click("reflection.configure");
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("CONTROL_CENTER_REQUEST_REJECTED");
+    expect(container.textContent).toContain("mutation.rejected");
+    expect(container.textContent).not.toContain("mutation.pending");
+  });
   it.each([401, 409, 503])(
-    "preserves operation truth after mutation failure %s",
+    "[R2-U5] preserves operation truth after mutation failure %s and reports it as rejected",
     async (status) => {
       detail = snapshot("task.snapshot");
       mutate.mockRejectedValueOnce({ status });
@@ -391,6 +401,8 @@ describe("operations page user contracts", () => {
             ? "CONTROL_CENTER_REAUTHENTICATION_REQUIRED"
             : "CONTROL_CENTER_REQUEST_REJECTED",
         );
+      expect(container.textContent).toContain("mutation.rejected");
+      expect(container.textContent).not.toContain("mutation.pending");
     },
   );
 });

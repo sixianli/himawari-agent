@@ -1,0 +1,44 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > adds an independent execution-state query without changing the strict legacy snapshot 3ms
+ × |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > describes the execution environment without internal identities or command text 3ms
+   → $.type: expected one of thread.create, thread.message.submit, thread.message.submit_configured, thread.run.cancel, thread.message.commit_assistant, thread.rename, thread.pin, thread.archive, thread.restore, thread.fork, thread.set_answer_locale, thread.trash, thread.delete_permanently, thread.task.resolve, thread.deletion_impact, thread.events, thread.list, thread.detail, thread.execution, thread.execution_snapshot, thread.execution_state, thread.execution_state_snapshot, thread.search, thread.lineage, thread.checkpoint, thread.snapshot, thread.collection_snapshot, thread.detail_snapshot, thread.search_snapshot, thread.lineage_snapshot, thread.checkpoint_snapshot, thread.deletion_impact_snapshot, thread.command_result, thread.conflict, thread.event
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > rejects invented phases, timing and unknown action commands in execution state 1ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > freezes idempotent revision-checked message admission 1ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > freezes lifecycle, locale, Fork and opaque search contracts 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > requires explicit task resolution and one-time permanent-delete authorization 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > freezes collection, detail, conflict and durable event subscription responses 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > rejects stale-compatible zero revision 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > rejects unknown field injection 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > rejects invalid locale 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > displayable execution records > preserves empty and bounded display content without treating it as a machine identifier 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > displayable execution records > rejects non-text or oversized execution input 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > displayable execution records > rejects non-text or oversized execution input 0ms
+ ✓ |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > displayable execution records > rejects non-text or oversized execution input 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |contracts| packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts > Thread Gateway v3 contracts > describes the execution environment without internal identities or command text
+ContractValidationError: $.type: expected one of thread.create, thread.message.submit, thread.message.submit_configured, thread.run.cancel, thread.message.commit_assistant, thread.rename, thread.pin, thread.archive, thread.restore, thread.fork, thread.set_answer_locale, thread.trash, thread.delete_permanently, thread.task.resolve, thread.deletion_impact, thread.events, thread.list, thread.detail, thread.execution, thread.execution_snapshot, thread.execution_state, thread.execution_state_snapshot, thread.search, thread.lineage, thread.checkpoint, thread.snapshot, thread.collection_snapshot, thread.detail_snapshot, thread.search_snapshot, thread.lineage_snapshot, thread.checkpoint_snapshot, thread.deletion_impact_snapshot, thread.command_result, thread.conflict, thread.event
+ ❯ fail packages/gateway-contracts/src/validation.ts:21:9
+     19|
+     20| function fail(path: string, message: string): never {
+     21|   throw new ContractValidationError(path, message);
+       |         ^
+     22| }
+     23|
+ ❯ Object.parse packages/gateway-contracts/src/validation.ts:42:9
+ ❯ readType packages/gateway-contracts/src/thread-contracts-v3.ts:684:52
+ ❯ Object.parseThreadGatewayMessage [as parse] packages/gateway-contracts/src/thread-contracts-v3.ts:691:24
+ ❯ packages/gateway-contracts/test/thread-contracts-v3.contract.test.ts:75:39
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'CONTRACT_VALIDATION_ERROR', path: '$.type' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  13:08:06
+   Duration  193ms (transform 63ms, setup 0ms, import 82ms, tests 11ms, environment 0ms)

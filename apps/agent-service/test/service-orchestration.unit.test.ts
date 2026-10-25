@@ -1,3 +1,4 @@
+// biome-ignore-all lint/complexity/useLiteralKeys: mock repository uses dynamic ports
 import { PassThrough } from "node:stream";
 import { EXECUTION_UDS_ERROR_CODES, ExecutionUdsError } from "@himawari-agent/platform-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -128,6 +129,7 @@ const authority = {
   fencingToken: 1,
 };
 let configuration: ReturnType<typeof config>;
+let mockListenPort = 43117;
 let repository: {
   close: ReturnType<typeof vi.fn>;
   startupRecovery: ReturnType<typeof vi.fn>;
@@ -178,6 +180,7 @@ function config() {
     modelDescriptors,
     secretReferences: [{ ref: "payload-kek", version: "v1", purpose: "payload-encryption" }],
     deadlines: { runMs: 1000, workerRequestMs: 150, providerRequestMs: 1000 },
+    concurrency: { totalRuns: 2, foregroundReserved: 1, perCategory: {} },
   };
 }
 function start() {
@@ -204,6 +207,7 @@ beforeEach(() => {
   signal = undefined;
   exit = undefined;
   boundary.events = [];
+  mockListenPort = 43117;
   configuration = config();
   boundary.load.mockImplementation(async () => configuration);
   output = new PassThrough();
@@ -250,6 +254,7 @@ beforeEach(() => {
     "authorityLeasePort",
     "sandboxJobJournal",
     "sandboxExecutionJournal",
+    "sandboxExecutionPreparations",
     "capabilityInvocationReceiptPort",
     "capabilityInvocationResultPort",
   ])
@@ -320,6 +325,27 @@ afterEach(async () => {
 });
 
 describe("agent service startup ownership", () => {
+  it("[R2-T6] reports the actual bound listen port in service.ready", async () => {
+    web();
+    start();
+    await settle();
+    const line = stdout
+      .split("\n")
+      .find((candidate) => candidate.includes('"event":"service.ready"'));
+    if (!line) throw new Error("SERVICE_READY_MISSING");
+    expect(JSON.parse(line).listenPort).toBe(mockListenPort);
+  });
+  it("[R2-T6] reports port 80 as 80 instead of the URL default", async () => {
+    mockListenPort = 80;
+    web();
+    start();
+    await settle();
+    const line = stdout
+      .split("\n")
+      .find((candidate) => candidate.includes('"event":"service.ready"'));
+    if (!line) throw new Error("SERVICE_READY_MISSING");
+    expect(JSON.parse(line).listenPort).toBe(80);
+  });
   it("recovers before publishing boot, connects the worker, then drains in dependency order", async () => {
     start();
     await settle();
@@ -423,6 +449,178 @@ describe("agent service startup ownership", () => {
   });
 });
 
+describe("resource recovery without web Run dispatch", () => {
+  it("starts after recovery and worker readiness, then drains before its dependencies close", async () => {
+    let recoverySignal: AbortSignal | undefined;
+    let finish: (() => void) | undefined;
+    const recoverPending = vi.fn(async (signal_: AbortSignal) => {
+      recoverySignal = signal_;
+      boundary.events.push("resource-recovery.start");
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      boundary.events.push("resource-recovery.finished");
+    });
+    boundary.recoverExecutions.mockImplementation(async () => {
+      boundary.events.push("recovery.register");
+    });
+    boundary.connect.mockImplementation(async () => {
+      boundary.events.push("worker.ready");
+      return { payload: { ready: true, selectedSchemaVersion: "execution.v2" } };
+    });
+    boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+    start();
+    await settle();
+    expect(stdout).toContain('"event":"service.ready"');
+    expect(recoverPending).toHaveBeenCalledWith(expect.any(AbortSignal), 2);
+    expect(boundary.events.indexOf("resource-recovery.start")).toBeGreaterThan(
+      boundary.events.indexOf("recovery.register"),
+    );
+    expect(boundary.events.indexOf("resource-recovery.start")).toBeGreaterThan(
+      boundary.events.indexOf("worker.ready"),
+    );
+    expect(boundary.runs).not.toHaveBeenCalled();
+    expect(boundary.modelComposition).not.toHaveBeenCalled();
+    expect(boundary.http).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(recoverPending).toHaveBeenCalledOnce();
+    signal?.();
+    await settle();
+    expect(recoverySignal?.aborted).toBe(true);
+    expect(repository.close).not.toHaveBeenCalled();
+    finish?.();
+    await settle();
+    expect(await exit).toBe(0);
+    expect(boundary.events.indexOf("resource-recovery.finished")).toBeLessThan(
+      boundary.events.indexOf("repository.close"),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(recoverPending).toHaveBeenCalledOnce();
+  });
+
+  it.each(["worker", "payload", "authority"])(
+    "does not start resource scans after %s startup failure",
+    async (stage) => {
+      const recoverPending = vi.fn(async () => {});
+      boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+      if (stage === "worker")
+        boundary.connect.mockRejectedValue(new Error("WORKER_STARTUP_FAILED"));
+      if (stage === "payload")
+        boundary.payloadStart.mockRejectedValue(new Error("PAYLOAD_STARTUP_FAILED"));
+      if (stage === "authority")
+        boundary.connect.mockImplementation(async () => {
+          boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+          return { payload: { ready: true, selectedSchemaVersion: "execution.v2" } };
+        });
+      start();
+      await settle();
+      expect(await exit).toBe(1);
+      expect(recoverPending).not.toHaveBeenCalled();
+      expect(stdout).not.toContain('"event":"service.ready"');
+      expect(repository.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["signal", "authority"])("cancels a running recovery on %s shutdown", async (cause) => {
+    let received: AbortSignal | undefined;
+    const recoverPending = vi.fn(async (input: AbortSignal) => {
+      received = input;
+      await new Promise<void>((resolve) =>
+        input.addEventListener("abort", () => resolve(), { once: true }),
+      );
+    });
+    boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+    start();
+    await settle();
+    expect(recoverPending).toHaveBeenCalledOnce();
+    if (cause === "signal") signal?.();
+    else boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT_AUTHORITY_LOST"));
+    await settle();
+    expect(received?.aborted).toBe(true);
+    expect(await exit).toBe(cause === "signal" ? 0 : 1);
+    expect(repository.close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(recoverPending).toHaveBeenCalledOnce();
+  });
+
+  it("ends startup/runtime on recovery storage failure without retrying or exposing diagnostics", async () => {
+    const recoverPending = vi.fn(async () => {
+      throw new Error("private database failure");
+    });
+    boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+    start();
+    await settle();
+    expect(recoverPending).toHaveBeenCalledOnce();
+    expect(await exit).toBe(1);
+    expect(stderr).toContain('"event":"runtime.failed"');
+    expect(stderr).not.toContain("private database failure");
+    expect(repository.close).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(recoverPending).toHaveBeenCalledOnce();
+  });
+
+  it("checks current authority before every fallback scan", async () => {
+    const recoverPending = vi.fn(async () => {});
+    boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+    start();
+    await settle();
+    expect(recoverPending).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(recoverPending).toHaveBeenCalledTimes(2);
+    lease.assertActive.mockRejectedValue(new Error("AGENT_AUTHORITY_LOST"));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await exit).toBe(1);
+    expect(recoverPending).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds shutdown even when a faulty recovery port ignores cancellation", async () => {
+    let release: (() => void) | undefined;
+    const recoverPending = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    boundary.sandbox.mockResolvedValue({ resources: { recoverPending } });
+    start();
+    await settle();
+    expect(recoverPending).toHaveBeenCalledOnce();
+    signal?.();
+    await settle();
+    expect(repository.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(configuration.deadlines.providerRequestMs + 30000);
+    expect(repository.close).toHaveBeenCalledOnce();
+    expect(await exit).toBe(1);
+    expect(stderr).toContain('"event":"service.failed"');
+    release?.();
+    await settle();
+    expect(recoverPending).toHaveBeenCalledOnce();
+  });
+
+  it.each(["public", "built-in"])(
+    "leaves %s resource recovery on its existing Run loop without a second scanner",
+    async (mode) => {
+      const f = web();
+      if (mode === "built-in") {
+        configuration.publicMode = false;
+        configuration.identity = { kind: "built-in" };
+      }
+      const resources = {
+        recoverPending: vi.fn(async () => {}),
+        stopRun: vi.fn(async () => ({ released: true })),
+      };
+      boundary.sandbox.mockResolvedValue({ resources });
+      start();
+      await settle();
+      expect(stdout).toContain('"event":"service.ready"');
+      expect(boundary.runs.mock.calls[0]?.[0].resources).toBe(resources);
+      expect(f.runs.loop.start).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(resources.recoverPending).not.toHaveBeenCalled();
+    },
+  );
+});
+
 function web() {
   const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   const primary = {
@@ -502,10 +700,11 @@ function web() {
   };
   boundary.runs.mockReturnValue(runs);
   const http = {
-    app: { addHook: vi.fn() },
+    app: { addHook: vi.fn(), server: { address: () => ({ port: mockListenPort }) } },
     assertIdentityReady: vi.fn(),
     listen: vi.fn(async () => {
       boundary.events.push("http.listen");
+      return `http://127.0.0.1:${mockListenPort}`;
     }),
     close: vi.fn(async () => {
       boundary.events.push("http.close");
@@ -515,6 +714,117 @@ function web() {
   return { model, memory, runs, http, port };
 }
 describe("web service composition and readiness", () => {
+  it("registers specialist pricing without asking Pi to present the reviewer", async () => {
+    const f = web();
+    const primary = f.model.descriptors.generation[0];
+    if (!primary) throw new Error("PRIMARY_FIXTURE_MISSING");
+    f.model.descriptors.generation.push({
+      ...primary,
+      ref: "review-specialist",
+      api: "typesafe-systemone",
+      routingClass: "specialist",
+      provider: "typesafe",
+      model: "jev-latest",
+      cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+    });
+    start();
+    await settle();
+    expect(boundary.runs.mock.calls[0]?.[0].modelRegistry).toContainEqual(
+      expect.objectContaining({
+        ref: "review-specialist",
+        estimatedCostMicros: Math.ceil(65_536 * 0.042),
+      }),
+    );
+    expect(boundary.http.mock.calls[0]?.[0].modelCatalog).toMatchObject([{ ref: "primary" }]);
+    expect(f.model.composition.piModels.resolve).toHaveBeenCalledWith("primary");
+    expect(f.model.composition.piModels.resolve).not.toHaveBeenCalledWith("review-specialist");
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+  });
+  it("binds the default model admission to the Run boot lease consumer", async () => {
+    const f = web();
+    const gate = {
+      context: { ownerId: authority.ownerId, agentId: authority.agentId, runId: "run-fixture" },
+      begin: vi.fn(),
+    };
+    f.runs.admission.mockReturnValue(gate);
+    repository["runDispatch"] = vi.fn((_ownerId, _agentId, _fence, _lease, consumerId) => ({
+      currentExecutionLease: vi.fn(async () => ({
+        executionLeaseId: "execution-fixture",
+        revision: 1,
+        authorityLeaseId: "lease-entry",
+        deploymentId: authority.id,
+        authorityEpoch: 1,
+        fencingToken: 1,
+        consumerId,
+        releasedAt: null,
+      })),
+    }));
+    start();
+    await settle();
+    const runOptions = boundary.runs.mock.calls[0]?.[0];
+    const modelOptions = boundary.modelComposition.mock.calls[0]?.[0];
+    expect(modelOptions.admission).toEqual(expect.any(Function));
+    expect(
+      await modelOptions.admission({
+        ownerId: authority.ownerId,
+        agentId: authority.agentId,
+        runId: "run-fixture",
+      }),
+    ).toBe(gate);
+    expect(repository["runDispatch"]).toHaveBeenCalledWith(
+      authority.ownerId,
+      authority.agentId,
+      expect.anything(),
+      expect.anything(),
+      runOptions.instanceId,
+    );
+    expect(f.runs.admission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionLease: expect.objectContaining({ consumerId: runOptions.instanceId }),
+      }),
+    );
+    signal?.();
+    await settle();
+    expect(await exit).toBe(0);
+  });
+  it("closes title consumers even when the Run loop drain rejects", async () => {
+    const f = web();
+    f.runs.loop.stop.mockRejectedValue(new Error("RUN_DRAIN_FAILED"));
+    start();
+    await settle();
+    signal?.();
+    await settle();
+    expect(await exit).toBe(1);
+    expect(f.runs.titles.stop).toHaveBeenCalledOnce();
+    expect(repository.close).toHaveBeenCalledOnce();
+    expect(f.model.composition.close).toHaveBeenCalledOnce();
+  });
+
+  it("stops background scans while Run interruption is still draining", async () => {
+    const f = web();
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    f.runs.coordinator.interruptAllExecutions.mockImplementation(() => pending);
+    start();
+    await settle();
+    try {
+      signal?.();
+      await settle();
+      expect(f.runs.loop.stop).toHaveBeenCalledOnce();
+      expect(repository.close).not.toHaveBeenCalled();
+    } finally {
+      finish();
+    }
+    await settle();
+    expect(await exit).toBe(0);
+    expect(f.runs.loop.stop).toHaveBeenCalledOnce();
+    expect(repository.close).toHaveBeenCalledOnce();
+  });
+
   it.each(["linux", "darwin"])(
     "opens HTTP only after memory and dispatch are ready on %s, then closes models after consumers",
     async (platform) => {
@@ -549,36 +859,47 @@ describe("web service composition and readiness", () => {
       expect(boundary.events.at(-1)).toBe("repository.close");
     },
   );
-  it.each(["models", "memory", "identity", "key", "dispatch", "listen", "drain", "model-close"])(
-    "cleans up acquired resources after %s failure",
-    async (kind) => {
-      const f = web();
-      if (kind === "models")
-        boundary.modelComposition.mockRejectedValue(new Error("MODEL_FIXTURE_FAILURE"));
-      if (kind === "memory")
-        boundary.memoryComposition.mockRejectedValue(new Error("MEMORY_FIXTURE_FAILURE"));
-      if (kind === "identity")
-        f.http.assertIdentityReady.mockRejectedValue(new Error("IDENTITY_FIXTURE_FAILURE"));
-      if (kind === "key") boundary.key.mockRejectedValue(new Error("HOST_SECRET_NOT_FOUND"));
-      if (kind === "dispatch") f.runs.loop.start.mockRejectedValue(new Error("RUN_START_FAILURE"));
-      if (kind === "listen") f.http.listen.mockRejectedValue(new Error("EADDRINUSE"));
-      if (kind === "drain") f.runs.loop.stop.mockResolvedValue({ drained: false });
-      if (kind === "model-close")
-        f.model.composition.close.mockRejectedValue(new Error("MODEL_CLOSE_FAILURE"));
-      start();
+  it.each([
+    "models",
+    "memory",
+    "identity",
+    "key",
+    "dispatch",
+    "listen",
+    "interrupt",
+    "drain",
+    "model-close",
+  ])("cleans up acquired resources after %s failure", async (kind) => {
+    const f = web();
+    if (kind === "models")
+      boundary.modelComposition.mockRejectedValue(new Error("MODEL_FIXTURE_FAILURE"));
+    if (kind === "memory")
+      boundary.memoryComposition.mockRejectedValue(new Error("MEMORY_FIXTURE_FAILURE"));
+    if (kind === "identity")
+      f.http.assertIdentityReady.mockRejectedValue(new Error("IDENTITY_FIXTURE_FAILURE"));
+    if (kind === "key") boundary.key.mockRejectedValue(new Error("HOST_SECRET_NOT_FOUND"));
+    if (kind === "dispatch") f.runs.loop.start.mockRejectedValue(new Error("RUN_START_FAILURE"));
+    if (kind === "listen") f.http.listen.mockRejectedValue(new Error("EADDRINUSE"));
+    if (kind === "interrupt")
+      f.runs.coordinator.interruptAllExecutions.mockRejectedValue(
+        new Error("RUN_INTERRUPT_FAILURE"),
+      );
+    if (kind === "drain") f.runs.loop.stop.mockResolvedValue({ drained: false });
+    if (kind === "model-close")
+      f.model.composition.close.mockRejectedValue(new Error("MODEL_CLOSE_FAILURE"));
+    start();
+    await settle();
+    if (kind === "interrupt" || kind === "drain" || kind === "model-close") {
+      signal?.();
       await settle();
-      if (kind === "drain" || kind === "model-close") {
-        signal?.();
-        await settle();
-      }
-      expect(await exit).toBe(1);
-      expect(stderr).toContain('"event":"service.failed"');
-      expect(repository.close).toHaveBeenCalledOnce();
-      expect(lease.stop).toHaveBeenCalledOnce();
-      if (kind !== "models") expect(f.model.composition.close).toHaveBeenCalledOnce();
-      if (!["models", "memory"].includes(kind)) expect(f.memory.close).toHaveBeenCalledOnce();
-    },
-  );
+    }
+    expect(await exit).toBe(1);
+    expect(stderr).toContain('"event":"service.failed"');
+    expect(repository.close).toHaveBeenCalledOnce();
+    expect(lease.stop).toHaveBeenCalledOnce();
+    if (kind !== "models") expect(f.model.composition.close).toHaveBeenCalledOnce();
+    if (!["models", "memory"].includes(kind)) expect(f.memory.close).toHaveBeenCalledOnce();
+  });
   it.each(["run", "memory"])("withdraws readiness when the %s consumer fails", async (kind) => {
     web();
     start();

@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "inputs": 1088,
+  "changed": [],
+  "added": [],
+  "excluded": [
+    "docs/",
+    "test/qualification/evidence/"
+  ]
+}

@@ -17,6 +17,7 @@ import {
 import { validateQualityPolicy } from "./quality-policy.mjs";
 import { observeResources } from "./resources.mjs";
 import { redactText } from "./security-redaction.mjs";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 export async function quality({
   check,
@@ -36,7 +37,10 @@ export async function quality({
   if (existsSync(directory)) throw new Error("CI_QUALITY_OUTPUT_EXISTS");
   mkdirSync(directory, { recursive: true });
   const started = Date.now();
-  const temporaryDirectory = mkdtempSync("/tmp/hci-");
+  const temporaryRootValue = env.HIMAWARI_TEST_TEMP_ROOT ?? process.env.HIMAWARI_TEST_TEMP_ROOT;
+  const temporaryDirectory = mkdtempSync(
+    `${testTemporaryRoot({ HIMAWARI_TEST_TEMP_ROOT: temporaryRootValue })}/hci-`,
+  );
   const resourceObserver = await observeResources({ root, toolsDirectory, temporaryDirectory });
   const report = {
     schemaVersion: 1,
@@ -83,6 +87,7 @@ export async function quality({
           .filter((key) => env[key] !== undefined)
           .map((key) => [key, env[key]]),
       ),
+      ...(temporaryRootValue === undefined ? {} : { HIMAWARI_TEST_TEMP_ROOT: temporaryRootValue }),
       HIMAWARI_CI_PYTHON: tools.python,
       HIMAWARI_CI_NPM: tools.npmCli,
       PLAYWRIGHT_BROWSERS_PATH:
@@ -98,8 +103,7 @@ export async function quality({
       report.commands.push({ name, ...result });
       if (result.exitCode !== 0) throw new Error(`CI_QUALITY_COMMAND_FAILED:${name}`);
     };
-    if (check === "scale" || check === "thread-scale") {
-      const prefix = check === "scale" ? "HIMAWARI_SCALE" : "HIMAWARI_THREAD_SCALE";
+    if (check === "scale" || check === "thread-scale" || check === "container") {
       const tests = path.join(directory, "tests.json");
       const evidence = path.join(directory, "measurement.json");
       await run(
@@ -111,17 +115,13 @@ export async function quality({
           "--config",
           "vitest.workspace.ts",
           "--project",
-          check === "scale" ? "qualification-scale" : "qualification-thread-scale",
+          `qualification-${check}`,
           "--maxWorkers",
           "1",
           "--reporter=json",
           `--outputFile=${tests}`,
         ],
-        {
-          [`${prefix}_QUALIFICATION`]: "1",
-          [`${prefix}_WRITE_EVIDENCE`]: "1",
-          [`${prefix}_EVIDENCE_PATH`]: evidence,
-        },
+        qualificationEnvironment(check, evidence, env),
       );
       report.observations.push({
         counts: vitestCounts(readJson(tests)),
@@ -237,6 +237,33 @@ export async function quality({
     { flag: "wx" },
   );
   return report;
+}
+
+function qualificationEnvironment(check, evidence, env) {
+  if (check === "container") {
+    const runtime = {
+      HIMAWARI_CONTAINER_DOCKER_CLI: env.HIMAWARI_CONTAINER_DOCKER_CLI,
+      HIMAWARI_CONTAINER_DOCKER_HOST: env.HIMAWARI_CONTAINER_DOCKER_HOST,
+      HIMAWARI_CONTAINER_RUNNER_IMAGE_ID: env.HIMAWARI_CONTAINER_RUNNER_IMAGE_ID,
+    };
+    if (Object.values(runtime).some((value) => !value))
+      throw new Error("CI_QUALITY_CONTAINER_RUNTIME_REQUIRED");
+    return {
+      HIMAWARI_CONTAINER_QUALIFICATION: "1",
+      HIMAWARI_LIVE_SANDBOX_PROBE: "1",
+      HIMAWARI_CONTAINER_EVIDENCE_PATH: evidence,
+      ...runtime,
+      ...(env.HIMAWARI_CONTAINER_WORK_ROOT
+        ? { HIMAWARI_CONTAINER_WORK_ROOT: env.HIMAWARI_CONTAINER_WORK_ROOT }
+        : {}),
+    };
+  }
+  const prefix = check === "scale" ? "HIMAWARI_SCALE" : "HIMAWARI_THREAD_SCALE";
+  return {
+    [`${prefix}_QUALIFICATION`]: "1",
+    [`${prefix}_WRITE_EVIDENCE`]: "1",
+    [`${prefix}_EVIDENCE_PATH`]: evidence,
+  };
 }
 
 export async function main(argv = process.argv.slice(2)) {

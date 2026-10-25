@@ -1,0 +1,8 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  12 passed | 138 skipped (150)
+   Start at  17:54:12
+   Duration  6.44s (transform 1.75s, setup 0ms, import 2.61s, tests 3.57s, environment 0ms)

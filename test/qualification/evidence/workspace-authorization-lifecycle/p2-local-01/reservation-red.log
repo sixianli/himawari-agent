@@ -1,0 +1,37 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/authorization-capability-governance.test.ts (24 tests | 1 failed) 40ms
+     × persists frozen Approval, requires recent auth for CRITICAL, and consumes one-time Grant idempotently 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/authorization-capability-governance.test.ts > S4 authorization and capability governance > persists frozen Approval, requires recent auth for CRITICAL, and consumes one-time Grant idempotently
+AssertionError: expected { Object (id, revision, ...) } to match object { uses: +0, spentCostMicros: +0 }
+(27 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "spentCostMicros": 0,
+-   "uses": 0,
++   "spentCostMicros": 100,
++   "uses": 1,
+  }
+
+ ❯ test/integration/authorization-capability-governance.test.ts:398:20
+    396|     ).resolves.toMatchObject({ decision: "ALLOW", basis: { type: "gran…
+    397|     const stored = (await store.listGrants(OWNER_ID, AGENT_ID))[0];
+    398|     expect(stored).toMatchObject({ uses: 0, spentCostMicros: 0 });
+       |                    ^
+    399|
+    400|     const critical = intent({ id: "critical-approval", actionKind: "PU…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 passed (24)
+   Start at  19:15:27
+   Duration  908ms (transform 599ms, setup 0ms, import 735ms, tests 40ms, environment 0ms)

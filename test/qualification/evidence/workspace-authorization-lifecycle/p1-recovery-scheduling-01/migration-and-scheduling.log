@@ -1,0 +1,68 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (28 tests | 4 failed) 5752ms
+     × releases verified bound resources while preserving unknown operation results 299ms
+     × retains queued work across a repository reopen and rejects its stale revision 316ms
+     × releases verified bound resources while preserving unknown operation results 83ms
+     × retains queued work across a repository reopen and rejects its stale revision 83ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > releases verified bound resources while preserving unknown operation results
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > releases verified bound resources while preserving unknown operation results
+AssertionError: expected { plan: { …(20) }, …(6) } to match object { workspaceBlocked: false, …(2) }
+(78 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "facts": {
+      "resource": {
+-       "supervision": "released",
++       "supervision": "lost",
+      },
+    },
+    "recovery": {
+      "attempts": 1,
+      "nextAttemptAt": null,
+-     "reasonCode": "SANDBOX_RECONCILIATION_CONFIRMED",
+-     "status": "resolved",
++     "reasonCode": "SANDBOX_RECONCILIATION_UNCONFIRMED",
++     "status": "unresolved",
+    },
+-   "workspaceBlocked": false,
++   "workspaceBlocked": true,
+  }
+
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:245:21
+    243|       await service.pump(new AbortController().signal, 1);
+    244|       const after = await f.journal.read(f.identity);
+    245|       expect(after).toMatchObject({ workspaceBlocked: false, facts: { …
+       |                     ^
+    246|         recovery: { status: "resolved", attempts: 1, nextAttemptAt: nu…
+    247|       expect(after?.facts.result).toEqual(before?.facts.result);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > retains queued work across a repository reopen and rejects its stale revision
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > retains queued work across a repository reopen and rejects its stale revision
+SqlitePersistenceError: The state root is already owned by a live process
+ ❯ acquireStateRootLock packages/persistence-sqlite/src/state-root-lock.ts:140:13
+    138|     }
+    139|     if (current.host !== hostname() || isProcessAlive(current.pid)) {
+    140|       throw new SqlitePersistenceError(
+       |             ^
+    141|         SQLITE_PERSISTENCE_ERROR_CODES.STATE_ROOT_LOCKED,
+    142|         "The state root is already owned by a live process",
+ ❯ Function.open packages/persistence-sqlite/src/product-state-repository.ts:190:18
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:261:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  4 failed | 64 passed (68)
+   Start at  12:50:43
+   Duration  26.93s (transform 2.75s, setup 0ms, import 4.20s, tests 25.14s, environment 0ms)

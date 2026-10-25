@@ -34,6 +34,8 @@ for (const [address, prefix] of [
 ] as const)
   reserved.addSubnet(address, prefix, "ipv6");
 
+const PROXY_CHALLENGE = 'Basic realm="himawari-egress"';
+
 export function isPublicEgressAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) return !reserved.check(address, "ipv4");
@@ -70,9 +72,19 @@ function endToEnd(headers: IncomingMessage["headers"]) {
 /** One Job Host owns one upstream. It accepts HTTP and CONNECT from SRT;
  * SRT translates SOCKS into CONNECT. No TLS interception, credential injection,
  * redirects, environment proxy discovery, or DNS cache is performed here. */
-export async function openNetworkEgress(allowedDomains: readonly string[]) {
+export async function openNetworkEgress(
+  allowedDomains: readonly string[],
+  assertCurrent: () => Promise<void>,
+  listen: { readonly host: string; readonly port: number; readonly token: string } = {
+    host: "127.0.0.1",
+    port: 0,
+    token: randomBytes(32).toString("hex"),
+  },
+) {
+  if (typeof assertCurrent !== "function") throw new Error("EGRESS_AUTHORITY_REQUIRED");
+  if (!/^[a-f0-9]{64}$/.test(listen.token)) throw new Error("EGRESS_TOKEN_INVALID");
   const allowed = new Set(allowedDomains);
-  const token = randomBytes(32).toString("hex");
+  const token = listen.token;
   const expectedAuth = Buffer.from(`Basic ${Buffer.from(`job:${token}`).toString("base64")}`);
   const sockets = new Set<Socket>();
   let stopped = false;
@@ -96,6 +108,8 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
       deniedTargets++;
       throw new Error("denied");
     }
+    await assertCurrent();
+    if (stopped || client.destroyed) throw new Error("stopped");
     // Check every answer, then dial a numeric IP; no second resolver invocation.
     const addresses = await lookup(host, { all: true, verbatim: true });
     if (stopped || client.destroyed) throw new Error("stopped");
@@ -104,13 +118,15 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
       deniedAddresses++;
       throw new Error("denied");
     }
+    await assertCurrent();
+    if (stopped || client.destroyed) throw new Error("stopped");
     return selected;
   }
   const server = createServer(
     { maxHeaderSize: 16384, requestTimeout: 10000, headersTimeout: 10000 },
     (req, res) => {
       if (!authenticated(req)) {
-        res.writeHead(407);
+        res.writeHead(407, { "Proxy-Authenticate": PROXY_CHALLENGE });
         res.end();
         return;
       }
@@ -167,7 +183,9 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
   server.on("connect", (req, clientStream, head) => {
     const client = clientStream as Socket;
     if (!authenticated(req)) {
-      client.end("HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n");
+      client.end(
+        `HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: ${PROXY_CHALLENGE}\r\nConnection: close\r\n\r\n`,
+      );
       return;
     }
     const timer = setTimeout(() => client.destroy(), 10000);
@@ -208,7 +226,7 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
   server.on("clientError", (_error, socket) => socket.destroy());
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(listen.port, listen.host, () => {
       server.removeListener("error", reject);
       resolve();
     });
@@ -218,10 +236,23 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("EGRESS_BIND_FAILED");
+  // TLS contents are opaque. Bound continued use of established tunnels using
+  // the existing Job Host heartbeat cadence; never cache an authority success.
+  let checking = false;
+  const authorityTimer = setInterval(() => {
+    if (stopped || checking || sockets.size === 0) return;
+    checking = true;
+    void assertCurrent()
+      .catch(() => close())
+      .finally(() => {
+        checking = false;
+      });
+  }, 250);
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     if (closing) return closing;
     stopped = true;
+    clearInterval(authorityTimer);
     const draining = [...sockets].map(
       (socket) =>
         new Promise<void>((resolve) => {
@@ -235,7 +266,7 @@ export async function openNetworkEgress(allowedDomains: readonly string[]) {
     ]).then(() => {});
     return closing;
   }
-  const url = `http://job:${token}@127.0.0.1:${address.port}`;
+  const url = `http://job:${token}@${listen.host}:${address.port}`;
   return Object.freeze({
     parentProxy: Object.freeze({ http: url, https: url, noProxy: "" }),
     close,

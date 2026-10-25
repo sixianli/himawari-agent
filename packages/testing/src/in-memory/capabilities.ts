@@ -1,3 +1,4 @@
+import type { InMemoryAuthorizationStore } from "./authorization.js";
 import type {
   CapabilityDescriptor,
   CapabilityExecutionHandle,
@@ -60,8 +61,13 @@ export class InMemoryCapabilityRegistryStore
   private readonly handles = new Map<string, CapabilityExecutionHandle>();
   private readonly failures: FailureScheduler;
 
-  constructor(failures: FailureScheduler = NO_FAILURES) {
+  private readonly authorization: InMemoryAuthorizationStore | undefined;
+  constructor(
+    failures: FailureScheduler = NO_FAILURES,
+    authorization?: InMemoryAuthorizationStore,
+  ) {
     this.failures = failures;
+    this.authorization = authorization;
   }
 
   async create(record: CapabilityRegistryRecord): Promise<CapabilityRegistryRecord> {
@@ -132,6 +138,7 @@ export class InMemoryCapabilityRegistryStore
 
   async createExecutionHandle(
     handle: CapabilityExecutionHandle,
+    options?: { authorizationReservationId: string },
   ): Promise<CapabilityExecutionHandle> {
     this.failures.checkpoint("capabilityHandle.create");
     if (this.handles.has(handle.ref)) {
@@ -140,6 +147,28 @@ export class InMemoryCapabilityRegistryStore
         `Capability handle ${handle.ref} already exists`,
         { handleRef: handle.ref },
       );
+    }
+    if (options) {
+      if (!this.authorization)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Reservation store is not connected",
+        );
+      const existing = this.authorization.bindReservationHandle(
+        options.authorizationReservationId,
+        handle as GovernedCapabilityExecutionHandle,
+        {
+          read: () => this.handles.get(handle.ref) as GovernedCapabilityExecutionHandle,
+          revoke: (now) => {
+            const stored = this.handles.get(handle.ref) as GovernedCapabilityExecutionHandle;
+            this.handles.set(
+              handle.ref,
+              frozenCopy({ ...stored, revision: stored.revision + 1, revokedAt: now }),
+            );
+          },
+        },
+      );
+      if (existing) return existing;
     }
     this.handles.set(handle.ref, frozenCopy(handle));
     return frozenCopy(handle);
@@ -166,7 +195,8 @@ export class InMemoryCapabilityRegistryStore
     if (current.revokedAt !== null) return frozenCopy(current);
     const revoked = frozenCopy({ ...current, revokedAt });
     this.handles.set(handleRef, revoked);
-    return frozenCopy(revoked);
+    this.authorization?.releaseUnusedHandle(handleRef, revokedAt);
+    return frozenCopy(this.handles.get(handleRef) ?? revoked);
   }
 
   async consumeExecutionHandle(
@@ -197,6 +227,11 @@ export class InMemoryCapabilityRegistryStore
         `Capability handle ${input.handleRef} is not consumable`,
       );
     }
+    this.authorization?.commitReservationHandle(
+      current.ref,
+      input.idempotencyKey,
+      input.consumedAt,
+    );
     const consumed: GovernedCapabilityExecutionHandle = frozenCopy({
       ...current,
       revision: current.revision + 1,
@@ -236,6 +271,7 @@ export class InMemoryCapabilityRegistryStore
       this.handles.set(ref, frozenCopy(ended));
       count += 1;
     }
+    this.authorization?.releaseRun(runId, endedAt);
     return count;
   }
 }

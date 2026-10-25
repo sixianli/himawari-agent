@@ -1,0 +1,40 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-execution-preparation.test.ts (22 tests | 3 failed) 5190ms
+     × rejects changing the persisted queued request at admission: claim 259ms
+     × rejects changing the persisted queued request at admission: contract 187ms
+     × does not give one invocation two queue identities or two places in line 194ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: claim
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > rejects changing the persisted queued request at admission: contract
+AssertionError: expected [Function] to throw an error
+ ❯ test/integration/sandbox-execution-preparation.test.ts:88:51
+     86|         if (change === "deadline")
+     87|           changed.plan = { ...changed.plan, effectiveDeadlineAt: "2026…
+     88|         expect(() => call(f, "reserve", changed)).toThrow();
+       |                                                   ^
+     89|         expect(f.database.prepare("SELECT count(*) FROM capability_inv…
+     90|         expect(f.database.prepare("SELECT count(*) FROM sandbox_worksp…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-preparation.test.ts > atomic execution reservation and runtime binding > does not give one invocation two queue identities or two places in line
+AssertionError: expected [Function] to throw an error
+ ❯ test/integration/sandbox-execution-preparation.test.ts:108:11
+    106|         plan: { ...first.plan, identity },
+    107|         reservation: { ...first.reservation, identity },
+    108|       })).toThrow();
+       |           ^
+    109|       expect(f.database.prepare("SELECT count(*) FROM sandbox_admissio…
+    110|     } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 19 passed (22)
+   Start at  18:43:47
+   Duration  6.64s (transform 845ms, setup 0ms, import 1.35s, tests 5.19s, environment 0ms)

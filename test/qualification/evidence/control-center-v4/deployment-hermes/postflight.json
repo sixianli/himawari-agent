@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-15T23:42:10.980522+00:00",
+  "sourceCommit": "0600b2958432a4592a52e5c01cf92794a7af7121",
+  "runtimeDigest": "fa74f6a8e5fd245027887dc6b9fc92227a90bf1d7e3b817fe4e01591a82ca005",
+  "livePhysicalMountVerified": true,
+  "configChangedTopLevelKeys": [
+    "capabilityDeployment"
+  ],
+  "schema": 32,
+  "activeRuns": [],
+  "unresolvedSandboxRecords": 0,
+  "foreignKeyErrors": 0,
+  "health": {
+    "status": "ready"
+  },
+  "modelCallsByDeployment": 0,
+  "httpStaticFilesMatched": 19,
+  "backupVerified": true
+}

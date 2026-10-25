@@ -12,6 +12,7 @@ import {
 import type { AuthorizationStorePort } from "../ports/authorization.js";
 import type {
   CapabilityExecutionHandle,
+  CapabilityInvocationAuthorityPort,
   CapabilityExecutionHandleStorePort,
   CapabilityPort,
   CapabilityRegistryStorePort,
@@ -42,6 +43,8 @@ export interface ExecutionWorkerServiceDependencies {
   readonly ids: IdGeneratorPort;
   readonly authorityFence?: () => number;
   readonly authorization?: AuthorizationStorePort;
+  /** Production Worker asks the Agent; it must not copy Grants into volatile delegation state. */
+  readonly invocationAuthority?: CapabilityInvocationAuthorityPort;
 }
 
 function sameSecret(left: CapabilitySecretReference, right: CapabilitySecretReference): boolean {
@@ -84,6 +87,7 @@ export class ExecutionWorkerService {
     try {
       for (const secret of request.payload.secretRefs) {
         assertCurrentAuthority?.();
+        await this.assertInvocationAuthority(request);
         const issued = await this.dependencies.secrets.issueHandle({
           ownerId: createOwnerId(request.scope.ownerId),
           agentId: createAgentId(request.scope.agentId),
@@ -99,6 +103,7 @@ export class ExecutionWorkerService {
 
       let terminal = false;
       assertCurrentAuthority?.();
+      await this.assertInvocationAuthority(request);
       for await (const event of this.dependencies.capability.invoke({
         invocationId: request.messageId,
         ownerId: createOwnerId(request.scope.ownerId),
@@ -344,7 +349,7 @@ export class ExecutionWorkerService {
     }
     if (
       !this.dependencies.handles.consumeExecutionHandle ||
-      !this.dependencies.authorization ||
+      (!this.dependencies.authorization && !this.dependencies.invocationAuthority) ||
       governed.revision === undefined ||
       governed.authorizationRef === undefined
     ) {
@@ -353,7 +358,8 @@ export class ExecutionWorkerService {
         `Execution request ${request.messageId} cannot revalidate its governed Handle`,
       );
     }
-    await this.assertGovernedAuthorization(handle);
+    if (this.dependencies.invocationAuthority) await this.assertInvocationAuthority(request);
+    else await this.assertGovernedAuthorization(handle);
     await this.dependencies.handles.consumeExecutionHandle({
       handleRef: handle.ref,
       expectedRevision: governed.revision,
@@ -367,6 +373,21 @@ export class ExecutionWorkerService {
       idempotencyKey: request.idempotencyKey,
       consumedAt: this.dependencies.clock.now(),
     });
+  }
+
+  private async assertInvocationAuthority(request: ExecuteWorkRequest): Promise<void> {
+    await this.dependencies.invocationAuthority?.assertCurrent({
+      handleRef: request.payload.capabilityHandleRef,
+      invocationId: request.messageId,
+    });
+    if (
+      this.cancellations.has(request.messageId) ||
+      this.dependencies.clock.now() >= request.payload.deadlineAt
+    )
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "Invocation was cancelled or expired",
+      );
   }
 
   private async assertGovernedAuthorization(handle: CapabilityExecutionHandle): Promise<void> {

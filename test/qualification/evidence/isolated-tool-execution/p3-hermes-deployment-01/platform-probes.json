@@ -1,0 +1,30 @@
+{
+  "pi": {
+    "passed": 22,
+    "allNamespacesReleased": true
+  },
+  "composition": {
+    "passed": true,
+    "cleanup": "confirmed",
+    "replayExecuted": false
+  },
+  "networkAllowed": {
+    "passed": true,
+    "cases": 10,
+    "allPassed": true
+  },
+  "networkBoundary": {
+    "cases": 7,
+    "allDenied": true,
+    "allNamespacesReleased": true,
+    "ssrfCounterexampleConfirmed": false
+  },
+  "workerLoss": {
+    "passed": true,
+    "namespaceState": "released"
+  },
+  "publicSearch": {
+    "passed": true,
+    "cases": 3
+  }
+}

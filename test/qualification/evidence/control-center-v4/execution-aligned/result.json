@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {
+      "locale": "zh-CN",
+      "width": 1280,
+      "passed": true
+    },
+    {
+      "locale": "zh-CN",
+      "width": 320,
+      "passed": true
+    },
+    {
+      "locale": "ja",
+      "width": 393,
+      "passed": true
+    },
+    {
+      "locale": "en",
+      "width": 430,
+      "passed": true
+    }
+  ],
+  "scope": "real browser with isolated HTTP fixture; no production model calls"
+}

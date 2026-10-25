@@ -28,6 +28,34 @@ function entry(
 
 export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
   entry(
+    "sandbox_queue_authority_bindings",
+    "SandboxExecutionPreparationPort",
+    "append-only authority bindings for an immutable unadmitted request",
+    "payload_reference",
+    "retain for audit; update and deletion are forbidden",
+  ),
+  entry(
+    "automatic_action_reviews",
+    "AutomaticReviewStorePort",
+    "durable review identity and source, conditionally resolved through original authorization",
+    "payload_reference",
+    "retain decisions for audit; cascade with retired Run",
+  ),
+  entry(
+    "sandbox_admission_queue",
+    "SandboxExecutionPreparationPort",
+    "fair admission priority without held resources or consumed invocation quota",
+    "payload_reference",
+    "retain while queued; cascade with retired Handle or Run",
+  ),
+  entry(
+    "authorization_reservations",
+    "AuthorizationStorePort",
+    "reserved quota committed at invocation admission or released before dispatch",
+    "payload_reference",
+    "cascade with grant deletion after execution authority is retired",
+  ),
+  entry(
     "built_in_accounts",
     "BuiltInIdentityStatePort",
     "credential revision and bounded login attempts",
@@ -55,6 +83,8 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "sandbox_workspace_occupancy",
     "sandbox_execution_intents",
     "sandbox_legacy_occupancy",
+    "sandbox_release_receipts",
+    "sandbox_workspace_barriers",
   ].map((table) =>
     entry(
       table,
@@ -62,6 +92,29 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
       "durable execution, observations and conservative workspace occupancy",
       "payload_reference",
       "retain while resource or reconciliation obligations exist",
+    ),
+  ),
+  entry(
+    "sandbox_reservation_release_receipts",
+    "SandboxExecutionPreparationPort / SqliteSandboxReservationAdministration",
+    "immutable host release or administrator cleanup with permanent audit binding",
+    "metadata_only",
+    "retain administrator audit and release proof with the original execution history",
+  ),
+  ...[
+    "execution_jobs",
+    "execution_environments",
+    "execution_environment_stop_intents",
+    "execution_environment_leases",
+    "execution_environment_calls",
+    "execution_environment_release_receipts",
+  ].map((table) =>
+    entry(
+      table,
+      "ExecutionEnvironmentStorePort",
+      "task environment identity, lease, stop fence and immutable release for one Run",
+      "metadata_only",
+      "retain until the environment is released; cascade with Run deletion afterwards",
     ),
   ),
   entry(

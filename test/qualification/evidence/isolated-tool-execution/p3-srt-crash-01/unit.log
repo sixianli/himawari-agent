@@ -1,0 +1,644 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 127.0.0.1 2ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 10.1.2.3 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 172.31.1.1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 192.168.1.1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 169.254.169.254 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 100.100.100.200 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 0.0.0.0 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 224.0.0.1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 192.0.2.1 1ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 198.18.0.1 1ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address ::1 5ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address ::ffff:8.8.8.8 3ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address ::ffff:127.0.0.1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 64:ff9b::a00:1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address fe80::1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address fc00::1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 2002:7f00:1:: 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 2001:db8::1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address 3fff::1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects non-public address invalid 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > accepts public unicast 8.8.8.8 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > accepts public unicast 1.1.1.1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > accepts public unicast 2606:4700:4700::1111 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > accepts public unicast 2001:4860:4860::8888 0ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects wrong credentials and unapproved ports without DNS 29ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > challenges unauthenticated HTTP and CONNECT requests with a Basic proxy scheme 9ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > listens on a configured address with a caller-provided token 6ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rejects mixed public/private answers before connecting 2ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > does not dial when a pending resolver completes after revocation 56ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > pins a CONNECT dial to the checked address and closes established tunnels 259ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress.unit.test.ts > per-job public network egress > rechecks current authority after DNS and rejects before an outbound dial 8ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > container execution backend capabilities > declares lifecycle and task egress guarantees, bound to the daemon and pinned images 7ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > container execution backend capabilities > pins a locally built image by its content ID and creates from the verified ID 10ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > container execution backend capabilities > creates registry images from the ID it verified rather than the mutable reference 7ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > container execution backend capabilities > refuses an unreachable daemon, a missing pinned image and a daemon without cgroup v2 2ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > creating a container environment > creates one locked-down container per create intent and starts the protected init 12ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > creating a container environment > refuses inputs it cannot enforce before touching the runtime 4ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > creating a container environment > removes a created container whose effective policy differs and never starts it 4ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > creating a container environment > seals the environment when a stop arrives between create and start 9ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > mounts each approved directory at a fixed target and runs the task as its owner 13ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > removes a created container whose mounts differ from the approved directories 7ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > kills the environment when an approved directory is replaced before the runtime mounts it 7ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > refuses directories it cannot resolve or verify on the host before touching the runtime 13ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > masks protected entries and special files that exist when the environment is created 54ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > refuses protected entries that another name could still reach 66ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting approved host directories > requires Git metadata referenced by the directory to stay inside it 80ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting the installed runtime read-only > mounts the installed runtime read-only and binds its digest into the runner digest 6ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > mounting the installed runtime read-only > refuses a runtime that is missing, not a directory or reached through a link, before the runtime is touched 4ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > refuses to create a writable environment when free space is unknown or below the floor 10ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > kills the whole environment on a growth observation and refuses later execution 190ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > kills the whole environment on a floor observation and refuses later execution 185ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > kills the whole environment on a unavailable observation and refuses later execution 275ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > stops observing once the environment is stopped 133ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > binds its existing Pi executor to the frozen grant and serializes a scoped result 1424ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid process identity arguments [] 30ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > protecting the host disk behind writable directories > resumes the guard from the saved baseline in a new backend before executing 76ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > isolates the task on an internal network whose only route is a started, ready proxy 58ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > refuses a network the runtime did not make internal and host-unreachable 13ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > never creates the task when the proxy does not become ready 22ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid process identity arguments [ 'host-program' ] 99ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid process identity arguments [ 'host-program', …(2) ] 24ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects oversized or malformed protected input 18ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects oversized or malformed protected input 14ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects oversized or malformed protected input 11ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched hostId before creating operations 15ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > closes the egress before the task and proves the stop only when both are stopped 97ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched workerInstanceId before creating operations 21ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched operation before creating operations 13ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched profileRef before creating operations 17ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched expiresAt before creating operations 22ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched cwd before creating operations 40ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > destroys the task, proxy and network and keeps proving the stop 64ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > seals the environment when a stop arrives while the egress proxy is prepared 48ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched home before creating operations 26ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects mismatched tmpdir before creating operations 35ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > uses the verified installed grep binary 42ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > routing task network access through a per-environment egress proxy > kills the proxy together with the task when the disk guard trips 143ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > uses the verified installed find binary 30ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > uses the verified installed bash binary 25ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses a missing installed tool without a PATH fallback 39ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses a symlink installed tool without a PATH fallback 15ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses a directory installed tool without a PATH fallback 17ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > executing in a container environment > runs as the task user and keeps the untrusted output behind a reference 34ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > executing in a container environment > refuses execution after a stop, on another runtime and once the container restarted 34ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses a non-executable installed tool without a PATH fallback 19ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses a outside installed tool without a PATH fallback 22ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects out-of-scope target ../outside 18ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects out-of-scope target .git/config 19ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects out-of-scope target .env 15ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > executing in a container environment > reports a timed-out execution as a failure the caller must stop for 51ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects out-of-scope target .himawari-private/record 58ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid tool arguments null 16ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid tool arguments [] 13ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid tool arguments "text" 18ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > refuses invalid tool arguments {invalid 15ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > exports a protected full result and removes its private filesystem path 22ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > records exactly one independently verified write 24ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects multiple write proofs instead of presenting ambiguous provenance 18ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects concurrent write proofs before accepting either as unique provenance 20ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > maps tool failure to a valid process exit code (0) 22ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > maps tool failure to a valid process exit code (7) 20ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > issues it for the first call only, passes the value outside the arguments and revokes it at the issuer 102ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > refuses an environment that already ran a call, or a backend without an issuer, before issuing 27ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > revokes and refuses a credential whose variables or lifetime exceed what was asked 173ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > revokes the credential when the call times out 17ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > stops the whole environment and withholds the stop proof until the issuer confirms revocation 41ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > maps tool failure to a valid process exit code (300) 32ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects a foreground output exceeding its granted byte ceiling 28ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > streams complete background lines and the final fragment with the real exit result 28ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > blocks unsafe background output (too-large) 27ms
+ ✓ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > blocks unsafe background output (secret) 53ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > revokes the claimed identifier when a stop lands between the claim and the issue 80ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > handing a temporary credential to one call in a fresh environment > revokes by the recorded identifier when the stop arrives before the issue completed 37ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > observing and stopping a container environment > distinguishes running, paused, stopped, missing and untrusted observations 176ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > observing and stopping a container environment > proves a stop only for a stopped, unrestarted container on the same runtime 72ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > observing and stopping a container environment > does not treat a container removed outside the backend as stopped 25ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > observing and stopping a container environment > destroys only a stopped container and keeps proving the stop from the saved record 44ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > creates private job scratch and preserves the policy across repeated preparation 10ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > rejects unsafe scratch: symlink without repairing it 9ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > rejects unsafe scratch: permissions without repairing it 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > rejects unsafe scratch: traversal without repairing it 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > freezes scope before asynchronous directory preparation 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-policy.unit.test.ts > uses an owned private directory as the network-only working directory 6ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > docker command runner > returns the exit code and caps each output stream 73ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > docker command runner > kills the command at its timeout 106ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > docker command runner > passes values to the command without letting them redirect the daemon 44ms
+ ✓ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > docker command runner > does not let the caller's environment redirect the daemon 45ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > separates task acknowledgement from preparation and reads bounded output without restarting 11ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > does not invent a task acknowledgement when the start reply is lost 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > freezes caller input and rejects malformed inputs before forking 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > quotes apostrophes and shell metacharacters as literal argv 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > requires ready and explicit start without inheriting host environment 5ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > rejects changed policy identity and never starts on readiness failure 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > Job Host admission and observation > discards oversized output and keeps cleanup unknown after start intent 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > bounds stdin and keeps binary input out of argv and the host environment 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > returns observed resource usage without converting it into cleanup confirmation 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > reports the task group gone only from a started task's own completion: started true, group gone true 0ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > reports the task group gone only from a started task's own completion: started true, group gone false 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > reports the task group gone only from a started task's own completion: started false, group gone true 0ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > expires supervision and rejects replaced boot identities without granting a new start 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > requests stop when the owned IPC observation window expires 9ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > does not signal a reaped process id when its old pipes close 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > renews the Worker lease while attached and stops renewing after completion 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > does not renew supervision from a delayed message 0ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > requires current authority for each original network check and never caches success 114ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > rejects network-enabled preparation without a current authority callback before forking 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host.unit.test.ts > does not authorize a late successful check after cancellation 58ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > routes egress checks through authenticated IPC and closes egress on a denied answer 148ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > accepts bounded shell diagnostics before the authenticated namespace frame 8ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > never treats diagnostic lines as proof or extends the namespace deadline 44ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > prepares without starting user code, binds namespace before stdin and returns truthful completion 12ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > starts a Mac task on spawn with only its supplied input and preserves cleanup failure 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects null IPC at the intended validation boundary 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects missing type IPC at the intended validation boundary 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects missing session IPC at the intended validation boundary 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects protocol IPC at the intended validation boundary 5ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects sequence gap IPC at the intended validation boundary 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects expired IPC at the intended validation boundary 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects future IPC at the intended validation boundary 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects invalid timestamp IPC at the intended validation boundary 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: environment 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: policy 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: unsupported 22ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: errors 32ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: warnings 8ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-session 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-overlap 40ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-parent 12ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > binds control observations and readiness to the owned job, then finishes its control socket 66ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the linux task starts 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the darwin task starts 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running without a start record when the leader already gone 43ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running without a start record when the identity unreadable 18ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running when writing the start record fails 10ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > ends same-group survivors after the task exits and reports the group gone 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps the stop unconfirmed when the task group is still-present 31ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps the stop unconfirmed when the task group is not-permitted 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > never probes a task group that did not start 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: output 25ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-invalid 51ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-oversize 23ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-error 12ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: spawn-error 5ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: stdin-error 8ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: readiness-false 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: readiness-reject 11ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on deadline 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on lease 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on disconnect 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on SIGTERM 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on cancel 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on send-error 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > does not reset SRT while initialization is still running 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > reports only machine error codes when preparation throws sensitive text 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects execution without its IPC parent 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-network-authority.unit.test.ts > requires a fresh one-shot answer and rejects replayed answers 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-network-authority.unit.test.ts > rejects all pending checks after deny, and a late success cannot restore authority 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-network-authority.unit.test.ts > rejects all pending checks after timeout, and a late success cannot restore authority 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-network-authority.unit.test.ts > rejects all pending checks after disconnect, and a late success cannot restore authority 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-network-authority.unit.test.ts > bounds concurrent pending checks and fails closed when sending fails 13ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > passes the active cancellation signal into preparation before Worker dispatch 33ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > classifies pre-dispatch file version changes for read and replays without dispatch 6ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > classifies pre-dispatch file version changes for write and replays without dispatch 5ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports a tool refused by strict mode as not dispatched and unavailable in strict mode 6ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > binds a protected recovery checkpoint before dispatch and preserves it on replay 15ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports admission refusal as not dispatched and retains a protected diagnostic 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_HANDLE_REVOKED) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_NOT_AUTHORITATIVE) 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps a safe reason for pre-dispatch refusal (PORT_NOT_FOUND) 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never sends a late execute after delegation outlives the caller deadline 12ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > intersects configured resources with the qualified capability before dispatch 5ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > reports a tightened Worker ceiling as a distinct pre-dispatch reason 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > offers a path request without a Handle and never dispatches it before authorization exists 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > does not mistake model-provided approval fields for execution authority 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > caps Worker execution at the parent Run deadline and rejects expired calls 3ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses the delegated Worker and reads only an observed result; restart replays without dispatch 5ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > denies outside reads, shared SRT scratch writes, and network expansion 29ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > runs network-only programs in private scratch without opening a user workspace 21ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > keeps read-only workspaces out of write permissions 19ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > freezes input before asynchronous filesystem resolution 14ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > warns that a failed command may have changed the workspace 4ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses worker end timing only for settled effects (true) 3ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > uses worker end timing only for settled effects (false) 3ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rejects expanded input, cross-Run and revoked handles without dispatch 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > admits at most one dispatch when independent executors race 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (unobserved) or resends uncertain work 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (wrong-scope) or resends uncertain work 27ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (hang) or resends uncertain work 27ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > never discloses an untrusted result (revoke) or resends uncertain work 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > requests stop when authority is withdrawn during a hung event stream: requested 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > requests stop when authority is withdrawn during a hung event stream: unconfirmed 5ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > keeps an unverified cancellation unknown and never resends it 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: succeeded 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: failed 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: null 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > verifies cancellation notifications before settling a tool: undefined 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > denies disclosure of a previously successful result after revocation 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rechecks the live receipt before replaying a saved successful result 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > does not disclose output when the Handle is revoked during decryption 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > ProductionRuntimeTools > rejects reuse of a call identity with changed arguments 3ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > exposes management as Pi extension definitions and sends no Worker request for status 3ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: true 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: false 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > uses Agent verification for Worker result notification: null 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects duplicate exposure references before looking up capabilities 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle ownerId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle agentId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle runId changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle revokedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle workerEndedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle expiresAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle issuedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle issuedAt changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle expiresAt changes 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle authorityFence changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle capabilityVersion changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when live handle handleVersion changes 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > withdraws exposure when the declaration is missing 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects invalid or elapsed execution deadline invalid 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects invalid or elapsed execution deadline 2026-09-06T00:00:00.000Z 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":3} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":"other"} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {"inputRef":"input:tools","extra":true} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not broaden input authority {} 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > rejects a higher data classification without creating execution artifacts 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > does not turn authority storage failures into an ordinary permission refusal 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > hides the built-in file reader when disabled 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {} 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools"} 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools","inputRef":3} 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"unexposed","inputRef":"input:tools"} 4ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses task launch with malformed or unexposed authority {"capabilityHandleRef":"handle:tools","inputRef":"input:tools","extra":true} 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > runtime tool exposure and live authority > refuses to promote a foreground Handle into a managed task 0ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > recovers a persisted sandbox handoff after interruption without executing again 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > delivers a later verified result without resending an unknown operation (success) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > delivers a later verified result without resending an unknown operation (cancelled) 1ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > binds a recovered file output to its verified delivery receipt (true) 2ms
+ ✓ |unit| apps/agent-service/test/production-runtime-tools.unit.test.ts > binds a recovered file output to its verified delivery receipt (false) 1ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > permits only one declared private socket without granting local TCP or other Unix sockets 16ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects secret exceptions, shared private roots and workspace toolchains 16ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects noncanonical directories and symlinks 6ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects a protected path that resolves through a symlink 8ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax *.example.com 6ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax https://example.com 9ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax user:password@example.com 6ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax example.com 3ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax example.com:0 6ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax example.com:65536 6ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax example.com:0443 7ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax 127.0.0.1 21ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects unreviewed domain syntax localhost 7ms
+ ✓ |unit| packages/runtime-sandbox/test/policy.unit.test.ts > SRT candidate policy compilation > rejects raw SDK overrides instead of dropping unknown keys 8ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP composition > authenticates an RS256 assertion, admits a durable Thread run, and replays after restart 1919ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects non-Linux capture before consulting the proc fixture 9ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > binds namespace init to the supplied task ancestry and rechecks its birth marker 4ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects invalid capture identity 1/1/pid:[9001] before reading proc 21ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects invalid capture identity 1.5/1/pid:[9001] before reading proc 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects invalid capture identity 10/0/pid:[9001] before reading proc 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects invalid capture identity 10/1/invalid before reading proc 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > does not treat invalid stored proof {"initPid":1} as released 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > does not treat invalid stored proof {"initPid":2.5} as released 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > does not treat invalid stored proof {"namespaceId":"unknown"} as released 3ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > does not treat invalid stored proof {"initStartTicks":"not-a-birth-marker"} as released 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects same-host capture instead of assuming ownership 25ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects unrelated capture instead of assuming ownership 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects cycle capture instead of assuming ownership 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects missing-init capture instead of assuming ownership 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > rejects over-capacity capture instead of assuming ownership 31ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps owner uncertainty distinct from proven release 1ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps permission uncertainty distinct from proven release 2ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps namespace uncertainty distinct from proven release 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps inner uncertainty distinct from proven release 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps missing-nspid uncertainty distinct from proven release 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps invalid-stat uncertainty distinct from proven release 0ms
+ ✓ |unit| packages/runtime-sandbox/test/linux-namespace.unit.test.ts > Linux namespace identity and release proof > keeps changed-stat uncertainty distinct from proven release 0ms
+ ✓ |unit| packages/runtime-sandbox/test/process-identity.unit.test.ts > readProcessStartToken > reads the same start token for a running process twice 22ms
+ ✓ |unit| packages/runtime-sandbox/test/process-identity.unit.test.ts > readProcessStartToken > reports no token once a process has exited and been reaped 69ms
+ ✓ |unit| packages/runtime-sandbox/test/process-identity.unit.test.ts > readProcessStartToken > refuses an invalid process id and an unsupported platform 8ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenHost=0.0.0.0 1366ms
+ ✓ |unit| packages/runtime-sandbox/test/process-identity.unit.test.ts > processGroupPresent > sees a live group, including one whose leader has exited, and not a vanished group 70ms
+ ✓ |unit| packages/runtime-sandbox/test/process-identity.unit.test.ts > processGroupPresent > refuses an invalid group id 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > binds the exact tool input and recipient to approval before issuing a handle 28ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > rejects an out-of-scope target ../outside 2ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > rejects an out-of-scope target /outside 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > rejects an out-of-scope target a/../note.txt 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > accepts the grant root for directory queries but does not execute without approval 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > does not substitute changed arguments when a request is resumed 2ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > governed coding requests > rejects missing grant disclosure and invalid deadlines before asking permission 2ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > binds public search disclosure to the provider and query without issuing before approval 3ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > rejects invalid public search queries before disclosure approval 2ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > passes cancellation to coding authorization before a handle or file effect exists 4ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes private-only search without a directory and rejects using that binding for files 3ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > associates new content with the verified conflict and asks the original policy again 3ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > blocks invalid conflict regeneration before asking permission: unverified 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > blocks invalid conflict regeneration before asking permission: different-target 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > blocks invalid conflict regeneration before asking permission: different-binding 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > blocks invalid conflict regeneration before asking permission: same-call 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > blocks invalid conflict regeneration before asking permission: limit 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > changes only authority after queue proof and still rejects changed outer tool arguments 2ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > replays a verified Worker conflict as accepted without dispatching or renewing approval 0ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > freezes both directory move paths under the original move permission 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes the actual prepared copy create effect 1ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes the actual prepared copy update effect 0ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes the actual prepared copy move effect 0ms
+ ✓ |unit| apps/agent-service/test/production-coding-workflow.unit.test.ts > authorizes the actual prepared copy trash effect 1ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > wires the trusted transport and closed Pi binding to the same descriptors 10ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > rejects unsafe secret sources and conflicting canonical descriptors 4ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > maps strict configuration into one Pi generation set and an independent embedding descriptor 8ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > keeps a dedicated TypeSafe reviewer outside the two Pi generation routes 2ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > fails closed instead of inventing a Pi route for an unregistered generation provider 1ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > production model composition > composes the selected 4096-dimensional Qwen embedding through Mem0 8ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > selects trusted Run policy and binds instruction content across configuration changes 55ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > propagates Run cancellation and remaining deadline to embedding and retains uncertain spend 11ms
+ ✓ |unit| packages/runtime-sandbox/test/job-command.unit.test.ts > sets proxy variables before launching the executable (replace=false) 111ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > retries only unstarted projection reservations and never repeats an uncertain provider request 12ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > accepts the production embedding descriptor in the real invocation registry 4ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > generates a title through the selected Pi transport (required reasoning: false) 20ms
+ ✓ |unit| apps/agent-service/test/production-model-composition.unit.test.ts > generates a title through the selected Pi transport (required reasoning: true) 6ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > ends members left in the task group after the leader exits and leaves escaped sessions untracked 141ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > reports a group that is already empty without sending a kill signal 3ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > does not report a group as gone when it cannot be signalled 3ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > does not report a group as gone while it still has members at the time limit 31ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > never signals the invalid group id 0 1ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > never signals the invalid group id 1 0ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > never signals the invalid group id -5 0ms
+ ✓ |unit| packages/runtime-sandbox/test/process-group.unit.test.ts > stopProcessGroup > never signals the invalid group id 1.5 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=0 452ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > recovers before publishing boot, connects the worker, then drains in dependency order 17ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for public-incomplete 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for payload-key 1ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for inactive 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for wrong-owner 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for persisted-mismatch 1ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for sqlite 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for open 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for claim 20ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for claimed-fence 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for missing-embedding 1ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for boot 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > fails closed and releases owned resources for worker 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > shuts down the first reverse socket if the second socket cannot start 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > retries a transient transport failure within the declared startup budget 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > agent service startup ownership > loses readiness and stops reverse services when its authority is revoked 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > starts after recovery and worker readiness, then drains before its dependencies close 6ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > does not start resource scans after worker startup failure 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > does not start resource scans after payload startup failure 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > does not start resource scans after authority startup failure 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > cancels a running recovery on signal shutdown 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > cancels a running recovery on authority shutdown 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > ends startup/runtime on recovery storage failure without retrying or exposing diagnostics 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-command.unit.test.ts > sets proxy variables before launching the executable (replace=true) 93ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > binds both private phases to the original model tool checkpoint 114ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > issues separate single-use credentials and feeds real Pi read output back; restart replays both stages 26ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > checks current authority before every fallback scan 22ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > bounds shutdown even when a faulty recovery port ignores cancellation 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > leaves public resource recovery on its existing Run loop without a second scanner 9ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > leaves built-in resource recovery on its existing Run loop without a second scanner 16ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > registers specialist pricing without asking Pi to present the reviewer 6ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > binds the default model admission to the Run boot lease consumer 4ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > closes title consumers even when the Run loop drain rejects 9ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > stops background scans while Run interruption is still draining 4ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > opens HTTP only after memory and dispatch are ready on linux, then closes models after consumers 9ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > opens HTTP only after memory and dispatch are ready on darwin, then closes models after consumers 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after models failure 4ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after memory failure 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after identity failure 2ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after key failure 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after dispatch failure 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after listen failure 4ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after interrupt failure 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after drain failure 4ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > cleans up acquired resources after model-close failure 4ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not share an active execution promise with a different lease attempt 98ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > requires an independent inspect permission 42ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > withdraws readiness when the run consumer fails 10ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > requires an independent read permission 104ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > requires an independent disclose permission 85ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > web service composition and readiness > withdraws readiness when the memory consumer fails 101ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > admits product requests only while all dependencies are ready (ready) 13ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > admits product requests only while all dependencies are ready (worker-unready) 11ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > admits product requests only while all dependencies are ready (dispatcher-stopped) 16ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > admits product requests only while all dependencies are ready (authority-inactive) 11ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > admits product requests only while all dependencies are ready (authority-lost) 6ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > checks the live worker for readiness probes (healthy) 10ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > checks the live worker for readiness probes (false) 19ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > checks the live worker for readiness probes (throws) 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > checks the live worker for readiness probes (authority) 3ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > keeps liveness reachable while dependencies are unavailable 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > logs title-generation failure without exposing its message or stopping chat 9ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > rechecks the memory worker authority at execution time 41ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > does not publish readiness after authority becomes unavailable before-reverse 7ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > does not publish readiness after authority becomes unavailable after-reverse 5ms
+ ✓ |unit| apps/agent-service/test/service-orchestration.unit.test.ts > service request readiness and runtime callbacks > does not publish readiness after authority becomes unavailable after-handshake 4ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unsafe path ../secret before metadata dispatch 7ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unsafe path /outside/note.txt before metadata dispatch 6ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unsafe path a/../note.txt before metadata dispatch 9ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unsafe path ~/note.txt before metadata dispatch 6ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unsafe path note.txt\escape before metadata dispatch 5ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > keeps model authority fields out of the operation input 3ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > keeps denied approval terminal and never probes the target 9ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unavailable directory authority before dispatch: { revokedAt: '2026-09-06T00:00:00.000Z' } 8ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unavailable directory authority before dispatch: { expiresAt: '2026-09-06T00:00:00.000Z' } 5ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects unavailable directory authority before dispatch: { dataClassification: 'restricted' } 5ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects mismatched Worker metadata: hostId 80ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects mismatched Worker metadata: relativePath 58ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects mismatched Worker metadata: identity 16ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects mismatched Worker metadata: extra 10ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not expose internally issued phase Handles as model authorities 27ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > uses the original Pi line range semantics 26ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > rejects a file replaced between inspect and read without reading the replacement 55ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not issue a content read for missing targets 8ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=65536 677ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > parses Mac and Linux CPU times and KiB RSS without reading command lines 7ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > includes child trees and groups, tracks observed reparenting, excludes unrelated processes and PID reuse 1ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > stops on observed cpu overshoot with one bounded ps request at a time 4ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > stops on observed memory overshoot with one bounded ps request at a time 2ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > stops on unavailable observation instead of inventing zero usage 0ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > ignores a late observation after task completion 0ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > sampled task resources > rejects malformed resource limits before launching any process 1ms
+ ✓ |unit| packages/runtime-sandbox/test/resource-observer.unit.test.ts > uses the platform containment contract for a detached process group 0ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not issue a content read for symlink targets 9ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not issue a content read for oversize targets 47ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not resume with changed grant revision, thread, model, or execution lease 28ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > stops at a cancelled Run between phases 15ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not resend an uncertain inspect after restart 47ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not resend an uncertain read after restart 24ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > coalesces concurrent identical calls and rejects changed argument replay 27ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a missing parent before durable consume 8ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a pre-consume scope mismatch 5ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a pre-consume correlation mismatch 2ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a pre-consume authority mismatch 1ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a pre-consume boot mismatch 1ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects a pre-consume ceiling mismatch 1ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects an unstable pre-consume parent digest 1ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > rejects an unstable pre-consume parent revision 15ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > returns a receipt and executable projection only for a fresh consume 6ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > returns replay without an executable projection 1ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > returns unknown after consume when the parent binding changes without rollback 0ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > returns unknown after consume when the authenticated peer changes 0ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > returns unknown after consume when peer revalidation fails 0ms
+ ✓ |unit| apps/agent-service/test/production-execution-admission-handler.unit.test.ts > ProductionExecutionAdmissionHandler > stabilizes private admission errors and never returns success 1ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > resumes an approved read under a fresh execution lease without repeating inspect 88ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not execute pending approval after the shared deadline 12ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > does not let a directory-only routing config become execution authority 15ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > claims one canonical Run, executes with that claim, and releases it after settlement 7ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > reconciles an unknown provider result and does not immediately retry execution 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > quarantines an input failure before surfacing it instead of allowing a lease retry 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > processes persisted reconciliation before claiming safe work 0ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > single-flights concurrent pumps for one service instance 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > renews a long-running claim with fresh clock time and the stable write revision 16ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > interrupts the claimed attempt once when renewal fails and reconciles as unknown 6ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatcher.unit.test.ts > ProductionRunDispatcher > does not start the coordinator after renewal fails while input is waiting 6ms
+ ✓ |unit| apps/agent-service/test/production-automatic-review.unit.test.ts > production automatic review composition > composes no reviewer when review is unconfigured 1177ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > production file read workflow through the Worker transport > refuses disclosure after its grant is revoked following the read 69ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > passes optional review through the production authority entry before any file dispatch 7ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > cancels production authorization review before opening confirmation or dispatching a file tool 8ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > verifies durable file conflict after restart before new approval: known 14ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > verifies durable file conflict after restart before new approval: missing-diagnostic 11ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > verifies durable file conflict after restart before new approval: possibly-sent 22ms
+ ✓ |unit| apps/agent-service/test/production-file-read-workflow.unit.test.ts > restores a known private inspection only after outer queue proof and validates its target 47ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > keeps resource recovery single-flight without blocking unrelated Run scans 8ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > bounds shutdown when a resource backend ignores cancellation 7ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > fails closed on resource scheduler storage failures without automatically retrying 2ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > runs the recovery pump immediately before enabling the fallback timer 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > coalesces repeated wakeups while one pump is running and keeps the follow-up 0ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > starts a pump for a wakeup received after the initial pump is idle 0ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > runs bounded fallback scans and unrefs the timer lifecycle 2ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > fails closed once on a pump error and does not retry from wakeups or the timer 4ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > fails closed on a later wakeup error and does not schedule another pump 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > rejects new wakeups before stop and waits for the active and accepted follow-up pump 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > returns dispatcher timeout semantics and permits a later bounded drain retry 1ms
+ ✓ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > makes the service ready after recovery without waiting for a queued Run to finish 1ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration listenPort=1.5 701ms
+ ✓ |unit| packages/runtime-sandbox/test/machine-boot.unit.test.ts > readMachineBootId > reads the same boot identity of this running machine twice 45ms
+ ✓ |unit| packages/runtime-sandbox/test/machine-boot.unit.test.ts > readMachineBootId > refuses a platform without a supported boot identity 3ms
+ ✓ |unit| apps/agent-service/test/production-worker-forward-transport.unit.test.ts > ProductionWorkerForwardTransport > registers the complete parent before the first delegate and execute send 6ms
+ ✓ |unit| apps/agent-service/test/production-worker-forward-transport.unit.test.ts > ProductionWorkerForwardTransport > rejects delegate identity mismatches before registry write or send 3ms
+ ✓ |unit| apps/agent-service/test/production-worker-forward-transport.unit.test.ts > ProductionWorkerForwardTransport > rejects execute identity and resource mismatches before registry write or send 4ms
+ ✓ |unit| apps/agent-service/test/production-worker-forward-transport.unit.test.ts > ProductionWorkerForwardTransport > keeps the binding and performs no automatic retry after an unknown send 6ms
+ ✓ |unit| apps/agent-service/test/production-worker-forward-transport.unit.test.ts > ProductionWorkerForwardTransport > rejects a changed identity on manual retry without resending 2ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > exposes a read-only reader and has no binding before registration 2ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > deep-freezes a complete binding before it becomes readable 31ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > allows only an exact same-identity registration replay 9ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > invalidates all bindings when the trusted boot or authority changes 1ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > rejects a binding that is not aligned with the trusted peer 0ms
+ ✓ |unit| apps/agent-service/test/production-worker-parent-binding-registry.unit.test.ts > ProductionWorkerParentBindingRegistry > rejects incomplete bindings without changing the registry 0ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > uses the model title, stores protected text and names the thread automatically 21ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > does not send a model request for an already named thread 1ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > keeps an Owner rename made while the model request is in flight 1ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > rejects malformed model titles without changing the conversation 0ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > rejects malformed model titles without changing the conversation 0ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > rejects malformed model titles without changing the conversation 0ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > contains provider failures instead of rejecting the answer stream 4ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > does not invent a title for an empty conversation 1ms
+ ✓ |unit| apps/agent-service/test/production-thread-titles.unit.test.ts > signals admission separately from the pending model response 2ms
+ ✓ |unit| apps/agent-service/test/production-service-lifecycle.unit.test.ts > production service lifecycle > stops admission and drains all resources before closing dependencies in reverse order 4ms
+ ✓ |unit| apps/agent-service/test/production-service-lifecycle.unit.test.ts > production service lifecycle > cleans up partial startup and continues after shutdown failures 4ms
+ ✓ |unit| apps/agent-service/test/production-service-lifecycle.unit.test.ts > production service lifecycle > rejects duplicate ownership and registration after startup 1ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=0 625ms
+ ✓ |unit| apps/agent-service/test/production-automatic-review.unit.test.ts > production automatic review composition > reviews a delegated request through the configured model and commits one bounded Grant 1043ms
+ ✓ |unit| apps/agent-service/test/local-composition-root.unit.test.ts > local agent-service composition root > composes reference adapters with a replaceable Secret Port and safe readiness 10ms
+ ✓ |unit| apps/agent-service/test/local-composition-root.unit.test.ts > local agent-service composition root > stops admission and waits for an in-flight command before shutdown 3ms
+ ✓ |unit| apps/agent-service/test/local-composition-root.unit.test.ts > local agent-service composition root > accepts a remote execution.v1 client without changing product or domain contracts 1ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=16777217 638ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > validates current receipt authority without disclosing input or using frozen results 2ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects absent or mismatched current receipt without disclosing input 1ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects absent or mismatched current receipt without disclosing input 0ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects absent or mismatched current receipt without disclosing input 0ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > does not disclose bytes when a Grant is revoked during input decryption 1ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > reads input only through a live receipt and scoped protected Payload 1ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > allows a lower-classification input under a private invocation ceiling 0ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects an input above the frozen invocation classification 0ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > protects output with frozen metadata and submits one observation 1ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects a content type that disagrees with the output request 1ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > rejects output before protection when media type or frozen byte ceiling is invalid 0ms
+ ✓ |unit| apps/agent-service/test/production-payload-broker-handler.unit.test.ts > production Payload broker trusted handler > fails closed when the consumed invocation is unavailable 0ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > keeps authority when validation overlaps renewal of the same lease 4ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > publishes the post-claim database fence and repairs a stale mirror 1ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > rejects a mirror from a different authority or a future fence 1ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > releases a lease when post-claim mirror publication fails 1ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > stops accepting and reports lost authority when the lease disappears 0ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > does not let an in-flight renewal resurrect authority after stop 0ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > does not become active when startup is superseded by stop 0ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > does not resurrect startup after a superseding stop during mirror publication 0ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > does not resurrect renewal after a superseding stop during mirror publication 1ms
+ ✓ |unit| apps/agent-service/test/production-authority-lifecycle.unit.test.ts > ProductionAuthorityLifecycle > does not mark authority lost after a superseding stop during final validation 0ms
+ ✓ |unit| apps/agent-service/test/production-package-entry.unit.test.ts > agent-service production package entry > does not expose test-only composition or production testing dependency 5ms
+ ✓ |unit| packages/runtime-sandbox/test/network-egress-init.unit.test.ts > rejects upstream initialization instead of returning a direct-egress fallback 18ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumBodyBytes=1.5 509ms
+ ✓ |unit| apps/agent-service/test/production-automatic-review.unit.test.ts > production automatic review composition > routes an approval without calibrated confidence to human confirmation 958ms
+ ✓ |unit| apps/agent-service/test/production-memory-worker.unit.test.ts > production Memory consumer > does not claim a job when shutdown begins during the authority check 2ms
+ ✓ |unit| apps/agent-service/test/production-memory-worker.unit.test.ts > production Memory consumer > checks authority before each claim and stops after authority loss 6ms
+ ✓ |unit| apps/agent-service/test/production-memory-worker.unit.test.ts > production Memory consumer > waits for the accepted job before allowing provider closure 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-tool-result.unit.test.ts > sandbox command effect reason > keeps nonzero command failure separate from unverified workspace effects 1ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-tool-result.unit.test.ts > sandbox command effect reason > does not classify a successful exit or a different operation as a failed command 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-tool-result.unit.test.ts > sandbox command effect reason > does not replace stronger effect evidence 0ms
+ ✓ |unit| packages/runtime-sandbox/test/qualification.unit.test.ts > accepted Mac SRT qualification limits > keeps Mac unqualified until unknown cleanup and crash reconciliation are wired 4ms
+ ✓ |unit| packages/runtime-sandbox/test/qualification.unit.test.ts > accepted Mac SRT qualification limits > does not relax Linux guarantees or discard dependency failures 1ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=0 486ms
+ ✓ |unit| apps/agent-service/test/production-automatic-review.unit.test.ts > production automatic review composition > turns a review alternative into a failed, non-authorizing result without a Grant 746ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > accepts routing references without granting authority and rejects expanded route fields 7ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > registers the configured generation models in real Pi without resolving credentials 7ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > fits two generation reservations and embedding within the proposed shared budget 2ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > rejects a vector dimension mismatch before model composition 1ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > passes the candidate embedding identity and dimensions through the production Mem0 adapter 6ms
+ ✓ |unit| apps/agent-service/test/file-summary-configuration.unit.test.ts > file summary qualification configuration > keeps the answer facts in the file and out of the system instruction 1ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > waits for installation verification before initializing sandbox services 58ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > fails startup when the installed sandbox cannot be verified 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > does not introduce sandbox work for a deployment without sandbox capabilities 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > does not read inventory when sandbox deployment is absent 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > refuses ambiguous sandbox installation before repository initialization 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > refuses missing-host sandbox installation before repository initialization 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > refuses unqualified sandbox installation before repository initialization 0ms
+ ✓ |unit| apps/agent-service/test/production-sandbox-startup.unit.test.ts > verifies every sandbox capability and ignores non-sandbox inventory 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=67108865 358ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration maximumStaticAssetBytes=1.5 250ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=9 228ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=300001 245ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects unsafe listener configuration heartbeatMilliseconds=10.5 231ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires the http boundary 229ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires the identity boundary 228ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > does not enable external Access identity in local mode 245ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin invalid 244ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin http://agent.example.test 222ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an unsafe public origin https://agent.example.test/path 237ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=invalid 283ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=http://team.cloudflareaccess.com 255ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape issuer=https://team.cloudflareaccess.com/path 311ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=invalid 285ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=http://team.cloudflareaccess.com/cdn-cgi/access/certs 226ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://person@team.cloudflareaccess.com/cdn-cgi/access/certs 232ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://:fixture@team.cloudflareaccess.com/cdn-cgi/access/certs 240ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://team.cloudflareaccess.com/cdn-cgi/access/certs?redirect=1 217ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://team.cloudflareaccess.com/cdn-cgi/access/certs#fragment 205ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects identity discovery escape jwksUrl=https://elsewhere.example.test/cdn-cgi/access/certs 216ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact relative 197ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact /tmp/../tmp/browser 208ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires a real normalized browser artifact /tmp/himawari-nonexistent-contract-root 207ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority deploymentId=deployment-other 200ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority authorityEpoch=0 203ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority authorityEpoch=1.5 204ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority fencingToken=0 208ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > rejects an invalid active authority fencingToken=1.5 207ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires exactly one correctly bound payload-encryption secret reference 468ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production HTTP startup rejection contracts > requires exactly one correctly bound identity-csrf secret reference 400ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > requires the active session on every authorized read 1ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects message-owner mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects message-agent mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects authentication-owner mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects actor mismatch before session lookup 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session ownerId substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session deviceId substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects session status substitution 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > rejects an unbound session and a subject that is not the owner 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > binds thread.message.submit to the current browser session 0ms
+ ✓ |unit| apps/agent-service/test/production-http-composition.unit.test.ts > production Thread access scope > binds thread.message.submit_configured to the current browser session 0ms
+
+ Test Files  38 passed (38)
+      Tests  636 passed (636)
+   Start at  10:47:17
+   Duration  18.87s (transform 14.50s, setup 0ms, import 46.83s, tests 29.28s, environment 5ms)

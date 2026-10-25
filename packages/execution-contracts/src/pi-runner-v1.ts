@@ -1,3 +1,8 @@
+import {
+  FILE_WRITE_NOT_STARTED,
+  SANDBOX_WRITE_EFFECT_UNVERIFIED,
+  type SandboxExecutionPlanV2,
+} from "./sandbox-execution-v2.ts";
 import { sandboxScopeSchema } from "./sandbox-scope-v1.ts";
 import {
   ContractValidationError,
@@ -11,11 +16,61 @@ import {
 } from "./validation.ts";
 
 export const PI_RUNNER_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "1" });
+/** Version 2 fixes the target and carries the host's pre-execution file version. */
+export const PI_FIXED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "2" });
+/** Version 3 prepares write/edit candidates before workspace admission. */
+export const PI_PREPARED_FILE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "3" });
+/** Product-owned directory move; built-in Pi tool definitions remain unchanged. */
+export const FIXED_FILE_COMPLETION_GUARANTEE = "fixed-file-terminal-no-writer.v1";
+export const PI_DIRECTORY_MOVE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "4" });
+export const PI_COPY_SAVE_CONTRACT = Object.freeze({ ref: "pi-coding-tool", version: "5" });
+export const COPY_SAVE_VERIFIER = Object.freeze({
+  ref: "host-copy-save",
+  version: "1",
+  targetRef: "pi-input:operation",
+});
+export const DIRECTORY_MOVE_VERIFIER = Object.freeze({
+  ref: "host-directory-move",
+  version: "1",
+  targetRef: "pi-input:source-destination",
+});
+/** Protected Agent artifact; separate from the original Worker's immutable output. */
+export const piFileRecoveryOperationKey = (invocationId: string) =>
+  `pi-file-recovery:${invocationId}`;
 export const PI_WRITE_VERIFIER = Object.freeze({
   ref: "pi-atomic-write",
   version: "1",
   targetRef: "pi-input:path",
 });
+export function sandboxFileOperationFailureReason(
+  plan: Pick<SandboxExecutionPlanV2, "operation" | "operationContract">,
+  verified: "conflict" | "not_written" | null,
+) {
+  if (verified === "conflict") return "FILE_VERSION_CONFLICT";
+  if (verified === "not_written") return FILE_WRITE_NOT_STARTED;
+  return plan.operationContract.kind === "verified_effect" &&
+    plan.operationContract.verifierRef === PI_WRITE_VERIFIER.ref &&
+    ["write", "edit"].includes(plan.operation)
+    ? SANDBOX_WRITE_EFFECT_UNVERIFIED
+    : "SANDBOX_OPERATION_FAILED";
+}
+export function srtTaskEnvironmentSession(
+  plan: Pick<SandboxExecutionPlanV2, "mode" | "operation" | "operationContract">,
+): "command" | "file_write" | null {
+  const contract = plan.operationContract;
+  if (
+    plan.mode !== "foreground" ||
+    contract.ref !== PI_RUNNER_CONTRACT.ref ||
+    contract.version !== PI_RUNNER_CONTRACT.version
+  )
+    return null;
+  if (plan.operation === "bash" && contract.kind === "command") return "command";
+  return ["write", "edit"].includes(plan.operation) &&
+    contract.kind === "verified_effect" &&
+    contract.verifierRef === PI_WRITE_VERIFIER.ref
+    ? "file_write"
+    : null;
+}
 export const piCodingToolNameSchema = enumeration([
   "read",
   "write",
@@ -24,6 +79,8 @@ export const piCodingToolNameSchema = enumeration([
   "find",
   "grep",
   "ls",
+  "move_directory",
+  "save_copy",
 ]);
 const absolutePath: Schema<string> = {
   parse(value, location = "$") {
@@ -50,6 +107,9 @@ const text: Schema<string> = {
     return value;
   },
 };
+export const PI_RESIDENT_RUNNER_FLAG = "--resident";
+export const PI_RESIDENT_OUTPUT_CHUNK_BYTES = 48 * 1024;
+export const PI_RESIDENT_FRAME_LIMIT_BYTES = 256 * 1024;
 /** Constructed by the Worker from the resolved scope and frozen input. These
  * fields are never accepted as model parameters or a new authority source. */
 const runnerInput = object({

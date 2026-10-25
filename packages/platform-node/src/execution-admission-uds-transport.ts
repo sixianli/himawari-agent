@@ -22,6 +22,8 @@ import {
   AuthenticatedUdsTransportError,
 } from "./authenticated-uds-transport.js";
 
+import { UdsHandshakeSession } from "./uds-handshake-session.js";
+
 const HANDSHAKE_PATH = "/admission/v1/handshake";
 const WORK_EXECUTE_PATH = "/admission/v1/work/execute";
 const JSON_CONTENT_TYPE = "application/json";
@@ -533,7 +535,7 @@ export class ExecutionAdmissionUdsClient {
   readonly schemaVersion = EXECUTION_ADMISSION_V1_SCHEMA_VERSION;
   private readonly options: ExecutionAdmissionUdsClientOptions;
   private readonly uds: AuthenticatedUdsClient;
-  private connected = false;
+  private readonly connection: UdsHandshakeSession<ExecutionAdmissionHandshakeAccepted>;
 
   constructor(options: ExecutionAdmissionUdsClientOptions) {
     assertPeerShape(options.peerBinding);
@@ -552,13 +554,22 @@ export class ExecutionAdmissionUdsClient {
         TRANSPORT_UNAVAILABLE: EXECUTION_ADMISSION_UDS_ERROR_CODES.TRANSPORT_UNAVAILABLE,
       },
     });
+    this.connection = new UdsHandshakeSession(
+      () => this.handshake(),
+      () =>
+        new ExecutionAdmissionUdsError(EXECUTION_ADMISSION_UDS_ERROR_CODES.HANDSHAKE_REQUIRED, 401),
+    );
   }
 
   isReady(): boolean {
-    return this.connected;
+    return this.connection.isReady();
   }
 
-  async connect(): Promise<ExecutionAdmissionHandshakeAccepted> {
+  connect(): Promise<ExecutionAdmissionHandshakeAccepted> {
+    return this.connection.connect();
+  }
+
+  private async handshake(): Promise<ExecutionAdmissionHandshakeAccepted> {
     const message = executionAdmissionV1MessageSchema.parse({
       ...requestEnvelope(
         "admission.handshake",
@@ -587,10 +598,9 @@ export class ExecutionAdmissionUdsClient {
           502,
         );
       }
-      this.connected = true;
       return accepted;
     } catch (error) {
-      this.connected = false;
+      this.connection.failed();
       throw error;
     }
   }
@@ -598,12 +608,7 @@ export class ExecutionAdmissionUdsClient {
   async admit(
     execute: Extract<ExecutionV2Request, { type: "work.execute" }>,
   ): Promise<ExecutionAdmissionWorkExecuteAccepted["payload"]> {
-    if (!this.connected) {
-      throw new ExecutionAdmissionUdsError(
-        EXECUTION_ADMISSION_UDS_ERROR_CODES.HANDSHAKE_REQUIRED,
-        401,
-      );
-    }
+    await this.connection.ensureConnected();
     try {
       const parsedExecute = executionV2MessageSchema.parse(execute);
       if (parsedExecute.kind !== "request" || parsedExecute.type !== "work.execute") {
@@ -639,17 +644,17 @@ export class ExecutionAdmissionUdsClient {
         accepted.payload.disposition === "unknown" &&
         accepted.payload.reasonCode === "PEER_BINDING_CHANGED_AFTER_ADMISSION"
       ) {
-        this.connected = false;
+        this.connection.failed();
       }
       return accepted.payload;
     } catch (error) {
-      this.connected = false;
+      this.connection.failed();
       throw error;
     }
   }
 
   disconnect(): void {
-    this.connected = false;
+    this.connection.disconnect();
   }
 
   private async send(path: string, message: ExecutionAdmissionV1Request) {
@@ -665,7 +670,7 @@ export class ExecutionAdmissionUdsClient {
         contentType: JSON_CONTENT_TYPE,
       });
     } catch (error) {
-      this.connected = false;
+      this.connection.failed();
       if (error instanceof AuthenticatedUdsTransportError) {
         throw new ExecutionAdmissionUdsError(
           error.code as ExecutionAdmissionUdsErrorCode,

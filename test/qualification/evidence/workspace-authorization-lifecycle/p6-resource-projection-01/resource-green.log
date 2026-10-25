@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-resource-projection.test.ts (1 test | 1 failed) 405ms
+     × authenticates parent tool identity and refuses to call a dispatch CAS actual execution 404ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-resource-projection.test.ts > historical resource display > authenticates parent tool identity and refuses to call a dispatch CAS actual execution
+Error: SANDBOX_SCOPE_UNAVAILABLE
+ ❯ readSandboxScopeSnapshot packages/application/src/services/sandbox-scope-service.ts:94:11
+     92|     return scope;
+     93|   } catch {
+     94|     throw new Error("SANDBOX_SCOPE_UNAVAILABLE");
+       |           ^
+     95|   }
+     96| }
+ ❯ add packages/application/src/services/thread-execution-resources.ts:54:25
+ ❯ readThreadExecutionResources packages/application/src/services/thread-execution-resources.ts:98:11
+ ❯ read test/integration/thread-resource-projection.test.ts:24:56
+ ❯ test/integration/thread-resource-projection.test.ts:30:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  16:32:11
+   Duration  2.81s (transform 1.23s, setup 0ms, import 2.12s, tests 405ms, environment 0ms)

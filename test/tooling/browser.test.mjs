@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { browserCounts } from "../../scripts/ci/browser.mjs";
+import { browserCounts, browserReportFiles } from "../../scripts/ci/browser.mjs";
 
 const report = () => ({
   status: "passed",
@@ -8,7 +11,7 @@ const report = () => ({
   profile: "chromium",
   browserVersion: "140.0",
   locales: ["zh-CN", "en", "ja"],
-  keyboard: ["visible-focus", "settings-tabs-roving"],
+  keyboard: ["visible-focus", "settings-keyboard-navigation"],
   axeViolations: 0,
   keyboardFocus: { visible: true, accessibleName: "Navigation" },
   journeys: ["chat"],
@@ -74,5 +77,22 @@ describe("browser execution evidence", () => {
     const value = report();
     mutate(value);
     expect(() => browserCounts(value, "chromium")).toThrow();
+  });
+});
+
+describe("browser report collection", () => {
+  it("publishes nested report files and never a directory", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "browser-reports-"));
+    try {
+      writeFileSync(path.join(root, "browser.json"), "{}");
+      mkdirSync(path.join(root, "execution-chain"));
+      writeFileSync(path.join(root, "execution-chain", "journey.png"), "");
+      expect(await browserReportFiles(root)).toEqual([
+        { path: path.join(root, "browser.json"), kind: "json" },
+        { path: path.join(root, "execution-chain", "journey.png"), kind: "diagnostic" },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

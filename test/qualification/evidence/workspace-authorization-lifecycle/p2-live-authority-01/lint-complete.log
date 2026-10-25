@@ -1,0 +1,524 @@
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 21.
+Checked 21 files in 108ms. No fixes applied.
+Found 10 errors.
+Found 31 infos.
+apps/agent-service/src/production-runtime-tools.ts:342:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    340 │     const args = invocation.arguments;
+    341 │     if (
+  > 342 │       typeof args["capabilityHandleRef"] !== "string" ||
+        │                   ^^^^^^^^^^^^^^^^^^^^^
+    343 │       typeof args["inputRef"] !== "string" ||
+    344 │       Object.keys(args).length !== 2 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     340  340 │       const args = invocation.arguments;
+     341  341 │       if (
+     342      │ - ······typeof·args["capabilityHandleRef"]·!==·"string"·||
+          342 │ + ······typeof·args.capabilityHandleRef·!==·"string"·||
+     343  343 │         typeof args["inputRef"] !== "string" ||
+     344  344 │         Object.keys(args).length !== 2 ||
+
+
+apps/agent-service/src/production-runtime-tools.ts:343:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    341 │     if (
+    342 │       typeof args["capabilityHandleRef"] !== "string" ||
+  > 343 │       typeof args["inputRef"] !== "string" ||
+        │                   ^^^^^^^^^^
+    344 │       Object.keys(args).length !== 2 ||
+    345 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+  i Unsafe fix: Use a literal key instead.
+
+     341  341 │       if (
+     342  342 │         typeof args["capabilityHandleRef"] !== "string" ||
+     343      │ - ······typeof·args["inputRef"]·!==·"string"·||
+          343 │ + ······typeof·args.inputRef·!==·"string"·||
+     344  344 │         Object.keys(args).length !== 2 ||
+     345  345 │         !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+
+apps/agent-service/src/production-runtime-tools.ts:345:54 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    343 │       typeof args["inputRef"] !== "string" ||
+    344 │       Object.keys(args).length !== 2 ||
+  > 345 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+        │                                                      ^^^^^^^^^^^^^^^^^^^^^
+    346 │     )
+    347 │       reject();
+
+  i Unsafe fix: Use a literal key instead.
+
+     343  343 │         typeof args["inputRef"] !== "string" ||
+     344  344 │         Object.keys(args).length !== 2 ||
+     345      │ - ······!this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+          345 │ + ······!this.#exposed.get(invocation.runId)?.has(args.capabilityHandleRef)
+     346  346 │       )
+     347  347 │         reject();
+
+
+apps/agent-service/src/production-runtime-tools.ts:348:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    346 │     )
+    347 │       reject();
+  > 348 │     const handle = await this.#handle(invocation.runId, args["capabilityHandleRef"]);
+        │                                                              ^^^^^^^^^^^^^^^^^^^^^
+    349 │     if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+    350 │     return {
+
+  i Unsafe fix: Use a literal key instead.
+
+     346  346 │       )
+     347  347 │         reject();
+     348      │ - ····const·handle·=·await·this.#handle(invocation.runId,·args["capabilityHandleRef"]);
+          348 │ + ····const·handle·=·await·this.#handle(invocation.runId,·args.capabilityHandleRef);
+     349  349 │       if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+     350  350 │       return {
+
+
+apps/agent-service/src/production-runtime-tools.ts:354:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    352 │       capabilityRef: handle.capabilityRef,
+    353 │       capabilityHandleRef: handle.ref,
+  > 354 │       arguments: { inputRef: args["inputRef"] },
+        │                                   ^^^^^^^^^^
+    355 │     };
+    356 │   }
+
+  i Unsafe fix: Use a literal key instead.
+
+     352  352 │         capabilityRef: handle.capabilityRef,
+     353  353 │         capabilityHandleRef: handle.ref,
+     354      │ - ······arguments:·{·inputRef:·args["inputRef"]·},
+          354 │ + ······arguments:·{·inputRef:·args.inputRef·},
+     355  355 │       };
+     356  356 │     }
+
+
+apps/agent-service/src/production-runtime-tools.ts:671:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    669 │       keys.length !== 1 ||
+    670 │       keys[0] !== "inputRef" ||
+  > 671 │       typeof invocation.arguments["inputRef"] !== "string" ||
+        │                                   ^^^^^^^^^^
+    672 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+    673 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+  i Unsafe fix: Use a literal key instead.
+
+     669  669 │         keys.length !== 1 ||
+     670  670 │         keys[0] !== "inputRef" ||
+     671      │ - ······typeof·invocation.arguments["inputRef"]·!==·"string"·||
+          671 │ + ······typeof·invocation.arguments.inputRef·!==·"string"·||
+     672  672 │         !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+     673  673 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+
+apps/agent-service/src/production-runtime-tools.ts:672:55 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    670 │       keys[0] !== "inputRef" ||
+    671 │       typeof invocation.arguments["inputRef"] !== "string" ||
+  > 672 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+        │                                                       ^^^^^^^^^^
+    673 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+    674 │     )
+
+  i Unsafe fix: Use a literal key instead.
+
+     670  670 │         keys[0] !== "inputRef" ||
+     671  671 │         typeof invocation.arguments["inputRef"] !== "string" ||
+     672      │ - ······!handle.inputRefs.includes(invocation.arguments["inputRef"])·||
+          672 │ + ······!handle.inputRefs.includes(invocation.arguments.inputRef)·||
+     673  673 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+     674  674 │       )
+
+
+apps/agent-service/src/production-runtime-tools.ts:831:40 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    829 │         capabilityVersion: handle.capabilityVersion,
+    830 │         operation: handle.operation,
+  > 831 │         inputRef: invocation.arguments["inputRef"] as string,
+        │                                        ^^^^^^^^^^
+    832 │         capabilityHandleRef: handle.ref,
+    833 │         delegatedContextRefs: [...handle.delegatedContextRefs],
+
+  i Unsafe fix: Use a literal key instead.
+
+     829  829 │           capabilityVersion: handle.capabilityVersion,
+     830  830 │           operation: handle.operation,
+     831      │ - ········inputRef:·invocation.arguments["inputRef"]·as·string,
+          831 │ + ········inputRef:·invocation.arguments.inputRef·as·string,
+     832  832 │           capabilityHandleRef: handle.ref,
+     833  833 │           delegatedContextRefs: [...handle.delegatedContextRefs],
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:112:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    110 │       return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+    111 │     if (operation === "readRunInventory") {
+  > 112 │       if (!id(input["runId"]))
+        │                     ^^^^^^^
+    113 │         return this.fail("PORT_INVALID_OPERATION", "Invalid Run inventory locator");
+    114 │       const runId = input["runId"];
+
+  i Unsafe fix: Use a literal key instead.
+
+     110  110 │         return this.fail("PORT_INVALID_OPERATION", "Invalid sandbox journal request");
+     111  111 │       if (operation === "readRunInventory") {
+     112      │ - ······if·(!id(input["runId"]))
+          112 │ + ······if·(!id(input.runId))
+     113  113 │           return this.fail("PORT_INVALID_OPERATION", "Invalid Run inventory locator");
+     114  114 │         const runId = input["runId"];
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:114:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    112 │       if (!id(input["runId"]))
+    113 │         return this.fail("PORT_INVALID_OPERATION", "Invalid Run inventory locator");
+  > 114 │       const runId = input["runId"];
+        │                           ^^^^^^^
+    115 │       return this.db.transaction(() => {
+    116 │         const rows = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     112  112 │         if (!id(input["runId"]))
+     113  113 │           return this.fail("PORT_INVALID_OPERATION", "Invalid Run inventory locator");
+     114      │ - ······const·runId·=·input["runId"];
+          114 │ + ······const·runId·=·input.runId;
+     115  115 │         return this.db.transaction(() => {
+     116  116 │           const rows = this.db
+
+
+apps/agent-service/src/production-payload-broker-handler.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+   > 1 │ import type {
+       │ ^^^^^^^^^^^^^
+   > 2 │   CapabilityInvocationAuthority,
+   > 3 │   CapabilityInvocationReceiptPort,
+   > 4 │   CapabilityInvocationResultPort,
+        ...
+  > 20 │   SandboxJobJournalPort,
+  > 21 │ } from "@himawari-agent/application";
+       │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    22 │ import type {
+    23 │   SandboxOutputChunk,
+
+  i Safe fix: Organize Imports (Biome)
+
+     28  28 │     type PayloadBrokerInputReadRequest,
+     29  29 │     type PayloadBrokerInvocationValidateRequest,
+     30     │ - ··payloadInvocationValidateRequestSchema,
+     31     │ - ··type·PayloadBrokerOutputWriteRequest,
+         30 │ + ··type·PayloadBrokerOutputWriteRequest,
+     32  31 │     type PayloadBrokerSandboxExecutionRequest,
+     33  32 │     type PayloadBrokerSandboxExecutionResult,
+     34  33 │     type PayloadBrokerSandboxJobRequest,
+     35  34 │     type PayloadBrokerSandboxJobResult,
+     36     │ - ··payloadSandboxExecutionRequestSchema,
+         35 │ + ··payloadInvocationValidateRequestSchema,
+         36 │ + ··payloadSandboxExecutionRequestSchema,
+     37  37 │     payloadSandboxJobRequestSchema,
+     38  38 │     type SandboxExecutionPlanV2,
+
+
+apps/agent-service/src/production-runtime-tools.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { createHash } from "node:crypto";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import {
+    3 │   ApplicationPortError,
+
+  i Safe fix: Organize Imports (Biome)
+
+      30   30 │   import {
+      31   31 │     EXECUTION_V2_SCHEMA_VERSION,
+      32      │ - ··piFileRecoveryOperationKey,
+      33      │ - ··executionV2MessageSchema,
+      34      │ - ··type·ExecutionAdmissionPeerBinding,
+           32 │ + ··type·ExecutionAdmissionPeerBinding,
+      35   33 │     type ExecutionV2Event,
+      36   34 │     type ExecutionV2Request,
+           35 │ + ··executionV2MessageSchema,
+           36 │ + ··piFileRecoveryOperationKey,
+      37   37 │   } from "@himawari-agent/execution-contracts";
+      38   38 │   import {
+    ········· │
+      42   42 │   import type { ProductionExecutionAdmissionParentBinding } from "./production-execution-admission-handler.js";
+      43   43 │   import {
+      44      │ - ··type·FileReadExecutionContext,
+      45      │ - ··type·CodingBinding,
+           44 │ + ··type·CodingBinding,
+           45 │ + ··type·FileReadExecutionContext,
+      46   46 │     type ProductionFileReadServices,
+      47   47 │     ProductionFileReadWorkflow,
+
+
+apps/agent-service/test/production-runtime-tools.unit.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { describe, expect, it, vi } from "vitest";
+    3 │ import {
+
+  i Safe fix: Organize Imports (Biome)
+
+      1   1 │   import { ApplicationPortError, type RuntimeToolInvocation } from "@himawari-agent/application";
+      2     │ - import·{·describe,·expect,·it,·vi·}·from·"vitest";
+      3     │ - import·{
+      4     │ - ··ProductionRuntimeTools,
+      5     │ - ··type·ProductionRuntimeToolsOptions,
+      6     │ - ··type·ProductionRuntimeSandbox,
+      7     │ - }·from·"../src/production-runtime-tools.js";
+      8     │ - import·{·piFileRecoveryOperationKey·}·from·"@himawari-agent/execution-contracts";
+          2 │ + import·{·piFileRecoveryOperationKey·}·from·"@himawari-agent/execution-contracts";
+          3 │ + import·{·describe,·expect,·it,·vi·}·from·"vitest";
+          4 │ + import·{
+          5 │ + ··type·ProductionRuntimeSandbox,
+          6 │ + ··ProductionRuntimeTools,
+          7 │ + ··type·ProductionRuntimeToolsOptions,
+          8 │ + }·from·"../src/production-runtime-tools.js";
+      9   9 │   import {
+     10  10 │     runtimeToolFixture as fixture,
+
+
+apps/execution-worker/src/production-payload-broker-client.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import type {
+      │ ^^^^^^^^^^^^^
+  > 2 │   CapabilityInvocationRequest,
+  > 3 │   CapabilityInvocationAuthorityPort,
+  > 4 │   PayloadRef,
+  > 5 │   SandboxJobIdentity,
+  > 6 │   SandboxJobReceipt,
+  > 7 │ } from "@himawari-agent/application";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    8 │ import type { SandboxExecutionBrokerCommand } from "@himawari-agent/execution-contracts";
+    9 │ import type { CapabilityPayloadBoundary } from "@himawari-agent/platform-node";
+
+  i Safe fix: Organize Imports (Biome)
+
+      1   1 │   import type {
+      2     │ - ··CapabilityInvocationRequest,
+      3     │ - ··CapabilityInvocationAuthorityPort,
+          2 │ + ··CapabilityInvocationAuthorityPort,
+          3 │ + ··CapabilityInvocationRequest,
+      4   4 │     PayloadRef,
+      5   5 │     SandboxJobIdentity,
+
+
+packages/application/src/services/execution-worker-service.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { createAgentId, createOwnerId, createRunId } from "@himawari-agent/domain";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import {
+    3 │   type CancelWorkRequest,
+
+  i Safe fix: Organize Imports (Biome)
+
+     13  13 │   import type {
+     14  14 │     CapabilityExecutionHandle,
+     15     │ - ··CapabilityInvocationAuthorityPort,
+     16     │ - ··CapabilityExecutionHandleStorePort,
+         15 │ + ··CapabilityExecutionHandleStorePort,
+         16 │ + ··CapabilityInvocationAuthorityPort,
+     17  17 │     CapabilityPort,
+     18  18 │     CapabilityRegistryStorePort,
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-recovery-scheduling.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import type {
+      │ ^^^^^^^^^^^^^
+  > 2 │   SandboxExecutionAdmissionRecord,
+  > 3 │   SandboxExecutionPreparationPort,
+  > 4 │   SandboxRecoveryState,
+  > 5 │ } from "@himawari-agent/application";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    6 │ import type Database from "better-sqlite3";
+    7 │ import { SANDBOX_AUTHORITY_WITHDRAWN_SQL } from "./sqlite-sandbox-authority-withdrawal.ts";
+
+  i Safe fix: Organize Imports (Biome)
+
+      5   5 │   } from "@himawari-agent/application";
+      6   6 │   import type Database from "better-sqlite3";
+      7     │ - import·{·SANDBOX_AUTHORITY_WITHDRAWN_SQL·}·from·"./sqlite-sandbox-authority-withdrawal.ts";
+      8     │ - import·type·{·SqliteApplicationFailure·}·from·"./sqlite-durable-operations.js";
+          7 │ + import·type·{·SqliteApplicationFailure·}·from·"./sqlite-durable-operations.js";
+          8 │ + import·{·SANDBOX_AUTHORITY_WITHDRAWN_SQL·}·from·"./sqlite-sandbox-authority-withdrawal.ts";
+      9   9 │
+     10  10 │   type Input = Parameters<SandboxExecutionPreparationPort["scheduleRecovery"]>[0];
+
+
+packages/platform-node/src/capabilities/node-capability-runtime.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { Client } from "@modelcontextprotocol/client";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+    3 │ import type {
+
+  i Safe fix: Organize Imports (Biome)
+
+      1     │ - import·{·Client·}·from·"@modelcontextprotocol/client";
+      2     │ - import·{·StdioClientTransport·}·from·"@modelcontextprotocol/client/stdio";
+      3     │ - import·type·{
+      4     │ - ··CapabilityDescriptor,
+      5     │ - ··CapabilityInvocationEvent,
+      6     │ - ··CapabilityInvocationAuthorityPort,
+      7     │ - ··CapabilityInvocationRequest,
+      8     │ - ··CapabilityManifest,
+      9     │ - ··CapabilityPort,
+     10     │ - ··ClockPort,
+     11     │ - ··PayloadRef,
+     12     │ - ··SecretPort,
+     13     │ - }·from·"@himawari-agent/application";
+          1 │ + import·type·{
+          2 │ + ··CapabilityDescriptor,
+          3 │ + ··CapabilityInvocationAuthorityPort,
+          4 │ + ··CapabilityInvocationEvent,
+          5 │ + ··CapabilityInvocationRequest,
+          6 │ + ··CapabilityManifest,
+          7 │ + ··CapabilityPort,
+          8 │ + ··ClockPort,
+          9 │ + ··PayloadRef,
+         10 │ + ··SecretPort,
+         11 │ + }·from·"@himawari-agent/application";
+         12 │ + import·{·Client·}·from·"@modelcontextprotocol/client";
+         13 │ + import·{·StdioClientTransport·}·from·"@modelcontextprotocol/client/stdio";
+     14  14 │   import {
+     15  15 │     type CapabilityEndpointBinding,
+     16  16 │     type CapabilityRuntimeBindingPort,
+     17     │ - ··type·SandboxedProcessIsolationBackend,
+     18     │ - ··type·SandboxedProcessLaunch,
+     19     │ - ··runSandboxedProcess,
+         17 │ + ··runSandboxedProcess,
+         18 │ + ··type·SandboxedProcessIsolationBackend,
+         19 │ + ··type·SandboxedProcessLaunch,
+     20  20 │   } from "./isolation.js";
+     21  21 │
+
+
+packages/platform-node/src/payload-uds-transport.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import type { IncomingMessage, ServerResponse } from "node:http";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import {
+    3 │   PAYLOAD_BROKER_V1_SCHEMA_VERSION,
+
+  i Safe fix: Organize Imports (Biome)
+
+      5   5 │     type PayloadBrokerHandshakeRequest,
+      6   6 │     type PayloadBrokerInputReadRequest,
+      7     │ - ··type·PayloadBrokerInvocationValidateRequest,
+          7 │ + ··type·PayloadBrokerInputReadResult,
+      8   8 │     type PayloadBrokerInvocationValidated,
+      9     │ - ··type·PayloadBrokerInputReadResult,
+          9 │ + ··type·PayloadBrokerInvocationValidateRequest,
+     10  10 │     type PayloadBrokerMessage,
+     11  11 │     type PayloadBrokerOutputWriteAccepted,
+
+
+packages/platform-node/test/node-capability-runtime.unit.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { fileURLToPath } from "node:url";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import type {
+    3 │   CapabilityInvocationRequest,
+
+  i Safe fix: Organize Imports (Biome)
+
+      1   1 │   import { fileURLToPath } from "node:url";
+      2   2 │   import type {
+      3     │ - ··CapabilityInvocationRequest,
+      4     │ - ··CapabilityInvocationAuthorityPort,
+          3 │ + ··CapabilityInvocationAuthorityPort,
+          4 │ + ··CapabilityInvocationRequest,
+      5   5 │     CapabilityManifest,
+      6   6 │     PayloadProtectorPort,
+
+
+test/integration/production-invocation-authority.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+
+  > 1 │ import { mkdtemp, rm } from "node:fs/promises";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import type { ConsumeCapabilityInvocationInput } from "@himawari-agent/application";
+    3 │ import { PayloadUdsServer } from "@himawari-agent/platform-node";
+
+  i Safe fix: Organize Imports (Biome)
+
+      6   6 │   import { ProductionPayloadBrokerClient } from "../../apps/execution-worker/src/production-payload-broker-client.js";
+      7   7 │   import {
+      8     │ - ··OWNER_ID,
+      9     │ - ··AGENT_ID,
+     10     │ - ··T1,
+     11     │ - ··T2,
+     12     │ - ··SERVICE_AUTHORITY,
+     13     │ - ··openRepository,
+     14     │ - ··capability,
+     15     │ - ··grantApproval,
+     16     │ - ··grant,
+     17     │ - ··grantHandle,
+     18     │ - ··invocation,
+     19     │ - ··outputPayload,
+          8 │ + ··AGENT_ID,
+          9 │ + ··capability,
+         10 │ + ··grant,
+         11 │ + ··grantApproval,
+         12 │ + ··grantHandle,
+         13 │ + ··invocation,
+         14 │ + ··OWNER_ID,
+         15 │ + ··openRepository,
+         16 │ + ··outputPayload,
+         17 │ + ··SERVICE_AUTHORITY,
+         18 │ + ··T1,
+         19 │ + ··T2,
+     20  20 │   } from "../fixtures/sqlite-capability-invocation-fixture.js";
+     21  21 │
+
+
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

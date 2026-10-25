@@ -1,0 +1,70 @@
+{
+  "policy": "Remove only trailing whitespace and surplus terminal blank lines",
+  "changed": [
+    {
+      "file": "typecheck-complete.log",
+      "beforeSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "afterSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "startup-red.log",
+      "beforeSha256": "941f7769c2872e8b2d89c162cf3df7630c421c21a113535e37eae71c4d9ea7c3",
+      "afterSha256": "d2b68ad78450473a97e00500b9bc34f0c2e4a44959add29ed29dc2847788740e"
+    },
+    {
+      "file": "typecheck-final.log",
+      "beforeSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "afterSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "recovery-consumers.log",
+      "beforeSha256": "10390d8523e8ed91d9be041afc85bd5e7f35fc8032f80bea7f8e5c43c30e0aba",
+      "afterSha256": "0cebeda4916e78172deb3b114d54ca6b688e21e5bd633cc7b88a7036152e3c49"
+    },
+    {
+      "file": "lifecycle.log",
+      "beforeSha256": "b11a19ee00436454aef84a9751b25cc5e22f27cf823ee223dd7f90580875ae5a",
+      "afterSha256": "d65599e582d5b6f88bb224f4a6884b82c54be6ec195a9d240668d0b0ea8d66a0"
+    },
+    {
+      "file": "typecheck.log",
+      "beforeSha256": "fb0587f6d86613ab483ba92f627c68aa31a9a77f7c937ef50c5479edacb8e5a9",
+      "afterSha256": "337379f9375be80af69239cf2e29b61d60e796c96248ff1a2af649fb05d21a07"
+    },
+    {
+      "file": "drain-failure-red.log",
+      "beforeSha256": "006a6a50991722cd6b84b7b9867a7f8c3393957076ee26788be29ca7d00e9874",
+      "afterSha256": "98de6e58c90ef532b4ab96b6499ee0d37a3c7cbfc076f4cdfcef086fd435d2f3"
+    },
+    {
+      "file": "stop-priority-red.log",
+      "beforeSha256": "76bbb065701696b350366119035348d777f035f76a1c438dd6387c809a5634a2",
+      "afterSha256": "008f2bccee38ad8878f82c597cbf49f9cb24164f309c4c4208769d41e0dbd6e4"
+    },
+    {
+      "file": "lifecycle-final.log",
+      "beforeSha256": "68d6e2aa68e4d89a2c89777f43bfcbc5b2ab3cbd7d62e7acce21bb47c5578cd8",
+      "afterSha256": "62d0769b1fbdfeeaea489def8eb9c93c018e7fab5f19758bde7d9ff248c67ba0"
+    },
+    {
+      "file": "lifecycle-complete.log",
+      "beforeSha256": "35254712f929edd498ce1dcb09660f910db8b244913ffad49e0f1d3a495107a2",
+      "afterSha256": "42d3850f60a12bcd3fd9fe45eeaa5a11eea713bdd78875f99428935f710b429e"
+    },
+    {
+      "file": "web-stop-red.log",
+      "beforeSha256": "a752edceb651cb057aafb32cf0193e2c80f5211b1e866addae62c9bee47e9012",
+      "afterSha256": "0b165f07f13b23c071deb369816e48a89c85fef127b8967301dc72f08f5c8367"
+    },
+    {
+      "file": "startup-first.log",
+      "beforeSha256": "8f1bb54ec6f910a0e054706b87d3bff34848ced3cde474b649c0e11a5054f2fc",
+      "afterSha256": "86bfa3c292add4a76bb108fc8841634e41d5f3f71f65199099e06c1761bc1807"
+    },
+    {
+      "file": "full-check.log",
+      "beforeSha256": "1f13d7f23a06226b1df4e8315fabd466437982b5d6b03c135eb01d3cdeb053b6",
+      "afterSha256": "8d2d0acf4e5cb239afaa036bf2d7995bf7727512c8d4cfb2b7aa97e9475e6c1f"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { prepareJobPolicy } from "../src/job-policy.js";
 
 let root: string;
-let input: Parameters<typeof prepareJobPolicy>[0];
+let input: Parameters<typeof prepareJobPolicy>[0] & { readonly workspace: string };
 beforeEach(async () => {
   root = await realpath(await mkdtemp(path.join(tmpdir(), "srt-job-policy-")));
   await Promise.all(
@@ -56,4 +56,18 @@ it("freezes scope before asynchronous directory preparation", async () => {
   expect(JSON.parse((await pending).compiled.policyJson).network.allowedDomains).toEqual([
     "example.com:443",
   ]);
+});
+
+it("uses an owned private directory as the network-only working directory", async () => {
+  const prepared = await prepareJobPolicy({
+    ...input,
+    workspace: null,
+    allowedDomains: ["example.test:443"],
+  });
+  expect((await lstat(prepared.policy.privateDirectory)).mode & 0o777).toBe(0o700);
+  expect(prepared.compiled.cwd).toBe(prepared.policy.privateDirectory);
+  const policy = JSON.parse(prepared.compiled.policyJson);
+  expect(policy.filesystem.allowRead).toEqual([prepared.policy.privateDirectory]);
+  expect(policy.filesystem.allowWrite).toEqual([prepared.policy.privateDirectory]);
+  expect(policy.network.allowedDomains).toEqual(["example.test:443"]);
 });

@@ -5,15 +5,17 @@ import type {
   RunExecutionLeaseTransactionGuard,
   StoredRunCheckpoint,
 } from "@himawari-agent/application";
+import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import {
   createAuthorityLeaseId,
   createDeploymentId,
   createRunExecutionLeaseId,
   createRunId,
 } from "@himawari-agent/domain";
-import type { ProductAuthorityFence } from "@himawari-agent/domain";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+
+import { readQueuedToolBatch } from "./sqlite-queued-tool-batch.ts";
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -368,7 +370,12 @@ export class SqliteRunCheckpointOperations {
       const worker = record(value);
       workerResults[text(worker["worker_run_id"])] = text(worker["result_ref"]);
     }
+    const queuedToolBatch =
+      row["phase"] === "runtime_running"
+        ? readQueuedToolBatch(this.database, ownerId, agentId, runId)
+        : undefined;
     return {
+      ...(queuedToolBatch ? { queuedToolBatch } : {}),
       runId,
       revision: integer(row["revision"]),
       checkpoint: checkpoint({

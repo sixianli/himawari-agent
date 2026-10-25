@@ -1,0 +1,37 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/pi-file-publication.unit.test.ts (11 tests | 1 failed) 489ms
+     × binds parents created during publication before recovering an interrupted receipt 51ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/pi-file-publication.unit.test.ts > fixed Pi file publication records > binds parents created during publication before recovering an interrupted receipt
+AssertionError: promise resolved "{ …(3) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "byteLength": 9,
++   "contentDigest": "dda18a0e21ae47c53b4309434cbc02ae8bf764fa83a6defbb719431242722aa7",
++   "path": "/private/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/pi-publication-w4dOID/workspace/new/file.txt",
+  }
+
+ ❯ packages/platform-node/test/pi-file-publication.unit.test.ts:137:75
+    135|     await mkdir(path.join(context.workspace, "new"));
+    136|     await rename(path.join(context.workspace, "old/file.txt"), path.jo…
+    137|     await expect(createPiFilePublicationJournal(context).recover(f.gra…
+       |                                                                           ^
+    138|     expect(await readFile(path.join(context.workspace, "new/file.txt")…
+    139|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 10 passed (11)
+   Start at  17:55:30
+   Duration  1.92s (transform 777ms, setup 0ms, import 1.32s, tests 489ms, environment 0ms)

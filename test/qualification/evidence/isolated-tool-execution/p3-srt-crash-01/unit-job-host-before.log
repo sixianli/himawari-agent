@@ -1,0 +1,87 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > routes egress checks through authenticated IPC and closes egress on a denied answer 53ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > accepts bounded shell diagnostics before the authenticated namespace frame 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > never treats diagnostic lines as proof or extends the namespace deadline 7ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > prepares without starting user code, binds namespace before stdin and returns truthful completion 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > starts a Mac task on spawn with only its supplied input and preserves cleanup failure 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects null IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects missing type IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects missing session IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects protocol IPC at the intended validation boundary 4ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects sequence gap IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects expired IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects future IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects invalid timestamp IPC at the intended validation boundary 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: environment 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: policy 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: unsupported 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: errors 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: warnings 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-session 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-overlap 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > refuses unsafe preparation: control-parent 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > binds control observations and readiness to the owned job, then finishes its control socket 2ms
+ × |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the linux task starts 6ms
+   → expected "vi.fn()" to be called once, but got 0 times
+ × |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the darwin task starts 2ms
+   → expected "vi.fn()" to be called once, but got 0 times
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running without a start record when the leader already gone 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running without a start record when the identity unreadable 2ms
+ × |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running when writing the start record fails 2ms
+   → expected "vi.fn()" to be called once, but got 0 times
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > ends same-group survivors after the task exits and reports the group gone 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps the stop unconfirmed when the task group is still-present 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps the stop unconfirmed when the task group is not-permitted 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > never probes a task group that did not start 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: output 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-invalid 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-oversize 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: namespace-error 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: spawn-error 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: stdin-error 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: readiness-false 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > stops unsafe running task: readiness-reject 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on deadline 3ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on lease 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on disconnect 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on SIGTERM 1ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on cancel 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > cleans a prepared task without starting it on send-error 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > does not reset SRT while initialization is still running 6ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > reports only machine error codes when preparation throws sensitive text 2ms
+ ✓ |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > rejects execution without its IPC parent 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the linux task starts
+ FAIL  |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > records the host and task group start identities once the darwin task starts
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ packages/runtime-sandbox/test/job-host-main.unit.test.ts:441:35
+    439|         await settle();
+    440|       }
+    441|       expect(control.recordStart).toHaveBeenCalledOnce();
+       |                                   ^
+    442|       expect(boundary.startToken.mock.calls.map(([pid]) => pid).sort()…
+    443|       expect(observe()).toMatchObject({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/job-host-main.unit.test.ts > Job Host entrypoint protocol and lifecycle > keeps running when writing the start record fails
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ packages/runtime-sandbox/test/job-host-main.unit.test.ts:490:33
+    488|     });
+    489|     await startLinux();
+    490|     expect(control.recordStart).toHaveBeenCalledOnce();
+       |                                 ^
+    491|     await closeTask();
+    492|     expect(result()).toMatchObject({ reason: "exited", taskStarted: tr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 45 passed (48)
+   Start at  10:48:09
+   Duration  426ms (transform 126ms, setup 0ms, import 117ms, tests 159ms, environment 0ms)

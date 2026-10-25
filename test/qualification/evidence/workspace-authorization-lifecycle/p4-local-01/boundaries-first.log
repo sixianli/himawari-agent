@@ -1,0 +1,51 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/production-sandbox-network-only.test.ts (3 tests | 1 failed) 1299ms
+   × resolves the production public search route without consulting directory state 371ms
+ ❯ |integration| test/integration/sandbox-execution-v2.test.ts (35 tests | 1 failed) 23ms
+   × network-only reports exit status without asserting the absence of remote effects 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-network-only.test.ts > resolves the production public search route without consulting directory state
+AssertionError: expected undefined to match object { grant: null, …(2) }
+
+- Expected:
+{
+  "grant": null,
+  "hostId": "sandbox-host",
+  "modelRef": "model-fixture",
+}
+
++ Received:
+undefined
+
+ ❯ test/integration/production-sandbox-network-only.test.ts:59:85
+     57|   });
+     58|   const read = vi.spyOn(f.repository, "readScopedState");
+     59|   expect(await services.binding({ ...f.call, capabilityRef: "search.we…
+       |                                                                                     ^
+     60|   expect(read).not.toHaveBeenCalled();
+     61| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/sandbox-execution-v2.test.ts > network-only reports exit status without asserting the absence of remote effects
+TypeError: Cannot read properties of undefined (reading 'operationContract')
+ ❯ validateSandboxExecutionFacts packages/execution-contracts/src/sandbox-execution-v2.ts:346:52
+    344|     !same(
+    345|       plan.operationContract,
+    346|       sandboxOperationContractSchema.parse(binding.operationContract),
+       |                                                    ^
+    347|     ) ||
+    348|     !same(env, sandboxEnvironmentSchema.parse(binding.environment))
+ ❯ test/integration/sandbox-execution-v2.test.ts:876:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  2 failed | 76 passed (78)
+   Start at  19:45:53
+   Duration  4.91s (transform 1.35s, setup 0ms, import 2.47s, tests 2.11s, environment 0ms)

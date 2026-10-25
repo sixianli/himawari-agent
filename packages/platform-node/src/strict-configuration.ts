@@ -4,9 +4,13 @@ import path from "node:path";
 import {
   assertMachineSecretFree,
   type CapabilityDeploymentConfiguration,
+  isWebProviderId,
+  WEB_PROVIDER_IDS,
+  WEB_PROVIDERS,
+  type WebProviderId,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
-  type ConfiguredGenerationModelDescriptor,
+  type ConfiguredCompletionsGenerationModelDescriptor,
   type ConfiguredModelDescriptor,
   type DataClassification,
   type HttpConfiguration,
@@ -18,6 +22,8 @@ import {
   type ProductConfiguration,
   type RecentAuthenticationConfiguration,
   type RunPolicyConfiguration,
+  type TaskEnvironmentConfiguration,
+  type TaskEnvironmentImageConfiguration,
 } from "@himawari-agent/application";
 import { createAgentId, createDeploymentId, createOwnerId } from "@himawari-agent/domain";
 
@@ -111,6 +117,13 @@ function nonNegativeNumber(value: unknown, field: string): number {
   return value;
 }
 
+function unitInterval(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw invalid(field, "must be a finite number from 0 to 1");
+  }
+  return value;
+}
+
 function absolutePath(value: unknown, field: string): string {
   const candidate = string(value, field);
   if (!path.isAbsolute(candidate) || path.normalize(candidate) !== candidate) {
@@ -137,6 +150,53 @@ function parseCapabilityDeploymentConfiguration(value: unknown): CapabilityDeplo
   });
 }
 
+function hexDigest(value: unknown, field: string): string {
+  const candidate = string(value, field);
+  if (!/^[a-f0-9]{64}$/.test(candidate) || /^0{64}$/.test(candidate)) {
+    throw invalid(field, "must be a lowercase 64-character hex digest");
+  }
+  return candidate;
+}
+
+function parseTaskEnvironmentImage(
+  value: unknown,
+  field: string,
+): TaskEnvironmentImageConfiguration {
+  const input = record(value, field);
+  rejectUnknown(input, ["reference", "digest", "pin"], field);
+  const pin = input["pin"];
+  if (pin !== "registry-digest" && pin !== "image-id") {
+    throw invalid(`${field}.pin`, "must be registry-digest or image-id");
+  }
+  return Object.freeze({
+    reference: safeReference(input["reference"], `${field}.reference`),
+    digest: hexDigest(input["digest"], `${field}.digest`),
+    pin,
+  });
+}
+
+function parseTaskEnvironmentConfiguration(value: unknown): TaskEnvironmentConfiguration {
+  const field = "configuration.taskEnvironments";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    ["backendRef", "dockerExecutable", "dockerHost", "image", "egressImage"],
+    field,
+  );
+  const backendRef = safeReference(input["backendRef"], `${field}.backendRef`);
+  if (backendRef === "srt") throw invalid(`${field}.backendRef`, "must not be the SRT backend");
+  return Object.freeze({
+    backendRef,
+    dockerExecutable: absolutePath(input["dockerExecutable"], `${field}.dockerExecutable`),
+    dockerHost:
+      input["dockerHost"] === null || input["dockerHost"] === undefined
+        ? null
+        : safeReference(input["dockerHost"], `${field}.dockerHost`),
+    image: parseTaskEnvironmentImage(input["image"], `${field}.image`),
+    egressImage: parseTaskEnvironmentImage(input["egressImage"], `${field}.egressImage`),
+  });
+}
+
 function stringArray(value: unknown, field: string): readonly string[] {
   if (!Array.isArray(value)) throw invalid(field, "must be an array");
   const result = value.map((entry, index) => safeReference(entry, `${field}[${index}]`));
@@ -160,41 +220,16 @@ function classifications(value: unknown, field: string): readonly DataClassifica
 
 function providerRouting(value: unknown, field: string): ModelProviderRouting {
   const input = record(value, field);
-  rejectUnknown(
-    input,
-    ["order", "allow_fallbacks", "require_parameters", "data_collection", "zdr"],
-    field,
+  rejectUnknown(input, ["order", "sort"], field);
+  if (!Array.isArray(input["order"]) || input["order"].length === 0)
+    throw invalid(`${field}.order`, "must be a non-empty array");
+  const order = input["order"].map((entry, index) =>
+    safeReference(entry, `${field}.order[${index}]`),
   );
-  let order: readonly string[] | undefined;
-  if (input["order"] !== undefined) {
-    if (!Array.isArray(input["order"]) || input["order"].length === 0) {
-      throw invalid(`${field}.order`, "must be a non-empty array");
-    }
-    const values = input["order"].map((entry, index) =>
-      safeReference(entry, `${field}.order[${index}]`),
-    );
-    if (new Set(values).size !== values.length) {
-      throw invalid(`${field}.order`, "must not contain duplicates");
-    }
-    order = Object.freeze(values);
-  }
-  const dataCollection = input["data_collection"];
-  if (dataCollection !== undefined && dataCollection !== "allow" && dataCollection !== "deny") {
-    throw invalid(`${field}.data_collection`, "must be allow or deny");
-  }
-  return Object.freeze({
-    ...(order === undefined ? {} : { order }),
-    ...(input["allow_fallbacks"] === undefined
-      ? {}
-      : { allow_fallbacks: boolean(input["allow_fallbacks"], `${field}.allow_fallbacks`) }),
-    ...(input["require_parameters"] === undefined
-      ? {}
-      : {
-          require_parameters: boolean(input["require_parameters"], `${field}.require_parameters`),
-        }),
-    ...(dataCollection === undefined ? {} : { data_collection: dataCollection }),
-    ...(input["zdr"] === undefined ? {} : { zdr: boolean(input["zdr"], `${field}.zdr`) }),
-  });
+  if (new Set(order).size !== order.length)
+    throw invalid(`${field}.order`, "must not contain duplicates");
+  if (input["sort"] !== "cost") throw invalid(`${field}.sort`, "must be cost");
+  return Object.freeze({ order: Object.freeze(order), sort: "cost" });
 }
 
 function modelCost(value: unknown, field: string): ModelCostDescriptor {
@@ -227,10 +262,11 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   const field = `modelDescriptors[${index}]`;
   const input = record(value, field);
   const role = string(input["role"], `${field}.role`);
-  if (!(["primary", "fallback", "embedding"] as const).includes(role as never)) {
+  if (!(["primary", "specialist", "embedding"] as const).includes(role as never)) {
     throw invalid(`${field}.role`, "is not a supported role");
   }
   const generation = role !== "embedding";
+  const declaredApi = generation ? input["api"] : undefined;
   rejectUnknown(
     input,
     [
@@ -245,17 +281,19 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       "capabilities",
       "cost",
       ...(generation
-        ? [
-            "priority",
-            "name",
-            "api",
-            "reasoning",
-            "reasoningRequired",
-            "input",
-            "contextWindow",
-            "maxTokens",
-            "providerRouting",
-          ]
+        ? declaredApi === "typesafe-systemone"
+          ? ["priority", "name", "api", "modelVersion"]
+          : [
+              "priority",
+              "name",
+              "api",
+              "reasoning",
+              "reasoningRequired",
+              "input",
+              "contextWindow",
+              "maxTokens",
+              "providerRouting",
+            ]
         : ["dimensions"]),
     ],
     field,
@@ -294,13 +332,40 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       role: "embedding",
       dimensions: integer(input["dimensions"], `${field}.dimensions`, 1, 65_536),
     };
+    if (descriptor.provider === "vercel-ai-gateway") {
+      if (descriptor.model !== "alibaba/qwen3-embedding-8b")
+        throw invalid(`${field}.model`, "must be alibaba/qwen3-embedding-8b");
+      if (descriptor.dimensions !== 4096) throw invalid(`${field}.dimensions`, "must be 4096");
+      if (descriptor.secretRef === null)
+        throw invalid(`${field}.secretRef`, "is required for AI Gateway");
+    }
     return Object.freeze(descriptor);
   }
   const api = string(input["api"], `${field}.api`);
-  if (api !== "openai-completions") throw invalid(`${field}.api`, "is unsupported");
-  const descriptor: ConfiguredGenerationModelDescriptor = {
+  if (api !== "openai-completions" && api !== "typesafe-systemone")
+    throw invalid(`${field}.api`, "is unsupported");
+  if (api === "typesafe-systemone") {
+    const descriptor: ConfiguredModelDescriptor = {
+      ...base,
+      role: "specialist",
+      priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
+      name: string(input["name"], `${field}.name`),
+      api: "typesafe-systemone",
+      ...(input["modelVersion"] === undefined
+        ? {}
+        : { modelVersion: safeReference(input["modelVersion"], `${field}.modelVersion`) }),
+    };
+    if (descriptor.cost.output !== 0)
+      throw invalid(`${field}.cost.output`, "must be zero for the decision endpoint");
+    if (role !== "specialist")
+      throw invalid(`${field}.role`, "TypeSafe requires the specialist role");
+    return Object.freeze(descriptor);
+  }
+  if (role === "specialist")
+    throw invalid(`${field}.role`, "specialist requires the TypeSafe decision API");
+  const descriptor: ConfiguredCompletionsGenerationModelDescriptor = {
     ...base,
-    role: role as "primary" | "fallback",
+    role: "primary",
     priority: integer(input["priority"], `${field}.priority`, 1, 10_000),
     name: string(input["name"], `${field}.name`),
     api: "openai-completions",
@@ -315,7 +380,7 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
       1,
       Number.MAX_SAFE_INTEGER,
     ),
-    maxTokens: integer(input["maxTokens"], `${field}.maxTokens`, 1, Number.MAX_SAFE_INTEGER),
+    maxTokens: integer(input["maxTokens"], `${field}.maxTokens`, 1, 32768),
     ...(input["providerRouting"] === undefined
       ? {}
       : { providerRouting: providerRouting(input["providerRouting"], `${field}.providerRouting`) }),
@@ -323,16 +388,13 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
   if (descriptor.reasoningRequired && !descriptor.reasoning) {
     throw invalid(`${field}.reasoningRequired`, "requires a reasoning-capable model");
   }
-  if (role === "fallback") {
-    if (
-      descriptor.allowedDataClassifications.length !== 1 ||
-      descriptor.allowedDataClassifications[0] !== "private"
-    ) {
-      throw invalid(
-        `${field}.allowedDataClassifications`,
-        "fallback must allow exactly the private classification",
-      );
-    }
+  if (descriptor.provider === "vercel-ai-gateway") {
+    if (descriptor.model !== "deepseek/deepseek-v4.1-flash")
+      throw invalid(`${field}.model`, "must be deepseek/deepseek-v4.1-flash");
+    if (descriptor.secretRef === null)
+      throw invalid(`${field}.secretRef`, "is required for AI Gateway");
+    if (descriptor.providerRouting === undefined)
+      throw invalid(`${field}.providerRouting`, "is required for AI Gateway");
   }
   return Object.freeze(descriptor);
 }
@@ -442,7 +504,7 @@ function parseHttpConfiguration(value: unknown): HttpConfiguration {
   }
   return Object.freeze({
     listenHost,
-    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 1, 65_535),
+    listenPort: integer(input["listenPort"], "configuration.http.listenPort", 0, 65_535),
     staticRoot: absolutePath(input["staticRoot"], "configuration.http.staticRoot"),
     sessionCookieName,
     maximumBodyBytes: integer(
@@ -677,25 +739,189 @@ function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration[
   });
 }
 
+function parseWebProviders(value: unknown, field: string): readonly WebProviderId[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > WEB_PROVIDER_IDS.length ||
+    new Set(value).size !== value.length ||
+    !value.every(isWebProviderId)
+  )
+    throw invalid(field, "must list distinct registered web providers in fallback order");
+  return Object.freeze([...value]);
+}
+
+function parseWebProviderSecrets(
+  value: unknown,
+  providers: readonly WebProviderId[] | undefined,
+  field: string,
+): Readonly<Partial<Record<WebProviderId, string>>> | undefined {
+  const needed = (providers ?? []).filter((id) => WEB_PROVIDERS[id].requiresSecret);
+  if (value === undefined) {
+    if (needed.length) throw invalid(field, `must name the secret for ${needed.join(", ")}`);
+    return undefined;
+  }
+  const input = record(value, field);
+  rejectUnknown(input, needed, field);
+  if (needed.some((id) => input[id] === undefined))
+    throw invalid(field, `must name the secret for ${needed.join(", ")}`);
+  return Object.freeze(
+    Object.fromEntries(needed.map((id) => [id, safeReference(input[id], `${field}.${id}`)])),
+  );
+}
+
+export const WEB_PROVIDER_SECRET_PURPOSE = "web-provider";
+
+function assertWebProviderSecretReferences(
+  runPolicy: RunPolicyConfiguration | undefined,
+  secretReferences: readonly {
+    readonly ref: string;
+    readonly version: string;
+    readonly purpose: string;
+  }[],
+): void {
+  for (const [name, route] of [
+    ["publicSearch", runPolicy?.publicSearch],
+    ["publicFetch", runPolicy?.publicFetch],
+  ] as const)
+    for (const [id, ref] of Object.entries(route?.providerSecrets ?? {}))
+      assertIdentitySecretReference(
+        secretReferences,
+        ref ?? null,
+        WEB_PROVIDER_SECRET_PURPOSE,
+        `configuration.runPolicy.${name}.providerSecrets.${id}`,
+      );
+}
+
+function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string) {
+  rejectUnknown(
+    input,
+    [
+      "scopeSource",
+      "hostId",
+      "workerInstanceId",
+      "capabilityRef",
+      "capabilityVersion",
+      "maximumBytes",
+      "providers",
+      "providerSecrets",
+    ],
+    field,
+  );
+  if (input["scopeSource"] !== "private_temp") throw invalid(field, "requires private_temp scope");
+  const providers = parseWebProviders(input["providers"], `${field}.providers`);
+  const providerSecrets = parseWebProviderSecrets(
+    input["providerSecrets"],
+    providers,
+    `${field}.providerSecrets`,
+  );
+  return Object.freeze({
+    scopeSource: "private_temp" as const,
+    hostId: safeReference(input["hostId"], `${field}.hostId`),
+    workerInstanceId: safeReference(input["workerInstanceId"], `${field}.workerInstanceId`),
+    capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
+    capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
+    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+    ...(providers === undefined ? {} : { providers }),
+    ...(providerSecrets === undefined ? {} : { providerSecrets }),
+  });
+}
+
+function parsePublicSearchRoute(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["publicSearch"]> {
+  const field = "configuration.runPolicy.publicSearch";
+  const input = record(value, field);
+  if (input["scopeSource"] === undefined) {
+    const { providers, providerSecrets, ...route } = input;
+    const parsed = parseFileReadRoute(route);
+    const chain = parseWebProviders(providers, `${field}.providers`);
+    const secrets = parseWebProviderSecrets(providerSecrets, chain, `${field}.providerSecrets`);
+    return Object.freeze({
+      ...parsed,
+      ...(chain === undefined ? {} : { providers: chain }),
+      ...(secrets === undefined ? {} : { providerSecrets: secrets }),
+    });
+  }
+  return parsePrivateTempWebRoute(input, field);
+}
+
+function parsePublicFetchRoute(value: unknown): NonNullable<RunPolicyConfiguration["publicFetch"]> {
+  const field = "configuration.runPolicy.publicFetch";
+  return parsePrivateTempWebRoute(record(value, field), field);
+}
+
 function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
   const input = record(value, "configuration.runPolicy.coding");
-  const { enabledTools, ...route } = input;
+  const { enabledTools, approval, ...route } = input;
   if (
     !Array.isArray(enabledTools) ||
     enabledTools.length === 0 ||
     new Set(enabledTools).size !== enabledTools.length ||
     enabledTools.some(
-      (tool) => !["read", "write", "edit", "bash", "find", "grep", "ls"].includes(tool),
+      (tool) =>
+        ![
+          "read",
+          "write",
+          "edit",
+          "bash",
+          "find",
+          "grep",
+          "ls",
+          "move_directory",
+          "save_copy",
+        ].includes(tool),
     )
   )
     throw invalid(
       "configuration.runPolicy.coding.enabledTools",
       "must select distinct installed Pi tools",
     );
+  if (approval !== undefined && approval !== "workspace_auto" && approval !== "ask")
+    throw invalid("configuration.runPolicy.coding.approval", "must be workspace_auto or ask");
   return {
     ...parseFileReadRoute(route),
     enabledTools: enabledTools as NonNullable<RunPolicyConfiguration["coding"]>["enabledTools"],
+    approval: approval === undefined ? "workspace_auto" : approval,
   };
+}
+
+function parseAutomaticReview(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["automaticReview"]> {
+  const field = "configuration.runPolicy.automaticReview";
+  const input = record(value, field);
+  rejectUnknown(
+    input,
+    [
+      "delegationKey",
+      "configurationVersion",
+      "modelRef",
+      "maximumWaitMs",
+      "maxOutputBytes",
+      "confidenceThreshold",
+    ],
+    field,
+  );
+  return Object.freeze({
+    delegationKey: safeReference(input["delegationKey"], `${field}.delegationKey`),
+    configurationVersion: safeReference(
+      input["configurationVersion"],
+      `${field}.configurationVersion`,
+    ),
+    modelRef: safeReference(input["modelRef"], `${field}.modelRef`),
+    maximumWaitMs: integer(input["maximumWaitMs"], `${field}.maximumWaitMs`, 1, 300_000),
+    maxOutputBytes: integer(input["maxOutputBytes"], `${field}.maxOutputBytes`, 1, 1_048_576),
+    ...(input["confidenceThreshold"] === undefined
+      ? {}
+      : {
+          confidenceThreshold: unitInterval(
+            input["confidenceThreshold"],
+            `${field}.confidenceThreshold`,
+          ),
+        }),
+  });
 }
 
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
@@ -712,6 +938,8 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "fileRead",
       "coding",
       "publicSearch",
+      "publicFetch",
+      "automaticReview",
     ],
     "configuration.runPolicy",
   );
@@ -737,9 +965,15 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(timeZone === undefined ? {} : { timeZone }),
     ...(input["publicSearch"] === undefined
       ? {}
-      : { publicSearch: parseFileReadRoute(input["publicSearch"]) }),
+      : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
+    ...(input["publicFetch"] === undefined
+      ? {}
+      : { publicFetch: parsePublicFetchRoute(input["publicFetch"]) }),
     ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
     ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
+    ...(input["automaticReview"] === undefined
+      ? {}
+      : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,
@@ -772,6 +1006,7 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
       "publicMode",
       "runPolicy",
       "capabilityDeployment",
+      "taskEnvironments",
       "http",
       "identity",
       "modelDescriptors",
@@ -834,6 +1069,10 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     input["capabilityDeployment"] === undefined
       ? undefined
       : parseCapabilityDeploymentConfiguration(input["capabilityDeployment"]);
+  const taskEnvironments =
+    input["taskEnvironments"] === undefined
+      ? undefined
+      : parseTaskEnvironmentConfiguration(input["taskEnvironments"]);
   if ((http === undefined) !== (identity === undefined)) {
     throw invalid("configuration", "http and identity must be configured together");
   }
@@ -845,11 +1084,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   if (new Set(modelDescriptors.map(({ ref }) => ref)).size !== modelDescriptors.length) {
     throw invalid("configuration.modelDescriptors", "must not contain duplicate refs");
   }
-  for (const role of ["primary", "fallback", "embedding"] as const) {
+  for (const role of ["primary", "embedding"] as const) {
     if (modelDescriptors.filter((descriptor) => descriptor.role === role).length !== 1) {
       throw invalid("configuration.modelDescriptors", `must contain exactly one ${role}`);
     }
   }
+  if (modelDescriptors.filter((descriptor) => descriptor.role === "specialist").length > 1)
+    throw invalid("configuration.modelDescriptors", "must contain at most one specialist");
 
   const memory = record(input["memory"], "configuration.memory");
   rejectUnknown(
@@ -967,6 +1208,18 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     ["runMs", "workerRequestMs", "providerRequestMs"],
     "configuration.deadlines",
   );
+  const runPolicy =
+    input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
+  assertWebProviderSecretReferences(runPolicy, secretReferences);
+  const review = runPolicy?.automaticReview;
+  if (review) {
+    const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
+    if (!descriptor || descriptor.role === "embedding")
+      throw invalid(
+        "configuration.runPolicy.automaticReview.modelRef",
+        "must name a configured generation model",
+      );
+  }
 
   return Object.freeze({
     schemaVersion: CONFIGURATION_SCHEMA_VERSION,
@@ -980,8 +1233,9 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
     cacheDirectory,
     publicOrigin,
     publicMode,
-    ...(input["runPolicy"] === undefined ? {} : { runPolicy: parseRunPolicy(input["runPolicy"]) }),
+    ...(runPolicy === undefined ? {} : { runPolicy }),
     ...(capabilityDeployment === undefined ? {} : { capabilityDeployment }),
+    ...(taskEnvironments === undefined ? {} : { taskEnvironments }),
     ...(http === undefined ? {} : { http }),
     ...(identity === undefined ? {} : { identity }),
     modelDescriptors,

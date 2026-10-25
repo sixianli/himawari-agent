@@ -1,0 +1,12 @@
+
+> himawari-agent@0.0.0 check:pi-compat
+> vitest run --config vitest.workspace.ts --project pi-compat packages/runtime-pi/test/prepare-file-mutation.compat.test.ts
+
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  00:54:09
+   Duration  1.79s (transform 39ms, setup 0ms, import 1.66s, tests 17ms, environment 0ms)

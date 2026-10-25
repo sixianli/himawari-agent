@@ -1,0 +1,82 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/service-orchestration.unit.test.ts (50 tests | 6 failed) 94ms
+     × starts after recovery and worker readiness, then drains before its dependencies close 4ms
+     × cancels a running recovery on signal shutdown 1ms
+     × cancels a running recovery on authority shutdown 2ms
+     × ends startup/runtime on recovery storage failure without retrying or exposing diagnostics 1ms
+     × checks current authority before every fallback scan 1ms
+     × bounds shutdown even when a faulty recovery port ignores cancellation 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > starts after recovery and worker readiness, then drains before its dependencies close
+AssertionError: expected "vi.fn()" to be called with arguments: [ Any<AbortSignal>, 2 ]
+
+Number of calls: 0
+
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:447:28
+    445|     await settle();
+    446|     expect(stdout).toContain('"event":"service.ready"');
+    447|     expect(recoverPending).toHaveBeenCalledWith(expect.any(AbortSignal…
+       |                            ^
+    448|     expect(boundary.events.indexOf("resource-recovery.start")).toBeGre…
+    449|     expect(boundary.events.indexOf("resource-recovery.start")).toBeGre…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > cancels a running recovery on signal shutdown
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > cancels a running recovery on authority shutdown
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:475:28
+    473|     boundary.sandbox.mockResolvedValue({ resources: { recoverPending }…
+    474|     start(); await settle();
+    475|     expect(recoverPending).toHaveBeenCalledOnce();
+       |                            ^
+    476|     if (cause === "signal") signal?.();
+    477|     else boundary.authority.mock.calls[0]?.[0].onLost(new Error("AGENT…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > ends startup/runtime on recovery storage failure without retrying or exposing diagnostics
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:490:28
+    488|     boundary.sandbox.mockResolvedValue({ resources: { recoverPending }…
+    489|     start(); await settle();
+    490|     expect(recoverPending).toHaveBeenCalledOnce();
+       |                            ^
+    491|     expect(await exit).toBe(1);
+    492|     expect(stderr).toContain('"event":"runtime.failed"');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > checks current authority before every fallback scan
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:503:28
+    501|     boundary.sandbox.mockResolvedValue({ resources: { recoverPending }…
+    502|     start(); await settle();
+    503|     expect(recoverPending).toHaveBeenCalledOnce();
+       |                            ^
+    504|     await vi.advanceTimersByTimeAsync(1000);
+    505|     expect(recoverPending).toHaveBeenCalledTimes(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |unit| apps/agent-service/test/service-orchestration.unit.test.ts > resource recovery without web Run dispatch > bounds shutdown even when a faulty recovery port ignores cancellation
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ apps/agent-service/test/service-orchestration.unit.test.ts:517:28
+    515|     boundary.sandbox.mockResolvedValue({ resources: { recoverPending }…
+    516|     start(); await settle();
+    517|     expect(recoverPending).toHaveBeenCalledOnce();
+       |                            ^
+    518|     signal?.(); await settle();
+    519|     expect(repository.close).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 44 passed (50)
+   Start at  13:16:20
+   Duration  3.37s (transform 1.15s, setup 0ms, import 3.16s, tests 94ms, environment 0ms)

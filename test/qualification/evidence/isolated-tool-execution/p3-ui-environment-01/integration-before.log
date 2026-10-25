@@ -1,0 +1,227 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry -1 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 0 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 11 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 151 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > atomically consumes once, rejects changed replay and persists a single starting winner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rolls back Handle consumption, record and occupancy when initial observation fails
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > blocks nested and aliased directories for a live writer, allows disjoint directories
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > lost supervision quarantines intersecting reads
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > known output survives lost supervision; observation CAS and immutable results survive reopen
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > stores late operation evidence after release without fabricating resource transitions
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation at +0ms without revoking release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation at +1ms without revoking release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > records verified new risk after the original execution permission expires
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > protects contradiction observed after release even when receipt acceptance was delayed
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps an incident across reopen and only clears it with newer stop evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from missing-proof evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from expired-proof evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from wrong-subject evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from stale evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from future evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not create a resource incident from changed-effect evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > preserves schema 41 protections and release facts when adding resource incidents
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not turn generic effect uncertainty into a new workspace lock
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > Run cancellation blocks a prepared continuation but still permits cleanup observations
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > dispatch rechecks sequence, is at most once, and preserves post-dispatch uncertainty
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > keeps post-dispatch uncertainty pending after resource release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > v1 unknown and missing journals never acquire v2 execution authority
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists background creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > persists service creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > blocks final completion with queued resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > blocks final completion with reserved resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > blocks final completion with released-incident resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > permits intersecting live readers and rejects a subsequent writer
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rejects a legacy Worker bypass and protects unresolved rows from cascading deletion
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rejects forged supervision and output references without changing either history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > does not freeze an unverified effect claim as confirmed business evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > rechecks resource sequence and execution fence before dispatch
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > serializes concurrent journal requests and rejects a competing state-root owner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting prepared history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting starting history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting quarantined history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting completed history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting failed history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_host history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_state history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > records why current v2 cannot bind a policy first compiled after admission
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > v2 startup invalidates previous supervision durably without replay or erasing known output
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation verified preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation untrusted preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation timeout preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation evidence-timeout preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > reconciliation concurrent preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > ignores late lost observations after recovery timeout without verification or writes
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > ignores late released observations after recovery timeout without verification or writes
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > fences recovery writes when another attempt takes ownership before the SQL transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure private backend diagnostic
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure SANDBOX_PRIVATE_SECRET
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure EACCES
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure EPERM
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure ECONNREFUSED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure ETIMEDOUT
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure JOB_HOST_CONTROL_TIMEOUT
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure JOB_HOST_CONTROL_EVIDENCE_INVALID
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure lost:SANDBOX_CONTROL_UNCONFIRMED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure lost:SANDBOX_HOST_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains safe bounded recovery failure lost:SANDBOX_PRIVATE_SECRET
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > finishes bounded recovery using current durable facts: preparation-deadline
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > finishes bounded recovery using current durable facts: concurrent-result
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > finishes bounded recovery using current durable facts: concurrent-release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > rejects stale recovery proof through the repository port: revision
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > rejects stale recovery proof through the repository port: owner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > rejects stale recovery proof through the repository port: finished
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > rejects stale recovery proof through the repository port: deadline
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > commits a single host observation with fresh proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > commits a single host observation with expired proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > commits a single host observation with changed proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > recovers legacy released occupancy with verified evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > recovers legacy released occupancy with expired evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > recovers legacy released occupancy with unavailable evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > keeps missing result delivery visible after accepting permanent resource release
+ × |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > lists started background and service programs until their release is recorded 264ms
+   → $: expected an object
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > names a process-group release a stop without strict confirmation
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > shows an owner-purged unconfirmed record as deleted without blocking its Run
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: deliver
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: retained-release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: cancel-before-dispatch
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: receipt-fails
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > Agent foreground result handoff: expired-proof
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > retains a failed command as a known failure with unverified file effects
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > preserves release safety when observing changed subject
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > preserves release safety when observing changed metrics
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > preserves release safety when observing changed revive
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry -1 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 0 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 11 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps release after result ACK at evidence expiry 151 ms
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > atomically consumes once, rejects changed replay and persists a single starting winner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > rolls back Handle consumption, record and occupancy when initial observation fails
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > blocks nested and aliased directories for a live writer, allows disjoint directories
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > lost supervision quarantines intersecting reads
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > known output survives lost supervision; observation CAS and immutable results survive reopen
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > stores late operation evidence after release without fabricating resource transitions
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation at +0ms without revoking release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects a fresh contradictory resource observation at +1ms without revoking release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > records verified new risk after the original execution permission expires
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > protects contradiction observed after release even when receipt acceptance was delayed
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps an incident across reopen and only clears it with newer stop evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from missing-proof evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from expired-proof evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from wrong-subject evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from stale evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from future evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not create a resource incident from changed-effect evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > preserves schema 41 protections and release facts when adding resource incidents
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not turn generic effect uncertainty into a new workspace lock
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > Run cancellation blocks a prepared continuation but still permits cleanup observations
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > dispatch rechecks sequence, is at most once, and preserves post-dispatch uncertainty
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > keeps post-dispatch uncertainty pending after resource release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > v1 unknown and missing journals never acquire v2 execution authority
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > persists foreground creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > persists background creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > persists service creator, environment and resource handle in the admission transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > blocks final completion with queued resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > blocks final completion with reserved resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > blocks final completion with released-incident resources in the same transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > permits intersecting live readers and rejects a subsequent writer
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > rejects a legacy Worker bypass and protects unresolved rows from cascading deletion
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > rejects forged supervision and output references without changing either history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > does not freeze an unverified effect claim as confirmed business evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > rechecks resource sequence and execution fence before dispatch
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > serializes concurrent journal requests and rejects a competing state-root owner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting prepared history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting starting history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting quarantined history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting completed history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting failed history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_host history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > R2 SQLite durable execution resources > upgrades populated schema 27 without reinterpreting missing_state history
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > records why current v2 cannot bind a policy first compiled after admission
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > v2 startup invalidates previous supervision durably without replay or erasing known output
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > reconciliation verified preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > reconciliation untrusted preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > reconciliation timeout preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > reconciliation evidence-timeout preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > reconciliation concurrent preserves operation facts and only releases verified risk
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > ignores late lost observations after recovery timeout without verification or writes
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > ignores late released observations after recovery timeout without verification or writes
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > fences recovery writes when another attempt takes ownership before the SQL transaction
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_DIRECTORY_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_IDENTITY_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_BINDING_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_CONTROL_EVIDENCE_CHANGED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_HOST_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure private backend diagnostic
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure SANDBOX_PRIVATE_SECRET
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure EACCES
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure EPERM
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure ECONNREFUSED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure ETIMEDOUT
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure JOB_HOST_CONTROL_TIMEOUT
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure JOB_HOST_CONTROL_EVIDENCE_INVALID
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure lost:SANDBOX_CONTROL_UNCONFIRMED
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure lost:SANDBOX_HOST_UNAVAILABLE
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains safe bounded recovery failure lost:SANDBOX_PRIVATE_SECRET
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > finishes bounded recovery using current durable facts: preparation-deadline
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > finishes bounded recovery using current durable facts: concurrent-result
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > finishes bounded recovery using current durable facts: concurrent-release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > rejects stale recovery proof through the repository port: revision
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > rejects stale recovery proof through the repository port: owner
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > rejects stale recovery proof through the repository port: finished
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > rejects stale recovery proof through the repository port: deadline
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > commits a single host observation with fresh proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > commits a single host observation with expired proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > commits a single host observation with changed proof without repeating verification
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > recovers legacy released occupancy with verified evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > recovers legacy released occupancy with expired evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > recovers legacy released occupancy with unavailable evidence
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > keeps missing result delivery visible after accepting permanent resource release
+ × |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > lists started background and service programs until their release is recorded 105ms
+   → $: expected an object
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > names a process-group release a stop without strict confirmation
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > shows an owner-purged unconfirmed record as deleted without blocking its Run
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > Agent foreground result handoff: deliver
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > Agent foreground result handoff: retained-release
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > Agent foreground result handoff: cancel-before-dispatch
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > Agent foreground result handoff: receipt-fails
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > Agent foreground result handoff: expired-proof
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > retains a failed command as a known failure with unverified file effects
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > preserves release safety when observing changed subject
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > preserves release safety when observing changed metrics
+ ↓ |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > preserves release safety when observing changed revive
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (worker) > lists started background and service programs until their release is recorded
+ FAIL  |integration| test/integration/sqlite-sandbox-execution-v2.test.ts > SQLite component contracts (direct) > lists started background and service programs until their release is recorded
+ApplicationPortError: $: expected an object
+ ❯ SqliteCapabilityInvocationOperations.fail test/fixtures/sqlite-capability-invocation-fixture.ts:543:11
+    541|     details?: Readonly<Record<string, string>>,
+    542|   ): never => {
+    543|     throw new ApplicationPortError(code as PortErrorCode, message, det…
+       |           ^
+    544|   };
+    545|   const artifacts = new SqliteRunPayloadArtifactOperations(database, f…
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:605:21
+ ❯ list test/integration/sqlite-sandbox-execution-v2.test.ts:2156:43
+ ❯ test/integration/sqlite-sandbox-execution-v2.test.ts:2162:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'PORT_INVALID_OPERATION', details: {} }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 194 skipped (196)
+   Start at  13:12:04
+   Duration  1.93s (transform 1.00s, setup 0ms, import 1.47s, tests 371ms, environment 0ms)

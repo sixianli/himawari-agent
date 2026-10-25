@@ -1,0 +1,74 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (22 tests | 2 failed) 4574ms
+     × releases an unbound original reservation once and fences old attempt proofs 319ms
+     × releases an unbound original reservation once and fences old attempt proofs 82ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > releases an unbound original reservation once and fences old attempt proofs
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > releases an unbound original reservation once and fences old attempt proofs
+AssertionError: expected { phase: 'reserved', …(5) } to match object { phase: 'reserved', …(3) }
+(37 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -3,39 +3,8 @@
+    "recovery": {
+      "attempts": 1,
+      "deadlineAt": "2026-09-04T00:00:02.000Z",
+      "nextAttemptAt": null,
+      "startedAt": "2026-09-04T00:00:01.000Z",
+-     "status": "resolved",
+-   },
+-   "releaseReceipt": {
+-     "acceptedAt": "2026-09-04T00:00:01.000Z",
+-     "verification": {
+-       "basis": "host_never_started",
+-       "checkedAt": "2026-09-04T00:00:01.000Z",
+-       "controlSessionId": "12345678-1234-1234-1234-123456789012",
+-       "environmentId": "environment",
+-       "evidence": {
+-         "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+-         "ref": "protected:release-proof",
+-       },
+-       "identity": {
+-         "agentId": "agent-capability-invocation",
+-         "attemptId": "attempt",
+-         "hostId": "sandbox-host",
+-         "invocationId": "invocation-capability-invocation",
+-         "jobId": "job",
+-         "ownerId": "owner-capability-invocation",
+-         "receiptRef": "receipt-capability-invocation",
+-         "runId": "run-capability-invocation",
+-         "threadId": "thread-capability-invocation",
+-         "toolCallId": "sandbox-tool",
+-       },
+-       "processIdentityRef": "job-host-process:original",
+-       "schemaVersion": "sandbox-reservation-release.v1",
+-       "semanticFingerprint": undefined,
+-       "stopRequestedAt": "2026-09-04T00:00:01.000Z",
+-       "validUntil": "2026-09-04T00:00:02.000Z",
++     "status": "unresolved",
+    },
+-   },
+-   "workspaceBlocked": false,
+  }
+
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:160:21
+    158|       await service.pump(new AbortController().signal, 1);
+    159|       const saved = await f.preparations.readAdmission(f.identity);
+    160|       expect(saved).toMatchObject({ phase: "reserved", workspaceBlocke…
+       |                     ^
+    161|         recovery: { status: "resolved", attempts: 1, startedAt: T1, de…
+    162|         releaseReceipt: { acceptedAt: T1, verification: proof } });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 20 passed (22)
+   Start at  12:47:29
+   Duration  6.89s (transform 1.34s, setup 0ms, import 2.19s, tests 4.57s, environment 0ms)

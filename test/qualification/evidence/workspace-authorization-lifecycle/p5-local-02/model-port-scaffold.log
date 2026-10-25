@@ -1,0 +1,24 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/model-action-reviewer.unit.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/model-action-reviewer.unit.test.ts [ packages/application/test/model-action-reviewer.unit.test.ts ]
+Error: Cannot find module '../src/services/model-action-reviewer.js' imported from /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/application/test/model-action-reviewer.unit.test.ts
+ ❯ packages/application/test/model-action-reviewer.unit.test.ts:4:1
+      2| import { createRunId } from '@himawari-agent/domain';
+      3| import type { AutomaticReviewRequest, ModelDescriptor, ModelInvocation…
+      4| import { ModelActionReviewer } from '../src/services/model-action-revi…
+       | ^
+      5|
+      6| const now='2026-09-19T12:00:00.000Z';
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  20:44:04
+   Duration  223ms (transform 96ms, setup 0ms, import 0ms, tests 0ms, environment 0ms)

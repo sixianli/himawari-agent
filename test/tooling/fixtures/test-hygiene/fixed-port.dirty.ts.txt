@@ -1,0 +1,12 @@
+import { createServer } from "node:net";
+import { it } from "vitest";
+
+const server = createServer();
+
+it("listens on a fixed port", async () => {
+  await new Promise((resolve) => server.listen(8080, "127.0.0.1", resolve));
+});
+
+it("listens on a fixed option port", async () => {
+  await new Promise((resolve) => server.listen({ host: "127.0.0.1", port: 8081 }, resolve));
+});

@@ -1,0 +1,121 @@
+{
+  "source": ".ci-output/local-1789554643356/test-macos-arm64/tests/unit.json",
+  "failures": [
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport issues separate single-use credentials and feeds real Pi read output back; restart replays both stages",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not share an active execution promise with a different lease attempt",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport requires an independent inspect permission",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport requires an independent read permission",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport requires an independent disclose permission",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport rejects mismatched Worker metadata: hostId",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport rejects mismatched Worker metadata: relativePath",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport rejects mismatched Worker metadata: identity",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport rejects mismatched Worker metadata: extra",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not expose internally issued phase Handles as model authorities",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport uses the original Pi line range semantics",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport rejects a file replaced between inspect and read without reading the replacement",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not issue a content read for missing targets",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not issue a content read for symlink targets",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not issue a content read for oversize targets",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not resume with changed grant revision, thread, model, or execution lease",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport stops at a cancelled Run between phases",
+      "failure": "Error: expected [Function] to throw error including 'RUN_NOT_ACTIVE' but got 'Reservation store is not connected'"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not resend an uncertain inspect after restart",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not resend an uncertain read after restart",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport coalesces concurrent identical calls and rejects changed argument replay",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport resumes an approved read under a fresh execution lease without repeating inspect",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport does not execute pending approval after the shared deadline",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    },
+    {
+      "file": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "test": "production file read workflow through the Worker transport refuses disclosure after its grant is revoked following the read",
+      "failure": "ApplicationPortError: Reservation store is not connected"
+    }
+  ],
+  "diagnosis": "文件读取测试分别建立授权与 Handle 存储，缺少新增预约关联；连接测试依赖后该文件 34 项通过。"
+}

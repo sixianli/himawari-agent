@@ -1,0 +1,25 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts (38 tests | 1 failed) 195ms
+   × recovers a known file conflict after restart and requires new exact-content approval 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-file-read-workflow.unit.test.ts > recovers a known file conflict after restart and requires new exact-content approval
+TypeError: Cannot read properties of undefined (reading 'id')
+ ❯ apps/agent-service/test/production-file-read-workflow.unit.test.ts:765:24
+    763|   const approvals = await f.approvals();
+    764|   expect(approvals).toHaveLength(2);
+    765|   expect(approvals[0]?.intent.id).not.toBe(approvals[1]?.intent.id);
+       |                        ^
+    766|   const lineageArtifact = [...f.artifacts.values()].find((item) =>
+    767|     item.operationKey.endsWith(":conflict-lineage"),
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 113 passed (114)
+   Start at  02:11:51
+   Duration  3.01s (transform 2.38s, setup 0ms, import 4.47s, tests 323ms, environment 0ms)

@@ -1,0 +1,28 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (39 tests | 1 failed) 261ms
+     × verifies its own completed publication after grant revocation without writing again 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > verifies its own completed publication after grant revocation without writing again
+ApplicationPortError: Directory Grant is revoked, expired, cross-host, or out of scope
+ ❯ FileOperationService.#reject packages/application/src/services/file-operation-service.ts:711:11
+    709|
+    710|   #reject(message: string): never {
+    711|     throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION,…
+       |           ^
+    712|   }
+    713|   #conflict(message: string): never {
+ ❯ FileOperationService.#usableGrant packages/application/src/services/file-operation-service.ts:681:12
+ ❯ FileOperationService.executeWrite packages/application/src/services/file-operation-service.ts:116:19
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:162:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 38 passed (39)
+   Start at  20:00:22
+   Duration  1.55s (transform 742ms, setup 0ms, import 1.19s, tests 261ms, environment 0ms)

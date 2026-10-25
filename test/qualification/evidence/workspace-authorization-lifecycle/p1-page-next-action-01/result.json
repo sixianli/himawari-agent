@@ -1,0 +1,205 @@
+{
+  "date": "2026-09-23",
+  "scope": "P1 execution-page guidance and safe command failure classification",
+  "p1Complete": false,
+  "checks": [
+    {
+      "name": "agent service unit tests",
+      "status": "passed",
+      "testFiles": 2,
+      "passed": 76,
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project node-services apps/agent-service/test/production-runtime-tools.unit.test.ts apps/agent-service/test/production-sandbox-tool-result.unit.test.ts"
+    },
+    {
+      "name": "application state unit tests",
+      "status": "passed",
+      "testFiles": 1,
+      "passed": 25,
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project unit packages/application/test/thread-execution-state.unit.test.ts"
+    },
+    {
+      "name": "control center execution view unit tests",
+      "status": "passed",
+      "testFiles": 1,
+      "passed": 28,
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project unit apps/control-center/test/execution-view.unit.test.ts"
+    },
+    {
+      "name": "Biome scoped check",
+      "status": "passed",
+      "files": 17,
+      "result": "exit 0; 59 informational useLiteralKeys suggestions; no fixes applied"
+    },
+    {
+      "name": "SQLite failed-command integration regression",
+      "status": "passed",
+      "testFilesStarted": 0,
+      "reason": "The complete SQLite sandbox execution file passed in worker and direct modes, including the failed-command partial-write case.",
+      "testFiles": 1,
+      "passed": 190,
+      "filtered": 0,
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts --pool=threads --maxWorkers=1",
+      "evidence": "raw-logs.tar.gz#sqlite-sandbox-execution-v2.log"
+    },
+    {
+      "name": "thread-interactions DOM test",
+      "status": "not_verified",
+      "reason": "Vitest threads worker did not respond within its 60-second startup timeout; zero test assertions ran, including when run alone.",
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project browser apps/control-center/test/thread-interactions.unit.test.ts --pool=threads --maxWorkers=1"
+    },
+    {
+      "name": "browser build",
+      "status": "passed",
+      "reason": "Vite production build and check-control-center-build.mjs passed; initial parse.fastpaths error did not recur. Bundle-size advisory remains.",
+      "command": "npm run build:browser",
+      "evidence": "raw-logs.tar.gz#control-center-build-rerun.log"
+    },
+    {
+      "name": "full TypeScript check",
+      "status": "incomplete",
+      "reason": "The first tsc project emitted no diagnostics and the command produced no output for 180 seconds before the bounded subprocess timeout; no typecheck result is claimed.",
+      "command": "npm run typecheck",
+      "evidence": "typecheck-rerun.log"
+    },
+    {
+      "name": "OrbStack detached-session candidate probe",
+      "status": "passed_as_candidate_only",
+      "evidence": "../p1-orbstack-probe-01/README.md",
+      "reason": "A setsid descendant wrote into an isolated bind mount before stop; after docker stop the independent daemon readback was exited/false/pid=0/137 and the host file byte count remained stable. Product SRT/Job Host routing and permanent release receipt are not implemented or qualified."
+    },
+    {
+      "name": "OrbStack restoration",
+      "status": "passed",
+      "reason": "The disposable probe container was removed; the previously running just-rag-postgres container was gracefully stopped after OrbStack auto-started it; OrbStack status returned to Stopped. The pinned BusyBox image remains cached to avoid restarting the user's services solely for image cleanup."
+    },
+    {
+      "name": "Git Graph reference repair",
+      "status": "passed",
+      "reason": "The invalid local ref codex/ux-fixes 2 was atomically renamed to codex/ux-fixes-2; target commit/tree remained readable and both pack files passed git verify-pack. Earlier pack-corruption assessment was disproved."
+    },
+    {
+      "name": "strict documentation validation",
+      "status": "blocked_by_preserved_user_files",
+      "reason": "Four pre-existing untracked user-owned Runbook copies have stale hashes; formal authority-transfer, backup-restore, Hermes upgrade, and install-start-stop Runbooks were individually sealed and checked successfully. The four untracked copies were preserved."
+    },
+    {
+      "name": "Job Host timeout, no-progress, and stop-grace regression",
+      "status": "passed",
+      "testFiles": 2,
+      "passed": 56,
+      "command": "node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project unit packages/runtime-sandbox/test/job-host.unit.test.ts packages/runtime-sandbox/test/job-host-main.unit.test.ts",
+      "reason": "Covers wall deadline, missing IPC progress/heartbeat stop request, bounded cleanup timeout, and cleanup unknown after task start."
+    },
+    {
+      "name": "formal affected Runbook static contracts",
+      "status": "passed",
+      "runbooks": 4,
+      "paths": [
+        "docs/runbooks/authority-transfer-runbook.md",
+        "docs/runbooks/backup-restore-runbook.md",
+        "docs/runbooks/hermes-control-center-upgrade-runbook.md",
+        "docs/runbooks/install-start-stop-runbook.md"
+      ]
+    },
+    {
+      "name": "CI policy contract",
+      "status": "passed",
+      "files": 308,
+      "projects": {
+        "unit": 136,
+        "contracts": 23,
+        "integration": 89,
+        "e2e": 1,
+        "pi-compat": 12,
+        "tooling": 38
+      },
+      "command": "npm run check:ci-policy",
+      "reason": "Passed after restoring the locked yaml@2.8.3 package from a tarball whose SHA-512 matched package-lock.json; the previous local package files were marked macOS dataless and loaded incomplete exports."
+    },
+    {
+      "name": "machine secret scan",
+      "status": "incomplete",
+      "command": "npm run check:secrets",
+      "reason": "Scanned tracked and untracked files for more than 120 seconds without producing output; stopped without a result. No pass or no-findings claim is made."
+    }
+  ],
+  "acceptance": {
+    "safeCommandFailure": "implemented_and_unit_tested",
+    "fullSqliteIntegration": "full_file_190_passed",
+    "browserDomAndBuild": "build_and_dom_component_test_passed_real_page_joint_path_not_verified",
+    "macDetachedDescendantContainment": "candidate_probe_passed_product_backend_not_integrated",
+    "macPermanentReleaseProof": "not_implemented_or_qualified",
+    "p1Complete": false
+  },
+  "revalidation": {
+    "date": "2026-09-25",
+    "base": "c18b70a plus the uncommitted 09-23 batch",
+    "evidenceDirectory": "revalidation-2026-09-25",
+    "checks": [
+      {
+        "name": "npm run typecheck",
+        "status": "passed",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#check-final.log"
+      },
+      {
+        "name": "check:boundaries, check:v0.2-coverage, check:v0.2-invariants, check:ci-policy",
+        "status": "passed",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#check-final.log"
+      },
+      {
+        "name": "format:check and lint",
+        "status": "failed_outside_batch",
+        "reason": "Only the untracked docs/assets/control-center/2026-09-16-state-review/verify.cjs fails; it is not part of this batch and was left untouched.",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#check-final.log"
+      },
+      {
+        "name": "machine secret scan",
+        "status": "passed",
+        "scannedFiles": 3680,
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#check-final.log"
+      },
+      {
+        "name": "npm run build",
+        "status": "passed",
+        "durationSeconds": 59,
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#build.log"
+      },
+      {
+        "name": "thread-interactions DOM test",
+        "status": "passed",
+        "passed": 41,
+        "reason": "The state-reason step was missing refresh() after changing fixture state; added it. Test defect, not a product defect.",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#all-projects.log"
+      },
+      {
+        "name": "all Vitest projects",
+        "status": "failed_outside_batch",
+        "total": 6141,
+        "passed": 6116,
+        "failed": 14,
+        "skipped": 11,
+        "command": "npx vitest run --config vitest.workspace.ts --reporter=default --reporter=json",
+        "reason": "Run outside the Claude Code sandbox. All batch test files passed. Failures: 2 stale queue-reentry expectations fixed in this batch; the rest are environment or pre-existing causes classified in README.md.",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#all-projects.log"
+      },
+      {
+        "name": "focused rerun of failing files",
+        "status": "failed_outside_batch",
+        "passed": 87,
+        "failed": 9,
+        "reason": "Queue re-entry, pi-compat, gate-installation and main-confirmation pass with a real-path TMPDIR; remaining failures are .DS_Store in the governance snapshot, missing locked CI Python, and the pre-existing rename-native.c fixture gap.",
+        "evidence": "revalidation-2026-09-25/raw-logs.tar.gz#focused-rerun.log"
+      },
+      {
+        "name": "strict documentation validation",
+        "status": "passed",
+        "reason": "Hermes upgrade Runbook resealed after reconciling its new paragraph with the DOM result; 0 warnings."
+      },
+      {
+        "name": "npm test",
+        "status": "not_run",
+        "reason": "Requires npm run ci:tools, a download that was not authorized."
+      }
+    ]
+  }
+}

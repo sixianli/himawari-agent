@@ -1,0 +1,23 @@
+{
+  "sourceCommit": "d6516794530b75df65ff9f3dbc34653f271817b3",
+  "fixCommit": "4f2b776",
+  "sourceArchiveSha256": "e86d896e7446d07a693f0d4c353f53bd75338038380d8003198b860a7993a454",
+  "sourceManifestSha256": "f48e47ad4fe73ef57c595561f8544755dedbe51d29305928ee3b83202c10dd16",
+  "sourceFiles": 3979,
+  "preparationSha256": "a20c6f12421c10ba0ea8a127fdf72756c1fef0efc02d2809cdc9a0f721c975e0",
+  "runtimeDigest": "fbce5ae673680c10942494b5b3912d023df9ec527476784bad0fb425c70d7716",
+  "buildPassed": true,
+  "networkDuringBuild": "none_private_network",
+  "failedAttempts": 0,
+  "prefixFiles": 34569,
+  "changedPrefixFilesVsC71adbd": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/execution-worker/dist/production-sandbox-execution-v2.js",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Makefile",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Release/.deps/ba23eeee118cd63e16015df367567cb043fed872.intermediate.d",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/config.gypi"
+  ],
+  "staticFilesUnchangedVsC71adbd": 23
+}

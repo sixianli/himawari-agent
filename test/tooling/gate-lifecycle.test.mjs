@@ -439,7 +439,7 @@ describe("publication admission is atomic and workflow-bound", { timeout: 30000 
         ))
           expect(step.if).toBe(githubExpression("always() && steps.publish.outcome == 'success'"));
       }
-      expect(publishers).toBe(name === "ci.yml" ? 8 : 5);
+      expect(publishers).toBe(name === "ci.yml" ? 8 : 6);
     }
   });
 });

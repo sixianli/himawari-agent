@@ -1,0 +1,15 @@
+import { setTimeout as delay } from "node:timers/promises";
+import { it } from "vitest";
+
+it("waits below the budget", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 99));
+});
+
+it("does not execute a timer written as text", async () => {
+  const script = "setTimeout(() => {}, 5000)";
+  await Promise.resolve(script);
+});
+
+it("waits below the budget through the promise timer", async () => {
+  await delay(50);
+});

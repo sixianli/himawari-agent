@@ -1,0 +1,77 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ × |tooling| test/tooling/gate-installation.test.mjs > 从锁定工具运行隔离的 npm ci，只发布成功安装的最小依赖目录 16ms
+   → expected '/private/var/folders/l2/yz2r8t351wn81…' to be '/var/folders/l2/yz2r8t351wn81jsl2zv3n…' // Object.is equality
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 拒绝覆盖现有 node_modules 2ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 拒绝覆盖现有 .ci-output/gate-runtime 3ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > npm 失败时不暴露依赖入口，保留安装输入供诊断且拒绝重用残留目录 4ms
+ ✓ |tooling| test/tooling/gate-installation.test.mjs > 共享依赖和循环依赖只投影一次，嵌套依赖按最近父目录解析 2ms
+ × |tooling| test/tooling/main-confirmation.test.mjs > 先重新验证资格，再构建、扫描新产物并执行安装服务测试，发布可核对的结果 16ms
+   → expected { …(4) } to match object { …(3) }
+(12 matching properties omitted from actual)
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > evidence 失败后停止下一阶段，保留受控失败报告 4ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > tools 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > build 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > security 失败后停止下一阶段，保留受控失败报告 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"exitCode":1}，即使测试报告声称成功 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"error":"spawn failed"}，即使测试报告声称成功 6ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝失败或中止的测试进程 {"termination":"timeout"}，即使测试报告声称成功 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：failed 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：pending 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：wrong-file 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：extra-file 5ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝不完整的安装服务测试证据：missing 3ms
+ ✓ |tooling| test/tooling/main-confirmation.test.mjs > 拒绝构建目录以外的产物，不启动安装服务测试 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |tooling| test/tooling/gate-installation.test.mjs > 从锁定工具运行隔离的 npm ci，只发布成功安装的最小依赖目录
+AssertionError: expected '/private/var/folders/l2/yz2r8t351wn81…' to be '/var/folders/l2/yz2r8t351wn81jsl2zv3n…' // Object.is equality
+
+Expected: "/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/gate-installation-cInp4r/.ci-output/gate-runtime/node_modules"
+Received: "/private/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/gate-installation-cInp4r/.ci-output/gate-runtime/node_modules"
+
+ ❯ test/tooling/gate-installation.test.mjs:75:57
+     73|     },
+     74|   });
+     75|   expect(realpathSync(path.join(root, "node_modules"))).toBe(path.join…
+       |                                                         ^
+     76|   expect(readFileSync(path.join(root, "node_modules/installed.txt"), "…
+     77|     "npm boundary completed",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |tooling| test/tooling/main-confirmation.test.mjs > 先重新验证资格，再构建、扫描新产物并执行安装服务测试，发布可核对的结果
+AssertionError: expected { …(4) } to match object { …(3) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "cwd": "/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/main-confirmation-xj1mQ4",
+    "env": {
+      "HIMAWARI_CI_PYTHON": "/fixture/python",
+-     "HIMAWARI_TEST_ARTIFACT": "/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/main-confirmation-xj1mQ4/.ci-output/main-check/build/artifact.tar.gz",
++     "HIMAWARI_TEST_ARTIFACT": "/private/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/main-confirmation-xj1mQ4/.ci-output/main-check/build/artifact.tar.gz",
+      "HIMAWARI_TEST_CONTEXT": "/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/main-confirmation-xj1mQ4/.ci-output/main-check/build/context.json",
+    },
+    "timeoutMs": 300000,
+  }
+
+ ❯ test/tooling/main-confirmation.test.mjs:113:33
+    111|     ),
+    112|   ).toEqual(["--retry", "0"]);
+    113|   expect(state.process.options).toMatchObject({
+       |                                 ^
+    114|     cwd: root,
+    115|     timeoutMs: 300_000,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 17 passed (19)
+   Start at  12:47:44
+   Duration  676ms (transform 203ms, setup 0ms, import 573ms, tests 99ms, environment 0ms)

@@ -2,6 +2,7 @@
 
 import type {
   ThreadExecutionRecord,
+  ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { act, Fragment, createElement as h } from "react";
@@ -19,6 +20,65 @@ import {
 } from "../src/thread-control-center.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
+class FakeEventSource {
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  closed = false;
+  readonly listeners = new Map<string, ((event: MessageEvent<string>) => void)[]>();
+  readonly url: string;
+  constructor(url: string) {
+    this.url = url;
+  }
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+  open() {
+    this.onopen?.(new Event("open"));
+  }
+  emit(type: string, data: unknown) {
+    for (const listener of this.listeners.get(type) ?? [])
+      listener(new MessageEvent(type, { data: JSON.stringify(data) }));
+  }
+  fail() {
+    this.onerror?.(new Event("error"));
+  }
+  close() {
+    this.closed = true;
+  }
+}
+function stubEventSource(sources: FakeEventSource[]) {
+  vi.stubGlobal(
+    "EventSource",
+    class extends FakeEventSource {
+      constructor(url: string) {
+        super(url);
+        sources.push(this);
+      }
+    },
+  );
+}
+function executionChanged(runId: string, runRevision: number, traceSequence: number) {
+  return {
+    schemaVersion: "gateway.thread.v3",
+    kind: "event",
+    type: "thread.execution_changed",
+    messageId: `execution:${runId}:${traceSequence}`,
+    correlationId: "subscription-ui",
+    causationId: null,
+    scope: { ownerId: "owner-ui", agentId: "agent-ui" },
+    authority: { deploymentId: "deployment-ui", authorityEpoch: 1, fencingToken: 1 },
+    actor: { actorType: "system", actorId: "thread-gateway" },
+    payload: {
+      threadId: "thread-ui",
+      runId,
+      runRevision,
+      traceSequence,
+      resourceRevision: null,
+      observedAt: "2026-09-14T00:00:00.000Z",
+    },
+  };
+}
 const NOW = "2026-09-14T00:00:00Z";
 const configuration: ControlCenterRuntimeConfiguration = {
   ownerId: "owner-ui",
@@ -62,7 +122,15 @@ const navigate = vi.fn(),
   unauthorized = vi.fn();
 function View() {
   model = useThreadControlCenter(options);
-  return h(Fragment, null, h("h1", null, model.title), model.list, model.content, model.details);
+  return h(
+    Fragment,
+    null,
+    h("h1", null, model.title),
+    model.list,
+    model.content,
+    model.details,
+    model.settingsData,
+  );
 }
 async function render() {
   const provider = { locale: "zh-CN" as const, loadingLabel: "加载中", children: h(View) };
@@ -77,8 +145,11 @@ async function refresh() {
   });
 }
 async function click(label: string) {
-  const button = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === label || button.getAttribute("aria-label") === label,
+  const button = [...document.querySelectorAll("button")].find(
+    (button) =>
+      button.textContent?.trim() === label ||
+      button.textContent?.trim() === messages[label as keyof typeof messages] ||
+      button.getAttribute("aria-label") === label,
   );
   if (!button) throw new Error(`Missing button: ${label}`);
   await act(async () => button.click());
@@ -93,14 +164,33 @@ async function input(element: HTMLInputElement | HTMLTextAreaElement | null, val
   });
 }
 function field(label: string) {
-  const node = [...container.querySelectorAll("label")].find((item) =>
+  const node = [...document.querySelectorAll("label")].find((item) =>
     item.textContent?.includes(label),
   );
   return node ? (document.getElementById(node.htmlFor) as HTMLInputElement) : null;
 }
+async function chooseAction(action: string) {
+  if (action === "restore") {
+    const archives = [...document.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === messages["review.archives"],
+    );
+    if (!archives) throw new Error("Missing archive settings");
+    await act(async () => archives.click());
+  } else {
+    const menu = container.querySelector<HTMLButtonElement>(".thread-row .action-menu > button");
+    if (!menu) throw new Error("Missing conversation menu");
+    await act(async () => menu.click());
+  }
+  await click(`threads.${action}`);
+}
 beforeEach(() => {
-  // These component tests invoke refresh explicitly. Keep the independent SSE
-  // debounce clock controlled so it cannot replace a search during assertions.
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -146,7 +236,12 @@ beforeEach(() => {
         return {
           ...shared,
           type: "thread.detail_snapshot",
-          payload: { thread, messages: threadMessages, runs, nextSequence: null },
+          payload: {
+            thread: { ...thread, threadId: request.payload.threadId },
+            messages: threadMessages,
+            runs,
+            nextSequence: null,
+          },
         };
       case "thread.checkpoint":
         return {
@@ -208,13 +303,27 @@ afterEach(async () => {
 });
 
 describe("thread control center interactions", () => {
+  it("opens a local new-chat draft before configuration or realtime is ready", async () => {
+    options = { ...options, client: undefined, configuration: undefined, connection: "connecting" };
+    await render();
+    await click("新建对话");
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ objectId: null, view: "content" }),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+    options = { ...options, route: { ...options.route, objectId: null } };
+    await render();
+    expect(container.querySelector("textarea")).not.toBeNull();
+    await input(container.querySelector("textarea"), "初始化期间的草稿");
+    expect(options.storage.readDraft("new")).toBe("初始化期间的草稿");
+  });
   it.each(["zh-CN", "en", "ja"] as const)(
     "does not expose or mutate the legacy %s answer locale in thread details",
     async (answerLocale) => {
       thread = { ...thread, answerLocale };
       await render();
       await refresh();
-      expect(container.querySelector(".thread-details")).not.toBeNull();
+      expect(container.querySelector(".thread-details")).toBeNull();
       expect(field("threads.answerLocale")).toBeNull();
       expect(mutate).not.toHaveBeenCalled();
     },
@@ -304,9 +413,1111 @@ describe("thread control center interactions", () => {
     await render();
     await refresh();
     expect(query.mock.calls.filter(([r]) => r.type === "thread.detail")).toHaveLength(2);
-    expect(container.textContent).toContain(messages["loading.retry"]);
+    expect(document.body.textContent).toContain(messages["loading.retry"]);
     expect(mutate).not.toHaveBeenCalled();
   });
+  it("uses backend phases and actions, keeps connection loss separate, and refreshes state without new trace", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-1",
+      lastObservedAt: NOW,
+      displayPhase: "unresolved",
+      reasonCode: "EXECUTION_RESULT_UNCONFIRMED",
+      availableActions: [],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "call",
+          displayPhase: "unresolved",
+          reasonCode: "TOOL_RESULT_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "call", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "record",
+                      sequence: 1,
+                      itemId: "call",
+                      kind: "tool",
+                      phase: "failed",
+                      name: "write",
+                      text: "",
+                      input: "",
+                      output: "Retained output",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".execution-next-action")?.textContent).toContain(
+      messages["chat.nextAction.unresolved"],
+    );
+    expect(container.querySelector(".turn-activity .run-indicator")).toBeNull();
+    expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+    await input(container.querySelector("textarea"), "Do not submit another Run yet");
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="发送"]')?.disabled).toBe(
+      true,
+    );
+    options = { ...options, connection: "offline" };
+    await render();
+    expect(container.querySelector(".turn-activity strong")?.textContent).toContain(
+      messages["chat.phase.unresolved"],
+    );
+    expect(container.querySelector(".turn-activity")?.textContent).toContain(
+      messages["chat.disconnected"],
+    );
+    options = { ...options, connection: "connected" };
+    state = {
+      ...state,
+      revision: "state-2",
+      displayPhase: "preparing",
+      availableActions: ["stop"],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.preparing"],
+    );
+    expect(
+      query.mock.calls.filter(([request]) => request.type === "thread.execution_state").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(container.textContent).toContain("Retained output");
+    state = {
+      ...state,
+      revision: "state-reason",
+      displayPhase: "not_dispatched",
+      reasonCode: "WORKER_DEADLINE_EXCEEDED",
+      availableActions: [],
+      operations: [
+        {
+          itemId: "call",
+          displayPhase: "not_dispatched",
+          reasonCode: "WORKER_DEADLINE_EXCEEDED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "call", outcome: "not_dispatched" }],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      messages["chat.reason.deadlineExceeded"],
+    );
+    expect(container.querySelector(".execution-next-action")?.textContent).toContain(
+      messages["chat.nextAction.notDispatched"],
+    );
+    const sources: FakeEventSource[] = [];
+    stubEventSource(sources);
+    options = {
+      ...options,
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEventsAvailable: true,
+      },
+    };
+    await render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    expect(source.url).toContain("/api/gateway/thread/v3/execution-events?subscription=");
+    await act(async () => {
+      source.open();
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const idle = query.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(query).toHaveBeenCalledTimes(idle);
+    state = { ...state, revision: "state-3", reasonCode: "RESOURCE_EXECUTION_OBSERVED" };
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-ui", 3, 1));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.resource.executing"],
+    );
+    expect(query.mock.calls.slice(idle).map(([request]) => request.type)).toEqual([
+      "thread.execution",
+      "thread.execution_state",
+    ]);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-D3] shows a deadline-ended Run with an unknown tool and no active or cleanup action", async () => {
+    runs = [{ runId: "run-ui", revision: 5, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 5,
+      revision: "d3-terminal",
+      lastObservedAt: NOW,
+      displayPhase: "failed",
+      reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      availableActions: [],
+      needsAttention: true,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "d3-call",
+          displayPhase: "unresolved",
+          reasonCode: "TOOL_RESULT_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "d3-call", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "d3-record",
+                      sequence: 1,
+                      itemId: "d3-call",
+                      kind: "tool",
+                      phase: "failed",
+                      name: "uncertain_tool",
+                      text: "",
+                      input: "",
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.reason.runDeadlineExceeded"],
+    );
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      "结果未确认",
+    );
+    expect(container.querySelector(".turn-activity")).toBeNull();
+    expect(container.querySelectorAll(".execution-next-action button")).toHaveLength(0);
+    expect(container.textContent).not.toMatch(/操作已撤销|操作没有发生/);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      displayPhase: "failed",
+      reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+      label: "chat.reason.runDeadlineExceeded",
+    },
+    {
+      displayPhase: "stopped",
+      reasonCode: "RUN_CANCELLED_RESOURCES_RELEASED",
+      label: "chat.phase.stopped",
+    },
+    {
+      displayPhase: "stopped",
+      reasonCode: "RUN_STOPPED_NOT_STRICTLY_CONFIRMED",
+      label: "chat.resource.stopNotStrictlyConfirmed",
+    },
+    {
+      displayPhase: "not_dispatched",
+      reasonCode: "RUN_CANCELLED_BEFORE_DISPATCH",
+      label: "chat.phase.notDispatched",
+    },
+  ] as const)(
+    "[R2-S3] shows a $displayPhase Run ($reasonCode) once when its execution state is newer than the turn detail",
+    async ({ displayPhase, reasonCode, label }) => {
+      runs = [{ runId: "run-ui", revision: 4, status: "running", createdAt: NOW, updatedAt: NOW }];
+      options = {
+        ...options,
+        message: (id) => messages[id],
+        configuration: {
+          ...configuration,
+          executionPresentationAvailable: true,
+          executionStateAvailable: true,
+        },
+      };
+      const state: ThreadExecutionState = {
+        runRevision: 5,
+        revision: "s3-terminal",
+        lastObservedAt: NOW,
+        displayPhase,
+        reasonCode,
+        availableActions: [],
+        needsAttention: true,
+        timing: { executionMilliseconds: null, reviewMilliseconds: null },
+        operations: [],
+        effectSummary: [],
+      };
+      const original = query.getMockImplementation();
+      query.mockImplementation(async (request, signal) => {
+        if (request.type === "thread.execution_state")
+          return {
+            ...request,
+            kind: "snapshot",
+            type: "thread.execution_state_snapshot",
+            payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+          };
+        if (request.type === "thread.execution")
+          return {
+            ...request,
+            kind: "snapshot",
+            type: "thread.execution_snapshot",
+            payload: {
+              threadId: "thread-ui",
+              runId: "run-ui",
+              nextSequence: null,
+              generatedAt: NOW,
+              records: [],
+            },
+          };
+        return original?.(request, signal);
+      });
+      await render();
+      await refresh();
+      expect(container.querySelector(".process-result")?.textContent).toBe(messages[label]);
+      expect(container.querySelector(".turn-activity")).toBeNull();
+      expect(
+        [...container.querySelectorAll("*")].filter(
+          (element) => element.children.length === 0 && element.textContent === messages[label],
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("[R2-U2] explains which tool a stuck turn waits for, whether the turn continues, and that no background program runs", async () => {
+    runs = [
+      {
+        runId: "run-ui",
+        revision: 7,
+        status: "reconciling_external_result",
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id, values) =>
+        Object.entries(values ?? {}).reduce(
+          (text, [key, value]) => text.replaceAll(`{${key}}`, String(value)),
+          messages[id],
+        ),
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEnvironmentAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 7,
+      revision: "u2-waiting",
+      lastObservedAt: NOW,
+      displayPhase: "unresolved",
+      reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+      availableActions: ["stop"],
+      needsAttention: true,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [
+        {
+          itemId: "u2-read",
+          displayPhase: "unresolved",
+          reasonCode: "RESOURCE_STATE_UNCONFIRMED",
+          lastObservedAt: NOW,
+          executionMilliseconds: null,
+        },
+      ],
+      effectSummary: [{ itemId: "u2-read", outcome: "unknown" }],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_environment")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_environment_snapshot",
+          payload: {
+            environment: { mode: "srt", programs: [], unavailableTools: [] },
+            generatedAt: NOW,
+          },
+        };
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "u2-record",
+                      sequence: 1,
+                      itemId: "u2-read",
+                      kind: "tool",
+                      phase: "updated",
+                      name: "read",
+                      text: "",
+                      input: '{"path":"notes.md"}',
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".turn-activity .turn-wait-reason")?.textContent).toBe(
+      "这一轮还在进行：正在等工具 read 的结果。工具已经交给执行环境，但还没确认它已经停下。",
+    );
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(
+      [...container.querySelectorAll(".environment-line > button")].map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["默认模式 · 没有后台程序在运行⌄"]);
+    expect(container.textContent).not.toContain("没有程序在运行");
+
+    runs = [{ runId: "run-ui", revision: 8, status: "failed", createdAt: NOW, updatedAt: NOW }];
+    state = {
+      ...state,
+      runRevision: 8,
+      revision: "u2-ended",
+      availableActions: ["retry_cleanup"],
+    };
+    await render();
+    await refresh();
+    expect(container.querySelector(".turn-activity .turn-wait-reason")?.textContent).toBe(
+      "这一轮已经结束，但工具 read 的执行环境还没确认已经停下。",
+    );
+    expect(container.querySelector(".execution-next-action")?.textContent).toBe(
+      messages["chat.nextAction.retryCleanup"],
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("adopts an advancing Run without hiding displayed text or reporting a failed conversation", async () => {
+    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    let state: ThreadExecutionState = {
+      runRevision: 5,
+      revision: "state-5",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records:
+              request.payload.afterSequence === 0
+                ? [
+                    {
+                      id: "partial-record",
+                      sequence: 1,
+                      itemId: "assistant-output",
+                      kind: "message",
+                      phase: "completed",
+                      name: "",
+                      text: "已经显示的工具回复",
+                      input: "",
+                      output: "",
+                      occurredAt: NOW,
+                    },
+                  ]
+                : [],
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已经显示的工具回复");
+    const initialReads = query.mock.calls.filter(([request]) => request.type === "thread.detail");
+    expect(initialReads).toHaveLength(1);
+    let releaseBody!: (value: { content: string }) => void;
+    const body = new Promise<{ content: string }>((resolve) => {
+      releaseBody = resolve;
+    });
+    readText.mockImplementation(async (ref: string) =>
+      ref === "formal-answer" ? body : { content: "组件交互测试" },
+    );
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    state = {
+      ...state,
+      runRevision: 6,
+      revision: "state-6",
+      displayPhase: "completed",
+      reasonCode: "EXECUTION_COMPLETED",
+      availableActions: [],
+    };
+    await refresh();
+    expect.soft(container.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect
+      .soft(container.querySelector(".assistant-markdown")?.textContent)
+      .toBe("已经显示的工具回复");
+    expect.soft(readText).toHaveBeenCalledWith("formal-answer");
+    expect
+      .soft(container.querySelector(".process-result")?.textContent)
+      .toContain(messages["chat.phase.completed"]);
+    runs = runs.map((run) => ({ ...run, revision: 6, status: "completed" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(80);
+    });
+    expect
+      .soft(query.mock.calls.filter(([request]) => request.type === "thread.detail"))
+      .toHaveLength(2);
+    expect.soft(container.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect
+      .soft(container.querySelector(".process-result")?.textContent)
+      .toContain(messages["chat.phase.completed"]);
+    expect
+      .soft(container.querySelector(".assistant-markdown")?.textContent)
+      .toBe("已经显示的工具回复");
+    await act(async () => releaseBody({ content: "正式保存的工具回复" }));
+    expect(container.querySelectorAll(".assistant-markdown")).toHaveLength(1);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("正式保存的工具回复");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it.each(["thread", "run", "older revision", "read error"])(
+    "rejects an invalid backend state but still loads message text (%s)",
+    async (mismatch) => {
+      runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+      threadMessages = [
+        {
+          messageId: "assistant-ui",
+          sequence: 1,
+          role: "agent",
+          contentRef: "formal-answer",
+          dataClassification: "private",
+          status: "committed",
+          turnId: "turn-ui",
+          runId: "run-ui",
+          committedAt: NOW,
+        },
+      ];
+      options = { ...options, configuration: { ...configuration, executionStateAvailable: true } };
+      const original = query.getMockImplementation();
+      query.mockImplementation(async (request, signal) => {
+        if (request.type === "thread.execution_state") {
+          if (mismatch === "read error") throw new Error("STATE_READ_FAILED");
+          return {
+            type: "thread.execution_state_snapshot",
+            payload: {
+              threadId: mismatch === "thread" ? "other-thread" : "thread-ui",
+              runId: mismatch === "run" ? "other-run" : "run-ui",
+              state: { runRevision: mismatch === "older revision" ? 2 : 4 },
+            },
+          };
+        }
+        return original?.(request, signal);
+      });
+      await render();
+      await refresh();
+      expect(readText).toHaveBeenCalledWith("formal-answer");
+      expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+      expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(document.body.textContent).toContain(messages["loading.retry"]);
+      expect(document.body.textContent).toContain(messages["loading.failedConversation"]);
+      expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+      expect(container.querySelector('button[aria-label="停止"]')).toBeNull();
+      expect(mutate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("[R2-U1] keeps a displayed conversation quiet while a brief state read failure retries", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-3",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    let failuresLeft = 0;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          throw new Error("STATE_READ_FAILED");
+        }
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    const stateReads = () =>
+      query.mock.calls.filter(([request]) => request.type === "thread.execution_state").length;
+    await render();
+    await refresh();
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    failuresLeft = 2;
+    const before = stateReads();
+    await refresh();
+    expect(stateReads()).toBe(before + 1);
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    for (let step = 0; step < 20; step++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+      expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    }
+    expect(failuresLeft).toBe(0);
+    expect(stateReads()).toBeGreaterThanOrEqual(before + 3);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-U1] reports only a persistent conversation refresh failure and keeps the notice steady until recovery", async () => {
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    await render();
+    await refresh();
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    let mode: "fail" | "hold" | "pass" = "fail";
+    let release: (() => void) | undefined;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.detail" && mode === "fail")
+        throw new Error("DETAIL_READ_FAILED");
+      if (request.type === "thread.detail" && mode === "hold")
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return original?.(request, signal);
+    });
+    const detailReads = () =>
+      query.mock.calls.filter(([request]) => request.type === "thread.detail").length;
+    const failedShown = () =>
+      document.body.textContent?.includes(messages["loading.failedConversation"]) === true;
+    const advanceUntilDetailReads = async (count: number) => {
+      for (let step = 0; step < 200 && detailReads() < count; step++)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+        });
+      expect(detailReads()).toBe(count);
+    };
+    const first = detailReads() + 1;
+    await refresh();
+    expect(detailReads()).toBe(first);
+    expect(failedShown()).toBe(false);
+    await advanceUntilDetailReads(first + 1);
+    expect(failedShown()).toBe(false);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    await advanceUntilDetailReads(first + 2);
+    expect(failedShown()).toBe(true);
+    expect(document.body.textContent).toContain(messages["loading.retry"]);
+    expect(document.body.textContent).not.toContain(messages["loading.failedList"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    mode = "hold";
+    await advanceUntilDetailReads(first + 3);
+    expect(failedShown()).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(failedShown()).toBe(true);
+    expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.slowList"]);
+    mode = "pass";
+    await act(async () => {
+      release?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(failedShown()).toBe(false);
+    expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("shows no slow-load notice once the first read has displayed the conversation", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-3",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    const held: (() => void)[] = [];
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        await new Promise<void>((resolve) => {
+          held.push(resolve);
+        });
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    let firstRead: Promise<void> | undefined;
+    await act(async () => {
+      firstRead = model.refresh();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    expect(held.length).toBeGreaterThan(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(document.body.textContent).not.toContain(messages["loading.slowConversation"]);
+    expect(document.body.textContent).not.toContain(messages["loading.slowList"]);
+    expect(container.querySelector(".thread-load-feedback")).toBeNull();
+    expect(container.querySelector(".assistant-markdown")?.textContent).toBe("已保存的回答");
+    await act(async () => {
+      for (const resolve of held.splice(0)) resolve();
+      await firstRead;
+    });
+  });
+
+  it("[R2-U3] shows a finished tool's result and duration while the Run keeps advancing past the summary", async () => {
+    runs = [{ runId: "run-ui", revision: 5, status: "running", createdAt: NOW, updatedAt: NOW }];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+      },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 6,
+      revision: "state-completed",
+      lastObservedAt: NOW,
+      displayPhase: "completed",
+      reasonCode: "EXECUTION_COMPLETED",
+      availableActions: [],
+      needsAttention: false,
+      timing: { executionMilliseconds: 9400, reviewMilliseconds: 9400 },
+      operations: [
+        {
+          itemId: "call",
+          displayPhase: "completed",
+          reasonCode: "TOOL_SUCCEEDED",
+          lastObservedAt: NOW,
+          executionMilliseconds: 9400,
+        },
+      ],
+      effectSummary: [{ itemId: "call", outcome: "succeeded" }],
+    };
+    const records: ThreadExecutionRecord[] = [
+      {
+        id: "call-result",
+        sequence: 2,
+        itemId: "call",
+        kind: "tool",
+        phase: "completed",
+        name: "read",
+        text: "",
+        input: '{"path":"notes.md"}',
+        output: "文件内容",
+        occurredAt: "2026-09-14T00:00:09.400Z",
+      },
+      {
+        id: "call-execution-started",
+        sequence: 3,
+        itemId: "call",
+        kind: "status",
+        phase: "updated",
+        name: "runtime.tool_execution.started",
+        text: "",
+        input: "",
+        output: "",
+        occurredAt: NOW,
+      },
+      {
+        id: "call-execution-ended",
+        sequence: 4,
+        itemId: "call",
+        kind: "status",
+        phase: "updated",
+        name: "runtime.tool_execution.ended",
+        text: "",
+        input: "",
+        output: "",
+        occurredAt: "2026-09-14T00:00:09.400Z",
+      },
+    ];
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: "run-ui",
+            nextSequence: null,
+            generatedAt: NOW,
+            records: records.filter((record) => record.sequence > request.payload.afterSequence),
+          },
+        };
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain(
+      messages["chat.phase.completed"],
+    );
+    expect(container.querySelector(".tool-record .step-status")?.textContent).toContain("9.4s");
+    expect(container.querySelector(".tool-record")?.textContent).toContain("文件内容");
+    expect(container.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-U3] recovers a briefly failing state read without a load notice", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const running: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-running",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    const finished: ThreadExecutionState = {
+      ...running,
+      revision: "state-completed",
+      displayPhase: "completed",
+      reasonCode: "EXECUTION_COMPLETED",
+      availableActions: [],
+    };
+    let current = running;
+    let failuresLeft = 0;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          throw Object.assign(new Error("PORT_NOT_AUTHORITATIVE"), { status: 403 });
+        }
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state: current, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.preparing"],
+    );
+    current = finished;
+    failuresLeft = 2;
+    await refresh();
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    expect(container.querySelector(".process-result")?.textContent).toContain(
+      messages["chat.phase.completed"],
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("[R2-U3] reports a persistent scope rejection of the state read after repeated failures", async () => {
+    runs = [{ runId: "run-ui", revision: 3, status: "running", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [
+      {
+        messageId: "assistant-ui",
+        sequence: 1,
+        role: "agent",
+        contentRef: "formal-answer",
+        dataClassification: "private",
+        status: "committed",
+        turnId: "turn-ui",
+        runId: "run-ui",
+        committedAt: NOW,
+      },
+    ];
+    options = {
+      ...options,
+      message: (id) => messages[id],
+      configuration: { ...configuration, executionStateAvailable: true },
+    };
+    const state: ThreadExecutionState = {
+      runRevision: 3,
+      revision: "state-running",
+      lastObservedAt: NOW,
+      displayPhase: "preparing",
+      reasonCode: "EXECUTION_PREPARING",
+      availableActions: ["stop"],
+      needsAttention: false,
+      timing: { executionMilliseconds: null, reviewMilliseconds: null },
+      operations: [],
+      effectSummary: [],
+    };
+    let failing = false;
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, signal) => {
+      if (request.type === "thread.execution_state") {
+        if (failing) throw Object.assign(new Error("HTTP_GATEWAY_SCOPE_REJECTED"), { status: 403 });
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: { threadId: "thread-ui", runId: "run-ui", state, generatedAt: NOW },
+        };
+      }
+      return original?.(request, signal);
+    });
+    await render();
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    failing = true;
+    await refresh();
+    await refresh();
+    expect(document.body.textContent).not.toContain(messages["loading.failedConversation"]);
+    await refresh();
+    expect(document.body.textContent).toContain(messages["loading.failedConversation"]);
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("paginates tool records, preserves their input, and resumes from the last confirmed sequence", async () => {
     runs = [{ runId: "run-ui", revision: 3, status: "completed", createdAt: NOW, updatedAt: NOW }];
     options = {
@@ -391,7 +1602,13 @@ describe("thread control center interactions", () => {
       await refresh();
       expect(query.mock.calls.filter(([r]) => r.type === "thread.execution")).toHaveLength(1);
       expect(container.querySelectorAll(".tool-record")).toHaveLength(0);
-      if (kind === "stalled") expect(container.textContent).toContain(messages["loading.retry"]);
+      expect(document.body.textContent).not.toContain(messages["loading.retry"]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(container.querySelectorAll(".tool-record")).toHaveLength(0);
+      if (kind === "stalled")
+        expect(document.body.textContent).toContain(messages["loading.retry"]);
     },
   );
   it.each(["success", "unauthorized", "unavailable", "wrong-type"])(
@@ -400,7 +1617,8 @@ describe("thread control center interactions", () => {
       options = { ...options, route: routeForSurface("threads") };
       await render();
       await refresh();
-      await input(container.querySelector('input[type="search"]'), "天气记录");
+      await click(messages["threads.search"]);
+      await input(document.querySelector('input[type="search"]'), "天气记录");
       if (result === "unauthorized") query.mockRejectedValueOnce({ status: 401 });
       if (result === "unavailable")
         prepareSearch.mockRejectedValueOnce(new Error("controlled search failure"));
@@ -410,7 +1628,7 @@ describe("thread control center interactions", () => {
           payload: { threads: [] },
         });
       await act(async () => {
-        container
+        document
           .querySelector("form.thread-search")
           ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       });
@@ -427,7 +1645,7 @@ describe("thread control center interactions", () => {
         });
         expect(JSON.stringify(query.mock.calls.at(-1)?.[0])).not.toContain("天气记录");
       } else {
-        expect(container.textContent).toContain(messages["loading.retry"]);
+        expect(document.body.textContent).toContain(messages["loading.retry"]);
       }
     },
   );
@@ -436,10 +1654,12 @@ describe("thread control center interactions", () => {
     mutate.mockRejectedValueOnce(new Error("controlled creation failure"));
     await render();
     await refresh();
-    await click("chat.start");
+    await input(container.querySelector("textarea"), "开始新对话");
+    await click("threads.send");
     expect(container.textContent).toContain("controlled creation failure");
     expect(navigate).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("chat.start");
+    expect(container.querySelector("textarea")?.value).toBe("开始新对话");
+    expect(options.storage.readDraft("new")).toBe("开始新对话");
   });
   it.each(["archive", "restore", "pin"])(
     "preserves a refused %s operation without falsely reporting acceptance",
@@ -448,11 +1668,38 @@ describe("thread control center interactions", () => {
       mutate.mockRejectedValueOnce("rejected");
       await render();
       await refresh();
-      await click(`threads.${operation}`);
+      await chooseAction(operation);
       expect(container.textContent).toContain("CONTROL_CENTER_REQUEST_REJECTED");
       expect(navigate).not.toHaveBeenCalled();
     },
   );
+  it("loads another history page and retains it through a background refresh", async () => {
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request) => {
+      if (request.type !== "thread.list") return original?.(request);
+      return {
+        kind: "snapshot",
+        type: "thread.collection_snapshot",
+        payload: {
+          threads: request.payload.afterCursor
+            ? [{ ...thread, threadId: "older-thread" }]
+            : [thread],
+          nextCursor: request.payload.afterCursor ? null : "page-two",
+          total: 2,
+        },
+      };
+    });
+    await render();
+    await refresh();
+    expect(container.querySelector('a[href="/threads/older-thread"]')).toBeNull();
+    await click("review.loadMore");
+    expect(container.querySelector('a[href="/threads/older-thread"]')).not.toBeNull();
+    await refresh();
+    expect(container.querySelector('a[href="/threads/older-thread"]')).not.toBeNull();
+    expect(query.mock.calls.some(([request]) => request.payload.afterCursor === "page-two")).toBe(
+      true,
+    );
+  });
   it("loads protected titles and persists a draft without sending it", async () => {
     await render();
     await refresh();
@@ -508,6 +1755,66 @@ describe("thread control center interactions", () => {
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
+  it("retries an uncertain send with its original identity and preserves a newer draft after revision changes", async () => {
+    await render();
+    await refresh();
+    await input(container.querySelector("textarea"), "原消息");
+    mutate.mockRejectedValueOnce(new Error("response lost"));
+    const send = async () =>
+      act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    await send();
+    const original = mutate.mock.calls[0]?.[0];
+    await input(container.querySelector("textarea"), "随后编辑的新草稿");
+    thread = { ...thread, revision: 8 };
+    await refresh();
+    expect(container.textContent).toContain("review.pendingSend");
+    await send();
+    const retry = mutate.mock.calls[1]?.[0];
+    expect(retry.idempotencyKey).toBe(original.idempotencyKey);
+    expect(retry.payload).toMatchObject({
+      expectedRevision: 2,
+      contentRef: original.payload.contentRef,
+      messageId: original.payload.messageId,
+      runId: original.payload.runId,
+    });
+    expect(protect.mock.calls.filter(([text]) => text === "原消息")).toHaveLength(2);
+    expect(options.storage.readDraft("thread-ui")).toBe("随后编辑的新草稿");
+    expect(container.querySelector("textarea")?.value).toBe("随后编辑的新草稿");
+    expect(options.storage.readPendingThreadSubmission("thread-ui")).toBeNull();
+  });
+  it("submits only once for two synchronous gestures and does not overwrite another conversation", async () => {
+    await render();
+    await refresh();
+    await input(container.querySelector("textarea"), "原会话发送");
+    let resolve: (value: unknown) => void = () => {};
+    mutate.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    await act(async () => {
+      for (let i = 0; i < 2; i++)
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(mutate).toHaveBeenCalledOnce();
+    options.storage.saveDraft("thread-other", "另一个会话草稿");
+    options = { ...options, route: { ...options.route, objectId: "thread-other" } };
+    await render();
+    await refresh();
+    await act(async () => {
+      resolve({ kind: "result", payload: { replayed: false, threadId: "thread-ui" } });
+    });
+    expect(container.querySelector("textarea")?.value).toBe("另一个会话草稿");
+    expect(options.storage.readDraft("thread-other")).toBe("另一个会话草稿");
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it("keeps unsent content on failed submission and prevents offline sends", async () => {
     await render();
     await refresh();
@@ -528,20 +1835,72 @@ describe("thread control center interactions", () => {
     await send();
     expect(mutate).toHaveBeenCalledOnce();
   });
-  it.each(["pin", "archive", "restore", "trash"] as const)(
+  it("[R2-U4] keeps a conversation's send closed until its content has loaded, then sends once", async () => {
+    const send = async () => {
+      await act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+    const sendButton = () => container.querySelector<HTMLButtonElement>("button.send-button");
+    await render();
+    await input(container.querySelector("textarea"), "刷新后立即发送");
+    expect(container.querySelector(".thread-loading-skeleton")).not.toBeNull();
+    expect(sendButton()?.disabled).toBe(true);
+    await send();
+    expect(mutate).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("mutation.pending");
+    expect(options.storage.readDraft("thread-ui")).toBe("刷新后立即发送");
+    await refresh();
+    expect(sendButton()?.disabled).toBe(false);
+    await send();
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.message.submit",
+      payload: { threadId: "thread-ui", expectedRevision: 2 },
+    });
+    expect(options.storage.readDraft("thread-ui")).toBe("");
+    expect(container.textContent).toContain("mutation.accepted");
+  });
+  it("[R2-U4] retries an unresolved send only after the conversation's content has loaded", async () => {
+    options.storage.savePendingThreadSubmission({
+      threadId: "thread-ui",
+      revision: 2,
+      content: "上次未确认的消息",
+    });
+    const send = async () => {
+      await act(async () => {
+        container
+          .querySelector("form.composer")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+    const sendButton = () => container.querySelector<HTMLButtonElement>("button.send-button");
+    await render();
+    expect(sendButton()?.getAttribute("aria-label")).toBe("review.retrySend");
+    expect(sendButton()?.disabled).toBe(true);
+    await send();
+    expect(mutate).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("mutation.pending");
+    await refresh();
+    expect(sendButton()?.disabled).toBe(false);
+    await send();
+    expect(mutate).toHaveBeenCalledOnce();
+    expect(mutate.mock.calls[0]?.[0]).toMatchObject({
+      type: "thread.message.submit",
+      payload: { threadId: "thread-ui", expectedRevision: 2 },
+    });
+    expect(protect.mock.calls.some(([text]) => text === "上次未确认的消息")).toBe(true);
+    expect(options.storage.readPendingThreadSubmission("thread-ui")).toBeNull();
+  });
+  it.each(["pin", "archive", "restore"] as const)(
     "sends an explicit %s with expected revision",
     async (action) => {
       if (action === "restore") thread = summary("archived");
       await render();
       await refresh();
-      if (action === "trash") {
-        query.mockResolvedValueOnce({
-          type: "thread.deletion_impact_snapshot",
-          payload: { deletionAllowed: true, associatedTasks: [] },
-        });
-        await click("threads.inspectDeletion");
-      }
-      await click(`threads.${action}`);
+      await chooseAction(action);
       expect(mutate.mock.calls[0]?.[0]).toMatchObject({
         type: `thread.${action}`,
         payload: { threadId: "thread-ui", expectedRevision: 2 },
@@ -551,12 +1910,13 @@ describe("thread control center interactions", () => {
   it("preserves a conflict and reapplies an owner rename only against the displayed latest revision", async () => {
     await render();
     await refresh();
-    await input(field("threads.rename"), "自定义标题");
+    await chooseAction("rename");
+    await input(field("review.conversationName"), "自定义标题");
     mutate.mockResolvedValueOnce({
       kind: "conflict",
       payload: { latest: { ...thread, revision: 4 }, reasonCode: "STALE_REVISION" },
     });
-    await click("threads.rename");
+    await click("review.save");
     expect(container.textContent).toContain("threads.conflictTitle");
     expect(mutate.mock.calls[0]?.[0].payload.expectedRevision).toBe(2);
     await click("threads.reapply");
@@ -568,7 +1928,8 @@ describe("thread control center interactions", () => {
     options = { ...options, route: routeForSurface("threads") };
     await render();
     await refresh();
-    await click("chat.start");
+    await input(container.querySelector("textarea"), "开始新对话");
+    await click("threads.send");
     expect(mutate.mock.calls[0]?.[0].type).toBe("thread.create");
     expect(navigate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -590,36 +1951,34 @@ describe("thread control center interactions", () => {
       });
     },
   );
-  it.each(["pause", "cancel", "rebind"] as const)(
-    "inspects deletion dependencies before explicitly choosing %s",
-    async (action) => {
-      await render();
-      await refresh();
-      await click("threads.checkpoint");
-      expect(container.textContent).toContain("checkpoint-summary");
-      await click("threads.inspectDeletion");
-      expect(container.textContent).toContain("task-ui");
-      expect(mutate).not.toHaveBeenCalled();
-      await click(`deletion.${action}Task`);
-      expect(mutate.mock.calls[0]?.[0]).toMatchObject({
-        type: "thread.task.resolve",
-        payload: {
-          threadId: "thread-ui",
-          taskId: "task-ui",
-          expectedTaskRevision: 3,
-          action,
-          targetThreadId: action === "rebind" ? "thread-other" : null,
-        },
-      });
-    },
-  );
+  it("offers archive only and never queries deletion or checkpoint controls", async () => {
+    await render();
+    await refresh();
+    const menu = container.querySelector<HTMLButtonElement>(".thread-row .action-menu > button");
+    await act(async () => menu?.click());
+    const labels = [...document.querySelectorAll('[role="menuitem"]')].map(
+      (item) => item.textContent,
+    );
+    expect(labels).toEqual([
+      messages["threads.rename"],
+      messages["threads.pin"],
+      messages["threads.archive"],
+    ]);
+    expect(document.body.textContent).not.toContain(messages["threads.trash"]);
+    expect(
+      query.mock.calls.some(([request]) =>
+        ["thread.checkpoint", "thread.deletion_impact"].includes(request.type),
+      ),
+    ).toBe(false);
+    expect(mutate).not.toHaveBeenCalled();
+  });
   it("shows a retry after a list failure and reports expired authorization", async () => {
     options = { ...options, route: routeForSurface("threads") };
     query.mockRejectedValueOnce({ status: 401 });
     await render();
     await refresh();
     expect(unauthorized).toHaveBeenCalledOnce();
-    const retry = [...container.querySelectorAll("button")].find((button) =>
+    const retry = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes(messages["loading.retry"]),
     );
     if (!retry) throw new Error("Missing retry for failed initial list");
@@ -633,7 +1992,7 @@ it("keeps an explicit search from being superseded by an already scheduled list 
   options = { ...options, route: routeForSurface("threads") };
   await render();
   await refresh();
-  const before = query.mock.calls.filter(([request]) => request.type === "thread.list").length;
+
   let resolveSearch!: (value: {
     queryRef: string;
     tokenRefs: string[];
@@ -645,9 +2004,10 @@ it("keeps an explicit search from being superseded by an already scheduled list 
         resolveSearch = resolve;
       }),
   );
-  await input(container.querySelector('input[type="search"]'), "天气记录");
+  await click(messages["threads.search"]);
+  await input(document.querySelector('input[type="search"]'), "天气记录");
   await act(async () => {
-    container
+    document
       .querySelector("form.thread-search")
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
@@ -662,7 +2022,225 @@ it("keeps an explicit search from being superseded by an already scheduled list 
     });
   });
   expect(query.mock.calls.filter(([request]) => request.type === "thread.search")).toHaveLength(1);
-  expect(query.mock.calls.filter(([request]) => request.type === "thread.list")).toHaveLength(
-    before,
-  );
+  expect(document.querySelectorAll(".thread-search-results li")).toHaveLength(1);
+  expect(container.querySelectorAll(".thread-row")).toHaveLength(2);
+});
+
+describe("pushed conversation updates", () => {
+  const message = (sequence: number) => ({
+    messageId: `message-${sequence}`,
+    sequence,
+    role: "agent" as const,
+    contentRef: `content-${sequence}`,
+    dataClassification: "private" as const,
+    status: "committed" as const,
+    turnId: `turn-${sequence}`,
+    runId: null,
+    committedAt: NOW,
+  });
+  const executionState = (runRevision: number, revision: string): ThreadExecutionState => ({
+    runRevision,
+    revision,
+    lastObservedAt: NOW,
+    displayPhase: statePhase,
+    reasonCode: "RUN_COMPLETED",
+    availableActions: [],
+    needsAttention: false,
+    timing: { executionMilliseconds: null, reviewMilliseconds: null },
+    operations: [],
+    effectSummary: [],
+  });
+  let sources: FakeEventSource[];
+  let queue: (string | null)[];
+  let signal: number;
+  let statePhase: ThreadExecutionState["displayPhase"];
+
+  beforeEach(() => {
+    statePhase = "completed";
+    sources = [];
+    queue = [];
+    signal = 0;
+    stubEventSource(sources);
+    runs = [{ runId: "run-1", revision: 4, status: "completed", createdAt: NOW, updatedAt: NOW }];
+    threadMessages = [message(1), message(2)];
+    const original = query.getMockImplementation();
+    query.mockImplementation(async (request, abort) => {
+      if (request.type === "thread.detail")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.detail_snapshot",
+          payload: {
+            thread: { ...thread, threadId: request.payload.threadId },
+            messages: threadMessages.filter(
+              (item) => item.sequence > request.payload.afterSequence,
+            ),
+            runs,
+            nextSequence: null,
+          },
+        };
+      if (request.type === "thread.execution")
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: request.payload.runId,
+            records: [],
+            nextSequence: null,
+            generatedAt: NOW,
+          },
+        };
+      if (request.type === "thread.execution_state") {
+        const run = runs.find((item) => item.runId === request.payload.runId);
+        return {
+          ...request,
+          kind: "snapshot",
+          type: "thread.execution_state_snapshot",
+          payload: {
+            threadId: "thread-ui",
+            runId: request.payload.runId,
+            state: executionState(run?.revision ?? 1, `state-${run?.revision ?? 1}`),
+            generatedAt: NOW,
+          },
+        };
+      }
+      return original?.(request, abort);
+    });
+    options = {
+      ...options,
+      configuration: {
+        ...configuration,
+        executionPresentationAvailable: true,
+        executionStateAvailable: true,
+        executionEventsAvailable: true,
+      },
+      threadEvents: { current: queue },
+    };
+  });
+
+  async function settle(milliseconds = 100) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(milliseconds);
+    });
+  }
+  async function threadEvent(threadId: string | null) {
+    queue.push(threadId);
+    options = { ...options, threadEventSignal: ++signal };
+    await render();
+    await settle();
+  }
+  const requested = (from: number) =>
+    query.mock.calls.slice(from).map(([request]) => ({
+      type: request.type,
+      payload: request.payload,
+    }));
+
+  it("reads nothing while an opened conversation is idle", async () => {
+    await render();
+    await settle();
+    sources.at(-1)?.open();
+    await settle();
+    const idle = query.mock.calls.length;
+    await settle(30_000);
+    expect(query).toHaveBeenCalledTimes(idle);
+  });
+
+  it("reads only new messages of the opened conversation and only the list for another one", async () => {
+    await render();
+    await settle();
+    let from = query.mock.calls.length;
+    await threadEvent("thread-other");
+    expect(requested(from).map(({ type }) => type)).toEqual(["thread.list"]);
+    threadMessages = [message(1), message(2), message(3)];
+    runs = [
+      ...runs,
+      { runId: "run-2", revision: 1, status: "running", createdAt: NOW, updatedAt: NOW },
+    ];
+    from = query.mock.calls.length;
+    await threadEvent("thread-ui");
+    const reads = requested(from);
+    expect(reads.map(({ type }) => type)).toEqual([
+      "thread.list",
+      "thread.detail",
+      "thread.execution",
+      "thread.execution_state",
+    ]);
+    expect(reads[1]?.payload).toMatchObject({ threadId: "thread-ui", afterSequence: 2 });
+    expect(reads[2]?.payload).toMatchObject({ runId: "run-2" });
+  });
+
+  it("opens the execution stream only while a Run of the conversation is live", async () => {
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(0);
+    runs = [{ ...runs[0], revision: 5, status: "running" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    const live = sources.filter((source) => source.url.includes("execution-events"));
+    expect(live).toHaveLength(1);
+    runs = [{ ...runs[0], revision: 6, status: "completed" } as Detail["payload"]["runs"][number]];
+    await threadEvent("thread-ui");
+    expect(live[0]?.closed).toBe(true);
+  });
+
+  it("keeps the execution stream open while a finished Run still has an unresolved result", async () => {
+    statePhase = "unresolved";
+    await render();
+    await settle();
+    expect(sources.filter((source) => source.url.includes("execution-events"))).toHaveLength(1);
+  });
+
+  it("re-reads the conversation when an execution event carries a newer Run revision", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const source = sources.at(-1);
+    if (!source) throw new Error("Missing execution stream");
+    source.open();
+    await settle();
+    runs = [{ ...runs[0], revision: 5 } as Detail["payload"]["runs"][number]];
+    const from = query.mock.calls.length;
+    await act(async () => {
+      source.emit("thread.execution_changed", executionChanged("run-1", 5, 9));
+    });
+    await settle();
+    const types = requested(from).map(({ type }) => type);
+    expect(types).toContain("thread.detail");
+    expect(types.filter((type) => type === "thread.execution_state").length).toBeGreaterThan(0);
+  });
+
+  it("catches up every Run after the execution stream reconnects", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const first = sources.at(-1);
+    if (!first) throw new Error("Missing execution stream");
+    first.open();
+    await settle();
+    first.fail();
+    expect(first.closed).toBe(true);
+    await settle(300);
+    const second = sources.at(-1);
+    expect(second).not.toBe(first);
+    const from = query.mock.calls.length;
+    second?.open();
+    await settle();
+    expect(requested(from).map(({ type }) => type)).toEqual([
+      "thread.execution",
+      "thread.execution_state",
+    ]);
+  });
+
+  it("closes the execution stream when the conversation changes", async () => {
+    runs = [{ ...runs[0], status: "running" } as Detail["payload"]["runs"][number]];
+    await render();
+    await settle();
+    const first = sources.at(-1);
+    options = { ...options, route: { ...options.route, objectId: "thread-other" } };
+    await render();
+    await settle();
+    expect(first?.closed).toBe(true);
+    expect(sources.at(-1)?.url).not.toBe(first?.url);
+  });
 });

@@ -6,7 +6,8 @@ import type {
 } from "../ports/authorization.js";
 import { ApplicationPortError, PORT_ERROR_CODES, type PortErrorCode } from "../ports/common.js";
 import type { ClockPort } from "../ports/system.js";
-import { actionIntentFingerprint } from "./permission-service.js";
+import { grantCoversIntent } from "./permission-service.js";
+import { actionIntentFingerprintMatches } from "./action-intent-snapshot.js";
 
 export type GovernedApprovalResponse =
   | { readonly decision: "denied" }
@@ -36,14 +37,26 @@ export class ApprovalService {
       | GovernedApprovalRequest
       | undefined;
     if (!current) this.fail(PORT_ERROR_CODES.NOT_FOUND, "Approval not found");
-    if (current.status !== "pending" || current.revision !== input.expectedRevision) {
-      this.fail(PORT_ERROR_CODES.CONFLICT, "Approval response is stale or duplicated");
-    }
     if (
       current.semanticSnapshotHash !== input.semanticSnapshotHash ||
-      actionIntentFingerprint(current.intentSnapshot) !== input.semanticSnapshotHash
+      !actionIntentFingerprintMatches(current.intentSnapshot, input.semanticSnapshotHash)
     )
       this.fail(PORT_ERROR_CODES.CONFLICT, "Approval semantic snapshot hash changed");
+    // Store arbitration also covers concurrent replies that read the same pending revision.
+    if (current.status !== "pending") {
+      return this.dependencies.store.resolveApproval({
+        approvalRequestId: current.id,
+        expectedRevision: input.expectedRevision,
+        semanticSnapshotHash: input.semanticSnapshotHash,
+        resolution: input.response.decision,
+        decidedAt: this.dependencies.clock.now(),
+        grant: input.response.decision === "approved" ? input.response.grant : null,
+        recentAuthenticationRef:
+          input.response.decision === "approved" ? input.response.recentAuthenticationRef : null,
+      }) as Promise<GovernedApprovalRequest>;
+    }
+    if (current.revision !== input.expectedRevision)
+      this.fail(PORT_ERROR_CODES.CONFLICT, "Approval response is stale");
     const now = this.dependencies.clock.now();
     if (now >= current.expiresAt) {
       return this.dependencies.store.resolveApproval({
@@ -63,6 +76,29 @@ export class ApprovalService {
       this.fail(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "Recent Owner authentication is required");
     if (input.response.decision === "approved") {
       this.assertGrantDoesNotExpand(current.intentSnapshot, input.response.grant);
+      if (
+        input.response.grant.sourceApprovalRequestId !== current.id ||
+        input.response.grant.validFrom > now ||
+        input.response.grant.expiresAt <= now ||
+        input.response.grant.uses !== 0 ||
+        input.response.grant.spentCostMicros !== 0 ||
+        input.response.grant.revokedAt !== null ||
+        input.response.grant.revision !== 1 ||
+        (input.response.grant.kind === "one_time" &&
+          (input.response.grant.maxUses !== 1 ||
+            input.response.grant.expiresAt > current.expiresAt ||
+            input.response.grant.expiresAt > current.intentSnapshot.expiresAt ||
+            input.response.grant.intentFingerprint === null ||
+            !actionIntentFingerprintMatches(
+              current.intentSnapshot,
+              input.response.grant.intentFingerprint,
+            )))
+      ) {
+        this.fail(
+          PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+          "Grant does not match this approval lifetime or identity",
+        );
+      }
     }
     return this.dependencies.store.resolveApproval({
       approvalRequestId: current.id,
@@ -87,7 +123,15 @@ export class ApprovalService {
       scope.resourcePrefixes.length > 0 ||
       scope.resourceIdentities.some((ref) => !intent.resourceRefs.includes(ref)) ||
       scope.recipients.some((recipient) => !intent.recipients.includes(recipient)) ||
-      scope.maxCostMicrosPerUse > intent.estimatedCostMicros
+      scope.maxCostMicrosPerUse > intent.estimatedCostMicros ||
+      scope.maxDataClassification !== intent.dataClassification ||
+      scope.disclosure !== intent.disclosure ||
+      scope.sideEffects.some((effect) => effect !== intent.sideEffect) ||
+      scope.maxFrequency.count > intent.frequency.count ||
+      (intent.frequency.intervalMs !== null &&
+        (scope.maxFrequency.intervalMs === null ||
+          scope.maxFrequency.intervalMs < intent.frequency.intervalMs)) ||
+      !grantCoversIntent(grant, intent, this.dependencies.clock.now())
     )
       this.fail(
         PORT_ERROR_CODES.NOT_AUTHORITATIVE,

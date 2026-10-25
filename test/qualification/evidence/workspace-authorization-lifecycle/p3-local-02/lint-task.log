@@ -1,0 +1,89 @@
+packages/execution-contracts/src/sandbox-scope-v1.ts:63:9 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    61 │             part.startsWith(".himawari-"),
+    62 │         ) ||
+  > 63 │       /[\u0000-\u001f\u007f]/.test(value)
+       │         ^^^^^^
+    64 │     )
+    65 │       throw new ContractValidationError(path, "invalid relative file target");
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+packages/execution-contracts/src/sandbox-scope-v1.ts:63:16 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    61 │             part.startsWith(".himawari-"),
+    62 │         ) ||
+  > 63 │       /[\u0000-\u001f\u007f]/.test(value)
+       │                ^^^^^^
+    64 │     )
+    65 │       throw new ContractValidationError(path, "invalid relative file target");
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:364:13 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    362 │           c.file.name === "." ||
+    363 │           c.file.name === ".." ||
+  > 364 │           /[\u0000-\u001f\u007f]/.test(c.file.name) ||
+        │             ^^^^^^
+    365 │           c.file.name !== c.file.name.normalize("NFC").toLowerCase() ||
+    366 │           typeof c.file.atomicPublish !== "boolean" ||
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:364:20 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    362 │           c.file.name === "." ||
+    363 │           c.file.name === ".." ||
+  > 364 │           /[\u0000-\u001f\u007f]/.test(c.file.name) ||
+        │                    ^^^^^^
+    365 │           c.file.name !== c.file.name.normalize("NFC").toLowerCase() ||
+    366 │           typeof c.file.atomicPublish !== "boolean" ||
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+packages/platform-node/src/capabilities/sandbox-host-verifier.ts:258:11 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    256 │         part === ".env" ||
+    257 │         part.startsWith(".himawari-") ||
+  > 258 │         /[\u0000-\u001f\u007f]/.test(part),
+        │           ^^^^^^
+    259 │     )
+    260 │   )
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+packages/platform-node/src/capabilities/sandbox-host-verifier.ts:258:18 lint/suspicious/noControlCharactersInRegex ━━━━━━━━━━
+
+  × Unexpected control character in a regular expression.
+
+    256 │         part === ".env" ||
+    257 │         part.startsWith(".himawari-") ||
+  > 258 │         /[\u0000-\u001f\u007f]/.test(part),
+        │                  ^^^^^^
+    259 │     )
+    260 │   )
+
+  i Control characters are unusual and potentially incorrect inputs, so they are disallowed.
+
+
+Checked 29 files in 74ms. No fixes applied.
+Found 6 errors.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

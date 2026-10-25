@@ -1,0 +1,425 @@
+Formatted 27 files in 40ms. Fixed 1 file.
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:115:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    113 │     }
+    114 │     if (operation === "readQueuedByInvocation") {
+  > 115 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+        │                     ^^^^^^^
+    116 │         return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+    117 │       return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+
+  i Unsafe fix: Use a literal key instead.
+
+     113  113 │       }
+     114  114 │       if (operation === "readQueuedByInvocation") {
+     115      │ - ······if·(!id(input["runId"])·||·!id(input["invocationId"]))
+          115 │ + ······if·(!id(input.runId)·||·!id(input["invocationId"]))
+     116  116 │           return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+     117  117 │         return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:115:44 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    113 │     }
+    114 │     if (operation === "readQueuedByInvocation") {
+  > 115 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+        │                                            ^^^^^^^^^^^^^^
+    116 │         return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+    117 │       return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+
+  i Unsafe fix: Use a literal key instead.
+
+     113  113 │       }
+     114  114 │       if (operation === "readQueuedByInvocation") {
+     115      │ - ······if·(!id(input["runId"])·||·!id(input["invocationId"]))
+          115 │ + ······if·(!id(input["runId"])·||·!id(input.invocationId))
+     116  116 │           return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+     117  117 │         return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:117:50 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    115 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+    116 │         return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+  > 117 │       return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+        │                                                  ^^^^^^^
+    118 │     }
+    119 │     if (operation === "readAdmissionByResource") {
+
+  i Unsafe fix: Use a literal key instead.
+
+     115  115 │         if (!id(input["runId"]) || !id(input["invocationId"]))
+     116  116 │           return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+     117      │ - ······return·this.queue.read(owner,·agent,·input["runId"],·input["invocationId"]);
+          117 │ + ······return·this.queue.read(owner,·agent,·input.runId,·input["invocationId"]);
+     118  118 │       }
+     119  119 │       if (operation === "readAdmissionByResource") {
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:117:66 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    115 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+    116 │         return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+  > 117 │       return this.queue.read(owner, agent, input["runId"], input["invocationId"]);
+        │                                                                  ^^^^^^^^^^^^^^
+    118 │     }
+    119 │     if (operation === "readAdmissionByResource") {
+
+  i Unsafe fix: Use a literal key instead.
+
+     115  115 │         if (!id(input["runId"]) || !id(input["invocationId"]))
+     116  116 │           return this.fail("PORT_INVALID_OPERATION", "Invalid queued invocation locator");
+     117      │ - ······return·this.queue.read(owner,·agent,·input["runId"],·input["invocationId"]);
+          117 │ + ······return·this.queue.read(owner,·agent,·input["runId"],·input.invocationId);
+     118  118 │       }
+     119  119 │       if (operation === "readAdmissionByResource") {
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:120:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    118 │     }
+    119 │     if (operation === "readAdmissionByResource") {
+  > 120 │       if (!id(input["runId"]) || !id(input["resourceRef"]))
+        │                     ^^^^^^^
+    121 │         return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
+    122 │       const row = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     118  118 │       }
+     119  119 │       if (operation === "readAdmissionByResource") {
+     120      │ - ······if·(!id(input["runId"])·||·!id(input["resourceRef"]))
+          120 │ + ······if·(!id(input.runId)·||·!id(input["resourceRef"]))
+     121  121 │           return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
+     122  122 │         const row = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:120:44 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    118 │     }
+    119 │     if (operation === "readAdmissionByResource") {
+  > 120 │       if (!id(input["runId"]) || !id(input["resourceRef"]))
+        │                                            ^^^^^^^^^^^^^
+    121 │         return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
+    122 │       const row = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     118  118 │       }
+     119  119 │       if (operation === "readAdmissionByResource") {
+     120      │ - ······if·(!id(input["runId"])·||·!id(input["resourceRef"]))
+          120 │ + ······if·(!id(input["runId"])·||·!id(input.resourceRef))
+     121  121 │           return this.fail("PORT_INVALID_OPERATION", "Invalid resource locator");
+     122  122 │         const row = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:126:34 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    124 │           "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND resource_ref=?",
+    125 │         )
+  > 126 │         .get(owner, agent, input["runId"], input["resourceRef"]) as { plan: string } | undefined;
+        │                                  ^^^^^^^
+    127 │       return row
+    128 │         ? this.readAdmission(
+
+  i Unsafe fix: Use a literal key instead.
+
+     124  124 │             "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND resource_ref=?",
+     125  125 │           )
+     126      │ - ········.get(owner,·agent,·input["runId"],·input["resourceRef"])·as·{·plan:·string·}·|·undefined;
+          126 │ + ········.get(owner,·agent,·input.runId,·input["resourceRef"])·as·{·plan:·string·}·|·undefined;
+     127  127 │         return row
+     128  128 │           ? this.readAdmission(
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:126:50 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    124 │           "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND resource_ref=?",
+    125 │         )
+  > 126 │         .get(owner, agent, input["runId"], input["resourceRef"]) as { plan: string } | undefined;
+        │                                                  ^^^^^^^^^^^^^
+    127 │       return row
+    128 │         ? this.readAdmission(
+
+  i Unsafe fix: Use a literal key instead.
+
+     124  124 │             "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND resource_ref=?",
+     125  125 │           )
+     126      │ - ········.get(owner,·agent,·input["runId"],·input["resourceRef"])·as·{·plan:·string·}·|·undefined;
+          126 │ + ········.get(owner,·agent,·input["runId"],·input.resourceRef)·as·{·plan:·string·}·|·undefined;
+     127  127 │         return row
+     128  128 │           ? this.readAdmission(
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:136:21 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    134 │     }
+    135 │     if (operation === "readAdmissionByInvocation") {
+  > 136 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+        │                     ^^^^^^^
+    137 │         return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
+    138 │       const row = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     134  134 │       }
+     135  135 │       if (operation === "readAdmissionByInvocation") {
+     136      │ - ······if·(!id(input["runId"])·||·!id(input["invocationId"]))
+          136 │ + ······if·(!id(input.runId)·||·!id(input["invocationId"]))
+     137  137 │           return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
+     138  138 │         const row = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:136:44 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    134 │     }
+    135 │     if (operation === "readAdmissionByInvocation") {
+  > 136 │       if (!id(input["runId"]) || !id(input["invocationId"]))
+        │                                            ^^^^^^^^^^^^^^
+    137 │         return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
+    138 │       const row = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     134  134 │       }
+     135  135 │       if (operation === "readAdmissionByInvocation") {
+     136      │ - ······if·(!id(input["runId"])·||·!id(input["invocationId"]))
+          136 │ + ······if·(!id(input["runId"])·||·!id(input.invocationId))
+     137  137 │           return this.fail("PORT_INVALID_OPERATION", "Invalid invocation locator");
+     138  138 │         const row = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:142:34 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    140 │           "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+    141 │         )
+  > 142 │         .get(owner, agent, input["runId"], input["invocationId"]) as { plan: string } | undefined;
+        │                                  ^^^^^^^
+    143 │       return row
+    144 │         ? this.readAdmission(
+
+  i Unsafe fix: Use a literal key instead.
+
+     140  140 │             "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+     141  141 │           )
+     142      │ - ········.get(owner,·agent,·input["runId"],·input["invocationId"])·as·{·plan:·string·}·|·undefined;
+          142 │ + ········.get(owner,·agent,·input.runId,·input["invocationId"])·as·{·plan:·string·}·|·undefined;
+     143  143 │         return row
+     144  144 │           ? this.readAdmission(
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:142:50 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    140 │           "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+    141 │         )
+  > 142 │         .get(owner, agent, input["runId"], input["invocationId"]) as { plan: string } | undefined;
+        │                                                  ^^^^^^^^^^^^^^
+    143 │       return row
+    144 │         ? this.readAdmission(
+
+  i Unsafe fix: Use a literal key instead.
+
+     140  140 │             "SELECT plan_json AS plan FROM sandbox_execution_records WHERE owner_id=? AND agent_id=? AND run_id=? AND invocation_id=?",
+     141  141 │           )
+     142      │ - ········.get(owner,·agent,·input["runId"],·input["invocationId"])·as·{·plan:·string·}·|·undefined;
+          142 │ + ········.get(owner,·agent,·input["runId"],·input.invocationId)·as·{·plan:·string·}·|·undefined;
+     143  143 │         return row
+     144  144 │           ? this.readAdmission(
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:196:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    194 │       )
+    195 │         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+  > 196 │       if (input["runId"] !== undefined && !id(input["runId"]))
+        │                 ^^^^^^^
+    197 │         return this.fail("PORT_INVALID_OPERATION", "Invalid Run locator");
+    198 │       const rows = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     194  194 │         )
+     195  195 │           return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+     196      │ - ······if·(input["runId"]·!==·undefined·&&·!id(input["runId"]))
+          196 │ + ······if·(input.runId·!==·undefined·&&·!id(input["runId"]))
+     197  197 │           return this.fail("PORT_INVALID_OPERATION", "Invalid Run locator");
+     198  198 │         const rows = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:196:53 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    194 │       )
+    195 │         return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+  > 196 │       if (input["runId"] !== undefined && !id(input["runId"]))
+        │                                                     ^^^^^^^
+    197 │         return this.fail("PORT_INVALID_OPERATION", "Invalid Run locator");
+    198 │       const rows = this.db
+
+  i Unsafe fix: Use a literal key instead.
+
+     194  194 │         )
+     195  195 │           return this.fail("PORT_INVALID_OPERATION", "Invalid bounded page");
+     196      │ - ······if·(input["runId"]·!==·undefined·&&·!id(input["runId"]))
+          196 │ + ······if·(input["runId"]·!==·undefined·&&·!id(input.runId))
+     197  197 │           return this.fail("PORT_INVALID_OPERATION", "Invalid Run locator");
+     198  198 │         const rows = this.db
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:205:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    203 │           owner,
+    204 │           agent,
+  > 205 │           input["runId"] ?? null,
+        │                 ^^^^^^^
+    206 │           input["runId"] ?? null,
+    207 │           afterJobId ?? "",
+
+  i Unsafe fix: Use a literal key instead.
+
+     203  203 │             owner,
+     204  204 │             agent,
+     205      │ - ··········input["runId"]·??·null,
+          205 │ + ··········input.runId·??·null,
+     206  206 │             input["runId"] ?? null,
+     207  207 │             afterJobId ?? "",
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:206:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    204 │           agent,
+    205 │           input["runId"] ?? null,
+  > 206 │           input["runId"] ?? null,
+        │                 ^^^^^^^
+    207 │           afterJobId ?? "",
+    208 │           limit,
+
+  i Unsafe fix: Use a literal key instead.
+
+     204  204 │             agent,
+     205  205 │             input["runId"] ?? null,
+     206      │ - ··········input["runId"]·??·null,
+          206 │ + ··········input.runId·??·null,
+     207  207 │             afterJobId ?? "",
+     208  208 │             limit,
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:271:63 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    269 │           );
+    270 │         if (operation === "admit") return this.admit(raw as Input<"admit">, owner, agent);
+  > 271 │         const identity = sandboxJobIdentitySchema.parse(input["identity"]);
+        │                                                               ^^^^^^^^^^
+    272 │         const now = input["now"];
+    273 │         if (
+
+  i Unsafe fix: Use a literal key instead.
+
+     269  269 │             );
+     270  270 │           if (operation === "admit") return this.admit(raw as Input<"admit">, owner, agent);
+     271      │ - ········const·identity·=·sandboxJobIdentitySchema.parse(input["identity"]);
+          271 │ + ········const·identity·=·sandboxJobIdentitySchema.parse(input.identity);
+     272  272 │           const now = input["now"];
+     273  273 │           if (
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:272:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    270 │         if (operation === "admit") return this.admit(raw as Input<"admit">, owner, agent);
+    271 │         const identity = sandboxJobIdentitySchema.parse(input["identity"]);
+  > 272 │         const now = input["now"];
+        │                           ^^^^^
+    273 │         if (
+    274 │           typeof now !== "string" ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     270  270 │           if (operation === "admit") return this.admit(raw as Input<"admit">, owner, agent);
+     271  271 │           const identity = sandboxJobIdentitySchema.parse(input["identity"]);
+     272      │ - ········const·now·=·input["now"];
+          272 │ + ········const·now·=·input.now;
+     273  273 │           if (
+     274  274 │             typeof now !== "string" ||
+
+
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:279:40 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    277 │         )
+    278 │           return this.fail("PORT_INVALID_OPERATION", "Invalid observation time");
+  > 279 │         this.authority.authority(input["authority"], owner, agent, now);
+        │                                        ^^^^^^^^^^^
+    280 │         if (
+    281 │           ["scheduleRecovery", "beginReservationRecovery", "finishReservationRecovery"].includes(
+
+  i Unsafe fix: Use a literal key instead.
+
+     277  277 │           )
+     278  278 │             return this.fail("PORT_INVALID_OPERATION", "Invalid observation time");
+     279      │ - ········this.authority.authority(input["authority"],·owner,·agent,·now);
+          279 │ + ········this.authority.authority(input.authority,·owner,·agent,·now);
+     280  280 │           if (
+     281  281 │             ["scheduleRecovery", "beginReservationRecovery", "finishReservationRecovery"].includes(
+
+
+test/integration/sqlite-sandbox-execution-v2.test.ts:1265:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    1263 │         if (state === "missing_host") delete plan.identity.hostId;
+    1264 │         const rawObservation: Record<string, unknown> = { ...observation };
+  > 1265 │         if (state === "missing_state") delete rawObservation["state"];
+         │                                                              ^^^^^^^
+    1266 │         old
+    1267 │           .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+  i Unsafe fix: Use a literal key instead.
+
+    1263 1263 │           if (state === "missing_host") delete plan.identity.hostId;
+    1264 1264 │           const rawObservation: Record<string, unknown> = { ...observation };
+    1265      │ - ········if·(state·===·"missing_state")·delete·rawObservation["state"];
+         1265 │ + ········if·(state·===·"missing_state")·delete·rawObservation.state;
+    1266 1266 │           old
+    1267 1267 │             .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 2.
+Checked 27 files in 54ms. No fixes applied.
+Found 22 infos.

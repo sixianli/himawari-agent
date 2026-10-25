@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -73,7 +81,7 @@ let root;
 const readPublic = (name) =>
   JSON.parse(readFileSync(path.join(root, ".ci-output/main-public", name), "utf8"));
 beforeEach(() => {
-  root = mkdtempSync(path.join(tmpdir(), "main-confirmation-"));
+  root = realpathSync(mkdtempSync(path.join(tmpdir(), "main-confirmation-")));
   Object.assign(state, { calls: [], fail: "", outcome: {}, report: "passed", process: undefined });
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));

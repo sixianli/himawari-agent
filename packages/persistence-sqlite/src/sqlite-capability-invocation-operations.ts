@@ -16,18 +16,22 @@ import type {
   SandboxJobAdmissionResult,
   SandboxJobRecord,
 } from "@himawari-agent/application";
+import { RECOVERY_SETTLE_WAIT_MS } from "@himawari-agent/application/sandbox-execution-projection";
 import { createAuthorityLeaseId, createDeploymentId } from "@himawari-agent/domain";
 import {
   ContractValidationError,
   type SandboxExecutionPlan,
+  type SandboxExecutionPlanV2,
   type SandboxJobIdentity,
   sandboxExecutionPlanSchema,
+  sandboxExecutionPlanV2Schema,
   sandboxJobIdentitySchema,
   sandboxJobReceiptSchema,
   validateSandboxJobObservation,
 } from "@himawari-agent/execution-contracts";
 import type Database from "better-sqlite3";
 import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
+import { SqliteExecutionEnvironmentOperations } from "./sqlite-execution-environment-operations.ts";
 import type {
   SqliteCapabilityInvocationObservationInput,
   SqliteRunPayloadArtifactOperations,
@@ -468,33 +472,171 @@ function grantRecord(row: GrantRow): Record<string, unknown> {
 
 export class SqliteCapabilityInvocationOperations {
   private readonly sandboxExecutions: SqliteSandboxExecutionOperations;
+  private readonly executionEnvironments: SqliteExecutionEnvironmentOperations;
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
   private readonly assertDiskHeadroom: () => void;
   private readonly runPayloadArtifacts: SqliteRunPayloadArtifactOperations | undefined;
+
+  private readonly commitAuthorization:
+    | ((handle: string, invocation: string, now: string) => void)
+    | undefined;
 
   constructor(
     database: Database.Database,
     fail: SqliteApplicationFailure,
     assertDiskHeadroom: () => void,
     runPayloadArtifacts?: SqliteRunPayloadArtifactOperations,
+    commitAuthorization?: (handle: string, invocation: string, now: string) => void,
   ) {
+    this.commitAuthorization = commitAuthorization;
     this.database = database;
     this.fail = fail;
     this.assertDiskHeadroom = assertDiskHeadroom;
     this.runPayloadArtifacts = runPayloadArtifacts;
     this.sandboxExecutions = new SqliteSandboxExecutionOperations(database, fail, {
       disk: assertDiskHeadroom,
+      recovery: (plan, value, now, deadlineFailure) => {
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(value), now, {
+          kind: deadlineFailure ? "deadline_failure" : "recovery",
+        });
+        const output = this.requireRunPayloadArtifacts().execute("runPayloadArtifact.lookup", {
+          ownerId: plan.identity.ownerId,
+          agentId: plan.identity.agentId,
+          runId: plan.identity.runId,
+          purpose: "worker_result",
+          operationKey: capabilityInvocationOutputOperationKey(plan.identity.invocationId),
+          authority: {
+            product: value.product,
+            leaseId: value.lease.leaseId,
+            leaseFencingToken: value.lease.fencingToken,
+          },
+          now,
+        }) as ResultArtifact | undefined;
+        return { receipt, output };
+      },
+      importOutput: (plan, input) => {
+        const receipt = this.sandboxRecoveryReceipt(plan, authority(input.authority), input.now, {
+          kind: input.recoveryPurpose === "deadline_failure" ? "deadline_failure" : "recovery",
+        });
+        if (
+          input.payload.contentType !== "application/octet-stream" ||
+          input.payload.dataClassification !== receipt.dataClassification ||
+          input.source.byteLength > receipt.resourceCeiling.maxOutputBytes
+        )
+          return this.fail(
+            "PORT_INVALID_OPERATION",
+            "Recovered output differs from the frozen output contract",
+          );
+        return this.requireRunPayloadArtifacts().commitInvocationObservationWithinTransaction({
+          ownerId: receipt.ownerId,
+          agentId: receipt.agentId,
+          runId: receipt.runId,
+          invocationId: receipt.invocationId,
+          authority: input.authority,
+          now: input.now,
+          payload: input.payload,
+        }).ref;
+      },
       consume: (value, owner, agent) => this.consume(parseConsume(value), owner, agent),
+      rebindQueued: (request, previous, owner, agent) => {
+        const input = parseConsume(request.invocation);
+        this.assertRequestScope(input, owner, agent);
+        this.assertAuthority(input.authority, owner, agent, input.consumedAt);
+        this.assertSandboxLease(request.plan, input.authority, input.consumedAt);
+        if (
+          this.readReceiptByKey(owner, agent, input.idempotencyKey) ||
+          this.readReceiptByInvocation(owner, agent, input.requestScope.runId, input.invocationId)
+        )
+          return this.fail("PORT_CONFLICT", "Consumed invocation cannot change queue authority");
+        const row = this.readHandle(input.handleRef);
+        if (!row) return this.fail("PORT_NOT_FOUND", "Queued Handle is missing");
+        const current = handleRecord(row);
+        if (
+          current.uses !== 0 ||
+          current.spentCostMicros !== 0 ||
+          current.idempotencyKeys.length !== 0 ||
+          current.authorityFence !== previous.authority.product.fencingToken
+        )
+          return this.fail(
+            "PORT_NOT_AUTHORITATIVE",
+            "Queued Handle is consumed or its binding changed",
+          );
+        if (current.authorityFence !== input.authority.product.fencingToken) {
+          if (
+            this.database
+              .prepare(
+                "SELECT 1 FROM sandbox_admission_queue WHERE handle_ref=? AND job_id!=? AND status='queued' LIMIT 1",
+              )
+              .get(input.handleRef, request.plan.identity.jobId)
+          )
+            return this.fail("PORT_CONFLICT", "Queued Handle has another pending request");
+          this.database.prepare("UPDATE capability_handles SET record_json=? WHERE id=?").run(
+            JSON.stringify({
+              ...current,
+              authorityFence: input.authority.product.fencingToken,
+              revision: current.revision + 1,
+            }),
+            input.handleRef,
+          );
+        }
+        this.unconsumedHandle(input);
+      },
+      validateQueued: (value, owner, agent) => {
+        const input = parseConsume(value);
+        this.assertRequestScope(input, owner, agent);
+        if (
+          this.readReceiptByKey(owner, agent, input.idempotencyKey) ||
+          this.readReceiptByInvocation(owner, agent, input.requestScope.runId, input.invocationId)
+        )
+          this.fail("PORT_CONFLICT", "Consumed invocation cannot acquire a new queue position");
+        this.unconsumedHandle(input);
+      },
       authority: (value, owner, agent, now) =>
         this.assertAuthority(authority(value), owner, agent, now),
       live: (plan, value, now) => this.assertSandboxLive(plan, authority(value), now),
+      result: (plan, value, executionLease, now) =>
+        this.assertSandboxResultReadable(plan, authority(value), executionLease, now),
+      disclosure: (plan, input) => {
+        const currentAuthority = authority(input.authority);
+        const bound = sandboxExecutionPlanV2Schema.parse({
+          ...plan,
+          executionLease: input.executionLease,
+        });
+        this.assertSandboxLease(bound, currentAuthority, input.now);
+        this.sandboxRecoveryReceipt(plan, currentAuthority, input.now, {
+          kind: "result_disclosure",
+          replyDeadlineAt: input.replyDeadlineAt,
+        });
+      },
+    });
+    this.executionEnvironments = new SqliteExecutionEnvironmentOperations(database, fail, {
+      authority: (value, owner, agent, now) =>
+        this.assertAuthority(authority(value), owner, agent, now),
+      disk: assertDiskHeadroom,
+      assertAvailable: (claims, requestJobId, now, ownRunId) =>
+        this.sandboxExecutions.assertAvailable(
+          claims,
+          requestJobId,
+          now,
+          "",
+          undefined,
+          ownRunId === "" ? undefined : { runId: ownRunId },
+        ),
     });
   }
 
   execute(operation: string, value: unknown): unknown {
     try {
       const scoped = this.scopedInput(value);
+      if (operation.startsWith("capabilityInvocation.executionEnvironment.")) {
+        return this.executionEnvironments.execute(
+          operation.slice("capabilityInvocation.executionEnvironment.".length),
+          scoped.input,
+          scoped.ownerId,
+          scoped.agentId,
+        );
+      }
       if (operation.startsWith("capabilityInvocation.sandboxV2.")) {
         return this.sandboxExecutions.execute(
           operation.slice("capabilityInvocation.sandboxV2.".length),
@@ -600,6 +742,120 @@ export class SqliteCapabilityInvocationOperations {
     ) {
       this.fail("PORT_NOT_AUTHORITATIVE", "Sandbox job exceeds its consumed invocation");
     }
+    this.assertSandboxLease(plan, authority, now);
+  }
+
+  private sandboxRecoveryReceipt(
+    plan: SandboxExecutionPlanV2,
+    currentAuthority: AuthorityInput,
+    now: string,
+    purpose:
+      | { readonly kind: "recovery" | "deadline_failure" }
+      | { readonly kind: "result_disclosure"; readonly replyDeadlineAt: string },
+  ): FrozenReceipt {
+    this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
+    const row = this.readReceiptByInvocationScope(
+      plan.identity.ownerId,
+      plan.identity.agentId,
+      plan.handleRef,
+      plan.identity.invocationId,
+    );
+    if (!row) return this.fail("PORT_NOT_FOUND", "Original recovery receipt is missing");
+    const receipt = receiptFromRow(row);
+    const handle = this.readHandle(receipt.handleRef);
+    if (!handle) return this.fail("PORT_NOT_FOUND", "Original recovery handle is missing");
+    const current = handleRecord(handle);
+    const capability = capabilityRecord(handle);
+    if (
+      receipt.receiptRef !== plan.identity.receiptRef ||
+      receipt.runId !== plan.identity.runId ||
+      receipt.semanticFingerprint !== plan.semanticFingerprint ||
+      receipt.inputRef !== plan.inputRef ||
+      receipt.operation !== plan.operation ||
+      receipt.capabilityRef !== plan.capabilityRef ||
+      receipt.capabilityVersion !== plan.capabilityVersion ||
+      receipt.authorizationRef !== plan.authorizationRef ||
+      receipt.authority.product.deploymentId !== plan.executionLease.deploymentId ||
+      receipt.authority.product.authorityEpoch !== plan.executionLease.authorityEpoch ||
+      receipt.authority.product.fencingToken !== plan.executionLease.fencingToken ||
+      !["running", "reconciling_external_result"].includes(handle.runStatus) ||
+      handle.handleRevokedAt !== null ||
+      current.revokedAt !== null ||
+      current.workerEndedAt !== null ||
+      current.ownerId !== receipt.ownerId ||
+      current.agentId !== receipt.agentId ||
+      current.runId !== receipt.runId ||
+      current.capabilityRef !== receipt.capabilityRef ||
+      current.capabilityVersion !== receipt.capabilityVersion ||
+      capability.ref !== receipt.capabilityRef ||
+      capability.declaration.version !== receipt.capabilityVersion ||
+      !CAPABILITY_LIFECYCLES_WITH_AUTHORITY.has(handle.capabilityStatus) ||
+      !capability.declaration.operations.includes(receipt.operation) ||
+      now >= current.expiresAt ||
+      (purpose.kind === "result_disclosure"
+        ? Date.parse(now) >=
+          Math.min(
+            Date.parse(receipt.deadlineAt) + RECOVERY_SETTLE_WAIT_MS,
+            Date.parse(plan.originalDeadlineAt),
+            Date.parse(purpose.replyDeadlineAt),
+          )
+        : purpose.kind === "deadline_failure"
+          ? plan.effectiveDeadlineAt > receipt.effectiveExpiresAt ||
+            plan.effectiveDeadlineAt > receipt.deadlineAt ||
+            now < plan.effectiveDeadlineAt ||
+            now >= plan.originalDeadlineAt
+          : now >= receipt.effectiveExpiresAt || now >= receipt.deadlineAt)
+    )
+      return this.fail(
+        "PORT_NOT_AUTHORITATIVE",
+        "Original recovery identity or permission changed",
+      );
+    this.assertGrant(current, {
+      operation: receipt.operation,
+      dataClassification: receipt.dataClassification,
+      deadlineAt: receipt.deadlineAt,
+      consumedAt: now,
+    });
+    return receipt;
+  }
+  private assertSandboxResultReadable(
+    plan: SandboxExecutionPlanV2,
+    currentAuthority: AuthorityInput,
+    executionLease: SandboxExecutionPlanV2["executionLease"],
+    now: string,
+  ): void {
+    this.assertAuthority(currentAuthority, plan.identity.ownerId, plan.identity.agentId, now);
+    const bound = sandboxExecutionPlanV2Schema.parse({ ...plan, executionLease });
+    this.assertSandboxLease(bound, currentAuthority, now);
+    const row = this.readReceiptByInvocationScope(
+      plan.identity.ownerId,
+      plan.identity.agentId,
+      plan.handleRef,
+      plan.identity.invocationId,
+    );
+    if (!row) this.fail("PORT_NOT_FOUND", "Original invocation receipt is missing");
+    const receipt = receiptFromRow(row);
+    if (
+      receipt.receiptRef !== plan.identity.receiptRef ||
+      receipt.runId !== plan.identity.runId ||
+      receipt.semanticFingerprint !== plan.semanticFingerprint ||
+      receipt.inputRef !== plan.inputRef ||
+      receipt.operation !== plan.operation ||
+      receipt.capabilityRef !== plan.capabilityRef ||
+      receipt.capabilityVersion !== plan.capabilityVersion ||
+      receipt.authorizationRef !== plan.authorizationRef
+    )
+      this.fail("PORT_NOT_AUTHORITATIVE", "Known result does not match its original invocation");
+    this.assertReceiptReadable(receipt, now);
+  }
+
+  private assertSandboxLease(
+    plan:
+      | SandboxExecutionPlan
+      | import("@himawari-agent/execution-contracts").SandboxExecutionPlanCandidateV2,
+    authority: AuthorityInput,
+    now: string,
+  ): void {
     const lease = plan.executionLease;
     if (
       lease.authorityLeaseId !== authority.lease.leaseId ||
@@ -888,6 +1144,22 @@ export class SqliteCapabilityInvocationOperations {
     };
   }
 
+  private unconsumedHandle(input: ConsumeInput): GovernedCapabilityExecutionHandle {
+    const row = this.readHandle(input.handleRef);
+    if (!row) return this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
+    const current = this.assertLiveInvocationAuthority(row, input);
+    if (current.idempotencyKeys.includes(input.idempotencyKey)) {
+      return this.fail(
+        "PORT_CONFLICT",
+        "Capability Handle has a historical consume without a durable invocation receipt",
+        { handleRef: input.handleRef },
+      );
+    }
+
+    this.assertGrant(current, input);
+    return current;
+  }
+
   private consume(input: ConsumeInput, ownerId: string, agentId: string): ConsumeResult {
     this.assertDiskHeadroom();
     return this.database
@@ -910,19 +1182,15 @@ export class SqliteCapabilityInvocationOperations {
           );
         }
 
-        const row = this.readHandle(input.handleRef);
-        if (!row)
-          return this.fail("PORT_NOT_FOUND", `Capability handle ${input.handleRef} not found`);
-        const current = this.assertLiveInvocationAuthority(row, input);
-        if (current.idempotencyKeys.includes(input.idempotencyKey)) {
-          return this.fail(
-            "PORT_CONFLICT",
-            "Capability Handle has a historical consume without a durable invocation receipt",
-            { handleRef: input.handleRef },
-          );
-        }
-
-        this.assertGrant(current, input);
+        const current = this.unconsumedHandle(input);
+        if (
+          !this.commitAuthorization &&
+          this.database
+            .prepare("SELECT 1 FROM authorization_reservations WHERE handle_ref=?")
+            .get(current.ref)
+        )
+          this.fail("PORT_NOT_AUTHORITATIVE", "Reservation commit owner is unavailable");
+        this.commitAuthorization?.(current.ref, input.invocationId, input.consumedAt);
         const effectiveExpiresAt =
           timestamp(current.expiresAt, "handle.expiresAt") <=
           timestamp(input.deadlineAt, "deadlineAt")
@@ -1083,6 +1351,10 @@ export class SqliteCapabilityInvocationOperations {
     ) {
       return this.fail("PORT_HANDLE_REVOKED", "Capability invocation receipt has expired");
     }
+    return this.assertReceiptReadable(receipt, input.now);
+  }
+
+  private assertReceiptReadable(receipt: FrozenReceipt, now: string): FrozenReceipt {
     const handleRow = this.readHandle(receipt.handleRef);
     if (!handleRow)
       return this.fail("PORT_NOT_FOUND", `Capability handle ${receipt.handleRef} not found`);
@@ -1101,7 +1373,7 @@ export class SqliteCapabilityInvocationOperations {
       !capability.declaration.operations.includes(receipt.operation) ||
       current.revokedAt !== null ||
       current.workerEndedAt !== null ||
-      timestamp(input.now, "now") >= timestamp(current.expiresAt, "handle.expiresAt")
+      timestamp(now, "now") >= timestamp(current.expiresAt, "handle.expiresAt")
     ) {
       return this.fail("PORT_HANDLE_REVOKED", "Capability Handle is no longer readable");
     }
@@ -1109,7 +1381,7 @@ export class SqliteCapabilityInvocationOperations {
       operation: receipt.operation,
       dataClassification: receipt.dataClassification,
       deadlineAt: receipt.deadlineAt,
-      consumedAt: input.now,
+      consumedAt: now,
     });
     return receipt;
   }

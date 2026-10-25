@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "checkId": "build",
+  "matrixKey": "macos-arm64",
+  "repository": "sixianli/himawari-agent",
+  "event": "workflow_dispatch",
+  "runId": "1789880631907",
+  "attempt": 1,
+  "testedSha": "afdf110618759e01dc9c9c6d250f035839f99c27",
+  "headSha": "afdf110618759e01dc9c9c6d250f035839f99c27",
+  "baseSha": "afdf110618759e01dc9c9c6d250f035839f99c27",
+  "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "initialization": false,
+  "toolchain": {
+    "node": "22.22.3",
+    "npm": "11.8.0",
+    "os": "darwin",
+    "arch": "arm64",
+    "abi": "127",
+    "runnerImage": "local"
+  },
+  "status": "passed",
+  "exitCode": 0,
+  "durationMs": 254233,
+  "retryCount": 0,
+  "counts": {
+    "files": 32937,
+    "executed": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "projects": [],
+  "reports": [
+    {
+      "path": "build/compile-node.log",
+      "kind": "diagnostic",
+      "sha256": "50ab91ed2087c0265e10dbbd5955af661aace92aa1bca2c5eeed951f06944832",
+      "bytes": 49
+    },
+    {
+      "path": "build/compile-browser.log",
+      "kind": "diagnostic",
+      "sha256": "516c77be15d8a6bdcf5042a81fd6aa61850de59cb4fa303a8f57d2fe277d0649",
+      "bytes": 1809
+    },
+    {
+      "path": "build/browser-budget.log",
+      "kind": "diagnostic",
+      "sha256": "9e1db17c077071e4ad5d5f688e1b4822722008bd5410bf275014fd09d730c524",
+      "bytes": 546
+    },
+    {
+      "path": "build/native-probe.log",
+      "kind": "diagnostic",
+      "sha256": "cdd1c16eb1cb21540e83001da6e8bcbb18e8733d19ddc7d6e73f5cf0defa15aa",
+      "bytes": 47
+    },
+    {
+      "path": "build/provider-imports.log",
+      "kind": "diagnostic",
+      "sha256": "6bbf489f3de3272123904198aa4310347a03c232d8d2e62380dea9fe2e769694",
+      "bytes": 48
+    },
+    {
+      "path": "build/build.json",
+      "kind": "json",
+      "sha256": "5bf5edd6f093d7883062f8ee2bb38e6a21cbba1d6e2923b48e7c09464728fa89",
+      "bytes": 8495702
+    },
+    {
+      "path": "build/build-manifest.json",
+      "kind": "json",
+      "sha256": "191c4767c7a29274bc561cc365b658baeceadf655a3bfb92c3d05b1d81d1f01f",
+      "bytes": 7843337
+    },
+    {
+      "path": "build/browser-budget.json",
+      "kind": "json",
+      "sha256": "2289509bfda998cacc5eacca1eef6350a1a4143212d79420a8803d4fa70ff338",
+      "bytes": 709
+    },
+    {
+      "path": "macos-arm64-abi127-afdf110618759e01dc9c9c6d250f035839f99c27-1789880631907-1.tar.gz",
+      "kind": "artifact",
+      "sha256": "8530eabbdd36e9f9d5f5608d2c52323af9dbd600b6815aaab66e07fc50318ea8",
+      "bytes": 64185946
+    },
+    {
+      "path": "details.json",
+      "kind": "json",
+      "sha256": "be168d9f7edb0c01d90a1931ac8823e5beccedfe6f21c0eb8586a938e1294af0",
+      "bytes": 2037
+    }
+  ],
+  "artifacts": [
+    {
+      "role": "produced",
+      "platform": "macos-arm64",
+      "path": "macos-arm64-abi127-afdf110618759e01dc9c9c6d250f035839f99c27-1789880631907-1.tar.gz",
+      "sha256": "8530eabbdd36e9f9d5f5608d2c52323af9dbd600b6815aaab66e07fc50318ea8"
+    }
+  ]
+}

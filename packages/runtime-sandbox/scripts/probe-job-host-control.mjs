@@ -7,13 +7,21 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { createProductionSandboxControl } from "../../../dist/node-build/apps/agent-service/src/production-sandbox-control.js";
+// Resolve through the packaged installation so workspace exports cannot lead
+// plain Node back to TypeScript sources and unresolved .js imports.
+import { createProductionSandboxControl } from "../../../dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-control.js";
 import {
   compileSandboxPolicy,
   prepareSandboxJobHost,
   queryJobHostControl,
   readJobHostFinalEvidence,
-} from "../../../dist/node-build/packages/runtime-sandbox/src/index.js";
+} from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/index.js";
+import {
+  processGroupPresent,
+  readJobHostStartEvidence,
+  readMachineBootId,
+  readProcessStartToken,
+} from "../../../dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host-control-client.js";
 
 // Temporary Linux helpers are a probe-only override, never product configuration.
 if (process.platform === "linux" && process.env.HIMAWARI_R4_HELPERS) {
@@ -59,12 +67,23 @@ if (process.argv.includes("--worker")) {
   );
   const results = [];
   try {
-    for (const scenario of ["stop", "worker-crash", "never-started", "observed-escape", "stdin"]) {
+    for (const scenario of [
+      "stop",
+      "worker-crash",
+      "never-started",
+      "observed-escape",
+      "stdin",
+      "writer-stop",
+      "writer-worker-crash",
+      "host-crash",
+    ]) {
       const directory = path.join(root, String(results.length));
       await mkdir(directory, { mode: 0o700 });
       for (const child of ["workspace", "private", "control"])
         await mkdir(path.join(directory, child), { mode: 0o700 });
       const controlDirectory = path.join(directory, "control");
+      const writerPath = path.join(directory, "workspace", "descendant-writes");
+      const writerScenario = scenario.startsWith("writer-");
       await writeFile(path.join(controlDirectory, "sentinel"), "synthetic-only", { mode: 0o600 });
       const policy = {
         workspace: path.join(directory, "workspace"),
@@ -101,11 +120,16 @@ if (process.argv.includes("--worker")) {
         executable: "/usr/bin/perl",
         args: [
           "-e",
-          scenario === "stdin"
-            ? "binmode STDIN; local $/; my $input=<STDIN>; print $input; $|=1; sleep(4);"
-            : scenario === "observed-escape"
-              ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
-              : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
+          writerScenario
+            ? "use POSIX qw(setsid); use Time::HiRes qw(time usleep); my $p=fork(); defined($p) or die 'fork'; if (!$p) { setsid() >= 0 or die 'setsid'; open(my $f, '>>', $ARGV[0]) or die 'open'; select((select($f), $|=1)[0]); my $end=time()+4; while(time()<$end) { print $f qq(x\\n); usleep(20000); } exit(0); } sleep(4);"
+            : scenario === "stdin"
+              ? "binmode STDIN; local $/; my $input=<STDIN>; print $input; $|=1; sleep(4);"
+              : scenario === "host-crash"
+                ? "print qq(started\\n); $|=1; sleep(8);"
+                : scenario === "observed-escape"
+                  ? "use POSIX qw(setsid); my $p=fork(); if (!$p) { setsid(); sleep(4); exit(0); } sleep(3);"
+                  : `open(my $f, '<', '${controlDirectory}/sentinel') and die 'control visible'; print qq(denied\\n); $|=1; sleep(4);`,
+          ...(writerScenario ? [writerPath] : []),
         ],
         ...(scenario === "stdin"
           ? { stdinBase64: Buffer.from("synthetic\u0000first\nsecond").toString("base64") }
@@ -146,7 +170,20 @@ if (process.argv.includes("--worker")) {
         // In-memory artifact storage and qualification are fixtures; the process,
         // control protocol and product evidence verifier are real.
         const artifacts = new Map();
+        const verifiedHost = async () => ({
+          binding: {
+            privateRoot: directory,
+            runtimeRoot: "/unused-runtime",
+            readOnlyToolchainPaths: [],
+            roots: [],
+          },
+          qualification: {
+            platform: process.platform,
+            terminationMode: process.platform === "linux" ? "verified_tree" : "best_effort",
+          },
+        });
         const product = createProductionSandboxControl({
+          machineBootId: () => readMachineBootId(),
           now: () => new Date().toISOString(),
           read: async (_plan, key) => artifacts.get(key),
           write: async (_plan, key, value) => {
@@ -158,18 +195,8 @@ if (process.argv.includes("--worker")) {
             artifacts.set(key, artifact);
             return artifact;
           },
-          host: async () => ({
-            binding: {
-              privateRoot: directory,
-              runtimeRoot: "/unused-runtime",
-              readOnlyToolchainPaths: [],
-              roots: [],
-            },
-            qualification: {
-              platform: process.platform,
-              terminationMode: process.platform === "linux" ? "verified_tree" : "best_effort",
-            },
-          }),
+          host: verifiedHost,
+          admit: verifiedHost,
         });
         const identity = {
           jobId: scenario,
@@ -233,8 +260,61 @@ if (process.argv.includes("--worker")) {
         await product.verifyPreparation(plan, record.facts);
         if (scenario !== "never-started") {
           worker.send({ start: true });
-          await delay(300);
+          if (writerScenario) {
+            stage = "descendant-writing";
+            const deadline = Date.now() + 3000;
+            while ((await readFile(writerPath).catch(() => Buffer.alloc(0))).length < 6) {
+              assert.ok(Date.now() < deadline, "descendant did not start writing");
+              await delay(20);
+            }
+          } else await delay(300);
         }
+        if (scenario === "host-crash") {
+          stage = "start-record";
+          let start;
+          for (let i = 0; i < 30 && !start; i++) {
+            try {
+              start = await readJobHostStartEvidence(binding);
+            } catch {
+              await delay(100);
+            }
+          }
+          assert.ok(start);
+          assert.equal(start.processId, inspected.processId);
+          assert.equal(start.processStartToken, await readProcessStartToken(start.processId));
+          const group = start.taskProcessGroup.processGroupId;
+          assert.equal(start.taskProcessGroup.startToken, await readProcessStartToken(group));
+          stage = "host-crash";
+          process.kill(start.processId, "SIGKILL");
+          await exited;
+          assert.equal(await readProcessStartToken(start.processId), null);
+          const groupOutlivedHost = processGroupPresent(group);
+          if (process.platform === "darwin") assert.ok(groupOutlivedHost);
+          if (groupOutlivedHost) {
+            stage = "blocked-while-group-alive";
+            await assert.rejects(product.observe(record));
+            process.kill(-group, "SIGKILL");
+          }
+          stage = "group-ends";
+          for (let i = 0; i < 100 && processGroupPresent(group); i++) await delay(20);
+          assert.equal(processGroupPresent(group), false);
+          const observed = await product.observe(record);
+          assert.equal(observed.supervision, "released");
+          assert.equal(observed.cleanup, "process_group_gone");
+          assert.equal(
+            (await product.evidence(plan, { ...record.facts, resource: observed })).length,
+            1,
+          );
+          results.push({
+            scenario,
+            passed: true,
+            cleanup: observed.cleanup,
+            groupOutlivedHost,
+            blockedWhileGroupAlive: groupOutlivedHost,
+          });
+          continue;
+        }
+        const stopRequestedAt = new Date().toISOString();
         if (scenario !== "observed-escape") {
           stage = "wrong-token";
           await assert.rejects(queryJobHostControl({ ...binding, token: "0".repeat(64) }, "stop"));
@@ -243,7 +323,8 @@ if (process.argv.includes("--worker")) {
             (await queryJobHostControl(binding, "inspect")).phase,
             scenario === "never-started" ? "ready" : "running",
           );
-          if (scenario === "worker-crash") worker.kill("SIGKILL");
+          if (scenario === "worker-crash" || scenario === "writer-worker-crash")
+            worker.kill("SIGKILL");
           else await queryJobHostControl(binding, "stop");
         }
         await exited;
@@ -263,39 +344,60 @@ if (process.argv.includes("--worker")) {
         if (scenario === "stop") {
           assert.equal(workerResult.stdout, "denied\n");
           assert.equal(workerResult.reason, "cancelled");
-          assert.equal(workerResult.taskTreeCleanup, "unknown");
+          assert.equal(workerResult.taskTreeCleanup, "process_group_gone");
         }
         let observed;
         for (let i = 0; i < 20; i++) {
           observed = await product.observe(record);
-          if (
-            (scenario !== "never-started" && process.platform !== "linux") ||
-            observed.supervision === "released"
-          )
-            break;
+          if (observed.supervision === "released") break;
           await delay(100);
         }
+        assert.equal(observed.supervision, "released");
         assert.equal(
-          observed.supervision,
-          scenario === "never-started" || process.platform === "linux" ? "released" : "lost",
+          observed.cleanup,
+          scenario === "never-started" || process.platform === "linux"
+            ? "confirmed"
+            : "process_group_gone",
         );
         if (observed.supervision === "released")
           assert.equal(
             (await product.evidence(plan, { ...record.facts, resource: observed })).length,
             1,
           );
+        let descendantWritesAfterObservation = null;
+        if (writerScenario) {
+          const before = await readFile(writerPath);
+          assert.ok(before.length >= 6);
+          // Bounded observation supplements namespace evidence; it is not itself
+          // proof that every possible descendant has terminated.
+          await delay(300);
+          const after = await readFile(writerPath);
+          descendantWritesAfterObservation = after.length - before.length;
+          if (observed.cleanup === "confirmed") assert.deepEqual(after, before);
+        }
+        const reservationRelease = await product.verifyReservationRelease(plan, stopRequestedAt);
+        if (scenario === "never-started") {
+          assert.equal(reservationRelease?.basis, "host_never_started");
+          assert.deepEqual(reservationRelease.identity, plan.identity);
+          assert.equal(reservationRelease.stopRequestedAt, stopRequestedAt);
+          assert.ok(reservationRelease.evidence.ref);
+        } else assert.equal(reservationRelease, undefined);
         if (scenario === "stdin") assert.equal(workerResult.stdout, "synthetic\u0000first\nsecond");
-        if (scenario === "observed-escape")
-          assert.equal(
-            workerResult.reason,
-            process.platform === "linux" ? "exited" : "host_failure",
-          );
+        if (scenario === "observed-escape") assert.equal(workerResult.reason, "exited");
         const filename = path.join(controlDirectory, "final.json");
         const envelope = JSON.parse(await readFile(filename, "utf8"));
         envelope.body = envelope.body.replace('"srtReset":true', '"srtReset":false');
         await writeFile(filename, JSON.stringify(envelope), { mode: 0o600 });
         await assert.rejects(readJobHostFinalEvidence(binding));
-        results.push({ scenario, passed: true, cleanup: observed.cleanup });
+        results.push({
+          scenario,
+          passed: true,
+          cleanup: observed.cleanup,
+          reservationReleased: Boolean(reservationRelease),
+          ...(writerScenario
+            ? { descendantStartedWriting: true, descendantWritesAfterObservation }
+            : {}),
+        });
       } catch (error) {
         console.error(JSON.stringify({ scenario, stage, workerResult }));
         throw error;

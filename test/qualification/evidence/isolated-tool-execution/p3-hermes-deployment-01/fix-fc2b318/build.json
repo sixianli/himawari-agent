@@ -1,0 +1,38 @@
+{
+  "sourceCommit": "fc2b318364ea7445841a53a133c9ff1b9de4bbe9",
+  "sourceArchiveSha256": "55917bedb3fa17a5aa00be7405b436f6bb986cb3c51e324e7e29c9886d3dff9f",
+  "sourceManifestSha256": "6430bc9c6b0618edea9e6a1bcaba7fae30384119a5cc2f62263cdc8939693bcf",
+  "sourceFiles": 4052,
+  "preparationSha256": "4e2e0342b85b76c8e5c87c0c5748dea722e3c4048964839d368a8b8f757a48ad",
+  "runtimeDigest": "9059b7f620247680e30eefa13d1c9c10fb7579f482235476cecbfe0dcff9843d",
+  "buildPassed": true,
+  "builtAs": "andy (uid 1000), no root",
+  "networkDuringBuild": "not_blocked; npm cache warm (prefer-offline), package-lock unchanged since ddbdac7",
+  "failedAttempts": 0,
+  "prefixFiles": 34575,
+  "removedPrefixFilesVsddbdac7": [],
+  "addedPrefixFilesVsddbdac7": [
+    "lib/himawari-agent/node_modules/@himawari-agent/admin-cli/dist/diagnose-command.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/sqlite-run-diagnostics.js"
+  ],
+  "changedPrefixFilesVsddbdac7": [
+    "bin/himawari",
+    "bin/himawari-agent-service",
+    "bin/himawari-execution-worker",
+    "lib/himawari-agent/node_modules/@himawari-agent/admin-cli/dist/index.js",
+    "lib/himawari-agent/node_modules/@himawari-agent/persistence-sqlite/dist/index.js",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Makefile",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/Release/.deps/ba23eeee118cd63e16015df367567cb043fed872.intermediate.d",
+    "lib/himawari-agent/node_modules/better-sqlite3/build/config.gypi"
+  ],
+  "staticFiles": 26,
+  "localChecksBeforeDeploy": {
+    "npmRunCheck": "passed (exit 0) at 2a04c91",
+    "npmTest": "passed (exit 0) at 2a04c91, report .ci-output/local-1790572985923/",
+    "productPathE2E": "not rerun: the product change since ddbdac7 is the read-only admin command only",
+    "logs": [
+      "scratchpad/check-diagnose.log",
+      "scratchpad/npm-test-diagnose.log"
+    ]
+  }
+}

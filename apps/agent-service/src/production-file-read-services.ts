@@ -1,21 +1,30 @@
 import {
   ActionPolicyService,
+  type AutomaticActionReviewPort,
   CapabilityHandleService,
   type CapabilityInvocationAuthority,
   type CapabilityManifest,
   type ClockPort,
   type HostDirectoryGrant,
+  type HostReadOnlyPort,
   hostDirectoryGrantStateKey,
   type IdGeneratorPort,
   type ProductConfiguration,
+  type RunPolicyConfiguration,
+  type WebProviderId,
 } from "@himawari-agent/application";
+import { sandboxWorkspaceCopySchema } from "@himawari-agent/execution-contracts";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
-import type { ProductionFileReadServices } from "./production-file-read-workflow.js";
-
+import type {
+  ProductionFileReadServices,
+  WebProviderSecretBinding,
+} from "./production-file-read-workflow.js";
 import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
+import { createProductionHostReadOnly } from "./production-host-read.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
+import { WebToolMemory } from "./web-tool-memory.js";
+import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
 
-/** Production composition: routing never creates grants or capability qualification. */
 export function createProductionFileReadServices(options: {
   readonly configuration: ProductConfiguration;
   readonly repository: Pick<
@@ -31,6 +40,9 @@ export function createProductionFileReadServices(options: {
   readonly authority: () => CapabilityInvocationAuthority;
   readonly clock: ClockPort;
   readonly ids: IdGeneratorPort;
+  readonly automaticReview?: AutomaticActionReviewPort;
+  readonly workspaceAuto?: WorkspaceAutoAuthorization;
+  readonly hostReadOnlyPort?: HostReadOnlyPort;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -48,6 +60,7 @@ export function createProductionFileReadServices(options: {
     policy: { version: "file-read.v1", rules: [] },
     clock,
     ids,
+    ...(options.automaticReview ? { automaticReview: options.automaticReview } : {}),
   });
   const searchAuthorization = new PublicSearchAuthorization({
     configuration,
@@ -56,7 +69,28 @@ export function createProductionFileReadServices(options: {
     ids,
   });
   const handles = new CapabilityHandleService({ store: capabilities, clock, ids });
+  const hostPort = options.hostReadOnlyPort;
+  const hostReadOnly = hostPort?.available ? createProductionHostReadOnly(hostPort) : undefined;
+  const webMemory =
+    configuration.runPolicy?.publicSearch || configuration.runPolicy?.publicFetch
+      ? new WebToolMemory({ now: () => Date.parse(clock.now()) })
+      : undefined;
+  const providerSecretBindings = (
+    secrets: NonNullable<NonNullable<RunPolicyConfiguration["publicSearch"]>["providerSecrets"]>,
+  ): readonly WebProviderSecretBinding[] =>
+    Object.entries(secrets).map(([provider, secretRef]) => {
+      const reference = configuration.secretReferences.find(({ ref }) => ref === secretRef);
+      if (!reference) throw new Error("WEB_PROVIDER_SECRET_UNAVAILABLE");
+      return {
+        provider: provider as WebProviderId,
+        secretRef: reference.ref,
+        secretVersion: reference.version,
+        purpose: reference.purpose,
+      };
+    });
   return {
+    ...(hostReadOnly ? { hostReadOnly } : {}),
+    ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {
       const coding = configuration.runPolicy?.coding;
       const route = coding?.enabledTools.some(
@@ -66,7 +100,10 @@ export function createProductionFileReadServices(options: {
         : call.capabilityRef ===
             `${configuration.runPolicy?.publicSearch?.capabilityRef}.web_search`
           ? configuration.runPolicy?.publicSearch
-          : configuration.runPolicy?.fileRead;
+          : call.capabilityRef ===
+              `${configuration.runPolicy?.publicFetch?.capabilityRef}.web_fetch`
+            ? configuration.runPolicy?.publicFetch
+            : configuration.runPolicy?.fileRead;
       const context = call.context;
       if (!route || !context?.threadId) return undefined;
       const authority = options.authority();
@@ -110,6 +147,31 @@ export function createProductionFileReadServices(options: {
       );
       if (!model || !model.allowedDataClassifications.includes(call.dataClassification))
         return undefined;
+      const common = {
+        hostId: route.hostId,
+        workerInstanceId: route.workerInstanceId,
+        capabilityRef: route.capabilityRef,
+        capabilityVersion: route.capabilityVersion,
+        maximumBytes: route.maximumBytes,
+        threadId: context.threadId,
+        modelRef: context.modelRef,
+        modelIdentity: configuredModelDisclosureIdentity(model),
+        ...("providers" in route && route.providers ? { providers: route.providers } : {}),
+        ...("providerSecrets" in route && route.providerSecrets
+          ? { providerSecrets: providerSecretBindings(route.providerSecrets) }
+          : {}),
+      };
+      if ("scopeSource" in route && route.scopeSource === "private_temp") {
+        if (
+          (route !== configuration.runPolicy?.publicFetch ||
+            call.capabilityRef !== `${route.capabilityRef}.web_fetch`) &&
+          (route !== configuration.runPolicy?.publicSearch ||
+            call.capabilityRef !== `${route.capabilityRef}.web_search`)
+        )
+          return undefined;
+        return { ...common, revision: 1, grant: null };
+      }
+      if (!("grantId" in route)) return undefined;
       const stored = await repository.readScopedState(
         configuration.ownerId,
         configuration.agentId,
@@ -118,23 +180,83 @@ export function createProductionFileReadServices(options: {
       const grant = stored?.value as unknown as HostDirectoryGrant | undefined;
       if (!stored || !grant || grant.id !== route.grantId || grant.hostId !== route.hostId)
         return undefined;
-      // Freeze the configured provider/model/routing identity, including fallback changes.
-      return {
-        revision: stored.revision,
-        hostId: route.hostId,
-        workerInstanceId: route.workerInstanceId,
-        grant,
-        capabilityRef: route.capabilityRef,
-        capabilityVersion: route.capabilityVersion,
-        maximumBytes: route.maximumBytes,
-        threadId: context.threadId,
-        modelRef: context.modelRef,
-        modelIdentity: configuredModelDisclosureIdentity(model),
-      };
+      if (
+        coding &&
+        route === coding &&
+        call.capabilityRef === `${coding.capabilityRef}.save_copy`
+      ) {
+        const args = call.arguments;
+        if (
+          typeof args["operationId"] !== "string" ||
+          typeof args["expectedHash"] !== "string" ||
+          Object.keys(args).some((key) => !["operationId", "expectedHash"].includes(key))
+        )
+          return undefined;
+        const operation = (
+          await repository.readScopedState(
+            configuration.ownerId,
+            configuration.agentId,
+            `host-workspace:file-operation:${args["operationId"]}`,
+          )
+        )?.value as unknown as
+          | import("@himawari-agent/application").PreparedFileOperation
+          | undefined;
+        if (
+          !operation ||
+          operation.canonicalHash !== args["expectedHash"] ||
+          operation.grantId !== grant.id ||
+          !["create", "update", "move", "trash"].includes(operation.operation) ||
+          operation.copyAuthority?.grantRevision !== grant.revision ||
+          operation.copyAuthority.canonicalRootId !== grant.canonicalRootId
+        )
+          return undefined;
+        return {
+          ...common,
+          revision: stored.revision,
+          grant,
+          copySaveOperation: {
+            id: operation.id,
+            operation: operation.operation as "create" | "update" | "move" | "trash",
+            canonicalHash: operation.canonicalHash,
+          },
+        };
+      }
+      const selection = await repository.readScopedState(
+        configuration.ownerId,
+        configuration.agentId,
+        `workspace-copy-selection:${context.threadId}`,
+      );
+      if (
+        selection?.value["workspaceRef"] !== undefined &&
+        selection.value["workspaceRef"] !== null
+      ) {
+        const selected = selection.value;
+        if (
+          route !== coding ||
+          call.capabilityRef !== `${coding.capabilityRef}.bash` ||
+          selected["grantId"] !== grant.id ||
+          selected["grantRevision"] !== grant.revision ||
+          selected["hostId"] !== grant.hostId
+        )
+          return undefined;
+        return {
+          ...common,
+          revision: stored.revision,
+          grant,
+          workspaceCopy: sandboxWorkspaceCopySchema.parse(selected["root"]),
+        };
+      }
+      return { ...common, revision: stored.revision, grant };
     },
-    authorize: async (intent) => {
+    authorize: async (intent, signal) => {
+      signal?.throwIfAborted();
       await searchAuthorization.authorize(intent);
-      return policy.evaluate(intent, { uiAvailable: true, approvalExpiresAt: intent.expiresAt });
+      await options.workspaceAuto?.authorize(intent);
+      return policy.evaluate(intent, {
+        uiAvailable: true,
+        approvalExpiresAt: intent.expiresAt,
+        ...(signal ? { signal } : {}),
+      });
     },
     issue: (input) => handles.issue(input),
   };

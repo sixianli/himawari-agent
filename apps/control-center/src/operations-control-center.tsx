@@ -915,6 +915,7 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
       setCorrection("");
       await refresh();
     } catch (caught) {
+      setMutationStatus("rejected");
       if (errorStatus(caught) === 409) {
         storage.clearPendingGovernanceMutation(identity.operationKey);
         setConflict(true);
@@ -962,6 +963,7 @@ export function useOperationsControlCenter(input: UseOperationsControlCenterInpu
       setMutationStatus(result.status);
       await refresh();
     } catch (caught) {
+      setMutationStatus("rejected");
       if (errorStatus(caught) === 401) onUnauthorized();
       else setError(caught instanceof Error ? caught.message : "CONTROL_CENTER_REQUEST_REJECTED");
     }

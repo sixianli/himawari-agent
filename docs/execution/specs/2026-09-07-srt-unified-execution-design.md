@@ -8,6 +8,9 @@ date: "2026-09-07"
 
 # Pi 工具复用与 SRT 受管理执行设计
 
+> 2026-09-24 架构修正：本设计的宿主 SRT 首选、单次调用环境和 Mac 尽力停止路线，仅保留为 legacy 实现/证据背景；新执行路径采用任务级隔离环境、可替换 backend 与严格停止证明。其余授权、Pi 复用、结果分离与输出合同继续复用。适用决定见 [ADR 0031](../../adr/0031-isolated-tool-execution.md#amendments)，具体新合同见[隔离执行 Spec](2026-09-24-isolated-tool-execution-design.md)与[迁移 Plan](../plans/2026-09-24-isolated-tool-execution-plan.md)。
+> [SOURCE: docs/adr/0031-isolated-tool-execution.md]
+
 ## 目标
 
 让 Himawari 的 Agent 通过统一的产品执行入口使用文件、Shell 和程序，不在 Agent loop 或工具业务代码中分辨 macOS 与 Linux。由 Anthropic Sandbox Runtime（下称 SRT）实现受限进程启动，Himawari 管理授权、执行生命周期、持久恢复和输出披露，Pi 继续管理模型交互及工具循环。
@@ -105,7 +108,7 @@ flowchart TB
     GW --> RC[Run Coordinator / 调度与预算]
     RC <--> DB[(产品持久状态 / 受保护 Payload)]
     RC <--> PI[Pi AgentSession / Agent loop]
-    PI <--> MODEL[受治理模型连接 / OpenRouter]
+    PI <--> MODEL[受治理模型连接 / Vercel AI Gateway]
     PI --> TOOLS[Pi 工具工厂 / Operations 适配]
     TOOLS --> ADMIT[统一动作入口 / 授权与披露检查]
     ADMIT <--> HITL[持久审批 / 暂停与恢复]
@@ -151,7 +154,7 @@ sequenceDiagram
     participant B as ego Lite
     participant A as Agent Service
     participant P as Pi AgentSession
-    participant M as OpenRouter 模型
+    participant M as Vercel AI Gateway 模型
     participant G as 动作授权与持久状态
     participant W as 目标主机 Worker
     participant S as SRT 作业
@@ -265,7 +268,7 @@ start 只有在原子消费并建账之后、唯一 starting CAS 获胜且当前
 
 R1 的统一入口为 `projectSandboxExecution`，分别返回结果结论、用户展示、单次工具交付、模型续接、新动作、服务调用、环境复用与资源义务判断。`projectSandboxRunCompletion` 还要求现有 RunCoordinator 提供完整资源/操作清单和当前 Run/fence，不能从单条作业成功推出 Run 成功。投影是只读规则，不执行授权消费或模型派发；后续消费者必须在现有事务中验证输入 sequence/fence 并在派发前复核。可信证据读取结果绑定被核验的完整不可变事实快照、当前调用、环境、策略、资源 sequence、读取时刻和有效期；子进程输出不得充当该输入。
 
-`controlled` 必须由该 profile 的资格规则和带时效的监督证据产生，至少绑定正确 boot/进程启动身份、范围与未过期监督窗口；没有心跳或只有父 PID 存活不能证明任意后代受控。能力声明中的“无法保证任意后代回收”和本次“已失去监管”是不同事实，但不能用前者给后者重新贴 controlled 标签。存在具体逃逸/残留风险、不可核验所有权、观测失效或应急停止失败即进入 lost/unknown。监管有效期间也不能跨已冻结权限续命。
+`controlled` 必须由该 profile 的资格规则和带时效的监督证据产生，至少绑定正确 boot/进程启动身份、范围与未过期监督窗口；没有心跳或只有父 PID 存活不能证明任意后代受控。能力声明中的“无法保证任意后代回收”和本次“已失去监管”是不同事实，但不能用前者给后者重新贴 controlled 标签。按 [ADR 0033 决定第 2、5 条](../../adr/0033-process-sandbox-default-and-optional-containers.md#decision)，SRT 模式不因观测到后代脱离进程组而停止任务或继续阻止目录释放；这类后代不属于停止与释放的跟踪范围。资源采样仍保留已观测用量，CPU/内存超限、样本不可用或非法继续触发停止；不可核验所有权、观测失效或应急停止失败仍进入 lost/unknown。监管有效期间也不能跨已冻结权限续命。
 
 继续模型与新动作准入必须读取最新资源 sequence、有效监督窗口及当前 Run/fence；同事务提交继续意图时检查它们未改变，实际派发前再次核验。故障在派发后才被观察到时，停止已在途工作并保存其不确定性，不能宣称能撤回已经外发的请求。
 
@@ -295,7 +298,7 @@ Agent Service、长驻 Worker 和 Job Host 仍在可信侧，实际 runner/脚�
 
 R6 的正式薄适配复用 `RuntimeToolPort` 与 Pi 扩展定义注册：模型名称为 `execution_task_start/status/output/cancel`，产品 action 为 `execution.task.start/status/output/cancel`。start 选择现有已授权 Handle 和冻结输入，其中保存已批准的 command/cwd/timeout；不会根据模型参数新建权限或放宽前台 Bash。管理调用按不透明 resourceRef 查原 Run 的持久关联，核对原调用回执、当前 Grant、模型、线程和 fence。调用身份及查询结果仍保存到现有 Run artifact。
 
-普通后台 Bash 复用 R5 的 Pi Bash 工厂和同一受限 Operations；只有 Worker 传入的 executionMode 可改变输出形态，前台结果保持原格式。后台 Bash 在完整行检查后输出，末尾未换行内容在退出时检查，秘密命中即停止并拒绝该段。
+普通后台 Bash 复用 R5 的 Pi Bash 工厂和同一受限 Operations；只有 Worker 传入的 executionMode 可改变输出形态，前台结果保持原格式。后台 Bash 在完整行检查后输出，末尾未换行内容在退出时检查，秘密（含只有开头行或结尾行的私钥片段）命中即停止并拒绝该段。
 
 Job Host 的实际进程启动确认与准备完成、命令结束分别返回。后台 start 的 `started` 回执不可改写，Worker 返回它后继续监督、复核授权并追加输出；启动确认丢失只保留未知结果和原关联。输出为按到达顺序合并的 stdout/stderr，每片最多 32 KiB、总量受原 maxOutputBytes 约束；片段和结束标记不可改写，游标只引用受保护片段位置。分页返回 base64，完整可显示文本另附 text，避免 UTF-8 跨页字节损失；结束片段持久保存命令退出码、结束原因和主进程退出事实，status 可查询它，不能覆盖初始 started 回执；输出对模型的披露仍要求原调用的有效授权和分类上限。
 
@@ -343,7 +346,7 @@ Run 正常结束前停止原 Run 的后台资源；仍有未知清理义务时�
 
 策略编译器保护整个真实用户数据区域、Himawari 控制/秘密目录、其他作业及相关挂载路径，再增加这次动作的最小读取例外。系统工具链仍有必要可读范围；本设计不声称 SRT 默认只看得见一个工作区。保护集必须记录覆盖范围，未知挂载或无法满足隔离要求时拒绝相应 profile。机器秘密不以扫描输出替代访问阻断。
 
-不用 glob 作为跨平台新文件保密的主要机制。授权原项目时明确排除秘密子树，保护 `.env`、Himawari 运行配置及未授予写权限的 Git 元数据；不能因为直接编辑就开放整个 home。Git 操作需要的元数据权限按动作单独授予，普通编辑不自动取得任意修改 `.git` 的能力。规则嵌套冲突必须在两种 OS 验证。显式封住 SRT 默认共享写路径，包括 `/tmp/claude` 及 Mac 对应路径；私有 `HOME`、`TMPDIR`、`CLAUDE_CODE_TMPDIR` 使用可信值。
+不用 glob 作为跨平台新文件保密的主要机制。授权原项目时明确排除秘密子树，保护 `.env`、Himawari 运行配置及未授予写权限的 Git 元数据；不能因为直接编辑就开放整个 home。Git 操作需要的元数据权限按动作单独授予，普通编辑不自动取得任意修改 `.git` 的能力。规则嵌套冲突必须在两种 OS 验证。显式封住 SRT 默认共享写路径，包括 `/tmp/claude` 及 Mac 对应路径；私有 `HOME`、`TMPDIR`、`CLAUDE_CODE_TMPDIR` 使用可信值。Linux 上，禁读目录展开出来的内存文件系统（tmpfs，含 `/tmp`）在交给 bubblewrap 之前改为只读（`--remount-ro`）。目的路径如果是符号链接，并且后面另有挂载盖住它解析后的真实目录，就不再对这条路径加 `--remount-ro`。Ubuntu 上 `/sbin` 指向 `/usr/sbin`，后面的 `/usr` 挂载会盖住它；若仍重挂 `/sbin`，bubblewrap 会去重挂已经被盖住的目标并报 `Invalid argument`，命令在启动前退出。被盖住的那一层不再可写。`/tmp` 这类真实目录仍改为只读。授权工作目录和私有目录以外的写入因此失败，错误是只读文件系统；其后重新绑定的工作目录和私有目录保持可写。实现是 `packages/runtime-sandbox/src/bwrap-read-only-tmpfs.ts`，只由 `packages/runtime-sandbox/src/job-host-main.ts` 的 Linux 任务启动和就绪探测调用。Mac 未改。[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
 
 读取原文件不要求先复制正文到 Agent Service。默认编码直接使用已授权原目录：启动前识别已有修改，写入前检查版本与重叠冲突；同一项目的 Agent 写作业串行，仍须考虑用户或其他程序同时修改，不能用本方锁假定独占文件。已有有效目录授权覆盖的普通编辑不重复询问。删除等命中高风险策略的动作须确认；被批准脚本可能删除文件时必须按其实际副作用授权，不能只拦截工具名中的 delete。无法机械保证只读或不删除的任意命令不能伪装成低风险动作。
 
@@ -411,19 +414,21 @@ Pi 扩展、插件或 MCP 服务发现不得从任务可写目录动态载入可
 
 stdout/stderr、文件产物、MCP 文本和 violation 消息都是不可信数据。监督器施加单流及总字节上限、背压和截断元数据，停止输出洪泛与保持管道打开的任务。可信回执只能由监督器产生；child 不能凭 stdout 中的 jobId、status 或 resultRef 冒充成功。
 
-Worker 将正文、来源、实际读取范围、截断状态、内容摘要和失败原因保存到受保护 Payload。产品继续执行分类、机器秘密排除与模型披露检查；只有对应 Run/model/toolCall 的允许内容进入 Pi 下一轮请求。拒绝披露时不得发送正文；源文件中的指令不能改变授权或系统提示。
+Worker 将正文、来源、实际读取范围、截断状态、内容摘要和失败原因保存到受保护 Payload。产品继续执行分类、机器秘密排除与模型披露检查；只有对应 Run/model/toolCall 的允许内容进入 Pi 下一轮请求。拒绝披露时不得发送正文；源文件中的指令不能改变授权或系统提示。bash 的结果里发现机器秘密时，runner 改写一份不含正文、不含命令参数的 pi-result.v1，只带拒绝说明和命令真实的退出码，进程退出码按同一信封规则计算，因此以 0 结束的命令不会因为秘密被拒绝而被报成失败；`write`/`edit` 的处理见本段后半；read、ls、find、grep 等其他工具遇到机器秘密仍按原样失败。工具输出常常只是原始输出的一部分（Pi 只保留结尾，命令也可能只打印一部分），完整私钥的开头行或结尾行可能被截掉，所以把工具输出交给模型的几处（前台结果、完整输出文件、后台输出流、主机只读工具结果、`write`/`edit` 准备阶段的预备结果）另用 `containsToolOutputSecret` 检查工具产生的那部分输出：机器秘密规则命中，或者出现任何一行私钥开头行（`-----BEGIN … PRIVATE KEY-----`）或结尾行，都按命中处理；模型自己给的参数（命令原文、搜索词、写入内容）仍按原规则检查；合同版本 3 的 `write`/`edit` 在准备阶段就查预备结果，被拒时文件不变。生产使用的是合同版本 1（`pi-coding-tool/1`），由 Pi 在沙箱里直接改文件、改完才整理结果，检查只能发生在文件已改之后：结果里发现私钥片段或机器秘密时，runner 不让整次调用失败，而是改写一份不含正文和 details、但保留调用参数和写入证明的 pi-result.v1，只放一句固定说明——文件已改并核实时说“文件已修改并通过核实”，确认在改文件之前就失败时说“文件没有被修改”，其余情况说“文件可能已被修改”。调用参数要留着，因为主机按参数核对写入证明，而且参数是模型自己给的文字；参数本身含机器秘密（例如写入内容里有一段完整私钥）时 runner 仍按原样失败，这次调用按下文 R5 实现说明里的“效果未核实”处理，参数里的秘密还留在对话中这一半记在 [BL-20261017-001](../../backlog/BL-20261017-001-写-入-内-容-含-完-整-私.md)；完整输出文件命中时，bash 同样交出上面那份不含正文的结果，而不是让整次调用失败。读整份文件、记忆、检查点和模型请求等其他调用方仍用原规则，理由见 [ADR 0054 的 R2-T14 补充](../../adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#failed-command-output)。只有正文、没有任何标记行的片段识别不了，这类情形只能靠不把密钥文件放进工作区或授权目录来防。
 
 审计串联 `Run → toolCall → approval → Handle → invocation → attempt → job → policy/qualification → result`。公开诊断只显示安全错误码、范围摘要和计数；敏感路径、命令与正文按权限保护，秘密不能进入日志、截图或测试报告。真实模型用量沿原账本累计，重放历史工具消息不记作新外部请求。
 
 #### R5 实现说明（2026-09-09）
 
-安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。
+安装 runner `pi-coding-main.js` 执行真实 Pi 七工具，Worker 对 `pi-coding-tool/1` 合同限定工具名及 fixed_read/command/verified_effect 类型，并以原认证 Payload 通道交付可信 scope 和冻结参数。只读宿主文件继续使用原 host-file.v1 双阶段入口；项目读取端口当前只接收文本，图片/二进制明确拒绝，不声称生产图片 profile 可用。只读工具（fixed_read，例如 read/ls/find/grep）执行失败时，Worker 已保存的 Pi 自身错误输出（例如“文件不存在”）经过与成功结果相同的披露检查后交给模型，让模型能据此换路径或改做法。前台 bash（command）以非零状态结束、超时，或因输出超过命令输出上限（单次结果上限的 64 倍，目前是 3 MiB）被结束时，runner 写好的 pi-result.v1 也经过同样的披露检查交给模型，内容是 Pi 保留的输出结尾（最多 2000 行或 50 KiB，包括标准错误）加一句结束说明：非零退出和超时用 Pi 自己的说明，例如“Command exited with code 7”“Command timed out after 2 seconds”；输出超限时 Pi 不写说明，由产品补一句“输出超过命令输出上限，命令已被结束”。前台 runner 目前不把取消信号传给 Pi，所以命令被取消不走这条路径。交出前 Agent 先核对这份结果：是 pi-result.v1，工具名与本次调用相同，标记为失败，并且按信封规则算出的进程退出码等于 Worker 记录的 runner 退出码（完成记录里的 `processExitCode`）。核对通过后在最前面加一个字段 `effectNotice`，写明命令以哪个退出码结束（或没有正常结束），以及 Himawari 没有核验命令是否改动了工作区、会写入文件时继续前先检查目标文件（2026-10-24 起的措辞，此前写“命令可能已修改工作区文件”）。核对不通过或 runner 自身故障时，模型仍只收到错误码说明。`processExitCode` 由 Agent 每次从已保存的沙箱执行记录重新算出，不读升级前保存的回执；升级前已经交给模型的失败结果，重放时保持原样，仍只有错误码说明。工具结论仍是失败，错误码仍是 `SANDBOX_COMMAND_EFFECT_UNVERIFIED`，因为非零退出不能证明工作区没有被改动。大小上限检查针对 Worker 保存的结果字节，`effectNotice` 只多出一段固定长度的说明。
 
-预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 PATH，不从用户 HOME 或系统 PATH 寻找替代搜索器。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。
+预装工具位于 runtimeRoot 下的 `pi-tools/bin`，参与整体 runtimeDigest；runner 在导入 Pi 前固定 PI_OFFLINE、PI_CODING_AGENT_DIR 和 `process.env.PATH`，Pi 自己的搜索器只从该固定目录取得，不从用户 HOME 或系统 PATH 寻找 `rg`/`fd` 的替代。`bash` 工具执行的子命令另用一份 PATH：固定目录在前，其后依次是 `/usr/local/bin`、`/usr/bin`、`/bin`，因此沙箱内可用系统自带命令；系统程序不计入 runtimeDigest，能否实际运行由沙箱只读放行列表决定，详见 [ADR 0055](../../adr/0055-bash-uses-system-commands-in-sandbox.md)。同一 Linux 路径上，授权工作目录和私有目录以外的写入会因只读挂载失败。bash 失败时模型能看到包括标准错误在内的输出结尾，例如只读挂载报出的“Read-only file system”；写入是否真的被挡住，仍由主机上的文件回读和命令的非零状态核对，不以模型看到的文字为准。当前产品路径里 bash 的目录授权只有 read，这次调用的工作目录是只读绑定，不能当作错误输出的落点；主机回读的文件写在仍可写的私有目录（环境变量 `TMPDIR` 指向的目录）里。实现见 `packages/runtime-sandbox/src/bwrap-read-only-tmpfs.ts`。Bash 关闭 Pi Session 环境导出，仅接收产品环境。完整 Pi 算法、路径探测、fd/rg 和临时输出均在 SRT 内。[SOURCE: docs/adr/0055-bash-uses-system-commands-in-sandbox.md]
 
 写入前固定已有文件身份与内容，复用约束文件平台的独占创建/安全替换和写后读取验证；不因 Pi mutation queue 省略外部修改核对。重要覆盖/删除继续由上游 Grant、HITL 与范围准入决定，只有部分文件写权限的 Shell 请求在执行前拒绝。runner 内的校验不签发或消费 Grant。
 
-pi-result.v1 保存内容、Pi details、原调用和目录来源、实际 Shell 退出码及 isError。长输出导出前检查私有目录、文件所有者、普通文件类型、链接数、尺寸和读取期间变化，正文检查机器秘密；完整字节及摘要放入同一受保护结果，不返回可再次访问的宿主 fullOutputPath。它是工具结果，不是可信副作用或资源释放证明；写入效果仍须经过已注册 verifier，Mac 清理未知不因工具测试成功而变成已释放。
+合同版本 1 的 `write`/`edit` 失败时（例如 edit 的原文在文件里找不到），runner 记下这次调用有没有开始改目标文件：约束文件平台在第一次改动目标的最终路径（`rename` 或 `link`）之前回调 `onCommitStarting`，失败时回调还没有发生，结果里就写 `writeNotStarted: true`。Worker 和 Agent 用 `verifyPiWriteEvidence` 核对这份结果属于本次调用：工具名、调用编号、参数摘要和目录授权都对得上，没有写入证明，合同是版本 1。核对通过时效果记为已核实，原因码是 `FILE_WRITE_NOT_STARTED`，Pi 的原始错误（例如“Could not find the exact text”）交给模型，模型能据此改正原文再试。核对不通过，或者已经开始改文件之后才失败（例如结果因含机器秘密被拒），原因码是 `SANDBOX_WRITE_EFFECT_UNVERIFIED`，按有界失败处理，和工具超过期限一样（见 [ADR 0035](../../adr/0035-tool-deadline-continues-run.md)）：效果仍记为未知，模型只收到一次固定说明“文件可能已被修改，也可能没有。请先读取目标文件确认当前内容”，然后由模型在这一轮剩余时间里决定下一步，不重放这次调用。界面在工具行显示这两个原因的说明。在此之前，这两类失败都把效果留在“未知”、结果不交给模型，恢复流程拿同一条模型输出反复重放到运行截止时间（2026-10-17 Hermes 诊断：5 分钟 284 次）。“开始改文件之前就失败”由 runner 报告、主机只核对它属于本次调用，可信程度与现有的写入证明相同。它只说明目标文件没有被改：新建文件时，缺失的父目录在回调之前就已建好（`packages/platform-node/src/files/constrained-file-system.ts` 的 `#resolve`），如果之后、改名之前失败（例如目录授权恰好被撤销），工作区里会留下这个空目录。合同版本 2、3 不接受 `writeNotStarted`，它们另有按目标文件版本核对的路径。
+
+pi-result.v1 保存内容、Pi details、原调用和目录来源、实际 Shell 退出码及 isError。长输出导出前检查私有目录、文件所有者、普通文件类型、链接数、尺寸和读取期间变化，正文检查机器秘密（含只有开头行或结尾行的私钥片段）；完整字节及摘要放入同一受保护结果，不返回可再次访问的宿主 fullOutputPath。它是工具结果，不是可信副作用或资源释放证明；写入效果仍须经过已注册 verifier，Mac 清理未知不因工具测试成功而变成已释放。
 
 #### R3 实现说明（2026-09-09）
 

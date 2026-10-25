@@ -1,0 +1,66 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts (12 tests | 3 failed | 9 skipped) 15ms
+     × keeps resource recovery single-flight without blocking unrelated Run scans 6ms
+     × bounds shutdown when a resource backend ignores cancellation 6ms
+     × fails closed on resource scheduler storage failures without automatically retrying 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > keeps resource recovery single-flight without blocking unrelated Run scans
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ apps/agent-service/test/production-run-dispatch-loop.unit.test.ts:104:22
+    102|     await loop.start();
+    103|     await vi.advanceTimersByTimeAsync(75);
+    104|     expect(recovery).toHaveBeenCalledTimes(1);
+       |                      ^
+    105|     expect(dispatcher.pumpCalls).toBe(4);
+    106|     const stopped = loop.stop(100);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > bounds shutdown when a resource backend ignores cancellation
+AssertionError: expected { drained: true, inFlight: +0 } to deeply equal { drained: false, inFlight: 1 }
+
+- Expected
++ Received
+
+  {
+-   "drained": false,
+-   "inFlight": 1,
++   "drained": true,
++   "inFlight": 0,
+  }
+
+ ❯ apps/agent-service/test/production-run-dispatch-loop.unit.test.ts:126:26
+    124|     const stopped = loop.stop(10);
+    125|     await vi.advanceTimersByTimeAsync(10);
+    126|     await expect(stopped).resolves.toEqual({ drained: false, inFlight:…
+       |                          ^
+    127|     expect(loop.wakeup()).toBe(false);
+    128|     await vi.advanceTimersByTimeAsync(100);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |unit| apps/agent-service/test/production-run-dispatch-loop.unit.test.ts > ProductionRunDispatchLoop > fails closed on resource scheduler storage failures without automatically retrying
+AssertionError: expected 'running' to be 'failed' // Object.is equality
+
+Expected: "failed"
+Received: "running"
+
+ ❯ apps/agent-service/test/production-run-dispatch-loop.unit.test.ts:150:24
+    148|     await loop.start();
+    149|     await vi.advanceTimersByTimeAsync(100);
+    150|     expect(loop.state).toBe("failed");
+       |                        ^
+    151|     expect(loop.failure).toEqual({ phase: "resource_recovery", error: …
+    152|     expect(onFailure).toHaveBeenCalledTimes(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 9 skipped (12)
+   Start at  12:26:22
+   Duration  222ms (transform 46ms, setup 0ms, import 64ms, tests 15ms, environment 0ms)

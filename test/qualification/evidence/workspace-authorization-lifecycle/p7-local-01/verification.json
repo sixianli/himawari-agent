@@ -1,0 +1,25 @@
+{
+  "scope": "local read-only CLI and SQLite inventory; not live host qualification",
+  "tests": {
+    "command": "node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project integration test/integration/workspace-lifecycle-audit.test.ts",
+    "passed": 10,
+    "failed": 0,
+    "log": "audit-cli-final.log"
+  },
+  "checks": {
+    "typecheck": "passed",
+    "taskFormatAndLint": "passed",
+    "boundaries": "passed",
+    "invariants": "passed",
+    "coverageManifest": "passed",
+    "secretScan": "passed",
+    "ciPolicy": "passed",
+    "strictDocumentation": "passed"
+  },
+  "reusedProductBaseline": "../p3-local-03/standard-ci-result.json",
+  "unverified": [
+    "live historical database inventory",
+    "host process and delayed dispatch isolation",
+    "repair or deployment"
+  ]
+}

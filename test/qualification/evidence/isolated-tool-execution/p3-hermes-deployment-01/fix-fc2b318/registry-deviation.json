@@ -1,0 +1,19 @@
+{
+  "ownerDecision": "start_now_update_registry_later",
+  "decidedAt": "2026-09-27",
+  "differences": [
+    {
+      "ref": "himawari.pi-coding",
+      "path": "artifact.digest",
+      "registered": "sha256:49b09ed268eb53abaedb35f3bc57a5fb40910f51b1cc643395b1ea0af0c36f2e",
+      "snapshot": "sha256:2de07ab03776da66f54fbf7608143f07fbdaf34471a52764354444a6bc4e6c79"
+    },
+    {
+      "ref": "himawari.pi-coding",
+      "path": "integrity",
+      "registered": "sha256:49b09ed268eb53abaedb35f3bc57a5fb40910f51b1cc643395b1ea0af0c36f2e",
+      "snapshot": "sha256:2de07ab03776da66f54fbf7608143f07fbdaf34471a52764354444a6bc4e6c79"
+    }
+  ],
+  "registryWritten": false
+}

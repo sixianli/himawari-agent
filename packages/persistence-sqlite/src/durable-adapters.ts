@@ -3,12 +3,14 @@ import type {
   AuditLedgerPort,
   AuthorityFence,
   AuthorizationStorePort,
+  AutomaticReviewStorePort,
   BackgroundWorkStatePort,
   BuiltInIdentityStatePort,
   CapabilityExecutionHandleStorePort,
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityRegistryStorePort,
+  ExecutionEnvironmentStorePort,
   GatewayReadModelPort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
@@ -189,6 +191,8 @@ export class SqliteDurableAdapters {
   ): RunReconciliationPort {
     const scope = { ownerId, agentId, authority, authorityLease, consumerId };
     return Object.freeze<RunReconciliationPort>({
+      settleExpired: (input) =>
+        this.context.write("runDispatch.settleExpired", { ...scope, input }),
       quarantine: (input) => this.context.write("runDispatch.quarantine", { ...scope, input }),
     });
   }
@@ -229,6 +233,11 @@ export class SqliteDurableAdapters {
         }),
       assertHeld: (input) =>
         this.context.read<RunExecutionLease>("runDispatch.assertHeld", {
+          ...scope,
+          input,
+        }),
+      currentExecutionLease: (input) =>
+        this.context.read<RunExecutionLease | undefined>("runDispatch.currentExecutionLease", {
           ...scope,
           input,
         }),
@@ -309,6 +318,15 @@ export class SqliteDurableAdapters {
     });
   }
 
+  automaticReviewStore(): AutomaticReviewStorePort {
+    return Object.freeze<AutomaticReviewStorePort>({
+      readDelegation: (input) => this.context.read("automaticReview.readDelegation", input),
+      get: (reviewId) => this.context.read("automaticReview.get", { reviewId }),
+      claim: (input) => this.context.write("automaticReview.claim", { input }),
+      finish: (input) => this.context.write("automaticReview.finish", { input }),
+    });
+  }
+
   authorizationStore(): AuthorizationStorePort {
     return Object.freeze<AuthorizationStorePort>({
       isPolicyAuthorizationCurrent: async ({ ownerId, agentId, key, revision }) => {
@@ -317,6 +335,10 @@ export class SqliteDurableAdapters {
         >("readScopedState", { ownerId, agentId, key });
         return state?.revision === revision && state.value.enabled === true;
       },
+      getAuthorizationReservation: (id) =>
+        this.context.read("authorization.reservation.get", { id }),
+      reserveAuthorization: (input) => this.context.write("authorization.reserve", { input }),
+      releaseAuthorization: (input) => this.context.write("authorization.release", { input }),
       createApproval: (request) => this.context.write("authorization.createApproval", { request }),
       findApprovalByIntent: (intentId) =>
         this.context.read("authorization.findApprovalByIntent", { intentId }),
@@ -380,7 +402,15 @@ export class SqliteDurableAdapters {
           expectedRevision,
           switchedAt,
         }),
-      createExecutionHandle: (handle) => this.context.write("capability.createHandle", { handle }),
+      applyCapabilityUpgrades: (upgrades, upgradedAt) =>
+        this.context.write("capability.applyUpgrades", {
+          ownerId,
+          agentId,
+          upgrades,
+          upgradedAt,
+        }),
+      createExecutionHandle: (handle, options) =>
+        this.context.write("capability.createHandle", { handle, options }),
       listRunExecutionHandles: (runId, at) =>
         this.context.read("capability.listRunHandles", { ownerId, agentId, runId, at }),
       getExecutionHandle: (handleRef) =>
@@ -426,6 +456,80 @@ export class SqliteDurableAdapters {
     agentId: AgentId,
   ): SandboxExecutionPreparationPort {
     return Object.freeze<SandboxExecutionPreparationPort>({
+      listRecoveryCandidates: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listRecoveryCandidates", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      scheduleRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.scheduleRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      beginReservationRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.beginReservationRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      finishReservationRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.finishReservationRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      validatePreparation: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.validatePreparation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      releaseReservation: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.releaseReservation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      interruptReservation: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.interruptReservation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      listRunningPrograms: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.listRunningPrograms", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      readRunInventory: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readRunInventory", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      readQueuedByInvocation: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readQueuedByInvocation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      enqueue: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.enqueue", { ownerId, agentId, input }),
+      rebindQueued: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.rebindQueued", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      cancelQueued: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.cancelQueued", {
+          ownerId,
+          agentId,
+          input,
+        }),
       reserve: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.reserve", { ownerId, agentId, input }),
       bindAndStart: (input) =>
@@ -436,6 +540,18 @@ export class SqliteDurableAdapters {
         }),
       readAdmission: (input) =>
         this.context.read("capabilityInvocation.sandboxV2.readAdmission", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      assertResultAuthority: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.assertResultAuthority", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      authorizeReservationResult: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.authorizeReservationResult", {
           ownerId,
           agentId,
           input,
@@ -461,6 +577,35 @@ export class SqliteDurableAdapters {
     });
   }
 
+  executionEnvironmentStore(ownerId: OwnerId, agentId: AgentId): ExecutionEnvironmentStorePort {
+    const operation = (name: keyof ExecutionEnvironmentStorePort) =>
+      `capabilityInvocation.executionEnvironment.${name}`;
+    return Object.freeze<ExecutionEnvironmentStorePort>({
+      reserve: (input) => this.context.write(operation("reserve"), { ownerId, agentId, input }),
+      beginCreate: (input) =>
+        this.context.write(operation("beginCreate"), { ownerId, agentId, input }),
+      recordCreated: (input) =>
+        this.context.write(operation("recordCreated"), { ownerId, agentId, input }),
+      recordCreateUnknown: (input) =>
+        this.context.write(operation("recordCreateUnknown"), { ownerId, agentId, input }),
+      linkCall: (input) => this.context.write(operation("linkCall"), { ownerId, agentId, input }),
+      completeCall: (input) =>
+        this.context.write(operation("completeCall"), { ownerId, agentId, input }),
+      requestStop: (input) =>
+        this.context.write(operation("requestStop"), { ownerId, agentId, input }),
+      acknowledgeStop: (input) =>
+        this.context.write(operation("acknowledgeStop"), { ownerId, agentId, input }),
+      acceptRelease: (input) =>
+        this.context.write(operation("acceptRelease"), { ownerId, agentId, input }),
+      read: (environmentId) =>
+        this.context.read(operation("read"), { ownerId, agentId, input: { environmentId } }),
+      readRun: (runId) =>
+        this.context.read(operation("readRun"), { ownerId, agentId, input: { runId } }),
+      listLeftovers: (input) =>
+        this.context.read(operation("listLeftovers"), { ownerId, agentId, input }),
+    });
+  }
+
   sandboxExecutionJournal(ownerId: OwnerId, agentId: AgentId): SandboxExecutionJournalPort {
     return Object.freeze<SandboxExecutionJournalPort>({
       admit: (input) =>
@@ -473,12 +618,42 @@ export class SqliteDurableAdapters {
           agentId,
           input,
         }),
+      beginRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.beginRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      finishRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.finishRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      interruptRecovery: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.interruptRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
       start: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.start", { ownerId, agentId, input }),
       append: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.append", { ownerId, agentId, input }),
       recordOperation: (input) =>
         this.context.write("capabilityInvocation.sandboxV2.recordOperation", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      readResultRecovery: (input) =>
+        this.context.read("capabilityInvocation.sandboxV2.readResultRecovery", {
+          ownerId,
+          agentId,
+          input,
+        }),
+      importResult: (input) =>
+        this.context.write("capabilityInvocation.sandboxV2.importResult", {
           ownerId,
           agentId,
           input,

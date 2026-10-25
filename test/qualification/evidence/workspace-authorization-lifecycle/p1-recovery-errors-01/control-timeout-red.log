@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-control-evidence.test.ts (41 tests | 1 failed | 40 skipped) 1421ms
+   × keeps the authenticated control timeout when no final proof exists 1420ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-control-evidence.test.ts > keeps the authenticated control timeout when no final proof exists
+AssertionError: expected [Function] to throw error including 'JOB_HOST_CONTROL_TIMEOUT' but got 'ENOENT: no such file or directory, op…'
+
+Expected: "JOB_HOST_CONTROL_TIMEOUT"
+Received: "ENOENT: no such file or directory, open '/private/tmp/r4-evidence-U93sAB/control/final.json'"
+
+ ❯ test/integration/sandbox-control-evidence.test.ts:240:82
+    238|     await new Promise<void>((resolve, reject) => stalled.close((error)…
+    239|   });
+    240|   await expect(f.control.backend.inspect(f.record, new AbortController…
+       |                                                                                  ^
+    241|   const diagnostics = [...f.stored.entries()].filter(([key]) => key.in…
+    242|   expect(diagnostics).toHaveLength(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 40 skipped (41)
+   Start at  11:59:47
+   Duration  3.63s (transform 1.27s, setup 0ms, import 2.00s, tests 1.42s, environment 0ms)

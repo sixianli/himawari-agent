@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   type AgentRuntimePort,
   ContextFormationService,
@@ -9,6 +10,7 @@ import {
   type ExecuteCoordinatedRunInput,
   type ModelInvocationAdmissionPort,
   PORT_ERROR_CODES,
+  ProductThreadGatewayAdapter,
   type RunCompletionInput,
   RunCoordinator,
   type RunDispatchPort,
@@ -21,7 +23,10 @@ import {
   type RuntimeRequest,
   SessionTraceRecorder,
   ThreadCommandService,
+  ThreadDeletionCoordinationService,
   ThreadExecutionProjection,
+  ThreadForkService,
+  ThreadQueryService,
   type TransitionRunStateInput,
   type WorkerRunEvent,
   type WorkerRunPort,
@@ -37,10 +42,10 @@ import {
   createSessionId,
   type ProductAuthorityFence,
   type RunId,
+  type ThreadId,
 } from "@himawari-agent/domain";
+import { threadGatewayMessageSchema } from "@himawari-agent/gateway-contracts";
 import {
-  applyMigrations,
-  loadBundledMigrations,
   openQualifiedDatabase,
   SqliteGovernedDeletionAdapter,
   SqliteProductStateRepository,
@@ -58,7 +63,9 @@ import {
 } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
+import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
   useSqliteContractExecution(execution);
@@ -87,11 +94,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     roots.push(stateRoot);
     await mkdir(path.join(stateRoot, "data"));
     const databasePath = path.join(stateRoot, "data", "product.sqlite");
+    await copyMigratedDatabase(databasePath);
     const database = openQualifiedDatabase(databasePath);
-    const migrations = await loadBundledMigrations();
-    // Seed a fresh test database in one durable transaction; migration and
-    // recovery tests still exercise the production per-migration boundaries.
-    database.transaction(() => applyMigrations(database, migrations)).immediate();
     database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(ownerId);
     database
       .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
@@ -368,6 +372,255 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     }
   });
 
+  it.each([
+    "delivered",
+    "cancelled",
+    "input-rejected",
+    "crash-after-output",
+    "crash-before-transition",
+    "checkpoint-race",
+  ] as const)(
+    "[R2-D21] recovers original answer delivery after the execution deadline: %s",
+    async (outcome) => {
+      const initialTime = clock.now();
+      const setup = await executionFixture();
+      try {
+        const dispatch = setup.repository.runDispatch(
+          ownerId,
+          agentId,
+          authority,
+          lease,
+          "thread-run-lifecycle",
+        );
+        const originalLease = await dispatch.assertHeld({
+          runId: setup.runId,
+          expectedLeaseRevision: 1,
+          executionLeaseId: executionLease(setup.runId).executionLeaseId,
+          at: clock.now(),
+        });
+        const policy = vi.fn(async () => ({
+          modelRef: setup.input.runtime.modelRef,
+          systemInstructionRef: setup.input.runtime.systemInstructionRef,
+          policyVersion: setup.input.context.policyVersion,
+          policies: setup.input.context.policies,
+          capabilities: setup.input.context.capabilities,
+          capabilityHandleRefs: [],
+          maxMemoryClassification: "private" as const,
+          memoryLimit: 10,
+          maxSelectedMemories: 0,
+        }));
+        const inputService = new RunExecutionInputService({
+          maximumRunDurationMs: 1000,
+          source: setup.repository.runExecutionSource(ownerId, agentId),
+          artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+            product: authority,
+            lease,
+          }),
+          payloads: setup.repository.payloadStore(ownerId, agentId),
+          protector: setup.protector,
+          clock,
+          ids: createReferenceAdapterSet({ clock }).ids,
+          dispatch,
+          policy,
+        });
+        const source = await setup.repository
+          .runExecutionSource(ownerId, agentId)
+          .read(setup.runId);
+        if (!source || source.threadId === null) throw new Error("missing canonical Thread source");
+        const originalInput = await inputService.create({
+          candidate: {
+            ...source,
+            action: "start",
+            runRevision: 1,
+            runStatus: "accepted",
+            checkpointPhase: null,
+            leaseRevision: 0,
+          },
+          lease: originalLease,
+        });
+        const stopRun = vi.fn(async () => ({ released: false }));
+        let checkpointRaced = false;
+        let firstCheckpointRead = true;
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        const coordinator = new RunCoordinator({
+          clock,
+          runs: {
+            readRun: (id) => setup.runs.readRun(id),
+            transitionRun: (value) => {
+              if (
+                outcome === "crash-before-transition" &&
+                value.nextStatus === "reconciling_external_result"
+              )
+                throw new Error("fixture crash before Run transition");
+              return setup.runs.transitionRun(value);
+            },
+            cancelRun: (value) => setup.runs.cancelRun(value),
+            completeRun: async (value) => {
+              if (outcome === "cancelled") {
+                const latest = await setup.runs.readRun(setup.runId);
+                if (!latest) throw new Error("missing Run before cancel");
+                await setup.runs.cancelRun({
+                  ...originalInput.commands.cancelled,
+                  ownerId,
+                  agentId,
+                  runId: setup.runId,
+                  authority: lease,
+                  expectedRevision: latest.revision,
+                });
+              }
+              if (outcome === "checkpoint-race" && !checkpointRaced) {
+                checkpointRaced = true;
+                const current = await setup.checkpoints.read(setup.runId);
+                if (!current || !value.executionLease)
+                  throw new Error("missing recovery checkpoint or lease");
+                await setup.checkpoints.compareAndSet({
+                  runId: setup.runId,
+                  expectedRevision: current.revision,
+                  checkpoint: current.checkpoint,
+                  executionLease: value.executionLease,
+                });
+              }
+              return setup.runs.completeRun(value);
+            },
+          },
+          checkpoints: {
+            read: async (id) => {
+              if (firstCheckpointRead && outcome.startsWith("crash-")) {
+                firstCheckpointRead = false;
+                await delay(1100);
+              }
+              return setup.checkpoints.read(id);
+            },
+            compareAndSet: async (value) => {
+              const saved = await setup.checkpoints.compareAndSet(value);
+              if (
+                outcome === "crash-after-output" &&
+                value.checkpoint.phase === "runtime_settled" &&
+                value.checkpoint.terminalStatus === "completed"
+              )
+                throw new Error("fixture crash after output checkpoint");
+              return saved;
+            },
+          },
+          context: setup.context,
+          runtime: setup.runtime,
+          trace: setup.trace,
+          resources: { stopRun },
+        });
+        if (outcome.startsWith("crash-"))
+          await expect(coordinator.execute(originalInput)).rejects.toThrow("fixture crash");
+        else
+          expect((await coordinator.execute(originalInput)).run.run.status).toBe(
+            "reconciling_external_result",
+          );
+        vi.useRealTimers();
+        expect(originalInput.executionDeadlineAt).toBe(
+          new Date(Date.parse(initialTime) + 1000).toISOString(),
+        );
+        expect(Date.parse(clock.now())).toBeLessThan(
+          Date.parse(originalInput.executionDeadlineAt ?? ""),
+        );
+        await dispatch.release({
+          runId: setup.runId,
+          expectedLeaseRevision: originalLease.revision,
+          executionLeaseId: originalLease.executionLeaseId,
+          releasedAt: clock.now(),
+        });
+        const before = await setup.repository
+          .threadRepository()
+          .listMessages(ownerId, agentId, source.threadId, 0, 20);
+        expect(before.filter((message) => message.role === "agent")).toHaveLength(0);
+        clock.set(new Date(Date.parse(initialTime) + 2000).toISOString());
+        expect(Date.parse(clock.now())).toBeGreaterThan(
+          Date.parse(originalInput.executionDeadlineAt ?? ""),
+        );
+        stopRun.mockResolvedValue({ released: true });
+        expect(await dispatch.listClaimable({ now: clock.now(), limit: 10 })).toEqual([
+          expect.objectContaining({ runId: setup.runId, action: "deliver_completed" }),
+        ]);
+        const dispatcher = new ProductionRunDispatcher({
+          authority: {
+            assertActive: async () => {
+              await setup.repository.deploymentAuthorityPort().assertCurrent(authority);
+            },
+            isAccepting: () => true,
+          },
+          dispatch,
+          coordinator,
+          input: (value) => {
+            if (outcome === "input-rejected") throw new Error("fixture recovery input unavailable");
+            return inputService.create(value);
+          },
+          reconcile: createProductionRunReconciler({
+            ownerId,
+            agentId,
+            runs: setup.runs,
+            recovery: setup.repository.runReconciliation(
+              ownerId,
+              agentId,
+              authority,
+              lease,
+              "thread-run-lifecycle",
+            ),
+            clock,
+          }),
+          clock,
+          executionLeaseDurationMs: 60_000,
+          maximumRunsPerPump: 1,
+          instanceId: "result-delivery",
+        });
+        if (outcome === "input-rejected") {
+          await expect(dispatcher.pump()).rejects.toThrow("fixture recovery input unavailable");
+          expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+            diagnosticCode: "RUN_COMPLETION_DELIVERY_REJECTED",
+            output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+          });
+          expect(await dispatcher.pump()).toMatchObject({ claimed: 0 });
+          expect(setup.attempts()).toBe(1);
+          expect(policy).toHaveBeenCalledOnce();
+          expect(
+            (
+              await setup.repository
+                .threadRepository()
+                .listMessages(ownerId, agentId, source.threadId, 0, 20)
+            ).filter((message) => message.role === "agent"),
+          ).toHaveLength(0);
+          return;
+        }
+        expect(await dispatcher.pump()).toMatchObject({
+          claimed: 1,
+          settled: outcome !== "cancelled" && outcome !== "checkpoint-race" ? 1 : 0,
+          conflicts: outcome !== "cancelled" && outcome !== "checkpoint-race" ? 0 : 1,
+          unknown: 0,
+        });
+        if (outcome === "checkpoint-race")
+          expect(await dispatcher.pump()).toMatchObject({ claimed: 1, settled: 1, conflicts: 0 });
+        expect(await dispatcher.pump()).toMatchObject({ claimed: 0 });
+        expect(setup.attempts()).toBe(1);
+        expect(policy).toHaveBeenCalledOnce();
+        const messages = await setup.repository
+          .threadRepository()
+          .listMessages(ownerId, agentId, source.threadId, 0, 20);
+        expect(messages.filter((message) => message.role === "agent")).toEqual(
+          outcome !== "cancelled"
+            ? [expect.objectContaining({ contentRef: "payload-final-answer" })]
+            : [],
+        );
+        expect((await setup.runs.readRun(setup.runId))?.run.status).toBe(
+          outcome !== "cancelled" ? "completed" : "cancelled",
+        );
+        expect(stopRun).toHaveBeenCalledTimes(outcome === "crash-after-output" ? 0 : 1);
+        expect((await setup.checkpoints.read(setup.runId))?.checkpoint).toMatchObject({
+          phase: outcome !== "cancelled" ? "completed" : "cancelled",
+          output: { kind: "assistant-answer", contentRef: "payload-final-answer" },
+        });
+      } finally {
+        vi.useRealTimers();
+        clock.set(initialTime);
+      }
+    },
+  );
+
   it("executes only once when two real SQLite dispatch pumps claim concurrently", async () => {
     const setup = await executionFixture();
     const initialDispatch = setup.repository.runDispatch(
@@ -423,6 +676,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     });
     const coordinator = {
       execute: (value: typeof setup.input) => setup.coordinator.execute(value),
+      recoverCompleted: (value: typeof setup.input) => setup.coordinator.recoverCompleted(value),
       interruptExecution: (value: Parameters<typeof setup.coordinator.interruptExecution>[0]) =>
         setup.coordinator.interruptExecution(value),
     };
@@ -2309,6 +2563,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       const titleGate = new Promise<void>((resolve) => {
         releaseTitle = resolve;
       });
+      let titleOperationKey: string | undefined;
       const generateTitle = vi.fn(
         async (request: RuntimeRequest, _prompt: string, gate: ModelInvocationAdmissionPort) => {
           onTitleRequested();
@@ -2326,6 +2581,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
             estimatedCostMicros: model.descriptor.estimatedCostMicros,
           });
           if (admittedTitle.disposition !== "fresh") throw new Error("Title admission was denied");
+          titleOperationKey = admittedTitle.identity.budgetOperationKey;
           await admittedTitle.permit.markStarted();
           await titleGate;
           await admittedTitle.permit.settle({
@@ -2337,7 +2593,12 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
           return "自动生成的对话标题";
         },
       );
+      let queuePrepared = false;
+      const prepareQueuedSandboxExecutions = vi.fn(async () => {
+        queuePrepared = true;
+      });
       const compositionOptions: Parameters<typeof createProductionRunComposition>[0] = {
+        prepareQueuedSandboxExecutions,
         configuration: {
           ownerId,
           agentId,
@@ -2366,8 +2627,9 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         protector: setup.protector,
         memory: adapters.memory,
         tools: {
-          listAuthorized: async () =>
-            unknown || denied
+          listAuthorized: async () => {
+            expect(queuePrepared).toBe(true);
+            return unknown || denied
               ? [
                   {
                     name: "uncertain_tool",
@@ -2377,7 +2639,8 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
                     parameters: { type: "object", properties: {} },
                   },
                 ]
-              : [],
+              : [];
+          },
           preflight: async () => {
             if (!unknown && !denied) throw new Error("No tools are authorized in this test");
             return { allowed: true, permissionDecisionRef: "test-policy", reasonCode: "test" };
@@ -2453,6 +2716,19 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect(
           await setup.repository.threadRepository().read(ownerId, agentId, thread.thread.id),
         ).toMatchObject({ titleSource: "automatic" });
+        const runId = admitted.message.runId;
+        if (!runId || !titleOperationKey) throw new Error("Missing title budget identity");
+        const budgets = setup.repository.modelBudgetPort(ownerId, agentId, authority, lease);
+        await expect(
+          budgets.read({ parent: { kind: "thread-title", runId }, limit: 10 }),
+        ).resolves.toMatchObject({
+          account: { status: "active", reservedCostMicros: 0 },
+          allocations: [{ operationKey: titleOperationKey, status: "settled" }],
+        });
+        const runBudget = await budgets.read({ parent: { kind: "run", runId }, limit: 100 });
+        expect(runBudget?.allocations.map(({ operationKey }) => operationKey)).not.toContain(
+          titleOperationKey,
+        );
       } else {
         expect(generateTitle).toHaveBeenCalledTimes(1);
         expect(titleFailure).toHaveBeenCalledWith(
@@ -2673,6 +2949,304 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     ).toEqual(selection);
   });
 
+  it.each([
+    {
+      name: "file conflict before dispatch",
+      outcome: "failed",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "failed product without Pi error",
+      outcome: "failed",
+      code: null,
+      phase: "failed",
+      marker: null,
+    },
+    {
+      name: "strict mode refusal before dispatch",
+      outcome: "failed",
+      dispatchState: "not_sent",
+      code: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+      phase: "failed",
+      marker: "not_dispatched",
+      reasonCode: "SANDBOX_STRICT_MODE_UNAVAILABLE",
+    },
+    {
+      name: "structured pre-dispatch rejection with a new reason",
+      outcome: "failed",
+      dispatchState: "not_sent",
+      code: "CODING_PATH_REQUIRED",
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "unknown result contradicts not sent evidence",
+      outcome: "result_unknown",
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "accepted dispatch contradicts legacy not dispatched reason",
+      outcome: "failed",
+      dispatchState: "accepted",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown dispatch evidence is not a successful effect",
+      outcome: "succeeded",
+      dispatchState: "future_state",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "invalid dispatch evidence is not a successful effect",
+      outcome: "succeeded",
+      dispatchState: 42,
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "not sent evidence without an outcome is not successful",
+      outcome: undefined,
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "not_dispatched",
+    },
+    {
+      name: "success contradicts not sent evidence",
+      outcome: "succeeded",
+      dispatchState: "not_sent",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown product without Pi error",
+      outcome: "result_unknown",
+      code: null,
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown result outranks admission code",
+      outcome: "result_unknown",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "unknown result outranks file conflict",
+      outcome: "result_unknown",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "legacy unknown error code",
+      outcome: undefined,
+      code: "WORKER_RESULT_RECONCILIATION_REQUIRED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "confirmed product success",
+      outcome: "succeeded",
+      code: null,
+      phase: "completed",
+      marker: null,
+    },
+    {
+      name: "success contradicts admission code",
+      outcome: "succeeded",
+      code: "WORKER_NOT_DISPATCHED",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "success contradicts file conflict",
+      outcome: "succeeded",
+      code: "FILE_VERSION_CONFLICT",
+      phase: "failed",
+      marker: "unresolved",
+    },
+    {
+      name: "legacy tool success",
+      outcome: undefined,
+      code: null,
+      phase: "completed",
+      marker: null,
+    },
+  ])("preserves product outcome evidence: $name", async (item) => {
+    const { outcome, code, phase, marker } = item;
+    const dispatchState = "dispatchState" in item ? item.dispatchState : undefined;
+    const reasonCode = "reasonCode" in item ? item.reasonCode : undefined;
+    const setup = await executionFixture();
+    const payloadRef = "outcome-evidence";
+    await setup.repository
+      .runPayloadArtifactPort(ownerId, agentId, {
+        product: authority,
+        lease,
+      })
+      .commit({
+        runId: setup.runId,
+        purpose: "trace",
+        operationKey: "outcome-evidence",
+        payload: await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref: payloadRef,
+          dataClassification: "private",
+          contentType: "application/json",
+          plaintext: new TextEncoder().encode(
+            JSON.stringify({
+              toolCallId: "outcome-call",
+              toolName: "write",
+              isError: false,
+              result: {
+                details: { productOutcome: outcome, errorCode: code, dispatchState },
+                content: [{ type: "text", text: "Preserved result evidence" }],
+              },
+            }),
+          ),
+          createdAt: clock.now(),
+        }),
+      });
+    await setup.trace.record({
+      ownerId,
+      agentId,
+      sessionId: setup.input.runtime.sessionId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: "outcome-test",
+      actorId: "outcome-test",
+      dataClassification: "private",
+      eventType: "runtime.tool_result",
+      payload: { payloadRef },
+    });
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      trace: setup.repository.traceStore(),
+      payloads: (owner, agent) =>
+        setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector: setup.protector,
+    });
+    const query = {
+      ownerId,
+      agentId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      afterSequence: 0,
+      limit: 100,
+    };
+    const page = await projection.read(query);
+    const tool = page.records.find((record) => record.kind === "tool");
+    expect(tool).toMatchObject({ phase, output: "Preserved result evidence" });
+    const states = page.records.filter((record) => record.name.startsWith("runtime.tool_outcome."));
+    if (marker)
+      expect(states).toEqual([
+        expect.objectContaining({
+          itemId: tool?.itemId,
+          sequence: tool?.sequence,
+          name: `runtime.tool_outcome.${marker}`,
+        }),
+      ]);
+    else expect(states).toEqual([]);
+    expect(page.records.some((record) => record.name.startsWith("runtime.tool_execution."))).toBe(
+      false,
+    );
+    const state = await projection.readState({ ...query, canCancelRun: true });
+    expect(state.operations).toEqual([
+      expect.objectContaining({
+        itemId: tool?.itemId,
+        displayPhase: marker ?? phase,
+        executionMilliseconds: null,
+        ...(reasonCode ? { reasonCode } : {}),
+      }),
+    ]);
+    expect(state.effectSummary).toEqual([
+      {
+        itemId: tool?.itemId,
+        outcome:
+          marker === "unresolved"
+            ? "unknown"
+            : marker === "not_dispatched"
+              ? "not_dispatched"
+              : phase === "completed"
+                ? "succeeded"
+                : "failed",
+      },
+    ]);
+    expect(await projection.readState({ ...query, canCancelRun: true })).toEqual(state);
+    const threads = setup.repository.threadRepository();
+    const gateway = new ProductThreadGatewayAdapter({
+      repository: threads,
+      checkpoints: setup.repository.threadDistillationState(),
+      commands: new ThreadCommandService({
+        repository: threads,
+        clock,
+        authority: () => authority,
+      }),
+      queries: new ThreadQueryService(threads),
+      forks: new ThreadForkService({ repository: threads, clock, authority: () => authority }),
+      deletion: new ThreadDeletionCoordinationService({
+        repository: threads,
+        clock,
+        authority: () => authority,
+      }),
+      clock,
+      execution: projection,
+    });
+    const request = threadGatewayMessageSchema.parse({
+      schemaVersion: "gateway.thread.v3",
+      kind: "query",
+      type: "thread.execution_state",
+      messageId: "execution-state-query",
+      correlationId: "execution-state-query",
+      causationId: null,
+      scope: { ownerId, agentId },
+      authority,
+      actor: { actorType: "owner", actorId: ownerId },
+      payload: { threadId: query.threadId, runId: query.runId },
+    });
+    if (request.kind !== "query") throw new Error("EXPECTED_QUERY");
+    const snapshot = await gateway.query({
+      authentication: {
+        subjectId: ownerId,
+        ownerId,
+        deviceId: "state-test-device",
+        authenticatedAt: clock.now(),
+        authenticationRef: "state-test-session",
+      },
+      query: request,
+    });
+    expect(snapshot).toMatchObject({
+      type: "thread.execution_state_snapshot",
+      payload: {
+        threadId: query.threadId,
+        runId: query.runId,
+        state: await projection.readState({ ...query, canCancelRun: false }),
+      },
+    });
+
+    await expect(
+      projection.readState({ ...query, ownerId: "other-owner", canCancelRun: true }),
+    ).rejects.toThrow("THREAD_EXECUTION_NOT_FOUND");
+    // Re-reading persisted history must preserve the same conclusion and sequence.
+    expect(await projection.read(query)).toEqual(page);
+  });
+
   it("projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {
     const setup = await executionFixture();
     const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
@@ -2769,16 +3343,20 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       limit: 100,
     };
     const displayed = await projection.read(query);
-    expect(displayed.records).toHaveLength(4);
+    expect(displayed.records).toHaveLength(5);
     expect(displayed.records[0]?.text).toBe("Visible answer");
     expect(displayed.records[1]).toMatchObject({
       name: "runtime.activity.text",
       text: "thinking_observed",
       phase: "updated",
     });
-    expect(displayed.records[2]?.input).toContain("[REDACTED]");
-    expect(displayed.records[2]?.itemId).toBe(displayed.records[3]?.itemId);
-    expect(displayed.records[3]?.output).toBe("Allowed file content");
+    expect(displayed.records[2]).toMatchObject({
+      kind: "status",
+      name: "runtime.tool_outcome.preparing",
+    });
+    expect(displayed.records[3]?.input).toContain("[REDACTED]");
+    expect(displayed.records[3]?.itemId).toBe(displayed.records[4]?.itemId);
+    expect(displayed.records[4]?.output).toBe("Allowed file content");
     expect(JSON.stringify(displayed)).not.toContain("PRIVATE_");
     expect(await projection.read(query)).toEqual(displayed);
     await expect(projection.read({ ...query, ownerId: "other-owner" })).rejects.toThrow(
@@ -2788,7 +3366,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       ...query,
       afterSequence: displayed.records[0]?.sequence ?? 0,
     });
-    expect(after.records).toHaveLength(2);
+    expect(after.records).toHaveLength(3);
     const events = await setup.repository
       .threadRepository()
       .listGatewayEvents(ownerId, agentId, null, 100);
@@ -2884,6 +3462,83 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       });
     }
     expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_");
+    const timedRef = await capture("timed-tool", {
+      toolCallId: "timed-call",
+      toolName: "read",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "file contents" }],
+        details: {
+          executionTiming: {
+            startedAt: "2026-09-14T00:00:01.000Z",
+            endedAt: "2026-09-14T00:00:03.250Z",
+          },
+        },
+      },
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.tool_result",
+      payload: { capabilityRef: "project.read", payloadRef: timedRef },
+    });
+    const timed = (await projection.read(query)).records;
+    expect(timed.filter((item) => item.name.startsWith("runtime.tool_execution."))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "runtime.tool_execution.started",
+          occurredAt: "2026-09-14T00:00:01.000Z",
+        }),
+        expect.objectContaining({
+          name: "runtime.tool_execution.ended",
+          occurredAt: "2026-09-14T00:00:03.250Z",
+        }),
+      ]),
+    );
+    for (const [errorCode, state] of [
+      ["WORKER_ADMISSION_CONFLICT", "not_dispatched"],
+      ["WORKER_NOT_DISPATCHED", "not_dispatched"],
+      ["RUNTIME_TOOL_CHECKPOINT_FAILED", "not_dispatched"],
+      ["WORKER_RESULT_RECONCILIATION_REQUIRED", "unresolved"],
+    ]) {
+      const outcomeRef = await capture(`outcome-${errorCode}`, {
+        toolCallId: `call-${errorCode}`,
+        toolName: "write",
+        isError: true,
+        result: { details: { errorCode }, content: [] },
+      });
+      await setup.trace.record({
+        ...scope,
+        eventType: "runtime.tool_result",
+        payload: { payloadRef: outcomeRef },
+      });
+      const projected = (await projection.read(query)).records;
+      const resultItem = projected.at(-1);
+      expect(resultItem).toMatchObject({ kind: "tool", phase: "failed" });
+      expect(projected).toContainEqual(
+        expect.objectContaining({
+          itemId: resultItem?.itemId,
+          sequence: resultItem?.sequence,
+          kind: "status",
+          name: `runtime.tool_outcome.${state}`,
+          phase: "updated",
+          text: "",
+        }),
+      );
+    }
+    const boundaryRef = await capture("thinking-boundary", {
+      thinkingBoundary: { phase: "started", contentIndex: 0 },
+      role: "assistant",
+      content: [{ type: "thinking", thinking: "PRIVATE_THOUGHT" }],
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { payloadRef: boundaryRef, role: "assistant", phase: "updated" },
+    });
+    expect((await projection.read(query)).records).toContainEqual(
+      expect.objectContaining({ name: "runtime.thinking.started" }),
+    );
+    expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_THOUGHT");
     const unresolvedRef = await capture("legacy-unresolved-tool", {
       toolCallId: "legacy-call",
       toolName: "write",
@@ -2988,4 +3643,516 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       before,
     );
   });
+
+  async function unknownToolFixture() {
+    const previousTime = clock.now();
+    clock.set("2026-09-04T00:00:00.000Z");
+    const setup = await executionFixture();
+    const { createFauxModelFixture } = await import(
+      "../../packages/runtime-pi/test/faux-model-fixture.ts"
+    );
+    const { createProductionRunComposition } = await import(
+      "../../apps/agent-service/src/production-run-composition.ts"
+    );
+    const adapters = createReferenceAdapterSet({ clock });
+    const calls = Array.from({ length: 6 }, (_, index) => [
+      { name: "uncertain_tool", id: `d3-call-${index}`, arguments: {} },
+    ]);
+    const model = await createFauxModelFixture("不应发布的回答", calls[0], calls.slice(1));
+    const payloads = setup.repository.payloadStore(ownerId, agentId);
+    for (const ref of ["d3-prompt", "d3-system"]) {
+      await payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: Buffer.from("请执行本轮工具。"),
+          createdAt: clock.now(),
+        }),
+      );
+    }
+    let toolCalls = 0;
+    const failure = vi.fn();
+    const options: Parameters<typeof createProductionRunComposition>[0] = {
+      configuration: {
+        ownerId,
+        agentId,
+        concurrency: { totalRuns: 1, foregroundReserved: 1, perCategory: {} },
+        deadlines: { runMs: 60_000, workerRequestMs: 10_000, providerRequestMs: 10_000 },
+        budgets: {
+          globalCostMicros: 100,
+          perRunCostMicros: 100,
+          perClassificationCostMicros: { public: 100, private: 100, sensitive: 0, restricted: 0 },
+        },
+      },
+      repository: setup.repository,
+      authority: {
+        authorityFence: () => authority,
+        authorityLease: () => lease,
+        assertActive: async () => {
+          await setup.repository.deploymentAuthorityPort().assertCurrent(authority);
+        },
+        isAccepting: () => true,
+      },
+      models: model.models,
+      modelRegistry: [model.descriptor],
+      protector: setup.protector,
+      memory: adapters.memory,
+      tools: {
+        listAuthorized: async () => [
+          {
+            name: "uncertain_tool",
+            capabilityRef: "test-tool",
+            capabilityHandleRef: "test-handle",
+            description: "test",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+        preflight: async () => ({
+          allowed: true,
+          permissionDecisionRef: "test-policy",
+          reasonCode: "test",
+        }),
+        execute: async () => {
+          toolCalls += 1;
+          return {
+            outcome: "result_unknown",
+            resultRef: null,
+            errorCode: null,
+            externalActionId: "d3-external-action",
+            modelContent: "不可交给模型的 UNKNOWN",
+          };
+        },
+      },
+      workers: new ScriptedWorkerRunPort(),
+      policy: async () => ({
+        modelRef: model.descriptor.ref,
+        systemInstructionRef: "d3-system",
+        policyVersion: "d3-policy",
+        policies: [],
+        capabilities: [],
+        capabilityHandleRefs: ["test-handle"],
+        maxMemoryClassification: "private",
+        memoryLimit: 5,
+        maxSelectedMemories: 0,
+      }),
+      clock,
+      ids: adapters.ids,
+      instanceId: "d3-composition",
+      cwd: setup.stateRoot,
+      agentDir: path.join(setup.stateRoot, "d3-agent"),
+      onFailure: failure,
+    };
+    const compositions: ReturnType<typeof createProductionRunComposition>[] = [];
+    const compose = (runMs = 120_000) => {
+      const composed = createProductionRunComposition({
+        ...options,
+        configuration: {
+          ...options.configuration,
+          deadlines: { ...options.configuration.deadlines, runMs },
+        },
+        instanceId: `d3-composition-${compositions.length}`,
+      });
+      compositions.push(composed);
+      return composed;
+    };
+    const artifacts = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+      product: authority,
+      lease,
+    });
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      checkpoints: setup.checkpoints,
+      trace: setup.repository.traceStore(),
+      payloads: () => payloads,
+      protector: setup.protector,
+      resources: {
+        readInventory: ({ runId }) =>
+          setup.repository
+            .sandboxExecutionPreparations(ownerId, agentId)
+            .readRunInventory({ runId }),
+        now: () => clock.now(),
+        digest: (bytes) => createHash("sha256").update(bytes).digest("hex"),
+      },
+    });
+    const targets: {
+      runId: RunId;
+      threadId: ThreadId;
+      deadlineAt: string;
+      inputRef: string;
+      inputDigest: string;
+    }[] = [];
+    const decode = async (ref: string) => {
+      const payload = await payloads.get(ref);
+      if (!payload) throw new Error("D3_PROTECTED_PAYLOAD_MISSING");
+      return JSON.parse(
+        Buffer.from(await setup.protector.unprotect({ ownerId, agentId, payload })).toString(),
+      );
+    };
+    const addUnknown = async (runMs = 60_000) => {
+      const index = targets.length;
+      const created = await setup.commands.create({
+        ownerId,
+        agentId,
+        idempotencyKey: `d3-thread-${index}`,
+        resultRef: "d3-prompt",
+      });
+      const admitted = await setup.commands.admitOwnerMessage({
+        ownerId,
+        agentId,
+        threadId: created.thread.id,
+        expectedThreadRevision: created.thread.revision,
+        sessionId: createSessionId(`d3-session-${index}`),
+        idempotencyKey: `d3-message-${index}`,
+        contentRef: "d3-prompt",
+        sourceProofRef: "owner:d3",
+        dataClassification: "private",
+        resultRef: "d3-prompt",
+      });
+      const runId = admitted.message.runId;
+      if (!runId) throw new Error("D3_RUN_MISSING");
+      const composed = compose(runMs);
+      expect(await composed.dispatcher.pump()).toMatchObject({
+        claimed: 1,
+        unknown: 1,
+        settled: 0,
+      });
+      await composed.loop.stop(1000);
+      expect(await setup.runs.readRun(runId)).toMatchObject({
+        run: { status: "reconciling_external_result" },
+      });
+      expect(await setup.checkpoints.read(runId)).toMatchObject({
+        checkpoint: {
+          phase: "reconciling_external_result",
+          diagnosticCode: "RUNTIME_TOOL_RESULT_UNKNOWN",
+          output: null,
+          terminalStatus: null,
+        },
+      });
+      const trace = await setup.repository.traceStore().readRun(runId, 0, 1000);
+      const intent = trace.find((event) => event.eventType === "runtime.tool_intent");
+      const unknown = trace.find((event) => event.eventType === "runtime.result_unknown");
+      if (!intent?.payloadRef || !unknown)
+        throw new Error("D3_PROTECTED_INTENT_OR_UNKNOWN_MISSING");
+      expect(intent.sequence).toBeLessThan(unknown.sequence);
+      const envelope = await decode(intent.payloadRef);
+      expect(await decode(envelope.payloadRef)).toMatchObject({
+        toolCallId: `d3-call-${index}`,
+        toolName: "uncertain_tool",
+      });
+      const artifact = await artifacts.lookup({
+        runId,
+        purpose: "context",
+        operationKey: "run-execution-input:v1",
+      });
+      if (!artifact) throw new Error("D3_FROZEN_INPUT_MISSING");
+      const frozen = await decode(artifact.payloadRef);
+      expect(frozen).toMatchObject({
+        version: "run-execution-input.v2",
+        deadlineAt: new Date(Date.parse(frozen.startedAt) + runMs).toISOString(),
+      });
+      const target = {
+        runId,
+        threadId: created.thread.id,
+        deadlineAt: frozen.deadlineAt as string,
+        inputRef: artifact.payloadRef,
+        inputDigest: artifact.contentDigest,
+      };
+      targets.push(target);
+      return target;
+    };
+    const readState = (target: (typeof targets)[number]) =>
+      projection.readState({
+        ownerId,
+        agentId,
+        threadId: target.threadId,
+        runId: target.runId,
+        canCancelRun: true,
+      });
+    const readback = (target: (typeof targets)[number]) => {
+      const db = openQualifiedDatabase(setup.databasePath);
+      try {
+        return {
+          run: db.prepare("SELECT status,revision FROM runs WHERE id=?").get(target.runId),
+          checkpoint: db
+            .prepare(
+              "SELECT phase,terminal_status,output_kind,diagnostic_code,revision FROM run_coordination_checkpoints WHERE run_id=?",
+            )
+            .get(target.runId),
+          lease: db.prepare("SELECT * FROM run_execution_leases WHERE run_id=?").get(target.runId),
+          sandboxRecords: db
+            .prepare("SELECT COUNT(*) AS count FROM sandbox_execution_records WHERE run_id=?")
+            .get(target.runId),
+          failedEvents: db
+            .prepare(
+              "SELECT * FROM reliable_events WHERE topic='run.failed' AND payload_ref=? ORDER BY id",
+            )
+            .all(target.inputRef),
+          gatewayEvents: db
+            .prepare(
+              "SELECT * FROM thread_gateway_events WHERE thread_id=? ORDER BY cursor_sequence",
+            )
+            .all(target.threadId),
+          commands: db
+            .prepare("SELECT * FROM command_results WHERE state_key=? ORDER BY id")
+            .all(target.runId),
+        };
+      } finally {
+        db.close();
+      }
+    };
+    await mkdir(path.join(process.cwd(), ".ci-output/r2-d3"), { recursive: true });
+    const evidenceRoot = await mkdtemp(path.join(process.cwd(), `.ci-output/r2-d3/${execution}-`));
+    const capture = async (name: string, target: (typeof targets)[number]) => {
+      await writeFile(
+        path.join(evidenceRoot, `${name}.json`),
+        JSON.stringify(
+          {
+            target,
+            at: clock.now(),
+            stored: readback(target),
+            state: await readState(target),
+            toolCalls,
+            observedModelRequests: model.observed,
+          },
+          null,
+          2,
+        ),
+      );
+    };
+    return {
+      ...setup,
+      model,
+      failure,
+      compose,
+      addUnknown,
+      readState,
+      readback,
+      capture,
+      decode,
+      artifacts,
+      counts: () => ({ toolCalls, modelCalls: model.observed.length }),
+      dispose: async () => {
+        try {
+          for (const composed of compositions) await composed.loop.stop(1000);
+        } finally {
+          clock.set(previousTime);
+        }
+      },
+    };
+  }
+
+  it("[R2-D3] expires a protected Pi UNKNOWN at its frozen deadline through public recovery and real projection", async () => {
+    const f = await unknownToolFixture();
+    try {
+      const target = await f.addUnknown();
+      expect(f.readback(target).sandboxRecords).toEqual({ count: 0 });
+      clock.set(new Date(Date.parse(target.deadlineAt) - 1).toISOString());
+      await f.compose().dispatcher.recover();
+      expect(await f.runs.readRun(target.runId)).toMatchObject({
+        run: { status: "reconciling_external_result" },
+      });
+      expect(await f.readState(target)).toMatchObject({
+        displayPhase: "unresolved",
+        effectSummary: [{ outcome: "unknown" }],
+      });
+      await f.capture("before-deadline", target);
+      clock.set(target.deadlineAt);
+      const dispatcher = f.compose().dispatcher;
+      const recovery = dispatcher.recover();
+      expect(dispatcher.recover()).toBe(recovery);
+      await recovery;
+      await f.capture("at-deadline", target);
+      expect.soft(await f.runs.readRun(target.runId)).toMatchObject({ run: { status: "failed" } });
+      expect.soft(await f.checkpoints.read(target.runId)).toMatchObject({
+        checkpoint: {
+          phase: "failed",
+          terminalStatus: "failed",
+          output: null,
+          diagnosticCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+        },
+      });
+      expect.soft(await f.readState(target)).toMatchObject({
+        displayPhase: "failed",
+        reasonCode: "RUN_EXECUTION_DEADLINE_EXCEEDED",
+        availableActions: [],
+        operations: [{ displayPhase: "unresolved", reasonCode: "TOOL_RESULT_UNCONFIRMED" }],
+        effectSummary: [{ outcome: "unknown" }],
+      });
+      const settled = f.readback(target);
+      await f.compose().dispatcher.recover();
+      await f.compose().dispatcher.recover();
+      expect.soft(f.readback(target)).toEqual(settled);
+      expect.soft(settled.failedEvents).toHaveLength(1);
+      expect
+        .soft(
+          settled.gatewayEvents.filter(
+            (event) => (event as { event_type: string }).event_type === "run.failed",
+          ),
+        )
+        .toHaveLength(1);
+      expect(f.counts()).toEqual({ toolCalls: 1, modelCalls: 1 });
+      expect(JSON.stringify(f.model.observed)).not.toContain("不可交给模型的 UNKNOWN");
+      expect(
+        await f.artifacts.lookup({
+          runId: target.runId,
+          purpose: "context",
+          operationKey: "run-execution-input:v1",
+        }),
+      ).toMatchObject({ payloadRef: target.inputRef, contentDigest: target.inputDigest });
+      expect(
+        (
+          await f.repository
+            .threadRepository()
+            .listMessages(ownerId, agentId, target.threadId, 0, 100)
+        ).filter((message) => message.role === "agent"),
+      ).toEqual([]);
+      expect(f.failure).not.toHaveBeenCalled();
+    } finally {
+      await f.dispose();
+    }
+  });
+
+  it("[R2-D3] scans past future UNKNOWNs and wraps a bounded round despite new candidates", async () => {
+    const f = await unknownToolFixture();
+    try {
+      const first = await f.addUnknown();
+      clock.advance(1000);
+      const second = await f.addUnknown();
+      clock.advance(1000);
+      const expired = await f.addUnknown(20_000);
+      clock.advance(28_000);
+      const recovery = f.compose().dispatcher;
+      await recovery.recover(2);
+      expect(await f.runs.readRun(first.runId)).toMatchObject({
+        run: { status: "reconciling_external_result" },
+      });
+      const added = await f.addUnknown();
+      await recovery.recover(2);
+      await f.capture("expired-tail", expired);
+      expect.soft(await f.runs.readRun(expired.runId)).toMatchObject({ run: { status: "failed" } });
+      clock.set(second.deadlineAt);
+      await recovery.recover(2);
+      await f.capture("wrapped-first", first);
+      expect.soft(await f.runs.readRun(first.runId)).toMatchObject({ run: { status: "failed" } });
+      expect.soft(await f.runs.readRun(second.runId)).toMatchObject({ run: { status: "failed" } });
+      expect(await f.runs.readRun(added.runId)).toMatchObject({
+        run: { status: "reconciling_external_result" },
+      });
+      expect(f.counts()).toEqual({ toolCalls: 4, modelCalls: 4 });
+    } finally {
+      await f.dispose();
+    }
+  });
+  it.each([
+    "live-lease",
+    "revoked-authority",
+    "run-revision",
+    "checkpoint-revision",
+    "lease-revision",
+    "input-ref",
+    "input-digest",
+    "source",
+    "not-unknown",
+    "output",
+    "terminal",
+  ] as const)(
+    "[R2-D3] rejects unsafe public recovery without replaying the UNKNOWN tool: %s",
+    async (scenario) => {
+      const f = await unknownToolFixture();
+      let restore = () => {};
+      try {
+        const target = await f.addUnknown();
+        clock.set(target.deadlineAt);
+        const mutate = (sql: string) => {
+          const db = openQualifiedDatabase(f.databasePath);
+          try {
+            db.prepare(sql).run(target.runId);
+          } finally {
+            db.close();
+          }
+        };
+        const before = f.readback(target);
+        if (scenario === "live-lease")
+          mutate(
+            "UPDATE run_execution_leases SET released_at=NULL,expires_at='2026-09-04T00:02:00.000Z' WHERE run_id=?",
+          );
+        if (scenario === "revoked-authority") {
+          const db = openQualifiedDatabase(f.databasePath);
+          try {
+            db.prepare("UPDATE authority_leases SET fencing_token=2").run();
+          } finally {
+            db.close();
+          }
+        }
+        if (scenario === "not-unknown")
+          mutate(
+            "UPDATE run_coordination_checkpoints SET diagnostic_code='OTHER_UNKNOWN' WHERE run_id=?",
+          );
+        if (scenario === "output")
+          mutate("UPDATE run_coordination_checkpoints SET output_kind='no-answer' WHERE run_id=?");
+        if (scenario === "terminal")
+          mutate("UPDATE run_coordination_checkpoints SET terminal_status='failed' WHERE run_id=?");
+        if (scenario === "input-ref")
+          mutate(
+            "UPDATE run_payload_artifacts SET payload_ref='d3-system' WHERE run_id=? AND operation_key='run-execution-input:v1'",
+          );
+        if (scenario === "input-digest")
+          mutate(
+            "UPDATE run_payload_artifacts SET content_digest='sha256:changed' WHERE run_id=? AND operation_key='run-execution-input:v1'",
+          );
+        if (scenario === "source")
+          mutate(
+            "UPDATE triggers SET payload_ref='d3-system' WHERE id=(SELECT trigger_id FROM runs WHERE id=?)",
+          );
+        if (["run-revision", "checkpoint-revision", "lease-revision"].includes(scenario)) {
+          const unprotect = f.protector.unprotect.bind(f.protector);
+          let changed = false;
+          const spy = vi.spyOn(f.protector, "unprotect").mockImplementation(async (input) => {
+            if (input.payload.ref === target.inputRef && !changed) {
+              changed = true;
+              const sql =
+                scenario === "run-revision"
+                  ? "UPDATE runs SET revision=revision+1 WHERE id=?"
+                  : scenario === "checkpoint-revision"
+                    ? "UPDATE run_coordination_checkpoints SET revision=revision+1 WHERE run_id=?"
+                    : "UPDATE run_execution_leases SET revision=revision+1 WHERE run_id=?";
+              mutate(sql);
+            }
+            return unprotect(input);
+          });
+          restore = () => spy.mockRestore();
+        }
+        const recovery = f.compose().dispatcher.recover();
+        if (
+          [
+            "revoked-authority",
+            "run-revision",
+            "checkpoint-revision",
+            "lease-revision",
+            "input-ref",
+            "input-digest",
+            "source",
+          ].includes(scenario)
+        )
+          await expect(recovery).rejects.toThrow();
+        else await recovery;
+        restore();
+        expect(await f.runs.readRun(target.runId)).toMatchObject({
+          run: { status: "reconciling_external_result" },
+        });
+        const after = f.readback(target);
+        expect(after.failedEvents).toEqual(before.failedEvents);
+        expect(after.gatewayEvents).toEqual(before.gatewayEvents);
+        expect(after.commands).toEqual(before.commands);
+        expect(f.counts()).toEqual({ toolCalls: 1, modelCalls: 1 });
+        await f.capture(`guard-${scenario}`, target);
+      } finally {
+        restore();
+        await f.dispose();
+      }
+    },
+  );
 });

@@ -1,12 +1,15 @@
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { builtinModules, createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 import { collectArtifactFiles } from "./ci/artifact-files.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PI_RUNNER_ENTRY = "pi-coding-main.js";
 const internalRoots = [
   "apps/admin-cli",
   "apps/agent-service",
@@ -83,6 +86,18 @@ export async function packageNodeRuntime({
       path.join(destination, "package.json"),
       `${JSON.stringify(runtimeManifest(manifest, relativeRoot), null, 2)}\n`,
     );
+    if (relativeRoot === "packages/platform-node") {
+      await promisify(execFile)("cc", [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-O2",
+        path.join(repositoryRoot, relativeRoot, "src/files/rename-native.c"),
+        "-o",
+        path.join(destination, "dist/files/rename-native"),
+      ]);
+    }
     if (relativeRoot === "packages/persistence-sqlite") {
       await cp(
         path.join(repositoryRoot, relativeRoot, "src/migrations"),
@@ -194,10 +209,45 @@ export async function packageNodeRuntime({
     return copied;
   }
 
+  async function bundlePiRunner() {
+    const programs = path.join(
+      runtimeNodeModules,
+      "@himawari-agent/agent-service/dist/capability-programs",
+    );
+    const entry = path.join(programs, PI_RUNNER_ENTRY);
+    if (!existsSync(entry)) return;
+    const staging = path.join(runtimeRoot, ".pi-runner-bundle");
+    const { build } = await import("rolldown");
+    await build({
+      input: entry,
+      platform: "node",
+      logLevel: "silent",
+      treeshake: {
+        moduleSideEffects: (id) =>
+          !id.includes("/node_modules/") || id.includes("/node_modules/@himawari-agent/"),
+      },
+      output: {
+        dir: staging,
+        format: "esm",
+        entryFileNames: PI_RUNNER_ENTRY,
+        chunkFileNames: "pi-coding-main-[hash].js",
+      },
+    });
+    for (const file of (await readdir(staging)).sort())
+      await cp(path.join(staging, file), path.join(programs, file));
+    await rm(staging, { recursive: true, force: true });
+    const renameHelper = path.join(
+      runtimeNodeModules,
+      "@himawari-agent/platform-node/dist/files/rename-native",
+    );
+    if (existsSync(renameHelper)) await cp(renameHelper, path.join(programs, "rename-native"));
+  }
+
   await rm(runtimeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await mkdir(runtimeNodeModules, { recursive: true });
   for (const relativeRoot of internalRoots.sort()) await copyInternalPackage(relativeRoot);
   const external = await copyExternalClosure(await externalRuntimeRoots());
+  await bundlePiRunner();
   const rootExternal = new Map(
     [...external.entries()]
       .filter(([location, { name }]) => location === path.join(...name.split("/")))
@@ -225,8 +275,6 @@ export async function packageNodeRuntime({
       2,
     )}\n`,
   );
-  // Published runtime bytes must not be writable by other users, regardless of
-  // the builder umask or dependency extraction modes. Preserve executable bits.
   await collectArtifactFiles(runtimeRoot, { normalizeModes: true });
   return { runtimeRoot, externalDependencyClosure: Object.fromEntries(external) };
 }

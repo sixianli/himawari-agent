@@ -1,0 +1,19 @@
+{
+  "typecheck": "passed",
+  "scopedFormat": "passed",
+  "scopedLint": "passed",
+  "boundaries": "passed",
+  "invariants": "passed",
+  "coverageMap": "passed",
+  "secrets": "passed",
+  "ciPolicy": "passed",
+  "additionalBiomeCheck": "existing import ordering assist in run-coordinator.ts; format and lint scripts pass; unchanged import order retained",
+  "targeted": {
+    "files": 5,
+    "passed": 168,
+    "failed": 0
+  },
+  "fullLocalCI": "passed: 240 files, 3633 tests, zero failed or skipped",
+  "scope": "real coordinator and persistence collaborators; controlled runtime and cleanup ports; not platform process-tree proof",
+  "strictDocs": "passed: zero warnings"
+}

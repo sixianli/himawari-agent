@@ -1,12 +1,17 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { SessionTraceRecorder } from "@himawari-agent/application";
+import {
+  RuntimeContinuationService,
+  type RuntimeRequest,
+  SessionTraceRecorder,
+} from "@himawari-agent/application";
 import {
   createAgentId,
   createAuthorityLeaseId,
   createDeploymentId,
   createOwnerId,
+  createRunExecutionLeaseId,
   createRunId,
   createSessionId,
   createThreadId,
@@ -164,6 +169,79 @@ describe.each(["worker", "direct"] as const)(
     }
 
     describe("Run-owned Payload artifacts", () => {
+      it("reopens a protected tool checkpoint with a fresh consumer while preserving the original scope", async () => {
+        const resource = await fixture();
+        let repository = resource.repository;
+        const input: RuntimeRequest = {
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          runId: RUN_ID,
+          sessionId: SESSION_ID,
+          threadId: THREAD_ID,
+          modelRef: "controlled:model",
+          systemInstructionRef: "system",
+          contextEnvelopeRef: "context",
+          workerResultRefs: [],
+          capabilityHandleRefs: [],
+          budget: { cost: 1000 },
+          correlationId: "checkpoint-test",
+          dataClassification: "private",
+          executionDeadlineAt: "2026-09-04T01:00:00.000Z",
+          executionLease: {
+            ...AUTHORITY.product,
+            executionLeaseId: createRunExecutionLeaseId("execution:first"),
+            expectedLeaseRevision: 1,
+            authorityLeaseId: LEASE_ID,
+            authorityFencingToken: 1,
+            consumerId: "first",
+          },
+        };
+        const service = () =>
+          new RuntimeContinuationService({
+            artifacts: repository.runPayloadArtifactPort(OWNER_ID, AGENT_ID, AUTHORITY),
+            payloads: repository.payloadStore(OWNER_ID, AGENT_ID),
+            protector: protector(),
+            clock: { now: () => NOW },
+            ids: { next: () => "protected-tool-checkpoint" },
+            assertActive: async () => {},
+          });
+        const snapshot = {
+          batch: {
+            waitingToolCallId: "original-tool",
+            arguments: { content: "private candidate text" },
+          },
+        };
+        try {
+          const ref = await service().save(input, snapshot);
+          const payload = await repository.payloadStore(OWNER_ID, AGENT_ID).get(ref);
+          if (!payload) throw new Error("checkpoint payload missing");
+          expect(new TextDecoder().decode(payload.ciphertext)).not.toContain(
+            "private candidate text",
+          );
+          await repository.close();
+          repository = await SqliteProductStateRepository.open({
+            ...resource,
+            minimumFreeBytes: 0,
+            now: () => NOW,
+          });
+          const resumed = {
+            ...input,
+            continuationRef: ref,
+            executionLease: {
+              ...input.executionLease,
+              consumerId: "second",
+              expectedLeaseRevision: 2,
+            },
+          };
+          expect(await service().load(resumed, ref)).toEqual(snapshot);
+          await expect(
+            service().load({ ...resumed, executionDeadlineAt: "2026-09-04T02:00:00.000Z" }, ref),
+          ).rejects.toThrow("RUNTIME_CONTINUATION_CONTEXT_CHANGED");
+        } finally {
+          await repository.close();
+        }
+      });
+
       it("atomically persists encrypted Payload and semantic receipt, then replays by identity", async () => {
         const resource = await fixture();
         try {
@@ -607,7 +685,9 @@ describe.each(["worker", "direct"] as const)(
           old,
           path.join(f.stateRoot, "schema31-backup.sqlite"),
         );
-        expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([32]);
+        expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
+          32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+        ]);
         expect(old.prepare("SELECT * FROM run_payload_artifacts").all()).toEqual(
           before.map((row) => ({ ...row, history_sequence: 0 })),
         );

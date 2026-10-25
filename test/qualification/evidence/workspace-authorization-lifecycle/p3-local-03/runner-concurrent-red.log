@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| apps/agent-service/test/pi-coding-program.unit.test.ts (42 tests | 1 failed) 930ms
+     × rejects concurrent write proofs before accepting either as unique provenance 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| apps/agent-service/test/pi-coding-program.unit.test.ts > installed Pi coding program boundary > rejects concurrent write proofs before accepting either as unique provenance
+AssertionError: expected undefined to be 1 // Object.is equality
+
+- Expected:
+1
+
++ Received:
+undefined
+
+ ❯ failed apps/agent-service/test/pi-coding-program.unit.test.ts:78:37
+     76| }
+     77| function failed() {
+     78|   expect(boundary.process.exitCode).toBe(1);
+       |                                     ^
+     79|   expect(boundary.process.stderr.write).toHaveBeenCalledWith("PI_RUNNE…
+     80| }
+ ❯ apps/agent-service/test/pi-coding-program.unit.test.ts:282:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 41 passed (42)
+   Start at  18:13:55
+   Duration  1.09s (transform 513ms, setup 0ms, import 60ms, tests 930ms, environment 0ms)

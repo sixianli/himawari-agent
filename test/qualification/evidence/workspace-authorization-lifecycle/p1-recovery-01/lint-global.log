@@ -1,0 +1,432 @@
+
+> himawari-agent@0.0.0 lint
+> biome lint --error-on-warnings .
+
+apps/agent-service/src/capability-programs/host-file-read.ts:26:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    24 │     throw new Error("HOST_FILE_INPUT_INVALID");
+    25 │   const value = input as Record<string, unknown>;
+  > 26 │   const grant = value["grant"] as HostDirectoryGrant | undefined;
+       │                       ^^^^^^^
+    27 │   const phase = value["phase"];
+    28 │   if (
+
+  i Unsafe fix: Use a literal key instead.
+
+     24  24 │       throw new Error("HOST_FILE_INPUT_INVALID");
+     25  25 │     const value = input as Record<string, unknown>;
+     26     │ - ··const·grant·=·value["grant"]·as·HostDirectoryGrant·|·undefined;
+         26 │ + ··const·grant·=·value.grant·as·HostDirectoryGrant·|·undefined;
+     27  27 │     const phase = value["phase"];
+     28  28 │     if (
+
+
+apps/agent-service/src/capability-programs/host-file-read.ts:27:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    25 │   const value = input as Record<string, unknown>;
+    26 │   const grant = value["grant"] as HostDirectoryGrant | undefined;
+  > 27 │   const phase = value["phase"];
+       │                       ^^^^^^^
+    28 │   if (
+    29 │     value["version"] !== "host-file.v1" ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     25  25 │     const value = input as Record<string, unknown>;
+     26  26 │     const grant = value["grant"] as HostDirectoryGrant | undefined;
+     27     │ - ··const·phase·=·value["phase"];
+         27 │ + ··const·phase·=·value.phase;
+     28  28 │     if (
+     29  29 │       value["version"] !== "host-file.v1" ||
+
+
+apps/agent-service/src/capability-programs/host-file-read.ts:29:11 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    27 │   const phase = value["phase"];
+    28 │   if (
+  > 29 │     value["version"] !== "host-file.v1" ||
+       │           ^^^^^^^^^
+    30 │     value["hostId"] !== options.hostId ||
+    31 │     value["workerInstanceId"] !== options.workerInstanceId ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     27  27 │     const phase = value["phase"];
+     28  28 │     if (
+     29     │ - ····value["version"]·!==·"host-file.v1"·||
+         29 │ + ····value.version·!==·"host-file.v1"·||
+     30  30 │       value["hostId"] !== options.hostId ||
+     31  31 │       value["workerInstanceId"] !== options.workerInstanceId ||
+
+
+apps/agent-service/src/capability-programs/host-file-read.ts:30:11 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    28 │   if (
+    29 │     value["version"] !== "host-file.v1" ||
+  > 30 │     value["hostId"] !== options.hostId ||
+       │           ^^^^^^^^
+    31 │     value["workerInstanceId"] !== options.workerInstanceId ||
+    32 │     !grant ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     28  28 │     if (
+     29  29 │       value["version"] !== "host-file.v1" ||
+     30     │ - ····value["hostId"]·!==·options.hostId·||
+         30 │ + ····value.hostId·!==·options.hostId·||
+     31  31 │       value["workerInstanceId"] !== options.workerInstanceId ||
+     32  32 │       !grant ||
+
+
+apps/agent-service/src/capability-programs/host-file-read.ts:31:11 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    29 │     value["version"] !== "host-file.v1" ||
+    30 │     value["hostId"] !== options.hostId ||
+  > 31 │     value["workerInstanceId"] !== options.workerInstanceId ||
+       │           ^^^^^^^^^^^^^^^^^^
+    32 │     !grant ||
+    33 │     grant.hostId !== options.hostId ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     29  29 │       value["version"] !== "host-file.v1" ||
+     30  30 │       value["hostId"] !== options.hostId ||
+     31     │ - ····value["workerInstanceId"]·!==·options.workerInstanceId·||
+         31 │ + ····value.workerInstanceId·!==·options.workerInstanceId·||
+     32  32 │       !grant ||
+     33  33 │       grant.hostId !== options.hostId ||
+
+
+apps/agent-service/src/capability-programs/host-file-read.ts:57:20 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    55 │   if (phase === "inspect") {
+    56 │     if (
+  > 57 │       typeof value["path"] !== "string" ||
+       │                    ^^^^^^
+    58 │       typeof value["maximumBytes"] !== "number" ||
+    59 │       value["maximumBytes"] > 48 * 1024
+
+  i Unsafe fix: Use a literal key instead.
+
+     55  55 │     if (phase === "inspect") {
+     56  56 │       if (
+     57     │ - ······typeof·value["path"]·!==·"string"·||
+         57 │ + ······typeof·value.path·!==·"string"·||
+     58  58 │         typeof value["maximumBytes"] !== "number" ||
+     59  59 │         value["maximumBytes"] > 48 * 1024
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:37:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    35 │     input.scope.expiresAt <= new Date().toISOString() ||
+    36 │     process.cwd() !== input.workspace ||
+  > 37 │     process.env["HOME"] !== input.privateDirectory ||
+       │                 ^^^^^^
+    38 │     process.env["TMPDIR"] !== input.privateDirectory
+    39 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+     35  35 │       input.scope.expiresAt <= new Date().toISOString() ||
+     36  36 │       process.cwd() !== input.workspace ||
+     37     │ - ····process.env["HOME"]·!==·input.privateDirectory·||
+         37 │ + ····process.env.HOME·!==·input.privateDirectory·||
+     38  38 │       process.env["TMPDIR"] !== input.privateDirectory
+     39  39 │     )
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:38:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    36 │     process.cwd() !== input.workspace ||
+    37 │     process.env["HOME"] !== input.privateDirectory ||
+  > 38 │     process.env["TMPDIR"] !== input.privateDirectory
+       │                 ^^^^^^^^
+    39 │   )
+    40 │     throw new Error("PI_RUNNER_SCOPE_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+     36  36 │       process.cwd() !== input.workspace ||
+     37  37 │       process.env["HOME"] !== input.privateDirectory ||
+     38     │ - ····process.env["TMPDIR"]·!==·input.privateDirectory
+         38 │ + ····process.env.TMPDIR·!==·input.privateDirectory
+     39  39 │     )
+     40  40 │       throw new Error("PI_RUNNER_SCOPE_INVALID");
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:61:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    59 │       throw new Error("PI_RUNNER_BINARY_UNAVAILABLE");
+    60 │   }
+  > 61 │   process.env["PI_OFFLINE"] = "1";
+       │               ^^^^^^^^^^^^
+    62 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+    63 │   process.env["PATH"] = binaryDirectory;
+
+  i Unsafe fix: Use a literal key instead.
+
+     59  59 │         throw new Error("PI_RUNNER_BINARY_UNAVAILABLE");
+     60  60 │     }
+     61     │ - ··process.env["PI_OFFLINE"]·=·"1";
+         61 │ + ··process.env.PI_OFFLINE·=·"1";
+     62  62 │     process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+     63  63 │     process.env["PATH"] = binaryDirectory;
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:62:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    60 │   }
+    61 │   process.env["PI_OFFLINE"] = "1";
+  > 62 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+       │               ^^^^^^^^^^^^^^^^^^^^^
+    63 │   process.env["PATH"] = binaryDirectory;
+    64 │   const parameters: unknown = JSON.parse(input.parametersJson);
+
+  i Unsafe fix: Use a literal key instead.
+
+     60  60 │     }
+     61  61 │     process.env["PI_OFFLINE"] = "1";
+     62     │ - ··process.env["PI_CODING_AGENT_DIR"]·=·path.dirname(binaryDirectory);
+         62 │ + ··process.env.PI_CODING_AGENT_DIR·=·path.dirname(binaryDirectory);
+     63  63 │     process.env["PATH"] = binaryDirectory;
+     64  64 │     const parameters: unknown = JSON.parse(input.parametersJson);
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:63:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    61 │   process.env["PI_OFFLINE"] = "1";
+    62 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+  > 63 │   process.env["PATH"] = binaryDirectory;
+       │               ^^^^^^
+    64 │   const parameters: unknown = JSON.parse(input.parametersJson);
+    65 │   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters))
+
+  i Unsafe fix: Use a literal key instead.
+
+     61  61 │     process.env["PI_OFFLINE"] = "1";
+     62  62 │     process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+     63     │ - ··process.env["PATH"]·=·binaryDirectory;
+         63 │ + ··process.env.PATH·=·binaryDirectory;
+     64  64 │     const parameters: unknown = JSON.parse(input.parametersJson);
+     65  65 │     if (!parameters || typeof parameters !== "object" || Array.isArray(parameters))
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:69:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    67 │   const args = parameters as Record<string, unknown>;
+    68 │   const target =
+  > 69 │     typeof args["path"] === "string" ? path.resolve(input.workspace, args["path"]) : undefined;
+       │                 ^^^^^^
+    70 │   if (
+    71 │     target &&
+
+  i Unsafe fix: Use a literal key instead.
+
+     67  67 │     const args = parameters as Record<string, unknown>;
+     68  68 │     const target =
+     69     │ - ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+         69 │ + ····typeof·args.path·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+     70  70 │     if (
+     71  71 │       target &&
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:69:75 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    67 │   const args = parameters as Record<string, unknown>;
+    68 │   const target =
+  > 69 │     typeof args["path"] === "string" ? path.resolve(input.workspace, args["path"]) : undefined;
+       │                                                                           ^^^^^^
+    70 │   if (
+    71 │     target &&
+
+  i Unsafe fix: Use a literal key instead.
+
+     67  67 │     const args = parameters as Record<string, unknown>;
+     68  68 │     const target =
+     69     │ - ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+         69 │ + ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args.path)·:·undefined;
+     70  70 │     if (
+     71  71 │       target &&
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:218:30 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    216 │         ? ({ ...result.details } as Record<string, unknown>)
+    217 │         : {};
+  > 218 │     const fullPath = details["fullOutputPath"];
+        │                              ^^^^^^^^^^^^^^^^
+    219 │     delete details["fullOutputPath"];
+    220 │     const fullOutput =
+
+  i Unsafe fix: Use a literal key instead.
+
+    216 216 │           ? ({ ...result.details } as Record<string, unknown>)
+    217 217 │           : {};
+    218     │ - ····const·fullPath·=·details["fullOutputPath"];
+        218 │ + ····const·fullPath·=·details.fullOutputPath;
+    219 219 │       delete details["fullOutputPath"];
+    220 220 │       const fullOutput =
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:219:20 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    217 │         : {};
+    218 │     const fullPath = details["fullOutputPath"];
+  > 219 │     delete details["fullOutputPath"];
+        │                    ^^^^^^^^^^^^^^^^
+    220 │     const fullOutput =
+    221 │       typeof fullPath === "string"
+
+  i Unsafe fix: Use a literal key instead.
+
+    217 217 │           : {};
+    218 218 │       const fullPath = details["fullOutputPath"];
+    219     │ - ····delete·details["fullOutputPath"];
+        219 │ + ····delete·details.fullOutputPath;
+    220 220 │       const fullOutput =
+    221 221 │         typeof fullPath === "string"
+
+
+apps/agent-service/src/capability-programs/web-search-main.ts:22:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    20 │   if (
+    21 │     Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+  > 22 │     typeof args["query"] !== "string" ||
+       │                 ^^^^^^^
+    23 │     (args["limit"] !== undefined && typeof args["limit"] !== "number")
+    24 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+    20 20 │     if (
+    21 21 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    22    │ - ····typeof·args["query"]·!==·"string"·||
+       22 │ + ····typeof·args.query·!==·"string"·||
+    23 23 │       (args["limit"] !== undefined && typeof args["limit"] !== "number")
+    24 24 │     )
+
+
+apps/agent-service/src/capability-programs/web-search-main.ts:23:11 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    21 │     Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    22 │     typeof args["query"] !== "string" ||
+  > 23 │     (args["limit"] !== undefined && typeof args["limit"] !== "number")
+       │           ^^^^^^^
+    24 │   )
+    25 │     throw new Error("WEB_SEARCH_INPUT_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+    21 21 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    22 22 │       typeof args["query"] !== "string" ||
+    23    │ - ····(args["limit"]·!==·undefined·&&·typeof·args["limit"]·!==·"number")
+       23 │ + ····(args.limit·!==·undefined·&&·typeof·args["limit"]·!==·"number")
+    24 24 │     )
+    25 25 │       throw new Error("WEB_SEARCH_INPUT_INVALID");
+
+
+apps/agent-service/src/capability-programs/web-search-main.ts:23:49 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    21 │     Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    22 │     typeof args["query"] !== "string" ||
+  > 23 │     (args["limit"] !== undefined && typeof args["limit"] !== "number")
+       │                                                 ^^^^^^^
+    24 │   )
+    25 │     throw new Error("WEB_SEARCH_INPUT_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+    21 21 │       Object.keys(args).some((key) => !["query", "limit"].includes(key)) ||
+    22 22 │       typeof args["query"] !== "string" ||
+    23    │ - ····(args["limit"]·!==·undefined·&&·typeof·args["limit"]·!==·"number")
+       23 │ + ····(args["limit"]·!==·undefined·&&·typeof·args.limit·!==·"number")
+    24 24 │     )
+    25 25 │       throw new Error("WEB_SEARCH_INPUT_INVALID");
+
+
+apps/agent-service/src/capability-programs/web-search-main.ts:27:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    25 │     throw new Error("WEB_SEARCH_INPUT_INVALID");
+    26 │   const results = await new ExaPublicSearchAdapter().search({
+  > 27 │     query: args["query"],
+       │                 ^^^^^^^
+    28 │     limit: (args["limit"] as number | undefined) ?? 5,
+    29 │   });
+
+  i Unsafe fix: Use a literal key instead.
+
+    25 25 │       throw new Error("WEB_SEARCH_INPUT_INVALID");
+    26 26 │     const results = await new ExaPublicSearchAdapter().search({
+    27    │ - ····query:·args["query"],
+       27 │ + ····query:·args.query,
+    28 28 │       limit: (args["limit"] as number | undefined) ?? 5,
+    29 29 │     });
+
+
+apps/agent-service/src/capability-programs/web-search-main.ts:28:18 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    26 │   const results = await new ExaPublicSearchAdapter().search({
+    27 │     query: args["query"],
+  > 28 │     limit: (args["limit"] as number | undefined) ?? 5,
+       │                  ^^^^^^^
+    29 │   });
+    30 │   process.stdout.write(
+
+  i Unsafe fix: Use a literal key instead.
+
+    26 26 │     const results = await new ExaPublicSearchAdapter().search({
+    27 27 │       query: args["query"],
+    28    │ - ····limit:·(args["limit"]·as·number·|·undefined)·??·5,
+       28 │ + ····limit:·(args.limit·as·number·|·undefined)·??·5,
+    29 29 │     });
+    30 30 │     process.stdout.write(
+
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 1708.
+Checked 1274 files in 969ms. No fixes applied.
+Found 2 errors.
+Found 1722 infos.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.

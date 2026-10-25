@@ -1,0 +1,26 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts (56 tests | 1 failed) 112ms
+   × binds a recovered file output to its verified delivery receipt (true) 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |node-services| apps/agent-service/test/production-runtime-tools.unit.test.ts > binds a recovered file output to its verified delivery receipt (true)
+Error: WORKER_OUTPUT_OBSERVATION_MISSING
+ ❯ ProductionRuntimeTools.#completionOutcome apps/agent-service/src/production-runtime-tools.ts:900:15
+    898|       });
+    899|       if (!observed || observed.payloadRef !== completion.outputRef)
+    900|         throw new Error("WORKER_OUTPUT_OBSERVATION_MISSING");
+       |               ^
+    901|       const payload = await this.#options.payloads.get(observed.payloa…
+    902|       if (
+ ❯ ProductionRuntimeTools.#execute apps/agent-service/src/production-runtime-tools.ts:612:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 55 passed (56)
+   Start at  17:48:13
+   Duration  1.06s (transform 673ms, setup 0ms, import 836ms, tests 112ms, environment 0ms)

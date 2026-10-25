@@ -33,6 +33,8 @@ export interface RunCheckpoint {
 }
 
 export interface StoredRunCheckpoint {
+  /** Derived from current unadmitted queue facts, never accepted from checkpoint writes. */
+  readonly queuedToolBatch?: import("./sandbox-execution-journal.js").SandboxQueuedToolBatch;
   readonly runId: RunId;
   readonly revision: number;
   readonly checkpoint: RunCheckpoint;

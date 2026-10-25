@@ -1,5 +1,6 @@
 import type {
   CapabilityInvocationRequest,
+  CapabilityInvocationAuthorityPort,
   PayloadRef,
   SandboxJobIdentity,
   SandboxJobReceipt,
@@ -14,7 +15,9 @@ import {
 
 export interface ProductionPayloadBrokerClientOptions extends PayloadUdsClientOptions {}
 
-export class ProductionPayloadBrokerClient implements CapabilityPayloadBoundary {
+export class ProductionPayloadBrokerClient
+  implements CapabilityPayloadBoundary, CapabilityInvocationAuthorityPort
+{
   readonly adapterIdentity = "production-payload-broker-client";
   readonly schemaVersion = "payload-broker.v1";
   private readonly options: ProductionPayloadBrokerClientOptions;
@@ -35,6 +38,18 @@ export class ProductionPayloadBrokerClient implements CapabilityPayloadBoundary 
 
   disconnect(): void {
     this.client.disconnect();
+  }
+
+  async assertCurrent(input: {
+    readonly handleRef: string;
+    readonly invocationId: string;
+  }): Promise<void> {
+    await this.client.validateInvocation(
+      this.identity({
+        capabilityHandleRef: input.handleRef,
+        invocationId: input.invocationId,
+      }),
+    );
   }
 
   async readInput(request: CapabilityInvocationRequest): Promise<Uint8Array> {
@@ -69,7 +84,9 @@ export class ProductionPayloadBrokerClient implements CapabilityPayloadBoundary 
     return this.client.sandboxJob(this.identity(request), observation.identity, observation);
   }
 
-  private identity(request: CapabilityInvocationRequest): PayloadBrokerInvocationIdentity {
+  private identity(
+    request: Pick<CapabilityInvocationRequest, "capabilityHandleRef" | "invocationId">,
+  ): PayloadBrokerInvocationIdentity {
     return {
       handleRef: request.capabilityHandleRef,
       invocationId: request.invocationId,

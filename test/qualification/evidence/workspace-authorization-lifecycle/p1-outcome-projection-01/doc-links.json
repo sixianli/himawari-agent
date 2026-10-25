@@ -1,0 +1,13 @@
+{
+  "checkedDocuments": [
+    "docs/architecture-v0.1.md",
+    "docs/execution/plans/2026-09-16-workspace-authorization-lifecycle-plan.md",
+    "docs/runbooks/authority-transfer-runbook.md",
+    "docs/runbooks/backup-restore-runbook.md",
+    "docs/runbooks/install-start-stop-runbook.md",
+    "test/qualification/evidence/workspace-authorization-lifecycle/p1-outcome-projection-01/README.md"
+  ],
+  "localLinksChecked": 484,
+  "errors": [],
+  "scope": "Local target existence and explicit-anchor uniqueness; no reader click verification"
+}

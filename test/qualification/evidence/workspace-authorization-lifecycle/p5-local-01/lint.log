@@ -1,0 +1,153 @@
+packages/application/src/services/action-policy-service.ts:349:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    347 │           if (
+    348 │             error instanceof ApplicationPortError &&
+  > 349 │             error.details["reasonCode"] === "AUTHORIZATION_QUOTA_UNAVAILABLE"
+        │                           ^^^^^^^^^^^^
+    350 │           ) {
+    351 │             quotaUnavailable = true;
+
+  i Unsafe fix: Use a literal key instead.
+
+    347 347 │             if (
+    348 348 │               error instanceof ApplicationPortError &&
+    349     │ - ············error.details["reasonCode"]·===·"AUTHORIZATION_QUOTA_UNAVAILABLE"
+        349 │ + ············error.details.reasonCode·===·"AUTHORIZATION_QUOTA_UNAVAILABLE"
+    350 350 │             ) {
+    351 351 │               quotaUnavailable = true;
+
+
+packages/application/src/services/automatic-action-review-contract.ts:58:16 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    56 │     "reasonCode",
+    57 │     "decision",
+  > 58 │     ...(record["decision"] === "alternative" ? ["suggestion"] : []),
+       │                ^^^^^^^^^^
+    59 │   ];
+    60 │   if (
+
+  i Unsafe fix: Use a literal key instead.
+
+    56 56 │       "reasonCode",
+    57 57 │       "decision",
+    58    │ - ····...(record["decision"]·===·"alternative"·?·["suggestion"]·:·[]),
+       58 │ + ····...(record.decision·===·"alternative"·?·["suggestion"]·:·[]),
+    59 59 │     ];
+    60 60 │     if (
+
+
+packages/application/src/services/automatic-action-review-contract.ts:65:29 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    63 │   )
+    64 │     return invalid();
+  > 65 │   const reasonCode = record["reasonCode"];
+       │                             ^^^^^^^^^^^^
+    66 │   if (typeof reasonCode !== "string" || !/^[A-Z][A-Z0-9_]{0,79}$/.test(reasonCode))
+    67 │     return invalid();
+
+  i Unsafe fix: Use a literal key instead.
+
+    63 63 │     )
+    64 64 │       return invalid();
+    65    │ - ··const·reasonCode·=·record["reasonCode"];
+       65 │ + ··const·reasonCode·=·record.reasonCode;
+    66 66 │     if (typeof reasonCode !== "string" || !/^[A-Z][A-Z0-9_]{0,79}$/.test(reasonCode))
+    67 67 │       return invalid();
+
+
+packages/application/src/services/automatic-action-review-contract.ts:77:27 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    75 │     reasonCode,
+    76 │   };
+  > 77 │   const decision = record["decision"];
+       │                           ^^^^^^^^^^
+    78 │   if (decision === "approve" || decision === "deny" || decision === "human")
+    79 │     return Object.freeze({ ...identity, decision });
+
+  i Unsafe fix: Use a literal key instead.
+
+    75 75 │       reasonCode,
+    76 76 │     };
+    77    │ - ··const·decision·=·record["decision"];
+       77 │ + ··const·decision·=·record.decision;
+    78 78 │     if (decision === "approve" || decision === "deny" || decision === "human")
+    79 79 │       return Object.freeze({ ...identity, decision });
+
+
+packages/application/src/services/automatic-action-review-contract.ts:80:29 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    78 │   if (decision === "approve" || decision === "deny" || decision === "human")
+    79 │     return Object.freeze({ ...identity, decision });
+  > 80 │   const suggestion = record["suggestion"];
+       │                             ^^^^^^^^^^^^
+    81 │   if (
+    82 │     decision === "alternative" &&
+
+  i Unsafe fix: Use a literal key instead.
+
+    78 78 │     if (decision === "approve" || decision === "deny" || decision === "human")
+    79 79 │       return Object.freeze({ ...identity, decision });
+    80    │ - ··const·suggestion·=·record["suggestion"];
+       80 │ + ··const·suggestion·=·record.suggestion;
+    81 81 │     if (
+    82 82 │       decision === "alternative" &&
+
+
+test/integration/sqlite-sandbox-execution-v2.test.ts:897:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    895 │         if (state === "missing_host") delete plan.identity.hostId;
+    896 │         const rawObservation: Record<string, unknown> = { ...observation };
+  > 897 │         if (state === "missing_state") delete rawObservation["state"];
+        │                                                              ^^^^^^^
+    898 │         old
+    899 │           .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+  i Unsafe fix: Use a literal key instead.
+
+     895  895 │           if (state === "missing_host") delete plan.identity.hostId;
+     896  896 │           const rawObservation: Record<string, unknown> = { ...observation };
+     897      │ - ········if·(state·===·"missing_state")·delete·rawObservation["state"];
+          897 │ + ········if·(state·===·"missing_state")·delete·rawObservation.state;
+     898  898 │           old
+     899  899 │             .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+
+test/integration/authorization-capability-governance.test.ts:1214:76 lint/suspicious/noConfusingVoidType  FIXABLE  ━━━━━━━━━━
+
+  ! void is confusing outside a return type or a type parameter.
+
+    1212 │   it("does not treat a review return value as execution authority", async () => {
+    1213 │     const f = await continuityFixture([]);
+  > 1214 │     const review = vi.fn(async () => ({ decision: "ALLOW" }) as unknown as void);
+         │                                                                            ^^^^
+    1215 │     const action = intent({ id: "review-no-authority" });
+    1216 │     expect(
+
+  i Unsafe fix: Use undefined instead.
+
+    1212 1212 │     it("does not treat a review return value as execution authority", async () => {
+    1213 1213 │       const f = await continuityFixture([]);
+    1214      │ - ····const·review·=·vi.fn(async·()·=>·({·decision:·"ALLOW"·})·as·unknown·as·void);
+         1214 │ + ····const·review·=·vi.fn(async·()·=>·({·decision:·"ALLOW"·})·as·unknown·as·undefined);
+    1215 1215 │       const action = intent({ id: "review-no-authority" });
+    1216 1216 │       expect(
+
+
+Checked 26 files in 91ms. No fixes applied.
+Found 1 warning.
+Found 6 infos.
+lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some warnings were emitted while running checks.

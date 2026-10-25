@@ -1,0 +1,67 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts (11 tests | 2 failed) 131ms
+     × pins a fixed file call to its target even within a broader grant 11ms
+     × does not expose a shell through a fixed file call with broad directory authority 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > pins a fixed file call to its target even within a broader grant
+AssertionError: promise resolved "Uint8Array[ 117, 110, 114, 101, …(-98) ]" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
+- }
++ Uint8Array [
++   117,
++   110,
++   114,
++   101,
++   108,
++   97,
++   116,
++   101,
++   100,
++ ]
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:52:39
+     50|     const other = path.join(root, "other.txt");
+     51|     await writeFile(other, "unrelated");
+     52|     await expect(port.readFile(other)).rejects.toThrow("PI_FIXED_TARGE…
+       |                                       ^
+     53|     await expect(port.access(other, "read")).rejects.toThrow("PI_FIXED…
+     54|     await expect(port.writeFile(other, "replacement")).rejects.toThrow…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| packages/platform-node/test/sandboxed-coding-operations.unit.test.ts > sandboxed coding file operations > does not expose a shell through a fixed file call with broad directory authority
+AssertionError: promise resolved "{ exitCode: +0 }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "exitCode": 0,
+  }
+
+ ❯ packages/platform-node/test/sandboxed-coding-operations.unit.test.ts:71:104
+     69|       maxOutputBytes: 4096,
+     70|     });
+     71|     await expect(port.executeCommand({ cwd: root, command: "printf byp…
+       |                                                                                                        ^
+     72|     await expect(readFile(path.join(root, "other.txt"))).rejects.toMat…
+     73|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  20:37:53
+   Duration  1.49s (transform 713ms, setup 0ms, import 1.20s, tests 131ms, environment 0ms)

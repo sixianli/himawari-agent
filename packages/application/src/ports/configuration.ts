@@ -1,6 +1,7 @@
 import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
 import type { ModelProviderRouting } from "./intelligence.js";
+import type { WebProviderId } from "./web-providers.js";
 
 export interface SecretReferenceDescriptor {
   readonly ref: string;
@@ -9,12 +10,6 @@ export interface SecretReferenceDescriptor {
   readonly scope: string;
 }
 
-/**
- * Provider pricing in USD per million input/output tokens (or the provider's
- * equivalent unit for an embedding request). Keeping this shape in the
- * product configuration lets the budget and disclosure policy see the exact
- * selected identity without importing the Pi runtime package.
- */
 export interface ModelCostDescriptor {
   readonly input: number;
   readonly output: number;
@@ -35,10 +30,14 @@ interface ConfiguredModelDescriptorBase {
   readonly providerRouting?: ModelProviderRouting;
 }
 
-export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDescriptorBase {
-  readonly role: "primary" | "fallback";
+interface ConfiguredGenerationModelDescriptorBase extends ConfiguredModelDescriptorBase {
+  readonly role: "primary";
   readonly priority: number;
   readonly name: string;
+}
+
+export interface ConfiguredCompletionsGenerationModelDescriptor
+  extends ConfiguredGenerationModelDescriptorBase {
   readonly api: "openai-completions";
   readonly reasoning: boolean;
   readonly reasoningRequired?: boolean;
@@ -47,13 +46,25 @@ export interface ConfiguredGenerationModelDescriptor extends ConfiguredModelDesc
   readonly maxTokens: number;
 }
 
+export interface ConfiguredTypeSafeGenerationModelDescriptor
+  extends Omit<ConfiguredGenerationModelDescriptorBase, "role"> {
+  readonly role: "specialist";
+  readonly api: "typesafe-systemone";
+  readonly modelVersion?: string;
+}
+
+export type ConfiguredGenerationModelDescriptor =
+  | ConfiguredCompletionsGenerationModelDescriptor
+  | ConfiguredTypeSafeGenerationModelDescriptor;
+
 export interface ConfiguredEmbeddingModelDescriptor extends ConfiguredModelDescriptorBase {
   readonly role: "embedding";
   readonly dimensions: number;
 }
 
 export type ConfiguredModelDescriptor =
-  | ConfiguredGenerationModelDescriptor
+  | ConfiguredCompletionsGenerationModelDescriptor
+  | ConfiguredTypeSafeGenerationModelDescriptor
   | ConfiguredEmbeddingModelDescriptor;
 
 export interface ConfiguredMemoryDescriptor {
@@ -138,8 +149,20 @@ export interface CapabilityDeploymentConfiguration {
   readonly sha256: string;
 }
 
-/** Host-owned, versioned instructions; never supplied by a browser message. */
-/** Routing selection only. Directory and action grants remain separate durable authority. */
+export interface TaskEnvironmentImageConfiguration {
+  readonly reference: string;
+  readonly digest: string;
+  readonly pin: "registry-digest" | "image-id";
+}
+
+export interface TaskEnvironmentConfiguration {
+  readonly backendRef: string;
+  readonly dockerExecutable: string;
+  readonly dockerHost: string | null;
+  readonly image: TaskEnvironmentImageConfiguration;
+  readonly egressImage: TaskEnvironmentImageConfiguration;
+}
+
 export interface FileReadRouteConfiguration {
   readonly hostId: string;
   readonly workerInstanceId: string;
@@ -149,20 +172,57 @@ export interface FileReadRouteConfiguration {
   readonly maximumBytes: number;
 }
 
+export type PublicSearchRouteConfiguration = (
+  | FileReadRouteConfiguration
+  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+) &
+  WebProviderRouteConfiguration;
+
+export interface WebProviderRouteConfiguration {
+  readonly providers?: readonly WebProviderId[];
+  readonly providerSecrets?: Readonly<Partial<Record<WebProviderId, string>>>;
+}
+
+export type PublicFetchRouteConfiguration = Omit<FileReadRouteConfiguration, "grantId"> & {
+  readonly scopeSource: "private_temp";
+} & WebProviderRouteConfiguration;
+
 export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
-  readonly enabledTools: readonly ("read" | "write" | "edit" | "bash" | "find" | "grep" | "ls")[];
+  readonly enabledTools: readonly (
+    | "read"
+    | "write"
+    | "edit"
+    | "bash"
+    | "find"
+    | "grep"
+    | "ls"
+    | "move_directory"
+    | "save_copy"
+  )[];
+  readonly approval?: "workspace_auto" | "ask";
 }
 
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly coding?: CodingRouteConfiguration;
-  readonly publicSearch?: FileReadRouteConfiguration;
+  readonly publicSearch?: PublicSearchRouteConfiguration;
+  readonly publicFetch?: PublicFetchRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;
+  readonly automaticReview?: AutomaticReviewConfiguration;
   readonly version: string;
   readonly systemInstruction: string;
   readonly memoryLimit: number;
   readonly maxSelectedMemories: number;
   readonly maxMemoryClassification: DataClassification;
+}
+
+export interface AutomaticReviewConfiguration {
+  readonly delegationKey: string;
+  readonly configurationVersion: string;
+  readonly modelRef: string;
+  readonly maximumWaitMs: number;
+  readonly maxOutputBytes: number;
+  readonly confidenceThreshold?: number;
 }
 
 export interface ProductConfiguration {
@@ -176,11 +236,9 @@ export interface ProductConfiguration {
   readonly publicOrigin: string;
   readonly publicMode: boolean;
   readonly runPolicy?: RunPolicyConfiguration;
-  /** Present only when a verified capability deployment snapshot is configured. */
   readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
-  /** Present only for a configured public HTTP composition. */
+  readonly taskEnvironments?: TaskEnvironmentConfiguration;
   readonly http?: HttpConfiguration;
-  /** Present only for a configured public identity composition. */
   readonly identity?: IdentityConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;

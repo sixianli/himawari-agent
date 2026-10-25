@@ -1,0 +1,50 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+ExpectError: expect(locator).not.toContainText(expected) failed
+
+Locator: locator('.tool-record .step-status').first()
+Expected substring: not "正在准备"
+Received string: "正在准备 · 暂无时长"
+Timeout: 5000ms
+
+Call log:
+  - Expect "to.have.text" with timeout 5000ms
+  - waiting for locator('.tool-record .step-status').first()
+    14 × locator resolved to <span class="step-status" title="执行端处理耗时，包含执行环境准备和清理；不包含排队、传输及等待你确认的时间。">正在准备 · 暂无时长</span>
+       - unexpected value "正在准备 · 暂无时长"
+
+    at captureRawStack (/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/playwright-core/lib/coreBundle.js:9681:17)
+    at callMatcherAsStep (/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/playwright/lib/matchers/expect.js:13310:57)
+    at Object.toContainText (/Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/node_modules/playwright/lib/matchers/expect.js:13300:23)
+    at /private/tmp/himawari-terminal-repro.mjs:40:70 {
+  matcherResult: {
+    name: 'toContainText',
+    expected: '正在准备',
+    message: 'expect(locator).not.toContainText(expected) failed\n' +
+      '\n' +
+      "Locator: locator('.tool-record .step-status').first()\n" +
+      'Expected substring: not "正在准备"\n' +
+      'Received string: "正在准备 · 暂无时长"\n' +
+      'Timeout: 5000ms\n' +
+      '\n' +
+      'Call log:\n' +
+      '  - Expect "to.have.text" with timeout 5000ms\n' +
+      "  - waiting for locator('.tool-record .step-status').first()\n" +
+      '    14 × locator resolved to <span class="step-status" title="执行端处理耗时，包含执行环境准备和清理；不包含排队、传输及等待你确认的时间。">正在准备 · 暂无时长</span>\n' +
+      '       - unexpected value "正在准备 · 暂无时长"\n',
+    pass: true,
+    actual: '正在准备 · 暂无时长',
+    log: [
+      '  - Expect "to.have.text" with timeout 5000ms',
+      "  - waiting for locator('.tool-record .step-status').first()",
+      '    14 × locator resolved to <span class="step-status" title="执行端处理耗时，包含执行环境准备和清理；不包含排队、传输及等待你确认的时间。">正在准备 · 暂无时长</span>',
+      '       - unexpected value "正在准备 · 暂无时长"'
+    ],
+    timeout: 5000,
+    ariaSnapshot: '- text: 正在准备 · 暂无时长'
+  }
+}
+
+Node.js v22.22.3

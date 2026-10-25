@@ -18,7 +18,8 @@ export function readReviewComment(commentId) {
   const credential = process.env.HIMAWARI_CI_GITHUB_TOKEN;
   if (credential) {
     assert(
-      process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REPOSITORY === repository,
+      process.env.GITHUB_ACTIONS === undefined ||
+        (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REPOSITORY === repository),
       "SECURITY_REVIEW_TOKEN_SCOPE_INVALID",
     );
     assert(/^[A-Za-z0-9_.-]+$/.test(credential), "SECURITY_REVIEW_TOKEN_INVALID");

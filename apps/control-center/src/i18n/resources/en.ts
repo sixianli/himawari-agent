@@ -1,6 +1,66 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "review.authorizationChecking": "Checking this operation",
+  "review.authorizationStarted": "Automatic review started",
+  "review.authorizationApproved": "Automatic review allowed this operation",
+  "review.authorizationDenied": "Automatic review did not allow this operation",
+  "review.authorizationHuman": "Automatic review needs your confirmation",
+  "review.authorizationAlternative": "Automatic review suggested changing the request",
+  "review.authorizationTiming":
+    "Measured from review registration to the saved decision; this is not tool execution time.",
+
+  "review.archivePending":
+    "This conversation has an action waiting for your confirmation. Resolve it before archiving.",
+  "review.system": "System",
+  "review.localeNote": "The interface language does not change previous messages.",
+  "review.loadMore": "Load more",
+  "review.retrySend": "Retry previous send",
+  "review.pendingSend":
+    "The previous send is unconfirmed. Retry checks the same message without duplicating it; your new draft is preserved.",
+  "review.workerTiming":
+    "Worker processing time, including environment setup and cleanup; excludes queueing, transport and approval waits.",
+  "review.thinkingTiming":
+    "Observed time between thinking-stream start and end events; not total internal model reasoning time.",
+  "review.preview": "Preview",
+  "review.impact.none": "No data changes",
+  "review.impact.reversible": "Changes content; reversible",
+  "review.impact.irreversible": "The operation may not be reversible",
+  "review.settings.general": "General",
+  "review.settings.tools": "Tools & permissions",
+  "review.settings.data": "Conversations & data",
+  "review.light": "Light",
+  "review.dark": "Dark",
+  "review.localData":
+    "This browser stores interface preferences and unsent drafts. Conversation history is stored on the server.",
+  "review.archives": "Archived conversations",
+  "review.loading": "Loading…",
+  "review.preparing": "Preparing the service. You can start typing.",
+  "review.needsAttention": "Needs your confirmation",
+  "review.conversationActions": "Conversation actions",
+  "review.conversationName": "Conversation name",
+  "review.save": "Save",
+  "review.effortUnavailable": "This model does not offer adjustable reasoning.",
+  "review.disconnected": "Connection interrupted. Reconnecting; your draft is saved.",
+  "review.progressUnknown": "Latest progress is unavailable. It will sync after reconnecting.",
+  "review.thinking": "Reasoning stage",
+  "review.thinkingObserved": "Reasoning output observed",
+  "review.thinkingCount": "Reasoning {count} times",
+  "review.effort.off": "Off",
+  "review.effort.minimal": "Minimal",
+  "review.effort.low": "Low",
+  "review.effort.medium": "Standard",
+  "review.effort.high": "High",
+  "review.effort.xhigh": "Very high",
+  "review.effort.max": "Maximum",
+  "review.effortDescription.off": "For clear, straightforward tasks.",
+  "review.effortDescription.minimal": "For clear, straightforward tasks.",
+  "review.effortDescription.low": "For clear, straightforward tasks.",
+  "review.effortDescription.medium": "Balances response speed and reasoning depth.",
+  "review.effortDescription.high": "More reasoning for complex tasks; may take longer.",
+  "review.effortDescription.xhigh": "More reasoning for complex tasks; may take longer.",
+  "review.effortDescription.max": "More reasoning for complex tasks; may take longer.",
+
   "layout.hideList": "Hide sidebar",
   "nav.manage": "Manage",
   "threads.recent": "Recent conversations",
@@ -38,6 +98,8 @@ export const messages = {
   "chat.error.authFailed":
     "Model authentication failed. Check the server credentials and model access.",
   "chat.error.unavailable": "The model service is unavailable. Try again later.",
+  "chat.error.contextMemoryUnavailable":
+    "Looking up related memory failed because the model service connection failed. No chat model was called and no tool ran in this turn.",
   "chat.error.failed": "This run failed. Saved messages and execution records remain available.",
   "chat.toolCount": "{count} tool calls",
   "chat.responseText": "Response text",
@@ -63,7 +125,17 @@ export const messages = {
   "chat.search.allowed": "Web search allowed",
   "chat.search.ask": "Confirm web search",
   "chat.search.disclosure":
-    "Generated queries will be sent to Exa and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+  "chat.search.recipients": "Recipients:",
+  "chat.search.remember": "Remember my choice and allow future web searches",
+  "chat.search.scope": "Applies to this account until revoked.",
+  "chat.search.afterRevoke":
+    "After turning this off, the next search asks for permission in its conversation.",
+  "chat.search.other": "Other permissions",
+  "review.inlineConsent": "Confirm the specific action and scope in its conversation.",
+  "review.archiveDescription": "Archiving tidies the list and keeps the conversation.",
+  "review.manageArchives": "Manage",
+  "review.localDataTitle": "What does this browser store?",
   "chat.search.enable": "Allow web search",
   "chat.search.revoke": "Revoke web search permission",
   "chat.allowOnce": "Allow once",
@@ -72,6 +144,7 @@ export const messages = {
   "chat.activity.output": "Writing response",
   "chat.activity.preparingTool": "Preparing tool call",
   "chat.activity.waitingModel": "Waiting for model",
+  "chat.activity.buildingContext": "Looking up related memory",
   "chat.lastActivity": "Last progress {time} ago",
   "chat.progressDelayed":
     "No recent progress. A connected page does not confirm that execution is advancing. You can wait or stop this turn.",
@@ -82,6 +155,70 @@ export const messages = {
   "chat.notProvided": "No displayable content provided",
   "chat.disconnected": "Connection lost; awaiting synchronization",
   "chat.recordUnavailable": "Some execution records are unavailable.",
+  "chat.phase.notDispatched": "Not dispatched",
+  "chat.resource.stopping": "Stopping",
+  "chat.resource.verifying": "Checking the original request",
+  "chat.resource.queued": "Waiting for resources",
+  "chat.resource.executing": "Executing",
+  "chat.resource.stopNotStrictlyConfirmed": "Stop not strictly confirmed",
+  "chat.resource.recordDeleted": "Execution record deleted",
+  "chat.reason.admissionConflict": "Resource or request state conflicted during admission",
+  "chat.reason.authorizationDenied": "Execution authorization expired or was denied",
+  "chat.reason.authorityUnavailable": "Execution authority is unavailable",
+  "chat.reason.admissionResourceMissing": "A required execution resource is missing",
+  "chat.reason.admissionAlreadyRecorded": "Request already recorded; check its original status",
+  "chat.reason.operationUnavailable": "This execution method is unavailable",
+  "chat.reason.admissionUnavailable": "Execution admission service is unavailable",
+  "chat.reason.runDeadlineExceeded":
+    "The Run deadline expired; cleanup is complete and this Run has ended",
+  "chat.reason.toolDeadlineExceeded":
+    "The tool timed out; it was terminated and cleanup is complete",
+  "chat.reason.toolNotStarted":
+    "The tool did not start: preparation failed and cleanup is confirmed",
+  "chat.reason.deadlineExceeded": "Execution deadline expired; the operation was not dispatched",
+  "chat.reason.resourceCeilingChanged":
+    "Allowed resource limits changed; the operation was not dispatched",
+  "chat.reason.directoryTargetChanged": "The directory location or target changed",
+  "chat.reason.fileVersionConflict": "The file version changed; the candidate was not published",
+  "chat.reason.fileWriteNotStarted": "The file operation failed; the file was not changed",
+  "chat.reason.commandEffectUnverified":
+    "The command failed; its effect on the workspace was not verified",
+  "chat.reason.writeEffectUnverified":
+    "The file operation failed; the file may have changed, and the effect is unverified",
+  "chat.reason.strictModeUnavailable": "Unavailable in strict mode",
+  "chat.environment.title": "Execution environment",
+  "chat.environment.mode.srt": "Default mode",
+  "chat.environment.mode.strict": "Strict mode",
+  "chat.environment.running": "{count} background programs running",
+  "chat.environment.idle": "No background programs running",
+  "chat.environment.currentMode": "Current mode",
+  "chat.environment.srtMeaning":
+    "Tools run in a process-level sandbox (SRT) on this computer that limits which files and networks they can reach. A stop only guarantees that the tool's process group has ended; programs that left the group may still be running.",
+  "chat.environment.strictMeaning": "Every tool runs in a container dedicated to the current turn.",
+  "chat.environment.fixed":
+    "The mode is set by the installation configuration and cannot be changed here.",
+  "chat.environment.programs": "Programs still running",
+  "chat.environment.noPrograms": "No programs are running.",
+  "chat.environment.kind.background": "Background task",
+  "chat.environment.kind.service": "Service",
+  "chat.environment.startedAt": "Started {time}",
+  "chat.environment.openThread": "Open conversation: {title}",
+  "chat.environment.otherThread": "A conversation not in the current list",
+  "chat.environment.unavailable": "Tools unavailable in strict mode",
+  "chat.environment.toolAvailability": "Tool availability",
+  "chat.environment.reason.SANDBOX_OPERATION_SRT_ONLY":
+    "Can only run in the process-level sandbox (SRT)",
+  "chat.environment.reason.SANDBOX_BINDING_SRT_ONLY":
+    "The installation does not declare, per operation, that it can run in a container",
+  "chat.environment.strictNote":
+    "Sub-tasks started from inside a tool are also unavailable. Calls to these tools show “Unavailable in strict mode” and are never run another way.",
+  "chat.environment.noneUnavailable":
+    "No tools are unavailable because of the mode in default mode.",
+  "chat.environment.threadRunning": "Background programs running",
+  "chat.environment.readFailed":
+    "The execution environment cannot be read right now. Try opening it again later.",
+  "chat.phase.unresolved": "Result unconfirmed",
+  "chat.phase.preparing": "Preparing",
   "chat.phase.started": "Running",
   "chat.phase.updated": "Streaming",
   "chat.phase.completed": "Completed",
@@ -89,6 +226,28 @@ export const messages = {
   "chat.phase.waiting": "Awaiting approval",
   "chat.phase.stopped": "Stopped",
   "chat.phase.unavailable": "Record unavailable",
+  "chat.nextAction.unresolved":
+    "The result is unconfirmed. Do not repeat a write operation until the original resource is verified as released.",
+  "chat.waiting.tool":
+    "This turn is still in progress: waiting for the result of {tool}. The tool was handed to the execution environment, but it is not yet confirmed to have stopped.",
+  "chat.waiting.afterTurn":
+    "This turn has ended, but the execution environment of {tool} is not yet confirmed to have stopped.",
+  "chat.nextAction.stop":
+    "The result is unconfirmed. Stop this run and verify its resources before retrying a write.",
+  "chat.nextAction.retryCleanup":
+    "The result is unconfirmed. Retry the stop and cleanup check; do not repeat a write until release is confirmed.",
+  "chat.nextAction.notDispatched":
+    "The operation was not dispatched. If it is still needed, submit a new request; current permissions and workspace state will be checked again.",
+  "chat.nextAction.stoppedWithResults":
+    "This run stopped. Completed tool records and results remain below; review them before continuing.",
+  "chat.nextAction.stopNotStrictlyConfirmed":
+    "Stop not strictly confirmed: the task's process group has ended, but programs that left the group may still be running, changing files or using the network. Check the affected folders before continuing.",
+  "chat.nextAction.partial":
+    "Some tool operations completed before this run failed. Review each result; a later failure does not undo earlier operations.",
+  "chat.nextAction.failed":
+    "Review the failed operation and workspace state before submitting a new request; a failed result does not prove its effects were rolled back.",
+  "chat.nextAction.failedBeforeAnyOperation":
+    "No tool operation ran in this turn. You can send it again.",
   "appearance.title": "Appearance and accent",
   "appearance.theme": "Theme",
   "appearance.accent": "Accent color",
@@ -123,6 +282,7 @@ export const messages = {
   "chat.thinking": "Thinking summary",
   "chat.unknownTime": "Time not recorded",
   "chat.workTime": "Working {time}",
+  "chat.executionTime": "Tool execution {time}",
   "chat.waitTime": "Approval wait {time}",
 
   "authentication.required": "Sign in to connect this browser",
@@ -232,7 +392,7 @@ export const messages = {
   "threads.id": "Thread ID",
   "threads.idHint": "Use a stable Thread identifier; never place content in URLs or logs.",
   "threads.draft": "Message draft",
-  "threads.send": "Send and start Run",
+  "threads.send": "Send",
   "threads.cancelRun": "Cancel selected Run",
   "threads.events": "Live Run events",
   "threads.eventsEmpty": "No live events yet",

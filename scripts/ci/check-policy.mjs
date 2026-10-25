@@ -17,6 +17,7 @@ import {
 import { coverageProjects, inCoverageScope } from "./coverage-model.mjs";
 import { validateMainWorkflow } from "./main-workflow.mjs";
 import { validateQualityWorkflow } from "./quality-policy.mjs";
+import { integrationWorkerLimits, testWorkerCount } from "./test-concurrency.mjs";
 
 const sorted = (values) => [...values].sort();
 const sameSet = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
@@ -38,7 +39,10 @@ const jobIds = [
 ];
 const mainProjects = ["unit", "contracts", "integration", "e2e", "pi-compat", "tooling"];
 
-export function validatePolicy(policy, { allowLegacyCoverage = false } = {}) {
+export function validatePolicy(
+  policy,
+  { allowLegacyCoverage = false, allowLegacyIntegration = false } = {},
+) {
   const legacyCoverage =
     allowLegacyCoverage &&
     sameSet(policy.checks?.find((check) => check.id === "coverage")?.projects ?? [], [
@@ -89,8 +93,14 @@ export function validatePolicy(policy, { allowLegacyCoverage = false } = {}) {
     unique(project.include, "project include");
     unique(project.exclude, "project exclude");
     assert(
-      project.id !== "integration" || project.fileParallelism === false,
-      "Integration files must execute serially",
+      project.id !== "integration" ||
+        (project.fileParallelism === true && project.workerLimits) ||
+        (allowLegacyIntegration && project.fileParallelism === false && !project.workerLimits),
+      "Integration files require a bounded parallel worker budget",
+    );
+    assert(
+      project.id === "integration" || !project.workerLimits,
+      "Only integration may change the worker budget",
     );
     for (const excluded of project.exclude)
       assert(
@@ -375,24 +385,30 @@ export function inspectTestSource(source, filename) {
   const host = ts.createCompilerHost(options);
   host.getSourceFile = (name) => (name === filename ? ast : undefined);
   const checker = ts.createProgram([filename], options, host).getTypeChecker();
+  const unitFile = /\.unit\.test\.[cm]?[jt]sx?$/u.test(filename);
   const roots = new Map();
   const namespaces = new Set();
   const rootNames = new Set(globals.keys());
+  const importedNames = new Map();
+  const namespaceModules = new Map();
   for (const statement of ast.statements) {
-    if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== "vitest") continue;
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue;
+    const module = statement.moduleSpecifier.text;
     const bindings = statement.importClause?.namedBindings;
     if (bindings && ts.isNamespaceImport(bindings)) {
-      namespaces.add(checker.getSymbolAtLocation(bindings.name));
-      rootNames.add(bindings.name.text);
+      namespaceModules.set(checker.getSymbolAtLocation(bindings.name), module);
+      if (module === "vitest") {
+        namespaces.add(checker.getSymbolAtLocation(bindings.name));
+        rootNames.add(bindings.name.text);
+      }
     }
     if (bindings && ts.isNamedImports(bindings))
       for (const item of bindings.elements) {
-        if (
-          ["describe", "suite", "it", "test"].includes(item.propertyName?.text ?? item.name.text)
-        ) {
-          roots.set(checker.getSymbolAtLocation(item.name), [
-            item.propertyName?.text ?? item.name.text,
-          ]);
+        const imported = item.propertyName?.text ?? item.name.text;
+        importedNames.set(checker.getSymbolAtLocation(item.name), { module, name: imported });
+        if (module === "vitest" && ["describe", "suite", "it", "test"].includes(imported)) {
+          roots.set(checker.getSymbolAtLocation(item.name), [imported]);
           rootNames.add(item.name.text);
         }
       }
@@ -424,6 +440,131 @@ export function inspectTestSource(source, filename) {
     }
     return [];
   };
+  const propertyName = (node) =>
+    ts.isPropertyAccessExpression(node)
+      ? node.name.text
+      : ts.isStringLiteral(node.argumentExpression)
+        ? node.argumentExpression.text
+        : undefined;
+  const vitestPath = (node) => {
+    if (ts.isParenthesizedExpression(node)) return vitestPath(node.expression);
+    if (ts.isIdentifier(node)) {
+      const symbol = checker.getSymbolAtLocation(node);
+      const imported = symbol && importedNames.get(symbol);
+      if (imported?.module === "vitest") return [imported.name];
+      if (symbol && namespaces.has(symbol)) return ["vitest"];
+      return [];
+    }
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const parent = vitestPath(node.expression);
+      const name = propertyName(node);
+      if (!parent.length || name === undefined) return [];
+      if (parent.length === 1 && parent[0] === "vitest" && name !== "vi") return [];
+      return [...parent, name];
+    }
+    return [];
+  };
+  const moduleMember = (expression) => {
+    if (ts.isIdentifier(expression))
+      return importedNames.get(checker.getSymbolAtLocation(expression));
+    if (ts.isPropertyAccessExpression(expression)) {
+      const module = namespaceModules.get(checker.getSymbolAtLocation(expression.expression));
+      return module ? { module, name: expression.name.text } : undefined;
+    }
+    return undefined;
+  };
+  const numericLiteral = (node) => {
+    if (ts.isNumericLiteral(node)) return Number(node.text.replaceAll("_", ""));
+    if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken) {
+      const value = numericLiteral(node.operand);
+      return value === null ? null : -value;
+    }
+    return null;
+  };
+  const timerDelayIndex = (expression) => {
+    if (ts.isIdentifier(expression)) {
+      const member = moduleMember(expression);
+      if (member?.module === "node:timers/promises" && member.name === "setTimeout") return 0;
+      if (expression.text !== "setTimeout") return null;
+      return !member || member.module === "node:timers" ? 1 : null;
+    }
+    if (ts.isPropertyAccessExpression(expression) && expression.name.text === "setTimeout") {
+      if (
+        ts.isIdentifier(expression.expression) &&
+        ["globalThis", "window"].includes(expression.expression.text)
+      )
+        return 1;
+      const module = namespaceModules.get(checker.getSymbolAtLocation(expression.expression));
+      if (module === "node:timers/promises") return 0;
+      if (module === "node:timers") return 1;
+    }
+    return null;
+  };
+  const listenPort = (node) => {
+    if (
+      !ts.isCallExpression(node) ||
+      !ts.isPropertyAccessExpression(node.expression) ||
+      node.expression.name.text !== "listen" ||
+      !node.arguments.length
+    )
+      return null;
+    const [first] = node.arguments;
+    const port = numericLiteral(first);
+    if (port !== null) return port;
+    if (!ts.isObjectLiteralExpression(first)) return null;
+    for (const property of first.properties) {
+      if (!ts.isPropertyAssignment(property)) continue;
+      const name =
+        ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)
+          ? property.name.text
+          : "";
+      if (name === "port") return numericLiteral(property.initializer);
+    }
+    return null;
+  };
+  const initializers = new Map();
+  const collectInitializers = (node) => {
+    if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.name))
+      initializers.set(checker.getSymbolAtLocation(node.name), node.initializer);
+    ts.forEachChild(node, collectInitializers);
+  };
+  collectInitializers(ast);
+  const textualPath = (node, seen = new Set()) => {
+    if (ts.isParenthesizedExpression(node)) return textualPath(node.expression, seen);
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+    if (ts.isNewExpression(node)) {
+      if (ts.isIdentifier(node.expression) && node.expression.text === "URL")
+        return node.arguments?.length ? textualPath(node.arguments[0], seen) : null;
+      return null;
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const member = moduleMember(callee);
+      if (member?.module === "node:path" && ["join", "resolve"].includes(member.name)) {
+        const parts = node.arguments.map((argument) => textualPath(argument, seen));
+        return parts.every((part) => part !== null) ? parts.join("/") : null;
+      }
+      if (ts.isIdentifier(callee) && callee.text === "fileURLToPath" && node.arguments.length === 1)
+        return textualPath(node.arguments[0], seen);
+      return null;
+    }
+    if (ts.isIdentifier(node)) {
+      const symbol = checker.getSymbolAtLocation(node);
+      const initializer = symbol && initializers.get(symbol);
+      if (!initializer || seen.has(symbol)) return null;
+      seen.add(symbol);
+      return textualPath(initializer, seen);
+    }
+    return null;
+  };
+  const readsSource = (expression) => {
+    const member = moduleMember(expression);
+    return Boolean(
+      member &&
+        (member.module === "node:fs" || member.module === "node:fs/promises") &&
+        (member.name === "readFile" || member.name === "readFileSync"),
+    );
+  };
   const modifiers = [];
   const recordModifier = (name, node) => {
     if (["only", "skip", "todo", "skipIf", "runIf", "<dynamic>"].includes(name))
@@ -447,6 +588,7 @@ export function inspectTestSource(source, filename) {
       bind(element.name, [...names, name]);
     }
   };
+  const resetAliases = new Set();
   const findAliases = (node) => {
     if (ts.isVariableDeclaration(node) && node.initializer) {
       const value = node.initializer;
@@ -458,6 +600,14 @@ export function inspectTestSource(source, filename) {
         if (whenTrue.length || whenFalse.length)
           bind(node.name, whenTrue.length ? whenTrue : whenFalse);
       }
+      if (ts.isObjectBindingPattern(node.name) && vitestPath(value).join(".") === "vi")
+        for (const element of node.name.elements) {
+          const property = element.propertyName ?? element.name;
+          const name =
+            ts.isIdentifier(property) || ts.isStringLiteral(property) ? property.text : "";
+          if (name === "resetModules" && ts.isIdentifier(element.name))
+            resetAliases.add(element.name.text);
+        }
     }
     if (
       ts.isBinaryExpression(node) &&
@@ -471,7 +621,13 @@ export function inspectTestSource(source, filename) {
   };
   findAliases(ast);
   const emptySuites = [];
+  const hygiene = [];
   let declarations = 0;
+  const recordHygiene = (kind, node) =>
+    hygiene.push({
+      kind,
+      line: ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1,
+    });
   const visit = (node) => {
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const names = chain(node);
@@ -484,6 +640,23 @@ export function inspectTestSource(source, filename) {
     }
     if (ts.isCallExpression(node)) {
       const names = chain(node.expression);
+      const called = vitestPath(node.expression);
+      if (called.at(-2) === "vi" && called.at(-1) === "resetModules")
+        recordHygiene("module-reset", node);
+      if (ts.isIdentifier(node.expression) && resetAliases.has(node.expression.text))
+        recordHygiene("module-reset", node);
+      const timerDelay = timerDelayIndex(node.expression);
+      if (timerDelay !== null && node.arguments.length > timerDelay) {
+        const delay = numericLiteral(node.arguments[timerDelay]);
+        if (delay !== null && delay >= 100) recordHygiene("real-wait", node);
+      }
+      const port = listenPort(node);
+      if (port !== null && port > 0) recordHygiene("fixed-port", node);
+      if (unitFile && readsSource(node.expression) && node.arguments.length) {
+        const target = textualPath(node.arguments[0]);
+        if (target && /(?:^|\/)src\/.*\.[cm]?[jt]sx?$/u.test(target))
+          recordHygiene("production-source-read", node);
+      }
       const callback = node.arguments.at(-1);
       if (
         names.length &&
@@ -503,7 +676,11 @@ export function inspectTestSource(source, filename) {
     ts.forEachChild(node, visit);
   };
   visit(ast);
-  return { declarations, modifiers, emptySuites };
+  hygiene.sort(
+    (left, right) =>
+      left.line - right.line || (left.kind < right.kind ? -1 : left.kind > right.kind ? 1 : 0),
+  );
+  return { declarations, modifiers, emptySuites, hygiene };
 }
 
 export function validateTestPlacement(files, coveragePolicy) {
@@ -555,15 +732,197 @@ export function validateTestFileSource(source, filename, registration) {
       `Forbidden test modifier ${modifier}: ${filename}:${line}`,
     );
   }
+  return inspection;
 }
 
 export function validateTestInventory(policy, files, readSource) {
   const { entries, ...inventory } = planTestInventory(policy, files);
+  const findings = [];
   for (const { filename, registration } of entries) {
-    if (registration?.kind !== "type-check")
-      validateTestFileSource(readSource(filename), filename, registration);
+    if (registration?.kind === "type-check") continue;
+    const inspection = validateTestFileSource(readSource(filename), filename, registration);
+    for (const finding of inspection.hygiene) findings.push({ path: filename, ...finding });
   }
-  return inventory;
+  findings.sort(
+    (left, right) =>
+      (left.path < right.path ? -1 : left.path > right.path ? 1 : 0) ||
+      left.line - right.line ||
+      (left.kind < right.kind ? -1 : left.kind > right.kind ? 1 : 0),
+  );
+  return { ...inventory, findings };
+}
+
+const testHygieneKinds = ["fixed-port", "module-reset", "production-source-read", "real-wait"];
+const testHygieneModeRank = { report: 0, enforce: 1 };
+const testHygieneAdvice = {
+  "fixed-port": "listen on port 0 and read the assigned port instead of a fixed one",
+  "module-reset": "load the module once at file scope and reset the state it holds",
+  "production-source-read": "assert the public behaviour instead of reading production source text",
+  "real-wait": "await the condition or use fake timers instead of a real wait of 100 ms or more",
+};
+const baselineInvalid = (reason) => new Error(`TEST_HYGIENE_BASELINE_INVALID:${reason}`);
+const compareHygieneEntries = (left, right) =>
+  left.path !== right.path
+    ? left.path < right.path
+      ? -1
+      : 1
+    : left.kind !== right.kind
+      ? left.kind < right.kind
+        ? -1
+        : 1
+      : 0;
+
+export function parseTestHygieneBaseline(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw baselineInvalid("not an object");
+  if (value.schemaVersion !== 1) throw baselineInvalid("schemaVersion");
+  if (!Object.hasOwn(testHygieneModeRank, value.mode ?? ""))
+    throw baselineInvalid(`mode ${value.mode}`);
+  if (!Array.isArray(value.entries)) throw baselineInvalid("entries");
+  const entries = value.entries.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw baselineInvalid("entry");
+    if (!safeRelativePath(entry.path)) throw baselineInvalid(`path ${entry.path}`);
+    if (!testHygieneKinds.includes(entry.kind)) throw baselineInvalid(`kind ${entry.kind}`);
+    if (!Number.isInteger(entry.count) || entry.count < 1)
+      throw baselineInvalid(`count ${entry.path} ${entry.kind}`);
+    return { path: entry.path, kind: entry.kind, count: entry.count };
+  });
+  const keys = entries.map((entry) => `${entry.path}\u0000${entry.kind}`);
+  if (new Set(keys).size !== keys.length) throw baselineInvalid("duplicate entry");
+  for (let index = 1; index < entries.length; index += 1)
+    if (compareHygieneEntries(entries[index - 1], entries[index]) >= 0)
+      throw baselineInvalid("entries must be sorted by path and kind");
+  return { schemaVersion: 1, mode: value.mode, entries };
+}
+
+export function resolveTestHygieneBaseline({
+  root = repositoryRoot,
+  base = "HEAD",
+  baselinePath = "ci/test-hygiene-baseline.json",
+} = {}) {
+  assert(/^(?:[a-f0-9]{40}|HEAD)$/u.test(base), "Hygiene base must be HEAD or a full commit SHA");
+  assert(safeRelativePath(baselinePath), "Hygiene baseline path must be relative");
+  const git = (args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const baseSha = git(["rev-parse", "--verify", `${base}^{commit}`]).trim();
+  const present = git(["ls-tree", "-r", "--name-only", baseSha, "--", baselinePath])
+    .split("\n")
+    .includes(baselinePath);
+  if (!present) return { baseline: null, baseSha, initialization: true };
+  return {
+    baseline: parseTestHygieneBaseline(JSON.parse(git(["show", `${baseSha}:${baselinePath}`]))),
+    baseSha,
+    initialization: false,
+  };
+}
+
+export function evaluateTestHygiene({ findings, workspace, accepted }) {
+  const baseline = parseTestHygieneBaseline(workspace);
+  const acceptedBaseline =
+    accepted === null || accepted === undefined ? null : parseTestHygieneBaseline(accepted);
+  const observed = new Map();
+  for (const finding of findings) {
+    const key = `${finding.path}\u0000${finding.kind}`;
+    const entry = observed.get(key);
+    if (entry) {
+      entry.count += 1;
+      entry.lines.push(finding.line);
+    } else
+      observed.set(key, {
+        path: finding.path,
+        kind: finding.kind,
+        count: 1,
+        lines: [finding.line],
+      });
+  }
+  const violations = [];
+  const entries = new Map(
+    baseline.entries.map((entry) => [`${entry.path}\u0000${entry.kind}`, entry]),
+  );
+  const acceptedEntries = acceptedBaseline
+    ? new Map(acceptedBaseline.entries.map((entry) => [`${entry.path}\u0000${entry.kind}`, entry]))
+    : null;
+  for (const [key, entry] of entries) {
+    const current = observed.get(key);
+    const count = current?.count ?? 0;
+    if (count > entry.count)
+      violations.push({
+        code: "TEST_HYGIENE_EXCESS",
+        message: `TEST_HYGIENE_EXCESS: ${entry.path}:${current.lines[entry.count]} ${entry.kind} has ${count} findings but the baseline allows ${entry.count}; ${testHygieneAdvice[entry.kind]}`,
+      });
+    else if (count < entry.count)
+      violations.push({
+        code: "TEST_HYGIENE_STALE",
+        message: `TEST_HYGIENE_STALE: ${entry.path} ${entry.kind} baseline is ${entry.count} but ${count} remain; lower the entry to ${count}`,
+      });
+    if (!acceptedEntries) continue;
+    const acceptedEntry = acceptedEntries.get(key);
+    if (!acceptedEntry)
+      violations.push({
+        code: "TEST_HYGIENE_UNACCEPTED",
+        message: `TEST_HYGIENE_UNACCEPTED: ${entry.path} ${entry.kind} is not in the baseline at the accepted base commit; a baseline entry can never be added, remove the finding instead`,
+      });
+    else if (entry.count > acceptedEntry.count)
+      violations.push({
+        code: "TEST_HYGIENE_RAISED",
+        message: `TEST_HYGIENE_RAISED: ${entry.path} ${entry.kind} baseline is ${entry.count} but the accepted base allows ${acceptedEntry.count}`,
+      });
+  }
+  for (const [key, current] of observed) {
+    if (entries.has(key)) continue;
+    violations.push({
+      code: "TEST_HYGIENE_UNACCEPTED",
+      message: `TEST_HYGIENE_UNACCEPTED: ${current.path}:${current.lines[0]} ${current.kind} has ${current.count} findings and no baseline entry; ${testHygieneAdvice[current.kind]}`,
+    });
+  }
+  if (
+    acceptedBaseline &&
+    testHygieneModeRank[baseline.mode] < testHygieneModeRank[acceptedBaseline.mode]
+  )
+    violations.push({
+      code: "TEST_HYGIENE_MODE_WEAKENED",
+      message: `TEST_HYGIENE_MODE_WEAKENED: workspace mode ${baseline.mode} is weaker than ${acceptedBaseline.mode} at the accepted base commit`,
+    });
+  return { baseline, violations, findings };
+}
+
+export function validateTestHygiene({
+  root = repositoryRoot,
+  base = "HEAD",
+  findings,
+  baselinePath = "ci/test-hygiene-baseline.json",
+  write = (line) => process.stderr.write(line),
+}) {
+  const accepted = resolveTestHygieneBaseline({ root, base, baselinePath });
+  let workspace;
+  try {
+    workspace = parseTestHygieneBaseline(
+      JSON.parse(readFileSync(path.join(root, baselinePath), "utf8")),
+    );
+  } catch (error) {
+    if (error instanceof SyntaxError) throw baselineInvalid(`syntax ${error.message}`);
+    if (error?.code === "ENOENT") throw new Error(`TEST_HYGIENE_BASELINE_MISSING:${baselinePath}`);
+    throw error;
+  }
+  const evaluation = evaluateTestHygiene({
+    findings,
+    workspace,
+    accepted: accepted.baseline,
+  });
+  const count = (code) =>
+    evaluation.violations.filter((violation) => violation.code === code).length;
+  const summary =
+    `TEST_HYGIENE_SUMMARY records=${workspace.entries.length} findings=${findings.length} ` +
+    `excess=${count("TEST_HYGIENE_EXCESS")} stale=${count("TEST_HYGIENE_STALE")} ` +
+    `unaccepted=${count("TEST_HYGIENE_UNACCEPTED")} raised=${count("TEST_HYGIENE_RAISED")} ` +
+    `mode=${workspace.mode} accepted=${accepted.initialization ? "initializing" : accepted.baseSha.slice(0, 7)}`;
+  for (const finding of findings)
+    write(`TEST_HYGIENE_FINDING ${finding.path}:${finding.line} ${finding.kind}\n`);
+  for (const violation of evaluation.violations) write(`${violation.message}\n`);
+  write(`${summary}\n`);
+  if (workspace.mode === "enforce" && evaluation.violations.length > 0)
+    throw new Error(evaluation.violations.map((violation) => violation.message).join("\n"));
+  return { ...evaluation, summary };
 }
 
 export function resolvePolicySource({
@@ -593,9 +952,22 @@ export function resolvePolicySource({
   const bytes = hasPolicy
     ? git(["show", `${baseSha}:${policyPath}`])
     : readFileSync(path.join(root, policyPath), "utf8");
-  const policy = validatePolicy(JSON.parse(bytes), { allowLegacyCoverage: true });
-  // The approved migration only adds integration collection and its build input.
-  // Keep the accepted bytes/hash, thresholds, inventory and every other gate.
+  const policy = validatePolicy(JSON.parse(bytes), {
+    allowLegacyCoverage: true,
+    allowLegacyIntegration: true,
+  });
+  const integration = policy.testProjects.find((project) => project.id === "integration");
+  if (!integration.fileParallelism && !integration.workerLimits) {
+    integration.fileParallelism = true;
+    integration.workerLimits = { ...integrationWorkerLimits };
+  } else if (
+    integration.workerLimits &&
+    integration.workerLimits.maximum === 4 &&
+    integration.workerLimits.cpusPerWorker === 2 &&
+    integration.workerLimits.memoryMiBPerWorker === 2048
+  ) {
+    integration.workerLimits = { ...integrationWorkerLimits };
+  }
   const collection = policy.checks.find((check) => check.id === "coverage");
   if (!collection.projects.includes("integration")) {
     collection.projects = [...coverageProjects];
@@ -694,6 +1066,21 @@ export function validateVitestProjects(policy, config) {
       `Vitest file parallelism differs from policy: ${required.id}`,
     );
     assert(actual.environment === "node", `Vitest environment differs from policy: ${required.id}`);
+    assert(
+      (actual.sequence?.groupOrder ?? root.sequence?.groupOrder ?? 0) ===
+        (required.id === "integration" ? 1 : 0),
+      `Vitest scheduling group differs from policy: ${required.id}`,
+    );
+    if (required.id === "integration") {
+      assert(
+        actual.maxWorkers === testWorkerCount(required),
+        "Vitest integration worker count differs from policy",
+      );
+      assert(
+        (actual.isolate ?? root.isolate ?? true) === true,
+        "Vitest integration files must remain isolated",
+      );
+    }
   }
   for (const id of projects.keys())
     assert(
@@ -716,7 +1103,6 @@ export async function main(argv = process.argv.slice(2)) {
   const workflow = path.resolve(root, args["--workflow"] ?? ".github/workflows/ci.yml");
   validateWorkflow(proposed, readFileSync(workflow, "utf8"), lock);
   validateMainWorkflow(readFileSync(path.join(root, ".github/workflows/main.yml"), "utf8"), lock);
-  // The accepted contract also has to hold: proposed changes cannot excuse their own failures.
   validateWorkflow(source.policy, readFileSync(workflow, "utf8"), lock);
   validateQualityWorkflow(
     readJson(path.join(root, "ci/quality-policy.json")),
@@ -735,9 +1121,12 @@ export async function main(argv = process.argv.slice(2)) {
     .filter(Boolean);
   validateTestPlacement(files, readJson(path.join(root, "ci/coverage-policy.json")));
   if (source.coverage) validateTestPlacement(files, source.coverage);
-  const inventory = validateTestInventory(source.policy, [...new Set(files)], (file) =>
-    readFileSync(path.join(root, file), "utf8"),
+  const { findings, ...inventory } = validateTestInventory(
+    source.policy,
+    [...new Set(files)],
+    (file) => readFileSync(path.join(root, file), "utf8"),
   );
+  validateTestHygiene({ root, base: source.baseSha, findings });
   const result = {
     status: "passed",
     baseSha: source.baseSha,

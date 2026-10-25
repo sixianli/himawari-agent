@@ -1,0 +1,7 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+packages/persistence-sqlite/src/sqlite-sandbox-recovery-scheduling.ts(19,15): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+packages/persistence-sqlite/src/sqlite-sandbox-recovery-scheduling.ts(19,55): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+test/integration/sandbox-v2-payload-broker.test.ts(68,9): error TS2739: Type '{ validatePreparation: (value: ConsumeCapabilityInvocationInput) => Promise<void>; releaseReservation: (value: { readonly identity: Readonly<{ readonly jobId: string; ... 8 more ...; readonly toolCallId: string; }>; readonly authority: CapabilityInvocationAuthority; readonly now: string; readonly verification: Sandb...' is missing the following properties from type 'SandboxExecutionPreparationPort': listRecoveryCandidates, scheduleRecovery, beginReservationRecovery, finishReservationRecovery

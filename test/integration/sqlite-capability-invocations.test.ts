@@ -19,6 +19,7 @@ import {
   type SandboxHostObservation,
   SandboxJobLifecycleService,
   SandboxScopeService,
+  readSandboxScopeSnapshot,
   WorkerDelegationService,
 } from "@himawari-agent/application";
 import {
@@ -35,6 +36,7 @@ import {
   SqliteRunPayloadArtifactOperations,
 } from "@himawari-agent/persistence-sqlite";
 import { PayloadUdsClient, PayloadUdsServer } from "@himawari-agent/platform-node";
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { ProductionPayloadBrokerHandler } from "../../apps/agent-service/src/production-payload-broker-handler.js";
 import { ProductionRuntimeTools } from "../../apps/agent-service/src/production-runtime-tools.js";
@@ -67,6 +69,7 @@ import {
   seed,
   openSandboxJournal,
 } from "../fixtures/sqlite-capability-invocation-fixture.js";
+import { testTemporaryRoot } from "@himawari-agent/testing/temporary-root";
 
 class RecordingServiceTransport implements ExecutionTransportPort {
   readonly requests: ExecutionV2Request[] = [];
@@ -1625,7 +1628,7 @@ describe("durable sandbox invocation journal", () => {
         minimumFreeBytes: 0,
         now: () => T1,
       });
-      const directory = await mkdtemp("/tmp/hj-");
+      const directory = await mkdtemp(`${testTemporaryRoot()}/hj-`);
       const credential = { tokenRef: "test-boot", tokenValue: "0123456789abcdef0123456789abcdef" };
       const { agentServiceInstanceId, agentServiceBootId, workerInstanceId, workerBootId } =
         SERVICE_AUTHORITY;
@@ -1768,15 +1771,56 @@ describe("durable sandbox invocation journal", () => {
               state: "starting",
             });
           let starts = 0;
+          let cancels = 0;
+          const sandboxJobCalls: Record<string, unknown>[] = [];
+          const errorDetails = (error: unknown) =>
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { name: "NonErrorThrown", message: "Non-Error thrown" };
+          const sandboxJob = async (
+            job: SandboxJobReceipt["identity"],
+            observation: SandboxJobReceipt | null = null,
+          ) => {
+            if (mode !== "execute") return client.sandboxJob(identity, job, observation);
+            const started = performance.now();
+            const request = {
+              operation: observation ? "append" : "read",
+              startedAt: Date.now(),
+              requestedState: observation?.state ?? null,
+              requestedSequence: observation?.sequence ?? null,
+            };
+            try {
+              const result = await client.sandboxJob(identity, job, observation);
+              sandboxJobCalls.push({
+                ...request,
+                elapsedMs: performance.now() - started,
+                applied: result.applied,
+                resultState: result.record.observation.state,
+                resultSequence: result.record.observation.sequence,
+                error: null,
+              });
+              return result;
+            } catch (error) {
+              sandboxJobCalls.push({
+                ...request,
+                elapsedMs: performance.now() - started,
+                applied: null,
+                resultState: null,
+                resultSequence: null,
+                error: errorDetails(error),
+              });
+              throw error;
+            }
+          };
           let notifyPrepared: () => void = () => {};
           const hostPrepared = new Promise<void>((resolve) => {
             notifyPrepared = resolve;
           });
           const sandbox = createBrokerSandboxExecution({
             payloads: {
-              readSandboxJob: async (_invocation, job) => client.sandboxJob(identity, job),
+              readSandboxJob: async (_invocation, job) => sandboxJob(job),
               appendSandboxJob: async (_invocation, observation) =>
-                client.sandboxJob(identity, observation.identity, observation),
+                sandboxJob(observation.identity, observation),
             },
             authority: () => SERVICE_AUTHORITY,
             now: () => T1,
@@ -1809,6 +1853,7 @@ describe("durable sandbox invocation journal", () => {
                   finish(observation);
                 },
                 cancel: () => {
+                  cancels++;
                   ready();
                   finish({ ...observation, outcome: "cancelled", effect: "not_started" });
                 },
@@ -1866,15 +1911,59 @@ describe("durable sandbox invocation journal", () => {
             if (cancellation.type !== "work.cancel") throw new Error("invalid fixture");
             await sandbox.cancel(cancellation);
           }
-          expect(await completion).toMatchObject({
-            outcome: "result_unknown",
-            externalActionId: expect.stringMatching(/^sandbox-job:[a-f0-9]{64}$/),
-          });
-          expect((await journal.read(plan.identity))?.observation.state).toBe("quarantined");
-          expect(starts).toBe(mode === "execute" ? 1 : 0);
-          await sandbox.execute(execution);
-          expect(starts).toBe(mode === "execute" ? 1 : 0);
-          await sandbox.shutdown();
+          try {
+            expect(await completion).toMatchObject({
+              outcome: "result_unknown",
+              externalActionId: expect.stringMatching(/^sandbox-job:[a-f0-9]{64}$/),
+            });
+            expect((await journal.read(plan.identity))?.observation.state).toBe("quarantined");
+            expect(starts).toBe(mode === "execute" ? 1 : 0);
+            await sandbox.execute(execution);
+            expect(starts).toBe(mode === "execute" ? 1 : 0);
+            await sandbox.shutdown();
+          } catch (error) {
+            try {
+              if (mode === "execute") {
+                let journalHistory: unknown;
+                try {
+                  const readback = new Database(repository.databasePath, {
+                    readonly: true,
+                    fileMustExist: true,
+                  });
+                  try {
+                    journalHistory = readback
+                      .prepare(
+                        `SELECT sequence,
+                          json_extract(observation_json, '$.state') AS state,
+                          json_extract(observation_json, '$.cleanup') AS cleanup,
+                          json_extract(observation_json, '$.effect') AS effect,
+                          json_extract(observation_json, '$.reasonCode') AS reasonCode
+                        FROM sandbox_job_observations WHERE job_id = ? ORDER BY sequence`,
+                      )
+                      .all(plan.identity.jobId);
+                  } finally {
+                    readback.close();
+                  }
+                } catch (readbackError) {
+                  journalHistory = { error: errorDetails(readbackError) };
+                }
+                console.error(
+                  JSON.stringify({
+                    event: "test.sandbox.lifecycle.failed",
+                    mode,
+                    failure: errorDetails(error),
+                    starts,
+                    cancels,
+                    sandboxJobCalls,
+                    journalHistory,
+                  }),
+                );
+              }
+            } catch {
+              throw error;
+            }
+            throw error;
+          }
           return;
         }
         const starting: SandboxJobReceipt = { ...fixture.prepared, sequence: 2, state: "starting" };
@@ -2225,6 +2314,50 @@ describe("durable sandbox invocation journal", () => {
       }
     },
   );
+
+  it("reads authentic historical scope without renewing expired or revoked execution rights", async () => {
+    const fixture = await openSandboxJournal();
+    try {
+      const { semanticFingerprint: _fingerprint, ...candidate } = fixture.plan;
+      const dependencies = {
+        payloads: { get: async () => fixture.scopePayload },
+        protector: fixture.protector,
+        digest: (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex"),
+      };
+      expect(await readSandboxScopeSnapshot(candidate, dependencies)).toEqual(fixture.scope);
+      const execution = new SandboxScopeService({
+        ...dependencies,
+        files: { readGrant: async () => ({ ...fixture.directoryGrant, revokedAt: T1 }) },
+        hostId: "sandbox-host",
+        now: () => T2,
+      });
+      await expect(execution.read(candidate, fixture.scope.parentRequestId)).rejects.toThrow(
+        "SANDBOX_SCOPE_UNAVAILABLE",
+      );
+      // History still belongs to the original operation; it never invokes the live grant reader.
+      expect(await readSandboxScopeSnapshot(candidate, dependencies)).toEqual(fixture.scope);
+      await expect(
+        readSandboxScopeSnapshot(
+          {
+            ...candidate,
+            identity: { ...candidate.identity, runId: "other-run" },
+          },
+          dependencies,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+      await expect(
+        readSandboxScopeSnapshot(
+          {
+            ...candidate,
+            binding: { ...candidate.binding, scopeDigest: "0".repeat(64) },
+          },
+          dependencies,
+        ),
+      ).rejects.toThrow("SANDBOX_SCOPE_UNAVAILABLE");
+    } finally {
+      await fixture.close();
+    }
+  });
 
   it.each([
     ["revoked", { revokedAt: T1 }],

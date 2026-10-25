@@ -184,6 +184,7 @@ class RecordingTransport implements TrustedModelTransport {
 
 function provider(options: {
   readonly transport: TrustedModelTransport;
+  readonly descriptor?: ModelDescriptor;
   readonly admission?: TrustedModelProviderAdapterDependencies["admission"];
   readonly events?: string[];
   readonly resolveSecret?: () => Promise<string>;
@@ -192,7 +193,7 @@ function provider(options: {
   return new TrustedModelProviderAdapter({
     ownerId: OWNER_ID,
     agentId: AGENT_ID,
-    descriptors: [DESCRIPTOR],
+    descriptors: [options.descriptor ?? DESCRIPTOR],
     handles: secretPort,
     secretSource: {
       resolve: async () => {
@@ -217,6 +218,99 @@ type TrustedModelProviderAdapterDependencies = ConstructorParameters<
 >[0];
 
 describe("TrustedModelProviderAdapter invocation admission", () => {
+  it.each([0, 77])("[R2-L5] passes the actual gateway fee %s to admission", async (costMicros) => {
+    let settled: ModelInvocationUsage | undefined;
+    const transport = new RecordingTransport(
+      providerEvents({
+        inputTokens: 10,
+        outputTokens: 2,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      }).map((event) => (event.type === "model.completed" ? { ...event, costMicros } : event)),
+    );
+    const model = provider({
+      descriptor: {
+        ...DESCRIPTOR,
+        provider: "vercel-ai-gateway",
+        model: "deepseek/deepseek-v4.1-flash",
+      },
+      transport,
+      admission: async () => ({
+        context: executionContext(),
+        begin: async () =>
+          freshAdmission({
+            assertActive: async () => undefined,
+            markStarted: async () => undefined,
+            releaseReserved: async () => undefined,
+            settle: async (usage) => {
+              settled = usage;
+            },
+            markUnknown: async () => {
+              throw new Error("Successful fee must settle");
+            },
+          }),
+      }),
+    });
+    const events: ModelInvocationEvent[] = [];
+    for await (const event of model.invoke(invocation())) events.push(event);
+
+    expect(settled).toEqual({
+      inputTokens: 10,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reportedCostMicros: costMicros,
+    });
+    expect(events.at(-1)).toMatchObject({ type: "model.completed", costMicros });
+    expect(transport.calls).toHaveLength(1);
+  });
+
+  it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "[R2-L5] keeps an invalid gateway fee %s unknown before publishing success",
+    async (costMicros) => {
+      const unknown: ModelInvocationUnknownReason[] = [];
+      const model = provider({
+        descriptor: {
+          ...DESCRIPTOR,
+          provider: "vercel-ai-gateway",
+          model: "deepseek/deepseek-v4.1-flash",
+        },
+        transport: new RecordingTransport(
+          providerEvents({
+            inputTokens: 10,
+            outputTokens: 2,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          }).map((event) => (event.type === "model.completed" ? { ...event, costMicros } : event)),
+        ),
+        admission: async () => ({
+          context: executionContext(),
+          begin: async () =>
+            freshAdmission({
+              assertActive: async () => undefined,
+              markStarted: async () => undefined,
+              releaseReserved: async () => undefined,
+              settle: async () => {
+                throw new Error("Invalid fee must not settle");
+              },
+              markUnknown: async (reason) => {
+                unknown.push(reason);
+              },
+            }),
+        }),
+      });
+      const events: ModelInvocationEvent[] = [];
+      for await (const event of model.invoke(invocation())) events.push(event);
+
+      expect(unknown).toEqual(["provider_unresolved"]);
+      expect(events).not.toContainEqual(expect.objectContaining({ type: "model.completed" }));
+      expect(events.at(-1)).toMatchObject({
+        type: "model.failed",
+        errorCode: "MODEL_PROVIDER_USAGE_UNAVAILABLE",
+      });
+    },
+  );
+
   it("admits before resolving a secret and settles from usage, not costMicros", async () => {
     const order: string[] = [];
     let settled: ModelInvocationUsage | undefined;
@@ -433,4 +527,117 @@ describe("TrustedModelProviderAdapter invocation admission", () => {
     expect(released).toEqual(["released"]);
     expect(transportCalls).toBe(0);
   });
+});
+
+describe("model request cancellation", () => {
+  it.each(["before", "reserved", "secret", "started", "stream"] as const)(
+    "preserves budget accounting when cancelled at %s",
+    async (stage) => {
+      const controller = new AbortController();
+      const events: string[] = [];
+      if (stage === "before") controller.abort();
+      const model = provider({
+        events,
+        admission: async () => ({
+          context: executionContext(),
+          begin: async () => {
+            events.push("begin");
+            if (stage === "reserved") controller.abort();
+            return freshAdmission({
+              assertActive: async () => undefined,
+              markStarted: async () => {
+                events.push("started");
+                if (stage === "started") controller.abort();
+              },
+              releaseReserved: async () => {
+                events.push("released");
+              },
+              settle: async () => {
+                events.push("settled");
+              },
+              markUnknown: async (reason) => {
+                events.push(`unknown:${reason}`);
+              },
+            });
+          },
+        }),
+        resolveSecret: async () => {
+          if (stage === "secret") controller.abort();
+          return "scoped-secret-value";
+        },
+        transport: {
+          invoke: async function* (input) {
+            if (stage === "stream") controller.abort();
+            expect(input.request).toMatchObject({ signal: controller.signal });
+            controller.signal.throwIfAborted();
+            yield* providerEvents({
+              inputTokens: 1,
+              outputTokens: 1,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            });
+          },
+        },
+      });
+      const input = { ...invocation(), signal: controller.signal };
+      await expect(async () => {
+        for await (const _event of model.invoke(input)) {
+          /* drain accounting */
+        }
+      }).rejects.toThrow();
+      expect(events).not.toContain("settled");
+      if (stage === "before") expect(events).toEqual([]);
+      else if (stage === "reserved" || stage === "secret") {
+        expect(events).toContain("released");
+        expect(events).not.toContain("started");
+        expect(events).not.toContain("transport");
+        if (stage === "reserved") expect(events).not.toContain("secret");
+      } else {
+        expect(events).toContain("unknown:cancel_unresolved");
+        expect(events).not.toContain("released");
+        if (stage === "started") expect(events).not.toContain("transport");
+      }
+    },
+  );
+});
+
+it("records cancellation when transport reports a terminal failure instead of throwing", async () => {
+  const controller = new AbortController();
+  const unknown: string[] = [];
+  const model = provider({
+    admission: async () => ({
+      context: executionContext(),
+      begin: async () =>
+        freshAdmission({
+          assertActive: async () => undefined,
+          markStarted: async () => undefined,
+          releaseReserved: async () => {
+            throw Error("started calls cannot be refunded");
+          },
+          settle: async () => {
+            throw Error("usage is unknown");
+          },
+          markUnknown: async (reason) => {
+            unknown.push(reason);
+          },
+        }),
+    }),
+    transport: {
+      invoke: async function* () {
+        controller.abort();
+        yield {
+          type: "model.failed",
+          invocationId: HANDLE.scopeRef,
+          errorCode: "MODEL_REQUEST_CANCELLED",
+          retryable: false,
+          latencyMs: 0,
+          occurredAt: NOW,
+        };
+      },
+    },
+  });
+  for await (const _event of model.invoke({ ...invocation(), signal: controller.signal })) {
+    /* drain */
+  }
+  expect(unknown).toEqual(["cancel_unresolved"]);
 });

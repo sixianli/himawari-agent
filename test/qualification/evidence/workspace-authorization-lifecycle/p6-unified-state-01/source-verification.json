@@ -1,0 +1,15 @@
+{
+  "inputs": 1094,
+  "changed": [],
+  "artifact": [
+    {
+      "role": "produced",
+      "platform": "macos-arm64",
+      "path": "macos-arm64-abi127-aa22759164cb33c8aa97485d9ba1ee7fae1c07d4-1789885112597-1.tar.gz",
+      "sha256": "fd6caa190b901a714f1c5ef6691ba8408b7797f27d9d36046ae2cc6cb231a7e1"
+    }
+  ],
+  "ciOutput": ".ci-output/p6-unified-state-03",
+  "baseHead": "aa22759164cb33c8aa97485d9ba1ee7fae1c07d4",
+  "scope": "uncommitted task source identified by source-freeze.json; local macOS build and tests"
+}

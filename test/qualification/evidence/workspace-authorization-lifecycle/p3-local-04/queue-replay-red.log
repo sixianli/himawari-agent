@@ -1,0 +1,86 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":1.2118749999999636,"at":"2026-09-19T09:45:41.389Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":39.99954200000002,"at":"2026-09-19T09:45:41.429Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.6815000000001419,"at":"2026-09-19T09:45:41.430Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":2.438999999999851,"at":"2026-09-19T09:45:41.434Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":1.0775000000003274,"at":"2026-09-19T09:45:41.435Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"deployment_snapshot","durationMs":0.701958999999988,"at":"2026-09-19T09:45:41.440Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"host_verification","durationMs":40.92574999999988,"at":"2026-09-19T09:45:41.481Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_payload","durationMs":0.9044999999996435,"at":"2026-09-19T09:45:41.483Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"scope_authorization","durationMs":1.2211670000001504,"at":"2026-09-19T09:45:41.485Z"}
+
+stderr | test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+{"event":"sandbox.admission.timing","runId":"run-capability-invocation","stage":"workspace_identity","durationMs":0.8355410000003758,"at":"2026-09-19T09:45:41.486Z"}
+
+ ❯ |integration| test/integration/production-sandbox-scope.test.ts (20 tests | 1 failed) 11442ms
+   × reuses the persisted queued plan with its original receipt and deadlines 779ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/production-sandbox-scope.test.ts > reuses the persisted queued plan with its original receipt and deadlines
+AssertionError: expected { plan: { …(19) }, …(2) } to deeply equal { plan: { …(19) }, …(2) }
+
+- Expected
++ Received
+
+@@ -42,11 +42,11 @@
+        "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+        "hostId": "sandbox-host",
+        "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+        "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+        "ownerId": "owner-capability-invocation",
+-       "receiptRef": "receipt-capability-invocation",
++       "receiptRef": "newly-generated-receipt",
+        "runId": "run-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "toolCallId": "tool-bash",
+      },
+      "inputRef": "payload-input-capability-invocation",
+@@ -77,11 +77,11 @@
+        "attemptId": "sandbox-attempt:520e6c13d935126d61bbc57d464c6bc111ceed415d36d3f2d760a060a55e837b",
+        "hostId": "sandbox-host",
+        "invocationId": "runtime-tool:dd535d49ed9f2ee85707ac132da6242a8eec925645355a79e0893a4f94b4df09",
+        "jobId": "jUg5sE9k1Em1hu8V9RkxrwRHO7UFdNtPy12CgYKVeg3s",
+        "ownerId": "owner-capability-invocation",
+-       "receiptRef": "receipt-capability-invocation",
++       "receiptRef": "newly-generated-receipt",
+        "runId": "run-capability-invocation",
+        "threadId": "thread-capability-invocation",
+        "toolCallId": "tool-bash",
+      },
+      "mode": "foreground",
+
+ ❯ test/integration/production-sandbox-scope.test.ts:40:18
+     38|   const position = await f.services.brokerV2.preparations.enqueue({ ..…
+     39|   const replay = await f.services.runtime.prepare({ ...f.input, receip…
+     40|   expect(replay).toEqual(prepared);
+       |                  ^
+     41|   expect(await f.services.brokerV2.preparations.readQueuedByInvocation…
+     42|   await expect(f.services.runtime.prepare({ ...f.input, deadlineAt: ne…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 19 passed (20)
+   Start at  18:45:38
+   Duration  13.57s (transform 1.34s, setup 0ms, import 2.02s, tests 11.44s, environment 0ms)

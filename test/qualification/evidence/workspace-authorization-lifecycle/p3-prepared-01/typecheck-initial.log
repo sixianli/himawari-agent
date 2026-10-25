@@ -1,0 +1,9 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/src/production-sandbox-file-recovery.ts(39,85): error TS2345: Argument of type 'string' is not assignable to parameter of type '"2" | "3"'.
+apps/agent-service/src/production-sandbox-services.ts(418,82): error TS2345: Argument of type 'string' is not assignable to parameter of type '"2" | "3"'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(212,89): error TS2345: Argument of type 'string' is not assignable to parameter of type '"2" | "3"'.
+apps/execution-worker/src/production-sandbox-execution-v2.ts(277,88): error TS2345: Argument of type 'string' is not assignable to parameter of type '"2" | "3"'.
+packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts(955,86): error TS2345: Argument of type 'string' is not assignable to parameter of type '"2" | "3"'.

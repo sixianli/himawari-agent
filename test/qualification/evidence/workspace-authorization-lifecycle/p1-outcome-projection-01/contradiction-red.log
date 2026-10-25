@@ -1,0 +1,51 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/thread-run-lifecycle.test.ts (138 tests | 4 failed | 134 skipped) 924ms
+     × preserves product outcome evidence: 'success contradicts admission code' 351ms
+     × preserves product outcome evidence: 'success contradicts file conflict' 321ms
+     × preserves product outcome evidence: 'success contradicts admission code' 130ms
+     × preserves product outcome evidence: 'success contradicts file conflict' 120ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts admission code'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through worker > preserves product outcome evidence: 'success contradicts file conflict'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts admission code'
+ FAIL  |integration| test/integration/thread-run-lifecycle.test.ts > thread-run-lifecycle through direct > preserves product outcome evidence: 'success contradicts file conflict'
+AssertionError: expected [ { id: 'trace-0001:outcome', …(9) } ] to deeply equal [ ObjectContaining{…} ]
+
+- Expected
++ Received
+
+  [
+    {
++     "id": "trace-0001:outcome",
++     "input": "",
+      "itemId": "tool:threadcommandv1db1bc902c4d8530f6902857e053c0575",
+-     "name": "runtime.tool_outcome.unresolved",
++     "kind": "status",
++     "name": "runtime.tool_outcome.not_dispatched",
++     "occurredAt": "2026-09-04T00:00:00.000Z",
++     "output": "",
++     "phase": "updated",
+      "sequence": 1,
++     "text": "",
+    },
+  ]
+
+ ❯ test/integration/thread-run-lifecycle.test.ts:2814:22
+    2812|     const states = page.records.filter((record) => record.name.startsW…
+    2813|     if (marker)
+    2814|       expect(states).toEqual([
+       |                      ^
+    2815|         expect.objectContaining({
+    2816|           itemId: tool?.itemId,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 134 skipped (138)
+   Start at  14:00:49
+   Duration  3.75s (transform 1.88s, setup 0ms, import 2.62s, tests 924ms, environment 0ms)

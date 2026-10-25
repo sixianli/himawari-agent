@@ -1,0 +1,86 @@
+{
+  "scope": "Recorded CI summaries before the current delivery; partial execution history",
+  "runs": [
+    {
+      "source": "p1-local-02/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 764075
+    },
+    {
+      "source": "p1-local-03/standard-ci-result.json",
+      "status": "failed",
+      "buildAndTestMs": 739219
+    },
+    {
+      "source": "p1-local-04/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 677236
+    },
+    {
+      "source": "p1-local-05/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 707618
+    },
+    {
+      "source": "p2-local-01/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 547129
+    },
+    {
+      "source": "p2-local-02/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 579567
+    },
+    {
+      "source": "p3-local-01/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 591729
+    },
+    {
+      "source": "p3-local-02/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 578408
+    },
+    {
+      "source": "p3-local-03/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 788236
+    },
+    {
+      "source": "p3-local-04/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 581139
+    },
+    {
+      "source": "p4-local-01/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 530360
+    },
+    {
+      "source": "p5-local-01/standard-ci-result.json",
+      "status": "failed",
+      "buildAndTestMs": 680628
+    },
+    {
+      "source": "p5-local-02/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 752217
+    },
+    {
+      "source": "p5-local-03/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 765104
+    },
+    {
+      "source": "p6-local-01/standard-ci-result.json",
+      "status": "local_passed",
+      "buildAndTestMs": 701426
+    }
+  ],
+  "totalBuildAndTestMs": 9984091,
+  "limitations": [
+    "Sum of recorded durations is neither total task wall time nor avoidable time.",
+    "No token usage ledger is available.",
+    "Different source revisions can require renewed validation."
+  ]
+}

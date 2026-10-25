@@ -1,0 +1,33 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |browser| apps/control-center/test/execution-view.unit.test.ts (18 tests | 3 failed) 17ms
+   × does not keep a terminal cancelled tool in preparation when its result is missing 6ms
+   × does not keep a terminal failed tool in preparation when its result is missing 1ms
+   × does not keep a terminal completed tool in preparation when its result is missing 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |browser| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal cancelled tool in preparation when its result is missing
+ FAIL  |browser| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal failed tool in preparation when its result is missing
+ FAIL  |browser| apps/control-center/test/execution-view.unit.test.ts > does not keep a terminal completed tool in preparation when its result is missing
+AssertionError: expected 'chat.phase.preparing' to be 'chat.phase.unresolved' // Object.is equality
+
+Expected: "chat.phase.unresolved"
+Received: "chat.phase.preparing"
+
+ ❯ apps/control-center/test/execution-view.unit.test.ts:313:77
+    311|     const tool = record(2, 1, { kind: "tool", name: "write", phase: "u…
+    312|     const preparing = record(3, 1, { phase: "updated", name: "runtime.…
+    313|     expect(executionToolPhase(tool, [tool, preparing], { ...run, statu…
+       |                                                                             ^
+    314|     expect(executionToolPhase(tool, [tool, preparing], run)).toBe("cha…
+    315|     expect(executionToolPhase(tool, [tool, { ...preparing, name: "runt…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 15 passed (18)
+   Start at  22:33:07
+   Duration  228ms (transform 46ms, setup 0ms, import 62ms, tests 17ms, environment 0ms)

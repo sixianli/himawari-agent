@@ -1,0 +1,4 @@
+Runbook static contract passed: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/docs/runbooks/workspace-lifecycle-audit-runbook.md
+fingerprint: sha256:05201c7502dff88831acbab98e135e71d078d8dc2144b0b443ef6c7798f0617e
+mode: apply
+Static contract success does not prove Live-State Preflight and does not authorize any operation.

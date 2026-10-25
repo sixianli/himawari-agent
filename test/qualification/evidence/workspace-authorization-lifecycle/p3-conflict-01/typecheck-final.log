@@ -1,0 +1,8 @@
+
+> himawari-agent@0.0.0 typecheck
+> tsc -p tsconfig.json && tsc -p apps/control-center/tsconfig.json
+
+apps/agent-service/test/production-file-read-workflow.unit.test.ts(765,24): error TS2551: Property 'intent' does not exist on type 'ApprovalRequest'. Did you mean 'intentId'?
+apps/agent-service/test/production-file-read-workflow.unit.test.ts(765,58): error TS2551: Property 'intent' does not exist on type 'ApprovalRequest'. Did you mean 'intentId'?
+apps/agent-service/test/production-file-read-workflow.unit.test.ts(774,37): error TS2551: Property 'intent' does not exist on type 'ApprovalRequest'. Did you mean 'intentId'?
+apps/agent-service/test/production-file-read-workflow.unit.test.ts(775,29): error TS2551: Property 'intent' does not exist on type 'ApprovalRequest'. Did you mean 'intentId'?

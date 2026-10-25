@@ -1,32 +1,65 @@
-import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 import type {
   GovernedCodingOperationsPort,
   HostDirectoryGrant,
   HostFileIdentity,
+  HostFilePublication,
 } from "@himawari-agent/application";
 import { scanMachineSecrets } from "@himawari-agent/application";
+import {
+  firstRejectedPathComponent,
+  type SandboxFileTarget,
+  type SandboxPreparedFile,
+  sandboxFileTargetSchema,
+  sandboxPreparedFileSchema,
+} from "@himawari-agent/execution-contracts";
+import { waitForProcessOutput } from "../process-output.js";
 import { ConstrainedHostFileSystem } from "./constrained-file-system.js";
+
+export const COMMAND_OUTPUT_CEILING_MULTIPLIER = 64;
 
 /** A per-invocation adapter inside SRT, not an isolation backend or authority
  * store. The Worker supplies the already resolved directory grant. */
 export async function createSandboxedCodingOperations(input: {
   readonly grant: HostDirectoryGrant;
   readonly targetPath?: string;
+  readonly expectedTarget?: SandboxFileTarget;
+  readonly preparedFile?: SandboxPreparedFile;
   readonly shell: string;
   readonly privateDirectory: string;
-  readonly binaryDirectory: string;
-  readonly maxOutputBytes: number;
+  readonly commandPath: string;
+  readonly maxCommandOutputBytes: number;
   readonly signal?: AbortSignal;
+  readonly onPreparedWrite?: (proof: {
+    readonly relativePath: string;
+    readonly publication: HostFilePublication;
+    readonly contentDigest: string;
+    readonly byteLength: number;
+  }) => Promise<void>;
+  readonly onCommitStarting?: () => Promise<void>;
   readonly onVerifiedWrite?: (proof: {
     readonly path: string;
     readonly contentDigest: string;
     readonly byteLength: number;
-  }) => void;
+  }) => void | Promise<void>;
 }): Promise<GovernedCodingOperationsPort> {
   const platform = new ConstrainedHostFileSystem();
   const grant = structuredClone(input.grant);
+  const fixedTarget = input.targetPath === undefined ? undefined : path.resolve(input.targetPath);
+  const expectedTarget =
+    input.expectedTarget === undefined
+      ? undefined
+      : sandboxFileTargetSchema.parse(structuredClone(input.expectedTarget));
+  const preparedFile =
+    input.preparedFile === undefined
+      ? undefined
+      : sandboxPreparedFileSchema.parse(structuredClone(input.preparedFile));
+  if (preparedFile && (!expectedTarget || !fixedTarget))
+    throw new Error("PI_PREPARED_TARGET_REQUIRED");
+  let writeStarted = false;
   const baseline = new Map<string, { identity: HostFileIdentity; bytes: Uint8Array } | null>();
   const check = () => {
     input.signal?.throwIfAborted();
@@ -35,14 +68,12 @@ export async function createSandboxedCodingOperations(input: {
   };
   const relative = (absolute: string) => {
     check();
+    if (fixedTarget !== undefined && path.resolve(absolute) !== fixedTarget)
+      throw new Error("PI_FIXED_TARGET_CHANGED");
     const value = path.relative(grant.displayPath, absolute);
     if (!value || value === ".." || value.startsWith(`..${path.sep}`) || path.isAbsolute(value))
       throw new Error("PI_PATH_OUTSIDE_GRANT");
-    if (
-      value
-        .split(path.sep)
-        .some((part) => part === ".git" || part === ".env" || part.startsWith(".himawari-"))
-    )
+    if (firstRejectedPathComponent(value.split(path.sep)) !== undefined)
       throw new Error("PI_PROTECTED_PATH");
     return value;
   };
@@ -64,7 +95,50 @@ export async function createSandboxedCodingOperations(input: {
     }
     return name;
   };
-  if (input.targetPath) await capture(input.targetPath);
+  const assertExpectedParents = async () => {
+    if (!expectedTarget) return;
+    if (!fixedTarget || relative(fixedTarget) !== expectedTarget.relativePath)
+      throw new Error("PI_FIXED_TARGET_CHANGED");
+    let current = await realpath(grant.displayPath);
+    const directories = [current];
+    for (const part of expectedTarget.relativePath.split("/").slice(0, -1)) {
+      current = path.join(current, part);
+      directories.push(current);
+    }
+    if (directories.length !== expectedTarget.lineage.length + (expectedTarget.missingParents ?? 0))
+      throw new Error("PI_FILE_PARENT_CHANGED");
+    for (const [index, filename] of directories.entries()) {
+      const expected = expectedTarget.lineage[index];
+      const info = await lstat(filename, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
+        if (!expected && expectedTarget.missingParents && error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (!info) return;
+      if (
+        !info.isDirectory() ||
+        info.isSymbolicLink() ||
+        String(info.dev) !== expectedTarget.lineage[0]?.device ||
+        (expected && String(info.ino) !== expected.inode)
+      )
+        throw new Error("PI_FILE_PARENT_CHANGED");
+    }
+  };
+  await assertExpectedParents();
+  if (fixedTarget) await capture(fixedTarget);
+  if (expectedTarget) {
+    const observed = baseline.get(expectedTarget.relativePath);
+    const before = expectedTarget.before;
+    if (
+      before === null
+        ? observed !== null
+        : !observed ||
+          observed.identity.device !== before.device ||
+          observed.identity.inode !== before.inode ||
+          createHash("sha256").update(observed.bytes).digest("hex") !== before.contentDigest
+    )
+      throw new Error("PI_FILE_VERSION_CHANGED");
+    await assertExpectedParents();
+  }
   return {
     async access(absolute, mode) {
       if (!grant.operations.includes(mode === "read" ? "read" : "update"))
@@ -77,7 +151,13 @@ export async function createSandboxedCodingOperations(input: {
       const name = await capture(absolute);
       const previous = baseline.get(name);
       if (!previous) throw new Error("PI_FILE_MISSING");
-      const bytes = await platform.read(grant, name, 16 * 1024 * 1024, previous.identity);
+      const bytes = await platform.read(
+        grant,
+        name,
+        16 * 1024 * 1024,
+        previous.identity,
+        "opened_version",
+      );
       const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       if (text.includes("\0") || scanMachineSecrets(text).length)
         throw new Error("PI_TEXT_READ_REJECTED");
@@ -87,10 +167,15 @@ export async function createSandboxedCodingOperations(input: {
       // createExclusive creates missing parents through the same no-link walk.
       // Pi calls mkdir before writeFile; do not introduce a separate raw mkdir.
       check();
-      if (absolute !== grant.displayPath) relative(absolute);
+      if (fixedTarget !== undefined) {
+        if (path.resolve(absolute) !== path.dirname(fixedTarget))
+          throw new Error("PI_FIXED_TARGET_CHANGED");
+      } else if (absolute !== grant.displayPath) relative(absolute);
     },
     async writeFile(absolute, content) {
       const name = relative(absolute);
+      if (preparedFile && writeStarted) throw new Error("PI_MULTIPLE_WRITES_UNSUPPORTED");
+      writeStarted = true;
       if (!baseline.has(name)) throw new Error("PI_WRITE_BASELINE_MISSING");
       const previous = baseline.get(name);
       if (!grant.operations.includes(previous ? "update" : "create"))
@@ -100,12 +185,49 @@ export async function createSandboxedCodingOperations(input: {
       const storage = await platform.storageObservation(grant);
       if (storage.availableBytes < bytes.length + 64 * 1024 * 1024)
         throw new Error("PI_STORAGE_RESERVE");
-      if (previous)
-        await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes);
-      else await platform.createExclusive(grant, name, bytes);
+      const hooks = {
+        ...(input.onCommitStarting ? { commitStarting: input.onCommitStarting } : {}),
+        beforePublish: async (publication: HostFilePublication) => {
+          check();
+          await assertExpectedParents();
+          await input.onPreparedWrite?.({
+            relativePath: name,
+            publication,
+            contentDigest: createHash("sha256").update(bytes).digest("hex"),
+            byteLength: bytes.byteLength,
+          });
+        },
+        assertCurrentAuthority: async () => {
+          check();
+          await assertExpectedParents();
+        },
+      };
+      if (preparedFile) {
+        if (
+          previous &&
+          (previous.identity.mode & 0o777) !== (preparedFile.content.identity.mode & 0o777)
+        )
+          throw new Error("PI_FILE_METADATA_CHANGED");
+        const staged = await platform.readPublication(grant, preparedFile.content);
+        if (
+          createHash("sha256").update(staged).digest("hex") !== preparedFile.contentDigest ||
+          !Buffer.from(staged).equals(bytes)
+        )
+          throw new Error("PI_PREPARED_CONTENT_CHANGED");
+        await platform.publishPrepared(
+          grant,
+          name,
+          preparedFile.content,
+          previous?.identity ?? null,
+          previous?.bytes ?? new Uint8Array(),
+          hooks,
+        );
+      } else if (previous)
+        await platform.replaceAtomic(grant, name, previous.identity, bytes, previous.bytes, hooks);
+      else await platform.createExclusive(grant, name, bytes, hooks);
       const observed = await platform.read(grant, name, Math.max(1, bytes.length));
       if (!Buffer.from(observed).equals(bytes)) throw new Error("PI_WRITE_VERIFICATION_FAILED");
-      input.onVerifiedWrite?.({
+      await input.onVerifiedWrite?.({
         path: absolute,
         contentDigest: createHash("sha256").update(observed).digest("hex"),
         byteLength: observed.byteLength,
@@ -113,6 +235,7 @@ export async function createSandboxedCodingOperations(input: {
     },
     async executeCommand(command) {
       check();
+      if (fixedTarget !== undefined) throw new Error("PI_FIXED_FILE_COMMAND_DENIED");
       if (command.cwd !== grant.displayPath) throw new Error("PI_COMMAND_CWD_CHANGED");
       // Arbitrary shell can delete and move files. A partial write grant cannot
       // be promoted to a shell grant merely because the tool is called bash.
@@ -123,61 +246,72 @@ export async function createSandboxedCodingOperations(input: {
         )
       )
         throw new Error("PI_SHELL_EFFECT_SCOPE_INCOMPLETE");
-      return new Promise((resolve, reject) => {
-        const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
-          cwd: grant.displayPath,
-          env: {
-            PATH: input.binaryDirectory,
-            HOME: input.privateDirectory,
-            TMPDIR: input.privateDirectory,
-            CLAUDE_CODE_TMPDIR: input.privateDirectory,
-            PI_OFFLINE: "1",
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        let failure: Error | undefined;
-        let count = 0;
-        const stop = (error: Error) => {
-          failure ??= error;
-          child.kill("SIGKILL");
-        };
-        const abort = () => stop(new Error("PI_COMMAND_ABORTED"));
-        const timer = setTimeout(
-          () => stop(new Error("PI_COMMAND_TIMEOUT")),
-          Math.max(
-            1,
-            Math.min(
-              command.timeoutMs ?? Number.MAX_SAFE_INTEGER,
-              Date.parse(grant.expiresAt) - Date.now(),
-            ),
-          ),
-        );
-        command.signal?.addEventListener("abort", abort, { once: true });
-        if (command.signal?.aborted) abort();
-        const data = (bytes: Buffer) => {
-          count += bytes.length;
-          if (count > input.maxOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
-          else if (!failure) {
-            try {
-              command.onData(bytes);
-            } catch {
-              stop(new Error("PI_COMMAND_OUTPUT_REJECTED"));
-            }
-          }
-        };
-        child.stdout.on("data", data);
-        child.stderr.on("data", data);
-        child.once("error", (error) => {
-          failure = error;
-        });
-        child.once("close", (exitCode) => {
-          clearTimeout(timer);
-          command.signal?.removeEventListener("abort", abort);
-          if (failure) reject(failure);
-          else if (exitCode === null) reject(new Error("PI_COMMAND_SIGNALLED"));
-          else resolve({ exitCode });
-        });
+      const child = spawn(input.shell, ["--noprofile", "--norc", "-c", command.command], {
+        cwd: grant.displayPath,
+        env: {
+          PATH: input.commandPath,
+          HOME: input.privateDirectory,
+          TMPDIR: input.privateDirectory,
+          CLAUDE_CODE_TMPDIR: input.privateDirectory,
+          PI_OFFLINE: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       });
+      let failure: Error | undefined;
+      let count = 0;
+      const interruption = new AbortController();
+      const stop = (error: Error) => {
+        failure ??= error;
+        child.kill("SIGKILL");
+        interruption.abort();
+      };
+      const abort = () => stop(new Error("PI_COMMAND_ABORTED"));
+      const grantRemainingMs = Date.parse(grant.expiresAt) - Date.now();
+      const commandLimited =
+        command.timeoutMs !== undefined && command.timeoutMs <= grantRemainingMs;
+      const timer = setTimeout(
+        () => stop(new Error(commandLimited ? "PI_COMMAND_TIMEOUT" : "PI_COMMAND_GRANT_EXPIRED")),
+        Math.max(1, commandLimited ? (command.timeoutMs ?? 1) : grantRemainingMs),
+      );
+      const data = (bytes: Buffer) => {
+        count += bytes.length;
+        if (count > input.maxCommandOutputBytes) stop(new Error("PI_COMMAND_OUTPUT_LIMIT"));
+        else if (!failure) {
+          try {
+            command.onData(bytes);
+          } catch {
+            stop(new Error("PI_COMMAND_OUTPUT_REJECTED"));
+          }
+        }
+      };
+      child.stdout.on("data", data);
+      child.stderr.on("data", data);
+      const completion = waitForProcessOutput(child, interruption.signal);
+      command.signal?.addEventListener("abort", abort, { once: true });
+      if (command.signal?.aborted) abort();
+      try {
+        const { exitCode, outputOpen } = await completion;
+        if (failure) throw failure;
+        if (exitCode === null) throw new Error("PI_COMMAND_SIGNALLED");
+        if (outputOpen) {
+          try {
+            command.onData(
+              Buffer.from(
+                "\n\n仍有后台程序占用这次命令的输出，它之后的输出不会显示在这次结果里；如果它继续往这里写输出，会被系统结束。需要长期运行的程序，请把输出重定向到文件，例如 `npm run dev > dev.log 2>&1 &`。\n",
+              ),
+            );
+          } catch {
+            throw new Error("PI_COMMAND_OUTPUT_REJECTED");
+          }
+        }
+        if (failure) throw failure;
+        return { exitCode };
+      } finally {
+        clearTimeout(timer);
+        command.signal?.removeEventListener("abort", abort);
+        child.stdout.off("data", data);
+        child.stderr.off("data", data);
+      }
     },
   };
 }

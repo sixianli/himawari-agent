@@ -1,0 +1,47 @@
+test/integration/sandbox-control-evidence.test.ts:380:14 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    378 │     const value = artifact.value as Record<string, unknown>;
+    379 │     if (field === "bootId" || field === "processIdentityRef")
+  > 380 │       (value["observation"] as Record<string, unknown>)[field] = "changed";
+        │              ^^^^^^^^^^^^^
+    381 │     else value[field] = field === "resourceSequence" ? 999 : "changed";
+    382 │   }
+
+  i Unsafe fix: Use a literal key instead.
+
+    378 378 │       const value = artifact.value as Record<string, unknown>;
+    379 379 │       if (field === "bootId" || field === "processIdentityRef")
+    380     │ - ······(value["observation"]·as·Record<string,·unknown>)[field]·=·"changed";
+        380 │ + ······(value.observation·as·Record<string,·unknown>)[field]·=·"changed";
+    381 381 │       else value[field] = field === "resourceSequence" ? 999 : "changed";
+    382 382 │     }
+
+
+test/integration/sqlite-sandbox-execution-v2.test.ts:1265:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    1263 │         if (state === "missing_host") delete plan.identity.hostId;
+    1264 │         const rawObservation: Record<string, unknown> = { ...observation };
+  > 1265 │         if (state === "missing_state") delete rawObservation["state"];
+         │                                                              ^^^^^^^
+    1266 │         old
+    1267 │           .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+  i Unsafe fix: Use a literal key instead.
+
+    1263 1263 │           if (state === "missing_host") delete plan.identity.hostId;
+    1264 1264 │           const rawObservation: Record<string, unknown> = { ...observation };
+    1265      │ - ········if·(state·===·"missing_state")·delete·rawObservation["state"];
+         1265 │ + ········if·(state·===·"missing_state")·delete·rawObservation.state;
+    1266 1266 │           old
+    1267 1267 │             .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+
+Skipped 2 suggested fixes.
+If you wish to apply the suggested (unsafe) fixes, use the command biome check --write --unsafe
+
+Checked 4 files in 78ms. Fixed 1 file.
+Found 2 infos.

@@ -1,0 +1,29 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/platform-node/test/constrained-file-system.unit.test.ts (41 tests | 1 failed) 365ms
+     × freezes create content before asynchronous filesystem checks 37ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/platform-node/test/constrained-file-system.unit.test.ts > ConstrainedHostFileSystem > freezes create content before asynchronous filesystem checks
+AssertionError: expected 'xxxxxxxx' to be 'approved' // Object.is equality
+
+Expected: "approved"
+Received: "xxxxxxxx"
+
+ ❯ packages/platform-node/test/constrained-file-system.unit.test.ts:158:67
+    156|     bytes.fill(120);
+    157|     await pending;
+    158|     expect(await readFile(path.join(root, "frozen.txt"), "utf8")).toBe…
+       |                                                                   ^
+    159|   });
+    160|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 40 passed (41)
+   Start at  20:06:06
+   Duration  1.69s (transform 733ms, setup 0ms, import 1.24s, tests 365ms, environment 0ms)

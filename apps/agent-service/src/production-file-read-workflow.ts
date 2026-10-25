@@ -9,13 +9,24 @@ import type {
   RuntimeRequest,
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
+  WebProviderId,
 } from "@himawari-agent/application";
 import {
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
 } from "@himawari-agent/application";
 
+import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
+import type { ProductionHostReadOnly } from "./production-host-read.js";
+import type { WebToolMemory } from "./web-tool-memory.js";
+
 export interface FileReadBinding {
+  readonly workspaceCopy?: SandboxWorkspaceCopy;
+  readonly copySaveOperation?: {
+    readonly id: string;
+    readonly operation: "create" | "update" | "move" | "trash";
+    readonly canonicalHash: string;
+  };
   readonly workerInstanceId: string;
   readonly revision: number;
   readonly hostId: string;
@@ -26,15 +37,45 @@ export interface FileReadBinding {
   readonly threadId: string;
   readonly modelRef: string;
   readonly modelIdentity: string;
+  readonly providers?: readonly WebProviderId[];
+  readonly providerSecrets?: readonly WebProviderSecretBinding[];
 }
+export interface WebProviderSecretBinding {
+  readonly provider: WebProviderId;
+  readonly secretRef: string;
+  readonly secretVersion: string;
+  readonly purpose: string;
+}
+export type CodingBinding =
+  | FileReadBinding
+  | (Omit<FileReadBinding, "grant"> & { readonly grant: null });
 export interface ProductionFileReadServices {
-  binding(call: RuntimeToolInvocation): Promise<FileReadBinding | undefined>;
-  authorize(intent: GovernedActionIntent): Promise<PermissionDecision>;
+  binding(call: RuntimeToolInvocation): Promise<CodingBinding | undefined>;
+  authorize(intent: GovernedActionIntent, signal?: AbortSignal): Promise<PermissionDecision>;
   issue(
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
+  readonly hostReadOnly?: ProductionHostReadOnly;
+  readonly webMemory?: WebToolMemory;
 }
+export type WorkflowAuthority = {
+  readonly deploymentId: string;
+  readonly authorityEpoch: number;
+  readonly fencingToken: number;
+};
 export interface FileReadExecutionContext {
+  canResumeAuthority?(previous: WorkflowAuthority): Promise<boolean>;
+  restoreInspection?(previous: WorkflowAuthority): Promise<RuntimeToolExecutionResult | undefined>;
+  fileConflict?(toolCallId: string): Promise<
+    | {
+        readonly call: RuntimeToolInvocation;
+        readonly binding: CodingBinding;
+        readonly depth: number;
+        readonly dispatchState?: "not_sent" | "accepted";
+      }
+    | undefined
+  >;
+  readonly signal?: AbortSignal;
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
   readonly now: () => string;
@@ -45,18 +86,30 @@ export interface FileReadExecutionContext {
   save(key: string, value: unknown): Promise<{ readonly ref: string; readonly value: unknown }>;
   phase(
     handle: GovernedCapabilityExecutionHandle,
-    phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
+    phase:
+      | "inspect"
+      | "read"
+      | "write"
+      | "edit"
+      | "bash"
+      | "find"
+      | "grep"
+      | "ls"
+      | "move_directory"
+      | "save_copy"
+      | "web_search"
+      | "web_fetch",
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
-function resumeIdentity(call: RuntimeToolInvocation) {
+function resumeIdentity(call: RuntimeToolInvocation, authority?: WorkflowAuthority) {
   if (!call.context) return call;
   const { executionLease, continuationRef: _continuation, ...context } = call.context;
   return {
     ...call,
     context: {
       ...context,
-      authority: {
+      authority: authority ?? {
         deploymentId: executionLease.deploymentId,
         authorityEpoch: executionLease.authorityEpoch,
         fencingToken: executionLease.fencingToken,
@@ -86,7 +139,6 @@ function failure(code: string): RuntimeToolExecutionResult {
 }
 const decisionFailure = runtimeToolAuthorizationResult;
 
-/** One model call, two separately authorized Worker operations. Never reads local files. */
 export class ProductionFileReadWorkflow {
   readonly services: ProductionFileReadServices;
   constructor(services: ProductionFileReadServices) {
@@ -112,7 +164,7 @@ export class ProductionFileReadWorkflow {
     )
       return failure("FILE_READ_REQUEST_INVALID");
     const binding = await this.services.binding(call);
-    if (!binding) return failure("FILE_READ_BINDING_UNAVAILABLE");
+    if (!binding || binding.grant === null) return failure("FILE_READ_BINDING_UNAVAILABLE");
     const now = ctx.now();
     const ranks = ["public", "private", "sensitive", "restricted"];
     if (
@@ -161,19 +213,33 @@ export class ProductionFileReadWorkflow {
       ).toISOString(),
     };
     const stored = (await ctx.save("context", snapshot)).value as typeof snapshot;
+    const previousLease = stored.call.context?.executionLease;
+    const previousAuthority = previousLease
+      ? {
+          deploymentId: previousLease.deploymentId,
+          authorityEpoch: previousLease.authorityEpoch,
+          fencingToken: previousLease.fencingToken,
+        }
+      : undefined;
+    const rebound =
+      previousAuthority &&
+      stored.authorityFence === previousAuthority.fencingToken &&
+      (await ctx.canResumeAuthority?.(previousAuthority));
+    const activeFence = rebound ? ctx.authorityFence() : stored.authorityFence;
     if (
       (call.context.continuationRef
-        ? hash(resumeIdentity(stored.call)) !== hash(resumeIdentity(call))
+        ? hash(resumeIdentity(stored.call)) !==
+          hash(resumeIdentity(call, rebound ? previousAuthority : undefined))
         : hash(stored.call) !== hash(call)) ||
       hash(stored.binding) !== hash(binding) ||
-      stored.authorityFence !== ctx.authorityFence()
+      activeFence !== ctx.authorityFence()
     )
       return failure("FILE_READ_CONTEXT_CHANGED");
     const active = async () => {
       await ctx.assertActive();
       if (
         Date.parse(ctx.now()) >= Date.parse(stored.expiresAt) ||
-        ctx.authorityFence() !== stored.authorityFence ||
+        ctx.authorityFence() !== activeFence ||
         ctx.workerInstanceId() !== binding.workerInstanceId ||
         hash((await this.services.binding(call)) ?? null) !== hash(binding)
       )
@@ -230,12 +296,24 @@ export class ProductionFileReadWorkflow {
       finalRisk: disclose ? "HIGH" : "LOW",
     });
     const runPhase = async (
-      phase: "inspect" | "read" | "write" | "edit" | "bash" | "find" | "grep" | "ls" | "web_search",
+      phase:
+        | "inspect"
+        | "read"
+        | "write"
+        | "edit"
+        | "bash"
+        | "find"
+        | "grep"
+        | "ls"
+        | "move_directory"
+        | "save_copy"
+        | "web_search"
+        | "web_fetch",
       payload: unknown,
       action: GovernedActionIntent,
     ) => {
       await active();
-      const permission = await this.services.authorize(action);
+      const permission = await this.services.authorize(action, ctx.signal);
       if (permission.decision !== "ALLOW") return decisionFailure(permission);
       await active();
       let saved = (await ctx.load(`${phase}:handle`)) as
@@ -275,7 +353,11 @@ export class ProductionFileReadWorkflow {
       path: call.arguments["path"],
       maximumBytes: binding.maximumBytes,
     };
-    const inspection = await runPhase("inspect", inspectInput, intent("inspect", inspectInput));
+    const retainedInspection =
+      rebound && previousAuthority ? await ctx.restoreInspection?.(previousAuthority) : undefined;
+    const inspection =
+      retainedInspection ??
+      (await runPhase("inspect", inspectInput, intent("inspect", inspectInput)));
     if (inspection.outcome !== "succeeded") return inspection;
     let target: ResolvedHostFileReadTarget;
     try {
@@ -338,10 +420,10 @@ export class ProductionFileReadWorkflow {
     if (!["model", "external_approved"].includes(binding.grant.disclosure))
       return failure("FILE_READ_DIRECTORY_DISCLOSURE_DENIED");
     const readIntent = intent("read", target);
-    const readPermission = await this.services.authorize(readIntent);
+    const readPermission = await this.services.authorize(readIntent, ctx.signal);
     if (readPermission.decision !== "ALLOW") return decisionFailure(readPermission);
     const disclosureIntent = intent("disclose", target, true);
-    const disclosure = await this.services.authorize(disclosureIntent);
+    const disclosure = await this.services.authorize(disclosureIntent, ctx.signal);
     if (disclosure.decision !== "ALLOW") return decisionFailure(disclosure);
     const result = await runPhase(
       "read",
@@ -359,7 +441,7 @@ export class ProductionFileReadWorkflow {
     if (result.outcome !== "succeeded") return result;
     await active();
     if (result.outcome === "succeeded") {
-      const renewed = await this.services.authorize(disclosureIntent);
+      const renewed = await this.services.authorize(disclosureIntent, ctx.signal);
       if (renewed.decision !== "ALLOW") return decisionFailure(renewed);
     }
     return result;

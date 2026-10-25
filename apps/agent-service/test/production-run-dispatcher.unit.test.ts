@@ -9,8 +9,10 @@ import type {
   RunReconciliationCandidate,
 } from "@himawari-agent/application";
 import {
+  ApplicationPortError,
   claimFromRunExecutionLease,
   createApplicationServiceIdentityFactory,
+  PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import { createBeefRestaurantFixture, createV02Fixture } from "@himawari-agent/testing";
 import { describe, expect, it } from "vitest";
@@ -199,6 +201,7 @@ interface ExecutionInterruptInput {
 
 interface TestCoordinator {
   execute(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult>;
+  recoverCompleted?(input: ExecuteCoordinatedRunInput): Promise<CoordinatedRunResult>;
   interruptExecution?(
     input: ExecutionInterruptInput,
   ): Promise<ExecutionInterruptionResult | undefined>;
@@ -244,10 +247,16 @@ function dispatcher(
     readonly executionLeaseDurationMs?: number;
     readonly executionLeaseRenewalIntervalMs?: number;
     readonly input?: ProductionRunInputFactory;
+    readonly prepareToolResultRecovery?: (candidate: RunDispatchCandidate) => Promise<undefined>;
   } = {},
 ): ProductionRunDispatcher {
   const boundCoordinator = {
     execute: coordinator.execute,
+    recoverCompleted:
+      coordinator.recoverCompleted ??
+      (async () => {
+        throw new Error("Unexpected completion recovery");
+      }),
     interruptExecution: coordinator.interruptExecution ?? (async () => undefined),
   };
   return new ProductionRunDispatcher({
@@ -269,6 +278,9 @@ function dispatcher(
     maximumRunsPerPump: 4,
     instanceId: "production-dispatch-test",
     nextExecutionLeaseId: () => EXECUTION_LEASE_ID,
+    ...(options.prepareToolResultRecovery
+      ? { prepareToolResultRecovery: options.prepareToolResultRecovery }
+      : {}),
   });
 }
 
@@ -518,5 +530,139 @@ describe("ProductionRunDispatcher", () => {
     await expect(operation).resolves.toMatchObject({ claimed: 1, settled: 0, unknown: 1 });
     expect(executions).toBe(0);
     expect(interruptions).toEqual([EXECUTION_LEASE_ID]);
+  });
+});
+
+describe("[R2-P2] per-record failure isolation", () => {
+  it("[R2-P2] records one Run's recovery failure without surfacing it as a service failure", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const quarantined: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+        },
+      },
+      async ({ reasonCode }) => {
+        quarantined.push(reasonCode);
+      },
+    );
+    await expect(service.pump()).resolves.toMatchObject({ claimed: 1, unknown: 1 });
+    expect(quarantined).toEqual(["RUN_EXECUTION_FAILED_WITHOUT_RESULT"]);
+  });
+
+  it("[R2-P2] records a tool-result recovery failure without surfacing it as a service failure", async () => {
+    const dispatch = new DispatchFixture([candidate("resume_tool_result")]);
+    const quarantined: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => result("completed"),
+      },
+      async ({ reasonCode }) => {
+        quarantined.push(reasonCode);
+      },
+      {
+        prepareToolResultRecovery: async () => {
+          throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+        },
+      },
+    );
+    await expect(service.pump()).resolves.toMatchObject({ claimed: 0 });
+    expect(quarantined).toEqual(["TOOL_RESULT_RECOVERY_FAILED"]);
+  });
+
+  it("[R2-P2] still surfaces authority loss during per-record handling", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          throw new Error("AGENT_AUTHORITY_LOST");
+        },
+      },
+      async () => undefined,
+    );
+    await expect(service.pump()).rejects.toThrow("AGENT_AUTHORITY_LOST");
+  });
+
+  it("[R2-P2] leaves a busy or full database failure to the service instead of isolating the Run", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const quarantined: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "SQLite writer remained busy", {
+            sqliteCode: "SQLITE_BUSY",
+          });
+        },
+      },
+      async ({ reasonCode }) => {
+        quarantined.push(reasonCode);
+      },
+    );
+    await expect(service.pump()).rejects.toMatchObject({ code: PORT_ERROR_CODES.CONFLICT });
+    expect(quarantined).toEqual(["RUN_EXECUTION_FAILED_WITHOUT_RESULT"]);
+  });
+
+  it("[R2-P2] leaves an authority or fence failure to the service instead of isolating the Run", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const quarantined: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "Authority fence does not match",
+          );
+        },
+      },
+      async ({ reasonCode }) => {
+        quarantined.push(reasonCode);
+      },
+    );
+    await expect(service.pump()).rejects.toMatchObject({
+      code: PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+    });
+    expect(quarantined).toEqual(["RUN_EXECUTION_FAILED_WITHOUT_RESULT"]);
+  });
+
+  it("[R2-P2] leaves a temporarily unavailable host to the service instead of isolating the Run", async () => {
+    const dispatch = new DispatchFixture([candidate()]);
+    const quarantined: string[] = [];
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => {
+          throw new Error("SANDBOX_HOST_UNAVAILABLE");
+        },
+      },
+      async ({ reasonCode }) => {
+        quarantined.push(reasonCode);
+      },
+    );
+    await expect(service.pump()).rejects.toThrow("SANDBOX_HOST_UNAVAILABLE");
+    expect(quarantined).toEqual(["RUN_EXECUTION_FAILED_WITHOUT_RESULT"]);
+  });
+
+  it("[R2-P2] leaves the service failing when writing the record isolation itself fails", async () => {
+    const dispatch = new DispatchFixture([]);
+    dispatch.reconciliation.push({ ...candidate("resume"), action: "reconcile" });
+    let calls = 0;
+    const service = dispatcher(
+      dispatch,
+      {
+        execute: async () => result("completed"),
+      },
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("SANDBOX_CONTROL_BINDING_UNAVAILABLE");
+        throw new Error("PORT_CONFLICT");
+      },
+    );
+    await expect(service.pump()).rejects.toThrow("PORT_CONFLICT");
   });
 });

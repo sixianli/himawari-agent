@@ -1,0 +1,13 @@
+{
+  "attempts": [
+    {
+      "result": "HTTP 403",
+      "cause": "探针遗漏正式 Host；网关按预期拒绝。"
+    },
+    {
+      "result": "HTTP 404",
+      "cause": "探针请求 /index.html；网关首页的规范路径为 /。"
+    }
+  ],
+  "classification": "验证脚本请求不符合既有 HTTP 合同；未修改产品或削弱摘要断言。"
+}

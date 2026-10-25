@@ -1,0 +1,422 @@
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 50.
+Checked 23 files in 55ms. No fixes applied.
+Found 70 infos.
+apps/agent-service/src/capability-programs/pi-coding-main.ts:35:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    33 │     input.scope.expiresAt <= new Date().toISOString() ||
+    34 │     process.cwd() !== input.workspace ||
+  > 35 │     process.env["HOME"] !== input.privateDirectory ||
+       │                 ^^^^^^
+    36 │     process.env["TMPDIR"] !== input.privateDirectory
+    37 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+     33  33 │       input.scope.expiresAt <= new Date().toISOString() ||
+     34  34 │       process.cwd() !== input.workspace ||
+     35     │ - ····process.env["HOME"]·!==·input.privateDirectory·||
+         35 │ + ····process.env.HOME·!==·input.privateDirectory·||
+     36  36 │       process.env["TMPDIR"] !== input.privateDirectory
+     37  37 │     )
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:36:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    34 │     process.cwd() !== input.workspace ||
+    35 │     process.env["HOME"] !== input.privateDirectory ||
+  > 36 │     process.env["TMPDIR"] !== input.privateDirectory
+       │                 ^^^^^^^^
+    37 │   )
+    38 │     throw new Error("PI_RUNNER_SCOPE_INVALID");
+
+  i Unsafe fix: Use a literal key instead.
+
+     34  34 │       process.cwd() !== input.workspace ||
+     35  35 │       process.env["HOME"] !== input.privateDirectory ||
+     36     │ - ····process.env["TMPDIR"]·!==·input.privateDirectory
+         36 │ + ····process.env.TMPDIR·!==·input.privateDirectory
+     37  37 │     )
+     38  38 │       throw new Error("PI_RUNNER_SCOPE_INVALID");
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:59:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    57 │       throw new Error("PI_RUNNER_BINARY_UNAVAILABLE");
+    58 │   }
+  > 59 │   process.env["PI_OFFLINE"] = "1";
+       │               ^^^^^^^^^^^^
+    60 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+    61 │   process.env["PATH"] = binaryDirectory;
+
+  i Unsafe fix: Use a literal key instead.
+
+     57  57 │         throw new Error("PI_RUNNER_BINARY_UNAVAILABLE");
+     58  58 │     }
+     59     │ - ··process.env["PI_OFFLINE"]·=·"1";
+         59 │ + ··process.env.PI_OFFLINE·=·"1";
+     60  60 │     process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+     61  61 │     process.env["PATH"] = binaryDirectory;
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:60:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    58 │   }
+    59 │   process.env["PI_OFFLINE"] = "1";
+  > 60 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+       │               ^^^^^^^^^^^^^^^^^^^^^
+    61 │   process.env["PATH"] = binaryDirectory;
+    62 │   const parameters: unknown = JSON.parse(input.parametersJson);
+
+  i Unsafe fix: Use a literal key instead.
+
+     58  58 │     }
+     59  59 │     process.env["PI_OFFLINE"] = "1";
+     60     │ - ··process.env["PI_CODING_AGENT_DIR"]·=·path.dirname(binaryDirectory);
+         60 │ + ··process.env.PI_CODING_AGENT_DIR·=·path.dirname(binaryDirectory);
+     61  61 │     process.env["PATH"] = binaryDirectory;
+     62  62 │     const parameters: unknown = JSON.parse(input.parametersJson);
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:61:15 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    59 │   process.env["PI_OFFLINE"] = "1";
+    60 │   process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+  > 61 │   process.env["PATH"] = binaryDirectory;
+       │               ^^^^^^
+    62 │   const parameters: unknown = JSON.parse(input.parametersJson);
+    63 │   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters))
+
+  i Unsafe fix: Use a literal key instead.
+
+     59  59 │     process.env["PI_OFFLINE"] = "1";
+     60  60 │     process.env["PI_CODING_AGENT_DIR"] = path.dirname(binaryDirectory);
+     61     │ - ··process.env["PATH"]·=·binaryDirectory;
+         61 │ + ··process.env.PATH·=·binaryDirectory;
+     62  62 │     const parameters: unknown = JSON.parse(input.parametersJson);
+     63  63 │     if (!parameters || typeof parameters !== "object" || Array.isArray(parameters))
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:67:17 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    65 │   const args = parameters as Record<string, unknown>;
+    66 │   const target =
+  > 67 │     typeof args["path"] === "string" ? path.resolve(input.workspace, args["path"]) : undefined;
+       │                 ^^^^^^
+    68 │   if (
+    69 │     target &&
+
+  i Unsafe fix: Use a literal key instead.
+
+     65  65 │     const args = parameters as Record<string, unknown>;
+     66  66 │     const target =
+     67     │ - ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+         67 │ + ····typeof·args.path·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+     68  68 │     if (
+     69  69 │       target &&
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:67:75 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    65 │   const args = parameters as Record<string, unknown>;
+    66 │   const target =
+  > 67 │     typeof args["path"] === "string" ? path.resolve(input.workspace, args["path"]) : undefined;
+       │                                                                           ^^^^^^
+    68 │   if (
+    69 │     target &&
+
+  i Unsafe fix: Use a literal key instead.
+
+     65  65 │     const args = parameters as Record<string, unknown>;
+     66  66 │     const target =
+     67     │ - ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args["path"])·:·undefined;
+         67 │ + ····typeof·args["path"]·===·"string"·?·path.resolve(input.workspace,·args.path)·:·undefined;
+     68  68 │     if (
+     69  69 │       target &&
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:164:30 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    162 │         ? ({ ...result.details } as Record<string, unknown>)
+    163 │         : {};
+  > 164 │     const fullPath = details["fullOutputPath"];
+        │                              ^^^^^^^^^^^^^^^^
+    165 │     delete details["fullOutputPath"];
+    166 │     const fullOutput =
+
+  i Unsafe fix: Use a literal key instead.
+
+    162 162 │           ? ({ ...result.details } as Record<string, unknown>)
+    163 163 │           : {};
+    164     │ - ····const·fullPath·=·details["fullOutputPath"];
+        164 │ + ····const·fullPath·=·details.fullOutputPath;
+    165 165 │       delete details["fullOutputPath"];
+    166 166 │       const fullOutput =
+
+
+apps/agent-service/src/capability-programs/pi-coding-main.ts:165:20 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    163 │         : {};
+    164 │     const fullPath = details["fullOutputPath"];
+  > 165 │     delete details["fullOutputPath"];
+        │                    ^^^^^^^^^^^^^^^^
+    166 │     const fullOutput =
+    167 │       typeof fullPath === "string"
+
+  i Unsafe fix: Use a literal key instead.
+
+    163 163 │           : {};
+    164 164 │       const fullPath = details["fullOutputPath"];
+    165     │ - ····delete·details["fullOutputPath"];
+        165 │ + ····delete·details.fullOutputPath;
+    166 166 │       const fullOutput =
+    167 167 │         typeof fullPath === "string"
+
+
+apps/agent-service/src/production-runtime-tools.ts:294:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    292 │     const args = invocation.arguments;
+    293 │     if (
+  > 294 │       typeof args["capabilityHandleRef"] !== "string" ||
+        │                   ^^^^^^^^^^^^^^^^^^^^^
+    295 │       typeof args["inputRef"] !== "string" ||
+    296 │       Object.keys(args).length !== 2 ||
+
+  i Unsafe fix: Use a literal key instead.
+
+     292  292 │       const args = invocation.arguments;
+     293  293 │       if (
+     294      │ - ······typeof·args["capabilityHandleRef"]·!==·"string"·||
+          294 │ + ······typeof·args.capabilityHandleRef·!==·"string"·||
+     295  295 │         typeof args["inputRef"] !== "string" ||
+     296  296 │         Object.keys(args).length !== 2 ||
+
+
+apps/agent-service/src/production-runtime-tools.ts:295:19 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    293 │     if (
+    294 │       typeof args["capabilityHandleRef"] !== "string" ||
+  > 295 │       typeof args["inputRef"] !== "string" ||
+        │                   ^^^^^^^^^^
+    296 │       Object.keys(args).length !== 2 ||
+    297 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+  i Unsafe fix: Use a literal key instead.
+
+     293  293 │       if (
+     294  294 │         typeof args["capabilityHandleRef"] !== "string" ||
+     295      │ - ······typeof·args["inputRef"]·!==·"string"·||
+          295 │ + ······typeof·args.inputRef·!==·"string"·||
+     296  296 │         Object.keys(args).length !== 2 ||
+     297  297 │         !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+
+
+apps/agent-service/src/production-runtime-tools.ts:297:54 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    295 │       typeof args["inputRef"] !== "string" ||
+    296 │       Object.keys(args).length !== 2 ||
+  > 297 │       !this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+        │                                                      ^^^^^^^^^^^^^^^^^^^^^
+    298 │     )
+    299 │       reject();
+
+  i Unsafe fix: Use a literal key instead.
+
+     295  295 │         typeof args["inputRef"] !== "string" ||
+     296  296 │         Object.keys(args).length !== 2 ||
+     297      │ - ······!this.#exposed.get(invocation.runId)?.has(args["capabilityHandleRef"])
+          297 │ + ······!this.#exposed.get(invocation.runId)?.has(args.capabilityHandleRef)
+     298  298 │       )
+     299  299 │         reject();
+
+
+apps/agent-service/src/production-runtime-tools.ts:300:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    298 │     )
+    299 │       reject();
+  > 300 │     const handle = await this.#handle(invocation.runId, args["capabilityHandleRef"]);
+        │                                                              ^^^^^^^^^^^^^^^^^^^^^
+    301 │     if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+    302 │     return {
+
+  i Unsafe fix: Use a literal key instead.
+
+     298  298 │       )
+     299  299 │         reject();
+     300      │ - ····const·handle·=·await·this.#handle(invocation.runId,·args["capabilityHandleRef"]);
+          300 │ + ····const·handle·=·await·this.#handle(invocation.runId,·args.capabilityHandleRef);
+     301  301 │       if (!this.#options.taskHandle || !(await this.#options.taskHandle(handle))) reject();
+     302  302 │       return {
+
+
+apps/agent-service/src/production-runtime-tools.ts:306:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    304 │       capabilityRef: handle.capabilityRef,
+    305 │       capabilityHandleRef: handle.ref,
+  > 306 │       arguments: { inputRef: args["inputRef"] },
+        │                                   ^^^^^^^^^^
+    307 │     };
+    308 │   }
+
+  i Unsafe fix: Use a literal key instead.
+
+     304  304 │         capabilityRef: handle.capabilityRef,
+     305  305 │         capabilityHandleRef: handle.ref,
+     306      │ - ······arguments:·{·inputRef:·args["inputRef"]·},
+          306 │ + ······arguments:·{·inputRef:·args.inputRef·},
+     307  307 │       };
+     308  308 │     }
+
+
+apps/agent-service/src/production-runtime-tools.ts:547:35 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    545 │       keys.length !== 1 ||
+    546 │       keys[0] !== "inputRef" ||
+  > 547 │       typeof invocation.arguments["inputRef"] !== "string" ||
+        │                                   ^^^^^^^^^^
+    548 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+    549 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+  i Unsafe fix: Use a literal key instead.
+
+     545  545 │         keys.length !== 1 ||
+     546  546 │         keys[0] !== "inputRef" ||
+     547      │ - ······typeof·invocation.arguments["inputRef"]·!==·"string"·||
+          547 │ + ······typeof·invocation.arguments.inputRef·!==·"string"·||
+     548  548 │         !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+     549  549 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+
+
+apps/agent-service/src/production-runtime-tools.ts:548:55 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    546 │       keys[0] !== "inputRef" ||
+    547 │       typeof invocation.arguments["inputRef"] !== "string" ||
+  > 548 │       !handle.inputRefs.includes(invocation.arguments["inputRef"]) ||
+        │                                                       ^^^^^^^^^^
+    549 │       RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+    550 │     )
+
+  i Unsafe fix: Use a literal key instead.
+
+     546  546 │         keys[0] !== "inputRef" ||
+     547  547 │         typeof invocation.arguments["inputRef"] !== "string" ||
+     548      │ - ······!handle.inputRefs.includes(invocation.arguments["inputRef"])·||
+          548 │ + ······!handle.inputRefs.includes(invocation.arguments.inputRef)·||
+     549  549 │         RANK.indexOf(invocation.dataClassification) > RANK.indexOf(handle.maxDataClassification)
+     550  550 │       )
+
+
+apps/agent-service/src/production-runtime-tools.ts:667:40 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    665 │         capabilityVersion: handle.capabilityVersion,
+    666 │         operation: handle.operation,
+  > 667 │         inputRef: invocation.arguments["inputRef"] as string,
+        │                                        ^^^^^^^^^^
+    668 │         capabilityHandleRef: handle.ref,
+    669 │         delegatedContextRefs: [...handle.delegatedContextRefs],
+
+  i Unsafe fix: Use a literal key instead.
+
+     665  665 │           capabilityVersion: handle.capabilityVersion,
+     666  666 │           operation: handle.operation,
+     667      │ - ········inputRef:·invocation.arguments["inputRef"]·as·string,
+          667 │ + ········inputRef:·invocation.arguments.inputRef·as·string,
+     668  668 │           capabilityHandleRef: handle.ref,
+     669  669 │           delegatedContextRefs: [...handle.delegatedContextRefs],
+
+
+packages/platform-node/src/files/pi-file-publication.ts:61:23 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    59 │   const parameters = record(JSON.parse(input.parametersJson));
+    60 │   if (
+  > 61 │     typeof parameters["path"] !== "string" ||
+       │                       ^^^^^^
+    62 │     path.resolve(input.workspace, parameters["path"]) !==
+    63 │       path.join(input.workspace, target.relativePath)
+
+  i Unsafe fix: Use a literal key instead.
+
+     59  59 │     const parameters = record(JSON.parse(input.parametersJson));
+     60  60 │     if (
+     61     │ - ····typeof·parameters["path"]·!==·"string"·||
+         61 │ + ····typeof·parameters.path·!==·"string"·||
+     62  62 │       path.resolve(input.workspace, parameters["path"]) !==
+     63  63 │         path.join(input.workspace, target.relativePath)
+
+
+packages/platform-node/src/files/pi-file-publication.ts:62:46 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    60 │   if (
+    61 │     typeof parameters["path"] !== "string" ||
+  > 62 │     path.resolve(input.workspace, parameters["path"]) !==
+       │                                              ^^^^^^
+    63 │       path.join(input.workspace, target.relativePath)
+    64 │   )
+
+  i Unsafe fix: Use a literal key instead.
+
+     60  60 │     if (
+     61  61 │       typeof parameters["path"] !== "string" ||
+     62     │ - ····path.resolve(input.workspace,·parameters["path"])·!==
+         62 │ + ····path.resolve(input.workspace,·parameters.path)·!==
+     63  63 │         path.join(input.workspace, target.relativePath)
+     64  64 │     )
+
+
+test/integration/sqlite-sandbox-execution-v2.test.ts:897:62 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+
+    895 │         if (state === "missing_host") delete plan.identity.hostId;
+    896 │         const rawObservation: Record<string, unknown> = { ...observation };
+  > 897 │         if (state === "missing_state") delete rawObservation["state"];
+        │                                                              ^^^^^^^
+    898 │         old
+    899 │           .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")
+
+  i Unsafe fix: Use a literal key instead.
+
+     895  895 │           if (state === "missing_host") delete plan.identity.hostId;
+     896  896 │           const rawObservation: Record<string, unknown> = { ...observation };
+     897      │ - ········if·(state·===·"missing_state")·delete·rawObservation["state"];
+          897 │ + ········if·(state·===·"missing_state")·delete·rawObservation.state;
+     898  898 │           old
+     899  899 │             .prepare("UPDATE sandbox_jobs SET plan_json=?,observation_json=?")

@@ -1,0 +1,14 @@
+{
+  "outputSchemaVersion": 1,
+  "command": "sandbox.list-unconfirmed",
+  "digest": "sha256:6406e5a0030506941264368e3e25f9c884865d804729e089fb9dab919245a591",
+  "records": [],
+  "counts": {
+    "sandbox_execution_records": 0,
+    "sandbox_workspace_occupancy": 0,
+    "sandbox_workspace_barriers": 0,
+    "sandbox_execution_observations": 0,
+    "sandbox_operation_observations": 0,
+    "sandbox_execution_intents": 0
+  }
+}

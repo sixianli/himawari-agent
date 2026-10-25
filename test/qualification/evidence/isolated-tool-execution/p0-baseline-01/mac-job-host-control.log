@@ -1,0 +1,6 @@
+$ node packages/runtime-sandbox/scripts/probe-job-host-control.mjs
+git HEAD: 4e6b073b8e3d4a42c21da357fd5548ea66d9d901; dist/node-runtime built 2026-09-25T03:25Z, runtime-sandbox dist/job-host.js sha256 ad20d32bf3b90efa36ee054b5002042723cdfce6738d657baec428434697952c
+host: Darwin 27.2.0 arm64; node v22.22.3; run outside the Claude Code sandbox because SRT cannot nest inside it
+2026-09-25T06:45:51Z
+{"passed":true,"productionQualified":false,"results":[{"scenario":"stop","passed":true,"cleanup":"unknown","reservationReleased":false},{"scenario":"worker-crash","passed":true,"cleanup":"unknown","reservationReleased":false},{"scenario":"never-started","passed":true,"cleanup":"confirmed","reservationReleased":true},{"scenario":"observed-escape","passed":true,"cleanup":"unknown","reservationReleased":false},{"scenario":"stdin","passed":true,"cleanup":"unknown","reservationReleased":false},{"scenario":"writer-stop","passed":true,"cleanup":"unknown","reservationReleased":false,"descendantStartedWriting":true,"descendantWritesAfterObservation":28},{"scenario":"writer-worker-crash","passed":true,"cleanup":"unknown","reservationReleased":false,"descendantStartedWriting":true,"descendantWritesAfterObservation":28}]}
+exit_code=0

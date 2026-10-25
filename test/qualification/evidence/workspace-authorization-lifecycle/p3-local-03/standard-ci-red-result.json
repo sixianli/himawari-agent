@@ -1,0 +1,150 @@
+{
+  "sourceEvidenceDirectory": ".ci-output/local-1789808336413",
+  "summary": {
+    "schemaVersion": 1,
+    "scope": "local-platform-validation",
+    "context": {
+      "repository": "sixianli/himawari-agent",
+      "event": "workflow_dispatch",
+      "runId": "1789808336413",
+      "attempt": 1,
+      "testedSha": "0183db08143bd410ddf38684927399d1edce4509",
+      "headSha": "0183db08143bd410ddf38684927399d1edce4509",
+      "baseSha": "0183db08143bd410ddf38684927399d1edce4509",
+      "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+      "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+      "initialization": false
+    },
+    "status": "failed",
+    "platform": "macos-arm64",
+    "publicationFailures": [
+      {
+        "checkId": "build",
+        "matrixKey": "macos-arm64",
+        "error": "PUBLIC_ARTIFACT_CONTAINS_SECRET"
+      },
+      {
+        "checkId": "test",
+        "matrixKey": "macos-arm64",
+        "error": "PUBLIC_ARTIFACT_CONTAINS_SECRET"
+      }
+    ],
+    "checks": [
+      {
+        "checkId": "build",
+        "matrixKey": "macos-arm64",
+        "status": "passed",
+        "durationMs": 266649
+      },
+      {
+        "checkId": "test",
+        "matrixKey": "macos-arm64",
+        "status": "failed",
+        "durationMs": 583123
+      }
+    ],
+    "hostedGate": "not_executed",
+    "enforcement": "not_configured",
+    "pending": [
+      "\u771f\u5b9e GitHub Linux/macOS \u5b8c\u6574\u77e9\u9635",
+      "Linux Node floor",
+      "\u771f\u5b9e\u53d6\u6d88\u3001fork \u5ba1\u6279\u4e0e Ruleset \u62d2\u7edd\u5408\u5e76",
+      "\u751f\u4ea7\u4e0a\u7ebf\u9a8c\u6536\u4e0e Owner \u7b7e\u7f72"
+    ]
+  },
+  "tests": {
+    "status": "failed",
+    "counts": {
+      "files": 234,
+      "executed": 3468,
+      "passed": 3467,
+      "failed": 1,
+      "skipped": 0
+    },
+    "projects": [
+      {
+        "id": "unit",
+        "counts": {
+          "files": 127,
+          "executed": 1706,
+          "passed": 1705,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "contracts",
+        "counts": {
+          "files": 23,
+          "executed": 330,
+          "passed": 330,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "integration",
+        "counts": {
+          "files": 73,
+          "executed": 1309,
+          "passed": 1309,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "e2e",
+        "counts": {
+          "files": 1,
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pi-compat",
+        "counts": {
+          "files": 10,
+          "executed": 120,
+          "passed": 120,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "unit",
+        "exitCode": 1,
+        "signal": null,
+        "durationMs": 91934
+      },
+      {
+        "id": "contracts",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 9996
+      },
+      {
+        "id": "integration",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 403038
+      },
+      {
+        "id": "e2e",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 2770
+      },
+      {
+        "id": "pi-compat",
+        "exitCode": 0,
+        "signal": null,
+        "durationMs": 21008
+      }
+    ],
+    "archiveSha256": "97373f1ae6e1a1f7586093f0b784072806c1520fa18e671b84ebf32110ac008b"
+  }
+}

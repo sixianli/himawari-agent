@@ -1,0 +1,81 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |contracts| packages/persistence-sqlite/test/migration-engine.contract.test.ts (0 test)
+ ❯ |integration| test/integration/workspace-lifecycle-audit.test.ts (0 test)
+ ❯ |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-v2-worker-lifecycle.test.ts [ test/integration/sandbox-v2-worker-lifecycle.test.ts ]
+Error: Transform failed with 1 error:
+
+[31m[PARSE_ERROR] [0mExpected `,` or `]` but found `{`
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m packages/persistence-sqlite/src/migration-engine.ts:9:78 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m9 │[0m [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mM[0m[38;5;249mI[0m[38;5;249mG[0m[38;5;249mR[0m[38;5;249mA[0m[38;5;249mT[0m[38;5;249mI[0m[38;5;249mO[0m[38;5;249mN[0m[38;5;249m_[0m[38;5;249mP[0m[38;5;249mH[0m[38;5;249mA[0m[38;5;249mS[0m[38;5;249mE[0m[38;5;249mS[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[[38;5;249m"[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mb[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mk[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mv[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mf[0m[38;5;249my[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249m"[0m[38;5;249m [0m[38;5;249m [0m{
+ [38;5;240m  │[0m                                 ┬                                            ┬
+ [38;5;240m  │[0m                                 ╰─────────────────────────────────────────────── Opened here
+ [38;5;240m  │[0m                                                                              │
+ [38;5;240m  │[0m                                                                              ╰── `,` or `]` expected
+[38;5;246m───╯[0m
+
+  Plugin: vite:oxc
+  File: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/migration-engine.ts
+ ❯ transformWithOxc node_modules/vite/dist/node/chunks/node.js:4103:19
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:4174:26
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:30932:51
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20671:26
+ ❯ fetchModule node_modules/vite/dist/node/chunks/node.js:34343:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |integration| test/integration/workspace-lifecycle-audit.test.ts [ test/integration/workspace-lifecycle-audit.test.ts ]
+Error: Transform failed with 1 error:
+
+[31m[PARSE_ERROR] [0mExpected `,` or `]` but found `{`
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m packages/persistence-sqlite/src/migration-engine.ts:9:78 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m9 │[0m [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mM[0m[38;5;249mI[0m[38;5;249mG[0m[38;5;249mR[0m[38;5;249mA[0m[38;5;249mT[0m[38;5;249mI[0m[38;5;249mO[0m[38;5;249mN[0m[38;5;249m_[0m[38;5;249mP[0m[38;5;249mH[0m[38;5;249mA[0m[38;5;249mS[0m[38;5;249mE[0m[38;5;249mS[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[[38;5;249m"[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mb[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mk[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mv[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mf[0m[38;5;249my[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249m"[0m[38;5;249m [0m[38;5;249m [0m{
+ [38;5;240m  │[0m                                 ┬                                            ┬
+ [38;5;240m  │[0m                                 ╰─────────────────────────────────────────────── Opened here
+ [38;5;240m  │[0m                                                                              │
+ [38;5;240m  │[0m                                                                              ╰── `,` or `]` expected
+[38;5;246m───╯[0m
+
+  Plugin: vite:oxc
+  File: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/migration-engine.ts
+ ❯ transformWithOxc node_modules/vite/dist/node/chunks/node.js:4103:19
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:4174:26
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:30932:51
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20671:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |contracts| packages/persistence-sqlite/test/migration-engine.contract.test.ts [ packages/persistence-sqlite/test/migration-engine.contract.test.ts ]
+Error: Transform failed with 1 error:
+
+[31m[PARSE_ERROR] [0mExpected `,` or `]` but found `{`
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m packages/persistence-sqlite/src/migration-engine.ts:9:78 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m9 │[0m [38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mM[0m[38;5;249mI[0m[38;5;249mG[0m[38;5;249mR[0m[38;5;249mA[0m[38;5;249mT[0m[38;5;249mI[0m[38;5;249mO[0m[38;5;249mN[0m[38;5;249m_[0m[38;5;249mP[0m[38;5;249mH[0m[38;5;249mA[0m[38;5;249mS[0m[38;5;249mE[0m[38;5;249mS[0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[[38;5;249m"[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mp[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mb[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mk[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mv[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mf[0m[38;5;249my[0m[38;5;249m"[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249m"[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249m"[0m[38;5;249m [0m[38;5;249m [0m{
+ [38;5;240m  │[0m                                 ┬                                            ┬
+ [38;5;240m  │[0m                                 ╰─────────────────────────────────────────────── Opened here
+ [38;5;240m  │[0m                                                                              │
+ [38;5;240m  │[0m                                                                              ╰── `,` or `]` expected
+[38;5;246m───╯[0m
+
+  Plugin: vite:oxc
+  File: /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent/packages/persistence-sqlite/src/migration-engine.ts
+ ❯ transformWithOxc node_modules/vite/dist/node/chunks/node.js:4103:19
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:4174:26
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:30932:51
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20671:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed | 3 passed (6)
+      Tests  42 passed (42)
+   Start at  19:42:03
+   Duration  1.54s (transform 858ms, setup 0ms, import 291ms, tests 39ms, environment 0ms)

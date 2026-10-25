@@ -186,3 +186,31 @@ it("binds readiness to a bounded private Unix HTTP target, not an arbitrary endp
     sandboxHostBindingSchema.parse({ ...binding, readinessProbes: [probe, probe] }),
   ).toThrow();
 });
+
+it("allows rootless installation only when every operation uses private network scope", () => {
+  const operation = {
+    operation: "web_search",
+    mode: "foreground",
+    contract: { ref: "search", version: "1", kind: "network_only" },
+    backendRef: "srt",
+    scopeSource: "private_temp",
+    directoryOperations: [],
+    network: "grant_targets",
+  };
+  const host = { ...binding, roots: [], operationBindings: [operation] };
+  expect(sandboxHostBindingSchema.parse(host).roots).toEqual([]);
+  expect(() => sandboxHostBindingSchema.parse({ ...binding, roots: [] })).toThrow();
+  expect(() =>
+    sandboxHostBindingSchema.parse({
+      ...host,
+      operationBindings: [
+        {
+          ...operation,
+          scopeSource: "grant_targets",
+          directoryOperations: ["read"],
+          contract: { ...operation.contract, kind: "fixed_read" },
+        },
+      ],
+    }),
+  ).toThrow();
+});

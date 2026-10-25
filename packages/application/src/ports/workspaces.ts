@@ -1,4 +1,5 @@
 import type { PayloadRef } from "./common.js";
+import { normalizeCandidatePath } from "./improvement.js";
 
 export interface WorkspaceFileObservation {
   readonly path: string;
@@ -231,4 +232,42 @@ export interface WorkspaceStatePort {
     readonly operationId: string;
     readonly resultRef: string;
   }): Promise<void>;
+}
+
+/** Host-captured current files; Git HEAD is deliberately not a baseline here. */
+export interface WorkspaceCopyBaseline {
+  readonly grantId: string;
+  readonly grantRevision: number;
+  readonly canonicalRootId: string;
+  readonly files: readonly {
+    readonly path: string;
+    readonly identity: import("./host-files.js").HostFileIdentity | null;
+    readonly digest: string | null;
+  }[];
+}
+
+/** Extends the existing qualified candidate manager with an explicit current-file input. */
+export interface WorkspaceCopyPort {
+  createFromSnapshot(input: {
+    readonly candidateId: string;
+    readonly baseline: WorkspaceCopyBaseline;
+    readonly files: readonly { readonly path: string; readonly bytes: Uint8Array }[];
+    readonly allowedPaths: readonly string[];
+    readonly spaceBudgetBytes: number;
+  }): Promise<string>;
+  readCopyChanges(workspaceRef: string): Promise<{
+    readonly baseline: WorkspaceCopyBaseline;
+    readonly changes: readonly {
+      readonly path: string;
+      readonly contentRef: PayloadRef | null;
+      readonly contentDigest: string | null;
+    }[];
+  }>;
+}
+
+export function normalizeWorkspaceCopyPath(value: string): string {
+  const normalized = normalizeCandidatePath(value);
+  if (normalized.split("/").some((part) => part.toLowerCase() === ".git"))
+    throw new Error("WORKSPACE_COPY_SHARED_METADATA_FORBIDDEN");
+  return normalized;
 }

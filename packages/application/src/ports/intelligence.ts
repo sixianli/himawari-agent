@@ -52,6 +52,8 @@ export interface MemoryCorrection {
   readonly correctedAt: string;
 }
 
+export const CONTEXT_MEMORY_UNAVAILABLE = "CONTEXT_MEMORY_UNAVAILABLE";
+
 export interface MemoryPort {
   search(request: MemorySearchRequest): Promise<readonly MemoryCandidate[]>;
   proposeWrite(proposal: MemoryWriteProposal): Promise<void>;
@@ -87,14 +89,13 @@ export interface ModelSecretRequirement {
 }
 
 export interface ModelProviderRouting {
-  readonly order?: readonly string[];
-  readonly allow_fallbacks?: boolean;
-  readonly require_parameters?: boolean;
-  readonly data_collection?: "allow" | "deny";
-  readonly zdr?: boolean;
+  readonly order: readonly string[];
+  readonly sort: "cost";
 }
 
 export interface ModelInvocationRequest {
+  /** In-process cancellation; never an authorization or serialized execution credential. */
+  readonly signal?: AbortSignal;
   readonly invocationId: string;
   readonly runId: RunId;
   readonly modelRef: string;
@@ -151,7 +152,16 @@ export interface ModelPort {
   invoke(request: ModelInvocationRequest): AsyncIterable<ModelInvocationEvent>;
 }
 
+export interface RuntimeKnownToolResult {
+  readonly capabilityRef: string;
+  readonly jobId: string;
+  readonly invocationId: string;
+  readonly continuationRef: PayloadRef;
+  readonly toolCallId: string;
+}
+
 export interface RuntimeRequest {
+  readonly knownToolResult?: RuntimeKnownToolResult;
   readonly thinkingLevel?: import("./run-execution-source.js").RunThinkingLevel;
   /** Product checkpoint for resuming the same logical tool batch. */
   readonly continuationRef?: PayloadRef;
@@ -432,6 +442,8 @@ export interface RuntimeCustomToolDescriptor {
 }
 
 export interface RuntimeToolInvocation {
+  /** Product runtime history hint; the host verifies the prior durable failure. Not a tool argument. */
+  readonly fileConflictOf?: string;
   /** Captured by the runtime, never taken from model-generated tool arguments. */
   readonly context?: Pick<
     RuntimeRequest,
@@ -466,6 +478,11 @@ export interface RuntimeContinuationPort {
 }
 
 export interface RuntimeToolSettledResult {
+  /** Product dispatch evidence, independent of the operation's effects.
+   * Optional for historical results; never inferred from cancellation alone. */
+  readonly dispatchState?: "not_sent" | "possibly_sent" | "accepted";
+  /** Same-host worker timestamps. Includes worker setup/cleanup, excludes dispatch and approval. */
+  readonly executionTiming?: { readonly startedAt: string; readonly endedAt: string };
   readonly outcome: "succeeded" | "failed" | "result_unknown";
   readonly resultRef: PayloadRef | null;
   readonly errorCode: string | null;
@@ -490,11 +507,19 @@ export type RuntimeToolExecutionResult = RuntimeToolSettledResult | RuntimeToolS
  * `runId + toolCallId`.
  */
 export interface RuntimeToolPort {
+  recoverResult?(
+    invocation: RuntimeToolInvocation,
+    recovery: RuntimeKnownToolResult,
+  ): Promise<RuntimeToolSettledResult>;
   /** List tools permitted to be offered, including requests that still require authorization. */
   listAuthorized(
     runId: RunId,
     capabilityHandleRefs: readonly string[],
   ): Promise<readonly RuntimeToolDescriptor[]>;
   preflight(invocation: RuntimeToolInvocation): Promise<RuntimeToolPreflightDecision>;
-  execute(invocation: RuntimeToolInvocation): Promise<RuntimeToolExecutionResult>;
+  /** Cancellation is process-local and never part of the durable invocation identity. */
+  execute(
+    invocation: RuntimeToolInvocation,
+    options?: { readonly signal?: AbortSignal },
+  ): Promise<RuntimeToolExecutionResult>;
 }

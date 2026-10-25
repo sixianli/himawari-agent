@@ -1,0 +1,66 @@
+{
+  "head": "74793a3490fe6f7476a5f98cdf86ab7df73f9e10",
+  "result": {
+    "passed": true,
+    "productionQualified": false,
+    "results": [
+      {
+        "scenario": "stop",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false
+      },
+      {
+        "scenario": "worker-crash",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false
+      },
+      {
+        "scenario": "never-started",
+        "passed": true,
+        "cleanup": "confirmed",
+        "reservationReleased": true
+      },
+      {
+        "scenario": "observed-escape",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false
+      },
+      {
+        "scenario": "stdin",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false
+      },
+      {
+        "scenario": "writer-stop",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false,
+        "descendantStartedWriting": true,
+        "descendantWritesAfterObservation": 28
+      },
+      {
+        "scenario": "writer-worker-crash",
+        "passed": true,
+        "cleanup": "unknown",
+        "reservationReleased": false,
+        "descendantStartedWriting": true,
+        "descendantWritesAfterObservation": 28
+      }
+    ]
+  },
+  "inputs": {
+    "packages/runtime-sandbox/scripts/probe-job-host-control.mjs": "587093ff333f8813dde97b209247eeb44123ea1d9aae9b03531a69d74153ebe7",
+    "packages/runtime-sandbox/src/job-host-main.ts": "3d4b4b11c12d15aa3a8eb035f68f6d52d4028639aacafb35b30b70c9faf046ae",
+    "packages/runtime-sandbox/src/job-host.ts": "767365695d843d19cdf1a2678be43fc05814cbb1397561bad7f8ce7d09a29698",
+    "apps/agent-service/src/production-sandbox-control.ts": "1551282bfdce3593f9c6cad236c43f9a095e784920c5140ffaa194c0af3d02c0",
+    "node_modules/@anthropic-ai/sandbox-runtime/package.json": "7df9fe8377d380c2340bf5143825af31cb533b0562a8d22f2c221ca690a8aea1",
+    "dist/node-runtime/node_modules/@himawari-agent/runtime-sandbox/dist/job-host-main.js": "e4a9174ac07f6bca9d30555f39de1ad735beeabc14b05ed69ee7ca18fc7f4aff",
+    "dist/node-runtime/node_modules/@himawari-agent/agent-service/dist/production-sandbox-control.js": "e0b5df48c8d3d0344fe9345dd02bcf7f028bd66a5000617a276c264cd0a89e2e"
+  },
+  "linux": "not_rerun",
+  "newBackendEnabled": false
+}

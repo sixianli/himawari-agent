@@ -1,0 +1,9 @@
+$ npx vitest run --config vitest.workspace.ts --project integration test/integration/sqlite-sandbox-execution-v2.test.ts -t "blocks nested and aliased directories for a live writer|lost supervision quarantines intersecting reads|v1 unknown and missing journals never acquire v2 execution authority"
+git HEAD: 4e6b073b8e3d4a42c21da357fd5548ea66d9d901
+2026-09-25T06:49:02Z
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+ Test Files  1 passed (1)
+      Tests  6 passed | 184 skipped (190)
+   Start at  15:49:03
+   Duration  3.53s (transform 1.31s, setup 0ms, import 2.03s, tests 1.39s, environment 0ms)
+exit_code=0

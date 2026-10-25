@@ -1,0 +1,37 @@
+{
+  "typecheck": {
+    "exitCode": 0
+  },
+  "scopedLint": {
+    "exitCode": 0,
+    "informationalDiagnostics": 51,
+    "warnings": 0,
+    "errors": 0
+  },
+  "boundaries": {
+    "exitCode": 0
+  },
+  "v0.2Coverage": {
+    "exitCode": 0
+  },
+  "v0.2Invariants": {
+    "exitCode": 0
+  },
+  "secrets": {
+    "exitCode": 0
+  },
+  "ciPolicy": {
+    "exitCode": 0
+  },
+  "strictDocs": {
+    "exitCode": 0
+  },
+  "fullCheck": {
+    "exitCode": 1,
+    "blockers": [
+      "docs/assets/control-center/2026-09-16-state-review/verify.cjs",
+      "docs/assets/control-center/2026-09-16-state-review-r2/verify.cjs"
+    ],
+    "scope": "pre-existing unrelated untracked files"
+  }
+}

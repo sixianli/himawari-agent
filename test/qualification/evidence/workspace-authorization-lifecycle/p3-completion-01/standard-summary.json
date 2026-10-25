@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "scope": "local-platform-validation",
+  "context": {
+    "repository": "sixianli/himawari-agent",
+    "event": "workflow_dispatch",
+    "runId": "1789971915291",
+    "attempt": 1,
+    "testedSha": "36a20d339cc31fdb4190eaded2026598e2f1e0a3",
+    "headSha": "36a20d339cc31fdb4190eaded2026598e2f1e0a3",
+    "baseSha": "36a20d339cc31fdb4190eaded2026598e2f1e0a3",
+    "policySha256": "aac2dd0f1652b4873c162e40dd5e8eb9fb1bc0bdf0423c386d4d47df80c1f83d",
+    "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+    "initialization": false
+  },
+  "status": "local_passed",
+  "platform": "macos-arm64",
+  "publicationFailures": [],
+  "checks": [
+    {
+      "checkId": "build",
+      "matrixKey": "macos-arm64",
+      "status": "passed",
+      "durationMs": 123520
+    },
+    {
+      "checkId": "test",
+      "matrixKey": "macos-arm64",
+      "status": "passed",
+      "durationMs": 655681
+    }
+  ],
+  "hostedGate": "not_executed",
+  "enforcement": "not_configured",
+  "pending": [
+    "真实 GitHub Linux/macOS 完整矩阵",
+    "Linux Node floor",
+    "真实取消、fork 审批与 Ruleset 拒绝合并",
+    "生产上线验收与 Owner 签署"
+  ]
+}

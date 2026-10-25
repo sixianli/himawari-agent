@@ -1,6 +1,7 @@
 import {
   type Api,
   type AssistantMessage,
+  type Context,
   createAssistantMessageEventStream,
   type Model,
   type SimpleStreamOptions,
@@ -56,13 +57,13 @@ const request = {
     consumerId: "accounting",
   }),
 } as unknown as RuntimeRequest;
-function message(): AssistantMessage {
+function message(chosenModel = model): AssistantMessage {
   return {
     role: "assistant",
     content: [{ type: "text", text: "Accounted answer" }],
-    api: model.api,
-    provider: model.provider,
-    model: model.id,
+    api: chosenModel.api,
+    provider: chosenModel.provider,
+    model: chosenModel.id,
     usage: {
       input: 3,
       output: 2,
@@ -75,7 +76,7 @@ function message(): AssistantMessage {
     timestamp: Date.parse(now),
   };
 }
-function fixture() {
+function fixture(chosenModel = model) {
   const permit = {
     assertActive: vi.fn(async () => {}),
     markStarted: vi.fn(async () => {}),
@@ -89,28 +90,39 @@ function fixture() {
     identity: {} as never,
   }));
   const binding: PiModelBinding = {
-    model,
+    model: chosenModel,
     modelRuntime: {} as never,
     descriptor: {
       ref: request.modelRef,
-      provider: model.provider,
-      model: model.id,
+      provider: chosenModel.provider,
+      model: chosenModel.id,
       version: "1",
-      routingClass: "local",
+      routingClass: chosenModel.provider === "vercel-ai-gateway" ? "primary" : "local",
       priority: 1,
-      disclosure: "local_only",
+      disclosure: chosenModel.provider === "vercel-ai-gateway" ? "external_remote" : "local_only",
       capabilities: ["text"],
       allowedDataClassifications: ["private"],
       secretRequirement: null,
+      ...(chosenModel.provider === "vercel-ai-gateway"
+        ? { providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" as const } }
+        : {}),
     },
     admissionCost: {
       estimatedCostMicros: 10,
       pricing: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
     },
   };
-  const original = vi.fn(() => {
+  const original = vi.fn<
+    (
+      model: Model<Api>,
+      context: Context,
+      options?: SimpleStreamOptions,
+    ) =>
+      | ReturnType<typeof createAssistantMessageEventStream>
+      | Promise<ReturnType<typeof createAssistantMessageEventStream>>
+  >(() => {
     const stream = createAssistantMessageEventStream();
-    stream.push({ type: "done", reason: "stop", message: message() });
+    stream.push({ type: "done", reason: "stop", message: message(chosenModel) });
     return stream;
   });
   let streamOptions: SimpleStreamOptions = {};
@@ -168,7 +180,7 @@ function fixture() {
             return () => {};
           },
           prompt: async () => {
-            const stream = await agent.streamFunction(model, { messages: [] }, streamOptions);
+            const stream = await agent.streamFunction(chosenModel, { messages: [] }, streamOptions);
             for await (const event of stream) {
               if (event.type === "done" || event.type === "error") {
                 terminals.push(event.type);
@@ -362,4 +374,199 @@ describe("model stream admission and uncertain accounting", () => {
       expect(f.permit.releaseReserved).not.toHaveBeenCalled();
     },
   );
+});
+
+const gatewayModel: Model<Api> = {
+  ...model,
+  id: "deepseek/deepseek-v4.1-flash",
+  api: "openai-completions",
+  provider: "vercel-ai-gateway",
+  maxTokens: 32768,
+};
+
+function gatewayFrame(cost: unknown = "0.00000019", metadataCost: unknown = cost) {
+  return {
+    model: gatewayModel.id,
+    usage: { cost },
+    choices: [
+      {
+        index: 0,
+        delta: {
+          provider_metadata: {
+            gateway: {
+              generationId: "gen-accounting-gateway",
+              cost: metadataCost,
+              routing: { finalProvider: "deepinfra" },
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
+function gatewayFixture(frames: readonly unknown[] = [gatewayFrame(), "[DONE]"]) {
+  const f = fixture(gatewayModel);
+  const payloads: unknown[] = [];
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+    payloads.push(JSON.parse(String(init?.body)));
+    const body = frames
+      .map((frame) => `data: ${typeof frame === "string" ? frame : JSON.stringify(frame)}\r\n\r\n`)
+      .join("");
+    const bytes = new TextEncoder().encode(body);
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let offset = 0; offset < bytes.length; offset += 7)
+            controller.enqueue(bytes.slice(offset, offset + 7));
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  let options: SimpleStreamOptions = { fetch };
+  let repeated = false;
+  let beforeDone = () => {};
+  f.setOptions(options);
+  f.original.mockImplementation(async (chosenModel, _context, current) => {
+    const payload = { model: chosenModel.id, messages: [], providerOptions: { retained: true } };
+    const replacement = await current?.onPayload?.(payload, chosenModel);
+    const send = async () => {
+      const response = await current?.fetch?.("http://127.0.0.1:1/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify(replacement ?? payload),
+      });
+      await response?.text();
+    };
+    await send();
+    if (repeated) await send().catch(() => undefined);
+    beforeDone();
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: message(chosenModel) });
+    return stream;
+  });
+  return {
+    ...f,
+    fetch,
+    payloads,
+    setGatewayOptions(value: SimpleStreamOptions) {
+      options = { fetch, ...value };
+      f.setOptions(options);
+    },
+    repeat() {
+      repeated = true;
+    },
+    beforeDone(callback: () => void) {
+      beforeDone = callback;
+    },
+  };
+}
+
+describe("[R2-L5] Agent Loop gateway billing", () => {
+  it.each([
+    { cost: "0", micros: 0 },
+    { cost: "0.00000019", micros: 1 },
+    { cost: "0.000077", micros: 77 },
+  ])("settles the observed $cost USD before publishing done", async ({ cost, micros }) => {
+    const f = gatewayFixture([gatewayFrame(cost), "[DONE]"]);
+    expect((await f.run()).at(-1)).toMatchObject({ type: "runtime.completed" });
+    expect(f.permit.settle).toHaveBeenCalledExactlyOnceWith({
+      inputTokens: 4,
+      outputTokens: 2,
+      cacheReadTokens: 1,
+      cacheWriteTokens: 0,
+      reportedCostMicros: micros,
+    });
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(f.permit.markUnknown).not.toHaveBeenCalled();
+    expect(f.terminals).toEqual(["done"]);
+  });
+
+  it.each([
+    { name: "missing billing", frames: [{ model: gatewayModel.id, choices: [] }, "[DONE]"] },
+    { name: "missing stream terminator", frames: [gatewayFrame()] },
+    { name: "invalid usage fee", frames: [gatewayFrame(-1), "[DONE]"] },
+    { name: "invalid metadata fee", frames: [gatewayFrame("0.00000019", "bad"), "[DONE]"] },
+    {
+      name: "different fees with equal rounded values",
+      frames: [gatewayFrame("0.0000001", "0.0000002"), "[DONE]"],
+    },
+    {
+      name: "conflicting terminal frames",
+      frames: [gatewayFrame(), gatewayFrame("0.0000002"), "[DONE]"],
+    },
+    { name: "invalid before valid", frames: [gatewayFrame(-1), gatewayFrame(), "[DONE]"] },
+    {
+      name: "different model",
+      frames: [{ ...gatewayFrame(), model: "unsupported-text-model" }, "[DONE]"],
+    },
+    { name: "data after terminator", frames: [gatewayFrame(), "[DONE]", gatewayFrame()] },
+  ])("retains unknown without resending when $name", async ({ frames }) => {
+    const f = gatewayFixture(frames);
+    failure(await f.run());
+    expect(f.permit.settle).not.toHaveBeenCalled();
+    expect(f.permit.markUnknown).toHaveBeenCalledExactlyOnceWith("provider_unresolved");
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(f.terminals).toEqual(["error"]);
+  });
+
+  it("applies configured routing after a caller payload hook", async () => {
+    const f = gatewayFixture();
+    const hook = vi.fn(async (payload: unknown) => ({
+      ...(payload as Record<string, unknown>),
+      temperature: 0,
+      providerOptions: {
+        retained: true,
+        gateway: { order: ["unapproved"], disallowPromptTraining: true },
+      },
+    }));
+    f.setGatewayOptions({ onPayload: hook });
+    await f.run();
+    expect(hook).toHaveBeenCalledOnce();
+    expect(f.payloads).toEqual([
+      {
+        model: gatewayModel.id,
+        messages: [],
+        temperature: 0,
+        providerOptions: {
+          retained: true,
+          gateway: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
+        },
+      },
+    ]);
+    expect(f.original.mock.calls[0]?.[2]?.maxRetries).toBe(0);
+  });
+
+  it.each([32769, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid maxTokens %s before contacting the provider",
+    async (maxTokens) => {
+      const f = gatewayFixture();
+      f.setGatewayOptions({ maxTokens });
+      failure(await f.run());
+      expect(f.fetch).not.toHaveBeenCalled();
+      expect(f.original).not.toHaveBeenCalled();
+      expect(f.permit.markStarted).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not permit a second physical request even if the provider catches rejection", async () => {
+    const f = gatewayFixture();
+    f.repeat();
+    failure(await f.run());
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(f.permit.settle).not.toHaveBeenCalled();
+    expect(f.permit.markUnknown).toHaveBeenCalledExactlyOnceWith("provider_unresolved");
+  });
+
+  it("retains cancellation uncertainty when cancellation arrives before terminal publication", async () => {
+    const f = gatewayFixture();
+    const controller = new AbortController();
+    f.setGatewayOptions({ signal: controller.signal });
+    f.beforeDone(() => controller.abort());
+    failure(await f.run());
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(f.permit.settle).not.toHaveBeenCalled();
+    expect(f.permit.markUnknown).toHaveBeenCalledExactlyOnceWith("cancel_unresolved");
+  });
 });

@@ -12,10 +12,10 @@ import type {
   ModelBudgetReadInput,
   ModelBudgetReleaseReservedInput,
   ModelBudgetReserveInput,
+  ModelBudgetRunLeaseParent,
   ModelBudgetSettlementInput,
   ModelBudgetSnapshot,
   ModelBudgetUnknownInput,
-  RunExecutionLeaseClaim,
 } from "@himawari-agent/application";
 import {
   type BackgroundOccurrence,
@@ -52,9 +52,10 @@ interface AccountRow {
   readonly ownerId: string;
   readonly agentId: string;
   readonly accountId: string;
-  readonly parentKind: "run" | "occurrence" | "memory-projection";
+  readonly parentKind: "run" | "thread-title" | "occurrence" | "memory-projection";
   readonly projectionJobId: string | null;
   readonly runId: string | null;
+  readonly titleRunId: string | null;
   readonly occurrenceId: string | null;
   readonly dataClassification: ModelClassification;
   readonly reservedCostMicros: number;
@@ -85,11 +86,7 @@ interface ParsedEnvelope {
   readonly input: Record<string, unknown>;
 }
 
-interface ParsedRunParent {
-  readonly kind: "run";
-  readonly runId: ReturnType<typeof createRunId>;
-  readonly executionLease: RunExecutionLeaseClaim;
-}
+type ParsedRunParent = ModelBudgetRunLeaseParent<"run"> | ModelBudgetRunLeaseParent<"thread-title">;
 
 interface ParsedOccurrenceParent {
   readonly kind: "occurrence";
@@ -245,9 +242,9 @@ export class SqliteModelBudgetOperations {
     const row = this.database
       .prepare(
         `SELECT 1 FROM model_budget_accounts
-         WHERE owner_id = ? AND agent_id = ? AND run_id = ? LIMIT 1`,
+         WHERE owner_id = ? AND agent_id = ? AND (run_id = ? OR title_run_id = ?) LIMIT 1`,
       )
-      .get(input.ownerId, input.agentId, input.runId);
+      .get(input.ownerId, input.agentId, input.runId, input.runId);
     if (row !== undefined) {
       this.fail(
         "PORT_CONFLICT",
@@ -537,7 +534,7 @@ export class SqliteModelBudgetOperations {
       return this.result(existingAccount, existing, true);
     }
     this.assertParent(scope, input.parent, input.reservedAt, true);
-    if (input.parent.kind === "run") {
+    if (input.parent.kind === "run" || input.parent.kind === "thread-title") {
       this.assertNoBackgroundOccurrenceParentWithinTransaction({
         ownerId: scope.ownerId,
         agentId: scope.agentId,
@@ -946,9 +943,9 @@ export class SqliteModelBudgetOperations {
 
   private parseAccountParent(value: unknown): ModelBudgetAccountParent {
     const row = record(value, "parent");
-    if (row["kind"] === "run") {
+    if (row["kind"] === "run" || row["kind"] === "thread-title") {
       return {
-        kind: "run",
+        kind: row["kind"],
         runId: createRunId(machineText(row["runId"], "runId")),
       };
     }
@@ -965,10 +962,10 @@ export class SqliteModelBudgetOperations {
 
   private parseParent(value: unknown): ModelBudgetActiveParent {
     const row = record(value, "parent");
-    if (row["kind"] === "run") {
+    if (row["kind"] === "run" || row["kind"] === "thread-title") {
       const claim = record(row["executionLease"], "executionLease");
       return {
-        kind: "run",
+        kind: row["kind"],
         runId: createRunId(machineText(row["runId"], "runId")),
         executionLease: {
           executionLeaseId: createRunExecutionLeaseId(
@@ -1121,7 +1118,7 @@ export class SqliteModelBudgetOperations {
     at: string,
     requireActive: boolean,
   ): void {
-    if (parent.kind === "run") {
+    if (parent.kind === "run" || parent.kind === "thread-title") {
       if (
         parent.executionLease.authorityLeaseId !== scope.authorityLease.leaseId ||
         parent.executionLease.authorityFencingToken !== scope.authority.fencingToken ||
@@ -1234,7 +1231,7 @@ export class SqliteModelBudgetOperations {
       this.projectionJob(scope, parent.jobId);
       return;
     }
-    if (parent.kind === "run") {
+    if (parent.kind === "run" || parent.kind === "thread-title") {
       const row = this.database
         .prepare("SELECT 1 FROM runs WHERE id = ? AND owner_id = ? AND agent_id = ?")
         .get(parent.runId, scope.ownerId, scope.agentId);
@@ -1313,8 +1310,9 @@ export class SqliteModelBudgetOperations {
       .prepare(
         `INSERT INTO model_budget_accounts (
           owner_id, agent_id, account_id, parent_kind, run_id, occurrence_id, projection_job_id,
-          data_classification, reserved_cost_micros, spent_cost_micros, status, revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', 0)`,
+          title_run_id, data_classification, reserved_cost_micros, spent_cost_micros, status,
+          revision
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', 0)`,
       )
       .run(
         ownerId,
@@ -1324,6 +1322,7 @@ export class SqliteModelBudgetOperations {
         parent.kind === "run" ? parent.runId : null,
         parent.kind === "occurrence" ? parent.occurrenceId : null,
         parent.kind === "memory-projection" ? parent.jobId : null,
+        parent.kind === "thread-title" ? parent.runId : null,
         dataClassification,
       );
     const account = this.readAccount(ownerId, agentId, id);
@@ -1370,6 +1369,7 @@ export class SqliteModelBudgetOperations {
       .prepare(
         `SELECT owner_id AS ownerId, agent_id AS agentId, account_id AS accountId,
           parent_kind AS parentKind, run_id AS runId, occurrence_id AS occurrenceId, projection_job_id AS projectionJobId,
+          title_run_id AS titleRunId,
           data_classification AS dataClassification,
           reserved_cost_micros AS reservedCostMicros,
           spent_cost_micros AS spentCostMicros, status, revision
@@ -1379,7 +1379,12 @@ export class SqliteModelBudgetOperations {
     if (value === undefined) return undefined;
     const row = record(value, "budget account row");
     const parentKind = text(row["parentKind"], "parentKind", 32);
-    if (parentKind !== "run" && parentKind !== "occurrence" && parentKind !== "memory-projection") {
+    if (
+      parentKind !== "run" &&
+      parentKind !== "thread-title" &&
+      parentKind !== "occurrence" &&
+      parentKind !== "memory-projection"
+    ) {
       return this.fail("PORT_INVALID_OPERATION", "Budget account parent kind is invalid");
     }
     const status = text(row["status"], "status", 32);
@@ -1394,6 +1399,7 @@ export class SqliteModelBudgetOperations {
       runId: optionalText(row["runId"], "runId"),
       occurrenceId: optionalText(row["occurrenceId"], "occurrenceId"),
       projectionJobId: optionalText(row["projectionJobId"], "projectionJobId"),
+      titleRunId: optionalText(row["titleRunId"], "titleRunId"),
       dataClassification: classification(row["dataClassification"], "dataClassification"),
       reservedCostMicros: safeInteger(row["reservedCostMicros"], "reservedCostMicros"),
       spentCostMicros: safeInteger(row["spentCostMicros"], "spentCostMicros"),
@@ -1620,6 +1626,10 @@ export class SqliteModelBudgetOperations {
         (account.parentKind !== "run" ||
           account.runId !== parent.runId ||
           account.occurrenceId !== null)) ||
+      (parent.kind === "thread-title" &&
+        (account.parentKind !== "thread-title" ||
+          account.titleRunId !== parent.runId ||
+          account.runId !== null)) ||
       (parent.kind === "occurrence" &&
         (account.parentKind !== "occurrence" ||
           account.occurrenceId !== parent.occurrenceId ||
@@ -1663,12 +1673,17 @@ export class SqliteModelBudgetOperations {
             }
           : row.parentKind === "run"
             ? { kind: "run", runId: createRunId(row.runId ?? this.invalidRow("run_id")) }
-            : {
-                kind: "occurrence",
-                occurrenceId: createOccurrenceId(
-                  row.occurrenceId ?? this.invalidRow("occurrence_id"),
-                ),
-              },
+            : row.parentKind === "thread-title"
+              ? {
+                  kind: "thread-title",
+                  runId: createRunId(row.titleRunId ?? this.invalidRow("title_run_id")),
+                }
+              : {
+                  kind: "occurrence",
+                  occurrenceId: createOccurrenceId(
+                    row.occurrenceId ?? this.invalidRow("occurrence_id"),
+                  ),
+                },
       dataClassification: row.dataClassification,
       reservedCostMicros: row.reservedCostMicros,
       spentCostMicros: row.spentCostMicros,
@@ -1712,7 +1727,9 @@ function accountId(parent: ParsedParent | AccountParent): string {
     ? `memory-projection:${parent.jobId}`
     : parent.kind === "run"
       ? `run:${parent.runId}`
-      : `occurrence:${parent.occurrenceId}`;
+      : parent.kind === "thread-title"
+        ? `thread-title:${parent.runId}`
+        : `occurrence:${parent.occurrenceId}`;
 }
 
 function isAfter(value: string, boundary: string): boolean {

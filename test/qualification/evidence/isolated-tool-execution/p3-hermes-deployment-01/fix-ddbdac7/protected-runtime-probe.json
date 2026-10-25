@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "protected-runtime-probe.v1",
+  "passed": true,
+  "runtimeRoot": "/data/hermes/himawari/releases/2026-09-11-control-center/lib/himawari-agent",
+  "runtimeDigest": "38b0e3769130dc703be37e1aaff4cfdaa49057c1b656e6e4ed7083a558f96e7a",
+  "runtimeUid": 998,
+  "denied": [
+    "overwrite sentinel",
+    "restore file write permission",
+    "restore directory write permission",
+    "delete sentinel",
+    "replace installation child",
+    "create installation child",
+    "open deployment record for writing",
+    "change deployment record permissions",
+    "write runtime root",
+    "replace release directory",
+    "access Docker control socket"
+  ],
+  "workspaceWriteRead": true,
+  "fullAudits": 1,
+  "initialAuditMs": 4748.9694150000005,
+  "subsequentVerifyMs": [
+    2.1983310000005076,
+    4.648473000000195,
+    1.465715000000273,
+    1.1255059999994046,
+    2.2995529999998325,
+    1.1199950000000172,
+    1.2074149999998554,
+    1.120614000000387,
+    0.9456660000005286,
+    0.9492929999996704
+  ],
+  "scope": "real Linux permissions and installation verification; not a model or complete tool latency measurement"
+}

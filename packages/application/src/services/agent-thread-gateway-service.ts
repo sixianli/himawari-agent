@@ -1,4 +1,6 @@
 import type {
+  ThreadExecutionChangedEvent,
+  ThreadExecutionEventsSubscription,
   ThreadGatewayEvent,
   ThreadGatewayRequestResult,
   ThreadGatewaySubscription,
@@ -92,6 +94,63 @@ export class AgentThreadGatewayService implements AgentThreadGatewayPort {
         }
         seen.add(event.payload.cursor);
         revisions.set(event.payload.threadId, event.payload.revision);
+        yield event;
+        pending = iterator.next();
+      }
+    } finally {
+      controller.abort();
+      signal?.removeEventListener("abort", abort);
+      void pending.catch(() => undefined);
+      void iterator.return?.().catch(() => undefined);
+    }
+  }
+
+  async *watchExecution(
+    authentication: GatewayAuthenticationContext,
+    subscription: ThreadExecutionEventsSubscription,
+    signal?: AbortSignal,
+  ): AsyncIterable<ThreadExecutionChangedEvent> {
+    const watch = this.#dependencies.reads.watchExecution?.bind(this.#dependencies.reads);
+    if (!watch)
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+        "THREAD_EXECUTION_EVENTS_NOT_INSTALLED",
+      );
+    await this.#authorize(authentication, subscription);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) controller.abort();
+    const iterator = watch({ authentication, subscription, signal: controller.signal })[
+      Symbol.asyncIterator
+    ]();
+    let pending = iterator.next();
+    try {
+      while (!controller.signal.aborted) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const tick = new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), 1000);
+        });
+        let item: IteratorResult<ThreadExecutionChangedEvent> | null;
+        try {
+          item = await Promise.race([pending, tick]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+        if (controller.signal.aborted) return;
+        await this.#authorize(authentication, subscription);
+        if (!item) continue;
+        if (item.done) return;
+        const event = item.value;
+        if (
+          event.scope.ownerId !== authentication.ownerId ||
+          event.payload.threadId !== subscription.payload.threadId
+        ) {
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.NOT_AUTHORITATIVE,
+            "Thread execution event is outside the subscribed Thread scope",
+          );
+        }
         yield event;
         pending = iterator.next();
       }

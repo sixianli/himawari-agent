@@ -1,0 +1,74 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts (14 tests | 4 failed) 2821ms
+     × fences unbound starts before queuing cleanup without inventing process identity 306ms
+     × pauses a failed attempt durably and only schedules a later distinct stop obligation 316ms
+     × fences unbound starts before queuing cleanup without inventing process identity 79ms
+     × pauses a failed attempt durably and only schedules a later distinct stop obligation 95ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > fences unbound starts before queuing cleanup without inventing process identity
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > fences unbound starts before queuing cleanup without inventing process identity
+AssertionError: expected { phase: 'reserved', …(5) } to match object { phase: 'reserved', …(2) }
+(43 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "phase": "reserved",
+    "stopRequestedAt": "2026-09-04T00:00:01.000Z",
+-   "workspaceBlocked": true,
+  }
+
+ ❯ test/integration/sandbox-resource-recovery-scheduling.test.ts:75:25
+     73|       expect(await f.preparations.scheduleRecovery(await f.requestFor(…
+     74|       const admission = await f.preparations.readAdmission(f.identity);
+     75|       expect(admission).toMatchObject({ phase: "reserved", stopRequest…
+       |                         ^
+     76|       expect(admission).not.toHaveProperty("releaseReceipt");
+     77|       await expect(f.preparations.bindAndStart({ identity: f.identity,…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (worker) > pauses a failed attempt durably and only schedules a later distinct stop obligation
+ApplicationPortError: Invalid bounded recovery request
+ ❯ SqliteExecutionContext.receive packages/persistence-sqlite/src/sqlite-execution-context.ts:109:9
+    107|     if (error.kind === "application") {
+    108|       operation.reject(
+    109|         new ApplicationPortError(error.code as PortErrorCode, error.me…
+       |         ^
+    110|       );
+    111|       return;
+ ❯ Worker.<anonymous> packages/persistence-sqlite/src/sqlite-execution-context.ts:50:60
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |integration| test/integration/sandbox-resource-recovery-scheduling.test.ts > resource recovery scheduling (direct) > pauses a failed attempt durably and only schedules a later distinct stop obligation
+ApplicationPortError: Invalid bounded recovery request
+ ❯ SqliteSandboxRecoveryOperations.fail test/integration/sqlite-contract-execution.fixture.ts:43:17
+     41|         database,
+     42|         (code, message, details) => {
+     43|           throw new ApplicationPortError(code as PortErrorCode, messag…
+       |                 ^
+     44|         },
+     45|         () => undefined,
+ ❯ SqliteSandboxRecoveryOperations.mutate packages/persistence-sqlite/src/sqlite-sandbox-recovery-operations.ts:53:21
+ ❯ Function.<anonymous> packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:338:74
+ ❯ Function.sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:65:24
+ ❯ SqliteSandboxExecutionOperations.execute packages/persistence-sqlite/src/sqlite-sandbox-execution-operations.ts:424:8
+ ❯ SqliteCapabilityInvocationOperations.execute packages/persistence-sqlite/src/sqlite-capability-invocation-operations.ts:515:39
+ ❯ SqliteDurableOperations.execute packages/persistence-sqlite/src/sqlite-durable-operations.ts:458:41
+ ❯ Object.request test/integration/sqlite-contract-execution.fixture.ts:60:29
+ ❯ SqliteProductStateRepository.writeRequest packages/persistence-sqlite/src/product-state-repository.ts:546:33
+ ❯ Object.write packages/persistence-sqlite/src/product-state-repository.ts:164:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 10 passed (14)
+   Start at  12:40:02
+   Duration  4.28s (transform 887ms, setup 0ms, import 1.37s, tests 2.82s, environment 0ms)

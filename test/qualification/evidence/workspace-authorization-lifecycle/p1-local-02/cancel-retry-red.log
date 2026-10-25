@@ -1,0 +1,38 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |integration| test/integration/run-coordinator.test.ts (24 tests | 2 failed) 121ms
+   × still cancels the active Worker when resource stopping fails, retry=true 5ms
+   × retries a failed cancellation of a still-active runtime on a repeated Stop 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > still cancels the active Worker when resource stopping fails, retry=true
+AssertionError: expected "cancel" to be called 2 times, but got 1 times
+ ❯ test/integration/run-coordinator.test.ts:1027:28
+    1025|         authority: f.authority, command: f.input.commands.cancelled, r…
+    1026|       });
+    1027|       expect(cancelWorker).toHaveBeenCalledTimes(2);
+       |                            ^
+    1028|     }
+    1029|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |integration| test/integration/run-coordinator.test.ts > retries a failed cancellation of a still-active runtime on a repeated Stop
+AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times
+ ❯ test/integration/run-coordinator.test.ts:1062:28
+    1060|     vi.mocked(runtime.cancel).mockImplementation(async () => { release…
+    1061|     expect((await f.coordinator.cancel(command)).run.status).toBe("can…
+    1062|     expect(runtime.cancel).toHaveBeenCalledTimes(2);
+       |                            ^
+    1063|   } finally {
+    1064|     release();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 22 passed (24)
+   Start at  21:52:36
+   Duration  1.06s (transform 674ms, setup 0ms, import 820ms, tests 121ms, environment 0ms)

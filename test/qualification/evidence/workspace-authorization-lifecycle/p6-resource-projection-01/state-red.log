@@ -1,0 +1,103 @@
+
+ RUN  v4.1.9 /Users/triggerjames/Documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/application/test/thread-execution-state.unit.test.ts (17 tests | 3 failed) 40ms
+     × shows resource recovery while preserving the successful tool effect 29ms
+     × ends cancelled cleanup only with complete release evidence, never an empty inventory 2ms
+     × does not hide an unrendered resource behind a completed Run or a last successful tool 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > shows resource recovery while preserving the successful tool effect
+AssertionError: expected { runRevision: 3, …(9) } to match object { displayPhase: 'stopping', …(4) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "availableActions": [],
+-   "displayPhase": "stopping",
++   "availableActions": [
++     "retry_cleanup",
++   ],
++   "displayPhase": "unresolved",
+    "effectSummary": [
+      {
+        "itemId": "saved",
+        "outcome": "succeeded",
+      },
+    ],
+-   "lastObservedAt": "2026-09-20T00:00:05.000Z",
++   "lastObservedAt": "2026-09-20T00:00:01.000Z",
+    "operations": [
+      {
+-       "displayPhase": "stopping",
++       "displayPhase": "completed",
+        "itemId": "saved",
+      },
+    ],
+  }
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:46:19
+     44|         operations: [{ itemId: "saved", phase: "stopping", reasonCode:…
+     45|       });
+     46|     expect(state).toMatchObject({ displayPhase: "stopping", lastObserv…
+       |                   ^
+     47|       effectSummary: [{ itemId: "saved", outcome: "succeeded" }],
+     48|       operations: [{ itemId: "saved", displayPhase: "stopping" }], ava…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > ends cancelled cleanup only with complete release evidence, never an empty inventory
+AssertionError: expected { runRevision: 3, …(9) } to match object { displayPhase: 'stopped', …(2) }
+(9 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -1,8 +1,10 @@
+  {
+-   "availableActions": [],
+-   "displayPhase": "stopped",
++   "availableActions": [
++     "retry_cleanup",
++   ],
++   "displayPhase": "unresolved",
+    "effectSummary": [
+      {
+        "itemId": "saved",
+        "outcome": "succeeded",
+      },
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:56:19
+     54|       operations: [{ itemId: "saved", phase: "released" as const, reas…
+     55|     const state = projectThreadExecutionState({ ...run, status: "cance…
+     56|     expect(state).toMatchObject({ displayPhase: "stopped", availableAc…
+       |                   ^
+     57|       effectSummary: [{ itemId: "saved", outcome: "succeeded" }] });
+     58|     expect(projectThreadExecutionState({ ...run, status: "cancelled" }…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |unit| packages/application/test/thread-execution-state.unit.test.ts > backend execution state > does not hide an unrendered resource behind a completed Run or a last successful tool
+AssertionError: expected 'completed' to be 'unresolved' // Object.is equality
+
+Expected: "unresolved"
+Received: "completed"
+
+ ❯ packages/application/test/thread-execution-state.unit.test.ts:67:32
+     65|       operations: [{ itemId: "other", phase: "unresolved", reasonCode:…
+     66|     });
+     67|     expect(state.displayPhase).toBe("unresolved");
+       |                                ^
+     68|     expect(state.effectSummary).toEqual([{ itemId: "saved", outcome: "…
+     69|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 14 passed (17)
+   Start at  16:33:23
+   Duration  297ms (transform 112ms, setup 0ms, import 141ms, tests 40ms, environment 0ms)

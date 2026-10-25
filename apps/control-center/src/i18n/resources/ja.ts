@@ -1,6 +1,69 @@
 import type { MessageCatalog } from "../message-ids.js";
 
 export const messages = {
+  "review.authorizationChecking": "この操作を確認しています",
+  "review.authorizationStarted": "自動審査を開始しました",
+  "review.authorizationApproved": "自動審査で今回の操作が許可されました",
+  "review.authorizationDenied": "自動審査で今回の操作は許可されませんでした",
+  "review.authorizationHuman": "自動審査には確認が必要です",
+  "review.authorizationAlternative": "自動審査で依頼の変更が提案されました",
+  "review.authorizationTiming":
+    "審査の登録から判断の保存までの実測時間です。ツールの実行時間ではありません。",
+
+  "review.archivePending":
+    "この会話には確認待ちの操作があります。対応してからアーカイブしてください。",
+  "review.system": "システムに合わせる",
+  "review.localeNote": "表示言語を変更しても、過去のメッセージは変わりません。",
+  "review.loadMore": "さらに表示",
+  "review.retrySend": "前の送信を再試行",
+  "review.pendingSend":
+    "前の送信結果を確認できません。同じメッセージを重複なく確認し、新しく編集した下書きは保持します。",
+  "review.workerTiming":
+    "実行環境の準備・後処理を含む実行側の処理時間。キュー、通信、承認待ちは含みません。",
+  "review.thinkingTiming":
+    "思考出力の開始・終了イベント間の観測時間です。モデル内部の思考全体の時間ではありません。",
+  "review.preview": "内容を表示",
+  "review.impact.none": "データの変更なし",
+  "review.impact.reversible": "内容を変更します。復元可能です",
+  "review.impact.irreversible": "取り消せない可能性があります",
+  "review.settings.general": "一般",
+  "review.settings.tools": "ツールと権限",
+  "review.settings.data": "会話とデータ",
+  "review.light": "ライト",
+  "review.dark": "ダーク",
+  "review.localData":
+    "このブラウザには表示設定と未送信の下書きを保存します。会話履歴はサーバーに保存されます。",
+  "review.archives": "アーカイブ済みの会話",
+  "review.loading": "読み込み中…",
+  "review.preparing": "サービスを準備中です。先に入力できます。",
+  "review.needsAttention": "確認待ち",
+  "review.conversationActions": "会話の操作",
+  "review.conversationName": "会話名",
+  "review.save": "保存",
+  "review.effortUnavailable": "このモデルの推論強度は調整できません。",
+  "review.disconnected": "接続が切れました。再接続中です。下書きは保持されています。",
+  "review.progressUnknown": "最新の進捗を取得できません。再接続後に同期します。",
+  "review.thinking": "推論段階",
+  "review.thinkingObserved": "推論出力を検出",
+  "review.thinkingCount": "推論 {count} 回",
+  "review.effort.off": "オフ",
+  "review.effort.minimal": "最小",
+  "review.effort.low": "低",
+  "review.effort.medium": "標準",
+  "review.effort.high": "高",
+  "review.effort.xhigh": "非常に高",
+  "review.effort.max": "最大",
+  "review.effortDescription.off": "明確で直接的なタスク向け。",
+  "review.effortDescription.minimal": "明確で直接的なタスク向け。",
+  "review.effortDescription.low": "明確で直接的なタスク向け。",
+  "review.effortDescription.medium": "応答速度と推論の深さのバランス。",
+  "review.effortDescription.high":
+    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
+  "review.effortDescription.xhigh":
+    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
+  "review.effortDescription.max":
+    "複雑なタスクにより多くの推論を使い、時間がかかる場合があります。",
+
   "layout.hideList": "サイドバーを閉じる",
   "nav.manage": "管理",
   "threads.recent": "最近の会話",
@@ -39,6 +102,8 @@ export const messages = {
   "chat.error.authFailed":
     "モデルサービスの認証に失敗しました。サーバーの認証情報とアクセス権限を確認してください。",
   "chat.error.unavailable": "モデルサービスを現在利用できません。後で再試行してください。",
+  "chat.error.contextMemoryUnavailable":
+    "関連する記憶の検索中にモデルサービスへの接続に失敗しました。このターンでは対話モデルを呼び出しておらず、ツールも実行していません。",
   "chat.error.failed":
     "この実行は失敗しました。保存済みのメッセージと実行記録は引き続き確認できます。",
   "chat.toolCount": "ツール呼び出し {count} 回",
@@ -66,7 +131,16 @@ export const messages = {
   "chat.search.allowed": "ウェブ検索を許可済み",
   "chat.search.ask": "ウェブ検索は確認が必要",
   "chat.search.disclosure":
-    "生成した検索語を Exa に送信します。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
+    "生成した検索語を 下記のウェブ検索サービスに送信します（ページを読む場合はその URL も送信します）。会話で提供した情報を含む場合があります。ファイル、添付、コマンドの権限は追加されません。認証情報は引き続き検出・遮断します。取り消すと以後の検索に確認が必要です。",
+  "chat.search.recipients": "送信先：",
+  "chat.search.remember": "選択を記憶して、今後のウェブ検索を許可する",
+  "chat.search.scope": "取り消すまで現在のアカウントに適用します。",
+  "chat.search.afterRevoke": "オフにすると、次の検索時に該当する会話で確認します。",
+  "chat.search.other": "その他の操作の許可",
+  "review.inlineConsent": "該当する会話で操作と範囲を確認します。",
+  "review.archiveDescription": "アーカイブは一覧を整理し、会話の内容を保持します。",
+  "review.manageArchives": "管理",
+  "review.localDataTitle": "このブラウザーには何が保存されますか？",
   "chat.search.enable": "ウェブ検索を許可",
   "chat.search.revoke": "ウェブ検索の許可を取り消す",
   "chat.allowOnce": "今回のみ許可",
@@ -75,6 +149,7 @@ export const messages = {
   "chat.activity.output": "回答を生成中",
   "chat.activity.preparingTool": "ツール呼び出しを準備中",
   "chat.activity.waitingModel": "モデルの応答を待機中",
+  "chat.activity.buildingContext": "関連する記憶を検索中",
   "chat.lastActivity": "最後の進捗は {time} 前",
   "chat.progressDelayed":
     "新しい進捗が届いていません。接続中でも処理が進んでいるとは限りません。結果を待つか、この実行を停止できます。",
@@ -85,6 +160,66 @@ export const messages = {
   "chat.notProvided": "表示可能な内容は提供されていません",
   "chat.disconnected": "接続が切断されました。同期待ちです",
   "chat.recordUnavailable": "一部の実行記録を読み取れません。",
+  "chat.phase.notDispatched": "未送信",
+  "chat.resource.stopping": "停止処理中",
+  "chat.resource.verifying": "元のリクエストを確認中",
+  "chat.resource.queued": "リソース待機中",
+  "chat.resource.executing": "実行中",
+  "chat.resource.stopNotStrictlyConfirmed": "停止は厳密に確認されていません",
+  "chat.resource.recordDeleted": "実行記録は削除されました",
+  "chat.reason.admissionConflict": "受付時にリソースまたはリクエストの状態が競合しました",
+  "chat.reason.authorizationDenied": "実行権限の期限切れまたは拒否により停止しました",
+  "chat.reason.authorityUnavailable": "実行権限を確認できません",
+  "chat.reason.admissionResourceMissing": "実行に必要なリソースがありません",
+  "chat.reason.admissionAlreadyRecorded": "リクエストは記録済みです。元の状態を確認してください",
+  "chat.reason.operationUnavailable": "この実行方法は利用できません",
+  "chat.reason.admissionUnavailable": "実行受付サービスを利用できません",
+  "chat.reason.runDeadlineExceeded":
+    "このターンの実行期限に達しました。後処理を完了し、ターンを終了しました",
+  "chat.reason.toolDeadlineExceeded": "ツールがタイムアウトしました。停止と後処理は完了しています",
+  "chat.reason.toolNotStarted": "ツールは起動しませんでした。準備に失敗し、後処理は完了しています",
+  "chat.reason.deadlineExceeded": "実行期限が切れ、操作は派遣されませんでした",
+  "chat.reason.resourceCeilingChanged":
+    "許可されたリソース上限が変わり、操作は派遣されませんでした",
+  "chat.reason.directoryTargetChanged": "ディレクトリの場所または対象が変わりました",
+  "chat.reason.fileVersionConflict": "ファイルの版が変わり、候補は公開されませんでした",
+  "chat.reason.fileWriteNotStarted": "ファイル操作は失敗しました。ファイルは変更されていません",
+  "chat.reason.commandEffectUnverified":
+    "コマンドは失敗しました。ワークスペースへの影響は確認していません",
+  "chat.reason.writeEffectUnverified":
+    "ファイル操作は失敗しました。ファイルが変更された可能性がありますが、影響は未確認です",
+  "chat.reason.strictModeUnavailable": "厳格モードでは使用できません",
+  "chat.environment.title": "実行環境",
+  "chat.environment.mode.srt": "デフォルトモード",
+  "chat.environment.mode.strict": "厳格モード",
+  "chat.environment.running": "{count} 個のバックグラウンドプログラムが実行中",
+  "chat.environment.idle": "実行中のバックグラウンドプログラムはありません",
+  "chat.environment.currentMode": "現在のモード",
+  "chat.environment.srtMeaning":
+    "ツールはこのコンピューター上のプロセス単位のサンドボックス（SRT）で実行され、アクセスできるファイルとネットワークが制限されます。停止で保証されるのはツールのプロセスグループの終了だけで、グループを離れたプログラムは動き続けている可能性があります。",
+  "chat.environment.strictMeaning": "すべてのツールは、このターン専用のコンテナーで実行されます。",
+  "chat.environment.fixed": "モードはインストール設定で決まり、この画面では変更できません。",
+  "chat.environment.programs": "実行中のプログラム",
+  "chat.environment.noPrograms": "実行中のプログラムはありません。",
+  "chat.environment.kind.background": "バックグラウンドタスク",
+  "chat.environment.kind.service": "サービス",
+  "chat.environment.startedAt": "{time} 開始",
+  "chat.environment.openThread": "所属する会話を開く：{title}",
+  "chat.environment.otherThread": "現在の一覧にない会話",
+  "chat.environment.unavailable": "厳格モードで使用できないツール",
+  "chat.environment.toolAvailability": "ツールの利用状況",
+  "chat.environment.reason.SANDBOX_OPERATION_SRT_ONLY":
+    "プロセス単位のサンドボックス（SRT）でのみ実行できます",
+  "chat.environment.reason.SANDBOX_BINDING_SRT_ONLY":
+    "インストール宣言に、操作ごとにコンテナーで実行できることが記載されていません",
+  "chat.environment.strictNote":
+    "ツールの内部から開始するサブタスクも使用できません。これらのツールを呼び出すと、該当する手順に「厳格モードでは使用できません」と表示され、別の方法では実行されません。",
+  "chat.environment.noneUnavailable":
+    "デフォルトモードでは、モードが原因で使用できないツールはありません。",
+  "chat.environment.threadRunning": "実行中のバックグラウンドプログラムあり",
+  "chat.environment.readFailed": "実行環境を読み取れません。しばらくしてから開き直してください。",
+  "chat.phase.unresolved": "結果未確認",
+  "chat.phase.preparing": "準備中",
   "chat.phase.started": "実行中",
   "chat.phase.updated": "出力中",
   "chat.phase.completed": "完了",
@@ -92,6 +227,28 @@ export const messages = {
   "chat.phase.waiting": "承認待ち",
   "chat.phase.stopped": "停止済み",
   "chat.phase.unavailable": "記録を利用できません",
+  "chat.nextAction.unresolved":
+    "結果は未確認です。元のリソースが解放されたと確認できるまで、書き込み操作を再実行しないでください。",
+  "chat.waiting.tool":
+    "このターンはまだ進行中です：ツール {tool} の結果を待っています。ツールは実行環境に渡されましたが、停止したことはまだ確認されていません。",
+  "chat.waiting.afterTurn":
+    "このターンは終了しましたが、ツール {tool} の実行環境が停止したことはまだ確認されていません。",
+  "chat.nextAction.stop":
+    "結果は未確認です。書き込みを再試行する前に、この実行を停止してリソースを確認してください。",
+  "chat.nextAction.retryCleanup":
+    "結果は未確認です。「停止と終了処理の確認を再試行」を実行してください。解放確認前に書き込みを再実行しないでください。",
+  "chat.nextAction.notDispatched":
+    "操作は派遣されていません。必要であれば新しいリクエストを送信してください。現在の権限とワークスペース状態が再確認されます。",
+  "chat.nextAction.stoppedWithResults":
+    "この実行は停止しました。完了したツール記録と結果は下に残っています。続行する前に確認してください。",
+  "chat.nextAction.stopNotStrictlyConfirmed":
+    "停止は厳密に確認されていません。タスクのプロセスグループは終了しましたが、グループを離れたプログラムがまだ実行中で、ファイルの変更やネットワーク接続を続けている可能性があります。続行する前に関係するフォルダを確認してください。",
+  "chat.nextAction.partial":
+    "この実行が失敗する前に一部のツール操作は完了しました。結果を個別に確認してください。後続の失敗によって以前の操作が取り消されることはありません。",
+  "chat.nextAction.failed":
+    "新しいリクエストを送信する前に、失敗した操作とワークスペースの状態を確認してください。失敗結果だけでは副作用が取り消されたとは確認できません。",
+  "chat.nextAction.failedBeforeAnyOperation":
+    "このターンではツール操作を実行していません。そのまま再送信できます。",
   "appearance.title": "外観とアクセント",
   "appearance.theme": "テーマ",
   "appearance.accent": "アクセント色",
@@ -126,6 +283,7 @@ export const messages = {
   "chat.thinking": "思考の要約",
   "chat.unknownTime": "時刻の記録なし",
   "chat.workTime": "作業 {time}",
+  "chat.executionTime": "ツール実行 {time}",
   "chat.waitTime": "承認待ち {time}",
 
   "authentication.required": "このブラウザーでログインしてください",
@@ -237,7 +395,7 @@ export const messages = {
   "threads.id": "Thread ID",
   "threads.idHint": "安定した Thread ID を使用し、URL やログに本文を含めないでください。",
   "threads.draft": "メッセージ下書き",
-  "threads.send": "送信して Run を開始",
+  "threads.send": "送信",
   "threads.cancelRun": "指定した Run をキャンセル",
   "threads.events": "リアルタイム Run イベント",
   "threads.eventsEmpty": "リアルタイムイベントはまだありません",

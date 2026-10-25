@@ -1,0 +1,50 @@
+{
+  "sourceBaseCommit": "825a7a1c452c4010e548ecf0ba33cc44f5774d59",
+  "recordedAt": "2026-09-19T12:18:54.803978+00:00",
+  "files": [
+    {
+      "path": "apps/agent-service/src/production-coding-workflow.ts",
+      "sha256": "265235de4780dc11ed6bae98f9dc6314997ffe2dce611a9636de64cfb7e8ef0c"
+    },
+    {
+      "path": "apps/agent-service/src/production-file-read-services.ts",
+      "sha256": "359d0e7a10cbaf59fad68d83e67d82a9a49ca21f96a8957cb0e82be6dadea9a9"
+    },
+    {
+      "path": "apps/agent-service/src/production-file-read-workflow.ts",
+      "sha256": "ee267592133df8d882f22a96f0bebcbed43502ad3e5643db6dfdfa4c55845850"
+    },
+    {
+      "path": "apps/agent-service/src/production-runtime-tools.ts",
+      "sha256": "1d6e05725e134b2e5b8cdb31de46abaaf366e8d74510b3920eaf85ba8a381b18"
+    },
+    {
+      "path": "apps/agent-service/test/production-coding-workflow.unit.test.ts",
+      "sha256": "b618eceec08b2e4398357998312e8437491c8514d39022aad97acdcb15cb1ad4"
+    },
+    {
+      "path": "apps/agent-service/test/production-file-read-workflow.unit.test.ts",
+      "sha256": "930b0098f5ef07544e4249f45f1925578cc8f5160e3d41718ce9e23d0c8ff2c8"
+    },
+    {
+      "path": "packages/application/src/ports/intelligence.ts",
+      "sha256": "12e751a0885c7ba287dbbad5e9e47b7d2714b2204baf6b53cd9ef0c4f69a35e4"
+    },
+    {
+      "path": "packages/application/src/services/action-policy-service.ts",
+      "sha256": "da008de3d191e67a333021833467dba5ef182d4476efd7e7c5210ede74035cea"
+    },
+    {
+      "path": "packages/runtime-pi/src/pi-runtime-adapter.ts",
+      "sha256": "8dda2e6d354b954fa4d00c93a1938665b2f7cc2ed42d057660406d48fae676c0"
+    },
+    {
+      "path": "packages/runtime-pi/test/pi-runtime-adapter.compat.test.ts",
+      "sha256": "061658f4ae9a6471077b19b15e2ba686e41209a6d2a229f8e2b6815beafabc3d"
+    },
+    {
+      "path": "test/integration/authorization-capability-governance.test.ts",
+      "sha256": "e2dfc4cc88270b156d1093c36ed5349e9661886624005969a18544b8ed6c1b8a"
+    }
+  ]
+}

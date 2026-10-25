@@ -1,0 +1,69 @@
+
+ RUN  v4.1.9 /Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent
+
+ ❯ |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts (52 tests | 4 failed | 48 skipped) 29ms
+     × runs the host commit once for a running environment without entering the container 13ms
+     × refuses before committing after a stop, past the deadline, on another runtime or after a restart 5ms
+     × does not prove the environment stopped while a host commit is still writing 6ms
+     × refuses a commit that races a stop request instead of writing after the stop 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > publishing prepared files from the host for a container environment > runs the host commit once for a running environment without entering the container
+TypeError: subject.publishOnHost is not a function
+ ❯ packages/runtime-sandbox/test/container-execution-backend.unit.test.ts:1452:26
+    1450|     const { subject, request } = await started();
+    1451|     const commit = vi.fn(async () => committed);
+    1452|     await expect(subject.publishOnHost(publication(request), commit)).…
+       |                          ^
+    1453|     expect(commit).toHaveBeenCalledTimes(1);
+    1454|     expect(docker.execs).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > publishing prepared files from the host for a container environment > refuses before committing after a stop, past the deadline, on another runtime or after a restart
+TypeError: subject.publishOnHost is not a function
+ ❯ call packages/runtime-sandbox/test/container-execution-backend.unit.test.ts:1465:15
+    1463|     const commit = vi.fn(async () => committed);
+    1464|     const call = (overrides: Record<string, unknown> = {}) =>
+    1465|       subject.publishOnHost({ ...publication(request), ...overrides },…
+       |               ^
+    1466|     await expect(call({ deadlineAt: "2026-09-25T10:00:00.000Z" })).rej…
+    1467|       code: "CONTAINER_DEADLINE_PASSED",
+ ❯ packages/runtime-sandbox/test/container-execution-backend.unit.test.ts:1466:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > publishing prepared files from the host for a container environment > does not prove the environment stopped while a host commit is still writing
+TypeError: subject.publishOnHost is not a function
+ ❯ packages/runtime-sandbox/test/container-execution-backend.unit.test.ts:1491:29
+    1489|       entered = resolve;
+    1490|     });
+    1491|     const pending = subject.publishOnHost(publication(request), async …
+       |                             ^
+    1492|       entered();
+    1493|       return writing;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > publishing prepared files from the host for a container environment > refuses a commit that races a stop request instead of writing after the stop
+TypeError: subject.publishOnHost is not a function
+ ❯ packages/runtime-sandbox/test/container-execution-backend.unit.test.ts:1511:28
+    1509|     const commit = vi.fn(async () => committed);
+    1510|     const stopping = subject.stop(stopRequest(locator));
+    1511|     const racing = subject.publishOnHost(publication(request), commit);
+       |                            ^
+    1512|     await stopping;
+    1513|     await racing.catch(() => {});
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |unit| packages/runtime-sandbox/test/container-execution-backend.unit.test.ts > publishing prepared files from the host for a container environment > refuses a commit that races a stop request instead of writing after the stop
+Error: ENOTEMPTY: directory not empty, rmdir '/var/folders/l2/yz2r8t351wn81jsl2zv3nnsh0000gn/T/container-backend-Ddkfiu/b292513d5cbc1eea8a4e09976d442cd3'
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 48 skipped (52)
+   Start at  16:04:48
+   Duration  368ms (transform 191ms, setup 0ms, import 237ms, tests 29ms, environment 0ms)

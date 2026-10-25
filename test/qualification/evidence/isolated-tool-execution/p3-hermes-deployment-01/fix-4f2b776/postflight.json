@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-27T12:23:31Z",
+  "sourceCommit": "d6516794530b75df65ff9f3dbc34653f271817b3",
+  "runtimeDigest": "fbce5ae673680c10942494b5b3912d023df9ec527476784bad0fb425c70d7716",
+  "serviceActive": true,
+  "restartsSinceCutover": 0,
+  "workerStartupTimeout": false,
+  "runtimeUid": 998,
+  "noNewPrivs": true,
+  "livePhysicalMount": "/dev/nvme0n1p2[/opt/himawari/releases/2026-09-27-4f2b776] ro",
+  "liveWorkerContainsFix": true,
+  "schema": 48,
+  "activeRuns": [
+    "run:f52264fe-b2b1-4bb6-a687-e9facdc06070"
+  ],
+  "foreignKeyErrors": 0,
+  "health": {
+    "status": "ready"
+  },
+  "staticFilesCheckedAsRuntimeAccount": 23,
+  "history": {
+    "threads": 38,
+    "thread_messages": 155,
+    "runs": 90
+  },
+  "modelCallsByDeployment": 0,
+  "temporarySudoRevoked": true
+}

@@ -1,0 +1,16 @@
+import { describe, expect, it } from "vitest";
+import { loadOnce } from "./example.js";
+
+const loaded = loadOnce();
+
+describe("module reset", () => {
+  it("keeps one module instance", () => {
+    expect(loaded).toBeDefined();
+  });
+
+  it("ignores a text mention and another resetModules object", () => {
+    const text = "vi.resetModules()";
+    const registry = { resetModules: () => text };
+    expect(registry.resetModules()).toBe(text);
+  });
+});

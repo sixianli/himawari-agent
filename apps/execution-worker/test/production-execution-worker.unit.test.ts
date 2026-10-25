@@ -153,6 +153,9 @@ async function workerFixture(
       typeof ProductionExecutionWorker
     >[0]["hostOperations"];
     readonly subtasks?: ConstructorParameters<typeof ProductionExecutionWorker>[0]["subtasks"];
+    readonly environments?: ConstructorParameters<
+      typeof ProductionExecutionWorker
+    >[0]["environments"];
   } = {},
 ) {
   const events = options.unknownResult
@@ -273,6 +276,7 @@ async function workerFixture(
       ...(options.sandboxV2 ? { sandboxV2: options.sandboxV2 } : {}),
       ...(options.hostOperations ? { hostOperations: options.hostOperations } : {}),
       ...(options.subtasks ? { subtasks: options.subtasks } : {}),
+      ...(options.environments ? { environments: options.environments } : {}),
       now: options.now ?? (() => adapters.clock.now()),
       nextId: (type) => adapters.ids.next(type),
     }),
@@ -327,6 +331,7 @@ describe("production execution Worker", () => {
     await worker.waitForIdle();
     expect(bind).toHaveBeenCalledTimes(1);
     expect(await readEvents(worker)).toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       {
         type: "work.result",
         payload: {
@@ -498,11 +503,18 @@ describe("production execution Worker", () => {
     await expect(worker.request(request)).resolves.toBeNull();
     await worker.waitForIdle();
     const events = await readEvents(worker);
-    expect(events.map(({ type }) => type)).toEqual(["work.progress", "work.result"]);
-    expect(events[1]).toMatchObject({ payload: { outcome: "succeeded" } });
+    expect(events.map(({ type }) => type)).toEqual([
+      "work.progress",
+      "work.progress",
+      "work.result",
+    ]);
+    expect(events[0]).toMatchObject({
+      payload: { stage: "worker.execution.started", occurredAt: fixture.times.start },
+    });
+    expect(events[2]).toMatchObject({ payload: { outcome: "succeeded" } });
     const firstPayload = events[0]?.payload;
     if (!firstPayload || !("cursor" in firstPayload)) throw new TypeError("cursor missing");
-    await expect(readEvents(worker, firstPayload.cursor)).resolves.toEqual([events[1]]);
+    await expect(readEvents(worker, firstPayload.cursor)).resolves.toEqual([events[1], events[2]]);
   });
 
   it("rejects stale fences, unregistered adapters and excessive ceilings before invocation", async () => {
@@ -536,6 +548,7 @@ describe("production execution Worker", () => {
     await worker.request(execute());
     await worker.waitForIdle();
     await expect(readEvents(worker)).resolves.toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       { type: "work.result", payload: { outcome: "failed", errorCode: "PORT_HANDLE_REVOKED" } },
     ]);
   });
@@ -547,6 +560,7 @@ describe("production execution Worker", () => {
     await worker.waitForIdle();
     const unknown = await readEvents(worker);
     expect(unknown).toMatchObject([
+      { type: "work.progress", payload: { stage: "worker.execution.started" } },
       {
         type: "work.result",
         payload: { outcome: "result_unknown", externalActionId: "external-worker-unit" },
@@ -1298,6 +1312,257 @@ describe("production execution Worker", () => {
     expect(expiredCalls).toBe(0);
   });
 
+  it("forwards each environment operation to the registered backend once and fails closed without one", async () => {
+    const identity = {
+      schemaVersion: "execution-environment.v1",
+      ownerId: fixture.owner.id,
+      agentId: fixture.agent.id,
+      runId: fixture.runs.monitoring.id,
+      hostId: "host-unit",
+      executionJobId: "execution-job-unit",
+      environmentId: "environment-unit",
+      environmentGeneration: 1,
+      role: "primary",
+    } as const;
+    const locator = {
+      backendRef: "container-docker:unit",
+      runtimeInstanceId: "daemon-unit",
+      runtimeEnvironmentId: "d".repeat(64),
+      createIntentId: "environment-create-unit",
+      effectivePolicyDigest: "e".repeat(64),
+    };
+    const operation = (messageId: string, payload: Record<string, unknown>, extra = {}) => {
+      const request = executionV2MessageSchema.parse({
+        ...requestEnvelope("environment.operation.execute"),
+        messageId,
+        idempotencyKey: messageId,
+        ...extra,
+        payload: {
+          backendRef: locator.backendRef,
+          requestedAt: fixture.times.start,
+          deadlineAt: fixture.times.deadline,
+          ...payload,
+        },
+      });
+      if (request.kind !== "request" || request.type !== "environment.operation.execute")
+        throw new TypeError("environment request fixture is invalid");
+      return request;
+    };
+    const create = operation("environment-create-unit", {
+      operation: "create",
+      identity,
+      createIntentId: "environment-create-unit",
+      envelope: {
+        schemaVersion: "execution-envelope.v1",
+        directories: [],
+        network: [],
+        resources: {
+          cpuMillicores: 500,
+          memoryBytes: 134217728,
+          maxProcesses: 64,
+          privateStorageBytes: 16777216,
+        },
+      },
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      environmentDeadlineAt: fixture.times.deadline,
+    });
+    expect(() =>
+      operation("environment-execute-unit", {
+        operation: "execute",
+        identity,
+        createIntentId: "environment-create-unit",
+        locator,
+        stopFence: 0,
+        invocationId: "invocation-unit",
+        argumentsRef: "payload-arguments-unit",
+        invocationDeadlineAt: fixture.times.deadline,
+        credential: null,
+      }),
+    ).toThrow();
+    const inspect = operation("environment-inspect-unit", {
+      operation: "inspect",
+      identity,
+      createIntentId: "environment-create-unit",
+      locator,
+    });
+
+    const absent = await workerFixture();
+    await absent.worker.request(handshake());
+    await expect(absent.worker.request(create)).rejects.toMatchObject({
+      code: PRODUCTION_WORKER_ERROR_CODES.ADAPTER_NOT_REGISTERED,
+    });
+
+    const calls: [string, unknown][] = [];
+    const backend = {
+      capabilities: async () => {
+        throw new Error("unused");
+      },
+      create: async (input: unknown) => {
+        calls.push(["create", input]);
+        return locator;
+      },
+      inspect: async (input: unknown) => {
+        calls.push(["inspect", input]);
+        throw Object.assign(new Error("runtime changed"), { code: "CONTAINER_RUNTIME_CHANGED" });
+      },
+      stop: async () => ({ accepted: true as const }),
+      verifyStopped: async () => {
+        throw new Error("unused");
+      },
+      destroy: async () => {},
+    };
+    const registered = await workerFixture({
+      environments: new Map([[locator.backendRef, backend]]),
+    });
+    await registered.worker.request(handshake());
+    for (const request of [create, create, inspect]) await registered.worker.request(request);
+    await registered.worker.waitForIdle();
+    expect(calls.map(([name]) => name)).toEqual(["create", "inspect"]);
+    expect(calls[0]?.[1]).toEqual({
+      identity,
+      createIntentId: "environment-create-unit",
+      envelope: create.payload.operation === "create" ? create.payload.envelope : null,
+      policyDigest: "a".repeat(64),
+      imageDigest: "b".repeat(64),
+      runnerDigest: "c".repeat(64),
+      deadlineAt: fixture.times.deadline,
+    });
+    const results = (await readEvents(registered.worker)).filter(
+      (event) => event.type === "environment.operation.result",
+    );
+    expect(results.map((event) => event.payload)).toEqual([
+      expect.objectContaining({
+        requestId: "environment-create-unit",
+        operation: "create",
+        outcome: "succeeded",
+        result: locator,
+        errorCode: null,
+      }),
+      expect.objectContaining({
+        requestId: "environment-inspect-unit",
+        outcome: "failed",
+        result: null,
+        errorCode: "CONTAINER_RUNTIME_CHANGED",
+      }),
+    ]);
+
+    let expiredCalls = 0;
+    const expired = await workerFixture({
+      now: () => fixture.times.deadline,
+      environments: new Map([
+        [
+          locator.backendRef,
+          {
+            ...backend,
+            create: async () => {
+              expiredCalls += 1;
+              return locator;
+            },
+          },
+        ],
+      ]),
+    });
+    await expired.worker.request(handshake());
+    await expect(expired.worker.request(create)).rejects.toMatchObject({
+      code: "WORKER_DEADLINE_EXPIRED",
+    });
+    expect(expiredCalls).toBe(0);
+  });
+
+  it("[R2-P2] runs two stops of one stop intent as separate requests without a duplicate conflict", async () => {
+    const identity = {
+      schemaVersion: "execution-environment.v1",
+      ownerId: fixture.owner.id,
+      agentId: fixture.agent.id,
+      runId: fixture.runs.monitoring.id,
+      hostId: "host-unit",
+      executionJobId: "execution-job-unit",
+      environmentId: "environment-unit",
+      environmentGeneration: 1,
+      role: "primary",
+    } as const;
+    const locator = {
+      backendRef: "container-docker:unit",
+      runtimeInstanceId: "daemon-unit",
+      runtimeEnvironmentId: "d".repeat(64),
+      createIntentId: "environment-create-unit",
+      effectivePolicyDigest: "e".repeat(64),
+    };
+    const stop = (messageId: string, requestedAt: string) => {
+      const request = executionV2MessageSchema.parse({
+        ...requestEnvelope("environment.operation.execute"),
+        messageId,
+        idempotencyKey: `${messageId}-key`,
+        payload: {
+          backendRef: locator.backendRef,
+          requestedAt,
+          deadlineAt: fixture.times.deadline,
+          operation: "stop",
+          identity,
+          createIntentId: "environment-create-unit",
+          locator,
+          stopIntentId: "stop-unit",
+          stopFence: 1,
+        },
+      });
+      if (request.kind !== "request" || request.type !== "environment.operation.execute")
+        throw new TypeError("environment request fixture is invalid");
+      return request;
+    };
+    let stops = 0;
+    const backend = {
+      capabilities: async () => {
+        throw new Error("unused");
+      },
+      create: async () => locator,
+      inspect: async () => {
+        throw new Error("unused");
+      },
+      stop: async () => {
+        stops += 1;
+        return { accepted: true as const };
+      },
+      verifyStopped: async () => {
+        throw new Error("unused");
+      },
+      destroy: async () => {},
+    };
+    const registered = await workerFixture({
+      now: () => fixture.times.providerCompleted,
+      environments: new Map([[locator.backendRef, backend]]),
+    });
+    await registered.worker.request(handshake());
+    const first = stop("environment-stop-unit-a", fixture.times.start);
+    const second = stop("environment-stop-unit-b", fixture.times.providerCompleted);
+    await registered.worker.request(first);
+    await registered.worker.request(second);
+    await registered.worker.waitForIdle();
+    expect(stops).toBe(2);
+    const results = (await readEvents(registered.worker)).filter(
+      (event) => event.type === "environment.operation.result",
+    );
+    expect(
+      results.map((event) => ({
+        requestId: event.payload.requestId,
+        causationId: event.causationId,
+        outcome: event.payload.outcome,
+      })),
+    ).toEqual([
+      {
+        requestId: "environment-stop-unit-a",
+        causationId: "environment-stop-unit-a",
+        outcome: "succeeded",
+      },
+      {
+        requestId: "environment-stop-unit-b",
+        causationId: "environment-stop-unit-b",
+        outcome: "succeeded",
+      },
+    ]);
+  });
+
   it("runs a frozen Worker subtask with only delegated Handles and rejects model expansion", async () => {
     const adapters = createReferenceAdapterSet({
       capability: {
@@ -1672,6 +1937,7 @@ it("routes v2 only to its supervisor and advertises its explicit foreground supp
   await worker.waitForIdle();
   expect(adapter.execute).toHaveBeenCalledTimes(1);
   expect(await readEvents(worker)).toMatchObject([
+    { type: "work.progress", payload: { stage: "worker.execution.started" } },
     { type: "work.result", payload: { outcome: "result_unknown" } },
   ]);
 });

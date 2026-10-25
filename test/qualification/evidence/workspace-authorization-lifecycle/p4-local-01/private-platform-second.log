@@ -1,0 +1,24 @@
+{
+  "platform": "darwin",
+  "architecture": "arm64",
+  "node": "v22.22.3",
+  "sourceBuildProbe": true,
+  "productionQualified": false,
+  "result": {
+    "reason": "exited",
+    "exitCode": 71,
+    "taskProcessExited": true,
+    "taskTreeCleanup": "unknown",
+    "network": {
+      "deniedTargets": 0,
+      "deniedAddresses": 0,
+      "connected": 0,
+      "closed": true
+    }
+  },
+  "stdout": "",
+  "stderr": "sandbox-exec: sandbox_apply: Operation not permitted\n",
+  "passed": false,
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n71 !== 0\n",
+  "ownedTemporaryFilesRemoved": true
+}
