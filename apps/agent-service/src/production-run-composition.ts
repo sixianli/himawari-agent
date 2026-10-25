@@ -62,7 +62,7 @@ export interface ProductionRunCompositionOptions {
   readonly onTitleFailure?: (error: unknown) => void;
   readonly memoryCapture?: Pick<
     ProductionMemoryCaptureOptions,
-    "product" | "approvals" | "onAudit" | "onFailure"
+    "product" | "approvals" | "onAudit" | "onFailure" | "timeZone"
   > & {
     readonly generate: (
       request: RuntimeRequest,
@@ -200,6 +200,8 @@ export function createProductionRunComposition(options: ProductionRunComposition
       );
     },
     digest: (text) => createHash("sha256").update(text).digest("hex"),
+    reminders: repository.memoryReminders(),
+    ...(options.memoryCapture?.timeZone ? { timeZone: options.memoryCapture.timeZone } : {}),
   });
   const context = new ContextFormationService({
     profile,
@@ -347,6 +349,8 @@ export function createProductionRunComposition(options: ProductionRunComposition
         relevantMemoryIds: (runId) => recalled.get(runId) ?? [],
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
+        reminders: repository.memoryReminders(),
+        ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
         payloads,
         protector,
         clock,

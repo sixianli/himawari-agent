@@ -1,3 +1,4 @@
+import type { MemoryReminderSchedule } from "./memory-reminders.js";
 import type {
   AgentId,
   MemoryGenerationId,
@@ -32,6 +33,7 @@ export interface ExtractedMemoryCandidate {
   readonly sensitiveTopic?: SensitiveMemoryTopic;
   readonly attributes?: ProductMemoryAttributes;
   readonly supersedes?: MemoryId | null;
+  readonly reminder?: MemoryReminderSchedule;
 }
 
 export interface IncrementalMemoryExtractionPort {

@@ -91,10 +91,22 @@ export const governanceMessages = [
         undone: false,
       },
     ],
+    reminders: [
+      {
+        reminderId: "reminder:memory-01",
+        text: "主人周五下午三点要交季度报告",
+        dueAt: "2026-09-12T07:00:00.000Z",
+        remindAt: "2026-09-12T06:00:00.000Z",
+      },
+    ],
     generatedAt: "2026-09-11T00:00:00.000Z",
   }),
   fixture("command", "memory.tidy.undo", {
     changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+  }),
+  fixture("command", "memory.reminder.respond", {
+    reminderId: "reminder:memory-01",
+    action: "dismiss",
   }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",

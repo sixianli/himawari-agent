@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseMemoryCandidates, quoteFromOwnerMessage } from "../src/production-memory-capture.js";
+import {
+  parseMemoryCandidates,
+  quoteFromOwnerMessage,
+  reminderSchedule,
+} from "../src/production-memory-capture.js";
 
 describe("memory evidence from the Owner's own words", () => {
   it("accepts a verbatim quote regardless of spacing, punctuation and width", () => {
@@ -141,5 +145,60 @@ describe("memory evidence from the Owner's own words", () => {
       undefined,
       true,
     ]);
+  });
+
+  it("turns a local due time into a reminder an hour ahead and drops impossible dates", () => {
+    const sentAt = "2026-10-25T12:00:00.000Z";
+    expect(reminderSchedule("2026-10-30T15:00", "none", sentAt, "Asia/Shanghai")).toEqual({
+      dueAt: "2026-10-30T07:00:00.000Z",
+      remindAt: "2026-10-30T06:00:00.000Z",
+      repeat: "none",
+    });
+    expect(reminderSchedule("2026-11-03", undefined, sentAt, "Asia/Shanghai")).toEqual({
+      dueAt: "2026-11-03T01:00:00.000Z",
+      remindAt: "2026-11-03T01:00:00.000Z",
+      repeat: "none",
+    });
+    expect(reminderSchedule("2026-10-25T20:30", "none", sentAt, "Asia/Shanghai")).toEqual({
+      dueAt: "2026-10-25T12:30:00.000Z",
+      remindAt: sentAt,
+      repeat: "none",
+    });
+    expect(reminderSchedule("2026-05-12", "yearly", sentAt, "Asia/Shanghai")?.dueAt).toBe(
+      "2027-05-12T01:00:00.000Z",
+    );
+    expect(reminderSchedule("2026-10-01", "none", sentAt, "Asia/Shanghai")).toBeUndefined();
+    expect(reminderSchedule("2030-01-01", "none", sentAt, "Asia/Shanghai")).toBeUndefined();
+    expect(reminderSchedule("2026-10-30T25:00", "none", sentAt, "Asia/Shanghai")).toBeUndefined();
+    expect(reminderSchedule("下周五", "none", sentAt, "Asia/Shanghai")).toBeUndefined();
+    expect(reminderSchedule("2026-10-30", "none", undefined, "Asia/Shanghai")).toBeUndefined();
+    const parsed = parseMemoryCandidates({
+      output: JSON.stringify({
+        memories: [
+          {
+            kind: "commitment",
+            decision: "create",
+            existingMemoryId: null,
+            text: "主人周五下午三点要交季度报告",
+            classification: "private",
+            confidence: 950,
+            category: "event",
+            dueAt: "2026-10-30T15:00",
+            quote: "周五下午三点要交季度报告",
+          },
+        ],
+      }),
+      sourceRef: "payload-1",
+      sourceClassification: "private",
+      existingIds: new Set(),
+      ownerMessage: "我周五下午三点要交季度报告",
+      sentAt,
+      timeZone: "Asia/Shanghai",
+    });
+    expect(parsed.candidates[0]?.reminder).toEqual({
+      dueAt: "2026-10-30T07:00:00.000Z",
+      remindAt: "2026-10-30T06:00:00.000Z",
+      repeat: "none",
+    });
   });
 });

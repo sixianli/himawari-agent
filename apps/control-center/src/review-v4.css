@@ -1241,6 +1241,22 @@ body {
 .memory-new {
   color: var(--accent, inherit);
 }
+.memory-reminders {
+  position: fixed;
+  right: 16px;
+  bottom: calc(112px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+}
+.memory-reminder {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface, var(--background, #fff));
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+}
 .memory-history s {
   color: var(--text-muted);
 }

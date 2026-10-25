@@ -2,12 +2,16 @@ import type { AgentId, MemoryId, OwnerId } from "@himawari-agent/domain";
 import type {
   DataClassification,
   MemoryCategory,
+  MemoryReminderStorePort,
   PayloadRef,
   ProductMemoryRecord,
   ProductMemoryStatePort,
 } from "../ports/index.js";
 
 export const OWNER_PROFILE_CHARACTER_BUDGET = 2000;
+const AGENDA_CHARACTER_BUDGET = 800;
+const AGENDA_HORIZON_MS = 7 * 24 * 3_600_000;
+const AGENDA_LIMIT = 10;
 const PROFILE_MINIMUM_IMPORTANCE = 600;
 const PROFILE_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
 const CLASSIFICATION_RANK: Record<DataClassification, number> = {
@@ -25,7 +29,7 @@ const PROFILE_SECTIONS: readonly (readonly [MemoryCategory, string])[] = [
 ];
 
 export interface OwnerProfileBlock {
-  readonly kind: "owner-rules" | "owner-profile";
+  readonly kind: "owner-rules" | "owner-profile" | "owner-agenda";
   readonly ref: string;
   readonly payloadRef: PayloadRef;
   readonly dataClassification: DataClassification;
@@ -73,6 +77,8 @@ export interface OwnerProfileServiceOptions {
   }) => Promise<void>;
   readonly digest: (text: string) => string;
   readonly characterBudget?: number;
+  readonly reminders?: Pick<MemoryReminderStorePort, "listUpcoming">;
+  readonly timeZone?: string;
 }
 
 function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
@@ -163,7 +169,45 @@ export class OwnerProfileService implements OwnerProfilePort {
         .sort((left, right) => byImportance(left.memory, right.memory));
       if (lines.length > 0) sections.push({ category, title, lines });
     }
-    return { rules, sections };
+    return { rules, sections, eligible };
+  }
+
+  async #agenda(
+    input: { readonly ownerId: OwnerId; readonly agentId: AgentId; readonly now: string },
+    eligible: readonly ProductMemoryRecord[],
+  ) {
+    const reminders = this.#options.reminders;
+    if (!reminders) return [];
+    const memories = new Map(eligible.map((memory) => [memory.id, memory]));
+    const upcoming = await reminders.listUpcoming({
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+      from: input.now,
+      to: new Date(Date.parse(input.now) + AGENDA_HORIZON_MS).toISOString(),
+      limit: AGENDA_LIMIT,
+    });
+    const format = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: this.#options.timeZone ?? "UTC",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    let remaining = AGENDA_CHARACTER_BUDGET;
+    const lines: { memory: ProductMemoryRecord; text: string }[] = [];
+    for (const reminder of upcoming) {
+      const memory = memories.get(reminder.memoryId);
+      if (!memory) continue;
+      const text = (await this.#options.readText(memory))?.replace(/\s+/gu, " ").trim();
+      if (!text) continue;
+      const line = `${format.format(new Date(reminder.dueAt))}：${text}`;
+      if (line.length + 3 > remaining) continue;
+      remaining -= line.length + 3;
+      lines.push({ memory, text: line });
+    }
+    return lines;
   }
 
   async compose(input: {
@@ -172,7 +216,8 @@ export class OwnerProfileService implements OwnerProfilePort {
     readonly maxClassification: DataClassification;
     readonly now: string;
   }): Promise<OwnerProfile> {
-    const { rules, sections } = await this.#select(input);
+    const { rules, sections, eligible } = await this.#select(input);
+    const agenda = await this.#agenda(input, eligible);
     const blocks: OwnerProfileBlock[] = [];
     if (rules.length > 0)
       blocks.push(
@@ -199,6 +244,18 @@ export class OwnerProfileService implements OwnerProfilePort {
             ]),
           ].join("\n"),
           sections.flatMap(({ lines }) => lines.map(({ memory }) => memory)),
+        ),
+      );
+    if (agenda.length > 0)
+      blocks.push(
+        await this.#block(
+          input,
+          "owner-agenda",
+          [
+            `主人接下来 7 天的安排（时间为主人当地时间，${this.#options.timeZone ?? "UTC"}）：`,
+            ...agenda.map(({ text }) => `- ${text}`),
+          ].join("\n"),
+          agenda.map(({ memory }) => memory),
         ),
       );
     return Object.freeze({

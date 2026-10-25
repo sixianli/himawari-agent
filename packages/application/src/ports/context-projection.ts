@@ -59,6 +59,7 @@ export type ProductContextBlockKind =
   | "thread-summary"
   | "owner-rules"
   | "owner-profile"
+  | "owner-agenda"
   | "memory"
   | "capability-summary";
 

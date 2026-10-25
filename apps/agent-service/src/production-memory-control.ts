@@ -7,6 +7,7 @@ import {
   type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   type MemoryProjectionJobStatePort,
+  type MemoryReminderStorePort,
   type OwnerProfileService,
   type PayloadProtectorPort,
   type PayloadStorePort,
@@ -33,8 +34,17 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.approval.respond",
   "memory.mutate",
   "memory.tidy.undo",
+  "memory.reminder.respond",
 ] as const);
 const TIDY_UPS_SHOWN = 30;
+const REMINDERS_SHOWN = 10;
+const SNOOZE_MS = 3_600_000;
+
+function nextYear(instant: string): string {
+  const date = new Date(instant);
+  date.setUTCFullYear(date.getUTCFullYear() + 1);
+  return date.toISOString();
+}
 
 const singleLine = (text: string) =>
   [...text]
@@ -61,6 +71,7 @@ export class ProductionMemoryControl {
       readonly store: Pick<MemoryConsolidationStorePort, "listChanges">;
       readonly undo: (changeId: string) => Promise<unknown>;
     };
+    readonly reminders?: Pick<MemoryReminderStorePort, "schedule" | "listDue" | "read" | "update">;
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -110,11 +121,25 @@ export class ProductionMemoryControl {
         agentId,
         limit: TIDY_UPS_SHOWN,
       })) ?? [];
+    const due = await this.#dueReminders();
     return JSON.stringify([
       active.map(({ id, revision }) => [id, revision]),
       pending.map(({ id }) => id),
       changes.map(({ id, undoneAt }) => [id, undoneAt]),
+      due.map(({ id, updatedAt }) => [id, updatedAt]),
     ]);
+  }
+
+  async #dueReminders() {
+    const { ownerId, agentId } = this.options.configuration;
+    return (
+      (await this.options.reminders?.listDue({
+        ownerId,
+        agentId,
+        now: this.options.clock.now(),
+        limit: REMINDERS_SHOWN,
+      })) ?? []
+    );
   }
 
   async query(query: GatewayV2Query): Promise<GatewayV2Snapshot> {
@@ -231,11 +256,40 @@ export class ProductionMemoryControl {
         requestedAt: request.requestedAt,
       });
     }
+    const dueReminders = await this.#dueReminders();
+    const reminded = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: dueReminders.map(({ memoryId }) => memoryId),
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const reminders: OverviewSnapshot["payload"]["reminders"][number][] = [];
+    for (const reminder of dueReminders) {
+      const memory = reminded.get(reminder.memoryId);
+      const text = memory ? singleLine(await this.readText(memory.contentRef).catch(() => "")) : "";
+      if (!text) continue;
+      reminders.push({
+        reminderId: reminder.id,
+        text,
+        dueAt: reminder.dueAt,
+        remindAt: reminder.remindAt,
+      });
+    }
     return {
       ...query,
       kind: "snapshot",
       type: "memory.overview.snapshot",
-      payload: { memories, profile, pending, tidyUps, generatedAt: this.options.clock.now() },
+      payload: {
+        memories,
+        profile,
+        pending,
+        tidyUps,
+        reminders,
+        generatedAt: this.options.clock.now(),
+      },
     } as GatewayV2Snapshot;
   }
 
@@ -254,6 +308,7 @@ export class ProductionMemoryControl {
         payloads: this.options.payloads,
         protector: this.options.protector,
         clock: this.options.clock,
+        ...(this.options.reminders ? { reminders: this.options.reminders } : {}),
         extract: async () => [],
         readSourceText: (ref) => this.readText(ref),
         onAudit: this.options.onAudit,
@@ -264,6 +319,49 @@ export class ProductionMemoryControl {
           : { requestId, resolution },
       );
       return { resultRef: committed ?? requestId, replayed: false };
+    }
+    if (command.type === "memory.reminder.respond") {
+      if (!this.options.reminders)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const { reminderId, action } = command.payload;
+      const { ownerId, agentId } = this.options.configuration;
+      const reminder = await this.options.reminders.read(reminderId);
+      if (!reminder || reminder.ownerId !== ownerId || reminder.agentId !== agentId)
+        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_REMINDER_NOT_FOUND");
+      const now = this.options.clock.now();
+      const next =
+        action === "snooze"
+          ? {
+              status: "scheduled" as const,
+              dueAt: reminder.dueAt,
+              remindAt: new Date(Date.parse(now) + SNOOZE_MS).toISOString(),
+              dismissedAt: null,
+            }
+          : reminder.repeat === "yearly"
+            ? {
+                status: "scheduled" as const,
+                dueAt: nextYear(reminder.dueAt),
+                remindAt: nextYear(reminder.remindAt),
+                dismissedAt: null,
+              }
+            : {
+                status: "dismissed" as const,
+                dueAt: reminder.dueAt,
+                remindAt: reminder.remindAt,
+                dismissedAt: now,
+              };
+      const updated = await this.options.reminders.update({
+        id: reminder.id,
+        expectedUpdatedAt: reminder.updatedAt,
+        ...next,
+        updatedAt: now === reminder.updatedAt ? new Date(Date.parse(now) + 1).toISOString() : now,
+      });
+      if (!updated)
+        throw new ApplicationPortError(PORT_ERROR_CODES.CONFLICT, "MEMORY_REMINDER_CHANGED");
+      return { resultRef: reminderId, replayed: false };
     }
     if (command.type === "memory.tidy.undo") {
       if (!this.options.consolidation)

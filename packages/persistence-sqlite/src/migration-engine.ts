@@ -455,6 +455,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0054_memory_consolidation.sql",
   },
+  {
+    sequence: 55,
+    name: "memory_reminders",
+    changeSet: "memory-reminders",
+    phase: "expand" as const,
+    file: "0055_memory_reminders.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

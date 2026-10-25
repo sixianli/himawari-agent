@@ -149,3 +149,54 @@ describe("owner profile composition", () => {
     expect(stored).toEqual([]);
   });
 });
+
+describe("owner agenda", () => {
+  it("lists the next seven days of reminders in the Owner's time zone", async () => {
+    const records = [
+      memory("memory-trip", "event", 500),
+      memory("memory-allergy", "health", 950, { dataClassification: "sensitive" }),
+    ];
+    const stored: { ref: string; text: string }[] = [];
+    const windows: { from: string; to: string }[] = [];
+    const profile = new OwnerProfileService({
+      state: { listActive: async () => records },
+      readText: async (record) => TEXT[record.id],
+      storeText: async ({ ref, text }) => {
+        stored.push({ ref, text });
+      },
+      digest: (text) => `digest-${text.length}`,
+      timeZone: "Asia/Shanghai",
+      reminders: {
+        listUpcoming: async ({ from, to }) => {
+          windows.push({ from, to });
+          return ["memory-trip", "memory-allergy", "memory-gone"].map((id) => ({
+            id: `reminder:${id}`,
+            ownerId: OWNER_ID,
+            agentId: AGENT_ID,
+            memoryId: createMemoryId(id),
+            dueAt: "2026-10-27T07:00:00.000Z",
+            remindAt: "2026-10-27T06:00:00.000Z",
+            repeat: "none" as const,
+            status: "scheduled" as const,
+            dismissedAt: null,
+            createdAt: NOW,
+            updatedAt: NOW,
+          }));
+        },
+      },
+    });
+    const result = await profile.compose({
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      maxClassification: "sensitive",
+      now: NOW,
+    });
+    expect(windows).toEqual([{ from: NOW, to: "2026-11-01T12:00:00.000Z" }]);
+    const agenda = result.blocks.find(({ kind }) => kind === "owner-agenda");
+    expect(agenda?.memoryIds).toEqual(["memory-trip"]);
+    const text = stored.find(({ ref }) => ref === agenda?.payloadRef)?.text ?? "";
+    expect(text).toContain("Asia/Shanghai");
+    expect(text).toContain("15:00：主人这周在东京出差");
+    expect(text).not.toContain("青霉素");
+  });
+});

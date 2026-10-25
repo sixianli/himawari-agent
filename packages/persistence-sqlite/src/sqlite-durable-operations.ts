@@ -78,6 +78,7 @@ import type Database from "better-sqlite3";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
@@ -334,6 +335,7 @@ export class SqliteDurableOperations {
   private readonly capabilityInvocations: SqliteCapabilityInvocationOperations;
   private readonly memory: SqliteMemoryOperations;
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
+  private readonly memoryReminders: SqliteMemoryReminderOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
@@ -400,6 +402,7 @@ export class SqliteDurableOperations {
       fail,
       assertDiskHeadroom,
     );
+    this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
       readonly ownerId: string;
@@ -487,6 +490,8 @@ export class SqliteDurableOperations {
     }
     if (operation.startsWith("memoryConsolidation."))
       return this.memoryConsolidation.execute(operation, payload);
+    if (operation.startsWith("memoryReminder."))
+      return this.memoryReminders.execute(operation, payload);
     switch (operation) {
       case "event.append":
         return this.appendEvent(

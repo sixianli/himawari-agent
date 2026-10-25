@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryItem, MemoryModel, MemoryTidyUp, PendingMemory } from "../memory.js";
+import type {
+  MemoryItem,
+  MemoryModel,
+  MemoryReminder,
+  MemoryTidyUp,
+  PendingMemory,
+} from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -93,6 +99,71 @@ export function MemoryApprovalCard({
         </>
       )}
     </section>
+  );
+}
+
+const notifications = () => (typeof Notification === "undefined" ? null : Notification);
+
+export function MemoryReminders({ memory, message }: { memory: MemoryModel; message: Message }) {
+  const items: readonly MemoryReminder[] = memory.overview?.reminders ?? [];
+  const shown = useRef(new Set<string>());
+  const [permission, setPermission] = useState(() => notifications()?.permission ?? "denied");
+  useEffect(() => {
+    const api = notifications();
+    for (const item of items) {
+      const key = `${item.reminderId}:${item.remindAt}`;
+      if (shown.current.has(key)) continue;
+      shown.current.add(key);
+      if (api?.permission === "granted" && document.visibilityState !== "visible")
+        new api(message("memory.reminderTitle"), { body: item.text, tag: item.reminderId });
+    }
+  }, [items, message]);
+  if (!items.length) return null;
+  const time = (value: string) =>
+    new Date(value).toLocaleString(undefined, {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  return (
+    <aside className="memory-reminders" aria-live="polite">
+      {items.map((item) => (
+        <section className="memory-reminder" key={item.reminderId}>
+          <strong>{message("memory.reminderTitle")}</strong>
+          <p className="memory-text">{item.text}</p>
+          <small>{message("memory.reminderDue", { time: time(item.dueAt) })}</small>
+          <div className="actions">
+            <ActionButton
+              disabled={memory.busy}
+              onClick={() => void memory.respondReminder(item, "dismiss")}
+            >
+              {message("memory.reminderDismiss")}
+            </ActionButton>
+            <ActionButton
+              variant="quiet"
+              disabled={memory.busy}
+              onClick={() => void memory.respondReminder(item, "snooze")}
+            >
+              {message("memory.reminderSnooze")}
+            </ActionButton>
+            {permission === "default" ? (
+              <ActionButton
+                variant="quiet"
+                onClick={() =>
+                  void notifications()
+                    ?.requestPermission()
+                    .then(setPermission)
+                    .catch(() => undefined)
+                }
+              >
+                {message("memory.reminderNotify")}
+              </ActionButton>
+            ) : null}
+          </div>
+        </section>
+      ))}
+    </aside>
   );
 }
 

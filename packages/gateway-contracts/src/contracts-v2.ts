@@ -27,6 +27,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.snapshot",
   "memory.approval.respond",
   "memory.tidy.undo",
+  "memory.reminder.respond",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -256,6 +257,14 @@ const memoryOverviewSnapshotSchema = object({
         undone: booleanValue,
       }),
     ),
+    reminders: array(
+      object({
+        reminderId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        remindAt: timestamp,
+      }),
+    ),
     profile: array(
       object({
         kind: enumeration(MEMORY_PROFILE_KINDS),
@@ -284,6 +293,13 @@ const memoryOverviewSnapshotSchema = object({
 const memoryTidyUndoCommandSchema = object({
   ...commandEnvelope("memory.tidy.undo"),
   payload: object({ changeId: machineString }),
+});
+const memoryReminderRespondCommandSchema = object({
+  ...commandEnvelope("memory.reminder.respond"),
+  payload: object({
+    reminderId: machineString,
+    action: enumeration(["dismiss", "snooze"]),
+  }),
 });
 const memoryApprovalRespondCommandSchema = object({
   ...commandEnvelope("memory.approval.respond"),
@@ -1412,6 +1428,7 @@ const schemasByType = {
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
+  "memory.reminder.respond": memoryReminderRespondCommandSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

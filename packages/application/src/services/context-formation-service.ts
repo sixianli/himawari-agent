@@ -749,6 +749,7 @@ function isProductContextEnvelopeV1(value: unknown): value is ProductContextEnve
           item["kind"] === "memory" ||
           item["kind"] === "owner-rules" ||
           item["kind"] === "owner-profile" ||
+          item["kind"] === "owner-agenda" ||
           item["kind"] === "capability-summary") &&
         isNonEmptyText(item["ref"]) &&
         isNonEmptyText(item["payloadRef"]) &&

@@ -3,6 +3,7 @@ import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MemoryReminders,
   MemorySettings,
   MemoryTurnNote,
   OPEN_MEMORY_SETTINGS,
@@ -46,6 +47,7 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     null,
     h("div", { id: "turn" }, h(MemoryTurnNote, { ownerRefs, memory, message })),
     h("div", { id: "settings" }, h(MemorySettings, { memory, message, onOpenThread: opened })),
+    h("div", { id: "reminders" }, h(MemoryReminders, { memory, message })),
   );
 }
 
@@ -108,6 +110,7 @@ beforeEach(() => {
       },
     ],
     tidyUps: [],
+    reminders: [],
     generatedAt: "2026-10-25T12:00:00.000Z",
   };
   query.mockImplementation(async (request) => ({
@@ -332,6 +335,33 @@ describe("memory approval and management", () => {
     expect(mutate.mock.lastCall?.[0]).toMatchObject({
       type: "memory.tidy.undo",
       payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
+    });
+  });
+
+  it("shows a due reminder and lets the Owner dismiss or snooze it", async () => {
+    overview = {
+      ...overview,
+      reminders: [
+        {
+          reminderId: "reminder:memory-report",
+          text: "主人周五下午三点要交季度报告",
+          dueAt: "2026-10-30T07:00:00.000Z",
+          remindAt: "2026-10-30T06:00:00.000Z",
+        },
+      ],
+    };
+    await render();
+    const reminders = document.querySelector("#reminders")?.textContent ?? "";
+    expect(reminders).toContain("主人周五下午三点要交季度报告");
+    await act(async () => button("#reminders", "一小时后再提醒").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-report", action: "snooze" },
+    });
+    await act(async () => button("#reminders", "知道了").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.reminder.respond",
+      payload: { reminderId: "reminder:memory-report", action: "dismiss" },
     });
   });
 });

@@ -28,6 +28,12 @@ export interface AutomaticMemoryServiceOptions {
   readonly memoryIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => MemoryId;
   readonly approvalIdFor: (generationId: MemoryGenerationId, candidateOrdinal: number) => string;
   readonly automaticConfidencePermille?: number;
+  readonly onCommitted?: (input: {
+    readonly candidate: ExtractedMemoryCandidate;
+    readonly memoryId: MemoryId;
+    readonly ownerId: CommittedRunMemoryInput["ownerId"];
+    readonly agentId: CommittedRunMemoryInput["agentId"];
+  }) => Promise<void>;
 }
 
 export interface CommittedRunMemoryInput {
@@ -378,7 +384,14 @@ export class AutomaticMemoryService {
         ...(candidate.attributes ? { attributes: candidate.attributes } : {}),
       };
     }
-    return (await this.options.product.applyProposal(proposal, input.generationId)).id;
+    const memoryId = (await this.options.product.applyProposal(proposal, input.generationId)).id;
+    await this.options.onCommitted?.({
+      candidate,
+      memoryId,
+      ownerId: input.ownerId,
+      agentId: input.agentId,
+    });
+    return memoryId;
   }
 
   private audit(

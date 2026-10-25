@@ -1309,6 +1309,9 @@ export async function runAgentService(
               memoryCapture: {
                 product: durableMemory,
                 approvals: repository.sensitiveMemoryApprovals(),
+                ...(configuration.runPolicy?.timeZone
+                  ? { timeZone: configuration.runPolicy.timeZone }
+                  : {}),
                 ...(memoryEpisodes
                   ? {
                       episodes: {

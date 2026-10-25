@@ -441,6 +441,11 @@ export const MESSAGE_IDS = [
   "memory.tidyKept",
   "memory.undo",
   "memory.undone",
+  "memory.reminderTitle",
+  "memory.reminderDue",
+  "memory.reminderDismiss",
+  "memory.reminderSnooze",
+  "memory.reminderNotify",
   "capabilities.title",
   "authorizations.title",
   "trace.title",
@@ -495,4 +500,5 @@ export const MESSAGE_SAMPLE_VALUES: Readonly<
   "memory.tentativeTitle": { count: 2 },
   "memory.tidyTitle": { count: 3 },
   "memory.tidyKept": { text: "主人的女儿名叫小葵" },
+  "memory.reminderDue": { time: "10/30 15:00" },
 });

@@ -16,6 +16,7 @@ import type {
   GovernanceMutationReceiptStorePort,
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
+  MemoryReminderStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
@@ -901,6 +902,16 @@ export class SqliteDurableAdapters {
       listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
+    });
+  }
+
+  memoryReminders(): MemoryReminderStorePort {
+    return Object.freeze<MemoryReminderStorePort>({
+      schedule: (reminder) => this.context.write("memoryReminder.schedule", { reminder }),
+      listDue: (input) => this.context.read("memoryReminder.listDue", input),
+      listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
+      read: (id) => this.context.read("memoryReminder.read", { id }),
+      update: (input) => this.context.write("memoryReminder.update", input),
     });
   }
 

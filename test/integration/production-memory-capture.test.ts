@@ -185,6 +185,8 @@ describe("production memory capture", () => {
       relevantMemoryIds: () => relevant as never,
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
+      reminders: repository.memoryReminders(),
+      timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => T0 },
@@ -209,15 +211,17 @@ describe("production memory capture", () => {
         dataClassification: "private",
       }) as unknown as RuntimeRequest;
     await turn("owner", message, "run-memory-capture");
+    const clock = { value: T0 };
     const control = new ProductionMemoryControl({
       configuration: { ownerId: OWNER_ID, agentId: AGENT_ID },
       state: repository.productMemoryState(),
       jobs: repository.memoryProjectionJobs(),
       approvals: repository.sensitiveMemoryApprovals(),
       memory,
+      reminders: repository.memoryReminders(),
       payloads,
       protector: adapters.payloadProtector,
-      clock: { now: () => T0 },
+      clock: { now: () => clock.value },
       onAudit: (record) => audits.push(record),
     });
     const protect = async (
@@ -237,6 +241,7 @@ describe("production memory capture", () => {
         }),
       );
     return {
+      clock,
       repository,
       memory,
       provider,
@@ -513,5 +518,92 @@ describe("production memory capture", () => {
     const active = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
     expect(active).toHaveLength(1);
     expect(active[0]).toMatchObject({ id: saved.id, revision: 2 });
+  });
+
+  it("schedules a reminder for a commitment and lets the Owner snooze and dismiss it", async () => {
+    const context = await setup(
+      "我答应老板周五下午三点前交季度报告。",
+      '{"memories":[{"kind":"commitment","decision":"create","existingMemoryId":null,"text":"主人答应老板周五下午三点前交季度报告","classification":"private","confidence":950,"inference":false,"explicit":false,"category":"event","importance":800,"entities":[],"validFrom":null,"dueAt":"2026-10-30T15:00","repeat":"none","quote":"我答应老板周五下午三点前交季度报告"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    expect(context.prompts.at(-1)).toContain('"ownerTimeZone":"Asia/Shanghai"');
+    const [saved] = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    const reminders = context.repository.memoryReminders();
+    const reminderId = `reminder:${saved?.id}`;
+    expect(await reminders.read(reminderId)).toMatchObject({
+      dueAt: "2026-10-30T07:00:00.000Z",
+      remindAt: "2026-10-30T06:00:00.000Z",
+      repeat: "none",
+      status: "scheduled",
+    });
+    expect((await overview(context.control)).reminders).toEqual([]);
+    const revision = await context.control.revision();
+    context.clock.value = "2026-10-30T06:05:00.000Z";
+    expect(await context.control.revision()).not.toBe(revision);
+    expect((await overview(context.control)).reminders).toEqual([
+      {
+        reminderId,
+        text: "主人答应老板周五下午三点前交季度报告",
+        dueAt: "2026-10-30T07:00:00.000Z",
+        remindAt: "2026-10-30T06:00:00.000Z",
+      },
+    ]);
+    const answer = (action: "dismiss" | "snooze") =>
+      context.control.execute({
+        ...envelope,
+        kind: "command",
+        type: "memory.reminder.respond",
+        payload: { reminderId, action },
+      } as never);
+    await answer("snooze");
+    expect((await reminders.read(reminderId))?.remindAt).toBe("2026-10-30T07:05:00.000Z");
+    expect((await overview(context.control)).reminders).toEqual([]);
+    context.clock.value = "2026-10-30T07:06:00.000Z";
+    expect((await overview(context.control)).reminders).toHaveLength(1);
+    await answer("dismiss");
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "dismissed",
+      dismissedAt: "2026-10-30T07:06:00.000Z",
+    });
+    expect((await overview(context.control)).reminders).toEqual([]);
+    await expect(
+      context.control.execute({
+        ...envelope,
+        kind: "command",
+        type: "memory.reminder.respond",
+        payload: { reminderId: "reminder:missing", action: "dismiss" },
+      } as never),
+    ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
+  });
+
+  it("rolls a yearly reminder forward when it is dismissed", async () => {
+    const context = await setup(
+      "我妈妈的生日是 5 月 12 日，到时候提醒我。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人妈妈的生日是 5 月 12 日","classification":"private","confidence":950,"inference":false,"explicit":true,"category":"relationship","importance":850,"entities":[],"validFrom":null,"dueAt":"2026-05-12","repeat":"yearly","quote":"我妈妈的生日是 5 月 12 日"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [saved] = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    const reminderId = `reminder:${saved?.id}`;
+    const reminders = context.repository.memoryReminders();
+    expect(await reminders.read(reminderId)).toMatchObject({
+      dueAt: "2027-05-12T01:00:00.000Z",
+      remindAt: "2027-05-12T01:00:00.000Z",
+      repeat: "yearly",
+    });
+    context.clock.value = "2027-05-12T01:30:00.000Z";
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId, action: "dismiss" },
+    } as never);
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "scheduled",
+      dueAt: "2028-05-12T01:00:00.000Z",
+      dismissedAt: null,
+    });
   });
 });

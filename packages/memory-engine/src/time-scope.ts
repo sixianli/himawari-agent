@@ -279,3 +279,10 @@ export function parseTimeScope(
     matched: Object.freeze(matched),
   });
 }
+
+export function localDayStart(day: string, timeZone = "UTC"): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(day);
+  if (!match) return null;
+  const instant = startOfLocalDay(Number(match[1]), Number(match[2]), Number(match[3]), timeZone);
+  return Number.isFinite(instant) ? new Date(instant).toISOString() : null;
+}

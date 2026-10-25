@@ -869,6 +869,7 @@ export async function createProductionHttpComposition(
           store: repository.memoryConsolidation(),
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
+        reminders: repository.memoryReminders(),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },
