@@ -907,6 +907,32 @@ function parseAutomaticReview(
   });
 }
 
+export const REMINDER_PUSH_SECRET_PURPOSE = "reminder-push";
+
+function parseReminderPush(value: unknown): NonNullable<RunPolicyConfiguration["reminderPush"]> {
+  const field = "configuration.runPolicy.reminderPush";
+  const input = record(value, field);
+  rejectUnknown(input, ["channel", "secretRef", "server"], field);
+  if (input["channel"] !== "bark") throw invalid(`${field}.channel`, "must be bark");
+  let server: string | undefined;
+  if (input["server"] !== undefined) {
+    server = string(input["server"], `${field}.server`);
+    let url: URL | undefined;
+    try {
+      url = new URL(server);
+    } catch {
+      url = undefined;
+    }
+    if (!url || url.protocol !== "https:" || url.origin !== server)
+      throw invalid(`${field}.server`, "must be an https origin");
+  }
+  return Object.freeze({
+    channel: "bark" as const,
+    secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
+    ...(server === undefined ? {} : { server }),
+  });
+}
+
 function parseRunPolicy(value: unknown): RunPolicyConfiguration {
   const input = record(value, "configuration.runPolicy");
   rejectUnknown(
@@ -923,6 +949,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicSearch",
       "publicFetch",
       "automaticReview",
+      "reminderPush",
     ],
     "configuration.runPolicy",
   );
@@ -957,6 +984,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["automaticReview"] === undefined
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
+    ...(input["reminderPush"] === undefined
+      ? {}
+      : { reminderPush: parseReminderPush(input["reminderPush"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,
@@ -1187,6 +1217,13 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
+  if (runPolicy?.reminderPush)
+    assertIdentitySecretReference(
+      secretReferences,
+      runPolicy.reminderPush.secretRef,
+      REMINDER_PUSH_SECRET_PURPOSE,
+      "configuration.runPolicy.reminderPush.secretRef",
+    );
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);

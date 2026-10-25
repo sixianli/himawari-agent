@@ -8,15 +8,12 @@ import type {
   RuntimeRequest,
 } from "@himawari-agent/application";
 
-export const REMINDER_PUSH_SECRET_PURPOSE = "reminder-push";
 const BARK_SERVER = "https://api.day.app";
-const NTFY_SERVER = "https://ntfy.sh";
 const IV_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const DEFAULT_INTERVAL_MS = 60_000;
 const STALE_AFTER_MS = 6 * 3_600_000;
 const BATCH = 10;
 const REQUEST_TIMEOUT_MS = 15_000;
-const PLAIN_CLASSIFICATIONS = new Set<DataClassification>(["public", "private"]);
 
 export interface ReminderPushMessage {
   readonly title: string;
@@ -93,34 +90,6 @@ export function barkChannel(options: {
   };
 }
 
-export function ntfyChannel(options: {
-  readonly secret: () => Promise<string>;
-  readonly server?: string;
-  readonly fetch?: Fetch;
-}): ReminderPushChannel {
-  const send = options.fetch ?? ((url, init) => fetch(url, init));
-  return {
-    send: async (message) => {
-      const topic = (await options.secret()).trim();
-      if (!/^[A-Za-z0-9_-]{16,64}$/u.test(topic)) throw new Error("REMINDER_PUSH_SECRET_INVALID");
-      const plain = PLAIN_CLASSIFICATIONS.has(message.dataClassification);
-      const response = await send(`${options.server ?? NTFY_SERVER}/`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          title: message.title,
-          message: plain ? message.body : "有一条私密提醒，打开 Himawari 查看。",
-          priority: 4,
-          tags: ["bell"],
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      if (!response.ok) throw new Error(`REMINDER_PUSH_HTTP_${response.status}`);
-    },
-  };
-}
-
 export interface ProductionReminderPushOptions {
   readonly ownerId: RuntimeRequest["ownerId"];
   readonly agentId: RuntimeRequest["agentId"];
@@ -147,7 +116,10 @@ export class ProductionReminderPush {
 
   start(): void {
     if (this.#timer) return;
-    this.#timer = setInterval(() => void this.tick(), this.#options.intervalMs ?? DEFAULT_INTERVAL_MS);
+    this.#timer = setInterval(
+      () => void this.tick(),
+      this.#options.intervalMs ?? DEFAULT_INTERVAL_MS,
+    );
     this.#timer.unref?.();
     void this.tick();
   }

@@ -1152,3 +1152,40 @@ describe("[R2-T2] coding route approval mode", () => {
     expect(() => parseProductConfiguration(raw, AT)).toThrow();
   });
 });
+
+it("accepts a Bark reminder push only with a reminder-push secret and an https server", () => {
+  const raw = config("/tmp/himawari-reminder-push-config");
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  const references = raw["secretReferences"] as unknown[];
+  raw["secretReferences"] = [
+    ...references,
+    { ref: "bark-push", version: "v1", purpose: "reminder-push", scope: "agent" },
+  ];
+  raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "bark-push" } };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.reminderPush,
+  ).toEqual({ channel: "bark", secretRef: "bark-push" });
+  for (const reminderPush of [
+    { channel: "ntfy", secretRef: "bark-push" },
+    { channel: "bark", secretRef: "missing-secret" },
+    { channel: "bark", secretRef: "bark-push", server: "http://bark.example" },
+    { channel: "bark", secretRef: "bark-push", server: "https://bark.example/push" },
+    { channel: "bark", secretRef: "bark-push", deviceKey: "inline" },
+  ]) {
+    raw["runPolicy"] = { ...policy, reminderPush };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["runPolicy"] = {
+    ...policy,
+    reminderPush: { channel: "bark", secretRef: "bark-push", server: "https://bark.example" },
+  };
+  expect(
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.reminderPush?.server,
+  ).toBe("https://bark.example");
+});
