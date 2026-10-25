@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   connect: vi.fn(),
   callTool: vi.fn(),
+  listTools: vi.fn(),
   closeClient: vi.fn(),
   closeProxy: vi.fn(),
   proxyFetch: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock("@modelcontextprotocol/client", () => ({
   Client: class {
     connect = state.connect;
     callTool = state.callTool;
+    listTools = state.listTools;
     close = state.closeClient;
   },
   StreamableHTTPClientTransport: class {
@@ -306,5 +308,60 @@ describe("[R2-T13] free MCP rate-limit notices", () => {
     expect(state.callTool).toHaveBeenCalledOnce();
     expect(state.proxyCreated).toHaveBeenCalledOnce();
     clock.mockRestore();
+  });
+});
+
+describe("public page fetch through Exa", () => {
+  const page = "Title: Example page\nURL: https://example.org/a\nText: Hello world";
+  const fetchPage = (maximumBytes = 1024) =>
+    new ExaPublicSearchAdapter().fetch({ url: "https://example.org/a", maximumBytes });
+  it.each([
+    [
+      "web_fetch_exa",
+      { urls: {}, maxCharacters: {} },
+      { urls: ["https://example.org/a"], maxCharacters: 1024 },
+    ],
+    ["crawling_exa", { url: {} }, { url: "https://example.org/a" }],
+  ])(
+    "uses the advertised %s tool with only the approved address",
+    async (name, properties, args) => {
+      state.listTools.mockResolvedValue({
+        tools: [{ name, inputSchema: { type: "object", properties } }, { name: "write_file" }],
+      });
+      state.callTool.mockResolvedValue({ content: [{ type: "text", text: page }] });
+      expect(await fetchPage()).toEqual({
+        url: "https://example.org/a",
+        title: "Example page",
+        markdown: page,
+        truncated: false,
+      });
+      expect(state.callTool).toHaveBeenCalledExactlyOnceWith(
+        { name, arguments: args },
+        { timeout: 30000 },
+      );
+      expect(state.closeProxy).toHaveBeenCalledOnce();
+    },
+  );
+  it("fails closed when the server advertises no page reading tool", async () => {
+    state.listTools.mockResolvedValue({ tools: [{ name: "web_search_exa" }] });
+    await expect(fetchPage()).rejects.toThrow("WEB_FETCH_PROVIDER_FAILED");
+    expect(state.callTool).not.toHaveBeenCalled();
+  });
+  it("caps the page and rejects secret-bearing page text", async () => {
+    state.listTools.mockResolvedValue({ tools: [{ name: "crawling_exa", inputSchema: {} }] });
+    state.callTool.mockResolvedValueOnce({
+      content: [{ type: "text", text: page + "x".repeat(99) }],
+    });
+    expect(await fetchPage(32)).toMatchObject({ truncated: true });
+    state.callTool.mockResolvedValueOnce({
+      content: [{ type: "text", text: page + "\nsk-" + "a".repeat(40) }],
+    });
+    await expect(fetchPage()).rejects.toThrow("WEB_FETCH_OUTPUT_REDACTED");
+  });
+  it("does not open a connection for a private address", async () => {
+    await expect(
+      new ExaPublicSearchAdapter().fetch({ url: "http://127.0.0.1/", maximumBytes: 1024 }),
+    ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
+    expect(state.proxyCreated).not.toHaveBeenCalled();
   });
 });

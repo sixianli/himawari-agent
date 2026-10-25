@@ -119,7 +119,8 @@ export const messages = {
   "chat.search.allowed": "联网搜索已允许",
   "chat.search.ask": "联网搜索需确认",
   "chat.search.disclosure":
-    "允许后，生成的查询词会发送给 Exa，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
+    "允许后，生成的查询词会发送给下列联网搜索服务；读网页时网址也会发送给它们，可能包含你在对话中提供的信息。不会因此获得文件、附件或命令权限；检测到凭据的查询仍会拦截。撤销后，后续搜索重新确认。",
+  "chat.search.recipients": "接收方：",
   "chat.search.remember": "记住我的选择，之后允许联网搜索",
   "chat.search.scope": "适用于当前账号，直到你撤销。",
   "chat.search.afterRevoke": "关闭后，下一次需要联网搜索时会在对应会话中询问。",

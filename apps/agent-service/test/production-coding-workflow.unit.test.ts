@@ -6,6 +6,7 @@ import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
 } from "../src/production-file-read-workflow.js";
+import { WebToolMemory } from "../src/web-tool-memory.js";
 import { invocation, now, runtimeToolFixture } from "./runtime-tools.fixture.js";
 
 function fixture() {
@@ -299,6 +300,118 @@ it("rejects invalid public search queries before disclosure approval", async () 
   expect(f.authorize).not.toHaveBeenCalled();
 });
 
+it("discloses a configured provider chain to every provider and freezes it into the program input", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: null,
+    providers: ["exa-public", "deepseek"],
+  });
+  const issue = vi.fn(async () => ({ ref: "handle:search" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_search", arguments: { query: "Tokyo forecast" } },
+    "web_search",
+    services,
+    f.ctx,
+  );
+  expect(services.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      recipients: [f.binding.modelIdentity, "https://mcp.exa.ai", "https://api.deepseek.com"],
+      targets: expect.arrayContaining([
+        { type: "network-domain", ref: "api.deepseek.com:443" },
+        { type: "network-domain", ref: "mcp.exa.ai:443" },
+      ]),
+    }),
+    undefined,
+  );
+  expect(f.values.get("input")).toEqual({
+    query: "Tokyo forecast",
+    providers: ["exa-public", "deepseek"],
+  });
+});
+it("fetches a public page through the provider with the configured size and no model-chosen fields", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const issue = vi.fn(async () => ({ ref: "handle:fetch" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_fetch", arguments: { url: "https://example.org/a" } },
+    "web_fetch",
+    services,
+    f.ctx,
+  );
+  expect(services.authorize).toHaveBeenCalledWith(
+    expect.objectContaining({
+      operation: "web_fetch",
+      recipients: [f.binding.modelIdentity, "https://mcp.exa.ai"],
+      targets: expect.arrayContaining([{ type: "network-domain", ref: "mcp.exa.ai:443" }]),
+      sideEffect: "none",
+    }),
+    undefined,
+  );
+  expect(f.values.get("input")).toEqual({
+    url: "https://example.org/a",
+    maximumBytes: f.binding.maximumBytes,
+  });
+});
+it("answers a repeated approved search from host memory without a second provider request", async () => {
+  const memory = new WebToolMemory();
+  const run = async (toolCallId: string) => {
+    const f = fixture();
+    f.services.binding = async () => ({ ...f.binding, grant: null });
+    const issue = vi.fn(async () => ({ ref: `handle:${toolCallId}` }));
+    const services = {
+      ...f.services,
+      authorize: allowRead(),
+      issue,
+      webMemory: memory,
+    } as unknown as typeof f.services;
+    const result = await executeProductionCodingRequest(
+      {
+        ...f.call,
+        toolCallId,
+        capabilityRef: "coding.web_search",
+        arguments: { query: "Tokyo  Forecast" },
+      },
+      "web_search",
+      services,
+      f.ctx,
+    );
+    return { f, issue, services, result };
+  };
+  const first = await run("call-a");
+  expect(first.f.ctx.phase).toHaveBeenCalledTimes(1);
+  const second = await run("call-b");
+  expect(second.services.authorize).toHaveBeenCalledTimes(1);
+  expect(second.issue).not.toHaveBeenCalled();
+  expect(second.f.ctx.phase).not.toHaveBeenCalled();
+  expect(second.result).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "not_sent",
+    modelContent: "actual tool result",
+  });
+  expect(second.f.values.get("host-result")).toEqual(second.result);
+});
+it.each([
+  { url: "http://localhost:8080/admin" },
+  { url: "http://192.168.1.10/" },
+  { url: "https://user:pw@example.org/" },
+  { url: "file:///etc/passwd" },
+  { url: "https://example.org/", maximumBytes: 1 },
+])("rejects a private or widened fetch request %j before disclosure", async (args) => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const result = await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_fetch", arguments: args },
+    "web_fetch",
+    f.services,
+    f.ctx,
+  );
+  expect(result.errorCode).toBe("WEB_FETCH_INPUT_INVALID");
+  expect(f.authorize).not.toHaveBeenCalled();
+});
+
 it("passes cancellation to coding authorization before a handle or file effect exists", async () => {
   const f = fixture();
   const controller = new AbortController();
@@ -365,8 +478,6 @@ it("associates new content with the verified conflict and asks the original poli
     f.services,
     f.ctx,
   );
-  // The original permission service denies this new request; the old approval
-  // and the conflict hint must not be converted into a new execution handle.
   expect(result.outcome).toBe("failed");
   expect(f.authorize).toHaveBeenCalledOnce();
   const lineage = f.values.get("conflict-lineage") as Record<string, unknown>;

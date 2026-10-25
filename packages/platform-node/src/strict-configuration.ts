@@ -4,6 +4,10 @@ import path from "node:path";
 import {
   assertMachineSecretFree,
   type CapabilityDeploymentConfiguration,
+  isWebProviderId,
+  WEB_PROVIDER_IDS,
+  WEB_PROVIDERS,
+  type WebProviderId,
   type ConfigurationPort,
   type ConfiguredEmbeddingModelDescriptor,
   type ConfiguredCompletionsGenerationModelDescriptor,
@@ -113,7 +117,6 @@ function nonNegativeNumber(value: unknown, field: string): number {
   return value;
 }
 
-/** A calibrated probability boundary: inclusive 0..1 with a finite decimal value. */
 function unitInterval(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     throw invalid(field, "must be a finite number from 0 to 1");
@@ -263,9 +266,6 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
     throw invalid(`${field}.role`, "is not a supported role");
   }
   const generation = role !== "embedding";
-  // The api discriminator decides which generation fields are legal, so an
-  // OpenAI-only field on a decision descriptor is an unknown field, not a
-  // silently ignored one. The discriminator itself is validated after this.
   const declaredApi = generation ? input["api"] : undefined;
   rejectUnknown(
     input,
@@ -355,8 +355,6 @@ function parseModel(value: unknown, index: number): ConfiguredModelDescriptor {
         ? {}
         : { modelVersion: safeReference(input["modelVersion"], `${field}.modelVersion`) }),
     };
-    // The decision endpoint has no output tokens, so an output price would book spend
-    // the provider never charges.
     if (descriptor.cost.output !== 0)
       throw invalid(`${field}.cost.output`, "must be zero for the decision endpoint");
     if (role !== "specialist")
@@ -741,12 +739,23 @@ function parseFileReadRoute(value: unknown): NonNullable<RunPolicyConfiguration[
   });
 }
 
-function parsePublicSearchRoute(
-  value: unknown,
-): NonNullable<RunPolicyConfiguration["publicSearch"]> {
-  const field = "configuration.runPolicy.publicSearch";
-  const input = record(value, field);
-  if (input["scopeSource"] === undefined) return parseFileReadRoute(value);
+function parseWebProviders(value: unknown, field: string): readonly WebProviderId[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > WEB_PROVIDER_IDS.length ||
+    new Set(value).size !== value.length ||
+    !value.every(isWebProviderId)
+  )
+    throw invalid(field, "must list distinct registered web providers in fallback order");
+  const secretProvider = value.find((id) => WEB_PROVIDERS[id].requiresSecret);
+  if (secretProvider !== undefined)
+    throw invalid(field, `${secretProvider} needs sandbox secret delivery, which is not installed`);
+  return Object.freeze([...value]);
+}
+
+function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string) {
   rejectUnknown(
     input,
     [
@@ -756,10 +765,12 @@ function parsePublicSearchRoute(
       "capabilityRef",
       "capabilityVersion",
       "maximumBytes",
+      "providers",
     ],
     field,
   );
   if (input["scopeSource"] !== "private_temp") throw invalid(field, "requires private_temp scope");
+  const providers = parseWebProviders(input["providers"], `${field}.providers`);
   return Object.freeze({
     scopeSource: "private_temp" as const,
     hostId: safeReference(input["hostId"], `${field}.hostId`),
@@ -767,7 +778,27 @@ function parsePublicSearchRoute(
     capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
     capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
     maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+    ...(providers === undefined ? {} : { providers }),
   });
+}
+
+function parsePublicSearchRoute(
+  value: unknown,
+): NonNullable<RunPolicyConfiguration["publicSearch"]> {
+  const field = "configuration.runPolicy.publicSearch";
+  const input = record(value, field);
+  if (input["scopeSource"] === undefined) {
+    const { providers, ...route } = input;
+    const parsed = parseFileReadRoute(route);
+    const chain = parseWebProviders(providers, `${field}.providers`);
+    return chain === undefined ? parsed : Object.freeze({ ...parsed, providers: chain });
+  }
+  return parsePrivateTempWebRoute(input, field);
+}
+
+function parsePublicFetchRoute(value: unknown): NonNullable<RunPolicyConfiguration["publicFetch"]> {
+  const field = "configuration.runPolicy.publicFetch";
+  return parsePrivateTempWebRoute(record(value, field), field);
 }
 
 function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {
@@ -856,6 +887,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "fileRead",
       "coding",
       "publicSearch",
+      "publicFetch",
       "automaticReview",
     ],
     "configuration.runPolicy",
@@ -883,6 +915,9 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["publicSearch"] === undefined
       ? {}
       : { publicSearch: parsePublicSearchRoute(input["publicSearch"]) }),
+    ...(input["publicFetch"] === undefined
+      ? {}
+      : { publicFetch: parsePublicFetchRoute(input["publicFetch"]) }),
     ...(input["coding"] === undefined ? {} : { coding: parseCodingRoute(input["coding"]) }),
     ...(input["fileRead"] === undefined ? {} : { fileRead: parseFileReadRoute(input["fileRead"]) }),
     ...(input["automaticReview"] === undefined
@@ -1127,10 +1162,6 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const review = runPolicy?.automaticReview;
   if (review) {
     const descriptor = modelDescriptors.find(({ ref }) => ref === review.modelRef);
-    // The reviewer always speaks for exactly this configured generation identity: the
-    // frozen delegation pins it, and an embedding identity cannot answer a review.
-    // A specialist has its own admission and pricing identity; existing Pi review
-    // identities remain valid for configurations that intentionally use them.
     if (!descriptor || descriptor.role === "embedding")
       throw invalid(
         "configuration.runPolicy.automaticReview.modelRef",

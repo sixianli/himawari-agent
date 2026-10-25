@@ -1,6 +1,7 @@
 import type { AgentId, DeploymentId, OwnerId } from "@himawari-agent/domain";
 import type { DataClassification } from "./common.js";
 import type { ModelProviderRouting } from "./intelligence.js";
+import type { WebProviderId } from "./web-providers.js";
 
 export interface SecretReferenceDescriptor {
   readonly ref: string;
@@ -9,12 +10,6 @@ export interface SecretReferenceDescriptor {
   readonly scope: string;
 }
 
-/**
- * Provider pricing in USD per million input/output tokens (or the provider's
- * equivalent unit for an embedding request). Keeping this shape in the
- * product configuration lets the budget and disclosure policy see the exact
- * selected identity without importing the Pi runtime package.
- */
 export interface ModelCostDescriptor {
   readonly input: number;
   readonly output: number;
@@ -41,7 +36,6 @@ interface ConfiguredGenerationModelDescriptorBase extends ConfiguredModelDescrip
   readonly name: string;
 }
 
-/** Conversational generation through the pinned Pi runtime and its OpenAI-compatible API. */
 export interface ConfiguredCompletionsGenerationModelDescriptor
   extends ConfiguredGenerationModelDescriptorBase {
   readonly api: "openai-completions";
@@ -52,13 +46,6 @@ export interface ConfiguredCompletionsGenerationModelDescriptor
   readonly maxTokens: number;
 }
 
-/**
- * A decision model reached through its own protocol instead of a chat
- * completion. TypeSafe Jev answers typed questions with a choice and a
- * calibrated confidence, so it has no context window, token ceiling, reasoning
- * switch or provider routing. `modelVersion` is the version TypeSafe reports
- * for billing and audit; `model` may be an alias such as `jev-latest`.
- */
 export interface ConfiguredTypeSafeGenerationModelDescriptor
   extends Omit<ConfiguredGenerationModelDescriptorBase, "role"> {
   readonly role: "specialist";
@@ -176,8 +163,6 @@ export interface TaskEnvironmentConfiguration {
   readonly egressImage: TaskEnvironmentImageConfiguration;
 }
 
-/** Host-owned, versioned instructions; never supplied by a browser message. */
-/** Routing selection only. Directory and action grants remain separate durable authority. */
 export interface FileReadRouteConfiguration {
   readonly hostId: string;
   readonly workerInstanceId: string;
@@ -187,10 +172,15 @@ export interface FileReadRouteConfiguration {
   readonly maximumBytes: number;
 }
 
-/** Pure search has host routing but no user directory authority. */
-export type PublicSearchRouteConfiguration =
+export type PublicSearchRouteConfiguration = (
   | FileReadRouteConfiguration
-  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" });
+  | (Omit<FileReadRouteConfiguration, "grantId"> & { readonly scopeSource: "private_temp" })
+) & { readonly providers?: readonly WebProviderId[] };
+
+export type PublicFetchRouteConfiguration = Omit<FileReadRouteConfiguration, "grantId"> & {
+  readonly scopeSource: "private_temp";
+  readonly providers?: readonly WebProviderId[];
+};
 
 export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
   readonly enabledTools: readonly (
@@ -211,13 +201,8 @@ export interface RunPolicyConfiguration {
   readonly timeZone?: string;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
+  readonly publicFetch?: PublicFetchRouteConfiguration;
   readonly fileRead?: FileReadRouteConfiguration;
-  /**
-   * Opt-in automatic review. Absent means no review coordinator is composed, so
-   * every request keeps the original human/deny path and no model disclosure or
-   * spend happens. `modelRef` must name a configured generation model that is
-   * distinct from the primary and fallback routing models.
-   */
   readonly automaticReview?: AutomaticReviewConfiguration;
   readonly version: string;
   readonly systemInstruction: string;
@@ -226,17 +211,12 @@ export interface RunPolicyConfiguration {
   readonly maxMemoryClassification: DataClassification;
 }
 
-/** Owner-authored delegation reference plus the frozen reviewer identity. */
 export interface AutomaticReviewConfiguration {
   readonly delegationKey: string;
   readonly configurationVersion: string;
   readonly modelRef: string;
   readonly maximumWaitMs: number;
   readonly maxOutputBytes: number;
-  /**
-   * Minimum calibrated confidence for an automatic approval. A lower value on the
-   * approve branch is routed to human confirmation instead of approving.
-   */
   readonly confidenceThreshold?: number;
 }
 
@@ -251,13 +231,9 @@ export interface ProductConfiguration {
   readonly publicOrigin: string;
   readonly publicMode: boolean;
   readonly runPolicy?: RunPolicyConfiguration;
-  /** Present only when a verified capability deployment snapshot is configured. */
   readonly capabilityDeployment?: CapabilityDeploymentConfiguration;
-  /** Present only when tool calls may run in per-Run task environments. */
   readonly taskEnvironments?: TaskEnvironmentConfiguration;
-  /** Present only for a configured public HTTP composition. */
   readonly http?: HttpConfiguration;
-  /** Present only for a configured public identity composition. */
   readonly identity?: IdentityConfiguration;
   readonly modelDescriptors: readonly ConfiguredModelDescriptor[];
   readonly memory: ConfiguredMemoryDescriptor;

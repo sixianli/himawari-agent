@@ -874,6 +874,49 @@ it("parses private search without allowing a mixed directory grant", () => {
   }
 });
 
+it("parses ordered web providers and a fetch route without accepting unregistered or secret-only providers", () => {
+  const raw = config("/tmp/config-fixture");
+  const route = {
+    scopeSource: "private_temp",
+    hostId: "host",
+    workerInstanceId: "worker",
+    capabilityRef: "fetch",
+    capabilityVersion: "1",
+    maximumBytes: 32768,
+  };
+  const policy = {
+    version: "1",
+    systemInstruction: "test",
+    memoryLimit: 10,
+    maxSelectedMemories: 1,
+    maxMemoryClassification: "private",
+  };
+  raw["runPolicy"] = {
+    ...policy,
+    publicSearch: { ...route, capabilityRef: "search", providers: ["exa-public"] },
+    publicFetch: route,
+  };
+  const parsed = parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy;
+  expect(parsed?.publicSearch).toEqual({
+    ...route,
+    capabilityRef: "search",
+    providers: ["exa-public"],
+  });
+  expect(parsed?.publicFetch).toEqual(route);
+  for (const providers of [
+    [],
+    ["bing"],
+    ["exa-public", "exa-public"],
+    ["deepseek"],
+    "exa-public",
+  ]) {
+    raw["runPolicy"] = { ...policy, publicFetch: { ...route, providers } };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["runPolicy"] = { ...policy, publicFetch: { ...route, scopeSource: undefined, grantId: "g" } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+});
+
 it("accepts a dedicated review model and rejects one the router could also select", () => {
   const raw = config("/tmp/himawari-review-config");
   const review = {
@@ -897,13 +940,11 @@ it("accepts a dedicated review model and rejects one the router could also selec
   ).toEqual(review);
   for (const changed of [
     { ...review, modelRef: "model-unknown" },
-    // An embedding identity can never answer a review request.
     { ...review, modelRef: "model-embedding" },
     { ...review, modelRef: "model-embedding" },
     { ...review, maximumWaitMs: 0 },
     { ...review, maximumWaitMs: 300_001 },
     { ...review, maxOutputBytes: 0 },
-    // Unknown or missing fields must not silently become defaults.
     { ...review, extra: true },
     { delegationKey: review.delegationKey, configurationVersion: review.configurationVersion },
   ]) {
@@ -962,7 +1003,6 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
   });
   expect(parsed.runPolicy?.automaticReview).toEqual(review);
 
-  // The calibrated boundary is optional but must be a real probability.
   raw["runPolicy"] = { ...policy, automaticReview: { ...review, confidenceThreshold: 0.8 } };
   expect(
     parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z").runPolicy?.automaticReview,
@@ -975,14 +1015,12 @@ it("accepts a TypeSafe decision model as the configured reviewer and rejects its
   ]) {
     raw["runPolicy"] = { ...policy, automaticReview: changed };
     if (changed.confidenceThreshold === 0 || changed.confidenceThreshold === 1) {
-      // Inclusive boundaries are valid.
       expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).not.toThrow();
     } else {
       expect(() => parseProductConfiguration(raw, "2026-09-22T00:00:00.000Z")).toThrow();
     }
   }
 
-  // A decision endpoint never charges for output, and it carries no chat-only fields.
   for (const [mutate, label] of [
     [
       (m: Record<string, unknown>) => ({ ...m, cost: { ...(m["cost"] as object), output: 1 } }),

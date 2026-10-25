@@ -125,7 +125,8 @@ export const messages = {
   "chat.search.allowed": "Web search allowed",
   "chat.search.ask": "Confirm web search",
   "chat.search.disclosure":
-    "Generated queries will be sent to Exa and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+    "Generated queries will be sent to the web search services listed below; when a page is read, its address is sent to them too and may contain information from your conversation. This does not grant file, attachment or command access. Detected credentials remain blocked. Revoking restores confirmation for future searches.",
+  "chat.search.recipients": "Recipients:",
   "chat.search.remember": "Remember my choice and allow future web searches",
   "chat.search.scope": "Applies to this account until revoked.",
   "chat.search.afterRevoke":
