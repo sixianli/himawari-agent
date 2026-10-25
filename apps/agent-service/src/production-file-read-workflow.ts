@@ -9,6 +9,7 @@ import type {
   RuntimeRequest,
   RuntimeToolExecutionResult,
   RuntimeToolInvocation,
+  WebProviderId,
 } from "@himawari-agent/application";
 import {
   resolveHostFileReadPath,
@@ -17,6 +18,7 @@ import {
 
 import type { SandboxWorkspaceCopy } from "@himawari-agent/execution-contracts";
 import type { ProductionHostReadOnly } from "./production-host-read.js";
+import type { WebToolMemory } from "./web-tool-memory.js";
 
 export interface FileReadBinding {
   readonly workspaceCopy?: SandboxWorkspaceCopy;
@@ -35,6 +37,14 @@ export interface FileReadBinding {
   readonly threadId: string;
   readonly modelRef: string;
   readonly modelIdentity: string;
+  readonly providers?: readonly WebProviderId[];
+  readonly providerSecrets?: readonly WebProviderSecretBinding[];
+}
+export interface WebProviderSecretBinding {
+  readonly provider: WebProviderId;
+  readonly secretRef: string;
+  readonly secretVersion: string;
+  readonly purpose: string;
 }
 export type CodingBinding =
   | FileReadBinding
@@ -46,6 +56,7 @@ export interface ProductionFileReadServices {
     input: Parameters<CapabilityHandleService["issue"]>[0],
   ): ReturnType<CapabilityHandleService["issue"]>;
   readonly hostReadOnly?: ProductionHostReadOnly;
+  readonly webMemory?: WebToolMemory;
 }
 export type WorkflowAuthority = {
   readonly deploymentId: string;
@@ -53,10 +64,8 @@ export type WorkflowAuthority = {
   readonly fencingToken: number;
 };
 export interface FileReadExecutionContext {
-  /** True only for this outer call's original queue, already bound to the current Run lease. */
   canResumeAuthority?(previous: WorkflowAuthority): Promise<boolean>;
   restoreInspection?(previous: WorkflowAuthority): Promise<RuntimeToolExecutionResult | undefined>;
-  /** Returns only a verified conflict with no publication in this same Run. */
   fileConflict?(toolCallId: string): Promise<
     | {
         readonly call: RuntimeToolInvocation;
@@ -88,7 +97,8 @@ export interface FileReadExecutionContext {
       | "ls"
       | "move_directory"
       | "save_copy"
-      | "web_search",
+      | "web_search"
+      | "web_fetch",
     inputRef: string,
   ): Promise<RuntimeToolExecutionResult>;
 }
@@ -129,7 +139,6 @@ function failure(code: string): RuntimeToolExecutionResult {
 }
 const decisionFailure = runtimeToolAuthorizationResult;
 
-/** One model call, two separately authorized Worker operations. Never reads local files. */
 export class ProductionFileReadWorkflow {
   readonly services: ProductionFileReadServices;
   constructor(services: ProductionFileReadServices) {
@@ -298,7 +307,8 @@ export class ProductionFileReadWorkflow {
         | "ls"
         | "move_directory"
         | "save_copy"
-        | "web_search",
+        | "web_search"
+        | "web_fetch",
       payload: unknown,
       action: GovernedActionIntent,
     ) => {
@@ -343,8 +353,6 @@ export class ProductionFileReadWorkflow {
       path: call.arguments["path"],
       maximumBytes: binding.maximumBytes,
     };
-    // On a proved queue rebind, reuse only the original known inspection result.
-    // The target below and the pending read's frozen scope are checked again.
     const retainedInspection =
       rebound && previousAuthority ? await ctx.restoreInspection?.(previousAuthority) : undefined;
     const inspection =

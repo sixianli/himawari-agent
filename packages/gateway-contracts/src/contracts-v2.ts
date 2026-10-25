@@ -166,12 +166,24 @@ export const respondApprovalV2CommandSchema = object({
   }),
 });
 
+const searchRecipientsSchema: Schema<readonly string[]> = {
+  parse(input, path = "$") {
+    const recipients = array(boundedString(512)).parse(input, path);
+    if (
+      recipients.length > 8 ||
+      new Set(recipients).size !== recipients.length ||
+      recipients.some((value) => !/^https:\/\/[a-z0-9.-]+$/.test(value))
+    )
+      throw new ContractValidationError(path, "expected distinct https origins");
+    return recipients;
+  },
+};
 const searchAuthorizationCommandSchema = object({
   ...commandEnvelope("search.authorization.set"),
   payload: object({
     expectedRevision: integer(0),
     enabled: booleanValue,
-    recipient: literal("https://mcp.exa.ai"),
+    recipients: searchRecipientsSchema,
   }),
 });
 const searchAuthorizationQuerySchema = object({
@@ -184,7 +196,7 @@ const searchAuthorizationSnapshotSchema = object({
     revision: integer(0),
     enabled: booleanValue,
     available: booleanValue,
-    recipient: literal("https://mcp.exa.ai"),
+    recipients: searchRecipientsSchema,
     generatedAt: timestamp,
   }),
 });
@@ -781,7 +793,6 @@ export const approvalSnapshotSchema = object({
       capabilityRef: machineString,
       capabilityVersion: machineString,
       operation: machineString,
-      // Targets include canonical paths and model identities, not just IDs.
       targetRefs: array(boundedString()),
       resourceRefs: array(boundedString()),
       dataClassification: classificationSchema,

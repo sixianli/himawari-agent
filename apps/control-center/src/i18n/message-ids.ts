@@ -112,6 +112,7 @@ export const MESSAGE_IDS = [
   "chat.search.allowed",
   "chat.search.ask",
   "chat.search.disclosure",
+  "chat.search.recipients",
   "chat.search.remember",
   "chat.search.scope",
   "chat.search.afterRevoke",

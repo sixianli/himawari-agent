@@ -1039,6 +1039,9 @@ export async function runAgentService(
         ...(configuration.runPolicy?.publicSearch
           ? { publicSearch: configuration.runPolicy.publicSearch }
           : {}),
+        ...(configuration.runPolicy?.publicFetch
+          ? { publicFetch: configuration.runPolicy.publicFetch }
+          : {}),
         ...(configuration.runPolicy?.coding ? { coding: configuration.runPolicy.coding } : {}),
         fileRead: fileReadServices,
         ...(sandboxServices

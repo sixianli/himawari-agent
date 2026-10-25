@@ -97,6 +97,11 @@ export function SearchAuthorizationControl({
           />
         </label>
         <p className="settings-note">{message("chat.search.disclosure")}</p>
+        {snapshot?.payload.recipients.length ? (
+          <p className="settings-note">
+            {message("chat.search.recipients")} {snapshot.payload.recipients.join(", ")}
+          </p>
+        ) : null}
         <p className="settings-note">{message("chat.search.afterRevoke")}</p>
         <div className="setting-row">
           <span>

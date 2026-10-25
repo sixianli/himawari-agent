@@ -61,6 +61,7 @@ import {
   type SandboxJobHost,
 } from "@himawari-agent/runtime-sandbox";
 import { sandboxInvocationFromRequest } from "./broker-sandbox-execution.js";
+import { injectProgramSecrets, type ProgramSecretSource } from "./program-secret-injection.js";
 import type { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import {
   type SandboxWorkerResult,
@@ -122,6 +123,7 @@ interface Options {
   clock: ClockPort;
   containers?: SandboxContainerRoute;
   srtEnvironments?: Pick<SrtTaskEnvironmentBackend, "session">;
+  secrets?: ProgramSecretSource;
 }
 const COMPLETION_RECORD_ATTEMPTS = 5;
 const RECOVERY_SETTLE_WAIT_MS = 35000;
@@ -379,8 +381,19 @@ export class ProductionSandboxExecutionV2 {
         `control-${createHash("sha256").update(JSON.stringify(plan.identity)).digest("hex").slice(0, 20)}`,
       );
       await mkdir(controlDirectory, { mode: 0o700 });
-      const input = await this.options.payloads.readInput(entry.invocation);
-      if (input.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+      const stored = await this.options.payloads.readInput(entry.invocation);
+      if (stored.byteLength > 49152) throw new Error("SANDBOX_INPUT_TOO_LARGE");
+      const input =
+        entry.request.payload.secretRefs.length && !piRunner
+          ? await injectProgramSecrets({
+              stored,
+              granted: entry.request.payload.secretRefs,
+              networkOnly: plan.operationContract.kind === "network_only",
+              ...(this.options.secrets ? { secrets: this.options.secrets } : {}),
+            })
+          : stored;
+      if (piRunner && entry.request.payload.secretRefs.length)
+        throw new Error("SANDBOX_SECRET_UNSUPPORTED");
       if (
         piRunner &&
         (![

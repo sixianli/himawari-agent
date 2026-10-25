@@ -6,10 +6,14 @@ import {
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolSettledResult,
+  DEFAULT_WEB_PROVIDERS,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
+  webProviderEgress,
+  webProviderRecipients,
 } from "@himawari-agent/application";
+import { validatePublicFetchUrl } from "@himawari-agent/platform-node";
 import type {
   FileReadExecutionContext,
   ProductionFileReadServices,
@@ -26,7 +30,9 @@ type Tool =
   | "ls"
   | "move_directory"
   | "save_copy"
-  | "web_search";
+  | "web_search"
+  | "web_fetch";
+const webTool = (tool: Tool) => tool === "web_search" || tool === "web_fetch";
 const hash = (value: unknown) =>
   createHash("sha256")
     .update(
@@ -89,8 +95,6 @@ export const fileVersionConflictResult = (
     "目标文件已变化，已确认本次候选未发布。已准备的候选仍保留；请重新读取最新内容，理解并保留他人修改后，用新的工具调用提出修改。新内容仍须经过原权限检查；无法确定意图时暂停说明。",
 });
 
-/** Freeze model parameters, obtain an actual action/disclosure grant, issue one
- * private handle, then use the existing Worker path. Model arguments never grant access. */
 export async function executeProductionCodingRequest(
   call: RuntimeToolInvocation,
   tool: Tool,
@@ -118,7 +122,7 @@ export async function executeProductionCodingRequest(
   )
     return failed("COPY_SAVE_OPERATION_UNAVAILABLE");
   const grant = binding.grant;
-  if (call.dataClassification !== "private" || (grant === null && tool !== "web_search"))
+  if (call.dataClassification !== "private" || (grant === null && !webTool(tool)))
     return failed("CODING_DIRECTORY_UNAVAILABLE");
   const write = ["write", "edit", "bash", "move_directory", "save_copy"].includes(tool);
   const required =
@@ -160,7 +164,16 @@ export async function executeProductionCodingRequest(
           Number(args["limit"]) > 10)))
   )
     return failed("WEB_SEARCH_INPUT_INVALID");
-  if (tool !== "bash" && tool !== "web_search" && tool !== "save_copy") {
+  if (tool === "web_fetch") {
+    if (typeof args["url"] !== "string" || Object.keys(args).some((key) => key !== "url"))
+      return failed("WEB_FETCH_INPUT_INVALID");
+    try {
+      validatePublicFetchUrl(args["url"]);
+    } catch {
+      return failed("WEB_FETCH_INPUT_INVALID");
+    }
+  }
+  if (tool !== "bash" && !webTool(tool) && tool !== "save_copy") {
     if (!grant) return failed("CODING_DIRECTORY_UNAVAILABLE");
     const target =
       args["path"] ?? (tool === "ls" || tool === "find" || tool === "grep" ? "." : undefined);
@@ -262,7 +275,9 @@ export async function executeProductionCodingRequest(
       { type: "tool", ref: tool },
       { type: "input-digest", ref: hash(args) },
       { type: "model", ref: binding.modelIdentity },
-      ...(tool === "web_search" ? [{ type: "network-domain", ref: "mcp.exa.ai:443" }] : []),
+      ...(webTool(tool)
+        ? webProviderEgress(binding.providers).map((ref) => ({ type: "network-domain", ref }))
+        : []),
       ...(typeof args["destination"] === "string"
         ? [{ type: "destination-path", ref: args["destination"] }]
         : []),
@@ -278,7 +293,10 @@ export async function executeProductionCodingRequest(
     expiresAt: frozen.expiresAt,
     actionKind,
     disclosure: "named_recipients",
-    recipients: [binding.modelIdentity, ...(tool === "web_search" ? ["https://mcp.exa.ai"] : [])],
+    recipients: [
+      binding.modelIdentity,
+      ...(webTool(tool) ? webProviderRecipients(binding.providers) : []),
+    ],
     credentialOrAccessChange: false,
     modelClassification: {
       actionKind,
@@ -290,8 +308,6 @@ export async function executeProductionCodingRequest(
     ],
     finalRisk: "HIGH",
   };
-  // Returning a known non-execution fact does not renew the withdrawn Handle or
-  // consume the old exact approval again. The frozen request above still must match.
   if (["write", "edit"].includes(tool)) {
     const previous = await ctx.fileConflict?.(call.toolCallId);
     if (previous) {
@@ -317,8 +333,6 @@ export async function executeProductionCodingRequest(
       previous.depth >= 3
     )
       return failed("CODING_CONFLICT_REGENERATION_BLOCKED");
-    // This association grants no authority. New content still has its own immutable
-    // intent and passes the original permission service, including exact approvals.
     await ctx.save("conflict-lineage", {
       previousToolCallId: previous.call.toolCallId,
       previousIntentId: `coding:${hash([
@@ -376,11 +390,51 @@ export async function executeProductionCodingRequest(
     await ctx.save("host-result", settled);
     return settled;
   }
+  const memory = webTool(tool) ? services.webMemory : undefined;
+  const providers = binding.providers ?? DEFAULT_WEB_PROVIDERS;
+  const memoryKey = memory?.key({
+    ownerId: ctx.ownerId,
+    agentId: ctx.agentId,
+    tool: tool as "web_search" | "web_fetch",
+    providers,
+    arguments: args,
+  });
   let saved = (await ctx.load("handle")) as
     | { handle: GovernedCapabilityExecutionHandle; inputRef: string }
     | undefined;
+  if (!saved && memory && memoryKey) {
+    const previous = (await ctx.load("host-result")) as RuntimeToolSettledResult | undefined;
+    if (previous) return previous;
+    const hit = memory.cached(memoryKey);
+    if (hit) {
+      await active();
+      await ctx.save("host-result", hit);
+      return hit;
+    }
+  }
+  const providerSecrets = webTool(tool) ? (binding.providerSecrets ?? []) : [];
+  const secretNames = providerSecrets.length
+    ? {
+        secretRefs: Object.fromEntries(
+          providerSecrets.map(({ provider, secretRef }) => [provider, secretRef]),
+        ),
+      }
+    : {};
   if (!saved) {
-    const input = await ctx.save("input", args);
+    const ordered = memory ? memory.order(providers) : binding.providers;
+    const input = await ctx.save(
+      "input",
+      tool === "web_search"
+        ? { ...args, ...(ordered ? { providers: ordered } : {}), ...secretNames }
+        : tool === "web_fetch"
+          ? {
+              url: args["url"],
+              maximumBytes: binding.maximumBytes,
+              ...(ordered ? { providers: ordered } : {}),
+              ...secretNames,
+            }
+          : args,
+    );
     const handle = await services.issue({
       ownerId: ctx.ownerId,
       agentId: ctx.agentId,
@@ -392,7 +446,11 @@ export async function executeProductionCodingRequest(
       permission,
       inputRefs: [input.ref],
       delegatedContextRefs: [],
-      secretRefs: [],
+      secretRefs: providerSecrets.map(({ secretRef, secretVersion, purpose }) => ({
+        secretRef,
+        secretVersion,
+        purpose,
+      })),
       maxUses: 1,
       maxTotalCostMicros: 0,
       expiresAt: frozen.expiresAt,
@@ -401,5 +459,10 @@ export async function executeProductionCodingRequest(
   }
   if (!saved) throw new Error("CODING_HANDLE_UNAVAILABLE");
   await active();
-  return ctx.phase(saved.handle, tool, saved.inputRef);
+  const result = await ctx.phase(saved.handle, tool, saved.inputRef);
+  if (memory && memoryKey) {
+    memory.observe(providers, result);
+    memory.remember(memoryKey, tool as "web_search" | "web_fetch", result);
+  }
+  return result;
 }

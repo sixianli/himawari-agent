@@ -36,7 +36,11 @@ describe("[R2-T13] installed public search program output", () => {
   it("hands the model a fixed rate-limit explanation and keeps the code on stderr", async () => {
     boundary.search.mockRejectedValue(new Error("WEB_SEARCH_RATE_LIMITED"));
     await run({ query: "Tokyo weather", limit: 3 });
-    expect(boundary.search).toHaveBeenCalledWith({ query: "Tokyo weather", limit: 3 });
+    expect(boundary.search).toHaveBeenCalledWith({
+      query: "Tokyo weather",
+      limit: 3,
+      signal: expect.any(AbortSignal),
+    });
     expect(boundary.process.exitCode).toBe(1);
     expect(JSON.parse(written(boundary.process.stdout))).toEqual({
       error: "WEB_SEARCH_RATE_LIMITED",
@@ -70,7 +74,11 @@ describe("[R2-T13] installed public search program output", () => {
       },
     ]);
     await run({ query: "Tokyo weather" });
-    expect(boundary.search).toHaveBeenCalledWith({ query: "Tokyo weather", limit: 5 });
+    expect(boundary.search).toHaveBeenCalledWith({
+      query: "Tokyo weather",
+      limit: 5,
+      signal: expect.any(AbortSignal),
+    });
     expect(boundary.process.exitCode).toBeUndefined();
     expect(JSON.parse(written(boundary.process.stdout))).toMatchObject({
       source: "Exa public web search",
