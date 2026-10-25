@@ -23,6 +23,7 @@ import type {
   ExecutionEnvironmentStorePort,
   GitHubIntegrationStatePort,
   GovernanceMutationReceiptStorePort,
+  MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
@@ -468,6 +469,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryEpisodes(): MemoryEpisodeStorePort {
     return this.durable.memoryEpisodes();
+  }
+
+  memoryConsolidation(): MemoryConsolidationStorePort {
+    return this.durable.memoryConsolidation();
   }
 
   memoryProjectionJobs(): MemoryProjectionJobStatePort {

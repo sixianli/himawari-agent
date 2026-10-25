@@ -107,6 +107,7 @@ export function memoryCapturePrompt(
     "classification：普通个人信息和偏好用 private；健康、财务、宗教与政治观点、性与亲密关系、他人隐私、精确住址与行踪、法律纠纷用 sensitive，并在 topic 里填 health、finance、beliefs、intimacy、third_party、location、legal 之一（都不合适填 other）；证件号码、银行卡或账户号码、密码和验证码用 restricted。",
     "confidence 是 0 到 1000 的整数，表示这条信息确实是主人明确陈述的长期事实的把握；推测出来的信息 inference 填 true 且 confidence 不超过 700。",
     "主人明确说“记住”“别忘了”之类时，对应那条 explicit 填 true。",
+    "rule 类：主人明确要求以后都这样做时 explicit 填 true；只是这一次的纠正，或你从对话里看出来的做事习惯，explicit 填 false，这条会先作为待确认的规矩，再出现一次或主人确认后才生效。已有记忆里同样的待确认规矩再次出现时用 unchanged 指向它。",
     "category：identity（身份、职业、住处）、preference（喜好、习惯）、relationship（家人朋友同事）、goal（长期目标）、project（正在做的事）、rule（主人对 Himawari 怎么做事的要求或纠正，例如回答语言、语气、格式）、health、finance、event（发生过或计划中的具体事件）、other。",
     "importance 是 0 到 1000 的整数：这条信息对以后理解和帮助主人有多重要；身份、家人、长期目标、对 Himawari 的要求通常 800 以上，一般偏好 500 到 700，琐碎细节 300 以下。",
     "entities 列出这条记忆提到的人名、地名、组织、项目、物品等专有名词，原样写，最多 8 个，没有就是 []。",
@@ -242,6 +243,7 @@ export function parseMemoryCandidates(input: {
         validTo: null,
         supersededBy: null,
         evidenceVerified,
+        ...(category === "rule" && value["explicit"] !== true ? { tentative: true } : {}),
       },
       ...(dataClassification === "sensitive"
         ? {

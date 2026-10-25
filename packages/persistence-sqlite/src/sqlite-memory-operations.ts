@@ -48,6 +48,7 @@ interface MemoryRow {
   readonly evidenceVerified: number;
   readonly sensitiveTopic: string | null;
   readonly recordedAt: string | null;
+  readonly tentative: number;
 }
 
 interface IndexCandidateRow {
@@ -208,7 +209,7 @@ const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revis
   category, importance_permille AS importancePermille, valid_from AS validFrom,
   valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
   evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic,
-  recorded_at AS recordedAt
+  recorded_at AS recordedAt, tentative
   FROM memory_records`;
 
 const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
@@ -219,6 +220,7 @@ const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
 
 const indexScope = `m.owner_id = @ownerId AND m.agent_id = @agentId AND m.status = 'active'
   AND i.memory_revision = m.revision
+  AND m.tentative = 0
   AND (@includeHistory = 1 OR m.valid_to IS NULL OR m.valid_to > @now)`;
 
 const projectionJobSelect = `SELECT id, memory_id AS memoryId,
@@ -454,6 +456,7 @@ export class SqliteMemoryOperations {
               >,
             }
           : {}),
+        ...(row.tentative === 1 ? { tentative: true } : {}),
       }),
       useCount: row.useCount,
     });
@@ -587,7 +590,8 @@ export class SqliteMemoryOperations {
     if (current === "active") {
       return ["archived", "trashed", "deletion_pending"].includes(next);
     }
-    if (current === "archived" || current === "trashed") return next === "deletion_pending";
+    if (current === "archived") return next === "deletion_pending" || next === "active";
+    if (current === "trashed") return next === "deletion_pending";
     return current === "deletion_pending" && next === "deleted_verified";
   }
 
@@ -654,8 +658,8 @@ export class SqliteMemoryOperations {
               source_thread_id, inference, confidence_permille, policy_version,
               provider_record_id, last_used_at, updated_at, category, importance_permille,
               valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic,
-              recorded_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              recorded_at, tentative
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -680,6 +684,7 @@ export class SqliteMemoryOperations {
             attributes.evidenceVerified ? 1 : 0,
             attributes.sensitiveTopic ?? null,
             input.memory.updatedAt,
+            attributes.tentative === true ? 1 : 0,
           );
       } else {
         if (
@@ -698,7 +703,7 @@ export class SqliteMemoryOperations {
               classification = ?, source_thread_id = ?, inference = ?, confidence_permille = ?,
               policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?,
               category = ?, importance_permille = ?, valid_from = ?, valid_to = ?,
-              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?
+              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?, tentative = ?
             WHERE id = ?`,
           )
           .run(
@@ -720,6 +725,7 @@ export class SqliteMemoryOperations {
             attributes.supersededBy,
             attributes.evidenceVerified ? 1 : 0,
             attributes.sensitiveTopic ?? null,
+            attributes.tentative === true ? 1 : 0,
             input.memory.id,
           );
       }

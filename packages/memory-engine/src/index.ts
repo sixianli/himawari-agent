@@ -4,3 +4,4 @@ export * from "./hybrid-memory-provider.js";
 export * from "./segmentation.js";
 export * from "./time-scope.js";
 export * from "./episodes.js";
+export * from "./consolidation.js";

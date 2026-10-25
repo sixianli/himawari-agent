@@ -78,7 +78,7 @@ export interface OwnerProfileServiceOptions {
 function currentlyValid(memory: ProductMemoryRecord, now: string): boolean {
   const attributes = memory.attributes;
   if (!attributes) return false;
-  if (attributes.supersededBy !== null) return false;
+  if (attributes.supersededBy !== null || attributes.tentative === true) return false;
   return attributes.validTo === null || attributes.validTo > now;
 }
 

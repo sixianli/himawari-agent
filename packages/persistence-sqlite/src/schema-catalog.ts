@@ -608,6 +608,20 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "removed with its memory_episodes row by trigger",
   ),
   entry(
+    "memory_consolidation_runs",
+    "MemoryConsolidationStorePort",
+    "one daily tidy-up per Agent, running to completed or failed",
+    "metadata_only",
+    "cascade with Owner or Agent deletion",
+  ),
+  entry(
+    "memory_consolidation_changes",
+    "MemoryConsolidationStorePort",
+    "one undoable change per tidied Memory, undone at most once",
+    "metadata_only",
+    "cascade with its Memory record or consolidation run",
+  ),
+  entry(
     "memory_approval_requests",
     "SensitiveMemoryApprovalStatePort",
     "pending to committed or terminal rejection",

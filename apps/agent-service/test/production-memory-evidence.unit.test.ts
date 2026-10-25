@@ -115,4 +115,31 @@ describe("memory evidence from the Owner's own words", () => {
     expect(parsed.candidates[1]).toMatchObject({ decision: "create", existingMemoryId: null });
     expect(parsed.candidates[1]).not.toHaveProperty("supersedes");
   });
+
+  it("keeps a one-off correction as a tentative rule and an explicit standing rule active", () => {
+    const rule = (text: string, explicit: boolean) => ({
+      kind: "decision",
+      decision: "create",
+      text,
+      classification: "private",
+      confidence: 950,
+      explicit,
+      category: "rule",
+      importance: 800,
+      quote: "以后回答都先说结论，这次也太长了",
+    });
+    const parsed = parseMemoryCandidates({
+      output: JSON.stringify({
+        memories: [rule("回答先说结论", true), rule("回答要简短", false)],
+      }),
+      sourceRef: "payload-owner",
+      sourceClassification: "private",
+      existingIds: new Set(),
+      ownerMessage: "以后回答都先说结论，这次也太长了",
+    });
+    expect(parsed.candidates.map(({ attributes }) => attributes?.tentative)).toEqual([
+      undefined,
+      true,
+    ]);
+  });
 });

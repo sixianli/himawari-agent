@@ -448,6 +448,13 @@ const bundledMigrationFiles = [
     phase: "expand" as const,
     file: "0053_memory_episodes.sql",
   },
+  {
+    sequence: 54,
+    name: "memory_consolidation",
+    changeSet: "memory-consolidation",
+    phase: "expand" as const,
+    file: "0054_memory_consolidation.sql",
+  },
 ] as const;
 
 function sha256(content: string | Uint8Array): string {

@@ -32,6 +32,7 @@ export interface ProductMemoryAttributes {
   readonly supersededBy: MemoryId | null;
   readonly evidenceVerified: boolean;
   readonly sensitiveTopic?: SensitiveMemoryTopic | null;
+  readonly tentative?: boolean;
 }
 
 export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
