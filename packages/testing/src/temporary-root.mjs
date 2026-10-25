@@ -3,7 +3,7 @@ import path from "node:path";
 
 export function testTemporaryRoot(environment = process.env) {
   const root = environment.HIMAWARI_TEST_TEMP_ROOT;
-  if (root === undefined) return "/tmp";
+  if (root === undefined) return realpathSync("/tmp");
   if (!path.isAbsolute(root)) throw new Error("HIMAWARI_TEST_TEMP_ROOT must be absolute");
   let canonical;
   try {
