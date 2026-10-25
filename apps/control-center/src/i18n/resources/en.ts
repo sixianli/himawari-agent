@@ -195,8 +195,6 @@ export const messages = {
   "chat.environment.srtMeaning":
     "Tools run in a process-level sandbox (SRT) on this computer that limits which files and networks they can reach. A stop only guarantees that the tool's process group has ended; programs that left the group may still be running.",
   "chat.environment.strictMeaning": "Every tool runs in a container dedicated to the current turn.",
-  "chat.environment.fixed":
-    "The mode is set by the installation configuration and cannot be changed here.",
   "chat.environment.programs": "Programs still running",
   "chat.environment.noPrograms": "No programs are running.",
   "chat.environment.kind.background": "Background task",
@@ -205,18 +203,13 @@ export const messages = {
   "chat.environment.openThread": "Open conversation: {title}",
   "chat.environment.otherThread": "A conversation not in the current list",
   "chat.environment.unavailable": "Tools unavailable in strict mode",
-  "chat.environment.toolAvailability": "Tool availability",
   "chat.environment.reason.SANDBOX_OPERATION_SRT_ONLY":
     "Can only run in the process-level sandbox (SRT)",
   "chat.environment.reason.SANDBOX_BINDING_SRT_ONLY":
     "The installation does not declare, per operation, that it can run in a container",
   "chat.environment.strictNote":
     "Sub-tasks started from inside a tool are also unavailable. Calls to these tools show “Unavailable in strict mode” and are never run another way.",
-  "chat.environment.noneUnavailable":
-    "No tools are unavailable because of the mode in default mode.",
   "chat.environment.threadRunning": "Background programs running",
-  "chat.environment.readFailed":
-    "The execution environment cannot be read right now. Try opening it again later.",
   "chat.phase.unresolved": "Result unconfirmed",
   "chat.phase.preparing": "Preparing",
   "chat.phase.started": "Running",
