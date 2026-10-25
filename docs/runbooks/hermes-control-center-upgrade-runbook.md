@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:f745d03b911c4fc8ff314ce02a10b86a6e0ca7acebac897dd3060c70cdb60c9b"
+contract_sha256: "sha256:24efec8c7b6dc81916abe4db0cf3fa7438f7b7ad48cff7a091034acb7ef23da4"
 supersedes: ""
 superseded_by: ""
 date: "2026-09-11"
@@ -574,6 +574,8 @@ Schema 38 为 `sandbox-scope.v2` 和 `network_only` 合同建立 writer 屏障�
 公开搜索新增显式 `runPolicy.publicSearch.scopeSource: private_temp` 路由，不能同时配置 `grantId`；安装清单须使用相匹配的 `private_temp` / `network_only` 操作合同，纯联网清单可不含用户目录根。旧目录型路由和合同保持原权限语义，升级不会自动切换部署配置。配置或模型绑定变化会使原搜索委托失效，需按现有入口重新授权；保存搜索结果是另一次获准文件操作。
 
 验证分别检查无目录 Grant 的搜索准入、零共享文件占用、原网络授权撤销、私有工作目录及真实沙箱越界拒绝。Schema 37 或更旧 writer/Worker 不得处理新合同；回退须停机并恢复与旧版本匹配的完整恢复点，不能删 migration ledger 降级。本批源码和受控测试不构成部署授权，也不替代目标平台与实际安装资格。
+
+2026-10-25 联网搜索和读网页改为供应商链（[SOURCE: docs/adr/0071-replaceable-web-search-and-fetch-providers.md]）：`runPolicy.publicSearch` 和新增的 `runPolicy.publicFetch` 可带有序的 `providers` 列表，不写时只用 `exa-public`，现有部署配置不变。开启读网页需要在配置加 `runPolicy.publicFetch`，并为 `web-fetch-main.js` 建与搜索相同的 `private_temp` / `network_only` 安装绑定。启用需要密钥的供应商（目前是 DeepSeek）还需要：主机密钥文件（Linux 为 `<stateRoot>/secrets/<引用>.<版本>`，目录 `0700`、文件 `0600`、属于服务账号）、路由的 `providerSecrets` 与 `secretReferences` 中用途为 `web-provider` 的对应项、能力清单 `scopes.secrets` 列出该引用，以及 `api.deepseek.com:443` 出口；任一项缺失时启动配置被拒绝或该供应商报不可用并回退到下一家。供应商列表一变，联网搜索开关须由主人重新同意。主机侧缓存和熔断状态只在内存里，重启后清空。以上每项生产改动都要主人单独批准；不配置时安装、启动、停止和升级步骤不变。
 
 ### Schema 39 自动审查记录
 

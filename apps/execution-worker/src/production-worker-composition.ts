@@ -81,7 +81,6 @@ export interface ProductionWorkerCompositionOptions {
   readonly configuration: ProductConfiguration;
   readonly credential: ExecutionUdsCredential;
   readonly authority: ProductionWorkerAuthorityBinding;
-  /** Must be supplied by the Agent boot coordinator; it is never derived. */
   readonly agentServiceBootId?: string;
   readonly agentServiceInstanceId?: string;
   readonly workerInstanceId?: string;
@@ -563,6 +562,7 @@ export async function createProductionWorkerComposition(
             clock,
             ...(taskEnvironments ? { containers: taskEnvironments.containers } : {}),
             ...(srtEnvironments ? { srtEnvironments } : {}),
+            secrets: providerSecrets,
           }),
           sandbox: createProductionSandboxWorker({
             configuration,
@@ -625,7 +625,6 @@ export async function createProductionWorkerComposition(
     stopped = true;
     agentServicesInitialized = false;
     try {
-      // Keep the broker available while jobs stop and persist their final observations.
       await worker.shutdown();
       await srtEnvironments?.close();
     } finally {
