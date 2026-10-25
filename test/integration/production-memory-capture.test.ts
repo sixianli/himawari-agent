@@ -7,6 +7,7 @@ import {
   type MemoryProviderProjectionPort,
   type ProductMemoryRecord,
   type RuntimeRequest,
+  type ThreadRepositoryPort,
 } from "@himawari-agent/application";
 import {
   createAgentId,
@@ -74,18 +75,37 @@ describe("production memory capture", () => {
     });
     const adapters = createReferenceAdapterSet();
     const payloads = repository.payloadStore(OWNER_ID, AGENT_ID);
-    const sourceRef = "payload-owner-message";
-    await payloads.put(
-      await adapters.payloadProtector.protect({
+    const messages: Awaited<ReturnType<ThreadRepositoryPort["listMessages"]>>[number][] = [];
+    const turn = async (role: "owner" | "agent", text: string, runId: string | null) => {
+      const sequence = messages.length + 1;
+      const contentRef = `payload-${role}-${sequence}`;
+      await payloads.put(
+        await adapters.payloadProtector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref: contentRef,
+          dataClassification: "private",
+          contentType: "text/plain",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: T0,
+        }),
+      );
+      messages.push({
+        id: createMessageId(`message-${sequence}`),
         ownerId: OWNER_ID,
         agentId: AGENT_ID,
-        ref: sourceRef,
+        threadId: THREAD_ID,
+        turnId: null,
+        runId: runId === null ? null : createRunId(runId),
+        sequence,
+        role,
+        contentRef,
         dataClassification: "private",
-        contentType: "text/plain",
-        plaintext: new TextEncoder().encode(message),
-        createdAt: T0,
-      }),
-    );
+        status: "committed",
+        committedAt: T0,
+      });
+      return contentRef;
+    };
     const provider = new RecordingProvider();
     const memory = new DurableMemoryService({
       state: repository.productMemoryState(),
@@ -101,47 +121,38 @@ describe("production memory capture", () => {
       workerId: "memory-capture-test",
       now: () => T0,
     });
-    const runId = createRunId("run-memory-capture");
     const audits: MemoryExtractionAuditRecord[] = [];
     const failures: unknown[] = [];
     const prompts: string[] = [];
+    const outputs: (string | Error)[] = [output];
+    const relevant: string[] = [];
     const capture = new ProductionMemoryCapture({
       sources: {
-        read: async () => ({
-          ownerId: OWNER_ID,
-          agentId: AGENT_ID,
-          runId,
-          sessionId: "session" as never,
-          threadId: THREAD_ID,
-          triggerId: "trigger" as never,
-          sourceType: "user_message",
-          sourceId: "message-1",
-          payloadRef: sourceRef,
-          dataClassification: "private",
-          occurredAt: T0,
-        }),
-      },
-      threads: {
-        read: async () => ({ messageWatermark: 1 }) as never,
-        listMessages: async () => [
-          {
-            id: createMessageId("message-1"),
+        read: async (runId) => {
+          const owner = messages.find((item) => item.role === "owner" && item.runId === runId);
+          if (!owner) return undefined;
+          return {
             ownerId: OWNER_ID,
             agentId: AGENT_ID,
-            threadId: THREAD_ID,
-            turnId: null,
             runId,
-            sequence: 1,
-            role: "owner",
-            contentRef: sourceRef,
+            sessionId: "session" as never,
+            threadId: THREAD_ID,
+            triggerId: "trigger" as never,
+            sourceType: "user_message",
+            sourceId: owner.id,
+            payloadRef: owner.contentRef,
             dataClassification: "private",
-            status: "committed",
-            committedAt: T0,
-          },
-        ],
+            occurredAt: T0,
+          };
+        },
+      },
+      threads: {
+        read: async () => ({ messageWatermark: messages.length }) as never,
+        listMessages: async () => messages,
       },
       generations: repository.threadDistillationState(),
       state: repository.productMemoryState(),
+      relevantMemoryIds: () => relevant as never,
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       payloads,
@@ -151,21 +162,37 @@ describe("production memory capture", () => {
       generate: async (_request, prompt, onAdmitted) => {
         prompts.push(prompt);
         onAdmitted();
-        if (output instanceof Error) throw output;
-        return output;
+        const next = outputs.shift() ?? '{"memories":[]}';
+        if (next instanceof Error) throw next;
+        return next;
       },
       onAudit: (record) => audits.push(record),
       onFailure: (error) => failures.push(error),
     });
-    const request = {
-      ownerId: OWNER_ID,
-      agentId: AGENT_ID,
-      runId,
-      threadId: THREAD_ID,
-      modelRef: "primary",
-      dataClassification: "private",
-    } as unknown as RuntimeRequest;
-    return { repository, memory, provider, capture, request, audits, failures, prompts };
+    const requestFor = (runId: string) =>
+      ({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        runId: createRunId(runId),
+        threadId: THREAD_ID,
+        modelRef: "primary",
+        dataClassification: "private",
+      }) as unknown as RuntimeRequest;
+    await turn("owner", message, "run-memory-capture");
+    return {
+      repository,
+      memory,
+      provider,
+      capture,
+      request: requestFor("run-memory-capture"),
+      requestFor,
+      turn,
+      outputs,
+      relevant,
+      audits,
+      failures,
+      prompts,
+    };
   }
 
   it("stores an Owner fact as active long-term Memory and projects it", async () => {
@@ -218,5 +245,47 @@ describe("production memory capture", () => {
     expect(
       await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
     ).toHaveLength(0);
+  });
+  it("updates a recalled memory using the previous answer as context", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [saved] = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    if (!saved) throw new Error("memory missing");
+    await context.turn("agent", "那你现在最喜欢什么颜色？", "run-memory-capture");
+    await context.turn("owner", "绿色", "run-memory-capture-2");
+    context.relevant.push(saved.id);
+    context.outputs.push(
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "update",
+            existingMemoryId: saved.id,
+            text: "主人最喜欢的颜色是绿色",
+            classification: "private",
+            confidence: 950,
+          },
+        ],
+      }),
+    );
+    const second = new ProductionMemoryCapture(
+      (
+        context.capture as unknown as {
+          options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+        }
+      ).options,
+    );
+    await second.start(context.requestFor("run-memory-capture-2"));
+    await second.stop();
+    expect(context.failures).toEqual([]);
+    expect(context.prompts[1]).toContain("那你现在最喜欢什么颜色？");
+    expect(context.prompts[1]).toContain(saved.id);
+    const active = await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID);
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({ id: saved.id, revision: 2 });
   });
 });
