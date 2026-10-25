@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
-import type { MemoryItem, MemoryModel, PendingMemory } from "../memory.js";
+import type { MemoryItem, MemoryModel, MemoryTidyUp, PendingMemory } from "../memory.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -222,6 +222,82 @@ function MemoryHistory({
   );
 }
 
+function MemoryTentative({
+  items,
+  memory,
+  message,
+}: {
+  items: readonly MemoryItem[];
+  memory: MemoryModel;
+  message: Message;
+}) {
+  if (!items.length) return null;
+  return (
+    <>
+      <h4>{message("memory.tentativeTitle", { count: items.length })}</h4>
+      <p className="settings-note">{message("memory.tentativeNote")}</p>
+      <ul className="memory-list">
+        {items.map((item) => (
+          <li key={item.memoryId} className="memory-row">
+            <p className="memory-text">{item.text}</p>
+            <div className="actions">
+              <ActionButton disabled={memory.busy} onClick={() => void memory.confirm(item)}>
+                {message("memory.confirm")}
+              </ActionButton>
+              <ActionButton
+                variant="secondary"
+                disabled={memory.busy}
+                onClick={() => void memory.remove(item)}
+              >
+                {message("memory.reject")}
+              </ActionButton>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function MemoryTidyUps({
+  items,
+  memory,
+  message,
+}: {
+  items: readonly MemoryTidyUp[];
+  memory: MemoryModel;
+  message: Message;
+}) {
+  if (!items.length) return null;
+  return (
+    <details className="memory-history memory-tidy">
+      <summary>{message("memory.tidyTitle", { count: items.length })}</summary>
+      <ul>
+        {items.map((item) => (
+          <li key={item.changeId}>
+            <strong>{message(`memory.tidy.${item.action}`)}</strong> {item.text}
+            {item.relatedText ? (
+              <small> {message("memory.tidyKept", { text: item.relatedText })}</small>
+            ) : null}
+            <small> · {day(item.createdAt)}</small>
+            {item.undone ? (
+              <small> · {message("memory.undone")}</small>
+            ) : (
+              <ActionButton
+                variant="quiet"
+                disabled={memory.busy}
+                onClick={() => void memory.undoTidy(item)}
+              >
+                {message("memory.undo")}
+              </ActionButton>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function MemoryRow({
   item,
   history,
@@ -315,7 +391,8 @@ export function MemorySettings({
     if (!item.supersededBy) continue;
     history.set(item.supersededBy, [...(history.get(item.supersededBy) ?? []), item]);
   }
-  const live = all.filter((item) => !item.supersededBy);
+  const live = all.filter((item) => !item.supersededBy && !item.tentative);
+  const tentative = all.filter((item) => !item.supersededBy && item.tentative);
   const memories = live.filter((item) => !needle || item.text.toLowerCase().includes(needle));
   return (
     <section className="memory-settings">
@@ -334,6 +411,7 @@ export function MemorySettings({
           ))}
         </>
       ) : null}
+      <MemoryTentative items={tentative} memory={memory} message={message} />
       <MemoryProfile memory={memory} message={message} />
       <input
         type="search"
@@ -366,6 +444,7 @@ export function MemorySettings({
       {live.length ? (
         <p className="settings-note">{message("memory.count", { count: live.length })}</p>
       ) : null}
+      <MemoryTidyUps items={overview?.tidyUps ?? []} memory={memory} message={message} />
       <p className="settings-note">{message("memory.note")}</p>
     </section>
   );

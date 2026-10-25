@@ -9,6 +9,7 @@ export type MemoryOverview = Extract<
 >["payload"];
 export type MemoryItem = MemoryOverview["memories"][number];
 export type PendingMemory = MemoryOverview["pending"][number];
+export type MemoryTidyUp = MemoryOverview["tidyUps"][number];
 
 export interface MemoryModel {
   readonly overview: MemoryOverview | null;
@@ -22,6 +23,8 @@ export interface MemoryModel {
   readonly correct: (item: MemoryItem, text: string) => Promise<boolean>;
   readonly remove: (item: MemoryItem) => Promise<boolean>;
   readonly restore: (item: MemoryItem) => Promise<boolean>;
+  readonly confirm: (item: MemoryItem) => Promise<boolean>;
+  readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
 }
 
 export function useMemory(input: {
@@ -132,6 +135,33 @@ export function useMemory(input: {
               expectedRevision: item.revision,
               contentRef: null,
             },
+            { risk: "medium" },
+          ),
+        ),
+      ),
+    confirm: (item) =>
+      run(() =>
+        client.mutate(
+          commandMessage(
+            configuration,
+            "memory.mutate",
+            {
+              memoryId: item.memoryId,
+              action: "confirm",
+              expectedRevision: item.revision,
+              contentRef: null,
+            },
+            { risk: "medium" },
+          ),
+        ),
+      ),
+    undoTidy: (item) =>
+      run(() =>
+        client.mutate(
+          commandMessage(
+            configuration,
+            "memory.tidy.undo",
+            { changeId: item.changeId },
             { risk: "medium" },
           ),
         ),

@@ -414,7 +414,8 @@ describe.each(["worker", "direct"] as const)("memory consolidation through %s", 
       await expect(resource.consolidation.undo(reflect.id)).rejects.toThrow(
         "MEMORY_CHANGED_AFTER_CONSOLIDATION",
       );
-      await expect(resource.consolidation.undo(changes[0]?.id ?? "")).rejects.toThrow("undone");
+      const undone = changes.find(({ action }) => action === "archive");
+      await expect(resource.consolidation.undo(undone?.id ?? "")).rejects.toThrow("undone");
     } finally {
       await resource.repository.close();
     }

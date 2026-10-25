@@ -26,6 +26,7 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
+  "memory.tidy.undo",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -242,6 +243,17 @@ const memoryOverviewSnapshotSchema = object({
         updatedAt: timestamp,
         supersededBy: nullable(machineString),
         validTo: nullable(boundedString(32)),
+        tentative: booleanValue,
+      }),
+    ),
+    tidyUps: array(
+      object({
+        changeId: machineString,
+        action: enumeration(["merge", "supersede", "archive", "reflect"]),
+        text: boundedString(2000),
+        relatedText: nullable(boundedString(2000)),
+        createdAt: timestamp,
+        undone: booleanValue,
       }),
     ),
     profile: array(
@@ -268,6 +280,10 @@ const memoryOverviewSnapshotSchema = object({
     ),
     generatedAt: timestamp,
   }),
+});
+const memoryTidyUndoCommandSchema = object({
+  ...commandEnvelope("memory.tidy.undo"),
+  payload: object({ changeId: machineString }),
 });
 const memoryApprovalRespondCommandSchema = object({
   ...commandEnvelope("memory.approval.respond"),
@@ -368,7 +384,7 @@ export const setGitHubMonitorStateCommandSchema = object({
 
 const memoryMutationPayloadSchema = object({
   memoryId: machineString,
-  action: enumeration(["correct", "archive", "delete", "restore"]),
+  action: enumeration(["correct", "archive", "delete", "restore", "confirm"]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
 });
@@ -1395,6 +1411,7 @@ const schemasByType = {
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
+  "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

@@ -79,6 +79,7 @@ beforeEach(() => {
         updatedAt: "2026-10-25T12:00:00.000Z",
         supersededBy: null,
         validTo: null,
+        tentative: false,
       },
       {
         memoryId: "memory-city",
@@ -92,6 +93,7 @@ beforeEach(() => {
         updatedAt: "2026-10-24T12:00:00.000Z",
         supersededBy: null,
         validTo: null,
+        tentative: false,
       },
     ],
     profile: [],
@@ -105,6 +107,7 @@ beforeEach(() => {
         requestedAt: "2026-10-25T12:00:00.000Z",
       },
     ],
+    tidyUps: [],
     generatedAt: "2026-10-25T12:00:00.000Z",
   };
   query.mockImplementation(async (request) => ({
@@ -249,6 +252,7 @@ describe("memory approval and management", () => {
           updatedAt: "2026-10-24T12:00:00.000Z",
           supersededBy: "memory-city",
           validTo: "2026-10-24T12:00:00.000Z",
+          tentative: false,
         },
       ],
       profile: [
@@ -279,5 +283,55 @@ describe("memory approval and management", () => {
     });
     await act(async () => button("#settings .memory-profile", "编辑").click());
     expect(document.querySelector("#settings .memory-profile textarea")).not.toBeNull();
+  });
+
+  it("asks the Owner to confirm guesses and undoes a tidy-up change", async () => {
+    overview = {
+      ...overview,
+      memories: [
+        ...overview.memories,
+        {
+          memoryId: "memory-guess",
+          revision: 1,
+          text: "主人在为半程马拉松坚持晨跑",
+          dataClassification: "private",
+          topic: null,
+          inference: true,
+          sourceThreadId: "thread-1",
+          sourceRefs: ["payload-1"],
+          updatedAt: "2026-10-25T12:00:00.000Z",
+          supersededBy: null,
+          validTo: null,
+          tentative: true,
+        },
+      ],
+      tidyUps: [
+        {
+          changeId: "memory-consolidation:agent:2026-10-25:c1",
+          action: "merge",
+          text: "主人的女儿叫小葵",
+          relatedText: "主人的女儿名叫小葵",
+          createdAt: "2026-10-25T12:00:00.000Z",
+          undone: false,
+        },
+      ],
+    };
+    await render();
+    const settings = document.querySelector("#settings")?.textContent ?? "";
+    expect(settings).toContain("待你确认：1 条");
+    expect(settings).toContain("共 2 条");
+    await act(async () => button("#settings", "确认").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.mutate",
+      payload: { memoryId: "memory-guess", action: "confirm", contentRef: null },
+    });
+    expect(document.querySelector("#settings .memory-tidy")?.textContent).toContain(
+      "合并重复： 主人的女儿叫小葵",
+    );
+    await act(async () => button("#settings .memory-tidy", "撤销").click());
+    expect(mutate.mock.lastCall?.[0]).toMatchObject({
+      type: "memory.tidy.undo",
+      payload: { changeId: "memory-consolidation:agent:2026-10-25:c1" },
+    });
   });
 });

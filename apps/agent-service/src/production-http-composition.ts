@@ -1,3 +1,4 @@
+import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
@@ -129,7 +130,7 @@ export interface ProductionHttpCompositionOptions {
   readonly memory?: {
     readonly service: Pick<
       DurableMemoryService,
-      "applyProposal" | "correct" | "delete" | "restore"
+      "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "revise"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
@@ -830,6 +831,21 @@ export async function createProductionHttpComposition(
       })
     : undefined;
   const memoryPayloads = repository.payloadStore(ownerId, agentId);
+  const memoryJobs = repository.memoryProjectionJobs();
+  const memoryTidyUp = options.memory
+    ? new MemoryConsolidationService({
+        store: repository.memoryConsolidation(),
+        state: repository.productMemoryState(),
+        memory: options.memory.service,
+        generationFor: async (memoryId) =>
+          (await memoryJobs.listByMemory(memoryId)).at(-1)?.generationId,
+        readText: async () => undefined,
+        storeText: async () => {
+          throw new Error("MEMORY_CONSOLIDATION_WRITE_UNAVAILABLE");
+        },
+        now: clock,
+      })
+    : undefined;
   const memoryControl = options.memory
     ? new ProductionMemoryControl({
         configuration,
@@ -849,6 +865,10 @@ export async function createProductionHttpComposition(
           storeText: async () => {},
           digest: (text) => createHash("sha256").update(text).digest("hex"),
         }),
+        consolidation: {
+          store: repository.memoryConsolidation(),
+          undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
+        },
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },

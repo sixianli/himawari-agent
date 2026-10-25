@@ -180,6 +180,7 @@ function parse(
 
 export class MemoryConsolidationService {
   readonly #options: MemoryConsolidationServiceOptions;
+  #sequence = 0;
 
   constructor(options: MemoryConsolidationServiceOptions) {
     this.#options = options;
@@ -224,6 +225,7 @@ export class MemoryConsolidationService {
       return null;
     const changes: MemoryConsolidationChange[] = [];
     let modelCalled = false;
+    this.#sequence = 0;
     try {
       const ownChanges = new Map(
         (last ? await this.#options.store.listChanges({ ownerId, agentId, limit: 200 }) : [])
@@ -428,7 +430,7 @@ export class MemoryConsolidationService {
       throw error;
     }
     return this.#record({
-      id: `${id}:${action}:${memory.id}`,
+      id: "",
       consolidationId: id,
       ownerId: memory.ownerId,
       agentId: memory.agentId,
@@ -499,7 +501,7 @@ export class MemoryConsolidationService {
       generationId,
     );
     return this.#record({
-      id: `${id}:reflect:${index}`,
+      id: "",
       consolidationId: id,
       ownerId: first.ownerId,
       agentId: first.agentId,
@@ -517,7 +519,8 @@ export class MemoryConsolidationService {
   }
 
   async #record(change: MemoryConsolidationChange): Promise<MemoryConsolidationChange> {
-    const frozen = Object.freeze(change);
+    this.#sequence += 1;
+    const frozen = Object.freeze({ ...change, id: `${change.consolidationId}:c${this.#sequence}` });
     await this.#options.store.recordChange(frozen);
     return frozen;
   }

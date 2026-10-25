@@ -56,6 +56,7 @@ export const governanceMessages = [
         updatedAt: "2026-09-11T00:00:00.000Z",
         supersededBy: null,
         validTo: null,
+        tentative: false,
       },
     ],
     profile: [
@@ -80,7 +81,20 @@ export const governanceMessages = [
         requestedAt: "2026-09-11T00:00:00.000Z",
       },
     ],
+    tidyUps: [
+      {
+        changeId: "memory-consolidation:agent-01:2026-09-11:c1",
+        action: "merge",
+        text: "主人的女儿叫小葵",
+        relatedText: "主人的女儿名叫小葵",
+        createdAt: "2026-09-11T00:00:00.000Z",
+        undone: false,
+      },
+    ],
     generatedAt: "2026-09-11T00:00:00.000Z",
+  }),
+  fixture("command", "memory.tidy.undo", {
+    changeId: "memory-consolidation:agent-01:2026-09-11:c1",
   }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",

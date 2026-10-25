@@ -4,6 +4,7 @@ import {
   scanMachineSecrets,
   type ClockPort,
   type DurableMemoryService,
+  type MemoryConsolidationStorePort,
   type MemoryExtractionAuditRecord,
   type MemoryProjectionJobStatePort,
   type OwnerProfileService,
@@ -31,7 +32,9 @@ export const PRODUCTION_MEMORY_OPERATIONS = Object.freeze([
   "memory.overview.read",
   "memory.approval.respond",
   "memory.mutate",
+  "memory.tidy.undo",
 ] as const);
+const TIDY_UPS_SHOWN = 30;
 
 const singleLine = (text: string) =>
   [...text]
@@ -49,8 +52,15 @@ export class ProductionMemoryControl {
     readonly state: ProductMemoryStatePort;
     readonly jobs: Pick<MemoryProjectionJobStatePort, "listByMemory">;
     readonly approvals: SensitiveMemoryApprovalStatePort;
-    readonly memory: Pick<DurableMemoryService, "applyProposal" | "correct" | "delete" | "restore">;
+    readonly memory: Pick<
+      DurableMemoryService,
+      "applyProposal" | "correct" | "delete" | "restore" | "confirm"
+    >;
     readonly profile?: Pick<OwnerProfileService, "outline">;
+    readonly consolidation?: {
+      readonly store: Pick<MemoryConsolidationStorePort, "listChanges">;
+      readonly undo: (changeId: string) => Promise<unknown>;
+    };
     readonly payloads: PayloadStorePort;
     readonly protector: PayloadProtectorPort;
     readonly clock: ClockPort;
@@ -94,9 +104,16 @@ export class ProductionMemoryControl {
     const { ownerId, agentId } = this.options.configuration;
     const active = await this.options.state.listActive(ownerId, agentId);
     const pending = await this.options.approvals.listPending(ownerId, null);
+    const changes =
+      (await this.options.consolidation?.store.listChanges({
+        ownerId,
+        agentId,
+        limit: TIDY_UPS_SHOWN,
+      })) ?? [];
     return JSON.stringify([
       active.map(({ id, revision }) => [id, revision]),
       pending.map(({ id }) => id),
+      changes.map(({ id, undoneAt }) => [id, undoneAt]),
     ]);
   }
 
@@ -122,6 +139,52 @@ export class ProductionMemoryControl {
         updatedAt: memory.updatedAt,
         supersededBy: memory.attributes?.supersededBy ?? null,
         validTo: memory.attributes?.validTo ?? null,
+        tentative: memory.attributes?.tentative === true,
+      });
+    }
+    const changes =
+      (await this.options.consolidation?.store.listChanges({
+        ownerId,
+        agentId,
+        limit: TIDY_UPS_SHOWN,
+      })) ?? [];
+    const touched = new Map(
+      (
+        await this.options.state.readMany({
+          ownerId,
+          agentId,
+          memoryIds: [
+            ...new Set(
+              changes.flatMap(({ memoryId, relatedMemoryId }) =>
+                relatedMemoryId ? [memoryId, relatedMemoryId] : [memoryId],
+              ),
+            ),
+          ],
+        })
+      ).map((memory) => [memory.id, memory]),
+    );
+    const textOf = async (memoryId: string | null) => {
+      const memory = memoryId ? touched.get(memoryId as MemoryId) : undefined;
+      if (
+        !memory ||
+        memory.status === "deletion_pending" ||
+        memory.status === "deleted_verified" ||
+        memory.status === "trashed"
+      )
+        return null;
+      return singleLine(await this.readText(memory.contentRef).catch(() => "")) || null;
+    };
+    const tidyUps: OverviewSnapshot["payload"]["tidyUps"][number][] = [];
+    for (const change of changes) {
+      const text = await textOf(change.memoryId);
+      if (!text) continue;
+      tidyUps.push({
+        changeId: change.id,
+        action: change.action,
+        text,
+        relatedText: await textOf(change.relatedMemoryId),
+        createdAt: change.createdAt,
+        undone: change.undoneAt !== null,
       });
     }
     const outline = await this.options.profile?.outline({
@@ -172,7 +235,7 @@ export class ProductionMemoryControl {
       ...query,
       kind: "snapshot",
       type: "memory.overview.snapshot",
-      payload: { memories, profile, pending, generatedAt: this.options.clock.now() },
+      payload: { memories, profile, pending, tidyUps, generatedAt: this.options.clock.now() },
     } as GatewayV2Snapshot;
   }
 
@@ -202,6 +265,22 @@ export class ProductionMemoryControl {
       );
       return { resultRef: committed ?? requestId, replayed: false };
     }
+    if (command.type === "memory.tidy.undo") {
+      if (!this.options.consolidation)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "MEMORY_OPERATION_NOT_INSTALLED",
+        );
+      const { changeId } = command.payload;
+      const { ownerId, agentId } = this.options.configuration;
+      const owned = (
+        await this.options.consolidation.store.listChanges({ ownerId, agentId, limit: 500 })
+      ).some(({ id }) => id === changeId);
+      if (!owned)
+        throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "MEMORY_TIDY_CHANGE_NOT_FOUND");
+      await this.options.consolidation.undo(changeId);
+      return { resultRef: changeId, replayed: false };
+    }
     if (command.type === "memory.mutate") {
       const { memoryId, action, expectedRevision, contentRef } = command.payload;
       const current = await this.options.state.read(memoryId as MemoryId);
@@ -224,6 +303,10 @@ export class ProductionMemoryControl {
           sourceRef: contentRef,
           generationId,
         });
+        return { resultRef: saved.id, replayed: false };
+      }
+      if (action === "confirm") {
+        const saved = await this.options.memory.confirm(current.id, generationId);
         return { resultRef: saved.id, replayed: false };
       }
       if (action === "restore") {
