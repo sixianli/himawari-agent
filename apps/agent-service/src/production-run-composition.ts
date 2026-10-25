@@ -32,6 +32,10 @@ import {
 import { ProductionRunDispatcher } from "./production-run-dispatcher.js";
 import { createProductionRunReconciler } from "./production-run-reconciler.js";
 import { createProductionRunExpiry } from "./production-run-expiry.js";
+import {
+  ProductionMemoryCapture,
+  type ProductionMemoryCaptureOptions,
+} from "./production-memory-capture.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
@@ -42,6 +46,16 @@ export interface ProductionRunCompositionOptions {
     admission: ModelInvocationAdmissionPort,
   ) => Promise<string>;
   readonly onTitleFailure?: (error: unknown) => void;
+  readonly memoryCapture?: Pick<
+    ProductionMemoryCaptureOptions,
+    "product" | "approvals" | "onAudit" | "onFailure"
+  > & {
+    readonly generate: (
+      request: RuntimeRequest,
+      prompt: string,
+      admission: ModelInvocationAdmissionPort,
+    ) => Promise<string>;
+  };
   readonly recoverMissingToolResult?: (
     record: SandboxExecutionRecord,
   ) => Promise<SandboxExecutionRecord>;
@@ -250,6 +264,48 @@ export function createProductionRunComposition(options: ProductionRunComposition
         onFailure: (error) => options.onTitleFailure?.(error),
       })
     : undefined;
+  const memoryCaptureOptions = options.memoryCapture;
+  const memoryCapture = memoryCaptureOptions
+    ? new ProductionMemoryCapture({
+        sources: repository.runExecutionSource(ownerId, agentId),
+        threads: repository.threadRepository(),
+        generations: repository.threadDistillationState(),
+        state: repository.productMemoryState(),
+        product: memoryCaptureOptions.product,
+        approvals: memoryCaptureOptions.approvals,
+        payloads,
+        protector,
+        clock,
+        assertActive: () => authority.assertActive(),
+        generate: async (request, prompt, onAdmitted) => {
+          const gate = await admission(request);
+          if (!gate) throw new Error("MEMORY_CAPTURE_ADMISSION_UNAVAILABLE");
+          return memoryCaptureOptions.generate(request, prompt, {
+            context: gate.context,
+            begin: async (input) => {
+              const result = await gate.begin({ ...input, budgetAccount: "thread-title" });
+              if (result.disposition !== "fresh") return result;
+              const { permit } = result;
+              return {
+                ...result,
+                permit: {
+                  assertActive: () => permit.assertActive(),
+                  releaseReserved: () => permit.releaseReserved(),
+                  settle: (usage) => permit.settle(usage),
+                  markUnknown: (reason) => permit.markUnknown(reason),
+                  markStarted: async () => {
+                    await permit.markStarted();
+                    onAdmitted();
+                  },
+                },
+              };
+            },
+          });
+        },
+        onAudit: memoryCaptureOptions.onAudit,
+        onFailure: memoryCaptureOptions.onFailure,
+      })
+    : undefined;
   const titledRuntime = {
     cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
     async *run(request: RuntimeRequest) {
@@ -257,15 +313,22 @@ export function createProductionRunComposition(options: ProductionRunComposition
       options.prewarmSandboxEnvironment?.(request);
       let requested = false;
       let titleAdmission: Promise<void> | undefined;
+      let memoryAdmission: Promise<void> | undefined;
       for await (const event of runtime.run(request)) {
         if (!requested && event.type === "runtime.message" && event.role === "assistant") {
           requested = true;
           titleAdmission = titles?.start(request);
+          if (memoryCapture)
+            memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve()).then(() =>
+              memoryCapture.start(request),
+            );
         }
         if (
           ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
-        )
+        ) {
           await titleAdmission;
+          await memoryAdmission;
+        }
         yield event;
       }
     },
@@ -339,5 +402,6 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatcher,
     loop,
     titles,
+    memoryCapture,
   });
 }

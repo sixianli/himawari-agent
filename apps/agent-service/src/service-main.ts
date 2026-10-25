@@ -513,6 +513,7 @@ export async function runAgentService(
         await runDrain;
       } finally {
         await runs?.titles?.stop();
+        await runs?.memoryCapture?.stop();
       }
     },
   });
@@ -1116,6 +1117,39 @@ export async function runAgentService(
             event: "thread-title.failed",
             code: stableErrorCode(error),
           }),
+        ...(modelComposition.composition.generateText
+          ? {
+              memoryCapture: {
+                product: durableMemory,
+                approvals: repository.sensitiveMemoryApprovals(),
+                generate: (request, prompt, gate) => {
+                  const generateText = modelComposition?.composition.generateText;
+                  if (!generateText) throw new Error("MEMORY_CAPTURE_MODEL_UNAVAILABLE");
+                  return generateText(request, prompt, gate, {
+                    invocationId: `memory-capture:${request.runId}`,
+                    maxOutputTokens: 1024,
+                    reasoningOutputTokens: 4096,
+                    requestTimeoutMs: 45000,
+                    errorPrefix: "MEMORY_CAPTURE",
+                  });
+                },
+                onAudit: (record) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "memory-capture.audit",
+                    outcome: record.outcome,
+                    candidateOrdinal: record.candidateOrdinal ?? -1,
+                    classification: record.classification,
+                  }),
+                onFailure: (error) =>
+                  writeServiceDiagnostic(errorOutput, {
+                    component: "agent-service",
+                    event: "memory-capture.failed",
+                    code: stableErrorCode(error),
+                  }),
+              },
+            }
+          : {}),
         ...(sandboxServices
           ? {
               resources: sandboxServices.resources,
