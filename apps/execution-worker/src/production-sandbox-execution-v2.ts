@@ -9,9 +9,9 @@ import {
   taskEnvironmentCallEvidence,
 } from "@himawari-agent/application";
 import {
+  type EnvironmentPrewarmRequest,
   type ExecutionAdmissionPeerBinding,
   type ExecutionEnvironmentIdentity,
-  type EnvironmentPrewarmRequest,
   type ExecutionEnvironmentLocator,
   type ExecutionV2Request,
   executionV2MessageSchema,
@@ -24,19 +24,19 @@ import {
   PI_PREPARED_FILE_CONTRACT,
   PI_RESIDENT_RUNNER_FLAG,
   PI_RUNNER_CONTRACT,
-  SANDBOX_HOST_COMPLETION_CONTRADICTED,
-  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
-  SANDBOX_TOOL_NOT_STARTED,
-  SRT_BACKEND_REF,
-  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   piCodingToolNameSchema,
   piContainerRunnerInputSchema,
   piRunnerInputSchema,
+  SANDBOX_HOST_COMPLETION_CONTRADICTED,
+  SANDBOX_PREPARATION_LAUNCH_PROTOCOL,
+  SANDBOX_TOOL_NOT_STARTED,
   type SandboxExecutionBrokerCommand,
   type SandboxExecutionPlanV2,
   type SandboxPreparationDiagnostic,
   type SandboxTaskEnvironmentBinding,
   type SandboxTaskTermination,
+  SRT_BACKEND_REF,
+  SRT_TASK_ENVIRONMENT_BACKEND_REF,
   sandboxExecutionFactsSchema,
   sandboxFileOperationFailureReason,
   sandboxPreparationDiagnosticSchema,
@@ -54,14 +54,13 @@ import {
 } from "@himawari-agent/platform-node";
 import {
   claimJobHostLaunch,
-  prepareJobPolicy,
   JobHostPreparationError,
+  prepareJobPolicy,
   prepareSandboxJobHost,
   readJobHostFinalEvidence,
   type SandboxJobHost,
 } from "@himawari-agent/runtime-sandbox";
 import { sandboxInvocationFromRequest } from "./broker-sandbox-execution.js";
-import { injectProgramSecrets, type ProgramSecretSource } from "./program-secret-injection.js";
 import type { ProductionPayloadBrokerClient } from "./production-payload-broker-client.js";
 import {
   type SandboxWorkerResult,
@@ -73,6 +72,7 @@ import {
   type SrtTaskEnvironmentSessionKind,
   srtTaskEnvironmentJobId,
 } from "./production-srt-task-environment-backend.js";
+import { injectProgramSecrets, type ProgramSecretSource } from "./program-secret-injection.js";
 
 type Execute = Extract<ExecutionV2Request, { type: "work.execute" }>;
 type Control = Extract<ExecutionV2Request, { type: "work.cancel" | "work.reconcile" }>;
@@ -88,7 +88,10 @@ interface Entry {
   completion?: Promise<SandboxWorkerResult>;
   supervision?: Promise<void>;
   acknowledge?: (result: SandboxWorkerResult) => void;
+  resolving?: Promise<ResolveReply> | undefined;
+  queuedResolve?: Promise<ResolveReply> | undefined;
 }
+type ResolveReply = Awaited<ReturnType<ProductionPayloadBrokerClient["sandboxExecution"]>>;
 export interface SandboxContainerRoute {
   readonly backendRef: string;
   execute(input: {
@@ -161,6 +164,37 @@ export class ProductionSandboxExecutionV2 {
       errorCode: null,
       externalActionId: sandboxExternalActionId(entry.identity),
     };
+  }
+  private freshResolve(entry: Entry): Promise<ResolveReply> {
+    if (entry.queuedResolve) return entry.queuedResolve;
+    const start = () => {
+      const running = this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
+        kind: "resolve",
+      });
+      entry.resolving = running;
+      const clear = () => {
+        if (entry.resolving === running) entry.resolving = undefined;
+      };
+      void running.then(clear, clear);
+      return running;
+    };
+    if (!entry.resolving) return start();
+    const queued = entry.resolving
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .then(() => {
+        if (entry.queuedResolve === queued) entry.queuedResolve = undefined;
+        return start();
+      });
+    entry.queuedResolve = queued;
+    return queued;
+  }
+  private async resolveRecord(entry: Entry) {
+    const reply = await this.freshResolve(entry);
+    entry.record = reply.record;
+    return reply;
   }
   private async rpc(entry: Entry, command: SandboxExecutionBrokerCommand) {
     const reply = await this.options.payloads.sandboxExecution(
@@ -485,11 +519,7 @@ export class ProductionSandboxExecutionV2 {
         controlDirectory,
         async () => {
           if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
-          const current = (
-            await this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
-              kind: "resolve",
-            })
-          ).resolvedScope;
+          const current = (await this.freshResolve(entry)).resolvedScope;
           if (
             entry.cancelled ||
             this.closed ||
@@ -695,7 +725,7 @@ export class ProductionSandboxExecutionV2 {
         const current = entry.record;
         if (!current || current.phase !== "bound") throw new Error("SANDBOX_BINDING_LOST");
         try {
-          await this.rpc(entry, { kind: "resolve" });
+          await this.resolveRecord(entry);
           if (taskCompleted && plan.mode === "foreground") {
             await flush(true, taskCompleted);
             break;
@@ -1503,11 +1533,7 @@ export class ProductionSandboxExecutionV2 {
         },
         async () => {
           if (entry.cancelled || this.closed) throw new Error("SANDBOX_STOPPED");
-          const latest = (
-            await this.options.payloads.sandboxExecution(entry.invocation, entry.identity, {
-              kind: "resolve",
-            })
-          ).resolvedScope;
+          const latest = (await this.freshResolve(entry)).resolvedScope;
           if (
             entry.cancelled ||
             this.closed ||
@@ -1536,7 +1562,7 @@ export class ProductionSandboxExecutionV2 {
           continue;
         }
         try {
-          await this.rpc(entry, { kind: "resolve" });
+          await this.resolveRecord(entry);
           if (finished) break;
           await flush(false);
         } catch {
