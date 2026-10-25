@@ -1,0 +1,6 @@
+interface:
+  display_name: "Readable Output"
+  short_description: "Answer in the form that is fastest to understand and check"
+  default_prompt: "Use $readable-output to explain this: plain text for the conclusion, a checked ASCII diagram for structure, or an HTML page with its link when I need to explore."
+policy:
+  allow_implicit_invocation: true
