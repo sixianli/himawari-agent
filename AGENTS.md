@@ -10,11 +10,11 @@ The owner's global instructions are copied into [.claude/rules/owner-global-inst
 
 ## Documentation Governance
 
-This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`.
+This repository explicitly adopts the `document-governance` skill for all governed project documentation under `docs/`. Every session, including cloud threads that do not load `.claude/skills/`, follows [.claude/rules/document-governance.md](.claude/rules/document-governance.md): where the skill is, when to use it, and the `npm run check:docs` check that runs in both delivery modes ([ADR 0080](docs/adr/0080-document-governance-in-fast-mode.md)).
 
 ## Code and Documentation Consistency
 
-In fast mode this section is suspended; see [Delivery Mode](#delivery-mode).
+In fast mode this section is replaced by the lighter rules in [.claude/rules/document-governance.md](.claude/rules/document-governance.md) and [Delivery Mode](#delivery-mode): strict validation still runs before every commit through `npm run check:docs`, and only Runbook reseals are deferred.
 
 The user asked on 2026-09-29 that code and documentation never drift apart. Documentation drift already happened once: commit `51fe7f6` changed `apps/control-center/src` without resealing `docs/runbooks/hermes-control-center-upgrade-runbook.md`, and strict validation failed from then on.
 
