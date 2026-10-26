@@ -3358,7 +3358,7 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
     expect(JSON.stringify(records)).not.toContain("PRIVATE_");
   });
 
-  it("projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {
+  it("[UI-9] projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {
     const setup = await executionFixture();
     const artifactPort = setup.repository.runPayloadArtifactPort(ownerId, agentId, {
       product: authority,
@@ -3669,6 +3669,40 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
         expect.objectContaining({ kind: "status", phase: "updated", name }),
       );
     }
+    const usageRef = await capture("usage-message", {
+      role: "assistant",
+      timestamp: 790,
+      stopReason: "stop",
+      content: [{ type: "text", text: "done" }],
+      usage: {
+        input: 1200,
+        output: 340,
+        cacheRead: 800,
+        cacheWrite: 0,
+        reasoning: 120,
+        totalTokens: 2340,
+        cost: { input: 0.0001, output: 0.0002, cacheRead: 0.00001, cacheWrite: 0, total: 0.00031 },
+      },
+    });
+    await setup.trace.record({
+      ...scope,
+      eventType: "runtime.message",
+      payload: { payloadRef: usageRef, role: "assistant", phase: "ended" },
+    });
+    expect((await projection.read(query)).records).toContainEqual(
+      expect.objectContaining({
+        kind: "status",
+        name: "runtime.usage",
+        text: JSON.stringify({
+          input: 1200,
+          output: 340,
+          cacheRead: 800,
+          cacheWrite: 0,
+          reasoning: 120,
+          costUsd: 0.00031,
+        }),
+      }),
+    );
     const unresolvedRef = await capture("legacy-unresolved-tool", {
       toolCallId: "legacy-call",
       toolName: "write",

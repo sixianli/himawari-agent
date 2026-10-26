@@ -23,6 +23,7 @@
     "POST /api/gateway/v2/queries",
     "POST /api/gateway/thread/v3/commands",
     "POST /api/gateway/thread/v3/queries",
+    "POST /api/payload/v1/attachment",
     "POST /api/payload/v1/text",
     "POST /api/payload/v1/text/read",
     "POST /api/thread-search/v1/prepare"

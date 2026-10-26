@@ -483,15 +483,45 @@ export class GatewayClient {
     return threadResponse(await json(response));
   }
 
-  async protectText(
+  protectText(
     content: string,
     dataClassification: "public" | "private" | "sensitive" | "restricted" = "private",
     idempotencyKey = `payload:${crypto.randomUUID()}`,
   ): Promise<string> {
-    if (content.length === 0 || content.length > 64 * 1024) {
+    return this.#admitText(
+      "/api/payload/v1/text",
+      64 * 1024,
+      content,
+      dataClassification,
+      idempotencyKey,
+    );
+  }
+
+  protectAttachment(
+    content: string,
+    dataClassification: "public" | "private" | "sensitive" | "restricted" = "private",
+    idempotencyKey = `attachment:${crypto.randomUUID()}`,
+  ): Promise<string> {
+    return this.#admitText(
+      "/api/payload/v1/attachment",
+      256 * 1024,
+      content,
+      dataClassification,
+      idempotencyKey,
+    );
+  }
+
+  async #admitText(
+    path: string,
+    maximumCharacters: number,
+    content: string,
+    dataClassification: "public" | "private" | "sensitive" | "restricted",
+    idempotencyKey: string,
+  ): Promise<string> {
+    if (content.length === 0 || content.length > maximumCharacters) {
       throw new Error("CONTROL_CENTER_PAYLOAD_INVALID");
     }
-    const response = await this.authenticatedFetch("/api/payload/v1/text", {
+    const response = await this.authenticatedFetch(path, {
       method: "POST",
       credentials: "same-origin",
       headers: {

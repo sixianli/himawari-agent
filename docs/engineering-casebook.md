@@ -52,6 +52,7 @@ date: "2026-10-26"
   25. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
   26. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
   27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
+  28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -77,10 +78,10 @@ date: "2026-10-26"
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
-| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
+| 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal)、[每轮 token 和附件](#case-answer-line-attachments) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
@@ -1722,6 +1723,73 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 **面试 30 秒版**
 
 “我们本来打算先用一个现成的推送 App 过渡，再上网页推送。用户一句‘为什么要两条路’让我们重新算账：过渡方案只覆盖一类通知，却要多维护一套代码和密钥。最后只留网页推送一条路，用苹果的声明式推送格式一份 JSON 通吃所有设备；锁屏只露标题，敏感记忆连标题都不露；人在看页面时不推；去重落库，重启不重发。”
+
+[返回目录](#contents)
+
+<a id="case-answer-line-attachments"></a>
+
+## 案例 28：回答下方一行、每轮 token 和“真能用”的附件
+
+**背景与现象**
+
+2026-10-26 Andy 在对话界面 v6 原型上对回答框和输入区留了 8 条批注（原话见 [ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md#context)），其中三条最费工夫：
+
+- 复制按钮挨着来源，用户会以为“连来源也一起复制了”。
+- “我比较关注每一次的 token 消耗”，但界面上看不到一轮用了多少 token（模型计费的文字单位）。
+- “加附件这个按钮……是真的有用，如果没用的话就不要”。旧按钮只能选一个文本文件，选完把全文直接贴进输入框，长文件把输入框撑满，发出去的消息里也是一整段原文；不能粘贴、不能拖放。
+
+**根因**
+
+- 复制按钮的问题是排版：复制、来源、“从此轮 Fork”散在回答下方几处，没有一条“这些操作只针对正文”的明确分界。
+- token 数其实一直有：Pi 每次模型调用结束时 `AssistantMessage.usage` 带着输入、输出、缓存读写和估算费用，Himawari 的事件记录也保存了整条消息，只是执行记录投影没有把它投影给网页。
+- 附件的问题在于没有“附件”这个概念：文件被当成普通文字并进草稿，界面没法区分哪部分是你打的字、哪部分是文件。查代码确认，服务端没有二进制上传接口，消息内容上限 64 KB，模型运行时只收文字（`pi-runtime-adapter.ts` 遇到非文字内容直接报错），生产只配了一个文本模型。
+
+**我们的方案**
+
+1. **回答下方一行：** 一轮结束后，正文正下方是“复制 · ⋯ · 模型 · 用时 · 时刻 · N tokens”；复制只复制正文 Markdown，Fork 收进“⋯”菜单；来源收成一行“N 个来源”，排在这一行之后。
+2. **token：** 执行记录投影在模型消息结束时多投影一条 `runtime.usage` 记录（输入、输出、缓存读写、推理、费用），网页把一轮里的记录相加。显示的输入数包含缓存命中的部分，悬停说明拆开写“输入（缓存）· 输出 · 约多少美元”。不改执行记录合同，不改 Pi。
+3. **附件：** 草稿仍是一段文字，但文件按 Pi 读文件参数的格式 `<file name="名字">\n内容\n</file>` 接在正文后面；网页用同一个格式把草稿拆成“你打的字 + 文件列表”，文字框只显示你打的字，文件显示成卡片。点选（可多选）、Ctrl+V 粘贴、拖放三种入口共用一套检查：必须是 UTF-8 文本、不含控制字符、合计 64 KB、最多 10 个。图片、PDF、Office 明确提示“还读不了”。聊天记录里你的消息同样只显示正文和文件卡片。
+
+**方案讨论与备选**
+
+- **附件先做完整的上传接口：** 新接口、文件加密存放、消息合同加附件引用、上下文展开、PDF/Office 抽文字，一次支持所有类型。工作量至少几天，还牵涉看图模型的选择。放弃的是“一次到位”，换来当天可用；记在 [BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)。
+- **附件放在单独的状态里，不进草稿文字：** 结构更“干净”，但草稿保存、发送失败后重试、刷新后恢复都按一段文字设计，要另外给附件做一套保存和重试。放进同一段文字后，这些现有逻辑全部原样可用。
+- **token 从用量账本读：** 费用是网关实际报的，更准，但要给对话快照另加查询路径；先用执行记录里已有的 Pi 数字，账本对账以后做。
+- **把附件按钮先关掉：** Andy 允许“没用就关掉”，但文本文件这一档不改服务端就能做到真能用，所以选了先做能用的部分，并把做不到的类型说清楚。
+
+**业界主流做法**
+
+- ✅ Anthropic Files API 文档（[Files API](https://platform.claude.com/docs/en/build-with-claude/files)）：对 `document` 块不支持的文件，写明“convert the files to plain text and include the content directly in your message”；PDF 和纯文本用 `document` 块，图片用 `image` 块，单个文件上限 500 MB。我们这一期就是前一种做法，完整上传接口对应后一种。
+- ✅ OpenTelemetry GenAI 语义约定（[GenAI 属性注册表](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md)）：`gen_ai.usage.input_tokens`“SHOULD include all types of input tokens, including cached tokens”，`gen_ai.usage.cache_read.input_tokens` 也“SHOULD be included in `gen_ai.usage.input_tokens`”。我们显示的输入数包含缓存读写，与这个约定一致。
+- ✅ Pi 0.84.2 源码 `dist/cli/file-processor.js`：命令行带文件参数时，文本文件拼成 `<file name="${absolutePath}">\n${content}\n</file>` 放进用户消息，图片单独变成图片内容。我们复用这个格式，模型看到的附件和 Pi 命令行一致。
+
+**对比与取舍**
+
+主流产品（ChatGPT、Claude）走“先上传、消息里带引用”的路线，支持大文件和多种格式；我们这一期把文件全文放进消息，代价是 64 KB 上限偏小，而且文件全文成了这条消息的一部分，之后每轮作为上下文再发给模型，长对话里费用会随之增加。好处是服务端、消息合同、数据库都不用改，发送失败重试、刷新恢复这些已有保证自动覆盖附件。token 显示没有另起一套计量，用的是 Pi 已经算好的数字，代价是费用是按价格表估算的，不是网关账单。
+
+**结果数据**
+
+- 测试：控制中心单元测试 439 个全部通过（含附件拆分与检查 3 个、输入框卡片 1 个、消息卡片 1 个、粘贴+拖放+移除+发送的交互测试 1 个，回答下方一行和来源 7 个）；执行记录投影的 `runtime.usage` 断言在 `test/integration/thread-run-lifecycle.test.ts`。
+- 真实 Chromium（无头浏览器）里用夹具服务器实测：点选一个 CSV、粘贴一个 Markdown 后，文字框只剩“帮我看看这两个文件”，输入框上方两张卡片（35 B、30 B）；再粘贴一张 PNG，提示“这个文件我还读不了”，页面没有报错。
+- 测试夹具里一轮的 token 显示为“21.5k tokens”（输入 3,000 + 缓存 18,000 + 输出 480），这是演示数据。上线后真实对话的 token 数和费用：未上线，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md)；[PR #48](https://github.com/sixianli/himawari-agent/pull/48)；[BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)；相关：[案例 26](#case-process-timeline)（同一轮回答的过程区）。
+
+**面试 30 秒版**
+
+“用户要求附件按钮必须真能用，否则关掉。完整做法是上传接口加服务端抽文字，要好几天，还要先选看图模型。我先查清现有边界：消息上限 64 KB、运行时只收文字。于是先做文本文件：用 Pi 命令行同样的 `<file name>` 格式把文件接在消息后面，网页再按这个格式拆回‘正文 + 文件卡片’，粘贴、拖放、点选共用一套检查，服务端一行没改，失败重试也自动覆盖附件；图片和 PDF 明确提示还不支持，记进 Backlog。同一期还把每轮 token 从 Pi 已有的用量数据投影出来，输入数按 OpenTelemetry 约定包含缓存。”
+
+**后续（2026-10-26 晚）：附件补上 PDF 和 Office，并改成“附件接口 + 引用”**
+
+第一版只读文本文件，图片、PDF、Office 只提示“还读不了”，可 Andy 的原话是附件“真的有用”，否则就关掉。当晚把做法换成三段：
+
+- **浏览器里转文字：** PDF 用 Mozilla 的 pdf.js（✅ [pdf.js README](https://github.com/mozilla/pdf.js)：目标是“a general-purpose, web standards-based platform for parsing and rendering PDFs”），只在第一次加 PDF 时下载；.docx、.xlsx、.pptx 是 XML 文件的压缩包，用 fflate（✅ [fflate README](https://github.com/101arrowz/fflate)：“High performance (de)compression in an 8kB package”）解压后取段落、单元格和幻灯片文字。解析放在浏览器，是为了让不受信任的文件格式只在用户自己的页面里解析，服务端不装解析库。
+- **附件接口：** 新增 `/api/payload/v1/attachment`，检查和消息正文接口相同，单段上限 256K 字符，内容类型是附件专用的 `text/x-himawari-attachment`。
+- **消息只带引用，发给模型时展开：** 消息里每个文件只是一行 `<file name ref bytes kind/>`，上下文投影只展开附件类型的加密内容，换成 Pi 的 `<file name>` 文件块；读不到就写“[附件无法读取]”，不让整轮失败。这样 64 KB 正文上限不再限制附件，标题生成、记忆提取和浏览器本地草稿里也不会出现文件全文。
+
+取舍：主流产品在服务端解析文件，支持的格式更多；我们放弃了旧版 .doc/.xls/.ppt 和扫描件（记在 [BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)），换来服务端没有新的解析风险。结果（来自本 PR 的测试记录）：控制中心单元测试 446 个通过，其中浏览器转文字 4 个、上传和引用 2 个、粘贴拖放发送的交互测试 1 个；HTTP 网关合同测试 29 个、上下文投影集成测试 12 个通过。真实 Chromium 加上线上同样的内容安全策略（CSP，浏览器只允许加载哪些来源的脚本的规则）：一次选中 PDF、Word、Excel、PowerPoint 各一个，四张卡片按选择顺序出现，四段文字都正确上传，消息只带四行引用，页面没有报错。真实模型读附件后的回答质量：未上线，未测量。
 
 [返回目录](#contents)
 

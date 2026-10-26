@@ -7,7 +7,16 @@
     "G3": "durable",
     "G4": "durable",
     "G5": "durable",
-    "G6": "once"
+    "G6": "once",
+    "G7": "durable",
+    "G8": "durable",
+    "G9": "durable",
+    "G10": "durable",
+    "G11": "durable",
+    "G12": "durable",
+    "G13": "durable",
+    "G14": "durable",
+    "G15": "once"
   },
   "items": [
     {
@@ -171,6 +180,215 @@
         "by": "claude",
         "on": "2026-10-26",
         "why": "快速模式的基本检查"
+      }
+    },
+    {
+      "id": "UI-9",
+      "title": "回答下方一行紧贴正文：复制只复制正文；后面是模型、用时、时刻和本轮 token，悬停看输入/缓存/输出和费用；过程区合计下多一行 token",
+      "goal_ref": [
+        "G7",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-9"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:12、13:14 批注"
+      }
+    },
+    {
+      "id": "UI-10",
+      "title": "来源改成紧凑列表，默认收在“N 个来源”一行里，点开每条一行",
+      "goal_ref": [
+        "G9"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-10"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:13 批注"
+      }
+    },
+    {
+      "id": "UI-11",
+      "title": "你的消息：右下角时间加状态（发送中/已送达/已开始处理），悬停亮出复制",
+      "goal_ref": [
+        "G10"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-11"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:16 批注"
+      }
+    },
+    {
+      "id": "UI-12",
+      "title": "模型选择：默认显示前 3 个，其余收进“更多模型”；换模型后推理强度回到标准，没有标准就低",
+      "goal_ref": [
+        "G11"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-12"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:18 批注"
+      }
+    },
+    {
+      "id": "UI-13",
+      "title": "输入框提示语改成俏皮版（新对话和对话中各一句，三语）；全界面滚动条平时隐藏、滚动时细条出现",
+      "goal_ref": [
+        "G12",
+        "G14"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-13"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:19、13:22 批注"
+      }
+    },
+    {
+      "id": "UI-14",
+      "title": "附件真能用（文本类）：文字、代码、CSV、JSON 等文本文件可点选、Ctrl+V 粘贴、拖进来，输入框上方显示文件卡片，发给模型；读不了的类型明确提示",
+      "goal_ref": [
+        "G13"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-14"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 13:21 批注"
+      },
+      "history": [
+        {
+          "on": "2026-10-26",
+          "by": "claude",
+          "why": "服务端无上传接口、生产只有文本模型，图片/PDF/Office 拆到 UI-16"
+        }
+      ]
+    },
+    {
+      "id": "UI-15",
+      "title": "第二期文字中英日三语齐全，ADR 与 Spec 增补，npm run check 和 npm run build 通过",
+      "goal_ref": [
+        "G5",
+        "G7",
+        "G8",
+        "G9",
+        "G10",
+        "G11",
+        "G12",
+        "G13",
+        "G14",
+        "G15"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-15"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0090-chat-ui-v6-answer-and-composer.md",
+          "quotes": [
+            "G7",
+            "G8",
+            "G9",
+            "G10",
+            "G11",
+            "G12",
+            "G13",
+            "G14"
+          ]
+        },
+        {
+          "type": "command",
+          "run": "npm run check"
+        },
+        {
+          "type": "command",
+          "run": "npm run build"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "第二期收尾"
+      }
+    },
+    {
+      "id": "UI-16",
+      "title": "附件支持 PDF、Word、Excel、PowerPoint：浏览器转文字、附件接口加密保存、消息只带引用、发给模型时展开",
+      "goal_ref": [
+        "G13"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-16"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "从 UI-14 拆出"
+      },
+      "history": [
+        {
+          "on": "2026-10-26",
+          "by": "claude",
+          "why": "协调者转达：附件要真可用；图片拆到 UI-17"
+        }
+      ]
+    },
+    {
+      "id": "UI-17",
+      "title": "附件支持图片（以及扫描件、旧版 Office）：等 Andy 选是否加看图模型（BL-20261026-012）",
+      "goal_ref": [
+        "G13"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-17"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "从 UI-16 拆出"
       }
     }
   ]

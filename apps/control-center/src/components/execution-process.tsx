@@ -30,6 +30,7 @@ import {
 } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { toolStepSummary } from "../step-summary.js";
+import { formatCost, type TurnUsage, turnUsage } from "../turn-summary.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ActionButton } from "./primitives.js";
@@ -439,7 +440,9 @@ export function ExecutionProcess({
         {records.some((item) => item.phase === "unavailable") ? (
           <output>{message("chat.recordUnavailable")}</output>
         ) : null}
-        {timeline && activityEnded ? <TimeLedger timeline={timeline} message={message} /> : null}
+        {timeline && activityEnded ? (
+          <TimeLedger timeline={timeline} usage={turnUsage(records)} message={message} />
+        ) : null}
       </details>
     </>
   );
@@ -595,7 +598,15 @@ function StepTiming({ step, message }: { step: TimelineStep; message: Message })
   );
 }
 
-function TimeLedger({ timeline, message }: { timeline: ExecutionTimeline; message: Message }) {
+function TimeLedger({
+  timeline,
+  usage,
+  message,
+}: {
+  timeline: ExecutionTimeline;
+  usage: TurnUsage | undefined;
+  message: Message;
+}) {
   return (
     <div className="process-ledger">
       <CategoryBar timeline={timeline} message={message} />
@@ -613,6 +624,23 @@ function TimeLedger({ timeline, message }: { timeline: ExecutionTimeline; messag
           {message("process.total", { time: timelineDuration(timeline.total) })}
         </span>
       </p>
+      {usage ? (
+        <p className="process-legend process-tokens">
+          <span className="legend-item">{message("process.tokens")}</span>
+          <span className="legend-item">
+            {message("process.tokenInput", {
+              count: usage.input.toLocaleString(),
+              cached: usage.cached.toLocaleString(),
+            })}
+          </span>
+          <span className="legend-item">
+            {message("process.tokenOutput", { count: usage.output.toLocaleString() })}
+          </span>
+          <span className="process-sum">
+            {message("process.tokenCost", { cost: formatCost(usage.costUsd) })}
+          </span>
+        </p>
+      ) : null}
       <p className="process-note">{message("process.note")}</p>
     </div>
   );

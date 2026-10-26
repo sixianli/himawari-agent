@@ -81,3 +81,31 @@ it("does not invent a model submenu for a single configured model", async () => 
   expect(container.querySelector(".picker-model-name")?.textContent).toBe("Configured primary");
   expect(container.querySelector(".model-options")).toBeNull();
 });
+
+const many = (count: number): AvailableModel[] =>
+  Array.from({ length: count }, (_, index) => ({
+    ref: index ? `model-${index}` : "primary",
+    provider: "fixture",
+    model: `model-${index}`,
+    name: `Model ${index}`,
+    thinkingLevels: ["off", "low", "high"],
+  }));
+
+it("[UI-12] shows the three highest-priority models first and the rest behind one more button", async () => {
+  await render(many(5));
+  await act(async () => container.querySelector<HTMLButtonElement>(".picker-model-name")?.click());
+  const names = () =>
+    [...container.querySelectorAll(".model-options button")].map((button) => button.textContent);
+  expect(names()).toEqual(["Model 0✓", "Model 1", "Model 2", "chat.moreModels"]);
+  await act(async () => container.querySelector<HTMLButtonElement>(".model-more")?.click());
+  expect(names()).toEqual(["Model 0✓", "Model 1", "Model 2", "Model 3", "Model 4"]);
+});
+
+it("[UI-12] picks a balanced default effort: medium, otherwise low, otherwise the first one that thinks", async () => {
+  const { defaultThinkingLevel } = await import("../src/components/model-picker.js");
+  expect(defaultThinkingLevel(["off", "low", "medium", "high", "max"])).toBe("medium");
+  expect(defaultThinkingLevel(["off", "low", "high"])).toBe("low");
+  expect(defaultThinkingLevel(["off", "high"])).toBe("high");
+  expect(defaultThinkingLevel(["off"])).toBe("off");
+  expect(defaultThinkingLevel([])).toBe("off");
+});

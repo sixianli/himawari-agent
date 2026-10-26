@@ -3,14 +3,18 @@ import type {
   ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { formatBytes, splitDraft } from "../draft-attachments.js";
+import { executionTimeline, timelineDuration } from "../execution-timeline.js";
 import type { RunSummary } from "../execution-view.js";
-import type { ContentPreviewValue } from "./content-preview.js";
-import { ExecutionProcess } from "./execution-process.js";
+import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { turnSources, turnUsage } from "../turn-summary.js";
+import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { HimawariBrand } from "./brand.js";
+import type { ContentPreviewValue } from "./content-preview.js";
+import { ExecutionProcess } from "./execution-process.js";
 import { ActionButton } from "./primitives.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
@@ -98,22 +102,35 @@ export function ChatHistory({
             <div className="chat-turn" key={key}>
               {group.messages
                 .filter((item) => item.role !== "agent")
-                .map((item) => (
-                  <article
-                    key={item.messageId}
-                    className={`thread-message thread-message-${item.role}`}
-                  >
-                    <pre className="thread-message-content">
-                      {contentByRef[item.contentRef] ?? "…"}
-                    </pre>
-                  </article>
-                ))}
+                .map((item) =>
+                  item.role === "owner" ? (
+                    <div className="owner-turn" key={item.messageId}>
+                      <OwnerMessage content={contentByRef[item.contentRef]} />
+                      <OwnerMessageMeta
+                        text={ownerCopyText(contentByRef[item.contentRef])}
+                        committedAt={item.committedAt}
+                        received={records.some(
+                          (record) => record.kind === "status" && record.phase === "started",
+                        )}
+                        message={message}
+                      />
+                    </div>
+                  ) : (
+                    <article
+                      key={item.messageId}
+                      className={`thread-message thread-message-${item.role}`}
+                    >
+                      <pre className="thread-message-content">
+                        {contentByRef[item.contentRef] ?? "…"}
+                      </pre>
+                    </article>
+                  ),
+                )}
               {group.run || agentMessages.length ? (
                 <article className="thread-message thread-message-agent">
                   <header>
                     <HimawariBrand busy={!!group.run && !isTerminalRun(group.run)} />
                     <strong>Himawari</strong>
-                    {actualModel ? <span className="turn-model">{actualModel}</span> : null}
                   </header>
                   {group.run ? (
                     <ExecutionProcess
@@ -156,6 +173,33 @@ export function ChatHistory({
                       <AssistantMarkdown text={partial} />
                     </>
                   ) : null}
+                  {agentMessages.length && (!group.run || isTerminalRun(group.run)) ? (
+                    <AnswerActions
+                      text={agentMessages
+                        .map((item) => contentByRef[item.contentRef] ?? "")
+                        .join("\n\n")}
+                      model={actualModel}
+                      duration={(() => {
+                        if (!group.run) return undefined;
+                        const total = executionTimeline(
+                          records,
+                          group.run,
+                          Date.parse(group.run.updatedAt),
+                        )?.total;
+                        return total === undefined ? undefined : timelineDuration(total);
+                      })()}
+                      committedAt={agentMessages.at(-1)?.committedAt}
+                      usage={turnUsage(records)}
+                      onFork={(() => {
+                        const last = agentMessages.findLast((item) => item.turnId);
+                        return last
+                          ? () => onFork(last.turnId as string, last.sequence)
+                          : undefined;
+                      })()}
+                      message={message}
+                    />
+                  ) : null}
+                  <AnswerSources sources={turnSources(records)} message={message} />
                   {renderMemory?.(
                     group.messages
                       .filter((item) => item.role === "owner")
@@ -176,17 +220,6 @@ export function ChatHistory({
                         {message("chat.retryCleanup")}
                       </ActionButton>
                     ) : null}
-                    {agentMessages.map((item) =>
-                      item.turnId ? (
-                        <ActionButton
-                          key={item.messageId}
-                          onClick={() => onFork(item.turnId as string, item.sequence)}
-                          variant="quiet"
-                        >
-                          {message("threads.fork")}
-                        </ActionButton>
-                      ) : null,
-                    )}
                   </div>
                 </article>
               ) : null}
@@ -209,5 +242,68 @@ export function ChatHistory({
         </ActionButton>
       ) : null}
     </>
+  );
+}
+
+const ownerCopyText = (content: string | undefined) =>
+  content === undefined ? "" : splitDraft(content).text || content;
+
+function OwnerMessage({ content }: { readonly content: string | undefined }) {
+  const { text, files } = content === undefined ? { text: "…", files: [] } : splitDraft(content);
+  return (
+    <article className="thread-message thread-message-owner">
+      {text ? <pre className="thread-message-content">{text}</pre> : null}
+      {files.length ? (
+        <ul className="message-files">
+          {files.map((file, index) => (
+            <li key={`${index}:${file.name}`}>
+              <LineIcon name="file" />
+              <span className="attachment-name">{file.name}</span>
+              <small>{formatBytes(file.bytes)}</small>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
+function OwnerMessageMeta({
+  text,
+  committedAt,
+  received,
+  message,
+}: {
+  readonly text: string;
+  readonly committedAt: string;
+  readonly received: boolean;
+  readonly message: Message;
+}) {
+  const [copied, copy] = useCopied();
+  const status = message(received ? "message.status.received" : "message.status.sent");
+  return (
+    <div className="owner-meta">
+      <button
+        type="button"
+        className="owner-copy"
+        aria-label={message("message.copy")}
+        title={message("message.copy")}
+        onClick={() => copy(text)}
+      >
+        <LineIcon name={copied ? "check" : "copy"} />
+      </button>
+      <span>{message("answer.at", { at: new Date(committedAt) })}</span>
+      <span className="owner-status" role="img" aria-label={status} title={status}>
+        <svg
+          className={`owner-tick ${received ? "is-received" : "is-sent"}`}
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            d={received ? "M1.5 12.5l4.5 4.5L15.5 7.5M10 16l1 1 9.5-9.5" : "M5 12.5l4.5 4.5L19 7.5"}
+          />
+        </svg>
+      </span>
+    </div>
   );
 }

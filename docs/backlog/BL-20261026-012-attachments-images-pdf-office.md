@@ -1,0 +1,34 @@
+---
+status: "active"
+document_type: "backlog"
+record_id: "BL-20261026-012"
+record_state: "open"
+date: "2026-10-26"
+updated: "2026-10-26"
+priority: "normal"
+item_type: "enhancement"
+source_idea: ""
+review_after: ""
+promoted_to: ""
+result: ""
+reason: ""
+supersedes: ""
+superseded_by: ""
+---
+# 附件支持图片、扫描件和旧版 Office 文件
+
+## Summary
+
+对话界面 v6 第二期已经支持文本类文件、PDF、Word（.docx）、Excel（.xlsx）和 PowerPoint（.pptx）：网页在浏览器里把文件转成文字，经附件接口加密保存，消息里只带附件引用，发给模型时展开（见 [ADR 0090 的附件一节](../adr/0090-chat-ui-v6-answer-and-composer.md#attachments)）。还没做的：
+
+- 图片：要等 Andy 决定是否加一个能看图的模型；选定后附件接口要能存图片原始字节，上下文投影按 Pi 的 `ImageContent` 发给模型。
+- 扫描件 PDF 和只有图片的文档：没有文字层，需要文字识别（OCR，从图片里认出文字），或者同样交给看图模型。
+- 旧版 .doc、.xls、.ppt：二进制格式，浏览器里没有轻量的读取库，需要服务端转换。
+
+## Origin
+
+- Captured directly.
+
+## Notes
+
+- Add evidence, constraints, and decisions here as the item is reviewed.
