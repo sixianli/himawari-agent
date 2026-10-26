@@ -32,6 +32,16 @@ The rule is in [ADR 0060](docs/adr/0060-hard-constraint-on-third-repeat.md): whe
 - Record the result where it belongs: a mistake coding agents repeat, with its constraint, in `docs/lessons.md` (extend an existing entry when one covers it; an entry that reached three occurrences names its constraint and where it runs); a way of briefing, reviewing, or driving opencode and Grok in the `opencode-orchestration` skill; a product defect fixed in the task or filed as a Backlog item; a change to how a test, deployment, or operation runs in its Runbook, plan, or spec; a user preference about how Claude works in Claude's memory.
 - Delivery reports name the root cause found and where it was recorded.
 
+## Engineering Casebook
+
+The user asked on 2026-10-26 that every hard problem and important decision of this project be kept as a case for the user's AI Application Engineer and AI Agent Engineer interviews. [docs/engineering-casebook.md](docs/engineering-casebook.md) is that record. This rule applies in fast mode and in full mode.
+
+- After a thread or delegated agent solves a notable hard problem or bug, or makes an important architecture or design decision (anything that gets an ADR, changes a measured latency or reliability figure, or fixes a production incident), add a case to the casebook, or extend the existing case, in the same delivery.
+- Use the casebook's case template and keep every section: background and symptoms, root cause, our solution, alternatives discussed and what was given up, industry practice, comparison and trade-offs, measured results, related ADRs and PRs, and the 30-second interview version. Write it in Simplified Chinese; English terms are allowed and are explained at first use.
+- Cite only first-party sources that were actually opened, with a short quote, and mark each one with the casebook's source legend. Take every number from a commit message, ADR, test record, or log, name where it came from, and write "未测量" when there is no measurement.
+- Add the case to the casebook's table of contents and competency map. When a later change alters a case's outcome, append a dated follow-up to that case instead of rewriting its conclusion.
+- Delivery reports name the case added or updated, or say why the work did not need one.
+
 ## Project Instruction Commits
 
 - Changes to this project-level `AGENTS.md` may be committed separately after review and applicable checks, without asking the user for confirmation. The same holds for the instruction files under `.agents/instructions/` that this file points to. Stage only those files in such a commit and preserve unrelated work. Push it like every other commit (see "Pushing Commits" below).
