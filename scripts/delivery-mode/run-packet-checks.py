@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 NODE_FIXTURES = (
     'maintenance/verify-fixtures.mjs',
@@ -76,6 +77,7 @@ def run_check(check, packet, source, environment, logs):
     scratch = short_scratch() if 'SCRATCH' in command or directory == 'migrate' else None
     command = [str(scratch) if part == 'SCRATCH' else part for part in command]
     log = logs / (name.replace('/', '_') + '.log')
+    started = time.monotonic()
     try:
         with log.open('wb') as output:
             if directory == 'migrate':
@@ -89,7 +91,7 @@ def run_check(check, packet, source, environment, logs):
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
-    return name, code, log
+    return name, code, log, round(time.monotonic() - started, 1)
 
 
 def main():
@@ -124,14 +126,14 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
         results = sorted(pool.map(lambda check: run_check(check, packet, source, environment, logs), checks))
     failed = [result for result in results if result[1] != 0]
-    for name, code, log in results:
-        print('CHECK ' + name + ' rc=' + str(code))
-    for name, code, log in failed:
+    for name, code, log, seconds in results:
+        print('CHECK ' + name + ' rc=' + str(code) + ' ' + str(seconds) + 's')
+    for name, code, log, seconds in failed:
         print('== ' + name)
         print('\n'.join(log.read_text(errors='replace').splitlines()[-12:]))
     shutil.rmtree(temp_root, ignore_errors=True)
     if arguments.record:
-        Path(arguments.record).write_text(json.dumps({'passed': not failed, 'currentSchema': current, 'targetSchema': target, 'checks': [{'name': name, 'exit': code} for name, code, log in results]}, indent=2) + '\n')
+        Path(arguments.record).write_text(json.dumps({'passed': not failed, 'currentSchema': current, 'targetSchema': target, 'checks': [{'name': name, 'exit': code, 'seconds': seconds} for name, code, log, seconds in results]}, indent=2) + '\n')
     print('PACKET_CHECKS ' + ('failed' if failed else 'passed') + ' ' + str(len(results) - len(failed)) + '/' + str(len(results)) + ' logs=' + str(logs))
     return 1 if failed else 0
 

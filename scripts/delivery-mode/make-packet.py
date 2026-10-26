@@ -524,6 +524,11 @@ class Hermes:
             shutil.rmtree(probe.parent)
         self.ssh('rm -f ' + ' '.join(shlex.quote(target) for target in targets))
 
+    def preflight(self):
+        child = subprocess.run([self.ssh_wrapper, 'bash ' + shlex.quote(self.scripts + '/run-release-walkthrough.sh') + ' --preflight'], capture_output=True, timeout=320, check=False)
+        if child.returncode != 0:
+            refuse('PACKET_HERMES_PREFLIGHT_FAILED', (child.stdout + child.stderr).decode(errors='replace').strip()[-400:])
+
     def install_scripts(self):
         self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
         for name in ('build-candidate.sh', 'layer3-verdict.py', 'builder.json', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'capture-build-source-inputs.template.mjs'):
@@ -714,6 +719,8 @@ def prepare(arguments):
     parameters = base_parameters(instance, commit, date, discovered)
     hermes = Hermes(run_id(parameters))
     hermes.probe_uploads()
+    hermes.install_scripts()
+    hermes.preflight()
     step('discover', started)
     packet = packet_directory(Path(arguments.output_root).resolve(), date, parameters['LABEL'])
     work = Path(tempfile.mkdtemp(prefix='packet-work-'))
@@ -722,7 +729,6 @@ def prepare(arguments):
     step('s0-schema', started)
     materials = work / 'materials'
     materials.mkdir()
-    hermes.install_scripts()
     walkthrough = None
     if arguments.reuse_materials:
         walkthrough = reuse_materials(Path(arguments.reuse_materials).resolve(), commit, materials)

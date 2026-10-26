@@ -7,6 +7,7 @@
   "evidenceRoot": "/data/hermes/himawari/tool-audit-round2/r2-u1/evidence",
   "tools": "/data/hermes/himawari/tool-audit-round2/r30/tools",
   "browsers": "/data/hermes/himawari/tool-audit-round2/r30/browsers",
+  "piToolBin": "/home/andy/himawari-tests/r2-u1/pi-tools-test-bin",
   "gitModesCheck": "require-git-modes.sh",
   "captureTemplate": "capture-build-source-inputs.template.mjs",
   "installerDependencyCollector": "collect-installer-dependencies.mjs",

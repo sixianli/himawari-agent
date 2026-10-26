@@ -289,6 +289,11 @@ class HermesCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(packet_maker.PacketError, '(?s)PACKET_HERMES_STEP_FAILED broken exit=7.*BUILD_LOG_LINE'):
             self.hermes.wait('broken')
 
+    def test_a_walkthrough_preflight_failure_refuses_the_packet(self):
+        self.hermes.install_scripts()
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_PREFLIGHT_FAILED .*HERMES_WALKTHROUGH_FAILED HOST_UNEXPECTED'):
+            self.hermes.preflight()
+
     def test_an_upload_area_the_wrapper_refuses_is_found_before_any_build(self):
         refusing = self.root / 'refusing-upload.sh'
         refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) cp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
@@ -363,7 +368,7 @@ class PacketChecksRunnerTest(unittest.TestCase):
     def run_check(self, check):
         previous = os.umask(0o002)
         try:
-            name, code, log = checks_runner.run_check(check, self.packet, self.source, dict(os.environ), self.logs)
+            name, code, log, seconds = checks_runner.run_check(check, self.packet, self.source, dict(os.environ), self.logs)
         finally:
             os.umask(previous)
         return code, log.read_text()
@@ -401,34 +406,73 @@ class PacketChecksRunnerTest(unittest.TestCase):
 class ReleaseWalkthroughTest(unittest.TestCase):
     TAG = '[PG-4]'
 
-    def test_the_walkthrough_gives_the_artifact_check_the_locked_python(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            scripts = root / 'scripts'
-            scripts.mkdir()
-            shutil.copy(HERE / 'hermes' / 'run-release-walkthrough.sh', scripts)
-            tools = root / 'tools'
-            (tools / 'bin').mkdir(parents=True)
-            node = tools / 'bin' / 'node'
-            node.write_text('#!/bin/bash\nenv > "$HIMAWARI_PRODUCT_PATH_OUTPUT.env"\nmkdir -p "$HIMAWARI_PRODUCT_PATH_OUTPUT"\necho "{}" > "$HIMAWARI_PRODUCT_PATH_OUTPUT/browser-acceptance.json"\n')
-            node.chmod(0o755)
-            source = root / 'source'
-            source.mkdir()
-            subprocess.run(['git', 'init', '-q', str(source)], check=True)
-            subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
-            revision = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
-            work = root / 'work'
-            materials = work / 'walk-1' / 'materials'
-            materials.mkdir(parents=True)
-            (materials / ('linux-x64-abi127-' + revision + '-1-1.tar.gz')).write_bytes(b'x')
-            (materials / 'context.json').write_text(json.dumps({'testedSha': revision}))
-            hostname = subprocess.run(['hostname'], capture_output=True, text=True, check=True).stdout.strip()
-            (scripts / 'builder.json').write_text(json.dumps({'hostname': hostname, 'tools': str(tools), 'source': str(source), 'workRoot': str(work), 'browsers': str(root / 'browsers')}))
-            run = subprocess.run(['bash', str(scripts / 'run-release-walkthrough.sh'), 'walk-1'], capture_output=True, text=True, check=False)
-            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-            seen = dict(line.split('=', 1) for line in (work / 'walk-1' / 'walkthrough' / 'product-path.env').read_text().splitlines() if '=' in line)
-            self.assertEqual(seen['HIMAWARI_CI_PYTHON'], str(tools / 'python/python/bin/python3'))
-            self.assertEqual(seen['HIMAWARI_CI_TOOLS'], str(tools))
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        root = Path(self.directory.name)
+        self.scripts = root / 'scripts'
+        self.scripts.mkdir()
+        shutil.copy(HERE / 'hermes' / 'run-release-walkthrough.sh', self.scripts)
+        self.tools = root / 'tools'
+        self.executable(self.tools / 'bin' / 'node', 'env > "$HIMAWARI_PRODUCT_PATH_OUTPUT.env"\nmkdir -p "$HIMAWARI_PRODUCT_PATH_OUTPUT"\necho "{}" > "$HIMAWARI_PRODUCT_PATH_OUTPUT/browser-acceptance.json"')
+        self.executable(self.tools / 'python/python/bin/python3', 'echo "Python 3.12.10"')
+        self.toolbin = root / 'pi-tools'
+        for name in ('fd', 'rg'):
+            self.executable(self.toolbin / name, 'exit 0')
+        (root / 'browsers').mkdir()
+        source = root / 'source'
+        source.mkdir()
+        subprocess.run(['git', 'init', '-q', str(source)], check=True)
+        subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
+        revision = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+        self.work = root / 'work'
+        materials = self.work / 'walk-1' / 'materials'
+        materials.mkdir(parents=True)
+        (materials / ('linux-x64-abi127-' + revision + '-1-1.tar.gz')).write_bytes(b'x')
+        (materials / 'context.json').write_text(json.dumps({'testedSha': revision}))
+        hostname = subprocess.run(['hostname'], capture_output=True, text=True, check=True).stdout.strip()
+        (self.scripts / 'builder.json').write_text(json.dumps({'hostname': hostname, 'tools': str(self.tools), 'source': str(source), 'workRoot': str(self.work), 'browsers': str(root / 'browsers'), 'piToolBin': str(self.toolbin)}))
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def executable(self, path, body):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('#!/bin/bash\n' + body + '\n')
+        path.chmod(0o755)
+
+    def walkthrough(self, argument):
+        return subprocess.run(['bash', str(self.scripts / 'run-release-walkthrough.sh'), argument], capture_output=True, text=True, check=False)
+
+    def test_the_walkthrough_gives_the_tests_the_locked_python_and_the_pi_tools(self):
+        run = self.walkthrough('walk-1')
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        seen = dict(line.split('=', 1) for line in (self.work / 'walk-1' / 'walkthrough' / 'product-path.env').read_text().splitlines() if '=' in line)
+        self.assertEqual(seen['HIMAWARI_CI_PYTHON'], str(self.tools / 'python/python/bin/python3'))
+        self.assertEqual(seen['HIMAWARI_CI_TOOLS'], str(self.tools))
+        self.assertEqual(seen['HIMAWARI_TEST_PI_TOOLBIN'], str(self.toolbin))
+
+    def test_a_missing_pi_tool_stops_the_preflight_before_any_test(self):
+        self.assertEqual(self.walkthrough('--preflight').stdout.strip(), 'HERMES_WALKTHROUGH_PREFLIGHT_OK')
+        (self.toolbin / 'fd').unlink()
+        for argument in ('--preflight', 'walk-1'):
+            run = self.walkthrough(argument)
+            self.assertEqual(run.returncode, 5)
+            self.assertIn('PI_TOOL_MISSING ' + str(self.toolbin / 'fd'), run.stderr)
+        self.assertFalse((self.work / 'walk-1' / 'walkthrough').exists())
+
+    def test_a_python_that_is_not_the_locked_one_stops_the_preflight(self):
+        self.executable(self.tools / 'python/python/bin/python3', 'echo "Python 3.12.3"')
+        run = self.walkthrough('--preflight')
+        self.assertEqual(run.returncode, 5)
+        self.assertIn('LOCKED_PYTHON_MISSING', run.stderr)
+
+    def test_the_generator_runs_the_preflight_before_any_build(self):
+        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
+        self.assertTrue(settings['piToolBin'].startswith('/home/andy/himawari-tests/'))
+        source = (HERE / 'make-packet.py').read_text()
+        body = source[source.index('def prepare(arguments):'):]
+        self.assertLess(body.index('hermes.preflight()'), body.index("step('discover'"))
+        self.assertLess(body.index('hermes.preflight()'), body.index('hermes.build('))
 
 
 if __name__ == '__main__':
