@@ -197,6 +197,25 @@ describe("SRT resident session prewarm", () => {
     });
   });
 
+  it("[NL-10] starts the command and file write sessions at the same time", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const pending: Array<() => void> = [];
+    const { instance, session } = worker(
+      [descriptor("bash"), descriptor("write")],
+      vi.fn(() => new Promise<object>((resolve) => pending.push(() => resolve({})))),
+    );
+    instance.prewarmSrtEnvironment(request());
+    await vi.waitFor(() => expect(session).toHaveBeenCalledTimes(2));
+    const calls = session.mock.calls as unknown as Array<[{ kind: string }]>;
+    expect(calls.map(([input]) => input.kind)).toEqual(["command", "file_write"]);
+    for (const release of pending.reverse()) release();
+    const [event] = await settled(log);
+    expect(event).toMatchObject({
+      event: "sandbox.srt_prewarm.finished",
+      sessions: ["command", "file_write"],
+    });
+  });
+
   it.each([
     ["network access", { network: "grant_targets" }],
     ["a one-shot backend", { backendRef: "container" }],

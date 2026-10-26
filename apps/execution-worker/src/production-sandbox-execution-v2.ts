@@ -1315,40 +1315,41 @@ export class ProductionSandboxExecutionV2 {
     });
     const root = binding.roots.find((item) => item.canonicalRootId === request.canonicalRootId);
     if (!root) throw new Error("SANDBOX_ROOT_UNAVAILABLE");
-    const sessions: string[] = [];
-    for (const kind of SRT_PREWARM_SESSIONS) {
-      const descriptor = binding.operationBindings?.find(
-        (item) =>
-          item.backendRef === SRT_BACKEND_REF &&
-          item.scopeSource === "grant_targets" &&
-          item.network === "disabled" &&
-          srtTaskEnvironmentSession({
-            mode: item.mode,
-            operation: item.operation,
-            operationContract: item.contract,
-          }) === kind,
-      );
-      if (!descriptor || this.closed) continue;
-      const { request: sessionRequest } = await this.srtSessionRequest({
-        binding,
-        workspace: root.canonicalPath,
-        environment: request,
-        kind,
-        writable: descriptor.directoryOperations.some((operation) => operation !== "read"),
-        allowedDomains: [],
-      });
-      await environments.session({
-        target: {
-          identity: request.identity,
-          createIntentId: request.createIntentId,
-          locator: request.locator,
-        },
-        kind,
-        request: sessionRequest,
-      });
-      sessions.push(kind);
-    }
-    return sessions;
+    const started = await Promise.all(
+      SRT_PREWARM_SESSIONS.map(async (kind) => {
+        const descriptor = binding.operationBindings?.find(
+          (item) =>
+            item.backendRef === SRT_BACKEND_REF &&
+            item.scopeSource === "grant_targets" &&
+            item.network === "disabled" &&
+            srtTaskEnvironmentSession({
+              mode: item.mode,
+              operation: item.operation,
+              operationContract: item.contract,
+            }) === kind,
+        );
+        if (!descriptor || this.closed) return null;
+        const { request: sessionRequest } = await this.srtSessionRequest({
+          binding,
+          workspace: root.canonicalPath,
+          environment: request,
+          kind,
+          writable: descriptor.directoryOperations.some((operation) => operation !== "read"),
+          allowedDomains: [],
+        });
+        await environments.session({
+          target: {
+            identity: request.identity,
+            createIntentId: request.createIntentId,
+            locator: request.locator,
+          },
+          kind,
+          request: sessionRequest,
+        });
+        return kind;
+      }),
+    );
+    return started.filter((kind) => kind !== null);
   }
   private async srtSessionRequest(input: {
     readonly binding: Awaited<ReturnType<ProductionSandboxExecutionV2["capabilityBinding"]>>;

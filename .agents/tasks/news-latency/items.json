@@ -198,6 +198,31 @@
         "by": "claude",
         "on": "2026-10-26"
       }
+    },
+    {
+      "id": "NL-10",
+      "title": "方案 B 第 1 步：两个常驻会话同时启动，等待就绪时不占环境锁",
+      "goal_ref": [
+        "G4",
+        "G6"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "NL-10",
+          "host": "hermes-home"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md",
+          "heading": "2026-10-26 补充：两个常驻会话同时启动，等待就绪时不占环境锁"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "方案 B 拆成两步：先做不改数据库的这一步，按对话复用和去掉每轮预热留在 NL-3"
+      }
     }
   ]
 }

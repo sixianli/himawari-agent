@@ -115,10 +115,10 @@ class FakeSession implements SandboxJobSession {
   outcome: JobHostCommandOutcome = outcome();
   pendingResult: Promise<JobHostCommandOutcome> | null = null;
   private settle!: (value: JobHostResult) => void;
-  constructor(readyFailure?: Error) {
+  constructor(readyFailure?: Error, heldReady?: Promise<SandboxJobSessionReady>) {
     this.ready = readyFailure
       ? Promise.reject(readyFailure)
-      : Promise.resolve({ residentProcessId: RESIDENT_PID, hostSteps: null });
+      : (heldReady ?? Promise.resolve({ residentProcessId: RESIDENT_PID, hostSteps: null }));
     this.ready.catch(() => {});
     this.result = new Promise((resolve) => {
       this.settle = resolve;
@@ -154,6 +154,7 @@ interface BackendFixture {
   readonly clock: { at: Date };
   readonly directory: string;
   readonly readyFailure: { error?: Error };
+  readonly heldReady: Array<Promise<SandboxJobSessionReady>>;
 }
 
 interface SharedState {
@@ -173,20 +174,21 @@ async function backendFixture(
   const clock = shared?.clock ?? { at: NOW };
   const sessions: FakeSession[] = [];
   const readyFailure: { error?: Error } = {};
+  const heldReady: Array<Promise<SandboxJobSessionReady>> = [];
   const backend = new SrtTaskEnvironmentBackend({
     stateDirectory: directory,
     runtimeInstanceId,
     proofValidityMs: 300_000,
     now: () => clock.at,
     prepareSession: () => {
-      const session = new FakeSession(readyFailure.error);
+      const session = new FakeSession(readyFailure.error, heldReady.shift());
       sessions.push(session);
       return session;
     },
     startToken: async (pid) => tokens.get(pid) ?? null,
     groupPresent: (groupId) => groups.has(groupId),
   });
-  return { backend, sessions, tokens, groups, clock, directory, readyFailure };
+  return { backend, sessions, tokens, groups, clock, directory, readyFailure, heldReady };
 }
 
 function sessionRequest(
@@ -724,5 +726,116 @@ describe("[R2-P2] the SRT task environment backend", () => {
     await expect(f.backend.verifyStopped(stop)).resolves.toMatchObject({
       basis: "process_group_gone",
     });
+  });
+});
+
+function holdReady(f: BackendFixture) {
+  let release!: () => void;
+  let reject!: (error: Error) => void;
+  f.heldReady.push(
+    new Promise<SandboxJobSessionReady>((resolve, fail) => {
+      release = () => resolve({ residentProcessId: RESIDENT_PID, hostSteps: null });
+      reject = fail;
+    }),
+  );
+  return { release, reject };
+}
+
+const turns = async (count = 20) => {
+  for (let turn = 0; turn < count; turn++) await new Promise((resolve) => setImmediate(resolve));
+};
+
+async function sessionsStarted(f: BackendFixture, count: number) {
+  for (let attempt = 0; attempt < 500 && f.sessions.length < count; attempt++) await turns(1);
+  await turns();
+  expect(f.sessions).toHaveLength(count);
+}
+
+async function createdEnvironment(f: BackendFixture) {
+  const environment = identity();
+  const locator = await f.backend.create({
+    identity: environment,
+    createIntentId: createIntentId(environment),
+    policyDigest: POLICY,
+    deadlineAt: DEADLINE,
+  });
+  const open = (kind: "command" | "file_write") => {
+    const { request } = sessionRequest(environment, kind);
+    return f.backend.session({ target: target(environment, locator), kind, request });
+  };
+  return { environment, locator, open };
+}
+
+describe("[NL-10] SRT sessions start without holding the environment lock while they get ready", () => {
+  it("[NL-10] starts the file write session while the command session is still getting ready", async () => {
+    const f = await backendFixture();
+    const { open } = await createdEnvironment(f);
+    const command = holdReady(f);
+    let commandReady = false;
+    const commandSession = open("command").then((session) => {
+      commandReady = true;
+      return session;
+    });
+    const fileWrite = await open("file_write");
+    expect(fileWrite.policyDigest).toBe(POLICY);
+    expect(f.sessions).toHaveLength(2);
+    await turns();
+    expect(commandReady).toBe(false);
+    command.release();
+    await expect(commandSession).resolves.toMatchObject({ policyDigest: POLICY });
+    const state = JSON.parse(
+      await readFile(path.join(await environmentDirectory(f.directory), "sessions.json"), "utf8"),
+    );
+    expect(state.sessions.command).toMatchObject({ residentGroup: RESIDENT_PID });
+    expect(state.sessions.file_write).toMatchObject({ residentGroup: RESIDENT_PID });
+    expect(state.failed).toBeNull();
+  });
+
+  it("[NL-10] gives a second caller of a session that is still starting the same session", async () => {
+    const f = await backendFixture();
+    const { open } = await createdEnvironment(f);
+    const command = holdReady(f);
+    const first = open("command");
+    const second = open("command");
+    await sessionsStarted(f, 1);
+    command.release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.policyDigest).toBe(POLICY);
+    expect(b.policyDigest).toBe(POLICY);
+    expect(f.sessions).toHaveLength(1);
+    await a.run(runInput, async () => {}).result;
+    await b.run(runInput, async () => {}).result;
+    expect((f.sessions[0] as FakeSession).runCount).toBe(2);
+  });
+
+  it("[NL-10] fails the environment and every waiting caller when a starting session never gets ready", async () => {
+    const f = await backendFixture();
+    const { open } = await createdEnvironment(f);
+    const command = holdReady(f);
+    const first = open("command").catch((error: unknown) => error);
+    const second = open("command").catch((error: unknown) => error);
+    await sessionsStarted(f, 1);
+    const failure = new JobHostPreparationError({ stage: "sdk_initialize", systemCode: "EIO" });
+    command.reject(failure);
+    expect(await first).toBe(failure);
+    expect(await second).toMatchObject({ code: "SRT_ENVIRONMENT_UNAVAILABLE" });
+    expect((f.sessions[0] as FakeSession).closeCount).toBe(1);
+    expect(f.sessions).toHaveLength(1);
+    const state = JSON.parse(
+      await readFile(path.join(await environmentDirectory(f.directory), "sessions.json"), "utf8"),
+    );
+    expect(state.failed).toBe("SRT_SESSION_START_FAILED");
+  });
+
+  it("[NL-10] does not hand out a session whose environment was stopped while it was getting ready", async () => {
+    const f = await backendFixture();
+    const { environment, locator, open } = await createdEnvironment(f);
+    const command = holdReady(f);
+    const starting = open("command").catch((error: unknown) => error);
+    await sessionsStarted(f, 1);
+    await f.backend.stop(stopInput(environment, locator));
+    expect((f.sessions[0] as FakeSession).closeCount).toBe(1);
+    command.release();
+    expect(await starting).toMatchObject({ code: "SRT_ENVIRONMENT_UNAVAILABLE" });
   });
 });
