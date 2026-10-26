@@ -193,11 +193,14 @@ describe("migration 0051 accepts the SRT process-group stop proof", () => {
         path.join(directory, "pre-migration.sqlite"),
       );
 
+      const latest = migrations.at(-1)?.sequence;
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [51, 52, 53, 54, 55, 56, 57],
-        currentSequence: 57,
+        appliedSequences: migrations
+          .map(({ sequence }) => sequence)
+          .filter((sequence) => sequence > 50),
+        currentSequence: latest,
       });
-      expect(readMigrationLedger(database).at(-1)?.sequence).toBe(57);
+      expect(readMigrationLedger(database).at(-1)?.sequence).toBe(latest);
       expect(receiptRows(database)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
 
