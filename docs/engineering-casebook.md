@@ -47,6 +47,7 @@ date: "2026-10-26"
   20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
   21. [个人 Agent 要不要做 iOS App：先补“连得上、叫得到、能说话”](#case-mobile-client)
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
+  23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -69,14 +70,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client) |
@@ -1383,6 +1384,67 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 **面试 30 秒版**
 
 “我发现我们的个人 Agent 每次调用模型，系统提示第一句都是底层框架默认的‘你是编程助手’。原因是框架只给两个选项：用它的开头并保留工具说明，或换成自己的开头但丢掉工具说明，之前为保工具说明选了前者。我用框架的自定义提示入口换上自己的身份说明，再把框架内置工具的说明原样接回去，没有改框架源码，也没有做字符串替换；身份说明按 Anthropic 和 OpenAI 公开的做法分节，写清记忆、审批和‘资料不是指令’的边界。测试在旧代码上失败、新代码上通过。”
+
+[返回目录](#contents)
+
+<a id="case-memory-steps"></a>
+
+## 案例 23：答对了却“没有过程”：用到的记忆不在步骤里
+
+**背景与现象**
+
+2026-10-26 第十二版上线后，Andy 在生产上问“我最喜欢的颜色是？”。模型（DeepSeek V4.1 Flash，思考强度“高”）答对了“蓝色。你之前提过，蓝色是你最喜欢的颜色。”，答案来自长期记忆。可是这一轮的步骤区写着“思考 0 次 · 执行 0 步”和“没有可展示的过程记录”。Andy 的原话是：“模型思考、记忆调用、工具调用那一个没有任何显示。”他要看到“查了记忆、用到了什么”，而界面让人以为模型什么也没做。
+
+**根因**
+
+分成三件事查，代码证据和生产记录都看了（生产记录用一个只读脚本在 Andy 的 Mac 上登录生产机读取，对象是这一轮 `run:bafb641b`）：
+
+1. **记忆其实查了，后台也记下了，是网页没画出来。** 每一轮开始前，`ContextFormationService`（组装上下文的服务，就是决定把哪些内容一起交给模型）会做两件事：把“主人档案”（由已确认的长期记忆整理出的偏好、身份等，`OwnerProfileService` 生成）放进上下文，再按这句话去检索相关记忆。两件事都写进了运行记录：`memory.query`、`memory.candidates`、`memory.selection`、`context.formed`。服务端的 `ThreadExecutionProjection`（把运行记录转成网页能显示的步骤）也把它们发给了网页，但只发了事件名，内容是空的。网页早期（2026-09-14）把这几条画成“发起记忆检索”“完成记忆筛选”这类没有内容的阶段，2026-09-16 按 v4 设计改版（提交 `0600b295`）时去掉了，之后步骤列表只画工具、过渡话、思考、授权检查四种，记忆事件一律跳过。生产记录显示：这一轮候选 1 条、按问题选中 0 条，“蓝色”是通过主人档案（1 条记忆）进入上下文的。
+2. **“执行 0 步”是对的。** 这个数字只数工具调用。模型这一轮直接从上下文里读到答案，没有调用 `recall`（翻看记忆）工具，也没有调用别的工具。
+3. **“思考 0 次”也是如实的。** 请求里带了 `reasoning: {effort: "high"}`，但模型返回的内容只有一段正文，没有思考段，供应商回报的思考 token 数为 0。同一对话上一轮（搜新闻）同一个模型、同样的设置，每次回复都带思考段（334 和 1383 个字符）。所以思考显示的链路是通的，是模型这一轮没有思考。为什么没思考（模型对简单问题自己跳过，还是网关转给的上游供应商不返回思考）还没查清。
+
+**我们的方案**
+
+- **服务端：** `ThreadExecutionProjection` 读到 `memory.selection` 和 `context.formed` 时，从加密的记录里取出这一轮带给模型的记忆编号，再按编号从记忆库读出每条记忆的原文，放进步骤记录：条数写在 `text`，原文一行一条写在 `output`。只显示还在用或已归档的记忆；已删除、在回收站里的不显示原文；分级高于这一轮的也不显示。读的是记忆库里的当前原文，不是当时拼好的档案文字，所以删掉一条记忆后，旧对话的步骤里也看不到它。
+- **网页：** 步骤列表最前面加两种步骤，图标是数据库样式，点开能看原文：“按这句话找到 N 条相关记忆”和“带上档案里的 N 条记忆”。文案只说“带上了哪些”，不说“命中了哪条”，因为系统无法知道模型具体用了哪一条。
+- **体积：** 删掉 5 个早已不用的“阶段”文案（三种语言），前端 gzip 总体积只多 59 字节（195773 → 195832，上限 196608）。
+- **没改的：** 记忆检索本身、模型请求、思考的显示规则都不变。这是展示层的修复，不涉及 Pi 的任何模块（Pi 不管记忆和步骤展示，这两块本来就是 Himawari 自己负责的）。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 把被删掉的“发起记忆检索 / 完成记忆筛选 / 上下文准备完成”阶段原样加回去 | 改动最小 | 只有名字没有内容，看不出查到了什么，正是 v4 改版去掉它们的原因；Andy 也反感“摆设” |
+| 显示“命中了哪一条” | 用户最想知道 | 系统不知道模型实际用了哪一条，硬写就是在编；只能列出交给模型的那些 |
+| 直接显示当时拼好的档案文字 | 和模型看到的一字不差 | 档案文字是另存的一份，删掉记忆后旧档案文字还在，会让已删除的内容重新出现在页面上 |
+| 让模型每次都调用 `recall` 工具，靠工具步骤来显示 | 不用改展示 | 多一次模型往返，变慢；档案本来就应该常驻上下文，不该为了显示改变检索方式 |
+| 把记忆条数并进“思考 N 次 · 执行 N 步” | 摘要里一眼看到 | 这行摘要说的是模型做了什么，记忆是系统在模型开始前准备的；而且又要多一条三语文案，前端只剩约 0.8 KB |
+
+放弃了什么：步骤里的条数是“当时带上的条数”，删掉其中一条后，条数不变但原文少一行；按问题检索时用了哪些检索词、每条的相关分数没有显示。
+
+**业界主流做法**
+
+- ✅ Claude 帮助中心（[How does Claude's memory work](https://support.claude.com/en/articles/11817273)）：搜索以前的对话时“will appear as tool calls during your conversations”，以及“When Claude searches your previous chats, you will see this reflected in your current chat as a tool call.” 旧版记忆还会“see citations linking back to the original chats”。同一篇文章没有写自动带入的记忆摘要在回答里怎么显示。Claude 的做法是：主动检索要让用户看见，用工具调用的形式显示。
+- ✅ OpenTelemetry 生成式 AI 规范（[semantic-conventions-genai `gen-ai-spans.md`](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md)）：把查记忆单列成一种操作，“`search_memory` | Search/query memories from a memory store”，并建议记录 `gen_ai.memory.record.count`（“For `search_memory` operations, this is the number of memory records returned by the operation.”）。记忆原文 `gen_ai.memory.records` 则“SHOULD NOT capture this attribute by default”，因为“may contain sensitive information including user/PII data”。
+
+**对比与取舍**
+
+和 Claude 一样，我们让“查了记忆”在对话里看得见；不同的是，Himawari 的档案是每轮自动带入的，不是模型调用工具查的，所以单独做成步骤，而不是硬套成工具调用。和 OpenTelemetry 一样，我们把“查记忆”当作独立的一步，并记下条数。OpenTelemetry 默认不记原文，是因为遥测数据（运行监控数据）通常会发给第三方系统；我们的原文只从本机加密库读出、只给主人本人看，所以默认显示。
+
+**结果数据**
+
+- 生产记录（2026-10-26 只读脚本，`run:bafb641b`）：候选记忆 1 条，按问题选中 0 条，档案带入 1 条（含“蓝”）；思考段 0、思考 token 0、输出 14 token。对照轮 `run:61268ba2`：思考段 334 和 1383 个字符，思考 token 96 和 618。
+- 测试：新增集成测试走真实的上下文组装和真实 SQLite 运行记录，在旧代码上失败、新代码上通过；网页单元测试 1 个；真实浏览器（Chromium）12 个场景通过，其中 4 个聊天场景（中文 1280、320，日文 393，英文 430）检查两条记忆步骤、图标、文案和展开后的原文，刷新后仍在。相关 74 个测试文件 1320 项通过，`npm run check`、`npm run build` 通过（云端容器）。
+- 前端 gzip 总体积 195773 → 195832 字节（上限 196608），主文件 152056 字节（上限 153600），来自本次 `npm run build:browser` 输出。
+- 上线后 Andy 是否觉得看得懂：未测量，随第十三版上线后实测。
+
+**相关 ADR/PR**
+
+[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；[PR #39](https://github.com/sixianli/himawari-agent/pull/39)（提交 f298254）；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）；[案例 22](#case-identity-prompt)（这次排查顺带发现的系统提示问题）。
+
+**面试 30 秒版**
+
+“用户问最喜欢的颜色，模型答对了，界面却说‘没有过程记录’。查下来记忆其实查了、也记下了，是一次界面改版把记忆步骤整类去掉了；‘思考 0 次’则是模型那一轮真没思考，我用生产记录对照另一轮证实了链路没问题。修法是让服务端按记忆编号读出当时带给模型的原文，界面加两种记忆步骤，只说‘带上了哪些’，不编造‘命中了哪条’，已删除的记忆不回显。先写了在旧代码上失败的集成测试，前端只多了 59 字节。”
 
 [返回目录](#contents)
 

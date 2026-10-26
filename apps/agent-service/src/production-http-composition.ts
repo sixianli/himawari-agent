@@ -743,6 +743,7 @@ export async function createProductionHttpComposition(
     execution: new ThreadExecutionProjection({
       threads,
       checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+      memories: repository.productMemoryState(),
       trace: repository.traceStore(),
       payloads: () => repository.payloadStore(ownerId, agentId),
       protector: payloadProtector,
