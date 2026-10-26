@@ -88,3 +88,19 @@ Andy 于 2026-10-26 审 v6 原型时选定过程区“时间条”样式和“�
 实现截图（测试夹具数据）：[收起，深色](../../assets/control-center/2026-10-26-v6/process-collapsed-dark-desktop.png)、[收起，英文](../../assets/control-center/2026-10-26-v6/process-collapsed-dark-desktop-en.png)、[展开，深色](../../assets/control-center/2026-10-26-v6/process-open-dark-desktop.png)、[展开，手机宽度](../../assets/control-center/2026-10-26-v6/process-open-dark-phone.png)、[展开，浅色日文](../../assets/control-center/2026-10-26-v6/process-open-light-desktop-ja.png)。
 
 [↑ 返回目标与确认](#目标与确认)
+
+<a id="v6-answer-and-composer"></a>
+
+## v6 第二期增补：回答下方一行、来源、消息状态、模型选择和输入区（2026-10-26）
+
+Andy 在 v6 原型上对回答框和输入区的批注，在第一期合并后作为第二期开发。决定和原话见 [ADR 0090](../../adr/0090-chat-ui-v6-answer-and-composer.md)。其余 v4、v5 和 v6 第一期要求不变。
+
+1. 回答正文下面紧贴一行：复制（只复制正文）、“⋯”（里面是“从这里开新对话”）、灰色的模型、用时、时刻和 token 数；来源、记忆和文件卡片在这一行之后。
+2. 来源默认收在“N 个来源”一行里，点开后每个来源一行。
+3. 你的消息右下方显示时刻和状态（已送达、已开始处理），悬停亮出复制。
+4. 模型列表默认显示前 3 个，其余在“更多模型”里；换模型后强度回到标准，没有就低。
+5. 输入框提示语分新对话和对话中两句；权限提示只在新对话出现；键盘提示放进发送按钮的悬停说明。
+6. 全界面滚动条只在滚动时出现。
+7. 附件：点选、粘贴、拖放都能加图片和文件，详见 [ADR 0090 的附件一节](../../adr/0090-chat-ui-v6-answer-and-composer.md#attachments)。
+
+[↑ 返回目标与确认](#目标与确认)

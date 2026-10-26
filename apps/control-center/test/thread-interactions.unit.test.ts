@@ -347,7 +347,10 @@ describe("thread control center interactions", () => {
       ];
       await render();
       await refresh();
-      await click("threads.fork");
+      await click("answer.more");
+      await act(async () =>
+        (document.querySelector('[role="menuitem"]') as HTMLButtonElement | null)?.click(),
+      );
       expect(mutate).toHaveBeenCalledTimes(1);
       expect(mutate.mock.calls[0]?.[0]).toMatchObject({
         type: "thread.fork",
@@ -1748,7 +1751,7 @@ describe("thread control center interactions", () => {
         dataClassification: "private",
       });
       if (configured)
-        expect(sent.payload).toMatchObject({ modelRef: "model-ui", thinkingLevel: "off" });
+        expect(sent.payload).toMatchObject({ modelRef: "model-ui", thinkingLevel: "minimal" });
       expect(JSON.stringify(sent)).not.toContain("请继续这个任务");
       expect(protect.mock.calls.some(([text]) => text === "请继续这个任务")).toBe(true);
       expect(options.storage.readDraft(thread.threadId)).toBe("");

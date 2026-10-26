@@ -3,6 +3,17 @@ import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { ActionButton } from "./primitives.js";
 
+const PRIMARY_MODEL_COUNT = 3;
+
+export function defaultThinkingLevel(levels: readonly string[]): string {
+  return (
+    ["medium", "low"].find((level) => levels.includes(level)) ??
+    levels.find((level) => level !== "off") ??
+    levels[0] ??
+    "off"
+  );
+}
+
 export function ModelPicker({
   models,
   modelRef,
@@ -16,10 +27,11 @@ export function ModelPicker({
   readonly thinkingLevel: string;
   readonly onModelChange: (ref: string) => void;
   readonly onThinkingChange: (level: string) => void;
-  readonly message: (id: MessageId) => string;
+  readonly message: (id: MessageId, values?: Record<string, string | number>) => string;
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const [choosing, setChoosing] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const model = models.find((item) => item.ref === modelRef);
   const levels = model?.thinkingLevels ?? [];
   const label = (level: string) => message(`review.effort.${level}` as MessageId);
@@ -71,7 +83,10 @@ export function ModelPicker({
               {message("chat.model")}
             </ActionButton>
             <div className="model-options">
-              {models.map((item) => (
+              {(showAll || models.findIndex((item) => item.ref === modelRef) >= PRIMARY_MODEL_COUNT
+                ? models
+                : models.slice(0, PRIMARY_MODEL_COUNT)
+              ).map((item) => (
                 <ActionButton
                   key={item.ref}
                   variant="quiet"
@@ -85,6 +100,17 @@ export function ModelPicker({
                   {item.ref === modelRef ? "✓" : null}
                 </ActionButton>
               ))}
+              {!showAll &&
+              models.length > PRIMARY_MODEL_COUNT &&
+              models.findIndex((item) => item.ref === modelRef) < PRIMARY_MODEL_COUNT ? (
+                <ActionButton
+                  className="model-more"
+                  variant="quiet"
+                  onClick={() => setShowAll(true)}
+                >
+                  {message("chat.moreModels", { count: models.length - PRIMARY_MODEL_COUNT })}
+                </ActionButton>
+              ) : null}
             </div>
           </>
         ) : (

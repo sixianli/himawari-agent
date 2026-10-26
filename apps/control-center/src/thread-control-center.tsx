@@ -11,6 +11,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ChatComposer } from "./components/chat-composer.js";
+import { defaultThinkingLevel } from "./components/model-picker.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
@@ -154,7 +155,7 @@ export function useThreadControlCenter(
     Readonly<Record<string, ThreadExecutionState>>
   >({});
   const [modelRef, setModelRef] = useState("");
-  const [thinkingLevel, setThinkingLevel] = useState("off");
+  const [thinkingLevel, setThinkingLevel] = useState("");
   const availableModels = configuration?.availableModels ?? [];
   const selectedModel =
     availableModels.find((item) => item.ref === modelRef) ??
@@ -162,7 +163,7 @@ export function useThreadControlCenter(
     availableModels[0];
   const selectedThinking = selectedModel?.thinkingLevels.includes(thinkingLevel)
     ? thinkingLevel
-    : (selectedModel?.thinkingLevels[0] ?? "off");
+    : defaultThinkingLevel(selectedModel?.thinkingLevels ?? []);
   const payloadEpoch = useRef(0);
   const payloadCache = useRef<Record<string, string>>({});
   const executionCache = useRef<Record<string, ThreadExecutionRecord[]>>({});
@@ -1197,6 +1198,7 @@ export function useThreadControlCenter(
         )}
         <ChatComposer
           key={`composer:${selectedThreadId ?? "new"}`}
+          fresh={!selectedThreadId}
           draft={draft}
           onDraft={(value) => {
             setDraft(value);
@@ -1210,7 +1212,14 @@ export function useThreadControlCenter(
           models={availableModels}
           modelRef={selectedModel?.ref ?? ""}
           thinkingLevel={selectedThinking}
-          onModelChange={setModelRef}
+          onModelChange={(ref) => {
+            setModelRef(ref);
+            setThinkingLevel(
+              defaultThinkingLevel(
+                availableModels.find((item) => item.ref === ref)?.thinkingLevels ?? [],
+              ),
+            );
+          }}
           onThinkingChange={setThinkingLevel}
           onStop={
             configuration?.canCancelRun && (detail?.payload.runs ?? []).some((run) => canStop(run))

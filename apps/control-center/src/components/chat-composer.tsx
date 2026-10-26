@@ -38,6 +38,7 @@ export function ChatComposer({
   canSend = true,
   retryPending = false,
   environment,
+  fresh = false,
 }: {
   readonly draft: string;
   readonly onDraft: (draft: string) => void;
@@ -51,10 +52,11 @@ export function ChatComposer({
   readonly onModelChange: (ref: string) => void;
   readonly onThinkingChange: (level: string) => void;
   readonly onStop?: (() => void) | undefined;
-  readonly message: (id: MessageId) => string;
+  readonly message: (id: MessageId, values?: Record<string, string | number>) => string;
   readonly canSend?: boolean;
   readonly retryPending?: boolean;
   readonly environment?: ReactNode;
+  readonly fresh?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -84,7 +86,7 @@ export function ChatComposer({
           <textarea
             rows={2}
             value={draft}
-            placeholder={message("chat.placeholder")}
+            placeholder={message(fresh ? "chat.placeholderNew" : "chat.placeholder")}
             onChange={(event) => onDraft(event.target.value)}
             onKeyDown={(event) => {
               if (
@@ -171,6 +173,7 @@ export function ChatComposer({
             <ActionButton
               className="send-button"
               aria-label={message(retryPending ? "review.retrySend" : "threads.send")}
+              title={`${message(retryPending ? "review.retrySend" : "threads.send")} · ${message("chat.keyboard")}`}
               disabled={!enabled}
               pending={pending}
               type="submit"
@@ -183,10 +186,11 @@ export function ChatComposer({
       {retryPending && !pending ? (
         <output className="composer-readiness">{message("review.pendingSend")}</output>
       ) : null}
-      <div className="composer-hint">
-        <span className="composer-permission">{message("chat.permission")}</span>
-        <span className="keyboard-hint">{message("chat.keyboard")}</span>
-      </div>
+      {fresh ? (
+        <div className="composer-hint">
+          <span className="composer-permission">{message("chat.permission")}</span>
+        </div>
+      ) : null}
     </>
   );
 }

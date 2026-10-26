@@ -7,17 +7,16 @@
 
 ## 当前批次
 
-- UI-1 scripts/check-control-center-build.mjs 去掉两条 gzip 上限，保留安全检查和体积报告；证据：tooling 测试标 [UI-1]。
-- UI-2 brand.tsx 的标志换成 96 粒黄金角排布的矢量葵盘，删掉 942 KB PNG 的引用；assets/brand/himawari/v2/ 存 SVG；证据：测试标 [UI-2]。
-- UI-3 apps/control-center/src/execution-timeline.ts 纯函数，从执行记录算出步骤区间和四类合计；证据：单元测试标 [UI-3]，含同时进行、等确认、合计相等。
+- UI-9 runtime-pi 把 Pi 终结消息里的 usage（输入、输出、缓存读写、费用）带进 runtime.message 记录；网页回答下方一行：复制（只正文）+ ⋯（从这里开新对话）+ 模型·用时·时刻·token；过程区合计下 token 行；证据：测试标 [UI-9]。
+- UI-10 从 web_search 工具记录取来源，回答操作行之后一行“N 个来源”，点开紧凑列表；证据：测试标 [UI-10]。
+- UI-11 用户消息右下：时刻 + 状态（发送中/已送达/已开始处理，后者以 model_started 记录为准），悬停复制；证据：测试标 [UI-11]。
 
 ## 之后
 
-- UI-4 runtime-pi 让 text_start、toolcall_start 不被合并，投影成 runtime.output.started 记录。
-- UI-5 execution-process.tsx 按原型 v16 重做过程区。
-- UI-6 三种语言文字齐全。
-- UI-7 ADR 0087、v6 基线、案例库（案例 26）、待办。
-- UI-8 npm run check、npm run build。
+- UI-12 model-picker 前 3 个 + 更多模型；换模型强度回 medium/low。
+- UI-13 提示语两句三语；全局细滚动条。
+- UI-14 附件：上传接口、存储、图片给视觉模型、文件进工作目录；网页点选/粘贴/拖放。
+- UI-15 三语、ADR 0090、Spec 增补、案例、check/build。
 
 ## 计划改动记录
 
@@ -31,3 +30,5 @@
 
 - 时间线先在前端用纯函数算，记录里的时刻都是服务端发生时刻；原设计写的“在服务端算”推迟，等有第二个客户端时再把同一个函数挪到共用包。原因：现在只有网页一个客户端，服务端算要改接口合同和快照，工作量大一倍，准确性没有区别。
 - “等你确认从卡片出现算起”这一期不做：接口里没有记录存入时刻。记录晚到 3.6 秒本身是要另查的问题，修好它比改归类更对。
+
+- 2026-10-26 15:45 第一期合入 main（b42e7ae）。加第二期 UI-9 到 UI-15：回答操作行与 token、紧凑来源、消息状态与复制、模型选择、提示语与滚动条、附件、收尾。ADR 用 0090（0089 已被推送线程占用）。附件最大，放最后。
