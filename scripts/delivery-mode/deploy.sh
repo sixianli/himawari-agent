@@ -51,4 +51,7 @@ for action in S1_TRANSPORT S1_INSTALL S2_STOP S3_COPY51 S6_ACCEPTANCE S6_PUBLISH
   echo "DEPLOY_STEP_PASSED $action"
 done
 echo "DEPLOY_PASSED"
+if [[ "$(basename "$(dirname "$packet")")" == production ]]; then
+  /usr/bin/python3 -I "$here/../disk-hygiene/prune-rebuildable.py" --apply --keep "$packet" "$(dirname "$(dirname "$packet")")" || echo "DEPLOY_PRUNE_FAILED: the deployment result is unchanged" >&2
+fi
 result passed "" 0

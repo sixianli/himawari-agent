@@ -102,6 +102,7 @@ date: "2026-10-21"
 - 证据目录：Hermes 上 `/data` 下本任务的目录，云服务器上 `/srv/himawari-ci/evidence/`。每次运行一个唯一编号，报告、日志、状态读回和跟踪记录按文件分别保存。
 - 不保存 `node_modules`、`.git`、与提交相同的源码；改记提交号、锁文件摘要和“路径、大小、SHA-256”清单。几次运行共用的输入只存一份，其他地方放写有路径和 SHA-256 的引用文件。近似的诊断只留一份完整的加差异。单个证据文件超过 50 MB 或一次运行超过 100 MB，先查里面是什么、为什么要留；同目录的 `EVIDENCE-REASONS.txt` 写明 `文件名: 理由`，否则等待脚本的证据门禁不接受这一批。
 - 不记录密钥和含密钥的配置。
+- 自动清理（用户决定，2026-10-26）：`scripts/disk-hygiene/prune-rebuildable.py` 只删能重新生成的文件，即源码包 `*.bundle`、依赖包 `node-modules.tar.gz`、构建安装包 `*-abi<数字>-*.tar.gz`、Python 安装包 `python-<版本>.tar.gz`，以及 `doc-check/` 下文档检查留下的旧临时仓库副本。它不删日志、报告、证据、脚本和 `.ci-output/tools/`（本地 CI 工具链），不删 24 小时内改过的文件，也不删任何 `production/` 目录下日期最新的两个操作包。`deploy.sh` 在 `DEPLOY_PASSED` 后对 `.ci-output` 跑一次。每天凌晨 4 点的定时清理由 `scripts/disk-hygiene/install-schedule.sh mac|hermes <目录>...` 安装：Mac 上用 launchd（macOS 自带的定时任务），Hermes 上用登录账号的 crontab。遇到正在跑的构建或测试，这一轮跳过。`remove-mac`、`remove-hermes` 用来卸载。不加 `--apply` 只列清单、不删除。
 - 始终保留：测试报告、控制台和服务日志、数据库或状态读回、跟踪记录、截图、文档和交接文件引用的证据、备份和恢复点、云服务器上的生产版本及其前一个版本。只能重建的产物优先删除；要减少证据本身时先问用户。
 
 <a id="rollback"></a>
