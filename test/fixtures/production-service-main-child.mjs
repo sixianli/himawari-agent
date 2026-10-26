@@ -6,8 +6,6 @@ import { pathToFileURL } from "node:url";
 const startupStage = (stage) =>
   process.stdout.write(`${JSON.stringify({ event: "test.startup", stage })}\n`);
 startupStage("imports_started");
-process.env.MEM0_TELEMETRY = "false";
-process.env.MEM0_TELEMETRY_SAMPLE_RATE = "0";
 const root = process.env.HIMAWARI_TEST_RUNTIME_ROOT;
 if (!root) throw new Error("INSTALLED_RUNTIME_REQUIRED");
 const loadPackage = (name) =>
@@ -154,33 +152,20 @@ process.exitCode = await agent.runAgentService(process.argv.slice(2), output, pr
       },
     };
   },
-  memoryCompositionFactory: async ({ configuration }) => {
-    startupStage("memory_import_started");
-    const { Memory, VectorStoreFactory } = await import(
-      pathToFileURL(path.join(root, "node_modules/mem0ai/dist/oss/index.mjs")).href
-    ).catch((error) => {
-      if (error.code === "ERR_MODULE_NOT_FOUND") process.stderr.write(`${error.message}\n`);
-      throw error;
-    });
+  memoryCompositionFactory: async ({ configuration, repository }) => {
     startupStage("memory_composition_started");
+    const gatewayUrl = "https://ai-gateway.vercel.sh/v1";
     const composition = await agent.createProductionMemoryCompositionFromConfiguration({
       configuration,
       secretSource: sources.provider,
-      load: async () => ({
-        VectorStoreFactory,
-        Memory: class extends Memory {
-          constructor(config) {
-            super({
-              ...config,
-              embedder: {
-                ...config.embedder,
-                config: { ...config.embedder.config, baseURL: providerUrl },
-              },
-              llm: { ...config.llm, config: { ...config.llm.config, baseURL: providerUrl } },
-            });
-          }
-        },
-      }),
+      index: repository.memoryIndex(),
+      fetch: (url, init) =>
+        fetch(
+          String(url).startsWith(gatewayUrl)
+            ? `${providerUrl}${String(url).slice(gatewayUrl.length)}`
+            : url,
+          init,
+        ),
     });
     startupStage("memory_composition_completed");
     return composition;
