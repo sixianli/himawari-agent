@@ -196,8 +196,15 @@ export interface CodingRouteConfiguration extends FileReadRouteConfiguration {
   readonly approval?: "workspace_auto" | "ask";
 }
 
+export interface ReminderPushConfiguration {
+  readonly channel: "bark";
+  readonly secretRef: string;
+  readonly server?: string;
+}
+
 export interface RunPolicyConfiguration {
   readonly timeZone?: string;
+  readonly reminderPush?: ReminderPushConfiguration;
   readonly coding?: CodingRouteConfiguration;
   readonly publicSearch?: PublicSearchRouteConfiguration;
   readonly publicFetch?: PublicFetchRouteConfiguration;
