@@ -43,7 +43,7 @@ export class WebToolMemory {
               .toLowerCase(),
             limit: input.arguments["limit"] ?? 5,
           }
-        : { url: input.arguments["url"] };
+        : { url: input.arguments["url"], offset: input.arguments["offset"] ?? 0 };
     return createHash("sha256")
       .update(
         JSON.stringify([

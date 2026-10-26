@@ -68,6 +68,7 @@ export function createProductionHostWeb(options: {
         : runWebFetch({
             ...common,
             url: String(input.arguments["url"]),
+            offset: (input.arguments["offset"] as number | undefined) ?? 0,
             maximumBytes: input.maximumBytes,
           });
     },

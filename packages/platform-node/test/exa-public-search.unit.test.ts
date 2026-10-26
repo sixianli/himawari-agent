@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ExaPublicSearchAdapter,
   parseExaSearchResults,
-  publicSearchFailure,
   SANDBOX_PROXY,
 } from "../src/exa-public-search.js";
+import { publicSearchFailure } from "../src/web-provider-failure.js";
 
 const exaFreeRateLimitNotice =
   "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key.\n\nFix: Create API key at https://dashboard.exa.ai/api-keys , and then update Exa MCP URL to this https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY";
@@ -27,7 +27,6 @@ describe("public search provider boundary", () => {
     expect(() => parseExaSearchResults("Provider unavailable", 5)).toThrow(
       "WEB_SEARCH_RESPONSE_UNRECOGNIZED",
     );
-    expect(() => parseExaSearchResults("x".repeat(131073), 5)).toThrow("WEB_SEARCH_OUTPUT_LIMIT");
   });
   it("[R2-T13] reports the free MCP rate-limit notice as a rate limit, not a changed format", () => {
     expect(() => parseExaSearchResults(exaFreeRateLimitNotice, 3)).toThrow(
@@ -89,7 +88,7 @@ describe("[R2-T13] public search failure reports", () => {
       code: "WEB_SEARCH_RATE_LIMITED",
       output: JSON.stringify({
         error: "WEB_SEARCH_RATE_LIMITED",
-        message: "公开搜索服务正在限流，请稍等片刻再搜索。",
+        message: "公开搜索服务正在限流，请等几秒再搜一次，不要连续重试。",
       }),
     });
     for (const error of [
@@ -100,10 +99,10 @@ describe("[R2-T13] public search failure reports", () => {
       undefined,
     ])
       expect(publicSearchFailure(error)).toEqual({
-        code: "WEB_SEARCH_FAILED",
+        code: "WEB_SEARCH_UNAVAILABLE",
         output: JSON.stringify({
-          error: "WEB_SEARCH_FAILED",
-          message: "公开网页搜索失败。",
+          error: "WEB_SEARCH_UNAVAILABLE",
+          message: "搜索服务暂时不可用，马上重试大概率仍会失败，请稍后再试。",
         }),
       });
   });

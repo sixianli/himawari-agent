@@ -10,6 +10,7 @@ import {
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
+  WEB_FETCH_MAXIMUM_OFFSET,
   webProviderEgress,
   webProviderRecipients,
 } from "@himawari-agent/application";
@@ -165,7 +166,14 @@ export async function executeProductionCodingRequest(
   )
     return failed("WEB_SEARCH_INPUT_INVALID");
   if (tool === "web_fetch") {
-    if (typeof args["url"] !== "string" || Object.keys(args).some((key) => key !== "url"))
+    if (
+      typeof args["url"] !== "string" ||
+      Object.keys(args).some((key) => !["url", "offset"].includes(key)) ||
+      (args["offset"] !== undefined &&
+        (!Number.isSafeInteger(args["offset"]) ||
+          Number(args["offset"]) < 0 ||
+          Number(args["offset"]) > WEB_FETCH_MAXIMUM_OFFSET))
+    )
       return failed("WEB_FETCH_INPUT_INVALID");
     try {
       validatePublicFetchUrl(args["url"]);
@@ -464,6 +472,7 @@ export async function executeProductionCodingRequest(
         : tool === "web_fetch"
           ? {
               url: args["url"],
+              ...(args["offset"] === undefined ? {} : { offset: args["offset"] }),
               maximumBytes: binding.maximumBytes,
               ...(ordered ? { providers: ordered } : {}),
               ...secretNames,

@@ -387,6 +387,27 @@ it("fetches a public page through the provider with the configured size and no m
     maximumBytes: f.binding.maximumBytes,
   });
 });
+it("[NL-11] passes the model's continuation offset to the fetch program", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const issue = vi.fn(async () => ({ ref: "handle:fetch" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    {
+      ...f.call,
+      capabilityRef: "coding.web_fetch",
+      arguments: { url: "https://example.org/a", offset: 102400 },
+    },
+    "web_fetch",
+    services,
+    f.ctx,
+  );
+  expect(f.values.get("input")).toEqual({
+    url: "https://example.org/a",
+    offset: 102400,
+    maximumBytes: f.binding.maximumBytes,
+  });
+});
 it("answers a repeated approved search from host memory without a second provider request", async () => {
   const memory = new WebToolMemory();
   const run = async (toolCallId: string) => {
@@ -431,6 +452,10 @@ it.each([
   { url: "https://user:pw@example.org/" },
   { url: "file:///etc/passwd" },
   { url: "https://example.org/", maximumBytes: 1 },
+  { url: "https://example.org/", offset: -1 },
+  { url: "https://example.org/", offset: 1.5 },
+  { url: "https://example.org/", offset: "100" },
+  { url: "https://example.org/", offset: 10_000_001 },
 ])("rejects a private or widened fetch request %j before disclosure", async (args) => {
   const f = fixture();
   f.services.binding = async () => ({ ...f.binding, grant: null });

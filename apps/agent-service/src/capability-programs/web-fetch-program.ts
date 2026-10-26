@@ -14,9 +14,10 @@ export async function runWebFetchProgram(): Promise<void> {
     const args = await readProgramInput("WEB_FETCH");
     if (
       Object.keys(args).some(
-        (key) => !["url", "maximumBytes", "providers", "secrets"].includes(key),
+        (key) => !["url", "offset", "maximumBytes", "providers", "secrets"].includes(key),
       ) ||
       typeof args["url"] !== "string" ||
+      (args["offset"] !== undefined && typeof args["offset"] !== "number") ||
       (args["maximumBytes"] !== undefined && typeof args["maximumBytes"] !== "number")
     )
       throw new Error("WEB_FETCH_INPUT_INVALID");
@@ -24,6 +25,7 @@ export async function runWebFetchProgram(): Promise<void> {
     const outcome = await runWebFetch({
       providers: programProviders(args["providers"], "WEB_FETCH"),
       url: args["url"],
+      offset: (args["offset"] as number | undefined) ?? 0,
       maximumBytes: (args["maximumBytes"] as number | undefined) ?? 32 * 1024,
       create: webProviderFactory(secrets, SANDBOX_PROXY),
     });

@@ -1398,3 +1398,30 @@ it("[NL-1] marks only service-process read-only tools for parallel execution", a
     ["web_fetch", undefined],
   ]);
 });
+
+it("[NL-11] tells the model how to continue reading a long page with offset", async () => {
+  const f = fixture();
+  const base = hostOptions(
+    f,
+    vi.fn(async () => ({ modelContent: "unused", isError: false, errorCode: null })),
+  );
+  const route = {
+    hostId: "host:test",
+    workerInstanceId: "worker-instance",
+    capabilityRef: "fetch",
+    capabilityVersion: "1.0.0",
+    maximumBytes: 100 * 1024,
+    scopeSource: "private_temp" as const,
+  };
+  const descriptors = await new ProductionRuntimeTools({
+    ...base,
+    publicFetch: route,
+  }).listAuthorized(invocation.runId, []);
+  const fetch = descriptors.find((descriptor) => descriptor.name === "web_fetch");
+  expect(fetch && "parameters" in fetch ? fetch.parameters : undefined).toMatchObject({
+    properties: { url: { type: "string" }, offset: { type: "integer", minimum: 0 } },
+    required: ["url"],
+    additionalProperties: false,
+  });
+  expect(fetch && "description" in fetch ? fetch.description : "").toMatch(/nextOffset/);
+});

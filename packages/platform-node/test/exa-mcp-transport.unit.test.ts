@@ -191,7 +191,7 @@ describe("public search MCP adapter transport contract", () => {
       dispatcher: expect.any(Object),
     });
   });
-  it.each([256 * 1024, 256 * 1024 + 1])(
+  it.each([1024 * 1024, 1024 * 1024 + 1])(
     "enforces the streaming response limit at %i bytes",
     async (size) => {
       await search();
@@ -207,7 +207,7 @@ describe("public search MCP adapter transport contract", () => {
         ),
       );
       const result = await transportFetch()(endpoint);
-      if (size === 256 * 1024) expect((await result.arrayBuffer()).byteLength).toBe(size);
+      if (size === 1024 * 1024) expect((await result.arrayBuffer()).byteLength).toBe(size);
       else await expect(result.arrayBuffer()).rejects.toThrow("WEB_SEARCH_RESPONSE_LIMIT");
     },
   );
@@ -336,13 +336,14 @@ describe("public page fetch through Exa", () => {
   const fetchPage = (maximumBytes = 1024) =>
     new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
       url: "https://example.org/a",
+      offset: 0,
       maximumBytes,
     });
   it.each([
     [
       "web_fetch_exa",
       { urls: {}, maxCharacters: {} },
-      { urls: ["https://example.org/a"], maxCharacters: 1024 },
+      { urls: ["https://example.org/a"], maxCharacters: 1025 },
     ],
     ["crawling_exa", { url: {} }, { url: "https://example.org/a" }],
   ])(
@@ -357,6 +358,7 @@ describe("public page fetch through Exa", () => {
         title: "Example page",
         markdown: page,
         truncated: false,
+        nextOffset: null,
       });
       expect(state.callTool).toHaveBeenCalledExactlyOnceWith(
         { name, arguments: args },
@@ -385,6 +387,7 @@ describe("public page fetch through Exa", () => {
     await expect(
       new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
         url: "http://127.0.0.1/",
+        offset: 0,
         maximumBytes: 1024,
       }),
     ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");

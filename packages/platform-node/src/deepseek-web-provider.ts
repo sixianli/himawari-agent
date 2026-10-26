@@ -8,15 +8,16 @@ import type {
 import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
 import { fetch as proxyFetch } from "undici";
 import {
+  pageWindow,
   providerDispatchers,
-  truncateUtf8,
+  validateFetchWindow,
   validatePublicFetchUrl,
   type WebProviderDispatcher,
 } from "./exa-public-search.js";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const origin = "https://api.deepseek.com";
-const responseLimit = 512 * 1024;
+const responseLimit = 16 * 1024 * 1024;
 
 async function boundedJson(response: Awaited<ReturnType<typeof proxyFetch>>, prefix: string) {
   if (!response.body) throw new Error(`${prefix}_RESPONSE_UNRECOGNIZED`);
@@ -34,6 +35,13 @@ async function boundedJson(response: Awaited<ReturnType<typeof proxyFetch>>, pre
   } catch {
     throw new Error(`${prefix}_RESPONSE_UNRECOGNIZED`);
   }
+}
+
+function statusFailure(status: number, prefix: "WEB_SEARCH" | "WEB_FETCH") {
+  if ([400, 413, 422].includes(status)) return `${prefix}_INPUT_UNSUPPORTED`;
+  if ([408, 504].includes(status)) return `${prefix}_TIMEOUT`;
+  if (prefix === "WEB_FETCH" && [403, 404].includes(status)) return "WEB_FETCH_UNREACHABLE";
+  return null;
 }
 
 const text = (value: unknown, limit: number) =>
@@ -114,15 +122,11 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
 
   async fetch(input: {
     readonly url: string;
+    readonly offset: number;
     readonly maximumBytes: number;
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
-    if (
-      !Number.isSafeInteger(input.maximumBytes) ||
-      input.maximumBytes < 1 ||
-      input.maximumBytes > 48 * 1024
-    )
-      throw new Error("WEB_FETCH_INPUT_INVALID");
+    validateFetchWindow(input);
     const url = validatePublicFetchUrl(input.url);
     const body = (await this.#post("/v1/tools/fetch", { url }, "WEB_FETCH", input.signal)) as {
       title?: unknown;
@@ -130,12 +134,10 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     };
     if (typeof body.content !== "string" || !body.content.trim())
       throw new Error("WEB_FETCH_RESPONSE_UNRECOGNIZED");
-    const markdown = truncateUtf8(body.content, input.maximumBytes);
     return {
       url,
       title: text(body.title, 1024),
-      markdown: markdown.text,
-      truncated: markdown.truncated,
+      ...pageWindow(body.content, input.offset, input.maximumBytes),
     };
   }
 
@@ -187,9 +189,10 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
         await response.body?.cancel().catch(() => undefined);
         throw new Error(`${prefix}_RATE_LIMITED`);
       }
-      if (response.status === 400 || response.status === 422) {
+      const statusCode = statusFailure(response.status, prefix);
+      if (statusCode) {
         await response.body?.cancel().catch(() => undefined);
-        throw new Error(`${prefix}_INPUT_UNSUPPORTED`);
+        throw new Error(statusCode);
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);

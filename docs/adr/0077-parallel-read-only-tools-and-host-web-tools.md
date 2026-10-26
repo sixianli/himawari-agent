@@ -19,6 +19,7 @@ date: "2026-10-26"
 - [与 ADR 0031、0071 的关系](#amendments)
 - [比较过的方案](#options)
 - [后果](#consequences)
+- [2026-10-26 补充：读网页和搜索的内容大小与失败原因](#content-limits)
 
 <a id="context"></a>
 
@@ -88,5 +89,47 @@ Andy 2026-10-26 的决定（原话）：
 - 限制：Pi 的工具循环检查在调用执行后才更新，并行批次里的调用在执行前已全部通过检查，所以同一批里重复的只读调用不会被中途拦下；下一次模型请求照旧会被拦。重复的搜索和读网页由主机缓存直接返回。
 - 并行批次中某个调用进入审批等待时，本轮暂停，同批其他正在执行的调用会被中止；批准后整批重新执行，已完成的调用直接返回保存的结果。
 - 生产启用不需要改配置：服务进程在配置了 `runPolicy.publicSearch` 或 `runPolicy.publicFetch` 时自动建立联网执行；出口主机来自配置里的供应商列表。
+
+[↑ 返回阅读导航](#contents)
+
+<a id="content-limits"></a>
+
+## 2026-10-26 补充：读网页和搜索的内容大小与失败原因
+
+Andy 2026-10-26 在方案文档里对“保留超时和返回内容大小上限”这一句的评论（原话）：
+
+> 这一块也要按照行业最实践来做，别因为错误或者不当的内容大小限制而影响效果或让模型搜索过多次！
+
+改前的问题：
+
+- 读网页一次只返回 32 KiB（生产配置 `publicFetch.maximumBytes = 32768`），没有接着读的办法，模型只能重新搜索或换网页。
+- 传给 Exa 的 `maxCharacters`（按字符计的长度上限）用的是字节数，截断按字节做，可能把一个汉字截成半个后再丢掉。
+- Exa 响应超过 256 KiB、搜索文本超过 128 KiB、DeepSeek 响应超过 512 KiB 时整次调用失败，已经读到的内容全部丢掉。
+- 失败时模型只看到“读取网页失败”“公开网页搜索失败”，不知道是超时、网页打不开还是服务不可用，只能盲目重试或重新搜索。
+
+参考做法：Claude Code 自己的读网页工具带 `offset` 参数（从网页正文的第几个字符开始读），一页太长时用上一次结果给出的位置接着读。
+
+决定：
+
+1. **读网页一次最多 100 KiB，可以接着读。** `web_fetch` 新增可选参数 `offset`（整数，0 到 10,000,000），第一次不填。结果新增 `offset`、`truncated`；没读完时再给 `nextOffset` 和一句中文提示“用同一个 url 和 offset=… 再调用一次 web_fetch，不要重新搜索”。启动配置里 `publicFetch.maximumBytes` 的上限从 48 KiB 改为 100 KiB（`WEB_FETCH_MAXIMUM_BYTES`），`publicSearch` 的上限不变。主机缓存的键包含 `offset`，同一网页的不同段分开缓存。上线时要把生产配置的 `publicFetch.maximumBytes` 从 32768 改为 102400。
+2. **按完整字符切分。** 返回的每一段都按 UTF-8 字节数装满到上限为止，从不拆开一个字符（包括表情这类占两个 UTF-16 单位的字符）；各段按顺序拼起来正好等于原网页。`offset` 的单位是 JavaScript 字符串位置，模型不需要自己算，只需原样带回 `nextOffset`。向 Exa 请求的 `maxCharacters` 是“offset + 本段字节上限 + 1”个字符：Exa 的这个参数只计正文，不计开头的标题和网址行，多要 1 个字符用来判断后面是否还有内容。DeepSeek 读网页接口没有长度参数，返回整页，由我们按同样规则切段。
+3. **内容多时截断返回，不整次失败。** 搜索文本不再有 128 KiB 的整体上限，逐条解析，每条摘录仍最多 12000 字符、最多 10 条。供应商原始响应的安全上限改为按请求算：Exa 搜索 1 MiB；Exa 读网页按请求的字符数留足余量（每字符按 6 字节算再加 64 KiB，最多 16 MiB）；DeepSeek 16 MiB。只有响应超过这个安全上限时才失败，失败原因是“网页内容超过可读取的上限”。
+4. **失败原因分类告诉模型，并给出下一步。** 模型看到的结果只有 `error`（错误代码）和 `message`（中文原因加建议），不含供应商名称、HTTP 状态码、供应商返回的原文或任何密钥：
+
+   | 情况 | 读网页代码 | 搜索代码 | 给模型的建议 |
+   | --- | --- | --- | --- |
+   | 超时（Exa 抓取超时、DeepSeek 408/504、本地 45 秒期限到） | `WEB_FETCH_TIMEOUT` | `WEB_SEARCH_TIMEOUT` | 可以重试一次，仍超时就换来源或改短查询 |
+   | 网页打不开或拒绝读取（Exa 抓取失败、DeepSeek 403/404） | `WEB_FETCH_UNREACHABLE` | — | 不要重试同一网址，换其他来源 |
+   | 内容超过安全上限 | `WEB_FETCH_TOO_LARGE` | `WEB_SEARCH_TOO_LARGE` | 换更具体的页面，或把 `limit` 调小 |
+   | 限流（429） | `WEB_FETCH_RATE_LIMITED` | `WEB_SEARCH_RATE_LIMITED` | 等几秒再试，不要连续重试 |
+   | 服务暂时不可用（5xx、402 余额不足、网络错误、格式变化） | `WEB_FETCH_UNAVAILABLE` | `WEB_SEARCH_UNAVAILABLE` | 稍后再试 |
+   | 输入不合规或供应商不支持 | `WEB_FETCH_INPUT_INVALID` / `WEB_FETCH_INPUT_UNSUPPORTED` | `WEB_SEARCH_INPUT_INVALID` / `WEB_SEARCH_INPUT_UNSUPPORTED` | 改好参数或换网址 |
+
+   “网页打不开”和“内容超过上限”在供应商链里会换下一家试，和超时、限流一样。分类和文字在 `packages/platform-node/src/web-provider-failure.ts`，服务进程和暂时保留的沙箱程序共用。
+5. **搜索结果的正文摘录不另加。** 2026-10-26 查 Exa 免费 MCP 的工具清单（`tools/list`）：`web_search_exa` 只有 `query`、`numResults`、`objective` 三个参数，没有控制摘录长度的参数，返回的每条结果已经带 `Highlights:`（正文摘录，实测常见 1000 字符以上）。DeepSeek 搜索的 `summary` 是给模型用的摘要（官方文档写通常 600 到 800 字符）；它的 `need_content` 会返回整页正文，每次搜索都要多下载最多 10 个整页，变慢，和这次提速的目标相反，所以不开。
+6. **`objective` 保留。** 同一次查询的工具清单把 `objective` 列为 `web_search_exa` 的必填参数（`required: ["query", "objective"]`），去掉会让请求不合规。
+7. **超时和搜索次数不变。** 整条供应商链仍共用 45 秒期限；不限制模型的搜索次数。
+
+验证：`test/integration/web-content-limits.test.ts` 经服务进程联网执行入口（`createProductionHostWeb`）和本地 HTTP 测试替身覆盖 Exa 和 DeepSeek：一页约 0.9 MB 的中英文和表情混排网页分段读完后拼回原文、每段不拆字符且装满；超过旧上限的内容截断返回；九种失败各自给出对应代码和建议且不带供应商细节。
 
 [↑ 返回阅读导航](#contents)

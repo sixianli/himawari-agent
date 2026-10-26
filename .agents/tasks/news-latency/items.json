@@ -10,7 +10,10 @@
     "G6": "durable",
     "G7": "once",
     "G8": "once",
-    "G9": "durable"
+    "G9": "durable",
+    "G10": "once",
+    "G11": "once",
+    "G12": "durable"
   },
   "items": [
     {
@@ -56,7 +59,8 @@
       "title": "沙箱按对话复用、空闲回收、用到才启动",
       "goal_ref": [
         "G4",
-        "G6"
+        "G6",
+        "G10"
       ],
       "done_when": [
         {
@@ -222,6 +226,30 @@
         "by": "claude",
         "on": "2026-10-26",
         "why": "方案 B 拆成两步：先做不改数据库的这一步，按对话复用和去掉每轮预热留在 NL-3"
+      }
+    },
+    {
+      "id": "NL-11",
+      "title": "读网页和搜索的内容大小按方案 A–E 调整，避免截得太短逼模型重复搜索",
+      "goal_ref": [
+        "G11",
+        "G12"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "NL-11",
+          "host": "hermes-home"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "quotes": "G12"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
       }
     }
   ]

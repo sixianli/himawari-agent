@@ -93,7 +93,11 @@ describe("DeepSeek search and fetch adapter", () => {
     state.fetch.mockResolvedValue(
       json({ title: "Page", content: "# Heading\n" + "x".repeat(200) }),
     );
-    const page = await provider().fetch({ url: "https://example.org/a", maximumBytes: 64 });
+    const page = await provider().fetch({
+      url: "https://example.org/a",
+      offset: 0,
+      maximumBytes: 64,
+    });
     expect(page).toMatchObject({ url: "https://example.org/a", title: "Page", truncated: true });
     expect(Buffer.byteLength(page.markdown)).toBeLessThanOrEqual(64);
     expect(JSON.parse(state.fetch.mock.calls[0]?.[1].body)).toEqual({
@@ -101,14 +105,14 @@ describe("DeepSeek search and fetch adapter", () => {
     });
   });
   it("refuses private addresses and secret-bearing responses", async () => {
-    await expect(provider().fetch({ url: "http://10.0.0.1/", maximumBytes: 1024 })).rejects.toThrow(
-      "WEB_FETCH_INPUT_INVALID",
-    );
+    await expect(
+      provider().fetch({ url: "http://10.0.0.1/", offset: 0, maximumBytes: 1024 }),
+    ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
     state.fetch.mockResolvedValue(
       json({ title: "Leak", content: `token ${"ghp_"}${"a".repeat(36)}` }),
     );
     await expect(
-      provider().fetch({ url: "https://example.org/", maximumBytes: 1024 }),
+      provider().fetch({ url: "https://example.org/", offset: 0, maximumBytes: 1024 }),
     ).rejects.toThrow("WEB_FETCH_OUTPUT_REDACTED");
   });
 });

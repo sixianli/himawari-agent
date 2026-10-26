@@ -1,66 +1,30 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type {
-  PublicWebAdapterPort,
-  WebFetchProvider,
-  WebFetchResult,
-  WebSearchCandidate,
-  WebSearchProvider,
+import {
+  type PublicWebAdapterPort,
+  scanMachineSecrets,
+  WEB_FETCH_MAXIMUM_BYTES,
+  WEB_FETCH_MAXIMUM_OFFSET,
+  WEB_PROVIDERS,
+  type WebFetchProvider,
+  type WebFetchResult,
+  type WebSearchCandidate,
+  type WebSearchProvider,
 } from "@himawari-agent/application";
-import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { type Dispatcher, ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
+import { webProviderFailure } from "./web-provider-failure.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
 const rateLimitNotice = /\brate[- ]limit/i;
 const rateLimitBackoffMs = 1000;
 const minimumRetryCallMs = 5000;
 const fetchToolNames = ["web_fetch_exa", "crawling_exa"] as const;
-
-export function publicSearchFailure(error: unknown): {
-  readonly code: "WEB_SEARCH_RATE_LIMITED" | "WEB_SEARCH_FAILED";
-  readonly output: string;
-} {
-  return error instanceof Error && /RATE_LIMITED$/.test(error.message)
-    ? {
-        code: "WEB_SEARCH_RATE_LIMITED",
-        output: JSON.stringify({
-          error: "WEB_SEARCH_RATE_LIMITED",
-          message: "公开搜索服务正在限流，请稍等片刻再搜索。",
-        }),
-      }
-    : {
-        code: "WEB_SEARCH_FAILED",
-        output: JSON.stringify({
-          error: "WEB_SEARCH_FAILED",
-          message: "公开网页搜索失败。",
-        }),
-      };
-}
-
-export function publicFetchFailure(error: unknown): {
-  readonly code: "WEB_FETCH_RATE_LIMITED" | "WEB_FETCH_FAILED";
-  readonly output: string;
-} {
-  return error instanceof Error && /RATE_LIMITED$/.test(error.message)
-    ? {
-        code: "WEB_FETCH_RATE_LIMITED",
-        output: JSON.stringify({
-          error: "WEB_FETCH_RATE_LIMITED",
-          message: "读网页服务正在限流，请稍等片刻再试。",
-        }),
-      }
-    : {
-        code: "WEB_FETCH_FAILED",
-        output: JSON.stringify({
-          error: "WEB_FETCH_FAILED",
-          message: "读取网页失败。",
-        }),
-      };
-}
+const searchResponseLimit = 1024 * 1024;
+const fetchResponseLimitCeiling = 16 * 1024 * 1024;
+const crawlFailure = /^Error fetching URL/;
 
 export function parseExaSearchResults(text: string, limit: number): readonly WebSearchCandidate[] {
-  if (Buffer.byteLength(text) > 128 * 1024) throw new Error("WEB_SEARCH_OUTPUT_LIMIT");
   const results: WebSearchCandidate[] = [];
   for (const part of text.split(/\n\s*---\s*\n/)) {
     const title = /^Title:\s*(.+)$/m.exec(part)?.[1];
@@ -95,26 +59,62 @@ export function parseExaSearchResults(text: string, limit: number): readonly Web
   return results;
 }
 
-export function truncateUtf8(text: string, maximumBytes: number) {
-  const bytes = Buffer.from(text);
-  if (bytes.length <= maximumBytes) return { text, truncated: false };
+const isHighSurrogate = (unit: number) => unit >= 0xd800 && unit <= 0xdbff;
+const isLowSurrogate = (unit: number) => unit >= 0xdc00 && unit <= 0xdfff;
+
+export function pageWindow(text: string, offset: number, maximumBytes: number) {
+  let start = Math.min(offset, text.length);
+  if (
+    start > 0 &&
+    isLowSurrogate(text.charCodeAt(start)) &&
+    isHighSurrogate(text.charCodeAt(start - 1))
+  )
+    start -= 1;
+  let end = start;
+  let bytes = 0;
+  while (end < text.length) {
+    const point = text.codePointAt(end) ?? 0;
+    const width = point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+    if (bytes + width > maximumBytes) break;
+    bytes += width;
+    end += point >= 0x10000 ? 2 : 1;
+  }
   return {
-    text: new TextDecoder("utf-8").decode(bytes.subarray(0, maximumBytes)).replace(/�$/, ""),
-    truncated: true,
+    markdown: text.slice(start, end),
+    truncated: end < text.length,
+    nextOffset: end < text.length ? end : null,
   };
+}
+
+export function validateFetchWindow(input: {
+  readonly offset: number;
+  readonly maximumBytes: number;
+}) {
+  if (
+    !Number.isSafeInteger(input.maximumBytes) ||
+    input.maximumBytes < 1 ||
+    input.maximumBytes > WEB_FETCH_MAXIMUM_BYTES ||
+    !Number.isSafeInteger(input.offset) ||
+    input.offset < 0 ||
+    input.offset > WEB_FETCH_MAXIMUM_OFFSET
+  )
+    throw new Error("WEB_FETCH_INPUT_INVALID");
 }
 
 export function parseExaFetchResult(
   text: string,
   url: string,
+  offset: number,
   maximumBytes: number,
 ): WebFetchResult {
   if (!text.trim()) throw new Error("WEB_FETCH_RESPONSE_UNRECOGNIZED");
   if (Buffer.byteLength(text) <= 4096 && rateLimitNotice.test(text) && !/^Title:/m.test(text))
     throw new Error("WEB_FETCH_RATE_LIMITED");
-  const title = (/^Title:\s*(.+)$/m.exec(text)?.[1] ?? "").slice(0, 1024);
-  const body = truncateUtf8(text, maximumBytes);
-  return { url, title, markdown: body.text, truncated: body.truncated };
+  const title = (/^Title:\s*(.+)$/m.exec(text)?.[1] ?? /^# (.+)$/.exec(text)?.[1] ?? "").slice(
+    0,
+    1024,
+  );
+  return { url, title, ...pageWindow(text, offset, maximumBytes) };
 }
 
 export function validatePublicFetchUrl(value: string): string {
@@ -221,6 +221,7 @@ export class ExaPublicSearchAdapter
     const limit = input.limit;
     return this.#session(
       "WEB_SEARCH",
+      searchResponseLimit,
       (message) =>
         message.method === "tools/call" &&
         message.params?.name === "web_search_exa" &&
@@ -254,7 +255,7 @@ export class ExaPublicSearchAdapter
           return await callSearch();
         } catch (error) {
           if (
-            publicSearchFailure(error).code !== "WEB_SEARCH_RATE_LIMITED" ||
+            webProviderFailure(error).code !== "RATE_LIMITED" ||
             session.deadline - performance.now() < rateLimitBackoffMs + minimumRetryCallMs
           )
             throw error;
@@ -268,20 +269,18 @@ export class ExaPublicSearchAdapter
 
   async fetch(input: {
     readonly url: string;
+    readonly offset: number;
     readonly maximumBytes: number;
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
-    if (
-      !Number.isSafeInteger(input.maximumBytes) ||
-      input.maximumBytes < 1 ||
-      input.maximumBytes > 48 * 1024
-    )
-      throw new Error("WEB_FETCH_INPUT_INVALID");
+    validateFetchWindow(input);
     const url = validatePublicFetchUrl(input.url);
+    const characters = input.offset + input.maximumBytes + 1;
     let toolName: string | undefined;
     let toolArguments: Record<string, unknown> | undefined;
     return this.#session(
       "WEB_FETCH",
+      Math.min(fetchResponseLimitCeiling, 6 * characters + 64 * 1024),
       (message) =>
         message.method === "tools/list" ||
         (message.method === "tools/call" &&
@@ -299,26 +298,34 @@ export class ExaPublicSearchAdapter
         toolName = tool.name;
         toolArguments = {
           ...("urls" in properties ? { urls: [url] } : { url }),
-          ...("maxCharacters" in properties ? { maxCharacters: input.maximumBytes } : {}),
+          ...("maxCharacters" in properties ? { maxCharacters: characters } : {}),
         };
         const result = await session.client.callTool(
           { name: toolName, arguments: toolArguments },
           { timeout: 30000 },
         );
-        if (result.isError || !Array.isArray(result.content))
-          throw new Error("WEB_FETCH_PROVIDER_FAILED");
+        if (!Array.isArray(result.content)) throw new Error("WEB_FETCH_PROVIDER_FAILED");
         const text = result.content
           .filter((item) => item.type === "text")
           .map((item) => item.text)
           .join("\n\n");
+        if (result.isError)
+          throw new Error(
+            !crawlFailure.test(text)
+              ? "WEB_FETCH_PROVIDER_FAILED"
+              : /TIMEOUT/i.test(text)
+                ? "WEB_FETCH_TIMEOUT"
+                : "WEB_FETCH_UNREACHABLE",
+          );
         if (scanMachineSecrets(text).length) throw new Error("WEB_FETCH_OUTPUT_REDACTED");
-        return parseExaFetchResult(text, url, input.maximumBytes);
+        return parseExaFetchResult(text, url, input.offset, input.maximumBytes);
       },
     );
   }
 
   async #session<T>(
     prefix: "WEB_SEARCH" | "WEB_FETCH",
+    responseLimit: number,
     readonly: (message: McpMessage) => boolean,
     external: AbortSignal | undefined,
     work: (session: ExaSession) => Promise<T>,
@@ -329,6 +336,7 @@ export class ExaPublicSearchAdapter
       ? AbortSignal.any([external, AbortSignal.timeout(45000)])
       : AbortSignal.timeout(45000);
     let retried = false;
+    let oversized = false;
     let dispatcher = dispatchers.next();
     const client = new Client({ name: "himawari-public-search", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
@@ -387,7 +395,10 @@ export class ExaPublicSearchAdapter
             new TransformStream<Uint8Array, Uint8Array>({
               transform(chunk, controller) {
                 total += chunk.byteLength;
-                if (total > 256 * 1024) throw new Error(`${prefix}_RESPONSE_LIMIT`);
+                if (total > responseLimit) {
+                  oversized = true;
+                  throw new Error(`${prefix}_RESPONSE_LIMIT`);
+                }
                 controller.enqueue(chunk);
               },
             }),
@@ -410,6 +421,9 @@ export class ExaPublicSearchAdapter
           dispatcher = dispatchers.next();
         },
       });
+    } catch (error) {
+      if (oversized) throw new Error(`${prefix}_RESPONSE_LIMIT`);
+      throw error;
     } finally {
       await client.close().catch(() => undefined);
       await dispatchers.close();

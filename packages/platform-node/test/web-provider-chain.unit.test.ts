@@ -5,8 +5,8 @@ import {
   searchWithProviders,
   type WebProvider,
   WebProviderChainError,
-  webProviderFailure,
 } from "../src/web-provider-chain.js";
+import { webProviderFailure } from "../src/web-provider-failure.js";
 
 function provider(id: WebProviderId, search: WebProvider["search"]): WebProvider {
   return { descriptor: WEB_PROVIDERS[id], search, fetch: vi.fn() };
