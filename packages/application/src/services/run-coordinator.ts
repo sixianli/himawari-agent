@@ -1042,6 +1042,7 @@ export class RunCoordinator {
   ): Promise<{ readonly checkpoint: StoredRunCheckpoint }> {
     let storedCheckpoint = initialCheckpoint;
     let observed = initialCheckpoint.checkpoint.runtimeEventCount;
+    let lastTraceEventId = initialCheckpoint.checkpoint.lastTraceEventId;
     const runtimeRequest: RuntimeRequest = {
       ...input.runtime,
       ...(!input.runtime.knownToolResult && storedCheckpoint.checkpoint.suspension
@@ -1072,12 +1073,13 @@ export class RunCoordinator {
         observed += 1;
         const recorded = await this.dependencies.trace.record({
           ...this.traceScope(input),
-          parentEventId: storedCheckpoint.checkpoint.lastTraceEventId,
-          causationId: storedCheckpoint.checkpoint.lastTraceEventId,
+          parentEventId: lastTraceEventId,
+          causationId: lastTraceEventId,
           eventType: event.type,
           occurredAt: event.occurredAt,
           payload: event,
         });
+        lastTraceEventId = recorded.event.id;
         this.assertExecutionActive(attempt);
         if (event.type === "runtime.suspended") {
           storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
@@ -1118,6 +1120,19 @@ export class RunCoordinator {
             ? input.runtime.threadId !== null
             : event.output.contentRef.trim().length === 0);
         const terminalStatus = invalidOutput ? "failed" : this.runtimeTerminalStatus(event);
+        const diagnosticCode = invalidOutput
+          ? "RUNTIME_FINAL_ANSWER_INVALID"
+          : event.type === "runtime.failed"
+            ? event.errorCode
+            : input.runtime.knownToolResult && !terminalStatus
+              ? "RUNTIME_TOOL_RESULT_UNKNOWN"
+              : null;
+        if (
+          !terminalStatus &&
+          storedCheckpoint.checkpoint.phase === "runtime_running" &&
+          storedCheckpoint.checkpoint.diagnosticCode === diagnosticCode
+        )
+          continue;
         storedCheckpoint = await this.saveCheckpoint(input, storedCheckpoint, {
           ...storedCheckpoint.checkpoint,
           phase: terminalStatus ? "runtime_settled" : "runtime_running",
@@ -1125,13 +1140,7 @@ export class RunCoordinator {
           lastTraceEventId: recorded.event.id,
           terminalStatus,
           output: event.type === "runtime.completed" && !invalidOutput ? event.output : null,
-          diagnosticCode: invalidOutput
-            ? "RUNTIME_FINAL_ANSWER_INVALID"
-            : event.type === "runtime.failed"
-              ? event.errorCode
-              : input.runtime.knownToolResult && !terminalStatus
-                ? "RUNTIME_TOOL_RESULT_UNKNOWN"
-                : null,
+          diagnosticCode,
         });
         this.assertExecutionActive(attempt);
         if (terminalStatus) break;

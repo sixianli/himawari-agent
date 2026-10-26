@@ -159,38 +159,6 @@ function productionIds(): IdGeneratorPort {
   return Object.freeze({ next: (namespace: string) => `${namespace}:${randomUUID()}` });
 }
 
-type SandboxEnvironmentPrewarm = NonNullable<
-  Awaited<ReturnType<typeof createProductionSandboxServices>>
->["prewarmEnvironment"];
-
-function sandboxEnvironmentPrewarm(
-  sandbox: { readonly prewarmEnvironment: SandboxEnvironmentPrewarm },
-  route: Parameters<SandboxEnvironmentPrewarm>[1],
-  output: NodeJS.WritableStream,
-): (request: RuntimeRequest) => void {
-  return (request) => {
-    const started = performance.now();
-    void sandbox.prewarmEnvironment(request, route).then(
-      (requested) =>
-        writeServiceDiagnostic(output, {
-          component: "agent-service",
-          event: "sandbox.srt_prewarm.requested",
-          runId: request.runId,
-          requested,
-          durationMs: Math.round(performance.now() - started),
-        }),
-      (error: unknown) =>
-        writeServiceDiagnostic(output, {
-          component: "agent-service",
-          event: "sandbox.srt_prewarm.failed",
-          runId: request.runId,
-          code: stableErrorCode(error),
-          durationMs: Math.round(performance.now() - started),
-        }),
-    );
-  };
-}
-
 function srtTaskEnvironmentRoute(lifecycle: RemoteExecutionBackend): ProductionTaskEnvironments {
   return {
     backendRef: SRT_TASK_ENVIRONMENT_BACKEND_REF,
@@ -1347,6 +1315,12 @@ export async function runAgentService(
         reminderPush.start();
       }
       runs = createProductionRunComposition({
+        onRunTiming: (diagnostic) =>
+          writeServiceDiagnostic(errorOutput, {
+            component: "agent-service",
+            event: "run.timing",
+            ...diagnostic,
+          }),
         ...(modelComposition.composition.generateTitle
           ? { generateTitle: modelComposition.composition.generateTitle }
           : {}),
@@ -1441,15 +1415,6 @@ export async function runAgentService(
               resources: sandboxServices.resources,
               recoverMissingToolResult: sandboxServices.recoverMissingToolResult,
               prepareQueuedSandboxExecutions: sandboxServices.rebindQueuedRun,
-              ...(configuration.runPolicy?.coding
-                ? {
-                    prewarmSandboxEnvironment: sandboxEnvironmentPrewarm(
-                      sandboxServices,
-                      configuration.runPolicy.coding,
-                      errorOutput,
-                    ),
-                  }
-                : {}),
             }
           : {}),
         configuration,
@@ -1509,6 +1474,9 @@ export async function runAgentService(
               getPiModelPresentation(await configuredPiModels.resolve(descriptor.ref)),
             ),
         ),
+        onCommandAccepted: () => {
+          runs?.loop.wakeup();
+        },
         cancelRun: async (input) => {
           if (!runs) throw new Error("RUN_COORDINATOR_UNAVAILABLE");
           await runs.coordinator.cancel({

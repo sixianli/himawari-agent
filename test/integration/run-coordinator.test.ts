@@ -623,6 +623,58 @@ describe("Task 13 Run Coordinator and worker orchestration", () => {
     expect(events[5]?.causationId).toBe(events[4]?.id);
   });
 
+  it("writes the Run checkpoint once for a streamed answer while keeping the Trace chain linked", async () => {
+    const suffix = "streamed-checkpoint";
+    const runId = createRunId(`run-${suffix}`);
+    const messages = Array.from({ length: 5 }, (_, index) => ({
+      type: "runtime.message" as const,
+      runId,
+      phase: "updated" as const,
+      role: "assistant",
+      sequence: index + 1,
+      payloadRef: `payload-message-${index}`,
+      occurredAt: T1,
+    }));
+    const runtime = new ScriptedAgentRuntime(
+      () => T0,
+      [
+        { type: "runtime.model_started", runId, occurredAt: T0 },
+        ...messages,
+        {
+          type: "runtime.completed",
+          runId,
+          output: { kind: "assistant-answer", contentRef: "payload-answer" },
+          occurredAt: T2,
+        },
+      ],
+    );
+    const setup = await fixture(suffix, runtime);
+    const writes: string[] = [];
+    const compareAndSet = setup.adapters.runCheckpoints.compareAndSet.bind(
+      setup.adapters.runCheckpoints,
+    );
+    vi.spyOn(setup.adapters.runCheckpoints, "compareAndSet").mockImplementation(async (input) => {
+      writes.push(input.checkpoint.phase);
+      return compareAndSet(input);
+    });
+
+    const result = await setup.coordinator.execute(setup.input);
+
+    expect(result.run.run.status).toBe("completed");
+    expect(writes).toEqual(["context_formed", "runtime_running", "runtime_settled", "completed"]);
+    expect(result.checkpoint.runtimeEventCount).toBe(7);
+    const events = await setup.adapters.trace.readRun(setup.run.id, 0, 30);
+    const runtimeEvents = events.slice(4);
+    expect(runtimeEvents.map(({ eventType }) => eventType)).toEqual([
+      "runtime.model_started",
+      ...messages.map(() => "runtime.message"),
+      "runtime.completed",
+    ]);
+    for (const [index, event] of runtimeEvents.entries())
+      expect(event.parentEventId).toBe(events[index + 3]?.id);
+    expect(result.checkpoint.lastTraceEventId).toBe(runtimeEvents.at(-1)?.id);
+  });
+
   it("rejects worker authority or context that was not explicitly delegated", async () => {
     const suffix = "task-13-scope";
     const runId = createRunId(`run-${suffix}`);
