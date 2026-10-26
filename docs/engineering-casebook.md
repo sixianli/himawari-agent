@@ -51,7 +51,7 @@ date: "2026-10-26"
 
 - **准备面试：** 先看[岗位能力对照表](#competency-map)，按职位要求挑 3–5 个案例。每个案例最后有一段“面试 30 秒版”，可以先用它开场，再按面试官追问展开到根因、备选方案和数据。
 - **被问“为什么不用某某现成方案”：** 看每个案例的“方案讨论与备选”和“对比与取舍”。
-- **被问“业界怎么做”：** 看“业界主流做法”。每条资料都标了核对情况，图例见[业界资料的核对情况](#source-status)。只引用标了“✅”或“📎”的资料；标“⚠”的是本次网络打不开、还没核对的，面试前要自己打开确认。
+- **被问“业界怎么做”：** 看“业界主流做法”。每条资料都标了核对情况，图例见[业界资料的核对情况](#source-status)。标“✅”的资料都打开原文核对过，可以直接引用；标“⚠”的没能核对，面试时不要引用。
 
 [返回目录](#contents)
 
@@ -107,7 +107,7 @@ date: "2026-10-26"
 | 继续用 Mem0 | 不用改 | 只用到全表比相似度；没有关键词检索；两份明文要双写；新算法只新增不更新 |
 | Postgres + pgvector（向量扩展） | 成熟、功能全 | 要多跑一个数据库服务，违背“本地优先、单文件状态”；主库是 SQLite，迁移大 |
 | Graphiti + 图数据库（Zep 的时序知识图） | 时间维度做得最完整 | 要额外的 Python 服务和图数据库，每条消息多次模型调用；只借鉴了“事实有有效期、失效不删” |
-| Letta 服务 | 常驻记忆块和空闲时整理是现成的 | 自带一整套 Agent 运行时，和 Pi 重复；只借鉴了“空闲时整理” |
+| Letta 服务 | 常驻记忆块和后台整理记忆是现成的 | 自带一整套 Agent 运行时，和 Pi 重复；只借鉴了“后台整理记忆” |
 | sqlite-vec 的 `vec0` 虚拟表 | 同数据量下快约 1.7 倍（3 万条 1024 维：72 ms 对 120 ms） | 没加载扩展的数据库连接读不了这张表，备份和恢复工具会出错；记忆在千条以内时标量函数约 17 ms（5 千条），够用 |
 
 放弃了什么：不用现成的托管记忆服务，检索质量要靠自己的评测集证明；向量检索是暴力扫描，记忆量涨到几十万条时要换方案。
@@ -118,8 +118,13 @@ date: "2026-10-26"
 - ✅ Graphiti（Zep 的开源引擎，[github.com/getzep/graphiti](https://github.com/getzep/graphiti)）：“Facts have validity windows. When information changes, old facts are invalidated — not deleted.” 我们的“取代而不删”借鉴了这一点。
 - ✅ sqlite-vec 官方文档（[KNN 查询说明](https://raw.githubusercontent.com/asg017/sqlite-vec/main/site/features/knn.md)）：标量函数可以做暴力 KNN（找最相近的 K 条），`vec0` 虚拟表“faster and more compact, but is less flexible”。
 - ✅ Claude 的记忆工具（[Memory tool 文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)）：“The memory tool operates client-side”，记忆是 `/memories` 下的文件，由应用自己执行读写。说明头部厂商也把“记忆存在哪、怎么管”留给应用方。
-- 🟡 LongMemEval（[github.com/xiaowu0162/LongMemEval](https://github.com/xiaowu0162/LongMemEval)，ICLR 2025 的长期记忆评测）：“500 high quality questions to test five core long-term memory abilities”。我们的中文评测集按它的五种能力分类。本次只核对到这句话，五种能力的具体名称以论文为准。
-- 📎 自研记忆提案（[已归档的提案](archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 Generative Agents（按新近度、重要度、相关度打分）、Letta 空闲整理、ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
+- ✅ LongMemEval（[论文 arXiv 2410.10813](https://arxiv.org/abs/2410.10813)，ICLR 2025 的长期记忆评测）：考五种能力，“information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention”（信息提取、跨会话推理、时间推理、知识更新、该拒答时拒答），共“500 meticulously curated questions”。我们的中文评测集按这五种能力分类。
+- ✅ Zep 论文（[arXiv 2501.13956](https://arxiv.org/abs/2501.13956)，数字在 PDF 正文）：在 DMR 记忆评测上“Zep demonstrates superior performance (94.8% vs 93.4%)”，对手是 MemGPT，两者都用 gpt-4-turbo。
+- ✅ RRF 原论文（Cormack、Clarke、Buettcher，SIGIR 2009，[PDF](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf)）：“RRFscore(d ∈ D) = Σ 1/(k + r(d)), where k = 60 was fixed during a pilot investigation”。只看名次、不看原始分数，所以能直接合并向量分和关键词分这种尺度不同的结果。
+- ✅ SQLite FTS5 文档（[sqlite.org/fts5.html](https://www.sqlite.org/fts5.html)）：“A contentless FTS5 table is created by setting the "content" option to an empty string.”，并且“It is also possible to create custom tokenizers for FTS5.”。我们用的“无内容索引 + 自定义分词”都是官方支持的用法。
+- ✅ Generative Agents（[arXiv 2304.03442](https://arxiv.org/abs/2304.03442)）：检索时“scores all memories as a weighted combination of the three elements”（新近度、重要度、相关度），另有“reflection, which synthesizes memories into higher-level inferences over time”。我们的“重要度 + 新鲜度”加权和“每日整理”分别对应这两点。
+- ✅ Letta 文档（[Memory & dreaming](https://docs.letta.com/configuration/memory)）：“Dreaming uses background subagents to review recent conversations, consolidate useful lessons, and update memory without interrupting your active work.”，触发时机是完成一定步数后或上下文被压缩时。我们改成每天固定整理一次，并且每处改动可撤销。
+- 📎 自研记忆提案（[已归档的提案](archive/specs/2026-10-25-self-built-memory-engine-proposal.md)）在 2026-10-25 调研时还对照了 ChatGPT 记忆、Mastra、LangMem 等，链接见该提案。
 
 **对比与取舍**
 
@@ -170,7 +175,7 @@ date: "2026-10-26"
 **业界主流做法**
 
 - ✅ Claude 记忆工具的文档写明记忆读写由应用侧执行（见[案例 1](#case-memory-engine) 的链接），什么时候写、写什么要应用自己设计。
-- ⚠ ChatGPT 的记忆 FAQ（候选链接 `https://help.openai.com/en/articles/8590148-memory-faq`）描述了用户可查看、删除记忆，本次未能打开核对。
+- ⚠ ChatGPT 的记忆 FAQ（`https://help.openai.com/en/articles/8590148-memory-faq`）：2026-10-26 在云端和 Andy 的 Mac 上打开都返回 HTTP 403，没能核对，面试时不要引用。
 
 **对比与取舍**
 
@@ -230,8 +235,9 @@ Agent 能执行命令、改文件、联网。模型可能被网页里的恶意�
 - ✅ Claude Code 沙箱文档（[Configure the sandboxed Bash tool](https://code.claude.com/docs/en/sandboxing)）：“The sandbox covers shell commands only.”，Read、Edit、Write、WebFetch、WebSearch 等工具“follow permission rules instead”。
 - ✅ Claude Code 权限文档（[Configure permissions](https://code.claude.com/docs/en/permissions)）：文件读取和 Grep 在工作目录内不需要批准；Bash 命令除内置的一组只读命令外需要批准；改文件需要批准。
 - ✅ Anthropic 工程博客（[Making Claude Code safer with sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing)）：基于“OS level primitives such as Linux bubblewrap and MacOS seatbelt”，内部使用中“sandboxing safely reduces permission prompts by 84%”。
-- 📎 Codex 的审批模式、OpenHands 和 Gemini CLI 的隔离方式，在 ADR 0053 和 ADR 0069 写成时（2026-10-13、10-23）对照过官方文档，链接见这两份 ADR。
-- ⚠ OWASP LLM01 提示注入（候选 `https://genai.owasp.org/llmrisk/llm01-prompt-injection/`），本次未能打开核对。
+- ✅ Codex 审批与安全文档（[Agent approvals & security](https://learn.chatgpt.com/docs/agent-approvals-security)）：默认的 Auto 模式“Codex can read files, make edits, and run commands in the workspace. Codex requires approval to edit outside the workspace or to access network.” 我们的 ADR 0053 就是照这个定的。
+- 📎 OpenHands 和 Gemini CLI 的隔离方式，在 ADR 0069 写成时（2026-10-23）对照过官方文档，链接见该 ADR。
+- ✅ OWASP LLM01 提示注入（[LLM01:2025 Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)）：“Indirect prompt injections occur when an LLM accepts input from external sources, such as websites or files.” Agent 会读网页和文件，所以执行工具的地方必须和掌握授权、密钥的地方分开。
 
 **对比与取舍**
 
@@ -285,8 +291,13 @@ Agent 能执行命令、改文件、联网。模型可能被网页里的恶意�
 
 **业界主流做法**
 
-- ✅ Go 的 singleflight 包（[golang.org/x/sync/singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight)）：“provides a duplicate function call suppression mechanism”，即“同一时刻相同请求只执行一次”，和我们第一步止血是同一个思路。
-- 📎 《搜索提速方案》（[方案文档](https://claude.ai/artifact/135D4LELqHTpXHBzYdtoEt)，另一个线程 2026-10-26 调研）对照了 NIST SP 800-207 零信任架构、Kubernetes 授权缓存、AWS API Gateway 授权结果缓存、Microsoft Entra 的持续访问评估（CAE）、OpenID CAEP（会话撤销事件推送）、Google Zanzibar 等。共同做法是“短时缓存 + 撤销事件主动推送”，而不是每次请求都完整核对。本次网络打不开这些官方页面（⚠），面试引用前请打开方案文档里的链接确认。
+- ✅ Go 的 singleflight 包（[golang.org/x/sync/singleflight](https://pkg.go.dev/golang.org/x/sync/singleflight)）：“If a duplicate comes in, the duplicate caller waits for the original to complete and receives the same results.” 和我们第一步止血是同一个思路；我们多加了一条“共享的结果必须在请求到达之后才开始计算”，避免拿到过期的授权结论。
+- ✅ NIST SP 800-207 零信任架构（[PDF](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-207.pdf)）：“Access to individual enterprise resources is granted on a per-session basis.”，“Access to resources is determined by dynamic policy”。即按会话授予、按策略动态评估，不要求每个网络包都重新做完整核对。
+- ✅ Microsoft Entra 持续访问评估（[CAE 文档](https://learn.microsoft.com/en-us/entra/identity/conditional-access/concept-continuous-access-evaluation)）：平时访问令牌“By default ... valid for one hour”，但遇到“User termination or password change/reset: User session revocation is enforced in near real time.” 即“平时用缓存，撤销靠事件立即生效”，和方案 A 一样。
+- ✅ OpenID CAEP（[规范 1.0](https://openid.net/specs/openid-caep-1_0.html)）：定义了“Session Revoked”事件，发送方可以“send continuous updates”给接收方。对应方案 A 里“撤销时主动推送取消”。
+- ✅ Kubernetes（[kube-apiserver 参数](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)）：授权 webhook 的结果默认缓存，“--authorization-webhook-cache-authorized-ttl ... Default: 5m0s”，拒绝结果“Default: 30s”。
+- ✅ AWS API Gateway（[Authorizer API 参考](https://docs.aws.amazon.com/apigateway/latest/api/API_Authorizer.html)）：授权结果缓存“If this field is not set, the default value is 300. The maximum value is 3600”（秒）。
+- ✅ Google Zanzibar 论文（[USENIX ATC 2019 PDF](https://www.usenix.org/system/files/atc19-pang.pdf)）：“95th-percentile latency of less than 10 milliseconds and availability of greater than 99.999% over 3 years”。说明大规模授权系统也要把单次核对压到毫秒级，而我们单次核对中位数 130 ms。
 
 **对比与取舍**
 
@@ -347,7 +358,7 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 - ✅ Claude Agent SDK 文档（[How the agent loop works](https://code.claude.com/docs/en/agent-sdk/agent-loop)）：“Read-only tools ... can run concurrently. Tools that modify state (like `Edit`, `Write`, and `Bash`) run sequentially to avoid conflicts.” 和我们的做法完全一致。
 - ✅ Claude API 并行工具文档（[Parallel tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use)）：模型“can contain several `tool_use` blocks in a single assistant turn”，结果要“all together in the next user message”返回。
 - ✅ Claude Code 沙箱文档（见[案例 3](#case-tool-isolation)）：WebFetch、WebSearch 不在沙箱里，走权限规则。
-- ⚠ OWASP 的 SSRF（服务端请求伪造，即诱导服务器去访问内网地址）防护清单（候选 `https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html`），本次未能打开核对。
+- ✅ OWASP SSRF（服务端请求伪造，即诱导服务器去访问内网地址）防护清单（[Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)）：协议要对照“an allowed list of protocols (HTTP or HTTPS)”，并且“Domain allowlisting alone does not prevent DNS rebinding. Validate the resolved destination IP addresses”。我们的出口检查正是“只允许 https + 只允许配置的主机 + 检查解析出的地址是公网地址”三层。
 
 **对比与取舍**
 
@@ -396,7 +407,9 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 **业界主流做法**
 
 - ✅ Claude 代码执行工具（[Code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool)）：“After about 5 minutes of inactivity a container is checkpointed”，带着容器编号再请求即可恢复；容器从创建起 30 天后过期。即“空闲后挂起、按需恢复”。
-- 📎 《搜索提速方案》对照了 OpenAI 容器（约 20 分钟空闲过期）、E2B（约 1 秒恢复）、AWS Lambda 的执行环境复用。本次未能打开这些页面（⚠）。
+- ✅ OpenAI 代码解释器（[Code Interpreter 文档](https://developers.openai.com/api/docs/guides/tools-code-interpreter)）：“A container expires if it is not used for 20 minutes.”，过期后数据不能恢复。
+- ✅ E2B（[Sandbox persistence](https://docs.e2b.dev/sandbox/persistence)）：“Pausing a sandbox takes approximately 4 seconds per 1 GiB of RAM”，“Resuming a sandbox takes approximately 1 second”，暂停会同时保存文件系统和内存。
+- ✅ AWS Lambda（[执行环境生命周期](https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html)）：调用之间冻结执行环境，“When the function is invoked again, Lambda thaws the environment for reuse.”
 
 **对比与取舍**
 
@@ -447,7 +460,8 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 **业界主流做法**
 
-- ⚠ 熔断器模式（Martin Fowler，候选 `https://martinfowler.com/bliki/CircuitBreaker.html`）和 AWS 的“超时、重试和带抖动的退避”（候选 `https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/`）是这类设计的常用参考，本次未能打开核对。
+- ✅ 熔断器模式（Martin Fowler，[CircuitBreaker](https://martinfowler.com/bliki/CircuitBreaker.html)）：“Once the failures reach a certain threshold, the circuit breaker trips, and all further calls to the circuit breaker return with an error”，之后进入半开状态时“results in a trial call”。我们的“5 分钟内失败 3 次暂停 2 分钟”就是这个模式。
+- ✅ AWS《Timeouts, retries, and backoff with jitter》（[原链接](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/)，现跳转到 AWS Builder Center）：重试用来应对“transient and random errors”，并且“APIs with side effects aren't safe to retry unless they provide idempotency.” 我们按错误类型决定换不换家，和这里的思路一致。
 
 **对比与取舍**
 
@@ -490,7 +504,7 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 **业界主流做法**
 
-- ⚠ 幂等请求（同一个请求重复执行结果不变，参考 Stripe 的 Idempotent requests，候选 `https://docs.stripe.com/api/idempotent_requests`）和“只重试可能成功的错误”是常见原则，本次未能打开核对。
+- ✅ Stripe 幂等请求（[Idempotent requests](https://docs.stripe.com/api/idempotent_requests)）：带幂等键（idempotency key，给每个请求一个唯一编号）的请求“you can safely repeat the request without risk of creating a second object”。重点是先判断“重复执行是否安全、是否可能成功”，再决定是否重试；我们的修复按同样思路识别出“永远不会成功”的重试。
 
 **对比与取舍**
 
@@ -583,7 +597,7 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **业界主流做法**
 
-- ⚠ Vercel AI Gateway 提供团队、项目和密钥级别的预算设置（候选 `https://vercel.com/docs/ai-gateway/observability-and-spend/budgets`），本次未能打开核对。费用控制放在网关一侧，产品内只记账，是一种常见分工。
+- ✅ Vercel AI Gateway 预算（[Budgets and Spend Limits](https://vercel.com/docs/ai-gateway/observability-and-spend/budgets)）：“A budget caps AI Gateway spend at one of four scopes: Team… Project… API key… User”。费用上限可以放在网关一侧设置，产品内只记账，是一种常见分工。
 
 **对比与取舍**
 
@@ -642,7 +656,9 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 - ✅ Kubernetes 就绪探针（[配置存活、就绪和启动探针](https://raw.githubusercontent.com/kubernetes/website/main/content/en/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md)，kubernetes/website 仓库的源文件）：“A pod with containers reporting that they are not ready does not receive traffic through Kubernetes Services.”，HTTP 探针“Any code greater than or equal to 200 and less than 400 indicates success.” 即“进程起来了”和“能接流量”要分开判断，我们的“等首页 200”就是就绪探针。
 - ✅ 十二要素应用的“构建、发布、运行”（[V. Build, release, run](https://raw.githubusercontent.com/heroku/12factor/main/content/en/build-release-run.md) 源文件）：“strict separation between the build, release, and run stages”，“Every release should always have a unique release ID”，发布一旦创建不能修改。我们每次上线一个独立发布目录、不改旧包，符合这一点；而“复制旧包再改”恰恰违反了“发布不可变、由构建产生”。
-- ⚠ Google SRE 的发布工程和事后复盘（候选 `https://sre.google/sre-book/release-engineering/`、`https://sre.google/sre-book/postmortem-culture/`），本次未能打开核对。
+- ✅ Google SRE《发布工程》（[Release Engineering](https://sre.google/sre-book/release-engineering/)）：“Our builds are hermetic, meaning that they are insensitive to the libraries and other software installed on the build machine”。操作包应该每次重新生成，而不是复制上一次再改。
+- ✅ Google SRE 工作手册《金丝雀发布》（[Canarying Releases](https://sre.google/workbook/canarying-releases/)）：“a partial and time-limited deployment of a change in a service and its evaluation”。单机部署做不了按流量比例的金丝雀，所以我们用“停服前在生产机上试跑探针”代替。
+- ✅ Google SRE《事后复盘文化》（[Postmortem Culture](https://sre.google/sre-book/postmortem-culture/)）：“Blameless postmortems are a tenet of SRE culture.” 我们的 lessons 记录也只写原因和约束，不追究是哪个代理犯的错。
 
 **对比与取舍**
 
@@ -739,7 +755,8 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **业界主流做法**
 
-- ⚠ 功能开关（Martin Fowler《Feature Toggles》，候选 `https://martinfowler.com/articles/feature-toggles.html`）和 DORA 的四项交付指标（部署频率、变更前置时间等，候选 `https://dora.dev/guides/dora-metrics-four-keys/`），本次未能打开核对。
+- ✅ 功能开关（Martin Fowler，[Feature Toggles](https://martinfowler.com/articles/feature-toggles.html)）：区分“Release Toggles”（让未完成的代码先上线但不启用）和“Ops Toggles”（“control operational aspects of our system's behavior”）。`DELIVERY_MODE` 是管流程的开关，而不是管功能的开关，思路相同。
+- ✅ DORA 交付指标（[DORA's software delivery performance metrics](https://dora.dev/guides/dora-metrics/)）：已从“original four keys”改为五项：Change lead time（变更前置时间）、Deployment frequency（部署频率）、Failed deployment recovery time（失败部署恢复时间）、Change fail rate（变更失败率）和 Deployment rework rate（部署返工率）。快速模式改善的主要是前两项，代价可能体现在变更失败率上，所以要靠自动回退控制恢复时间。
 
 **对比与取舍**
 
@@ -788,7 +805,7 @@ Andy 让 Agent 写一个贪吃蛇游戏，做到第 16 步时回答突然只剩�
 
 **业界主流做法**
 
-- ⚠ 精益生产里的“防错”（poka-yoke，用设计让错误无法发生，候选 `https://www.lean.org/lexicon-terms/poka-yoke/`）和 Google SRE 的无责复盘文化（候选 `https://sre.google/sre-book/postmortem-culture/`），本次未能打开核对。
+- ✅ 精益生产的防错（[Poka Yoke](https://www.lean.org/lexicon-terms/poka-yoke/)，Lean Enterprise Institute）：“Poka-yoke is a Japanese term that means "error-proofing"”，目标是“finding defects at their source”。“第三次就加硬约束”就是把复盘结论变成防错装置。无责复盘见[案例 11](#case-tenth-deploy) 引用的 Google SRE 原文。
 
 **对比与取舍**
 
@@ -837,7 +854,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **业界主流做法**
 
-- ⚠ Vercel AI Gateway 的服务商路由选项（候选 `https://vercel.com/docs/ai-gateway/provider-options`），本次未能打开核对 `order` 和 `sort` 的当前写法；ADR 0048 写成时（2026-10-04）实测过网关接口，见该 ADR 的“已验证的事实”。
+- ✅ Vercel AI Gateway 服务商路由（[Provider Routing and Fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/provider-options)）：“You can use order, only, and sort in providerOptions.gateway”，其中 `sort` 可取 `'cost'`（价格）、`'ttft'`（首字延迟）和 `'tps'`（吞吐）。我们现在用 `order` 固定首选服务商；如果服务商的速度经常变化，可以改成 `sort: 'ttft'`，让网关按实测首字延迟排序。
 
 **对比与取舍**
 
@@ -865,7 +882,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 | 问题 | 根因 | 解决 | 出处 |
 | --- | --- | --- | --- |
-| 仓库改成私有后 CI 报 403 | CI 用的 `GITHUB_TOKEN`（GitHub 给每次 CI 运行发的临时令牌）缺 `pull-requests: read` 权限 | 在工作流里按最小权限显式补上（🟡 [GitHub 工作流语法](https://raw.githubusercontent.com/github/docs/main/content/actions/reference/workflows-and-actions/workflow-syntax.md)：可以在工作流顶层写 `permissions`） | PR #6，PR #9 修复其后续检查 |
+| 仓库改成私有后 CI 报 403 | CI 用的 `GITHUB_TOKEN`（GitHub 给每次 CI 运行发的临时令牌）缺 `pull-requests: read` 权限 | 在工作流里按最小权限显式补上（✅ [GitHub 工作流语法](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)：可以用 `permissions` 修改 `GITHUB_TOKEN` 的默认权限，`pull-requests` 是其中一项） | PR #6，PR #9 修复其后续检查 |
 | 推理强度选项是写死的 | 界面列出了模型并不支持的档位 | 只显示 DeepSeek V4.1 Flash 真实支持的档位 | PR #13 |
 | 执行环境状态条像摆设 | 状态条一直显示，和实际情况无关 | 只在有事时出现 | PR #14 |
 | 运行过程看不懂 | 每一步只显示内部名称 | 给每一步加白话步骤摘要 | PR #15 |
@@ -877,14 +894,14 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 ## 业界资料的核对情况
 
-2026-10-26 写第一版时，所在的云端环境只能打开 GitHub、Anthropic 和 Go 的官方网站，其他网站都被网络策略拦住。图例：
+2026-10-26 写第一版时，云端环境只能打开 GitHub、Anthropic 和 Go 的官方网站。同一天又用 Andy 的 Mac 本机网络逐条打开其余资料补核，结果已经写回各个案例。图例：
 
 - ✅ 本次打开原文核对过，引文是原文。
 - 🟡 打开了原文，但只核对到部分内容。
 - 📎 本次没重新打开，但项目里的 ADR 或调研文档写成时打开过，链接在那份文档里。
-- ⚠ 本次打不开，没有核对；只给出候选链接，面试引用前要自己打开确认。
+- ⚠ 打不开原文，没有核对；面试时不要引用。
 
-待核对清单（下次在能访问这些网站的环境里补核）：NIST SP 800-207、Microsoft Entra CAE、OpenID CAEP、Kubernetes 授权缓存参数、Google Zanzibar、AWS Lambda 执行环境、E2B 持久化、OWASP LLM01 和 SSRF 清单、Codex 审批文档、Vercel 路由和预算文档、Zep 论文、RRF 原论文、SQLite FTS5、Generative Agents、Letta 空闲整理、ChatGPT 记忆 FAQ、熔断器、AWS 退避、Google SRE、DORA、功能开关、Stripe 幂等、poka-yoke。
+目前唯一没能核对的是 ChatGPT 记忆 FAQ：云端和 Mac 上打开都返回 HTTP 403。另有 4 条资料按原文改了措辞：Vercel 预算是四个范围，Letta 按步数或上下文压缩时整理，AWS 重试文章强调幂等，DORA 现在是五项指标。
 
 [返回目录](#contents)
 
