@@ -49,6 +49,8 @@ date: "2026-10-26"
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
   23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
+  25. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
+  26. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
   27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -74,12 +76,12 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
@@ -1522,6 +1524,135 @@ Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产
 **后续（2026-10-26）：过程记录不再等硬盘确认**
 
 Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
+
+[返回目录](#contents)
+
+<a id="case-packet-generator"></a>
+
+## 案例 25：上线操作包从“复制上一次再手改”改成“按参数生成”
+
+**背景与现象**
+
+Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本、输入和材料，由 `scripts/delivery-mode/deploy.sh` 按步骤执行，停服、换版本、失败就自动回退。到 2026-10-26，每次的操作包都是复制上一次的再手改“第几次”、版本目录、数据库版本号、配置预期和材料摘要，生成工具放在 Mac 和 Hermes（测试机）上被 git 忽略的 `.ci-output/` 里。
+
+后果是同一类错误反复在停服之后才暴露：第十次上线读错旧文件名 `s7-catalog-after51.json`，停服约 17 分钟后回退；第十二次上线切换脚本带着上一版的配置预期、回退脚本又拼错步骤名，停服约 15 分钟（[案例 20](#case-eleventh-twelfth-deploy)）。同时出包要 49 分钟到 1 小时，第十二次成功那次停服约 11 分钟。Andy 的原话：“这个时间也太长了吧？还能加快吗？因为我希望的是快速迭代上线验证。”
+
+**根因**
+
+1. **要变的值散在 146 个文件里，靠人记得改。** 一次上线要变的值只有十几个，但它们被抄进很多脚本。上一次的值看起来和这一次一样合理，复制后没有任何东西机械地对照“这一次应该是什么”。代码证据：第十二次的 S7 切换脚本里，原配置读网页上限 32768 是从第十一次抄来的，而维护脚本里同一个预期已经改成 102400。
+2. **之前的硬约束都是“复制之后再查”。** 每次出事后加一道检查（文件摘要表、交接文件名、切换配置夹具），只能拦已经想到的那类旧值，而且检查本身也在 `.ci-output/` 里靠复制带到下一次。把操作包搬进仓库时又找到一处没被任何检查发现的旧副本：包里的 `workspace-lifecycle-audit.mjs` 只认到数据库第 56 版，代码已改成认 57 版（提交 `bfa6162`），第十三次升库时会在停服后失败。
+3. **慢在冻结和停服后的验收。** 冻结（读生产状态、算绑定）离上线很远，中间服务一重启配置指纹就变，只能整套重做；停服后的验收 `S6_ACCEPTANCE` 占了 11 分钟停服里的 6 分 45 秒。
+
+**我们的方案**
+
+1. **模板加参数。** 第十二次冻结的操作包改写成模板 `scripts/delivery-mode/packet-template/`，每个随上线变化的值换成 `__PKT_名字__` 占位，文件名里的也一样；生成器 `scripts/delivery-mode/make-packet.py` 渲染时缺参数或留下占位都拒绝。
+2. **只让人决定该人决定的事。** 输入只有提交（默认 `origin/main`）和实例文件（主机和这次要设的模型上限、读网页上限）。“第几次”、旧版本目录、原配置的值从生产机只读读出；数据库版本从生产读回和提交里的迁移文件推出；材料摘要从 Hermes 上对这个提交的构建算出；包里带的仓库文件副本按这个提交刷新。
+3. **数据库升级变成模板的通用能力。** 代码版本更高时，生成器从 `migration-engine.ts` 取出要补的迁移，`S7_CONFIG_APPLY` 用新版本的 `himawari db migrate` 升库，并核对历史、能力目录、授权和回执内容不变。迁移如果改写这些要保留的表，出包时就拒绝。出包检查里加一项：用这个提交装出来的命令，把一个真实的旧版本数据库升到新版本。
+4. **检查前移到出包，上线只认生成器出的包。** 16 项操作包检查（升库时 17 项）在 Hermes 上并行跑，不过就不出包，结果写进 `packet-checks.json`；`deploy.sh` 发现包里没有生成器的记录，以退出码 6 停下，生产机上什么都不动。
+5. **冻结紧挨上线，停服前核对。** 出包最后一步冻结，过时了用 `make-packet.py freeze` 约一分钟重冻；上线前检查在停服前对比配置摘要、服务单元摘要和授权轮次、编号，变了就不停服并提示重冻。
+6. **验收挪到停服之前。** 步骤顺序改成 `S1_INSTALL → S6_ACCEPTANCE → S2_STOP`，验收失败时旧版本照常服务。
+
+这件事和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的上线流程。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 继续复制，再加检查清单 | 不用改工具 | 同类错误已经三次以上，[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md) 不许再只靠提醒；时间也降不下来 |
+| 改用 Ansible、Helm 一类通用部署工具 | 模板和变量写法现成 | 要重写 146 个在生产上验证过的脚本和夹具；单机停服切换用不上滚动更新 |
+| 升库只靠 Hermes 整套演练 | 最接近真实 | 快速模式不跑演练，一次几十分钟；改成出包时用真实命令升一个真实旧库，几十秒 |
+| 冻结后完全不许服务重启 | 实现最简单 | 做不到；改成停服前核对，变了就一分钟重冻 |
+
+放弃了什么：模板保留了第十二次的历史写法（例如步骤名 `S3_COPY51`）；生成器要同时连生产机和 Hermes，只能在 Andy 的 Mac 上跑；手写两个记录文件仍能骗过上线前检查，它拦的是“忘了用生成器”。
+
+**业界主流做法**
+
+- ✅ 十二要素应用《构建、发布、运行》（[Build, release, run](https://12factor.net/build-release-run)）：“The resulting release contains both the build and the config and is ready for immediate execution”，并且“Releases are an append-only ledger and a release cannot be mutated once it is created.” 发布物由构建加配置生成、生成后不改，对应我们“按参数生成、冻结后不手改”。
+- ✅ Google SRE《发布工程》（[Release Engineering](https://sre.google/sre-book/release-engineering/)）：构建应该“insensitive to the libraries and other software installed on the build machine”，并且“configuration changes are a potential source of instability.” 我们把配置预期从生产读出而不是手抄，就是为了去掉这个不稳定来源。
+- ✅ Helm 入门文档（[Getting Started](https://helm.sh/docs/chart_template_guide/getting_started/)）：Helm 把 `templates/` 目录“send all of the files … through the template rendering engine”，默认值在 `values.yaml`，“These values may be overridden by users during `helm install` or `helm upgrade`.” 模板加每次的值生成部署文件，和我们的模板加实例文件同一个思路。
+- ✅ Kubernetes API 概念（[API Concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/)）：“In the event that the resource has changed (the `resourceVersion` the client provided is stale), the API server returns a `409 Conflict` error response.” 读的时候记下版本，写之前对不上就拒绝、让客户端重读，我们停服前对比冻结时的配置摘要和授权编号也是这样。
+- ✅ Martin Fowler《Parallel Change》（[ParallelChange](https://martinfowler.com/bliki/ParallelChange.html)）把不兼容的改动拆成 expand（扩展）、migrate（迁移）、contract（收缩）三步，expand 阶段“you augment the interface to support both the old and the new versions.” 第 57 版迁移就是 expand 阶段，只加表和可空列，所以回退时旧版本还能用原副本。
+
+**对比与取舍**
+
+相同点：发布物由“代码 + 每次的值”生成、生成后不改，写之前核对版本。不同点：业界通常有多台机器做滚动更新和金丝雀发布，把风险挪到不停服；我们是单机，只能“停服、切换、失败回退”，所以把能挪的检查和验收都挪到停服之前。我们也没用 Helm 一类工具，而是把已经在生产上验证过的操作包直接变成模板，代价是模板里留着历史写法。
+
+**结果数据**
+
+- 用第十二次的参数生成：除 21 个有意改动的文件外，与第十二次冻结的操作包逐字节相同；生成器单元测试 18 项通过（`scripts/delivery-mode/test_make_packet.py`，云端容器，约 1.7 秒）。
+- 复现第十二次事故：把读网页上限换回手抄值 32768 生成时，S7 核对函数报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`；按生产读出的值生成时通过（同一测试文件）。
+- 第十三次要升的 56 → 57：生成的操作包 17 项检查全部通过，其中真实升库一项 6 个用例都通过，17 项共 34 秒（云端 4 核容器，提交 `4ca2d24c` 的构建）；不升库的第十二次参数 16 项全部通过。
+- 上线脚本：没有生成器记录、检查没全过或提交对不上、升库却没跑升库检查时，`deploy.sh` 都以 6 退出且一个上线步骤都没跑；冻结后配置、服务单元或授权编号变了，停服前拒绝（`scripts/delivery-mode/test_deploy.py`，21 项通过）。
+- 整次出包时间：6 分 26 秒（385.7 秒），原来约 49 分钟到 1 小时，目标 15–20 分钟。来源：2026-10-26 第六次 Mac 只出包演练的 `PACKET_STEP` 输出（提交 `500817f`，数据库 56 → 57，包已冻结，没有上线）。分步：读生产 14.8 秒，S0 读回到 22.3 秒，Hermes 构建约 4 分 19 秒（到 284.9 秒），取回材料到 320.8 秒，渲染到 321.5 秒，17 项检查到 371.6 秒，网页验收和检查并行、到 372.5 秒已完成，冻结到 385.7 秒。最大的一块是 Hermes 构建。
+- 停服时间：未测量，等第十三次真正上线后补。推算约 4 分钟（11 分钟减去挪到停服前的 6 分 45 秒验收）。
+- 演练本身挡住的问题：前五次演练都在出包阶段失败，生产一次都没停：上传目录不在 Hermes 包装脚本允许的范围、上传前目录还没建、升库检查用了测试机上过期的构建（只认 51 个迁移）、Hermes 登录默认文件权限 `umask 002` 让检查自己建的目录被判不安全、网页验收缺锁定版本的 Python 和 `fd` 工具、验收测试还在找改版前记忆页的文字。每一处都先在云端复现、加测试再修，后两类的前置条件改成出包第一步约 10 秒内检查。
+- 检查耗时：Hermes 上 17 项检查从约 469 秒降到约 50 秒。最慢的 `verify-raw-copy-fixtures.mjs` 从 457.7 秒降到 22.5 秒，原因是它的临时目录原来在 Hermes 的 `/data` 盘上，复制时每个文件都要落盘同步；改到 `/tmp` 后变快（第五、六次演练的逐项秒数）。同一项在云端容器里只要 2.9 秒。
+
+**相关 ADR/PR**
+
+[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+
+**面试 30 秒版**
+
+“我们的上线操作包有 146 个文件，过去每次复制上一次再手改，三次上线都因为漏改的旧值在停服之后才失败。我把它改成模板加参数生成：只有提交和实例配置由人给，其余从生产只读读回和代码里推出，数据库升级也从迁移清单自动生成；所有检查在出包时跑，上线脚本只接受生成器出的包。用第十二次的参数生成的包和当时手工冻结的逐字节一致，旧的手抄值能复现当时的事故，第十三次的升库在出包时就用真实命令验证过。出包从将近一小时降到 6 分半，前五次演练暴露的问题全在出包阶段被拦下，生产一次都没停。”
+
+[返回目录](#contents)
+
+<a id="case-process-timeline"></a>
+
+## 案例 26：每一步的时间要准：把一轮回答画成一条时间线
+
+**背景与现象**
+
+2026-10-26 Andy 审对话界面 v6 原型时要求“每一步的时间一定一定要准确”，让人一眼看出一轮回答的时间花在哪。旧过程区的问题：
+
+- 只有每个工具调用的用时，模型推理、等你确认、各步之间的衔接都没有时间，几段加起来远小于总用时，看不出另外的时间去了哪里。
+- “开始写回答”的时刻不准：Pi 适配器（把 Pi 的流式事件转成 Himawari 执行记录的那一层）会把连续的流式增量合并成一条记录，合并后记录的时间是最后一个增量的时间，所以“开始输出”被推后。
+- 两次同时进行的搜索各算各的，相加会超过总用时。
+
+**根因**
+
+- 前端只按单个工具调用算时间，没有一个把整轮从“按下发送”到“回答提交”每一毫秒都分到某一类的模型。
+- 代码证据：`packages/runtime-pi/src/pi-runtime-adapter.ts` 合并流式事件时不区分 `text_start`、`toolcall_start` 这类“边界”事件和普通增量；用一条新测试复现：给适配器喂入带时间的事件，旧代码给出的输出开始时间等于最后一个增量的时间。
+
+**我们的方案**
+
+1. 新增前端纯函数 `executionTimeline(records, run, now)`（`apps/control-center/src/execution-timeline.ts`）：起点是运行的 `createdAt`，终点是结束时的 `updatedAt`，中间每个时刻都用服务端记下的 `occurredAt`。步骤分为找记忆、读档案、思考、写回答、等你确认、工具调用（再拆成排队和执行两段）。
+2. 每一毫秒只归一类，同一时刻有多步时按“等你确认 > 工具 > 模型 > 准备与衔接”取一类，没被任何步骤覆盖的空档算“准备与衔接”。所以四类相加一定等于总用时，并行的两次搜索只算一次。
+3. Pi 适配器不再把 `thinking_start`/`thinking_end`、`text_start`/`toolcall_start` 合并进增量，并在内容里带上 `outputBoundary`；执行记录投影把它变成 `runtime.text.started`、`runtime.tool_call.started` 两种记录。复用 Pi 的流式事件类型和执行循环，不改 Pi；合并策略、投影和展示是 Himawari 自己的。
+4. 界面：一轮结束后收成一行“用时 + 四色细条 + 最久一步”，展开后每步一条对齐到同一时间轴的时间条，底部列出四类用时和合计。运行中每 0.1 秒刷新。所有文字有中、英、日三种语言。
+
+**方案讨论与备选**
+
+- 只显示每步自己的用时：最简单，但几段加起来对不上总用时，Andy 要的“一眼看出花在哪”做不到。
+- 服务端算好时间线再发给网页：别处（推送、用量页）可以复用，但要改执行记录合同和存储；网页已经拿到全部带时间的记录，第一期放在前端。
+- 并行步骤按各自时长相加：符合“工具真的跑了这么久”，但总和会超过墙上时间；选了“每一毫秒只算一次”，并在并行步骤上标“同时”。
+- 过程区画法：原型里比较了时间条、泳道、地铁线、圆环四种，Andy 选了时间条。
+
+**业界主流做法**
+
+- ✅ Chrome DevTools 网络面板（[Network features reference](https://developer.chrome.com/docs/devtools/network/reference)）：瀑布图是“A visual breakdown of each request's activity.”，每个请求再拆成 Queueing、“Waiting (TTFB) … The browser is waiting for the first byte of a response.”等阶段。我们把一次模型调用拆成“等模型开始回应、推理、输出”，工具拆成“排队和启动、执行”，是同一种拆法。
+- ✅ OpenTelemetry（[Traces](https://opentelemetry.io/docs/concepts/signals/traces/)）：span “represents a unit of work or operation”，“child spans represent sub-operations”；span event 是“a meaningful, singular point in time”。我们的步骤相当于 span，`text_start` 这类边界相当于 span event。
+- ✅ LangSmith（[Observability concepts](https://docs.langchain.com/langsmith/observability-concepts)）：run “represents a single unit of work executed by an agent”，“you can think of a run as a span”；trace “is a collection of runs for a single operation”。Agent 观测工具普遍把一轮回答画成一串带起止时间的步骤。
+
+**对比与取舍**
+
+DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以超过墙上时间；我们的四色细条按优先级让每一毫秒只算一次，代价是工具与模型重叠时，重叠的那段只算到工具上。这样做是因为 Andy 的问题是“这一轮的等待花在哪”，而不是“每个步骤本身多慢”；后者仍可从每步的时间条和用时看到。时间线没有引入 OpenTelemetry 整套追踪系统，只用已有的执行记录在前端算出。
+
+**结果数据**
+
+- 测试用 2026-10-26 生产新闻那一轮（run `61268ba2`，只取事件时间）做的夹具：总用时 27.1 秒，模型 9.3 秒、工具 2.9 秒、等你确认 8.4 秒、准备与衔接 6.4 秒，四项相加等于总用时（`apps/control-center/test/execution-timeline.unit.test.ts`）。
+- 测试：时间线 12 个、过程区 7 个（含中英日三语各渲染一次）、Pi 适配器边界 1 个，浏览器执行链测试 12 项通过；控制中心单元测试 422 个全部通过。
+- 已知偏差：执行记录里还没有“点了允许”的时刻，“等你确认”会多算约 1–2 秒恢复运行（[BL-20261026-009](backlog/BL-20261026-009-approval-click-time.md)）。
+- 上线后真实对话的显示效果：未上线，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0087](adr/0087-chat-ui-v6-process-timeline.md)；[PR #45](https://github.com/sixianli/himawari-agent/pull/45)（提交 `13cf0d6`、`b938b1a`、`001bbb6`）；相关：[案例 24](#case-run-gaps)（同一轮数据里找出的系统空档）、[案例 16](#case-narration-status)、[案例 23](#case-memory-steps)（同一块过程区之前的两次修复）。
+
+**面试 30 秒版**
+
+“用户要求每一步的时间必须准。旧界面只给工具算时间，加起来对不上总用时，‘开始输出’的时刻还因为流式事件被合并而推后。我让适配器保留输出边界事件，再在前端用一个纯函数把整轮每一毫秒按‘等你确认、工具、模型、准备’的优先级只归一类，四类相加一定等于总用时。用生产那一轮 27 秒的事件做测试夹具，测出等你确认 8.4 秒、准备与衔接 6.4 秒，这正是下一步优化的方向。”
 
 [返回目录](#contents)
 

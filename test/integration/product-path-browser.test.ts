@@ -5627,7 +5627,7 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     });
     await scenario("accept-memory-page", async () => {
       const dialog = await openSettingsTab("记忆");
-      await uiExpect(dialog.getByText(/还没有记忆|共 \d+ 条/).first()).toBeVisible({
+      await uiExpect(dialog.getByText(/记住了 \d+ 条关于你的事/)).toBeVisible({
         timeout: 30_000,
       });
       await uiExpect(dialog.getByRole("alert")).toHaveCount(0);

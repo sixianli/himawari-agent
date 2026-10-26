@@ -1,0 +1,25 @@
+{
+  "name": "andy-production",
+  "host": {
+    "address": "84.247.157.41",
+    "hostname": "vmi3618928"
+  },
+  "fixedByTemplate": {
+    "serviceAccount": "himawari-prod",
+    "serviceUid": 999,
+    "serviceGid": 988,
+    "unit": "himawari-prod.service",
+    "unitPath": "/etc/systemd/system/himawari-prod.service",
+    "config": "/etc/himawari/config.json",
+    "stateRoot": "/var/lib/himawari/state",
+    "releasesRoot": "/opt/himawari/releases",
+    "operationsRoot": "/opt/himawari/operations",
+    "qualificationRoot": "/var/lib/himawari/qualification"
+  },
+  "configTargets": {
+    "modelRef": "deepseek-primary",
+    "contextWindow": 1000000,
+    "maxTokens": 32768,
+    "publicFetchMaximumBytes": 102400
+  }
+}

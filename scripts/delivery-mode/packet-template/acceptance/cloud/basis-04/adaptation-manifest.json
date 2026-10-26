@@ -1,0 +1,44 @@
+{
+  "schema": "himawari-host-acceptance-adaptation.v1",
+  "productionQualificationIssued": false,
+  "scope": "Linux scratch-root guard; Pi probe Node read-only tool directory; Pi foreground empty, invalid-JSON or null output recorded as failure; original scenarios, assertions and deadlines unchanged",
+  "scratchValidatorSha256": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e",
+  "adapters": [
+    {
+      "source": "packages/runtime-pi/scripts/probe-foreground.mjs",
+      "sourceSha256": "c5bc50f2aa391c73c74a6c3e7a2b58363744e42d80e9bd15132745a1dbaee5eb",
+      "adapter": "probe-foreground.mjs",
+      "adapterSha256": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+      "oldGuard": "const scratch = process.env.HIMAWARI_PROBE_SCRATCH ?? os.tmpdir();\nif (process.platform === \"linux\" && !scratch.startsWith(\"/data/\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_DATA_DISK\");",
+      "newGuard": "const scratch = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": false
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs",
+      "sourceSha256": "c1a7b22a4813130b27364f29f83ae56eb38d20a24c0228394fdfe7358ee5af6c",
+      "adapter": "probe-linux-worker-loss.mjs",
+      "adapterSha256": "3667d02a9a6997aa54bbce1707514595fcc76ef9cdfc1be6014d29e86c92a524",
+      "oldGuard": "  const parent = await realpath(process.env.HIMAWARI_PROBE_SCRATCH);\n  assert.ok(parent.startsWith(\"/data/himawari-r8-\"));\n  assert.equal((await lstat(parent)).uid, process.getuid());",
+      "newGuard": "  const parent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": true
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-network-boundary.mjs",
+      "sourceSha256": "7003a476c1745ecde86ce5d779fa8a9bcbbcf2b5050feef201d038ac1e75a12c",
+      "adapter": "probe-network-boundary.mjs",
+      "adapterSha256": "f1dc66136f2ad41294b61c887cb8962c50bfcee90a54488f0e5b134cebe575b8",
+      "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
+      "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": true
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
+      "sourceSha256": "036adbeabb9fa305611967e051195977964086e2466f10e65b97b514c7fc4ae3",
+      "adapter": "probe-authorized-network.mjs",
+      "adapterSha256": "1731f03609f520f134bcddebe6c2308f57e0b8326a45c992a77e848eb12f4a82",
+      "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
+      "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": true
+    }
+  ]
+}

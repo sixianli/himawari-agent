@@ -3,13 +3,13 @@ import { type GatewayV2Snapshot, gatewayV2MessageSchema } from "@himawari-agent/
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import governanceMessages from "./fixtures/control-plane-snapshots.json" with { type: "json" };
 import {
   ControlCenterBrowserStorage,
   GOVERNANCE_MUTATION_STORAGE_PREFIX,
 } from "../src/browser-storage.ts";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "../src/gateway-client.ts";
 import { useGovernanceControlCenter } from "../src/governance-control-center.tsx";
+import governanceMessages from "./fixtures/control-plane-snapshots.json" with { type: "json" };
 
 type Input = Parameters<typeof useGovernanceControlCenter>[0];
 const configuration: ControlCenterRuntimeConfiguration = {

@@ -1,0 +1,158 @@
+{
+  "schemaVersion": "himawari.configuration.v1",
+  "deploymentId": "himawari-prod-deployment",
+  "ownerId": "owner:first-production",
+  "agentId": "agent:first-production",
+  "stateRoot": "/var/lib/himawari/state",
+  "runtimeDirectory": "/var/lib/himawari/state/runtime",
+  "cacheDirectory": "/var/lib/himawari/state/cache",
+  "publicOrigin": "http://127.0.0.1:8400",
+  "publicMode": false,
+  "runPolicy": {
+    "version": "owner-policy-v1",
+    "systemInstruction": "按用户请求执行已授权任务。首次测量仅使用 read 读取获准虚构文件并回答指定内容。",
+    "memoryLimit": 20,
+    "maxSelectedMemories": 5,
+    "maxMemoryClassification": "private",
+    "timeZone": "Asia/Shanghai",
+    "coding": {
+      "hostId": "himawari-prod-host",
+      "workerInstanceId": "execution-worker:himawari-prod-deployment",
+      "grantId": "directory:himawari-prod-workspace-20261009",
+      "capabilityRef": "himawari.pi-coding",
+      "capabilityVersion": "1.0.0",
+      "maximumBytes": 4096,
+      "enabledTools": [
+        "read"
+      ]
+    }
+  },
+  "capabilityDeployment": {
+    "snapshotPath": "/var/lib/himawari/state/deployment/capability-deployment.json",
+    "sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "http": {
+    "listenHost": "127.0.0.1",
+    "listenPort": 8400,
+    "staticRoot": "/opt/himawari/releases/2026-10-09-second/share/control-center",
+    "sessionCookieName": "himawari_session",
+    "maximumBodyBytes": 1048576,
+    "maximumStaticAssetBytes": 8388608,
+    "heartbeatMilliseconds": 15000
+  },
+  "identity": {
+    "kind": "built-in",
+    "sessionIdleMilliseconds": 1800000,
+    "sessionAbsoluteMilliseconds": 28800000,
+    "recentAuthentication": {
+      "maximumAgeMilliseconds": 300000,
+      "clockSkewMilliseconds": 30000
+    },
+    "csrf": {
+      "keySecretRef": "identity-csrf",
+      "ttlMilliseconds": 600000
+    }
+  },
+  "modelDescriptors": [
+    {
+      "ref": "deepseek-primary",
+      "role": "primary",
+      "provider": "vercel-ai-gateway",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "version": "gateway-deepseek-v4.1-flash-20261007",
+      "allowedDataClassifications": [
+        "public",
+        "private"
+      ],
+      "disclosure": "external_remote",
+      "secretRef": "vercel-gateway",
+      "capabilities": [
+        "text"
+      ],
+      "cost": {
+        "input": 0.45,
+        "output": 1.8,
+        "cacheRead": 0.055,
+        "cacheWrite": 0.45
+      },
+      "priority": 1,
+      "name": "DeepSeek V4.1 Flash",
+      "api": "openai-completions",
+      "reasoning": true,
+      "reasoningRequired": false,
+      "input": [
+        "text"
+      ],
+      "contextWindow": 1000000,
+      "maxTokens": 32768,
+      "providerRouting": {
+        "order": [
+          "runware",
+          "deepinfra",
+          "morph"
+        ],
+        "sort": "cost"
+      }
+    },
+    {
+      "ref": "qwen-embedding",
+      "role": "embedding",
+      "provider": "vercel-ai-gateway",
+      "model": "alibaba/qwen3-embedding-8b",
+      "version": "gateway-qwen3-embedding-8b-20261006",
+      "allowedDataClassifications": [
+        "public",
+        "private"
+      ],
+      "disclosure": "external_remote",
+      "secretRef": "vercel-gateway",
+      "capabilities": [
+        "embedding"
+      ],
+      "cost": {
+        "input": 0.01,
+        "output": 0,
+        "cacheRead": 0.01,
+        "cacheWrite": 0.01
+      },
+      "dimensions": 4096
+    }
+  ],
+  "memory": {
+    "adapter": "mem0-oss",
+    "version": "3.3.1",
+    "storagePath": "/var/lib/himawari/state/data/memory",
+    "dimensions": 4096
+  },
+  "repositoryAllowlistRefs": [],
+  "secretReferences": [
+    {
+      "ref": "vercel-gateway",
+      "version": "v1",
+      "purpose": "model-provider",
+      "scope": "himawari-prod-deployment"
+    },
+    {
+      "ref": "payload-key",
+      "version": "v1",
+      "purpose": "payload-encryption",
+      "scope": "himawari-prod-deployment"
+    },
+    {
+      "ref": "identity-csrf",
+      "version": "v1",
+      "purpose": "identity-csrf",
+      "scope": "himawari-prod-deployment"
+    }
+  ],
+  "concurrency": {
+    "totalRuns": 1,
+    "foregroundReserved": 1,
+    "perCategory": {}
+  },
+  "deadlines": {
+    "runMs": 300000,
+    "workerRequestMs": 120000,
+    "providerRequestMs": 60000
+  }
+}

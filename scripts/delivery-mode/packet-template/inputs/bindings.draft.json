@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "himawari.__PKT_LABEL__-change-bindings.v1",
+  "status": "candidate-awaiting-s0-db-and-freeze",
+  "d1Commit": "__PKT_COMMIT__",
+  "gateCommit": "__PKT_COMMIT__",
+  "candidate": {
+    "testedCommit": "PENDING:candidate.testedCommit",
+    "archivePath": "PENDING:candidate.archivePath",
+    "archiveBytes": "PENDING:candidate.archiveBytes",
+    "archiveSha256": "PENDING:candidate.archiveSha256",
+    "contextPath": "PENDING:candidate.contextPath",
+    "contextBytes": "PENDING:candidate.contextBytes",
+    "contextSha256": "PENDING:candidate.contextSha256",
+    "sourceTreeDigest": "PENDING:candidate.sourceTreeDigest",
+    "materialReadback": "PENDING:candidate.materialReadback",
+    "layer3Status": "PENDING:candidate.layer3Status",
+    "layer3Fingerprint": "PENDING:candidate.layer3Fingerprint",
+    "layer3Counts": "PENDING:candidate.layer3Counts",
+    "layer3Projects": "PENDING:candidate.layer3Projects",
+    "hermesLayer3Report": "PENDING:candidate.hermesLayer3Report",
+    "hermesLayer3ReportBytes": "PENDING:candidate.hermesLayer3ReportBytes",
+    "hermesLayer3ReportSha256": "PENDING:candidate.hermesLayer3ReportSha256",
+    "hermesLayer3TestsReport": "PENDING:candidate.hermesLayer3TestsReport",
+    "hermesLayer3TestsReportBytes": "PENDING:candidate.hermesLayer3TestsReportBytes",
+    "hermesLayer3TestsReportSha256": "PENDING:candidate.hermesLayer3TestsReportSha256",
+    "hermesLayer4Report": "PENDING:candidate.hermesLayer4Report",
+    "hermesLayer4ReportBytes": "PENDING:candidate.hermesLayer4ReportBytes",
+    "hermesLayer4ReportSha256": "PENDING:candidate.hermesLayer4ReportSha256",
+    "layer4Scope": "PENDING:candidate.layer4Scope",
+    "layer4FinalCandidateEvidence": "PENDING:candidate.layer4FinalCandidateEvidence",
+    "layer4FinalCandidateEvidenceBytes": "PENDING:candidate.layer4FinalCandidateEvidenceBytes",
+    "layer4FinalCandidateEvidenceSha256": "PENDING:candidate.layer4FinalCandidateEvidenceSha256",
+    "layer4CandidateRelation": "PENDING:candidate.layer4CandidateRelation",
+    "evidenceIds": "PENDING:candidate.evidenceIds",
+    "artifactRuntimeAndUiContentSha256": "PENDING:candidate.artifactRuntimeAndUiContentSha256",
+    "installationRehearsalEvidence": "PENDING:candidate.installationRehearsalEvidence",
+    "installedPrefixDigestHermesOnly": "PENDING:candidate.installedPrefixDigestHermesOnly"
+  },
+  "installationInputs": {
+    "sourceBundlePath": "PENDING:candidate.sourceBundlePath",
+    "sourceBundleBytes": "PENDING:candidate.sourceBundleBytes",
+    "sourceBundleSha256": "PENDING:candidate.sourceBundleSha256",
+    "sourceModeProofPath": "materials/source-build-inputs.json",
+    "sourceModeProofBytes": "PENDING:candidate.sourceModeProofBytes",
+    "sourceModeProofSha256": "PENDING:candidate.sourceModeProofSha256",
+    "sourceModeProofRecordCount": "PENDING:candidate.sourceModeProofRecordCount",
+    "sourceModeCounts": "PENDING:candidate.sourceModeCounts",
+    "sourceModeProofDigestBeforeAndAfter": "PENDING:candidate.sourceModeProofDigestBeforeAndAfter",
+    "sourceModeCaptureWritesPerformed": false,
+    "sourceModeCapturePermissionChangesPerformed": false,
+    "installationWrapper": "install/__PKT_LABEL__-artifact-install.mjs",
+    "materialManifest": "install/p5-materials.json"
+  },
+  "host": {
+    "address": "__PKT_ADDRESS__",
+    "hostname": "__PKT_HOSTNAME__",
+    "account": "himawari-prod",
+    "uid": 999,
+    "gid": 988,
+    "node": "/opt/himawari/node/bin/node",
+    "nodeVersion": "v22.22.3",
+    "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+    "systemBwrapIdentity": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+    },
+    "programBwrapIdentity": {
+      "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
+      "sha256": "20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3"
+    },
+    "serviceAccount": "himawari-prod",
+    "systemBwrap": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+    },
+    "programBwrap": {
+      "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
+      "sha256": "20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3"
+    },
+    "apparmorRestrictUnprivilegedUserns": 1
+  },
+  "paths": {
+    "oldPrefix": "__PKT_OLD_PREFIX__",
+    "newPrefix": "/opt/himawari/releases/__PKT_DATE__-__PKT_LABEL__",
+    "config": "/etc/himawari/config.json",
+    "stateRoot": "/var/lib/himawari/state",
+    "database": "/var/lib/himawari/state/data/product.sqlite",
+    "privateRoot": "/var/lib/himawari/jobs",
+    "secretDirectory": "/var/lib/himawari/state/secrets",
+    "evidenceRoot": "/var/lib/himawari/__PKT_LABEL__-__PKT_DATE_COMPACT__-evidence",
+    "transportRoot": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/input",
+    "validationSource": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/validation/source",
+    "uiVerificationRoot": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/validation/ui-verified",
+    "newOperations": "/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__"
+  },
+  "identity": {
+    "deploymentId": "S0_DB:identity.deploymentId",
+    "ownerId": "owner:first-production",
+    "agentId": "agent:first-production",
+    "hostId": "S0_DB:identity.hostId"
+  },
+  "maintenance": {
+    "expectedInitialSchema": "S0_DB:schema.current",
+    "expectedMinimumWriter": "S0_DB:schema.minimumWriter",
+    "targetSchema": __PKT_TARGET_SCHEMA__,
+    "recoveryMethod": "stopped-raw-copy-v1",
+    "recovery__PKT_CURRENT_SCHEMA__Id": "__PKT_LABEL__-__PKT_DATE_COMPACT__-raw-schema__PKT_CURRENT_SCHEMA__"
+  },
+  "service": {
+    "unit": "himawari-prod.service",
+    "unitFragmentPath": "/etc/systemd/system/himawari-prod.service",
+    "oldUnitSha256": "S0_DB:service.unitFragmentSha256",
+    "oldConfigSha256": "S0_DB:service.configurationSha256",
+    "pairSupervisor": "__PKT_OLD_OPERATIONS__/pair-supervisor.mjs",
+    "workerTokenFile": "/var/lib/himawari/state/secrets/worker-token.json",
+    "newPrepareHelper": "/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/cloud-protected-prepare.mjs",
+    "newRuntimeProtectionFile": "/opt/himawari/operations/__PKT_LABEL__-__PKT_DATE_COMPACT__/runtime-protection.json",
+    "newQualificationEvidenceRoot": "/var/lib/himawari/qualification/__PKT_LABEL__-__PKT_DATE_COMPACT__"
+  },
+  "smoke": {
+    "designer": "Claude",
+    "workspace": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/acceptance/service-read-01/workspace",
+    "file": "/var/tmp/himawari-__PKT_LABEL__-__PKT_DATE_COMPACT__/acceptance/service-read-01/workspace/fictional.txt",
+    "expectedToolCalls": 1,
+    "operatorSuppliedPaidRequestsAuthorized": false,
+    "stage": "S6_SERVICE_READ_BEFORE_S7",
+    "finalPaidAcceptance": "S10_USER_ONLY"
+  },
+  "approvals": {
+    "qualificationRule": "PENDING:user.qualificationRule",
+    "executionMethod": "PENDING:user.executionMethod",
+    "packageRef": "",
+    "freezeManifestSha256": "",
+    "executor": "Claude",
+    "databaseFallbackExecutor": "user",
+    "finalPaidAcceptanceExecutor": "user"
+  },
+  "authority": {
+    "authorityEpoch": "S0_DB:authority.authorityEpoch",
+    "fencingToken": "S0_DB:authority.fencingToken",
+    "ownerId": "S0_DB:authority.ownerId",
+    "agentId": "S0_DB:authority.agentId",
+    "deploymentId": "S0_DB:authority.deploymentId",
+    "status": "S0_DB:authority.status"
+  },
+  "workspace": {
+    "decisionRef": "G90",
+    "routeKey": "coding",
+    "grantId": "directory:himawari-prod-workspace-20261015",
+    "canonicalPath": "/var/lib/himawari/workspace",
+    "subdirectories": [
+      "files",
+      "repos"
+    ]
+  }
+}
