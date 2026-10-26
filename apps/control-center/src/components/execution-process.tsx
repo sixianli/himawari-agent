@@ -17,6 +17,8 @@ import {
   executionWaitReason,
   isNarration,
   isTerminalRun,
+  memoryStepLabels,
+  memorySteps,
   type RunSummary,
   recordedInterval,
   thinkingSteps,
@@ -85,6 +87,7 @@ export function ExecutionProcess({
         stage: null,
         review: null,
         note: null,
+        memory: null,
       })),
     ...items
       .filter((item) => isNarration(item, items) && item.text.trim())
@@ -94,6 +97,7 @@ export function ExecutionProcess({
         stage: null,
         review: null,
         note,
+        memory: null,
       })),
     ...thinking.map((stage) => ({
       sequence: stage.sequence,
@@ -101,6 +105,15 @@ export function ExecutionProcess({
       stage,
       review: null,
       note: null,
+      memory: null,
+    })),
+    ...memorySteps(records).map((memory) => ({
+      sequence: memory.sequence,
+      item: null,
+      stage: null,
+      review: null,
+      note: null,
+      memory,
     })),
     ...authorizationReviewSteps(records).map((review) => ({
       sequence: review.sequence,
@@ -108,6 +121,7 @@ export function ExecutionProcess({
       stage: null,
       review,
       note: null,
+      memory: null,
     })),
   ].sort((a, b) => a.sequence - b.sequence);
   const time = executionTime(records, run, now);
@@ -195,7 +209,28 @@ export function ExecutionProcess({
           </span>
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
-          {steps.map(({ item, stage, review, note }) => {
+          {steps.map(({ item, stage, review, note, memory }) => {
+            if (memory)
+              return (
+                <li className="execution-step" key={memory.id}>
+                  <span className="step-marker" aria-hidden="true" />
+                  <details className="tool-record memory-record">
+                    <summary>
+                      <ToolIcon name="memory" />
+                      <span className="step-summary">
+                        {message(memoryStepLabels[memory.name] as MessageId, {
+                          count: Number(memory.text),
+                        })}
+                      </span>
+                    </summary>
+                    {memory.output ? (
+                      <div className="step-detail">
+                        <pre>{memory.output}</pre>
+                      </div>
+                    ) : null}
+                  </details>
+                </li>
+              );
             if (note)
               return (
                 <li className="execution-stage execution-note" key={note.itemId}>

@@ -203,3 +203,39 @@ it("labels the final answer as streaming until the Run itself ends", () => {
     '<p class="partial-status">chat.phase.completed</p>',
   );
 });
+
+it("lists the memories brought to the model as steps instead of reporting no process", () => {
+  const memory = (
+    sequence: number,
+    name: string,
+    phase: ThreadExecutionRecord["phase"],
+    count: string,
+    output: string,
+  ): ThreadExecutionRecord => ({
+    id: `trace:${sequence}`,
+    itemId: `trace:${sequence}`,
+    sequence,
+    kind: "status",
+    phase,
+    name,
+    text: count,
+    input: "",
+    output,
+    occurredAt: `2026-09-11T00:00:0${sequence}Z`,
+  });
+  const html = renderRun("completed", [
+    memory(1, "memory.query", "updated", "", ""),
+    memory(2, "memory.selection", "completed", "1", "- 主人喜欢喝乌龙茶"),
+    memory(3, "context.formed", "completed", "2", "- 主人最喜欢的颜色是蓝色"),
+    record(4, "message:answer", "message", "completed", "蓝色。"),
+  ]);
+  expect(html).not.toContain("chat.noProcess");
+  expect(html.match(/data-tool-category="database"/g)).toHaveLength(2);
+  expect(html.indexOf("step.memoryFound")).toBeLessThan(html.indexOf("step.memoryProfile"));
+  expect(html).toContain("主人喜欢喝乌龙茶");
+  expect(html).toContain("主人最喜欢的颜色是蓝色");
+  expect(html).toContain("review.thinkingCount");
+  expect(renderRun("completed", [memory(1, "memory.query", "updated", "", "")])).toContain(
+    "chat.noProcess",
+  );
+});
