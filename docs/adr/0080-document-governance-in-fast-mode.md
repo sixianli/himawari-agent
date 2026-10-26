@@ -32,6 +32,8 @@ date: "2026-10-26"
 - 严格校验（`validate_docs.py . --strict`）现在有 7 个错误，全部在 Runbook 上：6 个 Runbook 的 `contract_sha256`（Runbook 依据的代码和配置文件算出的摘要，用来发现手册是否落后于代码）与当前代码对不上，1 个 Runbook 依据的 `packages/memory-mem0/src/index.ts` 已随去掉 Mem0 删除。其他类型的文档没有错误。
 - 一次严格校验约 1 秒（云端容器实测 0.997 秒）。
 
+Andy 在线程的选择卡片上选了“轻量版：校验+硬门槛”（2026-10-26T09:06Z），即下面的决定；另外两个选项是“只加规则，不加门槛”和“快速模式下完全恢复”。
+
 <a id="decision"></a>
 
 ## 决定
