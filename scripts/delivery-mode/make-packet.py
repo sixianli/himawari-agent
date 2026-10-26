@@ -499,10 +499,10 @@ class Hermes:
             refuse('PACKET_HERMES_COMMAND_FAILED', 'exit=' + str(child.returncode) + ' ' + command[:120] + ' ' + child.stderr.decode(errors='replace').strip()[-400:])
         return b'' if stdout else child.stdout
 
-    def upload(self, local, remote):
+    def upload(self, local, remote, code='PACKET_HERMES_UPLOAD_FAILED'):
         child = subprocess.run([self.upload_wrapper, str(local), remote], capture_output=True, timeout=320, check=False)
         if child.returncode != 0:
-            refuse('PACKET_HERMES_UPLOAD_FAILED', str(local) + ' ' + child.stderr.decode(errors='replace').strip()[-400:])
+            refuse(code, str(local) + ' -> ' + remote + ' ' + child.stderr.decode(errors='replace').strip()[-400:])
 
     def fetch(self, remote, local, expected_sha):
         partial = local.with_name(local.name + '.partial')
@@ -515,10 +515,11 @@ class Hermes:
     def probe_uploads(self):
         probe = Path(tempfile.mkdtemp(prefix='packet-probe-')) / 'upload-probe'
         probe.write_text(self.run_id + '\n')
+        self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
         targets = [self.work + '-inputs/upload-probe', self.scripts + '/upload-probe']
         try:
             for target in targets:
-                self.upload(probe, target)
+                self.upload(probe, target, 'PACKET_HERMES_UPLOAD_AREA_REFUSED')
         finally:
             shutil.rmtree(probe.parent)
         self.ssh('rm -f ' + ' '.join(shlex.quote(target) for target in targets))

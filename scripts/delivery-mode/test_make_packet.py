@@ -265,7 +265,7 @@ class HermesCommandTest(unittest.TestCase):
         wrapper.write_text('#!/bin/bash\nexec bash -c "$1"\n')
         wrapper.chmod(0o755)
         upload = self.root / 'hermes-upload.sh'
-        upload.write_text('#!/bin/bash\nmkdir -p "$(dirname "$2")" && cp "$1" "$2"\n')
+        upload.write_text('#!/bin/bash\ncp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2"\n')
         upload.chmod(0o755)
         self.environment = {'HIMAWARI_HERMES_SSH': str(wrapper), 'HIMAWARI_HERMES_UPLOAD': str(upload), 'HIMAWARI_HERMES_POLL_SECONDS': '0.05'}
         os.environ.update(self.environment)
@@ -290,15 +290,30 @@ class HermesCommandTest(unittest.TestCase):
 
     def test_an_upload_area_the_wrapper_refuses_is_found_before_any_build(self):
         refusing = self.root / 'refusing-upload.sh'
-        refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) mkdir -p "$(dirname "$2")" && cp "$1" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
+        refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) cp "$1" "$2.upload-tmp" && mv "$2.upload-tmp" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
         refusing.chmod(0o755)
         self.hermes.upload_wrapper = str(refusing)
-        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_FAILED .*HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA'):
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_AREA_REFUSED .*HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA'):
             self.hermes.probe_uploads()
         self.hermes.upload_wrapper = os.environ['HIMAWARI_HERMES_UPLOAD']
         self.hermes.probe_uploads()
         self.assertEqual(list(Path(self.hermes.scripts).iterdir()), [])
         self.assertEqual(list(Path(self.hermes.work + '-inputs').iterdir()), [])
+
+    def test_every_upload_in_prepare_order_finds_its_remote_directory(self):
+        self.hermes.probe_uploads()
+        self.hermes.install_scripts()
+        bundle = self.root / 'source-1234abc.bundle'
+        bundle.write_bytes(b'bundle')
+        self.hermes.upload(bundle, self.hermes.work + '-inputs/' + bundle.name)
+        packet = self.root / 'packet'
+        (packet / 'materials').mkdir(parents=True)
+        for name in ('linux-x64-abi127-fixture-1.tar.gz', 'context.json'):
+            (packet / 'materials' / name).write_bytes(b'x')
+        (packet / 'packet-parameters.json').write_text(json.dumps({'ARTIFACT_NAME': 'linux-x64-abi127-fixture-1.tar.gz'}))
+        self.hermes.upload_check_materials(packet)
+        self.assertTrue((Path(self.hermes.work) / 'materials' / 'context.json').is_file())
+        self.assertTrue((Path(self.hermes.work + '-inputs') / bundle.name).is_file())
 
     def test_builder_uploads_go_where_the_hermes_upload_wrapper_allows(self):
         settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
