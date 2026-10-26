@@ -1,0 +1,172 @@
+{
+  "schema": "himawari-third-cloud-acceptance-adaptation.v1",
+  "productionQualificationIssued": false,
+  "scope": "G65 second-deployment controlled acceptance: installed new runtime, original full limits/assertions, no production qualification issued by probes",
+  "scratchValidatorSha256": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e",
+  "adapters": [
+    {
+      "source": "packages/runtime-pi/scripts/probe-foreground.mjs",
+      "sourceSha256": "c5bc50f2aa391c73c74a6c3e7a2b58363744e42d80e9bd15132745a1dbaee5eb",
+      "adapter": "adapters/probe-foreground.mjs",
+      "adapterSha256": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+      "oldGuard": "const scratch = process.env.HIMAWARI_PROBE_SCRATCH ?? os.tmpdir();\nif (process.platform === \"linux\" && !scratch.startsWith(\"/data/\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_DATA_DISK\");",
+      "newGuard": "const scratch = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": false
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs",
+      "sourceSha256": "464568e8d49930f7fb1b94031c631d129c1dd81c082eb23ec30cbd7b9e6f5722",
+      "adapter": "adapters/probe-linux-worker-loss.mjs",
+      "adapterSha256": "459d6145338807e0a440599ec313f4d5416f8e2c770902c99986752cd26a29e5",
+      "oldGuard": "  const parent = await realpath(process.env.HIMAWARI_PROBE_SCRATCH);\n  assert.ok(parent.startsWith(\"/data/himawari-r8-\"));\n  assert.equal((await lstat(parent)).uid, process.getuid());",
+      "newGuard": "  const parent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": false,
+      "timingChanges": [
+        "revision-04 (G175): cleanupTimeoutMs 2000 -> 5000; ready wait 10 s -> 60 s; job deadline 20 s -> 60 s; after the fixed 5.5 s wait, polls up to 30 s for final evidence and a released namespace instead of reading once, then reads the final evidence once more without catching so a missing file reports its own error; the header comment is removed (project no-comment rule)"
+      ]
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-network-boundary.mjs",
+      "sourceSha256": "9c6f4c595a48225eebb4c1ff8db8216f959146de5d08286f97cc0c4addd2acd2",
+      "adapter": "adapters/probe-network-boundary.mjs",
+      "adapterSha256": "28c99b1d5b52953713b108aae4f5084241d2ada895f43abb84e349109596b465",
+      "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
+      "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": false,
+      "timingChanges": [
+        "revision-04 (G175): job deadline 10 s -> 30 s; cleanupTimeoutMs 2000 -> 5000; commands, curl --max-time 4 and resource limits unchanged; four comments are removed (project no-comment rule)"
+      ]
+    },
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
+      "sourceSha256": "348aa838b52e34afbc187af6ea70f53826104215e9b53636be887c95ac907962",
+      "adapter": "adapters/probe-authorized-network.mjs",
+      "adapterSha256": "e831e9980fe6088e5a398e93ad617b177dcce06cc2fe0409751fe5abe84659d8",
+      "oldGuard": "const scratchParent =\n  process.platform === \"linux\" ? await realpath(process.env.HIMAWARI_PROBE_SCRATCH) : \"/tmp\";\nif (process.platform === \"linux\" && !scratchParent.startsWith(\"/data/himawari-r8-\"))\n  throw new Error(\"LINUX_PROBE_REQUIRES_OWNED_DATA_DIRECTORY\");\nif (process.platform === \"linux\" && (await lstat(scratchParent)).uid !== process.getuid())\n  throw new Error(\"LINUX_PROBE_DIRECTORY_OWNER_MISMATCH\");",
+      "newGuard": "const scratchParent = await validateScratchRoot(process.env.HIMAWARI_PROBE_SCRATCH);",
+      "unchangedBeyondGuardAndImport": false,
+      "additionalChanges": [
+        "print the host diagnostic on stderr when host.ready fails (D-57 follow-up)",
+        "remove two comments (project no-comment rule)"
+      ],
+      "timingChanges": [
+        "revision-04 (G175): job deadline 25 s -> 60 s; cleanupTimeoutMs 2000 -> 5000; the cpu scenario busy-waits 20 s of wall time instead of 5 s, because the product reads CPU time from ps in whole seconds and a starved task did not reach 1 s of CPU within 5 s on the slowed Hermes rehearsal; other commands and all resource limits unchanged",
+        "revision-04 review (G175): the cpu scenario busy-waits 45 s (5 s in the source, 20 s in the first revision-04 draft); the install scenario gets a 120 s job deadline instead of 60 s; the cancel scenario waits up to 30 s instead of 10 s for the tunnel and the tunnel script exits after 45 s instead of 12 s, so the cancel still comes before the script ends"
+      ]
+    }
+  ],
+  "addedAdapters": [
+    {
+      "source": "packages/runtime-sandbox/scripts/probe-public-search.mjs",
+      "sourceSha256": "9075ee028483f184a13ae5cac65f366062959b65173be66511ad95a5dd909b6e",
+      "adapter": "adapters/probe-public-search.mjs",
+      "adapterSha256": "57cdd070d81646e1020dd5d91caf577063f0d98a54e43a29c937e38341d8b2d9",
+      "changesBeyondTimingChanges": "Import same -04 scratch validator and replace old /data scratch prefix assertion; public-query retries in a fresh job host only when the runner exits non-zero with stderr exactly WEB_SEARCH_RATE_LIMITED, at most three times after waiting 15, 60 and 120 seconds, and records each rate-limited attempt in rateLimitedAttempts",
+      "timingChanges": [
+        "revision-04 (G174, G175): cleanupTimeoutMs 1000 -> 5000, the production value; two comments are removed (project no-comment rule); any failed scenario prints the job host result summary (reason, exit code, diagnostic, supervision, stderr) on stderr before rethrowing"
+      ]
+    }
+  ],
+  "r2l6": {
+    "schema": "r2-l6-frozen-source-carry.v1",
+    "status": "__PKT_LABEL__-candidate-schema51-audit-resident-probe-assertions-unchanged",
+    "files": [
+      {
+        "source": "test/qualification/sandbox-install-restart-probe.mjs",
+        "packetCopy": "probe-source/test/qualification/sandbox-install-restart-probe.mjs",
+        "sha256": "36efdaa202ec9dc9359362abf1d06f126d74118c33315d1010fcb2d62dcc9a43",
+        "bytes": 61435,
+        "byteIdentical": true,
+        "previousSha256": "4fad72648068ffd5b744bfc601f8e7e5b1a26fb943bcbe6d216d39f3a1017efb",
+        "previousBytes": 61735,
+        "byteIdenticalBasis": "981f789d-test-only",
+        "sourceRevision": "__PKT_COMMIT__",
+        "replacementReason": "__PKT_LABEL_TITLE__ change: candidate 981f789d (53bfe699) keeps one resident command session per environment, so the probe counts resident identities from the command session only; assertions and limits unchanged"
+      },
+      {
+        "source": "test/qualification/sandbox-install-restart-controller.py",
+        "packetCopy": "probe-source/test/qualification/sandbox-install-restart-controller.py",
+        "sha256": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3",
+        "bytes": 31135,
+        "byteIdentical": true
+      },
+      {
+        "source": "test/qualification/sandbox-install-restart-http.mjs",
+        "packetCopy": "probe-source/test/qualification/sandbox-install-restart-http.mjs",
+        "sha256": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492",
+        "bytes": 30035,
+        "byteIdentical": true
+      },
+      {
+        "source": "test/qualification/sandbox-install-restart-model.mjs",
+        "packetCopy": "probe-source/test/qualification/sandbox-install-restart-model.mjs",
+        "sha256": "a7d5756845e61711a42bfbd28f59266334b3b5b35cc936522b4855babe529dc8",
+        "bytes": 19728,
+        "byteIdentical": true
+      },
+      {
+        "source": "scripts/operations/workspace-lifecycle-audit.mjs",
+        "packetCopy": "probe-source/scripts/operations/workspace-lifecycle-audit.mjs",
+        "sha256": "933cc99e36e0d1658e02b4f7af9110a8b903b0a024297472d8c1dfe481a5eecb",
+        "bytes": 13768,
+        "byteIdentical": true,
+        "byteIdenticalBasis": "candidate-aa563155",
+        "sourceRevision": "__PKT_COMMIT__",
+        "previousSha256": "aae13387cc61b2a0af680a031ef2d2db63ad7abf960d8648c7f410296bd1ec6e",
+        "previousBytes": 14014,
+        "replacementReason": "__PKT_LABEL_TITLE__ change: the aa563155 audit accepts Schema 56; the eleventh packet audit stops above Schema 55",
+        "firstDeploymentSha256": "625bcab3f09a138702be29c5970a5db2b2e3080e1c1fc5d7168e5568036d1fbf",
+        "firstDeploymentBytes": 13437
+      }
+    ],
+    "codeChanges": [],
+    "evidenceStatus": {
+      "group06": "Retained original passing evidence covers previous HTTP SHA only",
+      "static02": "Retained original static evidence covers previous HTTP SHA only",
+      "group07": "Awaiting parent Hermes verification",
+      "previousHttpSha256": "0b08fdbef70a9b4c49673a77f26d52969c309fd8eba8e132dcec481d69e47dd7",
+      "currentHttpSha256": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492",
+      "changeScope": "Parent-authorized probe-only HTTP credential alias and controller/main shared original30s cleanup deadline; no product, ten assertions, 250ms, 1500ms, 540000ms or 600000ms limit change; __PKT_LABEL_TITLE__ change: audit from candidate cca9d993 (byte-identical to 4126f4f3) (Schema 51); probe from test-only commit cca9d993 (resident task environment; new request identity read before cancel); ten assertions and limits unchanged",
+      "cleanupSingleDeadlineRepair": "Copied exact parent-frozen current source; prior groups retained; new complete fixed-source group and final regression pending",
+      "previousControllerSha256": "da0f43c3e8fa967833f2e29431879fe6c481514cf7a58bfa7165947a4ba82b94",
+      "currentControllerSha256": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3",
+      "previousMainSha256": "99fb47b490ccd8bd8615104b329f641765da2b2caecc2e187acbb9232be51798",
+      "currentMainSha256": "31d5cfb568aabd27de903659a2d322d75d3fbbcecb0f28b66833fe2e3cee795b",
+      "previousPacketMainSha256": "747ad083856d90a96ebc4a6cbe2595c609c9d2fa0ba1fcf92e42ca5cca658b7c"
+    },
+    "regressionSource": {
+      "path": "test/integration/product-path-browser.test.ts",
+      "sha256": "__PKT_REGRESSION_SOURCE_SHA256__",
+      "bytes": __PKT_REGRESSION_SOURCE_BYTES__,
+      "carriedForCloudExecution": false,
+      "reason": "Project-only Hermes regression runner; standalone P8 neither imports nor executes this TS file; temporary original3a source stays clean until the two authorized fixture path changes"
+    }
+  },
+  "compositionSource": {
+    "entry": "packages/runtime-sandbox/scripts/qualify-production.mjs --v2",
+    "sourceRevision": "__PKT_COMMIT__",
+    "temporaryWholeLockedNodeModules": true,
+    "precompiled": false,
+    "pathPatch": "composition-scratch.patch",
+    "onlyChangedFixture": "test/qualification/sandbox-production-mac-probe.ts",
+    "maximumPrivateRootBytes": 20,
+    "assertionsDeadlinesProductImportsUnchanged": true,
+    "rootInputPreserved": true,
+    "ordinaryAccountScratchCopy": true,
+    "wholeDependencyCopyVerifiedAgainstOriginalProof": true,
+    "copyEvidence": "composition-source-copy.json"
+  },
+  "bwrapBinding": {
+    "srt": "/usr/bin/bwrap",
+    "program": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
+    "programMinimumVersion": "0.11.2",
+    "systemMinimumVersion": null,
+    "sameBinaryRequired": false,
+    "hermesProgramBackendInsufficientVersionMustBeReported": true
+  },
+  "status": "G65-candidate-same-checks-awaiting-Hermes-run-and-Claude-freeze",
+  "sourceRevision": "__PKT_COMMIT__",
+  "secondDeploymentDecision": "goal.md G65",
+  "executionDecision": "goal.md G66",
+  "firstBasisExecuted": false
+}

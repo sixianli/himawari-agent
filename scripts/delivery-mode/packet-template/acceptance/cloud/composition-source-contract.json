@@ -1,0 +1,15 @@
+{
+  "schema": "himawari-third-deployment-composition-source-contract.v1",
+  "sourceRevision": "__PKT_COMMIT__",
+  "fixture": "test/qualification/sandbox-production-mac-probe.ts",
+  "originalFixtureSha256": "1769ca9bb8add29ab6b5d56d1f49bf40d67a41547cc52d43c14b88669ccc6da3",
+  "adaptedFixtureSha256": "c5f3c6e0f5e916eb73e9f7ecb9ccb6a2742013f4aa4d5133983ceef6952a365a",
+  "patchSha256": "e434d0767bcf2728a6263841e12d6b79e98bf93bd50b7b8241b5600ceb7ee66c",
+  "entry": "packages/runtime-sandbox/scripts/qualify-production.mjs",
+  "entrySha256": "bf3dfa837eada901a7f919ea6fae248e92179370e8608a83d51c98f669d29f06",
+  "scratchRootBytes": 10,
+  "maximumHostRootBytes": 18,
+  "maximumPrivateRootBytes": 20,
+  "productImportsAssertionsAndDeadlinesUnchanged": true,
+  "qualificationIssued": false
+}
