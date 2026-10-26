@@ -1,0 +1,380 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type {
+  ApprovalRequest,
+  MemoryReminder,
+  ProductMemoryRecord,
+  WebPushSendRequest,
+  WebPushSendResult,
+} from "@himawari-agent/application";
+import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  ProductionWebPush,
+  WebPushPresence,
+  webPushTopic,
+} from "../../apps/agent-service/src/production-web-push.ts";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+const OWNER_ID = createOwnerId("owner-web-push-dispatch");
+const AGENT_ID = createAgentId("agent-web-push-dispatch");
+const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+const START = "2026-11-01T00:59:00.000Z";
+const T0 = "2026-11-01T01:00:00.000Z";
+const ORIGIN = "https://himawari.siyi.win";
+
+const at = (base: string, seconds: number) =>
+  new Date(Date.parse(base) + seconds * 1_000).toISOString();
+
+class FakeSender {
+  readonly publicKey = "public-key";
+  readonly requests: WebPushSendRequest[] = [];
+  respond: (request: WebPushSendRequest) => WebPushSendResult = () => ({ kind: "sent" });
+  async send(request: WebPushSendRequest) {
+    this.requests.push(request);
+    return this.respond(request);
+  }
+  notifications() {
+    return this.requests.map((request) => ({
+      endpoint: request.endpoint,
+      ...(JSON.parse(request.payload) as {
+        web_push: number;
+        notification: Record<string, string>;
+      }),
+    }));
+  }
+}
+
+describe("[WP-3] web push dispatch", () => {
+  useSqliteContractExecution("direct");
+  const directories: string[] = [];
+  const closers: (() => Promise<void>)[] = [];
+  afterEach(async () => {
+    await Promise.all(closers.splice(0).map((close) => close()));
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  async function setup() {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-web-push-dispatch-"));
+    directories.push(stateRoot);
+    const file = path.join(stateRoot, "product.sqlite");
+    const database = openQualifiedDatabase(file);
+    applyMigrations(database, await loadBundledMigrations());
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database
+      .prepare(
+        `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+         VALUES ('thread-1', ?, ?, 1, 'open', ?, ?)`,
+      )
+      .run(OWNER_ID, AGENT_ID, START, START);
+    database.close();
+    let clock = START;
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => clock,
+    });
+    closers.push(() => repository.close());
+    await repository.payloadStore(OWNER_ID, AGENT_ID).put(
+      await createReferenceAdapterSet().payloadProtector.protect({
+        ...scope,
+        ref: "payload",
+        dataClassification: "private",
+        contentType: "text/plain",
+        plaintext: new TextEncoder().encode("hello"),
+        createdAt: START,
+      }),
+    );
+    const store = repository.webPush();
+    const finishRun = (id: string, status: "completed" | "failed" | "cancelled", when: string) => {
+      const seed = openQualifiedDatabase(file);
+      try {
+        seed
+          .prepare(
+            `INSERT INTO triggers (
+              id, owner_id, agent_id, thread_id, idempotency_key, source_type, source_id,
+              payload_ref, source_proof_ref, occurred_at
+            ) VALUES (?, ?, ?, 'thread-1', ?, 'user_message', ?, 'payload', 'proof', ?)`,
+          )
+          .run(`trigger-${id}`, OWNER_ID, AGENT_ID, `key-${id}`, id, when);
+        seed
+          .prepare(
+            `INSERT INTO runs (
+              id, owner_id, agent_id, thread_id, session_id, trigger_id, revision, status,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, 'thread-1', 'session', ?, 2, ?, ?, ?)`,
+          )
+          .run(id, OWNER_ID, AGENT_ID, `trigger-${id}`, status, when, when);
+      } finally {
+        seed.close();
+      }
+    };
+    const reminders: MemoryReminder[] = [];
+    const memories: ProductMemoryRecord[] = [];
+    const approvals: ApprovalRequest[] = [];
+    const titles = new Map<string, string | null>([["thread-1", "查下周东京天气"]]);
+    const sender = new FakeSender();
+    const presence = new WebPushPresence();
+    const failures: unknown[] = [];
+    const create = () =>
+      new ProductionWebPush({
+        ...scope,
+        store,
+        sender,
+        presence,
+        reminders: {
+          listDue: async ({ now }) =>
+            reminders.filter(
+              (reminder) => reminder.status === "scheduled" && reminder.remindAt <= now,
+            ),
+          read: async (id) => reminders.find((reminder) => reminder.id === id),
+        },
+        memories: {
+          readMany: async ({ memoryIds }) => memories.filter(({ id }) => memoryIds.includes(id)),
+        },
+        readMemoryText: async (memory) => `text of ${memory.id}`,
+        listApprovals: async () => approvals,
+        runThread: async () => "thread-1",
+        threadTitle: async (threadId) =>
+          titles.has(threadId) ? { title: titles.get(threadId) ?? null } : null,
+        publicOrigin: ORIGIN,
+        timeZone: "Asia/Shanghai",
+        now: () => clock,
+        onFailure: (error) => failures.push(error),
+      });
+    const subscribe = (id: string, locale: "zh-CN" | "en" | "ja") =>
+      store.saveSubscription({
+        ...scope,
+        id,
+        endpoint: `https://push.example/${id}`,
+        p256dh: `key-${id}`,
+        auth: `auth-${id}`,
+        locale,
+        deviceLabel: id,
+        now: clock,
+      });
+    const reminder = (id: string, classification: ProductMemoryRecord["dataClassification"]) => {
+      memories.push({
+        id: `memory-${id}`,
+        status: "active",
+        dataClassification: classification,
+      } as unknown as ProductMemoryRecord);
+      reminders.push({
+        id,
+        ...scope,
+        memoryId: `memory-${id}` as MemoryReminder["memoryId"],
+        dueAt: "2026-11-01T01:00:00.000Z",
+        remindAt: T0,
+        repeat: "none",
+        status: "scheduled",
+        dismissedAt: null,
+        createdAt: START,
+        updatedAt: START,
+      });
+    };
+    const approval = (id: string, risk: string, expiresAt = at(T0, 3_600)) =>
+      approvals.push({
+        id,
+        ...scope,
+        runId: "run-approval",
+        status: "pending",
+        expiresAt,
+        finalRisk: risk,
+      } as unknown as ApprovalRequest);
+    return {
+      store,
+      sender,
+      presence,
+      failures,
+      approvals,
+      reminders,
+      titles,
+      create,
+      subscribe,
+      reminder,
+      approval,
+      finishRun,
+      setClock: (value: string) => {
+        clock = value;
+      },
+    };
+  }
+
+  it("[WP-3] pushes a reminder, an approval and finished runs once per device in its language", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    await context.subscribe("laptop", "en");
+    context.finishRun("run-old", "completed", at(START, -60));
+    const push = context.create();
+    await push.tick();
+    expect(context.sender.requests).toEqual([]);
+
+    context.setClock(T0);
+    context.reminder("r1", "private");
+    context.approval("a1", "high");
+    context.finishRun("run-ok", "completed", at(T0, -5));
+    context.finishRun("run-bad", "failed", at(T0, -4));
+    context.finishRun("run-stopped", "cancelled", at(T0, -3));
+    await push.tick();
+    await push.tick();
+
+    const sent = context.sender.notifications();
+    expect(sent).toHaveLength(8);
+    expect(sent.every((message) => message.web_push === 8030)).toBe(true);
+    const phone = sent.filter(({ endpoint }) => endpoint.endsWith("/phone"));
+    expect(phone.map(({ notification }) => [notification["title"], notification["body"]])).toEqual([
+      ["等你审批 · 高风险", "查下周东京天气"],
+      ["Himawari 提醒", "text of memory-r1\n11/1周日 09:00"],
+      ["没有完成", "查下周东京天气"],
+      ["已完成", "查下周东京天气"],
+    ]);
+    expect(phone[1]?.notification).toMatchObject({
+      navigate: `${ORIGIN}/memory`,
+      lang: "zh-CN",
+      app_badge: "2",
+    });
+    expect(phone[0]?.notification["navigate"]).toBe(`${ORIGIN}/threads/thread-1`);
+    const laptop = sent.filter(({ endpoint }) => endpoint.endsWith("/laptop"));
+    expect(laptop.map(({ notification }) => notification["title"])).toEqual([
+      "Waiting for your approval · High risk",
+      "Himawari reminder",
+      "Didn't finish",
+      "Done",
+    ]);
+    const approvalRequest = context.sender.requests.find(({ payload }) =>
+      payload.includes("等你审批"),
+    );
+    expect(approvalRequest).toMatchObject({
+      urgency: "high",
+      ttlSeconds: 3_600,
+      topic: webPushTopic("approval:a1"),
+    });
+    expect(webPushTopic("approval:a1")).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(context.sender.requests.find(({ payload }) => payload.includes("已完成"))?.urgency).toBe(
+      "normal",
+    );
+    expect(context.failures).toEqual([]);
+
+    const restarted = context.create();
+    context.setClock(at(T0, 30));
+    await restarted.tick();
+    expect(context.sender.requests).toHaveLength(8);
+  });
+
+  it("[WP-3] hides sensitive reminders and suppresses everything while a page is visible", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "ja");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.reminder("secret", "sensitive");
+    await push.tick();
+    expect(context.sender.notifications()[0]?.notification).toMatchObject({
+      title: "Himawari リマインダー",
+      body: "非公開のリマインダーがあります",
+    });
+
+    context.presence.beat("tab-1", true, T0);
+    context.approval("a2", "low");
+    context.setClock(at(T0, 40));
+    await push.tick();
+    context.presence.beat("tab-1", false, at(T0, 41));
+    context.setClock(at(T0, 50));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+  });
+
+  it("[WP-3] expires work that was handled before it could be sent", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.approval("a3", "medium");
+    context.reminder("r3", "private");
+    context.sender.respond = () => ({ kind: "retry", code: "WEB_PUSH_HTTP_503" });
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(2);
+    context.approvals.splice(0);
+    const [reminder] = context.reminders;
+    if (reminder) context.reminders[0] = { ...reminder, status: "dismissed" };
+    context.sender.respond = () => ({ kind: "sent" });
+    context.setClock(at(T0, 61));
+    await push.tick();
+    context.setClock(at(T0, 3_600));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(2);
+  });
+
+  it("[WP-3] retries server errors after 1, 5 and 15 minutes and then gives up", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.approval("a4", "high", at(T0, 7_200));
+    context.sender.respond = () => ({ kind: "retry", code: "WEB_PUSH_HTTP_503" });
+    for (const seconds of [0, 59, 60, 359, 360, 1_259, 1_260, 3_000]) {
+      context.setClock(at(T0, seconds));
+      await push.tick();
+    }
+    expect(context.sender.requests).toHaveLength(4);
+  });
+
+  it("[WP-3] waits for Retry-After, removes gone devices and pauses rejected ones", async () => {
+    const context = await setup();
+    await context.subscribe("gone", "zh-CN");
+    await context.subscribe("limited", "zh-CN");
+    await context.subscribe("rejected", "zh-CN");
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.approval("a5", "high");
+    context.sender.respond = ({ endpoint }) =>
+      endpoint.endsWith("/gone")
+        ? { kind: "gone", code: "WEB_PUSH_HTTP_410" }
+        : endpoint.endsWith("/limited")
+          ? { kind: "rate_limited", code: "WEB_PUSH_HTTP_429", retryAfterSeconds: 120 }
+          : { kind: "rejected", code: "WEB_PUSH_HTTP_403" };
+    await push.tick();
+    const subscriptions = await context.store.listSubscriptions(scope);
+    expect(subscriptions.map(({ id, state, failureCode }) => [id, state, failureCode])).toEqual([
+      ["limited", "active", null],
+      ["rejected", "paused", "WEB_PUSH_HTTP_403"],
+    ]);
+    context.sender.respond = () => ({ kind: "sent" });
+    context.setClock(at(T0, 119));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(3);
+    context.setClock(at(T0, 120));
+    await push.tick();
+    expect(context.sender.requests.map(({ endpoint }) => endpoint).at(-1)).toBe(
+      "https://push.example/limited",
+    );
+    expect(context.sender.requests).toHaveLength(4);
+  });
+
+  it("[WP-3] sends a test notification to one device without the presence rule", async () => {
+    const context = await setup();
+    const device = await context.subscribe("phone", "en");
+    context.presence.beat("tab", true, START);
+    const push = context.create();
+    expect(await push.sendTest(device.id)).toEqual({ kind: "sent" });
+    expect(context.sender.notifications()[0]?.notification).toMatchObject({
+      title: "Notifications are on",
+      navigate: `${ORIGIN}/`,
+    });
+    expect((await context.store.listSubscriptions(scope))[0]?.lastDeliveredAt).toBe(START);
+  });
+});

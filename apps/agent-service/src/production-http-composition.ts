@@ -1,14 +1,13 @@
-import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import path from "node:path";
 import type {
-  PayloadProtectionRequest,
   CancelCoordinatedRunInput,
-  ThreadCreateInput,
-  ThreadGatewayInboundMessage,
   DurableMemoryService,
   MemoryExtractionAuditRecord,
+  PayloadProtectionRequest,
+  ThreadCreateInput,
+  ThreadGatewayInboundMessage,
 } from "@himawari-agent/application";
 import {
   AgentThreadGatewayService,
@@ -24,6 +23,7 @@ import {
   type ProductConfiguration,
   ProductThreadGatewayAdapter,
   RecentAuthenticationGuard,
+  readThreadExecutionEnvironment,
   type SessionDeviceStatePort,
   ThreadCommandService,
   ThreadDeletionCoordinationService,
@@ -31,8 +31,9 @@ import {
   ThreadForkService,
   type ThreadGatewayAccessPolicyPort,
   ThreadQueryService,
-  readThreadExecutionEnvironment,
 } from "@himawari-agent/application";
+import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
+import { MemoryConsolidationService } from "@himawari-agent/memory-engine";
 import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   CloudflareAccessJwtVerifier as AccessJwtVerifier,
@@ -40,18 +41,15 @@ import {
   BoundedJwksFetcher,
   BrowserTextPayloadReader,
   BrowserThreadSearchPreparer,
-  ScopedThreadSearchTokenizer,
-  ThreadSearchProjector,
+  BuiltInAuthenticationService,
   buildHttpGatewayServer,
   CloudflareAccessIdentityClient,
   type CloudflareAccessIdentityFetcher,
-  type HttpGatewayAuthenticationPort,
-  BuiltInAuthenticationService,
-  registerBuiltInIdentityRoutes,
   digestIdentityCredential,
   EnvelopePayloadProtector,
   type HostProviderSecretSource,
   type HostSecretMaterialSource,
+  type HttpGatewayAuthenticationPort,
   type HttpGatewayPayloadAdmissionPort,
   type HttpGatewayServerOptions,
   IDENTITY_GATEWAY_ERROR_CODES,
@@ -62,23 +60,30 @@ import {
   type ProductSessionAuthenticationServiceOptions,
   RuntimeHealthModel,
   RuntimeMetricsRegistry,
+  registerBuiltInIdentityRoutes,
   registerIdentityAuthenticationRoutes,
+  ScopedThreadSearchTokenizer,
   SessionBoundCsrfService,
+  ThreadSearchProjector,
 } from "@himawari-agent/platform-node";
-import type { ThreadExecutionEnvironment } from "@himawari-agent/gateway-contracts";
 import type { FastifyInstance } from "fastify";
 import {
   createProductionApprovalGateway,
   PRODUCTION_APPROVAL_OPERATIONS,
 } from "./production-approval-gateway.js";
 import {
-  createProductionWorkspaceCopies,
-  PRODUCTION_COPY_OPERATIONS,
-} from "./production-workspace-copies.js";
-import {
   PRODUCTION_MEMORY_OPERATIONS,
   ProductionMemoryControl,
 } from "./production-memory-control.js";
+import { type ProductionWebPush, WebPushPresence } from "./production-web-push.js";
+import {
+  PRODUCTION_WEB_PUSH_OPERATIONS,
+  ProductionWebPushControl,
+} from "./production-web-push-control.js";
+import {
+  createProductionWorkspaceCopies,
+  PRODUCTION_COPY_OPERATIONS,
+} from "./production-workspace-copies.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
 type AgentId = PayloadProtectionRequest["agentId"];
@@ -143,6 +148,10 @@ export interface ProductionHttpCompositionOptions {
       | "recover"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
+  };
+  readonly webPush?: {
+    readonly presence: WebPushPresence;
+    readonly push: ProductionWebPush | undefined;
   };
   readonly configuration: ProductConfiguration;
   readonly repository: SqliteProductStateRepository;
@@ -531,6 +540,7 @@ function routeOptions(
         ...PRODUCTION_APPROVAL_OPERATIONS,
         ...(workspaceCopiesAvailable ? PRODUCTION_COPY_OPERATIONS : []),
         ...(memoryAvailable ? PRODUCTION_MEMORY_OPERATIONS : []),
+        ...PRODUCTION_WEB_PUSH_OPERATIONS,
       ],
       agentId: configuration.agentId,
       deploymentId: configuration.deploymentId,
@@ -898,6 +908,13 @@ export async function createProductionHttpComposition(
     ...(workspaceCopies ? { workspaceCopies } : {}),
     ...(options.executionAuthority ? { executionAuthority: options.executionAuthority } : {}),
     ...(memoryControl ? { memoryControl } : {}),
+    webPushControl: new ProductionWebPushControl({
+      configuration,
+      store: repository.webPush(),
+      presence: options.webPush?.presence ?? new WebPushPresence(),
+      push: options.webPush?.push,
+      clock: { now: clock },
+    }),
   });
   const app = buildHttpGatewayServer({
     ...routeOptions(

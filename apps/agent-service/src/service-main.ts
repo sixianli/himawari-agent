@@ -32,6 +32,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
+  createWebPushSender,
   DescriptorRelativeReadOnly,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
@@ -98,6 +99,7 @@ import {
   type ProductionTaskEnvironments,
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
+import { ProductionWebPush, WebPushPresence } from "./production-web-push.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
 import {
   resolveCodingNetworkFacts,
@@ -412,6 +414,8 @@ export async function runAgentService(
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
+  let webPush: ProductionWebPush | undefined;
+  const webPushPresence = new WebPushPresence();
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
@@ -489,6 +493,7 @@ export async function runAgentService(
         await runs?.memoryCapture?.stop();
         await runs?.memoryEpisodes?.stop();
         await runs?.memoryConsolidation?.stop();
+        await webPush?.stop();
       }
     },
   });
@@ -1268,6 +1273,85 @@ export async function runAgentService(
           : undefined;
       const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
+      const webPushConfiguration = configuration.runPolicy?.webPush;
+      const webPushSecret = webPushConfiguration
+        ? configuration.secretReferences.find(
+            ({ ref, purpose }) => ref === webPushConfiguration.secretRef && purpose === "web-push",
+          )
+        : undefined;
+      if (webPushConfiguration && webPushSecret && episodeProtector) {
+        const pushRepository = repository;
+        const pushSources = hostModelSources(configuration);
+        const readPlain = async (ref: string) => {
+          const payload = await consolidationPayloads.get(ref);
+          if (!payload || payload.contentType !== "text/plain") return undefined;
+          return new TextDecoder("utf-8", { fatal: true }).decode(
+            await episodeProtector.unprotect({
+              ownerId: configuration.ownerId,
+              agentId: configuration.agentId,
+              payload,
+            }),
+          );
+        };
+        webPush = new ProductionWebPush({
+          ownerId: configuration.ownerId,
+          agentId: configuration.agentId,
+          store: pushRepository.webPush(),
+          sender: createWebPushSender({
+            privateKey: await pushSources.keys.resolve(webPushSecret.ref, webPushSecret.version),
+            subject: webPushConfiguration.subject,
+          }),
+          presence: webPushPresence,
+          reminders: pushRepository.memoryReminders(),
+          memories: pushRepository.productMemoryState(),
+          readMemoryText: (record) => readPlain(record.contentRef),
+          listApprovals: () =>
+            pushRepository
+              .authorizationStore()
+              .listApprovals(configuration.ownerId, configuration.agentId),
+          runThread: async (runId) =>
+            (
+              await pushRepository
+                .runLifecycle(configuration.ownerId, configuration.agentId, authority)
+                .readRun(
+                  runId as Parameters<ReturnType<typeof pushRepository.runLifecycle>["readRun"]>[0],
+                )
+            )?.run.threadId ?? null,
+          threadTitle: async (threadId) => {
+            const thread = await pushRepository
+              .threadRepository()
+              .read(
+                configuration.ownerId,
+                configuration.agentId,
+                threadId as Parameters<
+                  ReturnType<typeof pushRepository.threadRepository>["read"]
+                >[2],
+              );
+            if (!thread || thread.status !== "active") return null;
+            const title = thread.titleRef ? await readPlain(thread.titleRef) : undefined;
+            return { title: title?.trim() || null };
+          },
+          publicOrigin: configuration.publicOrigin,
+          ...(configuration.runPolicy?.timeZone
+            ? { timeZone: configuration.runPolicy.timeZone }
+            : {}),
+          now: () => clock.now(),
+          onDelivery: (outcome) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "web-push.delivery",
+              outcome: outcome.kind,
+              ...(outcome.code ? { code: outcome.code } : {}),
+            }),
+          onFailure: (error) =>
+            writeServiceDiagnostic(errorOutput, {
+              component: "agent-service",
+              event: "web-push.failed",
+              code: stableErrorCode(error),
+            }),
+        });
+        webPush.start();
+      }
       runs = createProductionRunComposition({
         onRunTiming: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {
@@ -1406,6 +1490,7 @@ export async function runAgentService(
       const configuredPiModels = modelComposition.composition.piModels;
       const activeDurableMemory = durableMemory;
       http = await createProductionHttpComposition({
+        webPush: { presence: webPushPresence, push: webPush },
         memory: {
           service: activeDurableMemory,
           onAudit: (record) =>

@@ -41,6 +41,38 @@ export const governanceMessages = [
     recipients: ["https://mcp.exa.ai"],
     generatedAt: "2026-09-11T00:00:00.000Z",
   }),
+  fixture("command", "push.subscription.set", {
+    action: "subscribe",
+    endpoint: "https://web.push.apple.com/QGuQyavXutnMH8Ta",
+    keys: {
+      p256dh:
+        "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+      auth: "BTBZMqHH6r4Tts7J_aSIgg",
+    },
+    locale: "zh-CN",
+    deviceLabel: "iPhone 主屏应用",
+  }),
+  fixture("command", "push.test", { subscriptionId: "web-push-01" }),
+  fixture("command", "presence.heartbeat", { clientId: "tab-01", visible: true }),
+  fixture("query", "push.status.read", {}),
+  fixture("snapshot", "push.status.snapshot", {
+    available: true,
+    publicKey:
+      "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U",
+    subscriptions: [
+      {
+        subscriptionId: "web-push-01",
+        deviceLabel: "iPhone 主屏应用",
+        endpointHost: "web.push.apple.com",
+        locale: "zh-CN",
+        state: "active",
+        failureCode: null,
+        createdAt: "2026-10-26T00:00:00.000Z",
+        lastDeliveredAt: null,
+      },
+    ],
+    generatedAt: "2026-10-26T00:00:00.000Z",
+  }),
   fixture("query", "memory.overview.read", {}),
   fixture("snapshot", "memory.overview.snapshot", {
     memories: [

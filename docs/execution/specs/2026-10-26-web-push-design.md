@@ -80,7 +80,7 @@ date: "2026-10-26"
 - `web_push_attempts`：一件事对一台设备的发送结果。
   - 列：`source_key`、`subscription_id`、`status`（`pending`、`sent`、`suppressed`、`expired`、`gone`、`failed`）、`attempts`、`next_attempt_at`、`last_code`、`updated_at`；主键 `owner_id, agent_id, source_key, subscription_id`。
   - `sent`、`suppressed`、`expired`、`gone`、`failed` 都是终态，终态不再发。
-- `web_push_cursors`：来源读到哪里。目前只有一行 `source = 'gateway-events'`，记对话事件游标。
+- `web_push_cursors`：来源读到哪里。目前只有一行 `source = 'finished-runs'`，记已结束 Run 读到的位置。
 
 清理：已到期 7 天的待推送行和它们的发送结果，在每轮扫描时顺带删除，每轮最多删 200 行。
 
@@ -110,10 +110,10 @@ date: "2026-10-26"
 | --- | --- | --- | --- | --- |
 | 记忆提醒 | `memoryReminders().listDue(now)`，只取到期不超过 6 小时的 | `reminder:<提醒 id>:<remindAt>` | 到期后 6 小时 | `high` |
 | 审批 | `authorizationStore().listApprovals()`，只取 `pending` 且未过期的 | `approval:<审批 id>` | 审批的过期时间 | `high` |
-| 一轮任务结束 | 对话事件游标之后的 `thread.message.commit_assistant`（成功）和 `run.failed`（失败）；`run.cancelled` 不推，因为是 Andy 自己停的 | `run:<runId>:completed` 或 `run:<runId>:failed` | 24 小时 | `normal` |
+| 一轮任务结束 | `runs` 表里状态变成 `completed` 或 `failed`、并且属于某个对话的 Run，按结束时间和 id 往后读；`cancelled` 不推，因为是 Andy 自己停的 | `run:<runId>:completed` 或 `run:<runId>:failed` | 24 小时 | `normal` |
 
-- 成功的一轮在事件表里没有 `run.completed`，以助手消息提交作为“完成”。同一轮的多条助手消息只推第一条（`source_key` 相同）。
-- 对话事件游标第一次启动时从当前末尾开始，不补推历史。
+- 不读对话事件表：成功的一轮在事件表里只有 `thread.message.commit_assistant`，事件行不带 Run id；普通失败也不一定写事件。`runs` 表的状态才是一轮结束的唯一记录。迁移给 `runs(owner_id, agent_id, updated_at, id)` 加索引。
+- 读取位置是“结束时间|Run id”，第一次启动时从当前时刻开始，不补推历史。
 - 审批记录里没有对话 id，通过它的 `runId` 找到所属对话。
 
 [↑ 返回阅读导航](#阅读导航)
@@ -146,7 +146,7 @@ date: "2026-10-26"
   "notification": {
     "title": "…",
     "body": "…",
-    "navigate": "https://himawari.siyi.win/?thread=<对话 id>",
+    "navigate": "https://himawari.siyi.win/threads/<对话 id>",
     "lang": "zh-CN",
     "tag": "<Topic>",
     "app_badge": "2"
@@ -154,7 +154,7 @@ date: "2026-10-26"
 }
 ```
 
-- `navigate` 用配置的 `publicOrigin` 拼成完整网址：任务和审批打开对应对话，提醒打开记忆页。
+- `navigate` 用配置的 `publicOrigin` 拼成完整网址：任务和审批打开对应对话（`/threads/<对话 id>`），提醒打开记忆页（`/memory`）。
 - 固定文字按订阅记下的语言取；提醒原文和对话标题保持写入时的语言。
 - 主屏图标角标（`app_badge`）= 待审批数 + 6 小时内到期且还没处理的提醒数，每条通知都带最新值；为 0 时不带这个字段。
 

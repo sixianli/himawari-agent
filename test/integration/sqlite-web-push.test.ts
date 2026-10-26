@@ -1,0 +1,327 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { WebPushOutboxItem } from "@himawari-agent/application";
+import { createAgentId, createOwnerId } from "@himawari-agent/domain";
+import {
+  applyMigrations,
+  loadBundledMigrations,
+  openQualifiedDatabase,
+  SqliteProductStateRepository,
+} from "@himawari-agent/persistence-sqlite";
+import { createReferenceAdapterSet } from "@himawari-agent/testing";
+import { afterEach, describe, expect, it } from "vitest";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
+
+const OWNER_ID = createOwnerId("owner-web-push");
+const AGENT_ID = createAgentId("agent-web-push");
+const scope = { ownerId: OWNER_ID, agentId: AGENT_ID };
+const T0 = "2026-10-26T12:00:00.000Z";
+const T1 = "2026-10-26T12:01:00.000Z";
+const T2 = "2026-10-26T12:06:00.000Z";
+
+const item = (sourceKey: string, expiresAt = "2026-10-26T18:00:00.000Z"): WebPushOutboxItem => ({
+  ...scope,
+  sourceKey,
+  kind: "reminder",
+  sourceRef: sourceKey,
+  threadId: null,
+  createdAt: T0,
+  expiresAt,
+});
+
+describe("[WP-2] web push storage", () => {
+  useSqliteContractExecution("direct");
+  const directories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
+  });
+
+  async function open() {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-web-push-"));
+    directories.push(stateRoot);
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    applyMigrations(database, await loadBundledMigrations());
+    database.prepare("INSERT INTO owners (id, revision) VALUES (?, 0)").run(OWNER_ID);
+    database
+      .prepare("INSERT INTO agents (id, owner_id, revision) VALUES (?, ?, 0)")
+      .run(AGENT_ID, OWNER_ID);
+    database.close();
+    const repository = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T0,
+    });
+    return { stateRoot, repository, store: repository.webPush() };
+  }
+
+  const subscription = (id: string, endpoint: string, locale: "zh-CN" | "en" | "ja" = "zh-CN") => ({
+    ...scope,
+    id,
+    endpoint,
+    p256dh: `key-${id}`,
+    auth: `auth-${id}`,
+    locale,
+    deviceLabel: `device ${id}`,
+    now: T0,
+  });
+
+  it("[WP-2] keeps one subscription per endpoint and reactivates a paused device on resubscribe", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      await store.markSubscription({
+        ...scope,
+        subscriptionId: "s1",
+        state: "paused",
+        failureCode: "WEB_PUSH_HTTP_403",
+        deliveredAt: null,
+        now: T1,
+      });
+      const again = await store.saveSubscription({
+        ...subscription("s9", "https://push.example/a", "ja"),
+        now: T2,
+      });
+      expect(again).toMatchObject({
+        id: "s1",
+        locale: "ja",
+        state: "active",
+        failureCode: null,
+        p256dh: "key-s9",
+        createdAt: T0,
+        updatedAt: T2,
+      });
+      expect(await store.listSubscriptions(scope)).toHaveLength(1);
+      await expect(
+        store.saveSubscription(subscription("s2", "http://push.example/b")),
+      ).rejects.toThrow();
+      expect(await store.removeSubscription({ ...scope, subscriptionId: "s1" })).toBe(true);
+      expect(await store.listSubscriptions(scope)).toEqual([]);
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WP-2] enqueues each source once, advances the cursor with it and lists due pairs per device", async () => {
+    const { repository, store } = await open();
+    try {
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      await store.saveSubscription(subscription("s2", "https://push.example/b"));
+      expect(await store.readCursor({ ...scope, source: "finished-runs" })).toBeNull();
+      expect(
+        await store.enqueue({
+          ...scope,
+          items: [item("reminder:r1:x"), item("reminder:r2:x")],
+          cursor: { source: "finished-runs", value: "c-10" },
+          now: T0,
+        }),
+      ).toBe(2);
+      expect(
+        await store.enqueue({
+          ...scope,
+          items: [item("reminder:r1:x")],
+          cursor: { source: "finished-runs", value: "c-11" },
+          now: T1,
+        }),
+      ).toBe(0);
+      expect(await store.readCursor({ ...scope, source: "finished-runs" })).toBe("c-11");
+      const due = await store.listDue({ ...scope, now: T1, limit: 50 });
+      expect(due.map(({ item, subscription }) => `${item.sourceKey}@${subscription.id}`)).toEqual([
+        "reminder:r1:x@s1",
+        "reminder:r1:x@s2",
+        "reminder:r2:x@s1",
+        "reminder:r2:x@s2",
+      ]);
+      expect(due[0]?.attempt).toBeNull();
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WP-2] never reopens a finished attempt, waits for a retry time and survives a restart", async () => {
+    const { stateRoot, repository, store } = await open();
+    await store.saveSubscription(subscription("s1", "https://push.example/a"));
+    await store.enqueue({
+      ...scope,
+      items: [item("approval:a1"), item("run:r1:completed")],
+      cursor: null,
+      now: T0,
+    });
+    const base = { ...scope, subscriptionId: "s1", lastCode: null, now: T1 };
+    expect(
+      await store.recordAttempt({
+        ...base,
+        sourceKey: "approval:a1",
+        status: "sent",
+        attempts: 1,
+        nextAttemptAt: null,
+      }),
+    ).toBe(true);
+    expect(
+      await store.recordAttempt({
+        ...base,
+        sourceKey: "approval:a1",
+        status: "pending",
+        attempts: 2,
+        nextAttemptAt: T1,
+      }),
+    ).toBe(false);
+    await store.recordAttempt({
+      ...base,
+      sourceKey: "run:r1:completed",
+      status: "pending",
+      attempts: 1,
+      nextAttemptAt: T2,
+      lastCode: "WEB_PUSH_HTTP_503",
+    });
+    expect(await store.listDue({ ...scope, now: T1, limit: 50 })).toEqual([]);
+    expect(
+      await store.recordAttempt({
+        ...base,
+        sourceKey: "missing",
+        status: "sent",
+        attempts: 1,
+        nextAttemptAt: null,
+      }),
+    ).toBe(false);
+    await repository.close();
+
+    const reopened = await SqliteProductStateRepository.open({
+      stateRoot,
+      minimumFreeBytes: 0,
+      now: () => T2,
+    });
+    try {
+      const due = await reopened.webPush().listDue({ ...scope, now: T2, limit: 50 });
+      expect(due).toHaveLength(1);
+      expect(due[0]).toMatchObject({
+        item: { sourceKey: "run:r1:completed" },
+        attempt: { status: "pending", attempts: 1, lastCode: "WEB_PUSH_HTTP_503" },
+      });
+    } finally {
+      await reopened.close();
+    }
+  });
+
+  it("[WP-2] skips paused devices and prunes expired items with their attempts", async () => {
+    const { stateRoot, repository, store } = await open();
+    try {
+      await store.saveSubscription(subscription("s1", "https://push.example/a"));
+      await store.saveSubscription(subscription("s2", "https://push.example/b"));
+      await store.markSubscription({
+        ...scope,
+        subscriptionId: "s2",
+        state: "paused",
+        failureCode: "WEB_PUSH_HTTP_403",
+        deliveredAt: null,
+        now: T1,
+      });
+      await store.enqueue({
+        ...scope,
+        items: [item("reminder:old:x", T0), item("reminder:new:x")],
+        cursor: null,
+        now: T0,
+      });
+      await store.recordAttempt({
+        ...scope,
+        sourceKey: "reminder:old:x",
+        subscriptionId: "s1",
+        status: "expired",
+        attempts: 0,
+        nextAttemptAt: null,
+        lastCode: null,
+        now: T1,
+      });
+      const due = await store.listDue({ ...scope, now: T1, limit: 50 });
+      expect(due.map(({ item, subscription }) => `${item.sourceKey}@${subscription.id}`)).toEqual([
+        "reminder:new:x@s1",
+      ]);
+      expect(await store.prune({ ...scope, expiredBefore: T1, limit: 200 })).toBe(1);
+      const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+      try {
+        expect(database.prepare("SELECT count(*) FROM web_push_attempts").pluck().get()).toBe(0);
+        expect(database.prepare("SELECT source_key FROM web_push_outbox").pluck().all()).toEqual([
+          "reminder:new:x",
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await repository.close();
+    }
+  });
+
+  it("[WP-2] lists finished runs with a thread in finish order after a cursor", async () => {
+    const { stateRoot, repository, store } = await open();
+    await repository.payloadStore(OWNER_ID, AGENT_ID).put(
+      await createReferenceAdapterSet().payloadProtector.protect({
+        ownerId: OWNER_ID,
+        agentId: AGENT_ID,
+        ref: "payload",
+        dataClassification: "private",
+        contentType: "text/plain",
+        plaintext: new TextEncoder().encode("hello"),
+        createdAt: T0,
+      }),
+    );
+    const database = openQualifiedDatabase(path.join(stateRoot, "product.sqlite"));
+    try {
+      database
+        .prepare(
+          `INSERT INTO threads (id, owner_id, agent_id, revision, status, created_at, updated_at)
+           VALUES ('thread-1', ?, ?, 1, 'open', ?, ?)`,
+        )
+        .run(OWNER_ID, AGENT_ID, T0, T0);
+      const run = (id: string, threadId: string | null, status: string, updatedAt: string) => {
+        database
+          .prepare(
+            `INSERT INTO triggers (
+              id, owner_id, agent_id, thread_id, idempotency_key, source_type, source_id,
+              payload_ref, source_proof_ref, occurred_at
+            ) VALUES (?, ?, ?, ?, ?, 'user_message', ?, 'payload', 'proof', ?)`,
+          )
+          .run(`trigger-${id}`, OWNER_ID, AGENT_ID, threadId, `key-${id}`, id, T0);
+        database
+          .prepare(
+            `INSERT INTO runs (
+              id, owner_id, agent_id, thread_id, session_id, trigger_id, revision, status,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'session', ?, 1, ?, ?, ?)`,
+          )
+          .run(id, OWNER_ID, AGENT_ID, threadId, `trigger-${id}`, status, T0, updatedAt);
+      };
+      run("run-b", "thread-1", "completed", T1);
+      run("run-a", "thread-1", "failed", T1);
+      run("run-c", "thread-1", "cancelled", T1);
+      run("run-d", "thread-1", "running", T1);
+      run("run-e", null, "completed", T1);
+      run("run-f", "thread-1", "completed", T2);
+      const first = await store.listFinishedRuns({ ...scope, afterCursor: T0, limit: 2 });
+      expect(first).toEqual([
+        {
+          runId: "run-a",
+          threadId: "thread-1",
+          status: "failed",
+          finishedAt: T1,
+          cursor: `${T1}|run-a`,
+        },
+        {
+          runId: "run-b",
+          threadId: "thread-1",
+          status: "completed",
+          finishedAt: T1,
+          cursor: `${T1}|run-b`,
+        },
+      ]);
+      const next = await store.listFinishedRuns({
+        ...scope,
+        afterCursor: first[1]?.cursor ?? "",
+        limit: 10,
+      });
+      expect(next.map(({ runId }) => runId)).toEqual(["run-f"]);
+    } finally {
+      database.close();
+      await repository.close();
+    }
+  });
+});

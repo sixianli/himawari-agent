@@ -232,7 +232,7 @@ function setSecurityHeaders(reply: FastifyReply): void {
   reply
     .header(
       "content-security-policy",
-      "default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; script-src 'self'; style-src 'self'",
+      "default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; manifest-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'",
     )
     .header("cross-origin-opener-policy", "same-origin")
     .header("cross-origin-resource-policy", "same-origin")
@@ -672,6 +672,8 @@ function staticContentType(target: string): string {
       return "image/svg+xml";
     case ".png":
       return "image/png";
+    case ".webmanifest":
+      return "application/manifest+json";
     default:
       return "text/html; charset=utf-8";
   }
@@ -1211,6 +1213,39 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       .header("cache-control", "public, max-age=31536000, immutable")
       .type(staticContentType(target))
       .send(content);
+  });
+
+  const sendHomeScreenFile = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    relative: string,
+    cacheControl: string,
+  ) => {
+    assertPublicHost(request, publicOrigin);
+    const target = safeAssetPath(options.staticRoot, relative);
+    const content = await readFile(target).catch(() => null);
+    if (!content || content.byteLength > (options.maximumStaticAssetBytes ?? DEFAULT_ASSET_LIMIT)) {
+      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+    }
+    return reply
+      .header("cache-control", cacheControl)
+      .type(staticContentType(target))
+      .send(content);
+  };
+  for (const file of ["/sw.js", "/manifest.webmanifest"])
+    app.get(file, (request, reply) => sendHomeScreenFile(request, reply, file, "no-cache"));
+  app.get("/apple-touch-icon.png", (request, reply) =>
+    sendHomeScreenFile(request, reply, "/apple-touch-icon.png", "public, max-age=86400"),
+  );
+  app.get<{ Params: { readonly "*": string } }>("/icons/*", (request, reply) => {
+    if (!/^[a-z0-9-]+\.png$/.test(request.params["*"]))
+      throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.STATIC_NOT_FOUND, 404);
+    return sendHomeScreenFile(
+      request,
+      reply,
+      `/icons/${request.params["*"]}`,
+      "public, max-age=86400",
+    );
   });
 
   app.get<{ Params: { readonly "*": string } }>("/*", async (request, reply) => {

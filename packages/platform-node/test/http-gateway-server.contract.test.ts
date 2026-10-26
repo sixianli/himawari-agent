@@ -1,5 +1,5 @@
 import { request as httpRequest, type IncomingMessage } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -406,6 +406,43 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(page.headers["x-content-type-options"]).toBe("nosniff");
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(asset.headers["cache-control"]).toContain("immutable");
+  });
+
+  it("[WP-6] serves the home screen app files with their types and lets the page install a worker", async () => {
+    const shell = new URL("../../../apps/control-center/public/", import.meta.url);
+    await mkdir(path.join(staticRoot, "icons"), { recursive: true });
+    for (const file of [
+      "sw.js",
+      "manifest.webmanifest",
+      "apple-touch-icon.png",
+      "icons/icon-192.png",
+    ])
+      await writeFile(path.join(staticRoot, file), await readFile(new URL(file, shell)));
+    const { app } = fixture();
+    const get = (url: string) =>
+      app.inject({ method: "GET", url, headers: { accept: "*/*", host: "agent.example.test" } });
+    const worker = await get("/sw.js");
+    const manifest = await get("/manifest.webmanifest");
+    const touchIcon = await get("/apple-touch-icon.png");
+    const icon = await get("/icons/icon-192.png");
+    const missing = await get("/icons/missing.png");
+    const traversal = await get("/icons/..%2Findex.html");
+
+    expect(worker.statusCode).toBe(200);
+    expect(worker.headers["content-type"]).toContain("text/javascript");
+    expect(worker.headers["cache-control"]).toBe("no-cache");
+    expect(worker.body).toContain('addEventListener("push"');
+    expect(worker.body).not.toContain('addEventListener("fetch"');
+    expect(manifest.headers["content-type"]).toContain("application/manifest+json");
+    expect(JSON.parse(manifest.body)).toMatchObject({ display: "standalone", start_url: "/" });
+    expect(manifest.headers["cache-control"]).toBe("no-cache");
+    expect(touchIcon.headers["content-type"]).toBe("image/png");
+    expect(icon.statusCode).toBe(200);
+    expect(icon.headers["cache-control"]).toBe("public, max-age=86400");
+    expect(missing.statusCode).toBe(404);
+    expect(traversal.statusCode).toBe(404);
+    expect(worker.headers["content-security-policy"]).toContain("manifest-src 'self'");
+    expect(worker.headers["content-security-policy"]).toContain("worker-src 'self'");
   });
 
   it("does not expose legacy v1 routes when no legacy gateway is composed", async () => {

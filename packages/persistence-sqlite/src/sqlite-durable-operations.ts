@@ -80,6 +80,7 @@ import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
 import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
+import { SqliteWebPushOperations } from "./sqlite-web-push-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
 import { SqliteModelInvocationOperations } from "./sqlite-model-invocation-operations.ts";
@@ -347,6 +348,7 @@ export class SqliteDurableOperations {
   private readonly memory: SqliteMemoryOperations;
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
+  private readonly webPush: SqliteWebPushOperations;
   private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
@@ -415,6 +417,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
+    this.webPush = new SqliteWebPushOperations(database, fail, assertDiskHeadroom);
     this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
@@ -516,6 +519,7 @@ export class SqliteDurableOperations {
       return this.memoryConsolidation.execute(operation, payload);
     if (operation.startsWith("memoryReminder."))
       return this.memoryReminders.execute(operation, payload);
+    if (operation.startsWith("webPush.")) return this.webPush.execute(operation, payload);
     if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":
