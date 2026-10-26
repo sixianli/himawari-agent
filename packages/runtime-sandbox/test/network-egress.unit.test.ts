@@ -1,7 +1,8 @@
 import { createServer, request } from "node:http";
 import type * as net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPublicEgressAddress, openNetworkEgress } from "../src/network-egress.ts";
+import { openNetworkEgress } from "../src/network-egress.ts";
+import { isPublicEgressAddress } from "../src/public-egress-address.ts";
 
 const { lookup, dial } = vi.hoisted(() => ({ lookup: vi.fn(), dial: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ lookup }));
@@ -176,8 +177,6 @@ describe("per-job public network egress", () => {
     await proxy.close();
   });
   it("pins a CONNECT dial to the checked address and closes established tunnels", async () => {
-    // Controlled transport: intercept only the numeric public dial and route it
-    // to our fake server. This verifies routing/lifecycle, not host isolation.
     const real = await vi.importActual<typeof import("node:net")>("node:net");
     const server = createServer((_req, res) => res.end("synthetic"));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -216,8 +215,6 @@ describe("per-job public network egress", () => {
     }
   });
   it("rechecks current authority after DNS and rejects before an outbound dial", async () => {
-    // A legal dial must return an actual socket even when the implementation is
-    // faulty, so a failing regression reports the authorization error itself.
     const real = await vi.importActual<typeof import("node:net")>("node:net");
     const server = real.createServer();
     const upstreams = new Set<net.Socket>();

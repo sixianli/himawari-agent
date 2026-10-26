@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist", "!!.ci-output", "!!.claude/skills"]
+    "includes": ["**", "!!**/dist", "!!.ci-output", "!!.claude/skills", "!!.agents/tasks"]
   },
   "formatter": {
     "enabled": true,

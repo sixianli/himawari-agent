@@ -65,7 +65,6 @@ export const allowedInternalDependencies = new Map([
   [
     "@himawari-agent/agent-service",
     new Set([
-      // Only the bounded control client subpath; never the SRT launch entry.
       "@himawari-agent/runtime-sandbox",
       "@himawari-agent/application",
       "@himawari-agent/gateway-contracts",
@@ -122,7 +121,6 @@ export const browserExternalPackages = new Set([
   "react",
   "react-dom",
   "react-intl",
-  // Browser rendering only: no HTML injection, network transport, or host I/O.
   "marked",
   "vite",
   "vitest",
@@ -160,10 +158,15 @@ export function isBrowserImportAllowed(packageName, specifier, workspaceNames) {
 
 export const srtDependencyOwner = "@himawari-agent/runtime-sandbox";
 
+const agentSandboxSubpaths = new Set([
+  "@himawari-agent/runtime-sandbox/control",
+  "@himawari-agent/runtime-sandbox/public-address",
+]);
+
 export function isSandboxImportAllowed(packageName, specifier) {
   return (
     packageName !== "@himawari-agent/agent-service" ||
     packageSpecifier(specifier) !== "@himawari-agent/runtime-sandbox" ||
-    specifier === "@himawari-agent/runtime-sandbox/control"
+    agentSandboxSubpaths.has(specifier)
   );
 }

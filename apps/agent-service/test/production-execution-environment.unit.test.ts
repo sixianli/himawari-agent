@@ -27,7 +27,7 @@ const refusals =
 let calls: string[] = [];
 
 describe("strict-mode unavailable tools", () => {
-  it("checks each configured tool against its own capability and lists refused ones once", async () => {
+  it("[NL-2] checks each sandboxed tool against its own capability, skips host web tools, and lists refused ones once", async () => {
     calls = [];
     await expect(
       strictModeUnavailableTools({
@@ -50,7 +50,6 @@ describe("strict-mode unavailable tools", () => {
       "host.file.read@1.0.0/inspect",
       "coding@1.0.0/bash",
       "coding@1.0.0/edit",
-      "search@1.0.0/web_search",
     ]);
   });
 

@@ -3197,3 +3197,87 @@ it("links regenerated file calls through native Pi history and stops changing-co
   expect(model.observed).toHaveLength(8);
   expect((model.observed.at(-1) as { tools: unknown[] }).tools).toEqual([]);
 });
+
+describe("[NL-1] product-selected tool execution mode", () => {
+  const searchParameters = {
+    type: "object",
+    properties: { query: { type: "string" } },
+    required: ["query"],
+    additionalProperties: false,
+  };
+  class ModeTools extends RecordingRuntimeTools {
+    readonly descriptors: readonly RuntimeToolDescriptor[];
+    constructor(descriptors: readonly RuntimeToolDescriptor[]) {
+      super();
+      this.descriptors = descriptors;
+    }
+    override async listAuthorized(): Promise<readonly RuntimeToolDescriptor[]> {
+      return this.descriptors;
+    }
+  }
+
+  it("lets only product-marked read-only tools run in parallel and keeps the rest sequential", async () => {
+    const observedOptions: FakeSessionOptions[] = [];
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new ModeTools([
+        {
+          definition: "builtin-coding",
+          name: "grep",
+          capabilityRef: "coding.grep",
+          capabilityHandleRef: null,
+          executionMode: "parallel",
+        },
+        {
+          name: "web_search",
+          capabilityRef: "search.web_search",
+          capabilityHandleRef: null,
+          description: "Search",
+          parameters: searchParameters,
+          executionMode: "parallel",
+        },
+        {
+          definition: "builtin-coding",
+          name: "write",
+          capabilityRef: "coding.write",
+          capabilityHandleRef: null,
+        },
+      ]),
+      fakeSessionFactory(async (emit) => {
+        emit({ type: "agent_settled" });
+      }, observedOptions),
+    );
+    await collect(adapter.run(request));
+    const modes = (
+      observedOptions[0]?.customTools as unknown as readonly {
+        name: string;
+        executionMode?: string;
+      }[]
+    ).map(({ name, executionMode }) => [name, executionMode]);
+    expect(modes).toEqual([
+      ["grep", "parallel"],
+      ["web_search", "parallel"],
+      ["write", "sequential"],
+    ]);
+  });
+
+  it("refuses a run that marks a file-changing tool as parallel before creating a session", async () => {
+    const factory = vi.fn(fakeSessionFactory(async () => {}));
+    const adapter = createAdapter(
+      new RecordingProjection(),
+      new ModeTools([
+        {
+          definition: "builtin-coding",
+          name: "bash",
+          capabilityRef: "coding.bash",
+          capabilityHandleRef: null,
+          executionMode: "parallel",
+        },
+      ]),
+      factory,
+    );
+    const events = await collect(adapter.run(request));
+    expect(factory).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "runtime.failed" });
+  });
+});

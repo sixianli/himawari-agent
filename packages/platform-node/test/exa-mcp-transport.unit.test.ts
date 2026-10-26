@@ -91,6 +91,22 @@ describe("public search MCP adapter transport contract", () => {
     expect(state.closeClient).toHaveBeenCalledOnce();
     expect(state.closeProxy).toHaveBeenCalledOnce();
   });
+  it("[NL-2] sends through a shared service dispatcher without a sandbox proxy and keeps it open", async () => {
+    vi.stubEnv("HTTPS_PROXY", undefined);
+    const shared = { close: vi.fn() } as unknown as import("undici").Dispatcher;
+    await new ExaPublicSearchAdapter({ dispatcher: shared }).search({
+      query: "Tokyo weather",
+      limit: 2,
+    });
+    await transportFetch()(endpoint, { method: "POST", body: "approved request" });
+    expect(state.proxyFetch).toHaveBeenCalledExactlyOnceWith(
+      endpoint,
+      expect.objectContaining({ dispatcher: shared, redirect: "error" }),
+    );
+    expect(state.proxyCreated).not.toHaveBeenCalled();
+    expect(shared.close).not.toHaveBeenCalled();
+    expect(state.closeClient).toHaveBeenCalledOnce();
+  });
   it.each([
     undefined,
     "https://fixture:fixture@127.0.0.1:4321",

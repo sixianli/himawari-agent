@@ -22,6 +22,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("DeepSeek search and fetch adapter", () => {
+  it("[NL-2] uses a shared service dispatcher without a sandbox proxy and keeps it open", async () => {
+    vi.stubEnv("HTTPS_PROXY", undefined);
+    state.fetch.mockResolvedValue(json({ results: [] }));
+    const shared = { close: vi.fn() } as unknown as import("undici").Dispatcher;
+    await new DeepSeekWebProvider({ credential: key, dispatcher: shared })
+      .search({ query: "Tokyo", limit: 1 })
+      .catch(() => undefined);
+    expect(state.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ dispatcher: shared }),
+    );
+    expect(shared.close).not.toHaveBeenCalled();
+    expect(state.close).not.toHaveBeenCalled();
+  });
   it("sends only the query and count to the fixed search endpoint through the sandbox proxy", async () => {
     state.fetch.mockResolvedValue(
       json({

@@ -8,7 +8,7 @@ import type {
 } from "@himawari-agent/application";
 import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { ProxyAgent, fetch as proxyFetch } from "undici";
+import { type Dispatcher, ProxyAgent, fetch as proxyFetch } from "undici";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
@@ -161,6 +161,22 @@ export function sandboxProxy(prefix: string) {
   return { uri: proxy.href, token };
 }
 
+export function providerDispatchers(shared: Dispatcher | undefined, prefix: string) {
+  if (shared) return { next: (): Dispatcher => shared, close: async () => {} };
+  const proxy = sandboxProxy(prefix);
+  const owned: ProxyAgent[] = [];
+  return {
+    next: (): Dispatcher => {
+      const created = new ProxyAgent(proxy);
+      owned.push(created);
+      return created;
+    },
+    close: async () => {
+      await Promise.all(owned.map((entry) => entry.close()));
+    },
+  };
+}
+
 type McpMessage = {
   readonly method?: unknown;
   readonly params?: { readonly name?: unknown; readonly arguments?: Record<string, unknown> };
@@ -177,6 +193,11 @@ export class ExaPublicSearchAdapter
   implements Pick<PublicWebAdapterPort, "search">, WebSearchProvider, WebFetchProvider
 {
   readonly descriptor = WEB_PROVIDERS["exa-public"];
+  readonly #dispatcher: Dispatcher | undefined;
+
+  constructor(options: { readonly dispatcher?: Dispatcher } = {}) {
+    this.#dispatcher = options.dispatcher;
+  }
 
   async search(input: {
     readonly query: string;
@@ -298,14 +319,13 @@ export class ExaPublicSearchAdapter
     external: AbortSignal | undefined,
     work: (session: ExaSession) => Promise<T>,
   ): Promise<T> {
-    const proxy = sandboxProxy(prefix);
+    const dispatchers = providerDispatchers(this.#dispatcher, prefix);
     const deadline = performance.now() + 45000;
     const lifetime = external
       ? AbortSignal.any([external, AbortSignal.timeout(45000)])
       : AbortSignal.timeout(45000);
     let retried = false;
-    let dispatcher = new ProxyAgent(proxy);
-    const dispatchers = [dispatcher];
+    let dispatcher = dispatchers.next();
     const client = new Client({ name: "himawari-public-search", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
       fetch: async (url, init) => {
@@ -348,8 +368,7 @@ export class ExaPublicSearchAdapter
           await response?.body?.cancel().catch(() => undefined);
           await delay(backoff, undefined, { signal });
           signal.throwIfAborted();
-          dispatcher = new ProxyAgent(proxy);
-          dispatchers.push(dispatcher);
+          dispatcher = dispatchers.next();
           response = await send();
         }
         if (!response) throw failure;
@@ -384,13 +403,12 @@ export class ExaPublicSearchAdapter
         deadline,
         lifetime,
         renew: () => {
-          dispatcher = new ProxyAgent(proxy);
-          dispatchers.push(dispatcher);
+          dispatcher = dispatchers.next();
         },
       });
     } finally {
       await client.close().catch(() => undefined);
-      await Promise.all(dispatchers.map((entry) => entry.close()));
+      await dispatchers.close();
     }
   }
 }

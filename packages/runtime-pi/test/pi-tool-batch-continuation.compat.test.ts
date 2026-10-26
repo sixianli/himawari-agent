@@ -8,8 +8,8 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   capturePiToolBatch,
-  restorePiToolBatch,
   type PiToolBatchContinuation,
+  restorePiToolBatch,
 } from "../src/pi-tool-batch-continuation.js";
 import { createFauxModelFixture } from "./faux-model-fixture.js";
 
@@ -160,6 +160,131 @@ describe("pinned Pi tool-batch continuation", () => {
         role: "assistant",
         stopReason: "stop",
       });
+    } finally {
+      for (const session of sessions) session.dispose();
+    }
+  });
+
+  it("[NL-1] runs a read-only batch concurrently and restores it without frozen results", async () => {
+    const model = await createFauxModelFixture("完成", [
+      { name: "lookup", id: "confirmed", arguments: { value: "first" } },
+      { name: "lookup", id: "waiting", arguments: { value: "second" } },
+    ]);
+    const binding = await model.models.resolve(model.descriptor.ref);
+    const completed = new Map<string, string>();
+    const effects: string[] = [];
+    let approved = false;
+    let saved: PiToolBatchContinuation | undefined;
+    let releaseFirst: () => void = () => {};
+    const waitingStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const sessions: Awaited<ReturnType<typeof createAgentSession>>["session"][] = [];
+    async function freshSession(executionMode: "parallel" | "sequential") {
+      const settingsManager = SettingsManager.inMemory(
+        { compaction: { enabled: false }, retry: { enabled: false }, defaultTools: [] },
+        { projectTrusted: false },
+      );
+      const resourceLoader = new DefaultResourceLoader({
+        cwd: process.cwd(),
+        agentDir: process.cwd(),
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        systemPrompt: "Use lookup.",
+      });
+      await resourceLoader.reload();
+      const tool: ToolDefinition = {
+        name: "lookup",
+        label: "lookup",
+        description: "Read-only test lookup",
+        parameters: {
+          type: "object",
+          properties: { value: { type: "string" } },
+          required: ["value"],
+        } as ToolDefinition["parameters"],
+        executionMode,
+        execute: async (id, parameters) => {
+          const session = sessions.at(-1);
+          if (!session) throw new Error("Missing test session");
+          if (!approved && id === "confirmed")
+            await Promise.race([
+              waitingStarted,
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("TEST_BATCH_NOT_CONCURRENT")), 2000),
+              ),
+            ]);
+          if (!approved && id === "waiting") {
+            releaseFirst();
+            saved = capturePiToolBatch(session, id, 1);
+            session.agent.abort();
+            throw new Error("PRODUCT_SUSPENDED");
+          }
+          const previous = completed.get(id);
+          if (previous) return { content: [{ type: "text", text: previous }], details: {} };
+          const value = (parameters as { value: string }).value;
+          effects.push(value);
+          completed.set(id, value);
+          return { content: [{ type: "text", text: value }], details: {} };
+        },
+      };
+      const { session } = await createAgentSession({
+        cwd: process.cwd(),
+        model: binding.model,
+        modelRuntime: binding.modelRuntime,
+        noTools: "all",
+        tools: [tool.name],
+        customTools: [tool],
+        settingsManager,
+        resourceLoader,
+        sessionManager: SessionManager.inMemory(process.cwd()),
+      });
+      sessions.push(session);
+      return session;
+    }
+    try {
+      const first = await freshSession("parallel");
+      await first.prompt("Look up both values.");
+      expect(effects).toEqual(["first"]);
+      expect(saved).toMatchObject({
+        waitingToolCallId: "waiting",
+        completedResults: [],
+        parallel: true,
+      });
+      first.dispose();
+      approved = true;
+      const snapshot = JSON.parse(JSON.stringify(saved)) as PiToolBatchContinuation;
+      const sequential = await freshSession("sequential");
+      expect(() => restorePiToolBatch(sequential, structuredClone(snapshot))).toThrow(
+        "PI_CONTINUATION_PARALLEL_BATCH_INVALID",
+      );
+      const { parallel: _flag, ...unflagged } = structuredClone(snapshot);
+      expect(() => restorePiToolBatch(sequential, unflagged)).toThrow(
+        "PI_CONTINUATION_RESULTS_INVALID",
+      );
+      const second = await freshSession("parallel");
+      const restored = restorePiToolBatch(second, snapshot);
+      const providerStream = second.agent.streamFunction;
+      second.agent.streamFunction = (model, context, options) => {
+        const replay = restored.takeReplay();
+        if (replay) return replay;
+        if (!providerStream) throw new Error("Missing Pi provider");
+        return providerStream(model, context, options);
+      };
+      await second.agent.continue();
+      await second.waitForIdle();
+      expect(effects).toEqual(["first", "second"]);
+      expect(model.observed).toHaveLength(2);
+      const followup = model.observed[1] as {
+        messages: { role: string; toolCallId?: string; content: unknown }[];
+      };
+      expect(
+        followup.messages.filter((m) => m.role === "toolResult").map((m) => m.toolCallId),
+      ).toEqual(["confirmed", "waiting"]);
+      expect(JSON.stringify(followup)).not.toContain("PRODUCT_SUSPENDED");
     } finally {
       for (const session of sessions) session.dispose();
     }

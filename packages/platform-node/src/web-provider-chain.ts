@@ -1,12 +1,13 @@
 import {
   type WebFetchProvider,
   type WebFetchResult,
+  WebProviderError,
   type WebProviderFailureCode,
   type WebProviderId,
-  WebProviderError,
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
+import type { Dispatcher } from "undici";
 import { DeepSeekWebProvider } from "./deepseek-web-provider.js";
 import { ExaPublicSearchAdapter } from "./exa-public-search.js";
 
@@ -19,10 +20,15 @@ export interface WebProviderSecrets {
 
 export type WebProvider = WebSearchProvider & WebFetchProvider;
 
-export function createWebProvider(id: WebProviderId, secrets: WebProviderSecrets): WebProvider {
-  if (id === "exa-public") return new ExaPublicSearchAdapter();
+export function createWebProvider(
+  id: WebProviderId,
+  secrets: WebProviderSecrets,
+  dispatcher?: Dispatcher,
+): WebProvider {
+  const transport = dispatcher ? { dispatcher } : {};
+  if (id === "exa-public") return new ExaPublicSearchAdapter(transport);
   if (!secrets.deepseek) throw new WebProviderError("UNAVAILABLE", "WEB_PROVIDER_SECRET_MISSING");
-  return new DeepSeekWebProvider({ credential: secrets.deepseek });
+  return new DeepSeekWebProvider({ credential: secrets.deepseek, ...transport });
 }
 
 export function webProviderFailure(error: unknown): WebProviderError {

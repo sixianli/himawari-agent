@@ -143,3 +143,14 @@ it("[R2-S4] [R2-D4] limits Agent imports to risk-reducing sandbox control", asyn
     "readProcessStartToken",
   ]);
 });
+
+it("[NL-2] lets the Agent share only the sandbox's public address rule", async () => {
+  expect(
+    isSandboxImportAllowed(
+      "@himawari-agent/agent-service",
+      "@himawari-agent/runtime-sandbox/public-address",
+    ),
+  ).toBe(true);
+  const publicAddress = await import("@himawari-agent/runtime-sandbox/public-address");
+  expect(Object.keys(publicAddress)).toEqual(["isPublicEgressAddress"]);
+});

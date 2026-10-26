@@ -6,8 +6,8 @@ import type {
   WebSearchProvider,
 } from "@himawari-agent/application";
 import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
-import { ProxyAgent, fetch as proxyFetch } from "undici";
-import { sandboxProxy, truncateUtf8, validatePublicFetchUrl } from "./exa-public-search.js";
+import { type Dispatcher, fetch as proxyFetch } from "undici";
+import { providerDispatchers, truncateUtf8, validatePublicFetchUrl } from "./exa-public-search.js";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const origin = "https://api.deepseek.com";
@@ -37,11 +37,13 @@ const text = (value: unknown, limit: number) =>
 export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider {
   readonly descriptor = WEB_PROVIDERS.deepseek;
   readonly #credential: string;
+  readonly #dispatcher: Dispatcher | undefined;
 
-  constructor(options: { readonly credential: string }) {
+  constructor(options: { readonly credential: string; readonly dispatcher?: Dispatcher }) {
     if (!/^[\x21-\x7e]{16,512}$/.test(options.credential))
       throw new Error("WEB_PROVIDER_SECRET_INVALID");
     this.#credential = options.credential;
+    this.#dispatcher = options.dispatcher;
   }
 
   async search(input: {
@@ -135,17 +137,15 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     prefix: "WEB_SEARCH" | "WEB_FETCH",
     external: AbortSignal | undefined,
   ): Promise<unknown> {
-    const proxy = sandboxProxy(prefix);
+    const dispatchers = providerDispatchers(this.#dispatcher, prefix);
     const signal = external
       ? AbortSignal.any([external, AbortSignal.timeout(45000)])
       : AbortSignal.timeout(45000);
     const deadline = performance.now() + 45000;
-    const dispatchers: ProxyAgent[] = [];
     const send = () => {
       signal.throwIfAborted();
       if (performance.now() >= deadline) throw new Error(`${prefix}_TIMEOUT`);
-      const dispatcher = new ProxyAgent(proxy);
-      dispatchers.push(dispatcher);
+      const dispatcher = dispatchers.next();
       return proxyFetch(`${origin}${path}`, {
         method: "POST",
         headers: {
@@ -189,7 +189,7 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
       }
       return await boundedJson(response, prefix);
     } finally {
-      await Promise.all(dispatchers.map((entry) => entry.close()));
+      await dispatchers.close();
     }
   }
 }

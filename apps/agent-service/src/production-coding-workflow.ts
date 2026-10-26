@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import {
+  DEFAULT_WEB_PROVIDERS,
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type HostDirectoryGrant,
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolSettledResult,
-  DEFAULT_WEB_PROVIDERS,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
@@ -399,6 +399,41 @@ export async function executeProductionCodingRequest(
     providers,
     arguments: args,
   });
+  if (services.hostWeb && webTool(tool)) {
+    const previous = (await ctx.load("host-result")) as RuntimeToolSettledResult | undefined;
+    if (previous) return previous;
+    const hit = memory && memoryKey ? memory.cached(memoryKey) : undefined;
+    if (hit) {
+      await active();
+      await ctx.save("host-result", hit);
+      return hit;
+    }
+    const startedAt = ctx.now();
+    const executed = await services.hostWeb.execute({
+      tool: tool as "web_search" | "web_fetch",
+      arguments: args,
+      providers: memory ? memory.order(providers) : providers,
+      secrets: binding.providerSecrets ?? [],
+      maximumBytes: binding.maximumBytes,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+    await active();
+    const settled: RuntimeToolSettledResult = {
+      dispatchState: "accepted",
+      executionTiming: { startedAt, endedAt: ctx.now() },
+      outcome: executed.ok ? "succeeded" : "failed",
+      resultRef: null,
+      errorCode: executed.code,
+      externalActionId: null,
+      modelContent: executed.output,
+    };
+    if (memory && memoryKey) {
+      memory.observe(providers, settled);
+      memory.remember(memoryKey, tool as "web_search" | "web_fetch", settled);
+    }
+    await ctx.save("host-result", settled);
+    return settled;
+  }
   let saved = (await ctx.load("handle")) as
     | { handle: GovernedCapabilityExecutionHandle; inputRef: string }
     | undefined;

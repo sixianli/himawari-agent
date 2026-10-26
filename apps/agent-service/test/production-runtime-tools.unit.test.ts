@@ -1344,3 +1344,57 @@ it("does not offer recall when memory is not configured", async () => {
     ).allowed,
   ).toBe(false);
 });
+
+it("[NL-1] marks only service-process read-only tools for parallel execution", async () => {
+  const f = fixture();
+  const execute = vi.fn(
+    async (_input: ProductionHostReadOnlyInput): Promise<ProductionHostReadOnlyResult> => ({
+      modelContent: "unused",
+      isError: false,
+      errorCode: null,
+    }),
+  );
+  const base = hostOptions(f, execute);
+  const route = {
+    hostId: "host:test",
+    workerInstanceId: "worker-instance",
+    capabilityRef: "search",
+    capabilityVersion: "1.0.0",
+    maximumBytes: 4096,
+    scopeSource: "private_temp" as const,
+  };
+  const modes = async (hostWeb: boolean) => {
+    const descriptors = await new ProductionRuntimeTools({
+      ...base,
+      coding: { ...base.coding, enabledTools: ["read", "grep", "write", "bash"] as const },
+      publicSearch: route,
+      publicFetch: route,
+      fileRead: {
+        ...base.fileRead,
+        ...(hostWeb
+          ? { hostWeb: { execute: vi.fn(async () => ({ ok: true, code: null, output: "" })) } }
+          : {}),
+      },
+    }).listAuthorized(invocation.runId, []);
+    return descriptors.map((descriptor) => [
+      descriptor.name,
+      "executionMode" in descriptor ? descriptor.executionMode : undefined,
+    ]);
+  };
+  expect(await modes(true)).toEqual([
+    ["read", "parallel"],
+    ["grep", "parallel"],
+    ["write", undefined],
+    ["bash", undefined],
+    ["web_search", "parallel"],
+    ["web_fetch", "parallel"],
+  ]);
+  expect(await modes(false)).toEqual([
+    ["read", "parallel"],
+    ["grep", "parallel"],
+    ["write", undefined],
+    ["bash", undefined],
+    ["web_search", undefined],
+    ["web_fetch", undefined],
+  ]);
+});

@@ -1,16 +1,13 @@
 import process from "node:process";
-import {
-  publicSearchFailure,
-  searchWithProviders,
-  WebProviderChainError,
-} from "@himawari-agent/platform-node";
-import {
-  programProvider,
-  programProviders,
-  programSecrets,
-  providerSource,
-  readProgramInput,
-} from "./web-program-io.js";
+import { publicSearchFailure } from "@himawari-agent/platform-node";
+import { runWebSearch, webProviderFactory } from "../web-tool-run.js";
+import { programProviders, programSecrets, readProgramInput } from "./web-program-io.js";
+
+const failed = (failure: { readonly code: string | null; readonly output: string }) => {
+  process.stdout.write(failure.output);
+  process.stderr.write(`${failure.code}\n`);
+  process.exitCode = 1;
+};
 
 try {
   const args = await readProgramInput("WEB_SEARCH");
@@ -21,29 +18,15 @@ try {
   )
     throw new Error("WEB_SEARCH_INPUT_INVALID");
   const secrets = programSecrets(args["secrets"], "WEB_SEARCH");
-  const searched = await searchWithProviders({
+  const outcome = await runWebSearch({
     providers: programProviders(args["providers"], "WEB_SEARCH"),
     secrets,
     query: args["query"],
     limit: (args["limit"] as number | undefined) ?? 5,
-    create: programProvider(secrets),
+    create: webProviderFactory(secrets),
   });
-  process.stdout.write(
-    JSON.stringify({
-      retrievedAt: new Date().toISOString(),
-      source: providerSource[searched.provider],
-      provider: searched.provider,
-      ...(searched.attempts.length ? { fallbackFrom: searched.attempts } : {}),
-      contentKind: "search_excerpts",
-      pagesOpened: false,
-      results: searched.result,
-    }),
-  );
+  if (outcome.ok) process.stdout.write(outcome.output);
+  else failed(outcome);
 } catch (error) {
-  const failure = publicSearchFailure(
-    error instanceof WebProviderChainError ? new Error(error.last.code) : error,
-  );
-  process.stdout.write(failure.output);
-  process.stderr.write(`${failure.code}\n`);
-  process.exitCode = 1;
+  failed(publicSearchFailure(error));
 }

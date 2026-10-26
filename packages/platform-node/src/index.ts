@@ -24,6 +24,7 @@ export * from "./http-gateway-server.js";
 export * from "./identity-gateway.js";
 export * from "./payload-protector.js";
 export * from "./payload-uds-transport.js";
+export * from "./public-web-egress.js";
 export * from "./runtime-health.js";
 export * from "./runtime-observability.js";
 export * from "./service-runtime.js";
