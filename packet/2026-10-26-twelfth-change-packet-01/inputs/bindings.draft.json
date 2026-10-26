@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "himawari.twelfth-change-bindings.v1",
+  "status": "candidate-awaiting-s0-db-and-freeze",
+  "d1Commit": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "gateCommit": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "candidate": {
+    "testedCommit": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+    "archivePath": "/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/.ci-output/production/2026-10-26-twelfth-change-packet-01/materials/linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz",
+    "archiveBytes": 64137729,
+    "archiveSha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc",
+    "contextPath": "/Users/triggerjames/DoNotDeleteThis/documents/sxl_code_work_space/himawari-agent/.ci-output/production/2026-10-26-twelfth-change-packet-01/materials/context.json",
+    "contextBytes": 497,
+    "contextSha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af",
+    "sourceTreeDigest": "2ff8e75c8452f9d6f7cfebccd09e48cd441fd61205de2dddb2ab943c92236660",
+    "materialReadback": "Hermes build at 470b6d30 (cc-build-470b6d30-r1, build check passed) and a real-browser release walkthrough of this archive on Hermes (browser-acceptance/walkthrough.json, required by deploy.sh); no installer rehearsal (fast delivery mode, G180)",
+    "layer3Status": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer3Fingerprint": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer3Counts": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer3Projects": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3Report": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3ReportBytes": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3ReportSha256": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3TestsReport": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3TestsReportBytes": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer3TestsReportSha256": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer4Report": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer4ReportBytes": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "hermesLayer4ReportSha256": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer4Scope": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer4FinalCandidateEvidence": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer4FinalCandidateEvidenceBytes": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer4FinalCandidateEvidenceSha256": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "layer4CandidateRelation": "not-run: Layer 3 and Layer 4 reruns at 470b6d30 skipped in fast delivery mode (DELIVERY_MODE=fast, ADR 0073, approved by Andy 2026-10-25T10:07Z; G180); only a Hermes build was run",
+    "evidenceIds": [
+      "G177",
+      "G180"
+    ],
+    "artifactRuntimeAndUiContentSha256": "not-run: no installer rehearsal (fast delivery mode, G180)",
+    "installationRehearsalEvidence": "not-run: no installer rehearsal (fast delivery mode, G180)",
+    "installedPrefixDigestHermesOnly": "not-run: no installer rehearsal (fast delivery mode, G180)"
+  },
+  "installationInputs": {
+    "sourceBundlePath": "materials/source-470b6d3.bundle",
+    "sourceBundleBytes": 103368750,
+    "sourceBundleSha256": "cf87386044f0139c7b53dab92398a651313f735d25d6769d2ba6e5a8370b1e30",
+    "sourceModeProofPath": "materials/source-build-inputs.json",
+    "sourceModeProofBytes": 4524809,
+    "sourceModeProofSha256": "e988930fef14b23d2aed32d5704f731de206073d662240cf783139844277012b",
+    "sourceModeProofRecordCount": 680,
+    "sourceModeCounts": {
+      "0644": 680
+    },
+    "sourceModeProofDigestBeforeAndAfter": "2ff8e75c8452f9d6f7cfebccd09e48cd441fd61205de2dddb2ab943c92236660",
+    "sourceModeCaptureWritesPerformed": false,
+    "sourceModeCapturePermissionChangesPerformed": false,
+    "installationWrapper": "install/twelfth-artifact-install.mjs",
+    "materialManifest": "install/p5-materials.json"
+  },
+  "host": {
+    "address": "84.247.157.41",
+    "hostname": "vmi3618928",
+    "account": "himawari-prod",
+    "uid": 999,
+    "gid": 988,
+    "node": "/opt/himawari/node/bin/node",
+    "nodeVersion": "v22.22.3",
+    "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+    "systemBwrapIdentity": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+    },
+    "programBwrapIdentity": {
+      "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
+      "sha256": "20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3"
+    },
+    "serviceAccount": "himawari-prod",
+    "systemBwrap": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71"
+    },
+    "programBwrap": {
+      "path": "/usr/local/libexec/bubblewrap-0.11.2/bwrap",
+      "sha256": "20a3bdb6c1147f62a043a9d4d9c7873db233df40f11a0cc48731a16b97e008f3"
+    },
+    "apparmorRestrictUnprivilegedUserns": 1
+  },
+  "paths": {
+    "oldPrefix": "/opt/himawari/releases/2026-10-26-eleventh",
+    "newPrefix": "/opt/himawari/releases/2026-10-26-twelfth",
+    "config": "/etc/himawari/config.json",
+    "stateRoot": "/var/lib/himawari/state",
+    "database": "/var/lib/himawari/state/data/product.sqlite",
+    "privateRoot": "/var/lib/himawari/jobs",
+    "secretDirectory": "/var/lib/himawari/state/secrets",
+    "evidenceRoot": "/var/lib/himawari/twelfth-20261026-evidence",
+    "transportRoot": "/var/tmp/himawari-twelfth-20261026/input",
+    "validationSource": "/var/tmp/himawari-twelfth-20261026/validation/source",
+    "uiVerificationRoot": "/var/tmp/himawari-twelfth-20261026/validation/ui-verified",
+    "newOperations": "/opt/himawari/operations/twelfth-20261026"
+  },
+  "identity": {
+    "deploymentId": "S0_DB:identity.deploymentId",
+    "ownerId": "owner:first-production",
+    "agentId": "agent:first-production",
+    "hostId": "S0_DB:identity.hostId"
+  },
+  "maintenance": {
+    "expectedInitialSchema": "S0_DB:schema.current",
+    "expectedMinimumWriter": "S0_DB:schema.minimumWriter",
+    "targetSchema": 56,
+    "recoveryMethod": "stopped-raw-copy-v1",
+    "recovery56Id": "twelfth-20261026-raw-schema56"
+  },
+  "service": {
+    "unit": "himawari-prod.service",
+    "unitFragmentPath": "/etc/systemd/system/himawari-prod.service",
+    "oldUnitSha256": "S0_DB:service.unitFragmentSha256",
+    "oldConfigSha256": "S0_DB:service.configurationSha256",
+    "pairSupervisor": "/opt/himawari/operations/eleventh-20261026/pair-supervisor.mjs",
+    "workerTokenFile": "/var/lib/himawari/state/secrets/worker-token.json",
+    "newPrepareHelper": "/opt/himawari/operations/twelfth-20261026/cloud-protected-prepare.mjs",
+    "newRuntimeProtectionFile": "/opt/himawari/operations/twelfth-20261026/runtime-protection.json",
+    "newQualificationEvidenceRoot": "/var/lib/himawari/qualification/twelfth-20261026"
+  },
+  "smoke": {
+    "designer": "Claude",
+    "workspace": "/var/tmp/himawari-twelfth-20261026/acceptance/service-read-01/workspace",
+    "file": "/var/tmp/himawari-twelfth-20261026/acceptance/service-read-01/workspace/fictional.txt",
+    "expectedToolCalls": 1,
+    "operatorSuppliedPaidRequestsAuthorized": false,
+    "stage": "S6_SERVICE_READ_BEFORE_S7",
+    "finalPaidAcceptance": "S10_USER_ONLY"
+  },
+  "approvals": {
+    "qualificationRule": "G180",
+    "executionMethod": "G180",
+    "packageRef": "",
+    "freezeManifestSha256": "",
+    "executor": "Claude",
+    "databaseFallbackExecutor": "user",
+    "finalPaidAcceptanceExecutor": "user"
+  },
+  "authority": {
+    "authorityEpoch": "S0_DB:authority.authorityEpoch",
+    "fencingToken": "S0_DB:authority.fencingToken",
+    "ownerId": "S0_DB:authority.ownerId",
+    "agentId": "S0_DB:authority.agentId",
+    "deploymentId": "S0_DB:authority.deploymentId",
+    "status": "S0_DB:authority.status"
+  },
+  "workspace": {
+    "decisionRef": "G90",
+    "routeKey": "coding",
+    "grantId": "directory:himawari-prod-workspace-20261015",
+    "canonicalPath": "/var/lib/himawari/workspace",
+    "subdirectories": [
+      "files",
+      "repos"
+    ]
+  }
+}

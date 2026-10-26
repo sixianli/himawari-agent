@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+test "$#" -eq 1
+case "$1" in
+  S9_RAW_RESTORE51) action=S9_RAW_CONTROL51 ;;
+  *) printf '%s\n' TWELFTH_CONTROL_ROLLBACK_ACTION_INVALID >&2; exit 1 ;;
+esac
+exec /bin/bash "$(dirname "$0")/../steps/run-user-step.sh" "$action"

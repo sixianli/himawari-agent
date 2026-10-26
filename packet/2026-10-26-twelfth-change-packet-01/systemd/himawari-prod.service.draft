@@ -1,0 +1,34 @@
+[Unit]
+Description=Himawari production Agent and Worker pair
+After=network.target
+StartLimitIntervalSec=60s
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=himawari-prod
+Group=himawari-prod
+UMask=0022
+WorkingDirectory=/var/lib/himawari/state
+Environment=PATH=/opt/himawari/node/bin:/usr/bin:/bin
+Environment=HOME=/var/lib/himawari/state
+Environment=LANG=C.UTF-8
+Environment=HIMAWARI_RUNTIME_PROTECTION_FILE=/opt/himawari/operations/twelfth-20261026/runtime-protection.json
+UnsetEnvironment=TMPDIR
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ExecStartPre=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/twelfth-20261026/cloud-protected-prepare.mjs --prepare /etc/himawari/config.json
+ExecStart=/opt/himawari/node/bin/node --no-global-search-paths /opt/himawari/operations/twelfth-20261026/pair-supervisor.mjs --prefix /opt/himawari/releases/2026-10-26-twelfth --config /etc/himawari/config.json --worker-token-file /var/lib/himawari/state/secrets/worker-token.json
+Restart=on-failure
+RestartSec=10s
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+TimeoutStopSec=35s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=himawari-prod
+
+[Install]
+WantedBy=multi-user.target

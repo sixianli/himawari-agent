@@ -1,0 +1,133 @@
+{
+  "schema": "himawari-twelfth-cloud-acceptance-inputs.v1",
+  "status": "candidate-G118-twelfth-change-not-executed-not-signed",
+  "productionQualificationIssued": false,
+  "expectedHostname": "vmi3618928",
+  "acceptanceUid": 999,
+  "acceptanceAccount": "himawari-prod",
+  "runtime": "/opt/himawari/releases/2026-10-26-twelfth/lib/himawari-agent",
+  "candidate": {
+    "artifact": "/var/tmp/himawari-twelfth-20261026/input/candidate.tar.gz",
+    "artifactSha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc",
+    "artifactBytes": 64137729,
+    "context": "/var/tmp/himawari-twelfth-20261026/input/context.json",
+    "contextSha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af",
+    "revision": "470b6d30a8664d5f85da2a8b261b59a4f5f18704"
+  },
+  "compositionEntry": {
+    "status": "ready",
+    "argv": [
+      "/var/tmp/himawari-twelfth-20261026/validation/source/packages/runtime-sandbox/scripts/qualify-production.mjs",
+      "--v2"
+    ],
+    "sourceRevision": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+    "nodeModulesProof": {
+      "path": "/var/tmp/himawari-twelfth-20261026/input/node-modules.json",
+      "sha256": null
+    },
+    "sourcePatchSha256": "e434d0767bcf2728a6263841e12d6b79e98bf93bd50b7b8241b5600ceb7ee66c",
+    "precompiled": false
+  },
+  "question12Downloads": {
+    "root": "/var/tmp/himawari-twelfth-20261026/acceptance/question-12-downloads",
+    "referenceSha256": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e",
+    "files": {
+      "fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz": "761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7",
+      "fd": "e79642a479d2816c887047476bbe6ad229465f30de031033574dee2a095e0037",
+      "is-number-7.0.0.tgz": "7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e"
+    }
+  },
+  "runtimeTools": [
+    {
+      "name": "node",
+      "sha256": null
+    },
+    {
+      "name": "bash",
+      "sha256": null
+    },
+    {
+      "name": "rg",
+      "sha256": null
+    },
+    {
+      "name": "fd",
+      "sha256": null
+    }
+  ],
+  "files": {
+    "adaptation-manifest.json": "b42fdb6775111a23f33b896f6835933da5248ce667a3f436ae8885d56180b590",
+    "adapters/digest-installed-runtime.mjs": "9c80ae9ee578e81683be377cac911b3d96a082e19d1beb39d103d803e212d1eb",
+    "adapters/failure-scene.py": "cb2020209fe48ece391f92be8ed0e92c19594dd9effb339c62670ab8932baca8",
+    "adapters/inspect-bwrap.mjs": "5e6c06045eaf14ce1d3da6068125a648534af38a9470fce72877f77d5a669169",
+    "adapters/probe-authorized-network.mjs": "e831e9980fe6088e5a398e93ad617b177dcce06cc2fe0409751fe5abe84659d8",
+    "adapters/probe-foreground.mjs": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+    "adapters/probe-linux-worker-loss.mjs": "459d6145338807e0a440599ec313f4d5416f8e2c770902c99986752cd26a29e5",
+    "adapters/probe-network-boundary.mjs": "28c99b1d5b52953713b108aae4f5084241d2ada895f43abb84e349109596b465",
+    "adapters/probe-public-search.mjs": "57cdd070d81646e1020dd5d91caf577063f0d98a54e43a29c937e38341d8b2d9",
+    "adapters/proc-sampler.py": "301447535a44d320ba2bb2a92bc6e1e4885d9d834aa54e75a20e3d1223e66a0c",
+    "adapters/scratch-root-check.mjs": "e0dc5cae30899eaa9f1291c1cd919b162c22a19371436247f4c03cc666601dad",
+    "adapters/scratch-root.mjs": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e",
+    "basis-04/adaptation-manifest.json": "e11c3eca6b6bd52fa4d72369b60f62d6e398562a932c1b7ef3ccd31a5972ee17",
+    "basis-04/candidate-inputs.json": "1823e8c7be309f4e1621de2c4ce6c6ed66b63284d13e94b9cffd70dd31c947b2",
+    "basis-04/check-entry-paths-06.py": "4c2ddd9dd6b068756db01f0a48ac1dc45645e648fc2e95e08f1350b0fb5ead08",
+    "basis-04/commands-03.json": "77e19290feabb08dfa12f8d9b3b8637a6221bdd6a03bff2e6cc64400f3c78791",
+    "basis-04/digest-installed-runtime.mjs": "cf0d81d652f2934d9877e40bb9a3436bfbf8b3e885408448f7ab33ed5d3c2659",
+    "basis-04/probe-authorized-network.mjs": "1731f03609f520f134bcddebe6c2308f57e0b8326a45c992a77e848eb12f4a82",
+    "basis-04/probe-foreground.mjs": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+    "basis-04/probe-linux-worker-loss.mjs": "3667d02a9a6997aa54bbce1707514595fcc76ef9cdfc1be6014d29e86c92a524",
+    "basis-04/probe-network-boundary.mjs": "f1dc66136f2ad41294b61c887cb8962c50bfcee90a54488f0e5b134cebe575b8",
+    "basis-04/proc-sampler.py": "e26589b7a8d677031961e2ec8ded59db866089b578e2c6e70606df2389782e36",
+    "basis-04/question-12-inputs.json": "093505100c734ed21278d4c17e64ca999b4a1ad1449f3a85ed99701a7e1cf531",
+    "basis-04/run-network-preparation.py": "b6a07f55b088e1fb0294f2564ce7a13e08431ed7230745fe05311e8c51b53f04",
+    "basis-04/run-stage-03.py": "db7f62f3866b4a827c072df544ba385f05eee58d36abd1172da2d7817464e1a0",
+    "basis-04/scratch-root-check.mjs": "e0dc5cae30899eaa9f1291c1cd919b162c22a19371436247f4c03cc666601dad",
+    "basis-04/scratch-root.mjs": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e",
+    "basis-04-inventory.json": "2e41ef9891fbe6dfaab3e1e07beb001cd9dea7dbf138a48efebb83fb74a9c35d",
+    "candidate-inputs.json": "f614a260d140ccef7626888c4fb8d925d7b13babf4885dd203da179dba138306",
+    "carry-forward-audit.json": "a58c40d6834069efed9271150f87d4f21f8b13da553d009323badffedded84e3",
+    "check-entry-paths-06.py": "273f91d692b9628bb9702fd42adead72b8d9ab8dbad4104811ec1a4fd1307082",
+    "commands-03.json": "837d725672fc9e3f3d52926fbf93df90cbc68cfeae48581adfb01fdc05a03c3b",
+    "composition-scratch.patch": "e434d0767bcf2728a6263841e12d6b79e98bf93bd50b7b8241b5600ceb7ee66c",
+    "composition-source-contract.json": "15c39b34dfd010ca535ce82fd9ee2a2ba9afcfd93e37a571b52a33581632da53",
+    "download-question-12.py": "5d03cf847ff93ad629c6781aa134ff9a23ec3789ba10033b453c3bb60dc85a16",
+    "finalize-cloud-inputs.py": "c7ed5e841e3b7e0469a9752210b7f839b9ffc1da131e71acbf5ead64058ef633",
+    "prepare-composition-source.py": "893ecbfb1e1616e991f3b294b33cdb446243b69478ddcfb2e19cecc5fc9e8d95",
+    "prepare-runtime-tools.py": "00cb0a8ad37b2726a99ad3d185449013f0d635dab58e059a74d3e7bacf6a2f35",
+    "probe-source/packages/runtime-pi/scripts/probe-foreground.mjs": "c5bc50f2aa391c73c74a6c3e7a2b58363744e42d80e9bd15132745a1dbaee5eb",
+    "probe-source/packages/runtime-sandbox/scripts/probe-authorized-network.mjs": "036adbeabb9fa305611967e051195977964086e2466f10e65b97b514c7fc4ae3",
+    "probe-source/packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs": "c1a7b22a4813130b27364f29f83ae56eb38d20a24c0228394fdfe7358ee5af6c",
+    "probe-source/packages/runtime-sandbox/scripts/probe-network-boundary.mjs": "7003a476c1745ecde86ce5d779fa8a9bcbbcf2b5050feef201d038ac1e75a12c",
+    "probe-source/packages/runtime-sandbox/scripts/probe-public-search.mjs": "8d806a324739da839ddfb565d3cb9c8836cd9c80b0ccac1a6b884d680171f072",
+    "probe-source/packages/runtime-sandbox/scripts/qualify-production.mjs": "bf3dfa837eada901a7f919ea6fae248e92179370e8608a83d51c98f669d29f06",
+    "probe-source/scripts/operations/workspace-lifecycle-audit.mjs": "933cc99e36e0d1658e02b4f7af9110a8b903b0a024297472d8c1dfe481a5eecb",
+    "probe-source/test/qualification/sandbox-install-restart-controller.py": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3",
+    "probe-source/test/qualification/sandbox-install-restart-http.mjs": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492",
+    "probe-source/test/qualification/sandbox-install-restart-model.mjs": "a7d5756845e61711a42bfbd28f59266334b3b5b35cc936522b4855babe529dc8",
+    "probe-source/test/qualification/sandbox-install-restart-probe.mjs": "36efdaa202ec9dc9359362abf1d06f126d74118c33315d1010fcb2d62dcc9a43",
+    "question-12-inputs.json": "a4006e26946ab2d536df893563e5dca61b7245cc1959e074467da1fdffb64f37",
+    "r2l6-source-manifest.json": "3c7a4feb1172533c9516f2bbe02bb6205be1c190d18b19ea552a3b6afd53c00b",
+    "run-cloud-acceptance.sh": "68ddc319c49446d13778ba3b84609d489a64eddafc8e4654f40f120ce795c3f5",
+    "run-network-preparation.py": "16e3dc97d93a6c7bdca7e98e9e553de25525f0344cdf387194e0909c91dd5a1b",
+    "run-question12-downloads.sh": "4f235cb1728017a9d0bcd29a5ff91081ffaaba0e738f718865807ff612076d5e",
+    "run-stage-03.py": "91b9124c16c3fbd57a855f6888836a8a7d9cbeabc7510aa501422cf1c25d28b6"
+  },
+  "profile": "cloud-twelfth-change",
+  "node": "/opt/himawari/node/bin/node",
+  "sourceRoot": "/var/tmp/himawari-twelfth-20261026/validation/source",
+  "rehearsalRoot": null,
+  "evidenceRoot": "/var/tmp/himawari-twelfth-20261026/acceptance",
+  "cleanupHelper": {
+    "path": "/var/tmp/himawari-twelfth-20261026/packet/acceptance/helpers/check-p5-scratch-cleanup.py",
+    "sha256": "4dd065f51420a0cb63911f62e37dbda95f15f8c5afa2b66327007e3afe9f4bb9"
+  },
+  "bwrapPaths": {
+    "srt": "/usr/bin/bwrap",
+    "program": "/usr/local/libexec/bubblewrap-0.11.2/bwrap"
+  },
+  "r2l6ValidatorSha256": "08b131e445108ef0382c8af53b79ee14b2030cbe1c10662c2bef7ba0d01b540c",
+  "siteObservedFields": {
+    "compositionEntry.nodeModulesProof.sha256": "finalize-cloud-inputs.py reads S1 whole dependency proof and rejects empty proof",
+    "runtimeTools[].sha256": "finalize-cloud-inputs.py reads S6 runtime-tool-preparation.json and independently reads installed files"
+  }
+}

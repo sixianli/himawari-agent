@@ -1,0 +1,12 @@
+{
+  "third-cloud-limited-host-acceptance": [
+    "/bin/bash",
+    "/var/tmp/himawari-third-20261012/packet/acceptance/cloud/run-cloud-acceptance.sh",
+    "--approved-s6-limited-host-acceptance"
+  ],
+  "third-cloud-reference-downloads": [
+    "/bin/bash",
+    "/var/tmp/himawari-third-20261012/packet/acceptance/cloud/run-question12-downloads.sh",
+    "--approved-s6-reference-downloads"
+  ]
+}

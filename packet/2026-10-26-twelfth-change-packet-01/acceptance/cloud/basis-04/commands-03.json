@@ -1,0 +1,8 @@
+{
+  "host-network-preparation-01": [
+    "/data/hermes/himawari/tool-audit-round2/r30/tools/python/python/bin/python3",
+    "/data/hermes/himawari/tool-audit-round2/r30/evidence/r64/host-acceptance-preparation-04/run-network-preparation.py",
+    "--approved-question-12",
+    "{scratch}"
+  ]
+}

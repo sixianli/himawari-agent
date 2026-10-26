@@ -1,0 +1,812 @@
+{
+  "schemaVersion": "himawari.twelfth-change-freeze.v1",
+  "status": "frozen-approved",
+  "approvalRef": "round2/R2-L13/twelfth-20261026/reviewed",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 11676,
+      "sha256": "484384ea3b5f79d641bf3f9d9228e291dba2ca6874bf8959368d551943e498ad"
+    },
+    {
+      "path": "acceptance/OWNED-SHA256SUMS",
+      "bytes": 7196,
+      "sha256": "94eb5194b1d6b9470ef9e3c4fc424743381d1f0639925ddaa78dfa9ec747c584"
+    },
+    {
+      "path": "acceptance/S6-limited-host-acceptance.sh",
+      "bytes": 4753,
+      "sha256": "5def9d15b68f951f373d6677a583f8ebbb4db5dd3f19e371f18b0305ff2bb76c"
+    },
+    {
+      "path": "acceptance/cloud/adaptation-manifest.json",
+      "bytes": 12196,
+      "sha256": "b42fdb6775111a23f33b896f6835933da5248ce667a3f436ae8885d56180b590"
+    },
+    {
+      "path": "acceptance/cloud/adapters/digest-installed-runtime.mjs",
+      "bytes": 842,
+      "sha256": "9c80ae9ee578e81683be377cac911b3d96a082e19d1beb39d103d803e212d1eb"
+    },
+    {
+      "path": "acceptance/cloud/adapters/failure-scene.py",
+      "bytes": 2628,
+      "sha256": "cb2020209fe48ece391f92be8ed0e92c19594dd9effb339c62670ab8932baca8"
+    },
+    {
+      "path": "acceptance/cloud/adapters/inspect-bwrap.mjs",
+      "bytes": 2613,
+      "sha256": "5e6c06045eaf14ce1d3da6068125a648534af38a9470fce72877f77d5a669169"
+    },
+    {
+      "path": "acceptance/cloud/adapters/probe-authorized-network.mjs",
+      "bytes": 10964,
+      "sha256": "e831e9980fe6088e5a398e93ad617b177dcce06cc2fe0409751fe5abe84659d8"
+    },
+    {
+      "path": "acceptance/cloud/adapters/probe-foreground.mjs",
+      "bytes": 13671,
+      "sha256": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4"
+    },
+    {
+      "path": "acceptance/cloud/adapters/probe-linux-worker-loss.mjs",
+      "bytes": 4985,
+      "sha256": "459d6145338807e0a440599ec313f4d5416f8e2c770902c99986752cd26a29e5"
+    },
+    {
+      "path": "acceptance/cloud/adapters/probe-network-boundary.mjs",
+      "bytes": 7700,
+      "sha256": "28c99b1d5b52953713b108aae4f5084241d2ada895f43abb84e349109596b465"
+    },
+    {
+      "path": "acceptance/cloud/adapters/probe-public-search.mjs",
+      "bytes": 5829,
+      "sha256": "57cdd070d81646e1020dd5d91caf577063f0d98a54e43a29c937e38341d8b2d9"
+    },
+    {
+      "path": "acceptance/cloud/adapters/proc-sampler.py",
+      "bytes": 23082,
+      "sha256": "301447535a44d320ba2bb2a92bc6e1e4885d9d834aa54e75a20e3d1223e66a0c"
+    },
+    {
+      "path": "acceptance/cloud/adapters/scratch-root-check.mjs",
+      "bytes": 1892,
+      "sha256": "e0dc5cae30899eaa9f1291c1cd919b162c22a19371436247f4c03cc666601dad"
+    },
+    {
+      "path": "acceptance/cloud/adapters/scratch-root.mjs",
+      "bytes": 960,
+      "sha256": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e"
+    },
+    {
+      "path": "acceptance/cloud/basis-04-inventory.json",
+      "bytes": 2582,
+      "sha256": "2e41ef9891fbe6dfaab3e1e07beb001cd9dea7dbf138a48efebb83fb74a9c35d"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/adaptation-manifest.json",
+      "bytes": 3614,
+      "sha256": "e11c3eca6b6bd52fa4d72369b60f62d6e398562a932c1b7ef3ccd31a5972ee17"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/candidate-inputs.json",
+      "bytes": 775,
+      "sha256": "1823e8c7be309f4e1621de2c4ce6c6ed66b63284d13e94b9cffd70dd31c947b2"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/check-entry-paths-06.py",
+      "bytes": 7461,
+      "sha256": "4c2ddd9dd6b068756db01f0a48ac1dc45645e648fc2e95e08f1350b0fb5ead08"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/commands-03.json",
+      "bytes": 294,
+      "sha256": "77e19290feabb08dfa12f8d9b3b8637a6221bdd6a03bff2e6cc64400f3c78791"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/digest-installed-runtime.mjs",
+      "bytes": 767,
+      "sha256": "cf0d81d652f2934d9877e40bb9a3436bfbf8b3e885408448f7ab33ed5d3c2659"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/probe-authorized-network.mjs",
+      "bytes": 10729,
+      "sha256": "1731f03609f520f134bcddebe6c2308f57e0b8326a45c992a77e848eb12f4a82"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/probe-foreground.mjs",
+      "bytes": 13671,
+      "sha256": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/probe-linux-worker-loss.mjs",
+      "bytes": 4790,
+      "sha256": "3667d02a9a6997aa54bbce1707514595fcc76ef9cdfc1be6014d29e86c92a524"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/probe-network-boundary.mjs",
+      "bytes": 8013,
+      "sha256": "f1dc66136f2ad41294b61c887cb8962c50bfcee90a54488f0e5b134cebe575b8"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/proc-sampler.py",
+      "bytes": 23086,
+      "sha256": "e26589b7a8d677031961e2ec8ded59db866089b578e2c6e70606df2389782e36"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/question-12-inputs.json",
+      "bytes": 1729,
+      "sha256": "093505100c734ed21278d4c17e64ca999b4a1ad1449f3a85ed99701a7e1cf531"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/run-network-preparation.py",
+      "bytes": 9972,
+      "sha256": "b6a07f55b088e1fb0294f2564ce7a13e08431ed7230745fe05311e8c51b53f04"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/run-stage-03.py",
+      "bytes": 43728,
+      "sha256": "db7f62f3866b4a827c072df544ba385f05eee58d36abd1172da2d7817464e1a0"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/scratch-root-check.mjs",
+      "bytes": 1892,
+      "sha256": "e0dc5cae30899eaa9f1291c1cd919b162c22a19371436247f4c03cc666601dad"
+    },
+    {
+      "path": "acceptance/cloud/basis-04/scratch-root.mjs",
+      "bytes": 960,
+      "sha256": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e"
+    },
+    {
+      "path": "acceptance/cloud/candidate-inputs.json",
+      "bytes": 406,
+      "sha256": "f614a260d140ccef7626888c4fb8d925d7b13babf4885dd203da179dba138306"
+    },
+    {
+      "path": "acceptance/cloud/carry-forward-audit.json",
+      "bytes": 18304,
+      "sha256": "a58c40d6834069efed9271150f87d4f21f8b13da553d009323badffedded84e3"
+    },
+    {
+      "path": "acceptance/cloud/check-entry-paths-06.py",
+      "bytes": 3831,
+      "sha256": "273f91d692b9628bb9702fd42adead72b8d9ab8dbad4104811ec1a4fd1307082"
+    },
+    {
+      "path": "acceptance/cloud/cloud-inputs.draft.json",
+      "bytes": 9199,
+      "sha256": "1b84cd1004a8557a028bf8d6dbb5544f49d8d223364d9f0992f0f42144ff9a1f"
+    },
+    {
+      "path": "acceptance/cloud/commands-03.json",
+      "bytes": 393,
+      "sha256": "837d725672fc9e3f3d52926fbf93df90cbc68cfeae48581adfb01fdc05a03c3b"
+    },
+    {
+      "path": "acceptance/cloud/composition-scratch.patch",
+      "bytes": 1572,
+      "sha256": "e434d0767bcf2728a6263841e12d6b79e98bf93bd50b7b8241b5600ceb7ee66c"
+    },
+    {
+      "path": "acceptance/cloud/composition-source-contract.json",
+      "bytes": 813,
+      "sha256": "15c39b34dfd010ca535ce82fd9ee2a2ba9afcfd93e37a571b52a33581632da53"
+    },
+    {
+      "path": "acceptance/cloud/download-question-12.py",
+      "bytes": 5709,
+      "sha256": "5d03cf847ff93ad629c6781aa134ff9a23ec3789ba10033b453c3bb60dc85a16"
+    },
+    {
+      "path": "acceptance/cloud/finalize-cloud-inputs.py",
+      "bytes": 8849,
+      "sha256": "c7ed5e841e3b7e0469a9752210b7f839b9ffc1da131e71acbf5ead64058ef633"
+    },
+    {
+      "path": "acceptance/cloud/prepare-composition-source.py",
+      "bytes": 4088,
+      "sha256": "893ecbfb1e1616e991f3b294b33cdb446243b69478ddcfb2e19cecc5fc9e8d95"
+    },
+    {
+      "path": "acceptance/cloud/prepare-runtime-tools.py",
+      "bytes": 4022,
+      "sha256": "00cb0a8ad37b2726a99ad3d185449013f0d635dab58e059a74d3e7bacf6a2f35"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-pi/scripts/probe-foreground.mjs",
+      "bytes": 12460,
+      "sha256": "c5bc50f2aa391c73c74a6c3e7a2b58363744e42d80e9bd15132745a1dbaee5eb"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-authorized-network.mjs",
+      "bytes": 11001,
+      "sha256": "036adbeabb9fa305611967e051195977964086e2466f10e65b97b514c7fc4ae3"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-linux-worker-loss.mjs",
+      "bytes": 4836,
+      "sha256": "c1a7b22a4813130b27364f29f83ae56eb38d20a24c0228394fdfe7358ee5af6c"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-network-boundary.mjs",
+      "bytes": 8285,
+      "sha256": "7003a476c1745ecde86ce5d779fa8a9bcbbcf2b5050feef201d038ac1e75a12c"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/probe-public-search.mjs",
+      "bytes": 4302,
+      "sha256": "8d806a324739da839ddfb565d3cb9c8836cd9c80b0ccac1a6b884d680171f072"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/packages/runtime-sandbox/scripts/qualify-production.mjs",
+      "bytes": 3586,
+      "sha256": "bf3dfa837eada901a7f919ea6fae248e92179370e8608a83d51c98f669d29f06"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/scripts/operations/workspace-lifecycle-audit.mjs",
+      "bytes": 13768,
+      "sha256": "933cc99e36e0d1658e02b4f7af9110a8b903b0a024297472d8c1dfe481a5eecb"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-controller.py",
+      "bytes": 31135,
+      "sha256": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-http.mjs",
+      "bytes": 30035,
+      "sha256": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-model.mjs",
+      "bytes": 19728,
+      "sha256": "a7d5756845e61711a42bfbd28f59266334b3b5b35cc936522b4855babe529dc8"
+    },
+    {
+      "path": "acceptance/cloud/probe-source/test/qualification/sandbox-install-restart-probe.mjs",
+      "bytes": 61435,
+      "sha256": "36efdaa202ec9dc9359362abf1d06f126d74118c33315d1010fcb2d62dcc9a43"
+    },
+    {
+      "path": "acceptance/cloud/question-12-inputs.json",
+      "bytes": 5490,
+      "sha256": "a4006e26946ab2d536df893563e5dca61b7245cc1959e074467da1fdffb64f37"
+    },
+    {
+      "path": "acceptance/cloud/r2l6-source-manifest.json",
+      "bytes": 4999,
+      "sha256": "3c7a4feb1172533c9516f2bbe02bb6205be1c190d18b19ea552a3b6afd53c00b"
+    },
+    {
+      "path": "acceptance/cloud/run-cloud-acceptance.sh",
+      "bytes": 9603,
+      "sha256": "68ddc319c49446d13778ba3b84609d489a64eddafc8e4654f40f120ce795c3f5"
+    },
+    {
+      "path": "acceptance/cloud/run-network-preparation.py",
+      "bytes": 17003,
+      "sha256": "16e3dc97d93a6c7bdca7e98e9e553de25525f0344cdf387194e0909c91dd5a1b"
+    },
+    {
+      "path": "acceptance/cloud/run-question12-downloads.sh",
+      "bytes": 8750,
+      "sha256": "4f235cb1728017a9d0bcd29a5ff91081ffaaba0e738f718865807ff612076d5e"
+    },
+    {
+      "path": "acceptance/cloud/run-stage-03.py",
+      "bytes": 13117,
+      "sha256": "91b9124c16c3fbd57a855f6888836a8a7d9cbeabc7510aa501422cf1c25d28b6"
+    },
+    {
+      "path": "acceptance/cloud/verify-failure-scene-fixtures.py",
+      "bytes": 3848,
+      "sha256": "8f7930c1b1f529ee4885c69c68d563efb61ee61623647b6ec565f00835a9e5b4"
+    },
+    {
+      "path": "acceptance/helpers/check-p5-scratch-cleanup.py",
+      "bytes": 16244,
+      "sha256": "4dd065f51420a0cb63911f62e37dbda95f15f8c5afa2b66327007e3afe9f4bb9"
+    },
+    {
+      "path": "acceptance/helpers/collect-installer-dependencies.mjs",
+      "bytes": 7623,
+      "sha256": "6bd748032203ac905c4e98cac78f349af92aa475d1098a622a9648fe7147ed51"
+    },
+    {
+      "path": "acceptance/helpers/extract-node-modules.py",
+      "bytes": 3999,
+      "sha256": "e58f80a39766dd7a93de247ceffed7ab6a2cd09c80669b91eecd38c901c4882c"
+    },
+    {
+      "path": "acceptance/helpers/observe-production-npm.py",
+      "bytes": 8895,
+      "sha256": "daed5e3e91fd8757fc6a71dfb11026629f532c2e156876bc24c22c53dad06358"
+    },
+    {
+      "path": "acceptance/helpers/run-hermes-rehearsal.py",
+      "bytes": 15560,
+      "sha256": "d4b9020b7c72094ea082108b0dd4b3871c34945e316253e2ec96c2f396a5507c"
+    },
+    {
+      "path": "acceptance/helpers/test-composition-source-copy.py",
+      "bytes": 16522,
+      "sha256": "283b002d8e86173da5b7fded48b08c66ff5ebfcc98a070dc92ee4d9866a4167e"
+    },
+    {
+      "path": "acceptance/helpers/test-resource-retention.py",
+      "bytes": 10473,
+      "sha256": "d302e97977ac065618dce541327d05edc1a73bef5a684f125eb87c3d1d518e84"
+    },
+    {
+      "path": "acceptance/helpers/validate-r2l6-installed.mjs",
+      "bytes": 5206,
+      "sha256": "08b131e445108ef0382c8af53b79ee14b2030cbe1c10662c2bef7ba0d01b540c"
+    },
+    {
+      "path": "acceptance/helpers/verify-frozen-packet.py",
+      "bytes": 3880,
+      "sha256": "c1dd882c711d96d86b3e5bac9839a14c97a263705427afe06962a7140918adcf"
+    },
+    {
+      "path": "browser-acceptance/walkthrough.json",
+      "bytes": 768,
+      "sha256": "fc4a3ad64315d1c13ee982093ecfb01b8274b3cac2141172f5a7c9444b4ae2ea"
+    },
+    {
+      "path": "inputs/bindings.draft.json",
+      "bytes": 10517,
+      "sha256": "92719e26b0f801fdbcbae146c39e2f4aecf15b0d63834d114a1a962192005b20"
+    },
+    {
+      "path": "inputs/bindings.json",
+      "bytes": 10860,
+      "sha256": "99ec57a7b2471b8239fe90e8968b54524b188f7000bdf101a8da43267948abf8"
+    },
+    {
+      "path": "inputs/bindings.reviewed.json",
+      "bytes": 10829,
+      "sha256": "ee8a01595a3a8ce14fb1b1bb37e1605b55afec6ed92d09cfb3ea2e090906a5ae"
+    },
+    {
+      "path": "inputs/check-packet-consistency.py",
+      "bytes": 7860,
+      "sha256": "e23713a9003dfedcbf196510bc77fdd671e82f3a71481e31945d74921ea8f03e"
+    },
+    {
+      "path": "inputs/finalize-bindings.py",
+      "bytes": 27008,
+      "sha256": "71b8ec4426a0537ba65333422b0a97146317e25716771ed2c80af6fc6a8b75f5"
+    },
+    {
+      "path": "inputs/npm-observed.json",
+      "bytes": 603699,
+      "sha256": "9699b07ed15a39a8ab30139b541067fa4df49c65518a7ea5a225be272965ccb4"
+    },
+    {
+      "path": "inputs/s0-db-readback.json",
+      "bytes": 6784,
+      "sha256": "d6cb53133e7731966a799099dd6e32d2f503d43192a03a26f176461e590bb19e"
+    },
+    {
+      "path": "inputs/system-tools-observed.json",
+      "bytes": 1983,
+      "sha256": "fb9c726bfedbf840fd949cf62de41908901a5d11212bdddce17c211a673a4faa"
+    },
+    {
+      "path": "inputs/verify-finalize-bindings.py",
+      "bytes": 36884,
+      "sha256": "8c6623b457881a888204060d1c862e6a330277ca9e0c16ed132fdc9650abf956"
+    },
+    {
+      "path": "inputs/verify-packet-consistency.py",
+      "bytes": 4792,
+      "sha256": "a77c2d97fd46fef41af853e5234d98a7ce743be49437ca122a1ff3aba613803b"
+    },
+    {
+      "path": "install/P0-readonly-preflight.md",
+      "bytes": 5991,
+      "sha256": "f9b6150fc7d556f1dcc1f828cf0e0d7b6c15f50df7f57d6f236908d0638dc02b"
+    },
+    {
+      "path": "install/P12-rollback.md",
+      "bytes": 3097,
+      "sha256": "631650560cc7ff8f3a3b8b87447b47807ed0ecef482e12f460f950013113bacf"
+    },
+    {
+      "path": "install/P5-new-prefix.md",
+      "bytes": 3535,
+      "sha256": "799c3520b8d95c966d738aac4546bdb3d120afa2181ed63b132cd8ccaccafeb5"
+    },
+    {
+      "path": "install/S1-publish-and-install.py",
+      "bytes": 9044,
+      "sha256": "8fffa67d1fc79fa1162d3533bb38c3fe245ccddec294d6c70328ce1c2e925ff6"
+    },
+    {
+      "path": "install/S9-clean-transport.md",
+      "bytes": 7571,
+      "sha256": "66af32f44225ed82916bc9a2c72d5670eb7ba9ca2b3abe0b4fc35cc375bec316"
+    },
+    {
+      "path": "install/S9-clean-transport.py",
+      "bytes": 30988,
+      "sha256": "b13bb9c243ef2ac6b0b8d0b187efdd0392f5147d04cc104399c070081fbc8040"
+    },
+    {
+      "path": "install/collect-installer-dependencies.mjs",
+      "bytes": 7623,
+      "sha256": "6bd748032203ac905c4e98cac78f349af92aa475d1098a622a9648fe7147ed51"
+    },
+    {
+      "path": "install/extract-node-modules.py",
+      "bytes": 3999,
+      "sha256": "e58f80a39766dd7a93de247ceffed7ab6a2cd09c80669b91eecd38c901c4882c"
+    },
+    {
+      "path": "install/p5-materials.json",
+      "bytes": 1470,
+      "sha256": "5489e3f7eb919b936677cdc8956003ff9b055fdb47decc2ede02d442ec4c1b7b"
+    },
+    {
+      "path": "install/twelfth-artifact-install.mjs",
+      "bytes": 15515,
+      "sha256": "bc68ca65e9d52e0cf60cd486c79b46c869d21ef99efce8743d3e6d1fe301c959"
+    },
+    {
+      "path": "install/verify-dependency-export.py",
+      "bytes": 2673,
+      "sha256": "82ee156da7f459194b90cb979abd9a50be5f7dfa5c259191c845b8c5b0484fda"
+    },
+    {
+      "path": "install/verify-s9-clean-transport-fixtures.py",
+      "bytes": 15008,
+      "sha256": "a25abef50aa5f58615c693fce2ba3e3733c0bde6de95e81bd4a6c6faa2903309"
+    },
+    {
+      "path": "maintenance/OWNED-SHA256SUMS",
+      "bytes": 1311,
+      "sha256": "2c40521f69ce871d89cbfa07cff7eb81372e2b178174e136683b4452eb1df3ca"
+    },
+    {
+      "path": "maintenance/P-readback-design.md",
+      "bytes": 10310,
+      "sha256": "336df635f6c5576e3a5c41b42e6b78ef6f15cdffafe0ff8a0e34ca28ee19b955"
+    },
+    {
+      "path": "maintenance/S9-control-files.py",
+      "bytes": 29898,
+      "sha256": "ba2cfc8d06529898351befef1c7c017f27dc0878ef6d2ab14ed41192f24f2f77"
+    },
+    {
+      "path": "maintenance/S9-rollback.md",
+      "bytes": 18121,
+      "sha256": "ef406483977a966a370e7eedea39156abf15e5d945107b6ed8e7858c11c00804"
+    },
+    {
+      "path": "maintenance/maintenance-common.mjs",
+      "bytes": 68646,
+      "sha256": "ee14d426309d8fdf9939704ab11f592398dec04b30217d6b77f8952f0b40eb58"
+    },
+    {
+      "path": "maintenance/maintenance-space-sampler.mjs",
+      "bytes": 4110,
+      "sha256": "cc84da65c36b3d44010448a40b017d6f595b651e1843f23875f087c01d72c319"
+    },
+    {
+      "path": "maintenance/production-shape-config-template.json",
+      "bytes": 4309,
+      "sha256": "b6bd769fbc8ee6f85c9b19a682b71debe8873ddd6a9b4d5ee03210888c8eaab1"
+    },
+    {
+      "path": "maintenance/raw-copy-recovery.mjs",
+      "bytes": 20902,
+      "sha256": "798e4caa5cba404aed5076e9148917afd6056b272336ce3373785b3df8eba694"
+    },
+    {
+      "path": "maintenance/read-upgrade-gate.sql",
+      "bytes": 772,
+      "sha256": "32866c3a19fc7b9a2225a4f9705f4c66a62123b693d925b9bcf17119ba755049"
+    },
+    {
+      "path": "maintenance/run-maintenance.mjs",
+      "bytes": 22026,
+      "sha256": "f1f842975daa86316995d4724a241d6d03afa8140fca27f75fad6b4094f71cbd"
+    },
+    {
+      "path": "maintenance/run-user-control-rollback.sh",
+      "bytes": 264,
+      "sha256": "a9b936b66a01f8678481044b1d106ceae8d52c64065e503cca10c89df19d4e39"
+    },
+    {
+      "path": "maintenance/run-user-maintenance.sh",
+      "bytes": 316,
+      "sha256": "e79039f010cdc583bf6d5029f94bf833dc1d8a9cfe7a59369450d1ed33bc1519"
+    },
+    {
+      "path": "maintenance/verify-fixtures.mjs",
+      "bytes": 68627,
+      "sha256": "19d81fd15cebb2f3a7fdeac10e3b58dbe461585fdee682d83e46cfd0cd3b119a"
+    },
+    {
+      "path": "maintenance/verify-raw-copy-fixtures.mjs",
+      "bytes": 18573,
+      "sha256": "420d949779f61556682bc9f9b7584b36b7df4a68e319552ba157c3785c7dd3eb"
+    },
+    {
+      "path": "maintenance/verify-s9-control-fixtures.py",
+      "bytes": 21764,
+      "sha256": "a967d48e63b69e4f3aab71da529011a90947b724494e204f192353015eff8499"
+    },
+    {
+      "path": "maintenance/verify-s9-raw-tree-fixtures.py",
+      "bytes": 4340,
+      "sha256": "3085e5a7d451bfae0af301c9f432a046036f1fcd5ee9ac64b3c52e853b0de870"
+    },
+    {
+      "path": "maintenance/verify-sidecar-tidy-fixtures.mjs",
+      "bytes": 29764,
+      "sha256": "9b11ec1bcd8d8b64e49814ac94f1e99b0a13c2e4c6ef02177dec4e5f15dbfc79"
+    },
+    {
+      "path": "maintenance/verify-single-sqlite-driver.mjs",
+      "bytes": 13288,
+      "sha256": "e92f314d1c12d3cfd03a31ec7726af1e9287e4731d6c5b5e2ed83109bf662440"
+    },
+    {
+      "path": "maintenance/workspace-grant.mjs",
+      "bytes": 1969,
+      "sha256": "4f04e00884a4f0fd285efecb833688a6b3610727db1e22cc62568b68826af199"
+    },
+    {
+      "path": "materials/context.json",
+      "bytes": 497,
+      "sha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af"
+    },
+    {
+      "path": "materials/linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz",
+      "bytes": 64137729,
+      "sha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc"
+    },
+    {
+      "path": "materials/node-modules.json",
+      "bytes": 9745078,
+      "sha256": "ce21ea6382d36b2144017f6d974b35318c5e801d46218af0c3793fc667a8d82b"
+    },
+    {
+      "path": "materials/node-modules.tar.gz",
+      "bytes": 135978016,
+      "sha256": "fd898d368b916e3cca36dade020605d160abbfd7fce3d4549f95fa6c88ac48e4"
+    },
+    {
+      "path": "materials/npm-ls.json",
+      "bytes": 198220,
+      "sha256": "560c704a49b26b56c8f66c44b9e4533a9d7e70db299320c775bc865dce372aa7"
+    },
+    {
+      "path": "materials/python-3.12.10.tar.gz",
+      "bytes": 34392187,
+      "sha256": "f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca"
+    },
+    {
+      "path": "materials/source-470b6d3.bundle",
+      "bytes": 103368750,
+      "sha256": "cf87386044f0139c7b53dab92398a651313f735d25d6769d2ba6e5a8370b1e30"
+    },
+    {
+      "path": "materials/source-build-inputs.json",
+      "bytes": 4524809,
+      "sha256": "e988930fef14b23d2aed32d5704f731de206073d662240cf783139844277012b"
+    },
+    {
+      "path": "measurement/OWNED-SHA256SUMS",
+      "bytes": 521,
+      "sha256": "133a0a3595dbd8065ed4d254e9e7dfddbd923666bf61b38cced88c6fb9239257"
+    },
+    {
+      "path": "measurement/P11-single-read.md",
+      "bytes": 2148,
+      "sha256": "f481d9afb4532aa6631a874b3a060d99ef29f2037378a02b3849265834136ee9"
+    },
+    {
+      "path": "measurement/S6-service-read.py",
+      "bytes": 11033,
+      "sha256": "d168a03d846d8bf7cf3f2a11138e4cfab5b257c9ec891207e0ab3f32ae5115a7"
+    },
+    {
+      "path": "measurement/probe/bootstrap.mjs",
+      "bytes": 6296,
+      "sha256": "16d9c3cb25900548ba8e5591df53fafb3c6862ca3cad5b13b8ed00c3c8362acc"
+    },
+    {
+      "path": "measurement/probe/observe.mjs",
+      "bytes": 3184,
+      "sha256": "cb3020e642743503c9ba492d33ce0793599163f8627fafdf55570b4fd572f6cf"
+    },
+    {
+      "path": "measurement/probe/read-driver.mjs",
+      "bytes": 8473,
+      "sha256": "fa493c28bc343af76b5bad3b0bcfc215f0d6026bfc4dbf4d8f0ee30aa58290bb"
+    },
+    {
+      "path": "measurement/probe/run-service-probe.py",
+      "bytes": 9980,
+      "sha256": "391875f0d1ef9c0fdccdf4dd2e71e5579c07e9907caa88f266cf02df54739d25"
+    },
+    {
+      "path": "s0-db/read-s0-db.mjs",
+      "bytes": 16603,
+      "sha256": "d32ddda66ef3d515c56fb35e5d269d2a175018dd9381a77bba91c960d283b6f8"
+    },
+    {
+      "path": "s0-db/verify-catalog-runtime-switch.mjs",
+      "bytes": 7713,
+      "sha256": "66c6890577583eee6a4c826acb4ccb16cd3edc027fe8eb89e052aab841680549"
+    },
+    {
+      "path": "signing/catalog-binding-report.md",
+      "bytes": 12864,
+      "sha256": "46d9534e99731ae5bb017349945177692ed17885e8b7472ebb67db09158863af"
+    },
+    {
+      "path": "signing/cloud-capability-manifest.mjs",
+      "bytes": 6885,
+      "sha256": "28761ac0c9899ced481fcf73cb055cf3af9fd9d8c2ef4ab8f06b97814f4024c2"
+    },
+    {
+      "path": "signing/cloud-protected-prepare.mjs",
+      "bytes": 8531,
+      "sha256": "82a0e56e571b0266bb95cfc53481533dbc2978a6f81fffa6b8312ccb6fa5d71c"
+    },
+    {
+      "path": "signing/cloud-seal.mjs",
+      "bytes": 29385,
+      "sha256": "95df8a263ad29f37bce40475e3944a54287b5b844cdd81f8a2828ef9864f8adc"
+    },
+    {
+      "path": "signing/cloud-system-tool-bindings.mjs",
+      "bytes": 4513,
+      "sha256": "0b4b833db5c9ced10b3772ba5a100ba65e4a2862ba4b81a599be25b672163e47"
+    },
+    {
+      "path": "signing/collect-system-tools.mjs",
+      "bytes": 5625,
+      "sha256": "9fc751098bdb938b54b6979fdd5ef34625046cf8b2ca696544750ba64eb72a52"
+    },
+    {
+      "path": "signing/finalize-binding-inputs.py",
+      "bytes": 19402,
+      "sha256": "02f0b897fc6b69d0d10dff624abc6576013ccc287ba8ba13cc95b7dff4ff663a"
+    },
+    {
+      "path": "signing/prepare-twelfth-snapshot.sh",
+      "bytes": 6356,
+      "sha256": "50c2e46966f5b8d0dab9373bf0be0207953854316a77268c98e38b359279c29a"
+    },
+    {
+      "path": "signing/publish-runtime-protection.mjs",
+      "bytes": 3399,
+      "sha256": "5286601fe06390d100a4ef874bf66ec7a9f56f2ad04c37e0636ac7eb87682d20"
+    },
+    {
+      "path": "signing/publish-signing-materials.py",
+      "bytes": 5505,
+      "sha256": "64fce3ac1220fb53f9ef8dc892baa5dc88051c817c514ef570b891849ba3826d"
+    },
+    {
+      "path": "signing/sign-twelfth.sh",
+      "bytes": 6547,
+      "sha256": "0262de2b5fdee903dec7ae3f730e640037a2976763a4725dac3e22d83182c139"
+    },
+    {
+      "path": "signing/validate-r2l6-installed.mjs",
+      "bytes": 5206,
+      "sha256": "08b131e445108ef0382c8af53b79ee14b2030cbe1c10662c2bef7ba0d01b540c"
+    },
+    {
+      "path": "signing/verify-capability-manifest.mjs",
+      "bytes": 18356,
+      "sha256": "a5c6d431c7c7f73a8659b1c0d935b8ff357cd62c5186fdbbb2e04ce24ebbfd3e"
+    },
+    {
+      "path": "signing/verify-finalize-capability-check.py",
+      "bytes": 3524,
+      "sha256": "63040439a9794e9dd504710a7e252c11ceade85fbdf6b6d348b174179fade436"
+    },
+    {
+      "path": "signing/workspace-grant-binding.py",
+      "bytes": 8629,
+      "sha256": "c5153121cd11cf5db71a15603bba78577f3e5f316123ffe72fc85f066d9bb3e9"
+    },
+    {
+      "path": "steps/README.md",
+      "bytes": 13309,
+      "sha256": "979dbb81bc47557f96f01d033751fc105b309a64101ecd67bf2f76965412928c"
+    },
+    {
+      "path": "steps/packet-common.py",
+      "bytes": 6466,
+      "sha256": "d964db10261baea4031def1521601508a2035fe67a577ba61c74b016791b7e13"
+    },
+    {
+      "path": "steps/run-local-step.py",
+      "bytes": 5319,
+      "sha256": "18860f726b34bc8ac2ec6cbdb66e88997289f2b81678aefc643e34321b5b1d40"
+    },
+    {
+      "path": "steps/run-step.py",
+      "bytes": 6503,
+      "sha256": "44afb132f5b42ba19d2bc48257904599e9ff79c8440aaed719d4a94db1a95814"
+    },
+    {
+      "path": "steps/run-user-step.sh",
+      "bytes": 122,
+      "sha256": "e472336b1cc108aee46053b9e4946441cf5c8099beafbe5fe87ddefecd55fe58"
+    },
+    {
+      "path": "steps/transport-packet.py",
+      "bytes": 7193,
+      "sha256": "1d3e678b555e0bc63f0994d844fc526e0314f6299547983c7f998a35ad0051f2"
+    },
+    {
+      "path": "steps/verify-steps.py",
+      "bytes": 14906,
+      "sha256": "abe3ed398846e8abb521371d700f900caf6665199c4eddba0503cbf12cff7e9e"
+    },
+    {
+      "path": "systemd/OWNED-SHA256SUMS",
+      "bytes": 640,
+      "sha256": "ee64c32c486d0579197e1570dcecde47ab20174fff82cd2c30ab50fceb0fc8bb"
+    },
+    {
+      "path": "systemd/P9-switch-start-readback.md",
+      "bytes": 24492,
+      "sha256": "7e582138805e8b67977283b56a145e4d67f2ae146a6c53bd87952f7e774d4dfa"
+    },
+    {
+      "path": "systemd/S2-stop-and-inspect.py",
+      "bytes": 18389,
+      "sha256": "9277d7dd1c28d79b73d11438bf0045f03f52c47412d15033cbe3f0ecb5a26884"
+    },
+    {
+      "path": "systemd/S7-startup-readback.mjs",
+      "bytes": 28094,
+      "sha256": "c0bb3bf17294e4a018e02727cddc6fd2cdba90f869275336fa7d4f8f8de8857e"
+    },
+    {
+      "path": "systemd/S7-switch-start-readback.py",
+      "bytes": 29508,
+      "sha256": "d58d9b091002a0b5907eb912d1bbc4c41e3dc7b6d4a6bd20d943aac4807a3c8d"
+    },
+    {
+      "path": "systemd/fixtures/verify-doctor.test.mjs",
+      "bytes": 2426,
+      "sha256": "62a3c134884f682522279f770bbc42b0f7bd400caa2f350146dd4c767c401dc6"
+    },
+    {
+      "path": "systemd/himawari-prod.service.draft",
+      "bytes": 1228,
+      "sha256": "6935a79343ad0ddc655b13a45045f69f74981c77eaef454745974440ac944048"
+    },
+    {
+      "path": "systemd/pair-supervisor.mjs",
+      "bytes": 3496,
+      "sha256": "1c8379bd7cc978c30342e823b159ab9add607c573087059e6f60c65edcf49b88"
+    },
+    {
+      "path": "systemd/run-user-s7.sh",
+      "bytes": 233,
+      "sha256": "03b655cd959d79807ebc31233776b6df4729d38bb2bf17752152a180178c0626"
+    },
+    {
+      "path": "systemd/verify-doctor.mjs",
+      "bytes": 2092,
+      "sha256": "fc6abfcb6ba98d5ecae09a6d807ba141bbb1067248662ff1c5de34b8f47fe92e"
+    },
+    {
+      "path": "systemd/verify-switch-config-fixtures.py",
+      "bytes": 4964,
+      "sha256": "023c914b018a290ce6901702ee23dc0f10f7144d4005a92171743e002ce145ba"
+    }
+  ]
+}

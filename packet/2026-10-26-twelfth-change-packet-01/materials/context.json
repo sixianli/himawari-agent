@@ -1,0 +1,12 @@
+{
+  "repository": "sixianli/himawari-agent",
+  "event": "workflow_dispatch",
+  "runId": "1793009690270",
+  "attempt": 1,
+  "testedSha": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "headSha": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "baseSha": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "policySha256": "6c686500a5d873ba769bb390b4721bc750d8df5e968ee25fe452a8091d584e6a",
+  "toolchainSha256": "88005cb73e4fa6c87ffa251b78b1458a6c6780739787133ca149038757e4c58e",
+  "initialization": false
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 2,
+  "purpose": "cloud-twelfth-install",
+  "nonProduction": false,
+  "nodeAlreadyInstalled": true,
+  "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+  "sourceHead": "470b6d30a8664d5f85da2a8b261b59a4f5f18704",
+  "files": [
+    {
+      "name": "source-470b6d3.bundle",
+      "bytes": 103368750,
+      "sha256": "cf87386044f0139c7b53dab92398a651313f735d25d6769d2ba6e5a8370b1e30"
+    },
+    {
+      "name": "candidate.tar.gz",
+      "bytes": 64137729,
+      "sha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc",
+      "sourceName": "linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz"
+    },
+    {
+      "name": "context.json",
+      "bytes": 497,
+      "sha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af"
+    },
+    {
+      "name": "python-3.12.10.tar.gz",
+      "bytes": 34392187,
+      "sha256": "f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca"
+    },
+    {
+      "name": "node-modules.tar.gz",
+      "bytes": 135978016,
+      "sha256": "fd898d368b916e3cca36dade020605d160abbfd7fce3d4549f95fa6c88ac48e4"
+    },
+    {
+      "name": "node-modules.json",
+      "bytes": 9745078,
+      "sha256": "ce21ea6382d36b2144017f6d974b35318c5e801d46218af0c3793fc667a8d82b"
+    },
+    {
+      "name": "npm-ls.json",
+      "bytes": 198220,
+      "sha256": "560c704a49b26b56c8f66c44b9e4533a9d7e70db299320c775bc865dce372aa7"
+    }
+  ]
+}

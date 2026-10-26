@@ -1,0 +1,78 @@
+{
+  "schema": "himawari-cloud-system-tools-observation.v1",
+  "hostname": "vmi3618928",
+  "platform": "linux",
+  "verifierSha256": "0b4b833db5c9ced10b3772ba5a100ba65e4a2862ba4b81a599be25b672163e47",
+  "systemToolPaths": {
+    "bwrap": "/usr/bin/bwrap",
+    "socat": "/usr/bin/socat",
+    "bash": "/usr/bin/bash",
+    "rg": "/usr/bin/rg"
+  },
+  "systemToolIdentities": {
+    "bwrap": {
+      "requestedPath": "/usr/bin/bwrap",
+      "realpath": "/usr/bin/bwrap",
+      "identity": {
+        "device": "2049",
+        "inode": "3696",
+        "uid": 0,
+        "gid": 0,
+        "mode": "0755"
+      },
+      "sha256": "e318903862396f96de3df57264e0158682b952fd3fb53ac23d876413e7b30f71",
+      "links": []
+    },
+    "socat": {
+      "requestedPath": "/usr/bin/socat",
+      "realpath": "/usr/bin/socat1",
+      "identity": {
+        "device": "2049",
+        "inode": "3707",
+        "uid": 0,
+        "gid": 0,
+        "mode": "0755"
+      },
+      "sha256": "4ba71cb9e75952234ca0f3af74db33ba017d6d8c66b1ccd323e80aa9bd80f0a9",
+      "links": [
+        {
+          "path": "/usr/bin/socat",
+          "target": "socat1",
+          "identity": {
+            "device": "2049",
+            "inode": "3718",
+            "uid": 0,
+            "gid": 0,
+            "mode": "0777"
+          }
+        }
+      ]
+    },
+    "bash": {
+      "requestedPath": "/usr/bin/bash",
+      "realpath": "/usr/bin/bash",
+      "identity": {
+        "device": "2049",
+        "inode": "1790",
+        "uid": 0,
+        "gid": 0,
+        "mode": "0755"
+      },
+      "sha256": "bc5945feb8bd26203ebfafea5ce1878bb2e32cb8fb50ab7ae395cfb1e1aaaef1",
+      "links": []
+    },
+    "rg": {
+      "requestedPath": "/usr/bin/rg",
+      "realpath": "/usr/bin/rg",
+      "identity": {
+        "device": "2049",
+        "inode": "3567",
+        "uid": 0,
+        "gid": 0,
+        "mode": "0755"
+      },
+      "sha256": "be2fbcdd985161603bfa268c7647eec670b9e94374f0e972da708d7de670a8fb",
+      "links": []
+    }
+  }
+}

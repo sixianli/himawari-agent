@@ -1,0 +1,8 @@
+{
+  "artifact": "/var/tmp/himawari-third-20261012/input/candidate.tar.gz",
+  "artifactSha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc",
+  "artifactBytes": 64137729,
+  "context": "/var/tmp/himawari-third-20261012/input/context.json",
+  "contextSha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af",
+  "revision": "470b6d30a8664d5f85da2a8b261b59a4f5f18704"
+}

@@ -1,0 +1,21 @@
+{
+  "head": "aa563155f23f783e1fd2e7adb34f252dcddce980",
+  "bundleName": "source-aa56315.bundle",
+  "bundleSha256": "def06f27a6da66ac63a4cbf621aa9a66ed0382b6e684abac346b5fddb05d050d",
+  "bundleBytes": 103302952,
+  "artifactName": "linux-x64-abi127-aa563155f23f783e1fd2e7adb34f252dcddce980-1793001246410-1.tar.gz",
+  "artifactSha256": "bbb339fc785f0cf1ca82d87acff081df6e526094edf2b2684fa22843a1061985",
+  "artifactBytes": 64138340,
+  "contextSha256": "a4ae0292b57d691a4fb315e1ae3bb3e55b7e9ccc39211da505ca3596a66449d4",
+  "contextBytes": 497,
+  "nodeModulesTarSha256": "fd898d368b916e3cca36dade020605d160abbfd7fce3d4549f95fa6c88ac48e4",
+  "nodeModulesTarBytes": 135978016,
+  "nodeModulesJsonSha256": "d66ade4ac0934fbfe44e321a39a2537681bc2e5ee3d1f676b3063511c817edef",
+  "nodeModulesJsonBytes": 9745078,
+  "npmLsSha256": "560c704a49b26b56c8f66c44b9e4533a9d7e70db299320c775bc865dce372aa7",
+  "npmLsBytes": 198220,
+  "sourceTreeSha256": "663137c3f6fb9918978b262fc19211831cd4c74df53edd0e46a64df1345c076e",
+  "regressionSourceSha256": "7c7166ecc1fce2b5d1ac3ccbb2edb9036a52d27089b113d64e4b170025bcc3c9",
+  "regressionSourceBytes": 238515,
+  "sourceInputRecordCount": 680
+}

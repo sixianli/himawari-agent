@@ -1,0 +1,28 @@
+capture records 680 [420]
+{
+  "artifactName": "linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz",
+  "artifactSha256": "4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc",
+  "artifactBytes": 64137729,
+  "contextSha256": "fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af",
+  "contextBytes": 497,
+  "sourceTreeSha256": "2ff8e75c8452f9d6f7cfebccd09e48cd441fd61205de2dddb2ab943c92236660",
+  "manifestFiles": 30887
+}
+4b341bf8a592fef141c4bf50b13c8fa081cffc9055d5afa4e9f7b0a6de3f8bdc  /data/hermes/himawari/tool-audit-round2/r2-u1/artifacts/cc-build-470b6d30-r1/linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz
+fbaa323e556c7e243263334fc554c1bb6e438027841b95bfb3cace775c5f29af  /data/hermes/himawari/tool-audit-round2/r2-u1/evidence/cc-build-470b6d30-r1-report/build-linux-x64/context.json
+e988930fef14b23d2aed32d5704f731de206073d662240cf783139844277012b  /data/hermes/himawari/tool-audit-round2/r2-u1/evidence/sixth-source-inputs-470b6d30/source-build-inputs.json
+fd898d368b916e3cca36dade020605d160abbfd7fce3d4549f95fa6c88ac48e4  installer-dependencies/node-modules.tar.gz
+ce21ea6382d36b2144017f6d974b35318c5e801d46218af0c3793fc667a8d82b  installer-dependencies/node-modules.json
+560c704a49b26b56c8f66c44b9e4533a9d7e70db299320c775bc865dce372aa7  installer-dependencies/npm-ls.json
+f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca  python-3.12.10.tar.gz
+8abf49b2d46e1a0f885b9bea9006c9fba2daec518c72b963bab9c09905421749  runtime-sandbox-dist/job-host-main.js
+709171577c8abf28419a96ee1e5c5050e82a47ac69b24d2b137947dd77a346d3  runtime-sandbox-dist/sandbox-sdk.js
+f7b9c4d0c83fdd22fa573a44704dd522f87c6e6cf871007720a0efa067b50be6  runtime-sandbox-dist/sandbox-sdk-worker.js
+64137729 /data/hermes/himawari/tool-audit-round2/r2-u1/artifacts/cc-build-470b6d30-r1/linux-x64-abi127-470b6d30a8664d5f85da2a8b261b59a4f5f18704-1793009690270-1.tar.gz
+497 /data/hermes/himawari/tool-audit-round2/r2-u1/evidence/cc-build-470b6d30-r1-report/build-linux-x64/context.json
+4524809 /data/hermes/himawari/tool-audit-round2/r2-u1/evidence/sixth-source-inputs-470b6d30/source-build-inputs.json
+135978016 installer-dependencies/node-modules.tar.gz
+9745078 installer-dependencies/node-modules.json
+198220 installer-dependencies/npm-ls.json
+34392187 python-3.12.10.tar.gz
+CAND_OK
