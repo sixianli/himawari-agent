@@ -36,6 +36,8 @@ date: "2026-10-13"
 - [加了新的沙箱后端，共用逻辑只接在原来的一次性路径上](#backend-branch-omission)
 - [按 `local.mjs` 的退出码判定第 3 层](#layer3-exit-code)
 - [第 0 层漏跑直接相关的测试文件](#layer0-related-tests)
+- [复制上一次操作包时留下旧文件和旧文件名](#copied-packet-stale-names)
+- [上线验收只查了首页 200 没真点网页](#release-without-browser-walkthrough)
 
 <a id="merged-in-rehearsal"></a>
 
@@ -673,5 +675,25 @@ date: "2026-10-13"
   - 验证：放回第四次的旧文件时，检查报 `EVIDENCE_NAME_WITHOUT_PRODUCER systemd/S7-switch-start-readback.py s7-catalog-after51.json` 并以 1 退出；改成 `after55` 后这一项消失。
   - 位置：检查脚本在操作包 `.ci-output/production/2026-10-26-tenth-change-packet-01/inputs/` 里（`.ci-output/` 不进仓库）。以后复制这个操作包做第十一次时，检查会一起带过去。
   - 限制：只覆盖这两个读取脚本；从第九次复制来、名字仍然合法但内容已过时的文件（例如第一次尝试的探针源文件）这项检查发现不了，那一类靠 `check-packet-consistency.py` 已有的哈希核对和 Hermes 上的 16 项操作包检查。
+
+[回到目录](#编码代理反复犯的错误)
+
+<a id="release-without-browser-walkthrough"></a>
+
+## 上线验收只查了首页 200 没真点网页
+
+- 反复出现的情况：新版本上线后的验收（确认新版本能用的检查）只读回了服务端的状态，例如首页返回 200、服务在运行、配置和数据库版本对，没有人在真实浏览器里像 Andy 一样发一轮对话、打开设置页。新版本里用不了的地方，都是 Andy 自己用的时候才发现。
+- 发生记录（详细经过见 [工程案例集](engineering-casebook.md)）：
+  - 2026-10-25，案例 9“上下文窗口配错，长回答被截断”：上线验收没有发过长回答，Andy 让 Agent 写贪吃蛇时回答只剩一个字。
+  - 2026-10-25，案例 12“生产一直在跑 10 月 7 日的旧前端”：验收只测了服务端接口，没核对浏览器拿到的前端是不是新版，设置里的联网搜索开关点不动。
+  - 2026-10-26，案例“搜索已经结束，却被判‘失联’，整个服务卡 5 分钟”：上线后 Andy 搜新闻时卡住 5 分钟。
+  - 2026-10-26，第十一次上线（代码 `aa563155`）：验收读回首页 200 后结束。约 16 分钟后 Andy 报告：已经打开的页面在服务重启后，审批卡一直停在“正在加载权威状态”，页面显示“部分执行记录暂不可读取”，设置里“允许联网搜索”勾不上，之前给过的搜索许可也失效了。
+- 为什么要紧：每一次都是生产上的新版本对 Andy 完全或部分不能用，Andy 要自己当测试员，然后再等一次修复和上线。
+- 第三次的根因：前几次之后只修了各自的那个问题（更新前端目录、改上下文窗口），并在上线脚本里多读回几项服务端的值；从来没有一步要求“在浏览器里打开这个版本，按用户的用法走一遍”。`deploy.sh`（上线脚本）对这件事没有任何条件，代理只读回服务端状态就能上线。
+- 硬约束（2026-10-26）：
+  - `scripts/delivery-mode/deploy.sh` 在上线前检查之前先运行 `scripts/delivery-mode/browser-acceptance-gate.py`。操作包里必须有 `browser-acceptance/walkthrough.json`，其中的 `artifactSha256` 必须等于操作包 `inputs/bindings.json` 里候选安装包的 `candidate.archiveSha256`，并且 6 项检查都记为通过：首页打开并登录（`accept-homepage`）、设置里“允许联网搜索”能勾上（`accept-search-toggle`）、搜新闻有带网址的结果且过程里有“搜索网页”这一步（`accept-news-search`）、长回答从第 1 段到最后一段都显示（`accept-long-answer`）、记忆页能打开且没有报错（`accept-memory-page`）、服务重启后已经打开的页面仍能用开关和搜索（`accept-after-restart`）。缺文件、安装包对不上、任何一项没通过，`deploy.sh` 以退出码 5 停下，结果为 `no-browser-acceptance`，生产机上什么都不动。
+  - 这个文件只能由产品路径测试 `test/integration/product-path-browser.test.ts` 里的“release acceptance in a real browser”写出：它在 Hermes 上把这个安装包装好，用 Chromium 打开真实页面，联网搜索走真实的 Exa 服务，测试结束时写出 `browser-acceptance.json`，再原样复制到操作包里。
+  - 验证：`scripts/delivery-mode/test_deploy.py` 新增三项，缺文件、换了安装包、一项失败或缺一项时 `deploy.sh` 都以 5 退出且一个上线步骤都没跑（Hermes `news-latency/evidence/ck13/` 与 `ck16/`，`test-deploy-rc=0`）。第十一次的操作包没有这份文件，检查报 `BROWSER_ACCEPTANCE_MISSING` 并拒绝（`ck13/`，`gate-eleventh-rc=1`）。同一个网页验收对第十一次的安装包 `aa563155` 重现了 Andy 遇到的问题：前五项通过，“服务重启后已经打开的页面”这一项在设置里等了 60 秒开关仍勾不上，测试失败（`pp15-old-accept/`）；对修好的 `470b6d30` 六项全部通过（`pp15-new-accept/`，2026-10-26T10:41:56Z），第十二次操作包带着这份结果通过了检查。
+  - 限制：网页验收用的是按脚本回答的模拟模型，证明不了生产上真实模型的配置和生产机的网络；生产上的读回和 Andy 的试用仍然要做。验收每次从新装的数据开始，测不出“上线前已经给过的搜索许可在新版本里失效”这类和旧数据有关的问题，这一类靠 `test/integration/public-search-authorization.test.ts` 覆盖。检查只看文件内容，手写一份同样内容的文件也能通过，所以只能复制测试写出的那份。
 
 [回到目录](#编码代理反复犯的错误)
