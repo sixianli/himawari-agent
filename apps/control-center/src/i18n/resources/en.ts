@@ -520,7 +520,6 @@ export const messages = {
   "memory.reminderDue": "Due {time}",
   "memory.reminderDismiss": "Don't remind again",
   "memory.reminderSnooze": "Remind me in an hour",
-  "memory.reminderNotify": "Show desktop notifications",
   "memory.cat":
     "{c, select, rule {Rules} identity {Identity} preference {Preferences} relationship {People} goal {Goals} project {In progress} health {Health} finance {Money} event {Events} other {Other}}",
   "memory.page.summary": "{live} things remembered · {week} new this week · {archived} archived",
@@ -556,7 +555,7 @@ export const messages = {
   "memory.page.yearly": "every year",
   "memory.page.cancelled": "No more reminders for “{text}”; the memory stays",
   "memory.page.notify":
-    "{on, select, true {Desktop notifications are on, so reminders appear even when this tab is in the background.} other {Desktop notifications are off, so reminders appear only while this tab is in front.}}",
+    "Due reminders are pushed to every device where you turned on notifications.",
   "memory.page.profileNote":
     "Himawari reads this profile before every answer. Click a line to change it; the old wording is kept. Sensitive memories are not shown here and are used only when relevant.",
   "memory.page.lines": "{count}",
@@ -663,4 +662,51 @@ export const messages = {
   "governed.cancel": "Cancel",
   "error.currentUnavailable": "Currently unavailable",
   "objects.count": "{count, plural, one {# item} other {# items}} total",
+  "review.settings.notifications": "Notifications",
+  "push.intro":
+    "When you are not looking at Himawari, send reminders, approvals and task results to this device.",
+  "push.kind.reminder": "Memory reminders",
+  "push.kind.reminderHint": "When something you asked to remember is due",
+  "push.kind.approval": "Waiting for approval",
+  "push.kind.approvalHint": "When a task stops for your go-ahead",
+  "push.kind.run": "Task finished",
+  "push.kind.runHint": "When a task completes or fails",
+  "push.enable": "Turn on for this device",
+  "push.enableHint": "Your browser will ask you to allow it.",
+  "push.thisDevice": "This device",
+  "push.on": "On",
+  "push.test": "Send a test notification",
+  "push.testSent": "Sent. It should appear in a few seconds.",
+  "push.otherDevices": "Other devices",
+  "push.remove": "Remove",
+  "push.turnOff": "Turn off on this device",
+  "push.lastDelivered": "Last delivered {time}",
+  "push.neverDelivered": "Nothing delivered yet",
+  "push.privacyNote":
+    "Nothing is pushed while Himawari is open on any device. The lock screen shows chat titles only, never answers; sensitive memories show as “You have a private reminder”.",
+  "push.iphoneTip":
+    "To hide every preview until you unlock, set iPhone Settings › Notifications › Show Previews to “When Unlocked”.",
+  "push.deniedTitle": "Notifications are blocked on this device",
+  "push.denied1": "Click the site icon left of the address bar and set Notifications to Allow.",
+  "push.denied2": "Reload the page and come back here.",
+  "push.deniedPhone":
+    "On iPhone: Settings › Notifications › Himawari, then turn on Allow Notifications.",
+  "push.pausedTitle": "Sending to this device is paused",
+  "push.pausedBody":
+    "The push service rejected the last delivery ({code}). This usually means the server’s push key is misconfigured. It resumes on its own after the server is fixed and restarted.",
+  "push.installTitle": "Add Himawari to your Home Screen first",
+  "push.installWhy":
+    "iPhone only lets Home Screen web apps receive notifications. You can’t turn them on from a Safari tab.",
+  "push.installStep1": "Tap the Share button below",
+  "push.installStep2": "Choose “Add to Home Screen”, then Add",
+  "push.installStep3":
+    "Open Himawari from the Home Screen icon and come back to Settings › Notifications",
+  "push.installNote":
+    "Requires iOS 16.4 or later. The Home Screen app keeps its own sign-in, so you sign in once more after adding it.",
+  "push.unavailable": "Push is not set up on this server yet.",
+  "push.unsupported": "This browser does not support web push.",
+  "push.failed": "That didn’t work. Please try again later.",
+  "push.deviceApp": "{platform} Home Screen app",
+  "push.deviceBrowser": "{platform} browser",
+  "push.openSettings": "Notification settings",
 } satisfies MessageCatalog;

@@ -2,29 +2,34 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as wait } from "node:timers/promises";
 import {
   AgentGatewayV2Service,
-  ApprovalService,
   ApplicationPortError,
+  ApprovalService,
+  type AuthorityFence,
+  type ClockPort,
+  type GatewayV2AccessPolicyPort,
+  type GatewayV2ControlPlanePort,
   GovernanceGatewayV2ControlPlane,
   GovernanceGatewayV2ReadModel,
   GrantService,
   PORT_ERROR_CODES,
-  type ClockPort,
-  type AuthorityFence,
-  type ThreadCreateInput,
-  type GatewayV2AccessPolicyPort,
   type ProductConfiguration,
   type RecentAuthenticationGuardPort,
-  type GatewayV2ControlPlanePort,
+  type ThreadCreateInput,
 } from "@himawari-agent/application";
-type ProductAuthorityFence = ThreadCreateInput["authority"];
-import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 
-import { PublicSearchAuthorization } from "./public-search-authorization.js";
-import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
+type ProductAuthorityFence = ThreadCreateInput["authority"];
+
+import type { SqliteProductStateRepository } from "@himawari-agent/persistence-sqlite";
 import {
   PRODUCTION_MEMORY_OPERATIONS,
   type ProductionMemoryControl,
 } from "./production-memory-control.js";
+import {
+  PRODUCTION_WEB_PUSH_OPERATIONS,
+  type ProductionWebPushControl,
+} from "./production-web-push-control.js";
+import { PRODUCTION_COPY_OPERATIONS } from "./production-workspace-copies.js";
+import { PublicSearchAuthorization } from "./public-search-authorization.js";
 
 export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "approval.list",
@@ -34,7 +39,6 @@ export const PRODUCTION_APPROVAL_OPERATIONS = Object.freeze([
   "search.authorization.set",
 ] as const);
 
-/** Only the installed approval surface is exposed; other governance mutations stay unavailable. */
 export function createProductionApprovalGateway(options: {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId"> &
     Partial<Pick<ProductConfiguration, "modelDescriptors" | "runPolicy">>;
@@ -46,6 +50,7 @@ export function createProductionApprovalGateway(options: {
   readonly authority: () => ProductAuthorityFence;
   readonly workspaceCopies?: GatewayV2ControlPlanePort;
   readonly memoryControl?: ProductionMemoryControl;
+  readonly webPushControl?: ProductionWebPushControl;
 }) {
   const { ownerId, agentId } = options.configuration;
   const { repository, clock } = options;
@@ -73,7 +78,9 @@ export function createProductionApprovalGateway(options: {
       query: (query) =>
         query.type.startsWith("memory.") && options.memoryControl
           ? options.memoryControl.query(query)
-          : searchAuthorization.query(query),
+          : query.type.startsWith("push.") && options.webPushControl
+            ? options.webPushControl.query(query)
+            : searchAuthorization.query(query),
       async *subscribe({ authentication, signal }) {
         let previous: string | undefined;
         while (!signal?.aborted) {
@@ -119,8 +126,6 @@ export function createProductionApprovalGateway(options: {
           if (signal?.aborted) return;
           if (version !== previous) {
             previous = version;
-            // This installation has authoritative snapshots, not a durable v2
-            // event journal. Reconnects always re-read; never invent a cursor.
             yield {
               kind: "snapshot_required",
               scope: { ownerId, agentId },
@@ -167,6 +172,11 @@ export function createProductionApprovalGateway(options: {
           return unsupported();
         if (command.type.startsWith("memory.") && options.memoryControl)
           return options.memoryControl.execute(command);
+        if (
+          (command.type.startsWith("push.") || command.type === "presence.heartbeat") &&
+          options.webPushControl
+        )
+          return options.webPushControl.execute(command);
         if (command.type.startsWith("workspace.copy.") && options.workspaceCopies)
           return options.workspaceCopies.execute({ authentication, command });
         return searchAuthorization.set(command, options.executionAuthority());
@@ -187,6 +197,7 @@ export function createProductionApprovalGateway(options: {
       ...PRODUCTION_APPROVAL_OPERATIONS,
       ...(options.workspaceCopies ? PRODUCTION_COPY_OPERATIONS : []),
       ...(options.memoryControl ? PRODUCTION_MEMORY_OPERATIONS : []),
+      ...(options.webPushControl ? PRODUCTION_WEB_PUSH_OPERATIONS : []),
     ],
     reads,
     controlPlane,

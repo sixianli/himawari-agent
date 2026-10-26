@@ -1,4 +1,5 @@
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
+import { NotificationSettings } from "./components/notification-settings.js";
 import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
@@ -34,6 +35,7 @@ import {
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
+import { startPresenceHeartbeat } from "./web-push.js";
 
 const MemorySettings = lazy(() =>
   import("./components/memory-page.js").then((module) => ({ default: module.MemorySettings })),
@@ -335,6 +337,18 @@ function LocalizedControlCenterApp({
     storage,
     onUnauthorized: clearPrivateViewState,
   });
+  const presenceInstalled =
+    configuration?.installedGatewayV2Operations?.includes("presence.heartbeat") ?? false;
+  useEffect(() => {
+    if (!client || !configuration || !presenceInstalled) return;
+    return startPresenceHeartbeat({
+      client,
+      configuration,
+      document,
+      setInterval: (handler, ms) => window.setInterval(handler, ms),
+      clearInterval: (handle) => window.clearInterval(handle as number),
+    });
+  }, [client, configuration, presenceInstalled]);
   const governanceSurface = [
     "approvals",
     "capabilities-adapters",
@@ -367,6 +381,17 @@ function LocalizedControlCenterApp({
               }
             />
           </Suspense>
+        ) : undefined
+      }
+      settingsNotifications={
+        client && configuration?.installedGatewayV2Operations?.includes("push.status.read") ? (
+          <NotificationSettings
+            client={client}
+            configuration={configuration}
+            locale={locale}
+            connected={threadConnection !== "offline"}
+            message={message}
+          />
         ) : undefined
       }
       settingsTools={

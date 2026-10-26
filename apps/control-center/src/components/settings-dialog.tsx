@@ -16,6 +16,7 @@ export function SettingsDialog({
   tools,
   data,
   memory,
+  notifications,
   initialTab = "general",
 }: {
   open: boolean;
@@ -27,6 +28,7 @@ export function SettingsDialog({
   tools?: ReactNode;
   data?: ReactNode;
   memory?: ReactNode;
+  notifications?: ReactNode;
   initialTab?: string;
 }) {
   const { message } = useControlCenterIntl();
@@ -43,9 +45,14 @@ export function SettingsDialog({
     >
       <div className="settings-body">
         <nav className="settings-nav" aria-label={message("settings.tabsLabel")}>
-          {(memory
-            ? (["general", "tools", "memory", "data"] as const)
-            : (["general", "tools", "data"] as const)
+          {(
+            [
+              "general",
+              "tools",
+              ...(memory ? (["memory"] as const) : []),
+              ...(notifications ? (["notifications"] as const) : []),
+              "data",
+            ] as const
           ).map((id) => (
             <ActionButton
               key={id}
@@ -123,6 +130,8 @@ export function SettingsDialog({
             tools
           ) : tab === "memory" ? (
             memory
+          ) : tab === "notifications" ? (
+            notifications
           ) : (
             <>
               {data}
