@@ -714,8 +714,8 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
       error: "",
       result: {
         command: "db.migrate",
-        currentSequence: 55,
-        appliedSequences: [50, 51, 52, 53, 54, 55],
+        currentSequence: 56,
+        appliedSequences: [50, 51, 52, 53, 54, 55, 56],
         snapshotPath: expect.any(String),
       },
     });
@@ -747,10 +747,10 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     withDatabase(f, (database) => {
       expect(
         database.prepare("SELECT max(sequence) FROM schema_migration_ledger").pluck().get(),
-      ).toBe(55);
+      ).toBe(56);
       expect(database.prepare("SELECT key,value FROM schema_metadata ORDER BY key").all()).toEqual([
-        { key: "current_sequence", value: "55" },
-        { key: "minimum_writer_sequence", value: "55" },
+        { key: "current_sequence", value: "56" },
+        { key: "minimum_writer_sequence", value: "56" },
       ]);
     });
     const listed = await inspect(f);
@@ -836,7 +836,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const f = await fixture();
     const listed = await inspect(f);
     withDatabase(f, (database) =>
-      database.exec(`UPDATE schema_metadata SET value='56'
+      database.exec(`UPDATE schema_metadata SET value='57'
       WHERE key IN ('current_sequence','minimum_writer_sequence')`),
     );
     await rejectsUnchanged(f, inspectArgs(f), "SANDBOX_RESERVATION_ADMIN_SCHEMA_UNSUPPORTED");
@@ -1390,7 +1390,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
             .pluck()
             .get(),
         ),
-      ).toBe(55);
+      ).toBe(56);
       expect(
         database
           .prepare(`SELECT 1 FROM runs r WHERE id=@runId AND (${RUN_RESOURCES_RELEASED_SQL})`)
@@ -1401,7 +1401,7 @@ describe("[R2-L4][prod-sandbox-D2-admin] offline reservation administration", ()
     const audit = auditWorkspaceLifecycle(f);
     expect(audit).toMatchObject({
       mode: "read_only",
-      schemaSequence: 55,
+      schemaSequence: 56,
       liveHostVerified: false,
       repairEligible: false,
     });

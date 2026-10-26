@@ -4,6 +4,7 @@ document_type: adr
 decision_status: accepted
 supersedes: "docs/adr/0067-runtime-artifacts-by-inode-metadata.md, docs/adr/0034-runtime-verification-by-inode-metadata.md, docs/adr/0028-protected-runtime-installation.md"
 superseded_by: ""
+amended_by: "docs/adr/0078-authority-check-once-then-version-compare.md"
 date: "2026-10-23"
 ---
 

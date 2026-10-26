@@ -622,6 +622,13 @@ export const schemaCatalog: readonly SchemaCatalogEntry[] = Object.freeze([
     "cascade with its Memory record or consolidation run",
   ),
   entry(
+    "authority_revision",
+    "ProductStateRepositoryPort",
+    "one counter raised by triggers on every grant, approval, authorization, capability and product state change",
+    "none",
+    "never deleted; single row",
+  ),
+  entry(
     "memory_reminders",
     "MemoryReminderStorePort",
     "one reminder per Memory, scheduled until dismissed; yearly ones roll forward",

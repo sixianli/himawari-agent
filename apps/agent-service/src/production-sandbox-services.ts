@@ -71,6 +71,7 @@ import {
   revalidateCapabilityDeploymentSnapshot,
   verifiedPiWriteFailure,
   verifyPiWriteEvidence,
+  sandboxHostIdentity,
   verifySandboxHost,
 } from "@himawari-agent/platform-node";
 import { readMachineBootId } from "@himawari-agent/runtime-sandbox/control";
@@ -2758,6 +2759,10 @@ export async function createProductionSandboxServices(options: {
       resolveScope: async (plan: SandboxExecutionPlanV2) => {
         const { scope, allowedDomains } = await resolve(plan);
         return { scope, allowedDomains };
+      },
+      authorityVersion: async (plan: SandboxExecutionPlanV2) => {
+        const { binding } = await entryFor(plan.capabilityRef, plan.capabilityVersion);
+        return hash([await repository.readAuthorityRevision(), await sandboxHostIdentity(binding)]);
       },
       verifyStart: async (plan: SandboxExecutionPlanV2) => {
         await resolve(plan);

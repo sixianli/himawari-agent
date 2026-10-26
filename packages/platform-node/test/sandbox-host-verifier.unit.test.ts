@@ -27,6 +27,7 @@ import {
   digestSandboxRuntime,
   resolveSandboxFileWorkspaceClaim,
   resolveSandboxWorkspaceClaim,
+  sandboxHostIdentity,
   verifySandboxHost,
 } from "../src/capabilities/sandbox-host-verifier.js";
 import { createDirectoryMoveJournal, resolveSandboxDirectoryMoveScope } from "../src/index.js";
@@ -134,6 +135,43 @@ async function fixture() {
   }
   return { binding, qualification, hostId: "host" };
 }
+it("[NL-4] keeps the host identity when files are created inside a workspace root", async () => {
+  const input = await fixture();
+  const before = await sandboxHostIdentity(input.binding);
+  const workspace = input.binding.roots[0]?.canonicalPath ?? "";
+  await writeFile(path.join(workspace, "note.txt"), "note");
+  await mkdir(path.join(workspace, "nested"));
+  expect(await sandboxHostIdentity(input.binding)).toBe(before);
+});
+
+it("[NL-4] changes the host identity when a workspace root or runner file is replaced", async () => {
+  const input = await fixture();
+  const before = await sandboxHostIdentity(input.binding);
+  const workspace = input.binding.roots[0]?.canonicalPath ?? "";
+  await rename(workspace, `${workspace}-old`);
+  await mkdir(workspace, { mode: 0o700 });
+  const replacedRoot = await sandboxHostIdentity(input.binding);
+  expect(replacedRoot).not.toBe(before);
+  await rename(input.binding.runner.path, `${input.binding.runner.path}.old`);
+  await writeFile(input.binding.runner.path, "runner", { mode: 0o600 });
+  expect(await sandboxHostIdentity(input.binding)).not.toBe(replacedRoot);
+});
+
+it("[NL-4] changes the host identity when the protection manifest metadata changes", async () => {
+  const input = await fixture();
+  const manifest = path.join(input.binding.privateRoot, "protection.json");
+  await writeFile(manifest, "{}", { mode: 0o600 });
+  vi.stubEnv("HIMAWARI_RUNTIME_PROTECTION_FILE", manifest);
+  try {
+    const before = await sandboxHostIdentity(input.binding);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await chmod(manifest, 0o400);
+    expect(await sandboxHostIdentity(input.binding)).not.toBe(before);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 it("[R2-D25] trusts an unprotected installation without reading or comparing its files", async () => {
   const input = await fixture();
   await verifySandboxHost(input);

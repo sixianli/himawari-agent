@@ -89,24 +89,18 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly command: string;
     readonly reason: string;
   }) => void;
-  /** Host binding comes from trusted composition, never the request. */
   readonly sandboxJobs?: {
     readonly hostId: string;
     readonly journal: SandboxJobJournalPort;
-    /** Agent-owned scope and qualification sources; called before a new start
-     * observation, never for cleanup or an exact replay of an old observation. */
     readonly verifyStart: (plan: SandboxExecutionPlan) => Promise<void>;
     readonly resolveScope: (
       plan: SandboxExecutionPlan,
     ) => Promise<NonNullable<PayloadBrokerSandboxJobResult["payload"]["resolvedScope"]>>;
   };
-  /** v2 uses the existing durable invocation authority and journal. Evidence is
-   * authenticated by the Agent's reader; no Worker-supplied verdict is accepted. */
   readonly sandboxExecutions?: {
     readonly hostId: string;
     readonly journal: SandboxExecutionJournalPort;
     readonly preparations?: SandboxExecutionPreparationPort;
-    /** Verify current scope, Grant and installed host before registering; caller rechecks authority. */
     readonly recordPreparationDiagnostic?: (
       plan: SandboxExecutionPlanV2,
       diagnostic: SandboxPreparationDiagnostic,
@@ -121,7 +115,6 @@ export interface ProductionPayloadBrokerHandlerOptions {
       plan: SandboxExecutionPlanV2,
       control: SandboxJobControlBinding,
     ) => Promise<boolean>;
-    /** Agent-owned observation and proof from one verification; never supplied over UDS. */
     readonly observeVerifiedControl?: (
       record: SandboxExecutionRecord,
     ) => Promise<SandboxExecutionVerification | SandboxCleanupPending>;
@@ -130,6 +123,7 @@ export interface ProductionPayloadBrokerHandlerOptions {
       facts: SandboxExecutionFacts,
     ) => Promise<void>;
     readonly verifyStart: (plan: SandboxExecutionPlanV2) => Promise<void>;
+    readonly authorityVersion?: (plan: SandboxExecutionPlanV2) => Promise<string>;
     readonly resolveEnvironment?: (
       plan: SandboxExecutionPlanV2,
     ) => Promise<PayloadBrokerSandboxExecutionResult["payload"]["environment"]>;
@@ -147,11 +141,8 @@ export interface ProductionPayloadBrokerHandlerOptions {
     readonly evidence?: SandboxExecutionEvidencePort;
     readonly reconciliation?: Pick<SandboxExecutionReconciliationService, "reconcile">;
   };
-  /** Scoped to the trusted Agent owner; no Worker-provided scope is accepted. */
   readonly receipts: CapabilityInvocationReceiptPort;
-  /** Scoped to the same trusted Agent owner as the receipt port. */
   readonly results: CapabilityInvocationResultPort;
-  /** Resolve the Payload store only after the durable receipt supplies its scope. */
   readonly payloadsFor: (ownerId: OwnerId, agentId: AgentId) => Pick<PayloadStorePort, "get">;
   readonly protector: PayloadProtectorPort;
   readonly currentAuthority: () => Pick<CapabilityInvocationAuthority, "product" | "lease">;
@@ -160,8 +151,18 @@ export interface ProductionPayloadBrokerHandlerOptions {
   readonly agentServiceInstanceId: string;
   readonly agentServiceBootId: string;
   readonly maximumPayloadBytes: number;
-  /** Product-approved media types; protocol syntax validation remains in execution-contracts. */
   readonly allowedContentTypes: readonly string[];
+}
+
+export const RESOLVED_AUTHORITY_REUSE_MS = 60_000;
+
+interface ResolvedAuthority {
+  readonly version: string;
+  readonly checkedAt: number;
+  readonly resolvedScope: NonNullable<
+    PayloadBrokerSandboxExecutionResult["payload"]["resolvedScope"]
+  >;
+  readonly environment: PayloadBrokerSandboxExecutionResult["payload"]["environment"];
 }
 
 function sameAuthority(
@@ -191,6 +192,7 @@ function samePayloadIdentity(payload: PayloadRecord, classification: string, con
 
 export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandler {
   readonly #options: ProductionPayloadBrokerHandlerOptions;
+  readonly #resolved = new Map<string, ResolvedAuthority>();
 
   constructor(options: ProductionPayloadBrokerHandlerOptions) {
     if (!Number.isSafeInteger(options.maximumPayloadBytes) || options.maximumPayloadBytes < 1) {
@@ -287,7 +289,6 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         }))
       )
         throw new Error("scope authority changed");
-      // A read must not disclose a plan after authority changes during lookup.
       const current = await this.#options.results.lookupFrozen({
         ...lookup,
         now: this.#options.clock.now(),
@@ -336,9 +337,6 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
             control.resourceRef !== previous.facts.environment.resourceRef)
         )
           throw new Error("reconciliation binding mismatch");
-        // This risk-reduction path uses today's authenticated peer and Agent
-        // authority, not the original invocation's frozen Worker boot. It has
-        // no input/output disclosure, preparation or launch capability.
         const mutation = await configured.reconciliation.reconcile({
           identity: previous.plan.identity,
           expectedSequence: control.expectedSequence,
@@ -434,9 +432,41 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         throw new Error("resource sequence changed");
       if (command.kind === "resolve") {
         await current(true);
+        const authorityVersion = record.phase === "bound" ? configured.authorityVersion : undefined;
+        const reuseKey =
+          record.phase === "bound"
+            ? JSON.stringify([
+                record.plan.identity,
+                record.plan.handleRef,
+                record.facts.resource.sequence,
+                record.operationRevision,
+              ])
+            : null;
+        const versionBefore = authorityVersion ? await authorityVersion(record.plan) : null;
+        const checkedAt = Date.parse(this.#options.clock.now());
+        this.sweepResolved(checkedAt);
+        const reusable = reuseKey === null ? undefined : this.#resolved.get(reuseKey);
+        if (reusable && versionBefore !== null && reusable.version === versionBefore)
+          return {
+            record,
+            applied: false,
+            resolvedScope: reusable.resolvedScope,
+            environment: reusable.environment,
+            output: null,
+          };
         const resolvedScope = await configured.resolveScope(record.plan);
         const environment = (await configured.resolveEnvironment?.(record.plan)) ?? null;
         await current(true);
+        if (reuseKey !== null && authorityVersion && versionBefore !== null) {
+          if ((await authorityVersion(record.plan)) === versionBefore)
+            this.#resolved.set(reuseKey, {
+              version: versionBefore,
+              checkedAt,
+              resolvedScope,
+              environment,
+            });
+          else this.#resolved.delete(reuseKey);
+        }
         return { record, applied: false, resolvedScope, environment, output: null };
       }
       if (command.kind === "preparation_diagnostic") {
@@ -558,8 +588,6 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
             ? await configured.evidence.verify({ plan: record.plan, facts: command.facts, now })
             : null);
         await current(false);
-        // This endpoint records observations only. It never grants disclosure,
-        // continuation or a new operation, even when evidence verifies cleanup.
         const input = {
           identity: record.plan.identity,
           expectedSequence: command.expectedSequence,
@@ -617,8 +645,6 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         await current(false);
         return { record, applied: false, resolvedScope: null, environment: null, output: null };
       }
-      // Resource control requires a real supervisor. A journal row is never a
-      // successful stop or a source of invented output cursors.
       throw new Error("resource supervisor unavailable");
     } catch (error) {
       try {
@@ -662,6 +688,12 @@ export class ProductionPayloadBrokerHandler implements PayloadBrokerTrustedHandl
         PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.OBSERVATION_REJECTED,
       );
     }
+  }
+
+  private sweepResolved(now: number): void {
+    for (const [key, entry] of this.#resolved)
+      if (!(now >= entry.checkedAt && now - entry.checkedAt < RESOLVED_AUTHORITY_REUSE_MS))
+        this.#resolved.delete(key);
   }
 
   private authorityFor(

@@ -8,9 +8,6 @@ function assertArgument(condition) {
 }
 const text = (value) => typeof value === "string" && value.trim().length > 0 && value.length <= 512;
 
-/** Read-only inventory, never a release decision. Receipt presence does not prove
- * its authenticity or that a former process / delayed dispatch cannot write.
- * Each bounded page is one SQLite snapshot; later pages may observe later state. */
 export function auditWorkspaceLifecycle({
   databasePath,
   ownerId,
@@ -34,7 +31,7 @@ export function auditWorkspaceLifecycle({
       if (
         !Number.isSafeInteger(version) ||
         version < 28 ||
-        version > 55 ||
+        version > 56 ||
         ledger.count !== version
       )
         throw new Error("WORKSPACE_AUDIT_SCHEMA_UNSUPPORTED");

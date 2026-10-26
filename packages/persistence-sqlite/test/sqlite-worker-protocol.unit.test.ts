@@ -83,6 +83,58 @@ function change(value: Record<string, unknown>, field: string, replacement: unkn
   return copy;
 }
 
+const AUTHORITY_TABLES = [
+  "grants",
+  "approval_requests",
+  "authorization_reservations",
+  "authorization_usage",
+  "capability_declarations",
+  "capability_handles",
+  "product_state_records",
+];
+
+describe("[NL-4] authority revision counter", () => {
+  it("[NL-4] keeps an insert, update and delete trigger on every authority table after all migrations", () => {
+    const database = new Database(ipc.configuration.databasePath, { readonly: true });
+    try {
+      const triggers = database
+        .prepare("SELECT tbl_name, name FROM sqlite_master WHERE type = 'trigger'")
+        .all() as { tbl_name: string; name: string }[];
+      for (const table of AUTHORITY_TABLES)
+        for (const operation of ["insert", "update", "delete"])
+          expect(triggers).toContainEqual({
+            tbl_name: table,
+            name: `authority_revision_${table}_${operation}`,
+          });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("[NL-4] raises the counter on authority writes and leaves it on unrelated writes", () => {
+    expect(request("readAuthorityRevision")).toMatchObject({ ok: true, value: 0 });
+    const writer = new Database(ipc.configuration.databasePath);
+    try {
+      writer.prepare("INSERT INTO owners (id, revision) VALUES ('nl4-owner', 0)").run();
+      writer
+        .prepare("INSERT INTO agents (id, owner_id, revision) VALUES ('nl4-agent', 'nl4-owner', 0)")
+        .run();
+      expect(request("readAuthorityRevision")).toMatchObject({ ok: true, value: 0 });
+      writer
+        .prepare(
+          "INSERT INTO product_state_records (key, owner_id, agent_id, revision, value_json, updated_at) VALUES ('setting', 'nl4-owner', 'nl4-agent', 1, '{}', '2026-10-26T00:00:00.000Z')",
+        )
+        .run();
+      expect(request("readAuthorityRevision")).toMatchObject({ ok: true, value: 1 });
+      writer.prepare("UPDATE product_state_records SET revision = 2 WHERE key = 'setting'").run();
+      writer.prepare("DELETE FROM product_state_records WHERE key = 'setting'").run();
+    } finally {
+      writer.close();
+    }
+    expect(request("readAuthorityRevision")).toMatchObject({ ok: true, value: 3 });
+  });
+});
+
 describe("SQLite Worker request and failure protocol", () => {
   it("acknowledges readiness and serializes an empty durable read", () => {
     expect(request("ready")).toMatchObject({

@@ -565,6 +565,15 @@ function readScopedState(input: {
   );
 }
 
+function readAuthorityRevision(): number {
+  const value = database
+    .prepare("SELECT value FROM authority_revision WHERE id = 1")
+    .pluck()
+    .get() as number | undefined;
+  if (!Number.isSafeInteger(value)) throw new Error("AUTHORITY_REVISION_UNAVAILABLE");
+  return value as number;
+}
+
 function findCommandResult(lookup: CommandResultLookup): CommandResultRecord | undefined {
   const row = database
     .prepare(
@@ -998,6 +1007,9 @@ channel.on("message", (request: WorkerRequest) => {
         break;
       case "read":
         value = readState((request.payload as { key: string }).key);
+        break;
+      case "readAuthorityRevision":
+        value = readAuthorityRevision();
         break;
       case "listPending":
         value = listPending((request.payload as { limit: number }).limit);
