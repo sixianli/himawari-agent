@@ -42,8 +42,9 @@ date: "2026-10-26"
   15. [模型网关迁移和“速度优先”路由](#case-model-gateway)
   16. [运行中却显示“已完成”：模型过渡话被当成回答](#case-narration-status)
   17. [记忆管理页重设计：记忆越来越多，一页长列表管不过来](#case-memory-page)
-  18. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
-  19. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
+  18. [个人 Agent 怎么给家人朋友用：每人一个实例，还是一个实例分用户](#case-multi-user)
+  19. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
+  20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -67,13 +68,14 @@ date: "2026-10-26"
 | --- | --- |
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
-| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers) |
+| Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
+| 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 
 [返回目录](#contents)
 
@@ -1028,9 +1030,80 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 [返回目录](#contents)
 
+<a id="case-multi-user"></a>
+
+## 案例 18：个人 Agent 怎么给家人朋友用：每人一个实例，还是一个实例分用户
+
+**背景与现象**
+
+2026-10-26 Andy 提出：Himawari 要能分享给老婆、朋友，以后也许给任何人用，每个人的对话、记忆和个人数据互相隔离，也就是多租户（一套系统服务多个互相看不到对方数据的用户）。他自己不确定这是不是好需求。当时 Himawari 只有 Andy 一个用户，生产只能通过 ssh 隧道访问，而且当天刚连续两版上线出过“用不了”的事故。
+
+**根因**
+
+这是一个设计问题，不是缺陷。难点在于先弄清“单用户”写死在哪一层。读代码（`main` 提交 `5c5feac`）发现：数据库几乎每张产品表已经有 `owner_id` 和 `agent_id`；写死单人的是配置里唯一的 `ownerId`、登录成功后总是返回这个主人、Cloudflare 登录只允许绑定第一个身份、全局的 `secrets/` 目录、按配置主人算出的授权存储键、只为一个主人运行的每日整理和提醒推送。另外，Agent 会替人运行命令、读写文件，原来的安全前提是“使用者就是可信的主人”（ADR 0069）。
+
+**我们的方案**
+
+定为“每人一个只属于自己的 Himawari”，分三步：
+
+- 先用独立实例（silo）：老婆一个实例，有自己的数据库文件、密钥目录、配置、系统服务、系统账号和端口；稳定两周后再给最多 2 位朋友开。产品代码几乎不改。
+- 只邀请，不开放注册。别人的实例前面放 Cloudflare Access（先确认身份再放行的入口服务），只放行 Andy 列出的邮箱，用邮箱验证码登录；服务端已有的代码会核对 Access 发的登录凭证。
+- 别人的实例每人每月模型费用上限 10 美元（Andy 定的数）。不在产品里重新加预算代码（[案例 10](#case-budget-removal) 刚删掉），而是给每个别人的实例单独一把模型网关 API key，在网关上设按月重置的 10 美元预算，用满后网关直接拒绝这把 key 的请求。
+- 用户超过约 5 人时，再改成一个实例按 `owner_id` 隔离（pool），先写“用 A 的身份读不到 B 的数据”的隔离测试；对陌生人开放的 SaaS 不做。
+- 开工条件：第十一版事故修好、真实网页验收通过、生产连续 7 天无“用不了”事故、上线脚本能按参数自动生成。
+
+这次决定不涉及 Pi：Pi 不管用户身份和数据归属，这些本来就是 Himawari 自己负责的部分。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选或暂缓 |
+| --- | --- | --- |
+| 一个实例按 `owner_id` 隔离（pool） | 只运维一份 | 要改登录、配置、服务组装、后台任务、密钥和调度，正是最近事故的地方；漏一个过滤条件就泄露别人的记忆，SQLite 没有行级安全策略兜底。粗估 2–4 周（未测量），留到人多时 |
+| 对陌生人开放注册的 SaaS | 增长空间最大 | 要做注册、计费、配额、合规和多台服务器；陌生人能刷爆模型费用，还能在放着 Andy 私人数据的机器上运行不可信的代码 |
+| 内置账号（密码 + 手机验证码）给朋友登录 | 产品已有 | 验证码不防钓鱼，朋友还要自己绑验证器；作为备选 |
+| Tailscale 私有网络共享 | 不暴露到公网 | 每个客人都要开 Tailscale 账号、装客户端，对家人朋友太麻烦 |
+
+放弃了什么：独立实例让每次上线要升级多份、磁盘和内存翻倍；以后改 pool 时要做一次把多个数据库合并的数据迁移。
+
+**业界主流做法**
+
+- ✅ AWS SaaS Lens（[Silo, pool, and bridge models](https://docs.aws.amazon.com/wellarchitected/latest/saas-lens/silo-pool-and-bridge-models.html)）：“The silo model refers to an architecture where tenants are provided dedicated resources”。
+- ✅ AWS SaaS 架构基础（[Tenant isolation](https://docs.aws.amazon.com/whitepapers/latest/saas-architecture-fundamentals/tenant-isolation.html)，页面标注为历史参考）：“the fact that a tenant user is authenticated does not mean that your system has achieved isolation.”
+- ✅ Azure 架构中心（[Tenancy models](https://learn.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/tenancy-models)）：共用部署时“you typically rely on your application code and a tenant identifier that's in a database to keep each tenant's data separate.”
+- ✅ Mem0（[Entity-scoped memory](https://docs.mem0.ai/platform/features/entity-scoped-memory)）：“Unmentioned entities are not constrained”，即查询时漏传的标识不做限制。
+- ✅ Zep（[Users](https://help.getzep.com/users)）：“Each user has a user graph that stores context for that user.”
+- ✅ Cloudflare D1（[Limits](https://developers.cloudflare.com/d1/platform/limits/)）：“designed for horizontal scale out across multiple, smaller (10 GB) databases, such as per-user, per-tenant or per-entity databases.”
+- ✅ Cloudflare Access（[One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)）：“To grant a user access... simply add their email address to an Access policy.”；[验证凭证](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)：“You should validate the token with your public key to ensure that the request came from Access and not a malicious third party.”
+- ✅ Vercel AI Gateway 预算（[Budgets and Spend Limits](https://vercel.com/docs/ai-gateway/observability-and-spend/budgets)）：“AI Gateway checks every budget in scope before each request and rejects further requests once a limit is exceeded, until the budget resets or you raise it.”；预算可以按单把 API key 设，周期可选 `monthly`（每月 1 日 UTC 0 点重置）。
+- ✅ LiteLLM 网关（[Budgets, Rate Limits](https://docs.litellm.ai/docs/proxy/users)）：“Personal budgets : Create virtual keys without team_id for individual spending limits”，并用 `budget_duration` 设重置周期。OpenRouter（[Provisioning API keys](https://openrouter.ai/docs/features/provisioning-api-keys)）的示例就是给每个客户实例建一把带额度的密钥：“name: 'Customer Instance Key', limit: 1000”，超额的密钥会被自动停用，可选按天、周、月重置。说明“每个用户或实例一把带预算的网关密钥”是模型网关的通行做法。
+- ✅ NIST SP 800-63B-4（[原文](https://pages.nist.gov/800-63-4/sp800-63b.html)）：“OTP authentication is not phishing-resistant.”
+- ✅ OWASP 大模型应用十大风险（[LLM10:2025 Unbounded Consumption](https://genai.owasp.org/llmrisk/llm102025-unbounded-consumption/)）：“Denial of Wallet (DoW): By initiating a high volume of operations, attackers exploit the cost-per-use model of cloud-based AI services”。
+- ✅ Open WebUI（[环境变量](https://docs.openwebui.com/reference/env-configuration)）：`DEFAULT_USER_ROLE` 默认 `pending`，“New users are pending until their accounts are manually activated by an admin.”
+- ⚠ ChatGPT 记忆按账号隔离的官方说明（Memory FAQ）：打开返回 HTTP 403，没有核对，面试时不要引用。
+
+**对比与取舍**
+
+记忆类产品（Mem0、Zep）都按用户标识分开记忆，这相当于 pool，隔离靠每次调用都带对标识。我们先选 silo，是因为用户只有两三个熟人、团队只有一个人，“隔离靠结构而不是靠每个查询都写对”更稳；代价是运维多份。登录用 Cloudflare Access，和 Google IAP 是同一类“身份入口放在应用前面”的做法；最强的 passkey 登录 Himawari 还没有，留作加强项。
+
+**结果数据**
+
+- 代码盘点：数据库几乎全部产品表已有 `owner_id`（迁移 0001–0057）；写死单用户的位置见 [ADR 0081](adr/0081-isolated-instance-per-person.md#context)。
+- 工作量：独立实例粗估 2–4 天，pool 粗估 2–4 周，SaaS 2–3 个月以上，均未测量。
+- 实际效果：还没开工，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0081](adr/0081-isolated-instance-per-person.md)；Idea `docs/ideas/IDEA-20261026-001-per-person-isolated-himawari.md`；Backlog `docs/backlog/BL-20261026-003-isolated-instance-per-person.md`；评估文档 <https://claude.ai/artifact/77cUajUv5MWWHHMH8m2g1N>；[PR #37](https://github.com/sixianli/himawari-agent/pull/37)。
+
+**面试 30 秒版**
+
+“个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
+
+[返回目录](#contents)
+
 <a id="case-sandbox-lost-race"></a>
 
-## 案例 18：搜索已经结束，却被判“失联”，整个服务卡 5 分钟
+## 案例 19：搜索已经结束，却被判“失联”，整个服务卡 5 分钟
 
 **背景与现象**
 
@@ -1087,13 +1160,13 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **后续（2026-10-26）**
 
-根因修复是提交 `cab7f8b9`，放在 [PR #38](https://github.com/sixianli/himawari-agent/pull/38) 里，随第十二次上线进入生产（2026-10-26 12:18 UTC 新版本启动）。上线经过见[案例 19](#case-eleventh-twelfth-deploy)。上线后的新闻搜索耗时：未测量，等 Andy 试用后从日志补上。
+根因修复是提交 `cab7f8b9`，放在 [PR #38](https://github.com/sixianli/himawari-agent/pull/38) 里，随第十二次上线进入生产（2026-10-26 12:18 UTC 新版本启动）。上线经过见[案例 20](#case-eleventh-twelfth-deploy)。上线后的新闻搜索耗时：未测量，等 Andy 试用后从日志补上。
 
 [返回目录](#contents)
 
 <a id="case-eleventh-twelfth-deploy"></a>
 
-## 案例 19：第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次
+## 案例 20：第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次
 
 **背景与现象**
 
@@ -1156,7 +1229,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 18](#case-sandbox-lost-race)。
+[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
 
 **面试 30 秒版**
 
