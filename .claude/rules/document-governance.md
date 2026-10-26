@@ -6,7 +6,7 @@ The user asked on 2026-10-26 that every later cloud thread actually apply the `d
 
 - The skill is the snapshot in [.claude/skills/document-governance/](../skills/document-governance/SKILL.md). Before governed documentation work, read its `SKILL.md`, then only the reference under `references/` that matches the work, as the skill's "Load Only What Is Needed" list says.
 - Run its scripts from the repository root as `python3 -B .claude/skills/document-governance/scripts/<script>.py ...`. Do not add `-I`: the scripts import each other from their own folder.
-- `tools/document-governance/` is an older pinned copy used only by the CI `static` job. Do not use it for agent work.
+- `tools/document-governance/` is an older pinned copy used only by the CI `static` job, which does not run while GitHub Actions is off ([ADR 0092](../../docs/adr/0092-pause-github-actions.md)). Do not use it for agent work.
 
 ## When to Use It
 

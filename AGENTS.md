@@ -2,7 +2,7 @@
 
 ## Delivery Mode
 
-Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode.
+Read `DELIVERY_MODE` at the repository root before deciding which tests, documentation steps, merge checks, or production steps a change needs. While it says `fast`, [.agents/instructions/delivery-mode.md](.agents/instructions/delivery-mode.md) replaces the rules it names in this file and in the files under `.agents/instructions/` (user decision, 2026-10-25). Only the user switches the mode. GitHub Actions is turned off ([ADR 0092](docs/adr/0092-pause-github-actions.md)): no CI runs, so the local fast-mode checks are the only quality gate, and a missing CI result on a PR is expected.
 
 ## Owner's Global Instructions and Skills
 
