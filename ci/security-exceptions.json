@@ -1243,31 +1243,6 @@
     {
       "kind": "published-synthetic-fixture",
       "id": "published-synthetic-fixture",
-      "path": "runtime/node_modules/axios/README.md",
-      "package": "axios",
-      "version": "1.20.0",
-      "packageLockPath": "node_modules/axios",
-      "integrity": "sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==",
-      "sourceUrl": "https://registry.npmjs.org/axios/-/axios-1.20.0.tgz",
-      "archiveMember": "package/README.md",
-      "fileSha256": "97a6e20150ce709291165af55c6fa4eba74f56c63dceb6aa69f1e9b495e52bcf",
-      "findings": [
-        {
-          "rule": "credential-literal",
-          "digest": "1df4fc63d18754fcdb0bacea44654a43e0b2412f2278f5554d6b7f880ba60c89",
-          "count": 1
-        }
-      ],
-      "reason": "README Basic auth 示例的演示密码。",
-      "owner": "sixianli",
-      "reviewReference": "https://github.com/sixianli/himawari-agent/commit/3f865d2860301d86f33978e6534cfbba02c37a89",
-      "expiresAt": "2026-11-23T00:00:00Z",
-      "sourceProofSha256": "ed2528d7bf542a9c3fe6f3e9a4dc532053f2e0b4805d6eaf5575b520b3bbd185",
-      "sourceReview": "2026-09-03 主代理逐项审阅 39 个成员、48 个字面量的用途。官方 npm 缓存 tar SHA512 等于锁 integrity，原始 tar 成员 SHA256 等于干净安装及构建成员摘要；此为初始化本地提案，仍待 Owner 合入审阅。reviewReference 仅标识依赖来源基线提交。"
-    },
-    {
-      "kind": "published-synthetic-fixture",
-      "id": "published-synthetic-fixture",
       "path": "runtime/node_modules/google-auth-library/build/src/auth/computeclient.js",
       "package": "google-auth-library",
       "version": "10.9.1",
