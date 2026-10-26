@@ -1298,7 +1298,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **相关 ADR/PR**
 
-[ADR 0082](adr/0082-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0081](adr/0081-isolated-instance-per-person.md)；分支 `claude/project-thread-yxinf8` 的草稿 PR；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+[ADR 0082](adr/0082-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0081](adr/0081-isolated-instance-per-person.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
 
 **面试 30 秒版**
 
