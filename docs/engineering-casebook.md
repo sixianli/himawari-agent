@@ -49,7 +49,7 @@ date: "2026-10-26"
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
   23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
-  25. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
+  26. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -1523,7 +1523,7 @@ Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过
 
 <a id="case-process-timeline"></a>
 
-## 案例 25：每一步的时间要准：把一轮回答画成一条时间线
+## 案例 26：每一步的时间要准：把一轮回答画成一条时间线
 
 **背景与现象**
 
