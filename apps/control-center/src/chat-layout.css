@@ -64,10 +64,104 @@
   font-size: 18px;
   letter-spacing: -0.6px;
 }
-.himawari-brand img {
-  border-radius: 5px;
+.himawari-mark {
   display: block;
-  background: #fafafa;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+}
+.himawari-mark .seeds {
+  transform-box: view-box;
+  transform-origin: 24px 24px;
+  transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.himawari-mark circle {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.himawari-mark .seed-ring-0 {
+  fill: light-dark(#936f1b, #b58e3f);
+  animation-delay: -2.2s;
+}
+.himawari-mark .seed-ring-1 {
+  fill: light-dark(#9e761b, #be9541);
+  animation-delay: -2s;
+}
+.himawari-mark .seed-ring-2 {
+  fill: light-dark(#a77d1a, #c49a43);
+  animation-delay: -1.8s;
+}
+.himawari-mark .seed-ring-3 {
+  fill: light-dark(#b0831a, #cba044);
+  animation-delay: -1.6s;
+}
+.himawari-mark .seed-ring-4 {
+  fill: light-dark(#b88919, #d0a546);
+  animation-delay: -1.4s;
+}
+.himawari-mark .seed-ring-5 {
+  fill: light-dark(#bf8e19, #d6a947);
+  animation-delay: -1.2s;
+}
+.himawari-mark .seed-ring-6 {
+  fill: light-dark(#c69319, #dbad48);
+  animation-delay: -1s;
+}
+.himawari-mark .seed-ring-7 {
+  fill: light-dark(#cd9818, #e0b249);
+  animation-delay: -0.8s;
+}
+.himawari-mark .seed-ring-8 {
+  fill: light-dark(#d49c18, #e5b64b);
+  animation-delay: -0.6s;
+}
+.himawari-mark .seed-ring-9 {
+  fill: light-dark(#daa118, #e9ba4c);
+  animation-delay: -0.4s;
+}
+.himawari-mark .seed-ring-10 {
+  fill: light-dark(#e0a517, #eebd4d);
+  animation-delay: -0.2s;
+}
+.himawari-mark .seed-ring-11 {
+  fill: light-dark(#e6a917, #f2c14e);
+  animation-delay: 0s;
+}
+.himawari-brand:hover .himawari-mark .seeds {
+  transform: rotate(40deg);
+}
+.himawari-mark.is-busy .seeds {
+  animation: himawari-mark-turn 48s linear infinite;
+}
+.himawari-mark.is-busy circle {
+  animation-name: himawari-seed-wave;
+  animation-duration: 2.6s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes himawari-mark-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes himawari-seed-wave {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .himawari-mark .seeds,
+  .himawari-mark circle {
+    animation: none;
+    transition: none;
+  }
 }
 .workspace {
   display: flex;
