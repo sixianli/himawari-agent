@@ -526,6 +526,7 @@ export async function installProductPath(options: {
   readonly timing?: boolean;
   readonly sourceRoot?: string;
   readonly approval?: "workspace_auto" | "ask";
+  readonly webSearch?: boolean;
 }): Promise<ProductPathInstallation> {
   const testRoot = await realpath(await mkdtemp(productPathTemporaryPrefix()));
   const stateRoot = path.join(testRoot, "state");
@@ -863,6 +864,7 @@ export async function installProductPath(options: {
       workspace,
       jobsRoot,
       protectedPaths: [stateRoot, path.join(workspace, ".env")],
+      webSearch: options.webSearch === true,
     });
   const capabilityDeployment = await qualifyCapabilities();
 
@@ -885,6 +887,15 @@ export async function installProductPath(options: {
     contextWindow: 32768,
     maxTokens: 2048,
     providerRouting: { order: ["runware", "deepinfra", "morph"], sort: "cost" },
+  });
+  const webRoute = (capabilityRef: string, maximumBytes: number) => ({
+    scopeSource: "private_temp",
+    hostId,
+    workerInstanceId,
+    capabilityRef,
+    capabilityVersion: "1.0.0",
+    maximumBytes,
+    providers: ["exa-public"],
   });
   const configuration = {
     schemaVersion: "himawari.configuration.v1",
@@ -982,6 +993,12 @@ export async function installProductPath(options: {
         enabledTools: [...codingTools],
         approval: options.approval ?? "workspace_auto",
       },
+      ...(options.webSearch
+        ? {
+            publicSearch: webRoute("himawari.public-search", 4096),
+            publicFetch: webRoute("himawari.public-fetch", 102400),
+          }
+        : {}),
       timeZone: "Asia/Tokyo",
     },
   };
@@ -1524,6 +1541,7 @@ async function writeCodingSnapshot(input: {
   readonly workspace: string;
   readonly jobsRoot: string;
   readonly protectedPaths: readonly string[];
+  readonly webSearch: boolean;
 }) {
   const fileHash = async (filename: string) =>
     createHash("sha256")
@@ -1531,171 +1549,209 @@ async function writeCodingSnapshot(input: {
       .digest("hex");
   const runtimeRoot = await realpath(input.runtimeRoot);
   const executable = await realpath(process.execPath);
-  const runner = path.join(
-    runtimeRoot,
-    "node_modules/@himawari-agent/agent-service/dist/capability-programs/pi-coding-main.js",
-  );
-  const runnerDigest = await fileHash(runner);
   const runtimeDigest = await digestSandboxRuntime(runtimeRoot);
   const metadata = await stat(input.workspace);
   const now = new Date().toISOString();
-  const artifactDigest = `sha256:${runnerDigest}`;
   const supportedExecutions = [{ schemaVersion: "sandbox-execution.v2", mode: "foreground" }];
-  const binding = {
-    schemaVersion: "sandbox-host-binding.v1",
-    capabilityRef: "himawari.pi-coding",
-    capabilityVersion: "1.0.0",
-    artifactDigest,
-    hostId,
-    profileRef: "authorized-project.v1",
-    runtimeRoot,
-    runtimeDigest,
-    executable: { path: executable, sha256: await fileHash(executable) },
-    runner: { path: runner, sha256: runnerDigest },
-    privateRoot: input.jobsRoot,
-    roots: [
-      {
-        canonicalRootId: `${metadata.dev}:${metadata.ino}`,
-        canonicalPath: input.workspace,
-        device: String(metadata.dev),
-        inode: String(metadata.ino),
-      },
-    ],
-    readOnlyToolchainPaths: [
-      ...new Set(
-        await Promise.all(
-          productPathToolchainPaths({ platform: process.platform, runtimeRoot, executable }).map(
-            (entry) => realpath(entry),
-          ),
+  const readOnlyToolchainPaths = [
+    ...new Set(
+      await Promise.all(
+        productPathToolchainPaths({ platform: process.platform, runtimeRoot, executable }).map(
+          (entry) => realpath(entry),
         ),
       ),
-    ],
-    protectedPaths: [...input.protectedPaths],
-    allowedDomains: [],
-    maximumResourceCeiling: {
-      maxWallTimeMs: 300_000,
-      maxCpuTimeMs: 30_000,
-      maxMemoryBytes: 536_870_912,
-      maxOutputBytes: 524_288,
-      maxProgressEvents: 256,
-    },
-    supportedExecutions,
-    operationBindings: codingTools.map((operation) => ({
-      operation,
-      mode: "foreground",
-      contract: {
-        ref: "pi-coding-tool",
-        version: "1",
-        kind:
-          operation === "bash"
-            ? "command"
-            : ["write", "edit"].includes(operation)
-              ? "verified_effect"
-              : "fixed_read",
-        ...(["write", "edit"].includes(operation)
-          ? { verifierRef: "pi-atomic-write", verifierVersion: "1", targetRef: "pi-input:path" }
-          : {}),
-      },
-      backendRef: "srt",
-      scopeSource: "grant_targets",
-      directoryOperations:
-        operation === "write"
-          ? ["read", "create", "update"]
-          : operation === "edit"
-            ? ["read", "update"]
-            : ["read"],
-      network: "disabled",
-    })),
-  };
+    ),
+  ];
   const evidenceDigest = createHash("sha256")
     .update("product-path-test-qualification-not-production")
     .digest("hex");
   const cleanup = productPathSandboxCleanup(process.platform);
-  const sandbox = {
-    schemaVersion: "sandbox-runtime-qualification.v1",
-    qualificationRef: `product-path:${evidenceDigest}`,
-    hostId,
-    profileRef: binding.profileRef,
-    srtVersion: "0.0.75",
-    platform: process.platform,
-    architecture: process.arch,
-    osRelease: release(),
-    runtimeDigest,
-    runnerDigest,
-    evidenceDigest,
-    resourceMode: "observe_and_stop",
-    terminationMode: cleanup.terminationMode,
-    guarantees: cleanup.guarantees,
-    limitations: cleanup.limitations,
-    supportedExecutions,
-  };
-  const manifest = {
-    manifestVersion: "capability.v2",
-    ref: binding.capabilityRef,
-    displayName: "产品路径测试 Pi 文件工具",
-    version: binding.capabilityVersion,
-    source: { type: "program", locator: "artifact:product-path-pi" },
-    sourceIdentity: `host:${hostId}`,
-    integrity: artifactDigest,
-    artifact: {
-      digest: artifactDigest,
-      signatureStatus: "verified",
-      signerRef: `test-signer:${evidenceDigest}`,
-      rollbackArtifactRef: null,
-    },
-    operations: [...codingTools],
-    permissionRefs: [],
-    isolation: "sandbox",
-    scopes: {
-      dataClassifications: ["public", "private"],
-      network: [],
-      filesystem: ["workspace:product-path"],
-      secrets: [],
-    },
-    cost: { currency: "USD", maxMicrosPerInvocation: 0 },
-    health: { status: "healthy", checkedAt: now },
-    reviewedBy: ownerId,
-    reviewedAt: now,
-    contractCompatibility: ["capability-conformance.v1"],
-    runtime: {
-      kind: "program",
-      argv: [executable, runner, hostId, workerInstanceId],
-      environmentKeys: [],
-      workdirRef: "workspace:product-path",
-      stdin: "protected_payload",
-      stdout: "protected_payload",
-      subprocesses: [],
-      network: [],
-      filesystem: ["workspace:product-path"],
-    },
-  };
-  const snapshot = {
-    schemaVersion: "capability-deployment.v1",
-    capabilities: [
-      {
-        manifest,
-        binding: { kind: "sandbox", value: binding },
-        qualification: {
-          qualificationVersion: "capability-runtime-qualification.v1",
-          platform: process.platform,
-          runtimeIdentity: "srt:0.0.75",
-          productionSuitable: true,
-          artifactDigest,
-          enforcement: {
-            filesystem: true,
-            network: true,
-            processes: true,
-            secrets: true,
-            resourceCeilings: false,
-            termination: cleanup.terminationEnforced,
-          },
-          reasonCodes: [],
-          checkedAt: now,
-          sandbox,
+  const webNetwork = ["mcp.exa.ai:443"];
+  const webOperation = (operation: string, contractRef: string) => ({
+    operation,
+    mode: "foreground",
+    contract: { ref: contractRef, version: "1", kind: "network_only" },
+    backendRef: "srt",
+    scopeSource: "private_temp",
+    directoryOperations: [],
+    network: "grant_targets",
+  });
+  const programs = [
+    {
+      capabilityRef: "himawari.pi-coding",
+      displayName: "产品路径测试 Pi 文件工具",
+      runnerFile: "pi-coding-main.js",
+      network: [] as string[],
+      operationBindings: codingTools.map((operation) => ({
+        operation,
+        mode: "foreground",
+        contract: {
+          ref: "pi-coding-tool",
+          version: "1",
+          kind:
+            operation === "bash"
+              ? "command"
+              : ["write", "edit"].includes(operation)
+                ? "verified_effect"
+                : "fixed_read",
+          ...(["write", "edit"].includes(operation)
+            ? { verifierRef: "pi-atomic-write", verifierVersion: "1", targetRef: "pi-input:path" }
+            : {}),
         },
+        backendRef: "srt",
+        scopeSource: "grant_targets",
+        directoryOperations:
+          operation === "write"
+            ? ["read", "create", "update"]
+            : operation === "edit"
+              ? ["read", "update"]
+              : ["read"],
+        network: "disabled",
+      })),
+    },
+    ...(input.webSearch
+      ? [
+          {
+            capabilityRef: "himawari.public-search",
+            displayName: "产品路径测试公开网页搜索",
+            runnerFile: "web-search-main.js",
+            network: webNetwork,
+            operationBindings: [webOperation("web_search", "public-web-search")],
+          },
+          {
+            capabilityRef: "himawari.public-fetch",
+            displayName: "产品路径测试公开网页读取",
+            runnerFile: "web-fetch-main.js",
+            network: webNetwork,
+            operationBindings: [webOperation("web_fetch", "public-web-fetch")],
+          },
+        ]
+      : []),
+  ];
+  const capabilities = [];
+  for (const program of programs) {
+    const runner = path.join(
+      runtimeRoot,
+      "node_modules/@himawari-agent/agent-service/dist/capability-programs",
+      program.runnerFile,
+    );
+    const runnerDigest = await fileHash(runner);
+    const artifactDigest = `sha256:${runnerDigest}`;
+    const binding = {
+      schemaVersion: "sandbox-host-binding.v1",
+      capabilityRef: program.capabilityRef,
+      capabilityVersion: "1.0.0",
+      artifactDigest,
+      hostId,
+      profileRef: "authorized-project.v1",
+      runtimeRoot,
+      runtimeDigest,
+      executable: { path: executable, sha256: await fileHash(executable) },
+      runner: { path: runner, sha256: runnerDigest },
+      privateRoot: input.jobsRoot,
+      roots: [
+        {
+          canonicalRootId: `${metadata.dev}:${metadata.ino}`,
+          canonicalPath: input.workspace,
+          device: String(metadata.dev),
+          inode: String(metadata.ino),
+        },
+      ],
+      readOnlyToolchainPaths,
+      protectedPaths: [...input.protectedPaths],
+      allowedDomains: program.network,
+      maximumResourceCeiling: {
+        maxWallTimeMs: 300_000,
+        maxCpuTimeMs: 30_000,
+        maxMemoryBytes: 536_870_912,
+        maxOutputBytes: 524_288,
+        maxProgressEvents: 256,
       },
-    ],
-  };
+      supportedExecutions,
+      operationBindings: program.operationBindings,
+    };
+    const sandbox = {
+      schemaVersion: "sandbox-runtime-qualification.v1",
+      qualificationRef: `product-path:${evidenceDigest}`,
+      hostId,
+      profileRef: binding.profileRef,
+      srtVersion: "0.0.75",
+      platform: process.platform,
+      architecture: process.arch,
+      osRelease: release(),
+      runtimeDigest,
+      runnerDigest,
+      evidenceDigest,
+      resourceMode: "observe_and_stop",
+      terminationMode: cleanup.terminationMode,
+      guarantees: cleanup.guarantees,
+      limitations: cleanup.limitations,
+      supportedExecutions,
+    };
+    const manifest = {
+      manifestVersion: "capability.v2",
+      ref: binding.capabilityRef,
+      displayName: program.displayName,
+      version: binding.capabilityVersion,
+      source: { type: "program", locator: "artifact:product-path-pi" },
+      sourceIdentity: `host:${hostId}`,
+      integrity: artifactDigest,
+      artifact: {
+        digest: artifactDigest,
+        signatureStatus: "verified",
+        signerRef: `test-signer:${evidenceDigest}`,
+        rollbackArtifactRef: null,
+      },
+      operations: program.operationBindings.map((entry) => entry.operation),
+      permissionRefs: [],
+      isolation: "sandbox",
+      scopes: {
+        dataClassifications: ["public", "private"],
+        network: program.network,
+        filesystem: ["workspace:product-path"],
+        secrets: [],
+      },
+      cost: { currency: "USD", maxMicrosPerInvocation: 0 },
+      health: { status: "healthy", checkedAt: now },
+      reviewedBy: ownerId,
+      reviewedAt: now,
+      contractCompatibility: ["capability-conformance.v1"],
+      runtime: {
+        kind: "program",
+        argv: [executable, runner, hostId, workerInstanceId],
+        environmentKeys: [],
+        workdirRef: "workspace:product-path",
+        stdin: "protected_payload",
+        stdout: "protected_payload",
+        subprocesses: [],
+        network: program.network,
+        filesystem: ["workspace:product-path"],
+      },
+    };
+    capabilities.push({
+      manifest,
+      binding: { kind: "sandbox", value: binding },
+      qualification: {
+        qualificationVersion: "capability-runtime-qualification.v1",
+        platform: process.platform,
+        runtimeIdentity: "srt:0.0.75",
+        productionSuitable: true,
+        artifactDigest,
+        enforcement: {
+          filesystem: true,
+          network: true,
+          processes: true,
+          secrets: true,
+          resourceCeilings: false,
+          termination: cleanup.terminationEnforced,
+        },
+        reasonCodes: [],
+        checkedAt: now,
+        sandbox,
+      },
+    });
+  }
+  const snapshot = { schemaVersion: "capability-deployment.v1", capabilities };
   const bytes = Buffer.from(JSON.stringify(snapshot));
   await writeFile(input.snapshotPath, bytes, { mode: 0o600 });
   return {
