@@ -85,7 +85,6 @@ import {
   type ProductionConfiguredModelComposition,
 } from "./production-model-composition.js";
 import { ProductionPayloadBrokerHandler } from "./production-payload-broker-handler.js";
-import { barkChannel, ProductionReminderPush } from "./production-reminder-push.js";
 import { createProductionRunComposition } from "./production-run-composition.js";
 import { ProductionRunDispatchLoop } from "./production-run-dispatch-loop.js";
 import {
@@ -413,7 +412,6 @@ export async function runAgentService(
   let httpClosing: Promise<void> | undefined;
   let governedMemory: ReturnType<typeof createProductionRunMemory> | undefined;
   let runMemoryEpisodes: MemoryEpisodeService | undefined;
-  let reminderPush: ProductionReminderPush | undefined;
   let durableMemory: DurableMemoryService | undefined;
   let protector: PayloadProtectorPort | undefined;
   let authorityLost = false;
@@ -491,7 +489,6 @@ export async function runAgentService(
         await runs?.memoryCapture?.stop();
         await runs?.memoryEpisodes?.stop();
         await runs?.memoryConsolidation?.stop();
-        await reminderPush?.stop();
       }
     },
   });
@@ -1271,49 +1268,6 @@ export async function runAgentService(
           : undefined;
       const consolidationProjection = memoryComposition.projection;
       runMemoryEpisodes = memoryEpisodes;
-      const pushConfiguration = configuration.runPolicy?.reminderPush;
-      const pushSecret = pushConfiguration
-        ? configuration.secretReferences.find(({ ref }) => ref === pushConfiguration.secretRef)
-        : undefined;
-      if (pushConfiguration && pushSecret && episodeProtector) {
-        reminderPush = new ProductionReminderPush({
-          ownerId: configuration.ownerId,
-          agentId: configuration.agentId,
-          reminders: repository.memoryReminders(),
-          state: repository.productMemoryState(),
-          readText: async (record) => {
-            const payload = await consolidationPayloads.get(record.contentRef);
-            if (!payload || payload.contentType !== "text/plain") return undefined;
-            return new TextDecoder("utf-8", { fatal: true }).decode(
-              await episodeProtector.unprotect({
-                ownerId: configuration.ownerId,
-                agentId: configuration.agentId,
-                payload,
-              }),
-            );
-          },
-          channel: barkChannel({
-            secret: () => sources.provider.resolve(pushSecret.ref, pushSecret.version),
-            ...(pushConfiguration.server ? { server: pushConfiguration.server } : {}),
-          }),
-          now: () => clock.now(),
-          ...(configuration.runPolicy?.timeZone
-            ? { timeZone: configuration.runPolicy.timeZone }
-            : {}),
-          onSent: () =>
-            writeServiceDiagnostic(errorOutput, {
-              component: "agent-service",
-              event: "reminder-push.sent",
-            }),
-          onFailure: (error) =>
-            writeServiceDiagnostic(errorOutput, {
-              component: "agent-service",
-              event: "reminder-push.failed",
-              code: stableErrorCode(error),
-            }),
-        });
-        reminderPush.start();
-      }
       runs = createProductionRunComposition({
         onRunTiming: (diagnostic) =>
           writeServiceDiagnostic(errorOutput, {

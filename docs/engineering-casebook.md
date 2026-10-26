@@ -49,6 +49,7 @@ date: "2026-10-26"
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
   23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
+  27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -80,7 +81,7 @@ date: "2026-10-26"
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
 
 [返回目录](#contents)
@@ -1327,6 +1328,10 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 “有人问个人 Agent 要不要做 iOS App。我先查手机端到底缺什么：不是界面，而是连不上、网页关了收不到提醒、不能说话。iOS 16.4 起主屏网页应用就能收推送，不需要 99 美元的开发者账号，内容还加密，所以我们先开 Cloudflare 入口、做 PWA 加网页推送、再用 Siri 快捷指令做语音入口，零费用一两周补齐。原生 App 留到需要手机摄像头、定位这类网页做不到的能力时再做，这和 OpenClaw 这类自托管 Agent 的做法一致。”
 
+**后续（2026-10-26）**
+
+Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产入口用 `himawari.siyi.win`、只用 Cloudflare 邮箱验证码登录。ADR 0082 由 [ADR 0089](adr/0089-web-push-only-owner-entry.md) 取代，详见[案例 27](#case-web-push-only)。
+
 [返回目录](#contents)
 
 <a id="case-identity-prompt"></a>
@@ -1517,6 +1522,75 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 **后续（2026-10-26）：过程记录不再等硬盘确认**
 
 Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
+
+[返回目录](#contents)
+
+<a id="case-web-push-only"></a>
+
+## 案例 27：推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送
+
+**背景与现象**
+
+案例 21 定了手机端先做主屏网页应用和网页推送，并让已写好的 Bark（一个开源 iOS 推送 App）先过渡推送记忆提醒。2026-10-26 Andy 追问：“所有的推送都通过网页推送，为什么一定要加入 Bark 呢？”随后决定“直接做这个，一步到位，你必须好好设计！”。要回答的问题从“哪个能最快推到手机”变成：一个个人 Agent 需要主动通知人的三类事（记忆提醒到期、等你审批、任务结束），该用几条通道、锁屏上露多少、什么时候不该打扰。
+
+**根因**
+
+这是设计问题，不是缺陷。过渡方案的问题在于“两条通道”本身：
+
+- Bark 只覆盖记忆提醒，审批和任务结束仍要等网页推送，最后还是要写网页推送。
+- 两套代码、两套配置，Andy 还要装 Bark、配两把密钥，点开进的是 Bark 而不是 Himawari。
+- Bark 的去重只记在内存里（`apps/agent-service/src/production-reminder-push.ts` 的 `#sent`），服务重启后会重发；按项目记录生产从没配置 `runPolicy.reminderPush`，所以它从未开启，删掉没有迁移成本。
+
+**我们的方案**
+
+只用网页推送（Web Push：服务器经浏览器厂商的推送服务把通知送到设备，网页关着也能收到），见 [ADR 0089](adr/0089-web-push-only-owner-entry.md)：
+
+1. 一条通道推三类事；删掉 Bark 代码和配置项。
+2. 推送内容用苹果的声明式网页推送 JSON（iOS 18.4 起系统自己弹出），其他浏览器由后台脚本解析同一份 JSON。一种格式通吃所有设备。
+3. 锁屏只显示提醒原文或对话标题；数据分级为“敏感”“受限”的记忆只显示“你有一条私密提醒”；回答正文不上锁屏。
+4. 任何设备上 Himawari 页面在前台时不推（页面每 30 秒报一次“有人在看”，服务器 45 秒内收到过就不推）。
+5. 每条通知有唯一来源键，发过就记进数据库，重启也不重发；推送服务返回 404/410 就删掉那台设备的订阅。
+6. 通知文字按设备开启通知时的界面语言出中英日三语。
+7. 入口同时定下：生产用 `himawari.siyi.win`，只用 Cloudflare 邮箱验证码一道门（复用已有的 `cloudflare-access` 登录方式，不写新登录代码）。
+
+Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储、发送调度、锁屏隐私规则和登录入口。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| Bark 过渡，网页推送稳定后再删 | 当天就能收到记忆提醒 | 两套代码和配置；只覆盖一类事；Andy 要装 App 配密钥 |
+| 推送内容放正文，靠 iPhone“解锁后显示预览” | 锁屏信息最全 | 默认设置下回答和审批命令会出现在锁屏上；改成只放标题，设置页提示 iPhone 的“解锁时”选项 |
+| 每次都推，不管人在不在看 | 实现最简单 | 边聊边被自己的回答震动；改成按“任何设备在前台”判断 |
+| 自己用 Node 加密库实现 RFC 8291 | 少一个依赖 | 加密代码自写容易错；用固定版本的 `web-push` 3.6.7，只在一个适配文件里用 |
+| 登录两道门（邮箱验证码 + 密码和验证器） | Cloudflare 规则配错时还有一道 | Andy 认为太复杂；改为要求 Gmail 两步验证 |
+
+放弃了什么：过渡期“当天就收到提醒”；“页面开着但人走开了”时手机不会响；Cloudflare 故障时要手动切回内置登录。
+
+**业界主流做法**
+
+- ✅ WebKit（[Meet Declarative Web Push](https://webkit.org/blog/16535/meet-declarative-web-push/)）：“Declarative Web Push allows web developers to request a Web Push subscription and display user visible notifications … without requiring an installed service worker.”；旧浏览器上“it’s handled imperatively by JavaScript as it always had been.”
+- ✅ Apple（[Sending web push notifications in web apps and browsers](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)）：“Safari doesn’t support invisible push notifications. … If you don’t, Safari revokes the push notification permission for your site.”；“When the user completes the gesture, call the push subscription method immediately from the gesture’s event handler code.”；“allow access for https://*.push.apple.com.”
+- ✅ RFC 8030（[Generic Event Delivery Using HTTP Push](https://www.rfc-editor.org/rfc/rfc8030)）：“An application server MUST include the TTL (Time-To-Live) header field in its request for push message delivery.”；“A push message with a topic replaces any outstanding push message with an identical topic.”；过期订阅“MUST be signaled by returning a 404 (Not Found) status code.”
+- ✅ RFC 8291（[Message Encryption for Web Push](https://www.rfc-editor.org/rfc/rfc8291)）：推送内容可以“secured against inspection, modification, and forgery by a push service”（引文同案例 21）。
+
+**对比与取舍**
+
+和苹果、RFC 的建议一致：每条推送都弹出可见通知、只在用户点按后申请权限、用 TTL 和 Topic 控制过期与替换、按 404/410 清理失效订阅。不同点在“锁屏露多少”：通用聊天 App 默认把消息正文推上锁屏，Himawari 推的是个人记忆和能执行命令的审批，所以默认只露标题，敏感记忆连标题都不露。代价是用户要点开才知道细节。
+
+**结果数据**
+
+- 代码事实：Bark 从未在生产开启。依据是项目记录：2026-10-26 00:08 Andy 说“Bark 先不做”，之后的上线都没有写 `runPolicy.reminderPush`；没有这一项时推送循环不会启动（`apps/agent-service/src/service-main.ts`）。这一点没有在生产机上直接读配置核对。
+- 工作量：约 5.5 个工作日，估计，未测量。
+- 推送到达率、从事件发生到锁屏弹出的耗时：还没上线，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0089](adr/0089-web-push-only-owner-entry.md)（取代 ADR 0082）；[网页推送实现规格](execution/specs/2026-10-26-web-push-design.md)；Backlog `BL-20261026-004`、`BL-20261026-005` 已更新，`BL-20261026-007` 以“不做”关闭；设计文档 <https://claude.ai/artifact/5WezX9kCNWhdpU7ttck7BG>；界面原型 <https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv>。
+
+**面试 30 秒版**
+
+“我们本来打算先用一个现成的推送 App 过渡，再上网页推送。用户一句‘为什么要两条路’让我们重新算账：过渡方案只覆盖一类通知，却要多维护一套代码和密钥。最后只留网页推送一条路，用苹果的声明式推送格式一份 JSON 通吃所有设备；锁屏只露标题，敏感记忆连标题都不露；人在看页面时不推；去重落库，重启不重发。”
 
 [返回目录](#contents)
 
