@@ -154,6 +154,7 @@ export const MESSAGE_IDS = [
   "chat.resource.verifying",
   "chat.resource.queued",
   "chat.resource.executing",
+  "chat.resource.noReport",
   "chat.resource.stopNotStrictlyConfirmed",
   "chat.resource.recordDeleted",
   "chat.reason.admissionConflict",
@@ -196,6 +197,7 @@ export const MESSAGE_IDS = [
   "chat.environment.threadRunning",
 
   "chat.phase.preparing",
+  "chat.phase.queued",
   "chat.phase.updated",
   "chat.phase.completed",
   "chat.phase.failed",

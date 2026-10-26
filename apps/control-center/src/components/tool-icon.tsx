@@ -66,6 +66,11 @@ const symbols = {
       <path d="M12 18V5a3 3 0 0 0-6-1 4 4 0 0 0-3 6 4 4 0 0 0 1 7 4 4 0 0 0 8 2m0-14a3 3 0 0 1 6-1 4 4 0 0 1 3 6 4 4 0 0 1-1 7 4 4 0 0 1-8 2M6 9l-2 1m14-1 2 1" />
     </>
   ),
+  note: (
+    <>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+    </>
+  ),
   unknown: (
     <>
       <path d="m14 6 4 4 4-4a7 7 0 0 1-9 9l-7 7-4-4 7-7a7 7 0 0 1 9-9Z" />
@@ -89,12 +94,14 @@ export function ToolIcon({
   name,
   thinking = false,
   review = false,
+  note = false,
 }: {
   name: string;
   thinking?: boolean;
   review?: boolean;
+  note?: boolean;
 }) {
-  const category = review ? "review" : thinking ? "thinking" : toolCategory(name);
+  const category = review ? "review" : thinking ? "thinking" : note ? "note" : toolCategory(name);
   return (
     <svg
       className="tool-icon"

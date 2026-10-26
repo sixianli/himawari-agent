@@ -169,6 +169,7 @@ export const messages = {
   "chat.resource.verifying": "Checking the original request",
   "chat.resource.queued": "Waiting for resources",
   "chat.resource.executing": "Executing",
+  "chat.resource.noReport": "No report from the execution environment",
   "chat.resource.stopNotStrictlyConfirmed": "Stop not strictly confirmed",
   "chat.resource.recordDeleted": "Execution record deleted",
   "chat.reason.admissionConflict": "Resource or request state conflicted during admission",
@@ -221,6 +222,7 @@ export const messages = {
   "chat.environment.threadRunning": "Background programs running",
   "chat.phase.unresolved": "Result unconfirmed",
   "chat.phase.preparing": "Preparing",
+  "chat.phase.queued": "Queued",
   "chat.phase.started": "Running",
   "chat.phase.updated": "Streaming",
   "chat.phase.completed": "Completed",
@@ -231,7 +233,7 @@ export const messages = {
   "chat.nextAction.unresolved":
     "The result is unconfirmed. Do not repeat a write operation until the original resource is verified as released.",
   "chat.waiting.tool":
-    "This turn is still in progress: waiting for the result of {tool}. The tool was handed to the execution environment, but it is not yet confirmed to have stopped.",
+    "This turn is still in progress: {tool} was handed to the execution environment, but no result has arrived and it is not confirmed to have stopped. Keep waiting or press Stop to end this turn.",
   "chat.waiting.afterTurn":
     "This turn has ended, but the execution environment of {tool} is not yet confirmed to have stopped.",
   "chat.nextAction.stop":

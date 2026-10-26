@@ -525,6 +525,9 @@ it("selects trusted Run policy and binds instruction content across configuratio
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     "本轮没有联网搜索工具",
   );
+  expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
+    "用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言",
+  );
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).not.toContain(
     "使用真实查询",
   );

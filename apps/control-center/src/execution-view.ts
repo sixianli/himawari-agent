@@ -40,8 +40,6 @@ const authorizationReviewLabels = {
   "runtime.authorization_review.human": "review.authorizationHuman",
   "runtime.authorization_review.alternative": "review.authorizationAlternative",
 } as const satisfies Readonly<Record<string, MessageId>>;
-
-/** Only persisted host observations, with no inferred end time or human approval. */
 export function authorizationReviewSteps(records: readonly ThreadExecutionRecord[]) {
   const groups = new Map<
     string,
@@ -77,8 +75,6 @@ export function authorizationReviewSteps(records: readonly ThreadExecutionRecord
     };
   });
 }
-
-/** Connection health is distinct from execution progress; an old observation is not a heartbeat. */
 export function executionActivity(
   records: readonly ThreadExecutionRecord[],
   run: RunSummary,
@@ -133,8 +129,6 @@ export function executionActivity(
     stale: !isTerminalRun(run) && run.status !== "awaiting_approval" && age >= 15000,
   };
 }
-
-/** Backend outcome markers remain separate from transport/Pi invocation phases. */
 export function executionToolPhase(
   item: ThreadExecutionRecord,
   records: readonly ThreadExecutionRecord[],
@@ -158,8 +152,6 @@ export function executionToolPhase(
     case "runtime.tool_outcome.unresolved":
       return "chat.phase.unresolved";
     case "runtime.tool_outcome.preparing":
-      // The Run has ended, but no tool result establishes whether it started or
-      // changed a file. Keep that uncertainty without a perpetual active phase.
       return isTerminalRun(run) ? "chat.phase.unresolved" : "chat.phase.preparing";
     default:
       return item.phase === "failed" && reason && reason.sequence >= item.sequence
@@ -167,8 +159,6 @@ export function executionToolPhase(
         : undefined;
   }
 }
-
-/** A delta notification can be replayed; snapshots have stable event and item identities. */
 export function executionItems(records: readonly ThreadExecutionRecord[]) {
   const items = new Map<
     string,
@@ -208,7 +198,15 @@ export function executionItems(records: readonly ThreadExecutionRecord[]) {
   );
 }
 
-/** The displayed tool/message duration excludes the Run's recorded approval waits. */
+export function isNarration(
+  item: { kind: string; firstSequence: number },
+  items: readonly { kind: string; firstSequence: number }[],
+) {
+  return (
+    item.kind === "message" &&
+    items.some((other) => other.kind === "tool" && other.firstSequence >= item.firstSequence)
+  );
+}
 export function executionItemWorkTime(
   item: { startedAt: string | null; endedAt: string | null },
   records: readonly ThreadExecutionRecord[],
@@ -237,8 +235,6 @@ export function executionItemWorkTime(
   if (waitingSince !== undefined) wait += overlap(waitingSince, end);
   return Math.max(0, end - start - wait);
 }
-
-/** Time is derived only from recorded execution boundaries, excluding approval waits. */
 export function executionTime(
   records: readonly ThreadExecutionRecord[],
   run: RunSummary,
@@ -281,8 +277,6 @@ export function duration(milliseconds: number): string {
   const seconds = Math.round(Math.max(0, milliseconds) / 100) / 10;
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
 }
-
-/** Only durable, public stage markers; never synthesize reasoning or infer successful steps. */
 export const executionStageLabels: Readonly<Record<string, MessageId>> = {
   "memory.query": "chat.stage.memoryQuery",
   "memory.candidates": "chat.stage.memoryCandidates",
@@ -296,8 +290,6 @@ export function executionStages(records: readonly ThreadExecutionRecord[]) {
     .filter((record) => record.kind === "status" && executionStageLabels[record.name])
     .sort((a, b) => a.sequence - b.sequence);
 }
-
-/** Never treat request/transport timestamps as host execution time. */
 export function recordedInterval(
   records: readonly ThreadExecutionRecord[],
   itemId: string,
@@ -310,8 +302,6 @@ export function recordedInterval(
   const elapsed = Date.parse(end.occurredAt) - Date.parse(start.occurredAt);
   return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null;
 }
-
-/** Provider thinking-stream boundaries contain no private reasoning text. */
 export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
   const boundaries = [
     ...new Map(
@@ -325,7 +315,6 @@ export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
       ...record,
       elapsed: recordedInterval(records, record.itemId, "runtime.thinking"),
     }));
-  // Older histories only attest that thinking was observed; they do not provide duration.
   const observations = records.filter((record) => record.name === "runtime.activity.thinking");
   return observations
     .filter(
@@ -340,8 +329,6 @@ export function thinkingSteps(records: readonly ThreadExecutionRecord[]) {
     )
     .map((record) => ({ ...record, elapsed: null }));
 }
-
-/** Localization only: all phase decisions belong to the backend projection. */
 export function executionStateLabel(
   phase: ThreadExecutionState["displayPhase"],
   reasonCode?: string,
@@ -355,6 +342,7 @@ export function executionStateLabel(
     RESOURCE_STOP_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
     RUN_STOPPED_NOT_STRICTLY_CONFIRMED: "chat.resource.stopNotStrictlyConfirmed",
     EXECUTION_RECORD_DELETED: "chat.resource.recordDeleted",
+    RESOURCE_OBSERVATION_EXPIRED: "chat.resource.noReport",
     WORKER_ADMISSION_CONFLICT: "chat.reason.admissionConflict",
     WORKER_AUTHORIZATION_DENIED: "chat.reason.authorizationDenied",
     WORKER_AUTHORITY_UNAVAILABLE: "chat.reason.authorityUnavailable",
@@ -408,8 +396,6 @@ export function executionWaitReason(
     tool: tool.name,
   };
 }
-
-/** Give the owner a safe follow-up based only on durable execution facts. */
 export function executionNextAction(state: ThreadExecutionState): MessageId | undefined {
   if (state.displayPhase === "unresolved") {
     if (state.availableActions.includes("retry_cleanup")) return "chat.nextAction.retryCleanup";
@@ -434,8 +420,6 @@ export function executionNextAction(state: ThreadExecutionState): MessageId | un
         : "chat.nextAction.failed";
   return undefined;
 }
-
-/** The Run ended while suspended for approval and nothing was recorded after the suspension. */
 export function endedAwaitingApproval(
   item: Pick<ThreadExecutionRecord, "itemId" | "kind" | "output"> & { firstSequence: number },
   records: readonly ThreadExecutionRecord[],
