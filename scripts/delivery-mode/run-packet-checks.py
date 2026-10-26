@@ -119,8 +119,7 @@ def main():
     python = '/usr/bin/python3' if Path('/usr/bin/python3').exists() else sys.executable
     logs = Path(arguments.logs).resolve() if arguments.logs else Path(tempfile.mkdtemp(prefix='packet-checks-'))
     logs.mkdir(parents=True, exist_ok=True)
-    temp_root = Path(tempfile.mkdtemp(prefix='packet-temp-', dir=logs))
-    temp_root.chmod(0o700)
+    temp_root = short_scratch()
     environment = {**os.environ, 'PATH': str(node.parent) + ':/usr/bin:/bin', 'HIMAWARI_TEST_TEMP_ROOT': str(temp_root), 'PYTHONDONTWRITEBYTECODE': '1'}
     checks = plan(packet, node, python, not arguments.skip_hermes_only, target != current)
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
