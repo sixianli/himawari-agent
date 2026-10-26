@@ -13,6 +13,7 @@ export interface TimelineSegment {
 
 export interface TimelineStep {
   readonly id: string;
+  readonly sequence: number;
   readonly kind: TimelineStepKind;
   readonly category: TimelineCategory;
   readonly start: number;
@@ -45,7 +46,9 @@ const hiddenModelStep = 50;
 
 interface ModelCall {
   readonly id: string;
+  readonly sequence: number;
   readonly start: number;
+  endSequence?: number;
   end?: number;
   messageId?: string;
   text: string;
@@ -93,17 +96,26 @@ export function executionTimeline(
   let call: ModelCall | undefined;
   let memoryStart: number | undefined;
   let selectionEnd: number | undefined;
-  let waitingSince: { id: string; start: number } | undefined;
-  const toolStarts = new Map<string, number>();
+  let waitingSince: { id: string; sequence: number; start: number } | undefined;
+  const toolStarts = new Map<string, { at: number; sequence: number }>();
   const toolExecutions = new Map<string, { start?: number; end?: number }>();
 
   const closeWait = (end: number) => {
     if (!waitingSince) return;
-    steps.push(step("you", waitingSince.id, waitingSince.start, end, false, []));
+    steps.push(
+      step("you", waitingSince.id, waitingSince.sequence, waitingSince.start, end, false, []),
+    );
     waitingSince = undefined;
   };
   const openCall = (record: ThreadExecutionRecord) => {
-    call = { id: record.id, start: time(record), text: "", toolCalls: false, reasoning: [] };
+    call = {
+      id: record.id,
+      sequence: record.sequence,
+      start: time(record),
+      text: "",
+      toolCalls: false,
+      reasoning: [],
+    };
     calls.push(call);
   };
 
@@ -112,20 +124,30 @@ export function executionTimeline(
     if (record.name === "memory.query") memoryStart ??= at;
     else if (record.name === "memory.selection" && record.phase === "completed") {
       steps.push({
-        ...step("memory", record.id, memoryStart ?? at, at, false, []),
+        ...step("memory", record.id, record.sequence, memoryStart ?? at, at, false, []),
         count: Number(record.text) || 0,
       });
       selectionEnd = at;
     } else if (record.name === "context.formed" && record.phase === "completed") {
       steps.push({
-        ...step("context", record.id, selectionEnd ?? memoryStart ?? at, at, false, []),
+        ...step(
+          "context",
+          record.id,
+          record.sequence,
+          selectionEnd ?? memoryStart ?? at,
+          at,
+          false,
+          [],
+        ),
         count: Number(record.text) || 0,
       });
     } else if (record.kind === "status" && record.phase === "waiting") {
       closeWait(at);
-      waitingSince = { id: record.id, start: at };
-    } else if (record.kind === "status" && record.phase === "started") closeWait(at);
-    else if (record.name === "runtime.turn_started") {
+      waitingSince = { id: record.id, sequence: record.sequence, start: at };
+    } else if (record.kind === "status" && record.phase === "started") {
+      closeWait(at);
+      if (!call || call.end !== undefined) openCall(record);
+    } else if (record.name === "runtime.turn_started") {
       closeWait(at);
       if (!call || call.end !== undefined || call.messageId) openCall(record);
     } else if (
@@ -155,33 +177,45 @@ export function executionTimeline(
         }
         if (["completed", "failed", "stopped"].includes(record.phase)) {
           call.end = at;
+          call.endSequence = record.sequence;
           call.toolCalls = ordered.some((other) => other.id.startsWith(`${record.id}:call:`));
         }
       }
     }
-    if (record.kind === "tool" && record.phase === "started") toolStarts.set(record.itemId, at);
+    if (record.kind === "tool" && record.phase === "started")
+      toolStarts.set(record.itemId, { at, sequence: record.sequence });
     else if (record.name === "runtime.tool_execution.started")
       toolExecutions.set(record.itemId, { ...toolExecutions.get(record.itemId), start: at });
     else if (record.name === "runtime.tool_execution.ended")
       toolExecutions.set(record.itemId, { ...toolExecutions.get(record.itemId), end: at });
     else if (record.kind === "tool" && ["completed", "failed", "stopped"].includes(record.phase)) {
-      const start = toolStarts.get(record.itemId);
-      if (start === undefined) continue;
+      const started = toolStarts.get(record.itemId);
+      if (started === undefined) continue;
       toolStarts.delete(record.itemId);
-      steps.push({ ...toolStep(record.itemId, record.id, start, at), itemId: record.itemId });
+      steps.push(toolStep(record.itemId, record.id, started.sequence, started.at, at));
     }
   }
   if (waitingSince) {
-    steps.push(step("you", waitingSince.id, waitingSince.start, openEnd, !terminal, []));
+    steps.push(
+      step(
+        "you",
+        waitingSince.id,
+        waitingSince.sequence,
+        waitingSince.start,
+        openEnd,
+        !terminal,
+        [],
+      ),
+    );
     waitingSince = undefined;
   }
-  for (const [itemId, start] of toolStarts)
+  for (const [itemId, started] of toolStarts)
     if (
       !terminal &&
-      !calls.some((item) => item.start > start) &&
-      !steps.some((item) => item.kind === "you" && item.start >= start)
+      !calls.some((item) => item.start > started.at) &&
+      !steps.some((item) => item.kind === "you" && item.start >= started.at)
     )
-      steps.push({ ...toolStep(itemId, `${itemId}:running`, start, total, true), itemId });
+      steps.push(toolStep(itemId, `${itemId}:running`, started.sequence, started.at, total, true));
   for (const item of calls) steps.push(...modelSteps(item));
 
   const sorted = steps
@@ -205,22 +239,40 @@ export function executionTimeline(
   function step(
     kind: TimelineStepKind,
     id: string,
+    sequence: number,
     start: number,
     end: number,
     running: boolean,
     segments: TimelineSegment[],
   ): TimelineStep {
-    return { id, kind, category: categoryOf[kind], start, end, running, parallel: false, segments };
+    return {
+      id,
+      sequence,
+      kind,
+      category: categoryOf[kind],
+      start,
+      end,
+      running,
+      parallel: false,
+      segments,
+    };
   }
 
-  function toolStep(itemId: string, id: string, start: number, end: number, running = false) {
+  function toolStep(
+    itemId: string,
+    id: string,
+    sequence: number,
+    start: number,
+    end: number,
+    running = false,
+  ): TimelineStep {
     const execution = toolExecutions.get(itemId);
     const segments: TimelineSegment[] = [];
     if (execution?.start !== undefined && execution.start >= start) {
       segments.push({ kind: "queue", start, end: execution.start });
       segments.push({ kind: "run", start: execution.start, end: execution.end ?? end });
     }
-    return step("tool", id, start, end, running, segments);
+    return { ...step("tool", id, sequence, start, end, running, segments), itemId };
   }
 
   function modelSteps(item: ModelCall): TimelineStep[] {
@@ -244,21 +296,31 @@ export function executionTimeline(
       if (outputStart > cursor) segments.push({ kind: "wait", start: cursor, end: outputStart });
       segments.push({ kind: "output", start: outputStart, end });
     } else if (thinkEnd > cursor) segments.push({ kind: "wait", start: cursor, end: thinkEnd });
-    const think = step(
-      "think",
-      item.id,
-      item.start,
-      thinkEnd,
-      running && thinkEnd === end,
-      segments,
-    );
+    const think = {
+      ...step(
+        "think",
+        item.id,
+        item.sequence,
+        item.start,
+        thinkEnd,
+        running && thinkEnd === end,
+        segments,
+      ),
+      ...(item.messageId ? { itemId: item.messageId } : {}),
+    };
     if (!answer || outputStart === undefined) return [think];
     return [
       think,
       {
-        ...step("write", `${item.id}:write`, outputStart, end, running, [
-          { kind: "output", start: outputStart, end },
-        ]),
+        ...step(
+          "write",
+          `${item.id}:write`,
+          item.endSequence ?? item.sequence,
+          outputStart,
+          end,
+          running,
+          [{ kind: "output", start: outputStart, end }],
+        ),
         ...(item.messageId ? { itemId: item.messageId } : {}),
         characters: [...item.text].length,
       },

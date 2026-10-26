@@ -234,7 +234,7 @@ it("lists the memories brought to the model as steps instead of reporting no pro
   expect(html.indexOf("step.memoryFound")).toBeLessThan(html.indexOf("step.memoryProfile"));
   expect(html).toContain("主人喜欢喝乌龙茶");
   expect(html).toContain("主人最喜欢的颜色是蓝色");
-  expect(html).toContain("review.thinkingCount");
+  expect(html).toContain("process.took");
   expect(renderRun("completed", [memory(1, "memory.query", "updated", "", "")])).toContain(
     "chat.noProcess",
   );

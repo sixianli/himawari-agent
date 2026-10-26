@@ -4,6 +4,13 @@ import type {
 } from "@himawari-agent/gateway-contracts";
 import { useEffect, useState } from "react";
 import {
+  type ExecutionTimeline,
+  executionTimeline,
+  type TimelineCategory,
+  type TimelineStep,
+  timelineDuration,
+} from "../execution-timeline.js";
+import {
   authorizationReviewSteps,
   duration,
   endedAwaitingApproval,
@@ -17,8 +24,6 @@ import {
   executionWaitReason,
   isNarration,
   isTerminalRun,
-  memoryStepLabels,
-  memorySteps,
   type RunSummary,
   recordedInterval,
   thinkingSteps,
@@ -66,64 +71,30 @@ export function ExecutionProcess({
   connection: string;
 }) {
   const [now, setNow] = useState(Date.now());
-  const [expanded, setExpanded] = useState(true);
+  const [expandedChoice, setExpandedChoice] = useState<boolean | null>(null);
   const stateEnded = ["completed", "failed", "stopped", "not_dispatched"].includes(
     state?.displayPhase ?? "",
   );
   const activityEnded = (isTerminalRun(run) || stateEnded) && state?.displayPhase !== "unresolved";
   useEffect(() => {
     if (activityEnded || connection !== "connected") return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(Date.now()), 100);
     return () => window.clearInterval(timer);
   }, [activityEnded, connection]);
   const items = executionItems(records);
-  const thinking = thinkingSteps(records);
-  const steps = [
-    ...items
-      .filter((item) => item.kind === "tool")
-      .map((item) => ({
-        sequence: item.firstSequence,
-        item,
-        stage: null,
-        review: null,
-        note: null,
-        memory: null,
-      })),
-    ...items
-      .filter((item) => isNarration(item, items) && item.text.trim())
-      .map((note) => ({
-        sequence: note.firstSequence,
-        item: null,
-        stage: null,
-        review: null,
-        note,
-        memory: null,
-      })),
-    ...thinking.map((stage) => ({
-      sequence: stage.sequence,
-      item: null,
-      stage,
-      review: null,
-      note: null,
-      memory: null,
-    })),
-    ...memorySteps(records).map((memory) => ({
-      sequence: memory.sequence,
-      item: null,
-      stage: null,
-      review: null,
-      note: null,
-      memory,
-    })),
-    ...authorizationReviewSteps(records).map((review) => ({
-      sequence: review.sequence,
-      item: null,
-      stage: null,
-      review,
-      note: null,
-      memory: null,
-    })),
-  ].sort((a, b) => a.sequence - b.sequence);
+  const timeline = executionTimeline(records, run, now);
+  const rows = processRows(records, items, timeline);
+  const expanded = expandedChoice ?? !activityEnded;
+  const longest = timeline?.steps.find((step) => step.id === timeline.longest);
+  const stepLabel = (step: TimelineStep) => {
+    if (step.kind === "tool") {
+      const tool = items.find((item) => item.itemId === step.itemId);
+      return message(tool ? toolStepSummary(tool.name, tool.input).id : "step.other");
+    }
+    return step.count === undefined
+      ? message(stepLabels[step.kind])
+      : message(stepLabels[step.kind], { count: step.count });
+  };
   const time = executionTime(records, run, now);
   const activity = executionActivity(records, run, connection, now);
   const measuredTime = stateAvailable
@@ -189,81 +160,130 @@ export function ExecutionProcess({
       <details
         className="turn-process"
         open={expanded}
-        onToggle={(event) => setExpanded(event.currentTarget.open)}
+        onToggle={(event) => {
+          if (event.currentTarget.open !== expanded) setExpandedChoice(event.currentTarget.open);
+        }}
       >
         <summary>
           <span className="process-chevron" aria-hidden="true">
             ›
           </span>
-          <span>
-            {message("review.thinkingCount", { count: thinking.length })} ·{" "}
-            {message("chat.toolCount", {
-              count: items.filter((item) => item.kind === "tool").length,
-            })}
-          </span>
-          <span className={`process-result run-text-${state?.displayPhase ?? run.status}`}>
+          {timeline ? (
+            <>
+              <span className="process-took">
+                {message("process.took", { time: timelineDuration(timeline.total) })}
+              </span>
+              <CategoryBar timeline={timeline} message={message} />
+              {longest && activityEnded ? (
+                <span className="process-longest">
+                  {message("process.longest", {
+                    step: stepLabel(longest),
+                    time: timelineDuration(longest.end - longest.start),
+                  })}
+                </span>
+              ) : null}
+            </>
+          ) : null}
+          <span
+            className={`process-result run-text-${state?.displayPhase ?? run.status}${
+              timeline && (state?.displayPhase ?? run.status) === "completed" ? " is-quiet" : ""
+            }`}
+          >
             {message(stateLabel ?? statusId(run))}
-            {measuredTime !== null
-              ? ` · ${message(measuredTimeLabel, { time: duration(measuredTime) })}`
-              : ""}
           </span>
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
-          {steps.map(({ item, stage, review, note, memory }) => {
-            if (memory)
+          {rows.map((row) => {
+            if (row.type === "review")
               return (
-                <li className="execution-step" key={memory.id}>
-                  <span className="step-marker" aria-hidden="true" />
-                  <details className="tool-record memory-record">
-                    <summary>
-                      <ToolIcon name="memory" />
-                      <span className="step-summary">
-                        {message(memoryStepLabels[memory.name] as MessageId, {
-                          count: Number(memory.text),
-                        })}
-                      </span>
-                    </summary>
-                    {memory.output ? (
-                      <div className="step-detail">
-                        <pre>{memory.output}</pre>
-                      </div>
-                    ) : null}
-                  </details>
-                </li>
-              );
-            if (note)
-              return (
-                <li className="execution-stage execution-note" key={note.itemId}>
-                  <span className="step-marker" aria-hidden="true" />
-                  <ToolIcon name="" note />
-                  <span>{note.text}</span>
-                </li>
-              );
-            if (review)
-              return (
-                <li className="execution-stage authorization-review" key={review.id}>
-                  <span className="step-marker" aria-hidden="true" />
-                  <ToolIcon name="" review />
-                  <span>{message(review.label)}</span>
-                  {review.elapsed === null ? null : (
+                <li className="execution-stage authorization-review" key={row.review.id}>
+                  <span className="row-icon">
+                    <ToolIcon name="" review />
+                  </span>
+                  <span>{message(row.review.label)}</span>
+                  {row.review.elapsed === null ? null : (
                     <span className="step-status" title={message("review.authorizationTiming")}>
-                      {duration(review.elapsed)}
+                      {duration(row.review.elapsed)}
                     </span>
                   )}
                 </li>
               );
-            if (stage)
+            if (row.type === "note")
               return (
-                <li className="execution-stage" key={stage.id}>
-                  <span className="step-marker" aria-hidden="true" />
-                  <ToolIcon name="" thinking />
+                <li className="execution-stage execution-note" key={row.note.itemId}>
+                  <span className="row-icon">
+                    <ToolIcon name="" note />
+                  </span>
+                  <span>{row.note.text}</span>
+                </li>
+              );
+            if (row.type === "thinking")
+              return (
+                <li className="execution-stage" key={row.stage.id}>
+                  <span className="row-icon">
+                    <ToolIcon name="" thinking />
+                  </span>
                   <span>
-                    {stage.elapsed === null
+                    {row.stage.elapsed === null
                       ? message("step.thinking")
-                      : message("step.thinkingFor", { time: duration(stage.elapsed) })}
+                      : message("step.thinkingFor", { time: duration(row.stage.elapsed) })}
                   </span>
                 </li>
               );
+            const step = row.step;
+            const item = row.item;
+            if (step && !item) {
+              const memory = step.kind === "memory" || step.kind === "context";
+              const detailRecord = memory ? records.find((record) => record.id === step.id) : null;
+              const quote =
+                step.kind === "think" && step.itemId
+                  ? items.find(
+                      (candidate) =>
+                        candidate.itemId === step.itemId &&
+                        candidate.kind === "message" &&
+                        isNarration(candidate, items),
+                    )?.text
+                  : undefined;
+              return (
+                <li
+                  key={step.id}
+                  className={`execution-step timeline-row${step.running ? " is-running" : ""}`}
+                >
+                  <details className={memory ? "tool-record memory-record" : "timeline-record"}>
+                    <summary>
+                      <span className="row-icon">
+                        <ToolIcon
+                          name={memory ? "memory" : step.kind === "write" ? "edit" : ""}
+                          thinking={step.kind === "think"}
+                          review={step.kind === "you"}
+                        />
+                      </span>
+                      <span className="row-main">
+                        <span className="step-summary">{stepLabel(step)}</span>
+                        {step.kind === "write" && step.characters !== undefined ? (
+                          <span className="step-preview">
+                            {message("process.characters", { count: step.characters })}
+                          </span>
+                        ) : null}
+                      </span>
+                      <TimelineBar step={step} total={timeline?.total ?? 0} />
+                      <span className="row-duration">
+                        {timelineDuration(step.end - step.start)}
+                      </span>
+                    </summary>
+                    <div className="step-detail">
+                      <StepTiming step={step} message={message} />
+                      {detailRecord?.output ? <pre>{detailRecord.output}</pre> : null}
+                    </div>
+                  </details>
+                  {quote?.trim() ? (
+                    <p className="row-quote">
+                      <q>{quote.trim()}</q>
+                    </p>
+                  ) : null}
+                </li>
+              );
+            }
             if (!item) return null;
             const operation = state?.operations.find(
               (operation) => operation.itemId === item.itemId,
@@ -305,28 +325,47 @@ export function ExecutionProcess({
             const elapsed = operation
               ? operation.executionMilliseconds
               : recordedInterval(records, item.itemId, "runtime.tool_execution");
+            const status = (
+              <span className="step-status" title={message("review.workerTiming")}>
+                {retainedEffect ? `${message(retainedEffect)} · ` : ""}
+                {message(phase)}
+                {elapsed !== null ? ` · ${duration(elapsed)}` : ""}
+              </span>
+            );
             return (
               <li
                 key={item.itemId}
-                className={`execution-step tool-${operation?.displayPhase ?? item.phase}`}
+                className={`execution-step timeline-row tool-${operation?.displayPhase ?? item.phase}${
+                  step?.running ? " is-running" : ""
+                }`}
               >
-                <span className="step-marker" aria-hidden="true" />
                 <details className="tool-record">
                   <summary>
-                    <ToolIcon name={item.name} />
-                    <span className="step-summary">
-                      {item.kind === "tool" ? message(summary.id) : message("chat.responseText")}
+                    <span className="row-icon">
+                      <ToolIcon name={item.name} />
                     </span>
-                    {item.kind === "tool" && summary.target ? (
-                      <span className="step-preview">{summary.target}</span>
+                    <span className="row-main">
+                      <span className="step-summary">
+                        {item.kind === "tool" ? message(summary.id) : message("chat.responseText")}
+                      </span>
+                      {item.kind === "tool" && summary.target ? (
+                        <span className="step-preview">{summary.target}</span>
+                      ) : null}
+                      {step?.parallel ? (
+                        <span className="row-tag">{message("process.parallel")}</span>
+                      ) : null}
+                      {step && phase === "chat.phase.completed" && !retainedEffect ? null : status}
+                    </span>
+                    {step ? <TimelineBar step={step} total={timeline?.total ?? 0} /> : null}
+                    {step ? (
+                      <span className="row-duration">
+                        {timelineDuration(step.end - step.start)}
+                      </span>
                     ) : null}
-                    <span className="step-status" title={message("review.workerTiming")}>
-                      {retainedEffect ? `${message(retainedEffect)} · ` : ""}
-                      {message(phase)}
-                      {elapsed !== null ? ` · ${duration(elapsed)}` : ""}
-                    </span>
                   </summary>
                   <div className="step-detail">
+                    {step ? <StepTiming step={step} message={message} /> : null}
+                    {step && phase === "chat.phase.completed" && !retainedEffect ? status : null}
                     {item.kind === "tool" ? (
                       <>
                         <p className="step-tool">
@@ -396,14 +435,185 @@ export function ExecutionProcess({
             );
           })}
         </ol>
-        {!steps.length ? <p>{message("chat.noProcess")}</p> : null}
+        {!rows.length ? <p>{message("chat.noProcess")}</p> : null}
         {records.some((item) => item.phase === "unavailable") ? (
           <output>{message("chat.recordUnavailable")}</output>
         ) : null}
-        {time.known && time.wait > 0 ? (
-          <p className="process-wait">{message("chat.waitTime", { time: duration(time.wait) })}</p>
-        ) : null}
+        {timeline && activityEnded ? <TimeLedger timeline={timeline} message={message} /> : null}
       </details>
     </>
+  );
+}
+
+type ExecutionItem = ReturnType<typeof executionItems>[number];
+type ProcessRow =
+  | { type: "step"; sequence: number; step?: TimelineStep; item?: ExecutionItem | undefined }
+  | {
+      type: "review";
+      sequence: number;
+      review: ReturnType<typeof authorizationReviewSteps>[number];
+    }
+  | { type: "note"; sequence: number; note: ExecutionItem }
+  | { type: "thinking"; sequence: number; stage: ReturnType<typeof thinkingSteps>[number] };
+
+const stepLabels: Readonly<Record<Exclude<TimelineStep["kind"], "tool">, MessageId>> = {
+  memory: "step.memoryFound",
+  context: "step.memoryProfile",
+  think: "step.thinking",
+  write: "process.step.write",
+  you: "process.step.you",
+};
+const categoryLabels: Readonly<Record<TimelineCategory, MessageId>> = {
+  model: "process.category.model",
+  tool: "process.category.tool",
+  you: "process.category.you",
+  prep: "process.category.prep",
+};
+const categoryOrder: readonly TimelineCategory[] = ["model", "tool", "you", "prep"];
+const segmentLabels: Readonly<Record<TimelineStep["segments"][number]["kind"], MessageId>> = {
+  wait: "process.segment.wait",
+  reason: "process.segment.reason",
+  output: "process.segment.output",
+  queue: "process.segment.queue",
+  run: "process.segment.run",
+};
+const percent = (part: number, whole: number) =>
+  `${whole > 0 ? Math.min(100, Math.max(0, (part / whole) * 100)) : 0}%`;
+
+function processRows(
+  records: readonly ThreadExecutionRecord[],
+  items: readonly ExecutionItem[],
+  timeline: ExecutionTimeline | null,
+): ProcessRow[] {
+  const tools = items.filter((item) => item.kind === "tool");
+  const reviews = authorizationReviewSteps(records).map(
+    (review): ProcessRow => ({ type: "review", sequence: review.sequence, review }),
+  );
+  if (!timeline)
+    return [
+      ...tools.map((item): ProcessRow => ({ type: "step", sequence: item.firstSequence, item })),
+      ...items
+        .filter((item) => isNarration(item, items) && item.text.trim())
+        .map((note): ProcessRow => ({ type: "note", sequence: note.firstSequence, note })),
+      ...thinkingSteps(records).map(
+        (stage): ProcessRow => ({ type: "thinking", sequence: stage.sequence, stage }),
+      ),
+      ...reviews,
+    ].sort((a, b) => a.sequence - b.sequence);
+  const timed = new Set(
+    timeline.steps.flatMap((step) => (step.kind === "tool" && step.itemId ? [step.itemId] : [])),
+  );
+  return [
+    ...timeline.steps.map(
+      (step): ProcessRow => ({
+        type: "step",
+        sequence: step.sequence,
+        step,
+        ...(step.kind === "tool"
+          ? { item: tools.find((item) => item.itemId === step.itemId) }
+          : {}),
+      }),
+    ),
+    ...tools
+      .filter((item) => !timed.has(item.itemId))
+      .map((item): ProcessRow => ({ type: "step", sequence: item.firstSequence, item })),
+    ...reviews,
+  ].sort((a, b) => a.sequence - b.sequence);
+}
+
+function CategoryBar({ timeline, message }: { timeline: ExecutionTimeline; message: Message }) {
+  const parts = categoryOrder.filter((category) => timeline.categories[category] > 0);
+  return (
+    <span
+      className="process-stack"
+      role="img"
+      aria-label={parts
+        .map((category) =>
+          message("process.categoryTime", {
+            category: message(categoryLabels[category]),
+            time: timelineDuration(timeline.categories[category]),
+          }),
+        )
+        .join(", ")}
+    >
+      {parts.map((category) => (
+        <i
+          key={category}
+          className={`category-${category}`}
+          style={{ width: percent(timeline.categories[category], timeline.total) }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function TimelineBar({ step, total }: { step: TimelineStep; total: number }) {
+  const length = step.end - step.start;
+  const segments = step.segments.length
+    ? step.segments
+    : [{ kind: "run" as const, start: step.start, end: step.end }];
+  return (
+    <span className="timeline-track" aria-hidden="true">
+      <span
+        className={`timeline-bar category-${step.category}`}
+        style={{ left: percent(step.start, total), width: percent(length, total) }}
+      >
+        {segments.map((segment) => (
+          <i
+            key={`${segment.kind}-${segment.start}`}
+            className={`segment-${segment.kind}`}
+            style={{ width: percent(segment.end - segment.start, length) }}
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+function StepTiming({ step, message }: { step: TimelineStep; message: Message }) {
+  return (
+    <>
+      {step.segments.length ? (
+        <p className="segment-list">
+          {step.segments.map((segment) => (
+            <span className="segment-item" key={`${segment.kind}-${segment.start}`}>
+              <i className={`category-${step.category} segment-${segment.kind}`} />
+              {message(segmentLabels[segment.kind])}{" "}
+              <em>{timelineDuration(segment.end - segment.start)}</em>
+            </span>
+          ))}
+        </p>
+      ) : null}
+      <p className="step-span">
+        {message("process.span", {
+          start: timelineDuration(step.start),
+          end: timelineDuration(step.end),
+          time: timelineDuration(step.end - step.start),
+        })}
+      </p>
+    </>
+  );
+}
+
+function TimeLedger({ timeline, message }: { timeline: ExecutionTimeline; message: Message }) {
+  return (
+    <div className="process-ledger">
+      <CategoryBar timeline={timeline} message={message} />
+      <p className="process-legend">
+        {categoryOrder
+          .filter((category) => timeline.categories[category] > 0)
+          .map((category) => (
+            <span className="legend-item" key={category}>
+              <i className={`category-${category}`} />
+              {message(categoryLabels[category])}{" "}
+              <b>{timelineDuration(timeline.categories[category])}</b>
+            </span>
+          ))}
+        <span className="process-sum">
+          {message("process.total", { time: timelineDuration(timeline.total) })}
+        </span>
+      </p>
+      <p className="process-note">{message("process.note")}</p>
+    </div>
   );
 }
