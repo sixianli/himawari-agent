@@ -1461,8 +1461,8 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
       path.join(f.resource.stateRoot, "schema42-snapshot.sqlite"),
     );
     expect(applyMigrations(old, migrations, { snapshot })).toEqual({
-      appliedSequences: [43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55],
-      currentSequence: 55,
+      appliedSequences: [43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+      currentSequence: 56,
     });
     expect(readMigrationLedger(old).slice(0, 42)).toEqual(ledger);
     const json = old

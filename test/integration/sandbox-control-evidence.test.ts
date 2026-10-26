@@ -107,6 +107,7 @@ async function fixture(
   cleanups.push(finishControl);
   const stored = new Map<string, { ref: string; digest: string; value: unknown }>();
   let platform = "darwin";
+  let terminationMode = "best_effort";
   const verifiedHost = async () => ({
     binding: {
       privateRoot: root,
@@ -117,7 +118,7 @@ async function fixture(
     qualification: {
       platform,
       guarantees: options.qualified ? ["fixed-file-terminal-no-writer.v1"] : [],
-      terminationMode: "best_effort",
+      terminationMode,
     } as unknown as SandboxRuntimeQualification,
   });
   let hostChecks = 0;
@@ -191,6 +192,9 @@ async function fixture(
     directory,
     setPlatform: (value: string) => {
       platform = value;
+    },
+    setTerminationMode: (value: string) => {
+      terminationMode = value;
     },
     restartMachine: () => {
       machineBootId = "66666666-7777-4888-9999-aaaaaaaaaaaa";
@@ -456,6 +460,40 @@ it.each(["running", "stopping", "finished"] as const)(
     expect(f.stored.size).toBe(before);
   },
 );
+it("reports a verified-tree task whose namespace ended before the host saw the exit as cleanup pending", async () => {
+  const f = await fixture();
+  f.setPlatform("linux");
+  f.setTerminationMode("verified_tree");
+  f.set({
+    phase: "running",
+    taskStarted: true,
+    linuxNamespace: { namespaceId: "pid:[4026532000]", initPid: 999999, initStartTicks: "12345" },
+    resources: { samples: 1, observedCpuTimeMs: 1, peakObservedMemoryBytes: 1024 },
+  });
+  const namespace = vi.spyOn(runtimeControl, "readLinuxNamespaceState");
+  try {
+    namespace.mockResolvedValue("alive");
+    const controlled = settled(await f.control.observe(f.record));
+    expect(controlled.supervision).toBe("controlled");
+    const record = { ...f.record, facts: { ...f.record.facts, resource: controlled } };
+    namespace.mockResolvedValue("released");
+    const before = f.stored.size;
+    expect(await f.control.observe(record)).toMatchObject({
+      kind: "cleanup_pending",
+      identity: record.plan.identity,
+    });
+    expect(f.stored.size).toBe(before);
+    const expired = settled(
+      await f.control.observe({
+        ...record,
+        plan: { ...record.plan, effectiveDeadlineAt: "2000-01-01T00:00:00.000Z" },
+      }),
+    );
+    expect(expired).toMatchObject({ supervision: "lost", cleanup: "unknown" });
+  } finally {
+    namespace.mockRestore();
+  }
+});
 it("rejects directory inode replacement and changed supervisor identity", async () => {
   const f = await fixture();
   f.set({ bootId: randomUUID() });
