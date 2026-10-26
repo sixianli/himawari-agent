@@ -7,6 +7,8 @@ import sqlite3
 import stat
 import subprocess
 import tempfile
+import threading
+import http.server
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -130,6 +132,44 @@ class RouteTest(unittest.TestCase):
     def test_missing_evidence_root_counts_as_untouched(self):
         self.plan['evidenceRoot'] = str(self.root / 'absent')
         self.assertTrue(remote.untouched(self.plan))
+
+
+class HomepageTest(unittest.TestCase):
+    def serve(self, statuses):
+        replies = list(statuses)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(replies.pop(0) if len(replies) > 1 else replies[0])
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return 'http://127.0.0.1:' + str(server.server_address[1]) + '/'
+
+    def test_homepage_address_comes_from_the_restored_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'config.json'
+            config.write_text(json.dumps({'http': {'listenHost': '127.0.0.1', 'listenPort': 8400}}))
+            self.assertEqual(remote.homepage_url(config), 'http://127.0.0.1:8400/')
+
+    def test_rollback_waits_until_the_homepage_answers_200(self):
+        url = self.serve([503, 503, 200])
+        self.assertEqual(remote.wait_for_homepage(url, timeout_seconds=10, interval_seconds=0.05), 200)
+
+    def test_rollback_fails_when_the_homepage_never_answers_200(self):
+        url = self.serve([503])
+        with self.assertRaisesRegex(RuntimeError, 'ROLLBACK_HOMEPAGE_NOT_READY:503'):
+            remote.wait_for_homepage(url, timeout_seconds=0.3, interval_seconds=0.05)
+
+    def test_rollback_fails_when_nothing_listens(self):
+        with self.assertRaisesRegex(RuntimeError, 'ROLLBACK_HOMEPAGE_NOT_READY:None'):
+            remote.wait_for_homepage('http://127.0.0.1:9/', timeout_seconds=0.2, interval_seconds=0.05)
 
 
 if __name__ == '__main__':
