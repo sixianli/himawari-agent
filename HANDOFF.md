@@ -229,3 +229,9 @@ Hermes：
 1. 把数据库版本（C 组）和生产配置当前值（D 组）改成从 S0 读出后自动生成期望，不再手写数字。这两组是这两次出事的直接原因。
 2. 版本名、安装目录、操作目录只作为一个参数传入，取代全文替换和每版复制工具改名。
 3. 冻结紧挨着上线做，并在上线前再核对一次配置指纹，因为任何一次重启都会让它失效。
+
+## 10. 补充（2026-10-26 13:20 UTC）：第十一版的数据库升级代码和 Hermes 辅助脚本
+
+- `eleventh-packet/`：第十一版操作包（`2026-10-26-eleventh-change-packet-01`）里带数据库升级的那套代码，原样复制，没有改名。第十一版在 `S7_CONFIG_APPLY` 里调 `db migrate` 把库从 55 升到 56，第十二版包把这段删掉了。包括 `maintenance/` 整个目录（`maintenance-common.mjs` 里的 `migrateDatabaseTo56`、`run-maintenance.mjs`、`verify-migrate56-fixtures.mjs`、`verify-fixtures.mjs` 等）、`steps/run-step.py`、`systemd/S7-switch-start-readback.py`、`inputs/finalize-bindings.py`、`inputs/verify-finalize-bindings.py`、`inputs/bindings.draft.json`、`s0-db/read-s0-db.mjs`。
+- `hermes-helpers/`：从 Hermes 只读取回的三个文件：`/data/hermes/himawari/tool-audit-round2/r2-l13/candidate-aa563155/capture-build-source-inputs.template.mjs`、同目录的 `collect-installer-dependencies.mjs`、`/home/andy/himawari-tests/r2-u1/require-git-modes.sh`。Hermes 上没有改动。
+- 推送前按同一组规则扫过全部 205 个文件，0 命中。
