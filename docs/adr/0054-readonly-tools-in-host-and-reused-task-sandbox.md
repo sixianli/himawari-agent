@@ -5,7 +5,7 @@ decision_status: accepted
 supersedes: ""
 superseded_by: ""
 amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0033-process-sandbox-default-and-optional-containers.md"
-amended_by: "docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md"
+amended_by: "docs/adr/0072-linux-pid-namespace-sweep-counts-as-release-confirmed.md, docs/adr/0085-remove-per-turn-system-gaps.md"
 date: "2026-10-13"
 ---
 
@@ -243,7 +243,7 @@ D-56：候选 `51f8b927` 的完整第 4 层里，`[R2-T11][R2-S2] keeps an offli
 2026-10-24 真实使用复盘第 2 项（[BL-20261024-006](../backlog/BL-20261024-006-first-tool-call-cold-start.md)）：Hermes 上连跑 10 个新 Run，第一次工具调用中位数 3.3 秒，其中约 3.07 秒是新开常驻会话；同一 Run 里后面的调用也常常重新建环境，每次又是约 3 秒。所有者 2026-10-25 在计时报告里选定：不改安全设计，Run 开始就预热（方案 1），缩短沙箱里 Node 程序的启动（方案 3，runner 打包，已在上一次提交完成），并修好同一 Run 内的复用。本段只记录方案 1 和复用修复，不改动[决定](#decision)。
 
 - **同一 Run 重新认领租约不再换环境**：Run 等待审批时释放执行租约，审批后重新认领，新租约的编号（`executionLeaseId`）和修订号（`expectedLeaseRevision`）都会变。原来复用键包含整份租约，于是每次审批后键都变，旧环境按“revocation”停掉、新环境重新冷启动，这就是同一 Run 里“也常常重新建环境”的原因。现在复用键里的执行权限只取不随重新认领变化的部分：权威租约编号和围栏令牌、部署编号、权威代次、围栏令牌和消费者编号（`apps/agent-service/src/production-task-environments.ts` 的 `srtEnvironmentPolicyDigest`）。这些任何一项变了（例如 Agent 换代或失去权威），仍先停旧环境再建新环境；授权的编号、版本、操作、根目录、授权记录和期限，允许域名，线程，模型，运行时、runner 摘要和资格记录也照旧在键里。每次调用仍按当前租约做完整的准入和授权检查，复用的只是沙箱进程，不是授权。
-- **Run 开始时预热**：Agent 每次派发 Run（包括审批后的续跑）时，在调用模型之前、不等待结果地发起一次预热（`apps/agent-service/src/production-run-composition.ts` 调用 `production-sandbox-services.ts` 的 `prewarmEnvironment`）。只在下面几条都成立时才预热：配置了编码路由；Linux 上启用了 SRT 常驻环境；Run 有执行期限；路由启用的工具里有前台、无网络、目标来自授权（`grant_targets`）、走 SRT 的 `bash` 或合同版本 1 的 `write`/`edit`；路由指定的目录授权存在、属于本机、未撤销、未过期，且包含这个工具声明的目录操作。预热用和真实调用相同的输入算复用键（授权取路由的授权，允许域名为空，环境期限取 Run 期限和授权期限中较早的一个）。这个 Run 还没有环境时，预热获取本轮主环境；已有一个就绪、未到期、复用键相同的环境时，直接用它；其他情况（环境已停止或已释放、复用键变了、已到期）预热什么都不做，换环境仍留给真实调用按原规则处理，预热从不停止或替换已有环境。拿到环境后给 Worker 发新的环境操作 `prewarm`。
+- **Run 开始时预热**（2026-10-26 起由 [ADR 0085](0085-remove-per-turn-system-gaps.md#decision) 取代，不再每轮预热）：Agent 每次派发 Run（包括审批后的续跑）时，在调用模型之前、不等待结果地发起一次预热（`apps/agent-service/src/production-run-composition.ts` 调用 `production-sandbox-services.ts` 的 `prewarmEnvironment`）。只在下面几条都成立时才预热：配置了编码路由；Linux 上启用了 SRT 常驻环境；Run 有执行期限；路由启用的工具里有前台、无网络、目标来自授权（`grant_targets`）、走 SRT 的 `bash` 或合同版本 1 的 `write`/`edit`；路由指定的目录授权存在、属于本机、未撤销、未过期，且包含这个工具声明的目录操作。预热用和真实调用相同的输入算复用键（授权取路由的授权，允许域名为空，环境期限取 Run 期限和授权期限中较早的一个）。这个 Run 还没有环境时，预热获取本轮主环境；已有一个就绪、未到期、复用键相同的环境时，直接用它；其他情况（环境已停止或已释放、复用键变了、已到期）预热什么都不做，换环境仍留给真实调用按原规则处理，预热从不停止或替换已有环境。拿到环境后给 Worker 发新的环境操作 `prewarm`。
 - **Worker 预热的会话与真实调用一致**：Worker 收到 `prewarm` 后按安装绑定先启动命令会话、再启动文件写入会话，两个会话都启动完（或失败）才答复“已接受”（`apps/execution-worker/src/production-sandbox-execution-v2.ts` 的 `prewarmSrtEnvironment`）。会话请求由真实调用共用的同一段代码生成：作业编号、私有目录、可写与否（按工具声明的目录操作）、只读工具链、受保护路径（命令会话另外保护 `.himawari-recovery`）、允许域名（空）、runner 参数都相同，所以真实调用到达时策略摘要一致，直接用已经就绪的会话；不一致时按既有规则以 `SRT_POLICY_CHANGED` 停掉环境，不会带着不同策略继续。网络工具（`grant_targets` 网络）、后台和服务模式、其他后端不预热。预热只启动空闲的 runner，不执行任何模型或用户给出的命令；会话的沙箱范围就是这个工具调用本来会得到的范围。
 - **真实调用先等预热结束**：同一个 Run 的预热还没结束时，真实调用获取环境前先等它，最多等 10 秒（`PREWARM_WAIT_MS`），再按原规则获取环境。这样预热失败时，真实调用看到的是已标记失败的环境，按原规则停掉它、换一个新环境，而不是排在失败的会话启动后面一起失败。
 - **失败不影响 Run**：预热的每一步失败都只写诊断，不改变 Run：Agent 写 `sandbox.srt_prewarm.requested` 或 `sandbox.srt_prewarm.failed`，Worker 写 `sandbox.srt_prewarm.finished`（列出启动了哪些会话）或 `sandbox.srt_prewarm.failed`（带原因码）。会话没启动成功时，环境按既有规则记为失败，下一次真实调用获取环境时检查发现不能复用，停掉旧环境、新建环境，退回原来的冷启动。Run 结束时预热出的环境和其他任务环境一样由 `stopRun` 停止和释放。审批后续跑时的预热，复用键不变，环境和会话都已存在，Worker 不再启动新会话。服务重启后续跑的 Run，Agent 的权威代次变了，复用键随之变化，预热不做任何事，原来的结果恢复流程不受影响。

@@ -224,21 +224,20 @@ export class ContextFormationService implements ContextFormationPort {
       },
     });
 
-    const profile: OwnerProfile = this.dependencies.profile
-      ? await this.dependencies.profile.compose({
-          ownerId: request.ownerId,
-          agentId: request.agentId,
-          maxClassification:
-            CLASSIFICATION_RANK[request.maxMemoryClassification] <
-            CLASSIFICATION_RANK[request.dataClassification]
-              ? request.maxMemoryClassification
-              : request.dataClassification,
-          now: this.dependencies.clock.now(),
-        })
-      : { blocks: [], memoryIds: [] };
-    const profileMemoryIds = new Set<string>(profile.memoryIds);
-    const candidates = [
-      ...(await this.dependencies.memory.search({
+    const [profile, found] = await Promise.all([
+      this.dependencies.profile
+        ? this.dependencies.profile.compose({
+            ownerId: request.ownerId,
+            agentId: request.agentId,
+            maxClassification:
+              CLASSIFICATION_RANK[request.maxMemoryClassification] <
+              CLASSIFICATION_RANK[request.dataClassification]
+                ? request.maxMemoryClassification
+                : request.dataClassification,
+            now: this.dependencies.clock.now(),
+          })
+        : Promise.resolve<OwnerProfile>({ blocks: [], memoryIds: [] }),
+      this.dependencies.memory.search({
         runId: request.runId,
         ...(request.executionLease ? { executionLease: request.executionLease } : {}),
         ...(request.signal ? { signal: request.signal } : {}),
@@ -249,8 +248,12 @@ export class ContextFormationService implements ContextFormationPort {
         queryRef: request.memoryQueryRef,
         queryTerms: request.memoryQueryTerms,
         limit: request.memoryLimit,
-      })),
-    ].sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+      }),
+    ]);
+    const profileMemoryIds = new Set<string>(profile.memoryIds);
+    const candidates = [...found].sort(
+      (left, right) => right.score - left.score || left.id.localeCompare(right.id),
+    );
     const candidateTrace = await this.dependencies.trace.record({
       ...this.traceScope(request),
       parentEventId: query.event.id,

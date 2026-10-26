@@ -45,6 +45,7 @@ date: "2026-10-26"
   18. [个人 Agent 怎么给家人朋友用：每人一个实例，还是一个实例分用户](#case-multi-user)
   19. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
   20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
+  24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -69,7 +70,7 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
@@ -426,6 +427,10 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 - 复用键修复 + 预热的第一版：Hermes 上第一次工具调用 3.3 秒 → 0.47 秒，但第 4 层测试有 14 个用例失败，原因是服务重启后和会话数量上预热做多了。修好后第七次生产变更的代码在 Hermes 第 0–4 层全部通过，首次工具调用中位数 0.22 秒（2026-10-25 项目进展记录）。
 - 方案 B 未上线，未测量。
+
+**后续（2026-10-26）**
+
+第十二版的生产日志显示，每轮预热用了 4.9–7.5 秒，并且和事件写入变慢、运行完成推迟的时间点重合，没用工具的一轮也照样预热。按 Andy 同意的方案 B 先去掉了每轮预热，改为用到才启动，见[案例 24](#case-run-gaps) 和 [ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；按对话复用仍是下一步。
 
 **相关 ADR/PR**
 
@@ -1234,6 +1239,74 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **面试 30 秒版**
 
 “一个版本上线后首页正常，但已经打开的页面在服务重启后什么都批不了，因为它带着重启前的授权编号。我们让页面在被拒绝时重读配置换编号，并把‘在真实浏览器里走一遍’做成上线脚本的硬门槛。修复版上线时，从上一版复制来的切换脚本带着旧预期失败了，自动回退又因为按版本号拼步骤名而失败；我们先手动恢复服务，再给这两处各加一道能复现旧错误的测试，第二次上线停服 11 分钟成功。”
+
+[返回目录](#contents)
+
+<a id="case-run-gaps"></a>
+
+## 案例 24：模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档
+
+**背景与现象**
+
+2026-10-26 第十二版上线后，Andy 在重新设计过程区时要求“每一步的时间一定一定要准确”。用生产数据库的 `trace_events`（每轮执行过程的事件表，只取事件类型和时间，没读内容）核对两轮对话：
+
+- “我最喜欢的颜色是？”共 12.1 秒，模型真正输出只有约 3.9 秒，没调用工具。上下文准备好到模型开始之间 2.7 秒没有任何事件；模型输出结束 1.1 秒后才写进数据库；运行结束后又过 1.7 秒回答才提交。
+- “查新闻”共 27.1 秒，准备与衔接约 6.4 秒；“等你确认”事件比实际暂停晚约 3.6 秒才写入，而网页从数据库读事件，确认卡片会跟着晚出现。
+
+**根因**
+
+先看代码，再用生产服务日志对时间，确认了五个原因：
+
+1. **每轮都预热沙箱**（沙箱：用操作系统机制限制程序能访问的文件和网络的隔离环境）。日志 `sandbox.srt_prewarm.requested` 显示两轮预热用了 4866 毫秒和 7523 毫秒；两轮里事件写入变慢、运行完成推迟，都正好在预热结束那一刻恢复。颜色那轮没用工具，结束时还要先停这个沙箱再提交回答。联网搜索当天已经不进沙箱，预热基本白做。拖慢的具体机制（抢 CPU 还是抢唯一的数据库写入线程）还没有区分，上线后用新加的分段计时确认。
+2. **调度器没人叫醒**。调度循环有 `wakeup()` 方法，但全仓库没有一处调用，新消息和审批后的续跑只能等每秒一次的兜底扫描。代码证据：`grep` 不到任何 `.wakeup()` 调用。
+3. **后台起标题拖住整轮**。后台模型调用借本轮执行租约登记，本轮暂停或完成前要等它们登记好；但记忆写入要等起标题的模型调用整个做完才开始登记。用单元测试复现：标题一直不结束时，旧代码永远放不出“完成”事件。
+4. **找记忆和读档案先后进行**，两者互不依赖。测试复现：让读档案等到检索开始才结束，旧代码会卡死。
+5. **每段流式文字要四次数据库提交，每次都等落盘**。生产库是 WAL 加 `synchronous = FULL`，这台机器每次同步写入实测 11.5–18.7 毫秒（BL-20261001-002 的记录）。四次里有一次只是更新进度检查点的计数器，恢复逻辑不依赖它。
+
+**我们的方案**
+
+1. 按 Andy 已同意的沙箱方案 B，去掉每轮预热，第一次用到 `bash`、`write`、`edit` 时才启动沙箱。
+2. HTTP 网关的命令接口返回成功后立即调用 `wakeup()`，兜底扫描保留。
+3. 起标题、记忆写入等后台调用同时开始登记；本轮仍等全部登记完（保持租约约束），但不再等起标题做完。
+4. 找记忆和读档案并行。
+5. 流式事件不再逐个写进度检查点，只在阶段、结束状态或诊断码变化时写；事件的父子链接不变。
+6. 每次执行结束写一行 `run.timing` 日志：上下文准备、记忆检索、模型登记、事件记录、数据库提交、工具、停沙箱、提交回答等每类步骤的次数、累计、最长和起止时间点。用包装端口（不改 Pi）实现，Pi 的执行循环和事件不动。
+
+还有一项需要 Andy 拍板：过程记录（步骤事件、流式文字片段）可以按次关掉“等落盘”，外部动作、授权、模型调用登记、最终回答照旧等落盘。
+
+**方案讨论与备选**
+
+- 只加计时、不改行为：最稳，但 Andy 要的是消掉空档；有代码证据和测试复现的几处直接改。
+- 立刻做按对话复用的常驻沙箱：每轮既不启动也不停，但工作量约 1–2 天，排在方案 B 的下一步。
+- 先提交回答再停沙箱：能省结尾 1–2 秒，但要放宽“沙箱确认释放才算完成”；不预热后，没用工具的轮次本来就不用停沙箱，不必放宽。
+- 后台调用不借本轮租约：本轮完全不用等，但要另设一套权限，放弃。
+- 把每轮所有写入合成一次提交：省得最多，但要改多个存储接口和恢复逻辑，先不做。
+- 全库改成不等落盘：最简单，但会让外部动作记录在断电时也可能丢；改成只对过程记录关掉，交给 Andy 选。
+
+**业界主流做法**
+
+- ✅ SQLite（[PRAGMA synchronous](https://www.sqlite.org/pragma.html#pragma_synchronous)）：“WAL mode is always consistent with synchronous=NORMAL, but WAL mode does lose durability. A transaction committed in WAL mode with synchronous=NORMAL might roll back following a power loss or system crash. Transactions are durable across application crashes regardless of the synchronous setting or journal mode.”
+- ✅ SQLite（[Write-Ahead Logging](https://www.sqlite.org/wal.html)）：“Writers sync the WAL on every transaction commit if PRAGMA synchronous is set to FULL but omit this sync if PRAGMA synchronous is set to NORMAL.”
+- ✅ Graphile Worker（[首页](https://worker.graphile.org/)，基于数据库的任务队列）：“Jobs start in milliseconds thanks to Postgres' LISTEN/NOTIFY”，即新任务到来时主动通知执行者，而不是靠定时扫描。
+- ✅ OpenTelemetry（[Traces](https://opentelemetry.io/docs/concepts/signals/traces/)）：span（一段计时的工作）“represents a unit of work or operation”，每个 span 带开始和结束时间；我们的 `run.timing` 按同样的思路给每类步骤记起止时间，但先写成一行日志，没有引入整套追踪系统。
+
+**对比与取舍**
+
+叫醒调度器和 Graphile Worker 的“有新任务就通知”是同一个思路，兜底扫描保留是为了别的来源（比如提醒）。分段计时只记名字和数字，满足 Andy“时间要准”的要求，又不把对话内容写进日志。没有照搬 SQLite 推荐的“WAL 用 NORMAL 就够了”，因为 Himawari 有“外部动作先记录再执行”的保证，所以只对过程记录考虑放宽，并交给 Andy 决定。
+
+**结果数据**
+
+- 改前（生产 trace 和日志）：颜色那轮 12.1 秒，其中模型约 3.9 秒；预热 4.9 秒和 7.5 秒；确认事件晚写入约 3.6 秒；回答提交比运行结束晚 1.35–1.7 秒。
+- 复现测试：叫醒调度器、后台登记、并行检索、少写检查点四项各有一个测试，改前失败、改后通过。
+- 改后生产耗时：未上线，未测量。上线后用 `run.timing` 回填。
+
+**相关 ADR/PR**
+
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR 见本分支 `claude/project-thread-zmcdah` 的草稿 PR。
+
+**面试 30 秒版**
+
+“一个不用工具的问题，模型只花 3.9 秒，整轮却要 12 秒。我把生产事件表和服务日志按时间对齐，找到五个原因：每轮都预热一个用不上的沙箱、调度器只靠每秒扫描、后台起标题拖住完成、两步本可并行的检索在串行、每段流式文字要四次等落盘的数据库提交。每个原因先写测试复现再修，并给每轮加了按步骤的计时，上线后每一秒花在哪都能看到。”
 
 [返回目录](#contents)
 

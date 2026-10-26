@@ -44,9 +44,6 @@ export class ProductionThreadTitles {
     this.#pending.set(id, { work, admitted });
     return admitted;
   }
-  async idle(threadId: string | null): Promise<void> {
-    if (threadId) await this.#pending.get(threadId)?.work;
-  }
   async stop(): Promise<void> {
     this.#stopping = true;
     await Promise.allSettled([...this.#pending.values()].map(({ work }) => work));
