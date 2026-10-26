@@ -66,6 +66,13 @@ const providerRequests: Array<{
   readonly accept: string | undefined;
   body?: Readonly<Record<string, unknown>>;
 }> = [];
+const agentGenerationRequests = () =>
+  providerRequests.filter(
+    ({ path: route, body }) =>
+      route === "/v1/chat/completions" &&
+      Array.isArray(body?.["messages"]) &&
+      (body["messages"] as Array<{ role?: unknown }>)[0]?.role === "system",
+  ).length;
 
 type HttpResult = {
   readonly status: number;
@@ -1508,6 +1515,7 @@ it("[R2-L5] executes authenticated HTTP requests and persists gateway costs afte
         "agent-stream",
         "embedding",
         "model-port",
+        "model-port",
       ]);
       expect(identities).toEqual(
         expect.arrayContaining([
@@ -1617,9 +1625,7 @@ it.each(["connection loss", "missing cost"] as const)(
         answerLocale: "zh-CN",
         resultRef: await service.upload("memory-lost-create-payload", "create"),
       });
-      const generationRequestsBefore = providerRequests.filter(
-        ({ path: route }) => route === "/v1/chat/completions",
-      ).length;
+      const generationRequestsBefore = agentGenerationRequests();
       const embeddingRequestsBefore = providerRequests.filter(
         ({ path: route }) => route === "/v1/embeddings",
       ).length;
@@ -1643,9 +1649,7 @@ it.each(["connection loss", "missing cost"] as const)(
       const ready = await httpRequest(service.running().address, "/health/ready");
       expect(ready.status).toBe(200);
       expect(ready.body).toMatchObject({ status: "ready" });
-      expect(
-        providerRequests.filter(({ path: route }) => route === "/v1/chat/completions").length,
-      ).toBe(generationRequestsBefore);
+      expect(agentGenerationRequests()).toBe(generationRequestsBefore);
       const execution = await service.query("thread.execution", {
         threadId,
         runId: "run:memory-lost-first",

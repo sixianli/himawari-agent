@@ -259,8 +259,6 @@ export async function runInstalledAgent({
   const providerUrl = localModelURL(modelURL);
   absolutePath(secretDirectory, "SECRET_DIRECTORY");
   if (!Array.isArray(serviceArgs)) throw new Error("R2_L6_SERVICE_ARGUMENTS_REQUIRED");
-  process.env.MEM0_TELEMETRY = "false";
-  process.env.MEM0_TELEMETRY_SAMPLE_RATE = "0";
   const [agent, platform] = await Promise.all([
     loadInstalledPackage(root, "@himawari-agent/agent-service"),
     loadInstalledPackage(root, "@himawari-agent/platform-node"),
@@ -317,28 +315,19 @@ export async function runInstalledAgent({
         },
       };
     },
-    memoryCompositionFactory: async ({ configuration }) => {
-      const { Memory, VectorStoreFactory } = await import(
-        pathToFileURL(path.join(root, "node_modules/mem0ai/dist/oss/index.mjs")).href
-      );
+    memoryCompositionFactory: async ({ configuration, repository }) => {
+      const gatewayUrl = "https://ai-gateway.vercel.sh/v1";
       return agent.createProductionMemoryCompositionFromConfiguration({
         configuration,
         secretSource: sources.provider,
-        load: async () => ({
-          VectorStoreFactory,
-          Memory: class extends Memory {
-            constructor(config) {
-              super({
-                ...config,
-                embedder: {
-                  ...config.embedder,
-                  config: { ...config.embedder.config, baseURL: providerUrl },
-                },
-                llm: { ...config.llm, config: { ...config.llm.config, baseURL: providerUrl } },
-              });
-            }
-          },
-        }),
+        index: repository.memoryIndex(),
+        fetch: (url, init) =>
+          fetch(
+            String(url).startsWith(gatewayUrl)
+              ? `${providerUrl}${String(url).slice(gatewayUrl.length)}`
+              : url,
+            init,
+          ),
       });
     },
   });

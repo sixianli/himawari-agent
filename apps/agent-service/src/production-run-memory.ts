@@ -281,6 +281,11 @@ export function createProductionRunMemory(options: {
               CONTEXT_MEMORY_UNAVAILABLE,
             );
           });
+        if (providerFailedSearches.has(request))
+          throw new ApplicationPortError(
+            PORT_ERROR_CODES.PROVIDER_FAILURE,
+            CONTEXT_MEMORY_UNAVAILABLE,
+          );
         return found.map(({ memory, score }) => ({
           id: memory.id,
           ownerId: memory.ownerId,
