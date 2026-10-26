@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { GatewayClient, loadRuntimeConfiguration, safeBrowserLog } from "../src/gateway-client.js";
+import { queryMessage } from "../src/messages.js";
 
 const configuration = {
   ownerId: "owner",
@@ -249,4 +250,34 @@ describe("gateway response contracts", () => {
     });
     expect(JSON.stringify(result)).not.toContain("not-for-log");
   });
+});
+
+describe("authority rejection", () => {
+  const rejected = (code: string) =>
+    vi.fn<typeof globalThis.fetch>(async () => response({ error: { code } }, 403));
+  const approvals = () =>
+    queryMessage(configuration, "approval.list", { status: null, afterCursor: null, limit: 1 });
+  it("reports a request the service refused because the page holds an old authority", async () => {
+    const fetch = rejected("PORT_NOT_AUTHORITATIVE");
+    const onAuthorityRejected = vi.fn();
+    const client = new GatewayClient({ fetch, csrfToken: () => "csrf", onAuthorityRejected });
+    await expect(client.query(approvals())).rejects.toMatchObject({
+      message: "PORT_NOT_AUTHORITATIVE",
+      status: 403,
+    });
+    expect(onAuthorityRejected).toHaveBeenCalledOnce();
+  });
+  it.each(["HTTP_GATEWAY_CSRF_REJECTED", "IDENTITY_SESSION_INVALID"])(
+    "does not report other refusals such as %s",
+    async (code) => {
+      const onAuthorityRejected = vi.fn();
+      const client = new GatewayClient({
+        fetch: rejected(code),
+        csrfToken: () => "csrf",
+        onAuthorityRejected,
+      });
+      await expect(client.query(approvals())).rejects.toThrow(code);
+      expect(onAuthorityRejected).not.toHaveBeenCalled();
+    },
+  );
 });

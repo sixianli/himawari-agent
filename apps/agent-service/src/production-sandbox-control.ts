@@ -566,6 +566,18 @@ export function createProductionSandboxControl(options: Options) {
     )
       return "exit_cleanup_pending";
     if (
+      qualification.platform === "linux" &&
+      qualification.terminationMode === "verified_tree" &&
+      namespace === "released" &&
+      raw.phase === "running" &&
+      raw.taskStarted &&
+      !raw.taskProcessExited &&
+      !processAbsent(raw.processId) &&
+      Date.parse(options.now()) - Date.parse(raw.observedAt) <= 1500 &&
+      options.now() < record.plan.effectiveDeadlineAt
+    )
+      return "exit_cleanup_pending";
+    if (
       raw.phase === "running" &&
       !raw.taskProcessExited &&
       (!raw.taskStarted || raw.resources?.samples === 0) &&
