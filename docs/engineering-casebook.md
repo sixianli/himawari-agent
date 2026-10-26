@@ -1004,7 +1004,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；PR 编号见本分支的合并请求。
+[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆）；原型 <https://claude.ai/artifact/SJkcL4hNPHeM2V6Nk3V4jL>；设计说明 <https://claude.ai/artifact/CykKuRNV26pNSBcfvNsDNR>；数据库迁移 `0057_memory_page.sql`；[PR #34](https://github.com/sixianli/himawari-agent/pull/34)（提交 bfa6162）。
 
 **面试 30 秒版**
 
