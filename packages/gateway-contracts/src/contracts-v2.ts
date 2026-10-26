@@ -28,6 +28,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "memory.approval.respond",
   "memory.tidy.undo",
   "memory.reminder.respond",
+  "memory.create",
+  "memory.settings.set",
+  "memory.person.respond",
+  "memory.import.commit",
+  "memory.import.undo",
   "task.set_state",
   "settings.update",
   "github.monitor.set_state",
@@ -216,6 +221,21 @@ export const MEMORY_SENSITIVE_TOPICS = [
   "legal",
   "other",
 ] as const;
+export const MEMORY_CATEGORY_NAMES = [
+  "identity",
+  "preference",
+  "relationship",
+  "goal",
+  "project",
+  "rule",
+  "health",
+  "finance",
+  "event",
+  "other",
+] as const;
+export const MEMORY_IMPORT_SOURCE_NAMES = ["codex", "assistant", "himawari"] as const;
+const memoryLabelSchema = boundedString(32);
+const memoryNameSchema = boundedString(64);
 export const MEMORY_PROFILE_KINDS = [
   "rules",
   "identity",
@@ -245,6 +265,12 @@ const memoryOverviewSnapshotSchema = object({
         supersededBy: nullable(machineString),
         validTo: nullable(boundedString(32)),
         tentative: booleanValue,
+        category: enumeration(MEMORY_CATEGORY_NAMES),
+        subCategory: nullable(memoryLabelSchema),
+        status: enumeration(["active", "archived", "trashed"]),
+        recordedAt: timestamp,
+        lastUsedAt: nullable(timestamp),
+        importBatchId: nullable(machineString),
       }),
     ),
     tidyUps: array(
@@ -265,6 +291,44 @@ const memoryOverviewSnapshotSchema = object({
         remindAt: timestamp,
       }),
     ),
+    upcoming: array(
+      object({
+        reminderId: machineString,
+        memoryId: machineString,
+        text: boundedString(2000),
+        dueAt: timestamp,
+        repeat: enumeration(["none", "yearly"]),
+      }),
+    ),
+    people: array(
+      object({
+        personId: machineString,
+        name: memoryNameSchema,
+        aliases: array(memoryNameSchema),
+        relation: nullable(memoryLabelSchema),
+        reverseRelation: nullable(memoryLabelSchema),
+        links: array(object({ personId: machineString, relation: memoryLabelSchema })),
+        memoryIds: array(machineString),
+      }),
+    ),
+    personSuggestions: array(
+      object({
+        suggestionId: machineString,
+        personId: machineString,
+        candidateId: machineString,
+        createdAt: timestamp,
+      }),
+    ),
+    imports: array(
+      object({
+        batchId: machineString,
+        source: enumeration(MEMORY_IMPORT_SOURCE_NAMES),
+        itemCount: integer(1),
+        createdAt: timestamp,
+        undone: booleanValue,
+      }),
+    ),
+    capturePaused: booleanValue,
     profile: array(
       object({
         kind: enumeration(MEMORY_PROFILE_KINDS),
@@ -298,8 +362,50 @@ const memoryReminderRespondCommandSchema = object({
   ...commandEnvelope("memory.reminder.respond"),
   payload: object({
     reminderId: machineString,
-    action: enumeration(["dismiss", "snooze"]),
+    action: enumeration(["dismiss", "snooze", "cancel"]),
   }),
+});
+const memoryCreateCommandSchema = object({
+  ...commandEnvelope("memory.create"),
+  payload: object({
+    contentRef: machineString,
+    category: enumeration(MEMORY_CATEGORY_NAMES),
+    subCategory: nullable(memoryLabelSchema),
+  }),
+});
+const memorySettingsSetCommandSchema = object({
+  ...commandEnvelope("memory.settings.set"),
+  payload: object({ capturePaused: booleanValue }),
+});
+const memoryPersonRespondCommandSchema = object({
+  ...commandEnvelope("memory.person.respond"),
+  payload: object({ suggestionId: machineString, merge: booleanValue }),
+});
+const memoryImportItemsSchema = array(
+  object({
+    contentRef: machineString,
+    category: enumeration(MEMORY_CATEGORY_NAMES),
+    subCategory: nullable(memoryLabelSchema),
+  }),
+);
+const memoryImportCommitCommandSchema = object({
+  ...commandEnvelope("memory.import.commit"),
+  payload: object({
+    batchId: machineString,
+    source: enumeration(MEMORY_IMPORT_SOURCE_NAMES),
+    items: {
+      parse(input, path = "$.payload.items") {
+        const items = memoryImportItemsSchema.parse(input, path);
+        if (items.length < 1 || items.length > 500)
+          throw new ContractValidationError(path, "must hold 1 to 500 items");
+        return items;
+      },
+    },
+  }),
+});
+const memoryImportUndoCommandSchema = object({
+  ...commandEnvelope("memory.import.undo"),
+  payload: object({ batchId: machineString }),
 });
 const memoryApprovalRespondCommandSchema = object({
   ...commandEnvelope("memory.approval.respond"),
@@ -400,7 +506,7 @@ export const setGitHubMonitorStateCommandSchema = object({
 
 const memoryMutationPayloadSchema = object({
   memoryId: machineString,
-  action: enumeration(["correct", "archive", "delete", "restore", "confirm"]),
+  action: enumeration(["correct", "archive", "delete", "restore", "confirm", "recover"]),
   expectedRevision: integer(0),
   contentRef: nullable(machineString),
 });
@@ -1429,6 +1535,11 @@ const schemasByType = {
   "memory.approval.respond": memoryApprovalRespondCommandSchema,
   "memory.tidy.undo": memoryTidyUndoCommandSchema,
   "memory.reminder.respond": memoryReminderRespondCommandSchema,
+  "memory.create": memoryCreateCommandSchema,
+  "memory.settings.set": memorySettingsSetCommandSchema,
+  "memory.person.respond": memoryPersonRespondCommandSchema,
+  "memory.import.commit": memoryImportCommitCommandSchema,
+  "memory.import.undo": memoryImportUndoCommandSchema,
   "task.set_state": setTaskStateCommandSchema,
   "settings.update": updateSettingsCommandSchema,
   "github.monitor.set_state": setGitHubMonitorStateCommandSchema,

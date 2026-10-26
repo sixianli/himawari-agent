@@ -1,6 +1,7 @@
-import type { GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
+import type { GatewayV2Command, GatewayV2Snapshot } from "@himawari-agent/gateway-contracts";
 import { useCallback, useEffect, useState } from "react";
 import type { ControlCenterRuntimeConfiguration, GatewayClient } from "./gateway-client.js";
+import type { ImportCandidate, MemoryCategory } from "./memory-import.js";
 import { commandMessage, queryMessage } from "./messages.js";
 
 export type MemoryOverview = Extract<
@@ -11,6 +12,7 @@ export type MemoryItem = MemoryOverview["memories"][number];
 export type PendingMemory = MemoryOverview["pending"][number];
 export type MemoryTidyUp = MemoryOverview["tidyUps"][number];
 export type MemoryReminder = MemoryOverview["reminders"][number];
+export type MemoryImportSource = MemoryOverview["imports"][number]["source"];
 const REMINDER_REFRESH_MS = 300_000;
 
 export interface MemoryModel {
@@ -25,12 +27,21 @@ export interface MemoryModel {
   readonly correct: (item: MemoryItem, text: string) => Promise<boolean>;
   readonly remove: (item: MemoryItem) => Promise<boolean>;
   readonly restore: (item: MemoryItem) => Promise<boolean>;
+  readonly recover: (item: MemoryItem) => Promise<boolean>;
   readonly confirm: (item: MemoryItem) => Promise<boolean>;
   readonly undoTidy: (item: MemoryTidyUp) => Promise<boolean>;
   readonly respondReminder: (
-    item: MemoryReminder,
-    action: "dismiss" | "snooze",
+    item: { readonly reminderId: string },
+    action: "dismiss" | "snooze" | "cancel",
   ) => Promise<boolean>;
+  readonly create: (text: string, category: MemoryCategory, sensitive: boolean) => Promise<boolean>;
+  readonly setPaused: (paused: boolean) => Promise<boolean>;
+  readonly respondPerson: (suggestionId: string, merge: boolean) => Promise<boolean>;
+  readonly importCommit: (
+    source: MemoryImportSource,
+    items: readonly ImportCandidate[],
+  ) => Promise<boolean>;
+  readonly importUndo: (batchId: string) => Promise<boolean>;
 }
 
 export function useMemory(input: {
@@ -87,106 +98,65 @@ export function useMemory(input: {
     }
   }, []);
   if (!available || !client || !configuration) return null;
+  const send = (type: GatewayV2Command["type"], payload: () => unknown | Promise<unknown>) =>
+    run(async () =>
+      client.mutate(commandMessage(configuration, type, await payload(), { risk: "medium" })),
+    );
+  const mutate = (item: MemoryItem, action: string) =>
+    send("memory.mutate", () => ({
+      memoryId: item.memoryId,
+      action,
+      expectedRevision: item.revision,
+      contentRef: null,
+    }));
   return {
     overview,
     failed,
     busy,
     respond: (item, resolution, editedText) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.approval.respond",
-            { requestId: item.requestId, resolution, editedText: editedText ?? null },
-            { risk: "medium" },
-          ),
-        ),
-      ),
+      send("memory.approval.respond", () => ({
+        requestId: item.requestId,
+        resolution,
+        editedText: editedText ?? null,
+      })),
     correct: (item, text) =>
-      run(async () =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.mutate",
-            {
-              memoryId: item.memoryId,
-              action: "correct",
-              expectedRevision: item.revision,
-              contentRef: await client.protectText(text, item.dataClassification),
-            },
-            { risk: "medium" },
-          ),
-        ),
-      ),
-    remove: (item) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.mutate",
-            {
-              memoryId: item.memoryId,
-              action: "delete",
-              expectedRevision: item.revision,
-              contentRef: null,
-            },
-            { risk: "medium" },
-          ),
-        ),
-      ),
-    restore: (item) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.mutate",
-            {
-              memoryId: item.memoryId,
-              action: "restore",
-              expectedRevision: item.revision,
-              contentRef: null,
-            },
-            { risk: "medium" },
-          ),
-        ),
-      ),
-    confirm: (item) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.mutate",
-            {
-              memoryId: item.memoryId,
-              action: "confirm",
-              expectedRevision: item.revision,
-              contentRef: null,
-            },
-            { risk: "medium" },
-          ),
-        ),
-      ),
-    undoTidy: (item) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.tidy.undo",
-            { changeId: item.changeId },
-            { risk: "medium" },
-          ),
-        ),
-      ),
+      send("memory.mutate", async () => ({
+        memoryId: item.memoryId,
+        action: "correct",
+        expectedRevision: item.revision,
+        contentRef: await client.protectText(text, item.dataClassification),
+      })),
+    remove: (item) => mutate(item, "delete"),
+    restore: (item) => mutate(item, "restore"),
+    recover: (item) => mutate(item, "recover"),
+    confirm: (item) => mutate(item, "confirm"),
+    undoTidy: (item) => send("memory.tidy.undo", () => ({ changeId: item.changeId })),
     respondReminder: (item, action) =>
-      run(() =>
-        client.mutate(
-          commandMessage(
-            configuration,
-            "memory.reminder.respond",
-            { reminderId: item.reminderId, action },
-            { risk: "medium" },
-          ),
+      send("memory.reminder.respond", () => ({ reminderId: item.reminderId, action })),
+    create: (text, category, sensitive) =>
+      send("memory.create", async () => ({
+        contentRef: await client.protectText(text, sensitive ? "sensitive" : "private"),
+        category,
+        subCategory: null,
+      })),
+    setPaused: (paused) => send("memory.settings.set", () => ({ capturePaused: paused })),
+    respondPerson: (suggestionId, merge) =>
+      send("memory.person.respond", () => ({ suggestionId, merge })),
+    importCommit: (source, items) =>
+      send("memory.import.commit", async () => ({
+        batchId: `memory-import-${Date.now()}`,
+        source,
+        items: await Promise.all(
+          items.map(async (item) => ({
+            contentRef: await client.protectText(
+              item.text,
+              item.sensitive ? "sensitive" : "private",
+            ),
+            category: item.category,
+            subCategory: item.subCategory,
+          })),
         ),
-      ),
+      })),
+    importUndo: (batchId) => send("memory.import.undo", () => ({ batchId })),
   };
 }

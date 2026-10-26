@@ -57,6 +57,12 @@ export const governanceMessages = [
         supersededBy: null,
         validTo: null,
         tentative: false,
+        category: "preference",
+        subCategory: "颜色",
+        status: "active",
+        recordedAt: "2026-09-11T00:00:00.000Z",
+        lastUsedAt: null,
+        importBatchId: null,
       },
     ],
     profile: [
@@ -99,6 +105,44 @@ export const governanceMessages = [
         remindAt: "2026-09-12T06:00:00.000Z",
       },
     ],
+    upcoming: [
+      {
+        reminderId: "reminder:memory-02",
+        memoryId: "memory-02",
+        text: "妈妈的生日是 3 月 14 日",
+        dueAt: "2027-03-14T01:00:00.000Z",
+        repeat: "yearly",
+      },
+    ],
+    people: [
+      {
+        personId: "person-01",
+        name: "李秀英",
+        aliases: ["妈妈"],
+        relation: "妈妈",
+        reverseRelation: "孩子",
+        links: [],
+        memoryIds: ["memory-02"],
+      },
+    ],
+    personSuggestions: [
+      {
+        suggestionId: "person-suggestion-01",
+        personId: "person-02",
+        candidateId: "person-01",
+        createdAt: "2026-09-11T00:00:00.000Z",
+      },
+    ],
+    imports: [
+      {
+        batchId: "memory-import-01",
+        source: "codex",
+        itemCount: 3,
+        createdAt: "2026-09-11T00:00:00.000Z",
+        undone: false,
+      },
+    ],
+    capturePaused: false,
     generatedAt: "2026-09-11T00:00:00.000Z",
   }),
   fixture("command", "memory.tidy.undo", {
@@ -108,6 +152,22 @@ export const governanceMessages = [
     reminderId: "reminder:memory-01",
     action: "dismiss",
   }),
+  fixture("command", "memory.create", {
+    contentRef: "payload-03",
+    category: "preference",
+    subCategory: "饮食",
+  }),
+  fixture("command", "memory.settings.set", { capturePaused: true }),
+  fixture("command", "memory.person.respond", {
+    suggestionId: "person-suggestion-01",
+    merge: true,
+  }),
+  fixture("command", "memory.import.commit", {
+    batchId: "memory-import-01",
+    source: "codex",
+    items: [{ contentRef: "payload-04", category: "rule", subCategory: null }],
+  }),
+  fixture("command", "memory.import.undo", { batchId: "memory-import-01" }),
   fixture("command", "memory.approval.respond", {
     requestId: "memory-approval-01",
     resolution: "approved",
