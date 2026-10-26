@@ -24,7 +24,7 @@ walk=$out/walkthrough
 mkdir -p "$walk"
 scratch=$(mktemp -d /tmp/hXXXX)
 chmod 700 "$scratch"
-export PATH=$tools/bin:/usr/bin:/bin PLAYWRIGHT_BROWSERS_PATH=$(setting browsers)
+export PATH=$tools/bin:/usr/bin:/bin HIMAWARI_CI_TOOLS=$tools HIMAWARI_CI_PYTHON=$tools/python/python/bin/python3 PLAYWRIGHT_BROWSERS_PATH=$(setting browsers)
 TMPDIR=$scratch HIMAWARI_TEST_TEMP_ROOT=$scratch HIMAWARI_PRODUCT_PATH_E2E=1 HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL=chromium \
   HIMAWARI_PRODUCT_PATH_OUTPUT="$walk/product-path" HIMAWARI_TEST_ARTIFACT="${artifacts[0]}" HIMAWARI_TEST_CONTEXT="$out/materials/context.json" \
   node node_modules/vitest/vitest.mjs run --config vitest.workspace.ts --project qualification-product-path test/integration/product-path-browser.test.ts \

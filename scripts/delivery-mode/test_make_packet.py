@@ -38,6 +38,7 @@ def load(name, filename):
 
 
 packet_maker = load('make_packet', 'make-packet.py')
+checks_runner = load('run_packet_checks', 'run-packet-checks.py')
 
 
 def production_facts(running='eleventh', date='2026-10-26', public_fetch=102400, context_window=1000000, max_tokens=32768, **changes):
@@ -335,6 +336,99 @@ class HermesCommandTest(unittest.TestCase):
         (local / 'context.json').unlink()
         with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_FETCH_DIGEST'):
             self.hermes.fetch_materials(local)
+
+
+class PacketChecksRunnerTest(unittest.TestCase):
+    TAG = '[PG-4]'
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.packet = self.root / 'packet'
+        (self.packet / 'materials').mkdir(parents=True)
+        self.archive = self.packet / 'materials' / 'linux-x64-abi127-fixture-1.tar.gz'
+        self.archive.write_bytes(b'artifact')
+        (self.packet / 'materials' / 'context.json').write_text('{}')
+        self.source = self.root / 'source'
+        (self.source / 'scripts').mkdir(parents=True)
+        self.logs = self.root / 'logs'
+        self.logs.mkdir()
+        self.node = self.root / 'node'
+        self.node.write_text('#!/bin/bash\necho "ARGS $*"\necho "UMASK $(umask)"\n')
+        self.node.chmod(0o755)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_check(self, check):
+        previous = os.umask(0o002)
+        try:
+            name, code, log = checks_runner.run_check(check, self.packet, self.source, dict(os.environ), self.logs)
+        finally:
+            os.umask(previous)
+        return code, log.read_text()
+
+    def test_checks_run_with_umask_022_whatever_the_hermes_login_sets(self):
+        code, output = self.run_check(('fixture', [str(self.node)], None))
+        self.assertEqual(code, 0)
+        self.assertIn('UMASK 0022', output)
+
+    def test_migration_check_installs_the_runtime_from_this_packets_build(self):
+        code, output = self.run_check((checks_runner.MIGRATE_FIXTURE, [str(self.node), 'fixture.mjs'], 'migrate'))
+        self.assertEqual(code, 0)
+        install = next(line for line in output.splitlines() if 'install-node-runtime.mjs' in line)
+        self.assertIn('--artifact ' + str(self.archive) + ' --context ' + str(self.packet / 'materials/context.json'), install)
+        self.assertNotIn('--source', install)
+        self.assertNotIn('dist/node-runtime', output)
+
+    def test_migration_check_refuses_a_packet_without_exactly_one_build(self):
+        self.archive.unlink()
+        with self.assertRaisesRegex(SystemExit, 'PACKET_CHECKS_CANDIDATE_ARCHIVE_COUNT 0'):
+            self.run_check((checks_runner.MIGRATE_FIXTURE, [str(self.node), 'fixture.mjs'], 'migrate'))
+
+    def test_an_upgrade_without_the_locked_python_stops_before_any_check(self):
+        for holder in checks_runner.OLD_CONFIG_HOLDERS:
+            (self.packet / holder).parent.mkdir(parents=True, exist_ok=True)
+            (self.packet / holder).write_text(checks_runner.OLD_CONFIG_PENDING)
+        (self.packet / 'maintenance/maintenance-common.mjs').write_text('export const currentSchema = 56;\nexport const targetSchema = 57;\n')
+        environment = {key: value for key, value in os.environ.items() if key != 'HIMAWARI_CI_PYTHON'}
+        run = subprocess.run([sys.executable, '-I', str(HERE / 'run-packet-checks.py'), str(self.packet), '--node', str(self.node), '--source', str(self.source), '--logs', str(self.logs)], env=environment, capture_output=True, text=True, check=False)
+        self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+        self.assertIn('PACKET_CHECKS_CI_PYTHON_REQUIRED', run.stdout)
+        self.assertEqual([path.name for path in self.logs.iterdir()], [])
+
+
+class ReleaseWalkthroughTest(unittest.TestCase):
+    TAG = '[PG-4]'
+
+    def test_the_walkthrough_gives_the_artifact_check_the_locked_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / 'scripts'
+            scripts.mkdir()
+            shutil.copy(HERE / 'hermes' / 'run-release-walkthrough.sh', scripts)
+            tools = root / 'tools'
+            (tools / 'bin').mkdir(parents=True)
+            node = tools / 'bin' / 'node'
+            node.write_text('#!/bin/bash\nenv > "$HIMAWARI_PRODUCT_PATH_OUTPUT.env"\nmkdir -p "$HIMAWARI_PRODUCT_PATH_OUTPUT"\necho "{}" > "$HIMAWARI_PRODUCT_PATH_OUTPUT/browser-acceptance.json"\n')
+            node.chmod(0o755)
+            source = root / 'source'
+            source.mkdir()
+            subprocess.run(['git', 'init', '-q', str(source)], check=True)
+            subprocess.run(['git', '-C', str(source), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], check=True)
+            revision = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
+            work = root / 'work'
+            materials = work / 'walk-1' / 'materials'
+            materials.mkdir(parents=True)
+            (materials / ('linux-x64-abi127-' + revision + '-1-1.tar.gz')).write_bytes(b'x')
+            (materials / 'context.json').write_text(json.dumps({'testedSha': revision}))
+            hostname = subprocess.run(['hostname'], capture_output=True, text=True, check=True).stdout.strip()
+            (scripts / 'builder.json').write_text(json.dumps({'hostname': hostname, 'tools': str(tools), 'source': str(source), 'workRoot': str(work), 'browsers': str(root / 'browsers')}))
+            run = subprocess.run(['bash', str(scripts / 'run-release-walkthrough.sh'), 'walk-1'], capture_output=True, text=True, check=False)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            seen = dict(line.split('=', 1) for line in (work / 'walk-1' / 'walkthrough' / 'product-path.env').read_text().splitlines() if '=' in line)
+            self.assertEqual(seen['HIMAWARI_CI_PYTHON'], str(tools / 'python/python/bin/python3'))
+            self.assertEqual(seen['HIMAWARI_CI_TOOLS'], str(tools))
 
 
 if __name__ == '__main__':

@@ -64,7 +64,14 @@ def plan(packet, node, python, include_hermes_only, migrating):
     return checks
 
 
-def run_check(check, source, environment, logs):
+def candidate_archive(packet):
+    archives = sorted((packet / 'materials').glob('linux-x64-abi127-*-1.tar.gz'))
+    if len(archives) != 1:
+        raise SystemExit('PACKET_CHECKS_CANDIDATE_ARCHIVE_COUNT ' + str(len(archives)))
+    return archives[0]
+
+
+def run_check(check, packet, source, environment, logs):
     name, command, directory = check
     scratch = short_scratch() if 'SCRATCH' in command or directory == 'migrate' else None
     command = [str(scratch) if part == 'SCRATCH' else part for part in command]
@@ -73,12 +80,12 @@ def run_check(check, source, environment, logs):
         with log.open('wb') as output:
             if directory == 'migrate':
                 prefix = scratch / 'prefix'
-                install = [command[0], str(source / 'scripts/install-node-runtime.mjs'), '--prefix', str(prefix), '--source', str(source / 'dist/node-runtime')]
-                code = subprocess.run(install, cwd=source, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+                install = [command[0], str(source / 'scripts/install-node-runtime.mjs'), '--prefix', str(prefix), '--artifact', str(candidate_archive(packet)), '--context', str(packet / 'materials/context.json')]
+                code = subprocess.run(install, cwd=source, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
                 if code == 0:
-                    code = subprocess.run(command, cwd=source, env={**environment, 'HIMAWARI_MIGRATE_PREFIX': str(prefix)}, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+                    code = subprocess.run(command, cwd=source, env={**environment, 'HIMAWARI_MIGRATE_PREFIX': str(prefix)}, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
             else:
-                code = subprocess.run(command, cwd=source if directory == 'source' else None, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+                code = subprocess.run(command, cwd=source if directory == 'source' else None, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False, umask=0o022).returncode
     finally:
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
@@ -101,16 +108,21 @@ def main():
         if (packet / holder).read_text().count(OLD_CONFIG_PENDING) != 1:
             print('PACKET_CHECKS_OLD_CONFIG_ALREADY_FILLED ' + holder)
             return 2
+    current, target = planned_schemas(packet)
+    if target != current:
+        candidate_archive(packet)
+        if not os.path.isabs(os.environ.get('HIMAWARI_CI_PYTHON', '')):
+            print('PACKET_CHECKS_CI_PYTHON_REQUIRED')
+            return 2
     python = '/usr/bin/python3' if Path('/usr/bin/python3').exists() else sys.executable
     logs = Path(arguments.logs).resolve() if arguments.logs else Path(tempfile.mkdtemp(prefix='packet-checks-'))
     logs.mkdir(parents=True, exist_ok=True)
     temp_root = Path(tempfile.mkdtemp(prefix='packet-temp-', dir=logs))
     temp_root.chmod(0o700)
     environment = {**os.environ, 'PATH': str(node.parent) + ':/usr/bin:/bin', 'HIMAWARI_TEST_TEMP_ROOT': str(temp_root), 'PYTHONDONTWRITEBYTECODE': '1'}
-    current, target = planned_schemas(packet)
     checks = plan(packet, node, python, not arguments.skip_hermes_only, target != current)
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
-        results = sorted(pool.map(lambda check: run_check(check, source, environment, logs), checks))
+        results = sorted(pool.map(lambda check: run_check(check, packet, source, environment, logs), checks))
     failed = [result for result in results if result[1] != 0]
     for name, code, log in results:
         print('CHECK ' + name + ' rc=' + str(code))
