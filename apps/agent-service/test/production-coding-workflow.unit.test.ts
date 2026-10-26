@@ -1,4 +1,9 @@
-import type { PermissionDecision, RuntimeToolInvocation } from "@himawari-agent/application";
+import {
+  type GovernedActionIntent,
+  type PermissionDecision,
+  type RuntimeToolInvocation,
+  validateGovernedActionIntent,
+} from "@himawari-agent/application";
 import { describe, expect, it, vi } from "vitest";
 import { executeProductionCodingRequest } from "../src/production-coding-workflow.js";
 import type {
@@ -200,6 +205,31 @@ describe("governed coding requests", () => {
         undefined,
       );
       expect(f.ctx.phase).not.toHaveBeenCalled();
+    }
+  });
+  it("rates workspace risk by what the operation does rather than marking every call high", async () => {
+    const cases = [
+      ["read", { path: "notes.txt" }, "LOW"],
+      ["ls", {}, "LOW"],
+      ["find", {}, "LOW"],
+      ["grep", {}, "LOW"],
+      ["write", undefined, "MEDIUM"],
+      ["edit", undefined, "MEDIUM"],
+      ["bash", { command: "ls" }, "HIGH"],
+      ["web_search", { query: "public weather" }, "MEDIUM"],
+    ] as const;
+    for (const [tool, args, risk] of cases) {
+      const f = fixture();
+      if (tool === "web_search") f.services.binding = async () => ({ ...f.binding, grant: null });
+      await executeProductionCodingRequest(
+        { ...f.call, capabilityRef: `coding.${tool}`, arguments: args ?? f.call.arguments },
+        tool,
+        f.services,
+        f.ctx,
+      );
+      const intent = f.authorize.mock.calls[0]?.[0] as GovernedActionIntent;
+      expect(intent, tool).toMatchObject({ finalRisk: risk });
+      expect(() => validateGovernedActionIntent(intent), tool).not.toThrow();
     }
   });
   it("[R2-T1] reports the grant root as a directory for write and edit", async () => {

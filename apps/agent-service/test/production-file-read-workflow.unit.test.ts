@@ -359,7 +359,7 @@ describe("production file read workflow through the Worker transport", () => {
     expect(await f.approvals()).toHaveLength(3);
     expect(f.intents.find(({ operation }) => operation === "disclose")).toMatchObject({
       disclosure: "named_recipients",
-      finalRisk: "HIGH",
+      finalRisk: "LOW",
       recipients: [
         expect.stringContaining("model:vercel-ai-gateway:deepseek/deepseek-v4.1-flash:"),
       ],

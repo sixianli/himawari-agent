@@ -264,7 +264,8 @@ export const messages = {
   "chat.latest": "Back to latest",
   "chat.placeholder": "Continue the conversation, or give Himawari a task…",
   "chat.keyboard": "Enter to send · Shift Enter for a new line",
-  "chat.permission": "Actions requiring permission ask you first",
+  "chat.permission":
+    "Deleting files, networked commands and actions outside the workspace ask you first",
   "chat.process": "Thinking and tools",
   "chat.noProcess": "No displayable process records",
   "chat.modelUnavailable": "Model information unavailable",
