@@ -111,7 +111,7 @@ export function ChatHistory({
               {group.run || agentMessages.length ? (
                 <article className="thread-message thread-message-agent">
                   <header>
-                    <HimawariBrand />
+                    <HimawariBrand busy={!!group.run && !isTerminalRun(group.run)} />
                     <strong>Himawari</strong>
                     {actualModel ? <span className="turn-model">{actualModel}</span> : null}
                   </header>

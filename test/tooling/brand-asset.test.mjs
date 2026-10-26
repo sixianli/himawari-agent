@@ -1,8 +1,8 @@
 import {
   copyFile,
+  readFile,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
   rm,
   symlink,
@@ -12,10 +12,11 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "vite";
 import { expect, it } from "vitest";
+import { sunflowerSeeds } from "../../apps/control-center/src/components/brand.tsx";
 import { repositoryRoot } from "../../scripts/ci/contracts.mjs";
 
 it(
-  "fails the real browser build when a source archive omits the required brand asset",
+  "[UI-2] builds the brand mark without any image asset, so no PNG reaches the browser bundle",
   { timeout: 20000 },
   async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "himawari-brand-build-"));
@@ -39,26 +40,28 @@ it(
         path.join(app, "src/main.ts"),
         'import {HimawariBrand} from "./components/brand"; console.log(HimawariBrand);',
       );
-      const options = {
+      await build({
         root: app,
         configFile: false,
         logLevel: "silent",
         build: { write: true, minify: false },
-      };
-      await expect(build(options)).rejects.toThrow();
-      const asset = "assets/brand/himawari/v1/logo-symbol-light.png";
-      await mkdir(path.dirname(path.join(root, asset)), { recursive: true });
-      await copyFile(path.join(repositoryRoot, asset), path.join(root, asset));
-      await build(options);
-      const emitted = (await readdir(path.join(app, "dist/assets"))).find((x) =>
-        x.endsWith(".png"),
-      );
-      expect(emitted).toBeTruthy();
-      expect(await readFile(path.join(app, "dist/assets", emitted))).toEqual(
-        await readFile(path.join(root, asset)),
-      );
+      });
+      const emitted = await readdir(path.join(app, "dist/assets"));
+      expect(emitted.some((name) => name.endsWith(".js"))).toBe(true);
+      expect(emitted.filter((name) => /\.(png|jpe?g|webp)$/.test(name))).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   },
 );
+
+it("[UI-2] keeps the v2 brand asset at the same seed positions as the interface mark", async () => {
+  const asset = await readFile(
+    path.join(repositoryRoot, "assets/brand/himawari/v2/logo-sunflower-disc.svg"),
+    "utf8",
+  );
+  const circles = [...asset.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)].map(
+    ([, cx, cy, r]) => ({ cx: Number(cx), cy: Number(cy), r: Number(r) }),
+  );
+  expect(circles).toEqual(sunflowerSeeds.map(({ cx, cy, r }) => ({ cx, cy, r })));
+});

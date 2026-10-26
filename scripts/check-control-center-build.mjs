@@ -7,14 +7,12 @@ import { gzipSync } from "node:zlib";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputIndex = process.argv.indexOf("--output-root");
 if (process.argv.length > 2 && (outputIndex !== 2 || process.argv.length !== 4))
-  throw new Error("Invalid browser budget arguments");
+  throw new Error("Invalid browser build check arguments");
 const distributionRoot =
   outputIndex < 0
     ? path.join(repositoryRoot, "apps/control-center/dist")
     : path.resolve(process.argv[outputIndex + 1]);
 const assetsRoot = path.join(distributionRoot, "assets");
-const maximumEntryGzipBytes = 150 * 1024;
-const maximumTotalGzipBytes = 192 * 1024;
 
 const indexHtml = await readFile(path.join(distributionRoot, "index.html"), "utf8");
 const assetNames = await readdir(assetsRoot);
@@ -55,12 +53,6 @@ for (const name of [...javaScriptNames, ...cssNames].sort()) {
 
 const entry = assets.find(({ name }) => entryChunks.includes(name));
 const totalGzipBytes = assets.reduce((total, asset) => total + asset.gzipBytes, 0);
-if (entry && entry.gzipBytes > maximumEntryGzipBytes) {
-  errors.push(`entry gzip budget exceeded: ${entry.gzipBytes} > ${maximumEntryGzipBytes}`);
-}
-if (totalGzipBytes > maximumTotalGzipBytes) {
-  errors.push(`total gzip budget exceeded: ${totalGzipBytes} > ${maximumTotalGzipBytes}`);
-}
 
 const result = {
   schemaVersion: 1,
@@ -71,7 +63,7 @@ const result = {
   sourceMaps: sourceMapNames.length,
   inlineScripts: 0,
   inlineStyles: 0,
-  budgets: { maximumEntryGzipBytes, maximumTotalGzipBytes, totalGzipBytes },
+  sizes: { entryGzipBytes: entry?.gzipBytes ?? 0, totalGzipBytes },
 };
 
 process.stdout.write(`${JSON.stringify(result)}\n`);

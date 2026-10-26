@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, useState, createElement as h } from "react";
+import { act, createElement as h, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ModelPicker } from "../src/components/model-picker.js";
 import type { AvailableModel } from "../src/gateway-client.js";
+
 let root: Root, container: HTMLDivElement;
 const models: AvailableModel[] = [
   {

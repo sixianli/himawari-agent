@@ -277,16 +277,6 @@ export function duration(milliseconds: number): string {
   const seconds = Math.round(Math.max(0, milliseconds) / 100) / 10;
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
 }
-export const memoryStepLabels: Readonly<Record<string, MessageId>> = {
-  "memory.selection": "step.memoryFound",
-  "context.formed": "step.memoryProfile",
-};
-export function memorySteps(records: readonly ThreadExecutionRecord[]) {
-  return [...new Map(records.map((record) => [record.id, record])).values()].filter(
-    (record) =>
-      record.kind === "status" && record.phase === "completed" && memoryStepLabels[record.name],
-  );
-}
 export function recordedInterval(
   records: readonly ThreadExecutionRecord[],
   itemId: string,

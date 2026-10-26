@@ -1,9 +1,9 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { IntlProvider } from "react-intl";
 import { describe, expect, it, vi } from "vitest";
 import { routeForSurface } from "../src/app/router.js";
 import { ThreadSidebar, type ThreadSidebarProps } from "../src/components/thread-sidebar.js";
-import { IntlProvider } from "react-intl";
 import { messages } from "../src/i18n/resources/zh-CN.js";
 
 const thread = (id: string, pinOrder: number | null): ThreadSidebarProps["threads"][number] => ({

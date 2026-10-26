@@ -1,0 +1,177 @@
+{
+  "task": "chat-ui-v6",
+  "prefix": "UI",
+  "decisions": {
+    "G1": "once",
+    "G2": "durable",
+    "G3": "durable",
+    "G4": "durable",
+    "G5": "durable",
+    "G6": "once"
+  },
+  "items": [
+    {
+      "id": "UI-1",
+      "title": "去掉前端体积上限，构建检查只报告各文件体积",
+      "goal_ref": [
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-1"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 14:32 决定去掉体积上限"
+      }
+    },
+    {
+      "id": "UI-2",
+      "title": "标志换成葵盘：侧栏、回答头像、新对话大图共用一个矢量标志，运行中光从花心向外涌；存成品牌素材 v2，v1 不动",
+      "goal_ref": [
+        "G3"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-2"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 14:25 选定 A 葵盘"
+      }
+    },
+    {
+      "id": "UI-3",
+      "title": "每轮时间线：每一秒归到模型/工具/等你确认/准备与衔接，同时进行只算一次，四类相加等于总用时",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-3"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G1 每一步时间一定要准确"
+      }
+    },
+    {
+      "id": "UI-4",
+      "title": "记下模型开始写文字、开始写工具参数的真实时刻（不被合并覆盖），用于拆分等模型回应/推理/输出",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-4"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "现在输出开始时刻被合并后的时间覆盖"
+      }
+    },
+    {
+      "id": "UI-5",
+      "title": "新过程区：收起一行（总用时+彩色条+最久一步），展开每步一行带时间条，不挂最久标签，步骤文字只用真实数据，进行中图标会动",
+      "goal_ref": [
+        "G1",
+        "G2",
+        "G6"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-5"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "原型 v16 审过的过程区"
+      }
+    },
+    {
+      "id": "UI-6",
+      "title": "新增和改动的界面文字中英日三种语言齐全",
+      "goal_ref": [
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "UI-6"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 14:33 要求完美支持三种语言"
+      }
+    },
+    {
+      "id": "UI-7",
+      "title": "长期决定写进 ADR：时间条样式、葵盘标志、去掉体积上限、界面三语",
+      "goal_ref": [
+        "G2",
+        "G3",
+        "G4",
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0087-chat-ui-v6-process-timeline.md",
+          "quotes": [
+            "G2",
+            "G3",
+            "G4",
+            "G5"
+          ]
+        },
+        {
+          "type": "command",
+          "run": "npm run check:docs"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "durable 决定必须进 ADR"
+      }
+    },
+    {
+      "id": "UI-8",
+      "title": "基本检查通过：npm run check 和 npm run build",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run check"
+        },
+        {
+          "type": "command",
+          "run": "npm run build"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "快速模式的基本检查"
+      }
+    }
+  ]
+}

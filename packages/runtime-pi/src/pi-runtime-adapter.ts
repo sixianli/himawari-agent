@@ -163,6 +163,23 @@ const KNOWN_IGNORED_EVENTS = new Set([
   "tool_execution_update",
 ]);
 
+const contentBoundaries = {
+  thinking_start: { field: "thinkingBoundary", value: { phase: "started" } },
+  thinking_end: { field: "thinkingBoundary", value: { phase: "ended" } },
+  text_start: { field: "outputBoundary", value: { kind: "text" } },
+  toolcall_start: { field: "outputBoundary", value: { kind: "toolCall" } },
+} as const;
+
+function contentBoundary(
+  event: { readonly type: string; readonly contentIndex?: number } | undefined,
+): Record<string, unknown> {
+  if (!event || !Object.hasOwn(contentBoundaries, event.type)) return {};
+  const boundary = contentBoundaries[event.type as keyof typeof contentBoundaries];
+  return {
+    [boundary.field]: { ...boundary.value, contentIndex: event.contentIndex ?? 0 },
+  };
+}
+
 const EMPTY_RESOURCES: AuthorizedPiResources = Object.freeze({
   extensionPaths: Object.freeze([]),
   skillPaths: Object.freeze([]),
@@ -1221,7 +1238,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         };
         const coalescible =
           event.type === "message_update" &&
-          !["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "");
+          !Object.hasOwn(contentBoundaries, event.assistantMessageEvent?.type ?? "");
         if (coalescible && pendingUpdate) {
           Object.assign(pendingUpdate, observed);
           return;
@@ -1628,18 +1645,8 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           kind: "message",
           value: {
             ...(observation as Record<string, unknown>),
-            ...(event.type === "message_update" &&
-            ["thinking_start", "thinking_end"].includes(event.assistantMessageEvent?.type ?? "")
-              ? {
-                  thinkingBoundary: {
-                    phase:
-                      event.assistantMessageEvent.type === "thinking_start" ? "started" : "ended",
-                    contentIndex:
-                      "contentIndex" in event.assistantMessageEvent
-                        ? event.assistantMessageEvent.contentIndex
-                        : 0,
-                  },
-                }
+            ...(event.type === "message_update"
+              ? contentBoundary(event.assistantMessageEvent)
               : {}),
           },
           dataClassification: request.dataClassification,
