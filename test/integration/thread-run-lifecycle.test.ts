@@ -66,8 +66,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionRunDispatcher } from "../../apps/agent-service/src/production-run-dispatcher.js";
 import { createProductionRunReconciler } from "../../apps/agent-service/src/production-run-reconciler.js";
-import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
+import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", (execution) => {
   useSqliteContractExecution(execution);
@@ -3650,6 +3650,25 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       expect.objectContaining({ name: "runtime.thinking.started" }),
     );
     expect(JSON.stringify(await projection.read(query))).not.toContain("PRIVATE_THOUGHT");
+    for (const [kind, name] of [
+      ["text", "runtime.text.started"],
+      ["toolCall", "runtime.tool_call.started"],
+    ] as const) {
+      const outputRef = await capture(`output-boundary-${kind}`, {
+        outputBoundary: { kind, contentIndex: 1 },
+        role: "assistant",
+        timestamp: 789,
+        content: [],
+      });
+      await setup.trace.record({
+        ...scope,
+        eventType: "runtime.message",
+        payload: { payloadRef: outputRef, role: "assistant", phase: "updated" },
+      });
+      expect((await projection.read(query)).records).toContainEqual(
+        expect.objectContaining({ kind: "status", phase: "updated", name }),
+      );
+    }
     const unresolvedRef = await capture("legacy-unresolved-tool", {
       toolCallId: "legacy-call",
       toolName: "write",

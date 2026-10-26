@@ -292,6 +292,26 @@ export class ThreadExecutionProjection {
               name: `runtime.thinking.${String(boundary["phase"])}`,
             });
           }
+          const output = object(message["outputBoundary"]);
+          if (
+            ["text", "toolCall"].includes(String(output["kind"])) &&
+            Number.isSafeInteger(output["contentIndex"])
+          ) {
+            records.push({
+              ...base,
+              id: `${event.id}:output`,
+              itemId: `output:${threadCommandFingerprint({
+                runId,
+                timestamp: message["timestamp"],
+                index: output["contentIndex"],
+              })
+                .replace(/[^a-zA-Z0-9]/g, "")
+                .slice(-64)}`,
+              phase: "updated",
+              name:
+                output["kind"] === "text" ? "runtime.text.started" : "runtime.tool_call.started",
+            });
+          }
           const activity = object(content.at(-1))["type"];
           if (["thinking", "text", "toolCall"].includes(String(activity))) {
             records.push({
