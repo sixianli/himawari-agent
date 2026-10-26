@@ -651,6 +651,7 @@ date: "2026-10-13"
   - 2026-10-22 D-54（提交 `9969a646`）：同样改了那个文件，第 0 层只跑 3 个文件；第 2 层发现 `sandbox-v2-container-route.test.ts` 整体替换 `@himawari-agent/runtime-sandbox` 的替身缺新导出的错误类，5 个用例超时（`plan.md`）。
   - 2026-10-22 D-55（提交 `51f8b927`）：改了 `packages/runtime-sandbox/src/job-host-main.ts`，第 0 层只跑了集成文件，漏了 `packages/runtime-sandbox/test/job-host-main.unit.test.ts`；第 2 层 `d55-l12-01` 发现一个旧用例在新行为下失败（`.ci-output/handoff/2026-10-22-d55-decision.md`）。
 - 为什么要紧：第 2 层要构建并跑整个项目，在 Hermes 上一轮二三十分钟；漏掉的文件本来几秒就能在第 0 层发现。三次里有一次还白跑了一整轮第 1、2 层。
+- 2026-10-26 补充（快速模式下又出现两次）：快速模式（[ADR 0073](adr/0073-fast-delivery-mode.md)）让上面的钩子直接放行，只要求跑相关测试。加迁移 0056 的提交 `d849375` 和加迁移 0057 的提交 `bfa6162`（PR #34）都没跑写死迁移编号的 `test/integration/sqlite-run-payload-artifacts.test.ts` 和 `test/integration/sqlite-sandbox-execution-v2.test.ts`，main 上 16 个用例一直失败，直到 PR #41 的线程扩大测试时才发现。处理：这两个文件和另外两个写死迁移编号列表的测试改成从迁移清单推算期望值，加迁移不再需要改它们；Backlog [BL-20261026-004](backlog/BL-20261026-004-fast-mode-migration-tests.md) 建议把“改迁移必跑的测试文件”写进快速模式规则，规则只由 Andy 决定是否改。
 - 第三次的根因：前两次之后的预防只有 `plan.md` 里的记录和交接文件里的计数，选第 0 层清单那一刻没有任何东西检查；而“哪些测试直接引用了被改文件”可以从代码机械算出。三次的提交说明正文其实都写到了漏掉的文件（第 2 层发现后补写的），所以只在说明全文里找文件名的检查三次都会放行。
 - 硬约束（2026-10-22，[ADR 0066](adr/0066-layer0-related-tests-declared.md)）：
   - 检查脚本 `check-layer0-tests.py`，装在仓库共享 git 目录（`git rev-parse --git-common-dir`）的 `hooks/` 下，是本机文件，不进仓库；SHA-256 为 `0b66a9ec3683226a6e5776307163815338c7cbdb2bcfbc2c7786ac0de35680e1`，来源副本在 `.ci-output/handoff/l0-guard/`。`derive` 按 ADR 0066 的规则推导直接相关的测试：相对路径引用被改文件、同包同名、被改文件的导出有增删时整体替换它所在包的测试；测试文件按 `ci/policy.json` 的测试项目判定。
@@ -683,7 +684,7 @@ date: "2026-10-13"
   - 操作包新增 `systemd/verify-switch-config-fixtures.py`，`twelfth-freeze-tools/run-packet-checks.sh` 每次出包都跑：它从 S7 脚本里取出核对原配置的函数，用和 `maintenance/verify-fixtures.mjs` 同样形状的配置运行，要求算出的新配置与 `maintenance-common.mjs` 算出的逐字节相同，并要求 7 种旧值或缺项都被拒绝。对第一次尝试的 S7 脚本它报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED` 并以 1 退出，对改好的通过 9 项（Hermes `himawari-tests/twelfth/repro-old-s7.log`、`repro-new-s7.log`）。改好的函数还在生产机上只读核对过：对生产机的原配置，它算出的结果和维护脚本写出的 `s7-config-apply.json` 一致。
   - 限制：这项出包检查和 `run-packet-checks.sh` 都在 `.ci-output/`（不进仓库），靠复制操作包带到下一次；`deploy.sh` 不会因为没跑出包检查而拒绝上线。
 - 为什么前两道硬约束还不够（2026-10-26）：两道都是“复制之后再查”，只能查出已经想到的那类旧值；它们本身也在 `.ci-output/`，靠复制带到下一次。把操作包搬进仓库时又发现一处没被任何检查发现的旧副本：包里带的 `scripts/operations/workspace-lifecycle-audit.mjs` 只认到数据库第 56 版，`main` 上的同名文件已改成认 57 版（提交 `bfa6162`），第十三次升库到 57 版时会在停服后失败。
-- 硬约束（2026-10-26，第三次，[ADR 0082](adr/0082-generate-release-packets-from-parameters.md)）：
+- 硬约束（2026-10-26，第三次，[ADR 0085](adr/0085-generate-release-packets-from-parameters.md)）：
   - 操作包不再复制：仓库里的 `scripts/delivery-mode/make-packet.py` 用模板 `scripts/delivery-mode/packet-template/` 按参数生成。“第几次”、旧版本目录、原配置的模型上限和读网页上限从生产机只读读出，数据库版本和要补的迁移从生产 S0 读回和这个提交的代码推出，包里带的仓库文件副本按这个提交刷新。没填的占位、改写了要保留的表的迁移，都在出包时拒绝。
   - 出包时在 Hermes 上跑 `scripts/delivery-mode/run-packet-checks.py`（16 项，升库时 17 项），任何一项不过就不出包；结果写进操作包的 `packet-checks.json`。`deploy.sh` 先运行 `generated-packet-gate.py`，操作包里没有生成器写的 `packet-parameters.json`、或 `packet-checks.json` 没记全部通过，就以退出码 6 停下（结果 `not-generated`），生产机上什么都不动。
   - 验证：`scripts/delivery-mode/test_make_packet.py` 用第十二次的参数生成，除 21 个有意改动的文件外与第十二次冻结的操作包逐字节相同；把读网页上限换回手抄的旧值 32768 生成时，S7 的核对函数对真实形状的配置报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`，按生产读出的值生成时通过。`test_deploy.py` 的三项 `[PG-1]` 用例：没有生成器记录、检查没全过或提交不符、升库却没跑升库检查，`deploy.sh` 都以 6 退出且一个上线步骤都没跑。

@@ -14,7 +14,7 @@
 ## 之后
 
 - PG-4 S6_ACCEPTANCE 挪到 S2_STOP 前，需在生产机上只读核实资源不冲突。
-- PG-5 ADR 0082、案例库、delivery-mode 规则，npm run check 与 npm run build。
+- PG-5 ADR 0085、案例库、delivery-mode 规则，npm run check 与 npm run build。
 
 ## 计划改动记录
 

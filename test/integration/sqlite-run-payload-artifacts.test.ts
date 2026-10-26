@@ -685,10 +685,9 @@ describe.each(["worker", "direct"] as const)(
           old,
           path.join(f.stateRoot, "schema31-backup.sqlite"),
         );
-        expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual([
-          32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,
-          54, 55,
-        ]);
+        expect(applyMigrations(old, migrations, { snapshot }).appliedSequences).toEqual(
+          migrations.map(({ sequence }) => sequence).filter((sequence) => sequence > 31),
+        );
         expect(old.prepare("SELECT * FROM run_payload_artifacts").all()).toEqual(
           before.map((row) => ({ ...row, history_sequence: 0 })),
         );

@@ -332,6 +332,40 @@ function projectedMessage(message: RuntimeProjectionMessage, model: Model<Api>):
   return projected;
 }
 
+type PiToolDefinitionText = Pick<
+  ToolDefinition,
+  | "name"
+  | "label"
+  | "description"
+  | "parameters"
+  | "promptSnippet"
+  | "promptGuidelines"
+  | "constrainedSampling"
+>;
+
+function productSystemPrompt(
+  systemInstruction: string,
+  tools: readonly PiToolDefinitionText[],
+): string {
+  const snippets = tools.flatMap(({ name, promptSnippet }) =>
+    promptSnippet ? [`- ${name}: ${promptSnippet}`] : [],
+  );
+  const guidelines = [
+    ...new Set(
+      tools.flatMap(({ promptGuidelines }) =>
+        (promptGuidelines ?? []).map((guideline) => guideline.trim()).filter(Boolean),
+      ),
+    ),
+  ];
+  return [
+    systemInstruction,
+    ...(snippets.length > 0 ? [["文件与命令工具：", ...snippets].join("\n")] : []),
+    ...(guidelines.length > 0
+      ? [["工具用法：", ...guidelines.map((guideline) => `- ${guideline}`)].join("\n")]
+      : []),
+  ].join("\n\n");
+}
+
 function contextBlockContent(block: RuntimeProjection["contextBlocks"][number]): string {
   const metadata = JSON.stringify({
     authority: block.authority,
@@ -946,8 +980,13 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         noThemes: true,
         noContextFiles: true,
         systemPrompt: "",
+        systemPromptOverride: () =>
+          productSystemPrompt(
+            projection.systemInstruction,
+            descriptors.map((descriptor) => this.toolDefinition(descriptor)),
+          ),
         appendSystemPrompt: [],
-        appendSystemPromptOverride: () => [projection.systemInstruction],
+        appendSystemPromptOverride: () => [],
         additionalExtensionPaths: authorizedPaths(resources.extensionPaths, "extensionPaths"),
         additionalSkillPaths: authorizedPaths(resources.skillPaths, "skillPaths"),
         additionalPromptTemplatePaths: authorizedPaths(
@@ -1331,35 +1370,10 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
     }
   }
 
-  private createTool(
-    request: RuntimeRequest,
-    descriptor: RuntimeToolDescriptor,
-    reconciliation: {
-      completedResult(
-        toolCallId: string,
-      ): PiToolBatchContinuation["completedResults"][number] | undefined;
-      assertKnown(): void;
-      checkpoint(invocation: RuntimeToolInvocation): Promise<string | undefined>;
-      suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
-      unknown(
-        invocation: RuntimeToolInvocation,
-        result: Awaited<ReturnType<RuntimeToolPort["execute"]>>,
-      ): void;
-    },
-  ): ToolDefinition {
+  private toolDefinition(descriptor: RuntimeToolDescriptor): PiToolDefinitionText {
     const unavailable = async (): Promise<never> => {
       throw new Error("PI_AGENT_SERVICE_FILE_IO_FORBIDDEN");
     };
-    let definition: Pick<
-      ToolDefinition,
-      | "name"
-      | "label"
-      | "description"
-      | "parameters"
-      | "promptSnippet"
-      | "promptGuidelines"
-      | "constrainedSampling"
-    >;
     if (descriptor.definition === "builtin-read" || descriptor.definition === "builtin-coding") {
       const [builtin] = createGovernedPiCodingTools({
         cwd: this.#dependencies.cwd,
@@ -1378,7 +1392,7 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
         },
       });
       if (!builtin) throw new Error("PI_READ_DEFINITION_MISSING");
-      definition = {
+      return {
         name: builtin.name,
         label: builtin.label,
         description:
@@ -1396,14 +1410,32 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           ? {}
           : { constrainedSampling: builtin.constrainedSampling }),
       };
-    } else {
-      definition = {
-        name: descriptor.name,
-        label: descriptor.name,
-        description: "description" in descriptor ? descriptor.description : "",
-        parameters: descriptor.parameters as ToolDefinition["parameters"],
-      };
     }
+    return {
+      name: descriptor.name,
+      label: descriptor.name,
+      description: "description" in descriptor ? descriptor.description : "",
+      parameters: descriptor.parameters as ToolDefinition["parameters"],
+    };
+  }
+
+  private createTool(
+    request: RuntimeRequest,
+    descriptor: RuntimeToolDescriptor,
+    reconciliation: {
+      completedResult(
+        toolCallId: string,
+      ): PiToolBatchContinuation["completedResults"][number] | undefined;
+      assertKnown(): void;
+      checkpoint(invocation: RuntimeToolInvocation): Promise<string | undefined>;
+      suspend(invocation: RuntimeToolInvocation, approval: RuntimeApprovalWait): Promise<void>;
+      unknown(
+        invocation: RuntimeToolInvocation,
+        result: Awaited<ReturnType<RuntimeToolPort["execute"]>>,
+      ): void;
+    },
+  ): ToolDefinition {
+    const definition = this.toolDefinition(descriptor);
     const parallel = "executionMode" in descriptor && descriptor.executionMode === "parallel";
     if (
       parallel &&

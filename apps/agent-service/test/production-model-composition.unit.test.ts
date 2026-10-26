@@ -34,6 +34,7 @@ import {
 import {
   configuredWorkspaceRoot,
   createProductionRunPolicy,
+  HIMAWARI_IDENTITY,
   runCapabilityNotice,
 } from "../src/production-run-policy.js";
 
@@ -516,6 +517,10 @@ it("selects trusted Run policy and binds instruction content across configuratio
     policyVersion: "policy-v1",
     capabilityHandleRefs: [],
   });
+  const instructionText = new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext);
+  expect(instructionText.startsWith(`${HIMAWARI_IDENTITY}\n\n可信系统指令\n\n`)).toBe(true);
+  expect(instructionText).toContain("你是 Himawari");
+  expect(instructionText).not.toContain("coding assistant");
   expect(new TextDecoder().decode(protect.mock.calls[0]?.[0].plaintext)).toContain(
     source.occurredAt,
   );
