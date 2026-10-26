@@ -9,6 +9,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 AUTHORITY_COLUMNS = (('id', 'id'), ('ownerId', 'owner_id'), ('agentId', 'agent_id'), ('revision', 'revision'), ('status', 'status'), ('authorityEpoch', 'authority_epoch'), ('fencingToken', 'fencing_token'), ('transferId', 'transfer_id'))
 SYSTEM_ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
@@ -153,7 +155,33 @@ def prepare(plan):
     return result
 
 
-def start(plan, settle_seconds=20):
+def homepage_url(config_path):
+    http = json.loads(Path(config_path).read_text())['http']
+    return 'http://' + http['listenHost'] + ':' + str(http['listenPort']) + '/'
+
+
+def homepage_status(url):
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def wait_for_homepage(url, timeout_seconds=180, interval_seconds=2):
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        status = homepage_status(url)
+        if status == 200:
+            return status
+        if time.monotonic() > deadline:
+            fail('ROLLBACK_HOMEPAGE_NOT_READY:' + str(status))
+        time.sleep(interval_seconds)
+
+
+def start(plan, settle_seconds=20, homepage_timeout_seconds=180):
     before = service(plan['unit'])
     if not stopped(before):
         fail('ROLLBACK_SERVICE_NOT_STOPPED_BEFORE_START')
@@ -164,11 +192,16 @@ def start(plan, settle_seconds=20):
             fail('ROLLBACK_SERVICE_DID_NOT_START')
         time.sleep(1)
     first = service(plan['unit'])
+    url = homepage_url(plan['config'])
+    wait_for_homepage(url, homepage_timeout_seconds)
     time.sleep(settle_seconds)
     settled = service(plan['unit'])
     if settled.get('SubState') != 'running' or settled.get('MainPID') != first.get('MainPID') or settled.get('NRestarts') != first.get('NRestarts'):
         fail('ROLLBACK_SERVICE_NOT_STABLE')
-    return {'serviceBefore': before, 'serviceAfter': settled}
+    homepage = homepage_status(url)
+    if homepage != 200:
+        fail('ROLLBACK_HOMEPAGE_NOT_STABLE:' + str(homepage))
+    return {'serviceBefore': before, 'serviceAfter': settled, 'homepage': {'url': url, 'status': homepage}}
 
 
 def main():
