@@ -288,6 +288,25 @@ class HermesCommandTest(unittest.TestCase):
         with self.assertRaisesRegex(packet_maker.PacketError, '(?s)PACKET_HERMES_STEP_FAILED broken exit=7.*BUILD_LOG_LINE'):
             self.hermes.wait('broken')
 
+    def test_an_upload_area_the_wrapper_refuses_is_found_before_any_build(self):
+        refusing = self.root / 'refusing-upload.sh'
+        refusing.write_text('#!/bin/bash\ncase "$2" in ' + str(self.root / 'scripts') + '/*) mkdir -p "$(dirname "$2")" && cp "$1" "$2" ;; *) echo "HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA: $2" >&2; exit 3 ;; esac\n')
+        refusing.chmod(0o755)
+        self.hermes.upload_wrapper = str(refusing)
+        with self.assertRaisesRegex(packet_maker.PacketError, 'PACKET_HERMES_UPLOAD_FAILED .*HERMES_UPLOAD_REMOTE_OUTSIDE_TEST_AREA'):
+            self.hermes.probe_uploads()
+        self.hermes.upload_wrapper = os.environ['HIMAWARI_HERMES_UPLOAD']
+        self.hermes.probe_uploads()
+        self.assertEqual(list(Path(self.hermes.scripts).iterdir()), [])
+        self.assertEqual(list(Path(self.hermes.work + '-inputs').iterdir()), [])
+
+    def test_builder_uploads_go_where_the_hermes_upload_wrapper_allows(self):
+        settings = json.loads((HERE / 'hermes' / 'builder.json').read_text())
+        allowed = ('/home/andy/himawari-tests/', '/data/hermes/himawari/tool-audit-round2/')
+        for key in ('workRoot', 'scriptRoot'):
+            self.assertTrue(settings[key].startswith(allowed), key)
+        self.assertTrue(settings['workRoot'].startswith('/data/'))
+
     def test_materials_are_fetched_and_digests_checked(self):
         remote = Path(self.hermes.work) / 'materials'
         remote.mkdir(parents=True)

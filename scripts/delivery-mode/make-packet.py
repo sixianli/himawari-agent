@@ -512,6 +512,17 @@ class Hermes:
             refuse('PACKET_HERMES_FETCH_DIGEST', remote)
         partial.rename(local)
 
+    def probe_uploads(self):
+        probe = Path(tempfile.mkdtemp(prefix='packet-probe-')) / 'upload-probe'
+        probe.write_text(self.run_id + '\n')
+        targets = [self.work + '-inputs/upload-probe', self.scripts + '/upload-probe']
+        try:
+            for target in targets:
+                self.upload(probe, target)
+        finally:
+            shutil.rmtree(probe.parent)
+        self.ssh('rm -f ' + ' '.join(shlex.quote(target) for target in targets))
+
     def install_scripts(self):
         self.ssh('mkdir -p ' + shlex.quote(self.scripts) + ' ' + shlex.quote(self.work + '-inputs'))
         for name in ('build-candidate.sh', 'layer3-verdict.py', 'builder.json', 'run-release-walkthrough.sh', 'require-git-modes.sh', 'capture-build-source-inputs.template.mjs'):
@@ -700,6 +711,8 @@ def prepare(arguments):
     if arguments.label is None:
         discovered = interpret_discovery(discover(instance, discovered['LABEL'], date), instance, discovered['LABEL'])
     parameters = base_parameters(instance, commit, date, discovered)
+    hermes = Hermes(run_id(parameters))
+    hermes.probe_uploads()
     step('discover', started)
     packet = packet_directory(Path(arguments.output_root).resolve(), date, parameters['LABEL'])
     work = Path(tempfile.mkdtemp(prefix='packet-work-'))
@@ -708,7 +721,6 @@ def prepare(arguments):
     step('s0-schema', started)
     materials = work / 'materials'
     materials.mkdir()
-    hermes = Hermes(run_id(parameters))
     hermes.install_scripts()
     walkthrough = None
     if arguments.reuse_materials:

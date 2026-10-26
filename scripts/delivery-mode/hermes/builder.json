@@ -1,6 +1,6 @@
 {
   "hostname": "hermes-home",
-  "workRoot": "/data/hermes/himawari/packet-builder",
+  "workRoot": "/data/hermes/himawari/tool-audit-round2/packet-builder",
   "scriptRoot": "/home/andy/himawari-tests/packet-builder/scripts",
   "lockFile": "/home/andy/himawari-tests/packet-builder.lock",
   "source": "/home/andy/himawari-tests/r2-u1/source",
