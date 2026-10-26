@@ -49,6 +49,7 @@ date: "2026-10-26"
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
   23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
+  25. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -73,11 +74,11 @@ date: "2026-10-26"
 | Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps)、[每一步的时间要准](#case-process-timeline) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client) |
@@ -1517,6 +1518,64 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 **后续（2026-10-26）：过程记录不再等硬盘确认**
 
 Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
+
+[返回目录](#contents)
+
+<a id="case-process-timeline"></a>
+
+## 案例 25：每一步的时间要准：把一轮回答画成一条时间线
+
+**背景与现象**
+
+2026-10-26 Andy 审对话界面 v6 原型时要求“每一步的时间一定一定要准确”，让人一眼看出一轮回答的时间花在哪。旧过程区的问题：
+
+- 只有每个工具调用的用时，模型推理、等你确认、各步之间的衔接都没有时间，几段加起来远小于总用时，看不出另外的时间去了哪里。
+- “开始写回答”的时刻不准：Pi 适配器（把 Pi 的流式事件转成 Himawari 执行记录的那一层）会把连续的流式增量合并成一条记录，合并后记录的时间是最后一个增量的时间，所以“开始输出”被推后。
+- 两次同时进行的搜索各算各的，相加会超过总用时。
+
+**根因**
+
+- 前端只按单个工具调用算时间，没有一个把整轮从“按下发送”到“回答提交”每一毫秒都分到某一类的模型。
+- 代码证据：`packages/runtime-pi/src/pi-runtime-adapter.ts` 合并流式事件时不区分 `text_start`、`toolcall_start` 这类“边界”事件和普通增量；用一条新测试复现：给适配器喂入带时间的事件，旧代码给出的输出开始时间等于最后一个增量的时间。
+
+**我们的方案**
+
+1. 新增前端纯函数 `executionTimeline(records, run, now)`（`apps/control-center/src/execution-timeline.ts`）：起点是运行的 `createdAt`，终点是结束时的 `updatedAt`，中间每个时刻都用服务端记下的 `occurredAt`。步骤分为找记忆、读档案、思考、写回答、等你确认、工具调用（再拆成排队和执行两段）。
+2. 每一毫秒只归一类，同一时刻有多步时按“等你确认 > 工具 > 模型 > 准备与衔接”取一类，没被任何步骤覆盖的空档算“准备与衔接”。所以四类相加一定等于总用时，并行的两次搜索只算一次。
+3. Pi 适配器不再把 `thinking_start`/`thinking_end`、`text_start`/`toolcall_start` 合并进增量，并在内容里带上 `outputBoundary`；执行记录投影把它变成 `runtime.text.started`、`runtime.tool_call.started` 两种记录。复用 Pi 的流式事件类型和执行循环，不改 Pi；合并策略、投影和展示是 Himawari 自己的。
+4. 界面：一轮结束后收成一行“用时 + 四色细条 + 最久一步”，展开后每步一条对齐到同一时间轴的时间条，底部列出四类用时和合计。运行中每 0.1 秒刷新。所有文字有中、英、日三种语言。
+
+**方案讨论与备选**
+
+- 只显示每步自己的用时：最简单，但几段加起来对不上总用时，Andy 要的“一眼看出花在哪”做不到。
+- 服务端算好时间线再发给网页：别处（推送、用量页）可以复用，但要改执行记录合同和存储；网页已经拿到全部带时间的记录，第一期放在前端。
+- 并行步骤按各自时长相加：符合“工具真的跑了这么久”，但总和会超过墙上时间；选了“每一毫秒只算一次”，并在并行步骤上标“同时”。
+- 过程区画法：原型里比较了时间条、泳道、地铁线、圆环四种，Andy 选了时间条。
+
+**业界主流做法**
+
+- ✅ Chrome DevTools 网络面板（[Network features reference](https://developer.chrome.com/docs/devtools/network/reference)）：瀑布图是“A visual breakdown of each request's activity.”，每个请求再拆成 Queueing、“Waiting (TTFB) … The browser is waiting for the first byte of a response.”等阶段。我们把一次模型调用拆成“等模型开始回应、推理、输出”，工具拆成“排队和启动、执行”，是同一种拆法。
+- ✅ OpenTelemetry（[Traces](https://opentelemetry.io/docs/concepts/signals/traces/)）：span “represents a unit of work or operation”，“child spans represent sub-operations”；span event 是“a meaningful, singular point in time”。我们的步骤相当于 span，`text_start` 这类边界相当于 span event。
+- ✅ LangSmith（[Observability concepts](https://docs.langchain.com/langsmith/observability-concepts)）：run “represents a single unit of work executed by an agent”，“you can think of a run as a span”；trace “is a collection of runs for a single operation”。Agent 观测工具普遍把一轮回答画成一串带起止时间的步骤。
+
+**对比与取舍**
+
+DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以超过墙上时间；我们的四色细条按优先级让每一毫秒只算一次，代价是工具与模型重叠时，重叠的那段只算到工具上。这样做是因为 Andy 的问题是“这一轮的等待花在哪”，而不是“每个步骤本身多慢”；后者仍可从每步的时间条和用时看到。时间线没有引入 OpenTelemetry 整套追踪系统，只用已有的执行记录在前端算出。
+
+**结果数据**
+
+- 测试用 2026-10-26 生产新闻那一轮（run `61268ba2`，只取事件时间）做的夹具：总用时 27.1 秒，模型 9.3 秒、工具 2.9 秒、等你确认 8.4 秒、准备与衔接 6.4 秒，四项相加等于总用时（`apps/control-center/test/execution-timeline.unit.test.ts`）。
+- 测试：时间线 12 个、过程区 7 个（含中英日三语各渲染一次）、Pi 适配器边界 1 个，浏览器执行链测试 12 项通过；控制中心单元测试 422 个全部通过。
+- 已知偏差：执行记录里还没有“点了允许”的时刻，“等你确认”会多算约 1–2 秒恢复运行（[BL-20261026-009](backlog/BL-20261026-009-approval-click-time.md)）。
+- 上线后真实对话的显示效果：未上线，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0087](adr/0087-chat-ui-v6-process-timeline.md)；[PR #45](https://github.com/sixianli/himawari-agent/pull/45)（提交 `13cf0d6`、`b938b1a`、`001bbb6`）；相关：[案例 24](#case-run-gaps)（同一轮数据里找出的系统空档）、[案例 16](#case-narration-status)、[案例 23](#case-memory-steps)（同一块过程区之前的两次修复）。
+
+**面试 30 秒版**
+
+“用户要求每一步的时间必须准。旧界面只给工具算时间，加起来对不上总用时，‘开始输出’的时刻还因为流式事件被合并而推后。我让适配器保留输出边界事件，再在前端用一个纯函数把整轮每一毫秒按‘等你确认、工具、模型、准备’的优先级只归一类，四类相加一定等于总用时。用生产那一轮 27 秒的事件做测试夹具，测出等你确认 8.4 秒、准备与衔接 6.4 秒，这正是下一步优化的方向。”
 
 [返回目录](#contents)
 

@@ -52,7 +52,9 @@
     {
       "includes": [
         "docs/assets/control-center/2026-09-10-v1/index.html",
-        "docs/assets/control-center/2026-09-10-v1/source.html"
+        "docs/assets/control-center/2026-09-10-v1/source.html",
+        "docs/assets/control-center/2026-10-26-v6/index.html",
+        "docs/assets/control-center/2026-10-26-v6/mark-options.html"
       ],
       "formatter": {
         "enabled": false
