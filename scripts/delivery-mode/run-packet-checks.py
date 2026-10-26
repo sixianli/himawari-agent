@@ -1,0 +1,128 @@
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+from pathlib import Path
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+
+NODE_FIXTURES = (
+    'maintenance/verify-fixtures.mjs',
+    'maintenance/verify-raw-copy-fixtures.mjs',
+    'maintenance/verify-sidecar-tidy-fixtures.mjs',
+    's0-db/verify-catalog-runtime-switch.mjs',
+    'signing/verify-capability-manifest.mjs',
+)
+PYTHON_FIXTURES = (
+    'maintenance/verify-s9-control-fixtures.py',
+    'maintenance/verify-s9-raw-tree-fixtures.py',
+    'install/verify-s9-clean-transport-fixtures.py',
+    'acceptance/cloud/verify-failure-scene-fixtures.py',
+    'signing/verify-finalize-capability-check.py',
+)
+HERMES_ONLY = ('steps/verify-steps.py',)
+MIGRATE_FIXTURE = 'maintenance/verify-migrate-fixtures.mjs'
+OLD_CONFIG_PENDING = "OLD_CONFIG_SHA = 'PENDING:s0.service.configurationSha256'\n"
+OLD_CONFIG_HOLDERS = ('systemd/S2-stop-and-inspect.py', 'maintenance/S9-control-files.py')
+
+
+def short_scratch():
+    while True:
+        path = Path('/tmp/h' + secrets.token_hex(2))
+        try:
+            path.mkdir(mode=0o700)
+        except FileExistsError:
+            continue
+        path.chmod(0o700)
+        return path
+
+
+def planned_schemas(packet):
+    source = (packet / 'maintenance/maintenance-common.mjs').read_text()
+    found = {name: re.findall(r'^export const ' + name + r' = ([0-9]+);$', source, re.M) for name in ('currentSchema', 'targetSchema')}
+    if any(len(values) != 1 for values in found.values()):
+        raise SystemExit('PACKET_CHECKS_SCHEMA_CONSTANTS_MISSING')
+    return int(found['currentSchema'][0]), int(found['targetSchema'][0])
+
+
+def plan(packet, node, python, include_hermes_only, migrating):
+    checks = [(name, [str(node), str(packet / name)], 'source') for name in NODE_FIXTURES]
+    checks.append(('systemd/fixtures/verify-doctor-fixtures.mjs', [str(node), '--test', str(packet / 'systemd/fixtures/verify-doctor-fixtures.mjs')], 'source'))
+    checks.append(('systemd/verify-switch-config-fixtures.py', [python, '-I', str(packet / 'systemd/verify-switch-config-fixtures.py'), str(node)], 'source'))
+    checks += [(name, [python, '-I', str(packet / name)], None) for name in PYTHON_FIXTURES]
+    checks.append(('inputs/verify-finalize-bindings.py', [python, '-I', str(packet / 'inputs/verify-finalize-bindings.py'), str(node), 'SCRATCH'], None))
+    checks.append(('inputs/verify-packet-consistency.py', [python, '-I', str(packet / 'inputs/verify-packet-consistency.py'), 'SCRATCH'], None))
+    checks.append(('inputs/check-packet-consistency.py', [python, '-I', str(packet / 'inputs/check-packet-consistency.py'), str(packet)], None))
+    if migrating:
+        checks.append((MIGRATE_FIXTURE, [str(node), str(packet / MIGRATE_FIXTURE)], 'migrate'))
+    if include_hermes_only:
+        checks += [(name, [python, '-I', str(packet / name), 'SCRATCH'], None) for name in HERMES_ONLY]
+    return checks
+
+
+def run_check(check, source, environment, logs):
+    name, command, directory = check
+    scratch = short_scratch() if 'SCRATCH' in command or directory == 'migrate' else None
+    command = [str(scratch) if part == 'SCRATCH' else part for part in command]
+    log = logs / (name.replace('/', '_') + '.log')
+    try:
+        with log.open('wb') as output:
+            if directory == 'migrate':
+                prefix = scratch / 'prefix'
+                install = [command[0], str(source / 'scripts/install-node-runtime.mjs'), '--prefix', str(prefix), '--source', str(source / 'dist/node-runtime')]
+                code = subprocess.run(install, cwd=source, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+                if code == 0:
+                    code = subprocess.run(command, cwd=source, env={**environment, 'HIMAWARI_MIGRATE_PREFIX': str(prefix)}, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+            else:
+                code = subprocess.run(command, cwd=source if directory == 'source' else None, env=environment, stdout=output, stderr=subprocess.STDOUT, check=False).returncode
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+    return name, code, log
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='run-packet-checks.py')
+    parser.add_argument('packet')
+    parser.add_argument('--node', required=True)
+    parser.add_argument('--source', required=True)
+    parser.add_argument('--logs')
+    parser.add_argument('--skip-hermes-only', action='store_true')
+    parser.add_argument('--record')
+    arguments = parser.parse_args()
+    packet = Path(arguments.packet).resolve()
+    node = Path(arguments.node).resolve()
+    source = Path(arguments.source).resolve()
+    for holder in OLD_CONFIG_HOLDERS:
+        if (packet / holder).read_text().count(OLD_CONFIG_PENDING) != 1:
+            print('PACKET_CHECKS_OLD_CONFIG_ALREADY_FILLED ' + holder)
+            return 2
+    python = '/usr/bin/python3' if Path('/usr/bin/python3').exists() else sys.executable
+    logs = Path(arguments.logs).resolve() if arguments.logs else Path(tempfile.mkdtemp(prefix='packet-checks-'))
+    logs.mkdir(parents=True, exist_ok=True)
+    temp_root = Path(tempfile.mkdtemp(prefix='packet-temp-', dir=logs))
+    temp_root.chmod(0o700)
+    environment = {**os.environ, 'PATH': str(node.parent) + ':/usr/bin:/bin', 'HIMAWARI_TEST_TEMP_ROOT': str(temp_root), 'PYTHONDONTWRITEBYTECODE': '1'}
+    current, target = planned_schemas(packet)
+    checks = plan(packet, node, python, not arguments.skip_hermes_only, target != current)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
+        results = sorted(pool.map(lambda check: run_check(check, source, environment, logs), checks))
+    failed = [result for result in results if result[1] != 0]
+    for name, code, log in results:
+        print('CHECK ' + name + ' rc=' + str(code))
+    for name, code, log in failed:
+        print('== ' + name)
+        print('\n'.join(log.read_text(errors='replace').splitlines()[-12:]))
+    shutil.rmtree(temp_root, ignore_errors=True)
+    if arguments.record:
+        Path(arguments.record).write_text(json.dumps({'passed': not failed, 'currentSchema': current, 'targetSchema': target, 'checks': [{'name': name, 'exit': code} for name, code, log in results]}, indent=2) + '\n')
+    print('PACKET_CHECKS ' + ('failed' if failed else 'passed') + ' ' + str(len(results) - len(failed)) + '/' + str(len(results)) + ' logs=' + str(logs))
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

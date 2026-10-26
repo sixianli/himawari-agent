@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 2,
+  "purpose": "cloud-__PKT_LABEL__-install",
+  "nonProduction": false,
+  "nodeAlreadyInstalled": true,
+  "nodeSha256": "e6ec2c188d83d813f81f2de8aea084d74dce603ac1abedd0a30ad941b10087b2",
+  "sourceHead": "__PKT_COMMIT__",
+  "files": [
+    {
+      "name": "__PKT_BUNDLE_NAME__",
+      "bytes": __PKT_BUNDLE_BYTES__,
+      "sha256": "__PKT_BUNDLE_SHA256__"
+    },
+    {
+      "name": "candidate.tar.gz",
+      "bytes": __PKT_ARTIFACT_BYTES__,
+      "sha256": "__PKT_ARTIFACT_SHA256__",
+      "sourceName": "__PKT_ARTIFACT_NAME__"
+    },
+    {
+      "name": "context.json",
+      "bytes": __PKT_CONTEXT_BYTES__,
+      "sha256": "__PKT_CONTEXT_SHA256__"
+    },
+    {
+      "name": "python-3.12.10.tar.gz",
+      "bytes": 34392187,
+      "sha256": "f50d08e0304b15d752b22932047135c1dc02f81977b284e51288be9d90627bca"
+    },
+    {
+      "name": "node-modules.tar.gz",
+      "bytes": __PKT_NODE_MODULES_TAR_BYTES__,
+      "sha256": "__PKT_NODE_MODULES_TAR_SHA256__"
+    },
+    {
+      "name": "node-modules.json",
+      "bytes": __PKT_NODE_MODULES_JSON_BYTES__,
+      "sha256": "__PKT_NODE_MODULES_JSON_SHA256__"
+    },
+    {
+      "name": "npm-ls.json",
+      "bytes": __PKT_NPM_LS_BYTES__,
+      "sha256": "__PKT_NPM_LS_SHA256__"
+    }
+  ]
+}

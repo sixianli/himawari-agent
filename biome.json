@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist", "!!.ci-output", "!!.claude/skills", "!!.agents/tasks"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!.ci-output",
+      "!!.claude/skills",
+      "!!.agents/tasks",
+      "!!scripts/delivery-mode/packet-template",
+      "!!scripts/delivery-mode/hermes/capture-build-source-inputs.template.mjs"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -45,6 +45,7 @@ date: "2026-10-26"
   18. [个人 Agent 怎么给家人朋友用：每人一个实例，还是一个实例分用户](#case-multi-user)
   19. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
   20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
+  21. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -72,9 +73,9 @@ date: "2026-10-26"
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
-| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
+| 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 
 [返回目录](#contents)
@@ -1234,6 +1235,74 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **面试 30 秒版**
 
 “一个版本上线后首页正常，但已经打开的页面在服务重启后什么都批不了，因为它带着重启前的授权编号。我们让页面在被拒绝时重读配置换编号，并把‘在真实浏览器里走一遍’做成上线脚本的硬门槛。修复版上线时，从上一版复制来的切换脚本带着旧预期失败了，自动回退又因为按版本号拼步骤名而失败；我们先手动恢复服务，再给这两处各加一道能复现旧错误的测试，第二次上线停服 11 分钟成功。”
+
+[返回目录](#contents)
+
+<a id="case-packet-generator"></a>
+
+## 案例 21：上线操作包从“复制上一次再手改”改成“按参数生成”
+
+**背景与现象**
+
+Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本、输入和材料，由 `scripts/delivery-mode/deploy.sh` 按步骤执行，停服、换版本、失败就自动回退。到 2026-10-26，每次的操作包都是复制上一次的再手改“第几次”、版本目录、数据库版本号、配置预期和材料摘要，生成工具放在 Mac 和 Hermes（测试机）上被 git 忽略的 `.ci-output/` 里。
+
+后果是同一类错误反复在停服之后才暴露：第十次上线读错旧文件名 `s7-catalog-after51.json`，停服约 17 分钟后回退；第十二次上线切换脚本带着上一版的配置预期、回退脚本又拼错步骤名，停服约 15 分钟（[案例 20](#case-eleventh-twelfth-deploy)）。同时出包要 49 分钟到 1 小时，第十二次成功那次停服约 11 分钟。Andy 的原话：“这个时间也太长了吧？还能加快吗？因为我希望的是快速迭代上线验证。”
+
+**根因**
+
+1. **要变的值散在 146 个文件里，靠人记得改。** 一次上线要变的值只有十几个，但它们被抄进很多脚本。上一次的值看起来和这一次一样合理，复制后没有任何东西机械地对照“这一次应该是什么”。代码证据：第十二次的 S7 切换脚本里，原配置读网页上限 32768 是从第十一次抄来的，而维护脚本里同一个预期已经改成 102400。
+2. **之前的硬约束都是“复制之后再查”。** 每次出事后加一道检查（文件摘要表、交接文件名、切换配置夹具），只能拦已经想到的那类旧值，而且检查本身也在 `.ci-output/` 里靠复制带到下一次。把操作包搬进仓库时又找到一处没被任何检查发现的旧副本：包里的 `workspace-lifecycle-audit.mjs` 只认到数据库第 56 版，代码已改成认 57 版（提交 `bfa6162`），第十三次升库时会在停服后失败。
+3. **慢在冻结和停服后的验收。** 冻结（读生产状态、算绑定）离上线很远，中间服务一重启配置指纹就变，只能整套重做；停服后的验收 `S6_ACCEPTANCE` 占了 11 分钟停服里的 6 分 45 秒。
+
+**我们的方案**
+
+1. **模板加参数。** 第十二次冻结的操作包改写成模板 `scripts/delivery-mode/packet-template/`，每个随上线变化的值换成 `__PKT_名字__` 占位，文件名里的也一样；生成器 `scripts/delivery-mode/make-packet.py` 渲染时缺参数或留下占位都拒绝。
+2. **只让人决定该人决定的事。** 输入只有提交（默认 `origin/main`）和实例文件（主机和这次要设的模型上限、读网页上限）。“第几次”、旧版本目录、原配置的值从生产机只读读出；数据库版本从生产读回和提交里的迁移文件推出；材料摘要从 Hermes 上对这个提交的构建算出；包里带的仓库文件副本按这个提交刷新。
+3. **数据库升级变成模板的通用能力。** 代码版本更高时，生成器从 `migration-engine.ts` 取出要补的迁移，`S7_CONFIG_APPLY` 用新版本的 `himawari db migrate` 升库，并核对历史、能力目录、授权和回执内容不变。迁移如果改写这些要保留的表，出包时就拒绝。出包检查里加一项：用这个提交装出来的命令，把一个真实的旧版本数据库升到新版本。
+4. **检查前移到出包，上线只认生成器出的包。** 16 项操作包检查（升库时 17 项）在 Hermes 上并行跑，不过就不出包，结果写进 `packet-checks.json`；`deploy.sh` 发现包里没有生成器的记录，以退出码 6 停下，生产机上什么都不动。
+5. **冻结紧挨上线，停服前核对。** 出包最后一步冻结，过时了用 `make-packet.py freeze` 约一分钟重冻；上线前检查在停服前对比配置摘要、服务单元摘要和授权轮次、编号，变了就不停服并提示重冻。
+6. **验收挪到停服之前。** 步骤顺序改成 `S1_INSTALL → S6_ACCEPTANCE → S2_STOP`，验收失败时旧版本照常服务。
+
+这件事和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的上线流程。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 继续复制，再加检查清单 | 不用改工具 | 同类错误已经三次以上，[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md) 不许再只靠提醒；时间也降不下来 |
+| 改用 Ansible、Helm 一类通用部署工具 | 模板和变量写法现成 | 要重写 146 个在生产上验证过的脚本和夹具；单机停服切换用不上滚动更新 |
+| 升库只靠 Hermes 整套演练 | 最接近真实 | 快速模式不跑演练，一次几十分钟；改成出包时用真实命令升一个真实旧库，几十秒 |
+| 冻结后完全不许服务重启 | 实现最简单 | 做不到；改成停服前核对，变了就一分钟重冻 |
+
+放弃了什么：模板保留了第十二次的历史写法（例如步骤名 `S3_COPY51`）；生成器要同时连生产机和 Hermes，只能在 Andy 的 Mac 上跑；手写两个记录文件仍能骗过上线前检查，它拦的是“忘了用生成器”。
+
+**业界主流做法**
+
+- ✅ 十二要素应用《构建、发布、运行》（[Build, release, run](https://12factor.net/build-release-run)）：“The resulting release contains both the build and the config and is ready for immediate execution”，并且“Releases are an append-only ledger and a release cannot be mutated once it is created.” 发布物由构建加配置生成、生成后不改，对应我们“按参数生成、冻结后不手改”。
+- ✅ Google SRE《发布工程》（[Release Engineering](https://sre.google/sre-book/release-engineering/)）：构建应该“insensitive to the libraries and other software installed on the build machine”，并且“configuration changes are a potential source of instability.” 我们把配置预期从生产读出而不是手抄，就是为了去掉这个不稳定来源。
+- ✅ Helm 入门文档（[Getting Started](https://helm.sh/docs/chart_template_guide/getting_started/)）：Helm 把 `templates/` 目录“send all of the files … through the template rendering engine”，默认值在 `values.yaml`，“These values may be overridden by users during `helm install` or `helm upgrade`.” 模板加每次的值生成部署文件，和我们的模板加实例文件同一个思路。
+- ✅ Kubernetes API 概念（[API Concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/)）：“In the event that the resource has changed (the `resourceVersion` the client provided is stale), the API server returns a `409 Conflict` error response.” 读的时候记下版本，写之前对不上就拒绝、让客户端重读，我们停服前对比冻结时的配置摘要和授权编号也是这样。
+- ✅ Martin Fowler《Parallel Change》（[ParallelChange](https://martinfowler.com/bliki/ParallelChange.html)）把不兼容的改动拆成 expand（扩展）、migrate（迁移）、contract（收缩）三步，expand 阶段“you augment the interface to support both the old and the new versions.” 第 57 版迁移就是 expand 阶段，只加表和可空列，所以回退时旧版本还能用原副本。
+
+**对比与取舍**
+
+相同点：发布物由“代码 + 每次的值”生成、生成后不改，写之前核对版本。不同点：业界通常有多台机器做滚动更新和金丝雀发布，把风险挪到不停服；我们是单机，只能“停服、切换、失败回退”，所以把能挪的检查和验收都挪到停服之前。我们也没用 Helm 一类工具，而是把已经在生产上验证过的操作包直接变成模板，代价是模板里留着历史写法。
+
+**结果数据**
+
+- 用第十二次的参数生成：除 21 个有意改动的文件外，与第十二次冻结的操作包逐字节相同；生成器单元测试 18 项通过（`scripts/delivery-mode/test_make_packet.py`，云端容器，约 1.7 秒）。
+- 复现第十二次事故：把读网页上限换回手抄值 32768 生成时，S7 核对函数报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`；按生产读出的值生成时通过（同一测试文件）。
+- 第十三次要升的 56 → 57：生成的操作包 17 项检查全部通过，其中真实升库一项 6 个用例都通过，17 项共 34 秒（云端 4 核容器，提交 `4ca2d24c` 的构建）；不升库的第十二次参数 16 项全部通过。
+- 上线脚本：没有生成器记录、检查没全过或提交对不上、升库却没跑升库检查时，`deploy.sh` 都以 6 退出且一个上线步骤都没跑；冻结后配置、服务单元或授权编号变了，停服前拒绝（`scripts/delivery-mode/test_deploy.py`，21 项通过）。
+- 整次出包时间、停服时间：未测量，等第十三次在 Mac 上出包演练和上线后补。目标是出包约 15–20 分钟（只改配置复用材料约 3 分钟），停服约 4 分钟（11 分钟减去挪走的 6 分 45 秒验收，推算）。
+
+**相关 ADR/PR**
+
+[ADR 0082](adr/0082-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0081](adr/0081-isolated-instance-per-person.md)；分支 `claude/project-thread-yxinf8` 的草稿 PR；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+
+**面试 30 秒版**
+
+“我们的上线操作包有 146 个文件，过去每次复制上一次再手改，三次上线都因为漏改的旧值在停服之后才失败。我把它改成模板加参数生成：只有提交和实例配置由人给，其余从生产只读读回和代码里推出，数据库升级也从迁移清单自动生成；所有检查在出包时跑，上线脚本只接受生成器出的包。用第十二次的参数生成的包和当时手工冻结的逐字节一致，旧的手抄值能复现当时的事故，第十三次的升库在出包时就用真实命令验证过。”
 
 [返回目录](#contents)
 

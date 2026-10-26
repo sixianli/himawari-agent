@@ -93,10 +93,11 @@ class PlanTest(unittest.TestCase):
         steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", (PACKET / 'steps' / 'run-step.py').read_text()))
         for action in (self.plan['restoreAction'], self.plan['controlAction']):
             self.assertIn(action, steps)
-        deployed = (HERE / 'deploy.sh').read_text().split('for action in ', 1)[1].split(';', 1)[0].split()
-        copies = [action for action in deployed if action.startswith('S3_')]
+        orders = [order.split() for order in re.findall(r'actions=\(([^)]*)\)', (HERE / 'deploy.sh').read_text())]
+        self.assertTrue(orders)
+        copies = {action for order in orders for action in order if action.startswith('S3_')}
         self.assertEqual(len(copies), 1)
-        self.assertEqual(self.plan['recoveryReport'], copies[0].lower() + '-result.json')
+        self.assertEqual(self.plan['recoveryReport'], copies.pop().lower() + '-result.json')
 
     def test_generated_approval_passes_the_packet_maintenance_check(self):
         approval = remote.approval_document(self.plan, 'a' * 64, '20261025T120000Z')
