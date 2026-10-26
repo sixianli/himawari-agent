@@ -156,6 +156,7 @@ function LocalizedControlCenterApp({
   useEffect(() => {
     void bootstrapRevision;
     let active = true;
+    let checkingAuthority = false;
     void loadRuntimeConfiguration(window.fetch.bind(window))
       .then((loaded) => {
         if (!active) return;
@@ -174,6 +175,21 @@ function LocalizedControlCenterApp({
                 current ? { ...current, csrfToken: fresh.csrfToken } : current,
               );
               return fresh.csrfToken;
+            },
+            onAuthorityRejected: () => {
+              if (checkingAuthority) return;
+              checkingAuthority = true;
+              void refreshRuntimeConfiguration(window.fetch.bind(window), loaded)
+                .then(
+                  () => undefined,
+                  (error: Error) => {
+                    if (active && error.message === "CONTROL_CENTER_AUTHENTICATION_SCOPE_CHANGED")
+                      setBootstrapRevision((revision) => revision + 1);
+                  },
+                )
+                .finally(() => {
+                  checkingAuthority = false;
+                });
             },
           }),
         );

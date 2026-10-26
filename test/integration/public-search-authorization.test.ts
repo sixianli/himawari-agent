@@ -250,7 +250,7 @@ it.each(["directory", "private"] as const)(
   },
 );
 
-it("covers page reading under the same owner switch and asks again when the provider list changes", async () => {
+it("covers page reading under the same owner switch, keeps it through limit changes and asks again when the provider list changes", async () => {
   const resource = await openRepository();
   const config = parseProductConfiguration(
     JSON.parse(
@@ -279,7 +279,10 @@ it("covers page reading under the same owner switch and asks again when the prov
     authorizationRef: "owner-authorization",
   };
   let sequence = 0;
-  const service = (providers?: readonly ("exa-public" | "deepseek")[]) =>
+  const service = (
+    providers?: readonly ("exa-public" | "deepseek")[],
+    limits: { readonly maximumBytes?: number } = {},
+  ) =>
     new PublicSearchAuthorization({
       configuration: {
         ...config,
@@ -292,6 +295,7 @@ it("covers page reading under the same owner switch and asks again when the prov
             ...route,
             capabilityRef: "fetch",
             ...(providers ? { providers } : {}),
+            ...limits,
           },
         },
       },
@@ -365,6 +369,18 @@ it("covers page reading under the same owner switch and asks again when the prov
     expect(
       await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
     ).toHaveLength(1);
+    const resized = service(undefined, { maximumBytes: 102_400 });
+    expect(await resized.query(queryMessage(ui, "search.authorization.read", {}))).toMatchObject({
+      payload: { enabled: true, recipients: ["https://mcp.exa.ai"] },
+    });
+    await resized.authorize({
+      ...intent,
+      id: "fetch-intent-resized",
+      idempotencyKey: createIdempotencyKey("fetch-intent-resized"),
+    });
+    expect(
+      await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
+    ).toHaveLength(2);
     const widened = service(["exa-public", "deepseek"]);
     expect(await widened.query(queryMessage(ui, "search.authorization.read", {}))).toMatchObject({
       payload: { enabled: false, recipients: ["https://mcp.exa.ai", "https://api.deepseek.com"] },
@@ -378,7 +394,7 @@ it("covers page reading under the same owner switch and asks again when the prov
     });
     expect(
       await resource.repository.authorizationStore().listGrants(OWNER_ID, AGENT_ID),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   } finally {
     await resource.repository.close();
     await rm(resource.stateRoot, { recursive: true, force: true });

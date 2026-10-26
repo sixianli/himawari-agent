@@ -895,6 +895,15 @@ async function toolDeliveryAfter(before: ReadonlySet<string>) {
   return { row, delivery: delivery?.content ?? null };
 }
 
+async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
+  await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+    timeout: 120_000,
+  });
+  await uiExpect(turn.getByText(step).first()).toBeVisible({ timeout: 30_000 });
+  await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
+  await uiExpect(page.getByText("没有可展示的过程记录")).toHaveCount(0);
+}
+
 async function newThread() {
   await page
     .getByRole("link", { name: "新建对话" })
@@ -1436,6 +1445,43 @@ productDescribe(
         expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
           "你好，Himawari",
         );
+      });
+    });
+
+    it("keeps an already open page working after the service restarts", async () => {
+      await scenario("04b-open-page-after-restart", async () => {
+        await newThread();
+        await installation.stop();
+        await installation.start();
+        const readAnswers = await beginToolRequest("重启后请读取 notes.txt");
+        await uiExpect(readAnswers).toHaveCount(1, { timeout: 60_000 });
+        await expectFinishedTurnShowsStep(currentTurn(), "读取文件");
+        const write = await send("重启后请写入 hello.txt");
+        const allow = write.getByRole("button", { name: "允许这一次" });
+        await uiExpect(allow).toBeVisible({ timeout: 60_000 });
+        await allow.click();
+        await uiExpect(write.getByText(/工具返回：/)).toHaveCount(1, { timeout: 60_000 });
+        await expectFinishedTurnShowsStep(write, "写入文件");
+      });
+    });
+
+    it("keeps every step of a turn visible over a slow connection", async () => {
+      await scenario("04c-slow-connection", async () => {
+        await newThread();
+        await page.route("**/api/gateway/**", async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.continue().catch(() => undefined);
+        });
+        try {
+          const turn = await send("慢速网络下请写入 hello.txt");
+          const allow = turn.getByRole("button", { name: "允许这一次" });
+          await uiExpect(allow).toBeVisible({ timeout: 60_000 });
+          await allow.click();
+          await uiExpect(turn.getByText(/工具返回：/)).toHaveCount(1, { timeout: 120_000 });
+          await expectFinishedTurnShowsStep(turn, "写入文件");
+        } finally {
+          await page.unrouteAll({ behavior: "ignoreErrors" });
+        }
       });
     });
 
