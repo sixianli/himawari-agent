@@ -51,6 +51,8 @@ import {
   type ProductionMemoryConsolidationOptions,
 } from "./production-memory-consolidation.js";
 import { ProductionThreadTitles } from "./production-thread-titles.js";
+import { ProductionRunTimings, type RunTimingDiagnostic } from "./production-run-timing.js";
+import { createProductionTitledRuntime } from "./production-titled-runtime.js";
 import { createProductionToolResultRecovery } from "./production-tool-result-recovery.js";
 
 export interface ProductionRunCompositionOptions {
@@ -104,7 +106,6 @@ export interface ProductionRunCompositionOptions {
   readonly memory: Pick<MemoryPort, "search">;
   readonly tools: RuntimeToolPort;
   readonly prepareQueuedSandboxExecutions?: (request: RuntimeRequest) => Promise<void>;
-  readonly prewarmSandboxEnvironment?: (request: RuntimeRequest) => void;
   readonly workers?: WorkerRunPort;
   readonly policy: (source: RunExecutionSource) => Promise<RunExecutionPolicy>;
   readonly clock: ClockPort;
@@ -113,6 +114,7 @@ export interface ProductionRunCompositionOptions {
   readonly cwd: string;
   readonly agentDir: string;
   readonly onFailure: (failure: ProductionRunDispatchLoopFailure) => void;
+  readonly onRunTiming?: (diagnostic: RunTimingDiagnostic) => void;
 }
 
 export function createProductionRunComposition(options: ProductionRunCompositionOptions) {
@@ -120,37 +122,53 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const { ownerId, agentId } = configuration;
   const fence = authority.authorityFence();
   const lease = authority.authorityLease();
+  const timings = new ProductionRunTimings();
   const payloads = repository.payloadStore(ownerId, agentId);
-  const artifacts = repository.runPayloadArtifactPort(ownerId, agentId, { product: fence, lease });
+  const artifacts = timings.methods(
+    repository.runPayloadArtifactPort(ownerId, agentId, { product: fence, lease }),
+    { commit: "payload.commit" },
+  );
   const dispatch = repository.runDispatch(ownerId, agentId, fence, lease, options.instanceId);
-  const checkpoints = repository.runCheckpointStore(ownerId, agentId, fence);
+  const checkpoints = timings.methods(repository.runCheckpointStore(ownerId, agentId, fence), {
+    read: "checkpoint.read",
+    compareAndSet: "checkpoint.write",
+  });
   const admission: ModelInvocationAdmissionResolver = async (scope) => {
     if (scope.ownerId !== ownerId || scope.agentId !== agentId || !scope.executionLease)
       return undefined;
     await authority.assertActive();
-    return new ModelInvocationAdmissionService({
-      ownerId,
-      agentId,
-      runId: scope.runId,
-      executionLease: scope.executionLease,
-      dispatch,
-      invocations: repository.modelInvocationIdentityPort(ownerId, agentId, fence, lease),
-      clock,
-      registry: options.modelRegistry,
-    });
+    return timings.methods(
+      new ModelInvocationAdmissionService({
+        ownerId,
+        agentId,
+        runId: scope.runId,
+        executionLease: scope.executionLease,
+        dispatch,
+        invocations: repository.modelInvocationIdentityPort(ownerId, agentId, fence, lease),
+        clock,
+        registry: options.modelRegistry,
+      }),
+      { begin: "model.admission" },
+      () => scope.runId,
+    );
   };
-  const trace = new SessionTraceRecorder({
-    trace: repository.traceStore(),
-    artifacts,
-    protector,
-    audit: repository.auditLedger(),
-    clock,
-    ids,
-  });
+  const trace = timings.methods(
+    new SessionTraceRecorder({
+      trace: repository.traceStore(),
+      artifacts,
+      protector,
+      audit: repository.auditLedger(),
+      clock,
+      ids,
+    }),
+    { record: "trace.record" },
+  );
   const recalled = new Map<string, readonly ProductionMemoryCaptureRecall[]>();
   const memory: Pick<MemoryPort, "search"> = {
     search: async (request) => {
-      const found = await options.memory.search(request);
+      const found = await timings.measure(request.runId, "memory.search", () =>
+        options.memory.search(request),
+      );
       if (options.memoryCapture && request.runId) {
         recalled.delete(request.runId);
         recalled.set(
@@ -198,29 +216,40 @@ export function createProductionRunComposition(options: ProductionRunComposition
     reminders: repository.memoryReminders(),
     ...(options.memoryCapture?.timeZone ? { timeZone: options.memoryCapture.timeZone } : {}),
   });
-  const context = new ContextFormationService({
-    profile,
-    memory,
-    trace,
-    artifacts,
-    payloads,
-    protector,
-    clock,
-    ids,
-    threads: repository.threadRepository(),
-    threadSummaries: repository.threadDistillationState(),
-  });
-  const projection = new ContextProjectionService({
-    ownerId,
-    agentId,
-    threads: repository.threadRepository(),
-    checkpoints,
-    payloads,
-    artifacts,
-    protector,
-    clock,
-    ids,
-  });
+  const context = timings.methods(
+    new ContextFormationService({
+      profile,
+      memory,
+      trace,
+      artifacts,
+      payloads,
+      protector,
+      clock,
+      ids,
+      threads: repository.threadRepository(),
+      threadSummaries: repository.threadDistillationState(),
+    }),
+    { form: "context.form" },
+  );
+  const projection = timings.methods(
+    new ContextProjectionService({
+      ownerId,
+      agentId,
+      threads: repository.threadRepository(),
+      checkpoints,
+      payloads,
+      artifacts,
+      protector,
+      clock,
+      ids,
+    }),
+    {
+      resolveProjection: "pi.resolve_projection",
+      capture: "pi.capture",
+      captureHistory: "pi.history_write",
+      captureFinalAnswer: "pi.final_answer",
+    },
+  );
   const prepareToolResultRecovery = createProductionToolResultRecovery({
     ...(options.recoverMissingToolResult
       ? { recoverMissingResult: options.recoverMissingToolResult }
@@ -289,7 +318,20 @@ export function createProductionRunComposition(options: ProductionRunComposition
   const runtime = new PiAgentRuntimeAdapter({
     continuations,
     projection,
-    tools: options.tools,
+    tools: timings.methods(
+      options.tools,
+      {
+        listAuthorized: "tool.list",
+        preflight: "tool.preflight",
+        execute: "tool.execute",
+      },
+      (args) => {
+        const first = args[0];
+        if (typeof first === "string") return first;
+        const runId = (first as { readonly runId?: unknown } | undefined)?.runId;
+        return typeof runId === "string" ? runId : undefined;
+      },
+    ),
     models: options.models,
     cwd: options.cwd,
     agentDir: options.agentDir,
@@ -424,49 +466,37 @@ export function createProductionRunComposition(options: ProductionRunComposition
       purpose,
     );
   }
-  const titledRuntime = {
-    cancel: (runId: Parameters<typeof runtime.cancel>[0]) => runtime.cancel(runId),
-    async *run(request: RuntimeRequest) {
-      await options.prepareQueuedSandboxExecutions?.(request);
-      options.prewarmSandboxEnvironment?.(request);
-      let requested = false;
-      let titleAdmission: Promise<void> | undefined;
-      let memoryAdmission: Promise<void> | undefined;
-      for await (const event of runtime.run(request)) {
-        if (!requested && event.type === "runtime.message" && event.role === "assistant") {
-          requested = true;
-          titleAdmission = titles?.start(request);
-          if (memoryCapture)
-            memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve())
-              .then(() => memoryCapture.start(request))
-              .then(() => memoryPaused())
-              .then(async (paused) => {
-                if (paused) return;
-                await memoryEpisodes?.start(request);
-                await memoryConsolidation?.start(request);
-              });
+  const titledRuntime = createProductionTitledRuntime({
+    runtime: timings.runtime(runtime, "pi"),
+    ...(options.prepareQueuedSandboxExecutions
+      ? {
+          prepareQueuedSandboxExecutions: (request: RuntimeRequest) =>
+            timings.measure(
+              request.runId,
+              "sandbox.rebind_queued",
+              () => options.prepareQueuedSandboxExecutions?.(request) ?? Promise.resolve(),
+            ),
         }
-        if (event.type === "runtime.compaction_proposed" && memoryEpisodes)
-          void memoryPaused().then((paused) =>
-            paused ? undefined : memoryEpisodes.recordCompaction(request, event.proposalRef),
-          );
-        if (
-          ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
-        ) {
-          await titleAdmission;
-          await memoryAdmission;
-        }
-        yield event;
-      }
-    },
-  };
+      : {}),
+    ...(titles ? { titles } : {}),
+    ...(memoryCapture ? { memoryCapture } : {}),
+    ...(memoryEpisodes ? { memoryEpisodes } : {}),
+    ...(memoryConsolidation ? { memoryConsolidation } : {}),
+    memoryPaused,
+  });
   const coordinator = new RunCoordinator({
-    ...(options.resources ? { resources: options.resources } : {}),
+    ...(options.resources
+      ? { resources: timings.methods(options.resources, { stopRun: "resources.stop" }) }
+      : {}),
     clock,
-    runs: repository.runLifecycle(ownerId, agentId, fence),
+    runs: timings.methods(repository.runLifecycle(ownerId, agentId, fence), {
+      readRun: "run.read",
+      transitionRun: "run.transition",
+      completeRun: "run.complete",
+    }),
     checkpoints,
     context,
-    runtime: titledRuntime,
+    runtime: timings.runtime(titledRuntime, "runtime"),
     ...(options.workers ? { workers: options.workers } : {}),
     trace,
   });
@@ -481,10 +511,29 @@ export function createProductionRunComposition(options: ProductionRunComposition
     dispatch,
     policy: options.policy,
   });
+  const reportTiming = (diagnostic: RunTimingDiagnostic) => options.onRunTiming?.(diagnostic);
   const dispatcher = new ProductionRunDispatcher({
     authority,
     dispatch,
-    coordinator,
+    coordinator: {
+      execute: (input) =>
+        timings.attempt(input.runId, "execute", () => coordinator.execute(input), reportTiming),
+      resumeToolResult: (input) =>
+        timings.attempt(
+          input.runId,
+          "resume_tool_result",
+          () => coordinator.resumeToolResult(input),
+          reportTiming,
+        ),
+      recoverCompleted: (input) =>
+        timings.attempt(
+          input.runId,
+          "recover_completed",
+          () => coordinator.recoverCompleted(input),
+          reportTiming,
+        ),
+      interruptExecution: (input) => coordinator.interruptExecution(input),
+    },
     input: (candidate) => input.create(candidate),
     prepareToolResultRecovery,
     reconcile: createProductionRunReconciler({

@@ -274,6 +274,7 @@ describe("production HTTP composition", () => {
       minimumFreeBytes: 0,
       now: () => NOW.toISOString(),
     });
+    const acceptedCommandPaths: string[] = [];
     let composition = await createProductionHttpComposition({
       configuration: config,
       repository,
@@ -283,6 +284,7 @@ describe("production HTTP composition", () => {
       identityFetcher,
       now: () => new Date(NOW),
       createSessionToken: () => "session-token-production-http",
+      onCommandAccepted: (path) => acceptedCommandPaths.push(path),
       executionEnvironment: {
         mode: "strict",
         unavailableTools: async () => [
@@ -460,6 +462,7 @@ describe("production HTTP composition", () => {
         },
       });
       expect(crossSession.statusCode).toBe(403);
+      expect(acceptedCommandPaths).toEqual(["/api/gateway/thread/v3/commands"]);
 
       const admitted = await composition.app.inject({
         method: "POST",
@@ -475,6 +478,10 @@ describe("production HTTP composition", () => {
         type: "thread.command_result",
         payload: { threadRevision: 2, replayed: false },
       });
+      expect(acceptedCommandPaths).toEqual([
+        "/api/gateway/thread/v3/commands",
+        "/api/gateway/thread/v3/commands",
+      ]);
 
       const action: GovernedActionIntent = {
         contractVersion: "authorization.v2",
