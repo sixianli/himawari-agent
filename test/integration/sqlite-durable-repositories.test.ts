@@ -50,7 +50,10 @@ import {
   traceStorePortConformance,
 } from "@himawari-agent/testing/conformance";
 import { describe, expect, it } from "vitest";
-import { SqliteDurableOperations } from "../../packages/persistence-sqlite/src/sqlite-durable-operations.ts";
+import {
+  isProcessRecordWrite,
+  SqliteDurableOperations,
+} from "../../packages/persistence-sqlite/src/sqlite-durable-operations.ts";
 import { copyMigratedDatabase } from "../fixtures/sqlite-migrated-template.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -1500,5 +1503,80 @@ describe.each(["worker", "direct"] as const)("SQLite component contracts (%s)", 
       await reopened.close();
       await rm(resource.stateRoot, { recursive: true });
     });
+  });
+});
+
+describe("process record durability", () => {
+  function processEvent(id: string): Omit<TraceEvent, "sequence"> {
+    return {
+      id,
+      schemaVersion: "trace.v1",
+      ownerId: OWNER_ID,
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      threadId: createThreadId("thread-conformance"),
+      runId: RUN_ID,
+      turnId: null,
+      parentEventId: null,
+      causationId: null,
+      correlationId: `run:${RUN_ID}`,
+      actorId: "durability-test",
+      dataClassification: "private",
+      eventType: "runtime.message",
+      payloadRef: null,
+      occurredAt: T0,
+      recordedAt: T0,
+    };
+  }
+
+  it("commits Trace events without waiting for the disk and restores the full disk wait afterwards", async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), "himawari-process-durability-"));
+    const databasePath = path.join(stateRoot, "product.sqlite");
+    await seedRepository(databasePath, "running");
+    const database = openQualifiedDatabase(databasePath);
+    try {
+      const operations = new SqliteDurableOperations(
+        database,
+        (code, message, details) => {
+          throw new ApplicationPortError(code as PortErrorCode, message, details);
+        },
+        () => undefined,
+      );
+      const pragma = database.pragma.bind(database);
+      const levels: string[] = [];
+      database.pragma = ((source: string, options?: { simple?: boolean }) => {
+        if (source.startsWith("synchronous =")) levels.push(source);
+        return pragma(source, options);
+      }) as typeof database.pragma;
+
+      operations.execute("trace.appendNext", { event: processEvent("trace:durability:1") });
+      expect(levels).toEqual(["synchronous = NORMAL", "synchronous = FULL"]);
+      expect(pragma("synchronous", { simple: true })).toBe(2);
+
+      levels.length = 0;
+      operations.execute("trace.readRun", { runId: RUN_ID, afterSequence: 0, limit: 10 });
+      database.transaction(() => {
+        operations.execute("trace.appendNext", { event: processEvent("trace:durability:2") });
+      })();
+      expect(levels).toEqual([]);
+      expect(pragma("synchronous", { simple: true })).toBe(2);
+      expect(
+        database.prepare("SELECT count(*) FROM trace_events WHERE run_id = ?").pluck().get(RUN_ID),
+      ).toBe(2);
+    } finally {
+      database.close();
+      await rm(stateRoot, { recursive: true });
+    }
+  });
+
+  it("treats only Trace events and Trace payload artifacts as process records", () => {
+    expect(isProcessRecordWrite("trace.append", {})).toBe(true);
+    expect(isProcessRecordWrite("trace.appendNext", {})).toBe(true);
+    expect(isProcessRecordWrite("runPayloadArtifact.commit", { purpose: "trace" })).toBe(true);
+    for (const purpose of ["runtime_history", "context", "final_answer", "worker_result"])
+      expect(isProcessRecordWrite("runPayloadArtifact.commit", { purpose })).toBe(false);
+    expect(isProcessRecordWrite("trace.readRun", {})).toBe(false);
+    expect(isProcessRecordWrite("runCheckpoint.compareAndSet", {})).toBe(false);
+    expect(isProcessRecordWrite("event.append", {})).toBe(false);
   });
 });
