@@ -657,3 +657,21 @@ date: "2026-10-13"
   - 限制：只证明声明里包含推导出的文件，不证明它们真的跑过并通过；经包名引用又不整体替换的测试、经上层调用者到达的场景测试、按构建产物路径引用的产品路径测试找不到，仍靠写方案的人判断和第 2 层；改 `test/fixtures/` 下的辅助文件不要求引用者；钩子只在本机生效，新克隆要按[代理工具 Runbook](runbooks/agent-tooling-runbook.md#procedure) 安装。
 
 [回到目录](#编码代理反复犯的错误)
+
+<a id="copied-packet-stale-names"></a>
+
+## 复制上一次操作包时留下旧文件和旧文件名
+
+- 反复出现的情况：第十次上线的操作包（把新版本装到生产机所需的脚本、配置和检查的整套文件）是复制第九次的再改出来的，复制时有几处没跟着改，上线时才发现。
+- 发生记录：
+  - 2026-10-26 第一次尝试：`acceptance/cloud/probe-source` 里有 3 个探针源文件（上线前在生产机上试运行沙箱工具的测试程序）还是第九次的版本，S6 验收失败后自动回退。
+  - 2026-10-26 冻结前复查：`systemd/S7-startup-readback.mjs` 里的 `memoryPath` 还是第九次的值，上线前发现并改成 `memory-engine-production`。
+  - 2026-10-26 第四次尝试：`systemd/S7-switch-start-readback.py` 读取数据库升级后的记录时仍用第九次的文件名 `s7-catalog-after51.json`；第十次把数据库升到第 55 版，写出的文件叫 `s7-catalog-after55.json`。S7 切换启动时报 `TENTH_SWITCH_MAINTENANCE_EVIDENCE_CHANGED:s7-catalog-after51.json`，自动回退，服务停了约 17 分钟。
+- 第三次的根因：前两次之后只是逐个改掉发现的文件，没有检查“后面的步骤要读的文件，前面的步骤到底会不会写出来”。`check-packet-consistency.py`（`deploy.sh` 上线前必跑的操作包自检）只核对文件哈希和引用，不核对步骤之间交接的文件名。
+- 硬约束（2026-10-26）：
+  - `check-packet-consistency.py` 新增 `EVIDENCE_NAME_WITHOUT_PRODUCER`：对 `systemd/S7-switch-start-readback.py` 和 `systemd/S7-startup-readback.mjs`，找出它们读取的每个 `s<数字>…json` 文件名，要求这个名字由脚本自己写出（`retain_json`），或出现在操作包里另一个脚本（`.py`、`.mjs`、`.sh`、`.sql`，不含 `fixtures`），或是 `run-maintenance.mjs` 按步骤名拼出的 `<步骤名小写>-result.json`。找不到就报错，`deploy.sh` 拒绝上线（退出码 3），`rollback.sh` 也拒绝运行。
+  - 验证：放回第四次的旧文件时，检查报 `EVIDENCE_NAME_WITHOUT_PRODUCER systemd/S7-switch-start-readback.py s7-catalog-after51.json` 并以 1 退出；改成 `after55` 后这一项消失。
+  - 位置：检查脚本在操作包 `.ci-output/production/2026-10-26-tenth-change-packet-01/inputs/` 里（`.ci-output/` 不进仓库）。以后复制这个操作包做第十一次时，检查会一起带过去。
+  - 限制：只覆盖这两个读取脚本；从第九次复制来、名字仍然合法但内容已过时的文件（例如第一次尝试的探针源文件）这项检查发现不了，那一类靠 `check-packet-consistency.py` 已有的哈希核对和 Hermes 上的 16 项操作包检查。
+
+[回到目录](#编码代理反复犯的错误)
