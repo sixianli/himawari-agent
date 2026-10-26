@@ -675,6 +675,13 @@ date: "2026-10-13"
   - 验证：放回第四次的旧文件时，检查报 `EVIDENCE_NAME_WITHOUT_PRODUCER systemd/S7-switch-start-readback.py s7-catalog-after51.json` 并以 1 退出；改成 `after55` 后这一项消失。
   - 位置：检查脚本在操作包 `.ci-output/production/2026-10-26-tenth-change-packet-01/inputs/` 里（`.ci-output/` 不进仓库）。以后复制这个操作包做第十一次时，检查会一起带过去。
   - 限制：只覆盖这两个读取脚本；从第九次复制来、名字仍然合法但内容已过时的文件（例如第一次尝试的探针源文件）这项检查发现不了，那一类靠 `check-packet-consistency.py` 已有的哈希核对和 Hermes 上的 16 项操作包检查。
+- 再次发生（2026-10-26，第十二次上线第一次尝试）：
+  - `systemd/S7-switch-start-readback.py` 核对原配置时还按第十一次的前提，要求原配置里读网页上限（`runPolicy.publicFetch.maximumBytes`）仍是 32768，再由它改成 102400；第十一次早已改成 102400。停服之后 S7 报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`，新版本没有启动。同一份“新配置应该长什么样”的预期写了两遍：`maintenance/maintenance-common.mjs` 里的那份改了并且有测试，S7 的 Python 那份没改、也没有任何测试运行它。
+  - 自动回退随后失败：`scripts/delivery-mode/rollback.py` 按数据库版本拼步骤名和恢复点报告名（`S9_RAW_RESTORE56`、`s3_copy56-result.json`），而操作包里这些步骤一直叫 `S3_COPY51`、`S9_RAW_RESTORE51`、`S9_RAW_CONTROL51`。回退脚本的测试只拿第六次（数据库第 51 版）的操作包跑过，名字恰好对上。服务停了约 15 分钟，改正回退脚本后手动回退恢复。
+- 硬约束（2026-10-26，第二次）：
+  - `scripts/delivery-mode/test_rollback.py` 的 `PlanTest` 要求回退计划要跑的步骤都在操作包 `steps/run-step.py` 的步骤表里，恢复点报告名等于 `deploy.sh` 实际运行的那个 S3 步骤名加 `-result.json`。拿第十二次的操作包跑，旧的 `rollback.py` 让这项测试失败（`S9_RAW_RESTORE56` 不在步骤表里），改成固定的包内步骤名后通过（Hermes `himawari-tests/twelfth/rbt-new.log`）。
+  - 操作包新增 `systemd/verify-switch-config-fixtures.py`，`twelfth-freeze-tools/run-packet-checks.sh` 每次出包都跑：它从 S7 脚本里取出核对原配置的函数，用和 `maintenance/verify-fixtures.mjs` 同样形状的配置运行，要求算出的新配置与 `maintenance-common.mjs` 算出的逐字节相同，并要求 7 种旧值或缺项都被拒绝。对第一次尝试的 S7 脚本它报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED` 并以 1 退出，对改好的通过 9 项（Hermes `himawari-tests/twelfth/repro-old-s7.log`、`repro-new-s7.log`）。改好的函数还在生产机上只读核对过：对生产机的原配置，它算出的结果和维护脚本写出的 `s7-config-apply.json` 一致。
+  - 限制：这项出包检查和 `run-packet-checks.sh` 都在 `.ci-output/`（不进仓库），靠复制操作包带到下一次；`deploy.sh` 不会因为没跑出包检查而拒绝上线。
 
 [回到目录](#编码代理反复犯的错误)
 

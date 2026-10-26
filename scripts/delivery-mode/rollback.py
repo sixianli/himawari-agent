@@ -7,6 +7,9 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 DATABASE_CHANGING_REPORTS = ['step-s4', 'step-s5', 'step-s7_']
+RECOVERY_COPY_ACTION = 'S3_COPY51'
+RESTORE_ACTION = 'S9_RAW_RESTORE51'
+CONTROL_ACTION = 'S9_RAW_CONTROL51'
 
 
 def fail(code):
@@ -35,10 +38,10 @@ def rollback_plan(packet):
         'oldPrefix': binding['paths']['oldPrefix'],
         'deploymentId': binding['identity']['deploymentId'],
         'approvalSchema': 'himawari.' + match.group(1) + '-change-rollback-approval.v1',
-        'restoreAction': 'S9_RAW_RESTORE' + str(schema),
-        'controlAction': 'S9_RAW_CONTROL' + str(schema),
+        'restoreAction': RESTORE_ACTION,
+        'controlAction': CONTROL_ACTION,
         'recoveryId': binding['maintenance']['recovery' + str(schema) + 'Id'],
-        'recoveryReport': 's3_copy' + str(schema) + '-result.json',
+        'recoveryReport': RECOVERY_COPY_ACTION.lower() + '-result.json',
         'databaseChangingReports': DATABASE_CHANGING_REPORTS,
     }
 

@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import stat
 import subprocess
@@ -83,11 +84,19 @@ class PlanTest(unittest.TestCase):
 
     def test_plan_matches_the_packet_rollback_route(self):
         binding = json.loads((PACKET / 'inputs' / 'bindings.json').read_text())
-        self.assertEqual(self.plan['restoreAction'], 'S9_RAW_RESTORE51')
-        self.assertEqual(self.plan['controlAction'], 'S9_RAW_CONTROL51')
-        self.assertEqual(self.plan['recoveryId'], binding['maintenance']['recovery51Id'])
+        schema = binding['maintenance']['expectedInitialSchema']
+        self.assertEqual(self.plan['recoveryId'], binding['maintenance']['recovery' + str(schema) + 'Id'])
         self.assertEqual(self.plan['oldPrefix'], binding['paths']['oldPrefix'])
         self.assertEqual(self.plan['evidenceRoot'], binding['paths']['evidenceRoot'])
+
+    def test_plan_runs_only_steps_the_packet_and_deploy_script_define(self):
+        steps = set(re.findall(r"'(S[0-9]+_[A-Z0-9_]+)'", (PACKET / 'steps' / 'run-step.py').read_text()))
+        for action in (self.plan['restoreAction'], self.plan['controlAction']):
+            self.assertIn(action, steps)
+        deployed = (HERE / 'deploy.sh').read_text().split('for action in ', 1)[1].split(';', 1)[0].split()
+        copies = [action for action in deployed if action.startswith('S3_')]
+        self.assertEqual(len(copies), 1)
+        self.assertEqual(self.plan['recoveryReport'], copies[0].lower() + '-result.json')
 
     def test_generated_approval_passes_the_packet_maintenance_check(self):
         approval = remote.approval_document(self.plan, 'a' * 64, '20261025T120000Z')
