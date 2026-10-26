@@ -17,6 +17,11 @@ describe("disclosed assistant Markdown", () => {
     expect(result).toContain('rel="noopener noreferrer"');
     expect(result).toContain('referrerPolicy="no-referrer"');
   });
+  it("[UI-18] shows one box per task list item", () => {
+    const result = render("- [x] 订好酒店\n- [ ] 买西瓜卡");
+    expect(result.match(/☑/g)).toHaveLength(1);
+    expect(result.match(/☐/g)).toHaveLength(1);
+  });
   it("keeps Chinese prose outside automatically detected source links", () => {
     const result = render(
       "来源（https://weathernews.jp/news/202609/120091/），属前一天预报。数据：https://example.com/?year=2026&month=9）。",

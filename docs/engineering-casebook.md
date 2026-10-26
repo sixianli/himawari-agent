@@ -1794,6 +1794,14 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 取舍：主流产品在服务端解析文件，支持的格式更多；我们放弃了旧版 .doc/.xls/.ppt 和扫描件（记在 [BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)），换来服务端没有新的解析风险。结果（来自本 PR 的测试记录）：控制中心单元测试 446 个通过，其中浏览器转文字 4 个、上传和引用 2 个、粘贴拖放发送的交互测试 1 个；HTTP 网关合同测试 29 个、上下文投影集成测试 12 个通过。真实 Chromium 加上线上同样的内容安全策略（CSP，浏览器只允许加载哪些来源的脚本的规则）：一次选中 PDF、Word、Excel、PowerPoint 各一个，四张卡片按选择顺序出现，四段文字都正确上传，消息只带四行引用，页面没有报错。真实模型读附件后的回答质量：未上线，未测量。
 
+**后续（2026-10-26 夜）：第三期文件预览不改后端，只用工具记录**
+
+原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
+
+网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+
+取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
+
 [返回目录](#contents)
 
 <a id="small-cases"></a>
