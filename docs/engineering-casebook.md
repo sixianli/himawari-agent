@@ -930,7 +930,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-本案例对应的 PR 见 [docs/engineering-casebook.md 的提交记录](engineering-casebook.md)；相关背景：[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)（模型接入复用 Pi）、[案例 5](#case-search-latency)（同一类新闻请求的耗时）、PR #15（每步白话摘要）。
+[PR #33](https://github.com/sixianli/himawari-agent/pull/33)（提交 42a0ad5）；相关背景：[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)（模型接入复用 Pi）、[案例 5](#case-search-latency)（同一类新闻请求的耗时）、PR #15（每步白话摘要）。
 
 **面试 30 秒版**
 
