@@ -1080,7 +1080,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 **相关 ADR/PR**
 
-[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；本次 PR 见提交说明；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）。
+[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；[PR #39](https://github.com/sixianli/himawari-agent/pull/39)（提交 f298254）；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）。
 
 **面试 30 秒版**
 
