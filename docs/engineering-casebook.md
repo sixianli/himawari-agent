@@ -47,7 +47,7 @@ date: "2026-10-26"
   20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
   21. [个人 Agent 要不要做 iOS App：先补“连得上、叫得到、能说话”](#case-mobile-client)
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
-  23. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
+  25. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -1384,7 +1384,7 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 <a id="case-packet-generator"></a>
 
-## 案例 23：上线操作包从“复制上一次再手改”改成“按参数生成”
+## 案例 25：上线操作包从“复制上一次再手改”改成“按参数生成”
 
 **背景与现象**
 
@@ -1442,7 +1442,7 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
+[ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
 
 **面试 30 秒版**
 

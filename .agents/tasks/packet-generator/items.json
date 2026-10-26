@@ -88,7 +88,7 @@
       "done_when": [
         {
           "type": "doc",
-          "path": "docs/adr/0085-generate-release-packets-from-parameters.md"
+          "path": "docs/adr/0086-generate-release-packets-from-parameters.md"
         },
         {
           "type": "command",
