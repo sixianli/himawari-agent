@@ -1046,6 +1046,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 
 - 先用独立实例（silo）：老婆一个实例，有自己的数据库文件、密钥目录、配置、系统服务、系统账号和端口；稳定两周后再给最多 2 位朋友开。产品代码几乎不改。
 - 只邀请，不开放注册。别人的实例前面放 Cloudflare Access（先确认身份再放行的入口服务），只放行 Andy 列出的邮箱，用邮箱验证码登录；服务端已有的代码会核对 Access 发的登录凭证。
+- 别人的实例每人每月模型费用上限 10 美元（Andy 定的数）。不在产品里重新加预算代码（[案例 10](#case-budget-removal) 刚删掉），而是给每个别人的实例单独一把模型网关 API key，在网关上设按月重置的 10 美元预算，用满后网关直接拒绝这把 key 的请求。
 - 用户超过约 5 人时，再改成一个实例按 `owner_id` 隔离（pool），先写“用 A 的身份读不到 B 的数据”的隔离测试；对陌生人开放的 SaaS 不做。
 - 开工条件：第十一版事故修好、真实网页验收通过、生产连续 7 天无“用不了”事故、上线脚本能按参数自动生成。
 
@@ -1071,6 +1072,7 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 - ✅ Zep（[Users](https://help.getzep.com/users)）：“Each user has a user graph that stores context for that user.”
 - ✅ Cloudflare D1（[Limits](https://developers.cloudflare.com/d1/platform/limits/)）：“designed for horizontal scale out across multiple, smaller (10 GB) databases, such as per-user, per-tenant or per-entity databases.”
 - ✅ Cloudflare Access（[One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)）：“To grant a user access... simply add their email address to an Access policy.”；[验证凭证](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)：“You should validate the token with your public key to ensure that the request came from Access and not a malicious third party.”
+- ✅ Vercel AI Gateway 预算（[Budgets and Spend Limits](https://vercel.com/docs/ai-gateway/observability-and-spend/budgets)）：“AI Gateway checks every budget in scope before each request and rejects further requests once a limit is exceeded, until the budget resets or you raise it.”；预算可以按单把 API key 设，周期可选 `monthly`（每月 1 日 UTC 0 点重置）。
 - ✅ NIST SP 800-63B-4（[原文](https://pages.nist.gov/800-63-4/sp800-63b.html)）：“OTP authentication is not phishing-resistant.”
 - ✅ OWASP 大模型应用十大风险（[LLM10:2025 Unbounded Consumption](https://genai.owasp.org/llmrisk/llm102025-unbounded-consumption/)）：“Denial of Wallet (DoW): By initiating a high volume of operations, attackers exploit the cost-per-use model of cloud-based AI services”。
 - ✅ Open WebUI（[环境变量](https://docs.openwebui.com/reference/env-configuration)）：`DEFAULT_USER_ROLE` 默认 `pending`，“New users are pending until their accounts are manually activated by an admin.”

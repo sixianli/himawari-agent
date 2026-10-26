@@ -48,7 +48,7 @@ date: "2026-10-26"
 2. **第一步用独立实例（silo）。** 每个人一套独立的 stateRoot、数据库文件、`secrets/` 目录、配置文件、系统服务、系统账号和监听端口，先放在现有生产机上。每个实例内部仍然只有一个主人，所以 [ADR 0003](0003-single-logical-agent-authority.md)、[ADR 0020](0020-public-web-identity-gateway.md)、[ADR 0027](0027-built-in-owner-authentication.md) 在每个实例里照旧成立，不取代。先只给老婆开；她的实例稳定运行两周后，再给最多 2 位朋友开。
 3. **只邀请，不开放注册。** 给谁开、什么时候停用都由 Andy 决定，由 Claude 开实例和账号。不做注册页、计费和防滥用。
 4. **别人的实例用 Cloudflare Access 登录。** 实例前面接 Cloudflare Tunnel 和 Access 应用，Access 规则只放行 Andy 列出的邮箱，用邮箱一次性验证码登录；实例的 `identity.kind` 用 `cloudflare-access`，服务端照旧核对 Access 发的登录凭证（`packages/platform-node/src/identity-gateway.ts`）。必须先建好 Access 规则，再把网址接到服务器。Andy 自己的实例继续走 ssh 隧道，不变。
-5. **别人的实例要设每月模型用量上限。** 金额由 Andy 定；实现时另写一份 ADR，只对别人的实例生效，Andy 自己的实例仍按 ADR 0076 不设上限。
+5. **别人的实例每人每月模型费用上限 10 美元，用模型网关的限额实现。** 2026-10-26T11:23Z Andy 说：“定为每个人十美元吧。”每个别人的实例用自己的一把 Vercel AI Gateway（模型网关；生产的对话模型和记忆嵌入都经它调用，见 `packages/runtime-pi/src/configured-model-binding.ts`、`packages/memory-engine/src/embedding.ts`）API key，给这把 key 设 10 美元、按月重置（每月 1 日 UTC 0 点）的预算，并打开用量达到 100% 时的邮件提醒，发给 Andy。用满后网关对这把 key 的请求返回 HTTP 402，直到下月重置或 Andy 调高额度。产品里不重新加预算代码，ADR 0076 不变：Andy 自己的实例不设上限，产品内的预算账本仍只记账。开工时要核对：别人实例的所有收费调用（对话、记忆嵌入、联网搜索）都走这把 key；网关返回 402 时页面明确显示“本月额度已用完”，而不是笼统的失败。
 6. **开工条件。** 第十一版事故修好、新版用真实网页验收通过（对话、搜索、记忆页、设置页）、生产连续 7 天没有“用不了”级别的事故，并且上线脚本能按参数自动生成。条件没满足前不动代码和生产机。
 7. **以后的两档。** 用户超过约 5 人，或者分别升级多个实例明显拖慢迭代时，再设计“一个实例按 `owner_id` 隔离”（pool），届时另写 ADR，并先写“用 A 的身份读不到 B 的数据”的隔离测试。对陌生人开放的 SaaS 现在不做；到 pool 阶段如需扩大范围，优先做“自己申请、Andy 批准”。passkey 登录作为以后的加强项。
 
@@ -61,6 +61,7 @@ date: "2026-10-26"
 - **独立实例（silo，选中）**：几乎不改产品代码，隔离最彻底（不同文件、不同进程、不同系统账号），老婆几天内就能用；代价是每次上线要升级 N 份，内存和磁盘翻 N 倍，各实例版本可能不一致。
 - **一个实例按 `owner_id` 隔离（pool）**：运维只有一份；但要改配置结构、登录、服务组装代码、后台任务、密钥、沙箱根目录和调度，这些正是最近两次事故发生的地方，粗估 2–4 周（未测量）。任何一个查询漏带 `owner_id` 就会泄露别人的记忆，SQLite 没有 PostgreSQL 那样的行级安全策略兜底，只能靠代码和测试。留到用户变多时再做。
 - **对陌生人开放注册的 SaaS**：要做注册、计费、配额、防滥用、隐私合规和多台服务器，还要推翻“任何时刻只有一个活动权威”（ADR 0003），粗估 2–3 个月以上（未测量）；陌生人能刷爆模型费用，还能在放着 Andy 私人数据的机器上运行不可信的代码。不做。
+- **在产品里重新加预算检查来限额**：要把 ADR 0076 删掉的 `budgets` 配置和准入比较加回来，代码多，而且当初正是这套累计上限把所有对话拦住；Vercel AI Gateway 已经支持按单把 API key 设预算（[文档](https://vercel.com/docs/ai-gateway/observability-and-spend/budgets)：“AI Gateway checks every budget in scope before each request and rejects further requests once a limit is exceeded, until the budget resets or you raise it.”），并支持按月重置和邮件提醒。不采用。
 - **登录用内置账号（密码 + 手机验证码）**：合格，产品已有；但验证码不防钓鱼，朋友还要自己绑验证器。作为备选。
 - **登录用 Tailscale 私有网络共享**：不暴露到公网；但每个客人都要有自己的 Tailscale 账号并安装客户端，对家人朋友太麻烦。不采用。
 
@@ -73,7 +74,7 @@ date: "2026-10-26"
 - 好处：老婆和朋友的数据与 Andy 的数据在文件和进程层面分开；方向和登录方式定下来，开工时不用再讨论；数据库已有的 `owner_id` 让以后改成 pool 比从头做容易。
 - 代价：生产机要多跑几份服务，磁盘余量本来就紧（第十一次上线曾因只剩 10.5 GB 停下），开第二个实例前要先核算内存和磁盘；生产机多一个经 Cloudflare 的对外入口。
 - 未验证：两个实例在同一台机器上的端口、沙箱目录、系统账号能否互不冲突。上线和回滚脚本已经从操作包读取服务名和 stateRoot（`scripts/delivery-mode/`），但生成操作包的工具在 Mac 的 `.ci-output` 里，没有核对。
-- 后续：实现工作记在 Backlog 项 [BL-20261026-003](../backlog/BL-20261026-003-isolated-instance-per-person.md)；费用上限金额和对应 ADR 待 Andy 给数；PRD v0.2 和架构文档在实现时再改，因为每个实例仍是单一主人，现有描述目前没有说错。
+- 后续：实现工作记在 Backlog 项 [BL-20261026-003](../backlog/BL-20261026-003-isolated-instance-per-person.md)；PRD v0.2 和架构文档在实现时再改，因为每个实例仍是单一主人，现有描述目前没有说错。
 
 [↑ 返回阅读导航](#contents)
 
