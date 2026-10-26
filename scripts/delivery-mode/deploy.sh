@@ -21,6 +21,11 @@ if [[ -f "$packet/inputs/check-packet-consistency.py" ]] && ! /usr/bin/python3 -
   result inconsistent PACKET 3
 fi
 
+if ! /usr/bin/python3 -I "$here/generated-packet-gate.py" "$packet"; then
+  echo "DEPLOY_PACKET_NOT_GENERATED: build the packet with python3 $here/make-packet.py prepare; do not copy or hand-edit an older packet" >&2
+  result not-generated PACKET 6
+fi
+
 if ! /usr/bin/python3 -I "$here/browser-acceptance-gate.py" "$packet"; then
   echo "DEPLOY_BROWSER_ACCEPTANCE_MISSING: walk the release checks in a real browser on this exact artifact first (product-path test 'release acceptance'), then copy its browser-acceptance.json to $packet/browser-acceptance/walkthrough.json" >&2
   result no-browser-acceptance ACCEPTANCE 5
@@ -34,7 +39,11 @@ fi
 echo "DEPLOY_PREFLIGHT_PASSED"
 
 stopped=0
-for action in S1_TRANSPORT S1_INSTALL S2_STOP S3_COPY51 S6_ACCEPTANCE S6_PUBLISH_MATERIALS S6_FINALIZE_BINDINGS S6_SIGN S6_RUNTIME_PROTECTION S6_READ S7_DB_STATUS S7_CONFIG_APPLY S7_CATALOG_UPGRADE S7_SWITCH_START S8_READBACK; do
+actions=(S1_TRANSPORT S1_INSTALL S6_ACCEPTANCE S2_STOP S3_COPY51 S6_PUBLISH_MATERIALS S6_FINALIZE_BINDINGS S6_SIGN S6_RUNTIME_PROTECTION S6_READ S7_DB_STATUS S7_CONFIG_APPLY S7_CATALOG_UPGRADE S7_SWITCH_START S8_READBACK)
+if [[ "${HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP:-0}" == 1 ]]; then
+  actions=(S1_TRANSPORT S1_INSTALL S2_STOP S3_COPY51 S6_ACCEPTANCE S6_PUBLISH_MATERIALS S6_FINALIZE_BINDINGS S6_SIGN S6_RUNTIME_PROTECTION S6_READ S7_DB_STATUS S7_CONFIG_APPLY S7_CATALOG_UPGRADE S7_SWITCH_START S8_READBACK)
+fi
+for action in "${actions[@]}"; do
   [[ "$action" == S2_STOP ]] && stopped=1
   echo "DEPLOY_STEP_START $action $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   /bin/bash "$packet/steps/run-user-step.sh" "$action"

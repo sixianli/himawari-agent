@@ -1,0 +1,8 @@
+{
+  "artifact": "/var/tmp/himawari-third-20261012/input/candidate.tar.gz",
+  "artifactSha256": "__PKT_ARTIFACT_SHA256__",
+  "artifactBytes": __PKT_ARTIFACT_BYTES__,
+  "context": "/var/tmp/himawari-third-20261012/input/context.json",
+  "contextSha256": "__PKT_CONTEXT_SHA256__",
+  "revision": "__PKT_COMMIT__"
+}

@@ -1,0 +1,24 @@
+{
+  "files": {
+    "run-network-preparation.py": "b6a07f55b088e1fb0294f2564ce7a13e08431ed7230745fe05311e8c51b53f04",
+    "run-stage-03.py": "db7f62f3866b4a827c072df544ba385f05eee58d36abd1172da2d7817464e1a0",
+    "commands-03.json": "77e19290feabb08dfa12f8d9b3b8637a6221bdd6a03bff2e6cc64400f3c78791",
+    "scratch-root.mjs": "800e8ae0922e89d48043d0dd9f8e6f407a3730979e64f1bbbcdff5328218773e",
+    "scratch-root-check.mjs": "e0dc5cae30899eaa9f1291c1cd919b162c22a19371436247f4c03cc666601dad",
+    "adaptation-manifest.json": "e11c3eca6b6bd52fa4d72369b60f62d6e398562a932c1b7ef3ccd31a5972ee17",
+    "probe-foreground.mjs": "2cbb0a9c1b2b0118c85cd14c8b43722bf5fb32d0d9a7e5bec96e0021f77b2cf4",
+    "probe-authorized-network.mjs": "1731f03609f520f134bcddebe6c2308f57e0b8326a45c992a77e848eb12f4a82",
+    "digest-installed-runtime.mjs": "cf0d81d652f2934d9877e40bb9a3436bfbf8b3e885408448f7ab33ed5d3c2659"
+  },
+  "candidate": {
+    "artifact": "/home/andy/himawari-tests/round2/source/.ci-output/r64-d4-rework-a1-final-01-product-build/build-linux-x64/linux-x64-abi127-3a65b9006b83d2a24bc7b2fbb1c1c831f239b841-1791355995637-1.tar.gz",
+    "artifactSha256": "6cc0c9d8b273fa1e5c4b46d053f9b146ae9613506027feabd8b635a82ac7fbd3",
+    "artifactBytes": 66607727,
+    "context": "/home/andy/himawari-tests/round2/source/.ci-output/r64-d4-rework-a1-final-01-product-build/context.json",
+    "contextSha256": "a2932641a699830b9826713cf6b10467c05c071656d5db0289732f768cb10f87",
+    "revision": "3a65b9006b83d2a24bc7b2fbb1c1c831f239b841",
+    "workspacePatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "fingerprintSha256": "0bf8f6218338dbe49918e3f4044119b81d5e4f0e2767bf60fbae8df99a09e0e9"
+  },
+  "approved": false
+}

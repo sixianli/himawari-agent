@@ -9,14 +9,25 @@ import unittest
 
 HERE = Path(__file__).resolve().parent
 ARTIFACT_SHA256 = 'a' * 64
-BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service'}, 'paths': {'stateRoot': '/var/lib/himawari/state'}, 'candidate': {'archiveSha256': ARTIFACT_SHA256}}
+CONFIG_SHA256 = 'c' * 64
+UNIT_SHA256 = 'd' * 64
+COMMIT = 'b' * 40
+BINDING = {'host': {'address': '192.0.2.10', 'hostname': 'prod-host'}, 'service': {'unit': 'himawari-prod.service', 'unitFragmentPath': '/etc/systemd/system/himawari-prod.service', 'oldConfigSha256': CONFIG_SHA256, 'oldUnitSha256': UNIT_SHA256}, 'paths': {'stateRoot': '/var/lib/himawari/state', 'config': '/etc/himawari/config.json'}, 'authority': {'authorityEpoch': 1, 'fencingToken': 31}, 'candidate': {'archiveSha256': ARTIFACT_SHA256, 'testedCommit': COMMIT}}
 SCENARIOS = ['accept-homepage', 'accept-search-toggle', 'accept-news-search', 'accept-long-answer', 'accept-memory-page', 'accept-after-restart']
 
 
 def walkthrough(sha=ARTIFACT_SHA256, statuses=None):
     statuses = statuses or {}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed')} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\n'
+
+
+def generated_records(commit=COMMIT, failed=()):
+    checks = load('run_packet_checks', 'run-packet-checks.py')
+    names = [name for name, command, directory in checks.plan(Path('/packet'), Path('node'), 'python', True, False)]
+    parameters = {'COMMIT': COMMIT, 'CURRENT_SCHEMA': 56, 'TARGET_SCHEMA': 56}
+    record = {'passed': not failed, 'commit': commit, 'currentSchema': 56, 'targetSchema': 56, 'checks': [{'name': name, 'exit': 1 if name in failed else 0} for name in names]}
+    return parameters, record
 
 
 def load(name, filename):
@@ -48,13 +59,34 @@ class PreflightChecksTest(unittest.TestCase):
         self.assertEqual(self.failed(self.facts(uid='1001')), ['ROOT_LOGIN'])
 
 
-class DeployFlowTest(unittest.TestCase):
+class FrozenStatePreflightTest(unittest.TestCase):
+    TAG = '[PG-3]'
+
+    def failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000) if not passed]
+
+    def test_restart_after_freeze_is_refused_before_anything_changes(self):
+        self.assertEqual(self.failed(configSha256='e' * 64), ['CONFIG_UNCHANGED_SINCE_FREEZE'])
+        self.assertEqual(self.failed(authority='1 32'), ['AUTHORITY_UNCHANGED_SINCE_FREEZE'])
+        self.assertEqual(self.failed(unitSha256='f' * 64), ['UNIT_UNCHANGED_SINCE_FREEZE'])
+        self.assertEqual(self.failed(authority=''), ['AUTHORITY_UNCHANGED_SINCE_FREEZE'])
+
+    def test_remote_script_reads_config_unit_and_authority_mirror(self):
+        script = preflight.remote_script(BINDING)
+        self.assertIn('/usr/bin/sha256sum /etc/himawari/config.json', script)
+        self.assertIn('/usr/bin/sha256sum /etc/systemd/system/himawari-prod.service', script)
+        self.assertIn('/var/lib/himawari/state/authority.json', script)
+
+
+class DeployHarness(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         root = Path(self.directory.name)
         self.scripts = root / 'scripts'
         self.scripts.mkdir()
-        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py'):
+        for name in ('deploy.sh', 'deploy-preflight.py', 'browser-acceptance-gate.py', 'generated-packet-gate.py', 'run-packet-checks.py'):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
@@ -73,6 +105,9 @@ class DeployFlowTest(unittest.TestCase):
         (self.packet / 'inputs').mkdir(parents=True)
         (self.packet / 'steps').mkdir()
         (self.packet / 'inputs' / 'bindings.json').write_text(json.dumps(BINDING))
+        parameters, record = generated_records()
+        (self.packet / 'packet-parameters.json').write_text(json.dumps(parameters))
+        (self.packet / 'packet-checks.json').write_text(json.dumps(record))
         self.walkthrough = self.packet / 'browser-acceptance' / 'walkthrough.json'
         self.walkthrough.parent.mkdir()
         self.walkthrough.write_text(json.dumps(walkthrough()))
@@ -92,6 +127,8 @@ class DeployFlowTest(unittest.TestCase):
         calls = self.calls.read_text().split() if self.calls.exists() else []
         return child.returncode, json.loads(line.split(' ', 1)[1]), calls
 
+
+class DeployFlowTest(DeployHarness):
     def test_full_run_passes_and_keeps_a_log(self):
         code, result, calls = self.deploy()
         self.assertEqual((code, result['result']), (0, 'passed'))
@@ -155,6 +192,58 @@ class DeployFlowTest(unittest.TestCase):
         code, result, calls = self.deploy(FAKE_FAIL_AT='S2_STOP', FAKE_ROLLBACK_EXIT='1')
         self.assertEqual(result['result'], 'recovery-failed')
         self.assertNotEqual(code, 0)
+
+
+class GeneratedPacketGateTest(DeployHarness):
+    TAG = '[PG-1]'
+
+    def test_a_copied_packet_without_generator_records_changes_nothing(self):
+        (self.packet / 'packet-parameters.json').unlink()
+        code, result, calls = self.deploy()
+        self.assertEqual((code, result['result'], calls), (6, 'not-generated', []))
+
+    def test_a_packet_whose_checks_did_not_all_pass_changes_nothing(self):
+        for record in (generated_records(failed=('maintenance/verify-fixtures.mjs',))[1], generated_records(commit='e' * 40)[1]):
+            (self.packet / 'packet-checks.json').write_text(json.dumps(record))
+            code, result, calls = self.deploy()
+            self.assertEqual((code, result['result'], calls), (6, 'not-generated', []))
+
+    def test_a_migrating_packet_needs_the_migration_check(self):
+        parameters, record = generated_records()
+        parameters['TARGET_SCHEMA'] = record['targetSchema'] = 57
+        (self.packet / 'packet-parameters.json').write_text(json.dumps(parameters))
+        (self.packet / 'packet-checks.json').write_text(json.dumps(record))
+        code, result, calls = self.deploy()
+        self.assertEqual((code, result['result'], calls), (6, 'not-generated', []))
+
+
+class DeployOrderTest(DeployHarness):
+    TAG = '[PG-4]'
+
+    def test_acceptance_runs_while_the_old_release_still_serves(self):
+        code, result, calls = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertLess(calls.index('S6_ACCEPTANCE'), calls.index('S2_STOP'))
+        self.assertEqual(calls[:4], ['S1_TRANSPORT', 'S1_INSTALL', 'S6_ACCEPTANCE', 'S2_STOP'])
+
+    def test_failed_acceptance_leaves_the_old_release_running(self):
+        code, result, calls = self.deploy(FAKE_FAIL_AT='S6_ACCEPTANCE')
+        self.assertEqual((result['result'], result['stoppedAt']), ('stopped-before-service-stop', 'S6_ACCEPTANCE'))
+        self.assertNotIn('S2_STOP', calls)
+        self.assertNotIn('rollback', calls)
+        self.assertNotEqual(code, 0)
+
+    def test_old_order_stays_available_as_a_fallback(self):
+        code, result, calls = self.deploy(HIMAWARI_DEPLOY_ACCEPTANCE_AFTER_STOP='1')
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertEqual(calls[2:5], ['S2_STOP', 'S3_COPY51', 'S6_ACCEPTANCE'])
+
+    def test_restart_after_freeze_stops_deploy_with_a_refreeze_hint(self):
+        code, result, calls = self.deploy(FAKE_FACTS=GOOD_FACTS.replace('authority=1 31', 'authority=1 32'))
+        self.assertEqual((code, result['result']), (4, 'preflight-failed'))
+        self.assertEqual(calls, [])
+        self.assertIn('PREFLIGHT_REFREEZE', Path(result['log']).read_text())
+        self.assertIn('make-packet.py freeze', Path(result['log']).read_text())
 
 
 if __name__ == '__main__':

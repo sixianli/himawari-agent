@@ -1,0 +1,80 @@
+{
+  "schema": "r2-l6-frozen-source-carry.v1",
+  "status": "__PKT_LABEL__-candidate-schema51-audit-resident-probe-assertions-unchanged",
+  "files": [
+    {
+      "source": "test/qualification/sandbox-install-restart-probe.mjs",
+      "packetCopy": "probe-source/test/qualification/sandbox-install-restart-probe.mjs",
+      "sha256": "36efdaa202ec9dc9359362abf1d06f126d74118c33315d1010fcb2d62dcc9a43",
+      "bytes": 61435,
+      "byteIdentical": true,
+      "previousSha256": "4fad72648068ffd5b744bfc601f8e7e5b1a26fb943bcbe6d216d39f3a1017efb",
+      "previousBytes": 61735,
+      "byteIdenticalBasis": "981f789d-test-only",
+      "sourceRevision": "__PKT_COMMIT__",
+      "replacementReason": "__PKT_LABEL_TITLE__ change: candidate 981f789d (53bfe699) keeps one resident command session per environment, so the probe counts resident identities from the command session only; assertions and limits unchanged"
+    },
+    {
+      "source": "test/qualification/sandbox-install-restart-controller.py",
+      "packetCopy": "probe-source/test/qualification/sandbox-install-restart-controller.py",
+      "sha256": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3",
+      "bytes": 31135,
+      "byteIdentical": true
+    },
+    {
+      "source": "test/qualification/sandbox-install-restart-http.mjs",
+      "packetCopy": "probe-source/test/qualification/sandbox-install-restart-http.mjs",
+      "sha256": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492",
+      "bytes": 30035,
+      "byteIdentical": true
+    },
+    {
+      "source": "test/qualification/sandbox-install-restart-model.mjs",
+      "packetCopy": "probe-source/test/qualification/sandbox-install-restart-model.mjs",
+      "sha256": "a7d5756845e61711a42bfbd28f59266334b3b5b35cc936522b4855babe529dc8",
+      "bytes": 19728,
+      "byteIdentical": true
+    },
+    {
+      "source": "scripts/operations/workspace-lifecycle-audit.mjs",
+      "packetCopy": "probe-source/scripts/operations/workspace-lifecycle-audit.mjs",
+      "sha256": "933cc99e36e0d1658e02b4f7af9110a8b903b0a024297472d8c1dfe481a5eecb",
+      "bytes": 13768,
+      "byteIdentical": true,
+      "sourceRevision": "__PKT_COMMIT__",
+      "previousSha256": "aae13387cc61b2a0af680a031ef2d2db63ad7abf960d8648c7f410296bd1ec6e",
+      "previousBytes": 14014,
+      "byteIdenticalBasis": "candidate-aa563155",
+      "replacementReason": "__PKT_LABEL_TITLE__ change: the aa563155 audit accepts Schema 56; the eleventh packet audit stops above Schema 55"
+    }
+  ],
+  "codeChanges": [],
+  "evidenceStatus": {
+    "group06": "Retained original passing evidence covers previous HTTP SHA only",
+    "static02": "Retained original static evidence covers previous HTTP SHA only",
+    "group07": "Awaiting parent Hermes verification",
+    "previousHttpSha256": "0b08fdbef70a9b4c49673a77f26d52969c309fd8eba8e132dcec481d69e47dd7",
+    "currentHttpSha256": "2c4db57b58d870a7a208836268c0bcfdd35dc827ea5b4372f9f0591ae8352492",
+    "changeScope": "Parent-authorized probe-only HTTP credential alias and controller/main shared original30s cleanup deadline; no product, ten assertions, 250ms, 1500ms, 540000ms or 600000ms limit change; __PKT_LABEL_TITLE__ change: audit from candidate cca9d993 (byte-identical to 4126f4f3) (Schema 51); probe from test-only commit cca9d993 (resident task environment; new request identity read before cancel); ten assertions and limits unchanged",
+    "cleanupSingleDeadlineRepair": "Copied exact parent-frozen current source; prior groups retained; new complete fixed-source group and final regression pending",
+    "previousControllerSha256": "da0f43c3e8fa967833f2e29431879fe6c481514cf7a58bfa7165947a4ba82b94",
+    "currentControllerSha256": "d5051c9afa0e71e9fcf9adeb49189a88fe532d99aace0c94b4dbc8a3f6d5e7d3",
+    "previousMainSha256": "99fb47b490ccd8bd8615104b329f641765da2b2caecc2e187acbb9232be51798",
+    "currentMainSha256": "31d5cfb568aabd27de903659a2d322d75d3fbbcecb0f28b66833fe2e3cee795b",
+    "previousPacketMainSha256": "747ad083856d90a96ebc4a6cbe2595c609c9d2fa0ba1fcf92e42ca5cca658b7c"
+  },
+  "regressionSource": {
+    "path": "test/integration/product-path-browser.test.ts",
+    "sha256": "__PKT_REGRESSION_SOURCE_SHA256__",
+    "bytes": __PKT_REGRESSION_SOURCE_BYTES__,
+    "carriedForCloudExecution": false,
+    "reason": "Project-only Hermes regression runner; standalone P8 neither imports nor executes this TS file; temporary original3a source stays clean until the two authorized fixture path changes"
+  },
+  "secondDeploymentAdaptation": {
+    "auditSourceCommit": "__PKT_COMMIT__",
+    "reason": "Sixth packet audit stops above Schema 50 and the __PKT_LABEL__ candidate migrates to Schema 51; audit taken from candidate cca9d993 (byte-identical to 4126f4f3), probe from test-only commit cca9d993 for the resident task environment",
+    "probeTenAssertionsChanged": false,
+    "firstOriginalsChanged": false,
+    "probeSourceCommit": "__PKT_COMMIT__"
+  }
+}
