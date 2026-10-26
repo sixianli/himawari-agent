@@ -19,9 +19,11 @@ superseded_by: ""
 
 ## Summary
 
-按 ADR 0082 第二步：加 manifest（display=standalone、图标用 assets/brand/himawari/v1）、内容安全策略加 manifest-src 'self'、服务端生成推送密钥并保存订阅（一次数据库迁移）、到期记忆提醒、任务完成、等待审批三类事件触发推送，优先用声明式网页推送（iOS 18.4 起），设置页加开启推送按钮（必须由用户点按触发）。锁屏显示多少正文设计时问 Andy；界面改动先出原型给 Andy 审。开工条件：BL-20261026-004 入口在 iPhone 上实测可登录；前端 gzip 总体积先省出约 1–2 KB，或经 Andy 同意调高上限。上线两周后核对推送到达情况，不可靠则按 ADR 0082 第 6 条重新评估原生 App。
+按 ADR 0089 第 2、5 条和[网页推送实现规格](../execution/specs/2026-10-26-web-push-design.md)：控制中心加 manifest、图标、不缓存的后台脚本，内容安全策略加 manifest-src 和 worker-src；服务端生成 VAPID 密钥、保存每台设备的订阅（一次数据库迁移）；到期记忆提醒、等待审批、任务完成或失败三类事推送，锁屏只显示提醒原文或对话标题，敏感记忆显示“你有一条私密提醒”；任何设备上页面在前台时不推；通知文字中英日三语；删掉 Bark 代码。设置页“通知”按[界面原型](https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv)做，等界面重构第一期合入 main 后再写。前端体积上限已由 Andy 取消。上线两周后核对推送到达情况，不可靠则按 ADR 0089 第 7 条重新评估原生 App。
 
 ## Origin
+
+- 改动：[SOURCE: docs/adr/0089-web-push-only-owner-entry.md]（Andy 2026-10-26T14:39Z“直接做这个，一步到位”，15:14Z 同意锁屏规则、在看就不推、删除 Bark）。
 
 - 决定：[SOURCE: docs/adr/0082-mobile-pwa-push-before-native-app.md]（Andy 2026-10-26T13:05Z 在决定卡片上同意 1–7 条）。
 

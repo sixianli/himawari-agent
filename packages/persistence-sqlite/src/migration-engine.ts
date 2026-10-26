@@ -185,7 +185,7 @@ const bundledMigrationFiles = [
   {
     sequence: 16,
     name: "thread_gateway_events",
-    changeSet: "thread-gateway-events",
+    changeSet: "thread-finished-runs",
     phase: "expand" as const,
     file: "0016_thread_gateway_events.sql",
   },
@@ -475,6 +475,13 @@ const bundledMigrationFiles = [
     changeSet: "memory-page",
     phase: "expand" as const,
     file: "0057_memory_page.sql",
+  },
+  {
+    sequence: 58,
+    name: "web_push",
+    changeSet: "web-push",
+    phase: "expand" as const,
+    file: "0058_web_push.sql",
   },
 ] as const;
 

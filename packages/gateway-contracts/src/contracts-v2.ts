@@ -23,6 +23,11 @@ export const GATEWAY_V2_MESSAGE_TYPES = [
   "search.authorization.set",
   "search.authorization.read",
   "search.authorization.snapshot",
+  "push.subscription.set",
+  "push.test",
+  "presence.heartbeat",
+  "push.status.read",
+  "push.status.snapshot",
   "memory.overview.read",
   "memory.overview.snapshot",
   "memory.approval.respond",
@@ -207,6 +212,76 @@ const searchAuthorizationSnapshotSchema = object({
     enabled: booleanValue,
     available: booleanValue,
     recipients: searchRecipientsSchema,
+    generatedAt: timestamp,
+  }),
+});
+
+const pushEndpointSchema: Schema<string> = {
+  parse(input, path = "$") {
+    const value = boundedString(2048).parse(input, path);
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new ContractValidationError(path, "expected an https push endpoint");
+    }
+    if (url.protocol !== "https:" || url.username || url.password)
+      throw new ContractValidationError(path, "expected an https push endpoint");
+    return value;
+  },
+};
+const pushKeySchema: Schema<string> = {
+  parse(input, path = "$") {
+    const value = boundedString(256).parse(input, path);
+    if (!/^[A-Za-z0-9_-]+={0,2}$/.test(value))
+      throw new ContractValidationError(path, "expected a base64url key");
+    return value;
+  },
+};
+const pushLocaleSchema = enumeration(["zh-CN", "en", "ja"]);
+const pushKindSchema = enumeration(["reminder", "approval", "run"]);
+const pushSubscriptionCommandSchema = object({
+  ...commandEnvelope("push.subscription.set"),
+  payload: object({
+    action: enumeration(["subscribe", "unsubscribe"]),
+    subscriptionId: nullable(machineString),
+    endpoint: nullable(pushEndpointSchema),
+    keys: nullable(object({ p256dh: pushKeySchema, auth: pushKeySchema })),
+    locale: nullable(pushLocaleSchema),
+    deviceLabel: nullable(boundedString(64)),
+    kinds: nullable(array(pushKindSchema)),
+  }),
+});
+const pushTestCommandSchema = object({
+  ...commandEnvelope("push.test"),
+  payload: object({ subscriptionId: machineString }),
+});
+const presenceHeartbeatCommandSchema = object({
+  ...commandEnvelope("presence.heartbeat"),
+  payload: object({ clientId: machineString, visible: booleanValue }),
+});
+const pushStatusQuerySchema = object({
+  ...envelope("query", "push.status.read"),
+  payload: object({}),
+});
+const pushStatusSnapshotSchema = object({
+  ...envelope("snapshot", "push.status.snapshot"),
+  payload: object({
+    available: booleanValue,
+    publicKey: nullable(pushKeySchema),
+    subscriptions: array(
+      object({
+        subscriptionId: machineString,
+        deviceLabel: boundedString(64),
+        endpointHost: boundedString(256),
+        locale: pushLocaleSchema,
+        kinds: array(pushKindSchema),
+        state: enumeration(["active", "paused"]),
+        failureCode: nullable(machineString),
+        createdAt: timestamp,
+        lastDeliveredAt: nullable(timestamp),
+      }),
+    ),
     generatedAt: timestamp,
   }),
 });
@@ -1531,6 +1606,11 @@ const schemasByType = {
   "search.authorization.set": searchAuthorizationCommandSchema,
   "search.authorization.read": searchAuthorizationQuerySchema,
   "search.authorization.snapshot": searchAuthorizationSnapshotSchema,
+  "push.subscription.set": pushSubscriptionCommandSchema,
+  "push.test": pushTestCommandSchema,
+  "presence.heartbeat": presenceHeartbeatCommandSchema,
+  "push.status.read": pushStatusQuerySchema,
+  "push.status.snapshot": pushStatusSnapshotSchema,
   "memory.overview.read": memoryOverviewQuerySchema,
   "memory.overview.snapshot": memoryOverviewSnapshotSchema,
   "memory.approval.respond": memoryApprovalRespondCommandSchema,

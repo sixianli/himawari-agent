@@ -37,4 +37,5 @@ export * from "./typesafe-jev-transport.js";
 export * from "./web-host-boundary.js";
 export * from "./web-provider-chain.js";
 export * from "./web-provider-failure.js";
+export * from "./web-push-sender.js";
 export * from "./workspaces/index.js";

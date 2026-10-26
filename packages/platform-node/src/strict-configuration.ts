@@ -912,29 +912,26 @@ function parseAutomaticReview(
   });
 }
 
-export const REMINDER_PUSH_SECRET_PURPOSE = "reminder-push";
+export const WEB_PUSH_SECRET_PURPOSE = "web-push";
 
-function parseReminderPush(value: unknown): NonNullable<RunPolicyConfiguration["reminderPush"]> {
-  const field = "configuration.runPolicy.reminderPush";
+function parseWebPush(value: unknown): NonNullable<RunPolicyConfiguration["webPush"]> {
+  const field = "configuration.runPolicy.webPush";
   const input = record(value, field);
-  rejectUnknown(input, ["channel", "secretRef", "server"], field);
-  if (input["channel"] !== "bark") throw invalid(`${field}.channel`, "must be bark");
-  let server: string | undefined;
-  if (input["server"] !== undefined) {
-    server = string(input["server"], `${field}.server`);
-    let url: URL | undefined;
-    try {
-      url = new URL(server);
-    } catch {
-      url = undefined;
-    }
-    if (!url || url.protocol !== "https:" || url.origin !== server)
-      throw invalid(`${field}.server`, "must be an https origin");
+  rejectUnknown(input, ["secretRef", "subject"], field);
+  const subject = string(input["subject"], `${field}.subject`);
+  let url: URL | undefined;
+  try {
+    url = new URL(subject);
+  } catch {
+    url = undefined;
   }
+  const httpsOrigin = url?.protocol === "https:" && url.origin === subject;
+  const mailto = url?.protocol === "mailto:" && /^mailto:[^@\s]+@[^@\s]+$/u.test(subject);
+  if (!httpsOrigin && !mailto)
+    throw invalid(`${field}.subject`, "must be an https origin or a mailto: address");
   return Object.freeze({
-    channel: "bark" as const,
     secretRef: safeReference(input["secretRef"], `${field}.secretRef`),
-    ...(server === undefined ? {} : { server }),
+    subject,
   });
 }
 
@@ -954,7 +951,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
       "publicSearch",
       "publicFetch",
       "automaticReview",
-      "reminderPush",
+      "webPush",
     ],
     "configuration.runPolicy",
   );
@@ -989,9 +986,7 @@ function parseRunPolicy(value: unknown): RunPolicyConfiguration {
     ...(input["automaticReview"] === undefined
       ? {}
       : { automaticReview: parseAutomaticReview(input["automaticReview"]) }),
-    ...(input["reminderPush"] === undefined
-      ? {}
-      : { reminderPush: parseReminderPush(input["reminderPush"]) }),
+    ...(input["webPush"] === undefined ? {} : { webPush: parseWebPush(input["webPush"]) }),
     version: safeReference(input["version"], "configuration.runPolicy.version"),
     systemInstruction: instruction,
     memoryLimit,
@@ -1222,12 +1217,12 @@ export function parseProductConfiguration(value: unknown, loadedAt: string): Pro
   const runPolicy =
     input["runPolicy"] === undefined ? undefined : parseRunPolicy(input["runPolicy"]);
   assertWebProviderSecretReferences(runPolicy, secretReferences);
-  if (runPolicy?.reminderPush)
+  if (runPolicy?.webPush)
     assertIdentitySecretReference(
       secretReferences,
-      runPolicy.reminderPush.secretRef,
-      REMINDER_PUSH_SECRET_PURPOSE,
-      "configuration.runPolicy.reminderPush.secretRef",
+      runPolicy.webPush.secretRef,
+      WEB_PUSH_SECRET_PURPOSE,
+      "configuration.runPolicy.webPush.secretRef",
     );
   const review = runPolicy?.automaticReview;
   if (review) {

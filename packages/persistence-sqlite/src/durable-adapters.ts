@@ -17,6 +17,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  WebPushStorePort,
   MemoryBookStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
@@ -933,6 +934,20 @@ export class SqliteDurableAdapters {
       listUpcoming: (input) => this.context.read("memoryReminder.listUpcoming", input),
       read: (id) => this.context.read("memoryReminder.read", { id }),
       update: (input) => this.context.write("memoryReminder.update", input),
+    });
+  }
+  webPush(): WebPushStorePort {
+    return Object.freeze<WebPushStorePort>({
+      saveSubscription: (input) => this.context.write("webPush.saveSubscription", input),
+      removeSubscription: (input) => this.context.write("webPush.removeSubscription", input),
+      listSubscriptions: (input) => this.context.read("webPush.listSubscriptions", input),
+      markSubscription: (input) => this.context.write("webPush.markSubscription", input),
+      readCursor: (input) => this.context.read("webPush.readCursor", input),
+      enqueue: (input) => this.context.write("webPush.enqueue", input),
+      listDue: (input) => this.context.read("webPush.listDue", input),
+      recordAttempt: (input) => this.context.write("webPush.recordAttempt", input),
+      listFinishedRuns: (input) => this.context.read("webPush.listFinishedRuns", input),
+      prune: (input) => this.context.write("webPush.prune", input),
     });
   }
 

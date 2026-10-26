@@ -554,7 +554,6 @@ export const messages = {
   "memory.reminderDue": "予定：{time}",
   "memory.reminderDismiss": "今後通知しない",
   "memory.reminderSnooze": "1 時間後に再通知",
-  "memory.reminderNotify": "デスクトップ通知を有効にする",
   "memory.cat":
     "{c, select, rule {ルール} identity {プロフィール} preference {好み} relationship {人間関係} goal {目標} project {進行中} health {健康} finance {お金} event {予定} other {その他}}",
   "memory.page.summary": "{live} 件を記憶 · 今週 {week} 件追加 · アーカイブ {archived} 件",
@@ -589,8 +588,7 @@ export const messages = {
   "memory.page.noUpcoming": "今後 60 日間の予定はありません。",
   "memory.page.yearly": "毎年",
   "memory.page.cancelled": "「{text}」の通知を止めました。記憶は残ります",
-  "memory.page.notify":
-    "{on, select, true {デスクトップ通知はオンです。タブが裏にあっても通知します。} other {デスクトップ通知はオフです。タブが前面にあるときだけ表示します。}}",
+  "memory.page.notify": "時間になったリマインダーは、通知をオンにしたデバイスに届きます。",
   "memory.page.profileNote":
     "Himawari が毎回の回答前に読むプロフィールです。行をクリックすると編集でき、以前の表現も残ります。機微な記憶はここに載せず、関係するときだけ使います。",
   "memory.page.lines": "{count} 件",
@@ -699,4 +697,49 @@ export const messages = {
   "governed.cancel": "キャンセル",
   "error.currentUnavailable": "現在利用できません",
   "objects.count": "合計 {count, plural, other {# 件}}",
+  "review.settings.notifications": "通知",
+  "push.intro":
+    "Himawari を見ていないとき、リマインダー・承認・タスク結果をこのデバイスに通知します。",
+  "push.kind.reminder": "記憶のリマインダー",
+  "push.kind.reminderHint": "覚えておいたことの時間になったとき",
+  "push.kind.approval": "承認待ち",
+  "push.kind.approvalHint": "タスクがあなたの承認を待って止まったとき",
+  "push.kind.run": "タスク終了",
+  "push.kind.runHint": "タスクが完了または失敗したとき",
+  "push.enable": "このデバイスで通知をオン",
+  "push.enableHint": "ブラウザが許可を求めます。",
+  "push.thisDevice": "このデバイス",
+  "push.on": "オン",
+  "push.test": "テスト通知を送る",
+  "push.testSent": "送信しました。数秒で表示されます。",
+  "push.otherDevices": "ほかのデバイス",
+  "push.remove": "削除",
+  "push.turnOff": "このデバイスでオフにする",
+  "push.lastDelivered": "最終配信 {time}",
+  "push.neverDelivered": "まだ配信なし",
+  "push.privacyNote":
+    "どのデバイスでも Himawari を開いている間は通知しません。ロック画面には会話のタイトルだけを表示し、回答は表示しません。機密の記憶は「非公開のリマインダーがあります」と表示します。",
+  "push.iphoneTip":
+    "すべてロック解除後に表示したい場合は、iPhone の 設定 › 通知 › プレビューを表示 を「ロックされていないときのみ」にします。",
+  "push.deniedTitle": "このデバイスでは通知が拒否されています",
+  "push.denied1": "アドレスバー左のサイトアイコンをクリックし、「通知」を「許可」にします。",
+  "push.denied2": "ページを再読み込みして、ここに戻ります。",
+  "push.deniedPhone": "iPhone では：設定 › 通知 › Himawari で「通知を許可」をオンにします。",
+  "push.pausedTitle": "このデバイスへの送信は一時停止中です",
+  "push.pausedBody":
+    "プッシュサービスが直近の送信を拒否しました（{code}）。通常はサーバーのプッシュ鍵の設定ミスです。サーバーを直して再起動すると自動で再開します。",
+  "push.installTitle": "まず Himawari をホーム画面に追加",
+  "push.installWhy":
+    "iPhone では、ホーム画面に追加した Web アプリだけが通知を受け取れます。Safari のタブからはオンにできません。",
+  "push.installStep1": "下の共有ボタンをタップ",
+  "push.installStep2": "「ホーム画面に追加」を選び、「追加」をタップ",
+  "push.installStep3": "ホーム画面の Himawari アイコンから開き、設定 › 通知 に戻る",
+  "push.installNote":
+    "iOS 16.4 以降が必要です。ホーム画面アプリは Safari とサインインが別なので、追加後にもう一度サインインします。",
+  "push.unavailable": "このサーバーではまだプッシュ通知が設定されていません。",
+  "push.unsupported": "このブラウザは Web プッシュに対応していません。",
+  "push.failed": "完了できませんでした。しばらくしてからもう一度お試しください。",
+  "push.deviceApp": "{platform} ホーム画面アプリ",
+  "push.deviceBrowser": "{platform} ブラウザ",
+  "push.openSettings": "通知の設定",
 } satisfies MessageCatalog;
