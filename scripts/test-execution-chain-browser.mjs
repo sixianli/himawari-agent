@@ -123,8 +123,10 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       const turnBox = await page.locator(".chat-turn").first().boundingBox();
       const inputBox = await page.locator(".composer").boundingBox();
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
-      await expect(process.locator(".execution-stage")).toHaveCount(1);
-      await expect(process.locator(".execution-stage")).toContainText("2s");
+      await expect(process.locator(".timeline-record .timeline-bar .segment-reason")).toHaveCount(
+        1,
+      );
+      await expect(process.locator(".timeline-record").first()).toContainText("2.0s");
       const reviewText = {
         "zh-CN": ["正在检查这次操作", "自动审查已允许本次操作"],
         en: ["Checking this operation", "Automatic review allowed this operation"],
@@ -251,7 +253,9 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
         ],
       });
       await expect(tools).toHaveCount(2);
-      await expect(process).toHaveAttribute("open", "");
+      await expect(process).not.toHaveAttribute("open", "");
+      await expect(process.locator(":scope > summary .process-took")).toBeVisible();
+      await expect(process.locator(":scope > .process-ledger")).toHaveCount(1);
       const title = `Tokyo headlines ${unique}`;
       await send({ title });
       await expect(page.locator("#page-title")).toHaveText(title);
@@ -264,6 +268,8 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await page.reload();
       await expect(page.locator("#page-title")).toHaveText(title);
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
+      await expect(process).not.toHaveAttribute("open", "");
+      await process.locator(":scope > summary").click();
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(2);
       await expect(memories).toHaveCount(2);

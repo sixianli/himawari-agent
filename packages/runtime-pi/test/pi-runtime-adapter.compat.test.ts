@@ -420,6 +420,7 @@ function createAdapter(
   tools: RecordingRuntimeTools,
   createSession: ReturnType<typeof fakeSessionFactory>,
   model: Partial<Model<Api>> = {},
+  now: () => string = () => NOW,
 ) {
   return new PiAgentRuntimeAdapter({
     projection,
@@ -428,7 +429,7 @@ function createAdapter(
       resolve: async () => ({ model, modelRuntime: {} }) as unknown as PiModelBinding,
     },
     cwd: process.cwd(),
-    now: () => NOW,
+    now,
     logicalSlot: (request, ordinal) => `${request.runId}:compat:${ordinal}`,
     turnId: (_request, turnIndex) => `turn-task-11-${turnIndex}` as never,
     createSession: createSession as unknown as NonNullable<
@@ -1060,6 +1061,66 @@ describe("Pi Agent Runtime adapter compatibility", () => {
       { phase: "started", contentIndex: 0 },
       { phase: "ended", contentIndex: 0 },
     ]);
+  });
+
+  it("[UI-4] records when text and tool-call output start while still coalescing deltas", async () => {
+    const projection = new RecordingProjection();
+    let tick = 0;
+    const clock = (offset: number) =>
+      new Date(Date.UTC(2026, 9, 26, 12, 24, 18) + offset * 100).toISOString();
+    const expected: Record<string, string> = {};
+    const message = {
+      role: "assistant",
+      timestamp: 456,
+      content: [
+        { type: "text", text: "Searching" },
+        { type: "toolCall", id: "call-1", name: "web_search", arguments: {} },
+      ],
+    };
+    const adapter = createAdapter(
+      projection,
+      new RecordingRuntimeTools(),
+      fakeSessionFactory((emit) => {
+        emit({ type: "agent_start" });
+        emit({ type: "message_start", message });
+        for (const [type, contentIndex] of [
+          ["text_start", 0],
+          ["text_delta", 0],
+          ["text_delta", 0],
+          ["toolcall_start", 1],
+          ["toolcall_delta", 1],
+        ] as const) {
+          expected[type] = clock(tick);
+          emit({ type: "message_update", message, assistantMessageEvent: { type, contentIndex } });
+        }
+        emit({
+          type: "message_end",
+          message: { ...message, content: [{ type: "text", text: "Done" }], stopReason: "stop" },
+        });
+        emit({ type: "agent_settled" });
+      }),
+      {},
+      () => clock(tick++),
+    );
+    const events = await collect(adapter.run(request));
+    const boundaries = (
+      projection.captures as {
+        value: { outputBoundary?: { kind: string; contentIndex: number } };
+      }[]
+    ).flatMap((entry, index) =>
+      entry.value.outputBoundary
+        ? [{ ref: `captured-${index + 1}`, ...entry.value.outputBoundary }]
+        : [],
+    );
+    expect(boundaries.map(({ kind, contentIndex }) => ({ kind, contentIndex }))).toEqual([
+      { kind: "text", contentIndex: 0 },
+      { kind: "toolCall", contentIndex: 1 },
+    ]);
+    const timeOf = (ref: string | undefined) =>
+      events.find((event) => event.type === "runtime.message" && event.payloadRef === ref)
+        ?.occurredAt;
+    expect(timeOf(boundaries[0]?.ref)).toBe(expected["text_start"]);
+    expect(timeOf(boundaries[1]?.ref)).toBe(expected["toolcall_start"]);
   });
 
   it("exposes only authorized custom tools and maps Pi lifecycle events after settlement", async () => {
@@ -2408,7 +2469,6 @@ it("restores already disclosed batch results across consecutive approvals withou
     }),
     execute: async (call) => {
       calls.push(call.toolCallId);
-      // The completed operation's execution receipt expires while a later approval waits.
       if (
         (approvals > 0 && call.toolCallId === "completed-before-wait") ||
         (approvals > 1 && call.toolCallId === "waiting-action")
@@ -2601,7 +2661,6 @@ it.each([
         commandExitCode: null,
         verifiedWrite: null,
         source: {
-          // Real production execution assigns a child ID in the file workflow.
           toolCallId:
             change === "matching-id" || change === "custom-tool"
               ? call.toolCallId
@@ -2632,7 +2691,6 @@ it.each([
     expect(model.observed).toHaveLength(5);
     const context = model.observed.at(-1) as { tools: unknown[]; messages: unknown[] };
     expect(context.tools.length === 0).toBe(["matching-id", "worker-id"].includes(change));
-    // Fingerprint normalization must not alter the model-visible or protected evidence.
     expect(JSON.stringify(context.messages)).toContain("provenance-3");
   },
 );
