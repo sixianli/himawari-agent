@@ -43,6 +43,8 @@ date: "2026-10-26"
   16. [运行中却显示“已完成”：模型过渡话被当成回答](#case-narration-status)
   17. [记忆管理页重设计：记忆越来越多，一页长列表管不过来](#case-memory-page)
   18. [个人 Agent 怎么给家人朋友用：每人一个实例，还是一个实例分用户](#case-multi-user)
+  19. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
+  20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -69,8 +71,8 @@ date: "2026-10-26"
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
@@ -1096,6 +1098,142 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **面试 30 秒版**
 
 “个人 Agent 要分享给家人朋友，各自的记忆必须隔离。我先盘点代码：数据库每张表已经带主人 ID，单用户写死在配置、登录、密钥和后台任务。对照 AWS 的 silo / pool 模型，我没有马上改成一个实例分用户，因为漏一个过滤条件就会泄露别人的记忆；先给每人起一个独立实例，前面用 Cloudflare Access 只放行邀请的邮箱，不开放注册，避免陌生人刷爆模型费用。用户超过五人再迁到 pool，先写隔离测试。”
+
+[返回目录](#contents)
+
+<a id="case-sandbox-lost-race"></a>
+
+## 案例 19：搜索已经结束，却被判“失联”，整个服务卡 5 分钟
+
+**背景与现象**
+
+2026-10-26 07:07（UTC）Andy 在生产版（第十次上线，源码 030f81f）问“美国新闻最新10条”，这一轮卡住不动。他停掉重问，新的一轮也卡住，服务等于完全不能用。大约 5 分钟后才自己恢复。
+
+**根因**
+
+用生产数据库和沙箱的控制文件确认（只读登录生产机查看）：
+
+1. 搜索任务本身正常结束了。沙箱主机（运行沙箱的那个进程）在任务进程退出后，要先清理沙箱，再写最终结果文件 `final.json`。
+2. agent-service（Himawari 的服务进程）里的 `classify`（`apps/agent-service/src/production-sandbox-control.ts`）每次查看沙箱时，如果发现沙箱的隔离环境已经没了，但主机还没把“任务进程已退出”记下来，就直接判成“失联”（`lost`）。清理期间恰好就是这个状态，失联标记比主机写 `final.json` 只早了 19 毫秒。
+3. worker（执行工具的组件）看到“失联”就取消任务，结果变成“未知”（`SANDBOX_EXIT_UNKNOWN`）。这一轮进入“等外部结果对账”的状态，一直等到 5 分钟的运行期限。
+4. 生产配置 `concurrency.totalRuns` 是 1，同一时间只允许一轮运行，所以卡住的这一轮把后面所有新对话都堵住了。
+
+第九次上线的代码在这条路径上没有区别，只是碰巧没撞上，所以回退旧版本没用。复现方法：单元测试里让沙箱的隔离环境先报告“已释放”、主机还没记下进程退出，旧代码判成 `lost`/`unknown`，测试失败；加上修复后通过。
+
+**我们的方案**
+
+- 立即止血（第十一次上线）：把已经合并的 PR #30 上线。搜索和读网页改在服务进程里执行，不再进沙箱（[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)），绕开了这次出事的路径。
+- 根因修复（单独的 PR）：在 `classify` 里加一条规则：Linux 上、隔离环境已释放、主机状态还是“运行中”且没记下进程退出、主机最近 1.5 秒内还在报告、还没到期限时，判成“清理中”（`exit_cleanup_pending`），继续等主机写结果；过了期限仍按失联处理。
+- 还没做：只读工具的结果变成“未知”时，直接把失败交给模型，而不是让整轮等到期限。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 回退到第九次 | 最快 | 第九次也有同样的问题，只是没撞上 |
+| 把 `totalRuns` 从 1 改成 2 | 一轮卡住时别的对话还能用 | 只是让卡住不那么明显，根因还在；而且这是 Andy 要决定的配置，他还没答复 |
+| 主机清理期间继续刷新状态 | 判断条件不用改 | 要改沙箱主机的协议，改动面更大，上线更慢 |
+| 判断时多等一会儿再判失联 | 改动最小 | 等多久都是猜的，等长了又会拖慢真正失联时的处理 |
+
+放弃了什么：这次止血靠的是“搜索不进沙箱”，运行命令的工具仍走同一条判断路径，要等根因修复上线才算真正解决。
+
+**业界主流做法**
+
+- ✅ Kubernetes 节点文档（[Nodes](https://kubernetes.io/docs/concepts/architecture/nodes/)）：节点失联时，“the node controller sets the `Ready` condition to `Unknown`”，并且“By default, the node controller waits 5 minutes between marking the node as `Unknown` and submitting the first eviction request.” 也就是说，收不到心跳先记成“未知”，等一段宽限时间再采取行动，不在第一次没收到就判死。
+
+**对比与取舍**
+
+思路和 Kubernetes 一样：暂时看不清的状态先当“未知/清理中”，到期限才处理。不同点是我们不加一段固定的等待时间，而是复用已有的运行期限，并且要求主机 1.5 秒内还在报告，这样主机真的没了时仍能很快判成失联。
+
+**结果数据**
+
+- 修复前写的复现测试失败（结果是 `lost`/`unknown`），修复后同一测试通过；沙箱相关测试文件 104/104 通过（Hermes 测试机，2026-10-26）。
+- 第十一次上线的结果、上线后新闻搜索的耗时：见本案例上线后的补充，未测量前不写数字。
+
+**相关 ADR/PR**
+
+[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)、[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（搜索移出沙箱）；根因修复的 PR 见本案例所在的提交；相关：[案例 8](#case-search-toggle-spin)（同样是对话空转 5 分钟）、[案例 11](#case-tenth-deploy)。
+
+**面试 30 秒版**
+
+“生产上搜索已经结束，服务却把它判成‘失联’，整轮等到 5 分钟期限，又因为同时只允许一轮运行，所有新对话都堵住了。查下来是沙箱清理那几十毫秒里，隔离环境已经没了、主机还没记下进程退出，判断逻辑把这个中间状态当成了失联。我们先上线‘搜索不进沙箱’止血，再把这个中间状态改判为‘清理中’，用一个能复现的测试证明修复前失败、修复后通过。”
+
+**后续（2026-10-26）**
+
+根因修复是提交 `cab7f8b9`，放在 [PR #38](https://github.com/sixianli/himawari-agent/pull/38) 里，随第十二次上线进入生产（2026-10-26 12:18 UTC 新版本启动）。上线经过见[案例 20](#case-eleventh-twelfth-deploy)。上线后的新闻搜索耗时：未测量，等 Andy 试用后从日志补上。
+
+[返回目录](#contents)
+
+<a id="case-eleventh-twelfth-deploy"></a>
+
+## 案例 20：第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次
+
+**背景与现象**
+
+2026-10-26 第十一次上线（代码 `aa563155`）的验收读回首页返回 200 就结束了。约 16 分钟后 Andy 报告：已经打开的页面在服务重启后，审批卡一直停在“正在加载权威状态”，设置里“允许联网搜索”勾不上，之前给过的搜索许可也失效了（出处：[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)）。Andy 决定不退回旧版本，要求把这一版修好再上。
+
+修复版作为第十二次上线。第一次尝试在停服之后失败，自动回退也失败，服务停了约 15 分钟，由 Claude 手动回退到第十一版。第二次尝试通过，停服约 11 分钟。
+
+**根因**
+
+第十一版用不了，有两个原因，都在 Hermes 测试机上用真实浏览器复现过：
+
+1. **页面带着过期的授权编号。** 网页打开时读一次服务配置，之后每次查询都带上授权编号（fencing token：服务每次启动都会加一，用来拒绝旧实例发来的请求）。服务重启后编号从 29 变成 30，已经打开的页面还带着 29 去查，被服务以 HTTP 403 `PORT_NOT_AUTHORITATIVE` 拒绝，审批卡和搜索开关都拿不到状态。对话本身用的另一组接口不核对编号，所以页面看上去还能聊天。
+2. **搜索许可绑得太宽。** 存下的联网搜索许可是整段搜索和读网页配置的摘要。第十一次把读网页的大小上限从 32768 调到 102400，摘要变了，许可就悄悄失效。按 [ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)，许可只应该针对“数据发给哪个模型、哪个服务”。
+
+验收没发现，是因为它只读回服务端状态，没人在浏览器里按 Andy 的用法走一遍。这已经是第四次“只有在网页里用才看得出”的上线问题。
+
+第十二次第一次尝试失败，也有两个原因：
+
+3. **切换脚本带着上一版的预期。** 操作包（上线用的整套固定脚本和输入）是复制第十一次的再改。停服后切换版本前，`systemd/S7-switch-start-readback.py` 要核对生产机的原配置，它仍要求原配置的读网页上限是 32768（第十一次之前的值），于是报 `TWELFTH_SWITCH_ORIGINAL_PUBLIC_FETCH_CHANGED`，新版本没有启动。“新配置应该长什么样”在操作包里写了两遍：维护脚本 `maintenance/maintenance-common.mjs` 那份改了并有测试，S7 的 Python 那份没改，也没有测试运行它。
+4. **回退脚本拼错了步骤名。** `scripts/delivery-mode/rollback.py` 按数据库版本号拼出 `S3_COPY56`、`S9_RAW_RESTORE56` 这样的步骤名，而操作包里这些步骤一直叫 `S3_COPY51`、`S9_RAW_RESTORE51`、`S9_RAW_CONTROL51`。回退找不到 `s3_copy56-result.json` 停下了。它的测试只用数据库第 51 版的操作包跑过，名字恰好对上。
+
+**我们的方案**
+
+1. 页面收到 403 `PORT_NOT_AUTHORITATIVE` 时重新读一次服务配置；部署、轮次或编号变了，就换一个新的接口客户端，审批卡和搜索开关重新加载（提交 `470b6d30`）。
+2. 搜索许可的摘要只覆盖模型和数据接收方，读网页上限这类参数变了不影响许可（`470b6d30`）。旧摘要对不上新摘要，所以 Andy 上线后要重新勾一次“允许联网搜索”。
+3. 上线门槛：`scripts/delivery-mode/deploy.sh` 先运行 `browser-acceptance-gate.py`。操作包里没有这个安装包在真实浏览器里的验收结果（首页、搜索开关、新闻搜索、长回答、记忆页、服务重启后已打开的页面，共 6 项），就以退出码 5 停下，不碰生产机（`856a2cee`）。
+4. 切换脚本：改正核对函数，并在操作包里加 `systemd/verify-switch-config-fixtures.py`，每次出包都运行。它要求 S7 算出的新配置和维护脚本算出的逐字节相同，并要求 7 种旧值或缺项都被拒绝。
+5. 回退脚本：改用操作包里固定的步骤名；`scripts/delivery-mode/test_rollback.py` 要求回退要跑的步骤都在操作包的步骤表里，恢复点报告名和 `deploy.sh` 实际跑的那个 S3 步骤对应（`2135359c`）。
+6. 失败时先恢复服务：用改好的回退脚本副本手动回退，数据库用停服后立刻做的副本恢复，服务回到第十一版之后再查原因。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 退回第十版 | 恢复最快 | Andy 决定不退，要求修完这一版 |
+| 页面定时重新读授权编号 | 实现简单 | 间隔多长都是猜的，重读之前仍会失败；按“被拒绝的原因”重读更准 |
+| 被拒绝后整页刷新 | 改动最小 | 会丢掉用户正在输入的内容 |
+| 再写一条“复制操作包要逐个核对”的提醒 | 不用写代码 | 同类错误在第十次上线时已经第三次出现，书面提醒没挡住；[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md) 要求加硬约束 |
+| 出包时按参数自动生成整套脚本 | 从根上消除复制残留 | 改动大，交给单独的线程做 |
+
+放弃了什么：S7 和维护脚本仍各有一份“新配置的样子”，只是靠测试保证两份一致；出包检查在 `.ci-output/`（不进仓库），`deploy.sh` 不强制要求跑过它。停服后的验收（`S6_ACCEPTANCE`）仍然在停服期间跑，约占 7 分钟。
+
+**业界主流做法**
+
+- ✅ OAuth 2.0 持有者令牌规范 [RFC 6750 第 3.1 节](https://www.rfc-editor.org/rfc/rfc6750.txt)（IETF 标准）对过期令牌 `invalid_token` 写道：“The access token provided is expired, revoked, malformed, or invalid for other reasons. … The client MAY request a new access token and retry the protected resource request.” 凭证过期时由客户端重新取一份再重试，和我们“被拒绝后重读配置换编号”是同一个思路。不同点：规范建议用 401，我们沿用服务已有的 403 和错误码。
+- ✅ Google SRE《大规模可靠地发布产品》（[Reliable Product Launches at Scale](https://sre.google/sre-book/reliable-product-launches/)）谈发布检查清单：“The checklist needs continuous attention in order to remain relevant and up-to-date: … areas of concern from previous launches become obsolete due to new policies and processes.” 上一次的检查条件会过时；我们从第十一次复制来的 S7 核对，正是过时的上一次条件。同一章也写“If the change doesn’t pass the validation period, it’s automatically rolled back.” 自动回退是常规做法，我们补上的是“回退脚本本身也要拿当次的操作包测过”。
+- ✅ 十二要素应用和 Google SRE《发布工程》都要求每次发布由构建产生、不可修改，不要复制上一次再改，原文见[案例 11](#case-tenth-deploy)。
+
+**对比与取舍**
+
+我们是单机部署，没有流量切换，只能“停服、验收、切换，失败就回退”。业界靠自动生成发布物和金丝雀发布把风险挪到停服之前；我们现在用两件事接近它：上线前要求真实浏览器的验收结果，出包时用测试核对复制来的脚本。代价是每次出包多跑几分钟检查。下一步是按参数自动生成操作包，并把约 7 分钟的停服后验收挪到停服之前。
+
+**结果数据**
+
+- 网页验收对第十一版 `aa563155` 重现了问题（服务重启后，设置里的开关等 60 秒仍勾不上），对修好的 `470b6d30` 六项全部通过（Hermes `pp15-old-accept/`、`pp15-new-accept/`，记录在 lessons）。
+- 第十二次第一次尝试：11:04:26 UTC 停服，11:15:35 S7 切换失败，自动回退失败，11:19:43 手动回退完成，停服约 15 分钟（`.ci-output/production/twelfth-attempt1-20261026/run-logs/`）。
+- 第二次尝试：12:07:25 UTC 停服，12:18:14 新版本服务启动，停服约 11 分钟；其中停服后的验收 `S6_ACCEPTANCE` 占 6 分 45 秒（12:07:54 到 12:14:39）（操作包 `run-logs/deploy-20261026T120047Z.log`）。上线后读回：服务在运行、首页返回 200、前端目录指向第十二版、模型上下文 1000000、输出上限 32768，服务日志没有警告。
+- 两道新检查：第一次尝试的 S7 脚本让出包检查报错并以 1 退出，改好的通过 9 项；旧的 `rollback.py` 让回退测试失败，改好的通过 13 项（Hermes `himawari-tests/twelfth/`、`news-latency/evidence/ck19/`）。
+- Andy 试用后的搜索耗时：未测量，待补。
+
+**相关 ADR/PR**
+
+[ADR 0071](adr/0071-replaceable-web-search-and-fetch-providers.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)；[PR #38](https://github.com/sixianli/himawari-agent/pull/38)（提交 `470b6d30`、`856a2cee`、`2135359c`）；[lessons：上线验收只查了首页 200 没真点网页](lessons.md#release-without-browser-walkthrough)、[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 12](#case-static-root)、[案例 19](#case-sandbox-lost-race)。
+
+**面试 30 秒版**
+
+“一个版本上线后首页正常，但已经打开的页面在服务重启后什么都批不了，因为它带着重启前的授权编号。我们让页面在被拒绝时重读配置换编号，并把‘在真实浏览器里走一遍’做成上线脚本的硬门槛。修复版上线时，从上一版复制来的切换脚本带着旧预期失败了，自动回退又因为按版本号拼步骤名而失败；我们先手动恢复服务，再给这两处各加一道能复现旧错误的测试，第二次上线停服 11 分钟成功。”
 
 [返回目录](#contents)
 
