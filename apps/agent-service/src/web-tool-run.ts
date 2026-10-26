@@ -1,17 +1,15 @@
 import type { WebProviderId } from "@himawari-agent/application";
 import {
   createWebProvider,
-  ExaPublicSearchAdapter,
   fetchWithProviders,
   publicFetchFailure,
   publicSearchFailure,
   searchWithProviders,
   type WebProvider,
   WebProviderChainError,
+  type WebProviderDispatcher,
   type WebProviderSecrets,
 } from "@himawari-agent/platform-node";
-
-export type WebToolDispatcher = NonNullable<Parameters<typeof createWebProvider>[2]>;
 
 export interface WebToolOutcome {
   readonly ok: boolean;
@@ -24,12 +22,11 @@ export const providerSource: Readonly<Record<WebProviderId, string>> = {
   deepseek: "DeepSeek web search",
 };
 
-export function webProviderFactory(secrets: WebProviderSecrets, dispatcher?: WebToolDispatcher) {
-  const transport = dispatcher ? { dispatcher } : {};
-  return (id: WebProviderId): WebProvider =>
-    id === "exa-public"
-      ? new ExaPublicSearchAdapter(transport)
-      : createWebProvider(id, secrets, dispatcher);
+export function webProviderFactory(
+  secrets: WebProviderSecrets,
+  dispatcher: WebProviderDispatcher,
+): (id: WebProviderId) => WebProvider {
+  return (id) => createWebProvider(id, secrets, dispatcher);
 }
 
 const chainCause = (error: unknown) =>
@@ -39,7 +36,6 @@ export async function runWebSearch(input: {
   readonly query: string;
   readonly limit: number;
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly create: (id: WebProviderId) => WebProvider;
   readonly signal?: AbortSignal;
 }): Promise<WebToolOutcome> {
@@ -69,7 +65,6 @@ export async function runWebFetch(input: {
   readonly url: string;
   readonly maximumBytes: number;
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly create: (id: WebProviderId) => WebProvider;
   readonly signal?: AbortSignal;
 }): Promise<WebToolOutcome> {

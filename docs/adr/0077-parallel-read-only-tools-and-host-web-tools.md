@@ -50,6 +50,7 @@ Andy 2026-10-26 的决定（原话）：
 1. **`web_search` 和 `web_fetch`（读网页工具）在服务进程里执行，不再进沙箱。**
    - 授权步骤不变：照旧先做输入检查、产品授权（含联网搜索开关的设置 revision 检查）和披露检查，命中主机缓存时同样不跳过授权。授权通过后不再签发执行凭据、不启动 Worker，由服务进程直接调用供应商链（Exa、DeepSeek），执行前后各确认一次本轮仍然有效。
    - 出口限制改由服务进程自己的网络出口检查承担（`packages/platform-node/src/public-web-egress.ts`）：只允许 `https`，只允许配置里供应商的固定主机和端口（例如 `mcp.exa.ai:443`、`api.deepseek.com:443`）；连接前解析出的所有地址都必须是公网地址，判断规则与沙箱出口代理共用（`packages/runtime-sandbox/src/public-egress-address.ts`）。
+   - 服务启动时只创建一个网络连接池（`createPublicWebDispatcher` 返回的 undici `Agent`，在进程里保持并反复使用 HTTPS 连接的对象），所有搜索和读网页供应商都通过它发请求，后面的调用复用已建立的连接，不再每次重新握手。2026-10-26 Andy 在方案文档里要求（原话）：“这里要做到：即使以后换成了别的网络搜索和fetch客户端也要保持这个特性”。因此连接池是供应商构造的必填参数（`WebProviderDispatcher`），新供应商不接这个参数就无法通过类型检查；只有暂时保留的沙箱程序显式传 `SANDBOX_PROXY`，改走沙箱出口代理。`test/integration/web-provider-shared-connection.test.ts` 对 `WEB_PROVIDERS` 里登记的每个供应商检查：请求都经过传入的连接池，第一次调用之后的搜索和读网页不再新建连接；新登记的供应商没有对应的测试替身时测试失败。
    - 供应商密钥仍从主机密钥目录按配置里的引用和版本读取，只在本次调用的内存里使用，不写入工具结果或日志。
    - 结果保存为本次调用的 `host-result`，服务重启后的恢复直接读它，不会重发请求。工具结果的格式、失败说明、缓存和熔断规则与原来的沙箱程序完全一致：两边共用同一段代码（`apps/agent-service/src/web-tool-run.ts`）。沙箱程序 `web-search-main.js`、`web-fetch-main.js` 暂时保留，因为已部署的安装绑定引用它们。
 2. **同一批次里的只读工具并行执行。**

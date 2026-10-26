@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { SANDBOX_PROXY } from "@himawari-agent/platform-node";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runWebFetchProgram } from "../src/capability-programs/web-fetch-program.js";
 
@@ -11,14 +12,22 @@ const boundary = vi.hoisted(() => ({
     exitCode: undefined as number | undefined,
   },
   fetch: vi.fn(),
+  dispatchers: [] as unknown[],
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
-vi.mock("@himawari-agent/platform-node", async (original) => ({
-  ...(await original<object>()),
-  ExaPublicSearchAdapter: class {
-    fetch = boundary.fetch;
-  },
-}));
+vi.mock("@himawari-agent/platform-node", async (original) => {
+  const actual = await original<typeof import("@himawari-agent/platform-node")>();
+  const { WEB_PROVIDERS } = await import("@himawari-agent/application");
+  return {
+    ...actual,
+    createWebProvider: (...input: Parameters<typeof actual.createWebProvider>) => {
+      boundary.dispatchers.push(input[2]);
+      return input[0] === "exa-public"
+        ? { descriptor: WEB_PROVIDERS["exa-public"], fetch: boundary.fetch, search: vi.fn() }
+        : actual.createWebProvider(...input);
+    },
+  };
+});
 
 async function run(value: unknown) {
   boundary.process.stdin = Readable.from([Buffer.from(JSON.stringify(value))]);
@@ -29,6 +38,7 @@ function written(stream: { write: ReturnType<typeof vi.fn> }) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  boundary.dispatchers.length = 0;
   boundary.process.exitCode = undefined;
 });
 
@@ -53,6 +63,7 @@ describe("installed public page reading program", () => {
       title: "Example",
       truncated: false,
     });
+    expect(boundary.dispatchers).toEqual([SANDBOX_PROXY]);
     expect(written(boundary.process.stderr)).toBe("");
   });
   it("falls back from a missing DeepSeek credential to Exa without exposing the reason", async () => {

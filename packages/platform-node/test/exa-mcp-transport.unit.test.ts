@@ -33,7 +33,7 @@ vi.mock("undici", () => ({
   },
 }));
 
-import { ExaPublicSearchAdapter } from "../src/exa-public-search.js";
+import { ExaPublicSearchAdapter, SANDBOX_PROXY } from "../src/exa-public-search.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
 const searchText =
@@ -49,7 +49,11 @@ beforeEach(() => {
   state.proxyFetch.mockResolvedValue(new Response("mcp response"));
 });
 afterEach(() => vi.unstubAllEnvs());
-const search = () => new ExaPublicSearchAdapter().search({ query: " Tokyo weather ", limit: 2 });
+const search = () =>
+  new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).search({
+    query: " Tokyo weather ",
+    limit: 2,
+  });
 function transportFetch() {
   if (!state.fetch) throw new Error("Transport not constructed");
   return state.fetch;
@@ -330,7 +334,10 @@ describe("[R2-T13] free MCP rate-limit notices", () => {
 describe("public page fetch through Exa", () => {
   const page = "Title: Example page\nURL: https://example.org/a\nText: Hello world";
   const fetchPage = (maximumBytes = 1024) =>
-    new ExaPublicSearchAdapter().fetch({ url: "https://example.org/a", maximumBytes });
+    new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
+      url: "https://example.org/a",
+      maximumBytes,
+    });
   it.each([
     [
       "web_fetch_exa",
@@ -376,7 +383,10 @@ describe("public page fetch through Exa", () => {
   });
   it("does not open a connection for a private address", async () => {
     await expect(
-      new ExaPublicSearchAdapter().fetch({ url: "http://127.0.0.1/", maximumBytes: 1024 }),
+      new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
+        url: "http://127.0.0.1/",
+        maximumBytes: 1024,
+      }),
     ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
     expect(state.proxyCreated).not.toHaveBeenCalled();
   });

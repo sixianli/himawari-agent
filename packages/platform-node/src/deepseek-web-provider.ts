@@ -6,8 +6,13 @@ import type {
   WebSearchProvider,
 } from "@himawari-agent/application";
 import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
-import { type Dispatcher, fetch as proxyFetch } from "undici";
-import { providerDispatchers, truncateUtf8, validatePublicFetchUrl } from "./exa-public-search.js";
+import { fetch as proxyFetch } from "undici";
+import {
+  providerDispatchers,
+  truncateUtf8,
+  validatePublicFetchUrl,
+  type WebProviderDispatcher,
+} from "./exa-public-search.js";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const origin = "https://api.deepseek.com";
@@ -37,9 +42,12 @@ const text = (value: unknown, limit: number) =>
 export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider {
   readonly descriptor = WEB_PROVIDERS.deepseek;
   readonly #credential: string;
-  readonly #dispatcher: Dispatcher | undefined;
+  readonly #dispatcher: WebProviderDispatcher;
 
-  constructor(options: { readonly credential: string; readonly dispatcher?: Dispatcher }) {
+  constructor(options: {
+    readonly credential: string;
+    readonly dispatcher: WebProviderDispatcher;
+  }) {
     if (!/^[\x21-\x7e]{16,512}$/.test(options.credential))
       throw new Error("WEB_PROVIDER_SECRET_INVALID");
     this.#credential = options.credential;

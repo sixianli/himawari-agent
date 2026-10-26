@@ -161,8 +161,12 @@ export function sandboxProxy(prefix: string) {
   return { uri: proxy.href, token };
 }
 
-export function providerDispatchers(shared: Dispatcher | undefined, prefix: string) {
-  if (shared) return { next: (): Dispatcher => shared, close: async () => {} };
+export const SANDBOX_PROXY = "sandbox-proxy";
+export type WebProviderDispatcher = Dispatcher | typeof SANDBOX_PROXY;
+
+export function providerDispatchers(transport: WebProviderDispatcher, prefix: string) {
+  if (transport !== SANDBOX_PROXY)
+    return { next: (): Dispatcher => transport, close: async () => {} };
   const proxy = sandboxProxy(prefix);
   const owned: ProxyAgent[] = [];
   return {
@@ -193,9 +197,9 @@ export class ExaPublicSearchAdapter
   implements Pick<PublicWebAdapterPort, "search">, WebSearchProvider, WebFetchProvider
 {
   readonly descriptor = WEB_PROVIDERS["exa-public"];
-  readonly #dispatcher: Dispatcher | undefined;
+  readonly #dispatcher: WebProviderDispatcher;
 
-  constructor(options: { readonly dispatcher?: Dispatcher } = {}) {
+  constructor(options: { readonly dispatcher: WebProviderDispatcher }) {
     this.#dispatcher = options.dispatcher;
   }
 

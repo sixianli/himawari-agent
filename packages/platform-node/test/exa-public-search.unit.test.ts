@@ -3,6 +3,7 @@ import {
   ExaPublicSearchAdapter,
   parseExaSearchResults,
   publicSearchFailure,
+  SANDBOX_PROXY,
 } from "../src/exa-public-search.js";
 
 const exaFreeRateLimitNotice =
@@ -70,7 +71,7 @@ describe("public search provider boundary", () => {
     ).toThrow();
   });
   it("rejects unbounded or secret-bearing queries before opening a connection", async () => {
-    const adapter = new ExaPublicSearchAdapter();
+    const adapter = new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY });
     for (const input of [
       { query: "", limit: 5 },
       { query: "weather", limit: 1.5 },

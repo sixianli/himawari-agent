@@ -7,9 +7,8 @@ import {
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
-import type { Dispatcher } from "undici";
 import { DeepSeekWebProvider } from "./deepseek-web-provider.js";
-import { ExaPublicSearchAdapter } from "./exa-public-search.js";
+import { ExaPublicSearchAdapter, type WebProviderDispatcher } from "./exa-public-search.js";
 
 const chainBudgetMs = 45000;
 const minimumAttemptMs = 5000;
@@ -23,12 +22,11 @@ export type WebProvider = WebSearchProvider & WebFetchProvider;
 export function createWebProvider(
   id: WebProviderId,
   secrets: WebProviderSecrets,
-  dispatcher?: Dispatcher,
+  dispatcher: WebProviderDispatcher,
 ): WebProvider {
-  const transport = dispatcher ? { dispatcher } : {};
-  if (id === "exa-public") return new ExaPublicSearchAdapter(transport);
+  if (id === "exa-public") return new ExaPublicSearchAdapter({ dispatcher });
   if (!secrets.deepseek) throw new WebProviderError("UNAVAILABLE", "WEB_PROVIDER_SECRET_MISSING");
-  return new DeepSeekWebProvider({ credential: secrets.deepseek, ...transport });
+  return new DeepSeekWebProvider({ credential: secrets.deepseek, dispatcher });
 }
 
 export function webProviderFailure(error: unknown): WebProviderError {
@@ -107,15 +105,14 @@ export async function runWebProviderChain<T>(input: {
 
 export function searchWithProviders(input: {
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly query: string;
   readonly limit: number;
   readonly signal?: AbortSignal;
-  readonly create?: (id: WebProviderId) => WebProvider;
+  readonly create: (id: WebProviderId) => WebProvider;
 }) {
   return runWebProviderChain<readonly WebSearchCandidate[]>({
     providers: input.providers,
-    create: input.create ?? ((id) => createWebProvider(id, input.secrets)),
+    create: input.create,
     attempt: (provider, signal) =>
       provider.search({ query: input.query, limit: input.limit, signal }),
     ...(input.signal ? { signal: input.signal } : {}),
@@ -124,15 +121,14 @@ export function searchWithProviders(input: {
 
 export function fetchWithProviders(input: {
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly url: string;
   readonly maximumBytes: number;
   readonly signal?: AbortSignal;
-  readonly create?: (id: WebProviderId) => WebProvider;
+  readonly create: (id: WebProviderId) => WebProvider;
 }) {
   return runWebProviderChain<WebFetchResult>({
     providers: input.providers,
-    create: input.create ?? ((id) => createWebProvider(id, input.secrets)),
+    create: input.create,
     attempt: (provider, signal) =>
       provider.fetch({ url: input.url, maximumBytes: input.maximumBytes, signal }),
     ...(input.signal ? { signal: input.signal } : {}),

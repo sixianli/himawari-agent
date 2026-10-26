@@ -3,13 +3,16 @@ import {
   type WebProviderId,
   webProviderEgress,
 } from "@himawari-agent/application";
-import { createPublicWebDispatcher, type WebProviderSecrets } from "@himawari-agent/platform-node";
+import {
+  createPublicWebDispatcher,
+  type WebProviderDispatcher,
+  type WebProviderSecrets,
+} from "@himawari-agent/platform-node";
 import { isPublicEgressAddress } from "@himawari-agent/runtime-sandbox/public-address";
 import type { WebProviderSecretBinding } from "./production-file-read-workflow.js";
 import {
   runWebFetch,
   runWebSearch,
-  type WebToolDispatcher,
   type WebToolOutcome,
   webProviderFactory,
 } from "./web-tool-run.js";
@@ -46,14 +49,13 @@ async function resolveSecrets(
 
 export function createProductionHostWeb(options: {
   readonly secrets: WebProviderSecretReader;
-  readonly dispatcher: WebToolDispatcher;
+  readonly dispatcher: WebProviderDispatcher;
 }): ProductionHostWeb {
   return {
     async execute(input) {
       const secrets = await resolveSecrets(options.secrets, input.secrets);
       const common = {
         providers: input.providers,
-        secrets,
         create: webProviderFactory(secrets, options.dispatcher),
         ...(input.signal ? { signal: input.signal } : {}),
       };

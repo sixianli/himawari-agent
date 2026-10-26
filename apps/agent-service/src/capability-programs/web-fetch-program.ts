@@ -1,5 +1,5 @@
 import process from "node:process";
-import { publicFetchFailure } from "@himawari-agent/platform-node";
+import { publicFetchFailure, SANDBOX_PROXY } from "@himawari-agent/platform-node";
 import { runWebFetch, webProviderFactory } from "../web-tool-run.js";
 import { programProviders, programSecrets, readProgramInput } from "./web-program-io.js";
 
@@ -23,10 +23,9 @@ export async function runWebFetchProgram(): Promise<void> {
     const secrets = programSecrets(args["secrets"], "WEB_FETCH");
     const outcome = await runWebFetch({
       providers: programProviders(args["providers"], "WEB_FETCH"),
-      secrets,
       url: args["url"],
       maximumBytes: (args["maximumBytes"] as number | undefined) ?? 32 * 1024,
-      create: webProviderFactory(secrets),
+      create: webProviderFactory(secrets, SANDBOX_PROXY),
     });
     if (outcome.ok) process.stdout.write(outcome.output);
     else failed(outcome);

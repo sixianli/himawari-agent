@@ -5,8 +5,6 @@ import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ url: "" }));
-// Replace only the external endpoint. Keep the actual SDK, HTTP client and
-// authenticated CONNECT proxy; a single connection makes old tunnel reuse deterministic.
 vi.mock("undici", async () => {
   const actual = await vi.importActual<typeof import("undici")>("undici");
   return {
@@ -22,7 +20,10 @@ vi.mock("undici", async () => {
   };
 });
 
-import { ExaPublicSearchAdapter } from "../../packages/platform-node/src/exa-public-search.js";
+import {
+  ExaPublicSearchAdapter,
+  SANDBOX_PROXY,
+} from "../../packages/platform-node/src/exa-public-search.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -136,7 +137,10 @@ describe("fixed readonly search with installed MCP and CONNECT transport", () =>
     fixture.url = `http://127.0.0.1:${address.port}/mcp`;
     vi.stubEnv("HTTPS_PROXY", `http://fixture:fixture@127.0.0.1:${proxyAddress.port}`);
     try {
-      const result = new ExaPublicSearchAdapter().search({ query: "readonly fixture", limit: 1 });
+      const result = new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).search({
+        query: "readonly fixture",
+        limit: 1,
+      });
       if (recovers)
         await expect(result).resolves.toMatchObject([
           { title: "Fixture source", url: "https://example.test/read" },

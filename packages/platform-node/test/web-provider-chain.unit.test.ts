@@ -23,7 +23,6 @@ describe("web provider fallback chain", () => {
     const deepseek = vi.fn(async () => result);
     const searched = await searchWithProviders({
       providers: ["exa-public", "deepseek"],
-      secrets: {},
       query: "q",
       limit: 1,
       create: (id) => provider(id, id === "exa-public" ? exa : deepseek),
@@ -40,7 +39,6 @@ describe("web provider fallback chain", () => {
       const deepseek = vi.fn(async () => result);
       const failing = searchWithProviders({
         providers: ["exa-public", "deepseek"],
-        secrets: {},
         query: "q",
         limit: 1,
         create: (id) =>

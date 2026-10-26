@@ -5,59 +5,199 @@
     "G1": "once",
     "G2": "once",
     "G3": "once",
-    "G4": "durable"
+    "G4": "durable",
+    "G5": "durable",
+    "G6": "durable",
+    "G7": "once",
+    "G8": "once",
+    "G9": "durable"
   },
   "items": [
     {
       "id": "NL-1",
       "title": "一轮里的多个只读工具并行执行，有副作用的工具仍按顺序",
-      "goal_ref": ["G1", "G4"],
-      "done_when": [{"type": "test", "tag": "NL-1", "host": "hermes-home"}],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "goal_ref": [
+        "G1",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "NL-1",
+          "host": "hermes-home"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     },
     {
       "id": "NL-2",
       "title": "web_search 和 web_fetch 在服务进程里执行，不进沙箱，出网只连允许的公网服务",
-      "goal_ref": ["G1", "G4"],
-      "done_when": [{"type": "test", "tag": "NL-2", "host": "hermes-home"}],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "goal_ref": [
+        "G1",
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "NL-2",
+          "host": "hermes-home"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     },
     {
       "id": "NL-3",
       "title": "沙箱按对话复用、空闲回收、用到才启动",
-      "goal_ref": ["G4"],
-      "done_when": [
-        {"type": "user", "ref": null, "question": "是否采用文档里的沙箱开启和复用新策略（方案 B）？"},
-        {"type": "test", "tag": "NL-3", "host": "hermes-home"}
+      "goal_ref": [
+        "G4",
+        "G6"
       ],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G6",
+          "question": "是否采用文档里的沙箱开启和复用新策略（方案 B）？"
+        },
+        {
+          "type": "test",
+          "tag": "NL-3",
+          "host": "hermes-home"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     },
     {
       "id": "NL-4",
       "title": "授权核对改为开头完整核对一次、之后按版本号比对、撤销时主动停止",
-      "goal_ref": ["G4"],
-      "done_when": [
-        {"type": "user", "ref": null, "question": "是否采用文档里的授权核对最佳方案（方案 A）？"},
-        {"type": "test", "tag": "NL-4", "host": "hermes-home"}
+      "goal_ref": [
+        "G4",
+        "G5"
       ],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "done_when": [
+        {
+          "type": "user",
+          "ref": "G5",
+          "question": "是否采用文档里的授权核对最佳方案（方案 A）？"
+        },
+        {
+          "type": "test",
+          "tag": "NL-4",
+          "host": "hermes-home"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     },
     {
       "id": "NL-5",
       "title": "新 ADR 记录并行工具和搜索出沙箱的决定，原文引用 G4",
-      "goal_ref": ["G4"],
-      "done_when": [{"type": "doc", "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md", "quotes": "G4"}],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "goal_ref": [
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "quotes": "G4"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     },
     {
       "id": "NL-6",
       "title": "npm run check 和 npm run build 在 Hermes 测试机上通过",
-      "goal_ref": ["G1"],
-      "done_when": [
-        {"type": "command", "run": "npm run -s check", "host": "hermes-home"},
-        {"type": "command", "run": "npm run -s build", "host": "hermes-home"}
+      "goal_ref": [
+        "G1"
       ],
-      "added": {"by": "claude", "on": "2026-10-26"}
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run -s check",
+          "host": "hermes-home"
+        },
+        {
+          "type": "command",
+          "run": "npm run -s build",
+          "host": "hermes-home"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
+    },
+    {
+      "id": "NL-7",
+      "title": "新 ADR 记录授权核对新做法，原文引用 G5",
+      "goal_ref": [
+        "G5"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0078-authority-check-once-then-version-compare.md",
+          "quotes": "G5"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
+    },
+    {
+      "id": "NL-8",
+      "title": "新 ADR 记录沙箱按对话复用的新做法，原文引用 G6",
+      "goal_ref": [
+        "G6"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/adr/0079-sandbox-reuse-per-conversation.md",
+          "quotes": "G6"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
+    },
+    {
+      "id": "NL-9",
+      "title": "所有搜索和读网页供应商必须使用服务的共享连接池，新供应商不接就无法通过类型检查和测试",
+      "goal_ref": [
+        "G9"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "NL-9",
+          "host": "hermes-home"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "quotes": "G9"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26"
+      }
     }
   ]
 }

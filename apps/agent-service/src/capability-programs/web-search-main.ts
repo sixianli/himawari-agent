@@ -1,5 +1,5 @@
 import process from "node:process";
-import { publicSearchFailure } from "@himawari-agent/platform-node";
+import { publicSearchFailure, SANDBOX_PROXY } from "@himawari-agent/platform-node";
 import { runWebSearch, webProviderFactory } from "../web-tool-run.js";
 import { programProviders, programSecrets, readProgramInput } from "./web-program-io.js";
 
@@ -20,10 +20,9 @@ try {
   const secrets = programSecrets(args["secrets"], "WEB_SEARCH");
   const outcome = await runWebSearch({
     providers: programProviders(args["providers"], "WEB_SEARCH"),
-    secrets,
     query: args["query"],
     limit: (args["limit"] as number | undefined) ?? 5,
-    create: webProviderFactory(secrets),
+    create: webProviderFactory(secrets, SANDBOX_PROXY),
   });
   if (outcome.ok) process.stdout.write(outcome.output);
   else failed(outcome);

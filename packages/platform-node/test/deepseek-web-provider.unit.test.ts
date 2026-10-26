@@ -9,11 +9,12 @@ vi.mock("undici", () => ({
 }));
 
 import { DeepSeekWebProvider } from "../src/deepseek-web-provider.js";
+import { SANDBOX_PROXY } from "../src/exa-public-search.js";
 
 const key = ["fixture", "credential", "0123456789"].join("-");
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
-const provider = () => new DeepSeekWebProvider({ credential: key });
+const provider = () => new DeepSeekWebProvider({ credential: key, dispatcher: SANDBOX_PROXY });
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("HTTPS_PROXY", "http://fixture:fixture@127.0.0.1:4321");
