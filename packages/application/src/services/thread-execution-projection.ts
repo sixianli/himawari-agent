@@ -1,6 +1,17 @@
-import { createAgentId, createOwnerId, createRunId, createThreadId } from "@himawari-agent/domain";
+import {
+  createAgentId,
+  createMemoryId,
+  createOwnerId,
+  createRunId,
+  createThreadId,
+} from "@himawari-agent/domain";
 import type { ThreadExecutionRecord } from "@himawari-agent/gateway-contracts";
-import { ApplicationPortError, PORT_ERROR_CODES } from "../ports/common.js";
+import {
+  ApplicationPortError,
+  type DataClassification,
+  PORT_ERROR_CODES,
+} from "../ports/common.js";
+import type { ProductMemoryStatePort } from "../ports/memory-projection.js";
 import type {
   PayloadProtectorPort,
   PayloadStorePort,
@@ -38,6 +49,13 @@ const SAFE_TOOL_REASON_CODES = new Set([
   "SANDBOX_WRITE_EFFECT_UNVERIFIED",
   "SANDBOX_STRICT_MODE_UNAVAILABLE",
 ]);
+
+const CLASSIFICATION_RANK: Readonly<Record<DataClassification, number>> = {
+  public: 0,
+  private: 1,
+  sensitive: 2,
+  restricted: 3,
+};
 
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -104,6 +122,7 @@ export class ThreadExecutionProjection {
     readonly protector: PayloadProtectorPort;
     readonly resources?: ThreadExecutionResourceReader;
     readonly checkpoints?: Pick<RunCheckpointStore, "read">;
+    readonly memories?: Pick<ProductMemoryStatePort, "readMany">;
   };
   constructor(dependencies: {
     readonly threads: ThreadRepositoryPort;
@@ -112,6 +131,7 @@ export class ThreadExecutionProjection {
     readonly protector: PayloadProtectorPort;
     readonly resources?: ThreadExecutionResourceReader;
     readonly checkpoints?: Pick<RunCheckpointStore, "read">;
+    readonly memories?: Pick<ProductMemoryStatePort, "readMany">;
   }) {
     this.dependencies = dependencies;
   }
@@ -185,7 +205,27 @@ export class ThreadExecutionProjection {
       }
       try {
         const envelope = object(await this.readPayload(event, event.payloadRef));
-        if (
+        const broughtMemories =
+          event.eventType === "memory.selection"
+            ? envelope["selected"]
+            : event.eventType === "context.formed"
+              ? envelope["ownerProfile"]
+              : undefined;
+        if (Array.isArray(broughtMemories)) {
+          const memoryIds = broughtMemories.flatMap((item) => {
+            const entry = object(item);
+            const ids = event.eventType === "memory.selection" ? [entry["id"]] : entry["memoryIds"];
+            return Array.isArray(ids)
+              ? ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+              : [];
+          });
+          records.push({
+            ...base,
+            phase: "completed",
+            text: String(memoryIds.length),
+            output: await this.memoryLines(event, memoryIds),
+          });
+        } else if (
           [
             "memory.query",
             "memory.candidates",
@@ -584,6 +624,50 @@ export class ThreadExecutionProjection {
       PORT_ERROR_CODES.NOT_AUTHORITATIVE,
       "THREAD_EXECUTION_HISTORY_LIMIT",
     );
+  }
+
+  private async memoryLines(event: TraceEvent, memoryIds: readonly string[]): Promise<string> {
+    const memories = this.dependencies.memories;
+    if (!memories || memoryIds.length === 0) return "";
+    const ceiling = CLASSIFICATION_RANK[event.dataClassification];
+    const found = new Map(
+      (
+        await memories.readMany({
+          ownerId: event.ownerId,
+          agentId: event.agentId,
+          memoryIds: memoryIds.map(createMemoryId),
+        })
+      ).map((memory) => [memory.id as string, memory]),
+    );
+    const payloads = this.dependencies.payloads(event.ownerId, event.agentId);
+    const lines: string[] = [];
+    for (const memoryId of memoryIds) {
+      const memory = found.get(memoryId);
+      if (
+        !memory ||
+        !["active", "archived"].includes(memory.status) ||
+        CLASSIFICATION_RANK[memory.dataClassification] > ceiling
+      )
+        continue;
+      const payload = await payloads.get(memory.contentRef);
+      if (
+        !payload?.contentType.startsWith("text/") ||
+        CLASSIFICATION_RANK[payload.dataClassification] > ceiling
+      )
+        continue;
+      const content = new TextDecoder()
+        .decode(
+          await this.dependencies.protector.unprotect({
+            ownerId: event.ownerId,
+            agentId: event.agentId,
+            payload,
+          }),
+        )
+        .replace(/\s+/gu, " ")
+        .trim();
+      if (content) lines.push(`- ${content}`);
+    }
+    return text(redactTracePayload(lines.join("\n")));
   }
 
   private async readPayload(event: TraceEvent, ref: unknown): Promise<unknown> {

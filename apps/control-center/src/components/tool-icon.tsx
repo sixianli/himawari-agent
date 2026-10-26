@@ -86,7 +86,7 @@ export function toolCategory(name: string): keyof typeof symbols {
   if (/browser|navigate|screenshot/.test(value)) return "browser";
   if (/web|exa|fetch|browse/.test(value)) return "web";
   if (/grep|glob|find|search/.test(value)) return "search";
-  if (/sql|database/.test(value)) return "database";
+  if (/sql|database|memory|recall/.test(value)) return "database";
   if (/delegate|spawn|worker/.test(value)) return "delegate";
   return "unknown";
 }

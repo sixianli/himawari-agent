@@ -61,15 +61,24 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       });
       assert.equal(response.ok(), true);
     };
-    // Separate fixture thread histories by browser case using a fresh server-side record set.
     await send({
       reset: true,
       status: "running",
       records: [
         record({ name: "memory.query" }),
         record({ name: "memory.candidates" }),
-        record({ name: "memory.selection" }),
-        record({ name: "context.formed" }),
+        record({
+          name: "memory.selection",
+          phase: "completed",
+          text: "1",
+          output: "- 主人喜欢喝乌龙茶",
+        }),
+        record({
+          name: "context.formed",
+          phase: "completed",
+          text: "2",
+          output: "- 主人最喜欢的颜色是蓝色",
+        }),
         record({ name: "runtime.model_started", phase: "started" }),
         record({
           name: "runtime.thinking.started",
@@ -95,9 +104,22 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await page.goto(`${baseUrl}/threads/thread-main`);
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
       const process = page.locator(".turn-process").first();
-      const tools = process.locator(".tool-record");
+      const tools = process.locator(".tool-record:not(.memory-record)");
+      const memories = process.locator(".memory-record");
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(1);
+      await expect(memories).toHaveCount(2);
+      await expect(memories.locator('[data-tool-category="database"]')).toHaveCount(2);
+      await expect(memories.first().locator(".step-summary")).toHaveText(
+        {
+          "zh-CN": "按这句话找到 1 条相关记忆",
+          en: "Related memories found: 1",
+          ja: "関連する記憶を 1 件発見",
+        }[locale],
+      );
+      await memories.nth(1).locator(":scope > summary").click();
+      await expect(memories.nth(1).locator("pre")).toHaveText("- 主人最喜欢的颜色是蓝色");
+      await memories.nth(1).locator(":scope > summary").click();
       const turnBox = await page.locator(".chat-turn").first().boundingBox();
       const inputBox = await page.locator(".composer").boundingBox();
       assert(turnBox && inputBox && Math.abs(turnBox.x - inputBox.x) <= 1);
@@ -244,6 +266,7 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
       await expect(page.locator(".app-shell")).toHaveAttribute("data-connection", "connected");
       await expect(process).toHaveAttribute("open", "");
       await expect(tools).toHaveCount(2);
+      await expect(memories).toHaveCount(2);
       await expect(process.locator(".authorization-review")).toHaveCount(1);
       await expect(process.locator(".authorization-review")).toContainText(reviewText[1]);
       await expect(process.locator(".authorization-review .step-status")).toHaveText("1.5s");
@@ -287,8 +310,6 @@ export async function qualifyExecutionChain(browser, baseUrl, output) {
             record({ itemId: "rejected-write", name: "runtime.tool_outcome.not_dispatched" }),
           ],
         });
-        // Each reset seeds a separate scenario; execution histories in a live
-        // page are append-only and must not be treated as a resettable cache.
         const terminalPage = await context.newPage();
         terminalPage.on("pageerror", (error) => errors.push(error.message));
         try {
@@ -442,7 +463,6 @@ export async function qualifyExecutionState(browser, baseUrl, output) {
         await page.screenshot({
           path: path.join(output, `state-${width}-${colorScheme}-unknown.png`),
         });
-        // The backend conclusion can change independently of the trace cursor.
         await send({
           status: "completed",
           state: {
