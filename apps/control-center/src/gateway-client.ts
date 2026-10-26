@@ -37,6 +37,7 @@ export interface GatewayClientOptions {
   readonly fetch: typeof globalThis.fetch;
   readonly csrfToken: () => string;
   readonly refreshCsrfToken?: () => Promise<string>;
+  readonly onAuthorityRejected?: () => void;
 }
 
 export interface AvailableModel {
@@ -321,12 +322,25 @@ export class GatewayClient {
     this.options = options;
   }
 
+  private async request(url: string, init: RequestInit): Promise<Response> {
+    const response = await this.options.fetch(url, init);
+    if (response.status === 403 && this.options.onAuthorityRejected) {
+      const body: unknown = await response
+        .clone()
+        .json()
+        .catch(() => null);
+      if ((body as { error?: { code?: unknown } } | null)?.error?.code === "PORT_NOT_AUTHORITATIVE")
+        this.options.onAuthorityRejected();
+    }
+    return response;
+  }
+
   private async authenticatedFetch(url: string, init: RequestInit): Promise<Response> {
     const token = this.refreshedCsrfToken ?? this.options.csrfToken();
     const send = (csrfToken: string) => {
       const headers = new Headers(init.headers);
       headers.set("x-csrf-token", csrfToken);
-      return this.options.fetch(url, { ...init, headers });
+      return this.request(url, { ...init, headers });
     };
     const response = await send(token);
     if (response.status !== 403 || !this.options.refreshCsrfToken) return response;
@@ -362,7 +376,7 @@ export class GatewayClient {
 
   async healthDependencies(): Promise<HealthDependenciesSnapshot> {
     const body = await json(
-      await this.options.fetch("/api/health/v1/dependencies", {
+      await this.request("/api/health/v1/dependencies", {
         credentials: "same-origin",
         headers: { accept: "application/json" },
       }),
@@ -394,7 +408,7 @@ export class GatewayClient {
   async query(message: GatewayV2Query): Promise<GatewayV2Snapshot> {
     const parsed = gatewayV2MessageSchema.parse(message);
     if (parsed.kind !== "query") throw new Error("CONTROL_CENTER_QUERY_INVALID");
-    const response = await this.options.fetch("/api/gateway/v2/queries", {
+    const response = await this.request("/api/gateway/v2/queries", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -441,7 +455,7 @@ export class GatewayClient {
   ): Promise<ThreadGatewaySnapshot> {
     const parsed = threadGatewayMessageSchema.parse(message);
     if (parsed.kind !== "query") throw new Error("CONTROL_CENTER_THREAD_QUERY_INVALID");
-    const response = await this.options.fetch("/api/gateway/thread/v3/queries", {
+    const response = await this.request("/api/gateway/thread/v3/queries", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
