@@ -122,15 +122,17 @@ def main():
     temp_root = short_scratch()
     environment = {**os.environ, 'PATH': str(node.parent) + ':/usr/bin:/bin', 'HIMAWARI_TEST_TEMP_ROOT': str(temp_root), 'PYTHONDONTWRITEBYTECODE': '1'}
     checks = plan(packet, node, python, not arguments.skip_hermes_only, target != current)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
-        results = sorted(pool.map(lambda check: run_check(check, packet, source, environment, logs), checks))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(checks)) as pool:
+            results = sorted(pool.map(lambda check: run_check(check, packet, source, environment, logs), checks))
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
     failed = [result for result in results if result[1] != 0]
     for name, code, log, seconds in results:
         print('CHECK ' + name + ' rc=' + str(code) + ' ' + str(seconds) + 's')
     for name, code, log, seconds in failed:
         print('== ' + name)
         print('\n'.join(log.read_text(errors='replace').splitlines()[-12:]))
-    shutil.rmtree(temp_root, ignore_errors=True)
     if arguments.record:
         Path(arguments.record).write_text(json.dumps({'passed': not failed, 'currentSchema': current, 'targetSchema': target, 'checks': [{'name': name, 'exit': code, 'seconds': seconds} for name, code, log, seconds in results]}, indent=2) + '\n')
     print('PACKET_CHECKS ' + ('failed' if failed else 'passed') + ' ' + str(len(results) - len(failed)) + '/' + str(len(results)) + ' logs=' + str(logs))
