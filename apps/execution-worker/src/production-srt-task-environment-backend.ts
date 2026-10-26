@@ -99,6 +99,7 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
   };
   private readonly live = new Map<string, SandboxJobSession>();
   private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly starting = new Map<string, Promise<SrtTaskEnvironmentSession>>();
 
   constructor(options: {
     readonly stateDirectory: string;
@@ -290,13 +291,14 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
     });
   }
 
-  session(input: {
+  async session(input: {
     readonly target: Target & { readonly locator: ExecutionEnvironmentLocator };
     readonly kind: SrtTaskEnvironmentSessionKind;
     readonly request: Omit<JobHostRequest, "deadlineAt">;
   }): Promise<SrtTaskEnvironmentSession> {
     const { identity } = input.target;
-    return this.locked(identity, async () => {
+    const key = this.sessionKey(identity, input.kind);
+    const next = await this.locked(identity, async () => {
       const state = await this.read(identity);
       if (!state) throw new SrtTaskEnvironmentError("SRT_ENVIRONMENT_UNAVAILABLE");
       this.assertTarget(state, input.target);
@@ -311,8 +313,12 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
         throw new SrtTaskEnvironmentError("SRT_ENVIRONMENT_UNAVAILABLE");
       if (input.request.jobId !== srtTaskEnvironmentJobId(identity.environmentId, input.kind))
         throw new SrtTaskEnvironmentError("SRT_SESSION_BINDING_INVALID");
+      const starting = this.starting.get(key);
+      if (starting) {
+        const retry = () => this.session(input);
+        return { session: starting.then(retry, retry) };
+      }
       const recorded = state.sessions[input.kind];
-      const key = this.sessionKey(identity, input.kind);
       const live = this.live.get(key);
       if (recorded) {
         if (!live) {
@@ -323,7 +329,11 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
           await this.fail(state, "SRT_POLICY_CHANGED");
           throw new SrtTaskEnvironmentError("SRT_POLICY_CHANGED");
         }
-        return this.wrap(identity, input.kind, live, recorded.policyDigest, state.deadlineAt);
+        return {
+          session: Promise.resolve(
+            this.wrap(identity, input.kind, live, recorded.policyDigest, state.deadlineAt),
+          ),
+        };
       }
       const record: SessionRecord = {
         jobId: input.request.jobId,
@@ -336,8 +346,8 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
         commandGroups: [],
       };
       const timingStarted = performance.now();
-      const starting = { ...state, sessions: { ...state.sessions, [input.kind]: record } };
-      await this.write(starting);
+      const withRecord = { ...state, sessions: { ...state.sessions, [input.kind]: record } };
+      await this.write(withRecord);
       const timing: Record<string, number> = {
         write_state: Math.round(performance.now() - timingStarted),
       };
@@ -345,13 +355,13 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
       try {
         session = this.options.prepareSession({ ...input.request, deadlineAt: state.deadlineAt });
       } catch (error) {
-        await this.fail(starting, "SRT_SESSION_START_FAILED");
+        await this.fail(withRecord, "SRT_SESSION_START_FAILED");
         throw error;
       }
       const pid = session.pid ?? null;
       const spawned = {
-        ...starting,
-        sessions: { ...starting.sessions, [input.kind]: { ...record, pid } },
+        ...withRecord,
+        sessions: { ...withRecord.sessions, [input.kind]: { ...record, pid } },
       };
       this.writeNow(spawned);
       this.live.set(key, session);
@@ -369,40 +379,75 @@ export class SrtTaskEnvironmentBackend implements ExecutionEnvironmentLifecycleP
       timing["spawn_and_start_token"] = Math.round(
         performance.now() - timingStarted - (timing["write_state"] ?? 0),
       );
-      let residentGroup: number;
-      let hostSteps: SandboxJobSessionReady["hostSteps"] = null;
-      try {
-        ({ residentProcessId: residentGroup, hostSteps } = await session.ready);
-      } catch (error) {
-        session.close();
-        await this.fail(await this.require(identity), "SRT_SESSION_START_FAILED");
-        throw error;
-      }
-      timing["ready"] = Math.round(
-        performance.now() -
-          timingStarted -
-          (timing["write_state"] ?? 0) -
-          (timing["spawn_and_start_token"] ?? 0),
+      const ready = this.finishStart({
+        identity,
+        kind: input.kind,
+        session,
+        policyDigest: record.policyDigest,
+        deadlineAt: state.deadlineAt,
+        timing,
+        timingStarted,
+      });
+      this.starting.set(key, ready);
+      const finished = () => {
+        if (this.starting.get(key) === ready) this.starting.delete(key);
+      };
+      void ready.then(finished, finished);
+      return { session: ready };
+    });
+    return next.session;
+  }
+
+  private async finishStart(input: {
+    readonly identity: ExecutionEnvironmentIdentity;
+    readonly kind: SrtTaskEnvironmentSessionKind;
+    readonly session: SandboxJobSession;
+    readonly policyDigest: string;
+    readonly deadlineAt: string;
+    readonly timing: Record<string, number>;
+    readonly timingStarted: number;
+  }): Promise<SrtTaskEnvironmentSession> {
+    const { identity, kind, session, timing, timingStarted } = input;
+    let residentGroup: number;
+    let hostSteps: SandboxJobSessionReady["hostSteps"] = null;
+    try {
+      ({ residentProcessId: residentGroup, hostSteps } = await session.ready);
+    } catch (error) {
+      session.close();
+      await this.locked(identity, async () =>
+        this.fail(await this.require(identity), "SRT_SESSION_START_FAILED"),
       );
-      const residentStartToken = await this.options.startToken(residentGroup).catch(() => null);
-      await this.updateSession(identity, input.kind, (current) => ({
+      throw error;
+    }
+    timing["ready"] = Math.round(
+      performance.now() -
+        timingStarted -
+        (timing["write_state"] ?? 0) -
+        (timing["spawn_and_start_token"] ?? 0),
+    );
+    const residentStartToken = await this.options.startToken(residentGroup).catch(() => null);
+    await this.locked(identity, async () => {
+      const state = await this.require(identity);
+      if (state.stop || state.failed || this.live.get(this.sessionKey(identity, kind)) !== session)
+        throw new SrtTaskEnvironmentError("SRT_ENVIRONMENT_UNAVAILABLE");
+      await this.updateSession(identity, kind, (current) => ({
         ...current,
         residentGroup,
         residentStartToken,
       }));
-      console.error(
-        JSON.stringify({
-          event: "sandbox.srt_session.timing",
-          environmentId: identity.environmentId,
-          session: input.kind,
-          stages: timing,
-          hostSteps,
-          totalMs: Math.round(performance.now() - timingStarted),
-          at: new Date().toISOString(),
-        }),
-      );
-      return this.wrap(identity, input.kind, session, record.policyDigest, state.deadlineAt);
     });
+    console.error(
+      JSON.stringify({
+        event: "sandbox.srt_session.timing",
+        environmentId: identity.environmentId,
+        session: kind,
+        stages: timing,
+        hostSteps,
+        totalMs: Math.round(performance.now() - timingStarted),
+        at: new Date().toISOString(),
+      }),
+    );
+    return this.wrap(identity, kind, session, input.policyDigest, input.deadlineAt);
   }
 
   async close(): Promise<void> {

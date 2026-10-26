@@ -417,6 +417,27 @@ it("fetches a public page through the provider with the configured size and no m
     maximumBytes: f.binding.maximumBytes,
   });
 });
+it("[NL-11] passes the model's continuation offset to the fetch program", async () => {
+  const f = fixture();
+  f.services.binding = async () => ({ ...f.binding, grant: null });
+  const issue = vi.fn(async () => ({ ref: "handle:fetch" }));
+  const services = { ...f.services, authorize: allowRead(), issue } as unknown as typeof f.services;
+  await executeProductionCodingRequest(
+    {
+      ...f.call,
+      capabilityRef: "coding.web_fetch",
+      arguments: { url: "https://example.org/a", offset: 102400 },
+    },
+    "web_fetch",
+    services,
+    f.ctx,
+  );
+  expect(f.values.get("input")).toEqual({
+    url: "https://example.org/a",
+    offset: 102400,
+    maximumBytes: f.binding.maximumBytes,
+  });
+});
 it("answers a repeated approved search from host memory without a second provider request", async () => {
   const memory = new WebToolMemory();
   const run = async (toolCallId: string) => {
@@ -461,6 +482,10 @@ it.each([
   { url: "https://user:pw@example.org/" },
   { url: "file:///etc/passwd" },
   { url: "https://example.org/", maximumBytes: 1 },
+  { url: "https://example.org/", offset: -1 },
+  { url: "https://example.org/", offset: 1.5 },
+  { url: "https://example.org/", offset: "100" },
+  { url: "https://example.org/", offset: 10_000_001 },
 ])("rejects a private or widened fetch request %j before disclosure", async (args) => {
   const f = fixture();
   f.services.binding = async () => ({ ...f.binding, grant: null });
@@ -773,5 +798,144 @@ it("[R2-P1] keeps a read rejected before execution as not sent", async () => {
     dispatchState: "not_sent",
     errorCode: "CODING_PATH_OUTSIDE_SCOPE",
   });
+  expect(execute).not.toHaveBeenCalled();
+});
+
+function hostWebFixture(
+  execute: NonNullable<ProductionFileReadServices["hostWeb"]>["execute"],
+  webMemory = new WebToolMemory(),
+) {
+  const f = fixture();
+  const secrets = [
+    {
+      provider: "deepseek" as const,
+      secretRef: "secret:deepseek",
+      secretVersion: "v1",
+      purpose: "web_provider",
+    },
+  ];
+  f.services.binding = async () => ({
+    ...f.binding,
+    grant: null,
+    providers: ["exa-public", "deepseek"],
+    providerSecrets: secrets,
+  });
+  const services: ProductionFileReadServices = {
+    ...f.services,
+    authorize: allowRead(),
+    hostWeb: { execute },
+    webMemory,
+  };
+  return { f, services, secrets };
+}
+
+it("[NL-2] runs web search in the service process without issuing a sandbox handle", async () => {
+  const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(
+    async () => ({ ok: true, code: null, output: '{"results":[]}' }),
+  );
+  const { f, services, secrets } = hostWebFixture(execute);
+  const call = {
+    ...f.call,
+    capabilityRef: "coding.web_search",
+    arguments: { query: "Tokyo forecast" },
+  };
+  const first = await executeProductionCodingRequest(call, "web_search", services, f.ctx);
+  expect(first).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "accepted",
+    errorCode: null,
+    modelContent: '{"results":[]}',
+    executionTiming: expect.any(Object),
+  });
+  expect(execute).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tool: "web_search",
+      arguments: { query: "Tokyo forecast" },
+      providers: ["exa-public", "deepseek"],
+      secrets,
+      maximumBytes: f.binding.maximumBytes,
+    }),
+  );
+  expect(f.services.issue).not.toHaveBeenCalled();
+  expect(f.ctx.phase).not.toHaveBeenCalled();
+  expect(f.values.get("host-result")).toEqual(first);
+  const replay = await executeProductionCodingRequest(call, "web_search", services, f.ctx);
+  expect(replay).toEqual(first);
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it("[NL-2] marks a host web fetch that ran and failed as dispatched and does not cache it", async () => {
+  const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(
+    async () => ({ ok: false, code: "WEB_FETCH_FAILED", output: '{"error":"WEB_FETCH_FAILED"}' }),
+  );
+  const memory = new WebToolMemory();
+  const run = (toolCallId: string) => {
+    const { f, services } = hostWebFixture(execute, memory);
+    return executeProductionCodingRequest(
+      {
+        ...f.call,
+        toolCallId,
+        capabilityRef: "coding.web_fetch",
+        arguments: { url: "https://example.org/" },
+      },
+      "web_fetch",
+      services,
+      f.ctx,
+    ).then((result) => ({ result, issue: f.services.issue }));
+  };
+  const first = await run("call-a");
+  expect(first.result).toMatchObject({
+    outcome: "failed",
+    dispatchState: "accepted",
+    errorCode: "WEB_FETCH_FAILED",
+  });
+  const second = await run("call-b");
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(first.issue).not.toHaveBeenCalled();
+  expect(second.issue).not.toHaveBeenCalled();
+});
+
+it("[NL-2] answers a repeated host web search from memory without running it again", async () => {
+  const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(
+    async () => ({ ok: true, code: null, output: '{"results":["a"]}' }),
+  );
+  const memory = new WebToolMemory();
+  const run = (toolCallId: string) => {
+    const { f, services } = hostWebFixture(execute, memory);
+    return executeProductionCodingRequest(
+      {
+        ...f.call,
+        toolCallId,
+        capabilityRef: "coding.web_search",
+        arguments: { query: "Tokyo  Forecast" },
+      },
+      "web_search",
+      services,
+      f.ctx,
+    );
+  };
+  await run("call-a");
+  const second = await run("call-b");
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(second).toMatchObject({
+    outcome: "succeeded",
+    dispatchState: "not_sent",
+    modelContent: '{"results":["a"]}',
+  });
+});
+
+it("[NL-2] still asks for permission before a host web search and stops when it is denied", async () => {
+  const execute = vi.fn<NonNullable<ProductionFileReadServices["hostWeb"]>["execute"]>(
+    async () => ({ ok: true, code: null, output: "unreachable" }),
+  );
+  const { f, services } = hostWebFixture(execute);
+  const result = await executeProductionCodingRequest(
+    { ...f.call, capabilityRef: "coding.web_search", arguments: { query: "Tokyo" } },
+    "web_search",
+    { ...services, authorize: f.authorize },
+    f.ctx,
+  );
+  expect(result).toMatchObject({ outcome: "failed", dispatchState: "not_sent" });
+  expect(f.authorize).toHaveBeenCalledTimes(1);
   expect(execute).not.toHaveBeenCalled();
 });

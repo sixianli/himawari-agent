@@ -2,16 +2,17 @@ import { createHash } from "node:crypto";
 import {
   ACTION_KIND_RISK_BASELINE,
   computeActionRisk,
+  DEFAULT_WEB_PROVIDERS,
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type HostDirectoryGrant,
   type RuntimeToolExecutionResult,
   type RuntimeToolInvocation,
   type RuntimeToolSettledResult,
-  DEFAULT_WEB_PROVIDERS,
   resolveHostFileReadPath,
   runtimeToolAuthorizationResult,
   scanMachineSecrets,
+  WEB_FETCH_MAXIMUM_OFFSET,
   webProviderEgress,
   webProviderRecipients,
 } from "@himawari-agent/application";
@@ -167,7 +168,14 @@ export async function executeProductionCodingRequest(
   )
     return failed("WEB_SEARCH_INPUT_INVALID");
   if (tool === "web_fetch") {
-    if (typeof args["url"] !== "string" || Object.keys(args).some((key) => key !== "url"))
+    if (
+      typeof args["url"] !== "string" ||
+      Object.keys(args).some((key) => !["url", "offset"].includes(key)) ||
+      (args["offset"] !== undefined &&
+        (!Number.isSafeInteger(args["offset"]) ||
+          Number(args["offset"]) < 0 ||
+          Number(args["offset"]) > WEB_FETCH_MAXIMUM_OFFSET))
+    )
       return failed("WEB_FETCH_INPUT_INVALID");
     try {
       validatePublicFetchUrl(args["url"]);
@@ -305,8 +313,6 @@ export async function executeProductionCodingRequest(
       suggestedRisk: ACTION_KIND_RISK_BASELINE[actionKind],
       reasonCode: "product_governed_coding",
     },
-    // The run's model already holds the owner's private context, so passing it workspace
-    // content is recorded without raising the risk; search providers sit outside that boundary.
     deterministicFacts: [
       { code: "external_model_disclosure", minimumRisk: "LOW", source: "product" },
       ...(webTool(tool)
@@ -415,6 +421,41 @@ export async function executeProductionCodingRequest(
     providers,
     arguments: args,
   });
+  if (services.hostWeb && webTool(tool)) {
+    const previous = (await ctx.load("host-result")) as RuntimeToolSettledResult | undefined;
+    if (previous) return previous;
+    const hit = memory && memoryKey ? memory.cached(memoryKey) : undefined;
+    if (hit) {
+      await active();
+      await ctx.save("host-result", hit);
+      return hit;
+    }
+    const startedAt = ctx.now();
+    const executed = await services.hostWeb.execute({
+      tool: tool as "web_search" | "web_fetch",
+      arguments: args,
+      providers: memory ? memory.order(providers) : providers,
+      secrets: binding.providerSecrets ?? [],
+      maximumBytes: binding.maximumBytes,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    });
+    await active();
+    const settled: RuntimeToolSettledResult = {
+      dispatchState: "accepted",
+      executionTiming: { startedAt, endedAt: ctx.now() },
+      outcome: executed.ok ? "succeeded" : "failed",
+      resultRef: null,
+      errorCode: executed.code,
+      externalActionId: null,
+      modelContent: executed.output,
+    };
+    if (memory && memoryKey) {
+      memory.observe(providers, settled);
+      memory.remember(memoryKey, tool as "web_search" | "web_fetch", settled);
+    }
+    await ctx.save("host-result", settled);
+    return settled;
+  }
   let saved = (await ctx.load("handle")) as
     | { handle: GovernedCapabilityExecutionHandle; inputRef: string }
     | undefined;
@@ -445,6 +486,7 @@ export async function executeProductionCodingRequest(
         : tool === "web_fetch"
           ? {
               url: args["url"],
+              ...(args["offset"] === undefined ? {} : { offset: args["offset"] }),
               maximumBytes: binding.maximumBytes,
               ...(ordered ? { providers: ordered } : {}),
               ...secretNames,

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./control": "./src/job-host-control-client.ts"
+    "./control": "./src/job-host-control-client.ts",
+    "./public-address": "./src/public-egress-address.ts"
   },
   "dependencies": {
     "@anthropic-ai/sandbox-runtime": "0.0.75",

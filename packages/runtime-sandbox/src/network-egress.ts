@@ -1,51 +1,10 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
-import { BlockList, connect, isIP, type Socket } from "node:net";
-
-// Conservative public-unicast policy, based on IANA special-purpose registries.
-// Special-purpose exceptions are intentionally not granted implicitly.
-const reserved = new BlockList();
-for (const [address, prefix] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["100.64.0.0", 10],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.0.0.0", 24],
-  ["192.0.2.0", 24],
-  ["192.88.99.0", 24],
-  ["192.168.0.0", 16],
-  ["198.18.0.0", 15],
-  ["198.51.100.0", 24],
-  ["203.0.113.0", 24],
-  ["224.0.0.0", 4],
-  ["240.0.0.0", 4],
-] as const)
-  reserved.addSubnet(address, prefix, "ipv4");
-const globalV6 = new BlockList();
-globalV6.addSubnet("2000::", 3, "ipv6");
-for (const [address, prefix] of [
-  ["2001::", 23],
-  ["2001:db8::", 32],
-  ["2002::", 16],
-  ["3fff::", 20],
-] as const)
-  reserved.addSubnet(address, prefix, "ipv6");
+import { connect, type Socket } from "node:net";
+import { isPublicEgressAddress } from "./public-egress-address.js";
 
 const PROXY_CHALLENGE = 'Basic realm="himawari-egress"';
-
-export function isPublicEgressAddress(address: string): boolean {
-  const family = isIP(address);
-  if (family === 4) return !reserved.check(address, "ipv4");
-  return (
-    family === 6 &&
-    !address.includes("%") &&
-    globalV6.check(address, "ipv6") &&
-    !reserved.check(address, "ipv6")
-  );
-}
 
 const hopHeaders = new Set([
   "connection",
@@ -69,9 +28,6 @@ function endToEnd(headers: IncomingMessage["headers"]) {
   return Object.fromEntries(Object.entries(headers).filter(([name]) => !excluded.has(name)));
 }
 
-/** One Job Host owns one upstream. It accepts HTTP and CONNECT from SRT;
- * SRT translates SOCKS into CONNECT. No TLS interception, credential injection,
- * redirects, environment proxy discovery, or DNS cache is performed here. */
 export async function openNetworkEgress(
   allowedDomains: readonly string[],
   assertCurrent: () => Promise<void>,
@@ -110,7 +66,6 @@ export async function openNetworkEgress(
     }
     await assertCurrent();
     if (stopped || client.destroyed) throw new Error("stopped");
-    // Check every answer, then dial a numeric IP; no second resolver invocation.
     const addresses = await lookup(host, { all: true, verbatim: true });
     if (stopped || client.destroyed) throw new Error("stopped");
     const selected = addresses[0];
@@ -236,8 +191,6 @@ export async function openNetworkEgress(
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("EGRESS_BIND_FAILED");
-  // TLS contents are opaque. Bound continued use of established tunnels using
-  // the existing Job Host heartbeat cadence; never cache an authority success.
   let checking = false;
   const authorityTimer = setInterval(() => {
     if (stopped || checking || sockets.size === 0) return;

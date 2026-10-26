@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { SANDBOX_PROXY } from "@himawari-agent/platform-node";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({
@@ -10,14 +11,22 @@ const boundary = vi.hoisted(() => ({
     exitCode: undefined as number | undefined,
   },
   search: vi.fn(),
+  dispatchers: [] as unknown[],
 }));
 vi.mock("node:process", () => ({ default: boundary.process }));
-vi.mock("@himawari-agent/platform-node", async (original) => ({
-  ...(await original<object>()),
-  ExaPublicSearchAdapter: class {
-    search = boundary.search;
-  },
-}));
+vi.mock("@himawari-agent/platform-node", async (original) => {
+  const actual = await original<typeof import("@himawari-agent/platform-node")>();
+  const { WEB_PROVIDERS } = await import("@himawari-agent/application");
+  return {
+    ...actual,
+    createWebProvider: (...input: Parameters<typeof actual.createWebProvider>) => {
+      boundary.dispatchers.push(input[2]);
+      return input[0] === "exa-public"
+        ? { descriptor: WEB_PROVIDERS["exa-public"], search: boundary.search, fetch: vi.fn() }
+        : actual.createWebProvider(...input);
+    },
+  };
+});
 
 async function run(value: unknown) {
   boundary.process.stdin = Readable.from([Buffer.from(JSON.stringify(value))]);
@@ -29,6 +38,7 @@ function written(stream: { write: ReturnType<typeof vi.fn> }) {
 beforeEach(() => {
   vi.resetModules();
   vi.resetAllMocks();
+  boundary.dispatchers.length = 0;
   boundary.process.exitCode = undefined;
 });
 
@@ -44,7 +54,7 @@ describe("[R2-T13] installed public search program output", () => {
     expect(boundary.process.exitCode).toBe(1);
     expect(JSON.parse(written(boundary.process.stdout))).toEqual({
       error: "WEB_SEARCH_RATE_LIMITED",
-      message: "公开搜索服务正在限流，请稍等片刻再搜索。",
+      message: "公开搜索服务正在限流，请等几秒再搜一次，不要连续重试。",
     });
     expect(written(boundary.process.stderr)).toBe("WEB_SEARCH_RATE_LIMITED\n");
   });
@@ -58,10 +68,10 @@ describe("[R2-T13] installed public search program output", () => {
     expect(output).not.toContain("secret");
     expect(output).not.toContain("127.0.0.1");
     expect(JSON.parse(written(boundary.process.stdout))).toEqual({
-      error: "WEB_SEARCH_FAILED",
-      message: "公开网页搜索失败。",
+      error: "WEB_SEARCH_UNAVAILABLE",
+      message: "搜索服务暂时不可用，马上重试大概率仍会失败，请稍后再试。",
     });
-    expect(written(boundary.process.stderr)).toBe("WEB_SEARCH_FAILED\n");
+    expect(written(boundary.process.stderr)).toBe("WEB_SEARCH_UNAVAILABLE\n");
   });
   it("keeps the successful result shape and writes nothing to stderr", async () => {
     boundary.search.mockResolvedValue([
@@ -86,6 +96,7 @@ describe("[R2-T13] installed public search program output", () => {
       pagesOpened: false,
       results: [{ url: "https://example.org/weather", openedResourceId: null }],
     });
+    expect(boundary.dispatchers).toEqual([SANDBOX_PROXY]);
     expect(boundary.process.stderr.write).not.toHaveBeenCalled();
   });
 });

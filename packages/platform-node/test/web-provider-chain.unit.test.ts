@@ -5,8 +5,8 @@ import {
   searchWithProviders,
   type WebProvider,
   WebProviderChainError,
-  webProviderFailure,
 } from "../src/web-provider-chain.js";
+import { webProviderFailure } from "../src/web-provider-failure.js";
 
 function provider(id: WebProviderId, search: WebProvider["search"]): WebProvider {
   return { descriptor: WEB_PROVIDERS[id], search, fetch: vi.fn() };
@@ -23,7 +23,6 @@ describe("web provider fallback chain", () => {
     const deepseek = vi.fn(async () => result);
     const searched = await searchWithProviders({
       providers: ["exa-public", "deepseek"],
-      secrets: {},
       query: "q",
       limit: 1,
       create: (id) => provider(id, id === "exa-public" ? exa : deepseek),
@@ -40,7 +39,6 @@ describe("web provider fallback chain", () => {
       const deepseek = vi.fn(async () => result);
       const failing = searchWithProviders({
         providers: ["exa-public", "deepseek"],
-        secrets: {},
         query: "q",
         limit: 1,
         create: (id) =>

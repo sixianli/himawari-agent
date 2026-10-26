@@ -27,20 +27,6 @@ function configuredSandboxTools(runPolicy: RunPolicyConfiguration | undefined): 
         capabilityVersion: coding.capabilityVersion,
         operations: [toolName],
       });
-  if (runPolicy?.publicSearch)
-    tools.push({
-      toolName: "web_search",
-      capabilityRef: runPolicy.publicSearch.capabilityRef,
-      capabilityVersion: runPolicy.publicSearch.capabilityVersion,
-      operations: ["web_search"],
-    });
-  if (runPolicy?.publicFetch)
-    tools.push({
-      toolName: "web_fetch",
-      capabilityRef: runPolicy.publicFetch.capabilityRef,
-      capabilityVersion: runPolicy.publicFetch.capabilityVersion,
-      operations: ["web_fetch"],
-    });
   return tools;
 }
 

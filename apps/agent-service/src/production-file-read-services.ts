@@ -19,8 +19,9 @@ import type {
   ProductionFileReadServices,
   WebProviderSecretBinding,
 } from "./production-file-read-workflow.js";
-import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { createProductionHostReadOnly } from "./production-host-read.js";
+import type { ProductionHostWeb } from "./production-host-web.js";
+import { configuredModelDisclosureIdentity } from "./production-model-disclosure.js";
 import { PublicSearchAuthorization } from "./public-search-authorization.js";
 import { WebToolMemory } from "./web-tool-memory.js";
 import type { WorkspaceAutoAuthorization } from "./workspace-auto-authorization.js";
@@ -43,6 +44,7 @@ export function createProductionFileReadServices(options: {
   readonly automaticReview?: AutomaticActionReviewPort;
   readonly workspaceAuto?: WorkspaceAutoAuthorization;
   readonly hostReadOnlyPort?: HostReadOnlyPort;
+  readonly hostWeb?: ProductionHostWeb;
 }): ProductionFileReadServices {
   const { configuration, repository, clock, ids } = options;
   const capabilities = repository.capabilityStore(configuration.ownerId, configuration.agentId);
@@ -90,6 +92,7 @@ export function createProductionFileReadServices(options: {
     });
   return {
     ...(hostReadOnly ? { hostReadOnly } : {}),
+    ...(webMemory && options.hostWeb ? { hostWeb: options.hostWeb } : {}),
     ...(webMemory ? { webMemory } : {}),
     binding: async (call) => {
       const coding = configuration.runPolicy?.coding;

@@ -1,14 +1,15 @@
 import {
   type WebFetchProvider,
   type WebFetchResult,
+  WebProviderError,
   type WebProviderFailureCode,
   type WebProviderId,
-  WebProviderError,
   type WebSearchCandidate,
   type WebSearchProvider,
 } from "@himawari-agent/application";
 import { DeepSeekWebProvider } from "./deepseek-web-provider.js";
-import { ExaPublicSearchAdapter } from "./exa-public-search.js";
+import { ExaPublicSearchAdapter, type WebProviderDispatcher } from "./exa-public-search.js";
+import { webProviderFailure } from "./web-provider-failure.js";
 
 const chainBudgetMs = 45000;
 const minimumAttemptMs = 5000;
@@ -19,28 +20,14 @@ export interface WebProviderSecrets {
 
 export type WebProvider = WebSearchProvider & WebFetchProvider;
 
-export function createWebProvider(id: WebProviderId, secrets: WebProviderSecrets): WebProvider {
-  if (id === "exa-public") return new ExaPublicSearchAdapter();
+export function createWebProvider(
+  id: WebProviderId,
+  secrets: WebProviderSecrets,
+  dispatcher: WebProviderDispatcher,
+): WebProvider {
+  if (id === "exa-public") return new ExaPublicSearchAdapter({ dispatcher });
   if (!secrets.deepseek) throw new WebProviderError("UNAVAILABLE", "WEB_PROVIDER_SECRET_MISSING");
-  return new DeepSeekWebProvider({ credential: secrets.deepseek });
-}
-
-export function webProviderFailure(error: unknown): WebProviderError {
-  if (error instanceof WebProviderError) return error;
-  const name = error instanceof Error ? error.name : "";
-  const message = error instanceof Error ? error.message : "";
-  const code: WebProviderFailureCode = /RATE_LIMITED$/.test(message)
-    ? "RATE_LIMITED"
-    : /TIMEOUT$/.test(message) || name === "TimeoutError"
-      ? "TIMEOUT"
-      : /INPUT_UNSUPPORTED$/.test(message)
-        ? "INPUT_UNSUPPORTED"
-        : /INPUT_INVALID$|INPUT_LIMIT$/.test(message)
-          ? "INPUT_INVALID"
-          : /OUTPUT_REDACTED$/.test(message)
-            ? "OUTPUT_REDACTED"
-            : "UNAVAILABLE";
-  return new WebProviderError(code, message || code);
+  return new DeepSeekWebProvider({ credential: secrets.deepseek, dispatcher });
 }
 
 export interface WebProviderAttempt {
@@ -101,15 +88,14 @@ export async function runWebProviderChain<T>(input: {
 
 export function searchWithProviders(input: {
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly query: string;
   readonly limit: number;
   readonly signal?: AbortSignal;
-  readonly create?: (id: WebProviderId) => WebProvider;
+  readonly create: (id: WebProviderId) => WebProvider;
 }) {
   return runWebProviderChain<readonly WebSearchCandidate[]>({
     providers: input.providers,
-    create: input.create ?? ((id) => createWebProvider(id, input.secrets)),
+    create: input.create,
     attempt: (provider, signal) =>
       provider.search({ query: input.query, limit: input.limit, signal }),
     ...(input.signal ? { signal: input.signal } : {}),
@@ -118,17 +104,22 @@ export function searchWithProviders(input: {
 
 export function fetchWithProviders(input: {
   readonly providers: readonly WebProviderId[];
-  readonly secrets: WebProviderSecrets;
   readonly url: string;
+  readonly offset: number;
   readonly maximumBytes: number;
   readonly signal?: AbortSignal;
-  readonly create?: (id: WebProviderId) => WebProvider;
+  readonly create: (id: WebProviderId) => WebProvider;
 }) {
   return runWebProviderChain<WebFetchResult>({
     providers: input.providers,
-    create: input.create ?? ((id) => createWebProvider(id, input.secrets)),
+    create: input.create,
     attempt: (provider, signal) =>
-      provider.fetch({ url: input.url, maximumBytes: input.maximumBytes, signal }),
+      provider.fetch({
+        url: input.url,
+        offset: input.offset,
+        maximumBytes: input.maximumBytes,
+        signal,
+      }),
     ...(input.signal ? { signal: input.signal } : {}),
   });
 }

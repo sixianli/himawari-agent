@@ -705,11 +705,11 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 
 ### 已授权公开搜索与聊天执行反馈
 
-用户可在聊天输入区明确开启或撤销固定 Exa 的联网搜索披露授权。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费和 Sandbox 准入都重新检查设置 revision。它不扩大文件、命令或任意网络权限，也不伪造人工点击。配置绑定变化使设置失效。
+用户可在聊天输入区明确开启或撤销固定 Exa 的联网搜索披露授权。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费时重新检查设置 revision。2026-10-26 起搜索和读网页授权通过后在服务进程执行，不再经过 Sandbox 准入，出口只允许配置里供应商的固定主机和公网地址，见 [ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)。它不扩大文件、命令或任意网络权限，也不伪造人工点击。配置绑定变化使设置失效。
 
 Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚未交付的连续更新；生命周期和工具边界始终保留，持久化消费提供背压。浏览器从真实事件显示思考活动、当前工具与最后进度时间；未获披露许可的原始 reasoning 和 Provider 元数据不作为思考摘要展示。审批使用原批准合同在当前 Run 的聊天卡片操作，保留披露 hash、revision、近期认证和重试身份。受保护安装的首次完整校验使用独立线程逐字节扫描，避免大量异步小文件调度拖慢工具过程；未受保护的安装按 ADR 0069 信任安装结果，不读取、不计算摘要。
 
 执行与验收记录：[SOURCE: docs/execution/specs/2026-09-10-control-center-local-acceptance-design.md]、[SOURCE: docs/execution/plans/2026-09-10-control-center-local-acceptance-plan.md]。
 
 
-受保护安装校验由 platform-node 实现，见 [ADR 0069](adr/0069-trust-unprotected-runtime-like-claude-code.md)（取代 ADR 0067、ADR 0034 和 ADR 0028）。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效。未配置保护记录的安装（含 Mac）信任安装结果：宿主核验不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要，与 Claude Code 的做法一致；每次调用仍检查绑定、资格和各路径的规范性、所有者与写权限。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装。前台工具运行期间 Worker 约每 250 毫秒检查一次控制状态；任务进程尚未启动或第一次资源采样尚未完成时，Agent 服务返回与正常收尾相同的非终态观察 `cleanup_pending`，Worker 继续等待而不取消任务，见[启动阶段的非终态观察](execution/specs/2026-09-28-sandbox-cleanup-observation-design.md#启动阶段的非终态观察)。
+受保护安装校验由 platform-node 实现，见 [ADR 0069](adr/0069-trust-unprotected-runtime-like-claude-code.md)（取代 ADR 0067、ADR 0034 和 ADR 0028）。Linux 部署可用 root 所有记录绑定非 root 运行账号与不可写安装；同进程初始审计复用与动态授权分别处理。此入口在实际权限与记录核验通过后才生效。未配置保护记录的安装（含 Mac）信任安装结果：宿主核验不读取、不计算摘要、不遍历运行时目录、Node 可执行文件和 runner，进程启动时也不算摘要，与 Claude Code 的做法一致；每次执行准入、绑定和启动仍检查绑定、资格和各路径的规范性、所有者与写权限；执行运行中的重复授权确认在授权计数器和宿主身份摘要都没变时复用最近一次完整核对的结果，最长 60 秒，见 [ADR 0078](adr/0078-authority-check-once-then-version-compare.md)。防止运行时被改靠沙箱把运行时目录设为只读、且不与工作区或私有目录重叠，以及受保护安装。前台工具运行期间 Worker 约每 250 毫秒检查一次控制状态；任务进程尚未启动或第一次资源采样尚未完成时，Agent 服务返回与正常收尾相同的非终态观察 `cleanup_pending`，Worker 继续等待而不取消任务，见[启动阶段的非终态观察](execution/specs/2026-09-28-sandbox-cleanup-observation-design.md#启动阶段的非终态观察)。

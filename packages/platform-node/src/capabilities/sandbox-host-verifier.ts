@@ -155,6 +155,30 @@ export async function verifySandboxHost(input: {
   ]);
 }
 
+export async function sandboxHostIdentity(input: SandboxHostBinding): Promise<string> {
+  const binding = sandboxHostBindingSchema.parse(input);
+  const protection = process.env["HIMAWARI_RUNTIME_PROTECTION_FILE"];
+  const paths = [
+    binding.privateRoot,
+    ...binding.roots.map((root) => root.canonicalPath),
+    ...binding.readOnlyToolchainPaths,
+    binding.runtimeRoot,
+    binding.executable.path,
+    binding.runner.path,
+  ];
+  const identities = await Promise.all(
+    paths.map(async (filename) => {
+      const info = await lstat(filename, { bigint: true });
+      return [filename, info.dev, info.ino, info.mode, info.uid].join(":");
+    }),
+  );
+  if (protection !== undefined) {
+    const info = await lstat(protection, { bigint: true });
+    identities.push([protection, info.dev, info.ino, info.mode, info.uid, info.ctimeNs].join(":"));
+  }
+  return createHash("sha256").update(identities.join("\n")).digest("hex");
+}
+
 export async function resolveSandboxWorkspaceRoot(input: {
   readonly binding: SandboxHostBinding;
   readonly scope: SandboxScope;

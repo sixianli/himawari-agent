@@ -33,7 +33,7 @@ vi.mock("undici", () => ({
   },
 }));
 
-import { ExaPublicSearchAdapter } from "../src/exa-public-search.js";
+import { ExaPublicSearchAdapter, SANDBOX_PROXY } from "../src/exa-public-search.js";
 
 const endpoint = "https://mcp.exa.ai/mcp";
 const searchText =
@@ -49,7 +49,11 @@ beforeEach(() => {
   state.proxyFetch.mockResolvedValue(new Response("mcp response"));
 });
 afterEach(() => vi.unstubAllEnvs());
-const search = () => new ExaPublicSearchAdapter().search({ query: " Tokyo weather ", limit: 2 });
+const search = () =>
+  new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).search({
+    query: " Tokyo weather ",
+    limit: 2,
+  });
 function transportFetch() {
   if (!state.fetch) throw new Error("Transport not constructed");
   return state.fetch;
@@ -90,6 +94,22 @@ describe("public search MCP adapter transport contract", () => {
     });
     expect(state.closeClient).toHaveBeenCalledOnce();
     expect(state.closeProxy).toHaveBeenCalledOnce();
+  });
+  it("[NL-2] sends through a shared service dispatcher without a sandbox proxy and keeps it open", async () => {
+    vi.stubEnv("HTTPS_PROXY", undefined);
+    const shared = { close: vi.fn() } as unknown as import("undici").Dispatcher;
+    await new ExaPublicSearchAdapter({ dispatcher: shared }).search({
+      query: "Tokyo weather",
+      limit: 2,
+    });
+    await transportFetch()(endpoint, { method: "POST", body: "approved request" });
+    expect(state.proxyFetch).toHaveBeenCalledExactlyOnceWith(
+      endpoint,
+      expect.objectContaining({ dispatcher: shared, redirect: "error" }),
+    );
+    expect(state.proxyCreated).not.toHaveBeenCalled();
+    expect(shared.close).not.toHaveBeenCalled();
+    expect(state.closeClient).toHaveBeenCalledOnce();
   });
   it.each([
     undefined,
@@ -171,7 +191,7 @@ describe("public search MCP adapter transport contract", () => {
       dispatcher: expect.any(Object),
     });
   });
-  it.each([256 * 1024, 256 * 1024 + 1])(
+  it.each([1024 * 1024, 1024 * 1024 + 1])(
     "enforces the streaming response limit at %i bytes",
     async (size) => {
       await search();
@@ -187,7 +207,7 @@ describe("public search MCP adapter transport contract", () => {
         ),
       );
       const result = await transportFetch()(endpoint);
-      if (size === 256 * 1024) expect((await result.arrayBuffer()).byteLength).toBe(size);
+      if (size === 1024 * 1024) expect((await result.arrayBuffer()).byteLength).toBe(size);
       else await expect(result.arrayBuffer()).rejects.toThrow("WEB_SEARCH_RESPONSE_LIMIT");
     },
   );
@@ -314,12 +334,16 @@ describe("[R2-T13] free MCP rate-limit notices", () => {
 describe("public page fetch through Exa", () => {
   const page = "Title: Example page\nURL: https://example.org/a\nText: Hello world";
   const fetchPage = (maximumBytes = 1024) =>
-    new ExaPublicSearchAdapter().fetch({ url: "https://example.org/a", maximumBytes });
+    new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
+      url: "https://example.org/a",
+      offset: 0,
+      maximumBytes,
+    });
   it.each([
     [
       "web_fetch_exa",
       { urls: {}, maxCharacters: {} },
-      { urls: ["https://example.org/a"], maxCharacters: 1024 },
+      { urls: ["https://example.org/a"], maxCharacters: 1025 },
     ],
     ["crawling_exa", { url: {} }, { url: "https://example.org/a" }],
   ])(
@@ -334,6 +358,7 @@ describe("public page fetch through Exa", () => {
         title: "Example page",
         markdown: page,
         truncated: false,
+        nextOffset: null,
       });
       expect(state.callTool).toHaveBeenCalledExactlyOnceWith(
         { name, arguments: args },
@@ -360,7 +385,11 @@ describe("public page fetch through Exa", () => {
   });
   it("does not open a connection for a private address", async () => {
     await expect(
-      new ExaPublicSearchAdapter().fetch({ url: "http://127.0.0.1/", maximumBytes: 1024 }),
+      new ExaPublicSearchAdapter({ dispatcher: SANDBOX_PROXY }).fetch({
+        url: "http://127.0.0.1/",
+        offset: 0,
+        maximumBytes: 1024,
+      }),
     ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
     expect(state.proxyCreated).not.toHaveBeenCalled();
   });

@@ -3,7 +3,6 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 type PiMessages = AgentSession["agent"]["state"]["messages"];
 
-/** Stored only in a product-protected Payload; never a public trace body. */
 export interface PiToolBatchContinuation {
   readonly version: "pi-tool-batch.v2";
   readonly prefix: PiMessages;
@@ -12,20 +11,33 @@ export interface PiToolBatchContinuation {
   readonly completedResults: Extract<PiMessages[number], { role: "toolResult" }>[];
   readonly waitingToolCallId: string;
   readonly completedStreamOrdinal: number;
+  readonly parallel?: true;
 }
 
-/** Freeze before Pi appends a synthetic abort/error result for the waiting call. */
 export function capturePiToolBatch(
   session: AgentSession,
   waitingToolCallId: string,
   completedStreamOrdinal: number,
 ): PiToolBatchContinuation {
+  const messages = session.agent.state.messages;
+  const assistant = messages.findLast((message) => message.role === "assistant");
   return freezeBatch(
-    session.agent.state.messages,
+    messages,
     waitingToolCallId,
     completedStreamOrdinal,
     session.agent.state.systemPrompt,
+    assistant?.role === "assistant" && runsInParallel(session, assistant),
   );
+}
+
+function runsInParallel(session: AgentSession, assistant: AssistantMessage): boolean {
+  const tools = session.agent.state.tools;
+  return assistant.content
+    .filter((part) => part.type === "toolCall")
+    .every((call) => {
+      const tool = tools.find(({ name }) => name === call.name);
+      return tool !== undefined && tool.executionMode !== "sequential";
+    });
 }
 
 function freezeBatch(
@@ -33,6 +45,7 @@ function freezeBatch(
   waitingToolCallId: string,
   completedStreamOrdinal: number,
   systemPrompt: string,
+  parallel: boolean,
 ): PiToolBatchContinuation {
   const index = messages.findLastIndex((message) => message.role === "assistant");
   const assistant = messages[index];
@@ -50,7 +63,7 @@ function freezeBatch(
   const waitingIndex = calls.findIndex((call) => call.id === waitingToolCallId);
   const completedResults = messages.slice(index + 1);
   if (
-    completedResults.length !== waitingIndex ||
+    completedResults.length !== (parallel ? 0 : waitingIndex) ||
     new Set(calls.map((call) => call.id)).size !== calls.length ||
     completedResults.some(
       (result, position) =>
@@ -72,16 +85,14 @@ function freezeBatch(
     completedResults: completedResults as PiToolBatchContinuation["completedResults"],
     waitingToolCallId,
     completedStreamOrdinal,
+    ...(parallel ? { parallel: true as const } : {}),
   });
 }
 
-/**
- * Feed a previously completed model message back through Pi's tool executor.
- * This is a local replay, not a new provider call. Previously disclosed results
- * are restored as conversation state; only unfinished calls enter product execution.
- */
 export function restorePiToolBatch(session: AgentSession, saved: PiToolBatchContinuation) {
   const checked = validateSavedBatch(saved);
+  if (checked.parallel && !runsInParallel(session, checked.assistant))
+    throw new Error("PI_CONTINUATION_PARALLEL_BATCH_INVALID");
   session.agent.state.messages = checked.prefix;
   session.agent.state.systemPrompt = checked.systemPrompt;
   let consumed = false;
@@ -116,6 +127,7 @@ function validateSavedBatch(saved: PiToolBatchContinuation): PiToolBatchContinua
     saved.waitingToolCallId,
     saved.completedStreamOrdinal,
     saved.systemPrompt,
+    saved.parallel === true,
   );
   return checked;
 }

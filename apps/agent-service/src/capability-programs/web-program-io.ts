@@ -1,11 +1,6 @@
 import process from "node:process";
 import { isWebProviderId, type WebProviderId } from "@himawari-agent/application";
-import {
-  createWebProvider,
-  ExaPublicSearchAdapter,
-  type WebProvider,
-  type WebProviderSecrets,
-} from "@himawari-agent/platform-node";
+import type { WebProviderSecrets } from "@himawari-agent/platform-node";
 
 export async function readProgramInput(prefix: string): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -48,13 +43,3 @@ export function programSecrets(value: unknown, prefix: string): WebProviderSecre
     throw new Error(`${prefix}_INPUT_INVALID`);
   return entries["deepseek"] === undefined ? {} : { deepseek: entries["deepseek"] as string };
 }
-
-export function programProvider(secrets: WebProviderSecrets) {
-  return (id: WebProviderId): WebProvider =>
-    id === "exa-public" ? new ExaPublicSearchAdapter() : createWebProvider(id, secrets);
-}
-
-export const providerSource: Readonly<Record<WebProviderId, string>> = {
-  "exa-public": "Exa public web search",
-  deepseek: "DeepSeek web search",
-};

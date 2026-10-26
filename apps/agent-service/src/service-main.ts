@@ -10,8 +10,8 @@ import {
   DurableMemoryService,
   type IdGeneratorPort,
   type ProductConfiguration,
-  type RuntimeRequest,
   RemoteExecutionBackend,
+  type RuntimeRequest,
   recoverSandboxExecutionsAtStartup,
   recoverSandboxJobsAtStartup,
   WorkerDelegationAdmissionService,
@@ -32,6 +32,7 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import {
   assertProductionSecretSource,
+  DescriptorRelativeReadOnly,
   EnvelopePayloadProtector,
   EphemeralSecretPort,
   EXECUTION_UDS_ERROR_CODES,
@@ -43,7 +44,6 @@ import {
   MacOsKeychainSecretSource,
   PayloadUdsServer,
   parseServiceArguments,
-  DescriptorRelativeReadOnly,
   RuntimeHealthModel,
   readAuthorityFile,
   readRestrictedExecutionTokenFile,
@@ -68,10 +68,7 @@ import { ProductionExecutionAdmissionHandler } from "./production-execution-admi
 import { AgentServiceExecutionClient } from "./production-execution-client.js";
 import { strictModeUnavailableTools } from "./production-execution-environment.js";
 import { createProductionFileReadServices } from "./production-file-read-services.js";
-import {
-  WorkspaceAutoAuthorization,
-  resolveCodingNetworkFacts,
-} from "./workspace-auto-authorization.js";
+import { createConfiguredHostWeb } from "./production-host-web.js";
 import {
   createProductionHttpComposition,
   type ProductionHttpComposition,
@@ -81,6 +78,7 @@ import {
   createProductionMemoryCompositionFromConfiguration,
   type ProductionMemoryComposition,
 } from "./production-memory-composition.js";
+import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionMemoryWorker } from "./production-memory-worker.js";
 import {
   createProductionModelCompositionFromConfiguration,
@@ -95,7 +93,6 @@ import {
   embeddingAdmissionDescriptor,
 } from "./production-run-memory.js";
 import { configuredWorkspaceRoot, createProductionRunPolicy } from "./production-run-policy.js";
-import { ProductionMemoryRecall } from "./production-memory-recall.js";
 import { ProductionRuntimeTools } from "./production-runtime-tools.js";
 import {
   createProductionSandboxServices,
@@ -103,6 +100,10 @@ import {
 } from "./production-sandbox-services.js";
 import { ProductionServiceLifecycle } from "./production-service-lifecycle.js";
 import { createProductionWorkerParentBindingRegistry } from "./production-worker-parent-binding-registry.js";
+import {
+  resolveCodingNetworkFacts,
+  WorkspaceAutoAuthorization,
+} from "./workspace-auto-authorization.js";
 
 export const AGENT_SERVICE_ERROR_CODES = Object.freeze({
   AUTHORITY_INACTIVE: "AGENT_AUTHORITY_INACTIVE",
@@ -759,6 +760,10 @@ export async function runAgentService(
           })
         : undefined;
     if (workspaceAuto) await workspaceAuto.sync(invocationAuthority().lease);
+    const hostWeb = createConfiguredHostWeb({
+      runPolicy: configuration.runPolicy,
+      secrets: sources.provider,
+    });
     const fileReadServices = createProductionFileReadServices({
       configuration,
       repository,
@@ -766,6 +771,7 @@ export async function runAgentService(
       clock,
       ids,
       hostReadOnlyPort: new DescriptorRelativeReadOnly(),
+      ...(hostWeb ? { hostWeb } : {}),
       ...(automaticReview ? { automaticReview } : {}),
       ...(workspaceAuto ? { workspaceAuto } : {}),
     });

@@ -1,5 +1,7 @@
 import type {
   CapabilityInvocationAuthority,
+  SandboxExecutionJournalPort,
+  SandboxExecutionRecord,
   CapabilityInvocationReceiptPort,
   CapabilityInvocationResultPort,
   CapabilityResourceCeiling,
@@ -14,6 +16,7 @@ import { createApplicationServiceIdentityFactory } from "@himawari-agent/applica
 import {
   type PayloadBrokerInputReadRequest,
   type PayloadBrokerOutputWriteRequest,
+  type PayloadBrokerSandboxExecutionRequest,
   payloadBrokerV1MessageSchema,
 } from "@himawari-agent/execution-contracts";
 import { createV02Fixture } from "@himawari-agent/testing";
@@ -21,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import {
   PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES,
   ProductionPayloadBrokerHandler,
+  RESOLVED_AUTHORITY_REUSE_MS,
 } from "../src/production-payload-broker-handler.js";
 
 type OwnerId = PayloadProtectionRequest["ownerId"];
@@ -282,6 +286,183 @@ function handlerFixture(
     },
   };
 }
+
+const SANDBOX_HOST_ID = "host:payload-handler";
+const executionIdentity = {
+  jobId: "job:payload-handler",
+  attemptId: "attempt:payload-handler",
+  invocationId: INVOCATION_ID,
+  receiptRef: receipt.receiptRef,
+  hostId: SANDBOX_HOST_ID,
+  ownerId: OWNER_ID,
+  agentId: AGENT_ID,
+  threadId: null,
+  runId: RUN_ID,
+  toolCallId: "tool-call:payload-handler",
+} as const;
+
+function resolveRequest(): PayloadBrokerSandboxExecutionRequest {
+  const parsed = payloadBrokerV1MessageSchema.parse({
+    schemaVersion: "payload-broker.v1",
+    kind: "request",
+    type: "payload.sandbox.execution",
+    messageId: "message:payload-sandbox-resolve",
+    correlationId: "message:payload-sandbox-resolve",
+    causationId: null,
+    idempotencyKey: "idempotency:payload-sandbox-resolve",
+    payload: { ...identity, identity: executionIdentity, command: { kind: "resolve" } },
+  });
+  if (parsed.kind !== "request" || parsed.type !== "payload.sandbox.execution") {
+    throw new TypeError("payload sandbox resolve request fixture is invalid");
+  }
+  return parsed;
+}
+
+function resolveFixture(options: { readonly phase?: "bound" | "reserved" } = {}) {
+  const startedAt = Date.parse(REQUESTED_AT);
+  const plan = {
+    identity: executionIdentity,
+    handleRef: HANDLE_REF,
+    inputRef: INPUT_REF,
+    semanticFingerprint: receipt.semanticFingerprint,
+  };
+  const bound = {
+    plan,
+    facts: { resource: { sequence: 2 }, environment: { resourceRef: "resource:payload-handler" } },
+    startedAt: REQUESTED_AT,
+    operationRevision: 1,
+  } as unknown as SandboxExecutionRecord;
+  const reserved = {
+    phase: "reserved" as const,
+    plan,
+    reservation: { sequence: 1, resourceRef: "resource:payload-handler" },
+  };
+  const state = {
+    now: startedAt,
+    version: "authority:1",
+    active: true,
+    resolveCalls: 0,
+    receiptReads: 0,
+    onResolve: undefined as (() => void) | undefined,
+  };
+  const handler = new ProductionPayloadBrokerHandler({
+    sandboxExecutions: {
+      hostId: SANDBOX_HOST_ID,
+      journal: { read: async () => bound } as unknown as SandboxExecutionJournalPort,
+      ...(options.phase === "reserved"
+        ? {
+            preparations: {
+              readAdmission: async () => reserved,
+            } as never,
+          }
+        : {}),
+      verifyStart: async () => {},
+      authorityVersion: async () => state.version,
+      resolveScope: async () => {
+        state.resolveCalls += 1;
+        state.onResolve?.();
+        return { scope: { handleRef: HANDLE_REF }, allowedDomains: ["example.com"] } as never;
+      },
+    },
+    receipts: {
+      consume: async () => {
+        throw new Error("consume is not part of the trusted handler boundary");
+      },
+      read: async () => {
+        state.receiptReads += 1;
+        if (!state.active) throw new Error("Grant revoked");
+        return receipt;
+      },
+    },
+    results: {
+      lookupFrozen: async () => receipt,
+      observeOutput: async () => outputArtifact,
+      lookupOutput: async () => undefined,
+    },
+    payloadsFor: () => ({ get: async () => undefined }),
+    protector: {
+      protect: async () => outputPayload,
+      unprotect: async () => new Uint8Array(),
+      rewrap: async ({ payload }) => payload,
+    },
+    currentAuthority: () => ({ product: authority.product, lease: authority.lease }),
+    clock: { now: () => new Date(state.now).toISOString() },
+    ids: { next: () => "payload:generated-output" },
+    agentServiceInstanceId: AGENT_SERVICE_INSTANCE_ID,
+    agentServiceBootId: AGENT_SERVICE_BOOT_ID,
+    maximumPayloadBytes: 32,
+    allowedContentTypes: ["application/json"],
+  });
+  return { handler, state, resolve: () => handler.sandboxExecution(resolveRequest()) };
+}
+
+describe("[NL-4] sandbox authority resolve reuse", () => {
+  it("[NL-4] runs the full check once and then reuses it while the authority version is unchanged", async () => {
+    const fixture = resolveFixture();
+    const first = await fixture.resolve();
+    const second = await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(1);
+    expect(second.resolvedScope).toEqual(first.resolvedScope);
+    expect(fixture.state.receiptReads).toBe(3);
+  });
+
+  it("[NL-4] still rejects a reused check when the live receipt read fails", async () => {
+    const fixture = resolveFixture();
+    await fixture.resolve();
+    fixture.state.active = false;
+    await expect(fixture.resolve()).rejects.toMatchObject({
+      code: PRODUCTION_PAYLOAD_HANDLER_ERROR_CODES.SANDBOX_JOB_REJECTED,
+    });
+    expect(fixture.state.resolveCalls).toBe(1);
+  });
+
+  it("[NL-4] runs the full check again when the authority version changes", async () => {
+    const fixture = resolveFixture();
+    await fixture.resolve();
+    fixture.state.version = "authority:2";
+    await fixture.resolve();
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(2);
+  });
+
+  it("[NL-4] runs the full check again once the reuse window has passed", async () => {
+    const fixture = resolveFixture();
+    await fixture.resolve();
+    fixture.state.now += RESOLVED_AUTHORITY_REUSE_MS - 1;
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(1);
+    fixture.state.now += 1;
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(2);
+  });
+
+  it("[NL-4] runs the full check again when the clock moves backwards", async () => {
+    const fixture = resolveFixture();
+    await fixture.resolve();
+    fixture.state.now -= 1;
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(2);
+  });
+
+  it("[NL-4] does not keep a check whose authority version changed while it ran", async () => {
+    const fixture = resolveFixture();
+    fixture.state.onResolve = () => {
+      fixture.state.version = `authority:${fixture.state.resolveCalls + 1}`;
+    };
+    await fixture.resolve();
+    fixture.state.onResolve = undefined;
+    await fixture.resolve();
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(2);
+  });
+
+  it("[NL-4] never reuses a check for a reservation that has not started", async () => {
+    const fixture = resolveFixture({ phase: "reserved" });
+    await fixture.resolve();
+    await fixture.resolve();
+    expect(fixture.state.resolveCalls).toBe(2);
+  });
+});
 
 describe("production Payload broker trusted handler", () => {
   it("validates current receipt authority without disclosing input or using frozen results", async () => {

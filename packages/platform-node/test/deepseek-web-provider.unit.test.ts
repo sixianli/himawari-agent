@@ -9,11 +9,12 @@ vi.mock("undici", () => ({
 }));
 
 import { DeepSeekWebProvider } from "../src/deepseek-web-provider.js";
+import { SANDBOX_PROXY } from "../src/exa-public-search.js";
 
 const key = ["fixture", "credential", "0123456789"].join("-");
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
-const provider = () => new DeepSeekWebProvider({ credential: key });
+const provider = () => new DeepSeekWebProvider({ credential: key, dispatcher: SANDBOX_PROXY });
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv("HTTPS_PROXY", "http://fixture:fixture@127.0.0.1:4321");
@@ -22,6 +23,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("DeepSeek search and fetch adapter", () => {
+  it("[NL-2] uses a shared service dispatcher without a sandbox proxy and keeps it open", async () => {
+    vi.stubEnv("HTTPS_PROXY", undefined);
+    state.fetch.mockResolvedValue(json({ results: [] }));
+    const shared = { close: vi.fn() } as unknown as import("undici").Dispatcher;
+    await new DeepSeekWebProvider({ credential: key, dispatcher: shared })
+      .search({ query: "Tokyo", limit: 1 })
+      .catch(() => undefined);
+    expect(state.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ dispatcher: shared }),
+    );
+    expect(shared.close).not.toHaveBeenCalled();
+    expect(state.close).not.toHaveBeenCalled();
+  });
   it("sends only the query and count to the fixed search endpoint through the sandbox proxy", async () => {
     state.fetch.mockResolvedValue(
       json({
@@ -78,7 +93,11 @@ describe("DeepSeek search and fetch adapter", () => {
     state.fetch.mockResolvedValue(
       json({ title: "Page", content: "# Heading\n" + "x".repeat(200) }),
     );
-    const page = await provider().fetch({ url: "https://example.org/a", maximumBytes: 64 });
+    const page = await provider().fetch({
+      url: "https://example.org/a",
+      offset: 0,
+      maximumBytes: 64,
+    });
     expect(page).toMatchObject({ url: "https://example.org/a", title: "Page", truncated: true });
     expect(Buffer.byteLength(page.markdown)).toBeLessThanOrEqual(64);
     expect(JSON.parse(state.fetch.mock.calls[0]?.[1].body)).toEqual({
@@ -86,14 +105,14 @@ describe("DeepSeek search and fetch adapter", () => {
     });
   });
   it("refuses private addresses and secret-bearing responses", async () => {
-    await expect(provider().fetch({ url: "http://10.0.0.1/", maximumBytes: 1024 })).rejects.toThrow(
-      "WEB_FETCH_INPUT_INVALID",
-    );
+    await expect(
+      provider().fetch({ url: "http://10.0.0.1/", offset: 0, maximumBytes: 1024 }),
+    ).rejects.toThrow("WEB_FETCH_INPUT_INVALID");
     state.fetch.mockResolvedValue(
       json({ title: "Leak", content: `token ${"ghp_"}${"a".repeat(36)}` }),
     );
     await expect(
-      provider().fetch({ url: "https://example.org/", maximumBytes: 1024 }),
+      provider().fetch({ url: "https://example.org/", offset: 0, maximumBytes: 1024 }),
     ).rejects.toThrow("WEB_FETCH_OUTPUT_REDACTED");
   });
 });

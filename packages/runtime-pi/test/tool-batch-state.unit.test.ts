@@ -7,8 +7,6 @@ import {
   restorePiToolBatch,
 } from "../src/pi-tool-batch-continuation.ts";
 
-// Pure persisted-state contracts. The separate compatibility suite exercises
-// these states through the pinned Pi agent loop and its real tool executor.
 function state() {
   const assistant: AssistantMessage = {
     role: "assistant",
@@ -44,7 +42,13 @@ function state() {
     },
   ];
   const session = {
-    agent: { state: { messages, systemPrompt: "Keep authorization" } },
+    agent: {
+      state: {
+        messages,
+        systemPrompt: "Keep authorization",
+        tools: [{ name: "read", executionMode: "sequential" }],
+      },
+    },
   } as AgentSession;
   return { session, messages, assistant };
 }

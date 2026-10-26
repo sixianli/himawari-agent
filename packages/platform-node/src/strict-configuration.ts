@@ -5,6 +5,7 @@ import {
   assertMachineSecretFree,
   type CapabilityDeploymentConfiguration,
   isWebProviderId,
+  WEB_FETCH_MAXIMUM_BYTES,
   WEB_PROVIDER_IDS,
   WEB_PROVIDERS,
   type WebProviderId,
@@ -777,7 +778,11 @@ function assertWebProviderSecretReferences(
       );
 }
 
-function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string) {
+function parsePrivateTempWebRoute(
+  input: Record<string, unknown>,
+  field: string,
+  maximumBytes: number,
+) {
   rejectUnknown(
     input,
     [
@@ -805,7 +810,7 @@ function parsePrivateTempWebRoute(input: Record<string, unknown>, field: string)
     workerInstanceId: safeReference(input["workerInstanceId"], `${field}.workerInstanceId`),
     capabilityRef: safeReference(input["capabilityRef"], `${field}.capabilityRef`),
     capabilityVersion: safeReference(input["capabilityVersion"], `${field}.capabilityVersion`),
-    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, 48 * 1024),
+    maximumBytes: integer(input["maximumBytes"], `${field}.maximumBytes`, 1, maximumBytes),
     ...(providers === undefined ? {} : { providers }),
     ...(providerSecrets === undefined ? {} : { providerSecrets }),
   });
@@ -827,12 +832,12 @@ function parsePublicSearchRoute(
       ...(secrets === undefined ? {} : { providerSecrets: secrets }),
     });
   }
-  return parsePrivateTempWebRoute(input, field);
+  return parsePrivateTempWebRoute(input, field, 48 * 1024);
 }
 
 function parsePublicFetchRoute(value: unknown): NonNullable<RunPolicyConfiguration["publicFetch"]> {
   const field = "configuration.runPolicy.publicFetch";
-  return parsePrivateTempWebRoute(record(value, field), field);
+  return parsePrivateTempWebRoute(record(value, field), field, WEB_FETCH_MAXIMUM_BYTES);
 }
 
 function parseCodingRoute(value: unknown): NonNullable<RunPolicyConfiguration["coding"]> {

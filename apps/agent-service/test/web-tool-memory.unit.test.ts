@@ -41,6 +41,21 @@ describe("WebToolMemory", () => {
     expect(memory.cached(key(memory, "Tokyo forecast"))).toBeUndefined();
   });
 
+  it("[NL-11] keeps each continuation window of a page apart", () => {
+    const memory = new WebToolMemory({ now: () => 0 });
+    const fetchKey = (args: Record<string, unknown>) =>
+      memory.key({
+        ownerId: "owner",
+        agentId: "agent",
+        tool: "web_fetch",
+        providers: ["exa-public"],
+        arguments: { url: "https://example.org/long", ...args },
+      });
+    memory.remember(fetchKey({}), "web_fetch", ok({ markdown: "first window" }));
+    expect(fetchKey({ offset: 0 })).toBe(fetchKey({}));
+    expect(memory.cached(fetchKey({ offset: 102400 }))).toBeUndefined();
+  });
+
   it("never stores failures", () => {
     const memory = new WebToolMemory({ now: () => 0 });
     memory.remember(key(memory, "q"), "web_search", failedResult);

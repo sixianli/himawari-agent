@@ -59,13 +59,17 @@ export type WebProviderFailureCode =
   | "UNAVAILABLE"
   | "INPUT_UNSUPPORTED"
   | "INPUT_INVALID"
-  | "OUTPUT_REDACTED";
+  | "OUTPUT_REDACTED"
+  | "PAGE_UNREACHABLE"
+  | "CONTENT_TOO_LARGE";
 
 const FALLBACK_CODES: ReadonlySet<WebProviderFailureCode> = new Set([
   "RATE_LIMITED",
   "TIMEOUT",
   "UNAVAILABLE",
   "INPUT_UNSUPPORTED",
+  "PAGE_UNREACHABLE",
+  "CONTENT_TOO_LARGE",
 ]);
 
 export class WebProviderError extends Error {
@@ -85,7 +89,11 @@ export interface WebFetchResult {
   readonly title: string;
   readonly markdown: string;
   readonly truncated: boolean;
+  readonly nextOffset: number | null;
 }
+
+export const WEB_FETCH_MAXIMUM_BYTES = 100 * 1024;
+export const WEB_FETCH_MAXIMUM_OFFSET = 10_000_000;
 
 export interface WebSearchProvider {
   readonly descriptor: WebProviderDescriptor;
@@ -100,6 +108,7 @@ export interface WebFetchProvider {
   readonly descriptor: WebProviderDescriptor;
   fetch(input: {
     readonly url: string;
+    readonly offset: number;
     readonly maximumBytes: number;
     readonly signal: AbortSignal;
   }): Promise<WebFetchResult>;

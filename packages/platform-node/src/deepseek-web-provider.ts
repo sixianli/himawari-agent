@@ -6,12 +6,18 @@ import type {
   WebSearchProvider,
 } from "@himawari-agent/application";
 import { scanMachineSecrets, WEB_PROVIDERS } from "@himawari-agent/application";
-import { ProxyAgent, fetch as proxyFetch } from "undici";
-import { sandboxProxy, truncateUtf8, validatePublicFetchUrl } from "./exa-public-search.js";
+import { fetch as proxyFetch } from "undici";
+import {
+  pageWindow,
+  providerDispatchers,
+  validateFetchWindow,
+  validatePublicFetchUrl,
+  type WebProviderDispatcher,
+} from "./exa-public-search.js";
 import { readonlyNetworkRetryDelay } from "./readonly-network-retry.js";
 
 const origin = "https://api.deepseek.com";
-const responseLimit = 512 * 1024;
+const responseLimit = 16 * 1024 * 1024;
 
 async function boundedJson(response: Awaited<ReturnType<typeof proxyFetch>>, prefix: string) {
   if (!response.body) throw new Error(`${prefix}_RESPONSE_UNRECOGNIZED`);
@@ -31,17 +37,29 @@ async function boundedJson(response: Awaited<ReturnType<typeof proxyFetch>>, pre
   }
 }
 
+function statusFailure(status: number, prefix: "WEB_SEARCH" | "WEB_FETCH") {
+  if ([400, 413, 422].includes(status)) return `${prefix}_INPUT_UNSUPPORTED`;
+  if ([408, 504].includes(status)) return `${prefix}_TIMEOUT`;
+  if (prefix === "WEB_FETCH" && [403, 404].includes(status)) return "WEB_FETCH_UNREACHABLE";
+  return null;
+}
+
 const text = (value: unknown, limit: number) =>
   typeof value === "string" ? value.slice(0, limit) : "";
 
 export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider {
   readonly descriptor = WEB_PROVIDERS.deepseek;
   readonly #credential: string;
+  readonly #dispatcher: WebProviderDispatcher;
 
-  constructor(options: { readonly credential: string }) {
+  constructor(options: {
+    readonly credential: string;
+    readonly dispatcher: WebProviderDispatcher;
+  }) {
     if (!/^[\x21-\x7e]{16,512}$/.test(options.credential))
       throw new Error("WEB_PROVIDER_SECRET_INVALID");
     this.#credential = options.credential;
+    this.#dispatcher = options.dispatcher;
   }
 
   async search(input: {
@@ -104,15 +122,11 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
 
   async fetch(input: {
     readonly url: string;
+    readonly offset: number;
     readonly maximumBytes: number;
     readonly signal?: AbortSignal;
   }): Promise<WebFetchResult> {
-    if (
-      !Number.isSafeInteger(input.maximumBytes) ||
-      input.maximumBytes < 1 ||
-      input.maximumBytes > 48 * 1024
-    )
-      throw new Error("WEB_FETCH_INPUT_INVALID");
+    validateFetchWindow(input);
     const url = validatePublicFetchUrl(input.url);
     const body = (await this.#post("/v1/tools/fetch", { url }, "WEB_FETCH", input.signal)) as {
       title?: unknown;
@@ -120,12 +134,10 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     };
     if (typeof body.content !== "string" || !body.content.trim())
       throw new Error("WEB_FETCH_RESPONSE_UNRECOGNIZED");
-    const markdown = truncateUtf8(body.content, input.maximumBytes);
     return {
       url,
       title: text(body.title, 1024),
-      markdown: markdown.text,
-      truncated: markdown.truncated,
+      ...pageWindow(body.content, input.offset, input.maximumBytes),
     };
   }
 
@@ -135,17 +147,15 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
     prefix: "WEB_SEARCH" | "WEB_FETCH",
     external: AbortSignal | undefined,
   ): Promise<unknown> {
-    const proxy = sandboxProxy(prefix);
+    const dispatchers = providerDispatchers(this.#dispatcher, prefix);
     const signal = external
       ? AbortSignal.any([external, AbortSignal.timeout(45000)])
       : AbortSignal.timeout(45000);
     const deadline = performance.now() + 45000;
-    const dispatchers: ProxyAgent[] = [];
     const send = () => {
       signal.throwIfAborted();
       if (performance.now() >= deadline) throw new Error(`${prefix}_TIMEOUT`);
-      const dispatcher = new ProxyAgent(proxy);
-      dispatchers.push(dispatcher);
+      const dispatcher = dispatchers.next();
       return proxyFetch(`${origin}${path}`, {
         method: "POST",
         headers: {
@@ -179,9 +189,10 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
         await response.body?.cancel().catch(() => undefined);
         throw new Error(`${prefix}_RATE_LIMITED`);
       }
-      if (response.status === 400 || response.status === 422) {
+      const statusCode = statusFailure(response.status, prefix);
+      if (statusCode) {
         await response.body?.cancel().catch(() => undefined);
-        throw new Error(`${prefix}_INPUT_UNSUPPORTED`);
+        throw new Error(statusCode);
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
@@ -189,7 +200,7 @@ export class DeepSeekWebProvider implements WebSearchProvider, WebFetchProvider 
       }
       return await boundedJson(response, prefix);
     } finally {
-      await Promise.all(dispatchers.map((entry) => entry.close()));
+      await dispatchers.close();
     }
   }
 }
