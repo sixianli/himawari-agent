@@ -2,11 +2,11 @@
 status: "active"
 document_type: "idea"
 record_id: "IDEA-20261026-001"
-record_state: "captured"
+record_state: "promoted"
 date: "2026-10-26"
 updated: "2026-10-26"
 project: "Himawari Agent"
-promoted_to: ""
+promoted_to: "docs/backlog/BL-20261026-003-isolated-instance-per-person.md"
 supersedes: ""
 superseded_by: ""
 ---
