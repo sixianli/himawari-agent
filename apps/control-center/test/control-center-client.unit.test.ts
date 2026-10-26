@@ -458,6 +458,31 @@ describe("typed browser Gateway client", () => {
     expect(bodies[1]).not.toContain("私人正文");
   });
 
+  it("[UI-16] sends an attachment's text to its own endpoint with a larger limit", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const client = new GatewayClient({
+      csrfToken: () => "csrf-01",
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), ...(init ? { init } : {}) });
+        return new Response(JSON.stringify({ payloadRef: "payload-attachment-01" }), {
+          status: 201,
+        });
+      }) as typeof fetch,
+    });
+    expect(await client.protectAttachment("页".repeat(100_000), "private", "attachment-a")).toBe(
+      "payload-attachment-01",
+    );
+    expect(calls[0]?.url).toBe("/api/payload/v1/attachment");
+    expect(new Headers(calls[0]?.init?.headers).get("idempotency-key")).toBe("attachment-a");
+    await expect(client.protectAttachment("x".repeat(256 * 1024 + 1))).rejects.toThrow(
+      "CONTROL_CENTER_PAYLOAD_INVALID",
+    );
+    await expect(client.protectText("x".repeat(64 * 1024 + 1))).rejects.toThrow(
+      "CONTROL_CENTER_PAYLOAD_INVALID",
+    );
+    expect(calls).toHaveLength(1);
+  });
+
   it("refreshes an expired CSRF token once without changing the request or idempotency key", async () => {
     const calls: RequestInit[] = [];
     let refreshes = 0;

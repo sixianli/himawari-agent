@@ -312,6 +312,26 @@ export class ThreadExecutionProjection {
                 output["kind"] === "text" ? "runtime.text.started" : "runtime.tool_call.started",
             });
           }
+          const usage = object(message["usage"]);
+          if (envelope["phase"] === "ended" && Object.keys(usage).length) {
+            const count = (value: unknown) =>
+              Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+            const cost = Number(object(usage["cost"])["total"]);
+            records.push({
+              ...base,
+              id: `${event.id}:usage`,
+              phase: "updated",
+              name: "runtime.usage",
+              text: JSON.stringify({
+                input: count(usage["input"]),
+                output: count(usage["output"]),
+                cacheRead: count(usage["cacheRead"]),
+                cacheWrite: count(usage["cacheWrite"]),
+                reasoning: count(usage["reasoning"]),
+                costUsd: Number.isFinite(cost) && cost >= 0 ? cost : 0,
+              }),
+            });
+          }
           const activity = object(content.at(-1))["type"];
           if (["thinking", "text", "toolCall"].includes(String(activity))) {
             records.push({

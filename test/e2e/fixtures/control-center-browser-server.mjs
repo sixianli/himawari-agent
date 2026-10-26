@@ -934,6 +934,7 @@ function handleGovernanceCommand(message) {
 function contentType(filePath) {
   switch (path.extname(filePath)) {
     case ".js":
+    case ".mjs":
       return "text/javascript; charset=utf-8";
     case ".css":
       return "text/css; charset=utf-8";
@@ -1578,7 +1579,10 @@ async function handleRequest(request, response) {
     json(response, 200, handleThreadCommand(message));
     return;
   }
-  if (request.method === "POST" && url.pathname === "/api/payload/v1/text") {
+  if (
+    request.method === "POST" &&
+    (url.pathname === "/api/payload/v1/text" || url.pathname === "/api/payload/v1/attachment")
+  ) {
     const message = await body(request);
     const digest = createHash("sha256").update(message.content).digest("hex").slice(0, 24);
     const payloadRef = `payload:${digest}`;

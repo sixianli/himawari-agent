@@ -138,7 +138,7 @@ export interface HttpGatewayPayloadAdmissionPort {
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain";
+    readonly contentType: "text/plain" | "text/x-himawari-attachment";
   }): Promise<{ readonly payloadRef: string }>;
 }
 
@@ -170,6 +170,8 @@ const JSON_CONTENT_TYPE = "application/json";
 const SSE_CONTENT_TYPE = "text/event-stream; charset=utf-8";
 const DEFAULT_BODY_LIMIT = 256 * 1024;
 const DEFAULT_ASSET_LIMIT = 8 * 1024 * 1024;
+const ATTACHMENT_TEXT_CHARACTERS = 256 * 1024;
+const ATTACHMENT_BODY_LIMIT = 2 * 1024 * 1024;
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 
 class HttpGatewayError extends Error {
@@ -665,6 +667,7 @@ function staticContentType(target: string): string {
     case ".css":
       return "text/css; charset=utf-8";
     case ".js":
+    case ".mjs":
       return "text/javascript; charset=utf-8";
     case ".json":
       return "application/json; charset=utf-8";
@@ -1054,60 +1057,68 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
 
   if (options.payloadAdmission) {
     const payloadAdmission = options.payloadAdmission;
-    app.post("/api/payload/v1/text", async (request, reply) => {
-      assertMutationBoundary(request, publicOrigin);
-      const authentication = await authenticate(request, options);
-      const csrfAccepted = await options.csrf.verify({
-        authentication,
-        token: header(request, "x-csrf-token"),
-        method: request.method,
-        path: requestPath(request),
-      });
-      if (!csrfAccepted) {
-        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
-      }
-      const idempotencyKey = header(request, "idempotency-key");
-      if (
-        !idempotencyKey ||
-        idempotencyKey.length > 128 ||
-        !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(idempotencyKey)
-      ) {
-        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
-      }
-      if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
-        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-      }
-      const body = request.body as Readonly<{
-        content?: unknown;
-        dataClassification?: unknown;
-      }>;
-      if (
-        Object.keys(body).some((key) => !["content", "dataClassification"].includes(key)) ||
-        typeof body.content !== "string" ||
-        body.content.length === 0 ||
-        body.content.length > 64 * 1024 ||
-        !["public", "private", "sensitive", "restricted"].includes(
-          body.dataClassification as string,
-        )
-      ) {
-        throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
-      }
-      return sendJson(
-        reply,
-        201,
-        await payloadAdmission.protect({
+    const admitText =
+      (maximumCharacters: number, contentType: "text/plain" | "text/x-himawari-attachment") =>
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        assertMutationBoundary(request, publicOrigin);
+        const authentication = await authenticate(request, options);
+        const csrfAccepted = await options.csrf.verify({
           authentication,
-          idempotencyKey,
-          content: body.content,
-          dataClassification: body.dataClassification as
-            | "public"
-            | "private"
-            | "sensitive"
-            | "restricted",
-          contentType: "text/plain",
-        }),
-      );
-    });
+          token: header(request, "x-csrf-token"),
+          method: request.method,
+          path: requestPath(request),
+        });
+        if (!csrfAccepted) {
+          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.CSRF_REJECTED, 403);
+        }
+        const idempotencyKey = header(request, "idempotency-key");
+        if (
+          !idempotencyKey ||
+          idempotencyKey.length > 128 ||
+          !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(idempotencyKey)
+        ) {
+          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.IDEMPOTENCY_MISMATCH, 400);
+        }
+        if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)) {
+          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+        }
+        const body = request.body as Readonly<{
+          content?: unknown;
+          dataClassification?: unknown;
+        }>;
+        if (
+          Object.keys(body).some((key) => !["content", "dataClassification"].includes(key)) ||
+          typeof body.content !== "string" ||
+          body.content.length === 0 ||
+          body.content.length > maximumCharacters ||
+          !["public", "private", "sensitive", "restricted"].includes(
+            body.dataClassification as string,
+          )
+        ) {
+          throw new HttpGatewayError(HTTP_GATEWAY_ERROR_CODES.BODY_INVALID, 400);
+        }
+        return sendJson(
+          reply,
+          201,
+          await payloadAdmission.protect({
+            authentication,
+            idempotencyKey,
+            content: body.content,
+            dataClassification: body.dataClassification as
+              | "public"
+              | "private"
+              | "sensitive"
+              | "restricted",
+            contentType,
+          }),
+        );
+      };
+    app.post("/api/payload/v1/text", admitText(64 * 1024, "text/plain"));
+    app.post(
+      "/api/payload/v1/attachment",
+      { bodyLimit: ATTACHMENT_BODY_LIMIT },
+      admitText(ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
+    );
   }
 
   if (options.payloadRead) {

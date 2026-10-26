@@ -298,6 +298,7 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  Reflect.deleteProperty(File.prototype, "arrayBuffer");
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -347,7 +348,10 @@ describe("thread control center interactions", () => {
       ];
       await render();
       await refresh();
-      await click("threads.fork");
+      await click("answer.more");
+      await act(async () =>
+        (document.querySelector('[role="menuitem"]') as HTMLButtonElement | null)?.click(),
+      );
       expect(mutate).toHaveBeenCalledTimes(1);
       expect(mutate.mock.calls[0]?.[0]).toMatchObject({
         type: "thread.fork",
@@ -1748,13 +1752,84 @@ describe("thread control center interactions", () => {
         dataClassification: "private",
       });
       if (configured)
-        expect(sent.payload).toMatchObject({ modelRef: "model-ui", thinkingLevel: "off" });
+        expect(sent.payload).toMatchObject({ modelRef: "model-ui", thinkingLevel: "minimal" });
       expect(JSON.stringify(sent)).not.toContain("请继续这个任务");
       expect(protect.mock.calls.some(([text]) => text === "请继续这个任务")).toBe(true);
       expect(options.storage.readDraft(thread.threadId)).toBe("");
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
+  it("[UI-16] uploads pasted and dropped files, sends only their references and drops a removed one", async () => {
+    const uploaded: string[] = [];
+    options = {
+      ...options,
+      client: {
+        ...options.client,
+        protectAttachment: vi.fn(async (text: string) => {
+          uploaded.push(text);
+          return `payload:http:file-${uploaded.length}`;
+        }),
+      } as unknown as GatewayClient,
+    };
+    await render();
+    await refresh();
+    const textarea = container.querySelector("textarea");
+    const form = container.querySelector("form.composer");
+    if (!textarea || !form) throw new Error("Missing composer");
+    await input(textarea, "帮我看看");
+    Object.defineProperty(File.prototype, "arrayBuffer", {
+      configurable: true,
+      value(this: File) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsArrayBuffer(this);
+        });
+      },
+    });
+    const transfer = (name: string, files: File[]) => {
+      const event = new Event(name, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, name === "paste" ? "clipboardData" : "dataTransfer", {
+        value: { files, types: ["Files"] },
+      });
+      return event;
+    };
+    await act(async () => {
+      textarea.dispatchEvent(transfer("paste", [new File(["a,b\n1,2"], "data.csv")]));
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    await act(async () => {
+      form.dispatchEvent(
+        transfer("drop", [new File(["笔记"], "notes.md"), new File(["x"], "extra.txt")]),
+      );
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(container.querySelector(".attachment-error")).toBeNull();
+    expect(
+      [...container.querySelectorAll(".attachment-name")].map((item) => item.textContent),
+    ).toEqual(["data.csv", "notes.md", "extra.txt"]);
+    expect(textarea.value).toBe("帮我看看");
+    await act(async () => {
+      container.querySelectorAll<HTMLButtonElement>(".attachment-chips button")[2]?.click();
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(uploaded).toEqual(["a,b\n1,2", "笔记", "x"]);
+    expect(protect.mock.calls.map(([text]) => text)).toContain(
+      '帮我看看\n\n<file name="data.csv" ref="payload:http:file-1" bytes="7" kind="text"/>\n\n<file name="notes.md" ref="payload:http:file-2" bytes="6" kind="text"/>',
+    );
+    expect(protect.mock.calls.some(([text]) => String(text).includes("笔记"))).toBe(false);
+    await act(async () => {
+      textarea.dispatchEvent(
+        transfer("paste", [new File(["x"], "photo.png", { type: "image/png" })]),
+      );
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(container.querySelector(".attachment-error")?.textContent).toBe(
+      "chat.attachmentUnsupported",
+    );
+  });
   it("retries an uncertain send with its original identity and preserves a newer draft after revision changes", async () => {
     await render();
     await refresh();

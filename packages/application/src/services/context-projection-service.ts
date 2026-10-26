@@ -23,6 +23,9 @@ import { isRuntimeHistoryReference, RuntimeHistoryService } from "./runtime-hist
 
 const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2, restricted: 3 });
 
+const ATTACHMENT_CONTENT_TYPE = "text/x-himawari-attachment";
+const ATTACHMENT_TAG = /<file name="([^"<>\n]*)" ref="([^"<>\s]+)"(?: [a-z]+="[^"<>\n]*")*\/>/g;
+const UNREADABLE_ATTACHMENT = "[附件无法读取]";
 const CURRENT_TASK_POLICY =
   "Himawari 任务边界：最后一条用户消息承载本轮的新请求。历史消息供理解背景，不是等待执行的任务队列。" +
   "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
@@ -61,7 +64,10 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       ? await this.#history.load(envelope.runtimeHistory.reference, input.dataClassification)
       : undefined;
     const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
-    const prompt = await this.readText(input, envelope.prompt.payloadRef, "context prompt");
+    const prompt = await this.expandAttachments(
+      input,
+      await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+    );
     const policyTexts = await Promise.all(
       envelope.systemPolicyRefs.map(({ payloadRef }) =>
         this.readText(input, payloadRef, "context system policy"),
@@ -334,12 +340,13 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       }
       previousSequence = message.sequence;
       if (message.runId && coveredRunIds.includes(message.runId)) continue;
-      const content = await this.readText(
+      const stored = await this.readText(
         input,
         item.contentRef,
         "context history",
         item.dataClassification,
       );
+      const content = item.role === "owner" ? await this.expandAttachments(input, stored) : stored;
       if (item.role === "owner" || item.role === "agent") {
         projected.push({
           id: item.messageId,
@@ -458,6 +465,28 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       });
     }
     return Object.freeze(blocks);
+  }
+
+  private async expandAttachments(input: RuntimeProjectionRequest, text: string): Promise<string> {
+    const tags = [...text.matchAll(ATTACHMENT_TAG)];
+    if (!tags.length) return text;
+    const expanded = await Promise.all(
+      tags.map(async ([, name, ref]) => {
+        const payload = ref ? await this.#dependencies.payloads.get(ref as PayloadRef) : null;
+        const content =
+          payload?.contentType === ATTACHMENT_CONTENT_TYPE
+            ? await this.readText(input, ref as PayloadRef, "attachment").catch(
+                (error: unknown) => {
+                  if (error instanceof ApplicationPortError) return UNREADABLE_ATTACHMENT;
+                  throw error;
+                },
+              )
+            : UNREADABLE_ATTACHMENT;
+        return `<file name="${name}">\n${content}\n</file>`;
+      }),
+    );
+    let index = 0;
+    return text.replace(ATTACHMENT_TAG, () => expanded[index++] ?? "");
   }
 
   private async readText(

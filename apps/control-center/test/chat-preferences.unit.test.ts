@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACCENT_COLORS, ControlCenterBrowserStorage } from "../src/browser-storage.js";
-import { appendTextAttachment } from "../src/components/chat-composer.js";
 
-describe("chat preferences and explicit text attachment admission", () => {
+describe("chat preferences", () => {
   const storage = () => {
     const values = new Map<string, string>();
     return {
@@ -36,21 +35,5 @@ describe("chat preferences and explicit text attachment admission", () => {
         client.savePreferences({ ...client.readPreferences(), theme, accent });
         expect(client.readPreferences()).toMatchObject({ theme, accent });
       }
-  });
-  it("adds user-selected UTF-8 contents to the reviewable draft", async () => {
-    expect(await appendTextAttachment("请分析", new File(["内容\n第二行"], "notes.md"))).toBe(
-      "请分析\n\n[notes.md]\n内容\n第二行",
-    );
-  });
-  it("rejects binary, invalid UTF-8 and oversized combined drafts", async () => {
-    await expect(
-      appendTextAttachment("", new File([new Uint8Array([0xff])], "x.txt")),
-    ).rejects.toThrow();
-    await expect(
-      appendTextAttachment("", new File([new Uint8Array([0])], "x.bin")),
-    ).rejects.toThrow();
-    await expect(
-      appendTextAttachment("界".repeat(22000), new File(["text"], "x.txt")),
-    ).rejects.toThrow("TEXT_ATTACHMENT_TOO_LARGE");
   });
 });
