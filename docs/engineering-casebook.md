@@ -1508,11 +1508,15 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 **相关 ADR/PR**
 
-[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR 见本分支 `claude/project-thread-zmcdah` 的草稿 PR。
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
 
 **面试 30 秒版**
 
 “一个不用工具的问题，模型只花 3.9 秒，整轮却要 12 秒。我把生产事件表和服务日志按时间对齐，找到五个原因：每轮都预热一个用不上的沙箱、调度器只靠每秒扫描、后台起标题拖住完成、两步本可并行的检索在串行、每段流式文字要四次等落盘的数据库提交。每个原因先写测试复现再修，并给每轮加了按步骤的计时，上线后每一秒花在哪都能看到。”
+
+**后续（2026-10-26）：过程记录不再等硬盘确认**
+
+Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
 
 [返回目录](#contents)
 

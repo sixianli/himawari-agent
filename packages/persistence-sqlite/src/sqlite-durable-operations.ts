@@ -328,6 +328,16 @@ function capabilityStatus(
   return lifecycle;
 }
 
+export function isProcessRecordWrite(operation: string, payload: unknown): boolean {
+  if (operation === "trace.append" || operation === "trace.appendNext") return true;
+  return (
+    operation === "runPayloadArtifact.commit" &&
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { readonly purpose?: unknown }).purpose === "trace"
+  );
+}
+
 export class SqliteDurableOperations {
   private readonly database: Database.Database;
   private readonly fail: SqliteApplicationFailure;
@@ -449,6 +459,17 @@ export class SqliteDurableOperations {
   }
 
   execute(operation: string, payload: unknown): unknown {
+    if (this.database.inTransaction || !isProcessRecordWrite(operation, payload))
+      return this.executeOperation(operation, payload);
+    this.database.pragma("synchronous = NORMAL");
+    try {
+      return this.executeOperation(operation, payload);
+    } finally {
+      this.database.pragma("synchronous = FULL");
+    }
+  }
+
+  private executeOperation(operation: string, payload: unknown): unknown {
     if (operation.startsWith("builtInIdentity."))
       return this.builtInIdentity.execute(operation, payload);
     if (operation.startsWith("runDispatch.")) {
