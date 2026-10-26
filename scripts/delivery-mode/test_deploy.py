@@ -51,7 +51,18 @@ class DeployFlowTest(unittest.TestCase):
             shutil.copy(HERE / name, self.scripts / name)
         self.calls = root / 'calls'
         (self.scripts / 'rollback.sh').write_text('echo rollback >> ' + str(self.calls) + '\nexit "${FAKE_ROLLBACK_EXIT:-0}"\n')
-        self.packet = root / 'packet'
+        (root / 'disk-hygiene').mkdir()
+        shutil.copy(HERE.parent / 'disk-hygiene' / 'prune-rebuildable.py', root / 'disk-hygiene' / 'prune-rebuildable.py')
+        self.old_packet = root / '.ci-output' / 'production' / '2026-10-01-old-change-packet-01'
+        self.old_material = self.old_packet / 'materials' / 'node-modules.tar.gz'
+        self.old_material.parent.mkdir(parents=True)
+        self.old_material.write_bytes(b'x')
+        os.utime(self.old_material, (1, 1))
+        self.previous_material = root / '.ci-output' / 'production' / '2026-10-20-previous-change-packet-01' / 'materials' / 'node-modules.tar.gz'
+        self.previous_material.parent.mkdir(parents=True)
+        self.previous_material.write_bytes(b'x')
+        os.utime(self.previous_material, (1, 1))
+        self.packet = root / '.ci-output' / 'production' / '2026-10-26-current-change-packet-01'
         (self.packet / 'inputs').mkdir(parents=True)
         (self.packet / 'steps').mkdir()
         (self.packet / 'inputs' / 'bindings.json').write_text(json.dumps(BINDING))
@@ -77,6 +88,22 @@ class DeployFlowTest(unittest.TestCase):
         self.assertEqual(calls[0], 'S1_TRANSPORT')
         self.assertEqual(calls[-1], 'S8_READBACK')
         self.assertIn('DEPLOY_PASSED', Path(result['log']).read_text())
+
+    def test_successful_deploy_prunes_rebuildable_files_of_old_packets(self):
+        (self.packet / 'materials').mkdir()
+        current = self.packet / 'materials' / 'node-modules.tar.gz'
+        current.write_bytes(b'x')
+        os.utime(current, (1, 1))
+        code, result, _ = self.deploy()
+        self.assertEqual((code, result['result']), (0, 'passed'))
+        self.assertFalse(self.old_material.exists())
+        self.assertTrue(self.previous_material.exists())
+        self.assertTrue(current.exists())
+        self.assertIn('PRUNE_RESULT', Path(result['log']).read_text())
+
+    def test_failed_deploy_does_not_prune(self):
+        self.deploy(FAKE_FAIL_AT='S1_INSTALL')
+        self.assertTrue(self.old_material.exists())
 
     def test_failed_preflight_changes_nothing(self):
         code, result, calls = self.deploy(FAKE_FACTS=GOOD_FACTS.replace('active=active', 'active=failed'))
