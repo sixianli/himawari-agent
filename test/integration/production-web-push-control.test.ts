@@ -15,7 +15,10 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebPushPresence } from "../../apps/agent-service/src/production-web-push.ts";
-import { ProductionWebPushControl } from "../../apps/agent-service/src/production-web-push-control.ts";
+import {
+  ProductionWebPushControl,
+  webPushSubscriptionId,
+} from "../../apps/agent-service/src/production-web-push-control.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
 const OWNER_ID = createOwnerId("owner-web-push-control");
@@ -46,10 +49,12 @@ function message(kind: "command" | "query", type: string, payload: unknown, acto
 const subscribe = (endpoint: string, overrides: Record<string, unknown> = {}) =>
   message("command", "push.subscription.set", {
     action: "subscribe",
+    subscriptionId: null,
     endpoint,
     keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
     locale: "zh-CN",
     deviceLabel: "iPhone 主屏应用",
+    kinds: ["reminder", "approval", "run"],
     ...overrides,
   }) as GatewayV2Command;
 
@@ -114,8 +119,14 @@ describe("[WP-5] web push gateway control", () => {
     const { control, tests } = await setup(true);
     const endpoint = "https://web.push.apple.com/QGuQyavXutnMH8Ta";
     const first = await control.execute(subscribe(endpoint));
-    const again = await control.execute(subscribe(endpoint, { locale: "ja" }));
+    const again = await control.execute(
+      subscribe(endpoint, { locale: "ja", kinds: ["approval", "approval", "run"] }),
+    );
     expect(again.resultRef).toBe(first.resultRef);
+    expect(first.resultRef).toBe(webPushSubscriptionId(endpoint));
+    expect(webPushSubscriptionId("https://push.example/this-device")).toBe(
+      "web-push-13e30baf6fc9963eab79da53",
+    );
     const listed = await status(control);
     expect(listed).toMatchObject({
       available: true,
@@ -125,6 +136,7 @@ describe("[WP-5] web push gateway control", () => {
           subscriptionId: first.resultRef,
           endpointHost: "web.push.apple.com",
           locale: "ja",
+          kinds: ["approval", "run"],
           state: "active",
           deviceLabel: "iPhone 主屏应用",
         },
@@ -144,10 +156,12 @@ describe("[WP-5] web push gateway control", () => {
     await control.execute(
       message("command", "push.subscription.set", {
         action: "unsubscribe",
-        endpoint,
+        subscriptionId: first.resultRef,
+        endpoint: null,
         keys: null,
         locale: null,
         deviceLabel: null,
+        kinds: null,
       }) as GatewayV2Command,
     );
     expect((await status(control)).subscriptions).toEqual([]);
@@ -164,10 +178,12 @@ describe("[WP-5] web push gateway control", () => {
       "push.subscription.set",
       {
         action: "subscribe",
+        subscriptionId: null,
         endpoint: "https://push.example/a",
         keys: { p256dh: P256DH, auth: "BTBZMqHH6r4Tts7J_aSIgg" },
         locale: "en",
         deviceLabel: "laptop",
+        kinds: ["run"],
       },
       "client",
     ) as GatewayV2Command;

@@ -168,6 +168,8 @@ export class ProductionWebPush {
     return this.#options.sender.publicKey;
   }
 
+  #resumed = false;
+
   start(): void {
     if (this.#timer) return;
     this.#timer = setInterval(
@@ -221,8 +223,27 @@ export class ProductionWebPush {
     return result;
   }
 
+  async #resumePaused(now: string): Promise<void> {
+    const { store, ownerId, agentId } = this.#options;
+    for (const subscription of await store.listSubscriptions({ ownerId, agentId }))
+      if (subscription.state === "paused")
+        await store.markSubscription({
+          ownerId,
+          agentId,
+          subscriptionId: subscription.id,
+          state: "active",
+          failureCode: null,
+          deliveredAt: null,
+          now,
+        });
+  }
+
   async #run(): Promise<void> {
     const now = this.#options.now();
+    if (!this.#resumed) {
+      await this.#resumePaused(now);
+      this.#resumed = true;
+    }
     const approvals = (await this.#options.listApprovals()).filter(
       (approval) =>
         approval.status === "pending" && Date.parse(approval.expiresAt) > Date.parse(now),
@@ -314,6 +335,10 @@ export class ProductionWebPush {
       const { item } = entry;
       if (Date.parse(now) >= Date.parse(item.expiresAt)) {
         await this.#record(entry, now, "expired", null);
+        continue;
+      }
+      if (!entry.subscription.kinds.includes(item.kind)) {
+        await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
         continue;
       }
       if (!contents.has(item.sourceKey))

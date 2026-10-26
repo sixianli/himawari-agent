@@ -63,6 +63,7 @@ describe("[WP-2] web push storage", () => {
     auth: `auth-${id}`,
     locale,
     deviceLabel: `device ${id}`,
+    kinds: ["reminder", "approval", "run"] as const,
     now: T0,
   });
 
@@ -80,11 +81,13 @@ describe("[WP-2] web push storage", () => {
       });
       const again = await store.saveSubscription({
         ...subscription("s9", "https://push.example/a", "ja"),
+        kinds: ["run"],
         now: T2,
       });
       expect(again).toMatchObject({
         id: "s1",
         locale: "ja",
+        kinds: ["run"],
         state: "active",
         failureCode: null,
         p256dh: "key-s9",

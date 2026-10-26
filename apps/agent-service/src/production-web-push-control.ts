@@ -20,6 +20,10 @@ export const PRODUCTION_WEB_PUSH_OPERATIONS = Object.freeze([
   "presence.heartbeat",
 ] as const);
 
+export function webPushSubscriptionId(endpoint: string): string {
+  return `web-push-${createHash("sha256").update(endpoint).digest("hex").slice(0, 24)}`;
+}
+
 export interface ProductionWebPushControlOptions {
   readonly configuration: Pick<ProductConfiguration, "ownerId" | "agentId">;
   readonly store: WebPushStorePort;
@@ -57,6 +61,7 @@ export class ProductionWebPushControl {
           deviceLabel: subscription.deviceLabel,
           endpointHost: new URL(subscription.endpoint).host,
           locale: subscription.locale,
+          kinds: [...subscription.kinds],
           state: subscription.state,
           failureCode: subscription.failureCode,
           createdAt: subscription.createdAt,
@@ -95,20 +100,24 @@ export class ProductionWebPushControl {
     }
     if (command.type !== "push.subscription.set")
       throw new Error("WEB_PUSH_OPERATION_NOT_INSTALLED");
-    const { action, endpoint, keys, locale, deviceLabel } = command.payload;
+    const { action, subscriptionId, endpoint, keys, locale, deviceLabel, kinds } = command.payload;
     if (action === "unsubscribe") {
-      const existing = (await this.#options.store.listSubscriptions({ ownerId, agentId })).find(
-        (subscription) => subscription.endpoint === endpoint,
-      );
-      if (existing)
-        await this.#options.store.removeSubscription({
-          ownerId,
-          agentId,
-          subscriptionId: existing.id,
-        });
-      return { resultRef: `web-push-unsubscribed:${existing?.id ?? "none"}`, replayed: false };
+      if (!subscriptionId)
+        throw new ApplicationPortError(
+          PORT_ERROR_CODES.INVALID_OPERATION,
+          "WEB_PUSH_SUBSCRIPTION_INCOMPLETE",
+        );
+      const removed = await this.#options.store.removeSubscription({
+        ownerId,
+        agentId,
+        subscriptionId,
+      });
+      return {
+        resultRef: `web-push-unsubscribed:${removed ? subscriptionId : "none"}`,
+        replayed: false,
+      };
     }
-    if (!keys || !locale || !deviceLabel?.trim())
+    if (!endpoint || !keys || !locale || !deviceLabel?.trim() || !kinds)
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "WEB_PUSH_SUBSCRIPTION_INCOMPLETE",
@@ -116,12 +125,13 @@ export class ProductionWebPushControl {
     const saved = await this.#options.store.saveSubscription({
       ownerId,
       agentId,
-      id: `web-push-${createHash("sha256").update(endpoint).digest("hex").slice(0, 24)}`,
+      id: webPushSubscriptionId(endpoint),
       endpoint,
       p256dh: keys.p256dh,
       auth: keys.auth,
       locale,
       deviceLabel: deviceLabel.trim(),
+      kinds: [...new Set(kinds)],
       now,
     });
     return { resultRef: saved.id, replayed: false };

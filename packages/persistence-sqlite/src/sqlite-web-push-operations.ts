@@ -3,6 +3,7 @@ import type {
   WebPushAttemptStatus,
   WebPushDue,
   WebPushFinishedRun,
+  WebPushKind,
   WebPushOutboxItem,
   WebPushScope,
   WebPushStorePort,
@@ -14,11 +15,26 @@ import type { SqliteApplicationFailure } from "./sqlite-durable-operations.js";
 type Input<TName extends keyof WebPushStorePort> = Parameters<WebPushStorePort[TName]>[0];
 
 const subscriptionColumns = `s.id, s.owner_id AS ownerId, s.agent_id AS agentId, s.endpoint,
-  s.p256dh, s.auth, s.locale, s.device_label AS deviceLabel, s.state,
+  s.p256dh, s.auth, s.locale, s.device_label AS deviceLabel, s.notify_reminder AS notifyReminder,
+  s.notify_approval AS notifyApproval, s.notify_run AS notifyRun, s.state,
   s.failure_code AS failureCode, s.created_at AS createdAt, s.updated_at AS updatedAt,
   s.last_delivered_at AS lastDeliveredAt`;
 
 const WEB_PUSH_LOCALES: readonly WebPushSubscription["locale"][] = ["zh-CN", "en", "ja"];
+
+const WEB_PUSH_KINDS: readonly WebPushKind[] = ["reminder", "approval", "run"];
+
+type SubscriptionRow = Omit<WebPushSubscription, "kinds"> & {
+  readonly notifyReminder: number;
+  readonly notifyApproval: number;
+  readonly notifyRun: number;
+};
+
+function subscriptionFromRow(row: SubscriptionRow): WebPushSubscription {
+  const { notifyReminder, notifyApproval, notifyRun, ...rest } = row;
+  const enabled = [notifyReminder, notifyApproval, notifyRun];
+  return { ...rest, kinds: WEB_PUSH_KINDS.filter((_, index) => enabled[index] === 1) };
+}
 
 const ATTEMPT_STATUSES: readonly WebPushAttemptStatus[] = [
   "pending",
@@ -86,12 +102,13 @@ export class SqliteWebPushOperations {
   }
 
   private readSubscription(scope: WebPushScope, id: string): WebPushSubscription | undefined {
-    return this.database
+    const row = this.database
       .prepare(
         `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
          WHERE s.owner_id = ? AND s.agent_id = ? AND s.id = ?`,
       )
-      .get(scope.ownerId, scope.agentId, id) as WebPushSubscription | undefined;
+      .get(scope.ownerId, scope.agentId, id) as SubscriptionRow | undefined;
+    return row ? subscriptionFromRow(row) : undefined;
   }
 
   private saveSubscription(input: Input<"saveSubscription">): WebPushSubscription {
@@ -102,18 +119,22 @@ export class SqliteWebPushOperations {
       input.endpoint.length > 2048 ||
       !WEB_PUSH_LOCALES.includes(input.locale) ||
       input.deviceLabel.length < 1 ||
-      input.deviceLabel.length > 64
+      input.deviceLabel.length > 64 ||
+      input.kinds.some((kind) => !WEB_PUSH_KINDS.includes(kind))
     )
       this.fail("PORT_INVALID_OPERATION", "Web push subscription is invalid");
     this.database
       .prepare(
         `INSERT INTO web_push_subscriptions (
-          id, owner_id, agent_id, endpoint, p256dh, auth, locale, device_label, state,
-          failure_code, created_at, updated_at, last_delivered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL)
+          id, owner_id, agent_id, endpoint, p256dh, auth, locale, device_label,
+          notify_reminder, notify_approval, notify_run, state, failure_code, created_at,
+          updated_at, last_delivered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL)
         ON CONFLICT (owner_id, agent_id, endpoint) DO UPDATE SET p256dh = excluded.p256dh,
           auth = excluded.auth, locale = excluded.locale, device_label = excluded.device_label,
-          state = 'active', failure_code = NULL, updated_at = excluded.updated_at`,
+          notify_reminder = excluded.notify_reminder, notify_approval = excluded.notify_approval,
+          notify_run = excluded.notify_run, state = 'active', failure_code = NULL,
+          updated_at = excluded.updated_at`,
       )
       .run(
         input.id,
@@ -124,15 +145,18 @@ export class SqliteWebPushOperations {
         input.auth,
         input.locale,
         input.deviceLabel,
+        ...WEB_PUSH_KINDS.map((kind) => (input.kinds.includes(kind) ? 1 : 0)),
         input.now,
         input.now,
       );
-    return this.database
-      .prepare(
-        `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
-         WHERE s.owner_id = ? AND s.agent_id = ? AND s.endpoint = ?`,
-      )
-      .get(input.ownerId, input.agentId, input.endpoint) as WebPushSubscription;
+    return subscriptionFromRow(
+      this.database
+        .prepare(
+          `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
+           WHERE s.owner_id = ? AND s.agent_id = ? AND s.endpoint = ?`,
+        )
+        .get(input.ownerId, input.agentId, input.endpoint) as SubscriptionRow,
+    );
   }
 
   private removeSubscription(input: Input<"removeSubscription">): boolean {
@@ -151,7 +175,8 @@ export class SqliteWebPushOperations {
         `SELECT ${subscriptionColumns} FROM web_push_subscriptions s
          WHERE s.owner_id = ? AND s.agent_id = ? ORDER BY s.created_at, s.id`,
       )
-      .all(scope.ownerId, scope.agentId) as WebPushSubscription[];
+      .all(scope.ownerId, scope.agentId)
+      .map((row) => subscriptionFromRow(row as SubscriptionRow));
   }
 
   private markSubscription(input: Input<"markSubscription">): void {
@@ -260,7 +285,7 @@ export class SqliteWebPushOperations {
          LIMIT ?`,
       )
       .all(input.ownerId, input.agentId, input.now, input.limit) as Array<
-      WebPushSubscription & {
+      SubscriptionRow & {
         sourceKey: string;
         kind: WebPushOutboxItem["kind"];
         sourceRef: string;
@@ -285,7 +310,7 @@ export class SqliteWebPushOperations {
         createdAt: row.itemCreatedAt,
         expiresAt: row.expiresAt,
       },
-      subscription: {
+      subscription: subscriptionFromRow({
         id: row.id,
         ownerId: row.ownerId,
         agentId: row.agentId,
@@ -294,12 +319,15 @@ export class SqliteWebPushOperations {
         auth: row.auth,
         locale: row.locale,
         deviceLabel: row.deviceLabel,
+        notifyReminder: row.notifyReminder,
+        notifyApproval: row.notifyApproval,
+        notifyRun: row.notifyRun,
         state: row.state,
         failureCode: row.failureCode,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         lastDeliveredAt: row.lastDeliveredAt,
-      },
+      }),
       attempt:
         row.attemptStatus === null
           ? null

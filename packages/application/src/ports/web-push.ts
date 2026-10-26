@@ -23,6 +23,7 @@ export interface WebPushSubscription extends WebPushScope {
   readonly auth: string;
   readonly locale: WebPushLocale;
   readonly deviceLabel: string;
+  readonly kinds: readonly WebPushKind[];
   readonly state: "active" | "paused";
   readonly failureCode: string | null;
   readonly createdAt: string;
@@ -72,6 +73,7 @@ export interface WebPushStorePort {
       readonly auth: string;
       readonly locale: WebPushLocale;
       readonly deviceLabel: string;
+      readonly kinds: readonly WebPushKind[];
       readonly now: string;
     },
   ): Promise<WebPushSubscription>;

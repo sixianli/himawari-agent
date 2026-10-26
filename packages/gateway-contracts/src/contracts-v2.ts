@@ -239,14 +239,17 @@ const pushKeySchema: Schema<string> = {
   },
 };
 const pushLocaleSchema = enumeration(["zh-CN", "en", "ja"]);
+const pushKindSchema = enumeration(["reminder", "approval", "run"]);
 const pushSubscriptionCommandSchema = object({
   ...commandEnvelope("push.subscription.set"),
   payload: object({
     action: enumeration(["subscribe", "unsubscribe"]),
-    endpoint: pushEndpointSchema,
+    subscriptionId: nullable(machineString),
+    endpoint: nullable(pushEndpointSchema),
     keys: nullable(object({ p256dh: pushKeySchema, auth: pushKeySchema })),
     locale: nullable(pushLocaleSchema),
     deviceLabel: nullable(boundedString(64)),
+    kinds: nullable(array(pushKindSchema)),
   }),
 });
 const pushTestCommandSchema = object({
@@ -272,6 +275,7 @@ const pushStatusSnapshotSchema = object({
         deviceLabel: boundedString(64),
         endpointHost: boundedString(256),
         locale: pushLocaleSchema,
+        kinds: array(pushKindSchema),
         state: enumeration(["active", "paused"]),
         failureCode: nullable(machineString),
         createdAt: timestamp,

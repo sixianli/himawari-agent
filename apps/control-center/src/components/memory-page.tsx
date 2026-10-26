@@ -8,7 +8,7 @@ import {
   parseMemoryExport,
   parseMemoryText,
 } from "../memory-import.js";
-import { MemoryApprovalCard, TextEditor } from "./memory-panel.js";
+import { MemoryApprovalCard, openNotificationSettings, TextEditor } from "./memory-panel.js";
 import { ActionButton } from "./primitives.js";
 
 type Message = (id: MessageId, values?: Record<string, string | number>) => string;
@@ -311,8 +311,6 @@ function PendingTab({ memory, message }: { memory: MemoryModel; message: Message
   );
 }
 
-const notifications = () => (typeof Notification === "undefined" ? null : Notification);
-
 function RemindersTab({
   memory,
   message,
@@ -322,7 +320,6 @@ function RemindersTab({
   message: Message;
   notify: (notice: Notice) => void;
 }) {
-  const [permission, setPermission] = useState(() => notifications()?.permission ?? "denied");
   const overview = memory.overview;
   if (!overview) return null;
   return (
@@ -385,20 +382,10 @@ function RemindersTab({
         <p className="settings-note">{message("memory.page.noUpcoming")}</p>
       )}
       <p className="memory-banner">
-        {message("memory.page.notify", { on: String(permission === "granted") })}
-        {permission === "default" ? (
-          <ActionButton
-            variant="secondary"
-            onClick={() =>
-              void notifications()
-                ?.requestPermission()
-                .then(setPermission)
-                .catch(() => undefined)
-            }
-          >
-            {message("memory.reminderNotify")}
-          </ActionButton>
-        ) : null}
+        {message("memory.page.notify")}
+        <ActionButton variant="secondary" onClick={openNotificationSettings}>
+          {message("push.openSettings")}
+        </ActionButton>
       </p>
     </>
   );

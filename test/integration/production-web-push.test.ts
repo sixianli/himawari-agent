@@ -153,7 +153,11 @@ describe("[WP-3] web push dispatch", () => {
         now: () => clock,
         onFailure: (error) => failures.push(error),
       });
-    const subscribe = (id: string, locale: "zh-CN" | "en" | "ja") =>
+    const subscribe = (
+      id: string,
+      locale: "zh-CN" | "en" | "ja",
+      kinds: readonly ("reminder" | "approval" | "run")[] = ["reminder", "approval", "run"],
+    ) =>
       store.saveSubscription({
         ...scope,
         id,
@@ -162,6 +166,7 @@ describe("[WP-3] web push dispatch", () => {
         auth: `auth-${id}`,
         locale,
         deviceLabel: id,
+        kinds,
         now: clock,
       });
     const reminder = (id: string, classification: ProductMemoryRecord["dataClassification"]) => {
@@ -295,6 +300,25 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(1);
   });
 
+  it("[WP-3] sends each device only the kinds it turned on, and never later", async () => {
+    const context = await setup();
+    await context.subscribe("phone", "zh-CN", ["approval"]);
+    const push = context.create();
+    await push.tick();
+    context.setClock(T0);
+    context.reminder("r-off", "private");
+    context.approval("a-on", "low");
+    context.finishRun("run-off", "completed", at(T0, -5));
+    await push.tick();
+    expect(context.sender.notifications().map(({ notification }) => notification["title"])).toEqual(
+      ["等你审批 · 低风险"],
+    );
+    await context.subscribe("phone", "zh-CN", ["reminder", "approval", "run"]);
+    context.setClock(at(T0, 30));
+    await push.tick();
+    expect(context.sender.requests).toHaveLength(1);
+  });
+
   it("[WP-3] expires work that was handled before it could be sent", async () => {
     const context = await setup();
     await context.subscribe("phone", "zh-CN");
@@ -332,7 +356,7 @@ describe("[WP-3] web push dispatch", () => {
     expect(context.sender.requests).toHaveLength(4);
   });
 
-  it("[WP-3] waits for Retry-After, removes gone devices and pauses rejected ones", async () => {
+  it("[WP-3] waits for Retry-After, removes gone devices, pauses rejected ones until the next restart", async () => {
     const context = await setup();
     await context.subscribe("gone", "zh-CN");
     await context.subscribe("limited", "zh-CN");
@@ -363,6 +387,18 @@ describe("[WP-3] web push dispatch", () => {
       "https://push.example/limited",
     );
     expect(context.sender.requests).toHaveLength(4);
+
+    const restarted = context.create();
+    context.setClock(at(T0, 130));
+    context.approval("a6", "low");
+    await restarted.tick();
+    expect((await context.store.listSubscriptions(scope)).map(({ state }) => state)).toEqual([
+      "active",
+      "active",
+    ]);
+    expect(
+      context.sender.requests.slice(4).map(({ endpoint }) => endpoint.split("/").at(-1)),
+    ).toEqual(["limited", "rejected"]);
   });
 
   it("[WP-3] sends a test notification to one device without the presence rule", async () => {

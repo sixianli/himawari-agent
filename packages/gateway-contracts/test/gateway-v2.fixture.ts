@@ -43,6 +43,7 @@ export const governanceMessages = [
   }),
   fixture("command", "push.subscription.set", {
     action: "subscribe",
+    subscriptionId: null,
     endpoint: "https://web.push.apple.com/QGuQyavXutnMH8Ta",
     keys: {
       p256dh:
@@ -51,6 +52,7 @@ export const governanceMessages = [
     },
     locale: "zh-CN",
     deviceLabel: "iPhone 主屏应用",
+    kinds: ["reminder", "approval", "run"],
   }),
   fixture("command", "push.test", { subscriptionId: "web-push-01" }),
   fixture("command", "presence.heartbeat", { clientId: "tab-01", visible: true }),
@@ -65,6 +67,7 @@ export const governanceMessages = [
         deviceLabel: "iPhone 主屏应用",
         endpointHost: "web.push.apple.com",
         locale: "zh-CN",
+        kinds: ["reminder", "approval", "run"],
         state: "active",
         failureCode: null,
         createdAt: "2026-10-26T00:00:00.000Z",

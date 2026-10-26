@@ -71,7 +71,7 @@ date: "2026-10-26"
 迁移 `0058_web_push.sql`，变更集 `web-push`，阶段 `expand`，数据库版本 57 → 58。四张表都按 `owner_id`、`agent_id` 隔离。
 
 - `web_push_subscriptions`：一行一台设备。
-  - 列：`subscription_id`、`endpoint`（https，最长 2048）、`p256dh`、`auth`、`locale`（`zh-CN`、`en`、`ja`）、`device_label`（最长 64，页面按浏览器信息生成，例如“iPhone 主屏应用”）、`state`（`active` 或 `paused`）、`failure_code`、`created_at`、`updated_at`、`last_delivered_at`。
+  - 列：`subscription_id`、`endpoint`（https，最长 2048）、`p256dh`、`auth`、`locale`（`zh-CN`、`en`、`ja`）、`device_label`（最长 64，页面按浏览器信息生成，例如“iPhone 主屏应用”）、`notify_reminder`、`notify_approval`、`notify_run`（这台设备要不要收这一类，0 或 1）、`state`（`active` 或 `paused`）、`failure_code`、`created_at`、`updated_at`、`last_delivered_at`。
   - 同一推送地址只有一行（唯一索引 `owner_id, agent_id, endpoint`）；重复开通时更新密钥和语言。
   - `p256dh` 和 `auth` 是公开密钥，推送地址只能用来给这台设备发加密消息，所以明文存放，与其他状态表一样受数据库文件权限保护。
 - `web_push_outbox`：待推送的事，一件事一行。
@@ -129,7 +129,7 @@ date: "2026-10-26"
   - `413`：内容太大（正常不会发生，见下），记 `failed`。
   - `429`：按 `Retry-After` 等待（缺省 60 秒，最长 1 小时）后重试。
   - `5xx` 或网络错误：1、5、15 分钟后重试，第 4 次仍失败记 `failed`。
-  - `400`、`401`、`403`：密钥或配置错了，订阅改为 `paused` 并记下 `failure_code`，设置页显示原因；Andy 重新开通知时恢复为 `active`。
+  - `400`、`401`、`403`：密钥或配置错了，订阅改为 `paused` 并记下 `failure_code`，设置页显示原因。密钥只能改配置再重启来修，所以服务每次启动后的第一轮扫描把 `paused` 的设备全部恢复为 `active`；Andy 重新开通知时也会恢复。
 - **请求头。** `TTL` 等于距 `expires_at` 的秒数；`Urgency` 按上表；`Topic` 是 `source_key` 的 SHA-256 前 24 字节的 base64url（32 个字符），推送服务对同一 Topic 只留最新一条。
 - **大小。** 加密前的 JSON 不超过 3 KB；正文超长时按字符截断并加“…”。
 - 每轮最多发 50 条；单次请求 15 秒超时；同一时间只有一轮在跑。
@@ -175,9 +175,9 @@ date: "2026-10-26"
 
 网关协议 v2 新增 4 种消息，都只允许主人（`actorType: "owner"`）在本人范围内使用：
 
-- `push.subscription.set`（命令）：`action` 为 `subscribe` 时带 `endpoint`、`keys.p256dh`、`keys.auth`、`locale`、`deviceLabel`；为 `unsubscribe` 时只带 `endpoint`。推送地址必须是 https 网址、最长 2048 个字符。重复提交同一幂等键返回同一结果。
+- `push.subscription.set`（命令）：`action` 为 `subscribe` 时带 `endpoint`、`keys.p256dh`、`keys.auth`、`locale`、`deviceLabel`、`kinds`（要收的类别：`reminder`、`approval`、`run`），`subscriptionId` 为空；为 `unsubscribe` 时只带 `subscriptionId`，其余为空，这样在一台设备上也能移除另一台。设备 id 是 `web-push-` 加推送地址 SHA-256 十六进制的前 24 位，页面用同样的算法认出“这台设备”。某台设备关掉的类别，调度器记为 `suppressed`（`WEB_PUSH_KIND_OFF`），之后再打开也不补发。推送地址必须是 https 网址、最长 2048 个字符。重复提交同一幂等键返回同一结果。
 - `push.test`（命令）：`subscriptionId`。立即给这台设备发一条“通知已开启 / Notifications are on / 通知がオンになりました”，不经过“在看就不推”，结果同步返回（成功或失败原因）。
-- `push.status.read`（查询）→ `push.status.snapshot`：`available`（服务器是否配置了推送）、`publicKey`（base64url，页面订阅时要用）、`subscriptions`（每台设备的 id、名称、语言、状态、失败原因、开通时间、最近送达时间；不返回密钥和推送地址全文，推送地址只返回主机名）、`generatedAt`。
+- `push.status.read`（查询）→ `push.status.snapshot`：`available`（服务器是否配置了推送）、`publicKey`（base64url，页面订阅时要用）、`subscriptions`（每台设备的 id、名称、语言、要收的类别、状态、失败原因、开通时间、最近送达时间；不返回密钥和推送地址全文，推送地址只返回主机名）、`generatedAt`。
 - `presence.heartbeat`（命令）：`clientId`、`visible`。只更新内存，不写数据库、不进审计。
 
 [↑ 返回阅读导航](#阅读导航)
@@ -200,13 +200,15 @@ date: "2026-10-26"
 
 ## 设置页通知开关
 
-等“重构整个用户界面”线程第一期合入 `main` 后再做，按[原型](https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv)：
+按[原型](https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv)做在 `apps/control-center/src/components/notification-settings.tsx`，浏览器一侧的订阅和在看信号在 `apps/control-center/src/web-push.ts`：
 
 - 设置里新增“通知”一节。iPhone Safari 标签页里打开时，只显示“先加到主屏幕”三步说明，不显示开关。
-- 开关打开：请求通知权限 → 注册 `sw.js` → 用 `publicKey` 订阅 → 发 `push.subscription.set` → 发一条测试通知。权限被拒时说明去哪里重新打开。
-- 列出已开通的设备，能单台关闭；`paused` 的设备显示原因。
+- 三个类别各一个开关，默认全开；已开通的设备改开关时重新提交一次订阅，不发测试通知。
+- 点“在这台设备开启通知”：请求通知权限 → 注册 `sw.js` → 用 `publicKey` 订阅 → 发 `push.subscription.set` → 发一条测试通知。权限被拒时说明去哪里重新打开。
+- 列出已开通的设备，能单台关闭或移除；`paused` 的设备显示原因。
+- `index.html` 加 manifest、`apple-touch-icon` 和主屏应用的 meta。
 - 页面显示在前台时每 30 秒发一次 `presence.heartbeat`，切到后台时立即发一次 `visible: false`。
-- 删掉记忆页里只在标签页开着时才弹的 `new Notification()`，到期提醒由服务器推送。
+- 删掉记忆页里只在标签页开着时才弹的 `new Notification()`，到期提醒由服务器推送；记忆页提醒栏改为一句说明和“通知设置”按钮。
 - 三种语言的文字都进界面语言资源文件。
 
 [↑ 返回阅读导航](#阅读导航)
