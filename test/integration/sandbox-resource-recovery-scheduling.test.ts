@@ -1480,7 +1480,8 @@ it("migrates populated schema 42 without restarting old recovery or weakening it
     expect(() => assertWritableSchema(migrated, 49)).toThrow();
     expect(() => assertWritableSchema(migrated, 50)).toThrow();
     expect(() => assertWritableSchema(migrated, 54)).toThrow();
-    expect(() => assertWritableSchema(migrated, 55)).not.toThrow();
+    expect(() => assertWritableSchema(migrated, 55)).toThrow();
+    expect(() => assertWritableSchema(migrated, 56)).not.toThrow();
     expect(old.pragma("foreign_key_check")).toEqual([]);
   } finally {
     old?.close();
