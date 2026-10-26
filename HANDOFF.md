@@ -7,7 +7,7 @@
 - 这是一份只读快照，只供写自动生成器时参考。不要直接用这里的文件上线：冻结后的包只对当时的生产状态有效，每次上线都要重新生成、重新冻结。
 - 原件在 Andy 的 Mac 上：`himawari-agent/.ci-output/production/`。`.ci-output` 目录不进 git，云端线程看不到，所以做了这份快照。
 - 快照里有：
-  - `twelfth-freeze-tools/`：Mac 上用的出包小工具（下文第 6 节），加上本版的构建摘要 `cc-build-470b6d30-r1.summary`、`run-cand-470b6d30.out` 和新值表 `new-values-470b6d30.json`，它们是这些工具的真实输入样例。
+  - `twelfth-freeze-tools/`：Mac 上用的出包小工具（下文第 7 节），加上本版的构建摘要 `cc-build-470b6d30-r1.summary`、`run-cand-470b6d30.out` 和新值表 `new-values-470b6d30.json`，它们是这些工具的真实输入样例。
   - `hermes-build/`：Hermes 测试机上构建候选产物的三个脚本（`e3-build.sh`、`build-cand.sh`、`run-cand.sh`），从 `/home/andy/himawari-tests/eleventh/` 原样取回。
   - `run-twelfth-packet-s0.sh`：在生产机上只读读取当前状态的脚本（S0，见第 1 节）。
   - `samples/new-values-aa563155.json`：第十一版的新值表，和本版的对照就是“旧值 → 新值”。
@@ -19,7 +19,7 @@
 - 操作包（packet）：一次上线用的全部脚本、期望值和输入文件，目录名 `2026-10-26-twelfth-change-packet-01`。每个子目录管一段：`install/` 安装、`systemd/` 停服和启动、`maintenance/` 数据库复制和恢复、`acceptance/` 停服后的主机验收、`signing/` 签名、`measurement/` 读回、`steps/` 每一步的入口 `run-step.py`。
 - 候选产物（candidate）：Hermes 用要上线的那个提交构建出的安装包，例如 `linux-x64-abi127-470b6d30…-1.tar.gz`，加上 `context.json`（记录构建用的提交号）。
 - S0：上线前在生产机上只读读取当前状态，写进包里的三个文件：`inputs/s0-db-readback.json`（数据库版本、授权令牌号、配置指纹、systemd 单元文件指纹）、`inputs/system-tools-observed.json`（系统工具哈希）、`inputs/npm-observed.json`（npm 文件清单）。
-- 配置指纹：生产配置文件 `/etc/himawari/config.json` 原始字节的 SHA-256，详见第 5 节。
+- 配置指纹：生产配置文件 `/etc/himawari/config.json` 原始字节的 SHA-256，详见第 6 节。
 - 单元文件（unit）：systemd 用来启动服务的配置文件 `himawari-prod.service`。
 - `bindings`：包里的“本次上线参数表”。`inputs/bindings.draft.json` 是草稿，`inputs/finalize-bindings.py` 把它和 S0 合并，写出 `bindings.reviewed.json`（待审）或 `bindings.json`（冻结版）。
 - 冻结（freeze）：`finalize-bindings.py --freeze-reviewed-packet …` 写出 `bindings.json` 和 `freeze-manifest.json`，后者记下包里每个文件的字节数和 SHA-256。冻结后改任何文件，上线脚本都会拒绝。
@@ -135,7 +135,7 @@
 
 | 文件 | 字段 | 旧值 → 新值 | 应从哪推出 |
 | --- | --- | --- | --- |
-| `systemd/S2-stop-and-inspect.py`、`maintenance/S9-control-files.py` | `OLD_CONFIG_SHA` | `219a21da` → `e889278a` | S0 的 `service.configurationSha256`，由 `fill-old-config.py` 填。服务每次重启都会变，见第 5 节 |
+| `systemd/S2-stop-and-inspect.py`、`maintenance/S9-control-files.py` | `OLD_CONFIG_SHA` | `219a21da` → `e889278a` | S0 的 `service.configurationSha256`，由 `fill-old-config.py` 填。服务每次重启都会变，见第 6 节 |
 | `bindings.json` 的 `service.oldConfigSha256` | 旧配置指纹 | 同上 | 草稿里写 `S0_DB:service.configurationSha256`，`finalize-bindings.py` 自动填 |
 | `bindings.json` 的 `service.oldUnitSha256` | 旧单元文件指纹 | `ea42411a` → `e2239417`（等于上一版的 `newUnitSha256`） | `S0_DB:service.unitFragmentSha256`，自动填 |
 | `bindings.json` 的 `service.newUnitSha256` | 新单元文件指纹 | `e2239417` → `6935a793` | `finalize-bindings.py` 对 `systemd/himawari-prod.service.draft` 算 SHA-256 |
