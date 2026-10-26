@@ -4,7 +4,7 @@ import type {
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { draftBytes, formatBytes, splitDraft } from "../draft-attachments.js";
+import { formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
 import type { RunSummary } from "../execution-view.js";
 import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
@@ -259,7 +259,7 @@ function OwnerMessage({ content }: { readonly content: string | undefined }) {
             <li key={`${index}:${file.name}`}>
               <LineIcon name="file" />
               <span className="attachment-name">{file.name}</span>
-              <small>{formatBytes(draftBytes(file.text))}</small>
+              <small>{formatBytes(file.bytes)}</small>
             </li>
           ))}
         </ul>

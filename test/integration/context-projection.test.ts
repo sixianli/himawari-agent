@@ -161,7 +161,7 @@ async function createContext(
         contentRef: "payload-history-owner",
         occurredAt: NOW,
         dataClassification: "private" as const,
-        ...(scenario ? { runState: scenario.runState } : {}),
+        ...(scenario?.runState ? { runState: scenario.runState } : {}),
       },
       {
         messageId: createMessageId("message-context-system"),
@@ -300,6 +300,39 @@ describe("ContextProjectionService", () => {
         }),
       ]),
     );
+  });
+
+  it("[UI-16] expands only attachment Payloads that a message names and keeps a missing one visible", async () => {
+    const fixture = createFixture();
+    const contextRef = await createContext(fixture, {
+      previous: '看看这个\n\n<file name="old.md" ref="payload-attachment-old" bytes="9"/>',
+      current:
+        '总结报告\n\n<file name="报告.pdf" ref="payload-attachment-report" bytes="2048"/>\n\n<file name="memo.txt" ref="payload-memory" bytes="9"/>\n\n<file name="gone.csv" ref="payload-attachment-gone" bytes="3"/>',
+      runState: undefined,
+    });
+    for (const [ref, text] of [
+      ["payload-attachment-report", "第一页：营收增长 12%"],
+      ["payload-attachment-old", "旧笔记"],
+    ] as const)
+      await fixture.adapters.payload.put(
+        await fixture.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          dataClassification: "private",
+          contentType: "text/x-himawari-attachment",
+          plaintext: new TextEncoder().encode(text),
+          createdAt: NOW,
+        }),
+      );
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    expect(projection.prompt.content).toBe(
+      '总结报告\n\n<file name="报告.pdf">\n第一页：营收增长 12%\n</file>\n\n<file name="memo.txt">\n[附件无法读取]\n</file>\n\n<file name="gone.csv">\n[附件无法读取]\n</file>',
+    );
+    expect(JSON.stringify(projection.history[0]?.content)).toContain(
+      '<file name=\\"old.md\\">\\n旧笔记\\n</file>',
+    );
+    expect(JSON.stringify(projection)).not.toContain("非权威记忆摘要\\n</file>");
   });
 
   it("fails closed for scope, missing selected message, and deleted Payloads", async () => {

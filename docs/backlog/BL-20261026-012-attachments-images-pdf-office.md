@@ -15,11 +15,15 @@ reason: ""
 supersedes: ""
 superseded_by: ""
 ---
-# 附件支持图片、PDF 和 Office 文件
+# 附件支持图片、扫描件和旧版 Office 文件
 
 ## Summary
 
-对话界面 v6 第二期的附件只支持 64 KB 以内的文本类文件（按 Pi 的 <file name> 格式拼进消息，见 ADR 0090）。图片要等 Andy 决定是否加一个能看图的模型；PDF、Word、Excel、PowerPoint 需要新的上传接口（约 10 MB、带同样的登录和防伪造请求检查）、服务端抽取文字并加密保存，消息里带附件引用，上下文投影时展开成文件块。
+对话界面 v6 第二期已经支持文本类文件、PDF、Word（.docx）、Excel（.xlsx）和 PowerPoint（.pptx）：网页在浏览器里把文件转成文字，经附件接口加密保存，消息里只带附件引用，发给模型时展开（见 [ADR 0090 的附件一节](../adr/0090-chat-ui-v6-answer-and-composer.md#attachments)）。还没做的：
+
+- 图片：要等 Andy 决定是否加一个能看图的模型；选定后附件接口要能存图片原始字节，上下文投影按 Pi 的 `ImageContent` 发给模型。
+- 扫描件 PDF 和只有图片的文档：没有文字层，需要文字识别（OCR，从图片里认出文字），或者同样交给看图模型。
+- 旧版 .doc、.xls、.ppt：二进制格式，浏览器里没有轻量的读取库，需要服务端转换。
 
 ## Origin
 

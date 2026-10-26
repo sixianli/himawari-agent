@@ -122,6 +122,8 @@ export const browserExternalPackages = new Set([
   "react-dom",
   "react-intl",
   "marked",
+  "pdfjs-dist",
+  "fflate",
   "vite",
   "vitest",
 ]);

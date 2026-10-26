@@ -1,5 +1,3 @@
-import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
-import { ArchivedConversations } from "./components/archived-conversations.js";
 import type {
   ThreadExecutionEnvironment,
   ThreadExecutionRecord,
@@ -10,13 +8,17 @@ import type {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
+import { ArchivedConversations } from "./components/archived-conversations.js";
 import { ChatComposer } from "./components/chat-composer.js";
-import { defaultThinkingLevel } from "./components/model-picker.js";
+import { ChatHistory } from "./components/chat-history.js";
+import { ContentPreview, type ContentPreviewValue } from "./components/content-preview.js";
 import { ExecutionEnvironmentLine } from "./components/execution-environment.js";
+import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
+import { defaultThinkingLevel } from "./components/model-picker.js";
+import { RunApprovalCard } from "./components/run-approval-card.js";
 import { ThreadLoadFeedback, ThreadLoadingSkeleton } from "./components/thread-load-feedback.js";
 import { ThreadSidebar } from "./components/thread-sidebar.js";
-import { ChatHistory } from "./components/chat-history.js";
-import { ActionButton, Banner, Field, ModalDialog, StatusRegion } from "./components/index.js";
+import { isTerminalRun } from "./execution-view.js";
 import type {
   ControlCenterRuntimeConfiguration,
   GatewayClient,
@@ -24,11 +26,9 @@ import type {
 } from "./gateway-client.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import { threadCommandMessage, threadQueryMessage } from "./messages.js";
-import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
-import { isTerminalRun } from "./execution-view.js";
 
 import { listPendingRunApprovals } from "./run-approval.js";
-import { RunApprovalCard } from "./components/run-approval-card.js";
+import { ThreadExecutionSynchronizer } from "./thread-execution-synchronizer.js";
 
 type ThreadCollectionSnapshot = Extract<
   ThreadGatewaySnapshot,
@@ -1199,6 +1199,7 @@ export function useThreadControlCenter(
         <ChatComposer
           key={`composer:${selectedThreadId ?? "new"}`}
           fresh={!selectedThreadId}
+          onUpload={client ? (text) => client.protectAttachment(text, "private") : undefined}
           draft={draft}
           onDraft={(value) => {
             setDraft(value);

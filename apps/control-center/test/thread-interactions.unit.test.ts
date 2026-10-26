@@ -1759,7 +1759,18 @@ describe("thread control center interactions", () => {
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
-  it("[UI-14] sends pasted and dropped text files with the message and drops a removed one", async () => {
+  it("[UI-16] uploads pasted and dropped files, sends only their references and drops a removed one", async () => {
+    const uploaded: string[] = [];
+    options = {
+      ...options,
+      client: {
+        ...options.client,
+        protectAttachment: vi.fn(async (text: string) => {
+          uploaded.push(text);
+          return `payload:http:file-${uploaded.length}`;
+        }),
+      } as unknown as GatewayClient,
+    };
     await render();
     await refresh();
     const textarea = container.querySelector("textarea");
@@ -1804,8 +1815,19 @@ describe("thread control center interactions", () => {
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
+    expect(uploaded).toEqual(["a,b\n1,2", "笔记", "x"]);
     expect(protect.mock.calls.map(([text]) => text)).toContain(
-      '帮我看看\n\n<file name="data.csv">\na,b\n1,2\n</file>\n\n<file name="notes.md">\n笔记\n</file>',
+      '帮我看看\n\n<file name="data.csv" ref="payload:http:file-1" bytes="7" kind="text"/>\n\n<file name="notes.md" ref="payload:http:file-2" bytes="6" kind="text"/>',
+    );
+    expect(protect.mock.calls.some(([text]) => String(text).includes("笔记"))).toBe(false);
+    await act(async () => {
+      textarea.dispatchEvent(
+        transfer("paste", [new File(["x"], "photo.png", { type: "image/png" })]),
+      );
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(container.querySelector(".attachment-error")?.textContent).toBe(
+      "chat.attachmentUnsupported",
     );
   });
   it("retries an uncertain send with its original identity and preserves a newer draft after revision changes", async () => {

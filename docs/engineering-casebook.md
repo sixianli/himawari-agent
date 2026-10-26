@@ -1707,6 +1707,16 @@ DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以
 
 “用户要求附件按钮必须真能用，否则关掉。完整做法是上传接口加服务端抽文字，要好几天，还要先选看图模型。我先查清现有边界：消息上限 64 KB、运行时只收文字。于是先做文本文件：用 Pi 命令行同样的 `<file name>` 格式把文件接在消息后面，网页再按这个格式拆回‘正文 + 文件卡片’，粘贴、拖放、点选共用一套检查，服务端一行没改，失败重试也自动覆盖附件；图片和 PDF 明确提示还不支持，记进 Backlog。同一期还把每轮 token 从 Pi 已有的用量数据投影出来，输入数按 OpenTelemetry 约定包含缓存。”
 
+**后续（2026-10-26 晚）：附件补上 PDF 和 Office，并改成“附件接口 + 引用”**
+
+第一版只读文本文件，图片、PDF、Office 只提示“还读不了”，可 Andy 的原话是附件“真的有用”，否则就关掉。当晚把做法换成三段：
+
+- **浏览器里转文字：** PDF 用 Mozilla 的 pdf.js（✅ [pdf.js README](https://github.com/mozilla/pdf.js)：目标是“a general-purpose, web standards-based platform for parsing and rendering PDFs”），只在第一次加 PDF 时下载；.docx、.xlsx、.pptx 是 XML 文件的压缩包，用 fflate（✅ [fflate README](https://github.com/101arrowz/fflate)：“High performance (de)compression in an 8kB package”）解压后取段落、单元格和幻灯片文字。解析放在浏览器，是为了让不受信任的文件格式只在用户自己的页面里解析，服务端不装解析库。
+- **附件接口：** 新增 `/api/payload/v1/attachment`，检查和消息正文接口相同，单段上限 256K 字符，内容类型是附件专用的 `text/x-himawari-attachment`。
+- **消息只带引用，发给模型时展开：** 消息里每个文件只是一行 `<file name ref bytes kind/>`，上下文投影只展开附件类型的加密内容，换成 Pi 的 `<file name>` 文件块；读不到就写“[附件无法读取]”，不让整轮失败。这样 64 KB 正文上限不再限制附件，标题生成、记忆提取和浏览器本地草稿里也不会出现文件全文。
+
+取舍：主流产品在服务端解析文件，支持的格式更多；我们放弃了旧版 .doc/.xls/.ppt 和扫描件（记在 [BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)），换来服务端没有新的解析风险。结果（来自本 PR 的测试记录）：控制中心单元测试 446 个通过，其中浏览器转文字 4 个、上传和引用 2 个、粘贴拖放发送的交互测试 1 个；HTTP 网关合同测试 29 个、上下文投影集成测试 12 个通过。真实 Chromium 加上线上同样的内容安全策略（CSP，浏览器只允许加载哪些来源的脚本的规则）：一次选中 PDF、Word、Excel、PowerPoint 各一个，四张卡片按选择顺序出现，四段文字都正确上传，消息只带四行引用，页面没有报错。真实模型读附件后的回答质量：未上线，未测量。
+
 [返回目录](#contents)
 
 <a id="small-cases"></a>

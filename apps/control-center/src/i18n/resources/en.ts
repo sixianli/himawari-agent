@@ -310,11 +310,17 @@ export const messages = {
   "chat.stop": "Stop",
   "chat.pendingModel": "For the next message",
   "chat.attachHint":
-    "Click, paste with Ctrl+V or drag files here. Text files such as notes, code, CSV and JSON, up to 64 KB in total",
+    "Click, paste with Ctrl+V or drag files here. Reads PDF, Word, Excel, PowerPoint and text files such as notes, code and CSV, up to 20 MB each",
   "chat.attachmentTooLarge":
-    "That does not fit: the message and its files can total 64 KB, with at most 10 files.",
+    "That does not fit: each file can be up to 20 MB, with at most 10 files per message.",
   "chat.attachmentUnsupported":
-    "I cannot read this file yet. Only text files such as notes, code, CSV and JSON work for now; images, PDF and Office files come later.",
+    "I cannot read this file yet. PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx) and text files work; images and old .doc, .xls and .ppt files do not yet.",
+  "chat.attachmentEmpty": "No text found in this file. It may be a scan or contain only images.",
+  "chat.attachmentUploadFailed": "The file did not upload. Please try again.",
+  "chat.attachmentReading": "Reading",
+  "chat.attachmentTruncated":
+    "The file is long, so only its first 250,000 or so characters were read",
+  "chat.attachmentTruncatedShort": "Cut short",
   "chat.removeAttachment": "Remove {name}",
   "chat.pinned": "Pinned",
   "chat.workTime": "Working {time}",

@@ -3,69 +3,49 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createIntl, createIntlCache } from "react-intl";
 import { describe, expect, it } from "vitest";
 import { ChatComposer } from "../src/components/chat-composer.js";
-import {
-  ATTACHMENT_LIMIT_BYTES,
-  joinDraft,
-  readAttachment,
-  splitDraft,
-} from "../src/draft-attachments.js";
+import { type DraftAttachment, joinDraft, splitDraft } from "../src/draft-attachments.js";
 import { loadMessageCatalog } from "../src/i18n/runtime.js";
 
-describe("[UI-14] files attached to a message", () => {
-  it("keeps the typed text and each file apart, in the file block format Pi uses", () => {
-    const draft = joinDraft("请分析\n", [
-      { name: "notes.md", text: "内容\n第二行" },
-      { name: "data.csv", text: "a,b\n1,2" },
-    ]);
+const report: DraftAttachment = {
+  name: "报告.pdf",
+  ref: "payload:http:abc",
+  bytes: 2_400_000,
+  kind: "pdf",
+  truncated: true,
+};
+const notes: DraftAttachment = {
+  name: "notes.md",
+  ref: "payload:http:def",
+  bytes: 9,
+  kind: "text",
+  truncated: false,
+};
+
+describe("[UI-16] files attached to a message", () => {
+  it("keeps the typed text and a short reference to each uploaded file, never the file text", () => {
+    const draft = joinDraft("请分析\n", [report, notes]);
     expect(draft).toBe(
-      '请分析\n\n\n<file name="notes.md">\n内容\n第二行\n</file>\n\n<file name="data.csv">\na,b\n1,2\n</file>',
+      '请分析\n\n\n<file name="报告.pdf" ref="payload:http:abc" bytes="2400000" kind="pdf" truncated="1"/>\n\n<file name="notes.md" ref="payload:http:def" bytes="9" kind="text"/>',
     );
-    expect(splitDraft(draft)).toEqual({
-      text: "请分析\n",
-      files: [
-        { name: "notes.md", text: "内容\n第二行" },
-        { name: "data.csv", text: "a,b\n1,2" },
-      ],
-    });
-    expect(splitDraft(joinDraft("", [{ name: "a.txt", text: "x" }]))).toEqual({
-      text: "",
-      files: [{ name: "a.txt", text: "x" }],
-    });
-    expect(splitDraft('只是文字 <file name="x">')).toEqual({
-      text: '只是文字 <file name="x">',
+    expect(splitDraft(draft)).toEqual({ text: "请分析\n", files: [report, notes] });
+    expect(splitDraft(joinDraft("", [notes]))).toEqual({ text: "", files: [notes] });
+    expect(splitDraft('只是文字 <file name="x" ref="y"/>')).toEqual({
+      text: '只是文字 <file name="x" ref="y"/>',
       files: [],
     });
   });
-
-  it("reads text, code and table files and refuses the kinds it cannot read yet", async () => {
-    expect(await readAttachment(new File(["print(1)\n"], 'a"b\n.py'))).toEqual({
-      name: "ab.py",
-      text: "print(1)\n",
-    });
-    await expect(readAttachment(new File([new Uint8Array([0xff, 0xd8])], "x.jpg"))).rejects.toThrow(
-      "ATTACHMENT_UNSUPPORTED",
-    );
-    await expect(readAttachment(new File([new Uint8Array([0])], "x.bin"))).rejects.toThrow(
-      "ATTACHMENT_UNSUPPORTED",
-    );
-    await expect(readAttachment(new File(["a\n</file>\nb"], "x.txt"))).rejects.toThrow(
-      "ATTACHMENT_UNSUPPORTED",
-    );
-    await expect(
-      readAttachment(new File(["x".repeat(ATTACHMENT_LIMIT_BYTES + 1)], "big.txt")),
-    ).rejects.toThrow("ATTACHMENT_TOO_LARGE");
-  });
 });
 
-describe("[UI-14] attached files on screen", () => {
+describe("[UI-16] attached files on screen", () => {
   const ids = (id: string, values?: Record<string, string | number>) =>
     values ? `${id}(${Object.values(values).join(",")})` : id;
-  it("shows only the typed text in the box and each file as a removable card", () => {
-    const html = renderToStaticMarkup(
+  const composer = (message: typeof ids, draft = joinDraft("看看这个", [report])) =>
+    renderToStaticMarkup(
       createElement(ChatComposer, {
-        draft: joinDraft("看看这个", [{ name: "notes.md", text: "第一行" }]),
+        draft,
         onDraft: () => {},
         onSubmit: () => {},
+        onUpload: async () => "payload:http:new",
         connected: true,
         pending: false,
         model: "deepseek",
@@ -74,53 +54,46 @@ describe("[UI-14] attached files on screen", () => {
         thinkingLevel: "",
         onModelChange: () => {},
         onThinkingChange: () => {},
-        message: ids,
-      }),
-    );
-    expect(html).toMatch(/<textarea[^>]*>看看这个<\/textarea>/);
-    expect(html).toContain('class="attachment-name">notes.md</span><small>9 B</small>');
-    expect(html).toContain('aria-label="chat.removeAttachment(notes.md)"');
-    expect(html).toContain('title="chat.attachHint"');
-    expect(html).toContain("multiple");
-  });
-});
-
-it.each(["zh-CN", "en", "ja"] as const)(
-  "[UI-15] has every phase two composer text in %s",
-  async (locale) => {
-    const catalog = await loadMessageCatalog(locale);
-    const intl = createIntl(
-      { locale, messages: catalog, onError: () => undefined },
-      createIntlCache(),
-    );
-    const html = renderToStaticMarkup(
-      createElement(ChatComposer, {
-        draft: joinDraft("", [{ name: "a.csv", text: "1" }]),
-        onDraft: () => {},
-        onSubmit: () => {},
-        connected: true,
-        pending: false,
-        model: "m",
-        models: [],
-        modelRef: "",
-        thinkingLevel: "",
-        onModelChange: () => {},
-        onThinkingChange: () => {},
-        message: (id, values) => intl.formatMessage({ id }, values),
+        message,
         fresh: true,
       }),
     );
-    expect(html).not.toMatch(/\bchat\.[a-zA-Z]/);
-    for (const id of [
-      "chat.attachHint",
-      "chat.attachmentTooLarge",
-      "chat.attachmentUnsupported",
-      "chat.removeAttachment",
-      "chat.placeholderNew",
-      "chat.moreModels",
-      "answer.tokens",
-      "process.tokens",
-    ] as const)
-      expect(catalog[id]).toBeTruthy();
-  },
-);
+  it("shows only the typed text in the box and each file as a removable card", () => {
+    const html = composer(ids);
+    expect(html).toMatch(/<textarea[^>]*>看看这个<\/textarea>/);
+    expect(html).toContain('class="attachment-name">报告.pdf</span><small>2.3 MB</small>');
+    expect(html).toContain('title="chat.attachmentTruncated"');
+    expect(html).toContain('aria-label="chat.removeAttachment(报告.pdf)"');
+    expect(html).toContain('title="chat.attachHint"');
+    expect(html).toContain(".pdf,.docx,.xlsx,.pptx");
+    expect(html).toContain("multiple");
+  });
+
+  it.each(["zh-CN", "en", "ja"] as const)(
+    "[UI-15] has every phase two composer text in %s",
+    async (locale) => {
+      const catalog = await loadMessageCatalog(locale);
+      const intl = createIntl(
+        { locale, messages: catalog, onError: () => undefined },
+        createIntlCache(),
+      );
+      const html = composer((id, values) => intl.formatMessage({ id }, values));
+      expect(html).not.toMatch(/\bchat\.[a-zA-Z]/);
+      for (const id of [
+        "chat.attachHint",
+        "chat.attachmentTooLarge",
+        "chat.attachmentUnsupported",
+        "chat.attachmentEmpty",
+        "chat.attachmentUploadFailed",
+        "chat.attachmentReading",
+        "chat.attachmentTruncated",
+        "chat.removeAttachment",
+        "chat.placeholderNew",
+        "chat.moreModels",
+        "answer.tokens",
+        "process.tokens",
+      ] as const)
+        expect(catalog[id]).toBeTruthy();
+    },
+  );
+});

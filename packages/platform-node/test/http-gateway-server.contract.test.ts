@@ -225,6 +225,7 @@ beforeAll(async () => {
   await mkdir(path.join(staticRoot, "assets"));
   await writeFile(path.join(staticRoot, "index.html"), "<!doctype html><title>Himawari</title>");
   await writeFile(path.join(staticRoot, "assets", "app.js"), "globalThis.__himawari = true;");
+  await writeFile(path.join(staticRoot, "assets", "worker.mjs"), "self.onmessage = () => {};");
 });
 
 afterAll(async () => {
@@ -406,6 +407,12 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(page.headers["x-content-type-options"]).toBe("nosniff");
     expect(page.headers["cache-control"]).toBe("no-cache");
     expect(asset.headers["cache-control"]).toContain("immutable");
+    const worker = await app.inject({
+      method: "GET",
+      url: "/assets/worker.mjs",
+      headers: { host: "agent.example.test" },
+    });
+    expect(worker.headers["content-type"]).toBe("text/javascript; charset=utf-8");
   });
 
   it("does not expose legacy v1 routes when no legacy gateway is composed", async () => {
@@ -1246,6 +1253,47 @@ describe("HTTP Gateway contract and security boundary", () => {
       "read:agent-01:payload-private-01",
       "search:agent-01:私人搜索",
     ]);
+  });
+
+  it("[UI-16] admits a large attachment text as its own Payload type and keeps the message limit", async () => {
+    const calls: string[] = [];
+    const { app } = createFixture(undefined, undefined, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+      payloadAdmission: {
+        async protect(input) {
+          calls.push(`${input.contentType}:${input.content.length}`);
+          return { payloadRef: "payload-attachment-01" };
+        },
+      },
+    });
+    const send = (url: string, content: string, key: string) =>
+      app.inject({
+        method: "POST",
+        url,
+        headers: requestHeaders(key),
+        payload: { content, dataClassification: "private" },
+      });
+    const attachment = await send(
+      "/api/payload/v1/attachment",
+      "页".repeat(200 * 1024),
+      "attachment-01",
+    );
+    const tooLarge = await send(
+      "/api/payload/v1/attachment",
+      "x".repeat(256 * 1024 + 1),
+      "attachment-02",
+    );
+    const message = await send("/api/payload/v1/text", "x".repeat(64 * 1024 + 1), "text-01");
+    expect(attachment.statusCode).toBe(201);
+    expect(attachment.json()).toEqual({ payloadRef: "payload-attachment-01" });
+    expect(tooLarge.statusCode).toBe(400);
+    expect([400, 413]).toContain(message.statusCode);
+    expect(calls).toEqual([`text/x-himawari-attachment:${200 * 1024}`]);
   });
 
   it("does not advertise a session reference as recent authentication proof", async () => {

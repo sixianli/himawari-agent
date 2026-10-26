@@ -183,12 +183,13 @@ it("[UI-11] marks your message as received once the model started, with a copy b
   expect(waitingOwner).toContain('aria-label="message.status.sent"');
 });
 
-it("[UI-14] shows the files sent with your message as cards, not their text", () => {
+it("[UI-16] shows the files sent with your message as cards with their size", () => {
   const html = renderToStaticMarkup(
     createElement(ChatHistory, {
       detail: detail(),
       contentByRef: {
-        "content:owner": '总结一下\n\n<file name="report.csv">\na,b\n1,2\n</file>',
+        "content:owner":
+          '总结一下\n\n<file name="report.pdf" ref="payload:http:abc" bytes="2400000" kind="pdf"/>',
         "content:agent": "好的",
       },
       execution: { [completedRun.runId]: turnRecords() },
@@ -201,8 +202,8 @@ it("[UI-14] shows the files sent with your message as cards, not their text", ()
   expect(html).toContain(
     '<pre class="thread-message-content">总结一下</pre><ul class="message-files">',
   );
-  expect(html).toContain('class="attachment-name">report.csv</span>');
-  expect(html).not.toContain("a,b");
+  expect(html).toContain('class="attachment-name">report.pdf</span><small>2.3 MB</small>');
+  expect(html).not.toContain("payload:http:abc");
 });
 
 it.each([

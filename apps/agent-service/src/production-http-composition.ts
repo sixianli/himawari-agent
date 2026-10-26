@@ -406,7 +406,7 @@ class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort 
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain";
+    readonly contentType: "text/plain" | "text/x-himawari-attachment";
   }): Promise<{ readonly payloadRef: string }> {
     const session = await activeSession(this.#sessions, input.authentication, this.#ownerId);
     if (!session || input.authentication.ownerId !== this.#ownerId) {

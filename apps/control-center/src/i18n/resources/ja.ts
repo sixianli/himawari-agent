@@ -312,11 +312,17 @@ export const messages = {
   "chat.stop": "停止",
   "chat.pendingModel": "次のメッセージに適用",
   "chat.attachHint":
-    "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。メモ、コード、CSV、JSON などのテキストファイル、合計 64 KB まで",
+    "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。PDF、Word、Excel、PowerPoint と、メモ、コード、CSV などのテキストファイルを読めます。1 個 20 MB まで",
   "chat.attachmentTooLarge":
-    "入りきりません。メッセージと添付は合計 64 KB、ファイルは 10 個までです。",
+    "入りきりません。ファイルは 1 個 20 MB まで、1 メッセージに 10 個までです。",
   "chat.attachmentUnsupported":
-    "このファイルはまだ読めません。今はメモ、コード、CSV、JSON などのテキストファイルだけです。画像、PDF、Office ファイルは今後対応します。",
+    "このファイルはまだ読めません。PDF、Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）とテキストファイルに対応しています。画像と旧形式の .doc、.xls、.ppt はまだです。",
+  "chat.attachmentEmpty":
+    "このファイルから文字が読み取れませんでした。スキャン画像だけの可能性があります。",
+  "chat.attachmentUploadFailed": "ファイルを送れませんでした。もう一度お試しください。",
+  "chat.attachmentReading": "読み込み中",
+  "chat.attachmentTruncated": "長いファイルなので、先頭の約 25 万字だけを読みました",
+  "chat.attachmentTruncatedShort": "一部のみ",
   "chat.removeAttachment": "{name} を削除",
   "chat.pinned": "ピン留め",
   "chat.workTime": "作業 {time}",
