@@ -2231,3 +2231,70 @@ body {
 [data-scrolling] {
   scrollbar-color: color-mix(in srgb, var(--text-muted) 55%, transparent) transparent;
 }
+.attachment-chips,
+.message-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment-chips {
+  padding: 12px 12px 0;
+}
+.message-files {
+  justify-content: flex-end;
+}
+.thread-message-content + .message-files {
+  margin-top: 8px;
+}
+.attachment-chips li,
+.message-files li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-chips small,
+.message-files small {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.attachment-chips button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.attachment-chips button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.attachment-error {
+  margin: 0;
+  padding: 0 14px 4px;
+  color: var(--danger);
+  font-size: 12px;
+}

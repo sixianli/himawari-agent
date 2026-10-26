@@ -307,11 +307,17 @@ export const messages = {
   "chat.process": "思考とツールの記録",
   "chat.noProcess": "表示できる処理記録はありません",
   "chat.modelUnavailable": "モデル情報がありません",
-  "chat.attach": "テキストファイルを添付",
+  "chat.attach": "ファイルを追加",
   "chat.retryCleanup": "停止と終了処理の確認を再試行",
   "chat.stop": "停止",
   "chat.pendingModel": "次のメッセージに適用",
-  "chat.attachmentError": "UTF-8 テキストを選択してください。合計 64 KiB まで。",
+  "chat.attachHint":
+    "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。メモ、コード、CSV、JSON などのテキストファイル、合計 64 KB まで",
+  "chat.attachmentTooLarge":
+    "入りきりません。メッセージと添付は合計 64 KB、ファイルは 10 個までです。",
+  "chat.attachmentUnsupported":
+    "このファイルはまだ読めません。今はメモ、コード、CSV、JSON などのテキストファイルだけです。画像、PDF、Office ファイルは今後対応します。",
+  "chat.removeAttachment": "{name} を削除",
   "chat.pinned": "ピン留め",
   "chat.workTime": "作業 {time}",
   "chat.executionTime": "ツール実行 {time}",

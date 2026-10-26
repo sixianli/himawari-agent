@@ -282,11 +282,16 @@ export const messages = {
   "chat.process": "执行过程",
   "chat.noProcess": "没有可展示的过程记录",
   "chat.modelUnavailable": "模型信息未提供",
-  "chat.attach": "添加文本附件",
+  "chat.attach": "添加文件",
   "chat.retryCleanup": "再次停止并检查清理",
   "chat.stop": "停止",
   "chat.pendingModel": "用于下一次发送",
-  "chat.attachmentError": "请选择 UTF-8 文本文件，总大小不能超过 64 KiB。",
+  "chat.attachHint":
+    "点这里、Ctrl+V 粘贴或拖进来都行。目前能读文字、代码、CSV、JSON 这类文本文件，合计 64 KB 以内",
+  "chat.attachmentTooLarge": "放不下了：消息和附件合计不能超过 64 KB，最多 10 个文件。",
+  "chat.attachmentUnsupported":
+    "这个文件我还读不了。目前只支持文字、代码、CSV、JSON 这类文本文件；图片、PDF 和 Office 文件之后再加。",
+  "chat.removeAttachment": "移除 {name}",
   "chat.pinned": "置顶",
   "chat.workTime": "工作 {time}",
   "chat.executionTime": "工具执行 {time}",

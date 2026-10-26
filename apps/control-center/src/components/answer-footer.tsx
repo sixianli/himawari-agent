@@ -10,6 +10,7 @@ const icons = {
   more: "M6 12h.01M12 12h.01M18 12h.01",
   fork: "M6 3v12m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm12-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 0c0 6-12 3-12 9",
   chevron: "m9 6 6 6-6 6",
+  file: "M14 3H6.5v18h11V6.5L14 3Zm0 0v3.5h3.5",
 };
 
 export function LineIcon({ name }: { readonly name: keyof typeof icons }) {

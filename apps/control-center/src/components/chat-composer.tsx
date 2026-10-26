@@ -1,25 +1,20 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  ATTACHMENT_LIMIT_BYTES,
+  type DraftAttachment,
+  draftBytes,
+  formatBytes,
+  joinDraft,
+  readAttachment,
+  splitDraft,
+} from "../draft-attachments.js";
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
+import { LineIcon } from "./answer-footer.js";
 import { ModelPicker } from "./model-picker.js";
 import { ActionButton, Field } from "./primitives.js";
 
-export async function appendTextAttachment(draft: string, file: File): Promise<string> {
-  if (file.size > 64 * 1024) throw new Error("TEXT_ATTACHMENT_TOO_LARGE");
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
-  if (
-    [...text].some((character) => {
-      const code = character.charCodeAt(0);
-      return code < 9 || (code > 13 && code < 32);
-    })
-  )
-    throw new Error("TEXT_ATTACHMENT_INVALID");
-  const name = file.name.replace(/[\r\n]/g, " ");
-  const next = `${draft}${draft ? "\n\n" : ""}[${name}]\n${text}`;
-  if (new TextEncoder().encode(next).length > 64 * 1024)
-    throw new Error("TEXT_ATTACHMENT_TOO_LARGE");
-  return next;
-}
+const MAX_ATTACHMENTS = 10;
 
 export function ChatComposer({
   draft,
@@ -66,28 +61,96 @@ export function ChatComposer({
       mounted.current = false;
     };
   }, []);
-  const [attachmentError, setAttachmentError] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<"" | "tooLarge" | "unsupported">("");
   const [reading, setReading] = useState(false);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
+  const { text, files } = splitDraft(draft);
   const enabled =
     canSend && connected && !pending && !reading && (retryPending || Boolean(draft.trim()));
+  const addFiles = (picked: readonly File[]) => {
+    if (!picked.length) return;
+    setReading(true);
+    setAttachmentError("");
+    void Promise.all(picked.map(readAttachment))
+      .then((read: DraftAttachment[]) => {
+        if (!mounted.current) return;
+        const current = splitDraft(latestDraft.current);
+        const next = joinDraft(current.text, [...current.files, ...read]);
+        if (
+          current.files.length + read.length > MAX_ATTACHMENTS ||
+          draftBytes(next) > ATTACHMENT_LIMIT_BYTES
+        )
+          throw new Error("ATTACHMENT_TOO_LARGE");
+        onDraft(next);
+      })
+      .catch((caught: unknown) => {
+        if (!mounted.current) return;
+        setAttachmentError(
+          caught instanceof Error && caught.message === "ATTACHMENT_TOO_LARGE"
+            ? "tooLarge"
+            : "unsupported",
+        );
+      })
+      .finally(() => {
+        if (mounted.current) setReading(false);
+      });
+  };
   return (
     <>
       {environment}
       <form
         className="composer"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return;
+          event.preventDefault();
+          addFiles([...event.dataTransfer.files]);
+        }}
         onSubmit={(event) => {
           event.preventDefault();
           if (enabled) onSubmit();
         }}
       >
+        {files.length ? (
+          <ul className="attachment-chips">
+            {files.map((file, index) => (
+              <li key={`${index}:${file.name}`}>
+                <LineIcon name="file" />
+                <span className="attachment-name">{file.name}</span>
+                <small>{formatBytes(draftBytes(file.text))}</small>
+                <button
+                  type="button"
+                  aria-label={message("chat.removeAttachment", { name: file.name })}
+                  title={message("chat.removeAttachment", { name: file.name })}
+                  onClick={() =>
+                    onDraft(
+                      joinDraft(
+                        text,
+                        files.filter((_, item) => item !== index),
+                      ),
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <Field label={message("threads.draft")}>
           <textarea
             rows={2}
-            value={draft}
+            value={text}
             placeholder={message(fresh ? "chat.placeholderNew" : "chat.placeholder")}
-            onChange={(event) => onDraft(event.target.value)}
+            onChange={(event) => onDraft(joinDraft(event.target.value, files))}
+            onPaste={(event) => {
+              if (!event.clipboardData.files.length) return;
+              event.preventDefault();
+              addFiles([...event.clipboardData.files]);
+            }}
             onKeyDown={(event) => {
               if (
                 event.key === "Enter" &&
@@ -104,41 +167,30 @@ export function ChatComposer({
           />
         </Field>
         {attachmentError ? (
-          <p role="alert" className="attachment-list">
-            {message("chat.attachmentError")}
+          <p role="alert" className="attachment-error">
+            {message(
+              attachmentError === "tooLarge"
+                ? "chat.attachmentTooLarge"
+                : "chat.attachmentUnsupported",
+            )}
           </p>
         ) : null}
         <div className="composer-tools">
           <input
             ref={fileRef}
             type="file"
-            accept="text/*,.md,.csv,.json,.yaml,.yml,.ts,.tsx,.js,.py,.log"
+            accept="text/*,.txt,.md,.csv,.tsv,.json,.yaml,.yml,.toml,.ini,.xml,.html,.css,.ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.sh,.sql,.log"
+            multiple
             hidden
             onChange={(event) => {
-              const file = event.target.files?.[0];
+              const picked = [...(event.target.files ?? [])];
               event.target.value = "";
-              if (!file) return;
-              setReading(true);
-              setAttachmentError(false);
-              void appendTextAttachment("", file)
-                .then((attachment) => {
-                  if (!mounted.current) return;
-                  const next = `${latestDraft.current}${latestDraft.current ? "\n\n" : ""}${attachment}`;
-                  if (new TextEncoder().encode(next).length > 64 * 1024)
-                    throw new Error("TEXT_ATTACHMENT_TOO_LARGE");
-                  onDraft(next);
-                })
-                .catch(() => {
-                  if (mounted.current) setAttachmentError(true);
-                })
-                .finally(() => {
-                  if (mounted.current) setReading(false);
-                });
+              addFiles(picked);
             }}
           />
           <ActionButton
             aria-label={message("chat.attach")}
-            title={message("chat.attach")}
+            title={message("chat.attachHint")}
             disabled={reading}
             onClick={() => fileRef.current?.click()}
             variant="quiet"

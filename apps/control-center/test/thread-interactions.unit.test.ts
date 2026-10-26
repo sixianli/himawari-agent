@@ -298,6 +298,7 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
   Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  Reflect.deleteProperty(File.prototype, "arrayBuffer");
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -1758,6 +1759,55 @@ describe("thread control center interactions", () => {
       expect(container.querySelector("textarea")?.value).toBe("");
     },
   );
+  it("[UI-14] sends pasted and dropped text files with the message and drops a removed one", async () => {
+    await render();
+    await refresh();
+    const textarea = container.querySelector("textarea");
+    const form = container.querySelector("form.composer");
+    if (!textarea || !form) throw new Error("Missing composer");
+    await input(textarea, "帮我看看");
+    Object.defineProperty(File.prototype, "arrayBuffer", {
+      configurable: true,
+      value(this: File) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsArrayBuffer(this);
+        });
+      },
+    });
+    const transfer = (name: string, files: File[]) => {
+      const event = new Event(name, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, name === "paste" ? "clipboardData" : "dataTransfer", {
+        value: { files, types: ["Files"] },
+      });
+      return event;
+    };
+    await act(async () => {
+      textarea.dispatchEvent(transfer("paste", [new File(["a,b\n1,2"], "data.csv")]));
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    await act(async () => {
+      form.dispatchEvent(
+        transfer("drop", [new File(["笔记"], "notes.md"), new File(["x"], "extra.txt")]),
+      );
+      await vi.advanceTimersByTimeAsync(20);
+    });
+    expect(container.querySelector(".attachment-error")).toBeNull();
+    expect(
+      [...container.querySelectorAll(".attachment-name")].map((item) => item.textContent),
+    ).toEqual(["data.csv", "notes.md", "extra.txt"]);
+    expect(textarea.value).toBe("帮我看看");
+    await act(async () => {
+      container.querySelectorAll<HTMLButtonElement>(".attachment-chips button")[2]?.click();
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(protect.mock.calls.map(([text]) => text)).toContain(
+      '帮我看看\n\n<file name="data.csv">\na,b\n1,2\n</file>\n\n<file name="notes.md">\n笔记\n</file>',
+    );
+  });
   it("retries an uncertain send with its original identity and preserves a newer draft after revision changes", async () => {
     await render();
     await refresh();

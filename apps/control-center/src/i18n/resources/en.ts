@@ -305,11 +305,17 @@ export const messages = {
   "chat.process": "Thinking and tools",
   "chat.noProcess": "No displayable process records",
   "chat.modelUnavailable": "Model information unavailable",
-  "chat.attach": "Attach text file",
+  "chat.attach": "Add files",
   "chat.retryCleanup": "Retry stop and cleanup check",
   "chat.stop": "Stop",
   "chat.pendingModel": "For the next message",
-  "chat.attachmentError": "Choose UTF-8 text files, up to 64 KiB total.",
+  "chat.attachHint":
+    "Click, paste with Ctrl+V or drag files here. Text files such as notes, code, CSV and JSON, up to 64 KB in total",
+  "chat.attachmentTooLarge":
+    "That does not fit: the message and its files can total 64 KB, with at most 10 files.",
+  "chat.attachmentUnsupported":
+    "I cannot read this file yet. Only text files such as notes, code, CSV and JSON work for now; images, PDF and Office files come later.",
+  "chat.removeAttachment": "Remove {name}",
   "chat.pinned": "Pinned",
   "chat.workTime": "Working {time}",
   "chat.executionTime": "Tool execution {time}",

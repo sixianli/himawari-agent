@@ -732,14 +732,6 @@
   padding: 24px;
   color: var(--text-muted);
 }
-.attachment-list {
-  padding: 0 14px;
-  font-size: 12px;
-}
-.attachment-list .action-button {
-  min-height: 32px;
-  padding: 2px 6px;
-}
 @media (max-width: 900px) {
   .sidebar {
     width: 240px;

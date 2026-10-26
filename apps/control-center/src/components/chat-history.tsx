@@ -3,17 +3,18 @@ import type {
   ThreadExecutionState,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
-import type { RunSummary } from "../execution-view.js";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { draftBytes, formatBytes, splitDraft } from "../draft-attachments.js";
 import { executionTimeline, timelineDuration } from "../execution-timeline.js";
+import type { RunSummary } from "../execution-view.js";
+import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
+import type { MessageId } from "../i18n/message-ids.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
 import { AnswerActions, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
-import type { ContentPreviewValue } from "./content-preview.js";
-import { ExecutionProcess } from "./execution-process.js";
-import type { MessageId } from "../i18n/message-ids.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { HimawariBrand } from "./brand.js";
+import type { ContentPreviewValue } from "./content-preview.js";
+import { ExecutionProcess } from "./execution-process.js";
 import { ActionButton } from "./primitives.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
@@ -104,13 +105,9 @@ export function ChatHistory({
                 .map((item) =>
                   item.role === "owner" ? (
                     <div className="owner-turn" key={item.messageId}>
-                      <article className="thread-message thread-message-owner">
-                        <pre className="thread-message-content">
-                          {contentByRef[item.contentRef] ?? "…"}
-                        </pre>
-                      </article>
+                      <OwnerMessage content={contentByRef[item.contentRef]} />
                       <OwnerMessageMeta
-                        text={contentByRef[item.contentRef] ?? ""}
+                        text={ownerCopyText(contentByRef[item.contentRef])}
                         committedAt={item.committedAt}
                         received={records.some(
                           (record) => record.kind === "status" && record.phase === "started",
@@ -245,6 +242,29 @@ export function ChatHistory({
         </ActionButton>
       ) : null}
     </>
+  );
+}
+
+const ownerCopyText = (content: string | undefined) =>
+  content === undefined ? "" : splitDraft(content).text || content;
+
+function OwnerMessage({ content }: { readonly content: string | undefined }) {
+  const { text, files } = content === undefined ? { text: "…", files: [] } : splitDraft(content);
+  return (
+    <article className="thread-message thread-message-owner">
+      {text ? <pre className="thread-message-content">{text}</pre> : null}
+      {files.length ? (
+        <ul className="message-files">
+          {files.map((file, index) => (
+            <li key={`${index}:${file.name}`}>
+              <LineIcon name="file" />
+              <span className="attachment-name">{file.name}</span>
+              <small>{formatBytes(draftBytes(file.text))}</small>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
   );
 }
 

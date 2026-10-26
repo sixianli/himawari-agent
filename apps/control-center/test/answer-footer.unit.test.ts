@@ -7,8 +7,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createIntl, createIntlCache } from "react-intl";
 import { expect, it } from "vitest";
 import { ChatHistory } from "../src/components/chat-history.js";
-import { loadMessageCatalog } from "../src/i18n/runtime.js";
 import type { MessageId } from "../src/i18n/message-ids.js";
+import { loadMessageCatalog } from "../src/i18n/runtime.js";
 import { at, completedRun, newsRun } from "./news-run-fixture.js";
 
 type Detail = Extract<ThreadGatewaySnapshot, { type: "thread.detail_snapshot" }>;
@@ -181,6 +181,28 @@ it("[UI-11] marks your message as received once the model started, with a copy b
     waiting.indexOf("thread-message-agent"),
   );
   expect(waitingOwner).toContain('aria-label="message.status.sent"');
+});
+
+it("[UI-14] shows the files sent with your message as cards, not their text", () => {
+  const html = renderToStaticMarkup(
+    createElement(ChatHistory, {
+      detail: detail(),
+      contentByRef: {
+        "content:owner": '总结一下\n\n<file name="report.csv">\na,b\n1,2\n</file>',
+        "content:agent": "好的",
+      },
+      execution: { [completedRun.runId]: turnRecords() },
+      connection: "connected",
+      message: ids,
+      onFork: () => {},
+      renderApproval: () => null,
+    }),
+  );
+  expect(html).toContain(
+    '<pre class="thread-message-content">总结一下</pre><ul class="message-files">',
+  );
+  expect(html).toContain('class="attachment-name">report.csv</span>');
+  expect(html).not.toContain("a,b");
 });
 
 it.each([
