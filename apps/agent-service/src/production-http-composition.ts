@@ -106,6 +106,8 @@ export class ProductionHttpCompositionError extends Error {
   }
 }
 
+const GATEWAY_COMMAND_PATH = /^\/api\/gateway\/(?:v1|v2|thread\/v3)\/commands$/u;
+
 export interface ProductionHttpCompositionSecretSources {
   readonly provider: HostProviderSecretSource;
   readonly keys: HostSecretMaterialSource;
@@ -122,6 +124,7 @@ export interface ProductionHttpCompositionOptions {
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
   ) => Promise<void>;
+  readonly onCommandAccepted?: (path: string) => void;
   readonly health?: RuntimeHealthModel;
   readonly executionEnvironment?: {
     readonly mode: ThreadExecutionEnvironment["mode"];
@@ -740,6 +743,7 @@ export async function createProductionHttpComposition(
     execution: new ThreadExecutionProjection({
       threads,
       checkpoints: repository.runCheckpointStore(ownerId, agentId, authority),
+      memories: repository.productMemoryState(),
       trace: repository.traceStore(),
       payloads: () => repository.payloadStore(ownerId, agentId),
       protector: payloadProtector,
@@ -922,6 +926,13 @@ export async function createProductionHttpComposition(
     }),
   );
   registerAuthentication(app, csrf, recentAuthentication);
+  const onCommandAccepted = options.onCommandAccepted;
+  if (onCommandAccepted)
+    app.addHook("onResponse", async (request, reply) => {
+      const path = request.url.split("?", 1)[0] ?? "";
+      if (request.method === "POST" && reply.statusCode < 300 && GATEWAY_COMMAND_PATH.test(path))
+        onCommandAccepted(path);
+    });
   return Object.freeze({
     app,
     authentication,

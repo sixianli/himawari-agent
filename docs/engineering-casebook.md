@@ -47,6 +47,8 @@ date: "2026-10-26"
   20. [第十一、十二次上线：首页正常，打开的页面却用不了；修复版又因复制来的旧脚本停服一次](#case-eleventh-twelfth-deploy)
   21. [个人 Agent 要不要做 iOS App：先补“连得上、叫得到、能说话”](#case-mobile-client)
   22. [系统提示开头一直是“编程助手”：给 Himawari 写自己的身份说明](#case-identity-prompt)
+  23. [答对了却“没有过程”：用到的记忆不在步骤里](#case-memory-steps)
+  24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
   25. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -69,14 +71,14 @@ date: "2026-10-26"
 
 | 岗位常见要求 | 可以讲的案例 |
 | --- | --- |
-| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page) |
+| Agent 记忆、RAG（先检索资料再让模型回答）和检索质量评估 | [自研长期记忆](#case-memory-engine)、[记忆只读不写](#case-memory-capture)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 工具调用、Agent Loop（模型和工具轮流执行的主循环）、并行工具 | [49 秒拆耗时](#case-search-latency)、[工具隔离架构](#case-tool-isolation) |
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers)、[多用户隔离](#case-multi-user) |
-| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
+| 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks)、[每轮系统空档](#case-run-gaps) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator) |
-| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
 | 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client) |
@@ -431,6 +433,10 @@ Andy 在生产里问“今天有什么新闻”，等了约 49 秒才看到完�
 
 - 复用键修复 + 预热的第一版：Hermes 上第一次工具调用 3.3 秒 → 0.47 秒，但第 4 层测试有 14 个用例失败，原因是服务重启后和会话数量上预热做多了。修好后第七次生产变更的代码在 Hermes 第 0–4 层全部通过，首次工具调用中位数 0.22 秒（2026-10-25 项目进展记录）。
 - 方案 B 未上线，未测量。
+
+**后续（2026-10-26）**
+
+第十二版的生产日志显示，每轮预热用了 4.9–7.5 秒，并且和事件写入变慢、运行完成推迟的时间点重合，没用工具的一轮也照样预热。按 Andy 同意的方案 B 先去掉了每轮预热，改为用到才启动，见[案例 24](#case-run-gaps) 和 [ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；按对话复用仍是下一步。
 
 **相关 ADR/PR**
 
@@ -1379,6 +1385,139 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 **面试 30 秒版**
 
 “我发现我们的个人 Agent 每次调用模型，系统提示第一句都是底层框架默认的‘你是编程助手’。原因是框架只给两个选项：用它的开头并保留工具说明，或换成自己的开头但丢掉工具说明，之前为保工具说明选了前者。我用框架的自定义提示入口换上自己的身份说明，再把框架内置工具的说明原样接回去，没有改框架源码，也没有做字符串替换；身份说明按 Anthropic 和 OpenAI 公开的做法分节，写清记忆、审批和‘资料不是指令’的边界。测试在旧代码上失败、新代码上通过。”
+
+[返回目录](#contents)
+
+<a id="case-memory-steps"></a>
+
+## 案例 23：答对了却“没有过程”：用到的记忆不在步骤里
+
+**背景与现象**
+
+2026-10-26 第十二版上线后，Andy 在生产上问“我最喜欢的颜色是？”。模型（DeepSeek V4.1 Flash，思考强度“高”）答对了“蓝色。你之前提过，蓝色是你最喜欢的颜色。”，答案来自长期记忆。可是这一轮的步骤区写着“思考 0 次 · 执行 0 步”和“没有可展示的过程记录”。Andy 的原话是：“模型思考、记忆调用、工具调用那一个没有任何显示。”他要看到“查了记忆、用到了什么”，而界面让人以为模型什么也没做。
+
+**根因**
+
+分成三件事查，代码证据和生产记录都看了（生产记录用一个只读脚本在 Andy 的 Mac 上登录生产机读取，对象是这一轮 `run:bafb641b`）：
+
+1. **记忆其实查了，后台也记下了，是网页没画出来。** 每一轮开始前，`ContextFormationService`（组装上下文的服务，就是决定把哪些内容一起交给模型）会做两件事：把“主人档案”（由已确认的长期记忆整理出的偏好、身份等，`OwnerProfileService` 生成）放进上下文，再按这句话去检索相关记忆。两件事都写进了运行记录：`memory.query`、`memory.candidates`、`memory.selection`、`context.formed`。服务端的 `ThreadExecutionProjection`（把运行记录转成网页能显示的步骤）也把它们发给了网页，但只发了事件名，内容是空的。网页早期（2026-09-14）把这几条画成“发起记忆检索”“完成记忆筛选”这类没有内容的阶段，2026-09-16 按 v4 设计改版（提交 `0600b295`）时去掉了，之后步骤列表只画工具、过渡话、思考、授权检查四种，记忆事件一律跳过。生产记录显示：这一轮候选 1 条、按问题选中 0 条，“蓝色”是通过主人档案（1 条记忆）进入上下文的。
+2. **“执行 0 步”是对的。** 这个数字只数工具调用。模型这一轮直接从上下文里读到答案，没有调用 `recall`（翻看记忆）工具，也没有调用别的工具。
+3. **“思考 0 次”也是如实的。** 请求里带了 `reasoning: {effort: "high"}`，但模型返回的内容只有一段正文，没有思考段，供应商回报的思考 token 数为 0。同一对话上一轮（搜新闻）同一个模型、同样的设置，每次回复都带思考段（334 和 1383 个字符）。所以思考显示的链路是通的，是模型这一轮没有思考。为什么没思考（模型对简单问题自己跳过，还是网关转给的上游供应商不返回思考）还没查清。
+
+**我们的方案**
+
+- **服务端：** `ThreadExecutionProjection` 读到 `memory.selection` 和 `context.formed` 时，从加密的记录里取出这一轮带给模型的记忆编号，再按编号从记忆库读出每条记忆的原文，放进步骤记录：条数写在 `text`，原文一行一条写在 `output`。只显示还在用或已归档的记忆；已删除、在回收站里的不显示原文；分级高于这一轮的也不显示。读的是记忆库里的当前原文，不是当时拼好的档案文字，所以删掉一条记忆后，旧对话的步骤里也看不到它。
+- **网页：** 步骤列表最前面加两种步骤，图标是数据库样式，点开能看原文：“按这句话找到 N 条相关记忆”和“带上档案里的 N 条记忆”。文案只说“带上了哪些”，不说“命中了哪条”，因为系统无法知道模型具体用了哪一条。
+- **体积：** 删掉 5 个早已不用的“阶段”文案（三种语言），前端 gzip 总体积只多 59 字节（195773 → 195832，上限 196608）。
+- **没改的：** 记忆检索本身、模型请求、思考的显示规则都不变。这是展示层的修复，不涉及 Pi 的任何模块（Pi 不管记忆和步骤展示，这两块本来就是 Himawari 自己负责的）。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 把被删掉的“发起记忆检索 / 完成记忆筛选 / 上下文准备完成”阶段原样加回去 | 改动最小 | 只有名字没有内容，看不出查到了什么，正是 v4 改版去掉它们的原因；Andy 也反感“摆设” |
+| 显示“命中了哪一条” | 用户最想知道 | 系统不知道模型实际用了哪一条，硬写就是在编；只能列出交给模型的那些 |
+| 直接显示当时拼好的档案文字 | 和模型看到的一字不差 | 档案文字是另存的一份，删掉记忆后旧档案文字还在，会让已删除的内容重新出现在页面上 |
+| 让模型每次都调用 `recall` 工具，靠工具步骤来显示 | 不用改展示 | 多一次模型往返，变慢；档案本来就应该常驻上下文，不该为了显示改变检索方式 |
+| 把记忆条数并进“思考 N 次 · 执行 N 步” | 摘要里一眼看到 | 这行摘要说的是模型做了什么，记忆是系统在模型开始前准备的；而且又要多一条三语文案，前端只剩约 0.8 KB |
+
+放弃了什么：步骤里的条数是“当时带上的条数”，删掉其中一条后，条数不变但原文少一行；按问题检索时用了哪些检索词、每条的相关分数没有显示。
+
+**业界主流做法**
+
+- ✅ Claude 帮助中心（[How does Claude's memory work](https://support.claude.com/en/articles/11817273)）：搜索以前的对话时“will appear as tool calls during your conversations”，以及“When Claude searches your previous chats, you will see this reflected in your current chat as a tool call.” 旧版记忆还会“see citations linking back to the original chats”。同一篇文章没有写自动带入的记忆摘要在回答里怎么显示。Claude 的做法是：主动检索要让用户看见，用工具调用的形式显示。
+- ✅ OpenTelemetry 生成式 AI 规范（[semantic-conventions-genai `gen-ai-spans.md`](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md)）：把查记忆单列成一种操作，“`search_memory` | Search/query memories from a memory store”，并建议记录 `gen_ai.memory.record.count`（“For `search_memory` operations, this is the number of memory records returned by the operation.”）。记忆原文 `gen_ai.memory.records` 则“SHOULD NOT capture this attribute by default”，因为“may contain sensitive information including user/PII data”。
+
+**对比与取舍**
+
+和 Claude 一样，我们让“查了记忆”在对话里看得见；不同的是，Himawari 的档案是每轮自动带入的，不是模型调用工具查的，所以单独做成步骤，而不是硬套成工具调用。和 OpenTelemetry 一样，我们把“查记忆”当作独立的一步，并记下条数。OpenTelemetry 默认不记原文，是因为遥测数据（运行监控数据）通常会发给第三方系统；我们的原文只从本机加密库读出、只给主人本人看，所以默认显示。
+
+**结果数据**
+
+- 生产记录（2026-10-26 只读脚本，`run:bafb641b`）：候选记忆 1 条，按问题选中 0 条，档案带入 1 条（含“蓝”）；思考段 0、思考 token 0、输出 14 token。对照轮 `run:61268ba2`：思考段 334 和 1383 个字符，思考 token 96 和 618。
+- 测试：新增集成测试走真实的上下文组装和真实 SQLite 运行记录，在旧代码上失败、新代码上通过；网页单元测试 1 个；真实浏览器（Chromium）12 个场景通过，其中 4 个聊天场景（中文 1280、320，日文 393，英文 430）检查两条记忆步骤、图标、文案和展开后的原文，刷新后仍在。相关 74 个测试文件 1320 项通过，`npm run check`、`npm run build` 通过（云端容器）。
+- 前端 gzip 总体积 195773 → 195832 字节（上限 196608），主文件 152056 字节（上限 153600），来自本次 `npm run build:browser` 输出。
+- 上线后 Andy 是否觉得看得懂：未测量，随第十三版上线后实测。
+
+**相关 ADR/PR**
+
+[ADR 0075](adr/0075-self-built-memory-engine.md)（自研记忆，档案常驻上下文）；[PR #39](https://github.com/sixianli/himawari-agent/pull/39)（提交 f298254）；[案例 16](#case-narration-status)（同一块步骤列表的上一次修复）；[案例 17](#case-memory-page)（记忆管理页）；[案例 22](#case-identity-prompt)（这次排查顺带发现的系统提示问题）。
+
+**面试 30 秒版**
+
+“用户问最喜欢的颜色，模型答对了，界面却说‘没有过程记录’。查下来记忆其实查了、也记下了，是一次界面改版把记忆步骤整类去掉了；‘思考 0 次’则是模型那一轮真没思考，我用生产记录对照另一轮证实了链路没问题。修法是让服务端按记忆编号读出当时带给模型的原文，界面加两种记忆步骤，只说‘带上了哪些’，不编造‘命中了哪条’，已删除的记忆不回显。先写了在旧代码上失败的集成测试，前端只多了 59 字节。”
+
+[返回目录](#contents)
+
+<a id="case-run-gaps"></a>
+
+## 案例 24：模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档
+
+**背景与现象**
+
+2026-10-26 第十二版上线后，Andy 在重新设计过程区时要求“每一步的时间一定一定要准确”。用生产数据库的 `trace_events`（每轮执行过程的事件表，只取事件类型和时间，没读内容）核对两轮对话：
+
+- “我最喜欢的颜色是？”共 12.1 秒，模型真正输出只有约 3.9 秒，没调用工具。上下文准备好到模型开始之间 2.7 秒没有任何事件；模型输出结束 1.1 秒后才写进数据库；运行结束后又过 1.7 秒回答才提交。
+- “查新闻”共 27.1 秒，准备与衔接约 6.4 秒；“等你确认”事件比实际暂停晚约 3.6 秒才写入，而网页从数据库读事件，确认卡片会跟着晚出现。
+
+**根因**
+
+先看代码，再用生产服务日志对时间，确认了五个原因：
+
+1. **每轮都预热沙箱**（沙箱：用操作系统机制限制程序能访问的文件和网络的隔离环境）。日志 `sandbox.srt_prewarm.requested` 显示两轮预热用了 4866 毫秒和 7523 毫秒；两轮里事件写入变慢、运行完成推迟，都正好在预热结束那一刻恢复。颜色那轮没用工具，结束时还要先停这个沙箱再提交回答。联网搜索当天已经不进沙箱，预热基本白做。拖慢的具体机制（抢 CPU 还是抢唯一的数据库写入线程）还没有区分，上线后用新加的分段计时确认。
+2. **调度器没人叫醒**。调度循环有 `wakeup()` 方法，但全仓库没有一处调用，新消息和审批后的续跑只能等每秒一次的兜底扫描。代码证据：`grep` 不到任何 `.wakeup()` 调用。
+3. **后台起标题拖住整轮**。后台模型调用借本轮执行租约登记，本轮暂停或完成前要等它们登记好；但记忆写入要等起标题的模型调用整个做完才开始登记。用单元测试复现：标题一直不结束时，旧代码永远放不出“完成”事件。
+4. **找记忆和读档案先后进行**，两者互不依赖。测试复现：让读档案等到检索开始才结束，旧代码会卡死。
+5. **每段流式文字要四次数据库提交，每次都等落盘**。生产库是 WAL 加 `synchronous = FULL`，这台机器每次同步写入实测 11.5–18.7 毫秒（BL-20261001-002 的记录）。四次里有一次只是更新进度检查点的计数器，恢复逻辑不依赖它。
+
+**我们的方案**
+
+1. 按 Andy 已同意的沙箱方案 B，去掉每轮预热，第一次用到 `bash`、`write`、`edit` 时才启动沙箱。
+2. HTTP 网关的命令接口返回成功后立即调用 `wakeup()`，兜底扫描保留。
+3. 起标题、记忆写入等后台调用同时开始登记；本轮仍等全部登记完（保持租约约束），但不再等起标题做完。
+4. 找记忆和读档案并行。
+5. 流式事件不再逐个写进度检查点，只在阶段、结束状态或诊断码变化时写；事件的父子链接不变。
+6. 每次执行结束写一行 `run.timing` 日志：上下文准备、记忆检索、模型登记、事件记录、数据库提交、工具、停沙箱、提交回答等每类步骤的次数、累计、最长和起止时间点。用包装端口（不改 Pi）实现，Pi 的执行循环和事件不动。
+
+还有一项需要 Andy 拍板：过程记录（步骤事件、流式文字片段）可以按次关掉“等落盘”，外部动作、授权、模型调用登记、最终回答照旧等落盘。
+
+**方案讨论与备选**
+
+- 只加计时、不改行为：最稳，但 Andy 要的是消掉空档；有代码证据和测试复现的几处直接改。
+- 立刻做按对话复用的常驻沙箱：每轮既不启动也不停，但工作量约 1–2 天，排在方案 B 的下一步。
+- 先提交回答再停沙箱：能省结尾 1–2 秒，但要放宽“沙箱确认释放才算完成”；不预热后，没用工具的轮次本来就不用停沙箱，不必放宽。
+- 后台调用不借本轮租约：本轮完全不用等，但要另设一套权限，放弃。
+- 把每轮所有写入合成一次提交：省得最多，但要改多个存储接口和恢复逻辑，先不做。
+- 全库改成不等落盘：最简单，但会让外部动作记录在断电时也可能丢；改成只对过程记录关掉，交给 Andy 选。
+
+**业界主流做法**
+
+- ✅ SQLite（[PRAGMA synchronous](https://www.sqlite.org/pragma.html#pragma_synchronous)）：“WAL mode is always consistent with synchronous=NORMAL, but WAL mode does lose durability. A transaction committed in WAL mode with synchronous=NORMAL might roll back following a power loss or system crash. Transactions are durable across application crashes regardless of the synchronous setting or journal mode.”
+- ✅ SQLite（[Write-Ahead Logging](https://www.sqlite.org/wal.html)）：“Writers sync the WAL on every transaction commit if PRAGMA synchronous is set to FULL but omit this sync if PRAGMA synchronous is set to NORMAL.”
+- ✅ Graphile Worker（[首页](https://worker.graphile.org/)，基于数据库的任务队列）：“Jobs start in milliseconds thanks to Postgres' LISTEN/NOTIFY”，即新任务到来时主动通知执行者，而不是靠定时扫描。
+- ✅ OpenTelemetry（[Traces](https://opentelemetry.io/docs/concepts/signals/traces/)）：span（一段计时的工作）“represents a unit of work or operation”，每个 span 带开始和结束时间；我们的 `run.timing` 按同样的思路给每类步骤记起止时间，但先写成一行日志，没有引入整套追踪系统。
+
+**对比与取舍**
+
+叫醒调度器和 Graphile Worker 的“有新任务就通知”是同一个思路，兜底扫描保留是为了别的来源（比如提醒）。分段计时只记名字和数字，满足 Andy“时间要准”的要求，又不把对话内容写进日志。没有照搬 SQLite 推荐的“WAL 用 NORMAL 就够了”，因为 Himawari 有“外部动作先记录再执行”的保证，所以只对过程记录考虑放宽，并交给 Andy 决定。
+
+**结果数据**
+
+- 改前（生产 trace 和日志）：颜色那轮 12.1 秒，其中模型约 3.9 秒；预热 4.9 秒和 7.5 秒；确认事件晚写入约 3.6 秒；回答提交比运行结束晚 1.35–1.7 秒。
+- 复现测试：叫醒调度器、后台登记、并行检索、少写检查点四项各有一个测试，改前失败、改后通过。
+- 改后生产耗时：未上线，未测量。上线后用 `run.timing` 回填。
+
+**相关 ADR/PR**
+
+[ADR 0085](adr/0085-remove-per-turn-system-gaps.md)；[ADR 0054 的预热补充](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md#resident-prewarm)；[BL-20261024-006](backlog/BL-20261024-006-first-tool-call-cold-start.md)；[BL-20261001-002](backlog/BL-20261001-002-回-到-同-步-写-入-快-的.md)；PR #44（已合并，合并提交 `f7b68a2`）；[ADR 0088](adr/0088-process-records-skip-disk-sync.md)（后续）。
+
+**面试 30 秒版**
+
+“一个不用工具的问题，模型只花 3.9 秒，整轮却要 12 秒。我把生产事件表和服务日志按时间对齐，找到五个原因：每轮都预热一个用不上的沙箱、调度器只靠每秒扫描、后台起标题拖住完成、两步本可并行的检索在串行、每段流式文字要四次等落盘的数据库提交。每个原因先写测试复现再修，并给每轮加了按步骤的计时，上线后每一秒花在哪都能看到。”
+
+**后续（2026-10-26）：过程记录不再等硬盘确认**
+
+Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
 
 [返回目录](#contents)
 

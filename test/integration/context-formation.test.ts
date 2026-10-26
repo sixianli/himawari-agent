@@ -113,6 +113,50 @@ function request(sourceType: "user_message" | "schedule" | "external_event") {
 }
 
 describe("Task 9 Memory and context formation", () => {
+  it("searches memory while the owner profile is still being composed", async () => {
+    const adapters = createReferenceAdapterSet({ scope: { ownerId: OWNER_ID, agentId: AGENT_ID } });
+    const trace = new SessionTraceRecorder({
+      trace: adapters.trace,
+      artifacts: adapters.runPayloadArtifacts,
+      protector: adapters.payloadProtector,
+      audit: adapters.audit,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+    let releaseProfile = () => {};
+    const profileHeld = new Promise<void>((resolve) => {
+      releaseProfile = resolve;
+    });
+    const steps: string[] = [];
+    const service = new ContextFormationService({
+      memory: {
+        search: async (input) => {
+          steps.push("search.started");
+          releaseProfile();
+          return adapters.memory.search(input);
+        },
+      },
+      profile: {
+        compose: async () => {
+          steps.push("profile.started");
+          await profileHeld;
+          steps.push("profile.finished");
+          return { blocks: [], memoryIds: [] };
+        },
+      },
+      trace,
+      artifacts: adapters.runPayloadArtifacts,
+      payloads: adapters.payload,
+      protector: adapters.payloadProtector,
+      clock: adapters.clock,
+      ids: adapters.ids,
+    });
+
+    await service.form(request("user_message"));
+
+    expect(steps).toEqual(["profile.started", "search.started", "profile.finished"]);
+  });
+
   it("freezes historical cancellation with the selected message across replay", async () => {
     const { service } = createService();
     const input = request("user_message");

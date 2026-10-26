@@ -10,6 +10,7 @@ import {
   type ExecuteCoordinatedRunInput,
   type ModelInvocationAdmissionPort,
   PORT_ERROR_CODES,
+  type ProductMemoryRecord,
   ProductThreadGatewayAdapter,
   type RunCompletionInput,
   RunCoordinator,
@@ -36,6 +37,7 @@ import {
   createAuthorityLeaseId,
   createDeploymentId,
   createIdempotencyKey,
+  createMemoryId,
   createOwnerId,
   createRunExecutionLeaseId,
   createRunId,
@@ -3208,6 +3210,152 @@ describe.each(["worker", "direct"] as const)("thread-run-lifecycle through %s", 
       projection.readState({ ...query, ownerId: "other-owner", canCancelRun: true }),
     ).rejects.toThrow("THREAD_EXECUTION_NOT_FOUND");
     expect(await projection.read(query)).toEqual(page);
+  });
+
+  it("shows the owner which memories the context formation brought to the model", async () => {
+    const setup = await executionFixture();
+    const payloads = setup.repository.payloadStore(ownerId, agentId);
+    const storeText = async (
+      ref: string,
+      text: string,
+      dataClassification: "private" | "sensitive",
+    ) =>
+      payloads.put(
+        await setup.protector.protect({
+          ownerId,
+          agentId,
+          ref,
+          dataClassification,
+          contentType: "text/plain",
+          createdAt: clock.now(),
+          plaintext: new TextEncoder().encode(text),
+        }),
+      );
+    const memory = (
+      id: string,
+      status: ProductMemoryRecord["status"],
+      dataClassification: ProductMemoryRecord["dataClassification"] = "private",
+    ): ProductMemoryRecord => ({
+      id: createMemoryId(id),
+      ownerId,
+      agentId,
+      revision: 1,
+      status,
+      contentRef: `payload-${id}`,
+      dataClassification,
+      sourceThreadId: null,
+      sourceRefs: [],
+      inference: false,
+      confidencePermille: 900,
+      policyVersion: "memory-test",
+      providerRecordId: null,
+      lastUsedAt: null,
+      updatedAt: clock.now(),
+    });
+    const stored = new Map(
+      [
+        memory("memory-color", "active"),
+        memory("memory-city", "trashed"),
+        memory("memory-tea", "active"),
+        memory("memory-health", "active", "sensitive"),
+      ].map((record) => [record.id as string, record]),
+    );
+    await storeText("payload-memory-color", "主人最喜欢的颜色是\n蓝色", "private");
+    await storeText("payload-memory-city", "主人住在 PRIVATE_DELETED_CITY", "private");
+    await storeText("payload-memory-tea", "主人喜欢喝乌龙茶", "private");
+    await storeText("payload-memory-health", "PRIVATE_SENSITIVE_HEALTH", "sensitive");
+    await storeText(
+      "payload-owner-profile",
+      "主人档案（由已确认的长期记忆整理）：\n- 主人最喜欢的颜色是 蓝色",
+      "private",
+    );
+    let issued = 0;
+    const context = new ContextFormationService({
+      memory: {
+        search: async () => [
+          {
+            id: "memory-tea",
+            ownerId,
+            agentId,
+            contentRef: "payload-memory-tea",
+            sourceRef: "trace-tea",
+            searchTerms: ["tea"],
+            dataClassification: "private",
+            updatedAt: clock.now(),
+            score: 0.9,
+          },
+        ],
+      },
+      trace: setup.trace,
+      artifacts: setup.repository.runPayloadArtifactPort(ownerId, agentId, {
+        product: authority,
+        lease,
+      }),
+      payloads,
+      protector: setup.protector,
+      clock,
+      ids: {
+        next: (kind: string) => {
+          issued += 1;
+          return `memory-step-${kind}-${issued}`;
+        },
+      },
+      threads: setup.repository.threadRepository(),
+      profile: {
+        compose: async () => {
+          const memoryIds = ["memory-color", "memory-city", "memory-health"].map(createMemoryId);
+          return {
+            blocks: [
+              {
+                kind: "owner-profile" as const,
+                ref: `owner-profile:${agentId}`,
+                payloadRef: "payload-owner-profile",
+                dataClassification: "private" as const,
+                memoryIds,
+              },
+            ],
+            memoryIds,
+          };
+        },
+      },
+    });
+    await context.form({ ...setup.input.context, maxSelectedMemories: 2 });
+    const reads: string[][] = [];
+    const projection = new ThreadExecutionProjection({
+      threads: setup.repository.threadRepository(),
+      trace: setup.repository.traceStore(),
+      payloads: (owner, agent) =>
+        setup.repository.payloadStore(createOwnerId(owner), createAgentId(agent)),
+      protector: setup.protector,
+      memories: {
+        readMany: async (input) => {
+          reads.push([...input.memoryIds]);
+          return input.memoryIds.flatMap((id) => stored.get(id) ?? []);
+        },
+      },
+    });
+    const { records } = await projection.read({
+      ownerId,
+      agentId,
+      threadId: setup.admitted.thread.id,
+      runId: setup.runId,
+      afterSequence: 0,
+      limit: 100,
+    });
+    expect(records.find((record) => record.name === "memory.selection")).toMatchObject({
+      kind: "status",
+      phase: "completed",
+      text: "1",
+      output: "- 主人喜欢喝乌龙茶",
+    });
+    expect(records.find((record) => record.name === "context.formed")).toMatchObject({
+      kind: "status",
+      phase: "completed",
+      text: "3",
+      output: "- 主人最喜欢的颜色是 蓝色",
+    });
+    expect(reads).toEqual([["memory-tea"], ["memory-color", "memory-city", "memory-health"]]);
+    expect(JSON.stringify(records)).not.toContain("PRIVATE_");
   });
 
   it("projects encrypted execution history with owner isolation and no raw reasoning or credentials", async () => {

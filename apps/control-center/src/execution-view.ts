@@ -277,18 +277,15 @@ export function duration(milliseconds: number): string {
   const seconds = Math.round(Math.max(0, milliseconds) / 100) / 10;
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
 }
-export const executionStageLabels: Readonly<Record<string, MessageId>> = {
-  "memory.query": "chat.stage.memoryQuery",
-  "memory.candidates": "chat.stage.memoryCandidates",
-  "memory.selection": "chat.stage.memorySelection",
-  "context.formed": "chat.stage.context",
-  "runtime.turn_started": "chat.stage.model",
-  "runtime.suspended": "chat.phase.waiting",
+export const memoryStepLabels: Readonly<Record<string, MessageId>> = {
+  "memory.selection": "step.memoryFound",
+  "context.formed": "step.memoryProfile",
 };
-export function executionStages(records: readonly ThreadExecutionRecord[]) {
-  return [...new Map(records.map((record) => [record.id, record])).values()]
-    .filter((record) => record.kind === "status" && executionStageLabels[record.name])
-    .sort((a, b) => a.sequence - b.sequence);
+export function memorySteps(records: readonly ThreadExecutionRecord[]) {
+  return [...new Map(records.map((record) => [record.id, record])).values()].filter(
+    (record) =>
+      record.kind === "status" && record.phase === "completed" && memoryStepLabels[record.name],
+  );
 }
 export function recordedInterval(
   records: readonly ThreadExecutionRecord[],

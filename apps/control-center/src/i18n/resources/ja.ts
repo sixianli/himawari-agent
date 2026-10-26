@@ -121,6 +121,8 @@ export const messages = {
   "step.other": "ツール使用",
   "step.active": "{step}中",
   "step.thinking": "推論",
+  "step.memoryFound": "関連する記憶を {count} 件発見",
+  "step.memoryProfile": "プロフィールの記憶 {count} 件を参照",
   "step.thinkingFor": "{time} 推論",
   "chat.phase.expiredAwaitingApproval": "確認待ちのまま時間切れ、未実行",
   "chat.responseText": "テキスト応答",
@@ -135,11 +137,6 @@ export const messages = {
   "chat.resultUnavailable": "表示可能な結果がありません。ステップの状態を確認してください。",
   "chat.responseUnavailable":
     "この応答には表示可能なテキストがありません。実行状態を確認してください。",
-  "chat.stage.memoryQuery": "記憶の検索を要求",
-  "chat.stage.memoryCandidates": "記憶の候補を受信",
-  "chat.stage.memorySelection": "記憶の選択が完了",
-  "chat.stage.context": "コンテキストの準備完了",
-  "chat.stage.model": "モデルの応答を要求",
   "chat.model": "モデル（次のターン）",
   "chat.depth": "思考の深さ（次のターン）",
   "chat.search.disclosure":
