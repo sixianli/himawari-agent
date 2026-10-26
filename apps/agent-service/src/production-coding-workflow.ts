@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import {
+  ACTION_KIND_RISK_BASELINE,
+  computeActionRisk,
   type GovernedActionIntent,
   type GovernedCapabilityExecutionHandle,
   type HostDirectoryGrant,
@@ -246,7 +248,7 @@ export async function executeProductionCodingRequest(
         : write
           ? "CREATE_OR_UPDATE"
           : "READ";
-  const intent: GovernedActionIntent = {
+  const unrated: Omit<GovernedActionIntent, "finalRisk"> = {
     contractVersion: "authorization.v2",
     id: resourceRef,
     ownerId: ctx.ownerId,
@@ -300,13 +302,27 @@ export async function executeProductionCodingRequest(
     credentialOrAccessChange: false,
     modelClassification: {
       actionKind,
-      suggestedRisk: "HIGH",
+      suggestedRisk: ACTION_KIND_RISK_BASELINE[actionKind],
       reasonCode: "product_governed_coding",
     },
+    // The run's model already holds the owner's private context, so passing it workspace
+    // content is recorded without raising the risk; search providers sit outside that boundary.
     deterministicFacts: [
-      { code: "external_model_disclosure", minimumRisk: "HIGH", source: "product" },
+      { code: "external_model_disclosure", minimumRisk: "LOW", source: "product" },
+      ...(webTool(tool)
+        ? [
+            {
+              code: "external_provider_disclosure",
+              minimumRisk: "MEDIUM" as const,
+              source: "product" as const,
+            },
+          ]
+        : []),
     ],
-    finalRisk: "HIGH",
+  };
+  const intent: GovernedActionIntent = {
+    ...unrated,
+    finalRisk: computeActionRisk({ ...unrated, finalRisk: "LOW" }),
   };
   if (["write", "edit"].includes(tool)) {
     const previous = await ctx.fileConflict?.(call.toolCallId);

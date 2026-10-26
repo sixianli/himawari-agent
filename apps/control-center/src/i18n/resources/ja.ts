@@ -265,7 +265,8 @@ export const messages = {
   "chat.latest": "最新に戻る",
   "chat.placeholder": "会話を続けるか、Himawari にタスクを依頼…",
   "chat.keyboard": "Enter で送信 · Shift Enter で改行",
-  "chat.permission": "承認が必要な操作は先に確認します",
+  "chat.permission":
+    "ファイル削除、ネットワーク接続するコマンド、作業フォルダー外の操作は先に確認します",
   "chat.process": "思考とツールの記録",
   "chat.noProcess": "表示できる処理記録はありません",
   "chat.modelUnavailable": "モデル情報がありません",
