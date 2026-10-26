@@ -705,7 +705,7 @@ Pi 0.84.2 在 `AgentSession.prompt()` 前检查自身的凭据配置。产品适
 
 ### 已授权公开搜索与聊天执行反馈
 
-用户可在聊天输入区明确开启或撤销固定 Exa 的联网搜索披露授权。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费时重新检查设置 revision。2026-10-26 起搜索和读网页授权通过后在服务进程执行，不再经过 Sandbox 准入，出口只允许配置里供应商的固定主机和公网地址，见 [ADR 0077](adr/0077-parallel-read-only-tools-and-host-web-tools.md)。它不扩大文件、命令或任意网络权限，也不伪造人工点击。配置绑定变化使设置失效。
+用户可在聊天输入区明确开启或撤销固定 Exa 的联网搜索披露授权。设置属于服务端 Owner/Agent 状态，使用既有 Product State 的 Authority fence、revision CAS 和幂等 receipt，不属于浏览器外观偏好。每次符合配置、模型披露身份及固定出口的真实搜索，从该设置派生精确一次性 Grant，并记录 `policyAuthorization` 来源；SQLite 消费时重新检查设置 revision。2026-10-26 起搜索和读网页授权通过后在服务进程执行，不再经过 Sandbox 准入，出口只允许配置里供应商的固定主机和公网地址，见 [ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)。它不扩大文件、命令或任意网络权限，也不伪造人工点击。配置绑定变化使设置失效。
 
 Pi 的累计消息更新在 Runtime 适配器中复制快照，并只合并尚未交付的连续更新；生命周期和工具边界始终保留，持久化消费提供背压。浏览器从真实事件显示思考活动、当前工具与最后进度时间；未获披露许可的原始 reasoning 和 Provider 元数据不作为思考摘要展示。审批使用原批准合同在当前 Run 的聊天卡片操作，保留披露 hash、revision、近期认证和重试身份。受保护安装的首次完整校验使用独立线程逐字节扫描，避免大量异步小文件调度拖慢工具过程；未受保护的安装按 ADR 0069 信任安装结果，不读取、不计算摘要。
 

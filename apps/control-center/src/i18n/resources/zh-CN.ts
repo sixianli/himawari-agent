@@ -243,7 +243,7 @@ export const messages = {
   "chat.latest": "回到最新消息",
   "chat.placeholder": "有什么想交给 Himawari？",
   "chat.keyboard": "Enter 发送 · Shift Enter 换行",
-  "chat.permission": "需要你确认的操作，会在当前对话中询问",
+  "chat.permission": "删除文件、联网命令和工作目录外的操作，会先在对话中问你",
   "chat.process": "执行过程",
   "chat.noProcess": "没有可展示的过程记录",
   "chat.modelUnavailable": "模型信息未提供",

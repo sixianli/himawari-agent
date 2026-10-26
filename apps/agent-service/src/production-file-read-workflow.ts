@@ -293,9 +293,9 @@ export class ProductionFileReadWorkflow {
         reasonCode: "product_file_read",
       },
       deterministicFacts: disclose
-        ? [{ code: "external_model_disclosure", minimumRisk: "HIGH", source: "product" }]
+        ? [{ code: "external_model_disclosure", minimumRisk: "LOW", source: "product" }]
         : [],
-      finalRisk: disclose ? "HIGH" : "LOW",
+      finalRisk: "LOW",
     });
     const runPhase = async (
       phase:

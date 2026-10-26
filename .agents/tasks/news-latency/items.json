@@ -112,7 +112,7 @@
       "done_when": [
         {
           "type": "doc",
-          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "path": "docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md",
           "quotes": "G4"
         }
       ],
@@ -194,7 +194,7 @@
         },
         {
           "type": "doc",
-          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "path": "docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md",
           "quotes": "G9"
         }
       ],
@@ -243,7 +243,7 @@
         },
         {
           "type": "doc",
-          "path": "docs/adr/0077-parallel-read-only-tools-and-host-web-tools.md",
+          "path": "docs/adr/0079-parallel-read-only-tools-and-host-web-tools.md",
           "quotes": "G12"
         }
       ],

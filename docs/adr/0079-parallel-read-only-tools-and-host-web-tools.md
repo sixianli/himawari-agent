@@ -8,7 +8,7 @@ amends: "docs/adr/0031-isolated-tool-execution.md, docs/adr/0071-replaceable-web
 date: "2026-10-26"
 ---
 
-# ADR 0077：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行
+# ADR 0079：同一轮的只读工具并行执行，联网搜索和读网页在服务进程执行
 
 <a id="contents"></a>
 
