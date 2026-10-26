@@ -15,6 +15,7 @@ import {
   executionTime,
   executionToolPhase,
   executionWaitReason,
+  isNarration,
   isTerminalRun,
   type RunSummary,
   recordedInterval,
@@ -78,13 +79,35 @@ export function ExecutionProcess({
   const steps = [
     ...items
       .filter((item) => item.kind === "tool")
-      .map((item) => ({ sequence: item.firstSequence, item, stage: null, review: null })),
-    ...thinking.map((stage) => ({ sequence: stage.sequence, item: null, stage, review: null })),
+      .map((item) => ({
+        sequence: item.firstSequence,
+        item,
+        stage: null,
+        review: null,
+        note: null,
+      })),
+    ...items
+      .filter((item) => isNarration(item, items) && item.text.trim())
+      .map((note) => ({
+        sequence: note.firstSequence,
+        item: null,
+        stage: null,
+        review: null,
+        note,
+      })),
+    ...thinking.map((stage) => ({
+      sequence: stage.sequence,
+      item: null,
+      stage,
+      review: null,
+      note: null,
+    })),
     ...authorizationReviewSteps(records).map((review) => ({
       sequence: review.sequence,
       item: null,
       stage: null,
       review,
+      note: null,
     })),
   ].sort((a, b) => a.sequence - b.sequence);
   const time = executionTime(records, run, now);
@@ -172,7 +195,15 @@ export function ExecutionProcess({
           </span>
         </summary>
         <ol className="execution-chain" aria-label={message("chat.process")}>
-          {steps.map(({ item, stage, review }) => {
+          {steps.map(({ item, stage, review, note }) => {
+            if (note)
+              return (
+                <li className="execution-stage execution-note" key={note.itemId}>
+                  <span className="step-marker" aria-hidden="true" />
+                  <ToolIcon name="" note />
+                  <span>{note.text}</span>
+                </li>
+              );
             if (review)
               return (
                 <li className="execution-stage authorization-review" key={review.id}>
@@ -207,19 +238,24 @@ export function ExecutionProcess({
               ? "chat.phase.expiredAwaitingApproval"
               : run.status === "awaiting_approval" && incomplete
                 ? "runs.status.awaitingApproval"
-                : ((operation
-                    ? executionStateLabel(operation.displayPhase, operation.reasonCode)
-                    : stateAvailable
-                      ? "chat.recordUnavailable"
-                      : undefined) ??
-                  executionToolPhase(item, records, run) ??
-                  (isTerminalRun(run) && incomplete
-                    ? run.status === "cancelled" && item.kind === "message"
-                      ? "chat.phase.stopped"
-                      : "chat.recordUnavailable"
-                    : item.kind === "tool" && item.phase === "updated"
-                      ? "chat.callRequested"
-                      : (`chat.phase.${item.phase}` as MessageId)));
+                : !isTerminalRun(run) &&
+                    item.kind === "tool" &&
+                    item.phase === "updated" &&
+                    operation?.reasonCode === "TOOL_START_UNCONFIRMED"
+                  ? "chat.phase.queued"
+                  : ((operation
+                      ? executionStateLabel(operation.displayPhase, operation.reasonCode)
+                      : stateAvailable
+                        ? "chat.recordUnavailable"
+                        : undefined) ??
+                    executionToolPhase(item, records, run) ??
+                    (isTerminalRun(run) && incomplete
+                      ? run.status === "cancelled" && item.kind === "message"
+                        ? "chat.phase.stopped"
+                        : "chat.recordUnavailable"
+                      : item.kind === "tool" && item.phase === "updated"
+                        ? "chat.callRequested"
+                        : (`chat.phase.${item.phase}` as MessageId)));
             const summary = toolStepSummary(item.name, item.input);
             const effect = state?.effectSummary.find((effect) => effect.itemId === item.itemId);
             const retainedEffect: MessageId | undefined = operation?.reasonCode.startsWith(

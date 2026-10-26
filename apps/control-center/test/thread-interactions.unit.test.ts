@@ -860,7 +860,7 @@ describe("thread control center interactions", () => {
     await render();
     await refresh();
     expect(container.querySelector(".turn-activity .turn-wait-reason")?.textContent).toBe(
-      "这一轮还在进行：正在等工具 read 的结果。工具已经交给执行环境，但还没确认它已经停下。",
+      "这一轮还在进行：工具 read 已经交给执行环境，但还没收到它的结果，也没法确认它已经停下。可以继续等，或点停止结束这一轮。",
     );
     expect(container.querySelector('button[aria-label="停止"]')).not.toBeNull();
     expect(

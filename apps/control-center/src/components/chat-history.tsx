@@ -4,7 +4,7 @@ import type {
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { executionItems, isTerminalRun } from "../execution-view.js";
+import { executionItems, isNarration, isTerminalRun } from "../execution-view.js";
 import type { RunSummary } from "../execution-view.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ExecutionProcess } from "./execution-process.js";
@@ -89,8 +89,9 @@ export function ChatHistory({
             (item) => item.kind === "message" && item.name,
           )?.name;
           const agentMessages = group.messages.filter((item) => item.role === "agent");
-          const partialItem = executionItems(records)
-            .filter((item) => item.kind === "message")
+          const items = executionItems(records);
+          const partialItem = items
+            .filter((item) => item.kind === "message" && !isNarration(item, items))
             .at(-1);
           const partial = partialItem?.text;
           return (
@@ -141,7 +142,9 @@ export function ChatHistory({
                     <>
                       <p className="partial-status">
                         {message(
-                          partialItem?.phase === "completed"
+                          partialItem?.phase === "completed" &&
+                            group.run &&
+                            isTerminalRun(group.run)
                             ? "chat.phase.completed"
                             : group.run?.status === "cancelled"
                               ? "chat.phase.stopped"

@@ -173,6 +173,7 @@ export const messages = {
   "chat.resource.verifying": "元のリクエストを確認中",
   "chat.resource.queued": "リソース待機中",
   "chat.resource.executing": "実行中",
+  "chat.resource.noReport": "実行環境から期限内に報告がありません",
   "chat.resource.stopNotStrictlyConfirmed": "停止は厳密に確認されていません",
   "chat.resource.recordDeleted": "実行記録は削除されました",
   "chat.reason.admissionConflict": "受付時にリソースまたはリクエストの状態が競合しました",
@@ -223,6 +224,7 @@ export const messages = {
   "chat.environment.threadRunning": "実行中のバックグラウンドプログラムあり",
   "chat.phase.unresolved": "結果未確認",
   "chat.phase.preparing": "準備中",
+  "chat.phase.queued": "順番待ち",
   "chat.phase.started": "実行中",
   "chat.phase.updated": "出力中",
   "chat.phase.completed": "完了",
@@ -233,7 +235,7 @@ export const messages = {
   "chat.nextAction.unresolved":
     "結果は未確認です。元のリソースが解放されたと確認できるまで、書き込み操作を再実行しないでください。",
   "chat.waiting.tool":
-    "このターンはまだ進行中です：ツール {tool} の結果を待っています。ツールは実行環境に渡されましたが、停止したことはまだ確認されていません。",
+    "このターンはまだ進行中です：ツール {tool} は実行環境に渡されましたが、結果がまだ届かず、停止したことも確認できていません。待つか、停止を押してこのターンを終了できます。",
   "chat.waiting.afterTurn":
     "このターンは終了しましたが、ツール {tool} の実行環境が停止したことはまだ確認されていません。",
   "chat.nextAction.stop":

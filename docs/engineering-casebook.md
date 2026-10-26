@@ -40,6 +40,7 @@ date: "2026-10-26"
   13. [快速交付模式：把“门槛”变成一个开关](#case-fast-mode)
   14. [管住 AI 编码代理：同一错误第三次就加硬约束](#case-agent-governance)
   15. [模型网关迁移和“速度优先”路由](#case-model-gateway)
+  16. [运行中却显示“已完成”：模型过渡话被当成回答](#case-narration-status)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -68,6 +69,7 @@ date: "2026-10-26"
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
 | 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy) |
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode) |
+| Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 
 [返回目录](#contents)
@@ -871,6 +873,68 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **面试 30 秒版**
 
 “我们用 Vercel AI Gateway 统一接模型，复用框架已有的 OpenAI 兼容接口，不另写协议。一开始按最便宜路由，拆耗时发现首字要 10 秒，就改成速度优先，换服务商只改配置。”
+
+[返回目录](#contents)
+
+<a id="case-narration-status"></a>
+
+## 案例 16：运行中却显示“已完成”：模型过渡话被当成回答
+
+**背景与现象**
+
+2026-10-26 Andy 在生产版（030f81f）里问“搜一下美国新闻，给我最新的10条”。页面顶部写“正在执行”，步骤列表里两个“搜索网页”一个“正在执行”、一个“正在准备”，可下面同时出现一个“已完成”标签和一句英文“I'll search for the latest US news now.”。Andy 问这是设计如此还是 bug。随后这一轮卡了一分多钟：第一个搜索变成“结果未确认”，第二个一直“正在准备”。
+
+**根因**
+
+读代码确认是三个问题叠在一起：
+
+1. **把“一段文字说完了”误当成“这一轮完成了”。** 模型调用工具前会先说一句过渡话，这句话和两个工具调用在同一条模型消息里。消息一结束，服务端把这段文字记成 `completed`（`thread-execution-projection.ts`）。前端 `chat-history.tsx` 把“最后一段文字”直接当作回答预览放在步骤列表下面，并原样显示它的状态，于是出现“上面正在执行、下面已完成”。两个状态说的是不同对象，但摆在一起像是在说同一件事。
+2. **英文过渡话。** Pi 自带的系统提示词全是英文（`pi-coding-agent` 的 `buildSystemPrompt`，开头是 “You are an expert coding assistant…”），我们追加的产品指令里没有“用用户提问的语言回答”这条，模型就顺着英文说了。产品需求文档早就定了“模型根据用户提问选择回答语言”，只是没写进指令。
+3. **状态文案说的不是实情。** 生产版的工具一个接一个执行，第二个搜索其实在排队等第一个结束，服务端只能看到“还没开始”，统一显示成“正在准备”。第一个搜索的“结果未确认”，对应执行环境超过约定时间没有回报（原因码 `RESOURCE_OBSERVATION_EXPIRED` 或 `RESOURCE_STATE_UNCONFIRMED`），页面却用了和“这一轮已经结束但结果不明”一样的字眼。为什么没回报，由耗时优化线程查生产日志，本案例不下结论。
+
+用单元测试复现：按截图构造“过渡话 + 两个搜索、第一个在执行”的记录，旧代码渲染出 `chat.phase.completed`、没有“排队”状态，4 个新测试在旧代码上全部失败。
+
+**我们的方案**
+
+- 只在前端改展示，不改服务端记录：工具调用之前的模型文字（判断方法：之后还有工具调用）放进步骤列表它出现的位置，用对话气泡图标显示原文；步骤列表下面只放最后一次工具之后的文字，也就是真正的回答。
+- 回答预览的“已完成”只在整轮结束后才显示，进行中一律显示“输出中”。
+- 模型已经请求、但 Pi 还没开始执行的工具，显示“排队等待”，不再显示“正在准备”。
+- 执行环境没按时回报时显示“执行环境没有按时回报”；卡住时的提示改成白话：“工具已经交给执行环境，但还没收到它的结果……可以继续等，或点停止结束这一轮”。
+- 产品指令固定加一条回答语言规则：用用户本轮提问的语言回答，调用工具前后写给用户的说明也用这种语言，搜索关键词可以用别的语言。复用 Pi 的“追加系统提示词”入口，不改 Pi。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 服务端把过渡话的状态改成“进行中” | 前端不用判断 | 记录要如实反映“这段文字确实说完了”，改记录等于让数据说谎；而且历史记录不会变 |
+| 直接隐藏过渡话 | 页面最干净 | 过渡话告诉用户模型打算做什么，藏掉会让步骤列表更像黑盒；Anthropic 文档也建议把它当成普通回答文字展示 |
+| 用提示词禁止模型说过渡话 | 问题从源头消失 | 模型不一定照做，换模型就可能复发；展示逻辑本身仍然是错的 |
+| 在设置里加“回答语言”选项 | 用户可控 | Andy 2026-09-12 定过“语言选择器只控制界面，不往模型指令里注入页面语言”，所以只按用户提问的语言回答 |
+
+放弃了什么：过渡话没有单独的状态和时长；文字还在流式输出、工具调用还没出现的那一两秒里，它会先显示在回答位置，等工具调用出现再移进步骤列表。
+
+**业界主流做法**
+
+- ✅ Anthropic 工具调用文档（[Define tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools#model-responses-with-tools)）：“When using tools, Claude often comments on what it's doing or responds naturally to the user before calling tools.”，并要求“Your code should treat these responses like any other assistant-generated text”。说明调用工具前的过渡话是常态，应当作为模型说的话展示，而不是丢掉。
+- ✅ OpenAI 官方 Node SDK 的 Responses 接口类型定义（[openai-node `responses.ts`](https://github.com/openai/openai-node/blob/master/src/resources/responses/responses.ts)）：单个输出项结束时发 `ResponseOutputItemDoneEvent`（“Emitted when an output item is marked done.”），整次回复结束时才发 `ResponseCompletedEvent`（“Emitted when the model response is complete.”）；每条消息自己的 `status` 是 “One of `in_progress`, `completed`, or `incomplete`”。也就是说，主流接口都把“某一项完成”和“整次回复完成”分成两件事。
+
+**对比与取舍**
+
+和业界一样，我们保留“每段文字、每个工具各有自己的状态”，只是在界面上把“某段文字说完了”和“这一轮完成了”分开展示：前者放进过程，后者只在整轮结束时出现。差别在于我们没有改记录格式，判断“哪段是过渡话”靠的是“后面还有没有工具调用”，这在文字流式输出的头一两秒里还判断不了。
+
+**结果数据**
+
+- 4 个新单元测试在旧代码上失败、新代码上通过；控制中心全部 392 个测试通过（2026-10-26，云端容器）。
+- 前端 gzip 总体积 176965 → 177406 字节（上限 184320），入口 148942 字节（上限 153600），来自本次 `npm run build` 输出。
+- 卡住一分多钟的原因、改后用户是否看得懂：未测量，等上线后 Andy 实测。
+
+**相关 ADR/PR**
+
+本案例对应的 PR 见 [docs/engineering-casebook.md 的提交记录](engineering-casebook.md)；相关背景：[ADR 0048](adr/0048-vercel-ai-gateway-replaces-openrouter.md)（模型接入复用 Pi）、[案例 5](#case-search-latency)（同一类新闻请求的耗时）、PR #15（每步白话摘要）。
+
+**面试 30 秒版**
+
+“用户看到上面‘正在执行’、下面‘已完成’。查下来是界面把‘模型调用工具前说的一句话说完了’当成了‘这一轮完成了’。我们没改记录，而是在界面上把过渡话放回执行过程里它出现的位置，‘已完成’只在整轮结束后出现；顺手把排队中的工具标成‘排队等待’，并补上‘用用户提问的语言回答’的指令。先写了 4 个能复现的测试，旧代码全失败、新代码全通过。”
 
 [返回目录](#contents)
 

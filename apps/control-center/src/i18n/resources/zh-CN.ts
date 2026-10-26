@@ -160,6 +160,7 @@ export const messages = {
   "chat.resource.verifying": "正在核验原请求",
   "chat.resource.queued": "正在等待资源",
   "chat.resource.executing": "正在执行",
+  "chat.resource.noReport": "执行环境没有按时回报",
   "chat.resource.stopNotStrictlyConfirmed": "停止未经严格确认",
   "chat.resource.recordDeleted": "执行记录已删除",
   "chat.reason.admissionConflict": "准入时发现资源或请求状态冲突",
@@ -204,6 +205,7 @@ export const messages = {
   "chat.environment.threadRunning": "有后台程序在运行",
   "chat.phase.unresolved": "结果未确认",
   "chat.phase.preparing": "正在准备",
+  "chat.phase.queued": "排队等待",
   "chat.phase.started": "执行中",
   "chat.phase.updated": "输出中",
   "chat.phase.completed": "已完成",
@@ -213,7 +215,7 @@ export const messages = {
   "chat.phase.unavailable": "记录不可用",
   "chat.nextAction.unresolved": "结果仍未确认。在原资源核验为已释放之前，不要再次发起写操作。",
   "chat.waiting.tool":
-    "这一轮还在进行：正在等工具 {tool} 的结果。工具已经交给执行环境，但还没确认它已经停下。",
+    "这一轮还在进行：工具 {tool} 已经交给执行环境，但还没收到它的结果，也没法确认它已经停下。可以继续等，或点停止结束这一轮。",
   "chat.waiting.afterTurn": "这一轮已经结束，但工具 {tool} 的执行环境还没确认已经停下。",
   "chat.nextAction.stop": "结果仍未确认。先停止本轮并核验资源；确认释放前不要重试写操作。",
   "chat.nextAction.retryCleanup":

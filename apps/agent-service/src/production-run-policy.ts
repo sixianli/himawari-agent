@@ -68,7 +68,7 @@ export function createProductionRunPolicy(options: {
         agentId: source.agentId,
         ref: options.ids.next("run-system-instruction"),
         plaintext: new TextEncoder().encode(
-          `${policy.systemInstruction}\n\n本轮请求时间（UTC）：${source.occurredAt}。配置时区 ${policy.timeZone ?? "UTC"} 的当地时间：${new Intl.DateTimeFormat("sv-SE", { timeZone: policy.timeZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "longOffset" }).format(new Date(source.occurredAt))}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。\n\n${capabilities}`,
+          `${policy.systemInstruction}\n\n本轮请求时间（UTC）：${source.occurredAt}。配置时区 ${policy.timeZone ?? "UTC"} 的当地时间：${new Intl.DateTimeFormat("sv-SE", { timeZone: policy.timeZone ?? "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "longOffset" }).format(new Date(source.occurredAt))}。涉及“今天”或最新信息时，必须按查询地点的时区换算日期，不能直接截取 UTC 日期。\n\n${ANSWER_LANGUAGE_RULE}\n\n${capabilities}`,
         ),
         dataClassification: source.dataClassification,
         contentType: "text/plain",
@@ -91,6 +91,9 @@ export function createProductionRunPolicy(options: {
     });
   };
 }
+
+export const ANSWER_LANGUAGE_RULE =
+  "回答语言：用用户本轮提问所用的语言回答；调用工具之前或之间写给用户看的说明也用这种语言。搜索关键词等工具参数可以用别的语言。";
 
 export function runCapabilityNotice(input: {
   readonly publicSearch: boolean;
