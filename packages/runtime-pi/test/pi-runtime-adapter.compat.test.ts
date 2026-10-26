@@ -1835,7 +1835,7 @@ it("runs the actual pinned AgentSession with an opaque HTTP product session iden
   expect(projection.finalAnswers[0]?.text).toBe("真实 Pi Session 回答");
 });
 
-it("keeps Pi's tool guidance alongside the product policy in the actual provider context", async () => {
+it("replaces Pi's coding identity with the product policy and keeps Pi's tool guidance", async () => {
   const model = await createFauxModelFixture("工具使用说明已保留");
   const tools = new RecordingRuntimeTools();
   vi.spyOn(tools, "listAuthorized").mockResolvedValue([
@@ -1859,11 +1859,12 @@ it("keeps Pi's tool guidance alongside the product policy in the actual provider
   expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
   const context = model.observed[0] as { systemPrompt: string };
   const read = createReadToolDefinition(process.cwd());
-  expect(context.systemPrompt).toContain("Available tools:");
-  expect(context.systemPrompt).toContain(read.promptSnippet);
+  expect(context.systemPrompt.startsWith(DEFAULT_CONTEXT.systemInstruction)).toBe(true);
+  expect(context.systemPrompt).toContain(`- read: ${read.promptSnippet}`);
   for (const guideline of read.promptGuidelines ?? [])
-    expect(context.systemPrompt).toContain(guideline);
-  expect(context.systemPrompt).toContain(DEFAULT_CONTEXT.systemInstruction);
+    expect(context.systemPrompt).toContain(`- ${guideline}`);
+  expect(context.systemPrompt).not.toContain("coding assistant");
+  expect(context.systemPrompt).not.toContain("Pi documentation");
   expect(tools.execute).not.toHaveBeenCalled();
 });
 
