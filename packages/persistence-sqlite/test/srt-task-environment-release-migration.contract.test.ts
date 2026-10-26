@@ -194,10 +194,10 @@ describe("migration 0051 accepts the SRT process-group stop proof", () => {
       );
 
       expect(applyMigrations(database, migrations, { snapshot })).toEqual({
-        appliedSequences: [51, 52, 53, 54, 55, 56],
-        currentSequence: 56,
+        appliedSequences: [51, 52, 53, 54, 55, 56, 57],
+        currentSequence: 57,
       });
-      expect(readMigrationLedger(database).at(-1)?.sequence).toBe(56);
+      expect(readMigrationLedger(database).at(-1)?.sequence).toBe(57);
       expect(receiptRows(database)).toEqual(before);
       expect(database.pragma("foreign_key_check")).toEqual([]);
 

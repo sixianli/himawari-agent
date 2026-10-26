@@ -26,6 +26,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  MemoryBookStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
@@ -482,6 +483,10 @@ export class SqliteProductStateRepository implements ProductStateRepositoryPort 
 
   memoryReminders(): MemoryReminderStorePort {
     return this.durable.memoryReminders();
+  }
+
+  memoryBook(): MemoryBookStorePort {
+    return this.durable.memoryBook();
   }
 
   memoryProjectionJobs(): MemoryProjectionJobStatePort {

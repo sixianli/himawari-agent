@@ -17,6 +17,7 @@ import type {
   MemoryConsolidationStorePort,
   MemoryEpisodeStorePort,
   MemoryReminderStorePort,
+  MemoryBookStorePort,
   MemoryIndexStorePort,
   MemoryProjectionJobStatePort,
   ModelBudgetPort,
@@ -902,6 +903,26 @@ export class SqliteDurableAdapters {
       listChanges: (input) => this.context.read("memoryConsolidation.listChanges", input),
       readChange: (id) => this.context.read("memoryConsolidation.readChange", { id }),
       markUndone: (input) => this.context.write("memoryConsolidation.markUndone", input),
+    });
+  }
+
+  memoryBook(): MemoryBookStorePort {
+    return Object.freeze<MemoryBookStorePort>({
+      readSettings: (scope) => this.context.read("memoryBook.readSettings", scope),
+      writeSettings: (input) => this.context.write("memoryBook.writeSettings", input),
+      latestGeneration: (scope) => this.context.read("memoryBook.latestGeneration", scope),
+      listInactive: (input) => this.context.read("memory.listInactive", input),
+      listExpiredTrash: (input) => this.context.read("memoryBook.listExpiredTrash", input),
+      listSubCategories: (scope) => this.context.read("memoryBook.listSubCategories", scope),
+      recordPeople: (input) => this.context.write("memoryBook.recordPeople", input),
+      listPeople: (scope) => this.context.read("memoryBook.listPeople", scope),
+      listPersonSuggestions: (scope) =>
+        this.context.read("memoryBook.listPersonSuggestions", scope),
+      decidePersonSuggestion: (input) =>
+        this.context.write("memoryBook.decidePersonSuggestion", input),
+      createImportBatch: (input) => this.context.write("memoryBook.createImportBatch", input),
+      listImportBatches: (input) => this.context.read("memoryBook.listImportBatches", input),
+      markImportUndone: (input) => this.context.write("memoryBook.markImportUndone", input),
     });
   }
 

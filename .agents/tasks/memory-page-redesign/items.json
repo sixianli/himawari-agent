@@ -1,0 +1,210 @@
+{
+  "task": "memory-page-redesign",
+  "prefix": "MP",
+  "decisions": {
+    "G1": "once",
+    "G2": "once",
+    "G3": "once",
+    "G4": "once",
+    "G5": "once",
+    "G6": "once",
+    "G7": "once",
+    "G8": "once"
+  },
+  "items": [
+    {
+      "id": "MP-1",
+      "title": "记忆页快照补齐：分类、小类、状态（在用/已归档/最近删除）、最近用到时间、即将到来的提醒、暂停状态",
+      "goal_ref": [
+        "G1",
+        "G7"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-1"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "原型要的数据后端快照里没有"
+      }
+    },
+    {
+      "id": "MP-2",
+      "title": "删除先进“最近删除”，7 天内可恢复，过期自动彻底删除；已归档可恢复使用",
+      "goal_ref": [
+        "G2",
+        "G7"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-2"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G7 同意删除先进最近删除"
+      }
+    },
+    {
+      "id": "MP-3",
+      "title": "手动添加一条记忆",
+      "goal_ref": [
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-3"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G4"
+      }
+    },
+    {
+      "id": "MP-4",
+      "title": "暂停记忆开关：暂停期间对话不再新记，已有记忆照常用",
+      "goal_ref": [
+        "G4"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-4"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G4"
+      }
+    },
+    {
+      "id": "MP-5",
+      "title": "记忆自动归到小类，每个分类最多 8 个小类",
+      "goal_ref": [
+        "G1",
+        "G7"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-5"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "Andy 批注要求偏好细分"
+      }
+    },
+    {
+      "id": "MP-6",
+      "title": "人物关系：记住人、别名和人与人的关系；拿不准是不是同一个人时进待确认；合并命令",
+      "goal_ref": [
+        "G5",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-6"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G5、G8"
+      }
+    },
+    {
+      "id": "MP-7",
+      "title": "导入记忆：Codex 文件、其他 AI 的回答、Himawari 导出文件；先预览勾选再写入；整批可撤销",
+      "goal_ref": [
+        "G6",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-7"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "G6、G8"
+      }
+    },
+    {
+      "id": "MP-8",
+      "title": "按原型重做记忆页前端（含导出、不再提醒、人物关系图、导入），弹窗 960 像素，前端体积不超预算",
+      "goal_ref": [
+        "G1",
+        "G3",
+        "G4",
+        "G7",
+        "G8"
+      ],
+      "done_when": [
+        {
+          "type": "test",
+          "tag": "MP-8"
+        },
+        {
+          "type": "command",
+          "run": "npm run build"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "界面改动主体"
+      }
+    },
+    {
+      "id": "MP-9",
+      "title": "npm run check 通过",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "command",
+          "run": "npm run check"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "快速模式基本检查"
+      }
+    },
+    {
+      "id": "MP-10",
+      "title": "案例库新增记忆页设计案例",
+      "goal_ref": [
+        "G1"
+      ],
+      "done_when": [
+        {
+          "type": "doc",
+          "path": "docs/engineering-casebook.md",
+          "heading": "案例 17：记忆管理页重设计：记忆越来越多，一页长列表管不过来"
+        }
+      ],
+      "added": {
+        "by": "claude",
+        "on": "2026-10-26",
+        "why": "项目规则：重要设计决定写进案例库"
+      }
+    }
+  ]
+}

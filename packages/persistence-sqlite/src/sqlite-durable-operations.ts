@@ -78,6 +78,7 @@ import type Database from "better-sqlite3";
 import { SqliteCapabilityInvocationOperations } from "./sqlite-capability-invocation-operations.ts";
 import { SqliteCheckpointOperations } from "./sqlite-checkpoint-operations.ts";
 import { SqliteMemoryConsolidationOperations } from "./sqlite-memory-consolidation-operations.ts";
+import { SqliteMemoryBookOperations } from "./sqlite-memory-book-operations.ts";
 import { SqliteMemoryReminderOperations } from "./sqlite-memory-reminder-operations.ts";
 import { SqliteMemoryOperations, type SqliteVectorEngine } from "./sqlite-memory-operations.ts";
 import { SqliteModelBudgetOperations } from "./sqlite-model-budget-operations.ts";
@@ -336,6 +337,7 @@ export class SqliteDurableOperations {
   private readonly memory: SqliteMemoryOperations;
   private readonly memoryConsolidation: SqliteMemoryConsolidationOperations;
   private readonly memoryReminders: SqliteMemoryReminderOperations;
+  private readonly memoryBook: SqliteMemoryBookOperations;
   private readonly builtInIdentity: SqliteBuiltInIdentityOperations;
   private readonly thread: SqliteThreadOperations;
   private readonly runs: SqliteRunLifecycleOperations;
@@ -403,6 +405,7 @@ export class SqliteDurableOperations {
       assertDiskHeadroom,
     );
     this.memoryReminders = new SqliteMemoryReminderOperations(database, fail, assertDiskHeadroom);
+    this.memoryBook = new SqliteMemoryBookOperations(database, fail, assertDiskHeadroom);
     this.thread = new SqliteThreadOperations(database, fail, assertDiskHeadroom);
     const executionLease = (input: {
       readonly ownerId: string;
@@ -492,6 +495,7 @@ export class SqliteDurableOperations {
       return this.memoryConsolidation.execute(operation, payload);
     if (operation.startsWith("memoryReminder."))
       return this.memoryReminders.execute(operation, payload);
+    if (operation.startsWith("memoryBook.")) return this.memoryBook.execute(operation, payload);
     switch (operation) {
       case "event.append":
         return this.appendEvent(

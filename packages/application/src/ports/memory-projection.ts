@@ -33,6 +33,8 @@ export interface ProductMemoryAttributes {
   readonly evidenceVerified: boolean;
   readonly sensitiveTopic?: SensitiveMemoryTopic | null;
   readonly tentative?: boolean;
+  readonly subCategory?: string | null;
+  readonly importBatchId?: string | null;
 }
 
 export const DEFAULT_MEMORY_ATTRIBUTES: ProductMemoryAttributes = Object.freeze({
