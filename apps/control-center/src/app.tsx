@@ -1,6 +1,6 @@
 import { SearchAuthorizationControl } from "./components/search-authorization-control.js";
 import { AccountLogin, AccountDevices, accountRequest } from "./components/account-login.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlCenterShell } from "./app/app-shell.js";
 import {
   CONTROL_CENTER_SURFACE_INVENTORY,
@@ -24,7 +24,7 @@ import {
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
 import { useMemory } from "./memory.js";
-import { MemoryReminders, MemorySettings, MemoryTurnNote } from "./components/memory-panel.js";
+import { MemoryReminders, MemoryTurnNote } from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
@@ -34,6 +34,10 @@ import {
 import { SseStateSynchronizer } from "./sse-synchronizer.js";
 import { useThreadControlCenter } from "./thread-control-center.js";
 import { ThreadSseSynchronizer } from "./thread-sse-synchronizer.js";
+
+const MemorySettings = lazy(() =>
+  import("./components/memory-page.js").then((module) => ({ default: module.MemorySettings })),
+);
 
 type SurfaceId = (typeof CONTROL_CENTER_SURFACE_INVENTORY)[number]["id"];
 type RuntimeConfiguration = Awaited<ReturnType<typeof loadRuntimeConfiguration>>;
@@ -354,13 +358,15 @@ function LocalizedControlCenterApp({
       settingsData={threadModel.settingsData}
       settingsMemory={
         memory ? (
-          <MemorySettings
-            memory={memory}
-            message={message}
-            onOpenThread={(threadId) =>
-              navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
-            }
-          />
+          <Suspense fallback={<p>{message("state.loading")}</p>}>
+            <MemorySettings
+              memory={memory}
+              message={message}
+              onOpenThread={(threadId) =>
+                navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
+              }
+            />
+          </Suspense>
         ) : undefined
       }
       settingsTools={

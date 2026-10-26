@@ -298,6 +298,28 @@ export class DurableMemoryService {
     return this.deactivate(memoryId, "deletion_pending", generationId);
   }
 
+  trash(memoryId: MemoryId, generationId: MemoryGenerationId): Promise<ProductMemoryRecord> {
+    return this.deactivate(memoryId, "trashed", generationId);
+  }
+
+  async recover(
+    memoryId: MemoryId,
+    generationId: MemoryGenerationId,
+  ): Promise<ProductMemoryRecord> {
+    const current = requireRecord(await this.options.state.read(memoryId), memoryId);
+    if (current.status !== "trashed" && current.status !== "archived")
+      throw new ApplicationPortError(
+        PORT_ERROR_CODES.INVALID_OPERATION,
+        `Memory ${memoryId} cannot be recovered from ${current.status}`,
+      );
+    return this.saveWithProjection(
+      nextRecord(current, { status: "active" }, this.options.now()),
+      current.revision,
+      "upsert",
+      generationId,
+    );
+  }
+
   async search(input: {
     readonly ownerId: OwnerId;
     readonly agentId: AgentId;
@@ -440,7 +462,7 @@ export class DurableMemoryService {
 
   private async deactivate(
     memoryId: MemoryId,
-    status: "archived" | "deletion_pending",
+    status: "archived" | "trashed" | "deletion_pending",
     generationId: MemoryGenerationId,
   ): Promise<ProductMemoryRecord> {
     const current = requireRecord(await this.options.state.read(memoryId), memoryId);
@@ -450,9 +472,10 @@ export class DurableMemoryService {
       return current;
     }
     if (
-      current.status !== "active" &&
-      current.status !== "archived" &&
-      status !== "deletion_pending"
+      (current.status !== "active" &&
+        current.status !== "archived" &&
+        status !== "deletion_pending") ||
+      (status === "trashed" && current.status !== "active" && current.status !== "archived")
     ) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,

@@ -49,6 +49,8 @@ interface MemoryRow {
   readonly sensitiveTopic: string | null;
   readonly recordedAt: string | null;
   readonly tentative: number;
+  readonly subCategory: string | null;
+  readonly importBatchId: string | null;
 }
 
 interface IndexCandidateRow {
@@ -209,7 +211,8 @@ const memorySelect = `SELECT id, owner_id AS ownerId, agent_id AS agentId, revis
   category, importance_permille AS importancePermille, valid_from AS validFrom,
   valid_to AS validTo, superseded_by AS supersededBy, use_count AS useCount,
   evidence_verified AS evidenceVerified, sensitive_topic AS sensitiveTopic,
-  recorded_at AS recordedAt, tentative
+  recorded_at AS recordedAt, tentative, sub_category AS subCategory,
+  import_batch_id AS importBatchId
   FROM memory_records`;
 
 const indexCandidateColumns = `m.id AS memoryId, m.revision AS revision,
@@ -295,6 +298,10 @@ export class SqliteMemoryOperations {
         return this.listActive(payload as { ownerId: OwnerId; agentId: AgentId });
       case "memory.markUsed":
         return this.markUsed(payload as { memoryIds: readonly MemoryId[]; usedAt: string });
+      case "memory.listInactive":
+        return this.listInactive(
+          payload as { ownerId: OwnerId; agentId: AgentId; trashedAfter: string; limit: number },
+        );
       case "memoryJob.propose":
         return this.proposeJob(payload as { job: MemoryProjectionJob; requeueCompleted: boolean });
       case "memoryJob.listPending":
@@ -457,6 +464,8 @@ export class SqliteMemoryOperations {
             }
           : {}),
         ...(row.tentative === 1 ? { tentative: true } : {}),
+        ...(row.subCategory ? { subCategory: row.subCategory } : {}),
+        ...(row.importBatchId ? { importBatchId: row.importBatchId } : {}),
       }),
       useCount: row.useCount,
     });
@@ -573,6 +582,8 @@ export class SqliteMemoryOperations {
       attributes.supersededBy === memory.id ||
       !(attributes.sensitiveTopic == null || SENSITIVE_TOPICS.has(attributes.sensitiveTopic)) ||
       attributes.entities.length > MAXIMUM_ENTITIES ||
+      (attributes.subCategory != null &&
+        (attributes.subCategory.trim().length === 0 || [...attributes.subCategory].length > 32)) ||
       attributes.entities.some((name) => {
         const normalized = normalizedEntity(name);
         return normalized.length === 0 || normalized.length > 64;
@@ -590,8 +601,9 @@ export class SqliteMemoryOperations {
     if (current === "active") {
       return ["archived", "trashed", "deletion_pending"].includes(next);
     }
-    if (current === "archived") return next === "deletion_pending" || next === "active";
-    if (current === "trashed") return next === "deletion_pending";
+    if (current === "archived")
+      return next === "deletion_pending" || next === "active" || next === "trashed";
+    if (current === "trashed") return next === "deletion_pending" || next === "active";
     return current === "deletion_pending" && next === "deleted_verified";
   }
 
@@ -658,8 +670,8 @@ export class SqliteMemoryOperations {
               source_thread_id, inference, confidence_permille, policy_version,
               provider_record_id, last_used_at, updated_at, category, importance_permille,
               valid_from, valid_to, superseded_by, evidence_verified, sensitive_topic,
-              recorded_at, tentative
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              recorded_at, tentative, sub_category, import_batch_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             input.memory.id,
@@ -685,6 +697,8 @@ export class SqliteMemoryOperations {
             attributes.sensitiveTopic ?? null,
             input.memory.updatedAt,
             attributes.tentative === true ? 1 : 0,
+            attributes.subCategory ?? null,
+            attributes.importBatchId ?? null,
           );
       } else {
         if (
@@ -703,7 +717,8 @@ export class SqliteMemoryOperations {
               classification = ?, source_thread_id = ?, inference = ?, confidence_permille = ?,
               policy_version = ?, provider_record_id = ?, last_used_at = ?, updated_at = ?,
               category = ?, importance_permille = ?, valid_from = ?, valid_to = ?,
-              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?, tentative = ?
+              superseded_by = ?, evidence_verified = ?, sensitive_topic = ?, tentative = ?,
+              sub_category = ?
             WHERE id = ?`,
           )
           .run(
@@ -726,6 +741,7 @@ export class SqliteMemoryOperations {
             attributes.evidenceVerified ? 1 : 0,
             attributes.sensitiveTopic ?? null,
             attributes.tentative === true ? 1 : 0,
+            attributes.subCategory ?? null,
             input.memory.id,
           );
       }
@@ -747,6 +763,24 @@ export class SqliteMemoryOperations {
       return this.read(input.memory.id) as ProductMemoryRecord;
     });
     return transaction.immediate();
+  }
+
+  private listInactive(input: {
+    ownerId: OwnerId;
+    agentId: AgentId;
+    trashedAfter: string;
+    limit: number;
+  }): readonly ProductMemoryRecord[] {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 1000)
+      this.fail("PORT_INVALID_OPERATION", "Memory listInactive limit is invalid");
+    const rows = this.database
+      .prepare(
+        `${memorySelect} WHERE owner_id = ? AND agent_id = ?
+          AND (status = 'archived' OR (status = 'trashed' AND updated_at > ?))
+        ORDER BY updated_at DESC, id LIMIT ?`,
+      )
+      .all(input.ownerId, input.agentId, input.trashedAfter, input.limit) as MemoryRow[];
+    return rows.map((row) => this.memoryFromRow(row));
   }
 
   private listActive(input: {

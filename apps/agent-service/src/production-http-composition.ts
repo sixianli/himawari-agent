@@ -130,7 +130,14 @@ export interface ProductionHttpCompositionOptions {
   readonly memory?: {
     readonly service: Pick<
       DurableMemoryService,
-      "applyProposal" | "correct" | "delete" | "restore" | "confirm" | "revise"
+      | "applyProposal"
+      | "correct"
+      | "delete"
+      | "restore"
+      | "confirm"
+      | "revise"
+      | "trash"
+      | "recover"
     >;
     readonly onAudit: (record: MemoryExtractionAuditRecord) => void;
   };
@@ -870,6 +877,7 @@ export async function createProductionHttpComposition(
           undo: (changeId) => memoryTidyUp?.undo(changeId) ?? Promise.resolve(),
         },
         reminders: repository.memoryReminders(),
+        book: repository.memoryBook(),
         payloads: memoryPayloads,
         protector: payloadProtector,
         clock: { now: clock },

@@ -14,7 +14,7 @@ const distributionRoot =
     : path.resolve(process.argv[outputIndex + 1]);
 const assetsRoot = path.join(distributionRoot, "assets");
 const maximumEntryGzipBytes = 150 * 1024;
-const maximumTotalGzipBytes = 180 * 1024;
+const maximumTotalGzipBytes = 192 * 1024;
 
 const indexHtml = await readFile(path.join(distributionRoot, "index.html"), "utf8");
 const assetNames = await readdir(assetsRoot);

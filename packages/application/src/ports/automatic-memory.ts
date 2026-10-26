@@ -1,3 +1,4 @@
+import type { MemoryPersonLinkMention, MemoryPersonMention } from "./memory-book.js";
 import type { MemoryReminderSchedule } from "./memory-reminders.js";
 import type {
   AgentId,
@@ -34,6 +35,8 @@ export interface ExtractedMemoryCandidate {
   readonly attributes?: ProductMemoryAttributes;
   readonly supersedes?: MemoryId | null;
   readonly reminder?: MemoryReminderSchedule;
+  readonly people?: readonly MemoryPersonMention[];
+  readonly personLinks?: readonly MemoryPersonLinkMention[];
 }
 
 export interface IncrementalMemoryExtractionPort {

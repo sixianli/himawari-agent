@@ -345,6 +345,7 @@ export function createProductionRunComposition(options: ProductionRunComposition
         product: memoryCaptureOptions.product,
         approvals: memoryCaptureOptions.approvals,
         reminders: repository.memoryReminders(),
+        book: repository.memoryBook(),
         ...(memoryCaptureOptions.timeZone ? { timeZone: memoryCaptureOptions.timeZone } : {}),
         payloads,
         protector,
@@ -382,6 +383,11 @@ export function createProductionRunComposition(options: ProductionRunComposition
         now: () => options.clock.now(),
       })
     : undefined;
+  const memoryPaused = () =>
+    repository
+      .memoryBook()
+      .readSettings({ ownerId, agentId })
+      .then(({ capturePaused }) => capturePaused);
   async function auxiliaryMemoryGeneration(
     request: RuntimeRequest,
     prompt: string,
@@ -433,11 +439,17 @@ export function createProductionRunComposition(options: ProductionRunComposition
           if (memoryCapture)
             memoryAdmission = (titles?.idle(request.threadId) ?? Promise.resolve())
               .then(() => memoryCapture.start(request))
-              .then(() => memoryEpisodes?.start(request))
-              .then(() => memoryConsolidation?.start(request));
+              .then(() => memoryPaused())
+              .then(async (paused) => {
+                if (paused) return;
+                await memoryEpisodes?.start(request);
+                await memoryConsolidation?.start(request);
+              });
         }
         if (event.type === "runtime.compaction_proposed" && memoryEpisodes)
-          void memoryEpisodes.recordCompaction(request, event.proposalRef);
+          void memoryPaused().then((paused) =>
+            paused ? undefined : memoryEpisodes.recordCompaction(request, event.proposalRef),
+          );
         if (
           ["runtime.completed", "runtime.suspended", "runtime.result_unknown"].includes(event.type)
         ) {

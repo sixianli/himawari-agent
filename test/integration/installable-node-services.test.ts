@@ -484,7 +484,7 @@ describe("installable Node services and admin CLI", { timeout: 60_000 }, () => {
     expect(JSON.parse(dbStatus.stdout)).toMatchObject({
       command: "db.status",
       managed: true,
-      schemaSequence: 56,
+      schemaSequence: 57,
       quickCheck: "ok",
     });
 

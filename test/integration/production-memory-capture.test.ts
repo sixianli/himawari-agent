@@ -24,7 +24,11 @@ import {
 } from "@himawari-agent/persistence-sqlite";
 import { createReferenceAdapterSet } from "@himawari-agent/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProductionMemoryCapture } from "../../apps/agent-service/src/production-memory-capture.ts";
+import {
+  memoryCapturePrompt,
+  ProductionMemoryCapture,
+  parseMemoryCandidates,
+} from "../../apps/agent-service/src/production-memory-capture.ts";
 import { ProductionMemoryControl } from "../../apps/agent-service/src/production-memory-control.ts";
 import { useSqliteContractExecution } from "./sqlite-contract-execution.fixture.ts";
 
@@ -186,6 +190,7 @@ describe("production memory capture", () => {
       product: memory,
       approvals: repository.sensitiveMemoryApprovals(),
       reminders: repository.memoryReminders(),
+      book: repository.memoryBook(),
       timeZone: "Asia/Shanghai",
       payloads,
       protector: adapters.payloadProtector,
@@ -219,6 +224,7 @@ describe("production memory capture", () => {
       approvals: repository.sensitiveMemoryApprovals(),
       memory,
       reminders: repository.memoryReminders(),
+      book: repository.memoryBook(),
       payloads,
       protector: adapters.payloadProtector,
       clock: { now: () => clock.value },
@@ -298,7 +304,7 @@ describe("production memory capture", () => {
     control: ProductionMemoryControl,
     memoryId: string,
     expectedRevision: number,
-    action: "correct" | "delete",
+    action: "correct" | "delete" | "recover",
     contentRef: string | null,
   ) =>
     control.execute({
@@ -392,7 +398,9 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_REVISION_CHANGED");
     if (!corrected) throw new Error("corrected");
     await mutate(context.control, memory.memoryId, corrected.revision, "delete", null);
-    expect((await overview(context.control)).memories).toEqual([]);
+    expect((await overview(context.control)).memories.map(({ status }) => status)).toEqual([
+      "trashed",
+    ]);
     const jobs = await context.repository
       .memoryProjectionJobs()
       .listByMemory(memory.memoryId as never);
@@ -578,7 +586,7 @@ describe("production memory capture", () => {
     ).rejects.toThrow("MEMORY_REMINDER_NOT_FOUND");
   });
 
-  it("rolls a yearly reminder forward when it is dismissed", async () => {
+  it("[MP-1] rolls a yearly reminder forward when it is dismissed and stops it when cancelled", async () => {
     const context = await setup(
       "我妈妈的生日是 5 月 12 日，到时候提醒我。",
       '{"memories":[{"kind":"durable_fact","decision":"create","existingMemoryId":null,"text":"主人妈妈的生日是 5 月 12 日","classification":"private","confidence":950,"inference":false,"explicit":true,"category":"relationship","importance":850,"entities":[],"validFrom":null,"dueAt":"2026-05-12","repeat":"yearly","quote":"我妈妈的生日是 5 月 12 日"}]}',
@@ -605,5 +613,359 @@ describe("production memory capture", () => {
       dueAt: "2028-05-12T01:00:00.000Z",
       dismissedAt: null,
     });
+    expect((await overview(context.control)).upcoming).toEqual([]);
+    context.clock.value = "2028-04-01T00:00:00.000Z";
+    expect((await overview(context.control)).upcoming).toEqual([
+      {
+        reminderId,
+        memoryId: saved?.id,
+        text: "主人妈妈的生日是 5 月 12 日",
+        dueAt: "2028-05-12T01:00:00.000Z",
+        repeat: "yearly",
+      },
+    ]);
+    await context.control.execute({
+      ...envelope,
+      kind: "command",
+      type: "memory.reminder.respond",
+      payload: { reminderId, action: "cancel" },
+    } as never);
+    expect(await reminders.read(reminderId)).toMatchObject({
+      status: "dismissed",
+      dueAt: "2028-05-12T01:00:00.000Z",
+    });
+    expect((await overview(context.control)).upcoming).toEqual([]);
+  });
+
+  const command = (control: ProductionMemoryControl, type: string, payload: unknown, key = type) =>
+    control.execute({
+      ...envelope,
+      idempotencyKey: key,
+      kind: "command",
+      type,
+      payload,
+    } as never);
+  const secondRun = async (
+    context: Awaited<ReturnType<typeof setup>>,
+    message: string,
+    output: unknown,
+    runId: string,
+  ) => {
+    await context.turn("owner", message, runId);
+    context.outputs.push(JSON.stringify(output));
+    const next = new ProductionMemoryCapture(
+      (
+        context.capture as unknown as {
+          options: ConstructorParameters<typeof ProductionMemoryCapture>[0];
+        }
+      ).options,
+    );
+    await next.start(context.requestFor(runId));
+    await next.stop();
+  };
+
+  it("[MP-1] lists category, sub-category, state, upcoming reminders and the pause switch", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色，11 月 3 日下午 3 点和房东视频看房。",
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "create",
+            text: "主人最喜欢的颜色是蓝色",
+            classification: "private",
+            confidence: 950,
+            category: "preference",
+            subCategory: "颜色",
+            quote: "我最喜欢的颜色是蓝色",
+          },
+          {
+            kind: "commitment",
+            decision: "create",
+            text: "主人 11 月 3 日下午 3 点和房东视频看房",
+            classification: "private",
+            confidence: 950,
+            category: "event",
+            subCategory: "看房",
+            dueAt: "2026-11-03T15:00",
+            repeat: "none",
+            quote: "11 月 3 日下午 3 点和房东视频看房",
+          },
+        ],
+      }),
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const view = await overview(context.control);
+    const color = view.memories.find(({ text }) => text.includes("蓝色"));
+    expect(color).toMatchObject({
+      category: "preference",
+      subCategory: "颜色",
+      status: "active",
+      recordedAt: T0,
+      lastUsedAt: null,
+      importBatchId: null,
+    });
+    expect(view.memories.find(({ text }) => text.includes("看房"))?.subCategory).toBeNull();
+    expect(view.upcoming).toEqual([
+      expect.objectContaining({
+        text: "主人 11 月 3 日下午 3 点和房东视频看房",
+        dueAt: "2026-11-03T07:00:00.000Z",
+        repeat: "none",
+      }),
+    ]);
+    expect(view.capturePaused).toBe(false);
+    expect(view).toMatchObject({ people: [], personSuggestions: [], imports: [] });
+  });
+
+  it("[MP-2] keeps a deleted Memory in recent deletions for seven days and can bring it back", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    const [memory] = (await overview(context.control)).memories;
+    if (!memory) throw new Error("memory");
+    await mutate(context.control, memory.memoryId, memory.revision, "delete", null);
+    const [trashed] = (await overview(context.control)).memories;
+    expect(trashed).toMatchObject({ memoryId: memory.memoryId, status: "trashed" });
+    if (!trashed) throw new Error("trashed");
+    await context.memory.runProjectionBatch(5);
+    await mutate(context.control, memory.memoryId, trashed.revision, "recover", null);
+    const [recovered] = (await overview(context.control)).memories;
+    expect(recovered).toMatchObject({ memoryId: memory.memoryId, status: "active" });
+    if (!recovered) throw new Error("recovered");
+    await mutate(context.control, memory.memoryId, recovered.revision, "delete", null);
+    context.clock.value = "2026-11-01T11:59:00.000Z";
+    expect((await overview(context.control)).memories).toHaveLength(1);
+    context.clock.value = "2026-11-01T12:00:01.000Z";
+    expect((await overview(context.control)).memories).toEqual([]);
+    expect(
+      (await context.repository.productMemoryState().read(memory.memoryId as never))?.status,
+    ).toBe("deletion_pending");
+  });
+
+  it("[MP-3] adds a Memory the Owner types in once one was learned and refuses card numbers", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.protect("payload-manual", "主人喜欢早上跑步");
+    expect((await overview(context.control)).manualAddReady).toBe(false);
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect((await overview(context.control)).manualAddReady).toBe(true);
+    await command(
+      context.control,
+      "memory.create",
+      { contentRef: "payload-manual", category: "preference", subCategory: "运动" },
+      "manual-1",
+    );
+    const added = (await overview(context.control)).memories.find(({ text }) =>
+      text.includes("跑步"),
+    );
+    expect(added).toMatchObject({
+      memoryId: "memory:owner:manual-1",
+      category: "preference",
+      subCategory: "运动",
+      status: "active",
+      sourceThreadId: null,
+    });
+    await context.memory.runProjectionBatch(5);
+    expect(context.provider.upserts.map(({ content }) => content)).toContain("主人喜欢早上跑步");
+    await context.protect("payload-card", "我的卡号是 6222020200112233445");
+    await expect(
+      command(
+        context.control,
+        "memory.create",
+        { contentRef: "payload-card", category: "finance", subCategory: null },
+        "manual-2",
+      ),
+    ).rejects.toThrow("MEMORY_TEXT_REFUSED");
+  });
+
+  it("[MP-4] stops learning from conversations while memory is paused", async () => {
+    const context = await setup(
+      "我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await command(context.control, "memory.settings.set", { capturePaused: true });
+    expect((await overview(context.control)).capturePaused).toBe(true);
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.prompts).toEqual([]);
+    expect(
+      await context.repository.productMemoryState().listActive(OWNER_ID, AGENT_ID),
+    ).toHaveLength(0);
+    await command(context.control, "memory.settings.set", { capturePaused: false }, "resume");
+    expect((await overview(context.control)).capturePaused).toBe(false);
+  });
+
+  it("[MP-5] reuses sub-categories and caps each category at eight", async () => {
+    const existing = ["饮食", "运动", "颜色", "音乐", "电影", "旅行", "穿着", "作息"];
+    const parsed = parseMemoryCandidates({
+      output: JSON.stringify({
+        memories: ["饮食", "宠物", "  运动 ", "这个小类名字实在是太长了不能用"].map(
+          (subCategory, index) => ({
+            kind: "durable_fact",
+            decision: "create",
+            text: `偏好 ${index}`,
+            classification: "private",
+            confidence: 900,
+            category: "preference",
+            subCategory,
+          }),
+        ),
+      }),
+      sourceRef: "payload",
+      sourceClassification: "private",
+      existingIds: new Set(),
+      subCategories: { preference: existing },
+    });
+    expect(parsed.candidates.map(({ attributes }) => attributes?.subCategory ?? null)).toEqual([
+      "饮食",
+      null,
+      "运动",
+      null,
+    ]);
+    const prompt = memoryCapturePrompt("我喜欢猫", [], null, null, null, {
+      subCategories: { preference: existing },
+    });
+    expect(prompt).toContain('"existingSubCategories":{"preference":["饮食","运动"');
+    expect(prompt).toContain("每个 category 最多 8 个小类");
+  });
+
+  it("[MP-6] remembers people and their relations and merges a person the Owner confirms", async () => {
+    const context = await setup(
+      "张伟是我研究生时的导师，王磊是他以前带过的学生。",
+      JSON.stringify({
+        memories: [
+          {
+            kind: "durable_fact",
+            decision: "create",
+            text: "张伟是主人研究生时的导师，王磊是张伟以前带过的学生",
+            classification: "private",
+            confidence: 950,
+            category: "relationship",
+            people: [
+              { name: "张伟", aliases: [], relation: "导师", reverseRelation: "学生" },
+              { name: "王磊", aliases: [], relation: null, reverseRelation: null },
+            ],
+            personLinks: [{ from: "张伟", to: "王磊", relation: "学生", reverseRelation: "导师" }],
+            quote: "张伟是我研究生时的导师，王磊是他以前带过的学生",
+          },
+        ],
+      }),
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    expect(context.failures).toEqual([]);
+    const first = await overview(context.control);
+    const zhang = first.people.find(({ name }) => name === "张伟");
+    const wang = first.people.find(({ name }) => name === "王磊");
+    if (!zhang || !wang) throw new Error("people");
+    expect(zhang).toMatchObject({ relation: "导师", reverseRelation: "学生" });
+    expect(zhang.links).toEqual([{ personId: wang.personId, relation: "学生" }]);
+    expect(wang.links).toEqual([{ personId: zhang.personId, relation: "导师" }]);
+    await secondRun(
+      context,
+      "张老师说我简历里项目写得太散。",
+      {
+        memories: [
+          {
+            kind: "experience",
+            decision: "create",
+            text: "张老师认为主人简历里的项目写得太散",
+            classification: "private",
+            confidence: 900,
+            category: "event",
+            people: [{ name: "张老师", maybeSameAs: zhang.personId }],
+            quote: "张老师说我简历里项目写得太散",
+          },
+        ],
+      },
+      "run-people-2",
+    );
+    expect(context.prompts[1]).toContain(`"knownPeople":[`);
+    expect(context.prompts[1]).toContain(zhang.personId);
+    const second = await overview(context.control);
+    expect(second.people).toHaveLength(3);
+    const [suggestion] = second.personSuggestions;
+    expect(suggestion?.candidateId).toBe(zhang.personId);
+    if (!suggestion) throw new Error("suggestion");
+    await command(context.control, "memory.person.respond", {
+      suggestionId: suggestion.suggestionId,
+      merge: true,
+    });
+    const merged = await overview(context.control);
+    expect(merged.personSuggestions).toEqual([]);
+    expect(merged.people).toHaveLength(2);
+    const kept = merged.people.find(({ personId }) => personId === zhang.personId);
+    expect(kept?.aliases).toEqual(["张老师"]);
+    expect(kept?.memoryIds).toHaveLength(2);
+    await expect(
+      command(
+        context.control,
+        "memory.person.respond",
+        {
+          suggestionId: suggestion.suggestionId,
+          merge: true,
+        },
+        "again",
+      ),
+    ).rejects.toThrow("MEMORY_PERSON_NOT_FOUND");
+  });
+
+  it("[MP-7] imports chosen memories as one batch the Owner can undo", async () => {
+    const context = await setup(
+      "请记住，我最喜欢的颜色是蓝色。",
+      '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
+    );
+    await context.capture.start(context.request);
+    await context.capture.stop();
+    await context.protect("payload-import-1", "回答一律用简体中文");
+    await context.protect("payload-import-2", "Andy 在准备 AI 应用工程师岗位的面试");
+    const commit = () =>
+      command(
+        context.control,
+        "memory.import.commit",
+        {
+          batchId: "memory-import-codex-1",
+          source: "codex",
+          items: [
+            { contentRef: "payload-import-1", category: "rule", subCategory: "回答方式" },
+            { contentRef: "payload-import-2", category: "goal", subCategory: null },
+          ],
+        },
+        "import-1",
+      );
+    expect(await commit()).toEqual({ resultRef: "memory-import-codex-1", replayed: false });
+    expect(await commit()).toEqual({ resultRef: "memory-import-codex-1", replayed: true });
+    const imported = await overview(context.control);
+    expect(
+      imported.memories.filter(({ importBatchId }) => importBatchId === "memory-import-codex-1"),
+    ).toHaveLength(2);
+    expect(imported.imports).toEqual([
+      {
+        batchId: "memory-import-codex-1",
+        source: "codex",
+        itemCount: 2,
+        createdAt: T0,
+        undone: false,
+      },
+    ]);
+    await command(context.control, "memory.import.undo", { batchId: "memory-import-codex-1" });
+    const undone = await overview(context.control);
+    expect(
+      undone.memories
+        .filter(({ importBatchId }) => importBatchId === "memory-import-codex-1")
+        .map(({ status }) => status),
+    ).toEqual(["trashed", "trashed"]);
+    expect(undone.imports[0]?.undone).toBe(true);
+    await expect(
+      command(context.control, "memory.import.undo", { batchId: "memory-import-codex-1" }, "u2"),
+    ).rejects.toThrow("MEMORY_IMPORT_NOT_FOUND");
   });
 });
