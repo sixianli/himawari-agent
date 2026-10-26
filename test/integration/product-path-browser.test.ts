@@ -895,6 +895,15 @@ async function toolDeliveryAfter(before: ReadonlySet<string>) {
   return { row, delivery: delivery?.content ?? null };
 }
 
+async function expectFinishedTurnShowsStep(turn: Locator, step: string) {
+  await uiExpect(page.getByRole("button", { name: "停止", exact: true })).toHaveCount(0, {
+    timeout: 120_000,
+  });
+  await uiExpect(turn.getByText(step).first()).toBeVisible({ timeout: 30_000 });
+  await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
+  await uiExpect(page.getByText("没有可展示的过程记录")).toHaveCount(0);
+}
+
 async function newThread() {
   await page
     .getByRole("link", { name: "新建对话" })
@@ -1436,6 +1445,43 @@ productDescribe(
         expect(await readFile(path.join(installation.workspace, "hello.txt"), "utf8")).toBe(
           "你好，Himawari",
         );
+      });
+    });
+
+    it("keeps an already open page working after the service restarts", async () => {
+      await scenario("04b-open-page-after-restart", async () => {
+        await newThread();
+        await installation.stop();
+        await installation.start();
+        const readAnswers = await beginToolRequest("重启后请读取 notes.txt");
+        await uiExpect(readAnswers).toHaveCount(1, { timeout: 60_000 });
+        await expectFinishedTurnShowsStep(currentTurn(), "读取文件");
+        const write = await send("重启后请写入 hello.txt");
+        const allow = write.getByRole("button", { name: "允许这一次" });
+        await uiExpect(allow).toBeVisible({ timeout: 60_000 });
+        await allow.click();
+        await uiExpect(write.getByText(/工具返回：/)).toHaveCount(1, { timeout: 60_000 });
+        await expectFinishedTurnShowsStep(write, "写入文件");
+      });
+    });
+
+    it("keeps every step of a turn visible over a slow connection", async () => {
+      await scenario("04c-slow-connection", async () => {
+        await newThread();
+        await page.route("**/api/gateway/**", async (route) => {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await route.continue().catch(() => undefined);
+        });
+        try {
+          const turn = await send("慢速网络下请写入 hello.txt");
+          const allow = turn.getByRole("button", { name: "允许这一次" });
+          await uiExpect(allow).toBeVisible({ timeout: 60_000 });
+          await allow.click();
+          await uiExpect(turn.getByText(/工具返回：/)).toHaveCount(1, { timeout: 120_000 });
+          await expectFinishedTurnShowsStep(turn, "写入文件");
+        } finally {
+          await page.unrouteAll({ behavior: "ignoreErrors" });
+        }
       });
     });
 
@@ -5413,4 +5459,187 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
     await uiExpect(asking.getByText(/工具返回：/)).toBeVisible({ timeout: 300_000 });
     expect(auditCount("workspace.authorization.revoked")).toBe(1);
   }, 1_500_000);
+});
+
+const RELEASE_ACCEPTANCE_SCENARIOS = [
+  "accept-homepage",
+  "accept-search-toggle",
+  "accept-news-search",
+  "accept-long-answer",
+  "accept-memory-page",
+  "accept-after-restart",
+] as const;
+const LONG_ANSWER_END = "长回答验收到此结束";
+const LONG_ANSWER = [
+  ...Array.from(
+    { length: 600 },
+    (_, index) => `第${index + 1}段：这一段用来检查很长的回答能否从头到尾完整显示。`,
+  ),
+  LONG_ANSWER_END,
+].join("\n\n");
+const releaseAcceptanceScript: ModelScript = ({ lastUserText, toolResults }) => {
+  if (lastUserText.includes("联网搜索今天的新闻") && toolResults.length === 0)
+    return {
+      kind: "tool",
+      name: "web_search",
+      arguments: { query: "today top world news headlines", limit: 5 },
+    };
+  if (toolResults.length > 0) return { kind: "text", text: `工具返回：${toolResults.join("\n")}` };
+  if (lastUserText.includes("长回答")) return { kind: "text", text: LONG_ANSWER };
+  return { kind: "text", text: "普通回答已完成" };
+};
+
+async function openSettingsTab(tab: "工具与权限" | "记忆") {
+  const dialog = page.getByRole("dialog");
+  if (!(await dialog.isVisible()))
+    await page.getByRole("button", { name: "设置", exact: true }).first().click();
+  await uiExpect(dialog).toBeVisible({ timeout: 20_000 });
+  await dialog.getByRole("button", { name: tab, exact: true }).click();
+  return dialog;
+}
+
+async function closeSettings() {
+  const dialog = page.getByRole("dialog");
+  if (await dialog.isVisible()) await dialog.getByRole("button", { name: "关闭" }).first().click();
+  await uiExpect(dialog).toHaveCount(0, { timeout: 20_000 });
+}
+
+async function searchToggleUsable(name: "允许联网搜索" | "撤销联网搜索授权") {
+  await uiExpect
+    .poll(
+      async () => {
+        const dialog = await openSettingsTab("工具与权限");
+        return dialog
+          .getByRole("checkbox", { name, exact: true })
+          .isEnabled({ timeout: 1_000 })
+          .catch(() => false);
+      },
+      { timeout: 60_000, intervals: [1_000] },
+    )
+    .toBe(true);
+  return page.getByRole("dialog").getByRole("checkbox", { name, exact: true });
+}
+
+async function expectNewsSearchResults(text: string) {
+  await newThread();
+  const turn = await send(text);
+  const answer = turn.getByText(/工具返回：/);
+  await uiExpect(answer).toHaveCount(1, { timeout: 120_000 });
+  await uiExpect(answer).toContainText("https://");
+  await uiExpect(turn.getByRole("button", { name: "允许这一次" })).toHaveCount(0);
+  await uiExpect(page.getByText("正在加载权威状态")).toHaveCount(0);
+  await expectFinishedTurnShowsStep(turn, "搜索网页");
+}
+
+productDescribe("product path: release acceptance in a real browser", { timeout: 900_000 }, () => {
+  beforeAll(async () => {
+    const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+    const contextFile = process.env["HIMAWARI_TEST_CONTEXT"];
+    if (!artifact || !contextFile)
+      throw new Error(
+        "PRODUCT_PATH_REQUIRES_ARTIFACT: set HIMAWARI_TEST_ARTIFACT and HIMAWARI_TEST_CONTEXT",
+      );
+    installation = await installProductPath({
+      artifact,
+      context: contextFile,
+      logDirectory: path.join(outputDirectory, "acceptance-service-logs"),
+      approval: "ask",
+      webSearch: true,
+    });
+    installation.setModelScript(releaseAcceptanceScript);
+    await installation.start();
+    browser = await chromium.launch({
+      channel: process.env["HIMAWARI_PRODUCT_PATH_BROWSER_CHANNEL"] ?? "chrome",
+      tracesDir: path.join(outputDirectory, "traces", "acceptance"),
+      args: [`--host-resolver-rules=MAP ${publicHost}:443 127.0.0.1:${installation.frontPort}`],
+    });
+    context = await browser.newContext({ ignoreHTTPSErrors: true, locale: "zh-CN" });
+    await context.tracing.start({
+      name: "acceptance",
+      live: true,
+      screenshots: true,
+      snapshots: true,
+    });
+    page = await context.newPage();
+  }, 400_000);
+
+  afterAll(async () => {
+    const artifact = process.env["HIMAWARI_TEST_ARTIFACT"];
+    await cleanupWithEvidence("acceptance-teardown", [
+      [
+        "browser-acceptance",
+        async () =>
+          writeFile(
+            path.join(outputDirectory, "browser-acceptance.json"),
+            `${JSON.stringify(
+              {
+                schema: "himawari-browser-acceptance.v1",
+                artifact: artifact ? path.basename(artifact) : null,
+                artifactSha256: artifact
+                  ? createHash("sha256")
+                      .update(await readFile(artifact))
+                      .digest("hex")
+                  : null,
+                completedAt: new Date().toISOString(),
+                results: results.filter(({ scenario: name }) =>
+                  (RELEASE_ACCEPTANCE_SCENARIOS as readonly string[]).includes(name),
+                ),
+              },
+              null,
+              2,
+            )}\n`,
+          ),
+      ],
+      ["installation", async () => installation?.close()],
+      ["trace", async () => context?.tracing.stop()],
+      ["browser", async () => browser?.close()],
+    ]);
+  }, 120_000);
+
+  it("walks the five release checks and keeps them working after a service restart", async () => {
+    await scenario("accept-homepage", async () => {
+      const response = await page.goto(`${installation.origin}/`);
+      expect(response?.status()).toBe(200);
+      await page.getByRole("button", { name: "登录 Himawari" }).click();
+      await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
+    });
+    await scenario("accept-search-toggle", async () => {
+      const toggle = await searchToggleUsable("允许联网搜索");
+      await uiExpect(toggle).not.toBeChecked();
+      await toggle.click();
+      const enabled = page
+        .getByRole("dialog")
+        .getByRole("checkbox", { name: "撤销联网搜索授权", exact: true });
+      await uiExpect(enabled).toBeChecked({ timeout: 30_000 });
+      await uiExpect(enabled).toBeEnabled();
+      await closeSettings();
+    });
+    await scenario("accept-news-search", async () => {
+      await expectNewsSearchResults("请联网搜索今天的新闻");
+    });
+    await scenario("accept-long-answer", async () => {
+      await newThread();
+      const turn = await send("请给一个长回答");
+      await uiExpect(turn.getByText(LONG_ANSWER_END)).toBeVisible({ timeout: 120_000 });
+      await uiExpect(turn.getByText("第1段：", { exact: false })).toHaveCount(1);
+      await uiExpect(turn.getByText("第600段：", { exact: false })).toHaveCount(1);
+      await uiExpect(page.getByText("部分执行记录暂不可读取")).toHaveCount(0);
+    });
+    await scenario("accept-memory-page", async () => {
+      const dialog = await openSettingsTab("记忆");
+      await uiExpect(dialog.getByText(/还没有记忆|共 \d+ 条/).first()).toBeVisible({
+        timeout: 30_000,
+      });
+      await uiExpect(dialog.getByRole("alert")).toHaveCount(0);
+      await closeSettings();
+    });
+    await scenario("accept-after-restart", async () => {
+      await installation.stop();
+      await installation.start();
+      const toggle = await searchToggleUsable("撤销联网搜索授权");
+      await uiExpect(toggle).toBeChecked();
+      await closeSettings();
+      await expectNewsSearchResults("重启后请联网搜索今天的新闻");
+    });
+  });
 });

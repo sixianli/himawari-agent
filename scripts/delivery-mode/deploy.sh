@@ -21,6 +21,11 @@ if [[ -f "$packet/inputs/check-packet-consistency.py" ]] && ! /usr/bin/python3 -
   result inconsistent PACKET 3
 fi
 
+if ! /usr/bin/python3 -I "$here/browser-acceptance-gate.py" "$packet"; then
+  echo "DEPLOY_BROWSER_ACCEPTANCE_MISSING: walk the release checks in a real browser on this exact artifact first (product-path test 'release acceptance'), then copy its browser-acceptance.json to $packet/browser-acceptance/walkthrough.json" >&2
+  result no-browser-acceptance ACCEPTANCE 5
+fi
+
 echo "DEPLOY_PREFLIGHT_START $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if ! /usr/bin/python3 -I "$here/deploy-preflight.py" "$packet"; then
   echo "DEPLOY_PREFLIGHT_FAILED: nothing on the production server was changed" >&2

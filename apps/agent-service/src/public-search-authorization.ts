@@ -47,20 +47,20 @@ export class PublicSearchAuthorization {
       ]),
     ];
   }
-  private binding() {
-    const config = this.options.configuration;
-    const recipients = this.recipients();
+  private routes() {
+    const runPolicy = this.options.configuration.runPolicy;
+    return { search: runPolicy?.publicSearch ?? null, fetch: runPolicy?.publicFetch ?? null };
+  }
+  private consent() {
     return {
-      route: config.runPolicy?.publicSearch ?? null,
-      ...(config.runPolicy?.publicFetch ? { fetchRoute: config.runPolicy.publicFetch } : {}),
-      models: (config.modelDescriptors ?? [])
+      models: (this.options.configuration.modelDescriptors ?? [])
         .filter(
           (model) =>
             model.role !== "embedding" && model.allowedDataClassifications.includes("private"),
         )
         .map(configuredModelDisclosureIdentity)
         .sort(),
-      recipient: recipients.length === 1 ? recipients[0] : recipients,
+      recipients: [...this.recipients()].sort(),
     };
   }
   async revision(): Promise<number> {
@@ -74,7 +74,7 @@ export class PublicSearchAuthorization {
     if (query.type !== "search.authorization.read")
       throw new Error("SEARCH_OPERATION_NOT_INSTALLED");
     const state = await this.read();
-    const binding = this.binding();
+    const routes = this.routes();
     return {
       ...query,
       kind: "snapshot",
@@ -82,8 +82,9 @@ export class PublicSearchAuthorization {
       payload: {
         revision: state?.revision ?? 0,
         enabled:
-          state?.value["enabled"] === true && state.value["bindingDigest"] === digest(binding),
-        available: binding.route !== null || "fetchRoute" in binding,
+          state?.value["enabled"] === true &&
+          state.value["bindingDigest"] === digest(this.consent()),
+        available: routes.search !== null || routes.fetch !== null,
         recipients: this.recipients(),
         generatedAt: this.options.clock.now(),
       },
@@ -100,8 +101,8 @@ export class PublicSearchAuthorization {
       command.scope.agentId !== configuration.agentId
     )
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_AUTHORITATIVE, "SEARCH_OWNER_REQUIRED");
-    const binding = this.binding();
-    if (!binding.route && !("fetchRoute" in binding))
+    const routes = this.routes();
+    if (!routes.search && !routes.fetch)
       throw new ApplicationPortError(PORT_ERROR_CODES.INVALID_OPERATION, "SEARCH_NOT_CONFIGURED");
     if (
       command.payload.enabled &&
@@ -117,7 +118,11 @@ export class PublicSearchAuthorization {
         agentId: configuration.agentId,
         commandType: command.type,
         idempotencyKey: command.idempotencyKey as IdempotentAgentCommand["idempotencyKey"],
-        commandFingerprint: digest({ payload: command.payload, actor: command.actor, binding }),
+        commandFingerprint: digest({
+          payload: command.payload,
+          actor: command.actor,
+          consent: this.consent(),
+        }),
         authority,
       },
       state: {
@@ -125,7 +130,7 @@ export class PublicSearchAuthorization {
         expectedRevision: command.payload.expectedRevision || null,
         value: {
           enabled: command.payload.enabled,
-          bindingDigest: digest(binding),
+          bindingDigest: digest(this.consent()),
           recipients: this.recipients(),
           actorId: command.actor.actorId,
         },
@@ -152,12 +157,13 @@ export class PublicSearchAuthorization {
   }
   async authorize(intent: GovernedActionIntent): Promise<void> {
     const { configuration, repository, clock, ids } = this.options;
-    const binding = this.binding();
+    const routes = this.routes();
+    const consent = this.consent();
     const route =
       intent.operation === "web_search"
-        ? binding.route
-        : intent.operation === "web_fetch" && "fetchRoute" in binding
-          ? binding.fetchRoute
+        ? routes.search
+        : intent.operation === "web_fetch"
+          ? routes.fetch
           : null;
     if (!route) return;
     const recipients = webProviderRecipients(route.providers);
@@ -179,7 +185,7 @@ export class PublicSearchAuthorization {
       intent.estimatedCostMicros !== 0 ||
       intent.recipients.length !== recipients.length + 1 ||
       !recipients.every((value) => intent.recipients.includes(value)) ||
-      !intent.recipients.some((value) => binding.models.includes(value)) ||
+      !intent.recipients.some((value) => consent.models.includes(value)) ||
       !intent.targets.some((target) => target.type === "host" && target.ref === route.hostId) ||
       ("scopeSource" in route
         ? intent.targets.some((target) =>
@@ -195,7 +201,7 @@ export class PublicSearchAuthorization {
     if (
       !state ||
       state.value["enabled"] !== true ||
-      state.value["bindingDigest"] !== digest(binding)
+      state.value["bindingDigest"] !== digest(consent)
     )
       return;
     const store = repository.authorizationStore();
