@@ -490,6 +490,8 @@ export const messages = {
     "{paused, select, true {一時停止しました。新しくは記憶せず、既存の記憶は使います} other {再開しました。会話の好みや予定を記憶します}}",
   "memory.page.pausedNote":
     "自動記憶を一時停止中です。既存の記憶は使いますが、会話から新しく記憶せず、毎日の整理もしません。手動で追加したものは記憶します。",
+  "memory.page.notReady":
+    "手動追加とインポートは、会話から最初の記憶ができてから使えます。自動記憶をオンにして、自分のことを一つ話してください（例：「好きな色は青」）。",
   "memory.page.add": "手動で追加",
   "memory.page.addTitle": "Himawari に覚えてほしいこと",
   "memory.page.addNote":

@@ -459,6 +459,8 @@ export const messages = {
     "{paused, select, true {已暂停：不再从对话里记新的，已有记忆照常用} other {已恢复：聊天中提到的偏好、计划会自动记下}}",
   "memory.page.pausedNote":
     "自动记忆已暂停：Himawari 仍会用已有的记忆回答，但不会再从对话里记新的事，也不做每日整理。你手动添加的照样会记。",
+  "memory.page.notReady":
+    "要先从对话里记下第一条记忆，才能手动添加和导入。打开自动记忆后，和 Himawari 说一件关于你的事（比如“我最喜欢蓝色”）就可以了。",
   "memory.page.add": "手动添加一条",
   "memory.page.addTitle": "让 Himawari 记住一件事",
   "memory.page.addNote":

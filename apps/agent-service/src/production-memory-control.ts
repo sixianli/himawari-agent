@@ -201,6 +201,7 @@ export class ProductionMemoryControl {
       due.map(({ id, updatedAt }) => [id, updatedAt]),
       inactive.map(({ id, revision }) => [id, revision]),
       settings.updatedAt,
+      (await this.options.book.latestGeneration(scope)) ?? null,
       people.map(({ id, updatedAt, memoryIds }) => [id, updatedAt, memoryIds.length]),
       suggestions.map(({ id }) => id),
       imports.map(({ id, undoneAt }) => [id, undoneAt]),
@@ -426,6 +427,7 @@ export class ProductionMemoryControl {
       undone: undoneAt !== null,
     }));
     const { capturePaused } = await this.options.book.readSettings(scope);
+    const manualAddReady = (await this.options.book.latestGeneration(scope)) !== undefined;
     return {
       ...query,
       kind: "snapshot",
@@ -441,6 +443,7 @@ export class ProductionMemoryControl {
         personSuggestions,
         imports,
         capturePaused,
+        manualAddReady,
         generatedAt: now,
       },
     } as GatewayV2Snapshot;

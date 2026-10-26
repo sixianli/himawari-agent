@@ -486,6 +486,8 @@ export const messages = {
     "{paused, select, true {Paused: nothing new is learned; existing memories are still used} other {Resumed: preferences and plans you mention are remembered again}}",
   "memory.page.pausedNote":
     "Learning is paused: Himawari still uses what it knows, but learns nothing new from conversations and skips the daily tidy-up. Memories you add by hand are still saved.",
+  "memory.page.notReady":
+    'Adding and importing by hand become available once Himawari learns its first memory from a conversation. Turn learning on and tell Himawari one thing about yourself (for example, "my favorite color is blue").',
   "memory.page.add": "Add a memory",
   "memory.page.addTitle": "Tell Himawari something to remember",
   "memory.page.addNote":

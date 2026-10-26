@@ -154,6 +154,7 @@ beforeEach(() => {
     personSuggestions: [],
     imports: [],
     capturePaused: false,
+    manualAddReady: true,
     generatedAt: "2026-10-25T12:00:00.000Z",
   };
   query.mockImplementation(async (request) => ({
@@ -565,6 +566,22 @@ describe("memory approval and management", () => {
     expect(created).toHaveBeenCalledTimes(1);
     expect(clicked).toHaveBeenCalledTimes(1);
     clicked.mockRestore();
+  });
+
+  it("[MP-8] keeps adding and importing closed until the first memory is learned and says why", async () => {
+    overview = { ...overview, manualAddReady: false };
+    await render();
+    const header = [
+      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-header button"),
+    ];
+    const footer = [
+      ...document.querySelectorAll<HTMLButtonElement>("#settings .memory-footer button"),
+    ];
+    expect(header.find((item) => item.textContent === "手动添加一条")?.disabled).toBe(true);
+    expect(footer.find((item) => item.textContent === "导入记忆")?.disabled).toBe(true);
+    expect(footer.find((item) => item.textContent === "导出全部记忆")?.disabled).toBe(false);
+    expect(text("#settings")).toContain("要先从对话里记下第一条记忆，才能手动添加和导入");
+    expect(document.querySelector("#settings .memory-card[data-kind=add]")).toBeNull();
   });
 });
 

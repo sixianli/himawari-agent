@@ -1262,6 +1262,7 @@ export function MemorySettings({
   const due = overview?.reminders.length ?? 0;
   const current: Tab = tab === "pending" && !queue ? "profile" : tab;
   const paused = overview?.capturePaused ?? false;
+  const ready = overview?.manualAddReady ?? false;
   const tabs: { key: Tab; count?: string; urgent?: boolean }[] = [
     ...(queue ? [{ key: "pending" as const, count: String(queue), urgent: true }] : []),
     {
@@ -1323,6 +1324,7 @@ export function MemorySettings({
           </label>
           <ActionButton
             variant="secondary"
+            disabled={!ready}
             onClick={() => setPanel(panel === "add" ? null : "add")}
           >
             {message("memory.page.add")}
@@ -1334,6 +1336,9 @@ export function MemorySettings({
         <p className="memory-banner" data-kind="paused">
           {message("memory.page.pausedNote")}
         </p>
+      ) : null}
+      {overview && !ready ? (
+        <p className="memory-banner">{message("memory.page.notReady")}</p>
       ) : null}
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
@@ -1362,6 +1367,7 @@ export function MemorySettings({
             <ActionButton
               key={key}
               variant="quiet"
+              disabled={key === "import" && !ready}
               aria-expanded={panel === key}
               onClick={() => setPanel(panel === key ? null : key)}
             >

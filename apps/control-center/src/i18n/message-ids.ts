@@ -438,6 +438,7 @@ export const MESSAGE_IDS = [
   "memory.page.autoState",
   "memory.page.pauseDone",
   "memory.page.pausedNote",
+  "memory.page.notReady",
   "memory.page.add",
   "memory.page.addTitle",
   "memory.page.addNote",

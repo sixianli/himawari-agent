@@ -329,6 +329,7 @@ const memoryOverviewSnapshotSchema = object({
       }),
     ),
     capturePaused: booleanValue,
+    manualAddReady: booleanValue,
     profile: array(
       object({
         kind: enumeration(MEMORY_PROFILE_KINDS),

@@ -747,14 +747,16 @@ describe("production memory capture", () => {
     ).toBe("deletion_pending");
   });
 
-  it("[MP-3] adds a Memory the Owner types in and refuses card numbers", async () => {
+  it("[MP-3] adds a Memory the Owner types in once one was learned and refuses card numbers", async () => {
     const context = await setup(
       "请记住，我最喜欢的颜色是蓝色。",
       '{"memories":[{"kind":"durable_fact","decision":"create","text":"主人最喜欢的颜色是蓝色","classification":"private","confidence":950,"explicit":true,"quote":"我最喜欢的颜色是蓝色"}]}',
     );
+    await context.protect("payload-manual", "主人喜欢早上跑步");
+    expect((await overview(context.control)).manualAddReady).toBe(false);
     await context.capture.start(context.request);
     await context.capture.stop();
-    await context.protect("payload-manual", "主人喜欢早上跑步");
+    expect((await overview(context.control)).manualAddReady).toBe(true);
     await command(
       context.control,
       "memory.create",
