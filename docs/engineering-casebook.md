@@ -42,6 +42,7 @@ date: "2026-10-26"
   15. [模型网关迁移和“速度优先”路由](#case-model-gateway)
   16. [运行中却显示“已完成”：模型过渡话被当成回答](#case-narration-status)
   17. [记忆管理页重设计：记忆越来越多，一页长列表管不过来](#case-memory-page)
+  18. [搜索已经结束，却被判“失联”，整个服务卡 5 分钟](#case-sandbox-lost-race)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -68,8 +69,8 @@ date: "2026-10-26"
 | Agent 安全：沙箱、权限、提示注入防护、外发网络控制 | [工具隔离架构](#case-tool-isolation)、[授权核对](#case-authority-checks)、[搜索供应商链](#case-web-providers) |
 | 延迟优化和性能分析 | [49 秒拆耗时](#case-search-latency)、[沙箱冷启动](#case-sandbox-cold-start)、[授权核对](#case-authority-checks) |
 | 模型接入、路由、上下文管理、成本 | [模型网关](#case-model-gateway)、[上下文窗口](#case-context-window)、[删掉预算上限](#case-budget-removal) |
-| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy) |
-| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode) |
+| 可靠性：失败恢复、回退、熔断 | [搜索供应商链](#case-web-providers)、[搜索开关空转](#case-search-toggle-spin)、[第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race) |
+| 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode) |
 
@@ -1009,6 +1010,65 @@ lessons 共 25 条；第十次上线中“复制操作包留旧名”达到第�
 **面试 30 秒版**
 
 “记忆功能是一块块加出来的，设置页变成 7 块的长列表，同一条记忆出现两次、删除要确认、整理改了什么看不见。我先出可点原型给用户审，再按‘要处理的’和‘随时看的’分页签，删除改成 7 天可恢复加撤销，人物关系用 SQLite 表加以人为中心的放射图，不引入图数据库。新页面改成打开时才下载，聊天页主文件没变大，代价是总体积上限从 180 放宽到 192 KiB。”
+
+[返回目录](#contents)
+
+<a id="case-sandbox-lost-race"></a>
+
+## 案例 18：搜索已经结束，却被判“失联”，整个服务卡 5 分钟
+
+**背景与现象**
+
+2026-10-26 07:07（UTC）Andy 在生产版（第十次上线，源码 030f81f）问“美国新闻最新10条”，这一轮卡住不动。他停掉重问，新的一轮也卡住，服务等于完全不能用。大约 5 分钟后才自己恢复。
+
+**根因**
+
+用生产数据库和沙箱的控制文件确认（只读登录生产机查看）：
+
+1. 搜索任务本身正常结束了。沙箱主机（运行沙箱的那个进程）在任务进程退出后，要先清理沙箱，再写最终结果文件 `final.json`。
+2. agent-service（Himawari 的服务进程）里的 `classify`（`apps/agent-service/src/production-sandbox-control.ts`）每次查看沙箱时，如果发现沙箱的隔离环境已经没了，但主机还没把“任务进程已退出”记下来，就直接判成“失联”（`lost`）。清理期间恰好就是这个状态，失联标记比主机写 `final.json` 只早了 19 毫秒。
+3. worker（执行工具的组件）看到“失联”就取消任务，结果变成“未知”（`SANDBOX_EXIT_UNKNOWN`）。这一轮进入“等外部结果对账”的状态，一直等到 5 分钟的运行期限。
+4. 生产配置 `concurrency.totalRuns` 是 1，同一时间只允许一轮运行，所以卡住的这一轮把后面所有新对话都堵住了。
+
+第九次上线的代码在这条路径上没有区别，只是碰巧没撞上，所以回退旧版本没用。复现方法：单元测试里让沙箱的隔离环境先报告“已释放”、主机还没记下进程退出，旧代码判成 `lost`/`unknown`，测试失败；加上修复后通过。
+
+**我们的方案**
+
+- 立即止血（第十一次上线）：把已经合并的 PR #30 上线。搜索和读网页改在服务进程里执行，不再进沙箱（[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)），绕开了这次出事的路径。
+- 根因修复（单独的 PR）：在 `classify` 里加一条规则：Linux 上、隔离环境已释放、主机状态还是“运行中”且没记下进程退出、主机最近 1.5 秒内还在报告、还没到期限时，判成“清理中”（`exit_cleanup_pending`），继续等主机写结果；过了期限仍按失联处理。
+- 还没做：只读工具的结果变成“未知”时，直接把失败交给模型，而不是让整轮等到期限。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 回退到第九次 | 最快 | 第九次也有同样的问题，只是没撞上 |
+| 把 `totalRuns` 从 1 改成 2 | 一轮卡住时别的对话还能用 | 只是让卡住不那么明显，根因还在；而且这是 Andy 要决定的配置，他还没答复 |
+| 主机清理期间继续刷新状态 | 判断条件不用改 | 要改沙箱主机的协议，改动面更大，上线更慢 |
+| 判断时多等一会儿再判失联 | 改动最小 | 等多久都是猜的，等长了又会拖慢真正失联时的处理 |
+
+放弃了什么：这次止血靠的是“搜索不进沙箱”，运行命令的工具仍走同一条判断路径，要等根因修复上线才算真正解决。
+
+**业界主流做法**
+
+- ✅ Kubernetes 节点文档（[Nodes](https://kubernetes.io/docs/concepts/architecture/nodes/)）：节点失联时，“the node controller sets the `Ready` condition to `Unknown`”，并且“By default, the node controller waits 5 minutes between marking the node as `Unknown` and submitting the first eviction request.” 也就是说，收不到心跳先记成“未知”，等一段宽限时间再采取行动，不在第一次没收到就判死。
+
+**对比与取舍**
+
+思路和 Kubernetes 一样：暂时看不清的状态先当“未知/清理中”，到期限才处理。不同点是我们不加一段固定的等待时间，而是复用已有的运行期限，并且要求主机 1.5 秒内还在报告，这样主机真的没了时仍能很快判成失联。
+
+**结果数据**
+
+- 修复前写的复现测试失败（结果是 `lost`/`unknown`），修复后同一测试通过；沙箱相关测试文件 104/104 通过（Hermes 测试机，2026-10-26）。
+- 第十一次上线的结果、上线后新闻搜索的耗时：见本案例上线后的补充，未测量前不写数字。
+
+**相关 ADR/PR**
+
+[ADR 0079](adr/0079-parallel-read-only-tools-and-host-web-tools.md)、[PR #30](https://github.com/sixianli/himawari-agent/pull/30)（搜索移出沙箱）；根因修复的 PR 见本案例所在的提交；相关：[案例 8](#case-search-toggle-spin)（同样是对话空转 5 分钟）、[案例 11](#case-tenth-deploy)。
+
+**面试 30 秒版**
+
+“生产上搜索已经结束，服务却把它判成‘失联’，整轮等到 5 分钟期限，又因为同时只允许一轮运行，所有新对话都堵住了。查下来是沙箱清理那几十毫秒里，隔离环境已经没了、主机还没记下进程退出，判断逻辑把这个中间状态当成了失联。我们先上线‘搜索不进沙箱’止血，再把这个中间状态改判为‘清理中’，用一个能复现的测试证明修复前失败、修复后通过。”
 
 [返回目录](#contents)
 
