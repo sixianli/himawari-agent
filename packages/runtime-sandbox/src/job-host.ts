@@ -206,12 +206,12 @@ export function prepareSandboxJobHost(
     };
   };
   const supervisionTimer = setInterval(() => {
-    if (starting) return;
-    if (!ended && performance.now() - lastMessageTick > 1500) {
+    if (starting || ended || completion !== undefined) return;
+    if (performance.now() - lastMessageTick > 1500) {
       recordTimeout("JOB_HOST_HEARTBEAT_EXPIRED");
       cancel("host_failure");
     }
-    if (!ended && !cancelled) send({ type: "heartbeat" });
+    if (!cancelled) send({ type: "heartbeat" });
   }, 250);
   const deadlineRemainingMs = Date.parse(request.deadlineAt) - Date.now();
   const timer = setTimeout(

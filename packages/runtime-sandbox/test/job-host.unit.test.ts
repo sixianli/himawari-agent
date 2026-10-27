@@ -439,6 +439,46 @@ it("renews the Worker lease while attached and stops renewing after completion",
   expect(process.send.mock.calls.length).toBe(sent);
 });
 
+it("does not kill a Job Host that already delivered its result when it disconnects", async () => {
+  vi.useFakeTimers();
+  const process = child();
+  let channelClosed = false;
+  process.send.mockImplementation((_message: unknown, callback?: (error: Error | null) => void) => {
+    callback?.(channelClosed ? new Error("ERR_IPC_CHANNEL_CLOSED") : null);
+    return true;
+  });
+  const host = prepareSandboxJobHost({ ...request(), cleanupTimeoutMs: 5000 });
+  process.emitMessage({
+    type: "ready",
+    jobId: "job",
+    attemptId: "attempt",
+    policyDigest: "a".repeat(64),
+  });
+  await host.ready;
+  host.start();
+  process.emitMessage({
+    type: "started",
+    pid: 4321,
+    taskIdentityRef: "sandbox-process:22222222-2222-2222-2222-222222222222",
+    taskStartedAt: new Date().toISOString(),
+  });
+  process.emitMessage({
+    type: "result",
+    exitCode: 0,
+    reason: "exited",
+    taskStarted: true,
+    taskProcessExited: true,
+    stdioClosed: true,
+    srtReset: true,
+    taskProcessGroupGone: true,
+  });
+  channelClosed = true;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(globalThis.process.kill).not.toHaveBeenCalledWith(-12345, "SIGKILL");
+  process.emit("close", 0, null);
+  expect(await host.result).toMatchObject({ reason: "exited", exitCode: 0 });
+});
+
 it("does not renew supervision from a delayed message", async () => {
   const process = child();
   const host = prepareSandboxJobHost(request());
