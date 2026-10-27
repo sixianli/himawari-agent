@@ -22,7 +22,7 @@ RENAMED_FILES = {'systemd/fixtures/verify-doctor-fixtures.mjs': 'systemd/fixture
 INTENDED_CHANGES = {
     'acceptance/OWNED-SHA256SUMS', 'acceptance/S6-limited-host-acceptance.sh', 'acceptance/cloud/cloud-inputs.draft.json',
     'acceptance/cloud/run-cloud-acceptance.sh', 'acceptance/cloud/run-question12-downloads.sh', 'inputs/bindings.draft.json',
-    'inputs/finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
+    'inputs/finalize-bindings.py', 'inputs/verify-finalize-bindings.py', 'maintenance/OWNED-SHA256SUMS', 'maintenance/S9-control-files.py', 'maintenance/maintenance-common.mjs',
     'maintenance/raw-copy-recovery.mjs', 'maintenance/run-maintenance.mjs', 'maintenance/verify-fixtures.mjs', 's0-db/read-s0-db.mjs',
     'steps/README.md', 'steps/run-step.py', 'systemd/OWNED-SHA256SUMS', 'systemd/P9-switch-start-readback.md',
     'systemd/S2-stop-and-inspect.py', 'systemd/S7-switch-start-readback.py', 'systemd/verify-switch-config-fixtures.py',
