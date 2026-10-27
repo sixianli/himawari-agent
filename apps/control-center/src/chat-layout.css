@@ -1489,3 +1489,8 @@
     opacity: 1;
   }
 }
+.browser-entry .browser-entry-action.action-button-primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--background);
+}
