@@ -181,7 +181,7 @@ throwsCode(() => readS0State(full, { ...expectedIdentity, deploymentId: "deploym
 for (const [name, code, statement, undo] of [
   ["schema __PKT_PREVIOUS_SCHEMA__", "__PKT_LABEL_UPPER___DB_SCHEMA_UNSUPPORTED", "UPDATE schema_metadata SET value='__PKT_PREVIOUS_SCHEMA__' WHERE key='current_sequence'", "UPDATE schema_metadata SET value='__PKT_CURRENT_SCHEMA__' WHERE key='current_sequence'"],
   ["writer floor __PKT_PREVIOUS_SCHEMA__", "__PKT_LABEL_UPPER___DB_SCHEMA_UNSUPPORTED", "UPDATE schema_metadata SET value='__PKT_PREVIOUS_SCHEMA__' WHERE key='minimum_writer_sequence'", "UPDATE schema_metadata SET value='__PKT_CURRENT_SCHEMA__' WHERE key='minimum_writer_sequence'"],
-  ["ledger gap", "__PKT_LABEL_UPPER___DB_LEDGER_INVALID", "UPDATE schema_migration_ledger SET sequence=57 WHERE sequence=10", "UPDATE schema_migration_ledger SET sequence=10 WHERE sequence=57"],
+  ["ledger gap", "__PKT_LABEL_UPPER___DB_LEDGER_INVALID", "UPDATE schema_migration_ledger SET sequence=1000000 WHERE sequence=10", "UPDATE schema_migration_ledger SET sequence=10 WHERE sequence=1000000"],
   ["deployment retired", "__PKT_LABEL_UPPER___DB_DEPLOYMENT_NOT_ACTIVE", "UPDATE deployments SET status='retired'", "UPDATE deployments SET status='active'"],
   ["fencing token zero", "__PKT_LABEL_UPPER___DB_AUTHORITY_INVALID", "UPDATE deployments SET fencing_token=0", "UPDATE deployments SET fencing_token=7"],
   ["history table missing", "__PKT_LABEL_UPPER___DB_HISTORY_TABLE_MISSING", "ALTER TABLE threads RENAME TO threads_hidden", "ALTER TABLE threads_hidden RENAME TO threads"],

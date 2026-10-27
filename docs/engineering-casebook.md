@@ -1592,6 +1592,13 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 - 演练本身挡住的问题：前五次演练都在出包阶段失败，生产一次都没停：上传目录不在 Hermes 包装脚本允许的范围、上传前目录还没建、升库检查用了测试机上过期的构建（只认 51 个迁移）、Hermes 登录默认文件权限 `umask 002` 让检查自己建的目录被判不安全、网页验收缺锁定版本的 Python 和 `fd` 工具、验收测试还在找改版前记忆页的文字。每一处都先在云端复现、加测试再修，后两类的前置条件改成出包第一步约 10 秒内检查。
 - 检查耗时：Hermes 上 17 项检查从约 469 秒降到约 50 秒。最慢的 `verify-raw-copy-fixtures.mjs` 从 457.7 秒降到 22.5 秒，原因是它的临时目录原来在 Hermes 的 `/data` 盘上，复制时每个文件都要落盘同步；改到 `/tmp` 后变快（第五、六次演练的逐项秒数）。同一项在云端容器里只要 2.9 秒。
 
+**后续（2026-10-27）：模板里写死的迁移序号让第十四版出包停在 16/17**
+
+- 现象：给第十四版（提交 `4af85d1`，数据库 57 → 58）出包时，17 项检查只过了 16 项。失败的是维护夹具检查 `maintenance/verify-fixtures.mjs`：用例 “deployment retired” 预期报 `DB_DEPLOYMENT_NOT_ACTIVE`，实际报 `DB_LEDGER_INVALID`（迁移记录表无效）。来源：PR #53 说明和第十四版上线线程。
+- 根因：前一个用例 “ledger gap”（迁移记录缺号）把迁移记录第 10 行的序号改成 57 造出缺号，再把 57 改回 10 复原。这个 57 是模板从第十二次（数据库 56）抄来的写死数字，当时 57 还不存在。生产库升到 57 版以后，“改回”那一步把真的第 57 行也改成了 10，记录表此后一直是坏的，后面的用例都先撞上这个错误。这和本案例的根因是同一类：上一次合理的值被原样带到下一次，模板没有让它跟着数据库版本变。
+- 修复：用一个永远不会出现的序号 1000000 造缺号（提交 `ec49a24`，[PR #53](https://github.com/sixianli/himawari-agent/pull/53)）。检查在出包阶段就拦住了它，生产没有停服。
+- 教训：模板里凡是会和“当前数据库版本”撞上的数字，要么换成 `__PKT_*__` 参数，要么用不可能出现的值；夹具“改了再改回”时，改回的条件必须只命中自己改过的那一行。
+
 **相关 ADR/PR**
 
 [ADR 0086](adr/0086-generate-release-packets-from-parameters.md)、[ADR 0060](adr/0060-hard-constraint-on-third-repeat.md)、[ADR 0074](adr/0074-claude-runs-production-deployments.md)、[ADR 0083](adr/0083-isolated-instance-per-person-with-owner-entry.md)；[PR #42](https://github.com/sixianli/himawari-agent/pull/42)；[lessons：复制上一次操作包时留下旧文件和旧文件名](lessons.md#copied-packet-stale-names)；相关：[案例 11](#case-tenth-deploy)、[案例 20](#case-eleventh-twelfth-deploy)。
