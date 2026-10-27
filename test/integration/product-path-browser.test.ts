@@ -463,7 +463,7 @@ function noteAnswer() {
 }
 
 function composer() {
-  return page.getByPlaceholder("有什么想交给 Himawari？");
+  return page.getByRole("textbox", { name: "消息草稿", exact: true });
 }
 
 let activeTurn: Locator | undefined;
@@ -5332,7 +5332,7 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
   let autoContext: BrowserContext;
   let autoPage: Page;
 
-  const autoComposer = () => autoPage.getByPlaceholder("有什么想交给 Himawari？");
+  const autoComposer = () => autoPage.getByRole("textbox", { name: "消息草稿", exact: true });
   async function newAutoThread() {
     await autoPage
       .getByRole("link", { name: "新建对话" })
