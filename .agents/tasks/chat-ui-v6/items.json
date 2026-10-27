@@ -389,7 +389,7 @@
         },
         {
           "type": "doc",
-          "path": "docs/adr/0092-chat-attachments-images.md",
+          "path": "docs/adr/0093-chat-attachments-images.md",
           "quotes": [
             "G17"
           ]

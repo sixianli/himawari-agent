@@ -30,4 +30,4 @@ superseded_by: ""
 
 ## Notes
 
-- 2026-10-27：图片已经做了，见 [ADR 0092](../adr/0092-chat-attachments-images.md)，这一项只剩扫描件和旧版 Office 文件。
+- 2026-10-27：图片已经做了，见 [ADR 0093](../adr/0093-chat-attachments-images.md)，这一项只剩扫描件和旧版 Office 文件。
