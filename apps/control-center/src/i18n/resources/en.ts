@@ -303,22 +303,24 @@ export const messages = {
   "chat.process": "Thinking and tools",
   "chat.noProcess": "No displayable process records",
   "chat.modelUnavailable": "Model information unavailable",
-  "chat.attach": "Add files",
+  "chat.attach": "Add images or files",
   "chat.retryCleanup": "Retry stop and cleanup check",
   "chat.stop": "Stop",
   "chat.pendingModel": "For the next message",
   "chat.attachHint":
-    "Click, paste with Ctrl+V or drag files here. Reads PDF, Word, Excel, PowerPoint and text files such as notes, code and CSV, up to 20 MB each",
+    "Click, paste with Ctrl+V or drag files here. Sees PNG, JPG, WebP and GIF images, and reads PDF, Word, Excel, PowerPoint and text files such as notes, code and CSV, up to 20 MB each",
   "chat.attachmentTooLarge":
     "That does not fit: each file can be up to 20 MB, with at most 10 files per message.",
   "chat.attachmentUnsupported":
-    "I cannot read this file yet. PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx) and text files work; images and old .doc, .xls and .ppt files do not yet.",
+    "I cannot read this file yet. PNG, JPG, WebP and GIF images, PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx) and text files work; HEIC photos and old .doc, .xls and .ppt files do not yet.",
   "chat.attachmentEmpty": "No text found in this file. It may be a scan or contain only images.",
   "chat.attachmentUploadFailed": "The file did not upload. Please try again.",
   "chat.attachmentReading": "Reading",
   "chat.attachmentTruncated":
     "The file is long, so only its first 250,000 or so characters were read",
   "chat.attachmentTruncatedShort": "Cut short",
+  "chat.imageUnsupported":
+    "{model} cannot see images, so the images in this message will be skipped.",
   "chat.removeAttachment": "Remove {name}",
   "files.label": "Files from this turn",
   "files.open": "Open",

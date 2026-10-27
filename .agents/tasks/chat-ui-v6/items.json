@@ -17,7 +17,8 @@
     "G13": "durable",
     "G14": "durable",
     "G15": "once",
-    "G16": "durable"
+    "G16": "durable",
+    "G17": "durable"
   },
   "items": [
     {
@@ -376,14 +377,22 @@
     },
     {
       "id": "UI-17",
-      "title": "附件支持图片（以及扫描件、旧版 Office）：等 Andy 选是否加看图模型（BL-20261026-012）",
+      "title": "附件支持图片：浏览器压缩后上传，发给能看图的模型，消息里显示缩略图（扫描件和旧版 Office 仍在 BL-20261026-012）",
       "goal_ref": [
-        "G13"
+        "G13",
+        "G17"
       ],
       "done_when": [
         {
           "type": "test",
           "tag": "UI-17"
+        },
+        {
+          "type": "doc",
+          "path": "docs/adr/0092-chat-attachments-images.md",
+          "quotes": [
+            "G17"
+          ]
         }
       ],
       "added": {

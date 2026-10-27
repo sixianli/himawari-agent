@@ -26,6 +26,9 @@ const CLASSIFICATION_RANK = Object.freeze({ public: 0, private: 1, sensitive: 2,
 const ATTACHMENT_CONTENT_TYPE = "text/x-himawari-attachment";
 const ATTACHMENT_TAG = /<file name="([^"<>\n]*)" ref="([^"<>\s]+)"(?: [a-z]+="[^"<>\n]*")*\/>/g;
 const UNREADABLE_ATTACHMENT = "[附件无法读取]";
+const IMAGE_CONTENT_TYPE = "text/x-himawari-image";
+const IMAGE_DATA_URL = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/;
+const IMAGE_KIND = / kind="image"/;
 const CURRENT_TASK_POLICY =
   "Himawari 任务边界：最后一条用户消息承载本轮的新请求。历史消息供理解背景，不是等待执行的任务队列。" +
   "标为已取消的历史请求已终止，不要自动恢复，也不要把其中的一次性要求或工具限制当成本轮要求。" +
@@ -43,11 +46,6 @@ export interface ContextProjectionServiceDependencies {
   readonly ids: IdGeneratorPort;
 }
 
-/**
- * Resolves one immutable product context envelope into runtime input. It is
- * deliberately the only component that reads product message identities for
- * Pi; Pi itself never reads Trace JSON, PayloadStore, or SQLite.
- */
 export class ContextProjectionService implements RuntimeProjectionPort {
   readonly #dependencies: ContextProjectionServiceDependencies;
   readonly #history: RuntimeHistoryService;
@@ -64,9 +62,11 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       ? await this.#history.load(envelope.runtimeHistory.reference, input.dataClassification)
       : undefined;
     const history = await this.readHistory(input, envelope, nativeHistory?.coveredRunIds);
+    const images: { readonly mimeType: string; readonly data: string }[] = [];
     const prompt = await this.expandAttachments(
       input,
       await this.readText(input, envelope.prompt.payloadRef, "context prompt"),
+      images,
     );
     const policyTexts = await Promise.all(
       envelope.systemPolicyRefs.map(({ payloadRef }) =>
@@ -100,6 +100,7 @@ export class ContextProjectionService implements RuntimeProjectionPort {
         id: envelope.prompt.id,
         content: prompt,
         occurredAt: envelope.prompt.occurredAt,
+        ...(images.length ? { images: Object.freeze(images) } : {}),
       }),
       contextBlocks: Object.freeze([...contextBlocks, ...workerBlocks]),
     });
@@ -467,12 +468,30 @@ export class ContextProjectionService implements RuntimeProjectionPort {
     return Object.freeze(blocks);
   }
 
-  private async expandAttachments(input: RuntimeProjectionRequest, text: string): Promise<string> {
+  private async expandAttachments(
+    input: RuntimeProjectionRequest,
+    text: string,
+    images?: { readonly mimeType: string; readonly data: string }[],
+  ): Promise<string> {
     const tags = [...text.matchAll(ATTACHMENT_TAG)];
     if (!tags.length) return text;
     const expanded = await Promise.all(
-      tags.map(async ([, name, ref]) => {
+      tags.map(async ([tag, name, ref]) => {
         const payload = ref ? await this.#dependencies.payloads.get(ref as PayloadRef) : null;
+        if (IMAGE_KIND.test(tag)) {
+          if (!images) return `<image name="${name}"/>`;
+          const image =
+            payload?.contentType === IMAGE_CONTENT_TYPE
+              ? IMAGE_DATA_URL.exec(
+                  await this.readText(input, ref as PayloadRef, "image").catch((error: unknown) => {
+                    if (error instanceof ApplicationPortError) return "";
+                    throw error;
+                  }),
+                )
+              : null;
+          if (!image) return `<image name="${name}">${UNREADABLE_ATTACHMENT}</image>`;
+          return { name, mimeType: image[1] as string, data: image[2] as string };
+        }
         const content =
           payload?.contentType === ATTACHMENT_CONTENT_TYPE
             ? await this.readText(input, ref as PayloadRef, "attachment").catch(
@@ -486,7 +505,12 @@ export class ContextProjectionService implements RuntimeProjectionPort {
       }),
     );
     let index = 0;
-    return text.replace(ATTACHMENT_TAG, () => expanded[index++] ?? "");
+    return text.replace(ATTACHMENT_TAG, () => {
+      const item = expanded[index++];
+      if (typeof item !== "object") return item ?? "";
+      images?.push({ mimeType: item.mimeType, data: item.data });
+      return `<image name="${item.name}" index="${images?.length ?? 0}"/>`;
+    });
   }
 
   private async readText(

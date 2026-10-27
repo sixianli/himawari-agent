@@ -1,6 +1,7 @@
 import { type Unzipped, unzipSync } from "fflate";
+import { isImageFile } from "./attachment-image.js";
 
-export type AttachmentKind = "text" | "pdf" | "word" | "excel" | "powerpoint";
+export type AttachmentKind = "text" | "pdf" | "word" | "excel" | "powerpoint" | "image";
 
 export const ATTACHMENT_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
 export const ATTACHMENT_TEXT_LIMIT = 256 * 1024;
@@ -9,6 +10,7 @@ export const ATTACHMENT_ACCEPT = [
   ".txt,.md,.csv,.tsv,.json,.yaml,.yml,.toml,.ini,.xml,.html,.css,.log",
   ".ts,.tsx,.js,.jsx,.py,.go,.rs,.java,.c,.cpp,.h,.sh,.sql",
   ".pdf,.docx,.xlsx,.pptx",
+  "image/png,image/jpeg,image/webp,image/gif",
 ].join(",");
 
 const TRUNCATED_NOTE = "\n[后面的内容太长，已截断]";
@@ -19,6 +21,7 @@ export function attachmentKind(file: File): AttachmentKind | null {
   if (extension === "docx") return "word";
   if (extension === "xlsx") return "excel";
   if (extension === "pptx") return "powerpoint";
+  if (isImageFile(file)) return "image";
   if (
     file.type.startsWith("image/") ||
     file.type.startsWith("audio/") ||
@@ -33,7 +36,7 @@ export async function extractAttachmentText(
   file: File,
 ): Promise<{ readonly kind: AttachmentKind; readonly text: string; readonly truncated: boolean }> {
   const kind = attachmentKind(file);
-  if (!kind) throw new Error("ATTACHMENT_UNSUPPORTED");
+  if (!kind || kind === "image") throw new Error("ATTACHMENT_UNSUPPORTED");
   if (file.size > ATTACHMENT_FILE_LIMIT_BYTES) throw new Error("ATTACHMENT_TOO_LARGE");
   const bytes = new Uint8Array(await file.arrayBuffer());
   const raw = await extract(kind, bytes);
@@ -51,7 +54,7 @@ export async function extractAttachmentText(
   };
 }
 
-async function extract(kind: AttachmentKind, bytes: Uint8Array): Promise<string> {
+async function extract(kind: Exclude<AttachmentKind, "image">, bytes: Uint8Array): Promise<string> {
   switch (kind) {
     case "text":
       return plainText(bytes);

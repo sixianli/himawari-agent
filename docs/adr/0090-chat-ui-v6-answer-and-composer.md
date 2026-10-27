@@ -80,6 +80,8 @@ Andy 要求附件按钮“真的有用”，否则关掉。做法分三段：浏
 
 图片要等 Andy 决定是否加一个能看图的模型（生产配置目前只允许一个文本模型）。图片、扫描件和旧版 Office 文件记在 [BL-20261026-012](../backlog/BL-20261026-012-attachments-images-pdf-office.md)，选定后在本 ADR 补一条后续。
 
+后续（2026-10-27）：Andy 选了“加一个看图模型”，图片的做法见 [ADR 0092](0092-chat-attachments-images.md)。
+
 [↑ 返回阅读导航](#contents)
 
 <a id="pi-reuse"></a>

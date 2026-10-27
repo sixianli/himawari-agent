@@ -206,6 +206,31 @@ it("[UI-16] shows the files sent with your message as cards with their size", ()
   expect(html).not.toContain("payload:http:abc");
 });
 
+it("[UI-17] shows the images sent with your message as thumbnails above the text", () => {
+  const html = renderToStaticMarkup(
+    createElement(ChatHistory, {
+      detail: detail(),
+      contentByRef: {
+        "content:owner":
+          '这是哪里\n\n<file name="街景.jpg" ref="payload:http:img" bytes="2048" kind="image"/>\n\n<file name="notes.md" ref="payload:http:md" bytes="9" kind="text"/>',
+        "content:agent": "好的",
+      },
+      execution: { [completedRun.runId]: turnRecords() },
+      connection: "connected",
+      message: ids,
+      onFork: () => {},
+      renderApproval: () => null,
+      readImage: async () => "data:image/jpeg;base64,/9j/",
+    }),
+  );
+  expect(html).toContain(
+    '<ul class="message-images"><li title="街景.jpg · 2.0 KB"><span class="attachment-image is-empty">',
+  );
+  expect(html.indexOf("message-images")).toBeLessThan(html.indexOf("thread-message-content"));
+  expect(html).toContain('class="attachment-name">notes.md</span>');
+  expect(html).not.toContain('class="attachment-name">街景.jpg');
+});
+
 it.each([
   ["zh-CN", "复制", "2 个来源", "已开始处理"],
   ["en", "Copy", "2 sources", "Being handled"],

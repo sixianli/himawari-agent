@@ -90,7 +90,8 @@ describe("[UI-16] reading attached files as text in the browser", () => {
     expect(long.truncated).toBe(true);
     expect(long.text.length).toBe(ATTACHMENT_TEXT_LIMIT);
     expect(long.text.endsWith("[后面的内容太长，已截断]")).toBe(true);
-    expect(attachmentKind(new File(["x"], "photo.png", { type: "image/png" }))).toBeNull();
+    expect(attachmentKind(new File(["x"], "photo.png", { type: "image/png" }))).toBe("image");
+    expect(attachmentKind(new File(["x"], "photo.heic", { type: "image/heic" }))).toBeNull();
     expect(attachmentKind(new File(["x"], "old.doc"))).toBeNull();
     await expect(
       extractAttachmentText(new File([new Uint8Array([0xff, 0xfe, 0x00])], "x.bin")),

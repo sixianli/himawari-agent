@@ -14,7 +14,7 @@ export const MAX_ATTACHMENTS = 10;
 const SEPARATOR = "\n\n";
 const OPEN = '<file name="';
 const CLOSE = "/>";
-const KINDS: readonly AttachmentKind[] = ["text", "pdf", "word", "excel", "powerpoint"];
+const KINDS: readonly AttachmentKind[] = ["text", "pdf", "word", "excel", "powerpoint", "image"];
 const TAG =
   /^<file name="([^"<>\n]*)" ref="([^"<>\s]+)" bytes="(\d+)" kind="([a-z]+)"( truncated="1")?\/>$/;
 

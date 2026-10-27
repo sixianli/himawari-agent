@@ -1281,6 +1281,15 @@ export class PiAgentRuntimeAdapter implements AgentRuntimePort {
           await session.prompt(projection.prompt.content, {
             expandPromptTemplates: false,
             source: "extension",
+            ...(projection.prompt.images?.length
+              ? {
+                  images: projection.prompt.images.map(({ mimeType, data }) => ({
+                    type: "image" as const,
+                    mimeType,
+                    data,
+                  })),
+                }
+              : {}),
           });
         await session.waitForIdle();
         await eventChain;

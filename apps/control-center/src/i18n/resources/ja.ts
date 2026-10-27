@@ -305,22 +305,23 @@ export const messages = {
   "chat.process": "思考とツールの記録",
   "chat.noProcess": "表示できる処理記録はありません",
   "chat.modelUnavailable": "モデル情報がありません",
-  "chat.attach": "ファイルを追加",
+  "chat.attach": "画像やファイルを追加",
   "chat.retryCleanup": "停止と終了処理の確認を再試行",
   "chat.stop": "停止",
   "chat.pendingModel": "次のメッセージに適用",
   "chat.attachHint":
-    "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。PDF、Word、Excel、PowerPoint と、メモ、コード、CSV などのテキストファイルを読めます。1 個 20 MB まで",
+    "クリック、Ctrl+V で貼り付け、ドラッグのどれでも追加できます。PNG、JPG、WebP、GIF の画像を見られ、PDF、Word、Excel、PowerPoint と、メモ、コード、CSV などのテキストファイルを読めます。1 個 20 MB まで",
   "chat.attachmentTooLarge":
     "入りきりません。ファイルは 1 個 20 MB まで、1 メッセージに 10 個までです。",
   "chat.attachmentUnsupported":
-    "このファイルはまだ読めません。PDF、Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）とテキストファイルに対応しています。画像と旧形式の .doc、.xls、.ppt はまだです。",
+    "このファイルはまだ読めません。PNG、JPG、WebP、GIF の画像、PDF、Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）とテキストファイルに対応しています。HEIC 写真と旧形式の .doc、.xls、.ppt はまだです。",
   "chat.attachmentEmpty":
     "このファイルから文字が読み取れませんでした。スキャン画像だけの可能性があります。",
   "chat.attachmentUploadFailed": "ファイルを送れませんでした。もう一度お試しください。",
   "chat.attachmentReading": "読み込み中",
   "chat.attachmentTruncated": "長いファイルなので、先頭の約 25 万字だけを読みました",
   "chat.attachmentTruncatedShort": "一部のみ",
+  "chat.imageUnsupported": "{model} は画像を見られないため、このメッセージの画像は使われません。",
   "chat.removeAttachment": "{name} を削除",
   "files.label": "このターンで書いたファイル",
   "files.open": "開く",

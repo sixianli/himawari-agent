@@ -335,6 +335,45 @@ describe("ContextProjectionService", () => {
     expect(JSON.stringify(projection)).not.toContain("非权威记忆摘要\\n</file>");
   });
 
+  it("[UI-17] hands the images of the current message to the model and leaves older images as names", async () => {
+    const fixture = createFixture();
+    const contextRef = await createContext(fixture, {
+      previous: '<file name="旧图.png" ref="payload-image-old" bytes="9" kind="image"/>',
+      current:
+        '这两张图有什么不同\n\n<file name="a.png" ref="payload-image-a" bytes="2048" kind="image"/>\n\n<file name="b.jpg" ref="payload-image-b" bytes="1024" kind="image"/>\n\n<file name="c.png" ref="payload-image-text" bytes="3" kind="image"/>',
+      runState: undefined,
+    });
+    for (const [ref, contentType, text] of [
+      ["payload-image-a", "text/x-himawari-image", "data:image/png;base64,iVBORw0KGgo="],
+      ["payload-image-b", "text/x-himawari-image", "data:image/jpeg;base64,/9j/4AAQ"],
+      ["payload-image-old", "text/x-himawari-image", "data:image/png;base64,b2xk"],
+      ["payload-image-text", "text/x-himawari-attachment", "不是图片"],
+    ] as const)
+      await fixture.adapters.payload.put(
+        await fixture.protector.protect({
+          ownerId: OWNER_ID,
+          agentId: AGENT_ID,
+          ref,
+          dataClassification: "private",
+          contentType,
+          plaintext: new TextEncoder().encode(text),
+          createdAt: NOW,
+        }),
+      );
+    const projection = await fixture.service.resolveProjection(request(contextRef));
+    expect(projection.prompt.content).toBe(
+      '这两张图有什么不同\n\n<image name="a.png" index="1"/>\n\n<image name="b.jpg" index="2"/>\n\n<image name="c.png">[附件无法读取]</image>',
+    );
+    expect(projection.prompt.images).toEqual([
+      { mimeType: "image/png", data: "iVBORw0KGgo=" },
+      { mimeType: "image/jpeg", data: "/9j/4AAQ" },
+    ]);
+    expect(JSON.stringify(projection.history[0]?.content)).toContain(
+      '<image name=\\"旧图.png\\"/>',
+    );
+    expect(JSON.stringify(projection.history)).not.toContain("b2xk");
+  });
+
   it("fails closed for scope, missing selected message, and deleted Payloads", async () => {
     const fixture = createFixture();
     const contextRef = await createContext(fixture);
