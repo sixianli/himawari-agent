@@ -620,6 +620,67 @@ function ProfileTab({ memory, message }: { memory: MemoryModel; message: Message
   );
 }
 
+function JustSavedRow({
+  item,
+  memory,
+  message,
+  notify,
+}: {
+  item: MemoryItem;
+  memory: MemoryModel;
+  message: Message;
+  notify: (notice: Notice) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <li className="memory-just-saved-item">
+      <span className="memory-tags">
+        <span className="memory-tag" data-kind="new">
+          {message("memory.justSaved")}
+        </span>
+        <span className="memory-tag">
+          {message("memory.cat", { c: item.category })}
+          {item.subCategory ? ` · ${item.subCategory}` : ""}
+        </span>
+      </span>
+      {editing ? (
+        <TextEditor
+          initial={item.text}
+          busy={memory.busy}
+          message={message}
+          onCancel={() => setEditing(false)}
+          onSave={(text) => void memory.correct(item, text).then((ok) => ok && setEditing(false))}
+        />
+      ) : (
+        <>
+          <p className="memory-text">{item.text}</p>
+          <span className="actions">
+            <ActionButton variant="secondary" onClick={() => setEditing(true)}>
+              {message("memory.editAction")}
+            </ActionButton>
+            <ActionButton
+              variant="secondary"
+              disabled={memory.busy}
+              onClick={() =>
+                void memory.remove(item).then(
+                  (ok) =>
+                    ok &&
+                    notify({
+                      text: message("memory.page.deleted"),
+                      undo: () => void memory.recover({ ...item, revision: item.revision + 1 }),
+                    }),
+                )
+              }
+            >
+              {message("memory.deleteAction")}
+            </ActionButton>
+          </span>
+        </>
+      )}
+    </li>
+  );
+}
+
 function AllTab({
   memory,
   message,
@@ -1220,10 +1281,14 @@ function AddForm({
 export function MemorySettings({
   memory,
   message,
+  focus = [],
+  focusThreadTitle,
   onOpenThread,
 }: {
   memory: MemoryModel | null;
   message: Message;
+  focus?: readonly string[];
+  focusThreadTitle?: string;
   onOpenThread: (threadId: string) => void;
 }) {
   const [tab, setTab] = useState<Tab>("pending");
@@ -1240,6 +1305,11 @@ export function MemorySettings({
   };
   const memories = overview?.memories.filter(live) ?? [];
   const active = memories.filter((item) => item.status === "active");
+  const justSaved = active.filter((item) => focus.includes(item.memoryId));
+  const savedAt = justSaved
+    .map((item) => item.recordedAt)
+    .sort()
+    .at(-1);
   const queue =
     (overview?.pending.length ?? 0) +
     (overview?.personSuggestions.length ?? 0) +
@@ -1329,6 +1399,29 @@ export function MemorySettings({
       ) : null}
       {panel === "add" ? (
         <AddForm memory={memory} message={message} notify={notify} onDone={() => setPanel(null)} />
+      ) : null}
+      {justSaved.length ? (
+        <section className="memory-just-saved" aria-label={message("memory.justSaved")}>
+          {focusThreadTitle && savedAt ? (
+            <p className="settings-note">
+              {message("memory.justSavedFrom", {
+                title: focusThreadTitle,
+                time: time(savedAt),
+              })}
+            </p>
+          ) : null}
+          <ul className="memory-list">
+            {justSaved.map((item) => (
+              <JustSavedRow
+                key={`${item.memoryId}:${item.revision}`}
+                item={item}
+                memory={memory}
+                message={message}
+                notify={notify}
+              />
+            ))}
+          </ul>
+        </section>
       ) : null}
       <div role="tablist" className="memory-tabs" aria-label={message("review.settings.memory")}>
         {tabs.map((item) => (

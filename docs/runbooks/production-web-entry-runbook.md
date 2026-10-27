@@ -2,7 +2,7 @@
 status: active
 document_type: runbook
 execution_risk: critical
-contract_sha256: "sha256:7a78efa04f696599eb84274668686591ef079974d04c9880b254290ed3c62a95"
+contract_sha256: "sha256:b68b57aa515784f37a01bd767e2e8df37445dc9e8967675d0d34948232582398"
 supersedes: ""
 superseded_by: ""
 date: "2026-10-27"
@@ -89,7 +89,7 @@ date: "2026-10-27"
 
 ## Procedure
 
-1. **手机登录和开通知（用户自己做）**：Safari 打开 `https://himawari.siyi.win`，在 Access 页面填允许的那个邮箱，收邮件里的 6 位码填回去。进来后用 Safari 的“分享 → 添加到主屏幕”，从主屏幕图标打开，在设置里开通知，点“发送一条测试通知”。iPhone 只给添加到主屏幕的网页发推送。
+1. **手机登录和开通知（用户自己做）**：Safari 打开 `https://himawari.siyi.win`，在 Access 页面填允许的那个邮箱，收邮件里的 6 位码填回去。网页会自己换取 Himawari 的登录，直接进对话，不用再点按钮（[ADR 0095](../adr/0095-silent-session-exchange-behind-cloudflare-access.md)）。进来后用 Safari 的“分享 → 添加到主屏幕”，从主屏幕图标打开，在设置里开通知，点“发送一条测试通知”。iPhone 只给添加到主屏幕的网页发推送。
 2. **电脑登录**：浏览器打开同一地址，同样用邮箱验证码。Access 会话 1 个月，到期再登。
 3. **加减 Access 登录方式或改允许的邮箱**：用户同意后在 Cloudflare Zero Trust 控制台（Access → Applications → Himawari → Policies 和 Settings → Authentication）改。One-time PIN 的编号是 `98dddcc9-cc1a-4e8f-bb99-d16322d147ed`；另有一个 “Cloudflare 账号登录” 方式，当前没用在 “Himawari” 应用上。
 4. **重新绑定 Access 身份（换邮箱后，或从自带登录切到 Access）**：
@@ -158,7 +158,8 @@ date: "2026-10-27"
 | --- | --- | --- |
 | 收不到验证码，垃圾邮件里也没有 | 填的不是策略允许的邮箱，Access 不发码 | 换允许的那个邮箱；确实要换邮箱时按[步骤](#procedure)第 3、4 步 |
 | 过了 Access 后又出现 Himawari 的用户名密码页 | 服务还是自带登录，或配置没生效 | 读配置的 `identity.kind`；要切到 Access 按[步骤](#procedure)第 4 步 |
-| 网页提示“需要登录”，点登录无效或报未绑定 | Access 的用户编号和绑定行对不上（多半是换了邮箱） | 只读查绑定行，按[步骤](#procedure)第 4 步重新绑定 |
+| 过了 Access 后网页一直显示“Himawari 暂时连不上”，点“重试”也不行 | 网页自动换取登录被拒，多半是 Access 的用户编号和绑定行对不上（换了邮箱） | 只读查绑定行，按[步骤](#procedure)第 4 步重新绑定 |
+| 网页显示“需要重新验证邮箱” | Access 会话过期，网页的请求被 Access 拦下 | 点“重新验证邮箱”，在 Access 页面重新收验证码 |
 | 批准操作或删除对话时被要求重新认证 | Access 登录超过 5 分钟 | 打开 `/cdn-cgi/access/logout` 退出再登 |
 | 外网打开是 Cloudflare 的 502/1033 错误页 | 隧道或服务没在跑 | 生产机上看 `cloudflared.service` 和 `himawari-prod.service` |
 | 生产机本机 `curl http://127.0.0.1:8400/` 得到 403 | 没带 `publicOrigin` 的 Host 头，属正常 | 加 `-H 'Host: himawari.siyi.win'` 再试 |

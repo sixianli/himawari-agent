@@ -11,7 +11,8 @@
   width: 100%;
   height: 100dvh;
   min-height: 420px;
-  padding: 0;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0
+    env(safe-area-inset-left, 0px);
   margin: 0;
   overflow: hidden;
   --pane-padding: 20px;
@@ -496,6 +497,7 @@
 .chat-scroll {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 24px max(24px, calc((100% - 720px) / 2));
@@ -691,12 +693,6 @@
   margin-left: auto;
   min-width: 0;
 }
-.composer-tools .send-button {
-  font-size: 20px;
-  background: var(--surface-muted);
-  min-width: 36px;
-  border-radius: 10px;
-}
 .composer-hint {
   display: flex;
   justify-content: space-between;
@@ -740,7 +736,7 @@
   .details-pane {
     position: absolute;
     right: 0;
-    top: 66px;
+    top: calc(66px + env(safe-area-inset-top, 0px));
     bottom: 0;
     width: min(380px, 100%);
     z-index: 20;
@@ -763,20 +759,22 @@
   .app-shell {
     width: 100%;
     margin: 0;
-    padding: 0;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0
+      env(safe-area-inset-left, 0px);
     min-height: 0;
   }
   .sidebar {
     display: none;
     position: absolute;
     z-index: 25;
-    top: 66px;
+    top: calc(66px + env(safe-area-inset-top, 0px));
     bottom: 0;
     width: min(280px, 100%);
     box-shadow: 16px 0 40px #0005;
   }
   .app-shell[data-mobile-view="list"] .sidebar {
     display: flex;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   }
   .app-shell .content-pane {
     display: block;
@@ -809,7 +807,7 @@
   }
   .appearance-panel {
     position: fixed;
-    top: 62px;
+    top: calc(62px + env(safe-area-inset-top, 0px));
     right: 12px;
     max-width: calc(100vw - 24px);
   }
@@ -1408,4 +1406,89 @@
   .execution-chain .execution-stage > time {
     font-size: 10px;
   }
+}
+.browser-entry {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: max(24px, env(safe-area-inset-top)) max(32px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(32px, env(safe-area-inset-left));
+  background: var(--background);
+  color: var(--text);
+  text-align: center;
+}
+.browser-entry .himawari-mark {
+  width: 56px;
+  height: 56px;
+}
+.browser-entry.is-opening {
+  gap: 20px;
+}
+.browser-entry.is-opening output {
+  margin: 0;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  animation: browser-entry-breathe 1.8s ease-in-out infinite;
+}
+.browser-entry.is-unreachable .himawari-mark {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+.browser-entry-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 320px;
+}
+.browser-entry-text h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.browser-entry-text p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-muted);
+}
+.browser-entry-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 300px;
+}
+.browser-entry .browser-entry-actions output {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.browser-entry .browser-entry-action {
+  width: 100%;
+  max-width: 300px;
+  min-height: 48px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+}
+@keyframes browser-entry-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.browser-entry .browser-entry-action.action-button-primary {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--background);
 }

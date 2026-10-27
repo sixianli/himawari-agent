@@ -305,7 +305,9 @@ export function ChatComposer({
               onClick={onStop}
               variant="secondary"
             >
-              ■
+              <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="7" y="7" width="10" height="10" rx="2" />
+              </svg>
             </ActionButton>
           ) : (
             <ActionButton
@@ -316,7 +318,9 @@ export function ChatComposer({
               pending={pending}
               type="submit"
             >
-              ↑
+              <svg className="send-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 19V5M6 11l6-6 6 6" />
+              </svg>
             </ActionButton>
           )}
         </div>

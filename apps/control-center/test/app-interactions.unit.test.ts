@@ -69,6 +69,12 @@ const text = () => container.textContent ?? "";
 async function render() {
   await act(async () => root.render(createElement(ControlCenterApp)));
 }
+async function settle() {
+  for (let round = 0; round < 6; round++)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+}
 async function click(label: string) {
   const button = [...container.querySelectorAll("button")].find(
     (item) => item.textContent === label || item.getAttribute("aria-label") === label,
@@ -147,29 +153,80 @@ describe("control center application bootstrap and interaction", () => {
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);
   });
   it.each([401, 403])(
-    "offers explicit external sign-in on HTTP %s then retries bootstrap",
+    "enters through Cloudflare Access on HTTP %s without asking for another click",
     async (status) => {
       boundary.load.mockRejectedValueOnce(Object.assign(new Error("session expired"), { status }));
       await render();
-      expect(Events.instances).toHaveLength(0);
-      expect(text()).toContain(messages["authentication.required"]);
-      await click(messages["authentication.signIn"]);
+      await settle();
       expect(boundary.login).toHaveBeenCalledOnce();
+      expect(boundary.login.mock.lastCall?.[1]).toBe(messages["authentication.deviceLabel"]);
       expect(boundary.load).toHaveBeenCalledTimes(2);
       expect(text()).toContain("threads content");
       expect(Events.instances).toHaveLength(2);
     },
   );
-  it("shows bootstrap and sign-in failures without treating them as connected", async () => {
-    boundary.load.mockRejectedValue(Object.assign(new Error("expired"), { status: 401 }));
-    boundary.login.mockRejectedValue(new Error("exchange unavailable"));
+  it("shows the opening state while the configuration is still loading", async () => {
+    boundary.load.mockImplementation(() => new Promise(() => undefined));
     await render();
-    await click(messages["authentication.signIn"]);
-    expect(text()).toContain("exchange unavailable");
+    expect(text()).toBe(messages["entry.opening"]);
+    expect(container.querySelector("output")?.textContent).toBe(messages["entry.opening"]);
+  });
+  it("asks for the email code again when Cloudflare Access no longer lets requests through", async () => {
+    boundary.load.mockRejectedValue(new TypeError("Failed to fetch"));
+    fetcher.mockImplementation(async () => new Response(null, { status: 401 }));
+    await render();
+    await settle();
+    expect(container.querySelector("h1")?.textContent).toBe(messages["entry.expired.title"]);
+    expect(text()).toContain(messages["entry.expired.body"]);
+    expect(text()).not.toContain("Failed to fetch");
+    expect(boundary.login).not.toHaveBeenCalled();
+    expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      messages["entry.expired.action"],
+    ]);
+  });
+  it("explains an unreachable service without error codes and retries on its own", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      boundary.load.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      fetcher.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await render();
+      await settle();
+      expect(container.querySelector("h1")?.textContent).toBe(messages["entry.unreachable.title"]);
+      expect(text()).toContain("5");
+      expect(text()).not.toContain("Failed to fetch");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      await settle();
+      expect(boundary.load).toHaveBeenCalledTimes(2);
+      expect(text()).toContain("threads content");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("stops after one session exchange and offers a manual retry instead of looping", async () => {
+    boundary.load.mockRejectedValue(Object.assign(new Error("expired"), { status: 401 }));
+    await render();
+    await settle();
+    expect(boundary.login).toHaveBeenCalledOnce();
+    expect(boundary.load).toHaveBeenCalledTimes(2);
+    expect(container.querySelector("h1")?.textContent).toBe(messages["entry.unreachable.title"]);
+    expect(container.querySelector("output")).toBeNull();
+    boundary.load.mockResolvedValue(configuration);
+    await click(messages["loading.retry"]);
+    await settle();
+    expect(text()).toContain("threads content");
+  });
+  it("hides a rejected session exchange behind the unreachable explanation", async () => {
+    boundary.load.mockRejectedValue(Object.assign(new Error("expired"), { status: 401 }));
+    boundary.login.mockRejectedValue(
+      Object.assign(new Error("IDENTITY_ASSERTION_INVALID"), { status: 401 }),
+    );
+    await render();
+    await settle();
+    expect(container.querySelector("h1")?.textContent).toBe(messages["entry.unreachable.title"]);
+    expect(text()).not.toContain("IDENTITY_ASSERTION_INVALID");
     expect(Events.instances).toHaveLength(0);
-    boundary.login.mockRejectedValue("opaque failure");
-    await click(messages["authentication.signIn"]);
-    expect(text()).toContain("CONTROL_CENTER_REQUEST_REJECTED");
   });
   it("renders built-in authentication, completes factor verification and reloads the app", async () => {
     boundary.load.mockRejectedValueOnce(Object.assign(new Error("expired"), { status: 401 }));
@@ -201,6 +258,7 @@ describe("control center application bootstrap and interaction", () => {
   });
   it("clears private child state immediately when a stream reports session revocation", async () => {
     await render();
+    boundary.load.mockImplementation(() => new Promise(() => undefined));
     const stream = Events.instances.find((source) => source.url.includes("/thread/"));
     if (!stream) throw new Error("missing thread stream");
     await act(async () =>
@@ -213,7 +271,8 @@ describe("control center application bootstrap and interaction", () => {
     expect(boundary.threads.mock.lastCall?.[0].configuration).toBeUndefined();
     expect(boundary.threads.mock.lastCall?.[0].client).toBeUndefined();
     expect(text()).not.toContain("threads content");
-    expect(text()).toContain("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
+    expect(text()).toBe(messages["entry.opening"]);
+    expect(boundary.load).toHaveBeenCalledTimes(2);
     expect(Events.instances.every((source) => source.close.mock.calls.length > 0)).toBe(true);
   });
   it("refreshes CSRF for the active client and rejects refresh after disposal", async () => {

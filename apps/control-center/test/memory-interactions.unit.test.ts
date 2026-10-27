@@ -5,6 +5,7 @@ import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemorySettings } from "../src/components/memory-page.tsx";
 import {
+  focusedMemoryIds,
   MemoryReminders,
   MemoryTurnNote,
   OPEN_MEMORY_SETTINGS,
@@ -72,6 +73,22 @@ function Harness({ ownerRefs }: { ownerRefs: readonly string[] }) {
     h("div", { id: "turn" }, h(MemoryTurnNote, { ownerRefs, memory, message })),
     h("div", { id: "settings" }, h(MemorySettings, { memory, message, onOpenThread: opened })),
     h("div", { id: "reminders" }, h(MemoryReminders, { memory, message })),
+  );
+}
+
+function MemorySettingsWithFocus({ focus, title }: { focus: readonly string[]; title: string }) {
+  const memory = useMemory({ client, configuration, connected: true, refreshSignal: 0 });
+  if (!memory) return null;
+  return h(
+    "div",
+    { id: "settings" },
+    h(MemorySettings, {
+      memory,
+      message,
+      focus,
+      focusThreadTitle: title,
+      onOpenThread: opened,
+    }),
   );
 }
 
@@ -182,7 +199,7 @@ describe("memory approval and management", () => {
     const turn = text("#turn");
     expect(turn).toContain("主人对青霉素过敏");
     expect(turn).toContain("这条涉及「健康」");
-    expect(turn).toContain("已记住 1 条");
+    expect(turn).toContain("记下了 1 条新记忆查看");
     expect(turn).not.toContain("主人住在上海");
     await render(["payload-other"]);
     expect(text("#turn")).toBe("");
@@ -265,13 +282,28 @@ describe("memory approval and management", () => {
     });
   });
 
-  it("opens memory settings from the remembered line", async () => {
-    const listener = vi.fn();
+  it("opens memory settings on the memory the reply just saved", async () => {
+    const listener = vi.fn((event: Event) => focusedMemoryIds(event));
     window.addEventListener(OPEN_MEMORY_SETTINGS, listener);
     await render();
-    await click("#turn", "管理记忆");
-    expect(listener).toHaveBeenCalledTimes(1);
+    await click("#turn", "记下了 1 条新记忆");
+    expect(listener).toHaveReturnedWith(["memory-color"]);
     window.removeEventListener(OPEN_MEMORY_SETTINGS, listener);
+    await act(async () =>
+      root.render(
+        h(MemorySettingsWithFocus, { focus: ["memory-color"], title: "记住我喜欢的颜色" }),
+      ),
+    );
+    await act(async () => {});
+    const saved = text("#settings .memory-just-saved");
+    expect(saved).toContain("刚记住");
+    expect(saved).toContain("主人最喜欢的颜色是蓝色");
+    expect(saved).toContain("来自对话“记住我喜欢的颜色”");
+    expect(saved).not.toContain("主人住在上海");
+    await click("#settings .memory-just-saved", "删除");
+    expect(lastCommand()).toMatchObject({
+      payload: { memoryId: "memory-color", action: "delete" },
+    });
   });
 
   it("stays hidden when the deployment has no memory operations", async () => {
