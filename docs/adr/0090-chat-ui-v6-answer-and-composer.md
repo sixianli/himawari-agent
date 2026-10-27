@@ -125,4 +125,5 @@ Andy 要求附件按钮“真的有用”，否则关掉。做法分三段：浏
 - [控制中心 v4 设计 Spec 的 v6 第二期增补](../execution/specs/2026-09-15-control-center-v4-design.md#v6-answer-and-composer)
 - [v6 原型](../assets/control-center/2026-10-26-v6/index.html)
 - [案例 28：回答下方一行和附件](../engineering-casebook.md#case-answer-line-attachments)
+- [ADR 0096：手机对话页，回答下方一行不再显示模型名](0096-phone-chat-page-safe-area-and-quiet-answer-line.md)
 - [SOURCE: docs/execution/specs/2026-09-15-control-center-v4-design.md]

@@ -55,6 +55,8 @@ date: "2026-10-26"
   28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
   29. [工具已经交回结果，任务宿主却被自己人“补刀”，第十四次上线因此回滚](#case-job-host-heartbeat-after-result)
   30. [改登录方式时网页没接上，回滚又被授权编号检查拦住，停服约 9 分钟](#case-login-switch-outage)
+  31. [输完邮箱验证码还要再点一次“登录”：让网页自己换取会话](#case-silent-access-entry)
+  32. [iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动](#case-ios-safe-area-scrollbar)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
 - [新增案例模板](#case-template)
@@ -85,8 +87,8 @@ date: "2026-10-26"
 | 上线、回滚和事故复盘 | [第十次上线](#case-tenth-deploy)、[搜索被判失联](#case-sandbox-lost-race)、[旧前端事故](#case-static-root)、[快速交付模式](#case-fast-mode)、[第十一、十二次上线](#case-eleventh-twelfth-deploy)、[按参数生成操作包](#case-packet-generator)、[任务宿主被误杀](#case-job-host-heartbeat-after-result)、[改登录方式停服](#case-login-switch-outage) |
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
-| 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
+| 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user)、[改登录方式停服](#case-login-switch-outage)、[验证码后自动进入](#case-silent-access-entry) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only)、[iPhone 安全区和灰色横条](#case-ios-safe-area-scrollbar) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
 
 [返回目录](#contents)
@@ -1975,6 +1977,125 @@ Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的
 **面试 30 秒版**
 
 “为了让用户只用 Cloudflare 的邮箱验证码登录，我直接在生产上改了身份配置，结果停服约 9 分钟。原因有两层：服务只在‘对公网开放’或‘自带登录’时才开网页端口，我少改了一个开关，服务报就绪却没接上网页；回滚时我把整个数据库换回了备份，但启动时领的授权编号还留在镜像文件里，启动检查发现镜像比数据库新，拒绝启动。这条检查本身是对的，我没放宽它，而是把镜像改回一致后恢复。教训是配置变更也是发布：先在测试机试通，停服前按程序真实规则预检，回滚只撤回本次改动。”
+
+[返回目录](#contents)
+
+<a id="case-silent-access-entry"></a>
+
+## 案例 31：输完邮箱验证码还要再点一次“登录”：让网页自己换取会话
+
+**背景与现象**
+
+2026-10-27 12:54（日本时间），生产入口切成只用 Cloudflare Access（Cloudflare 提供的登录关卡，只放行 Andy 的邮箱，用邮箱验证码登录）。13:14 Andy 发来 iPhone 截图：输完验证码后，页面停在一个黄色边框的空框里，标题“このブラウザーでログインしてください”（请登录以连接此浏览器），下面一个“Himawari にログイン”按钮，再下面是一串给程序看的错误码 `HTTP_GATEWAY_AUTHENTICATION_REQUIRED`。他的原话：“为什么我既然都输入验证码了，还要让我来这里点一下呢？”
+
+**根因**
+
+- Himawari 有自己的登录凭据：浏览器里的会话 Cookie（`himawari_session`，网站存在浏览器里的登录凭据）。过了 Cloudflare 之后，每个请求都带着 Cloudflare 签发的身份令牌（请求头 `cf-access-jwt-assertion`），服务器的 `POST /api/identity/v1/sessions` 用这个令牌就能换出 Himawari 会话，只检查请求来自本站和令牌有效，不需要用户做任何事（代码证据：`packages/platform-node/src/identity-gateway.ts` 里这条路由）。
+- 多出的一步在网页：`apps/control-center/src/app.tsx` 读配置收到 401/403 时，只摆出一个按钮，用户点了才调用换取接口；同时把内部错误码原样显示出来。服务器端没有问题。确认方式是读代码，没有在生产上复现。
+
+**我们的方案**
+
+- 新增 `apps/control-center/src/browser-entry.ts`：读配置失败时，先用 `redirect: "manual"`（不跟随跳转）请求一次公开的 `/api/identity/v1/method`。
+  - 被 Cloudflare 跳转（浏览器返回 `opaqueredirect`）或被拒 → Cloudflare 登录过期，显示“需要重新验证邮箱”，点按钮重新加载整页，交给 Cloudflare 的验证码页面。
+  - 请求不通 → “Himawari 暂时连不上”，5 秒后自动重试。
+  - 登录方式是 `cloudflare-access` 且配置被 401/403 拒绝 → 自动换取一次会话，成功后重新读配置，直接进对话。
+  - 登录方式是 `built-in`（自带用户名密码） → 原来的登录表单不变。
+- 每次进入只自动换取一次；换取后仍被拒就停下来给“重试”按钮，不会无限循环。
+- 新页面 `components/browser-entry-screen.tsx` 只显示葵盘标志和一两句话，不显示错误码，中英日三语。
+- 和 Pi（Himawari 依赖的开源 Agent 框架）无关；全部是 Himawari 自己的身份和网页代码。决定记在 [ADR 0095](adr/0095-silent-session-exchange-behind-cloudflare-access.md)。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 留着按钮，只把页面做好看 | 改动最小 | 多出的一步本来就不需要，没解决 Andy 的问题 |
+| 服务器见到有效的 Cloudflare 令牌就在任何请求里顺手建会话 | 网页不用改 | 让只读请求带上“建会话、写设备记录”的副作用，扩大了服务器的安全检查范围 |
+| 网页每次打开都先换一次会话 | 逻辑最简单 | 每次打开多一条设备记录；改为只在读配置被拒时换 |
+| 换取失败就一直自动重试 | 用户什么都不用点 | 服务器持续拒绝时会无限请求；改为只换一次，之后给“重试”按钮 |
+
+放弃了什么：服务器持续拒绝会话这种少见情况下，用户要点一次“重试”。
+
+**业界主流做法**
+
+- ✅ Cloudflare 文档 [Authorization cookie](https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/)：“If a request does not include the cookie, Access will block the request.” 也就是 Cloudflare 登录过期后，网页里的请求会被 Cloudflare 拦下，网页必须能认出这种情况。
+- ✅ Cloudflare 文档 [CORS](https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/cors/)：没登录时，普通请求“will return a `CORS error`”，并要求 fetch 请求设置“`credentials: 'same-origin'`”。这说明被拦时普通 fetch 只会得到一个看不出原因的网络错误，所以我们改用不跟随跳转的探测请求来区分“登录过期”和“断网”。
+- ✅ MDN [Response.type](https://developer.mozilla.org/en-US/docs/Web/API/Response/type)：`opaqueredirect` 是“A response to a request whose redirect option was set to `manual`, and which was redirected by the server.”，这是我们判断“被 Cloudflare 跳转到登录页”的依据。
+
+**对比与取舍**
+
+做法和 Cloudflare 文档一致：靠 Cloudflare 的 Cookie 做外层登录，网页请求都带 `credentials: 'same-origin'`。Himawari 多了一层自己的会话，是为了沿用已有的设备记录和撤销能力（[ADR 0089](adr/0089-web-push-only-owner-entry.md)）；代价是要在网页里把“换会话”做成看不见的一步。ChatGPT、Claude 网页版登录后也是直接进对话，不会在中间再要一次确认，这一点只是使用体验上的对照，没有找到它们的一手技术文档，所以不当作依据。
+
+**结果数据**
+
+- 单元测试：`apps/control-center` 全部 485 项通过，其中新增的 `browser-entry.unit.test.ts`（4 组）和 `app-interactions.unit.test.ts` 里的进入流程（自动换取、登录过期、连不上自动重试、只换一次）。
+- 上线后从输完验证码到进入对话的时间：未测量（要等生产上线后在 iPhone 上实测）。
+- `npm run check` 和 `npm run build` 通过；发布走查测试 `product-path-browser` 已去掉点按钮的步骤，云端容器里跳过，未运行。
+
+**相关 ADR/PR**
+
+[ADR 0095](adr/0095-silent-session-exchange-behind-cloudflare-access.md)、[ADR 0089](adr/0089-web-push-only-owner-entry.md)；[原型](https://claude.ai/artifact/BxexuxfGz84FFYTSnqu5Y6)；相关：[案例 30](#case-login-switch-outage)。
+
+**面试 30 秒版**
+
+“我们的个人 Agent 外面套了 Cloudflare Access 邮箱验证码，里面还有自己的会话。用户输完验证码还被要求再点一次‘登录’，页面上还露出了错误码。服务器其实早就能凭 Cloudflare 的身份令牌自动换出会话，是前端写成了等用户点按钮。我改成读配置被拒时自动换一次；用 `redirect: manual` 的探测请求区分‘Cloudflare 登录过期’和‘断网’，前者让 Cloudflare 重新要验证码，后者倒计时自动重试；只换一次防止死循环，所有页面都不再显示错误码。”
+
+[返回目录](#contents)
+
+<a id="case-ios-safe-area-scrollbar"></a>
+
+## 案例 32：iPhone 上输入框贴底、上方多出一条灰色横条：安全区和横向滚动
+
+**背景与现象**
+
+2026-10-27 13:24（日本时间），Andy 从 iPhone 主屏幕打开 Himawari（PWA，渐进式网页应用：加到主屏幕后像 App 一样全屏打开的网页），截图指出：输入框紧贴屏幕底边，被 iPhone 底部的横条（Home 指示条）挡住；输入框上方横贯整屏有一条深灰色横条；回答下面那一行里“复制”两个字被挤成竖排，模型名被截断。他还要求去掉模型名、记忆只给一句提示，发送按钮“改成和电脑端一样……设计的好看一点”。
+
+**根因**
+
+- **贴底（代码确认）。** `apps/control-center/index.html` 的 `viewport` 没写 `viewport-fit=cover`，CSS 也没用 `env(safe-area-inset-bottom)`（浏览器提供的“底部被横条挡住多高”）。手机样式给输入框的下边距 `margin: 0 12px 12px`（`chat-layout.css`）又被后加载的 `review-v4.css` 里 `.composer { margin: 12px auto 0; }` 盖掉，实际下边距是 0。
+- **灰色横条（推断，没有在 iOS 内核上复现）。** 横条位置正好在对话区底边，宽度和对话区一样，样子和 iOS 滚动条一致。对话区只写了 `overflow-y: auto`；CSS 规定另一个方向写 `visible` 时会被算成 `auto`，所以对话区可以横向滚动。回答下面那一行比屏幕宽一点（Chromium 里测到 399px，屏幕 390px），用户上下滑动时 iOS 就显示了几乎和屏幕一样长的横向滚动条。云端容器只有 Chromium，没有 Safari 内核，所以只能推断。
+- **“复制”竖排（代码确认）。** 复制按钮是可以被压缩的弹性布局子元素，回答下面那一行太长时它被压窄，两个字只好竖排。
+
+**我们的方案**
+
+- `viewport` 加 `viewport-fit=cover`，页面上、左、右用 `env(safe-area-inset-*)` 留边；手机上对话区容器底部留出横条高度，输入框再离开 8px。侧栏抽屉、右侧详情、外观面板的顶部位置一起加上上边距。
+- 对话区明确 `overflow-x: hidden`，并去掉超宽的来源：回答下方一行不再显示模型名，复制按钮只留图标且不可压缩。
+- 记忆改成一行 12px 灰字“记下了 N 条新记忆 · 查看”，点开记忆页把这一轮记下的那几条放最上面，标“刚记住”，能直接编辑、删除。
+- 发送按钮电脑和手机都改成 34px 圆形，手机点按区域 44px；空着是浅灰，能发是深色，回答中显示停止方块。
+- 先出原型，Andy 批注“再放小一点……太抢用户的注意力了”后改小，13:49 审核通过才写代码。决定记在 [ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)。和 Pi（Himawari 依赖的开源 Agent 框架）无关，全是网页样式和组件。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| 不加 `viewport-fit=cover`，输入框下面写死 34px | 改动小 | 没有横条的设备上多一截空白；不同机型横条高度不同 |
+| 只去掉超宽内容，不关对话区横向滚动 | 不碰滚动设置 | 以后别的元素一超宽，横条还会回来；对话区本来就不该横向滚动 |
+| 记忆提示保留可展开的灰框 | 不用跳页就能看内容 | Andy 明确不要在对话里显示记忆内容，灰框太抢眼 |
+
+放弃了什么：回答下方不再显示模型名，想看某一轮用了哪个模型要展开过程区。
+
+**业界主流做法**
+
+- ✅ WebKit 官方博客 [Designing Websites for iPhone X](https://webkit.org/blog/7929/designing-websites-for-iphone-x/)：`viewport-fit` 默认 `auto`，“Content is automatically inset within the display's safe area”；要铺满整屏需要 `viewport-fit=cover`，再用安全区变量给内容留边。
+- ✅ MDN [overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/overflow)：“`overflow-x`: as specified, except with `visible`/`clip` computing to `auto`/`hidden` respectively if one of `overflow-x` or `overflow-y` is neither `visible` nor clip”。
+- ✅ Open WebUI（开源 AI 对话网页）[src/app.html](https://github.com/open-webui/open-webui/blob/main/src/app.html) 的 `viewport` 写的是 “`width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content`”。
+
+**对比与取舍**
+
+做法和 WebKit 官方建议、Open WebUI 一致：铺满整屏，再按安全区留边。我们没有照搬 Open WebUI 的 `maximum-scale=1`（禁止双指放大），因为它会妨碍看不清字时放大。`interactive-widget=resizes-content`（键盘弹出时缩小页面）这次没加，键盘遮挡没有被报告，等有现象再处理。
+
+**结果数据**
+
+- 单元测试：`apps/control-center` 全部 485 项通过（含改写的 `answer-footer.unit.test.ts` 和 `memory-interactions.unit.test.ts` 记忆跳转用例）。
+- Chromium 390×844 手机视口、模拟上 47px 下 34px 安全区：对话区 `scrollWidth` 等于 `clientWidth`（390），没有元素超出屏幕；改前 token 数右边到 399px。截图在 [2026-10-27-v7](assets/control-center/2026-10-27-v7/SHA256SUMS)。
+- iPhone 真机效果：未测量（等第十五版上线后看）。
+
+**相关 ADR/PR**
+
+[ADR 0096](adr/0096-phone-chat-page-safe-area-and-quiet-answer-line.md)、[ADR 0090](adr/0090-chat-ui-v6-answer-and-composer.md)；PR #62；[原型](https://claude.ai/artifact/BGa1vxG7DHy9GQKBQLatSS)。
+
+**面试 30 秒版**
+
+“用户在 iPhone 主屏幕打开我们的 PWA，输入框贴着底部横条，上方还多了一条灰色横条。贴底是因为没写 `viewport-fit=cover`、也没用安全区变量，而且手机下边距被另一份样式表覆盖成 0。灰条是对话区只写了 `overflow-y: auto`，按 CSS 规则横向也变成可滚动，回答下面一行超宽 9px，iOS 就画出几乎满屏的横向滚动条。我铺满整屏再按安全区留边，关掉对话区横向滚动，同时去掉超宽内容；改前先出原型给用户批注，改后在模拟安全区的手机视口里测了没有元素超宽。”
 
 [返回目录](#contents)
 

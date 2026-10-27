@@ -139,8 +139,11 @@ it("[UI-9] puts copy and the turn facts in one line right under the answer, befo
   expect(answer).toBeGreaterThan(0);
   expect(actions).toBeGreaterThan(answer);
   expect(sources).toBeGreaterThan(actions);
-  expect(html).toContain('aria-label="answer.copyHint"');
-  expect(html).toContain("deepseek-v4-flash · 27.1s · answer.at(at=2026-10-26T12:24:24.777Z)");
+  expect(html).toContain('title="answer.copyHint" aria-label="answer.copy"');
+  expect(html).toContain(
+    '<span class="answer-meta">27.1s · answer.at(at=2026-10-26T12:24:24.777Z)',
+  );
+  expect(html).not.toContain("deepseek-v4-flash");
   expect(html).toContain("answer.tokens(count=21.5k)");
   expect(html).toContain(
     'title="answer.tokenDetail(input=21,000,cached=18,000,output=480,cost=$0.0042)"',

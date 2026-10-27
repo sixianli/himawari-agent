@@ -15,9 +15,10 @@ import {
   type ControlCenterUiLocale,
   THREAD_CURSOR_STORAGE_KEY,
 } from "./browser-storage.js";
-import { ActionButton, Banner } from "./components/index.js";
+import { Banner } from "./components/index.js";
+import { BrowserEntryScreen } from "./components/browser-entry-screen.js";
+import { type BrowserEntry, recoverBrowserEntry } from "./browser-entry.js";
 import {
-  createBrowserSession,
   GatewayClient,
   loadRuntimeConfiguration,
   refreshRuntimeConfiguration,
@@ -25,7 +26,12 @@ import {
 import { useGovernanceControlCenter } from "./governance-control-center.js";
 import { HealthControlCenter } from "./health-control-center.js";
 import { useMemory } from "./memory.js";
-import { MemoryReminders, MemoryTurnNote } from "./components/memory-panel.js";
+import {
+  focusedMemoryIds,
+  MemoryReminders,
+  MemoryTurnNote,
+  OPEN_MEMORY_SETTINGS,
+} from "./components/memory-panel.js";
 import type { MessageId } from "./i18n/message-ids.js";
 import {
   bootstrapLoadingLabel,
@@ -143,8 +149,10 @@ function LocalizedControlCenterApp({
         configuration.installedGatewayV2Operations ?? [],
         configuration.healthDependenciesAvailable,
       ));
-  const [authenticationRequired, setAuthenticationRequired] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
+  const [entry, setEntry] = useState<BrowserEntry | null>(null);
+  const sessionExchanged = useRef(false);
+  const deviceLabel = useRef("");
+  deviceLabel.current = message("authentication.deviceLabel");
   const [bootstrapRevision, setBootstrapRevision] = useState(0);
   const [client, setClient] = useState<GatewayClient>();
   const [gatewayRefreshSignal, setGatewayRefreshSignal] = useState(0);
@@ -157,8 +165,6 @@ function LocalizedControlCenterApp({
   const [threadConnection, setThreadConnection] = useState<"connecting" | "connected" | "offline">(
     "connecting",
   );
-  const [requestError, setRequestError] = useState<string | null>(null);
-
   useEffect(() => {
     void bootstrapRevision;
     let active = true;
@@ -166,8 +172,8 @@ function LocalizedControlCenterApp({
     void loadRuntimeConfiguration(window.fetch.bind(window))
       .then((loaded) => {
         if (!active) return;
-        setAuthenticationRequired(false);
-        setRequestError(null);
+        sessionExchanged.current = false;
+        setEntry(null);
         setConfiguration(loaded);
         setClient(
           new GatewayClient({
@@ -200,12 +206,22 @@ function LocalizedControlCenterApp({
           }),
         );
       })
-      .catch((error: Error) => {
-        if (active) {
-          setRequestError(error.message);
-          const status = "status" in error ? error.status : undefined;
-          setAuthenticationRequired(status === 401 || status === 403);
+      .catch(async (failure: unknown) => {
+        const exchanged = sessionExchanged.current;
+        const next = await recoverBrowserEntry({
+          fetch: window.fetch.bind(window),
+          deviceLabel: deviceLabel.current,
+          failure,
+          exchanged,
+        });
+        if (!active) return;
+        if (next.kind === "reload") {
+          sessionExchanged.current = true;
+          setBootstrapRevision((revision) => revision + 1);
+          return;
         }
+        if (next.kind === "built-in-login") setIdentityMethod("built-in");
+        setEntry(next);
       });
     return () => {
       active = false;
@@ -226,24 +242,18 @@ function LocalizedControlCenterApp({
     };
   }, []);
 
-  const signIn = async () => {
-    if (signingIn) return;
-    setSigningIn(true);
-    try {
-      await createBrowserSession(window.fetch.bind(window), message("authentication.deviceLabel"));
-      setBootstrapRevision((revision) => revision + 1);
-    } catch (error) {
-      setRequestError(error instanceof Error ? error.message : "CONTROL_CENTER_REQUEST_REJECTED");
-    } finally {
-      setSigningIn(false);
-    }
-  };
+  const retryEntry = useCallback(() => {
+    sessionExchanged.current = false;
+    setEntry(null);
+    setBootstrapRevision((revision) => revision + 1);
+  }, []);
+  const verifyEmail = useCallback(() => window.location.reload(), []);
 
   const clearPrivateViewState = useCallback(() => {
-    setRequestError("CONTROL_CENTER_REAUTHENTICATION_REQUIRED");
-    setAuthenticationRequired(true);
     setConfiguration(undefined);
     setClient(undefined);
+    setEntry(null);
+    setBootstrapRevision((revision) => revision + 1);
   }, []);
 
   useEffect(() => {
@@ -310,6 +320,12 @@ function LocalizedControlCenterApp({
     };
   }, [configuration, storage, clearPrivateViewState]);
 
+  const [memoryFocus, setMemoryFocus] = useState<readonly string[]>([]);
+  useEffect(() => {
+    const focus = (event: Event) => setMemoryFocus(focusedMemoryIds(event));
+    window.addEventListener(OPEN_MEMORY_SETTINGS, focus);
+    return () => window.removeEventListener(OPEN_MEMORY_SETTINGS, focus);
+  }, []);
   const memory = useMemory({
     client,
     configuration,
@@ -367,6 +383,9 @@ function LocalizedControlCenterApp({
     onUnauthorized: clearPrivateViewState,
   });
 
+  if (!configuration && entry?.kind !== "built-in-login")
+    return <BrowserEntryScreen entry={entry} onRetry={retryEntry} onVerifyEmail={verifyEmail} />;
+
   return (
     <ControlCenterShell
       settingsData={threadModel.settingsData}
@@ -376,6 +395,8 @@ function LocalizedControlCenterApp({
             <MemorySettings
               memory={memory}
               message={message}
+              focus={memoryFocus}
+              focusThreadTitle={threadModel.title}
               onOpenThread={(threadId) =>
                 navigate(routeForSurface("threads", { objectId: threadId, view: "content" }))
               }
@@ -416,29 +437,8 @@ function LocalizedControlCenterApp({
         configuration ? (route.surfaceId === "threads" ? threadConnection : connection) : null
       }
       content={
-        !configuration && authenticationRequired && identityMethod === "built-in" ? (
-          <AccountLogin onComplete={() => setBootstrapRevision((value) => value + 1)} />
-        ) : !configuration && requestError ? (
-          <>
-            <Banner
-              title={message(
-                authenticationRequired ? "authentication.required" : "error.currentUnavailable",
-              )}
-              tone="warning"
-            >
-              {authenticationRequired ? (
-                <ActionButton disabled={signingIn} onClick={() => void signIn()}>
-                  {message("authentication.signIn")}
-                </ActionButton>
-              ) : (
-                <ActionButton onClick={() => setBootstrapRevision((value) => value + 1)}>
-                  {message("loading.retry")}
-                </ActionButton>
-              )}
-              <code>{requestError}</code>
-            </Banner>
-            {!authenticationRequired && route.surfaceId === "threads" ? threadModel.content : null}
-          </>
+        !configuration && entry?.kind === "built-in-login" ? (
+          <AccountLogin onComplete={retryEntry} />
         ) : configuration && nativeDevices ? (
           <AccountDevices
             csrfToken={configuration.csrfToken}

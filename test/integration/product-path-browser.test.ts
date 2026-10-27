@@ -1394,7 +1394,6 @@ productDescribe(
       page = await context.newPage();
       await scenario("00-sign-in", async () => {
         await page.goto(`${installation.origin}/`);
-        await page.getByRole("button", { name: "登录 Himawari" }).click();
         await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
       });
     }, 400_000);
@@ -2384,7 +2383,6 @@ productDescribe(
           await context.tracing.start({ screenshots: true, snapshots: true });
           page = await context.newPage();
           await page.goto(`${installation.origin}/`);
-          await page.getByRole("button", { name: "登录 Himawari" }).click();
           await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
         } else await page.reload();
         try {
@@ -5133,7 +5131,6 @@ profileDescribe("alternating installed tool profiling", () => {
       const current: Session = { side, directory, installation, browser, context, page };
       sessions.push(current);
       await page.goto(`${installation.origin}/`);
-      await page.getByRole("button", { name: "登录 Himawari" }).click();
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
       await newThread();
       return current;
@@ -5413,7 +5410,6 @@ productDescribe("[R2-T2] workspace auto approval", { timeout: 600_000 }, () => {
     });
     autoPage = await autoContext.newPage();
     await autoPage.goto(`${autoInstallation.origin}/`);
-    await autoPage.getByRole("button", { name: "登录 Himawari" }).click();
     await uiExpect(autoComposer()).toBeVisible({ timeout: 30_000 });
   }, 400_000);
 
@@ -5600,7 +5596,6 @@ productDescribe("product path: release acceptance in a real browser", { timeout:
     await scenario("accept-homepage", async () => {
       const response = await page.goto(`${installation.origin}/`);
       expect(response?.status()).toBe(200);
-      await page.getByRole("button", { name: "登录 Himawari" }).click();
       await uiExpect(composer()).toBeVisible({ timeout: 30_000 });
     });
     await scenario("accept-search-toggle", async () => {

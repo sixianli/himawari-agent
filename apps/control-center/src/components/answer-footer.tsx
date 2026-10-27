@@ -44,7 +44,6 @@ export function useCopied(): [boolean, (text: string) => void] {
 
 export function AnswerActions({
   text,
-  model,
   duration,
   committedAt,
   usage,
@@ -52,7 +51,6 @@ export function AnswerActions({
   message,
 }: {
   readonly text: string;
-  readonly model: string | undefined;
   readonly duration: string | undefined;
   readonly committedAt: string | undefined;
   readonly usage: TurnUsage | undefined;
@@ -80,7 +78,6 @@ export function AnswerActions({
     };
   }, [menu]);
   const meta = [
-    model,
     duration,
     committedAt ? message("answer.at", { at: new Date(committedAt) }) : undefined,
   ].filter(Boolean);
@@ -88,13 +85,12 @@ export function AnswerActions({
     <div className="answer-actions">
       <button
         type="button"
-        className="answer-action"
+        className="answer-action icon-only"
         title={message("answer.copyHint")}
-        aria-label={message("answer.copyHint")}
+        aria-label={message(copied ? "answer.copied" : "answer.copy")}
         onClick={() => copy(text)}
       >
         <LineIcon name={copied ? "check" : "copy"} />
-        {message(copied ? "answer.copied" : "answer.copy")}
       </button>
       {onFork ? (
         <span className="answer-more" ref={menuRef}>
