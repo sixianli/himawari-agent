@@ -7,7 +7,7 @@ superseded_by: ""
 date: "2026-10-27"
 ---
 
-# ADR 0093：Job Host 交回最终结果后，调用方停止心跳和租约检查
+# ADR 0094：Job Host 交回最终结果后，调用方停止心跳和租约检查
 
 <a id="contents"></a>
 

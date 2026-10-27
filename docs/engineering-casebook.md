@@ -1835,7 +1835,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 **我们的方案**
 
-- 调用方收到最终结果后，停止心跳和 1.5 秒租约检查；Job Host 如果迟迟不退出，仍由原有的收尾期限 `cleanupTimeoutMs` 兜底（[ADR 0093](adr/0093-stop-job-host-supervision-after-final-result.md)，[PR #56](https://github.com/sixianli/himawari-agent/pull/56)）。
+- 调用方收到最终结果后，停止心跳和 1.5 秒租约检查；Job Host 如果迟迟不退出，仍由原有的收尾期限 `cleanupTimeoutMs` 兜底（[ADR 0094](adr/0094-stop-job-host-supervision-after-final-result.md)，[PR #56](https://github.com/sixianli/himawari-agent/pull/56)）。
 - 交回结果之前的规则不变：那时心跳发不出去说明 Job Host 已经不在，立刻清理整组。
 - 不改验收脚本。这次是验收脚本发现了真问题，放宽它只会把问题藏起来。
 - 这件事和 Pi（Himawari 依赖的开源 Agent 框架）无关，全部是 Himawari 自己的沙箱代码。
@@ -1869,7 +1869,7 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 **相关 ADR/PR**
 
-[ADR 0093](adr/0093-stop-job-host-supervision-after-final-result.md)、[ADR 0031](adr/0031-isolated-tool-execution.md)、[ADR 0054](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)；[PR #56](https://github.com/sixianli/himawari-agent/pull/56)；相关：[案例 19](#case-sandbox-lost-race)（同样是沙箱收尾那几十毫秒里的状态判错）、[案例 25](#case-packet-generator)。
+[ADR 0094](adr/0094-stop-job-host-supervision-after-final-result.md)、[ADR 0031](adr/0031-isolated-tool-execution.md)、[ADR 0054](adr/0054-readonly-tools-in-host-and-reused-task-sandbox.md)；[PR #56](https://github.com/sixianli/himawari-agent/pull/56)；相关：[案例 19](#case-sandbox-lost-race)（同样是沙箱收尾那几十毫秒里的状态判错）、[案例 25](#case-packet-generator)。
 
 **面试 30 秒版**
 
