@@ -24,6 +24,7 @@ date: "2026-10-26"
 - [主屏网页应用外壳](#主屏网页应用外壳)
 - [设置页通知开关](#设置页通知开关)
 - [生产入口切换](#生产入口切换)
+  - [入口切换实施记录](#入口切换实施记录)
 - [删除 Bark](#删除-bark)
 - [取舍](#取舍)
 - [验证](#验证)
@@ -223,6 +224,18 @@ date: "2026-10-26"
 4. 重启后用真实网页走一遍对话、搜索、记忆页、设置页，再在 iPhone 上加到主屏、开通知，验三类推送。
 5. Cloudflare 故障时：远程会话把 `publicOrigin` 改回 `http://127.0.0.1:8400`、`identity.kind` 改回 `built-in`，重启，Andy 用 ssh 隧道打开。
 
+<a id="入口切换实施记录"></a>
+
+### 入口切换实施记录（2026-10-27）
+
+以下时间为日本时间（JST）。各步由 Mac 远程会话线程在 Andy 打字授权后完成，网页推送随第十四版上线。
+
+- 第 1 步：Hermes 已改用 `himawari-test.siyi.win`。Hermes 测试服务自 10-13 起启动失败、每 15 秒重启一次，和本次改名无关，由 Mac 线程跟进；Runbook 里的网址更新也由 Mac 线程跟进。
+- 第 2 步：11:38 Andy 自己在生产机装好 `cloudflared` 隧道令牌；`https://himawari.siyi.win` 指向生产机。Access 只放行 Andy 的邮箱，会话 1 个月（不是原定的 30 天）。从外网看，首页跳到 Access 登录页，`/manifest.webmanifest` 和 `/sw.js` 返回 200。
+- 第 3 步：11:39 推送开启（`secrets/web-push-vapid.v1`、`runPolicy.webPush`），`publicOrigin` 改为 `https://himawari.siyi.win`。登录切换第一次在 11:53 失败，停服约 9 分钟：原因是配置里 `publicMode` 还是关的，网页端口没开，整库回退又撞上镜像编号不一致。根因和修复见[工程案例 30](../../engineering-casebook.md#case-login-switch-outage) 和 [BL-20261027-008](../../backlog/BL-20261027-008-config-change-preflight-and-verified-rollback.md)。12:54 第二次切换成功，生产登录只用 Cloudflare 邮箱验证码（`identity.kind` 为 `cloudflare-access`）。
+- 第 4 步：Andy 在 iPhone 上加到主屏、登录、开启通知，点“发送一条测试通知”后回复“收到了”。三类真实推送、锁屏文字、点开位置、角标、在看不推，以及 iPhone 上的对话、搜索、记忆页、设置页走查还没有确认，记在 [BL-20261027-009](../../backlog/BL-20261027-009-web-push-real-device-acceptance.md)。
+- 已知问题：通过 Access 后，前端还要再点一次“登录”。这个问题由界面重构线程处理，不在本规格范围。
+
 [↑ 返回阅读导航](#阅读导航)
 
 ## 删除 Bark
@@ -248,6 +261,6 @@ date: "2026-10-26"
 - 网关（`[WP-5]`）：4 种消息的结构校验、只许主人、幂等、状态查询不泄露密钥。
 - 外壳（`[WP-6]`）：`/sw.js`、`/manifest.webmanifest` 的类型、缓存头和 CSP；后台脚本不拦截请求。
 - 配置和删 Bark（`[WP-7]`）：`webPush` 的校验；`reminderPush` 被拒；`push init-key` 不覆盖已有文件、权限 0600。
-- 真机：iPhone 主屏应用上收到三类推送、锁屏内容符合规则、点开进对的页面；在看时不推。
+- 真机：iPhone 主屏应用上收到三类推送、锁屏内容符合规则、点开进对的页面；在看时不推。2026-10-27 只确认了测试通知能到达（见[入口切换实施记录](#入口切换实施记录)），其余项见 [BL-20261027-009](../../backlog/BL-20261027-009-web-push-real-device-acceptance.md)。
 
 [↑ 返回阅读导航](#阅读导航)
