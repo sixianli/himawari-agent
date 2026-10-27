@@ -7,7 +7,9 @@
     "G3": "durable",
     "G4": "durable",
     "G5": "durable",
-    "G6": "durable"
+    "G6": "durable",
+    "G7": "once",
+    "G8": "once"
   },
   "items": [
     {
@@ -178,7 +180,7 @@
       "done_when": [
         {
           "type": "user",
-          "ref": null,
+          "ref": "G8",
           "question": "第十三版上线后，在 Mac 远程会话线程里打字授权：改 Hermes 域名、生产装隧道、改生产配置并重启"
         }
       ],
@@ -189,15 +191,15 @@
     },
     {
       "id": "WP-10",
-      "title": "iPhone 真机验收：安装、登录、三类通知、点开位置、角标、在看不推",
+      "title": "iPhone 真机验收：安装到主屏幕、登录、开启通知并收到测试通知",
       "goal_ref": [
         "G1"
       ],
       "done_when": [
         {
           "type": "user",
-          "ref": null,
-          "question": "上线后在 iPhone 上走一遍验收并确认"
+          "ref": "G7",
+          "question": "iPhone 上开启通知并发送测试通知，收到了吗"
         }
       ],
       "added": {

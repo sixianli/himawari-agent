@@ -4,7 +4,7 @@ document_type: "backlog"
 record_id: "BL-20261026-005"
 record_state: "open"
 date: "2026-10-26"
-updated: "2026-10-26"
+updated: "2026-10-27"
 priority: "high"
 item_type: "feature"
 source_idea: ""
@@ -31,3 +31,4 @@ superseded_by: ""
 
 - 评估文档：<https://claude.ai/artifact/Vs8dfsFfsgLNeMhSfTatoS>。
 - 工程案例：[SOURCE: docs/engineering-casebook.md#case-mobile-client]。
+- 2026-10-27 进展：实现已随 PR #49 合入并在第十四版上线；12:54 JST 生产入口切为 Cloudflare 邮箱验证码后推送开启，Andy 在 iPhone 主屏应用上收到测试通知。本条保持 open，只剩 2026-11-09 的到达情况核对；其余真机项见 BL-20261027-009。
