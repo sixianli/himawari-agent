@@ -19,7 +19,7 @@ SCENARIOS = ['accept-homepage', 'accept-search-toggle', 'accept-news-search', 'a
 def walkthrough(sha=ARTIFACT_SHA256, statuses=None):
     statuses = statuses or {}
     return {'schema': 'himawari-browser-acceptance.v1', 'artifactSha256': sha, 'results': [{'scenario': name, 'status': statuses.get(name, 'passed')} for name in SCENARIOS]}
-GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\n'
+GOOD_FACTS = 'hostname=prod-host\nactive=active\noptFree=999999999\nstateFree=999999999\nuid=0\nconfigSha256=' + CONFIG_SHA256 + '\nunitSha256=' + UNIT_SHA256 + '\nauthority=1 31\nrootFree=99999999999\n'
 
 
 def generated_records(commit=COMMIT, failed=()):
@@ -57,6 +57,48 @@ class PreflightChecksTest(unittest.TestCase):
         self.assertEqual(self.failed(self.facts(active='failed')), ['SERVICE_ACTIVE'])
         self.assertEqual(self.failed(self.facts(optFree='1500')), ['OPT_FREE'])
         self.assertEqual(self.failed(self.facts(uid='1001')), ['ROOT_LOGIN'])
+
+
+class LeftoverPreflightTest(unittest.TestCase):
+    UNIT = 'himawari-fourteenth-read-20261026.service'
+    PATHS = ['/opt/himawari/releases/2026-10-27-fourteenth', '/var/tmp/himawari-fourteenth-20261027']
+
+    def failed(self, **changes):
+        facts = dict(line.split('=', 1) for line in GOOD_FACTS.splitlines())
+        facts.update({'probeUnit.' + self.UNIT: 'not-found', **{'targetPath.' + path: 'absent' for path in self.PATHS}})
+        facts.update(changes)
+        return [name for name, passed in preflight.checks(BINDING, facts, 1000, [self.UNIT], self.PATHS) if not passed]
+
+    def test_clean_server_passes(self):
+        self.assertEqual(self.failed(), [])
+
+    def test_failed_probe_unit_from_an_earlier_attempt_is_refused_before_the_stop(self):
+        self.assertEqual(self.failed(**{'probeUnit.' + self.UNIT: 'loaded'}), ['PROBE_UNIT_UNUSED ' + self.UNIT])
+        self.assertEqual(self.failed(**{'probeUnit.' + self.UNIT: ''}), ['PROBE_UNIT_UNUSED ' + self.UNIT])
+
+    def test_leftover_target_path_is_refused(self):
+        self.assertEqual(self.failed(**{'targetPath.' + self.PATHS[1]: 'present'}), ['TARGET_PATH_ABSENT ' + self.PATHS[1]])
+
+    def test_root_without_room_for_acceptance_is_refused(self):
+        self.assertEqual(self.failed(rootFree=str(10 * 1024 ** 3)), ['ROOT_FREE_FOR_ACCEPTANCE'])
+
+    def test_probe_units_come_from_the_packet_measurement_scripts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            packet = Path(directory)
+            (packet / 'measurement').mkdir()
+            (packet / 'measurement' / 'S6-service-read.py').write_text("import os\nunit = '" + self.UNIT + "'\n")
+            (packet / 'measurement' / 'other.py').write_text("unit = 'himawari-prod.service'\n")
+            self.assertEqual(preflight.probe_units(packet, BINDING), [self.UNIT])
+
+    def test_target_paths_come_from_the_bindings(self):
+        binding = {**BINDING, 'paths': {**BINDING['paths'], 'newPrefix': self.PATHS[0], 'newOperations': '/opt/himawari/operations/fourteenth-20261027', 'evidenceRoot': '/var/lib/himawari/fourteenth-20261027-evidence', 'transportRoot': self.PATHS[1] + '/input'}}
+        self.assertEqual(preflight.target_paths(binding), sorted([self.PATHS[0], self.PATHS[1], '/opt/himawari/operations/fourteenth-20261027', '/var/lib/himawari/fourteenth-20261027-evidence']))
+
+    def test_remote_script_reads_unit_state_and_paths(self):
+        script = preflight.remote_script(BINDING, [self.UNIT], self.PATHS)
+        self.assertIn('/usr/bin/systemctl show -p LoadState --value ' + self.UNIT, script)
+        self.assertIn("[ -e /var/tmp/himawari-fourteenth-20261027 ]", script)
+        self.assertIn('df --output=avail -B1 /', script)
 
 
 class FrozenStatePreflightTest(unittest.TestCase):

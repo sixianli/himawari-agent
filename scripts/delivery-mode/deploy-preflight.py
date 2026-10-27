@@ -1,18 +1,34 @@
 import json
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
 
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']
 MINIMUM_FREE_FACTOR = 2
+ACCEPTANCE_ROOT_FREE_BYTES = 10 * 1024 ** 3
+PROBE_UNIT_LINE = re.compile(r"^unit = '([A-Za-z0-9@._-]+\.service)'$", re.MULTILINE)
 
 
 def packet_bytes(packet):
     return sum(path.stat().st_size for path in packet.rglob('*') if path.is_file() and 'run-logs' not in path.parts)
 
 
-def remote_script(binding):
+def probe_units(packet, binding):
+    units = set()
+    for script in sorted((packet / 'measurement').glob('*.py')):
+        units.update(PROBE_UNIT_LINE.findall(script.read_text()))
+    units.discard(binding['service']['unit'])
+    return sorted(units)
+
+
+def target_paths(binding):
+    paths = binding['paths']
+    return sorted({paths[key] for key in ('newPrefix', 'newOperations', 'evidenceRoot') if key in paths} | ({str(Path(paths['transportRoot']).parent)} if 'transportRoot' in paths else set()))
+
+
+def remote_script(binding, units=(), paths=()):
     state_parent = str(Path(binding['paths']['stateRoot']).parent)
     mirror = str(Path(binding['paths']['stateRoot']) / 'authority.json')
     return '; '.join([
@@ -25,13 +41,16 @@ def remote_script(binding):
         'echo "configSha256=$(/usr/bin/sha256sum ' + shlex.quote(binding['paths']['config']) + ' | /usr/bin/cut -d \' \' -f 1)"',
         'echo "unitSha256=$(/usr/bin/sha256sum ' + shlex.quote(binding['service']['unitFragmentPath']) + ' | /usr/bin/cut -d \' \' -f 1)"',
         'echo "authority=$(/usr/bin/python3 -I -c \'import json, sys; mirror = json.load(open(sys.argv[1])); print(mirror["authorityEpoch"], mirror["fencingToken"])\' ' + shlex.quote(mirror) + ')"',
+        'echo "rootFree=$(/usr/bin/df --output=avail -B1 / | /usr/bin/tail -n 1 | /usr/bin/tr -d \' \')"',
+        *['echo ' + shlex.quote('probeUnit.' + unit) + '="$(/usr/bin/systemctl show -p LoadState --value ' + shlex.quote(unit) + ')"' for unit in units],
+        *['if [ -e ' + shlex.quote(path) + ' ] || [ -L ' + shlex.quote(path) + ' ]; then echo ' + shlex.quote('targetPath.' + path + '=present') + '; else echo ' + shlex.quote('targetPath.' + path + '=absent') + '; fi' for path in paths],
     ])
 
 
 FROZEN_STATE_CHECKS = ('CONFIG_UNCHANGED_SINCE_FREEZE', 'UNIT_UNCHANGED_SINCE_FREEZE', 'AUTHORITY_UNCHANGED_SINCE_FREEZE')
 
 
-def checks(binding, facts, size):
+def checks(binding, facts, size, units=(), paths=()):
     needed = size * MINIMUM_FREE_FACTOR
     authority = str(binding['authority']['authorityEpoch']) + ' ' + str(binding['authority']['fencingToken'])
     return [
@@ -43,23 +62,32 @@ def checks(binding, facts, size):
         ('CONFIG_UNCHANGED_SINCE_FREEZE', facts.get('configSha256') == binding['service']['oldConfigSha256']),
         ('UNIT_UNCHANGED_SINCE_FREEZE', facts.get('unitSha256') == binding['service']['oldUnitSha256']),
         ('AUTHORITY_UNCHANGED_SINCE_FREEZE', facts.get('authority') == authority),
+        ('ROOT_FREE_FOR_ACCEPTANCE', int(facts.get('rootFree') or 0) >= ACCEPTANCE_ROOT_FREE_BYTES + needed),
+        *[('PROBE_UNIT_UNUSED ' + unit, facts.get('probeUnit.' + unit) == 'not-found') for unit in units],
+        *[('TARGET_PATH_ABSENT ' + path, facts.get('targetPath.' + path) == 'absent') for path in paths],
     ]
 
 
 def main():
     packet = Path(sys.argv[1]).resolve()
     binding = json.loads((packet / 'inputs' / 'bindings.json').read_text())
-    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding)], capture_output=True, text=True, timeout=60, check=False)
+    units, paths = probe_units(packet, binding), target_paths(binding)
+    child = subprocess.run(['ssh', *SSH_OPTIONS, 'root@' + binding['host']['address'], remote_script(binding, units, paths)], capture_output=True, text=True, timeout=60, check=False)
     if child.returncode != 0:
         print('PREFLIGHT_CHECK SSH failed exit=' + str(child.returncode) + ' ' + child.stderr.strip())
         return 1
     facts = dict(line.split('=', 1) for line in child.stdout.splitlines() if '=' in line)
     failed = False
-    results = checks(binding, facts, packet_bytes(packet))
+    results = checks(binding, facts, packet_bytes(packet), units, paths)
     for name, passed in results:
         print('PREFLIGHT_CHECK ' + name + ' ' + ('passed' if passed else 'failed'))
         failed = failed or not passed
     print('PREFLIGHT_FACTS ' + json.dumps(facts))
+    for name, passed in results:
+        if not passed and name.startswith('PROBE_UNIT_UNUSED '):
+            print('PREFLIGHT_LEFTOVER_UNIT a failed earlier attempt left this transient unit loaded; after saving its status and journal run: systemctl reset-failed ' + name.split(' ', 1)[1])
+        if not passed and name.startswith('TARGET_PATH_ABSENT '):
+            print('PREFLIGHT_LEFTOVER_PATH an earlier attempt left this path; rename it with a .attemptN-failed-YYYYMMDD suffix: ' + name.split(' ', 1)[1])
     if any(name in FROZEN_STATE_CHECKS and not passed for name, passed in results):
         print('PREFLIGHT_REFREEZE the production service restarted or changed after this packet was frozen; run: python3 ' + str(Path(__file__).resolve().parent / 'make-packet.py') + ' freeze ' + str(packet))
     return 1 if failed else 0
