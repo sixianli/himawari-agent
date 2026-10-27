@@ -1,0 +1,547 @@
+import { createHash } from "node:crypto";
+import type {
+  ApprovalRequest,
+  MemoryReminder,
+  MemoryReminderStorePort,
+  ProductMemoryRecord,
+  ProductMemoryStatePort,
+  RuntimeRequest,
+  WebPushDue,
+  WebPushLocale,
+  WebPushOutboxItem,
+  WebPushSenderPort,
+  WebPushSendResult,
+  WebPushStorePort,
+} from "@himawari-agent/application";
+
+const DEFAULT_INTERVAL_MS = 10_000;
+const PRESENCE_WINDOW_MS = 45_000;
+const REMINDER_WINDOW_MS = 6 * 3_600_000;
+const RUN_WINDOW_MS = 24 * 3_600_000;
+const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
+const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
+const MAX_PAYLOAD_BYTES = 3_072;
+const SEND_BATCH = 50;
+const FINISHED_RUN_BATCH = 100;
+
+export const WEB_PUSH_TEXT = {
+  "zh-CN": {
+    reminder: "Himawari 提醒",
+    privateReminder: "你有一条私密提醒",
+    approval: "等你审批",
+    risk: { low: "低风险", medium: "中风险", high: "高风险", critical: "极高风险" },
+    completed: "已完成",
+    failed: "没有完成",
+    untitled: "新对话",
+    test: "通知已开启",
+    testBody: "Himawari 会在这里提醒你。",
+  },
+  en: {
+    reminder: "Himawari reminder",
+    privateReminder: "You have a private reminder",
+    approval: "Waiting for your approval",
+    risk: { low: "Low risk", medium: "Medium risk", high: "High risk", critical: "Critical risk" },
+    completed: "Done",
+    failed: "Didn't finish",
+    untitled: "New chat",
+    test: "Notifications are on",
+    testBody: "Himawari will remind you here.",
+  },
+  ja: {
+    reminder: "Himawari リマインダー",
+    privateReminder: "非公開のリマインダーがあります",
+    approval: "承認待ち",
+    risk: { low: "低リスク", medium: "中リスク", high: "高リスク", critical: "最高リスク" },
+    completed: "完了しました",
+    failed: "完了できませんでした",
+    untitled: "新しいチャット",
+    test: "通知がオンになりました",
+    testBody: "Himawari からのお知らせがここに届きます。",
+  },
+} as const satisfies Record<WebPushLocale, unknown>;
+
+type RiskLevel = keyof (typeof WEB_PUSH_TEXT)["en"]["risk"];
+
+export class WebPushPresence {
+  readonly #seen = new Map<string, number>();
+
+  beat(clientId: string, visible: boolean, now: string): void {
+    if (visible) this.#seen.set(clientId, Date.parse(now));
+    else this.#seen.delete(clientId);
+  }
+
+  anyVisible(now: string): boolean {
+    const at = Date.parse(now);
+    for (const [clientId, seen] of this.#seen) {
+      if (at - seen <= PRESENCE_WINDOW_MS) return true;
+      this.#seen.delete(clientId);
+    }
+    return false;
+  }
+}
+
+export interface WebPushNotification {
+  readonly title: string;
+  readonly body: string;
+  readonly navigate: string;
+  readonly lang: WebPushLocale;
+  readonly tag: string;
+  readonly badge: number;
+}
+
+export function webPushTopic(sourceKey: string): string {
+  return createHash("sha256").update(sourceKey).digest().subarray(0, 24).toString("base64url");
+}
+
+function clip(text: string, bytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= bytes) return text;
+  let result = "";
+  for (const character of text) {
+    if (Buffer.byteLength(`${result}${character}…`, "utf8") > bytes) break;
+    result += character;
+  }
+  return `${result}…`;
+}
+
+export function webPushPayload(notification: WebPushNotification): string {
+  const build = (body: string) =>
+    JSON.stringify({
+      web_push: 8030,
+      notification: {
+        title: notification.title,
+        body,
+        navigate: notification.navigate,
+        lang: notification.lang,
+        tag: notification.tag,
+        ...(notification.badge > 0 ? { app_badge: String(notification.badge) } : {}),
+      },
+    });
+  const full = build(notification.body);
+  const overflow = Buffer.byteLength(full, "utf8") - MAX_PAYLOAD_BYTES;
+  if (overflow <= 0) return full;
+  return build(
+    clip(
+      notification.body,
+      Math.max(0, Buffer.byteLength(notification.body, "utf8") - overflow - 8),
+    ),
+  );
+}
+
+export interface ProductionWebPushOptions {
+  readonly ownerId: RuntimeRequest["ownerId"];
+  readonly agentId: RuntimeRequest["agentId"];
+  readonly store: WebPushStorePort;
+  readonly sender: WebPushSenderPort;
+  readonly presence: WebPushPresence;
+  readonly reminders: Pick<MemoryReminderStorePort, "listDue" | "read">;
+  readonly memories: Pick<ProductMemoryStatePort, "readMany">;
+  readonly readMemoryText: (memory: ProductMemoryRecord) => Promise<string | undefined>;
+  readonly listApprovals: () => Promise<readonly ApprovalRequest[]>;
+  readonly runThread: (runId: string) => Promise<string | null>;
+  readonly threadTitle: (threadId: string) => Promise<{ readonly title: string | null } | null>;
+  readonly publicOrigin: string;
+  readonly timeZone?: string;
+  readonly now: () => string;
+  readonly intervalMs?: number;
+  readonly onDelivery?: (outcome: { readonly kind: string; readonly code?: string }) => void;
+  readonly onFailure: (error: unknown) => void;
+}
+
+type Content =
+  | { readonly expired: true }
+  | {
+      readonly expired: false;
+      readonly build: (locale: WebPushLocale) => Omit<WebPushNotification, "badge" | "tag">;
+    };
+
+export class ProductionWebPush {
+  readonly #options: ProductionWebPushOptions;
+  readonly #runThreads = new Map<string, string | null>();
+  #timer: ReturnType<typeof setInterval> | undefined;
+  #running: Promise<void> | undefined;
+
+  constructor(options: ProductionWebPushOptions) {
+    this.#options = options;
+  }
+
+  get publicKey(): string {
+    return this.#options.sender.publicKey;
+  }
+
+  #resumed = false;
+
+  start(): void {
+    if (this.#timer) return;
+    this.#timer = setInterval(
+      () => void this.tick(),
+      this.#options.intervalMs ?? DEFAULT_INTERVAL_MS,
+    );
+    this.#timer.unref?.();
+    void this.tick();
+  }
+
+  async stop(): Promise<void> {
+    if (this.#timer) clearInterval(this.#timer);
+    this.#timer = undefined;
+    await this.#running;
+  }
+
+  tick(): Promise<void> {
+    this.#running ??= this.#run()
+      .catch(this.#options.onFailure)
+      .finally(() => {
+        this.#running = undefined;
+      });
+    return this.#running;
+  }
+
+  async sendTest(subscriptionId: string): Promise<WebPushSendResult> {
+    const { store, ownerId, agentId } = this.#options;
+    const subscription = (await store.listSubscriptions({ ownerId, agentId })).find(
+      ({ id }) => id === subscriptionId,
+    );
+    if (!subscription) return { kind: "gone", code: "WEB_PUSH_SUBSCRIPTION_NOT_FOUND" };
+    const text = WEB_PUSH_TEXT[subscription.locale];
+    const sourceKey = `test:${subscription.id}:${this.#options.now()}`;
+    const result = await this.#options.sender.send({
+      endpoint: subscription.endpoint,
+      p256dh: subscription.p256dh,
+      auth: subscription.auth,
+      payload: webPushPayload({
+        title: text.test,
+        body: text.testBody,
+        navigate: `${this.#options.publicOrigin}/`,
+        lang: subscription.locale,
+        tag: webPushTopic(sourceKey),
+        badge: 0,
+      }),
+      ttlSeconds: 300,
+      urgency: "high",
+      topic: webPushTopic(sourceKey),
+    });
+    await this.#applySubscriptionOutcome(subscription.id, result);
+    return result;
+  }
+
+  async #resumePaused(now: string): Promise<void> {
+    const { store, ownerId, agentId } = this.#options;
+    for (const subscription of await store.listSubscriptions({ ownerId, agentId }))
+      if (subscription.state === "paused")
+        await store.markSubscription({
+          ownerId,
+          agentId,
+          subscriptionId: subscription.id,
+          state: "active",
+          failureCode: null,
+          deliveredAt: null,
+          now,
+        });
+  }
+
+  async #run(): Promise<void> {
+    const now = this.#options.now();
+    if (!this.#resumed) {
+      await this.#resumePaused(now);
+      this.#resumed = true;
+    }
+    const approvals = (await this.#options.listApprovals()).filter(
+      (approval) =>
+        approval.status === "pending" && Date.parse(approval.expiresAt) > Date.parse(now),
+    );
+    const reminders = (
+      await this.#options.reminders.listDue({
+        ownerId: this.#options.ownerId,
+        agentId: this.#options.agentId,
+        now,
+        limit: 50,
+      })
+    ).filter(({ remindAt }) => Date.parse(now) - Date.parse(remindAt) <= REMINDER_WINDOW_MS);
+    await this.#collect(now, approvals, reminders);
+    await this.#deliver(now, approvals, reminders.length + approvals.length);
+    await this.#options.store.prune({
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      expiredBefore: new Date(Date.parse(now) - PRUNE_AFTER_MS).toISOString(),
+      limit: 200,
+    });
+  }
+
+  async #collect(
+    now: string,
+    approvals: readonly ApprovalRequest[],
+    reminders: readonly MemoryReminder[],
+  ): Promise<void> {
+    const { ownerId, agentId, store } = this.#options;
+    const scope = { ownerId, agentId };
+    const items: WebPushOutboxItem[] = [];
+    for (const reminder of reminders)
+      items.push({
+        ...scope,
+        sourceKey: `reminder:${reminder.id}:${reminder.remindAt}`,
+        kind: "reminder",
+        sourceRef: reminder.id,
+        threadId: null,
+        createdAt: now,
+        expiresAt: new Date(Date.parse(reminder.remindAt) + REMINDER_WINDOW_MS).toISOString(),
+      });
+    for (const approval of approvals)
+      items.push({
+        ...scope,
+        sourceKey: `approval:${approval.id}`,
+        kind: "approval",
+        sourceRef: approval.id,
+        threadId: await this.#runThread(approval.runId),
+        createdAt: now,
+        expiresAt: approval.expiresAt,
+      });
+    const cursor = await store.readCursor({ ...scope, source: "finished-runs" });
+    const runs = cursor
+      ? await store.listFinishedRuns({ ...scope, afterCursor: cursor, limit: FINISHED_RUN_BATCH })
+      : [];
+    for (const run of runs)
+      if (Date.parse(now) - Date.parse(run.finishedAt) < RUN_WINDOW_MS)
+        items.push({
+          ...scope,
+          sourceKey: `run:${run.runId}:${run.status}`,
+          kind: "run",
+          sourceRef: run.runId,
+          threadId: run.threadId,
+          createdAt: now,
+          expiresAt: new Date(Date.parse(run.finishedAt) + RUN_WINDOW_MS).toISOString(),
+        });
+    const next = cursor ? runs.at(-1)?.cursor : now;
+    if (items.length === 0 && !next) return;
+    await store.enqueue({
+      ...scope,
+      items,
+      cursor: next ? { source: "finished-runs", value: next } : null,
+      now,
+    });
+  }
+
+  async #runThread(runId: string): Promise<string | null> {
+    if (!this.#runThreads.has(runId))
+      this.#runThreads.set(runId, await this.#options.runThread(runId));
+    return this.#runThreads.get(runId) ?? null;
+  }
+
+  async #deliver(now: string, approvals: readonly ApprovalRequest[], badge: number): Promise<void> {
+    const { ownerId, agentId, store } = this.#options;
+    const due = await store.listDue({ ownerId, agentId, now, limit: SEND_BATCH });
+    if (due.length === 0) return;
+    const visible = this.#options.presence.anyVisible(now);
+    const contents = new Map<string, Content>();
+    for (const entry of due) {
+      const { item } = entry;
+      if (Date.parse(now) >= Date.parse(item.expiresAt)) {
+        await this.#record(entry, now, "expired", null);
+        continue;
+      }
+      if (!entry.subscription.kinds.includes(item.kind)) {
+        await this.#record(entry, now, "suppressed", "WEB_PUSH_KIND_OFF");
+        continue;
+      }
+      if (!contents.has(item.sourceKey))
+        contents.set(item.sourceKey, await this.#content(item, approvals, now));
+      const content = contents.get(item.sourceKey);
+      if (!content || content.expired) {
+        await this.#record(entry, now, "expired", null);
+        continue;
+      }
+      if (visible) {
+        await this.#record(entry, now, "suppressed", null);
+        continue;
+      }
+      await this.#send(entry, now, content, badge);
+    }
+  }
+
+  async #content(
+    item: WebPushOutboxItem,
+    approvals: readonly ApprovalRequest[],
+    now: string,
+  ): Promise<Content> {
+    const origin = this.#options.publicOrigin;
+    const threadUrl = (threadId: string | null) =>
+      threadId ? `${origin}/threads/${encodeURIComponent(threadId)}` : `${origin}/`;
+    if (item.kind === "reminder") {
+      const reminder = await this.#options.reminders.read(item.sourceRef);
+      if (
+        !reminder ||
+        reminder.status !== "scheduled" ||
+        !item.sourceKey.endsWith(`:${reminder.remindAt}`)
+      )
+        return { expired: true };
+      const [memory] = await this.#options.memories.readMany({
+        ownerId: this.#options.ownerId,
+        agentId: this.#options.agentId,
+        memoryIds: [reminder.memoryId],
+      });
+      if (!memory || memory.status !== "active") return { expired: true };
+      const hidden =
+        memory.dataClassification === "sensitive" || memory.dataClassification === "restricted";
+      const text = hidden
+        ? undefined
+        : (await this.#options.readMemoryText(memory))?.replace(/\s+/gu, " ").trim();
+      if (!hidden && !text) return { expired: true };
+      return {
+        expired: false,
+        build: (locale) => ({
+          title: WEB_PUSH_TEXT[locale].reminder,
+          body: hidden
+            ? WEB_PUSH_TEXT[locale].privateReminder
+            : `${text}\n${this.#formatTime(reminder.dueAt, locale)}`,
+          navigate: `${origin}/memory`,
+          lang: locale,
+        }),
+      };
+    }
+    if (item.kind === "approval") {
+      const approval = approvals.find(({ id }) => id === item.sourceRef);
+      if (!approval || Date.parse(approval.expiresAt) <= Date.parse(now)) return { expired: true };
+      const title = await this.#title(item.threadId);
+      if (title === undefined) return { expired: true };
+      const risk =
+        "finalRisk" in approval ? (approval as { finalRisk: RiskLevel }).finalRisk : undefined;
+      return {
+        expired: false,
+        build: (locale) => ({
+          title: risk
+            ? `${WEB_PUSH_TEXT[locale].approval} · ${WEB_PUSH_TEXT[locale].risk[risk]}`
+            : WEB_PUSH_TEXT[locale].approval,
+          body: title ?? WEB_PUSH_TEXT[locale].untitled,
+          navigate: threadUrl(item.threadId),
+          lang: locale,
+        }),
+      };
+    }
+    const title = await this.#title(item.threadId);
+    if (title === undefined) return { expired: true };
+    const failed = item.sourceKey.endsWith(":failed");
+    return {
+      expired: false,
+      build: (locale) => ({
+        title: failed ? WEB_PUSH_TEXT[locale].failed : WEB_PUSH_TEXT[locale].completed,
+        body: title ?? WEB_PUSH_TEXT[locale].untitled,
+        navigate: threadUrl(item.threadId),
+        lang: locale,
+      }),
+    };
+  }
+
+  async #title(threadId: string | null): Promise<string | null | undefined> {
+    if (!threadId) return null;
+    const thread = await this.#options.threadTitle(threadId);
+    return thread ? thread.title : undefined;
+  }
+
+  #formatTime(at: string, locale: WebPushLocale): string {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: this.#options.timeZone ?? "UTC",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(at));
+  }
+
+  async #send(
+    entry: WebPushDue,
+    now: string,
+    content: Extract<Content, { expired: false }>,
+    badge: number,
+  ): Promise<void> {
+    const { item, subscription, attempt } = entry;
+    const topic = webPushTopic(item.sourceKey);
+    let result: WebPushSendResult;
+    try {
+      result = await this.#options.sender.send({
+        endpoint: subscription.endpoint,
+        p256dh: subscription.p256dh,
+        auth: subscription.auth,
+        payload: webPushPayload({ ...content.build(subscription.locale), tag: topic, badge }),
+        ttlSeconds: Math.max(1, Math.floor((Date.parse(item.expiresAt) - Date.parse(now)) / 1_000)),
+        urgency: item.kind === "run" ? "normal" : "high",
+        topic,
+      });
+    } catch (error) {
+      this.#options.onFailure(error);
+      result = { kind: "retry", code: "WEB_PUSH_NETWORK" };
+    }
+    const attempts = (attempt?.attempts ?? 0) + 1;
+    this.#options.onDelivery?.({
+      kind: result.kind,
+      ...("code" in result ? { code: result.code } : {}),
+    });
+    if (result.kind === "sent") await this.#record(entry, now, "sent", null, attempts);
+    else if (result.kind === "gone" || result.kind === "rejected" || result.kind === "too_large")
+      await this.#record(
+        entry,
+        now,
+        result.kind === "gone" ? "gone" : "failed",
+        result.code,
+        attempts,
+      );
+    else if (result.kind === "rate_limited")
+      await this.#record(entry, now, "pending", result.code, attempts, {
+        delayMs: Math.min(3_600, Math.max(1, result.retryAfterSeconds ?? 60)) * 1_000,
+      });
+    else if (attempts > RETRY_DELAYS_MS.length)
+      await this.#record(entry, now, "failed", result.code, attempts);
+    else
+      await this.#record(entry, now, "pending", result.code, attempts, {
+        delayMs: RETRY_DELAYS_MS[attempts - 1] ?? RETRY_DELAYS_MS[0],
+      });
+    await this.#applySubscriptionOutcome(subscription.id, result);
+  }
+
+  async #applySubscriptionOutcome(subscriptionId: string, result: WebPushSendResult) {
+    const { store, ownerId, agentId } = this.#options;
+    const now = this.#options.now();
+    if (result.kind === "gone")
+      await store.removeSubscription({ ownerId, agentId, subscriptionId });
+    else if (result.kind === "sent")
+      await store.markSubscription({
+        ownerId,
+        agentId,
+        subscriptionId,
+        state: "active",
+        failureCode: null,
+        deliveredAt: now,
+        now,
+      });
+    else if (result.kind === "rejected")
+      await store.markSubscription({
+        ownerId,
+        agentId,
+        subscriptionId,
+        state: "paused",
+        failureCode: result.code,
+        deliveredAt: null,
+        now,
+      });
+  }
+
+  async #record(
+    entry: WebPushDue,
+    now: string,
+    status: "pending" | "sent" | "suppressed" | "expired" | "gone" | "failed",
+    code: string | null,
+    attempts = entry.attempt?.attempts ?? 0,
+    retry?: { readonly delayMs: number },
+  ): Promise<void> {
+    await this.#options.store.recordAttempt({
+      ownerId: this.#options.ownerId,
+      agentId: this.#options.agentId,
+      sourceKey: entry.item.sourceKey,
+      subscriptionId: entry.subscription.id,
+      status,
+      attempts,
+      nextAttemptAt: retry ? new Date(Date.parse(now) + retry.delayMs).toISOString() : null,
+      lastCode: code,
+      now,
+    });
+  }
+}

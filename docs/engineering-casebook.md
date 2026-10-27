@@ -51,6 +51,7 @@ date: "2026-10-26"
   24. [模型只用 3.9 秒，整轮却要 12 秒：找出 Himawari 自己造成的空档](#case-run-gaps)
   25. [上线操作包从“复制上一次再手改”改成“按参数生成”](#case-packet-generator)
   26. [每一步的时间要准：把一轮回答画成一条时间线](#case-process-timeline)
+  27. [推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送](#case-web-push-only)
   28. [回答下方一行、每轮 token 和“真能用”的附件](#case-answer-line-attachments)
 - [小案例速查](#small-cases)
 - [业界资料的核对情况](#source-status)
@@ -83,7 +84,7 @@ date: "2026-10-26"
 | Agent 交互体验：把执行过程如实展示给用户 | [运行中却显示“已完成”](#case-narration-status)、[记忆管理页重设计](#case-memory-page)、[用到的记忆不在步骤里](#case-memory-steps)、[每一步的时间要准](#case-process-timeline)、[回答下方一行和附件](#case-answer-line-attachments) |
 | 用 AI 编码代理做工程、管理多代理协作 | [管住 AI 编码代理](#case-agent-governance)、[快速交付模式](#case-fast-mode)、[按参数生成操作包](#case-packet-generator) |
 | 多用户 / 多租户隔离和登录方式选择 | [多用户隔离](#case-multi-user) |
-| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client) |
+| 多端接入、主动推送和语音入口 | [要不要做 iOS App](#case-mobile-client)、[推送只留一条路](#case-web-push-only) |
 | 系统提示设计、Agent 身份和行为约束、提示注入边界 | [Himawari 身份系统提示](#case-identity-prompt) |
 
 [返回目录](#contents)
@@ -1330,6 +1331,10 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 “有人问个人 Agent 要不要做 iOS App。我先查手机端到底缺什么：不是界面，而是连不上、网页关了收不到提醒、不能说话。iOS 16.4 起主屏网页应用就能收推送，不需要 99 美元的开发者账号，内容还加密，所以我们先开 Cloudflare 入口、做 PWA 加网页推送、再用 Siri 快捷指令做语音入口，零费用一两周补齐。原生 App 留到需要手机摄像头、定位这类网页做不到的能力时再做，这和 OpenClaw 这类自托管 Agent 的做法一致。”
 
+**后续（2026-10-26）**
+
+Andy 决定不用 Bark 过渡，所有推送只走网页推送，并定下生产入口用 `himawari.siyi.win`、只用 Cloudflare 邮箱验证码登录。ADR 0082 由 [ADR 0089](adr/0089-web-push-only-owner-entry.md) 取代，详见[案例 27](#case-web-push-only)。
+
 [返回目录](#contents)
 
 <a id="case-identity-prompt"></a>
@@ -1507,7 +1512,8 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 - 改前（生产 trace 和日志）：颜色那轮 12.1 秒，其中模型约 3.9 秒；预热 4.9 秒和 7.5 秒；确认事件晚写入约 3.6 秒；回答提交比运行结束晚 1.35–1.7 秒。
 - 复现测试：叫醒调度器、后台登记、并行检索、少写检查点四项各有一个测试，改前失败、改后通过。
-- 改后生产耗时：未上线，未测量。上线后用 `run.timing` 回填。
+- 改后生产耗时（第十三版，2026-10-26 23:38Z，Andy 的浏览器里问“搜索一下今天的科技新闻，列 3 条”，来源：生产服务日志的 `run.timing` 一行）：整轮 11 988 毫秒，改前同类的查新闻一轮 27.1 秒。分段（累计毫秒，同类步骤重叠时会超过实际经过时间）：准备上下文 2938，其中找记忆 2882；模型登记 270；工具执行 3616（两次网页搜索同时跑，过程区各显示约 2 秒）；等模型输出 5365；停沙箱和收尾 `resources.stop` 2、`run.complete` 9；沙箱只记了一次 2 毫秒的排队，没有预热。
+- 结论：沙箱预热、后台起标题和结尾的停沙箱都不再占时间；这一轮里 Himawari 自己最大的一段是找记忆的 2.9 秒（要先调嵌入模型），排在下一步。
 
 **相关 ADR/PR**
 
@@ -1519,7 +1525,7 @@ Pi 不管客户端和推送，这些是 Himawari 自己负责的部分；语音�
 
 **后续（2026-10-26）：过程记录不再等硬盘确认**
 
-Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过；生产效果未上线，未测量。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
+Andy 选了“过程记录不等落盘”。现在只有过程记录（执行过程事件和用途为 `trace` 的事件内容）提交时临时切到 `synchronous = NORMAL`，提交后立刻切回 `FULL`；回答、运行状态、审批、记忆和外部动作记录照旧等硬盘确认。WAL 是按顺序追加的，下一次等硬盘的提交会把前面的过程记录一起写盘，所以断电时最多丢最后几条步骤，服务崩溃不丢。每个流式事件因此少两次等硬盘确认。测试：一条新测试在改动前失败（没有切换），改动后通过。生产效果（第十三版上线后同一轮查新闻的 `run.timing`）：数据库提交 283 次累计 2002 毫秒，平均约 7 毫秒一次，低于原来每次等硬盘确认的 11.5–18.7 毫秒；这一项没有逐次区分哪些提交等了硬盘。决定记在 [ADR 0088](adr/0088-process-records-skip-disk-sync.md)。
 
 [返回目录](#contents)
 
@@ -1580,9 +1586,18 @@ Himawari 单机部署，每次上线用一个操作包：约 146 个固定脚本
 - 第十三次要升的 56 → 57：生成的操作包 17 项检查全部通过，其中真实升库一项 6 个用例都通过，17 项共 34 秒（云端 4 核容器，提交 `4ca2d24c` 的构建）；不升库的第十二次参数 16 项全部通过。
 - 上线脚本：没有生成器记录、检查没全过或提交对不上、升库却没跑升库检查时，`deploy.sh` 都以 6 退出且一个上线步骤都没跑；冻结后配置、服务单元或授权编号变了，停服前拒绝（`scripts/delivery-mode/test_deploy.py`，21 项通过）。
 - 整次出包时间：6 分 26 秒（385.7 秒），原来约 49 分钟到 1 小时，目标 15–20 分钟。来源：2026-10-26 第六次 Mac 只出包演练的 `PACKET_STEP` 输出（提交 `500817f`，数据库 56 → 57，包已冻结，没有上线）。分步：读生产 14.8 秒，S0 读回到 22.3 秒，Hermes 构建约 4 分 19 秒（到 284.9 秒），取回材料到 320.8 秒，渲染到 321.5 秒，17 项检查到 371.6 秒，网页验收和检查并行、到 372.5 秒已完成，冻结到 385.7 秒。最大的一块是 Hermes 构建。
-- 停服时间：未测量，等第十三次真正上线后补。推算约 4 分钟（11 分钟减去挪到停服前的 6 分 45 秒验收）。
+- 停服时间：第十三次真正上线（2026-10-26，包 `2026-10-26-thirteenth-change-packet-05`，提交 `d39e7a9`）实测 4 分 28 秒：23:24:26.6Z 服务停止，23:28:54.4Z 新版本报告就绪，和推算的约 4 分钟相符（来源：生产服务日志）。
+- 第十三次上线各步耗时（`deploy.sh` 的 `DEPLOY_STEP_START` 时间）：上线前检查 2 秒，传包 4 分 01 秒，安装 2 分 11 秒，验收 7 分 50 秒，以上都在停服前；停服 10 秒，复制数据库 20 秒，发布材料 3 秒，确定绑定 8 秒，签名 21 秒，运行保护 35 秒，读回 14 秒，查数据库状态 6 秒，写配置并升库 15 秒，升级能力目录 38 秒，切换启动 2 分 17 秒，最后读回约 10 秒。出包 414.8 秒，上线全程约 19 分钟。
+- 第十三次第一次上线停在验收：上线前检查只要求空闲不少于包大小的 2 倍（当时 11.17 GB 通过），装完新版本后根分区只剩 8.19 GB，验收要 10 GiB。服务没停；Andy 同意删掉第一到第九版的旧临时目录（17.6 GB）后第二次成功。改进记在 [BL-20261027-001](backlog/BL-20261027-001-deploy-preflight-root-free-after-install.md)、[BL-20261027-002](backlog/BL-20261027-002-prune-production-release-leftovers.md)。
 - 演练本身挡住的问题：前五次演练都在出包阶段失败，生产一次都没停：上传目录不在 Hermes 包装脚本允许的范围、上传前目录还没建、升库检查用了测试机上过期的构建（只认 51 个迁移）、Hermes 登录默认文件权限 `umask 002` 让检查自己建的目录被判不安全、网页验收缺锁定版本的 Python 和 `fd` 工具、验收测试还在找改版前记忆页的文字。每一处都先在云端复现、加测试再修，后两类的前置条件改成出包第一步约 10 秒内检查。
 - 检查耗时：Hermes 上 17 项检查从约 469 秒降到约 50 秒。最慢的 `verify-raw-copy-fixtures.mjs` 从 457.7 秒降到 22.5 秒，原因是它的临时目录原来在 Hermes 的 `/data` 盘上，复制时每个文件都要落盘同步；改到 `/tmp` 后变快（第五、六次演练的逐项秒数）。同一项在云端容器里只要 2.9 秒。
+
+**后续（2026-10-27）：模板里写死的迁移序号让第十四版出包停在 16/17**
+
+- 现象：给第十四版（提交 `4af85d1`，数据库 57 → 58）出包时，17 项检查只过了 16 项。失败的是维护夹具检查 `maintenance/verify-fixtures.mjs`：用例 “deployment retired” 预期报 `DB_DEPLOYMENT_NOT_ACTIVE`，实际报 `DB_LEDGER_INVALID`（迁移记录表无效）。来源：PR #53 说明和第十四版上线线程。
+- 根因：前一个用例 “ledger gap”（迁移记录缺号）把迁移记录第 10 行的序号改成 57 造出缺号，再把 57 改回 10 复原。这个 57 是模板从第十二次（数据库 56）抄来的写死数字，当时 57 还不存在。生产库升到 57 版以后，“改回”那一步把真的第 57 行也改成了 10，记录表此后一直是坏的，后面的用例都先撞上这个错误。这和本案例的根因是同一类：上一次合理的值被原样带到下一次，模板没有让它跟着数据库版本变。
+- 修复：用一个永远不会出现的序号 1000000 造缺号（提交 `ec49a24`，[PR #53](https://github.com/sixianli/himawari-agent/pull/53)）。检查在出包阶段就拦住了它，生产没有停服。
+- 教训：模板里凡是会和“当前数据库版本”撞上的数字，要么换成 `__PKT_*__` 参数，要么用不可能出现的值；夹具“改了再改回”时，改回的条件必须只命中自己改过的那一行。
 
 **相关 ADR/PR**
 
@@ -1652,6 +1667,75 @@ DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以
 
 [返回目录](#contents)
 
+<a id="case-web-push-only"></a>
+
+## 案例 27：推送只留一条路：去掉过渡用的 Bark，所有通知走网页推送
+
+**背景与现象**
+
+案例 21 定了手机端先做主屏网页应用和网页推送，并让已写好的 Bark（一个开源 iOS 推送 App）先过渡推送记忆提醒。2026-10-26 Andy 追问：“所有的推送都通过网页推送，为什么一定要加入 Bark 呢？”随后决定“直接做这个，一步到位，你必须好好设计！”。要回答的问题从“哪个能最快推到手机”变成：一个个人 Agent 需要主动通知人的三类事（记忆提醒到期、等你审批、任务结束），该用几条通道、锁屏上露多少、什么时候不该打扰。
+
+**根因**
+
+这是设计问题，不是缺陷。过渡方案的问题在于“两条通道”本身：
+
+- Bark 只覆盖记忆提醒，审批和任务结束仍要等网页推送，最后还是要写网页推送。
+- 两套代码、两套配置，Andy 还要装 Bark、配两把密钥，点开进的是 Bark 而不是 Himawari。
+- Bark 的去重只记在内存里（`apps/agent-service/src/production-reminder-push.ts` 的 `#sent`），服务重启后会重发；按项目记录生产从没配置 `runPolicy.reminderPush`，所以它从未开启，删掉没有迁移成本。
+
+**我们的方案**
+
+只用网页推送（Web Push：服务器经浏览器厂商的推送服务把通知送到设备，网页关着也能收到），见 [ADR 0089](adr/0089-web-push-only-owner-entry.md)：
+
+1. 一条通道推三类事；删掉 Bark 代码和配置项。
+2. 推送内容用苹果的声明式网页推送 JSON（iOS 18.4 起系统自己弹出），其他浏览器由后台脚本解析同一份 JSON。一种格式通吃所有设备。
+3. 锁屏只显示提醒原文或对话标题；数据分级为“敏感”“受限”的记忆只显示“你有一条私密提醒”；回答正文不上锁屏。
+4. 任何设备上 Himawari 页面在前台时不推（页面每 30 秒报一次“有人在看”，服务器 45 秒内收到过就不推）。
+5. 每条通知有唯一来源键，发过就记进数据库，重启也不重发；推送服务返回 404/410 就删掉那台设备的订阅。
+6. 通知文字按设备开启通知时的界面语言出中英日三语。
+7. 入口同时定下：生产用 `himawari.siyi.win`，只用 Cloudflare 邮箱验证码一道门（复用已有的 `cloudflare-access` 登录方式，不写新登录代码）。
+
+Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储、发送调度、锁屏隐私规则和登录入口。
+
+**方案讨论与备选**
+
+| 备选 | 好处 | 为什么没选 |
+| --- | --- | --- |
+| Bark 过渡，网页推送稳定后再删 | 当天就能收到记忆提醒 | 两套代码和配置；只覆盖一类事；Andy 要装 App 配密钥 |
+| 推送内容放正文，靠 iPhone“解锁后显示预览” | 锁屏信息最全 | 默认设置下回答和审批命令会出现在锁屏上；改成只放标题，设置页提示 iPhone 的“解锁时”选项 |
+| 每次都推，不管人在不在看 | 实现最简单 | 边聊边被自己的回答震动；改成按“任何设备在前台”判断 |
+| 自己用 Node 加密库实现 RFC 8291 | 少一个依赖 | 加密代码自写容易错；用固定版本的 `web-push` 3.6.7，只在一个适配文件里用 |
+| 登录两道门（邮箱验证码 + 密码和验证器） | Cloudflare 规则配错时还有一道 | Andy 认为太复杂；改为要求 Gmail 两步验证 |
+
+放弃了什么：过渡期“当天就收到提醒”；“页面开着但人走开了”时手机不会响；Cloudflare 故障时要手动切回内置登录。
+
+**业界主流做法**
+
+- ✅ WebKit（[Meet Declarative Web Push](https://webkit.org/blog/16535/meet-declarative-web-push/)）：“Declarative Web Push allows web developers to request a Web Push subscription and display user visible notifications … without requiring an installed service worker.”；旧浏览器上“it’s handled imperatively by JavaScript as it always had been.”
+- ✅ Apple（[Sending web push notifications in web apps and browsers](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)）：“Safari doesn’t support invisible push notifications. … If you don’t, Safari revokes the push notification permission for your site.”；“When the user completes the gesture, call the push subscription method immediately from the gesture’s event handler code.”；“allow access for https://*.push.apple.com.”
+- ✅ RFC 8030（[Generic Event Delivery Using HTTP Push](https://www.rfc-editor.org/rfc/rfc8030)）：“An application server MUST include the TTL (Time-To-Live) header field in its request for push message delivery.”；“A push message with a topic replaces any outstanding push message with an identical topic.”；过期订阅“MUST be signaled by returning a 404 (Not Found) status code.”
+- ✅ RFC 8291（[Message Encryption for Web Push](https://www.rfc-editor.org/rfc/rfc8291)）：推送内容可以“secured against inspection, modification, and forgery by a push service”（引文同案例 21）。
+
+**对比与取舍**
+
+和苹果、RFC 的建议一致：每条推送都弹出可见通知、只在用户点按后申请权限、用 TTL 和 Topic 控制过期与替换、按 404/410 清理失效订阅。不同点在“锁屏露多少”：通用聊天 App 默认把消息正文推上锁屏，Himawari 推的是个人记忆和能执行命令的审批，所以默认只露标题，敏感记忆连标题都不露。代价是用户要点开才知道细节。
+
+**结果数据**
+
+- 代码事实：Bark 从未在生产开启。依据是项目记录：2026-10-26 00:08 Andy 说“Bark 先不做”，之后的上线都没有写 `runPolicy.reminderPush`；没有这一项时推送循环不会启动（`apps/agent-service/src/service-main.ts`）。这一点没有在生产机上直接读配置核对。
+- 工作量：约 5.5 个工作日，估计，未测量。
+- 推送到达率、从事件发生到锁屏弹出的耗时：还没上线，未测量。
+
+**相关 ADR/PR**
+
+[ADR 0089](adr/0089-web-push-only-owner-entry.md)（取代 ADR 0082）；[网页推送实现规格](execution/specs/2026-10-26-web-push-design.md)；Backlog `BL-20261026-004`、`BL-20261026-005` 已更新，`BL-20261026-007` 以“不做”关闭；设计文档 <https://claude.ai/artifact/5WezX9kCNWhdpU7ttck7BG>；界面原型 <https://claude.ai/artifact/E1BP6KR7gqYrXkgEcxqghv>。
+
+**面试 30 秒版**
+
+“我们本来打算先用一个现成的推送 App 过渡，再上网页推送。用户一句‘为什么要两条路’让我们重新算账：过渡方案只覆盖一类通知，却要多维护一套代码和密钥。最后只留网页推送一条路，用苹果的声明式推送格式一份 JSON 通吃所有设备；锁屏只露标题，敏感记忆连标题都不露；人在看页面时不推；去重落库，重启不重发。”
+
+[返回目录](#contents)
+
 <a id="case-answer-line-attachments"></a>
 
 ## 案例 28：回答下方一行、每轮 token 和“真能用”的附件
@@ -1716,6 +1800,14 @@ DevTools 和 LangSmith 的瀑布图让并行的步骤各自画满，总和可以
 - **消息只带引用，发给模型时展开：** 消息里每个文件只是一行 `<file name ref bytes kind/>`，上下文投影只展开附件类型的加密内容，换成 Pi 的 `<file name>` 文件块；读不到就写“[附件无法读取]”，不让整轮失败。这样 64 KB 正文上限不再限制附件，标题生成、记忆提取和浏览器本地草稿里也不会出现文件全文。
 
 取舍：主流产品在服务端解析文件，支持的格式更多；我们放弃了旧版 .doc/.xls/.ppt 和扫描件（记在 [BL-20261026-012](backlog/BL-20261026-012-attachments-images-pdf-office.md)），换来服务端没有新的解析风险。结果（来自本 PR 的测试记录）：控制中心单元测试 446 个通过，其中浏览器转文字 4 个、上传和引用 2 个、粘贴拖放发送的交互测试 1 个；HTTP 网关合同测试 29 个、上下文投影集成测试 12 个通过。真实 Chromium 加上线上同样的内容安全策略（CSP，浏览器只允许加载哪些来源的脚本的规则）：一次选中 PDF、Word、Excel、PowerPoint 各一个，四张卡片按选择顺序出现，四段文字都正确上传，消息只带四行引用，页面没有报错。真实模型读附件后的回答质量：未上线，未测量。
+
+**后续（2026-10-26 夜）：第三期文件预览不改后端，只用工具记录**
+
+原型里右侧预览能打开任何文件，产品里却没有“读工作目录文件”的接口。我没有先写接口，而是先看浏览器手里已有什么：Pi 的写文件工具参数是 `{ path, content }`，改文件是 `{ path, edits: [{ oldText, newText }] }`，这些参数本来就作为过程记录发给浏览器。于是浏览器从记录里取全文，按顺序把改动替换进去得到最终内容，再用最长公共子序列算逐行增删，卡片上的“+N −N”和“改动”页一致（详见 [ADR 0091](adr/0091-chat-ui-v6-file-preview-and-sidebar.md#file-source)）。
+
+网页文件本想用 `iframe srcdoc` 直接渲染，但查规范发现 srcdoc 文档会继承父页面的内容安全策略（✅ [W3C CSP Level 3 第 7.8 节](https://www.w3.org/TR/CSP3/)：“Documents loaded from local schemes will inherit a copy of the policies in the source document”），我们的策略禁止内联样式，渲染出来是错的；正确做法是单独的隔离预览地址，和图片、PDF 一起记进 [BL-20261026-013](backlog/BL-20261026-013-file-preview-images-pdf-html.md)。
+
+取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
 
 [返回目录](#contents)
 

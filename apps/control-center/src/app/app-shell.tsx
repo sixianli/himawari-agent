@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ControlCenterPreferences, ControlCenterUiLocale } from "../browser-storage.js";
-import { OPEN_MEMORY_SETTINGS } from "../components/memory-panel.js";
+import { OPEN_MEMORY_SETTINGS, OPEN_NOTIFICATION_SETTINGS } from "../components/memory-panel.js";
 import { SettingsDialog } from "../components/settings-dialog.js";
 import { SidebarIcon } from "../components/sidebar-icon.js";
 import { HimawariBrand } from "../components/brand.js";
@@ -19,6 +19,7 @@ export interface ControlCenterShellProps {
   readonly settingsTools?: ReactNode;
   readonly settingsData?: ReactNode;
   readonly settingsMemory?: ReactNode;
+  readonly settingsNotifications?: ReactNode;
   readonly list: ReactNode;
   readonly locale: ControlCenterUiLocale;
   readonly onLocaleChange: (locale: ControlCenterUiLocale) => void;
@@ -40,6 +41,7 @@ export function ControlCenterShell({
   settingsTools,
   settingsData,
   settingsMemory,
+  settingsNotifications,
   list,
   locale,
   onLocaleChange,
@@ -70,8 +72,16 @@ export function ControlCenterShell({
       setSettingsTab("memory");
       setSettingsOpen(true);
     };
+    const openNotifications = () => {
+      setSettingsTab("notifications");
+      setSettingsOpen(true);
+    };
     window.addEventListener(OPEN_MEMORY_SETTINGS, open);
-    return () => window.removeEventListener(OPEN_MEMORY_SETTINGS, open);
+    window.addEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
+    return () => {
+      window.removeEventListener(OPEN_MEMORY_SETTINGS, open);
+      window.removeEventListener(OPEN_NOTIFICATION_SETTINGS, openNotifications);
+    };
   }, []);
   useEffect(() => {
     void route.objectId;
@@ -188,6 +198,7 @@ export function ControlCenterShell({
         tools={settingsTools}
         data={settingsData}
         memory={settingsMemory}
+        notifications={settingsNotifications}
         initialTab={settingsTab}
       />
     </div>

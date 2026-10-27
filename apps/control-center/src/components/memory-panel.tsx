@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { MessageId } from "../i18n/message-ids.js";
 import type { MemoryModel, MemoryReminder, PendingMemory } from "../memory.js";
 import { ActionButton } from "./primitives.js";
@@ -7,8 +7,14 @@ type Message = (id: MessageId, values?: Record<string, string | number>) => stri
 
 export const OPEN_MEMORY_SETTINGS = "himawari:open-memory-settings";
 
+export const OPEN_NOTIFICATION_SETTINGS = "himawari:open-notification-settings";
+
 export function openMemorySettings() {
   window.dispatchEvent(new Event(OPEN_MEMORY_SETTINGS));
+}
+
+export function openNotificationSettings() {
+  window.dispatchEvent(new Event(OPEN_NOTIFICATION_SETTINGS));
 }
 
 export function TextEditor({
@@ -99,22 +105,8 @@ export function MemoryApprovalCard({
   );
 }
 
-const notifications = () => (typeof Notification === "undefined" ? null : Notification);
-
 export function MemoryReminders({ memory, message }: { memory: MemoryModel; message: Message }) {
   const items: readonly MemoryReminder[] = memory.overview?.reminders ?? [];
-  const shown = useRef(new Set<string>());
-  const [permission, setPermission] = useState(() => notifications()?.permission ?? "denied");
-  useEffect(() => {
-    const api = notifications();
-    for (const item of items) {
-      const key = `${item.reminderId}:${item.remindAt}`;
-      if (shown.current.has(key)) continue;
-      shown.current.add(key);
-      if (api?.permission === "granted" && document.visibilityState !== "visible")
-        new api(message("memory.reminderTitle"), { body: item.text, tag: item.reminderId });
-    }
-  }, [items, message]);
   if (!items.length) return null;
   const time = (value: string) =>
     new Date(value).toLocaleString(undefined, {
@@ -144,19 +136,6 @@ export function MemoryReminders({ memory, message }: { memory: MemoryModel; mess
             >
               {message("memory.reminderSnooze")}
             </ActionButton>
-            {permission === "default" ? (
-              <ActionButton
-                variant="quiet"
-                onClick={() =>
-                  void notifications()
-                    ?.requestPermission()
-                    .then(setPermission)
-                    .catch(() => undefined)
-                }
-              >
-                {message("memory.reminderNotify")}
-              </ActionButton>
-            ) : null}
           </div>
         </section>
       ))}

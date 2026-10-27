@@ -1180,8 +1180,8 @@ describe("[R2-T2] coding route approval mode", () => {
   });
 });
 
-it("accepts a Bark reminder push only with a reminder-push secret and an https server", () => {
-  const raw = config("/tmp/himawari-reminder-push-config");
+it("[WP-7] accepts web push only with a web-push secret and an https or mailto subject", () => {
+  const raw = config("/tmp/himawari-web-push-config");
   const policy = {
     version: "1",
     systemInstruction: "test",
@@ -1192,27 +1192,33 @@ it("accepts a Bark reminder push only with a reminder-push secret and an https s
   const references = raw["secretReferences"] as unknown[];
   raw["secretReferences"] = [
     ...references,
-    { ref: "bark-push", version: "v1", purpose: "reminder-push", scope: "agent" },
+    { ref: "web-push-vapid", version: "v1", purpose: "web-push", scope: "agent" },
   ];
-  raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "bark-push" } };
-  expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.reminderPush,
-  ).toEqual({ channel: "bark", secretRef: "bark-push" });
-  for (const reminderPush of [
-    { channel: "ntfy", secretRef: "bark-push" },
-    { channel: "bark", secretRef: "missing-secret" },
-    { channel: "bark", secretRef: "bark-push", server: "http://bark.example" },
-    { channel: "bark", secretRef: "bark-push", server: "https://bark.example/push" },
-    { channel: "bark", secretRef: "bark-push", deviceKey: "inline" },
-  ]) {
-    raw["runPolicy"] = { ...policy, reminderPush };
-    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
-  }
   raw["runPolicy"] = {
     ...policy,
-    reminderPush: { channel: "bark", secretRef: "bark-push", server: "https://bark.example" },
+    webPush: { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win" },
+  };
+  expect(parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.webPush).toEqual({
+    secretRef: "web-push-vapid",
+    subject: "https://himawari.siyi.win",
+  });
+  raw["runPolicy"] = {
+    ...policy,
+    webPush: { secretRef: "web-push-vapid", subject: "mailto:owner@example.com" },
   };
   expect(
-    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.reminderPush?.server,
-  ).toBe("https://bark.example");
+    parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z").runPolicy?.webPush?.subject,
+  ).toBe("mailto:owner@example.com");
+  for (const webPush of [
+    { secretRef: "missing-secret", subject: "https://himawari.siyi.win" },
+    { secretRef: "web-push-vapid", subject: "http://himawari.siyi.win" },
+    { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win/settings" },
+    { secretRef: "web-push-vapid", subject: "owner@example.com" },
+    { secretRef: "web-push-vapid", subject: "https://himawari.siyi.win", privateKey: "inline" },
+  ]) {
+    raw["runPolicy"] = { ...policy, webPush };
+    expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
+  }
+  raw["runPolicy"] = { ...policy, reminderPush: { channel: "bark", secretRef: "web-push-vapid" } };
+  expect(() => parseProductConfiguration(raw, "2026-09-06T00:00:00.000Z")).toThrow();
 });

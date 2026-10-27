@@ -332,6 +332,10 @@ describe("production HTTP composition", () => {
           "approval.respond",
           "search.authorization.read",
           "search.authorization.set",
+          "push.status.read",
+          "push.subscription.set",
+          "push.test",
+          "presence.heartbeat",
         ],
         healthDependenciesAvailable: true,
       });
