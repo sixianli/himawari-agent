@@ -1816,6 +1816,20 @@ Pi 不管推送和客户端，这部分全是 Himawari 自己的：订阅存储�
 
 取舍：放弃了图片、PDF、命令生成的文件和超过 64K 字的文件，换来不加任何服务端读取路径。结果（来自本次提交的测试记录）：控制中心单元测试 459 个通过；真实 Chromium 在中英日、深浅色和 390 像素手机宽度下打开 Markdown、CSV 和改动三种预览，页面没有报错。走查时还发现勾选清单每项画了两个框，已修。真实对话里的使用情况：未上线，未测量。
 
+**后续（2026-10-27）：Andy 要“加一个看图模型”，查完发现主模型自己能看图**
+
+Andy 在卡片上选了“加一个看图模型”。动手前我先查现有的东西能不能直接用，而不是先接一个新模型：
+
+- 模型网关的公开列表里，主模型 `deepseek/deepseek-v4.1-flash` 的输入类型是 `["text","image","pdf"]`，每家供应商的图片单价都是 0（✅ Vercel AI Gateway 模型列表 `https://ai-gateway.vercel.sh/v1/models` 和 `/v1/models/deepseek/deepseek-v4.1-flash/endpoints`，2026-10-27 读取）。
+- Pi 已经会发图片：`AgentSession.prompt()` 有 `images` 参数；模型声明不含 `image` 时，`transform-messages.js` 自动把图片换成“(image omitted: model does not support images)”（✅ 固定版本 `@earendil-works/pi-ai` 0.84.2 源码）。
+- 缺的只是 Himawari 这一层：配置里模型只声明了 `text`，发给 Pi 的只有文字。
+
+所以没有加第二个模型（那会和 ADR 0048 “文本模型只能用 DeepSeek V4.1 Flash”冲突，还多一次调用），而是补齐 Himawari 负责的部分：浏览器把图片长边缩到 1568 像素以内，经新的图片接口加密保存，消息里仍然只带一行引用，上下文投影只把当前这条消息的图片交给 Pi（详见 [ADR 0093](adr/0093-chat-attachments-images.md#image-path)）。
+
+复核时又查了两处一手资料：DeepSeek 官方视觉指南写明 `deepseek-flash` 收 “JPEG, PNG, GIF, and WebP”，图片 token “are billed together with your text tokens”（✅ `https://api-docs.deepseek.com/guides/vision`，2026-10-27 读取）；网关上生产路由用的 digitalocean、fireworks、morph 等供应商标签都带 `vision`（✅ 上面的 endpoints 列表）。
+
+取舍：没有服务端压缩，所以 iPhone 的 HEIC 照片暂不支持；真实请求云端没有密钥测不了，上线后必须用真图实测一次。结果（来自本次提交的测试记录）：新加的图片测试 12 个全过（浏览器端 9 个、接口合同 1 个、上下文投影 1 个、Pi 真实会话收到图片内容 1 个）。真实模型看图的回答质量：未上线，未测量。
+
 [返回目录](#contents)
 
 <a id="case-job-host-heartbeat-after-result"></a>

@@ -1,12 +1,14 @@
 import {
   ApplicationPortError,
-  PORT_ERROR_CODES,
   type GatewayAuthenticationContext,
   type PayloadProtectorPort,
   type PayloadStorePort,
+  PORT_ERROR_CODES,
 } from "@himawari-agent/application";
 import { createAgentId, createOwnerId } from "@himawari-agent/domain";
 import type { HttpGatewayPayloadReadPort } from "./http-gateway-server.js";
+
+const IMAGE_PLAINTEXT_BYTES = 1_500_000;
 
 export interface BrowserTextPayloadReaderOptions {
   readonly payloads: (ownerId: string, agentId: string) => PayloadStorePort;
@@ -28,16 +30,21 @@ export class BrowserTextPayloadReader implements HttpGatewayPayloadReadPort {
   }): Promise<{
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain";
+    readonly contentType: "text/plain" | "text/x-himawari-image";
   }> {
     const ownerId = createOwnerId(input.authentication.ownerId);
     const agentId = createAgentId(input.agentId);
     const payload = await this.#options.payloads(ownerId, agentId).get(input.payloadRef);
-    if (!payload || payload.contentType !== "text/plain") {
+    const contentType = payload?.contentType;
+    if (!payload || (contentType !== "text/plain" && contentType !== "text/x-himawari-image")) {
       throw new ApplicationPortError(PORT_ERROR_CODES.NOT_FOUND, "Text Payload was not found");
     }
     const plaintext = await this.#options.protector.unprotect({ ownerId, agentId, payload });
-    if (plaintext.byteLength > (this.#options.maximumPlaintextBytes ?? 64 * 1024)) {
+    const limit =
+      contentType === "text/x-himawari-image"
+        ? IMAGE_PLAINTEXT_BYTES
+        : (this.#options.maximumPlaintextBytes ?? 64 * 1024);
+    if (plaintext.byteLength > limit) {
       throw new ApplicationPortError(
         PORT_ERROR_CODES.INVALID_OPERATION,
         "Text Payload exceeds browser disclosure limit",
@@ -55,7 +62,7 @@ export class BrowserTextPayloadReader implements HttpGatewayPayloadReadPort {
     return Object.freeze({
       content,
       dataClassification: payload.dataClassification,
-      contentType: "text/plain" as const,
+      contentType,
     });
   }
 }

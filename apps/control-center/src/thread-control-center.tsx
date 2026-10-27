@@ -5,7 +5,7 @@ import type {
   ThreadGatewayRequestResult,
   ThreadGatewaySnapshot,
 } from "@himawari-agent/gateway-contracts";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ControlCenterRouteState } from "./app/router.js";
 import type { ControlCenterBrowserStorage, PendingThreadMutation } from "./browser-storage.js";
 import { ArchivedConversations } from "./components/archived-conversations.js";
@@ -274,6 +274,11 @@ export function useThreadControlCenter(
       setContentByRef({ ...payloadCache.current });
     },
     [client, message],
+  );
+
+  const readImage = useMemo(
+    () => (client ? (ref: string) => client.readImage(ref) : undefined),
+    [client],
   );
 
   const loadEnvironment = useCallback(async () => {
@@ -1175,6 +1180,7 @@ export function useThreadControlCenter(
                 setPreview((current) => (value.key && current?.key === value.key ? null : value))
               }
               previewKey={preview?.key}
+              readImage={readImage}
               connection={connection}
               renderMemory={options.renderMemory}
               renderApproval={(runId, records) =>
@@ -1214,7 +1220,15 @@ export function useThreadControlCenter(
         <ChatComposer
           key={`composer:${selectedThreadId ?? "new"}`}
           fresh={!selectedThreadId}
-          onUpload={client ? (text) => client.protectAttachment(text, "private") : undefined}
+          onUpload={
+            client
+              ? (content, as) =>
+                  as === "image"
+                    ? client.protectImage(content, "private")
+                    : client.protectAttachment(content, "private")
+              : undefined
+          }
+          readImage={readImage}
           draft={draft}
           onDraft={(value) => {
             setDraft(value);

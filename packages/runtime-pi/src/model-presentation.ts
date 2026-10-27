@@ -8,5 +8,6 @@ export function getPiModelPresentation(binding: PiModelBinding) {
     name: binding.model.name,
     provider: binding.model.provider,
     thinkingLevels: getSupportedThinkingLevels(binding.model),
+    images: binding.model.input.includes("image"),
   };
 }

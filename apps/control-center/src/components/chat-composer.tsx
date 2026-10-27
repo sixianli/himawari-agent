@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { isImageFile, prepareImage, rememberImage } from "../attachment-image.js";
 import { ATTACHMENT_ACCEPT, extractAttachmentText } from "../attachment-text.js";
 import {
   attachmentName,
@@ -13,6 +14,7 @@ import {
 import type { AvailableModel } from "../gateway-client.js";
 import type { MessageId } from "../i18n/message-ids.js";
 import { LineIcon } from "./answer-footer.js";
+import { AttachmentThumb } from "./attachment-thumb.js";
 import { ModelPicker } from "./model-picker.js";
 import { ActionButton, Field } from "./primitives.js";
 
@@ -55,6 +57,7 @@ export function ChatComposer({
   environment,
   fresh = false,
   onUpload,
+  readImage,
 }: {
   readonly draft: string;
   readonly onDraft: (draft: string) => void;
@@ -73,7 +76,8 @@ export function ChatComposer({
   readonly retryPending?: boolean;
   readonly environment?: ReactNode;
   readonly fresh?: boolean;
-  readonly onUpload?: ((text: string) => Promise<string>) | undefined;
+  readonly onUpload?: ((content: string, as: "text" | "image") => Promise<string>) | undefined;
+  readonly readImage?: ((ref: string) => Promise<string>) | undefined;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -90,6 +94,7 @@ export function ChatComposer({
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
   const { text, files } = splitDraft(draft);
+  const selectedModel = models.find((item) => item.ref === modelRef);
   const enabled =
     canSend && connected && !pending && !reading.length && (retryPending || Boolean(draft.trim()));
   const addFiles = (picked: readonly File[]) => {
@@ -109,13 +114,21 @@ export function ChatComposer({
       file,
     }));
     setReading((current) => [...current, ...jobs]);
+    const upload = (content: string, as: "text" | "image") =>
+      onUpload(content, as).catch(() => {
+        throw new Error("ATTACHMENT_UPLOAD_FAILED");
+      });
     const prepared = jobs.map((job) =>
-      extractAttachmentText(job.file).then(async ({ kind, text: content, truncated }) => {
-        const ref = await onUpload(content).catch(() => {
-          throw new Error("ATTACHMENT_UPLOAD_FAILED");
-        });
-        return { name: job.name, ref, bytes: job.bytes, kind, truncated };
-      }),
+      isImageFile(job.file)
+        ? prepareImage(job.file).then(async ({ dataUrl, bytes }) => {
+            const ref = await upload(dataUrl, "image");
+            rememberImage(ref, dataUrl);
+            return { name: job.name, ref, bytes, kind: "image" as const, truncated: false };
+          })
+        : extractAttachmentText(job.file).then(async ({ kind, text: content, truncated }) => {
+            const ref = await upload(content, "text");
+            return { name: job.name, ref, bytes: job.bytes, kind, truncated };
+          }),
     );
     for (const promise of prepared) promise.catch(() => undefined);
     void jobs.reduce(
@@ -162,10 +175,22 @@ export function ChatComposer({
         {files.length || reading.length ? (
           <ul className="attachment-chips">
             {files.map((file, index) => (
-              <li key={`${index}:${file.ref}`}>
-                <LineIcon name="file" />
-                <span className="attachment-name">{file.name}</span>
-                <small>{formatBytes(file.bytes)}</small>
+              <li
+                key={`${index}:${file.ref}`}
+                className={file.kind === "image" ? "is-image" : undefined}
+                title={
+                  file.kind === "image" ? `${file.name} · ${formatBytes(file.bytes)}` : undefined
+                }
+              >
+                {file.kind === "image" ? (
+                  <AttachmentThumb imageRef={file.ref} name={file.name} readImage={readImage} />
+                ) : (
+                  <>
+                    <LineIcon name="file" />
+                    <span className="attachment-name">{file.name}</span>
+                    <small>{formatBytes(file.bytes)}</small>
+                  </>
+                )}
                 {file.truncated ? (
                   <small
                     className="attachment-truncated"
@@ -226,6 +251,11 @@ export function ChatComposer({
             }}
           />
         </Field>
+        {files.some((file) => file.kind === "image") && selectedModel?.images === false ? (
+          <p className="attachment-note">
+            {message("chat.imageUnsupported", { model: selectedModel.name })}
+          </p>
+        ) : null}
         {attachmentError ? (
           <p role="alert" className="attachment-error">
             {message(ATTACHMENT_ERROR_MESSAGES[attachmentError])}

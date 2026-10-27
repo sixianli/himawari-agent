@@ -13,6 +13,7 @@ import { turnFiles } from "../turn-files.js";
 import { turnSources, turnUsage } from "../turn-summary.js";
 import { AnswerActions, AnswerFiles, AnswerSources, LineIcon, useCopied } from "./answer-footer.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
+import { AttachmentThumb } from "./attachment-thumb.js";
 import { HimawariBrand } from "./brand.js";
 import type { ContentPreviewValue } from "./content-preview.js";
 import { ExecutionProcess } from "./execution-process.js";
@@ -32,6 +33,7 @@ export function ChatHistory({
   onCleanup,
   onPreview,
   previewKey,
+  readImage,
   renderApproval,
   renderMemory,
 }: {
@@ -46,6 +48,7 @@ export function ChatHistory({
   readonly renderMemory?: ((ownerRefs: readonly string[]) => ReactNode) | undefined;
   readonly onPreview?: ((preview: ContentPreviewValue) => void) | undefined;
   readonly previewKey?: string | undefined;
+  readonly readImage?: ((ref: string) => Promise<string>) | undefined;
   readonly onCleanup?: ((run: RunSummary) => void) | undefined;
   readonly onFork: (turnId: string, sequence: number) => void;
 }) {
@@ -108,7 +111,7 @@ export function ChatHistory({
                 .map((item) =>
                   item.role === "owner" ? (
                     <div className="owner-turn" key={item.messageId}>
-                      <OwnerMessage content={contentByRef[item.contentRef]} />
+                      <OwnerMessage content={contentByRef[item.contentRef]} readImage={readImage} />
                       <OwnerMessageMeta
                         text={ownerCopyText(contentByRef[item.contentRef])}
                         committedAt={item.committedAt}
@@ -269,14 +272,31 @@ export function ChatHistory({
 const ownerCopyText = (content: string | undefined) =>
   content === undefined ? "" : splitDraft(content).text || content;
 
-function OwnerMessage({ content }: { readonly content: string | undefined }) {
+function OwnerMessage({
+  content,
+  readImage,
+}: {
+  readonly content: string | undefined;
+  readonly readImage?: ((ref: string) => Promise<string>) | undefined;
+}) {
   const { text, files } = content === undefined ? { text: "…", files: [] } : splitDraft(content);
+  const images = files.filter((file) => file.kind === "image");
+  const others = files.filter((file) => file.kind !== "image");
   return (
     <article className="thread-message thread-message-owner">
+      {images.length ? (
+        <ul className="message-images">
+          {images.map((file, index) => (
+            <li key={`${index}:${file.ref}`} title={`${file.name} · ${formatBytes(file.bytes)}`}>
+              <AttachmentThumb imageRef={file.ref} name={file.name} readImage={readImage} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {text ? <pre className="thread-message-content">{text}</pre> : null}
-      {files.length ? (
+      {others.length ? (
         <ul className="message-files">
-          {files.map((file, index) => (
+          {others.map((file, index) => (
             <li key={`${index}:${file.name}`}>
               <LineIcon name="file" />
               <span className="attachment-name">{file.name}</span>

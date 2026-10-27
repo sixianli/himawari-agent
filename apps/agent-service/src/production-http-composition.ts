@@ -51,6 +51,7 @@ import {
   type HostSecretMaterialSource,
   type HttpGatewayAuthenticationPort,
   type HttpGatewayPayloadAdmissionPort,
+  type HttpGatewayPayloadContentType,
   type HttpGatewayServerOptions,
   IDENTITY_GATEWAY_ERROR_CODES,
   IdentityGatewayError,
@@ -125,6 +126,7 @@ export interface ProductionHttpCompositionOptions {
     name: string;
     provider: string;
     thinkingLevels: readonly string[];
+    images: boolean;
   }[];
   readonly cancelRun?: (
     input: Pick<CancelCoordinatedRunInput, "runId" | "command">,
@@ -415,7 +417,7 @@ class ProductionHttpPayloadAdmission implements HttpGatewayPayloadAdmissionPort 
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain" | "text/x-himawari-attachment";
+    readonly contentType: HttpGatewayPayloadContentType;
   }): Promise<{ readonly payloadRef: string }> {
     const session = await activeSession(this.#sessions, input.authentication, this.#ownerId);
     if (!session || input.authentication.ownerId !== this.#ownerId) {

@@ -1,5 +1,5 @@
-import { request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -1331,6 +1331,41 @@ describe("HTTP Gateway contract and security boundary", () => {
     expect(tooLarge.statusCode).toBe(400);
     expect([400, 413]).toContain(message.statusCode);
     expect(calls).toEqual([`text/x-himawari-attachment:${200 * 1024}`]);
+  });
+
+  it("[UI-17] admits a browser-prepared image only as a base64 image data URL", async () => {
+    const calls: string[] = [];
+    const { app } = createFixture(undefined, undefined, {
+      browserConfiguration: {
+        agentId: "agent-01",
+        deploymentId: "deployment-01",
+        authorityEpoch: 1,
+        fencingToken: 1,
+      },
+      payloadAdmission: {
+        async protect(input) {
+          calls.push(`${input.contentType}:${input.content.length}`);
+          return { payloadRef: "payload-image-01" };
+        },
+      },
+    });
+    const send = (content: string, key: string) =>
+      app.inject({
+        method: "POST",
+        url: "/api/payload/v1/image",
+        headers: requestHeaders(key),
+        payload: { content, dataClassification: "private" },
+      });
+    const photo = `data:image/jpeg;base64,${"A".repeat(1_200_000)}==`;
+    const accepted = await send(photo, "image-01");
+    const svg = await send("data:image/svg+xml;base64,PHN2Zz4=", "image-02");
+    const text = await send("一张图片", "image-03");
+    const huge = await send(`data:image/png;base64,${"A".repeat(1_500_000)}`, "image-04");
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json()).toEqual({ payloadRef: "payload-image-01" });
+    expect([svg.statusCode, text.statusCode]).toEqual([400, 400]);
+    expect([400, 413]).toContain(huge.statusCode);
+    expect(calls).toEqual([`text/x-himawari-image:${photo.length}`]);
   });
 
   it("does not advertise a session reference as recent authentication proof", async () => {

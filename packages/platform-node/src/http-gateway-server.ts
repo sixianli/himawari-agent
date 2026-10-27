@@ -110,6 +110,7 @@ export interface HttpGatewayServerOptions {
       name: string;
       provider: string;
       thinkingLevels: readonly string[];
+      images: boolean;
     }[];
     readonly installedGatewayV2Operations?: readonly (GatewayV2Query | GatewayV2Command)["type"][];
     readonly agentId: string;
@@ -132,13 +133,18 @@ export interface HttpGatewayServerOptions {
   };
 }
 
+export type HttpGatewayPayloadContentType =
+  | "text/plain"
+  | "text/x-himawari-attachment"
+  | "text/x-himawari-image";
+
 export interface HttpGatewayPayloadAdmissionPort {
   protect(input: {
     readonly authentication: GatewayAuthenticationContext;
     readonly idempotencyKey: string;
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain" | "text/x-himawari-attachment";
+    readonly contentType: HttpGatewayPayloadContentType;
   }): Promise<{ readonly payloadRef: string }>;
 }
 
@@ -150,7 +156,7 @@ export interface HttpGatewayPayloadReadPort {
   }): Promise<{
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
-    readonly contentType: "text/plain";
+    readonly contentType: "text/plain" | "text/x-himawari-image";
   }>;
 }
 
@@ -172,6 +178,8 @@ const DEFAULT_BODY_LIMIT = 256 * 1024;
 const DEFAULT_ASSET_LIMIT = 8 * 1024 * 1024;
 const ATTACHMENT_TEXT_CHARACTERS = 256 * 1024;
 const ATTACHMENT_BODY_LIMIT = 2 * 1024 * 1024;
+const IMAGE_DATA_URL_CHARACTERS = 1_500_000;
+const IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 const DEFAULT_HEARTBEAT_MILLISECONDS = 15_000;
 
 class HttpGatewayError extends Error {
@@ -1060,7 +1068,11 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
   if (options.payloadAdmission) {
     const payloadAdmission = options.payloadAdmission;
     const admitText =
-      (maximumCharacters: number, contentType: "text/plain" | "text/x-himawari-attachment") =>
+      (
+        maximumCharacters: number,
+        contentType: HttpGatewayPayloadContentType,
+        accepts: (content: string) => boolean = () => true,
+      ) =>
       async (request: FastifyRequest, reply: FastifyReply) => {
         assertMutationBoundary(request, publicOrigin);
         const authentication = await authenticate(request, options);
@@ -1093,6 +1105,7 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
           typeof body.content !== "string" ||
           body.content.length === 0 ||
           body.content.length > maximumCharacters ||
+          !accepts(body.content) ||
           !["public", "private", "sensitive", "restricted"].includes(
             body.dataClassification as string,
           )
@@ -1120,6 +1133,13 @@ export function buildHttpGatewayServer(options: HttpGatewayServerOptions): Fasti
       "/api/payload/v1/attachment",
       { bodyLimit: ATTACHMENT_BODY_LIMIT },
       admitText(ATTACHMENT_TEXT_CHARACTERS, "text/x-himawari-attachment"),
+    );
+    app.post(
+      "/api/payload/v1/image",
+      { bodyLimit: ATTACHMENT_BODY_LIMIT },
+      admitText(IMAGE_DATA_URL_CHARACTERS, "text/x-himawari-image", (content) =>
+        IMAGE_DATA_URL.test(content),
+      ),
     );
   }
 

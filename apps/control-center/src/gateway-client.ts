@@ -11,6 +11,7 @@ import {
   type ThreadGatewaySnapshot,
   threadGatewayMessageSchema,
 } from "@himawari-agent/gateway-contracts";
+import { IMAGE_DATA_URL, IMAGE_DATA_URL_CHARACTERS } from "./image-data-url.js";
 
 export type MutationStatus = "pending" | "accepted" | "rejected" | "expired" | "replayed";
 
@@ -46,6 +47,7 @@ export interface AvailableModel {
   readonly name: string;
   readonly provider: string;
   readonly thinkingLevels: readonly string[];
+  readonly images?: boolean;
 }
 
 export interface ControlCenterRuntimeConfiguration {
@@ -511,6 +513,21 @@ export class GatewayClient {
     );
   }
 
+  async protectImage(
+    dataUrl: string,
+    dataClassification: "public" | "private" | "sensitive" | "restricted" = "private",
+    idempotencyKey = `image:${crypto.randomUUID()}`,
+  ): Promise<string> {
+    if (!IMAGE_DATA_URL.test(dataUrl)) throw new Error("CONTROL_CENTER_PAYLOAD_INVALID");
+    return this.#admitText(
+      "/api/payload/v1/image",
+      IMAGE_DATA_URL_CHARACTERS,
+      dataUrl,
+      dataClassification,
+      idempotencyKey,
+    );
+  }
+
   async #admitText(
     path: string,
     maximumCharacters: number,
@@ -543,7 +560,23 @@ export class GatewayClient {
     return (body as { payloadRef: string }).payloadRef;
   }
 
-  async readText(payloadRef: string): Promise<{
+  readText(payloadRef: string): Promise<{
+    readonly content: string;
+    readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
+  }> {
+    return this.#readPayload(payloadRef, "text/plain");
+  }
+
+  async readImage(payloadRef: string): Promise<string> {
+    const { content } = await this.#readPayload(payloadRef, "text/x-himawari-image");
+    if (!IMAGE_DATA_URL.test(content)) throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
+    return content;
+  }
+
+  async #readPayload(
+    payloadRef: string,
+    contentType: "text/plain" | "text/x-himawari-image",
+  ): Promise<{
     readonly content: string;
     readonly dataClassification: "public" | "private" | "sensitive" | "restricted";
   }> {
@@ -570,7 +603,7 @@ export class GatewayClient {
       !["public", "private", "sensitive", "restricted"].includes(
         value.dataClassification as string,
       ) ||
-      value.contentType !== "text/plain"
+      value.contentType !== contentType
     ) {
       throw new Error("CONTROL_CENTER_RESPONSE_INVALID");
     }

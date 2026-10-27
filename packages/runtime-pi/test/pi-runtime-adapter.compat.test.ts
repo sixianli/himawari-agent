@@ -1896,6 +1896,37 @@ it("runs the actual pinned AgentSession with an opaque HTTP product session iden
   expect(projection.finalAnswers[0]?.text).toBe("真实 Pi Session 回答");
 });
 
+it("[UI-17] sends the images of the current message to Pi as image content", async () => {
+  const model = await createFauxModelFixture("两张图都看到了");
+  const projection = new RecordingProjection({
+    ...DEFAULT_CONTEXT,
+    prompt: {
+      ...DEFAULT_CONTEXT.prompt,
+      content: '对比一下\n\n<image name="a.png" index="1"/>',
+      images: [{ mimeType: "image/png", data: "iVBORw0KGgo=" }],
+    },
+  });
+  const adapter = new PiAgentRuntimeAdapter({
+    projection,
+    tools: new RecordingRuntimeTools(),
+    models: model.models,
+    cwd: process.cwd(),
+    now: () => NOW,
+    admission: async (scope) => allowAdmission(scope),
+    logicalSlot: (_request, ordinal) => `pi-image:${ordinal}`,
+  });
+  const events = await collect(adapter.run({ ...request, modelRef: model.descriptor.ref }));
+  expect(events.at(-1)).toMatchObject({ type: "runtime.completed" });
+  const context = model.observed[0] as { messages: { role: string; content: unknown }[] };
+  expect(context.messages.at(-1)).toMatchObject({
+    role: "user",
+    content: [
+      { type: "text", text: '对比一下\n\n<image name="a.png" index="1"/>' },
+      { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
+    ],
+  });
+});
+
 it("replaces Pi's coding identity with the product policy and keeps Pi's tool guidance", async () => {
   const model = await createFauxModelFixture("工具使用说明已保留");
   const tools = new RecordingRuntimeTools();

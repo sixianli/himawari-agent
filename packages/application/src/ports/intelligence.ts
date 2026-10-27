@@ -349,9 +349,15 @@ export interface RuntimeProjectionContext {
     readonly id: string;
     readonly content: string;
     readonly occurredAt: string;
+    readonly images?: readonly RuntimeProjectionImage[];
   };
   readonly contextBlocks: readonly RuntimeProjectionContextBlock[];
   readonly compaction?: RuntimeProjectionCompaction;
+}
+
+export interface RuntimeProjectionImage {
+  readonly mimeType: string;
+  readonly data: string;
 }
 
 export interface RuntimeProjectionContextBlock {
